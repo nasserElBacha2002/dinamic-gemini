@@ -9,7 +9,7 @@ Priority (highest first): failed → active pipeline → review stage → all co
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import InventoryStatus

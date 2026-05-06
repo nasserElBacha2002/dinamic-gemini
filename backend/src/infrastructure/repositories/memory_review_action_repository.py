@@ -4,7 +4,7 @@ In-memory implementation of ReviewActionRepository — v3.0 Épica 8.
 
 from __future__ import annotations
 
-from typing import List, Sequence
+from collections.abc import Sequence
 
 from src.application.ports.repositories import ReviewActionRepository
 from src.domain.reviews.entities import ReviewAction
@@ -12,7 +12,7 @@ from src.domain.reviews.entities import ReviewAction
 
 class MemoryReviewActionRepository(ReviewActionRepository):
     def __init__(self) -> None:
-        self._store: List[ReviewAction] = []
+        self._store: list[ReviewAction] = []
 
     def save(self, review: ReviewAction) -> None:
         self._store.append(review)

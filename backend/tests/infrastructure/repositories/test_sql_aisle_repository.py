@@ -8,13 +8,17 @@ Requires v3 schema (inventories and aisles tables). Creates a temporary inventor
 from __future__ import annotations
 
 import os
+
 import pytest
 
-from src.database.sqlserver import SqlServerClient, now_utc
+from src.database.sqlserver import now_utc
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
+from tests.support.sql_integration import sql_server_client_or_skip
+
+pytestmark = pytest.mark.integration
 
 
 def _connection_string() -> str:
@@ -30,6 +34,7 @@ def _connection_string() -> str:
         if not driver:
             try:
                 import pyodbc
+
                 for d in pyodbc.drivers():
                     if "SQL Server" in d:
                         driver = d
@@ -43,10 +48,7 @@ def _connection_string() -> str:
 
 @pytest.fixture(scope="module")
 def sql_client():
-    cs = _connection_string()
-    if not cs:
-        pytest.skip("SQL Server not configured")
-    return SqlServerClient(cs)
+    return sql_server_client_or_skip(_connection_string())
 
 
 @pytest.fixture
@@ -88,7 +90,9 @@ def test_sql_aisle_repository_save_and_get_by_id(aisle_repo: SqlAisleRepository)
     assert loaded.status == AisleStatus.CREATED
 
 
-def test_sql_aisle_repository_list_by_inventory_includes_saved(aisle_repo: SqlAisleRepository) -> None:
+def test_sql_aisle_repository_list_by_inventory_includes_saved(
+    aisle_repo: SqlAisleRepository,
+) -> None:
     now = now_utc()
     aisle = Aisle(
         id="test-epica3-aisle-002",
@@ -121,5 +125,7 @@ def test_sql_aisle_repository_get_by_inventory_and_code(aisle_repo: SqlAisleRepo
     assert aisle_repo.get_by_inventory_and_code("test-epica3-inv-001", "nonexistent") is None
 
 
-def test_sql_aisle_repository_get_by_id_missing_returns_none(aisle_repo: SqlAisleRepository) -> None:
+def test_sql_aisle_repository_get_by_id_missing_returns_none(
+    aisle_repo: SqlAisleRepository,
+) -> None:
     assert aisle_repo.get_by_id("nonexistent-aisle-id") is None

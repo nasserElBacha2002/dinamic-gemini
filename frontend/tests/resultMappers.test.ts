@@ -258,18 +258,15 @@ describe('mapPositionSummaryToResultSummary', () => {
 
 describe('mapEvidenceToResultEvidence', () => {
   it('maps primary evidence with role PRIMARY', () => {
-    const r = mapEvidenceToResultEvidence(
-      {
-        id: 'ev-1',
-        entity_type: 'PALLET',
-        entity_id: 'e1',
-        type: 'position_crop',
-        storage_path: '/path',
-        source_asset_id: 'asset-1',
-        is_primary: true,
-      },
-      0
-    );
+    const r = mapEvidenceToResultEvidence({
+      id: 'ev-1',
+      entity_type: 'PALLET',
+      entity_id: 'e1',
+      type: 'position_crop',
+      storage_path: '/path',
+      source_asset_id: 'asset-1',
+      is_primary: true,
+    });
     expect(r.id).toBe('ev-1');
     expect(r.role).toBe('PRIMARY');
     expect(r.sourceImageId).toBe('asset-1');
@@ -278,17 +275,14 @@ describe('mapEvidenceToResultEvidence', () => {
   });
 
   it('maps supporting evidence with role SUPPORTING', () => {
-    const r = mapEvidenceToResultEvidence(
-      {
-        id: 'ev-2',
-        entity_type: 'PALLET',
-        entity_id: 'e1',
-        type: 'product_crop',
-        storage_path: '/path2',
-        is_primary: false,
-      },
-      1
-    );
+    const r = mapEvidenceToResultEvidence({
+      id: 'ev-2',
+      entity_type: 'PALLET',
+      entity_id: 'e1',
+      type: 'product_crop',
+      storage_path: '/path2',
+      is_primary: false,
+    });
     expect(r.role).toBe('SUPPORTING');
     expect(r.sourceImageId).toBeNull();
   });

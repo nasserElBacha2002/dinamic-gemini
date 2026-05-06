@@ -17,7 +17,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, cast
 
 import cv2
 import numpy as np
@@ -29,6 +29,7 @@ from openai import (
     OpenAI,
     RateLimitError,
 )
+from openai.types.chat import ChatCompletionUserMessageParam
 
 from src.exceptions.global_analysis_exceptions import GlobalAnalysisValidationError
 from src.llm.errors import LLMProviderError
@@ -87,7 +88,7 @@ class OpenAiCompatibleVendorConfig:
     raw_response_filename: str
     log_label: str
     settings_base_url_attr: str
-    default_base_url: Optional[str]
+    default_base_url: str | None
 
 
 _OPENAI_VENDOR = OpenAiCompatibleVendorConfig(
@@ -164,15 +165,21 @@ def _image_to_data_url(obj: Any, max_side: int) -> str:
     return _pil_to_jpeg_data_url(obj, max_side)
 
 
-def _openai_completion_usage_dict(completion: Any) -> Dict[str, Any]:
-    """Best-effort ``CompletionUsage`` extraction for ``normalize_usage`` (nested details included)."""
+def _openai_completion_usage_dict(completion: Any) -> dict[str, Any]:
+    """Extract OpenAI completion usage as a plain ``dict`` for ``normalize_usage``.
+
+    Top-level ``usage.model_dump()`` must return a ``dict`` or the result is empty. For nested
+    fields (e.g. token details), only ``dict`` results from ``model_dump`` are stored; non-dict
+    dumps are omitted so usage snapshots remain JSON-serializable (no raw SDK objects).
+    """
     u = getattr(completion, "usage", None)
     if u is None:
         return {}
     model_dump = getattr(u, "model_dump", None)
     if callable(model_dump):
-        return model_dump(exclude_none=True)
-    out: Dict[str, Any] = {}
+        dumped = model_dump(exclude_none=True)
+        return cast(dict[str, Any], dumped) if isinstance(dumped, dict) else {}
+    out: dict[str, Any] = {}
     for key in (
         "prompt_tokens",
         "completion_tokens",
@@ -185,16 +192,223 @@ def _openai_completion_usage_dict(completion: Any) -> Dict[str, Any]:
             continue
         nested_dump = getattr(val, "model_dump", None)
         if callable(nested_dump):
-            out[key] = nested_dump(exclude_none=True)
+            nd = nested_dump(exclude_none=True)
+            if isinstance(nd, dict):
+                out[key] = nd
         else:
             out[key] = val
     return out
 
 
+def _openai_load_frames_nd(request: LLMRequest) -> list[np.ndarray]:
+    """Load primary frames from ndarray buffers or disk paths (same behavior as pre-B8.5 inline block)."""
+    if request.frames_nd and len(request.frames_nd) > 0:
+        return [np.asarray(f) for f in request.frames_nd]
+    frames_nd: list[np.ndarray] = []
+    for p in request.frames:
+        img = cv2.imread(str(p))
+        if img is not None:
+            frames_nd.append(img)
+    return frames_nd
+
+
+def _openai_effective_model(
+    request: LLMRequest, settings: Any, v: OpenAiCompatibleVendorConfig
+) -> str:
+    meta = request.metadata or {}
+    job_model = (meta.get(v.model_metadata_key) or "").strip()
+    default_m = (
+        getattr(settings, v.settings_model_attr, "") or v.default_model_if_settings_empty
+    ).strip()
+    return job_model or default_m
+
+
+def _openai_build_user_content(
+    request: LLMRequest,
+    settings: Any,
+    v: OpenAiCompatibleVendorConfig,
+    frames_nd: list[np.ndarray],
+    max_side: int,
+) -> list[dict[str, Any]]:
+    meta = request.metadata or {}
+    prompt_parity_mode = bool(meta.get(LLM_METADATA_KEY_PROMPT_PARITY_MODE))
+    use_request_prompt = (
+        request.prompt.strip() if (request.prompt and request.prompt.strip()) else None
+    )
+    prompt_text = (
+        use_request_prompt
+        if use_request_prompt is not None
+        else compose_hybrid_base_from_settings(
+            settings,
+            pipeline_provider_key=v.hybrid_compose_provider_key,
+            prompt_parity_mode=prompt_parity_mode,
+        )
+    )
+    if request.context_instruction and str(request.context_instruction).strip():
+        prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text
+    prompt_text = prompt_text + _JSON_OBJECT_SUFFIX
+    prompt_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+    prompt_preview = prompt_text[:240].replace("\n", " ")
+    logger.debug(
+        "%s prompt_contract hash=%s preview=%r requested_keys=%s",
+        v.log_label,
+        prompt_hash,
+        prompt_preview,
+        _OPENAI_CANONICAL_ENTITY_KEYS,
+    )
+
+    content: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
+    ctx_imgs = list(request.context_images) if request.context_images else []
+    for im in ctx_imgs:
+        url = _image_to_data_url(im, max_side)
+        content.append({"type": "image_url", "image_url": {"url": url, "detail": "auto"}})
+    for nd in frames_nd:
+        url = _bgr_to_jpeg_data_url(nd, max_side)
+        content.append({"type": "image_url", "image_url": {"url": url, "detail": "auto"}})
+    return content
+
+
+def _openai_chat_completions_create(
+    client: OpenAI,
+    *,
+    model_str: str,
+    content: list[dict[str, Any]],
+    prov: str,
+    v: OpenAiCompatibleVendorConfig,
+) -> tuple[Any, int]:
+    """Run Chat Completions with ``json_object`` response format; returns (completion, latency_ms)."""
+    t0 = time.perf_counter()
+    user_message = cast(
+        ChatCompletionUserMessageParam,
+        {"role": "user", "content": content},
+    )
+    try:
+        completion = client.chat.completions.create(
+            model=model_str,
+            messages=[user_message],
+            response_format={"type": "json_object"},
+        )
+    except AuthenticationError as e:
+        raise LLMProviderError(
+            code="NOT_CONFIGURED",
+            message=str(e),
+            details={"provider": prov},
+        ) from e
+    except RateLimitError as e:
+        raise LLMProviderError(
+            code="RATE_LIMIT",
+            message=str(e),
+            details={"provider": prov},
+        ) from e
+    except APITimeoutError as e:
+        raise LLMProviderError(
+            code="TIMEOUT",
+            message=str(e),
+            details={"provider": prov},
+        ) from e
+    except APIConnectionError as e:
+        raise LLMProviderError(
+            code="TIMEOUT",
+            message=str(e),
+            details={"provider": prov},
+        ) from e
+    except APIError as e:
+        msg_l = str(e).lower()
+        sc = getattr(e, "status_code", None)
+        if sc == 429 or "rate limit" in msg_l:
+            raise LLMProviderError(
+                code="RATE_LIMIT",
+                message=str(e),
+                details={"provider": prov, "status_code": sc},
+            ) from e
+        if sc == 401:
+            raise LLMProviderError(
+                code="NOT_CONFIGURED",
+                message=str(e),
+                details={"provider": prov},
+            ) from e
+        raise LLMProviderError(
+            code="UNKNOWN",
+            message=str(e),
+            details={"provider": prov, "status_code": sc},
+        ) from e
+
+    latency_ms = int((time.perf_counter() - t0) * 1000)
+    return completion, latency_ms
+
+
+def _openai_parse_validate_global_analysis_json(
+    raw_text: str,
+    *,
+    prov: str,
+    v: OpenAiCompatibleVendorConfig,
+) -> dict[str, Any]:
+    cleaned = _extract_json_text(raw_text)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        logger.warning("%s global analysis: invalid JSON: %s", v.log_label, e)
+        raise LLMProviderError(
+            code="INVALID_JSON",
+            message=f"Invalid JSON: {e}",
+            details={"provider": prov},
+        ) from e
+    if not isinstance(parsed, dict):
+        logger.warning("%s global analysis: JSON root is not an object", v.log_label)
+        raise LLMProviderError(
+            code="INVALID_JSON",
+            message="Global analysis response must be a JSON object",
+            details={"provider": prov},
+        )
+    data: dict[str, Any] = parsed
+
+    if logger.isEnabledFor(logging.DEBUG):
+        entities_raw = data.get("entities")
+        if isinstance(entities_raw, list):
+            before_presence: dict[str, int] = {k: 0 for k in _OPENAI_CANONICAL_ENTITY_KEYS}
+            for ent in entities_raw:
+                if not isinstance(ent, dict):
+                    continue
+                for key in _OPENAI_CANONICAL_ENTITY_KEYS:
+                    val = ent.get(key)
+                    if val is None:
+                        continue
+                    if isinstance(val, str) and not val.strip():
+                        continue
+                    before_presence[key] += 1
+            logger.debug(
+                "%s canonical_key_presence_before_normalize entities=%d presence=%s",
+                v.log_label,
+                len(entities_raw),
+                before_presence,
+            )
+
+    total = data.get("total_entities_detected")
+    entities = data.get("entities") or []
+    if isinstance(entities, list) and isinstance(total, (int, float)) and total != len(entities):
+        logger.warning(
+            "%s count mismatch: total_entities_detected=%s vs len(entities)=%d; normalizing",
+            v.log_label,
+            total,
+            len(entities),
+        )
+        data["total_entities_detected"] = len(entities)
+
+    try:
+        validate_global_analysis_structure_v21(data)
+    except GlobalAnalysisValidationError as e:
+        raise LLMProviderError(
+            code="SCHEMA_INVALID",
+            message=str(e),
+            details={"provider": prov},
+        ) from e
+    return data
+
+
 class OpenAiSdkAdapter:
     """OpenAI Chat Completions (vision) + json_object; maps failures to ``LLMProviderError``."""
 
-    def __init__(self, vendor_config: Optional[OpenAiCompatibleVendorConfig] = None) -> None:
+    def __init__(self, vendor_config: OpenAiCompatibleVendorConfig | None = None) -> None:
         self._v = vendor_config or _OPENAI_VENDOR
 
     def execute(self, request: LLMRequest, settings: Any) -> LLMResponse:
@@ -209,22 +423,12 @@ class OpenAiSdkAdapter:
             )
 
         meta = request.metadata or {}
-        prompt_parity_mode = bool(meta.get(LLM_METADATA_KEY_PROMPT_PARITY_MODE))
-        job_model = (meta.get(v.model_metadata_key) or "").strip()
-        default_m = (getattr(settings, v.settings_model_attr, "") or v.default_model_if_settings_empty).strip()
-        effective_model = job_model or default_m
+        effective_model = _openai_effective_model(request, settings, v)
 
         timeout = float(getattr(settings, v.settings_timeout_attr, 120.0))
         max_side = int(getattr(settings, v.settings_max_side_attr, 2048))
 
-        if request.frames_nd and len(request.frames_nd) > 0:
-            frames_nd: List[np.ndarray] = [np.asarray(f) for f in request.frames_nd]
-        else:
-            frames_nd = []
-            for p in request.frames:
-                img = cv2.imread(str(p))
-                if img is not None:
-                    frames_nd.append(img)
+        frames_nd = _openai_load_frames_nd(request)
         if not frames_nd:
             raise LLMProviderError(
                 code="NO_FRAMES",
@@ -232,40 +436,8 @@ class OpenAiSdkAdapter:
                 details={"paths_count": len(request.frames), "provider": prov},
             )
 
-        use_request_prompt = (
-            request.prompt.strip() if (request.prompt and request.prompt.strip()) else None
-        )
-        prompt_text = (
-            use_request_prompt
-            if use_request_prompt is not None
-            else compose_hybrid_base_from_settings(
-                settings,
-                pipeline_provider_key=v.hybrid_compose_provider_key,
-                prompt_parity_mode=prompt_parity_mode,
-            )
-        )
-        if request.context_instruction and str(request.context_instruction).strip():
-            prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text
-        prompt_text = prompt_text + _JSON_OBJECT_SUFFIX
-        prompt_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
-        prompt_preview = prompt_text[:240].replace("\n", " ")
-        logger.debug(
-            "%s prompt_contract hash=%s preview=%r requested_keys=%s",
-            v.log_label,
-            prompt_hash,
-            prompt_preview,
-            _OPENAI_CANONICAL_ENTITY_KEYS,
-        )
-
-        content: List[Dict[str, Any]] = [{"type": "text", "text": prompt_text}]
+        content = _openai_build_user_content(request, settings, v, frames_nd, max_side)
         ctx_imgs = list(request.context_images) if request.context_images else []
-        for im in ctx_imgs:
-            url = _image_to_data_url(im, max_side)
-            content.append({"type": "image_url", "image_url": {"url": url, "detail": "auto"}})
-        for nd in frames_nd:
-            url = _bgr_to_jpeg_data_url(nd, max_side)
-            content.append({"type": "image_url", "image_url": {"url": url, "detail": "auto"}})
-
         logger.info(
             "%s global analysis: model=%s context_images=%d primary_frames=%d",
             v.log_label,
@@ -274,67 +446,22 @@ class OpenAiSdkAdapter:
             len(frames_nd),
         )
 
-        base_url: Optional[str] = None
+        base_url: str | None = None
         if v.settings_base_url_attr:
             raw_u = (getattr(settings, v.settings_base_url_attr, "") or "").strip()
             base_url = raw_u or v.default_base_url
-        client_kw: Dict[str, Any] = {"api_key": api_key, "timeout": timeout}
+        client_kw: dict[str, Any] = {"api_key": api_key, "timeout": timeout}
         if base_url:
             client_kw["base_url"] = base_url
         client = OpenAI(**client_kw)
-        t0 = time.perf_counter()
-        try:
-            completion = client.chat.completions.create(
-                model=effective_model,
-                messages=[{"role": "user", "content": content}],
-                response_format={"type": "json_object"},
-            )
-        except AuthenticationError as e:
-            raise LLMProviderError(
-                code="NOT_CONFIGURED",
-                message=str(e),
-                details={"provider": prov},
-            ) from e
-        except RateLimitError as e:
-            raise LLMProviderError(
-                code="RATE_LIMIT",
-                message=str(e),
-                details={"provider": prov},
-            ) from e
-        except APITimeoutError as e:
-            raise LLMProviderError(
-                code="TIMEOUT",
-                message=str(e),
-                details={"provider": prov},
-            ) from e
-        except APIConnectionError as e:
-            raise LLMProviderError(
-                code="TIMEOUT",
-                message=str(e),
-                details={"provider": prov},
-            ) from e
-        except APIError as e:
-            msg_l = str(e).lower()
-            sc = getattr(e, "status_code", None)
-            if sc == 429 or "rate limit" in msg_l:
-                raise LLMProviderError(
-                    code="RATE_LIMIT",
-                    message=str(e),
-                    details={"provider": prov, "status_code": sc},
-                ) from e
-            if sc == 401:
-                raise LLMProviderError(
-                    code="NOT_CONFIGURED",
-                    message=str(e),
-                    details={"provider": prov},
-                ) from e
-            raise LLMProviderError(
-                code="UNKNOWN",
-                message=str(e),
-                details={"provider": prov, "status_code": sc},
-            ) from e
-
-        latency_ms = int((time.perf_counter() - t0) * 1000)
+        model_str: str = str(effective_model).strip()
+        completion, latency_ms = _openai_chat_completions_create(
+            client,
+            model_str=model_str,
+            content=content,
+            prov=prov,
+            v=v,
+        )
         choice = completion.choices[0] if completion.choices else None
         raw_text = (choice.message.content or "").strip() if choice and choice.message else ""
         run_dir = meta.get("run_dir")
@@ -343,57 +470,7 @@ class OpenAiSdkAdapter:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(raw_text, encoding="utf-8")
 
-        cleaned = _extract_json_text(raw_text)
-        try:
-            data = json.loads(cleaned)
-        except json.JSONDecodeError as e:
-            logger.warning("%s global analysis: invalid JSON: %s", v.log_label, e)
-            raise LLMProviderError(
-                code="INVALID_JSON",
-                message=f"Invalid JSON: {e}",
-                details={"provider": prov},
-            ) from e
-
-        if logger.isEnabledFor(logging.DEBUG):
-            entities_raw = data.get("entities")
-            if isinstance(entities_raw, list):
-                before_presence: Dict[str, int] = {k: 0 for k in _OPENAI_CANONICAL_ENTITY_KEYS}
-                for ent in entities_raw:
-                    if not isinstance(ent, dict):
-                        continue
-                    for key in _OPENAI_CANONICAL_ENTITY_KEYS:
-                        val = ent.get(key)
-                        if val is None:
-                            continue
-                        if isinstance(val, str) and not val.strip():
-                            continue
-                        before_presence[key] += 1
-                logger.debug(
-                    "%s canonical_key_presence_before_normalize entities=%d presence=%s",
-                    v.log_label,
-                    len(entities_raw),
-                    before_presence,
-                )
-
-        total = data.get("total_entities_detected")
-        entities = data.get("entities") or []
-        if isinstance(entities, list) and isinstance(total, (int, float)) and total != len(entities):
-            logger.warning(
-                "%s count mismatch: total_entities_detected=%s vs len(entities)=%d; normalizing",
-                v.log_label,
-                total,
-                len(entities),
-            )
-            data["total_entities_detected"] = len(entities)
-
-        try:
-            validate_global_analysis_structure_v21(data)
-        except GlobalAnalysisValidationError as e:
-            raise LLMProviderError(
-                code="SCHEMA_INVALID",
-                message=str(e),
-                details={"provider": prov},
-            ) from e
+        data = _openai_parse_validate_global_analysis_json(raw_text, prov=prov, v=v)
 
         usage = _openai_completion_usage_dict(completion)
 

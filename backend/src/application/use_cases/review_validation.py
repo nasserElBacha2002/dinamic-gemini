@@ -8,21 +8,21 @@ run-scoped; legacy rows require no job id. ``aisles.operational_job_id`` is not 
 
 from __future__ import annotations
 
-from typing import Optional
-
 from src.application.errors import (
+    AisleNotFoundError,
     InventoryNotFoundError,
     PositionDeletedError,
     PositionNotFoundError,
     ProductNotFoundError,
 )
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.repositories import (
     AisleRepository,
     InventoryRepository,
     PositionRepository,
     ProductRecordRepository,
 )
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
+from src.domain.aisle.entities import Aisle
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 
@@ -35,19 +35,19 @@ def ensure_position_not_deleted(position: Position) -> None:
         )
 
 
-def _normalize_job_id_param(raw: Optional[str]) -> Optional[str]:
+def _normalize_job_id_param(raw: str | None) -> str | None:
     if raw is None:
         return None
     s = str(raw).strip()
-    return s if s else None
+    return s or None
 
 
-def _storage_job_id_on_position(position: Position) -> Optional[str]:
+def _storage_job_id_on_position(position: Position) -> str | None:
     """Effective job id on the position row: ``None`` = legacy ``job_id IS NULL``."""
     return _normalize_job_id_param(position.job_id)
 
 
-def ensure_review_job_matches_position(request_job_id: Optional[str], position: Position) -> None:
+def ensure_review_job_matches_position(request_job_id: str | None, position: Position) -> None:
     """Ensure POST ``job_id`` matches the storage row (run-scoped vs legacy).
 
     Rules:
@@ -81,7 +81,7 @@ def resolve_position(
     inv = inventory_repo.get_by_id(inventory_id)
     if inv is None:
         raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
-    aisle = require_aisle_scoped_to_inventory(
+    require_aisle_scoped_to_inventory(
         aisle_repo,
         inventory_id=inventory_id,
         aisle_id=aisle_id,
@@ -91,9 +91,7 @@ def resolve_position(
     if position is None:
         raise PositionNotFoundError(f"Position not found: {position_id}")
     if position.aisle_id != aisle_id:
-        raise PositionNotFoundError(
-            f"Position {position_id} does not belong to aisle {aisle_id}"
-        )
+        raise PositionNotFoundError(f"Position {position_id} does not belong to aisle {aisle_id}")
     return position
 
 
@@ -148,12 +146,10 @@ def resolve_single_product_for_position(
     if not products:
         raise ProductNotFoundError(f"No products found for position {position_id}")
     if len(products) > 1:
-        raise ValueError(
-            f"Ambiguous product for position {position_id}: multiple products exist"
-        )
+        raise ValueError(f"Ambiguous product for position {position_id}: multiple products exist")
     return products[0]
 
 
-def storage_job_id_for_review_audit(position: Position) -> Optional[str]:
+def storage_job_id_for_review_audit(position: Position) -> str | None:
     """Persist the run id on ``review_actions`` (null for legacy rows)."""
     return _storage_job_id_on_position(position)

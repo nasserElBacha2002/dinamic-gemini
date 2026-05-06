@@ -5,6 +5,13 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ExecutionLogPanel from '../src/components/ExecutionLogPanel';
 
 describe('ExecutionLogPanel', () => {
+  it('does not expose technical query errors in the primary load-failed message', () => {
+    render(<ExecutionLogPanel error={new Error('TypeError internal stack file.ts:99')} />);
+
+    expect(screen.queryByText(/TypeError internal stack file\.ts:99/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/load failed|request failed|something went wrong|could not load/i)).toBeInTheDocument();
+  });
+
   it('renders operator-friendly Gemini request details above the timeline', () => {
     render(
       <ExecutionLogPanel
@@ -54,12 +61,12 @@ describe('ExecutionLogPanel', () => {
       />,
     );
 
-    expect(screen.getByText('Prompt')).toBeInTheDocument();
+    expect(screen.getByText(/prompt heading/i)).toBeInTheDocument();
     expect(screen.getByText('Exact prompt text sent to Gemini.')).toBeInTheDocument();
-    expect(screen.getByText('Reference guidance')).toBeInTheDocument();
+    expect(screen.getByText(/reference guidance/i)).toBeInTheDocument();
     expect(screen.getByText('Use inventory references only as comparison context.')).toBeInTheDocument();
-    expect(screen.getByText('Attached files')).toBeInTheDocument();
-    expect(screen.getByText(/Primary evidence: 2 \| Reference images: 1 \| Total: 3/i)).toBeInTheDocument();
+    expect(screen.getByText(/attached files/i)).toBeInTheDocument();
+    expect(screen.getByText(/attachment counts/i)).toBeInTheDocument();
     expect(screen.getByText('img_001: input-01.jpg (image/jpeg)')).toBeInTheDocument();
     expect(screen.getByText('ref-1: reference-front.jpg (image/jpeg)')).toBeInTheDocument();
     expect(screen.getByText('Gemini analysis request started')).toBeInTheDocument();
@@ -111,11 +118,10 @@ describe('ExecutionLogPanel', () => {
       />,
     );
 
-    expect(screen.getByText('Gemini request 1')).toBeInTheDocument();
-    expect(screen.getByText('Gemini request 2')).toBeInTheDocument();
+    expect(screen.getAllByText(/gemini request n/i)).toHaveLength(2);
     expect(screen.getByText('Retry prompt text')).toBeInTheDocument();
     expect(screen.getByText(/ref-two\.jpg/i)).toBeInTheDocument();
-    expect(screen.getByText(/\[not resolved\]/i)).toBeInTheDocument();
+    expect(screen.getByText(/not resolved suffix/i)).toBeInTheDocument();
     const longPromptNode = screen.getByText((content, element) => {
       return element?.tagName.toLowerCase() === 'pre' && content.includes('Prompt start');
     });
@@ -164,11 +170,11 @@ describe('ExecutionLogPanel', () => {
     expect(screen.queryByText('Requested job')).not.toBeInTheDocument();
     expect(screen.getByText('ma')).toBeInTheDocument();
     expect(screen.getByText('mb')).toBeInTheDocument();
-    fireEvent.mouseDown(screen.getByLabelText('Job'));
-    expect(await screen.findByRole('option', { name: /All jobs in log/i })).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: /pick job/i, hidden: true }));
+    expect(await screen.findByRole('option', { name: /all jobs/i })).toBeInTheDocument();
   });
 
-  it('defaults to requested job and shows all lines only after All jobs in log', async () => {
+  it('defaults to requested job and shows all lines only after selecting all jobs', async () => {
     render(
       <ExecutionLogPanel
         log={{
@@ -204,8 +210,8 @@ describe('ExecutionLogPanel', () => {
     expect(screen.getByText('for-a')).toBeInTheDocument();
     expect(screen.queryByText('for-b')).not.toBeInTheDocument();
 
-    fireEvent.mouseDown(screen.getByLabelText('Job'));
-    const opt = await screen.findByRole('option', { name: /All jobs in log/i });
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: /pick job/i, hidden: true }));
+    const opt = await screen.findByRole('option', { name: /all jobs/i });
     fireEvent.click(opt);
     await waitFor(() => {
       expect(screen.getByText('for-b')).toBeInTheDocument();
@@ -245,7 +251,7 @@ describe('ExecutionLogPanel', () => {
     );
     expect(screen.queryByText('line-b-only')).not.toBeInTheDocument();
 
-    fireEvent.mouseDown(screen.getByLabelText('Job'));
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: /pick job/i, hidden: true }));
     fireEvent.click(await screen.findByRole('option', { name: /^job-b$/i }));
     await waitFor(() => {
       expect(screen.getByText('line-b-only')).toBeInTheDocument();
@@ -308,7 +314,7 @@ describe('ExecutionLogPanel', () => {
     fireEvent.mouseDown(attemptCombobox());
     fireEvent.click(screen.getByRole('option', { name: '2' }));
 
-    fireEvent.mouseDown(screen.getByLabelText('Job'));
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: /pick job/i, hidden: true }));
     fireEvent.click(await screen.findByRole('option', { name: /^job-b$/i }));
 
     await waitFor(() => {

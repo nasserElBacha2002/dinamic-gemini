@@ -24,8 +24,12 @@ from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleR
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
-from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
+from src.infrastructure.repositories.memory_review_action_repository import (
+    MemoryReviewActionRepository,
+)
 
 
 def _seed_repos():
@@ -264,9 +268,7 @@ def test_post_review_confirm_returns_204_and_detail_includes_review() -> None:
         )
         assert resp.status_code == 204
 
-        list_resp = client.get(
-            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
-        )
+        list_resp = client.get("/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions")
         assert list_resp.status_code == 200
         list_data = list_resp.json()
         assert len(list_data["positions"]) == 1
@@ -309,9 +311,7 @@ def test_post_review_update_quantity_returns_204_and_detail_updated() -> None:
         )
         assert resp.status_code == 204
 
-        list_resp = client.get(
-            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
-        )
+        list_resp = client.get("/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions")
         assert list_resp.status_code == 200
         positions = list_resp.json()["positions"]
         assert len(positions) == 1
@@ -444,9 +444,7 @@ def test_post_review_update_sku_returns_204_and_detail_updated() -> None:
         )
         assert resp.status_code == 204
 
-        list_resp = client.get(
-            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
-        )
+        list_resp = client.get("/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions")
         assert list_resp.status_code == 200
         positions = list_resp.json()["positions"]
         assert len(positions) == 1
@@ -513,9 +511,7 @@ def test_post_review_delete_position_returns_204_and_detail_deleted() -> None:
         )
         assert resp.status_code == 204
 
-        list_resp = client.get(
-            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
-        )
+        list_resp = client.get("/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions")
         assert list_resp.status_code == 200
         positions = list_resp.json()["positions"]
         assert len(positions) == 1
@@ -578,9 +574,7 @@ def test_list_and_detail_corrected_quantity_coherent_after_update_quantity() -> 
         )
         assert resp.status_code == 204
 
-        list_resp = client.get(
-            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
-        )
+        list_resp = client.get("/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions")
         assert list_resp.status_code == 200
         list_data = list_resp.json()
         assert "positions" in list_data
@@ -614,9 +608,7 @@ def test_list_corrected_quantity_null_when_no_manual_correction() -> None:
     app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
     app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
     try:
-        list_resp = client.get(
-            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
-        )
+        list_resp = client.get("/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions")
         assert list_resp.status_code == 200
         list_data = list_resp.json()
         assert len(list_data["positions"]) == 1
@@ -685,9 +677,7 @@ def test_list_and_detail_has_evidence_coherent_when_evidence_present() -> None:
     app.dependency_overrides[get_evidence_repo] = lambda: repos["evidence_repo"]
     app.dependency_overrides[get_review_action_repo] = lambda: repos["review_repo"]
     try:
-        list_resp = client.get(
-            "/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions"
-        )
+        list_resp = client.get("/api/v3/inventories/inv-review-1/aisles/aisle-review-1/positions")
         assert list_resp.status_code == 200
         list_data = list_resp.json()
         assert len(list_data["positions"]) == 1

@@ -1,0 +1,125 @@
+"""
+Capture session aggregate — Sprint 1 domain model.
+
+Session/item states are application-enforced strings persisted as VARCHAR; enums document
+allowed values. Invalid transitions are rejected in future use cases (not in entity methods
+for Sprint 1 beyond basic documentation here).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
+from typing import Any
+
+
+class CaptureSessionStatus(str, Enum):
+    """Lifecycle for a capture session (wire / DB value = enum value)."""
+
+    DRAFT = "draft"
+    IMPORTING = "importing"
+    READY_FOR_REVIEW = "ready_for_review"
+    ASSIGNMENT_PROPOSED = "assignment_proposed"
+    CONFIRMING = "confirming"
+    CONFIRMED = "confirmed"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+
+class CaptureSessionItemImportStatus(str, Enum):
+    PENDING_IMPORT = "pending_import"
+    IMPORTING = "importing"
+    IMPORTED = "imported"
+    IMPORT_FAILED = "import_failed"
+
+
+class CaptureTimeSource(str, Enum):
+    EXIF = "exif"
+    FILE_MTIME = "file_mtime"
+    FALLBACK_CLOCK = "fallback_clock"
+
+
+class CaptureSessionItemAssignmentStatus(str, Enum):
+    """Preview / assignment outcome (Sprint 3+); ``pending`` until preview runs."""
+
+    PENDING = "pending"
+    PROPOSED = "proposed"
+    CONFLICT = "conflict"
+    UNASSIGNED = "unassigned"
+
+
+class CaptureSessionGroupAisleAssignmentStatus(str, Enum):
+    """G4 — which aisle (if any) a temporal group is bound to before materialization."""
+
+    UNASSIGNED = "unassigned"
+    ASSIGNED_EXISTING = "assigned_existing"
+    ASSIGNED_NEW = "assigned_new"
+
+
+@dataclass
+class CaptureSession:
+    id: str
+    inventory_id: str
+    aisle_id: str | None
+    status: CaptureSessionStatus
+    created_at: datetime
+    updated_at: datetime
+    opened_at: datetime | None = None
+    closed_at: datetime | None = None
+    #: Seconds added to each item's ``effective_capture_time`` for preview ordering (Sprint 3).
+    clock_offset_seconds: int = 0
+
+
+@dataclass(kw_only=True)
+class CaptureSessionGroup:
+    """Temporal segmentation bucket for capture items (G3 — inventory-level, no aisles)."""
+
+    id: str
+    session_id: str
+    group_index: int
+    created_at: datetime
+    algorithm_version: str
+    #: G4 — aisle this group is staged for (materialization in G5); null until assigned.
+    assigned_aisle_id: str | None = None
+    assignment_status: CaptureSessionGroupAisleAssignmentStatus = (
+        CaptureSessionGroupAisleAssignmentStatus.UNASSIGNED
+    )
+    assigned_at: datetime | None = None
+
+
+@dataclass
+class CaptureSessionItem:
+    id: str
+    session_id: str
+    staging_storage_key: str
+    import_status: CaptureSessionItemImportStatus
+    assignment_status: CaptureSessionItemAssignmentStatus
+    updated_at: datetime
+    content_hash: str | None = None
+    effective_capture_time: datetime | None = None
+    time_source: CaptureTimeSource | None = None
+    time_confidence: float | None = None
+    linked_source_asset_id: str | None = None
+    last_error_code: str | None = None
+    last_error_detail: str | None = None
+    original_filename: str | None = None
+    #: ``effective_capture_time`` + session offset at last preview (UTC); null until preview.
+    adjusted_capture_time: datetime | None = None
+    #: Human-readable deterministic preview outcome (Sprint 3).
+    assignment_reason: str | None = None
+    #: Aisle ``positions.id`` when preview proposes a unique slot; null otherwise.
+    preview_target_position_id: str | None = None
+    #: G3 temporal group; null until ``ComputeCaptureSessionGroups`` runs (or after clear).
+    group_id: str | None = None
+
+
+@dataclass
+class CaptureSessionConfirmationLedgerEntry:
+    """Persisted idempotency record for confirm-session (Sprint 6+)."""
+
+    id: str
+    session_id: str
+    idempotency_key: str
+    created_at: datetime
+    outcome_json: dict[str, Any] | None = None

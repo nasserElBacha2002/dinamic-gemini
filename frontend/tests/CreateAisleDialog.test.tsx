@@ -25,8 +25,8 @@ describe('CreateAisleDialog', () => {
       </WithTheme>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /create aisle/i }));
-    expect(await screen.findByText(/aisle code is required/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+    expect(await screen.findByText(/validation code required/i)).toBeInTheDocument();
   });
 
   it('pre-validates duplicate code when existing codes are provided', async () => {
@@ -43,9 +43,9 @@ describe('CreateAisleDialog', () => {
       </WithTheme>
     );
 
-    fireEvent.change(screen.getByLabelText(/aisle code/i), { target: { value: ' a-01 ' } });
-    fireEvent.click(screen.getByRole('button', { name: /create aisle/i }));
-    expect(await screen.findByText(/already exists in this inventory/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/code label/i), { target: { value: ' a-01 ' } });
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+    expect(await screen.findByText(/validation duplicate/i)).toBeInTheDocument();
   });
 
   it('shows success state with create another and close actions', async () => {
@@ -65,18 +65,18 @@ describe('CreateAisleDialog', () => {
       </WithTheme>
     );
 
-    fireEvent.change(screen.getByLabelText(/aisle code/i), { target: { value: 'A1' } });
-    fireEvent.click(screen.getByRole('button', { name: /create aisle/i }));
+    fireEvent.change(screen.getByLabelText(/code label/i), { target: { value: 'A1' } });
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalled());
-    expect(screen.getByRole('alert')).toHaveTextContent(/aisle\s+a1\s+created/i);
+    expect(screen.getByRole('alert')).toHaveTextContent(/success created/i);
     expect(screen.getByRole('button', { name: /create another/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /create another/i }));
     expect(screen.queryByText(/created/i)).not.toBeInTheDocument();
-    expect(screen.getByLabelText(/aisle code/i)).toHaveValue('');
-    expect(screen.getByLabelText(/aisle code/i)).toHaveFocus();
+    expect(screen.getByLabelText(/code label/i)).toHaveValue('');
+    expect(screen.getByLabelText(/code label/i)).toHaveFocus();
   });
 });
 

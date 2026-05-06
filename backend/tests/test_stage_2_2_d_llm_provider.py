@@ -28,7 +28,9 @@ def test_pipeline_hybrid_does_not_import_gemini_sdk():
     assert hasattr(reg, "resolve_llm_executor"), "Registry must expose LLM executor resolution"
 
 
-def test_hybrid_pipeline_e2e_patched_executor_no_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hybrid_pipeline_e2e_patched_executor_no_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Hybrid path uses patched ``resolve_llm_executor_for_context`` + fixture JSON; no network."""
     from tests.support.llm_executor_harness import patch_offline_hybrid_json_fixture
 
@@ -57,18 +59,20 @@ def test_hybrid_pipeline_e2e_patched_executor_no_network(tmp_path: Path, monkeyp
     settings.debug_save_frames = False
     settings.hybrid_max_frames = None
 
-    from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
+    from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, _HybridRunParams
 
     logger = MagicMock()
     pipe = HybridInventoryPipeline()
     result = pipe._run_hybrid(
         "",
-        settings=settings,
-        video_id="job_photos",
-        output_path=tmp_path,
-        run_id="run",
-        logger=logger,
-        job_input=job_input,
+        _HybridRunParams(
+            settings=settings,
+            video_id="job_photos",
+            output_path=tmp_path,
+            run_id="run",
+            logger=logger,
+            job_input=job_input,
+        ),
     )
     assert result.exit_code == 0
     report_path = run_dir / "hybrid_report.json"

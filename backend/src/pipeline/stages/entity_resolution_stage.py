@@ -10,7 +10,6 @@ job image IDs from the manifest when input_type is photos.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
 
 from src.decision.count_status import assign_count_status
 from src.decision.entity_order import sort_entities_deterministically
@@ -20,16 +19,16 @@ from src.domain.entity import Entity
 from src.domain.traceability import apply_traceability_validation
 from src.jobs.image_identity import load_job_images_from_manifest
 from src.jobs.photos_paths import photos_dir_relative_for_manifest, resolve_manifest_path
-from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_entities
-from src.pipeline.stages.analysis_stage import AnalysisStageResult
+from src.parsing.global_analysis_parser import parse_entities
 from src.pipeline.context.run_context import RunContext
+from src.pipeline.stages.analysis_stage import AnalysisStageResult
 
 
 @dataclass
 class ResolvedEntities:
     """Output of EntityResolutionStage: entities with count_status, pallet_id, quality score set."""
 
-    entities: List[Entity]
+    entities: list[Entity]
 
 
 class EntityResolutionStage:

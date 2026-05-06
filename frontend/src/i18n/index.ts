@@ -8,7 +8,7 @@ const SUPPORTED_LANGS = new Set(['es', 'en']);
 
 function resolveInitialLanguage(): 'es' | 'en' {
   // Product default is always Spanish for clean starts.
-  const fallback: 'es' = 'es';
+  const fallback = 'es' as const;
   if (import.meta.env.MODE === 'test') {
     // Keep unit tests deterministic with existing expectations.
     return 'en';

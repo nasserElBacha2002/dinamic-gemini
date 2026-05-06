@@ -7,7 +7,6 @@ Returns the aisle, latest job, operational pointer, and recent jobs for status /
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
 
 from src.application.ports.repositories import AisleRepository, JobRepository
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
@@ -19,9 +18,10 @@ from src.domain.jobs.entities import Job
 @dataclass
 class AisleProcessingStatusResult:
     """Result of GetAisleProcessingStatusUseCase."""
+
     aisle: Aisle
-    latest_job: Optional[Job]
-    recent_jobs: Tuple[Job, ...]
+    latest_job: Job | None
+    recent_jobs: tuple[Job, ...]
 
 
 class GetAisleProcessingStatusUseCase:
@@ -52,6 +52,4 @@ class GetAisleProcessingStatusUseCase:
         recent = tuple(
             self._job_repo.list_jobs_for_target("aisle", aisle_id, limit=self._recent_limit)
         )
-        return AisleProcessingStatusResult(
-            aisle=aisle, latest_job=latest_job, recent_jobs=recent
-        )
+        return AisleProcessingStatusResult(aisle=aisle, latest_job=latest_job, recent_jobs=recent)

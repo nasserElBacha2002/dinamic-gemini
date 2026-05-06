@@ -1,0 +1,1004 @@
+Run started:2026-05-04 12:43:55.132185+00:00
+
+Test results:
+>> Issue: [B324:hashlib] Use of weak MD5 hash for security. Consider usedforsecurity=False
+   Severity: High   Confidence: High
+   CWE: CWE-327 (https://cwe.mitre.org/data/definitions/327.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html
+   Location: src/app.py:161:15
+160	    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+161	    run_hash = hashlib.md5(f"{video_id}_{timestamp}".encode()).hexdigest()[:8]
+162	    run_id = f"{timestamp}_{run_hash}"
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: src/application/services/capture_assignment_preview.py:89:8
+88	        adj = adjusted_effective_time(i.effective_capture_time, clock_offset_seconds)
+89	        assert adj is not None
+90	        by_adj[adj].append(i)
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: src/application/services/capture_assignment_preview.py:113:8
+112	        adj = adjusted_effective_time(i.effective_capture_time, clock_offset_seconds)
+113	        assert adj is not None
+114	        if idx < len(slots):
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: src/application/use_cases/compare_aisle_runs.py:113:8
+112	        job_b_ent = self._job_repo.get_by_id(job_b)
+113	        assert job_a_ent is not None and job_b_ent is not None
+114	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: src/application/use_cases/compare_many_aisle_runs.py:232:16
+231	            if command.include_diff_rows:
+232	                assert diff_row_cap is not None
+233	                rows, rows_truncated = build_compare_diff_rows(
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: src/application/use_cases/export_aisle_benchmark.py:118:8
+117	        job = self._job_repo.get_by_id(command.run_job_id)
+118	        assert inv is not None and aisle is not None and job is not None
+119	
+
+--------------------------------------------------
+>> Issue: [B106:hardcoded_password_funcarg] Possible hardcoded password: 'bearer'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b106_hardcoded_password_funcarg.html
+   Location: src/auth/service.py:191:11
+190	        access_token=access_token,
+191	        token_type="bearer",
+192	        expires_in=s.token_expires_minutes * 60,
+193	        refresh_token=refresh_token,
+194	        refresh_expires_in=s.refresh_token_expires_minutes * 60,
+195	        user=user,
+196	    )
+197	
+198	
+199	def refresh_session(refresh_token: str, context: AuthContext) -> LoginResponse:
+
+--------------------------------------------------
+>> Issue: [B106:hardcoded_password_funcarg] Possible hardcoded password: 'bearer'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b106_hardcoded_password_funcarg.html
+   Location: src/auth/service.py:243:11
+242	        access_token=access_token,
+243	        token_type="bearer",
+244	        expires_in=s.token_expires_minutes * 60,
+245	        refresh_token=new_refresh_token,
+246	        refresh_expires_in=s.refresh_token_expires_minutes * 60,
+247	        user=user,
+248	    )
+249	
+250	
+251	def logout_session(refresh_token: str | None, context: AuthContext) -> None:
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/database/migrations/service.py:88:16
+87	        cur.execute(
+88	            f"""
+89	            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = '{_MIGRATION_TABLE}')
+90	            BEGIN
+91	                CREATE TABLE {_MIGRATION_TABLE} (
+92	                    id INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+93	                    service_name VARCHAR(128) NOT NULL,
+94	                    version VARCHAR(64) NOT NULL,
+95	                    migration_name NVARCHAR(255) NOT NULL,
+96	                    checksum_sha256 VARCHAR(64) NOT NULL,
+97	                    deployment_id VARCHAR(128) NULL,
+98	                    applied_at DATETIME2 NOT NULL,
+99	                    UNIQUE (service_name, version)
+100	                );
+101	                CREATE INDEX IX_schema_migrations_service_version
+102	                    ON {_MIGRATION_TABLE}(service_name, version);
+103	                CREATE INDEX IX_schema_migrations_service_applied
+104	                    ON {_MIGRATION_TABLE}(service_name, applied_at DESC);
+105	            END
+106	            """
+107	        )
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/database/migrations/service.py:135:16
+134	        cur.execute(
+135	            f"""
+136	            SELECT version
+137	            FROM {_MIGRATION_TABLE}
+138	            WHERE service_name = ?
+139	            ORDER BY version ASC
+140	            """,
+141	            (service,),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/database/migrations/service.py:150:16
+149	        cur.execute(
+150	            f"""
+151	            SELECT TOP 1 version
+152	            FROM {_MIGRATION_TABLE}
+153	            WHERE service_name = ?
+154	            ORDER BY version DESC
+155	            """,
+156	            (service,),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/database/migrations/service.py:172:16
+171	        cur.execute(
+172	            f"""
+173	            IF NOT EXISTS (
+174	                SELECT 1
+175	                FROM {_MIGRATION_TABLE}
+176	                WHERE service_name = ? AND version = ?
+177	            )
+178	            BEGIN
+179	                INSERT INTO {_MIGRATION_TABLE}
+180	                    (service_name, version, migration_name, checksum_sha256, deployment_id, applied_at)
+181	                VALUES (?, ?, ?, ?, ?, ?)
+182	            END
+183	            """,
+184	            (
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/database/sqlserver.py:49:16
+48	                    conn.rollback()
+49	                except Exception:
+50	                    pass
+51	            logger.exception("SQL Server operation failed: %s", e)
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/database/sqlserver.py:57:16
+56	                    conn.close()
+57	                except Exception:
+58	                    pass
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/env_settings/sqlserver_resolution.py:33:4
+32	                return _sqlserver_driver_cache
+33	    except Exception:
+34	        pass
+35	    _sqlserver_driver_cache = ""
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/env_settings/sqlserver_resolution.py:54:4
+53	                return name, "installed_odbc_substring"
+54	    except Exception:
+55	        pass
+56	    return "", ""
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: src/infrastructure/pipeline/v3_execution_artifacts_service.py:43:8
+42	        """Publish durable artifacts; caller must have called :meth:`require_store` first."""
+43	        assert self._artifact_store is not None
+44	        return publish_worker_durable_artifacts(
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: src/infrastructure/pipeline/v3_job_executor.py:273:8
+272	
+273	        assert analysis_context is not None
+274	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/infrastructure/pipeline/v3_job_executor.py:544:16
+543	                    exec_log.error("Pipeline", f"Job failed: {e}", payload={"error": str(e)[:500]})
+544	                except Exception:
+545	                    pass
+546	            self._state.fail_job_and_aisle(job_id, aisle, str(e))
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_analytics_repository.py:201:28
+200	        )
+201	        sql_positions = f"""
+202	            SELECT
+203	              COUNT(*) AS total_positions,
+204	              SUM({processed_expr}) AS processed_positions,
+205	              SUM(CASE WHEN {_unknown_resolution_expr("p")} THEN 1 ELSE 0 END) AS operator_marked_unknown_n,
+206	              SUM(CASE WHEN {_unidentified_product_expr("pr_primary")} THEN 1 ELSE 0 END) AS unidentified_product_n,
+207	              SUM(CASE WHEN {tr_inv} THEN 1 ELSE 0 END) AS invalid_n
+208	            FROM positions p
+209	            OUTER APPLY (
+210	              SELECT TOP 1 pr.id, pr.sku
+211	              FROM product_records pr
+212	              WHERE pr.position_id = p.id
+213	              ORDER BY pr.created_at ASC, pr.id ASC
+214	            ) pr_primary
+215	            INNER JOIN aisles a ON a.id = p.aisle_id
+216	            INNER JOIN inventories i ON i.id = a.inventory_id
+217	            WHERE {where_pos}
+218	        """
+219	        sql_reviews = f"""
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_analytics_repository.py:219:26
+218	        """
+219	        sql_reviews = f"""
+220	            SELECT
+221	              COUNT(*) AS reviewed_positions,
+222	              SUM(CASE WHEN t.latest_action_type IN ({SQL_IN_CORRECTION_ACTIONS}) THEN 1 ELSE 0 END) AS manually_corrected_positions,
+223	              SUM(CASE WHEN t.latest_action_type = {SQL_EQ_CONFIRM} THEN 1 ELSE 0 END) AS auto_accepted_positions,
+224	              SUM(CASE WHEN t.latest_action_type = {SQL_EQ_MARK_UNKNOWN} THEN 1 ELSE 0 END) AS unknown_positions,
+225	              SUM(t.settling_actions) AS settling_actions
+226	            FROM (
+227	              SELECT
+228	                ra.position_id AS position_id,
+229	                MAX(CASE WHEN ra.rn = 1 THEN ra.action_type END) AS latest_action_type,
+230	                SUM(CASE WHEN ra.action_type IN ({SQL_IN_SETTLING_ACTIONS}) THEN 1 ELSE 0 END) AS settling_actions
+231	              FROM (
+232	                SELECT
+233	                  ra.position_id,
+234	                  ra.action_type,
+235	                  ra.created_at,
+236	                  ra.id,
+237	                  ROW_NUMBER() OVER (
+238	                    PARTITION BY ra.position_id
+239	                    ORDER BY ra.created_at DESC, ra.id DESC
+240	                  ) AS rn
+241	                FROM review_actions ra
+242	                INNER JOIN positions p ON p.id = ra.position_id
+243	                INNER JOIN aisles a ON a.id = p.aisle_id
+244	                INNER JOIN inventories i ON i.id = a.inventory_id
+245	                WHERE {where_ra}
+246	                  AND ra.action_type IN ({SQL_IN_SETTLING_ACTIONS})
+247	              ) ra
+248	              GROUP BY ra.position_id
+249	            ) t
+250	        """
+251	        sq_params = list(params)
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_analytics_repository.py:271:37
+270	        job_proc_where = " AND ".join(job_proc_conditions)
+271	        sql_avg_job_processing = f"""
+272	            SELECT AVG(CAST(DATEDIFF_BIG(SECOND, j.started_at, j.finished_at) AS float)) AS avg_sec
+273	            FROM inventory_jobs j
+274	            {job_join}
+275	            WHERE {job_proc_where}
+276	        """
+277	
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_analytics_repository.py:363:18
+362	        where_j = " AND ".join(conditions)
+363	        sql = f"""
+364	            SELECT
+365	              SUM(CASE WHEN j.status = N'succeeded' THEN 1 ELSE 0 END) AS ok_n,
+366	              SUM(CASE WHEN j.status = N'failed' THEN 1 ELSE 0 END) AS fail_n
+367	            FROM inventory_jobs j
+368	            {join}
+369	            WHERE {where_j}
+370	        """
+371	        with self._client.cursor() as cur:
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_analytics_repository.py:391:32
+390	
+391	        sql_daily_reviews = f"""
+392	            SELECT
+393	              CONVERT(date, ra.created_at) AS d,
+394	              SUM(CASE WHEN ra.action_type IN ({SQL_IN_SETTLING_ACTIONS}) THEN 1 ELSE 0 END) AS settling,
+395	              SUM(CASE WHEN ra.action_type = {SQL_EQ_MARK_UNKNOWN} THEN 1 ELSE 0 END) AS unknowns,
+396	              SUM(CASE WHEN ra.action_type IN ({SQL_IN_CORRECTION_ACTIONS}) THEN 1 ELSE 0 END) AS corrections
+397	            FROM review_actions ra
+398	            INNER JOIN positions p ON p.id = ra.position_id
+399	            INNER JOIN aisles a ON a.id = p.aisle_id
+400	            INNER JOIN inventories i ON i.id = a.inventory_id
+401	            WHERE {where_ra}
+402	            GROUP BY CONVERT(date, ra.created_at)
+403	            ORDER BY d
+404	        """
+405	
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_analytics_repository.py:422:29
+421	        where_j = " AND ".join(cond_j)
+422	        sql_daily_jobs = f"""
+423	            SELECT
+424	              CONVERT(date, j.updated_at) AS d,
+425	              SUM(CASE WHEN j.status = N'succeeded' THEN 1 ELSE 0 END) AS ok_n,
+426	              SUM(CASE WHEN j.status = N'failed' THEN 1 ELSE 0 END) AS fail_n
+427	            FROM inventory_jobs j
+428	            {join_j}
+429	            WHERE {where_j}
+430	            GROUP BY CONVERT(date, j.updated_at)
+431	            ORDER BY d
+432	        """
+433	
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_analytics_repository.py:519:18
+518	        )
+519	        sql = f"""
+520	            SELECT
+521	              i.id AS inventory_id,
+522	              i.name AS inventory_name,
+523	              i.created_at AS inventory_created_at,
+524	              COUNT(DISTINCT a.id) AS total_aisles,
+525	              COUNT(*) AS total_positions,
+526	              SUM({processed_expr}) AS processed_positions,
+527	              AVG(CAST(p.confidence AS float)) AS avg_confidence,
+528	              SUM(CASE WHEN {_unknown_resolution_expr("p")} THEN 1 ELSE 0 END) AS operator_marked_unknown_n,
+529	              SUM(CASE WHEN {_unidentified_product_expr("pr_primary")} THEN 1 ELSE 0 END) AS unidentified_product_n,
+530	              SUM(CASE WHEN {tr_inv} THEN 1 ELSE 0 END) AS invalid_n
+531	            FROM positions p
+532	            OUTER APPLY (
+533	              SELECT TOP 1 pr.id, pr.sku
+534	              FROM product_records pr
+535	              WHERE pr.position_id = p.id
+536	              ORDER BY pr.created_at ASC, pr.id ASC
+537	            ) pr_primary
+538	            INNER JOIN aisles a ON a.id = p.aisle_id
+539	            INNER JOIN inventories i ON i.id = a.inventory_id
+540	            WHERE {where_scope}
+541	            GROUP BY i.id, i.name, i.created_at
+542	            ORDER BY i.name ASC
+543	        """
+544	        rows_out: list[InventoryPerformanceRowDTO] = []
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_analytics_repository.py:619:18
+618	        where_ra = " AND ".join(cond)
+619	        sql = f"""
+620	            SELECT
+621	              COUNT(*) AS reviewed_positions,
+622	              SUM(CASE WHEN t.latest_action_type = {SQL_EQ_CONFIRM} THEN 1 ELSE 0 END) AS auto_accepted_positions,
+623	              SUM(CASE WHEN t.latest_action_type IN ({SQL_IN_CORRECTION_ACTIONS}) THEN 1 ELSE 0 END) AS manually_corrected_positions,
+624	              SUM(CASE WHEN t.latest_action_type = {SQL_EQ_MARK_UNKNOWN} THEN 1 ELSE 0 END) AS unknown_positions
+625	            FROM (
+626	              SELECT
+627	                ra.position_id AS position_id,
+628	                MAX(CASE WHEN ra.rn = 1 THEN ra.action_type END) AS latest_action_type
+629	              FROM (
+630	                SELECT
+631	                  ra.position_id,
+632	                  ra.action_type,
+633	                  ROW_NUMBER() OVER (
+634	                    PARTITION BY ra.position_id
+635	                    ORDER BY ra.created_at DESC, ra.id DESC
+636	                  ) AS rn
+637	                FROM review_actions ra
+638	                INNER JOIN positions p ON p.id = ra.position_id
+639	                INNER JOIN aisles a ON a.id = p.aisle_id
+640	                INNER JOIN inventories i ON i.id = a.inventory_id
+641	                WHERE {where_ra}
+642	                  AND ra.action_type IN ({SQL_IN_SETTLING_ACTIONS})
+643	              ) ra
+644	              GROUP BY ra.position_id
+645	            ) t
+646	        """
+647	        with self._client.cursor() as cur:
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_analytics_repository.py:673:18
+672	        where_sql = " AND ".join(cond)
+673	        sql = f"""
+674	            SELECT AVG(CAST(DATEDIFF_BIG(SECOND, j.started_at, j.finished_at) AS float)) AS avg_sec
+675	            FROM inventory_jobs j
+676	            INNER JOIN aisles a ON a.id = j.target_id
+677	            INNER JOIN inventories i ON i.id = a.inventory_id
+678	            WHERE {where_sql}
+679	        """
+680	        with self._client.cursor() as cur:
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_analytics_repository.py:697:18
+696	        low_thr = float(LOW_CONFIDENCE_THRESHOLD)
+697	        sql = f"""
+698	            SELECT
+699	              a.id AS aisle_id,
+700	              a.code AS aisle_code,
+701	              i.id AS inventory_id,
+702	              i.name AS inventory_name,
+703	              COUNT(*) AS total_results,
+704	              SUM(CASE WHEN p.needs_review = 1 THEN 1 ELSE 0 END) AS needs_review_count,
+705	              SUM(CASE WHEN p.status = N'corrected' THEN 1 ELSE 0 END) AS corrected_count,
+706	              SUM(CASE WHEN {_unknown_resolution_expr("p")} THEN 1 ELSE 0 END) AS operator_marked_unknown_count,
+707	              SUM(CASE WHEN {_unidentified_product_expr("pr_primary")} THEN 1 ELSE 0 END) AS unidentified_product_count,
+708	              SUM(CASE WHEN p.review_resolution IN (N'qty_corrected', N'sku_corrected') THEN 1 ELSE 0 END) AS manual_corrections_count,
+709	              SUM(CASE WHEN {tr_inv} THEN 1 ELSE 0 END) AS invalid_traceability_count,
+710	              SUM(CASE WHEN p.confidence < CAST({low_thr} AS float) THEN 1 ELSE 0 END) AS low_confidence_count,
+711	              SUM(CASE WHEN ({bucket}) = N'unidentified_product' THEN 1 ELSE 0 END) AS iss_unidentified_product,
+712	              SUM(CASE WHEN ({bucket}) = N'invalid_traceability' THEN 1 ELSE 0 END) AS iss_invalid,
+713	              SUM(CASE WHEN ({bucket}) = N'missing_evidence' THEN 1 ELSE 0 END) AS iss_missing,
+714	              SUM(CASE WHEN ({bucket}) = N'quantity_zero' THEN 1 ELSE 0 END) AS iss_qty0,
+715	              SUM(CASE WHEN ({bucket}) = N'low_confidence' THEN 1 ELSE 0 END) AS iss_lowc,
+716	              SUM(CASE WHEN ({bucket}) = N'pending_review' THEN 1 ELSE 0 END) AS iss_pending
+717	            FROM positions p
+718	            OUTER APPLY (
+719	              SELECT TOP 1 pr.id, pr.sku, pr.detected_quantity, pr.corrected_quantity
+720	              FROM product_records pr
+721	              WHERE pr.position_id = p.id
+722	              ORDER BY pr.created_at ASC, pr.id ASC
+723	            ) pr_primary
+724	            INNER JOIN aisles a ON a.id = p.aisle_id
+725	            INNER JOIN inventories i ON i.id = a.inventory_id
+726	            WHERE {where_scope}
+727	            GROUP BY a.id, a.code, i.id, i.name
+728	            ORDER BY (SUM(CASE WHEN p.needs_review = 1 THEN 1 ELSE 0 END)) DESC, total_results DESC
+729	        """
+730	        labels = [
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_analytics_repository.py:787:18
+786	        where_scope = " AND ".join(conditions)
+787	        sql = f"""
+788	            SELECT bucket, COUNT(*) AS cnt
+789	            FROM (
+790	                SELECT {bucket_sql} AS bucket
+791	                FROM positions p
+792	                OUTER APPLY (
+793	                  SELECT TOP 1 pr.id, pr.sku, pr.detected_quantity, pr.corrected_quantity
+794	                  FROM product_records pr
+795	                  WHERE pr.position_id = p.id
+796	                  ORDER BY pr.created_at ASC, pr.id ASC
+797	                ) pr_primary
+798	                INNER JOIN aisles a ON a.id = p.aisle_id
+799	                INNER JOIN inventories i ON i.id = a.inventory_id
+800	                WHERE {where_scope}
+801	            ) t
+802	            GROUP BY bucket
+803	        """
+804	        display = {
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_analytics_repository.py:853:18
+852	        where_sql = " AND ".join(cond)
+853	        sql = f"""
+854	            WITH scoped_actions AS (
+855	              SELECT
+856	                ra.position_id,
+857	                ra.action_type,
+858	                ra.created_at,
+859	                ra.id,
+860	                ROW_NUMBER() OVER (
+861	                  PARTITION BY ra.position_id
+862	                  ORDER BY ra.created_at DESC, ra.id DESC
+863	                ) AS rn
+864	              FROM review_actions ra
+865	              INNER JOIN positions p ON p.id = ra.position_id
+866	              INNER JOIN aisles a ON a.id = p.aisle_id
+867	              INNER JOIN inventories i ON i.id = a.inventory_id
+868	              WHERE {where_sql}
+869	                AND ra.action_type IN ({SQL_IN_MANUAL_QUALITY_FILTER_ACTIONS})
+870	            )
+871	            SELECT
+872	              SUM(CASE WHEN rn = 1 THEN 1 ELSE 0 END) AS intervention_positions_count,
+873	              SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_CONFIRM} THEN 1 ELSE 0 END) AS confirmed_count,
+874	              SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_UPDATE_QUANTITY} THEN 1 ELSE 0 END) AS qty_corrected_count,
+875	              SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_UPDATE_SKU} THEN 1 ELSE 0 END) AS sku_corrected_count,
+876	              SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_MARK_UNKNOWN} THEN 1 ELSE 0 END) AS unknown_count,
+877	              SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_MARK_IMAGE_MISMATCH} THEN 1 ELSE 0 END) AS image_mismatch_count,
+878	              SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_DELETE_POSITION} THEN 1 ELSE 0 END) AS deleted_count,
+879	              COUNT(DISTINCT CASE WHEN action_type IN ({SQL_IN_REVIEWED_POSITIONS_ACTIONS}) THEN position_id END) AS reviewed_positions_count
+880	            FROM scoped_actions
+881	        """
+882	        with self._client.cursor() as cur:
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_capture_session_repository.py:164:20
+163	            cur.execute(
+164	                f"""
+165	                SELECT COUNT(1) AS c
+166	                FROM capture_sessions
+167	                WHERE inventory_id = ? AND aisle_id = ?
+168	                  AND closed_at IS NULL
+169	                  AND status NOT IN ({",".join("?" for _ in _OPEN_STATUS_EXCLUSION)})
+170	                """,
+171	                (inventory_id, aisle_id, *_OPEN_STATUS_EXCLUSION),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_capture_session_repository.py:206:22
+205	        where_sql = " AND ".join(where_parts)
+206	        count_sql = f"SELECT COUNT(1) AS c FROM capture_sessions WHERE {where_sql}"
+207	        list_sql = f"""
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_capture_session_repository.py:207:23
+206	        count_sql = f"SELECT COUNT(1) AS c FROM capture_sessions WHERE {where_sql}"
+207	        list_sql = f"""
+208	            SELECT id, inventory_id, aisle_id, status, created_at, updated_at, opened_at, closed_at,
+209	                   clock_offset_seconds
+210	            FROM capture_sessions
+211	            WHERE {where_sql}
+212	            ORDER BY created_at DESC, id DESC
+213	            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+214	        """
+215	        with self._client.cursor() as cur:
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_final_count_repository.py:154:20
+153	            cur.execute(
+154	                f"""
+155	                SELECT
+156	                    id,
+157	                    inventory_id,
+158	                    aisle_id,
+159	                    position_id,
+160	                    sku,
+161	                    product_name,
+162	                    quantity,
+163	                    normalized_label_ids_json,
+164	                    review_required,
+165	                    explanation_summary,
+166	                    metadata_json,
+167	                    created_at,
+168	                    job_id
+169	                FROM final_count_records
+170	                WHERE inventory_id = ? AND aisle_id = ?{extra_sql}
+171	                ORDER BY created_at ASC, id ASC
+172	                """,
+173	                (inventory_id, aisle_id, *extra_params),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_final_count_repository.py:215:18
+214	            cur.execute(
+215	                f"DELETE FROM final_count_records WHERE inventory_id = ? AND aisle_id = ?{extra_sql}",
+216	                (inventory_id, aisle_id, *extra_params),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_job_repository.py:244:18
+243	            cur.execute(
+244	                f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs WHERE id = ?",
+245	                (job_id,),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_job_repository.py:255:20
+254	            cur.execute(
+255	                f"""
+256	                SELECT TOP 1 {_JOB_SELECT_FIELDS}
+257	                FROM inventory_jobs
+258	                WHERE target_type = ? AND target_id = ?
+259	                ORDER BY updated_at DESC, created_at DESC
+260	                """,
+261	                (target_type, target_id),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_job_repository.py:274:20
+273	            cur.execute(
+274	                f"""
+275	                SELECT TOP ({n}) {_JOB_SELECT_FIELDS}
+276	                FROM inventory_jobs
+277	                WHERE target_type = ? AND target_id = ?
+278	                ORDER BY updated_at DESC, created_at DESC
+279	                """,
+280	                (target_type, target_id),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_job_repository.py:288:18
+287	            cur.execute(
+288	                f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs ORDER BY updated_at DESC, created_at DESC"
+289	            )
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_job_repository.py:298:20
+297	        params: list[Any] = [target_type, *target_ids]
+298	        query = f"""
+299	            SELECT {_JOB_SELECT_FIELDS}
+300	            FROM (
+301	                SELECT *, ROW_NUMBER() OVER (
+302	                    PARTITION BY target_id ORDER BY updated_at DESC, created_at DESC
+303	                ) AS rn
+304	                FROM inventory_jobs
+305	                WHERE target_type = ? AND target_id IN ({placeholders})
+306	            ) t
+307	            WHERE t.rn = 1
+308	        """
+309	        with self._client.cursor() as cur:
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_job_repository.py:358:20
+357	            cur.execute(
+358	                f"""
+359	                UPDATE inventory_jobs
+360	                SET status = 'failed',
+361	                    updated_at = ?,
+362	                    finished_at = ?,
+363	                    failure_code = ?,
+364	                    failure_message = ?,
+365	                    error_message = ?
+366	                WHERE status IN ({stale_statuses})
+367	                  AND DATEDIFF(SECOND, COALESCE(last_heartbeat_at, updated_at), ?) >= ?
+368	                """,
+369	                (
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_normalized_label_repository.py:179:20
+178	            cur.execute(
+179	                f"""
+180	                SELECT
+181	                    id, inventory_id, aisle_id, position_id, group_key, canonical_sku, canonical_product_name,
+182	                    raw_label_ids_json, merge_rule_applied, merge_confidence, merge_reason, review_required,
+183	                    metadata_json, created_at, job_id
+184	                FROM normalized_labels
+185	                WHERE inventory_id = ? AND aisle_id = ?{extra_sql}
+186	                ORDER BY created_at ASC, id ASC
+187	                """,
+188	                (inventory_id, aisle_id, *extra_params),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_normalized_label_repository.py:203:18
+202	            cur.execute(
+203	                f"DELETE FROM normalized_labels WHERE inventory_id = ? AND aisle_id = ?{extra_sql}",
+204	                (inventory_id, aisle_id, *extra_params),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_position_repository.py:243:22
+242	        if join_product_records:
+243	            sql = f"""
+244	                SELECT DISTINCT p.id, p.aisle_id, p.status, p.confidence, p.needs_review, p.primary_evidence_id,
+245	                       p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json, p.corrected_position_code, p.job_id
+246	                FROM positions p
+247	                INNER JOIN product_records pr ON pr.position_id = p.id
+248	                WHERE {where}
+249	                {order_clause}
+250	                OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+251	                """
+252	        else:
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_position_repository.py:253:22
+252	        else:
+253	            sql = f"""
+254	                SELECT p.id, p.aisle_id, p.status, p.confidence, p.needs_review, p.primary_evidence_id,
+255	                       p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json, p.corrected_position_code, p.job_id
+256	                FROM positions p
+257	                WHERE {where}
+258	                {order_clause}
+259	                OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+260	                """
+261	        with self._client.cursor() as cur:
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_position_repository.py:292:20
+291	            cur.execute(
+292	                f"""
+293	                SELECT id, aisle_id, status, confidence, needs_review, primary_evidence_id,
+294	                       review_resolution, created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code, job_id
+295	                FROM positions
+296	                WHERE aisle_id IN ({placeholders})
+297	                ORDER BY created_at ASC, id ASC
+298	                """,
+299	                list(aisle_ids),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_product_record_repository.py:175:20
+174	            cur.execute(
+175	                f"""
+176	                SELECT id, position_id, sku, description, detected_quantity, corrected_quantity, confidence,
+177	                       created_at, updated_at, qty_source, qty_inference_reason, raw_qty_json, qty_parse_status
+178	                FROM product_records
+179	                WHERE position_id IN ({placeholders})
+180	                ORDER BY position_id, created_at ASC, id ASC
+181	                """,
+182	                tuple(uniq),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_raw_label_repository.py:174:20
+173	            cur.execute(
+174	                f"""
+175	                SELECT
+176	                    id, inventory_id, aisle_id, position_id, evidence_id, group_key, provider, source_type,
+177	                    source_reference, sku_raw, sku_candidate, product_name_raw, detected_text, confidence,
+178	                    metadata_json, created_at, job_id
+179	                FROM raw_labels
+180	                WHERE inventory_id = ? AND aisle_id = ?{extra_sql}
+181	                ORDER BY created_at ASC, id ASC
+182	                """,
+183	                (inventory_id, aisle_id, *extra_params),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: src/infrastructure/repositories/sql_source_asset_repository.py:237:20
+236	            cur.execute(
+237	                f"""
+238	                SELECT aisle_id, COUNT(*) AS cnt, MAX(uploaded_at) AS max_uploaded
+239	                FROM source_assets
+240	                WHERE aisle_id IN ({placeholders})
+241	                GROUP BY aisle_id
+242	                """,
+243	                list(aisle_ids),
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: src/infrastructure/services/on_demand_worker_launch_service.py:7:0
+6	import shlex
+7	import subprocess
+8	import sys
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: src/infrastructure/services/on_demand_worker_launch_service.py:43:26
+42	            try:
+43	                process = subprocess.Popen(
+44	                    command,
+45	                    cwd=cwd,
+46	                    env=env,
+47	                    stdout=launch_log,
+48	                    stderr=subprocess.STDOUT,
+49	                    start_new_session=True,
+50	                )
+51	            except Exception as exc:
+
+--------------------------------------------------
+>> Issue: [B112:try_except_continue] Try, Except, Continue detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b112_try_except_continue.html
+   Location: src/jobs/dev_reset_local_jobs.py:32:8
+31	            data = json.loads(job_file.read_text(encoding="utf-8"))
+32	        except Exception:
+33	            continue
+34	        status = str(data.get("status") or "").strip().lower()
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/jobs/dev_reset_local_jobs.py:118:12
+117	                )
+118	            except Exception:
+119	                pass
+120	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/jobs/worker.py:330:12
+329	                events_repo.insert_event(job_id, "ERROR", {"message": str(e)})
+330	            except Exception:
+331	                pass
+332	
+
+--------------------------------------------------
+>> Issue: [B311:blacklist] Standard pseudo-random generators are not suitable for security/cryptographic purposes.
+   Severity: Low   Confidence: High
+   CWE: CWE-330 (https://cwe.mitre.org/data/definitions/330.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random
+   Location: src/llm/anthropic_sdk_adapter.py:554:52
+553	                    )
+554	                delay = base_delay * (2**attempt) + random.uniform(0.0, _RETRY_JITTER_SEC)
+555	                logger.info(
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: src/llm/costing.py:493:8
+492	
+493	        assert isinstance(price, Decimal)
+494	        if dim.mode == "per_million":
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: src/pipeline/hybrid_inventory_pipeline.py:163:16
+162	                    progress_cb(stage, percent)
+163	                except Exception:
+164	                    pass
+165	
+
+--------------------------------------------------
+>> Issue: [B101:assert_used] Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b101_assert_used.html
+   Location: src/pipeline/services/multi_provider_analysis_execution.py:266:4
+265	
+266	    assert last_exc is not None
+267	    base_context.emit_stage_event(
+
+--------------------------------------------------
+
+Code scanned:
+	Total lines of code: 45031
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 23
+		Medium: 35
+		High: 1
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 17
+		Medium: 20
+		High: 22
+Files skipped (0):

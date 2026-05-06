@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import inspect
 import logging
-from typing import Any, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
 _LOG = logging.getLogger("dinamic.legacy_sql")
 
@@ -40,7 +41,7 @@ def _truncate(value: Any, max_len: int = 120) -> str:
     return s[: max_len - 3] + "..."
 
 
-def classify_stage8_access_path_kind(caller_module: Optional[str]) -> str:
+def classify_stage8_access_path_kind(caller_module: str | None) -> str:
     if not caller_module:
         return "unknown"
     if caller_module.startswith("src.jobs"):
@@ -60,7 +61,7 @@ def classify_stage8_access_path_kind(caller_module: Optional[str]) -> str:
     return "other"
 
 
-def _resolve_caller_module(max_frames: int = 16) -> tuple[Optional[str], Optional[str]]:
+def _resolve_caller_module(max_frames: int = 16) -> tuple[str | None, str | None]:
     """Return (caller_module, caller_function) for the first frame outside this helper/repo."""
     for frame_info in inspect.stack()[2 : 2 + max_frames]:
         mod = inspect.getmodule(frame_info.frame)
@@ -118,7 +119,7 @@ def log_legacy_sql_write_blocked(
     *,
     operation: str,
     table: str,
-    identifiers: Optional[Mapping[str, Any]] = None,
+    identifiers: Mapping[str, Any] | None = None,
 ) -> None:
     """Phase 14.1 — a mutating legacy SQL operation was skipped (writes-disabled flag)."""
     parts: list[str] = []
@@ -141,7 +142,7 @@ def log_stage8_sql_access(
     repository_class: str,
     operation: str,
     table: str,
-    identifiers: Optional[Mapping[str, Any]] = None,
+    identifiers: Mapping[str, Any] | None = None,
 ) -> None:
     """Emit one concise INFO line per legacy SQL operation (no secrets / no payloads)."""
     caller_mod, caller_fn = _resolve_caller_module()

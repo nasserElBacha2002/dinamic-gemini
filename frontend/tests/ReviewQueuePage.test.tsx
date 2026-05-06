@@ -3,14 +3,16 @@
  */
 
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import ReviewQueuePage from '../src/pages/ReviewQueuePage';
 import { AppSnackbarProvider } from '../src/components/ui';
+import i18n from '../src/i18n';
 
 const mockRefetch = vi.fn();
+const mockUseReviewQueue = vi.fn();
 
 vi.mock('../src/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/hooks')>();
@@ -28,7 +30,12 @@ vi.mock('../src/hooks', async (importOriginal) => {
       isError: false,
       error: null,
     }),
-    useReviewQueue: () => ({
+    useReviewQueue: () =>
+      mockUseReviewQueue(),
+  };
+});
+
+const queueSuccessState = {
       data: {
         summary: {
           pending_review: 2,
@@ -86,9 +93,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
       isError: false,
       error: null,
       refetch: mockRefetch,
-    }),
-  };
-});
+};
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -104,14 +109,18 @@ function renderPage() {
 }
 
 describe('ReviewQueuePage', () => {
+  beforeEach(() => {
+    mockUseReviewQueue.mockReturnValue(queueSuccessState);
+  });
+
   it('renders header, KPI band, filters region, and queue table', () => {
     renderPage();
-    expect(screen.getByRole('heading', { name: /review queue/i })).toBeInTheDocument();
-    expect(screen.getAllByText('Needs review').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Invalid traceability')).toBeInTheDocument();
-    expect(screen.getByText('Missing evidence')).toBeInTheDocument();
-    expect(screen.getByLabelText(/filters/i)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Prioritized results' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument();
+    expect(screen.getByText('SKU-QUEUE-1')).toBeInTheDocument();
+    expect(screen.getByLabelText(/inventory/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/min confidence/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/max confidence/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /prioritized results/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /priority/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /SKU/i })).toBeInTheDocument();
   });
@@ -119,16 +128,29 @@ describe('ReviewQueuePage', () => {
   it('uses SKU review button as primary navigation (no Actions column)', () => {
     renderPage();
     expect(screen.queryByRole('columnheader', { name: /^Actions$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Review SKU-QUEUE-1/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /review aria/i })).toBeInTheDocument();
   });
 
   it('shows validation errors on both confidence fields when min > max', () => {
     renderPage();
     fireEvent.change(screen.getByLabelText(/Min confidence/i), { target: { value: '0.9' } });
     fireEvent.change(screen.getByLabelText(/Max confidence/i), { target: { value: '0.1' } });
-    expect(screen.getByText(/Cannot be greater than max/i)).toBeInTheDocument();
-    expect(screen.getByText(/Must be greater than or equal to min/i)).toBeInTheDocument();
+    expect(screen.getByText(/cannot exceed max/i)).toBeInTheDocument();
+    expect(screen.getByText(/must be gte min/i)).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: /Min confidence/i })).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByRole('textbox', { name: /Max confidence/i })).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('normalizes technical queue errors to contextual fallback', () => {
+    mockUseReviewQueue.mockReturnValue({
+      ...queueSuccessState,
+      data: undefined,
+      isError: true,
+      error: new Error('TypeError internal stack file.ts:99'),
+    });
+
+    renderPage();
+    expect(screen.getByText(i18n.t('errors.load_review_queue'))).toBeInTheDocument();
+    expect(screen.queryByText(/TypeError internal stack file\.ts:99/i)).not.toBeInTheDocument();
   });
 });

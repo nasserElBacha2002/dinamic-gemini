@@ -20,9 +20,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
+from src.application.dto.mapped_aisle_result import MappedAisleResult
+from src.application.ports.clock import Clock
+from src.application.ports.hybrid_report_to_domain_mapper import HybridReportToDomainMapper
 from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
@@ -30,12 +33,10 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     RawLabelRepository,
 )
-from src.application.ports.clock import Clock
 from src.application.use_cases.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
     RecomputeConsolidatedCountsUseCase,
 )
-from src.infrastructure.pipeline.v3_report_mapper import map_hybrid_report_to_domain
 
 logger = logging.getLogger(__name__)
 
@@ -56,29 +57,41 @@ class PersistAisleResultUseCase:
         product_record_repo: ProductRecordRepository,
         evidence_repo: EvidenceRepository,
         clock: Clock,
-        aisle_repo: Optional[AisleRepository] = None,
-        raw_label_repo: Optional[RawLabelRepository] = None,
-        recompute_consolidated_uc: Optional[RecomputeConsolidatedCountsUseCase] = None,
+        hybrid_mapper: HybridReportToDomainMapper,
+        aisle_repo: AisleRepository | None = None,
+        raw_label_repo: RawLabelRepository | None = None,
+        recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
     ) -> None:
         self._position_repo = position_repo
         self._product_record_repo = product_record_repo
         self._evidence_repo = evidence_repo
         self._clock = clock
+        self._hybrid_mapper = hybrid_mapper
         self._aisle_repo = aisle_repo
         self._raw_label_repo = raw_label_repo
         self._recompute_uc = recompute_consolidated_uc
 
     def execute(self, command: PersistAisleResultCommand) -> None:
         now = self._clock.now()
-        if self._aisle_repo is None:
-            raise ValueError("PersistAisleResultUseCase requires AisleRepository for v3.2.3 consolidation")
-        aisle = self._aisle_repo.get_by_id(command.aisle_id)
-        if aisle is None:
-            raise ValueError(f"Aisle not found while persisting results: {command.aisle_id}")
-        inventory_id = aisle.inventory_id
+        inventory_id = self._inventory_id_for_aisle(command.aisle_id)
+        mapped = self._map_hybrid(command, inventory_id, now)
+        self._raise_if_mapped_lengths_mismatch(command, mapped)
+        self._persist_all(command, mapped, inventory_id)
 
-        report_entities = len(command.report.get("entities") or [])
-        mapped = map_hybrid_report_to_domain(
+    def _inventory_id_for_aisle(self, aisle_id: str) -> str:
+        if self._aisle_repo is None:
+            raise ValueError(
+                "PersistAisleResultUseCase requires AisleRepository for v3.2.3 consolidation"
+            )
+        aisle = self._aisle_repo.get_by_id(aisle_id)
+        if aisle is None:
+            raise ValueError(f"Aisle not found while persisting results: {aisle_id}")
+        return aisle.inventory_id
+
+    def _map_hybrid(
+        self, command: PersistAisleResultCommand, inventory_id: str, now: datetime
+    ) -> MappedAisleResult:
+        return self._hybrid_mapper(
             aisle_id=command.aisle_id,
             report=command.report,
             run_dir=command.run_dir,
@@ -87,6 +100,11 @@ class PersistAisleResultUseCase:
             now=now,
             inventory_id=inventory_id,
         )
+
+    def _raise_if_mapped_lengths_mismatch(
+        self, command: PersistAisleResultCommand, mapped: MappedAisleResult
+    ) -> None:
+        report_entities = len(command.report.get("entities") or [])
         n_pos = len(mapped.positions)
         n_prod = len(mapped.product_records)
         n_evid = len(mapped.evidences)
@@ -105,12 +123,29 @@ class PersistAisleResultUseCase:
                 f"PersistAisleResult invariant broken: positions={n_pos} product_records={n_prod} "
                 f"evidences={n_evid} (must be equal before zip)"
             )
+        logger.debug(
+            "v3.persist_aisle_result mapped_counts aisle_id=%s job_id=%s report_entities=%d "
+            "mapped_positions=%d",
+            command.aisle_id,
+            command.job_id,
+            report_entities,
+            n_pos,
+        )
+
+    def _persist_all(
+        self,
+        command: PersistAisleResultCommand,
+        mapped: MappedAisleResult,
+        inventory_id: str,
+    ) -> None:
         try:
             persisted_positions = 0
             persisted_products = 0
             persisted_evidences = 0
             skipped_unknown_zero = 0
-            for position, product, evidence in zip(mapped.positions, mapped.product_records, mapped.evidences):
+            for position, product, evidence in zip(
+                mapped.positions, mapped.product_records, mapped.evidences
+            ):
                 final_quantity = product.detected_quantity
                 if not should_persist_detected_position(product.sku, final_quantity):
                     skipped_unknown_zero += 1
@@ -132,26 +167,40 @@ class PersistAisleResultUseCase:
                 "mapped_positions=%d skipped_unknown_zero_qty=%d persisted_positions=%d",
                 command.aisle_id,
                 command.job_id,
-                report_entities,
+                len(command.report.get("entities") or []),
                 len(mapped.positions),
                 skipped_unknown_zero,
                 persisted_positions,
             )
-            logger.debug("PersistAisleResult: saved %d positions for aisle %s", persisted_positions, command.aisle_id)
-            logger.debug("PersistAisleResult: saved %d product_records for aisle %s", persisted_products, command.aisle_id)
-            logger.debug("PersistAisleResult: saved %d evidences for aisle %s", persisted_evidences, command.aisle_id)
+            logger.debug(
+                "PersistAisleResult: saved %d positions for aisle %s",
+                persisted_positions,
+                command.aisle_id,
+            )
+            logger.debug(
+                "PersistAisleResult: saved %d product_records for aisle %s",
+                persisted_products,
+                command.aisle_id,
+            )
+            logger.debug(
+                "PersistAisleResult: saved %d evidences for aisle %s",
+                persisted_evidences,
+                command.aisle_id,
+            )
 
             if self._raw_label_repo and mapped.raw_labels:
                 self._raw_label_repo.save_many(mapped.raw_labels)
-                logger.debug("PersistAisleResult: saved %d raw_labels for aisle %s", len(mapped.raw_labels), command.aisle_id)
+                logger.debug(
+                    "PersistAisleResult: saved %d raw_labels for aisle %s",
+                    len(mapped.raw_labels),
+                    command.aisle_id,
+                )
 
             if self._recompute_uc and inventory_id and self._raw_label_repo:
                 result = self._recompute_uc.execute(
                     RecomputeConsolidatedCountsCommand(
                         inventory_id=inventory_id,
                         aisle_id=command.aisle_id,
-                        # Hotfix v3.2.5: merge/consolidation is non-authoritative in main flow.
-                        # Keep explicit quantity resolved by pipeline mapping; do not overwrite ProductRecord.
                         apply_to_product_records=False,
                         job_scope=command.job_id,
                     )
@@ -164,11 +213,16 @@ class PersistAisleResultUseCase:
                     result.product_records_updated,
                 )
         except Exception as e:
-            logger.exception("PersistAisleResult failed for aisle %s job %s: %s", command.aisle_id, command.job_id, e)
+            logger.exception(
+                "PersistAisleResult failed for aisle %s job %s: %s",
+                command.aisle_id,
+                command.job_id,
+                e,
+            )
             raise
 
 
-def should_persist_detected_position(sku: Optional[str], final_quantity: Optional[int]) -> bool:
+def should_persist_detected_position(sku: str | None, final_quantity: int | None) -> bool:
     """
     Persist all detections except the explicitly non-actionable case:
     unknown/empty SKU with exactly zero final quantity.

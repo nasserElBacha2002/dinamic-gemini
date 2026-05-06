@@ -6,7 +6,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material';
 import * as client from '../src/api/client';
-import CompareManyRunsPage, { __testables } from '../src/pages/analytics/CompareManyRunsPage';
+import CompareManyRunsPage from '../src/pages/analytics/CompareManyRunsPage';
+import { buildDraftError } from '../src/pages/analytics/compareManyRunsDraft';
 import { AppSnackbarProvider } from '../src/components/ui';
 import theme from '../src/theme';
 import type { AisleBenchmarkCompareManyResponse, Inventory, Aisle, JobSummary } from '../src/api/types';
@@ -50,6 +51,8 @@ function compareManyFixture(includeDiffRows: boolean): AisleBenchmarkCompareMany
         prompt_key: 'pk-a',
         prompt_version: 'v1',
         created_at: '2026-01-01T00:00:00Z',
+        execution_time_seconds: 10,
+        execution_time_human: '10s',
         metrics: {
           raw_rows_considered: 10,
           consolidated_positions: 5,
@@ -66,6 +69,8 @@ function compareManyFixture(includeDiffRows: boolean): AisleBenchmarkCompareMany
         prompt_key: 'pk-b',
         prompt_version: 'v2',
         created_at: '2026-01-02T00:00:00Z',
+        execution_time_seconds: 25,
+        execution_time_human: '25s',
         metrics: {
           raw_rows_considered: 11,
           consolidated_positions: 6,
@@ -108,6 +113,7 @@ function compareManyFixture(includeDiffRows: boolean): AisleBenchmarkCompareMany
           consolidated_positions_diff: 1,
           unknown_internal_code_diff: 1,
           needs_review_diff: -1,
+          execution_time_delta: 15,
         },
         diff_rows: includeDiffRows
           ? [
@@ -141,6 +147,7 @@ function compareManyFixture(includeDiffRows: boolean): AisleBenchmarkCompareMany
           consolidated_positions_diff: 2,
           unknown_internal_code_diff: 3,
           needs_review_diff: 1,
+          execution_time_delta: null,
         },
         diff_rows: includeDiffRows ? [] : [],
         diff_rows_truncated: false,
@@ -334,14 +341,22 @@ describe('CompareManyRunsPage', () => {
     expect(screen.getByText(/Unknown internal code min\/max:/i)).toBeInTheDocument();
   });
 
+  it('surfaces wall-clock execution time on job cards and delta when present', async () => {
+    renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
+    await screen.findByTestId('compare-many-results');
+    expect(screen.getByText(/Execution time: 10s/i)).toBeInTheDocument();
+    expect(screen.getByText(/Execution time: 25s/i)).toBeInTheDocument();
+    expect(screen.getByText(/Wall time \(target − baseline\): \+15s/i)).toBeInTheDocument();
+  });
+
   it('helper validation flags duplicate and baseline-outside-selection drafts', () => {
-    expect(__testables.buildDraftError('aisle-1', ['job-1', 'job-1'], 'job-1', (k) => k)).toBe('compare_many.errors.duplicate_jobs');
-    expect(__testables.buildDraftError('aisle-1', ['job-1', 'job-2'], 'job-3', (k) => k)).toBe(
+    expect(buildDraftError('aisle-1', ['job-1', 'job-1'], 'job-1', (k) => k)).toBe('compare_many.errors.duplicate_jobs');
+    expect(buildDraftError('aisle-1', ['job-1', 'job-2'], 'job-3', (k) => k)).toBe(
       'compare_many.errors.pick_valid_baseline'
     );
   });
 
   it('helper validation flags too-few selections for draft apply', () => {
-    expect(__testables.buildDraftError('aisle-1', ['job-1'], 'job-1', (k) => k)).toBe('compare_many.errors.pick_two_jobs');
+    expect(buildDraftError('aisle-1', ['job-1'], 'job-1', (k) => k)).toBe('compare_many.errors.pick_two_jobs');
   });
 });

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 class CreateInventoryRequest(BaseModel):
     """POST /api/v3/inventories body."""
+
     name: str = Field(..., min_length=1, max_length=255)
     processing_mode: Literal["production", "test"] = Field(
         "production",
@@ -26,6 +27,7 @@ class PrimaryExecutionConfigResponse(BaseModel):
 
 class InventoryResponse(BaseModel):
     """Single inventory for GET /{id} and POST / (create). Not the list-row contract; see InventoryListItemResponse."""
+
     id: str
     name: str
     status: str
@@ -69,14 +71,27 @@ class InventoryListItemResponse(BaseModel):
 
 class InventoryMetricsResponse(BaseModel):
     """GET /api/v3/inventories/{inventory_id}/metrics response — Épica 9 (§9.6)."""
-    total_positions: int = Field(..., description="Total positions across all aisles in the inventory.")
-    total_reviewed_positions: int = Field(..., description="Positions in terminal state (reviewed, corrected, deleted).")
-    auto_accepted_positions: int = Field(..., description="Positions accepted without change (status=reviewed).")
+
+    total_positions: int = Field(
+        ..., description="Total positions across all aisles in the inventory."
+    )
+    total_reviewed_positions: int = Field(
+        ..., description="Positions in terminal state (reviewed, corrected, deleted)."
+    )
+    auto_accepted_positions: int = Field(
+        ..., description="Positions accepted without change (status=reviewed)."
+    )
     corrected_positions: int = Field(..., description="Positions that were corrected.")
     deleted_positions: int = Field(..., description="Positions that were deleted.")
-    success_rate: float = Field(..., description="Percentage auto_accepted / total_reviewed (0 if total_reviewed=0).")
-    correction_rate: float = Field(..., description="Percentage corrected / total_reviewed (0 if total_reviewed=0).")
-    deletion_rate: float = Field(..., description="Percentage deleted / total_reviewed (0 if total_reviewed=0).")
+    success_rate: float = Field(
+        ..., description="Percentage auto_accepted / total_reviewed (0 if total_reviewed=0)."
+    )
+    correction_rate: float = Field(
+        ..., description="Percentage corrected / total_reviewed (0 if total_reviewed=0)."
+    )
+    deletion_rate: float = Field(
+        ..., description="Percentage deleted / total_reviewed (0 if total_reviewed=0)."
+    )
 
 
 class InventoryVisualReferenceResponse(BaseModel):

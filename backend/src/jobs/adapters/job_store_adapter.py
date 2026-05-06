@@ -7,7 +7,7 @@ Migration adapter: job_store remains the implementation; this is a thin wrapper.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from src.jobs.job_store import create_job, get_job, update_job
 from src.jobs.models import JobRecord
@@ -19,10 +19,10 @@ class JobStoreRepositoryAdapter:
     def __init__(self, base_path: Path) -> None:
         self._base_path = base_path
 
-    def get(self, job_id: str) -> Optional[JobRecord]:
+    def get(self, job_id: str) -> JobRecord | None:
         return get_job(self._base_path, job_id)
 
-    def update(self, job_id: str, **updates: Any) -> Optional[JobRecord]:
+    def update(self, job_id: str, **updates: Any) -> JobRecord | None:
         return update_job(self._base_path, job_id, **updates)
 
     def create(self, record: JobRecord) -> JobRecord:

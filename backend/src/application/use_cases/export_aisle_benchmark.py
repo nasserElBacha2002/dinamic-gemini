@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any
 
 from src.application.errors import (
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
-)
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
-from src.application.services.inventory_processing_mode import (
-    require_test_inventory_for_experimental_features,
 )
 from src.application.mappers.inventory_export_rows import (
     export_position_sort_key,
@@ -26,11 +22,21 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
 )
-from src.application.services.csv_inventory_exporter import CsvInventoryExporter, INVENTORY_RESULTS_CSV_FIELDS
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
+from src.application.services.csv_inventory_exporter import (
+    INVENTORY_RESULTS_CSV_FIELDS,
+    CsvInventoryExporter,
+)
 from src.application.services.display_primary_product import select_display_primary_product
+from src.application.services.inventory_processing_mode import (
+    require_test_inventory_for_experimental_features,
+)
 from src.application.services.position_sku_consolidation import consolidate_positions_by_sku
 from src.application.use_cases.benchmark_compare_support import CompareDiffRow, compare_csv_row_dict
-from src.application.use_cases.compare_aisle_runs import CompareAisleRunsCommand, CompareAisleRunsUseCase
+from src.application.use_cases.compare_aisle_runs import (
+    CompareAisleRunsCommand,
+    CompareAisleRunsUseCase,
+)
 from src.domain.positions.entities import PositionStatus
 
 BENCHMARK_RUN_EXTRA_FIELDS: tuple[str, ...] = (
@@ -41,7 +47,9 @@ BENCHMARK_RUN_EXTRA_FIELDS: tuple[str, ...] = (
     "benchmark_prompt_version",
 )
 
-BENCHMARK_RUN_CSV_FIELDS: tuple[str, ...] = INVENTORY_RESULTS_CSV_FIELDS + BENCHMARK_RUN_EXTRA_FIELDS
+BENCHMARK_RUN_CSV_FIELDS: tuple[str, ...] = (
+    INVENTORY_RESULTS_CSV_FIELDS + BENCHMARK_RUN_EXTRA_FIELDS
+)
 
 BENCHMARK_COMPARE_CSV_FIELDS: tuple[str, ...] = (
     "match_key",
@@ -121,7 +129,7 @@ class ExportAisleBenchmarkRunCsvUseCase:
         consolidated = consolidate_positions_by_sku(candidates)
         consolidated_sorted = sorted(consolidated, key=export_position_sort_key)
 
-        rows: List[dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
         for seq, p in enumerate(consolidated_sorted, start=1):
             products = self._product_record_repo.list_by_position(p.id)
             primary = select_display_primary_product(products)

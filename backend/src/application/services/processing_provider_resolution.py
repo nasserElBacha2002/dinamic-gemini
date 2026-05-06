@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from src.application.errors import (
     InvalidProcessingModelError,
@@ -17,21 +17,21 @@ from src.application.services.processing_experiment_catalog import (
     normalize_requested_model,
 )
 from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_keys
+from src.pipeline.provider_keys import normalize_pipeline_provider_key
 from src.pipeline.providers.definitions import (
     credential_configured,
     pipeline_provider_spec,
     registered_pipeline_provider_keys_from_definitions,
 )
-from src.pipeline.provider_keys import normalize_pipeline_provider_key
 
 
 def resolve_start_processing_request(
     *,
-    requested_provider_name: Optional[str],
-    requested_model_name: Optional[str],
-    requested_prompt_key: Optional[str],
+    requested_provider_name: str | None,
+    requested_model_name: str | None,
+    requested_prompt_key: str | None,
     settings: Any,
-) -> tuple[str, Optional[str], str]:
+) -> tuple[str, str | None, str]:
     """
     Return ``(pipeline_provider_key, model_name, prompt_key)`` for a new process-aisle job.
 

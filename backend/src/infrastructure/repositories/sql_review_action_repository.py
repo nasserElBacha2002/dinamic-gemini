@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Sequence
+from typing import Any
 
 from src.application.ports.repositories import ReviewActionRepository
 from src.database.sqlserver import SqlServerClient
@@ -16,7 +17,7 @@ from src.domain.reviews.entities import ReviewAction, ReviewActionType
 logger = logging.getLogger(__name__)
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -29,7 +30,7 @@ def _parse_json_field(
     field_name: str,
     review_id: str,
     position_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Parse JSON field from row; log warning on invalid JSON, return {} as safe fallback."""
     if not raw:
         return {}
@@ -63,8 +64,12 @@ def _row_to_review(row: Any) -> ReviewAction:
         raise ValueError("review_actions row missing created_at")
     before_raw = getattr(row, "before_json", None)
     after_raw = getattr(row, "after_json", None)
-    before = _parse_json_field(before_raw, "before_json", getattr(row, "id", ""), getattr(row, "position_id", ""))
-    after = _parse_json_field(after_raw, "after_json", getattr(row, "id", ""), getattr(row, "position_id", ""))
+    before = _parse_json_field(
+        before_raw, "before_json", getattr(row, "id", ""), getattr(row, "position_id", "")
+    )
+    after = _parse_json_field(
+        after_raw, "after_json", getattr(row, "id", ""), getattr(row, "position_id", "")
+    )
     jid = getattr(row, "job_id", None)
     if jid is not None and isinstance(jid, str):
         jid = jid.strip() or None

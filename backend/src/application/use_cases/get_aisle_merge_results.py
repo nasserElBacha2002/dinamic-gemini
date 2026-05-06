@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Optional, Sequence
 
 from src.application.errors import InventoryNotFoundError
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.repositories import (
     AisleRepository,
     FinalCountRepository,
     InventoryRepository,
 )
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.domain.labels.entities import FinalCountRecord
 
@@ -18,13 +18,13 @@ from src.domain.labels.entities import FinalCountRecord
 class GetAisleMergeResultsCommand:
     inventory_id: str
     aisle_id: str
-    job_id: Optional[str] = None
+    job_id: str | None = None
 
 
 @dataclass(frozen=True)
 class GetAisleMergeResultsResult:
     records: Sequence[FinalCountRecord]
-    resolved_job_id: Optional[str]
+    resolved_job_id: str | None
     result_context_source: str
 
 

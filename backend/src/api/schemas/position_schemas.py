@@ -5,7 +5,7 @@ SKU / traceability fields remain as deprecated aliases for backward compatibilit
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -50,8 +50,8 @@ class PositionTechnicalSnapshot(BaseModel):
     raw_qty: Optional[Union[int, float, str]] = None
     qty_parse_status: Optional[str] = None
     qty_origin_field: Optional[str] = None
-    aggregated_from_ids: Optional[List[str]] = None
-    audit: Optional[Dict[str, Any]] = Field(
+    aggregated_from_ids: Optional[list[str]] = None
+    audit: Optional[dict[str, Any]] = Field(
         None,
         description=(
             "Flexible technical audit payload from the immutable pipeline snapshot (`_audit`). "
@@ -66,7 +66,9 @@ class PositionProductBlock(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: Optional[str] = Field(None, description="Primary ``ProductRecord`` id when applicable.")
-    sku: Optional[str] = Field(None, description="Public SKU; mirrors deprecated top-level ``sku``.")
+    sku: Optional[str] = Field(
+        None, description="Public SKU; mirrors deprecated top-level ``sku``."
+    )
     display_label: Optional[str] = Field(
         None,
         description="Operator-facing label: primary description, else ``review_display_label`` from snapshot.",
@@ -91,14 +93,20 @@ class PositionQuantityBlock(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    detected: int = Field(..., description="Resolved detected quantity (legacy `detected_quantity`).")
+    detected: int = Field(
+        ..., description="Resolved detected quantity (legacy `detected_quantity`)."
+    )
     corrected: Optional[int] = Field(None, description="Operator correction when present.")
     final: int = Field(
         ...,
         description="Line quantity for UX: corrected ?? system qty (see module docstring vs legacy `qty`).",
     )
-    source: _QtySourcePublic = Field(..., description="Provenance; mirrors deprecated ``qtySource``.")
-    inference_reason: Optional[str] = Field(None, description="Mirrors deprecated ``qtyInferenceReason``.")
+    source: _QtySourcePublic = Field(
+        ..., description="Provenance; mirrors deprecated ``qtySource``."
+    )
+    inference_reason: Optional[str] = Field(
+        None, description="Mirrors deprecated ``qtyInferenceReason``."
+    )
     resolved: Optional[bool] = Field(None, description="Mirrors deprecated ``qtyResolved``.")
 
 
@@ -115,7 +123,9 @@ class PositionTraceabilityBlock(BaseModel):
             "Other strings may appear for forward-compatible extensions."
         ),
     )
-    source_image_id: Optional[str] = Field(None, description="Report source image; mirrors deprecated field.")
+    source_image_id: Optional[str] = Field(
+        None, description="Report source image; mirrors deprecated field."
+    )
     source_image_original_filename: Optional[str] = None
     source_image_sequence: Optional[int] = Field(
         None,
@@ -159,7 +169,7 @@ class PositionSummaryResponse(BaseModel):
         None,
         description=(
             "Final operator-facing review outcome when a terminal decision exists. "
-            "This is distinct from `status` and from quantity provenance such as `qtySource=\"unknown\"`."
+            'This is distinct from `status` and from quantity provenance such as `qtySource="unknown"`.'
         ),
     )
     confidence: float
@@ -171,7 +181,7 @@ class PositionSummaryResponse(BaseModel):
     )
     created_at: datetime
     updated_at: datetime
-    detected_summary_json: Optional[Dict[str, Any]] = Field(
+    detected_summary_json: Optional[dict[str, Any]] = Field(
         None,
         deprecated=True,
         description=(
@@ -183,22 +193,42 @@ class PositionSummaryResponse(BaseModel):
 
     product: PositionProductBlock = Field(..., description="Canonical product identity (Sprint 2).")
     quantity: PositionQuantityBlock = Field(..., description="Canonical quantity (Sprint 2).")
-    traceability: PositionTraceabilityBlock = Field(..., description="Canonical traceability (Sprint 2).")
+    traceability: PositionTraceabilityBlock = Field(
+        ..., description="Canonical traceability (Sprint 2)."
+    )
 
     sku: Optional[str] = Field(None, deprecated=True, description="Deprecated: use `product.sku`.")
-    detected_quantity: Optional[int] = Field(None, deprecated=True, description="Deprecated: use `quantity.detected`.")
-    corrected_quantity: Optional[int] = Field(None, deprecated=True, description="Deprecated: use `quantity.corrected`.")
-    qty: int = Field(..., deprecated=True, description="Deprecated: system-resolved qty; prefer `quantity.final` for UX line total.")
-    qtySource: _QtySourcePublic = Field(..., deprecated=True, description="Deprecated: use `quantity.source`.")
-    qtyInferenceReason: Optional[str] = Field(None, deprecated=True, description="Deprecated: use `quantity.inference_reason`.")
-    qtyResolved: Optional[bool] = Field(None, deprecated=True, description="Deprecated: use `quantity.resolved`.")
-    source_image_id: Optional[str] = Field(None, deprecated=True, description="Deprecated: use `traceability.source_image_id`.")
+    detected_quantity: Optional[int] = Field(
+        None, deprecated=True, description="Deprecated: use `quantity.detected`."
+    )
+    corrected_quantity: Optional[int] = Field(
+        None, deprecated=True, description="Deprecated: use `quantity.corrected`."
+    )
+    qty: int = Field(
+        ...,
+        deprecated=True,
+        description="Deprecated: system-resolved qty; prefer `quantity.final` for UX line total.",
+    )
+    qtySource: _QtySourcePublic = Field(  # noqa: N815 — camelCase wire keys (deprecated fields)
+        ..., deprecated=True, description="Deprecated: use `quantity.source`."
+    )
+    qtyInferenceReason: Optional[str] = Field(  # noqa: N815 — camelCase wire keys (deprecated fields)
+        None, deprecated=True, description="Deprecated: use `quantity.inference_reason`."
+    )
+    qtyResolved: Optional[bool] = Field(  # noqa: N815 — camelCase wire keys (deprecated fields)
+        None, deprecated=True, description="Deprecated: use `quantity.resolved`."
+    )
+    source_image_id: Optional[str] = Field(
+        None, deprecated=True, description="Deprecated: use `traceability.source_image_id`."
+    )
     traceability_status: Optional[Union[_TraceabilityStatusPublic, str]] = Field(
         None,
         deprecated=True,
         description="Deprecated: use `traceability.status` (known v3 values: valid, missing, invalid, unvalidated).",
     )
-    has_evidence: bool = Field(False, deprecated=True, description="Deprecated: use `traceability.has_evidence`.")
+    has_evidence: bool = Field(
+        False, deprecated=True, description="Deprecated: use `traceability.has_evidence`."
+    )
     source_image_original_filename: Optional[str] = Field(
         None,
         deprecated=True,
@@ -245,7 +275,7 @@ class PositionListResponse(PageMeta):
     or streaming strategy exists.
     """
 
-    positions: List[PositionSummaryResponse]
+    positions: list[PositionSummaryResponse]
     raw_fetch_truncated: bool = Field(
         False,
         description=(
@@ -264,6 +294,7 @@ class PositionListResponse(PageMeta):
 
 class ProductRecordResponse(BaseModel):
     """Product record within a position."""
+
     id: str
     position_id: str
     sku: str
@@ -277,6 +308,7 @@ class ProductRecordResponse(BaseModel):
 
 class EvidenceResponse(BaseModel):
     """Evidence (crop/media) for a position."""
+
     id: str
     entity_type: str
     entity_id: str
@@ -286,21 +318,24 @@ class EvidenceResponse(BaseModel):
     is_primary: bool
     frame_index: Optional[int] = None
     timestamp_ms: Optional[int] = None
-    bbox_json: Optional[Dict[str, Any]] = None
+    bbox_json: Optional[dict[str, Any]] = None
     quality_score: Optional[float] = None
 
 
 class ReviewActionResponse(BaseModel):
     """Single review action in audit history."""
+
     id: str
     position_id: str
     action_type: str
-    before_json: Dict[str, Any]
-    after_json: Dict[str, Any]
+    before_json: dict[str, Any]
+    after_json: dict[str, Any]
     created_at: datetime
     user_id: Optional[str] = None
     comment: Optional[str] = None
-    job_id: Optional[str] = Field(None, description="Run id for this review (null = legacy position).")
+    job_id: Optional[str] = Field(
+        None, description="Run id for this review (null = legacy position)."
+    )
 
 
 class PositionDetailResponse(BaseModel):
@@ -310,13 +345,14 @@ class PositionDetailResponse(BaseModel):
     Sprint 3 keeps ``position`` on the shared summary schema for compatibility, and adds
     ``technical_snapshot`` as the preferred detail-only technical surface.
     """
+
     position: PositionSummaryResponse
     technical_snapshot: Optional[PositionTechnicalSnapshot] = Field(
         None,
         description="Explicit technical/debug snapshot (Sprint 3-4). Prefer this over legacy `position.detected_summary_json`.",
     )
-    evidences: List[EvidenceResponse]
-    review_actions: List[ReviewActionResponse] = Field(default_factory=list)
+    evidences: list[EvidenceResponse]
+    review_actions: list[ReviewActionResponse] = Field(default_factory=list)
     run_context: PositionRunContextResponse = Field(
         ...,
         description="Phase 2: run identity for this row so clients do not mix multi-run datasets.",
@@ -329,6 +365,7 @@ class ReviewActionRequest(BaseModel):
 
     ``job_id``: required when the position row is run-scoped (``positions.job_id`` set); must match
     that value. Omit or null for legacy rows (``job_id IS NULL``)."""
+
     action_type: ReviewActionType
     product_id: Optional[str] = None
     corrected_quantity: Optional[int] = None

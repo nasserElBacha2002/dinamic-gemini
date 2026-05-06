@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import timezone
-from typing import DefaultDict, Dict, List, Optional, Tuple
 
 from src.application.ports.contracts import (
     ReviewQueueListRow,
@@ -39,7 +38,7 @@ def _sort_key(
     row: ReviewQueueListRow,
     sort_by: str,
     sort_dir: str,
-    primary_product: Optional[ProductRecord],
+    primary_product: ProductRecord | None,
 ) -> tuple:
     """Sort key with reverse=False on list.sort: negate numeric primary key when desc."""
     p = row.position
@@ -61,66 +60,89 @@ def _sort_key(
     return (-ts if desc else ts, p.id)
 
 
-def _position_status_matches(p: Position, raw: Optional[str]) -> bool:
+def _position_status_matches(p: Position, raw: str | None) -> bool:
     if raw is None or str(raw).strip() == "":
         return True
     fv = str(raw).strip().lower()
     st = p.status
-    if fv == "confirmed":
-        return st in (PositionStatus.REVIEWED, PositionStatus.CORRECTED)
-    if fv == "detected":
-        return st == PositionStatus.DETECTED
-    if fv == "reviewed":
-        return st == PositionStatus.REVIEWED
-    if fv == "corrected":
-        return st == PositionStatus.CORRECTED
-    if fv == "deleted":
-        return st == PositionStatus.DELETED
+    # Dispatch table keeps branch count low (B8.2 PLR0911).
+    _confirmed = frozenset({PositionStatus.REVIEWED, PositionStatus.CORRECTED})
+    filter_map: dict[str, bool] = {
+        "confirmed": st in _confirmed,
+        "detected": st == PositionStatus.DETECTED,
+        "reviewed": st == PositionStatus.REVIEWED,
+        "corrected": st == PositionStatus.CORRECTED,
+        "deleted": st == PositionStatus.DELETED,
+    }
+    if fv not in filter_map:
+        return True
+    return filter_map[fv]
+
+
+def _query_confidence_band_ok(p: Position, q: ReviewQueueQuery) -> bool:
+    if q.min_confidence is not None and p.confidence < q.min_confidence:
+        return False
+    if q.max_confidence is not None and p.confidence > q.max_confidence:
+        return False
     return True
+
+
+def _query_traceability_ok(
+    p: Position, q: ReviewQueueQuery, primary_product: ProductRecord | None
+) -> bool:
+    if q.traceability is None or str(q.traceability).strip() == "":
+        return True
+    want = str(q.traceability).strip().lower()
+    got = traceability_normalized(p, primary_product)
+    return want == got
+
+
+def _query_has_evidence_ok(p: Position, q: ReviewQueueQuery) -> bool:
+    if q.has_evidence is None:
+        return True
+    has_ev = position_has_primary_evidence(p)
+    return q.has_evidence == has_ev
+
+
+def _query_qty_zero_ok(
+    p: Position, q: ReviewQueueQuery, primary_product: ProductRecord | None
+) -> bool:
+    if q.qty_zero is None:
+        return True
+    _, qty = summary_sku_and_detected_quantity(p, primary_product)
+    is_zero = qty == 0
+    return q.qty_zero == is_zero
+
+
+def _query_sku_contains_ok(
+    p: Position, q: ReviewQueueQuery, primary_product: ProductRecord | None
+) -> bool:
+    if q.sku_contains is None or str(q.sku_contains).strip() == "":
+        return True
+    needle = str(q.sku_contains).strip().lower()
+    sku, _ = summary_sku_and_detected_quantity(p, primary_product)
+    sku_l = (sku or "").lower()
+    return needle in sku_l
 
 
 def _row_matches_query(
     p: Position,
     q: ReviewQueueQuery,
-    primary_product: Optional[ProductRecord],
+    primary_product: ProductRecord | None,
 ) -> bool:
-    if q.min_confidence is not None and p.confidence < q.min_confidence:
-        return False
-    if q.max_confidence is not None and p.confidence > q.max_confidence:
-        return False
-    if not _position_status_matches(p, q.position_status):
-        return False
-
-    if q.traceability is not None and str(q.traceability).strip() != "":
-        want = str(q.traceability).strip().lower()
-        got = traceability_normalized(p, primary_product)
-        if want != got:
-            return False
-
-    if q.has_evidence is not None:
-        has_ev = position_has_primary_evidence(p)
-        if q.has_evidence != has_ev:
-            return False
-
-    _, qty = summary_sku_and_detected_quantity(p, primary_product)
-    if q.qty_zero is not None:
-        is_zero = qty == 0
-        if q.qty_zero != is_zero:
-            return False
-
-    if q.sku_contains is not None and str(q.sku_contains).strip() != "":
-        needle = str(q.sku_contains).strip().lower()
-        sku, _ = summary_sku_and_detected_quantity(p, primary_product)
-        sku_l = (sku or "").lower()
-        if needle not in sku_l:
-            return False
-
-    return True
+    return (
+        _query_confidence_band_ok(p, q)
+        and _position_status_matches(p, q.position_status)
+        and _query_traceability_ok(p, q, primary_product)
+        and _query_has_evidence_ok(p, q)
+        and _query_qty_zero_ok(p, q, primary_product)
+        and _query_sku_contains_ok(p, q, primary_product)
+    )
 
 
 def _build_summary(
-    rows: List[ReviewQueueListRow],
-    primary_by_position: Dict[str, Optional[ProductRecord]],
+    rows: list[ReviewQueueListRow],
+    primary_by_position: dict[str, ProductRecord | None],
 ) -> ReviewQueueSummary:
     pending = len(rows)
     low_conf = 0
@@ -162,12 +184,16 @@ class ListReviewQueueUseCase:
         self._product_record_repo = product_record_repo
 
     def execute(
-        self, query: Optional[ReviewQueueQuery] = None
-    ) -> Tuple[List[ReviewQueueListRow], int, ReviewQueueSummary]:
+        self, query: ReviewQueueQuery | None = None
+    ) -> tuple[list[ReviewQueueListRow], int, ReviewQueueSummary]:
         q = query or ReviewQueueQuery()
-        scope: List[tuple] = []
+        scope: list[tuple] = []
         for inv in self._inventory_repo.list_all():
-            if q.inventory_id is not None and str(q.inventory_id).strip() and inv.id != q.inventory_id:
+            if (
+                q.inventory_id is not None
+                and str(q.inventory_id).strip()
+                and inv.id != q.inventory_id
+            ):
                 continue
             for aisle in self._aisle_repo.list_by_inventory(inv.id):
                 if q.aisle_id is not None and str(q.aisle_id).strip() and aisle.id != q.aisle_id:
@@ -187,10 +213,10 @@ class ListReviewQueueUseCase:
         aisle_ids = [a.id for _, a in scope]
         by_aisle_id = {a.id: (inv, a) for inv, a in scope}
         positions = list(self._position_repo.list_by_aisles(aisle_ids))
-        primary_by_position: Dict[str, Optional[ProductRecord]] = {}
+        primary_by_position: dict[str, ProductRecord | None] = {}
         if positions:
             batch = self._product_record_repo.list_by_position_ids([p.id for p in positions])
-            by_pid: DefaultDict[str, List[ProductRecord]] = defaultdict(list)
+            by_pid: defaultdict[str, list[ProductRecord]] = defaultdict(list)
             for pr in batch:
                 by_pid[pr.position_id].append(pr)
             for p in positions:
@@ -198,7 +224,7 @@ class ListReviewQueueUseCase:
         pending = [p for p in positions if p.needs_review]
         pending = [p for p in pending if _row_matches_query(p, q, primary_by_position.get(p.id))]
 
-        rows: List[ReviewQueueListRow] = []
+        rows: list[ReviewQueueListRow] = []
         for p in pending:
             inv, aisle = by_aisle_id[p.aisle_id]
             rows.append(

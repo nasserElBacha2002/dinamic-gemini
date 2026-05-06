@@ -2,10 +2,12 @@
 Análisis global de video con una sola llamada a Gemini (hybrid v2.1, Structured Output).
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, cast
 
 import numpy as np
 
@@ -25,6 +27,7 @@ logger = logging.getLogger(__name__)
 def _ndarray_to_pil(frame: np.ndarray):
     """Convierte frame BGR (OpenCV) a PIL Image RGB."""
     import cv2
+
     try:
         from PIL import Image
     except ImportError:
@@ -42,12 +45,12 @@ class GeminiGlobalAnalyzer:
 
     def analyze_video_frames(
         self,
-        frames: List[np.ndarray],
+        frames: list[np.ndarray],
         *,
-        context_instruction: Optional[str] = None,
-        context_images: Optional[ContextImageSequence] = None,
+        context_instruction: str | None = None,
+        context_images: ContextImageSequence | None = None,
         **kwargs: object,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Envía los frames en una sola llamada a Gemini (Structured Output v2.1) y devuelve el JSON validado.
 
         Usa response_schema para que Gemini devuelva JSON conforme a GlobalEntityResponseV21.
@@ -65,7 +68,14 @@ class GeminiGlobalAnalyzer:
         if not frames:
             raise ValueError("frames no puede estar vacía")
         run_logger = kwargs.get("logger")
-        log = run_logger if run_logger is not None else logger
+        if (
+            run_logger is not None
+            and hasattr(run_logger, "info")
+            and hasattr(run_logger, "warning")
+        ):
+            log = run_logger  # tests may pass MagicMock; production passes logging.Logger
+        else:
+            log = logger
         primary_images = [_ndarray_to_pil(f) for f in frames]
         prompt = (
             self._prompt_text
@@ -84,25 +94,37 @@ class GeminiGlobalAnalyzer:
             )
         else:
             images = primary_images
-            log.info("Enviando %d frames a Gemini (análisis global v2.1 structured)...", len(frames))
-        raw = self.client.generate_global_analysis_structured(images, prompt, GlobalEntityResponseV21)
+            log.info(
+                "Enviando %d frames a Gemini (análisis global v2.1 structured)...", len(frames)
+            )
+        raw = self.client.generate_global_analysis_structured(
+            images, prompt, GlobalEntityResponseV21
+        )
         cleaned = raw.strip()
         save_raw_to_path = kwargs.get("save_raw_to_path")
         if save_raw_to_path is not None:
-            p = Path(save_raw_to_path)
+            p = Path(str(save_raw_to_path))
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(cleaned, encoding="utf-8")
             log.info("Respuesta cruda de Gemini guardada en %s", p)
         try:
-            data = json.loads(cleaned)
+            parsed = json.loads(cleaned)
         except json.JSONDecodeError as e:
             log.warning("Global analysis parsing failed (invalid JSON): %s", e)
             raise GlobalAnalysisParsingError(f"Invalid JSON: {e}") from e
+        if not isinstance(parsed, dict):
+            raise GlobalAnalysisParsingError("Global analysis response must be a JSON object")
+
+        data = parsed
 
         # Normalize Gemini count mismatch: trust len(entities) as source of truth (deterministic, auditable)
         total = data.get("total_entities_detected")
         entities = data.get("entities") or []
-        if isinstance(entities, list) and isinstance(total, (int, float)) and total != len(entities):
+        if (
+            isinstance(entities, list)
+            and isinstance(total, (int, float))
+            and total != len(entities)
+        ):
             log.warning(
                 "Gemini count mismatch: total_entities_detected=%s vs len(entities)=%d; normalizing to len(entities)",
                 total,
@@ -115,4 +137,4 @@ class GeminiGlobalAnalyzer:
         except GlobalAnalysisValidationError as e:
             log.warning("Global analysis validation failed: %s", e)
             raise
-        return data
+        return cast(dict[str, Any], data)

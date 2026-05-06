@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence
+from collections.abc import Sequence
 
 from src.application.ports.repositories import FinalCountRepository, LabelJobScope
 from src.domain.labels.entities import FinalCountRecord
@@ -18,9 +18,9 @@ def _matches_label_job(job_id: LabelJobScope, row_job: str | None) -> bool:
 
 class MemoryFinalCountRepository(FinalCountRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, FinalCountRecord] = {}
+        self._store: dict[str, FinalCountRecord] = {}
 
-    def save_many(self, records: List[FinalCountRecord]) -> None:
+    def save_many(self, records: list[FinalCountRecord]) -> None:
         for r in records:
             self._store[r.id] = r
 

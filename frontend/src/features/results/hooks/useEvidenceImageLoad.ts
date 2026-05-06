@@ -3,7 +3,7 @@
  * Caller: use imageSrc on <img>; hook revokes object URLs on spec change or unmount.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef } from 'react';
 import { fetchEvidenceImageDisplay, type EvidenceImageLoadSpec } from '../../../api/client';
 import i18n from '../../../i18n';
 
@@ -30,7 +30,7 @@ function kindFromResponse(status: number, detail?: string): EvidenceImageErrorKi
   return 'network';
 }
 
-function messageForKind(kind: EvidenceImageErrorKind, _detail?: string): string {
+function messageForKind(kind: EvidenceImageErrorKind): string {
   switch (kind) {
     case 'not_found':
       return i18n.t('results.evidence_image_load.source_unavailable');
@@ -48,7 +48,10 @@ function messageForKind(kind: EvidenceImageErrorKind, _detail?: string): string 
  * Resolve reference asset image for display via ``/image-display-url`` + optional ``/file`` blob fetch.
  */
 export function useEvidenceImageLoad(spec: EvidenceImageLoadSpec | null): EvidenceImageLoadState {
-  const [state, setState] = useState<EvidenceImageLoadState>({ status: 'idle' });
+  const [state, dispatchState] = useReducer(
+    (_: EvidenceImageLoadState, next: EvidenceImageLoadState) => next,
+    { status: 'idle' } as EvidenceImageLoadState
+  );
   const revokeRef = useRef<(() => void) | null>(null);
 
   const inventoryId = spec?.inventoryId ?? '';
@@ -58,7 +61,7 @@ export function useEvidenceImageLoad(spec: EvidenceImageLoadSpec | null): Eviden
 
   useEffect(() => {
     if (!inventoryId.trim() || !aisleId.trim() || !assetId.trim()) {
-      setState({ status: 'idle' });
+      dispatchState({ status: 'idle' });
       if (revokeRef.current) {
         revokeRef.current();
         revokeRef.current = null;
@@ -66,7 +69,7 @@ export function useEvidenceImageLoad(spec: EvidenceImageLoadSpec | null): Eviden
       return;
     }
     let cancelled = false;
-    setState({ status: 'loading' });
+    dispatchState({ status: 'loading' });
     if (revokeRef.current) {
       revokeRef.current();
       revokeRef.current = null;
@@ -86,16 +89,17 @@ export function useEvidenceImageLoad(spec: EvidenceImageLoadSpec | null): Eviden
         if (result.revoke) {
           revokeRef.current = result.revoke;
         }
-        setState({ status: 'loaded', imageSrc: result.imageSrc });
+        dispatchState({ status: 'loaded', imageSrc: result.imageSrc });
       } else {
         const kind = kindFromResponse(result.status, result.detail);
-        setState({
+        dispatchState({
           status: 'error',
           kind,
-          message: messageForKind(kind, result.detail),
+          message: messageForKind(kind),
         });
       }
     });
+    // Runs on dependency change and on unmount — same revoke lifecycle previously duplicated in a second effect.
     return () => {
       cancelled = true;
       if (revokeRef.current) {
@@ -104,15 +108,6 @@ export function useEvidenceImageLoad(spec: EvidenceImageLoadSpec | null): Eviden
       }
     };
   }, [inventoryId, aisleId, assetId, jobId]);
-
-  useEffect(() => {
-    return () => {
-      if (revokeRef.current) {
-        revokeRef.current();
-        revokeRef.current = null;
-      }
-    };
-  }, []);
 
   return state;
 }

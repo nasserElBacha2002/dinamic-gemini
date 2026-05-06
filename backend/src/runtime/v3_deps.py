@@ -8,6 +8,12 @@ and worker bootstrap without duplicating construction logic.
 
 from __future__ import annotations
 
+from src.application.ports.capture_repositories import (
+    CaptureSessionConfirmIdempotencyRepository,
+    CaptureSessionGroupRepository,
+    CaptureSessionItemRepository,
+    CaptureSessionRepository,
+)
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
@@ -23,7 +29,8 @@ from src.application.ports.repositories import (
     ReviewActionRepository,
     SourceAssetRepository,
 )
-from src.application.ports.services import MetricsCalculator
+from src.application.ports.services import MetricsCalculator, WorkerLaunchService
+from src.application.ports.stored_artifact_reader import StoredArtifactReader
 from src.runtime.app_container import get_app_container
 
 
@@ -76,7 +83,12 @@ def get_artifact_store():
     return get_app_container().get_artifact_storage()
 
 
-def get_worker_launch_service():
+def get_stored_artifact_reader() -> StoredArtifactReader:
+    """Best-effort hybrid report / stored JSON reads (application port; no API imports)."""
+    return get_app_container().get_stored_artifact_reader()
+
+
+def get_worker_launch_service() -> WorkerLaunchService:
     return get_app_container().get_worker_launch_service()
 
 
@@ -94,6 +106,22 @@ def get_final_count_repo() -> FinalCountRepository:
 
 def get_analytics_repo():
     return get_app_container().get_analytics_repo()
+
+
+def get_capture_session_repo() -> CaptureSessionRepository:
+    return get_app_container().get_capture_session_repo()
+
+
+def get_capture_session_item_repo() -> CaptureSessionItemRepository:
+    return get_app_container().get_capture_session_item_repo()
+
+
+def get_capture_session_group_repo() -> CaptureSessionGroupRepository:
+    return get_app_container().get_capture_session_group_repo()
+
+
+def get_capture_session_confirm_repo() -> CaptureSessionConfirmIdempotencyRepository:
+    return get_app_container().get_capture_session_confirm_repo()
 
 
 def get_recompute_consolidated_counts_use_case():

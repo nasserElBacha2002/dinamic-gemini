@@ -6,19 +6,21 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Sequence
+from typing import Any
 
-from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.application.ports.repositories import SourceAssetRepository
+from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.database.sqlserver import SqlServerClient
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_for_row
 
 logger = logging.getLogger(__name__)
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -27,7 +29,13 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 def _type_from_row(row, asset_id: str = "?") -> SourceAssetType:
-    type_str = getattr(row, "type", "photo") or "photo"
+    raw = getattr(row, "type", None)
+    if raw is None:
+        type_str = "photo"
+    elif isinstance(raw, str):
+        type_str = raw.strip() or "photo"
+    else:
+        type_str = str(raw).strip() or "photo"
     try:
         return SourceAssetType(type_str)
     except ValueError:
@@ -39,14 +47,24 @@ def _type_from_row(row, asset_id: str = "?") -> SourceAssetType:
         return SourceAssetType.PHOTO
 
 
-def _parse_metadata(raw: Optional[str]) -> Optional[Dict[str, Any]]:
-    if not raw or not raw.strip():
+def _parse_metadata(raw: object) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+    else:
+        text = str(raw).strip()
+    if not text:
         return None
     try:
-        return json.loads(raw)
+        parsed = json.loads(text)
     except json.JSONDecodeError as e:
         logger.warning("Invalid metadata_json in source_assets: %s", e)
         return None
+    if not isinstance(parsed, dict):
+        logger.warning("metadata_json root is not an object in source_assets")
+        return None
+    return parsed
 
 
 def _row_to_asset(row) -> SourceAsset:
@@ -54,30 +72,36 @@ def _row_to_asset(row) -> SourceAsset:
     uploaded = _ensure_utc(getattr(row, "uploaded_at", None))
     if uploaded is None:
         raise ValueError("source_assets row missing required uploaded_at")
-    storage_path = (getattr(row, "storage_path", None) or "").strip()
-    storage_provider_raw = (getattr(row, "storage_provider", None) or "").strip() or None
+    storage_path = normalize_db_str(getattr(row, "storage_path", None))
+    storage_provider_raw = optional_nonempty_db_str(getattr(row, "storage_provider", None))
     storage_key = resolved_storage_key_for_row(
         storage_provider=storage_provider_raw,
         storage_key_raw=getattr(row, "storage_key", None),
         storage_path=storage_path,
     )
     # mime_type: domain/API; content_type: storage metadata (falls back to mime for legacy rows).
-    content_type = (getattr(row, "content_type", None) or "").strip() or (getattr(row, "mime_type", None) or "")
+    ct = optional_nonempty_db_str(getattr(row, "content_type", None))
+    if ct:
+        content_type = ct
+    else:
+        content_type = normalize_db_str(getattr(row, "mime_type", None))
+    cap_item = optional_nonempty_db_str(getattr(row, "capture_session_item_id", None))
     return SourceAsset(
         id=aid,
-        aisle_id=row.aisle_id or "",
+        aisle_id=normalize_db_str(getattr(row, "aisle_id", None)),
         type=_type_from_row(row, aid),
-        original_filename=row.original_filename or "",
+        original_filename=normalize_db_str(getattr(row, "original_filename", None)),
         storage_path=storage_path,
-        mime_type=row.mime_type or "application/octet-stream",
+        mime_type=(normalize_db_str(getattr(row, "mime_type", None)) or "application/octet-stream"),
         uploaded_at=uploaded,
         metadata_json=_parse_metadata(getattr(row, "metadata_json", None)),
         storage_provider=storage_provider_raw,
-        storage_bucket=(getattr(row, "storage_bucket", None) or "").strip() or None,
+        storage_bucket=optional_nonempty_db_str(getattr(row, "storage_bucket", None)),
         storage_key=storage_key or None,
         content_type=content_type or None,
         file_size_bytes=getattr(row, "file_size_bytes", None),
-        etag=(getattr(row, "etag", None) or "").strip() or None,
+        etag=optional_nonempty_db_str(getattr(row, "etag", None)),
+        capture_session_item_id=cap_item,
     )
 
 
@@ -89,7 +113,9 @@ class SqlSourceAssetRepository(SourceAssetRepository):
         uploaded = _ensure_utc(asset.uploaded_at)
         if uploaded is None:
             raise ValueError("SourceAsset.uploaded_at is required")
-        meta_str = json.dumps(asset.metadata_json, ensure_ascii=False) if asset.metadata_json else None
+        meta_str = (
+            json.dumps(asset.metadata_json, ensure_ascii=False) if asset.metadata_json else None
+        )
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -97,7 +123,8 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 SET aisle_id = ?, type = ?, original_filename = ?, storage_path = ?,
                     storage_provider = ?, storage_bucket = ?, storage_key = ?,
                     content_type = ?, file_size_bytes = ?, etag = ?,
-                    mime_type = ?, uploaded_at = ?, metadata_json = ?
+                    mime_type = ?, uploaded_at = ?, metadata_json = ?,
+                    capture_session_item_id = ?
                 WHERE id = ?
                 """,
                 (
@@ -114,6 +141,7 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                     asset.mime_type,
                     uploaded,
                     meta_str,
+                    asset.capture_session_item_id,
                     asset.id,
                 ),
             )
@@ -123,9 +151,9 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                     INSERT INTO source_assets (
                         id, aisle_id, type, original_filename, storage_path,
                         storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                        mime_type, uploaded_at, metadata_json
+                        mime_type, uploaded_at, metadata_json, capture_session_item_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         asset.id,
@@ -142,16 +170,17 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                         asset.mime_type,
                         uploaded,
                         meta_str,
+                        asset.capture_session_item_id,
                     ),
                 )
 
-    def get_by_id(self, asset_id: str) -> Optional[SourceAsset]:
+    def get_by_id(self, asset_id: str) -> SourceAsset | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """
                 SELECT id, aisle_id, type, original_filename, storage_path,
                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                       mime_type, uploaded_at, metadata_json
+                       mime_type, uploaded_at, metadata_json, capture_session_item_id
                 FROM source_assets WHERE id = ?
                 """,
                 (asset_id,),
@@ -166,13 +195,32 @@ class SqlSourceAssetRepository(SourceAssetRepository):
             cur.execute("DELETE FROM source_assets WHERE id = ?", (asset_id,))
             return cur.rowcount > 0
 
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> SourceAsset | None:
+        cid = (capture_session_item_id or "").strip()
+        if not cid:
+            return None
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, aisle_id, type, original_filename, storage_path,
+                       storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                       mime_type, uploaded_at, metadata_json, capture_session_item_id
+                FROM source_assets WHERE capture_session_item_id = ?
+                """,
+                (cid,),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return _row_to_asset(row)
+
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         with self._client.cursor() as cur:
             cur.execute(
                 """
                 SELECT id, aisle_id, type, original_filename, storage_path,
                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                       mime_type, uploaded_at, metadata_json
+                       mime_type, uploaded_at, metadata_json, capture_session_item_id
                 FROM source_assets WHERE aisle_id = ? ORDER BY uploaded_at ASC
                 """,
                 (aisle_id,),
@@ -180,10 +228,11 @@ class SqlSourceAssetRepository(SourceAssetRepository):
             rows = cur.fetchall()
         return [_row_to_asset(row) for row in rows]
 
-    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> dict[str, AisleAssetRollup]:
         if not aisle_ids:
             return {}
         placeholders = ",".join("?" * len(aisle_ids))
+        # IN clause: placeholders only; aisle_ids bound as parameters.
         with self._client.cursor() as cur:
             cur.execute(
                 f"""
@@ -191,11 +240,11 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 FROM source_assets
                 WHERE aisle_id IN ({placeholders})
                 GROUP BY aisle_id
-                """,
+                """,  # nosec B608
                 list(aisle_ids),
             )
             rows = cur.fetchall()
-        out: Dict[str, AisleAssetRollup] = {}
+        out: dict[str, AisleAssetRollup] = {}
         for row in rows:
             aid = row.aisle_id or ""
             if not aid:

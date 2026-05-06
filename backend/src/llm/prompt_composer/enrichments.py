@@ -8,8 +8,6 @@ keeps enrichment policy at the request-building layer.
 
 from __future__ import annotations
 
-from typing import List
-
 from src.jobs.image_identity import JobImage
 
 # Traceability id for Phase 6 metadata (when ``enrich_prompt_with_image_ids`` applies).
@@ -36,7 +34,7 @@ def enrich_prompt_with_product_label_association(base_prompt: str) -> str:
 
 def enrich_prompt_with_image_ids(
     base_prompt: str,
-    images: List[JobImage],
+    images: list[JobImage],
 ) -> str:
     """Append image list and traceability instruction (Epic 3.1.A)."""
     if not images:

@@ -327,6 +327,9 @@
     "diff_summary_note": "Diff summary note",
     "diff_summary_stats": "Diff summary stats",
     "diff_summary_title": "Diff summary title",
+    "execution_lower_is_better": "Lower wall time is better (Run B − Run A).",
+    "execution_unavailable": "Unavailable",
+    "execution_wall_clock_delta": "Wall time (Run B − Run A): {{value}}",
     "export_csv": "Export csv",
     "info_benchmark": "Info benchmark",
     "llm_cost_display": {
@@ -347,6 +350,7 @@
       "unavailable": "Unavailable"
     },
     "loading": "Loading",
+    "metric_execution_time": "Execution time (wall)",
     "metric_consolidated": "Metric consolidated",
     "metric_needs_review": "Metric needs review",
     "metric_total_cost": "Metric total cost",
@@ -360,6 +364,12 @@
     "warning_need_jobs": "Warning need jobs"
   },
   "compare_many": {
+    "delta_execution_time": "Wall time (target − baseline): {{value}}",
+    "insight_faster_but_unknown_up": "Target is faster ({{time}}) but unknown internal codes increased by {{unknown}}.",
+    "insight_slower_but_unknown_down": "Target is slower ({{time}}) but unknown internal codes decreased by {{unknown}}.",
+    "job_execution_time": "Execution time: {{value}}",
+    "summary_exec_range": "Execution time across selected runs (min–max): {{min}} – {{max}}",
+    "summary_exec_unavailable": "Execution time: not all runs have start/finish timestamps (e.g. still running).",
     "apply": "Apply comparison",
     "baseline_adjusted_notice": "Baseline adjusted to match current selection.",
     "baseline_chip": "Baseline",
@@ -367,7 +377,7 @@
     "baseline_vs_target": "Baseline {{baseline}} vs {{target}}",
     "changes_not_applied": "Changes not applied",
     "delta_consolidated": "Consolidated positions: {{value}}",
-    "delta_legend_body": "Color indicates better/worse only for needs review and unknown internal code metrics.",
+    "delta_legend_body": "Color indicates better/worse for needs review, unknown internal code, and wall time (lower time is better).",
     "delta_legend_title": "Delta interpretation",
     "delta_needs_review": "Needs review: {{value}}",
     "delta_total_qty": "Total quantity: {{value}}",
@@ -832,6 +842,7 @@
   },
   "nav": {
     "inventories": "Inventories",
+    "ingestion_sessions": "Import sessions",
     "review_queue": "Review queue",
     "metrics": "Metrics",
     "ai_config": "AI configuration"
@@ -868,9 +879,130 @@
       "title": "Metrics",
       "subtitle": "Operational performance and quality trends"
     },
+    "ingestion_sessions": {
+      "title": "Import sessions",
+      "subtitle": "Upload media and prepare sessions for preview"
+    },
     "admin_ai_config": {
       "title": "AI configuration",
       "subtitle": "Manage providers, prompts, and prompt parity"
+    }
+  },
+  "ingestion_sessions": {
+    "page": {
+      "title": "Import Sessions",
+      "subtitle": "Create, upload, and prepare sessions before preview."
+    },
+    "filters": {
+      "title": "Session filters",
+      "inventory": "Inventory",
+      "aisle": "Aisle",
+      "all_aisles": "All aisles"
+    },
+    "list": {
+      "title": "Import Sessions",
+      "column_session_id": "Session ID",
+      "column_aisle_id": "Aisle ID",
+      "column_status": "Status",
+      "column_created": "Created",
+      "column_actions": "Actions"
+    },
+    "detail": {
+      "page_title": "Import Session Detail",
+      "section_title": "Session",
+      "title": "Import Session",
+      "session_id": "ID",
+      "status": "Status",
+      "created": "Created",
+      "import_status": "import_status",
+      "import_status_imported": "Imported",
+      "import_status_failed": "Import failed",
+      "import_status_pending": "Pending / in progress",
+      "effective_capture_time": "Capture time",
+      "time_source": "Time source",
+      "time_source_values": {
+        "exif": "EXIF",
+        "file_mtime": "File modified time",
+        "fallback_clock": "Server clock (fallback)"
+      },
+      "time_confidence": "Time confidence",
+      "grouping_title": "Grouping",
+      "grouping_compute": "Compute groups",
+      "grouping_hint_close": "Close the session to run deterministic temporal grouping.",
+      "grouping_hint_blocked": "Temporal grouping is not available for this session state.",
+      "grouping_loading": "Loading groups…",
+      "grouping_empty": "No groups yet. Run compute after closing the session.",
+      "grouping_row": "Group {{index}} — {{count}} items — {{start}} → {{end}}",
+      "grouping_ungrouped": "{{count}} item(s) are not in any group (excluded by rules or missing capture time).",
+      "grouping_assign_existing": "Assign to aisle",
+      "grouping_create_aisle": "Create aisle",
+      "grouping_assignment_unassigned": "Unassigned",
+      "grouping_assignment_existing": "Assigned (existing aisle)",
+      "grouping_assignment_new": "New aisle created",
+      "grouping_assign_dialog_title": "Assign group to aisle",
+      "grouping_assign_dialog_confirm": "Assign",
+      "grouping_assign_dialog_cancel": "Cancel",
+      "grouping_assign_select_aisle": "Select aisle",
+      "grouping_create_dialog_title": "Create aisle from group",
+      "grouping_create_dialog_code_label": "Aisle code",
+      "grouping_create_dialog_confirm": "Create and assign",
+      "grouping_recompute_confirm_title": "Lose aisle assignments?",
+      "grouping_recompute_confirm_body": "Recomputing groups deletes the current groups and clears every aisle assignment for this session. This cannot be undone from the app.",
+      "grouping_recompute_confirm_cancel": "Cancel",
+      "grouping_recompute_confirm_proceed": "Recompute anyway",
+      "grouping_assigned_aisle_code": "Aisle: {{code}}",
+      "grouping_assigned_aisle_id_only": "Aisle ID: {{id}}",
+      "grouping_assign_no_aisles_helper": "No aisles in this inventory. Create an aisle first, then assign.",
+      "grouping_preview": "Preview",
+      "grouping_materialize": "Materialize",
+      "grouping_preview_disabled_assign": "Assign this group to an aisle first",
+      "grouping_preview_disabled_materialize": "Materialize this group before preview",
+      "grouping_preview_dialog_title": "Group preview (materialized assets)",
+      "grouping_preview_trace_session": "Capture session: {{id}}",
+      "grouping_preview_meta": "Aisle: {{aisle}} · {{assets}} source asset(s) · status: {{status}}",
+      "grouping_preview_row_status": "Assignment status: {{status}}",
+      "grouping_preview_row_reason": "Reason: {{reason}}",
+      "grouping_preview_row_item": "Capture item: {{id}}",
+      "grouping_preview_row_asset": "Source asset: {{id}}",
+      "grouping_preview_row_position": "Preview target position: {{id}}",
+      "grouping_preview_row_time": "Adjusted capture time: {{time}}",
+      "grouping_preview_summary": "{{proposed}} proposed · {{conflicts}} conflicts · {{unassigned}} unassigned · {{items}} item(s) in preview",
+      "grouping_preview_empty_hint": "No usable assets available for preview (empty or non-imported items only).",
+      "grouping_preview_item_row": "{{status}} — item {{itemId}} — asset {{assetId}}",
+      "grouping_create_code_helper": "1–64 characters (same rules as creating an aisle)."
+    },
+    "upload": {
+      "title": "Upload imported media",
+      "subtitle": "Drag and drop files here or select multiple files from your device.",
+      "select_files": "Select files",
+      "error_summary": "Upload completed with errors. Review file-level statuses below.",
+      "summary_ok": "{{ok}} file(s) uploaded successfully.",
+      "summary_mixed": "{{ok}} file(s) uploaded successfully, {{fail}} failed.",
+      "summary_all_failed": "No files uploaded successfully ({{fail}} failed).",
+      "status": {
+        "uploaded": "Uploaded",
+        "failed": "Failed",
+        "uploading": "Uploading",
+        "pending": "Pending"
+      }
+    },
+    "actions": {
+      "new_import_session": "New Import Session",
+      "open": "Open",
+      "close_session": "Close Session",
+      "cancel_session": "Cancel Session",
+      "back_to_sessions": "Back to sessions"
+    },
+    "empty": {
+      "title": "No import sessions yet",
+      "message": "Create a new import session to begin ingestion.",
+      "upload_to_begin": "Upload images to begin."
+    },
+    "errors": {
+      "missing_inventory_or_session": "Missing required route parameters: inventoryId and sessionId."
+    },
+    "common": {
+      "not_available": "N/A"
     }
   },
   "shell": {

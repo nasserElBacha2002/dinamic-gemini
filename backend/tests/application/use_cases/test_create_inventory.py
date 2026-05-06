@@ -9,7 +9,10 @@ from src.application.ports.repositories import InventoryRepository
 from src.application.services.operational_execution_config_resolver import (
     OperationalPrimaryExecutionConfig,
 )
-from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
+from src.application.use_cases.create_inventory import (
+    CreateInventoryCommand,
+    CreateInventoryUseCase,
+)
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 

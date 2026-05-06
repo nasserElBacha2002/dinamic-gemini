@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -20,21 +20,21 @@ class RawLabel:
     id: str
     inventory_id: str
     aisle_id: str
-    position_id: Optional[str]
-    evidence_id: Optional[str]
+    position_id: str | None
+    evidence_id: str | None
     group_key: str
     provider: str
     source_type: str
-    source_reference: Optional[str]
-    sku_raw: Optional[str]
-    sku_candidate: Optional[str]
-    product_name_raw: Optional[str]
-    detected_text: Optional[str]
-    confidence: Optional[float]
-    metadata: Dict[str, Any]
+    source_reference: str | None
+    sku_raw: str | None
+    sku_candidate: str | None
+    product_name_raw: str | None
+    detected_text: str | None
+    confidence: float | None
+    metadata: dict[str, Any]
     created_at: datetime
     #: Same as ``positions.job_id`` for this observation; ``None`` = legacy row.
-    job_id: Optional[str] = None
+    job_id: str | None = None
 
 
 @dataclass
@@ -44,18 +44,18 @@ class NormalizedLabel:
     id: str
     inventory_id: str
     aisle_id: str
-    position_id: Optional[str]
+    position_id: str | None
     group_key: str
-    canonical_sku: Optional[str]
-    canonical_product_name: Optional[str]
-    raw_label_ids: List[str]
+    canonical_sku: str | None
+    canonical_product_name: str | None
+    raw_label_ids: list[str]
     merge_rule_applied: str
-    merge_confidence: Optional[float]
+    merge_confidence: float | None
     merge_reason: str
     review_required: bool
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
     created_at: datetime
-    job_id: Optional[str] = None
+    job_id: str | None = None
 
 
 @dataclass
@@ -65,13 +65,13 @@ class FinalCountRecord:
     id: str
     inventory_id: str
     aisle_id: str
-    position_id: Optional[str]
-    sku: Optional[str]
-    product_name: Optional[str]
+    position_id: str | None
+    sku: str | None
+    product_name: str | None
     quantity: int
-    normalized_label_ids: List[str]
+    normalized_label_ids: list[str]
     review_required: bool
-    explanation_summary: Optional[str]
-    metadata: Dict[str, Any]
+    explanation_summary: str | None
+    metadata: dict[str, Any]
     created_at: datetime
-    job_id: Optional[str] = None
+    job_id: str | None = None

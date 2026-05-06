@@ -9,7 +9,6 @@ Tests use mocks; no real SQL Server required.
 """
 
 import json
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -17,7 +16,7 @@ import pytest
 
 from src.database.repository import PalletResultsRepository
 from src.jobs.job_store import get_job
-from src.jobs.worker import run_job, _push_success_to_db
+from src.jobs.worker import _push_success_to_db, run_job
 
 
 @pytest.fixture
@@ -38,7 +37,11 @@ def test_get_job_returns_from_db_when_enabled(output_dir):
         },
         "status": "succeeded",
         "progress": {"stage": "done", "percent": 100},
-        "output": {"report_json_path": "/out/job_db123/run/hybrid_report.json", "report_csv_path": None, "artifacts_dir": "/out/job_db123"},
+        "output": {
+            "report_json_path": "/out/job_db123/run/hybrid_report.json",
+            "report_csv_path": None,
+            "artifacts_dir": "/out/job_db123",
+        },
         "error": None,
         "created_at": "2025-01-01T12:00:00Z",
         "updated_at": "2025-01-01T12:01:00Z",
@@ -60,8 +63,16 @@ def test_push_success_to_db_calls_set_job_outputs_and_insert_pallet_results(outp
         "frames_selected": 10,
         "prompt_version": "global_min_v1",
         "metrics": {"total_calls": 2, "fallback_attempts": 1},
-        "pallets": [
-            {"pallet_id": "P1", "internal_code": "X", "quantity": 5, "source": "label", "confidence": 0.9, "fallback_used": False, "estimated_visible_boxes": None},
+        "entities": [
+            {
+                "pallet_id": "P1",
+                "internal_code": "X",
+                "final_quantity": None,
+                "product_label_quantity": 5,
+                "confidence": 0.9,
+                "source_image_id": None,
+                "traceability_status": None,
+            },
         ],
     }
     report_path.write_text(json.dumps(report_data), encoding="utf-8")
@@ -78,8 +89,14 @@ def test_push_success_to_db_calls_set_job_outputs_and_insert_pallet_results(outp
     assert call_kw["frames_count_sent"] == 10
     assert call_kw["gemini_calls"] == 2
     assert call_kw["prompt_version"] == "global_min_v1"
-    mock_pallet.insert_pallet_results.assert_called_once_with("job_xyz", report_data["pallets"])
-    assert mock_events.insert_event.call_count >= 3  # FRAMES_SELECTED, GEMINI_GLOBAL_CALL, FALLBACK_RUN, REPORT_WRITTEN
+    mock_pallet.insert_pallet_results.assert_called_once()
+    ip_call = mock_pallet.insert_pallet_results.call_args
+    assert ip_call[0][0] == "job_xyz"
+    assert len(ip_call[0][1]) == 1
+    assert ip_call[0][1][0]["pallet_id"] == "P1"
+    assert (
+        mock_events.insert_event.call_count >= 3
+    )  # FRAMES_SELECTED, GEMINI_GLOBAL_CALL, FALLBACK_RUN, REPORT_WRITTEN
 
 
 def test_worker_inserts_error_event_on_exception(output_dir):
@@ -105,7 +122,9 @@ def test_worker_inserts_error_event_on_exception(output_dir):
             run_job(output_dir, "job_fail")
 
     mock_events.insert_event.assert_called()
-    error_calls = [c for c in mock_events.insert_event.call_args_list if len(c[0]) >= 2 and c[0][1] == "ERROR"]
+    error_calls = [
+        c for c in mock_events.insert_event.call_args_list if len(c[0]) >= 2 and c[0][1] == "ERROR"
+    ]
     assert len(error_calls) >= 1
     payload = error_calls[0][0][2] if len(error_calls[0][0]) > 2 else {}
     assert "simulated failure" in str(payload.get("message", ""))
@@ -124,9 +143,29 @@ def test_insert_pallet_results_quantity_dict_final_quantity_preferred():
     mock_client.cursor.return_value = mock_cm
     repo = PalletResultsRepository(mock_client)
     pallets = [
-        {"pallet_id": "P1", "final_quantity": 10, "quantity": 5, "source": "label", "confidence": 0.9, "fallback_used": False},
-        {"pallet_id": "P2", "quantity": 3, "source": "fallback", "confidence": 0.8, "fallback_used": True},
-        {"pallet_id": "P3", "final_quantity": None, "quantity": 7, "source": "label", "confidence": 1.0, "fallback_used": False},
+        {
+            "pallet_id": "P1",
+            "final_quantity": 10,
+            "quantity": 5,
+            "source": "label",
+            "confidence": 0.9,
+            "fallback_used": False,
+        },
+        {
+            "pallet_id": "P2",
+            "quantity": 3,
+            "source": "fallback",
+            "confidence": 0.8,
+            "fallback_used": True,
+        },
+        {
+            "pallet_id": "P3",
+            "final_quantity": None,
+            "quantity": 7,
+            "source": "label",
+            "confidence": 1.0,
+            "fallback_used": False,
+        },
     ]
     repo.insert_pallet_results("job_1", pallets)
     assert mock_cursor.execute.call_count == 3
@@ -147,15 +186,24 @@ def test_insert_pallet_results_quantity_object_final_quantity_preferred():
     mock_cm.__exit__.return_value = None
     mock_client.cursor.return_value = mock_cm
     repo = PalletResultsRepository(mock_client)
-    P = SimpleNamespace
+    row = SimpleNamespace
     pallets = [
-        P(pallet_id="P1", internal_code="X", final_quantity=12, quantity=5, source="label", confidence=0.9, fallback_used=False, estimated_visible_boxes=10),
+        row(
+            pallet_id="P1",
+            internal_code="X",
+            final_quantity=12,
+            quantity=5,
+            source="label",
+            confidence=0.9,
+            fallback_used=False,
+            estimated_visible_boxes=10,
+        ),
     ]
     repo.insert_pallet_results("job_1", pallets)
     mock_cursor.execute.assert_called_once()
     args = mock_cursor.execute.call_args[0][1]
     assert args[3] == 12  # quantity_to_store
-    assert args[8] == 10  # raw_estimated_visible_boxes
+    assert args[7] == 10  # raw_estimated_visible_boxes
 
 
 # --- API uses DB when enabled: removed in Stage 3 (v1 job routes retired) ---

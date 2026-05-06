@@ -16,8 +16,7 @@ import numpy as np
 import pytest
 
 from src.jobs.job_store import create_job, get_job
-from src.jobs.models import JobStatus
-from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
+from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, _HybridRunParams
 
 # Paths to fixtures (relative to repo root)
 FIXTURES_V21 = Path(__file__).resolve().parent / "fixtures" / "v2_1"
@@ -72,23 +71,29 @@ def run_pipeline_sync(
 
     if job_input is None:
         record = get_job(output_dir, job_id)
-        job_input = record.input if record else JobInput(video_path="", mode="hybrid", input_type="video")
+        job_input = (
+            record.input if record else JobInput(video_path="", mode="hybrid", input_type="video")
+        )
     pipeline = HybridInventoryPipeline()
     logger = MagicMock()
     video_path = getattr(job_input, "video_path", "") or ""
     result = pipeline._run_hybrid(
         video_path,
-        settings=settings,
-        video_id=job_id,
-        output_path=output_dir,
-        run_id=run_id,
-        logger=logger,
-        job_input=job_input,
+        _HybridRunParams(
+            settings=settings,
+            video_id=job_id,
+            output_path=output_dir,
+            run_id=run_id,
+            logger=logger,
+            job_input=job_input,
+        ),
     )
     return result.exit_code
 
 
-def _patch_offline_hybrid_executor_from_json(monkeypatch: pytest.MonkeyPatch, fixture_path: Path) -> None:
+def _patch_offline_hybrid_executor_from_json(
+    monkeypatch: pytest.MonkeyPatch, fixture_path: Path
+) -> None:
     from tests.support.llm_executor_harness import patch_offline_hybrid_json_fixture
 
     patch_offline_hybrid_json_fixture(monkeypatch, fixture_path)
@@ -120,7 +125,9 @@ def make_offline_pipeline_settings(
 # --- A) E2E Video ---
 
 
-def test_e2e_video_job_generates_report_and_evidence(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_e2e_video_job_generates_report_and_evidence(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Video path: stub frames + patched executor from fixture JSON; assert report + evidence + stable order."""
     _patch_offline_hybrid_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
     job_id = "e2e_video_01"
@@ -144,7 +151,12 @@ def test_e2e_video_job_generates_report_and_evidence(tmp_path, monkeypatch: pyte
     bundle = FramesBundle(
         frames=frame_paths,
         frame_refs=[f"frame_{i:06d}" for i in range(len(frame_paths))],
-        metadata={"source": "video", "frame_count": len(frame_paths), "selected_by": "video_sampling", "frame_indices": [0, 1, 2]},
+        metadata={
+            "source": "video",
+            "frame_count": len(frame_paths),
+            "selected_by": "video_sampling",
+            "frame_indices": [0, 1, 2],
+        },
     )
 
     settings = make_offline_pipeline_settings()
@@ -186,7 +198,9 @@ def test_e2e_video_job_generates_report_and_evidence(tmp_path, monkeypatch: pyte
 # --- B) E2E Photos ---
 
 
-def test_e2e_photos_job_persists_normalized_and_generates_report(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_e2e_photos_job_persists_normalized_and_generates_report(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Photos job: input_photos + manifest, normalization, patched executor; assert normalized dir + report + evidence."""
     _patch_offline_hybrid_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
     job_id = "e2e_photos_01"
@@ -275,7 +289,12 @@ def test_e2e_evidence_localization_modes(tmp_path, monkeypatch: pytest.MonkeyPat
     bundle = FramesBundle(
         frames=frame_paths,
         frame_refs=[f"frame_{i:06d}" for i in range(2)],
-        metadata={"source": "video", "frame_count": 2, "selected_by": "video_sampling", "frame_indices": [0, 1]},
+        metadata={
+            "source": "video",
+            "frame_count": 2,
+            "selected_by": "video_sampling",
+            "frame_indices": [0, 1],
+        },
     )
 
     # 1) With bboxes -> LOCALIZED
@@ -286,20 +305,25 @@ def test_e2e_evidence_localization_modes(tmp_path, monkeypatch: pytest.MonkeyPat
         from src.jobs.models import JobInput
 
         job_input = JobInput(video_path="", mode="hybrid", input_type="video")
-        code1 = run_pipeline_sync(tmp_path, job_id, run_id, settings=settings_ok, job_input=job_input)
+        code1 = run_pipeline_sync(
+            tmp_path, job_id, run_id, settings=settings_ok, job_input=job_input
+        )
     assert code1 == 0
     index1 = json.loads((run_dir / "evidence_index.json").read_text(encoding="utf-8"))
     entities_index1 = index1.get("entities") or []
-    localized_any = any(
-        (e.get("evidence_localization") == "LOCALIZED") for e in entities_index1
-    )
+    localized_any = any((e.get("evidence_localization") == "LOCALIZED") for e in entities_index1)
     assert localized_any, "At least one entity should be LOCALIZED when bboxes present"
     # Label crops referenced
     for e in entities_index1:
         ev = e.get("evidence") or {}
         if e.get("evidence_localization") == "LOCALIZED":
             assert "overview" in ev
-            assert ev.get("position_label_best") or ev.get("product_label_best") or ev.get("position_label_candidates") or ev.get("product_label_candidates")
+            assert (
+                ev.get("position_label_best")
+                or ev.get("product_label_best")
+                or ev.get("position_label_candidates")
+                or ev.get("product_label_candidates")
+            )
 
     # 2) Without bboxes -> UNLOCALIZED (new job_id to avoid overwriting)
     job_id2 = "e2e_loc_u"
@@ -313,14 +337,21 @@ def test_e2e_evidence_localization_modes(tmp_path, monkeypatch: pytest.MonkeyPat
     bundle2 = FramesBundle(
         frames=list(extract_dir2.glob("*.jpg")),
         frame_refs=["frame_000000", "frame_000001"],
-        metadata={"source": "video", "frame_count": 2, "selected_by": "video_sampling", "frame_indices": [0, 1]},
+        metadata={
+            "source": "video",
+            "frame_count": 2,
+            "selected_by": "video_sampling",
+            "frame_indices": [0, 1],
+        },
     )
     _patch_offline_hybrid_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_UNLOCALIZED)
     settings_u = make_offline_pipeline_settings()
     with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:
         mock_src.return_value.get_frames.return_value = bundle2
         job_input2 = JobInput(video_path="", mode="hybrid", input_type="video")
-        code2 = run_pipeline_sync(tmp_path, job_id2, run_id, settings=settings_u, job_input=job_input2)
+        code2 = run_pipeline_sync(
+            tmp_path, job_id2, run_id, settings=settings_u, job_input=job_input2
+        )
     assert code2 == 0
     index2 = json.loads((run_dir2 / "evidence_index.json").read_text(encoding="utf-8"))
     entities_index2 = index2.get("entities") or []
@@ -340,7 +371,9 @@ def test_e2e_evidence_localization_modes(tmp_path, monkeypatch: pytest.MonkeyPat
 # --- E) Provider wiring (no network) ---
 
 
-def test_pipeline_completes_without_gemini_client_when_executor_is_patched(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pipeline_completes_without_gemini_client_when_executor_is_patched(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Patched registry executor: pipeline completes without instantiating GeminiClient."""
     _patch_offline_hybrid_executor_from_json(monkeypatch, GLOBAL_ANALYSIS_OK)
     job_id = "e2e_patched_executor"
@@ -356,14 +389,21 @@ def test_pipeline_completes_without_gemini_client_when_executor_is_patched(tmp_p
     bundle = FramesBundle(
         frames=sorted(extract_dir.glob("*.jpg")),
         frame_refs=["frame_000000", "frame_000001"],
-        metadata={"source": "video", "frame_count": 2, "selected_by": "video_sampling", "frame_indices": [0, 1]},
+        metadata={
+            "source": "video",
+            "frame_count": 2,
+            "selected_by": "video_sampling",
+            "frame_indices": [0, 1],
+        },
     )
     settings = make_offline_pipeline_settings()
     gemini_constructor_called = []
 
     def _track_gemini(*args, **kwargs):
         gemini_constructor_called.append(1)
-        raise RuntimeError("GeminiClient must not be used when executor is injected at registry boundary")
+        raise RuntimeError(
+            "GeminiClient must not be used when executor is injected at registry boundary"
+        )
 
     with patch("src.pipeline.stages.frame_acquisition_stage.get_frame_source") as mock_src:
         mock_src.return_value.get_frames.return_value = bundle
@@ -371,7 +411,11 @@ def test_pipeline_completes_without_gemini_client_when_executor_is_patched(tmp_p
             from src.jobs.models import JobInput
 
             job_input = JobInput(video_path="", mode="hybrid", input_type="video")
-            code = run_pipeline_sync(tmp_path, job_id, "run", settings=settings, job_input=job_input)
+            code = run_pipeline_sync(
+                tmp_path, job_id, "run", settings=settings, job_input=job_input
+            )
     assert code == 0
-    assert len(gemini_constructor_called) == 0, "GeminiClient must not be instantiated when registry returns test executor"
+    assert len(gemini_constructor_called) == 0, (
+        "GeminiClient must not be instantiated when registry returns test executor"
+    )
     assert (run_dir / "hybrid_report.json").exists()

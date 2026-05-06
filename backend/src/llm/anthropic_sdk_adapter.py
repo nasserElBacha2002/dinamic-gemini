@@ -32,8 +32,9 @@ import json
 import logging
 import random
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, NoReturn, Tuple
+from typing import Any, NoReturn, cast
 
 import cv2
 import numpy as np
@@ -114,10 +115,10 @@ def _coerce_claude_response_text_to_json_string(
     raw_text: str,
     *,
     model: str,
-    extraction_meta: Dict[str, Any],
+    extraction_meta: dict[str, Any],
 ) -> str:
     """Turn assistant text into a single JSON object string; raise ``INVALID_JSON`` on failure."""
-    base_details: Dict[str, Any] = {
+    base_details: dict[str, Any] = {
         "provider": "claude",
         "phase": "response_json_extract",
         "model": model,
@@ -135,7 +136,7 @@ def _coerce_claude_response_text_to_json_string(
             },
         )
 
-    candidates: List[str] = []
+    candidates: list[str] = []
     seen: set[str] = set()
 
     def _add(c: str) -> None:
@@ -171,11 +172,11 @@ def _coerce_claude_response_text_to_json_string(
     )
 
 
-def _extract_text_and_block_meta_from_anthropic_message(message: Any) -> tuple[str, Dict[str, Any]]:
+def _extract_text_and_block_meta_from_anthropic_message(message: Any) -> tuple[str, dict[str, Any]]:
     """Concatenate assistant ``text`` blocks only; summarize all block types for logs."""
     content = getattr(message, "content", None) or []
-    block_types: List[str] = []
-    parts: List[str] = []
+    block_types: list[str] = []
+    parts: list[str] = []
     for block in content:
         if isinstance(block, dict):
             btype = str(block.get("type") or "")
@@ -188,7 +189,7 @@ def _extract_text_and_block_meta_from_anthropic_message(message: Any) -> tuple[s
             if btype == "text":
                 parts.append(str(getattr(block, "text", "") or ""))
     raw_text = "".join(parts)
-    meta: Dict[str, Any] = {
+    meta: dict[str, Any] = {
         "message_object_type": type(message).__name__,
         "block_count": len(content),
         "block_types": ",".join(block_types) if block_types else "",
@@ -197,7 +198,7 @@ def _extract_text_and_block_meta_from_anthropic_message(message: Any) -> tuple[s
     return raw_text, meta
 
 
-def _anthropic_jpeg_content_block(jpeg_bytes: bytes) -> Dict[str, Any]:
+def _anthropic_jpeg_content_block(jpeg_bytes: bytes) -> dict[str, Any]:
     """One Claude Messages API image block from JPEG bytes (shared shape for context + primary frames)."""
     b64 = base64.standard_b64encode(jpeg_bytes).decode("ascii")
     return {
@@ -218,7 +219,7 @@ def _request_id_from_anthropic_body(body: Any) -> str | None:
     return None
 
 
-def classify_anthropic_messages_api_error(exc: BaseException) -> Tuple[str, Dict[str, Any]]:
+def classify_anthropic_messages_api_error(exc: BaseException) -> tuple[str, dict[str, Any]]:
     """Map Anthropic ``messages.create`` failures to ``LLMProviderError.code`` + detail dict.
 
     Preserves ``request_id`` from JSON body when present (e.g. 529 overload responses).
@@ -226,7 +227,7 @@ def classify_anthropic_messages_api_error(exc: BaseException) -> Tuple[str, Dict
     msg = str(exc)
     msg_l = msg.lower()
     et = type(exc).__name__
-    details: Dict[str, Any] = {
+    details: dict[str, Any] = {
         "provider": "claude",
         "provider_family": "anthropic",
         "exception_class": et,
@@ -247,23 +248,22 @@ def classify_anthropic_messages_api_error(exc: BaseException) -> Tuple[str, Dict
         if rid:
             details["request_id"] = rid
 
+    # Single exit (B8.5 PLR0911); branch order matches legacy early-return classifier.
+    code = "UNKNOWN"
     if status_code == 529:
-        return "PROVIDER_OVERLOADED", details
-    if api_error_type == "overloaded_error":
-        return "PROVIDER_OVERLOADED", details
-    if "overloaded_error" in msg_l or "error code: 529" in msg_l:
-        return "PROVIDER_OVERLOADED", details
+        code = "PROVIDER_OVERLOADED"
+    elif api_error_type == "overloaded_error":
+        code = "PROVIDER_OVERLOADED"
+    elif "overloaded_error" in msg_l or "error code: 529" in msg_l:
+        code = "PROVIDER_OVERLOADED"
+    elif status_code == 429 or "429" in msg or "rate_limit" in msg_l or "rate limit" in msg_l:
+        code = "RATE_LIMIT"
+    elif status_code == 401 or "401" in msg or "authentication" in msg_l or "api_key" in msg_l:
+        code = "NOT_CONFIGURED"
+    elif "timeout" in msg_l or "timed out" in msg_l:
+        code = "TIMEOUT"
 
-    if status_code == 429 or "429" in msg or "rate_limit" in msg_l or "rate limit" in msg_l:
-        return "RATE_LIMIT", details
-
-    if status_code == 401 or "401" in msg or "authentication" in msg_l or "api_key" in msg_l:
-        return "NOT_CONFIGURED", details
-
-    if "timeout" in msg_l or "timed out" in msg_l:
-        return "TIMEOUT", details
-
-    return "UNKNOWN", details
+    return code, details
 
 
 def _is_retryable_anthropic_classified_code(code: str) -> bool:
@@ -287,13 +287,150 @@ def _raise_llm_error_from_messages_api_exception(
     raise LLMProviderError(code=code, message=str(exc), details=details) from exc
 
 
-def _parsed_v21_from_json_text(cleaned: str, *, error_context: Dict[str, Any] | None = None) -> dict:
+def _anthropic_load_frames_nd(request: LLMRequest) -> list[np.ndarray]:
+    """Load primary frames from ndarray buffers or disk paths (same behavior as pre-B8.5 inline block)."""
+    if request.frames_nd and len(request.frames_nd) > 0:
+        return [np.asarray(f) for f in request.frames_nd]
+    frames_nd: list[np.ndarray] = []
+    for p in request.frames:
+        img = cv2.imread(str(p))
+        if img is not None:
+            frames_nd.append(img)
+    return frames_nd
+
+
+def _anthropic_build_message_content(
+    request: LLMRequest,
+    settings: Any,
+    frames_nd: list[np.ndarray],
+    max_side: int,
+    *,
+    effective_model: str,
+) -> list[dict[str, Any]]:
+    meta = request.metadata or {}
+    prompt_parity_mode = bool(meta.get(LLM_METADATA_KEY_PROMPT_PARITY_MODE))
+    use_request_prompt = (
+        request.prompt.strip() if (request.prompt and request.prompt.strip()) else None
+    )
+    prompt_text = (
+        use_request_prompt
+        if use_request_prompt is not None
+        else compose_hybrid_base_from_settings(
+            settings, pipeline_provider_key="claude", prompt_parity_mode=prompt_parity_mode
+        )
+    )
+    if request.context_instruction and str(request.context_instruction).strip():
+        prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text
+    prompt_text = prompt_text + _JSON_OBJECT_SUFFIX
+
+    content: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
+    ctx_imgs = list(request.context_images) if request.context_images else []
+    for im in ctx_imgs:
+        content.append(_anthropic_jpeg_content_block(_image_to_jpeg_bytes(im, max_side)))
+    for nd in frames_nd:
+        content.append(_anthropic_jpeg_content_block(_bgr_to_jpeg_bytes(nd, max_side)))
+
+    image_blocks = sum(1 for b in content if b.get("type") == "image")
+    logger.info(
+        "Claude phase=api_request_ready model=%s provider_family=anthropic "
+        "context_images=%d primary_frames=%d total_image_attachments=%d text_blocks=1",
+        effective_model,
+        len(ctx_imgs),
+        len(frames_nd),
+        image_blocks,
+    )
+    return content
+
+
+@dataclass(frozen=True)
+class _AnthropicMessagesInvokeParams:
+    """Internal bundle for ``messages.create`` retry loop (B8.5 PLR0913)."""
+
+    effective_model: str
+    max_tokens: int
+    content: list[dict[str, Any]]
+    max_attempts: int
+    base_delay: float
+
+
+def _anthropic_invoke_messages_with_retries(
+    client: Any,
+    params: _AnthropicMessagesInvokeParams,
+) -> tuple[Any, int]:
+    """Call ``messages.create`` with retry policy; returns (message, total_attempt_window_ms)."""
+    t_cycle_start = time.perf_counter()
+    message = None
+    for attempt in range(params.max_attempts):
+        try:
+            logger.debug(
+                "Claude phase=api_invoke model=%s attempt=%d/%d",
+                params.effective_model,
+                attempt + 1,
+                params.max_attempts,
+            )
+            message = client.messages.create(
+                model=params.effective_model,
+                max_tokens=params.max_tokens,
+                messages=cast(Any, [{"role": "user", "content": params.content}]),
+            )
+            break
+        except Exception as e:
+            code, det = classify_anthropic_messages_api_error(e)
+            retryable = _is_retryable_anthropic_classified_code(code)
+            can_retry = retryable and attempt < params.max_attempts - 1
+            logger.warning(
+                "Claude phase=api_invoke failed model=%s code=%s http_status=%s "
+                "api_error_type=%s request_id=%s attempt=%d/%d retryable=%s",
+                params.effective_model,
+                code,
+                det.get("http_status"),
+                det.get("api_error_type"),
+                det.get("request_id"),
+                attempt + 1,
+                params.max_attempts,
+                retryable,
+            )
+            if not can_retry:
+                _raise_llm_error_from_messages_api_exception(
+                    e,
+                    model=params.effective_model,
+                    phase="api_invoke",
+                    attempt_index=attempt,
+                    max_attempts=params.max_attempts,
+                )
+            delay = params.base_delay * (2**attempt) + random.uniform(0.0, _RETRY_JITTER_SEC)
+            logger.info(
+                "Claude phase=api_invoke backing_off_sec=%.2f next_attempt=%d/%d",
+                delay,
+                attempt + 2,
+                params.max_attempts,
+            )
+            time.sleep(delay)
+
+    if message is None:
+        raise LLMProviderError(
+            code="UNKNOWN",
+            message="Claude messages.create returned no response after retries",
+            details={
+                "provider": "claude",
+                "model": params.effective_model,
+                "phase": "api_invoke",
+            },
+        )
+
+    total_attempt_window_ms = int((time.perf_counter() - t_cycle_start) * 1000)
+    return message, total_attempt_window_ms
+
+
+def _parsed_v21_from_json_text(
+    cleaned: str, *, error_context: dict[str, Any] | None = None
+) -> dict:
     """Parse model JSON text, align ``total_entities_detected`` with ``entities`` length, validate v2.1."""
-    ctx: Dict[str, Any] = {"provider": "claude", "phase": "response_parse"}
+    ctx: dict[str, Any] = {"provider": "claude", "phase": "response_parse"}
     if error_context:
         ctx.update(error_context)
     try:
-        data = json.loads(cleaned)
+        parsed = json.loads(cleaned)
     except json.JSONDecodeError as e:
         logger.warning(
             "Claude global analysis: response_parse invalid JSON model=%s preview=%r err=%s",
@@ -306,6 +443,13 @@ def _parsed_v21_from_json_text(cleaned: str, *, error_context: Dict[str, Any] | 
             message=f"Invalid JSON: {e}",
             details={**ctx, "parse_failure": str(e)},
         ) from e
+    if not isinstance(parsed, dict):
+        raise LLMProviderError(
+            code="INVALID_JSON",
+            message="Global analysis response must be a JSON object",
+            details={**ctx, "parse_failure": "root_not_object"},
+        )
+    data = parsed
 
     total = data.get("total_entities_detected")
     entities = data.get("entities") or []
@@ -325,7 +469,7 @@ def _parsed_v21_from_json_text(cleaned: str, *, error_context: Dict[str, Any] | 
             message=str(e),
             details={**ctx, "phase": "schema_validate"},
         ) from e
-    return data
+    return cast(dict[str, Any], data)
 
 
 def _bgr_to_jpeg_bytes(arr: np.ndarray, max_side: int) -> bytes:
@@ -371,15 +515,21 @@ def _image_to_jpeg_bytes(obj: Any, max_side: int) -> bytes:
     return _pil_to_jpeg_bytes(obj, max_side)
 
 
-def _anthropic_message_usage_dict(message: Any) -> Dict[str, Any]:
-    """Serialize Anthropic ``Usage`` (cache read/create, server tools) for costing normalization."""
+def _anthropic_message_usage_dict(message: Any) -> dict[str, Any]:
+    """Serialize Anthropic message usage as a plain ``dict`` for ``normalize_usage``.
+
+    Top-level ``usage.model_dump()`` must return a ``dict`` or the result is empty. For nested
+    fields, only ``dict`` results from ``model_dump`` are stored; non-dict dumps are omitted so
+    usage snapshots remain JSON-serializable (no raw SDK objects).
+    """
     u = getattr(message, "usage", None)
     if u is None:
         return {}
     model_dump = getattr(u, "model_dump", None)
     if callable(model_dump):
-        return model_dump(exclude_none=True)
-    out: Dict[str, Any] = {}
+        dumped = model_dump(exclude_none=True)
+        return cast(dict[str, Any], dumped) if isinstance(dumped, dict) else {}
+    out: dict[str, Any] = {}
     for key in (
         "input_tokens",
         "output_tokens",
@@ -394,7 +544,9 @@ def _anthropic_message_usage_dict(message: Any) -> Dict[str, Any]:
             continue
         nested_dump = getattr(val, "model_dump", None)
         if callable(nested_dump):
-            out[key] = nested_dump(exclude_none=True)
+            nd = nested_dump(exclude_none=True)
+            if isinstance(nd, dict):
+                out[key] = nd
         else:
             out[key] = val
     return out
@@ -429,7 +581,6 @@ class AnthropicSdkAdapter:
             )
 
         meta = request.metadata or {}
-        prompt_parity_mode = bool(meta.get(LLM_METADATA_KEY_PROMPT_PARITY_MODE))
         job_model = (meta.get("claude_model_name") or "").strip()
         effective_model = job_model or (getattr(settings, "anthropic_model", "") or "").strip()
         if not effective_model:
@@ -441,113 +592,39 @@ class AnthropicSdkAdapter:
         max_attempts = int(getattr(settings, "anthropic_max_retries", 4))
         base_delay = float(getattr(settings, "anthropic_retry_base_delay_sec", 1.0))
 
-        if request.frames_nd and len(request.frames_nd) > 0:
-            frames_nd: List[np.ndarray] = [np.asarray(f) for f in request.frames_nd]
-        else:
-            frames_nd = []
-            for p in request.frames:
-                img = cv2.imread(str(p))
-                if img is not None:
-                    frames_nd.append(img)
+        frames_nd = _anthropic_load_frames_nd(request)
         if not frames_nd:
             raise LLMProviderError(
                 code="NO_FRAMES",
                 message="No frames could be loaded",
-                details={"paths_count": len(request.frames), "provider": "claude", "phase": "input"},
+                details={
+                    "paths_count": len(request.frames),
+                    "provider": "claude",
+                    "phase": "input",
+                },
             )
 
-        use_request_prompt = (
-            request.prompt.strip() if (request.prompt and request.prompt.strip()) else None
-        )
-        prompt_text = (
-            use_request_prompt
-            if use_request_prompt is not None
-            else compose_hybrid_base_from_settings(
-                settings, pipeline_provider_key="claude", prompt_parity_mode=prompt_parity_mode
-            )
-        )
-        if request.context_instruction and str(request.context_instruction).strip():
-            prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text
-        prompt_text = prompt_text + _JSON_OBJECT_SUFFIX
-
-        content: List[Dict[str, Any]] = [{"type": "text", "text": prompt_text}]
-        ctx_imgs = list(request.context_images) if request.context_images else []
-        # TODO: overload mitigation — optional reduction of context image count or quality after
-        # repeated PROVIDER_OVERLOADED (requires policy + metrics; high attachment counts stress API).
-        for im in ctx_imgs:
-            content.append(_anthropic_jpeg_content_block(_image_to_jpeg_bytes(im, max_side)))
-        for nd in frames_nd:
-            content.append(_anthropic_jpeg_content_block(_bgr_to_jpeg_bytes(nd, max_side)))
-
-        image_blocks = sum(1 for b in content if b.get("type") == "image")
-        logger.info(
-            "Claude phase=api_request_ready model=%s provider_family=anthropic "
-            "context_images=%d primary_frames=%d total_image_attachments=%d text_blocks=1",
-            effective_model,
-            len(ctx_imgs),
-            len(frames_nd),
-            image_blocks,
+        content = _anthropic_build_message_content(
+            request,
+            settings,
+            frames_nd,
+            max_side,
+            effective_model=effective_model,
         )
 
         client = Anthropic(api_key=api_key, timeout=timeout)
-        t_cycle_start = time.perf_counter()
-        message = None
-        for attempt in range(max_attempts):
-            try:
-                logger.debug(
-                    "Claude phase=api_invoke model=%s attempt=%d/%d",
-                    effective_model,
-                    attempt + 1,
-                    max_attempts,
-                )
-                message = client.messages.create(
-                    model=effective_model,
-                    max_tokens=max_tokens,
-                    messages=[{"role": "user", "content": content}],
-                )
-                break
-            except Exception as e:
-                code, det = classify_anthropic_messages_api_error(e)
-                retryable = _is_retryable_anthropic_classified_code(code)
-                can_retry = retryable and attempt < max_attempts - 1
-                logger.warning(
-                    "Claude phase=api_invoke failed model=%s code=%s http_status=%s "
-                    "api_error_type=%s request_id=%s attempt=%d/%d retryable=%s",
-                    effective_model,
-                    code,
-                    det.get("http_status"),
-                    det.get("api_error_type"),
-                    det.get("request_id"),
-                    attempt + 1,
-                    max_attempts,
-                    retryable,
-                )
-                if not can_retry:
-                    _raise_llm_error_from_messages_api_exception(
-                        e,
-                        model=effective_model,
-                        phase="api_invoke",
-                        attempt_index=attempt,
-                        max_attempts=max_attempts,
-                    )
-                delay = base_delay * (2**attempt) + random.uniform(0.0, _RETRY_JITTER_SEC)
-                logger.info(
-                    "Claude phase=api_invoke backing_off_sec=%.2f next_attempt=%d/%d",
-                    delay,
-                    attempt + 2,
-                    max_attempts,
-                )
-                time.sleep(delay)
-
-        if message is None:
-            raise LLMProviderError(
-                code="UNKNOWN",
-                message="Claude messages.create returned no response after retries",
-                details={"provider": "claude", "model": effective_model, "phase": "api_invoke"},
-            )
+        message, total_attempt_window_ms = _anthropic_invoke_messages_with_retries(
+            client,
+            _AnthropicMessagesInvokeParams(
+                effective_model=effective_model,
+                max_tokens=max_tokens,
+                content=content,
+                max_attempts=max_attempts,
+                base_delay=base_delay,
+            ),
+        )
 
         # Wall time from first attempt through last successful HTTP response (includes prior failures + backoff).
-        total_attempt_window_ms = int((time.perf_counter() - t_cycle_start) * 1000)
         raw_text, block_meta = _extract_text_and_block_meta_from_anthropic_message(message)
 
         logger.info(

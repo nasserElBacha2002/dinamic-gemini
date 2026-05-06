@@ -25,12 +25,20 @@ import json
 import logging
 import os
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any
 
 from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from src.config import load_settings
+from src.infrastructure.artifacts.stored_artifact_reader import (
+    StoredArtifactAccessError,
+    cast_mapping,
+    ensure_s3_bucket_matches_configured,
+    fetch_json_from_durable_meta,
+    provider_meta_complete,
+)
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
     DURABLE_ARTIFACT_KIND_EXECUTION_LOG,
@@ -41,26 +49,6 @@ from src.pipeline.execution_log import read_execution_log, read_execution_log_fi
 logger = logging.getLogger(__name__)
 
 
-class StoredArtifactAccessError(Exception):
-    """Resolution failed; map to HTTP in the route."""
-
-    def __init__(self, status_code: int, detail: str, reason_code: str):
-        super().__init__(detail)
-        self.status_code = int(status_code)
-        self.detail = detail
-        self.reason_code = reason_code
-
-
-def _provider_meta_complete(meta: Mapping[str, Any]) -> bool:
-    prov = (meta.get("storage_provider") or "").strip().lower()
-    key = (meta.get("storage_key") or "").strip()
-    if not prov or not key:
-        return False
-    if prov == "s3":
-        return bool((meta.get("storage_bucket") or "").strip())
-    return True
-
-
 def _provider_meta_has_any_fields(meta: Mapping[str, Any]) -> bool:
     """True when any provider-aware field is present (including incomplete values)."""
     return bool(
@@ -68,19 +56,6 @@ def _provider_meta_has_any_fields(meta: Mapping[str, Any]) -> bool:
         or (meta.get("storage_key") or "").strip()
         or (meta.get("storage_bucket") or "").strip()
     )
-
-
-def _ensure_s3_bucket_matches_configured(meta: Mapping[str, Any], artifact_store: Any) -> None:
-    configured = (getattr(artifact_store, "bucket", None) or "").strip()
-    record_bucket = (meta.get("storage_bucket") or "").strip()
-    if not configured or not record_bucket:
-        return
-    if record_bucket != configured:
-        raise StoredArtifactAccessError(
-            409,
-            f"Artifact bucket metadata does not match configured bucket (record={record_bucket!r}).",
-            "bucket_mismatch",
-        )
 
 
 def _local_provider_resolved_file_path(*, storage_key: str) -> Path:
@@ -152,7 +127,7 @@ def _legacy_v3_uploads_resolved_file_path(*, storage_path: str) -> Path:
 def presigned_s3_get_url_for_provider_key(
     *,
     storage_key: str,
-    storage_bucket: Optional[str],
+    storage_bucket: str | None,
     artifact_store: Any,
 ) -> str:
     """Generate a presigned GET URL for S3-backed ``storage_key`` (after bucket validation)."""
@@ -169,7 +144,7 @@ def presigned_s3_get_url_for_provider_key(
         "storage_bucket": storage_bucket,
         "storage_key": key,
     }
-    _ensure_s3_bucket_matches_configured(meta_dict, artifact_store)
+    ensure_s3_bucket_matches_configured(meta_dict, artifact_store)
     sign = getattr(artifact_store, "generate_signed_url", None)
     if not callable(sign):
         raise StoredArtifactAccessError(
@@ -204,7 +179,7 @@ def serve_provider_artifact_response(
     media_type: str,
     storage_provider: str,
     storage_key: str,
-    storage_bucket: Optional[str],
+    storage_bucket: str | None,
     artifact_store: Any,
 ) -> Response:
     """Return redirect (S3) or FileResponse (local) for a provider-backed object."""
@@ -222,7 +197,7 @@ def serve_provider_artifact_response(
         "storage_bucket": storage_bucket,
         "storage_key": key,
     }
-    _ensure_s3_bucket_matches_configured(meta_dict, artifact_store)
+    ensure_s3_bucket_matches_configured(meta_dict, artifact_store)
 
     if prov == "s3":
         url = presigned_s3_get_url_for_provider_key(
@@ -292,7 +267,7 @@ def resolve_source_asset_file_response(
     }
 
     if _provider_meta_has_any_fields(provider_meta):
-        if not _provider_meta_complete(provider_meta):
+        if not provider_meta_complete(provider_meta):
             raise StoredArtifactAccessError(
                 404,
                 "Source asset storage metadata is incomplete for provider-backed access.",
@@ -318,7 +293,7 @@ def resolve_source_asset_image_display(
     asset: Any,
     *,
     artifact_store: Any,
-) -> tuple[Optional[str], bool]:
+) -> tuple[str | None, bool]:
     """Resolve how the SPA should display a non-HEIC source asset image.
 
     Returns ``(image_url, requires_authenticated_fetch)``:
@@ -343,7 +318,7 @@ def resolve_source_asset_image_display(
     }
 
     if _provider_meta_has_any_fields(provider_meta):
-        if not _provider_meta_complete(provider_meta):
+        if not provider_meta_complete(provider_meta):
             raise StoredArtifactAccessError(
                 404,
                 "Source asset storage metadata is incomplete for provider-backed access.",
@@ -388,7 +363,7 @@ def resolve_visual_reference_file_response(
     }
 
     if _provider_meta_has_any_fields(provider_meta):
-        if not _provider_meta_complete(provider_meta):
+        if not provider_meta_complete(provider_meta):
             raise StoredArtifactAccessError(
                 404,
                 "Visual reference storage metadata is incomplete for provider-backed access.",
@@ -410,191 +385,24 @@ def resolve_visual_reference_file_response(
     )
 
 
-def load_artifact_content_from_provider_meta(
-    meta: Mapping[str, Any],
-    *,
-    artifact_store: Any,
-    label: str,
-    hard_max_bytes: Optional[int] = None,
-) -> bytes:
-    """Load raw bytes using provider metadata.
-
-    Without ``hard_max_bytes``, chooses ``get_object`` vs ``download_to_path`` using
-    ``artifact_store_max_in_memory_get_bytes`` and may load arbitrarily large objects.
-
-    With ``hard_max_bytes`` (e.g. JSON durable payloads), rejects objects larger than the cap
-    **before** reading the full body into memory when ``object_size_bytes`` succeeds; when
-    size is unknown, downloads to a tempfile, checks ``stat().st_size``, and raises without
-    ``read_bytes`` if over the cap.
-    """
-    if not _provider_meta_complete(meta):
-        raise StoredArtifactAccessError(
-            404,
-            f"{label}: incomplete storage metadata (provider, key, and for S3 a bucket are required).",
-            "incomplete_metadata",
-        )
-    _ensure_s3_bucket_matches_configured(meta, artifact_store)
-    key = (meta.get("storage_key") or "").strip()
-    prov = (meta.get("storage_provider") or "").strip().lower()
-    bucket = (meta.get("storage_bucket") or "").strip() or None
-    dl_bucket = bucket if prov == "s3" else None
-    settings = load_settings()
-    mem_threshold = int(settings.artifact_store_max_in_memory_get_bytes)
-
-    size_known: Optional[int] = None
-    try:
-        size_known = int(artifact_store.object_size_bytes(key, bucket=dl_bucket))
-    except Exception as head_exc:
-        logger.warning(
-            "%s object_size_bytes failed storage_key=%s provider=%s: %s",
-            label,
-            key,
-            prov,
-            head_exc,
-        )
-
-    if hard_max_bytes is not None and size_known is not None and size_known > hard_max_bytes:
-        logger.info(
-            "%s payload_too_large (head) provider=%s bucket=%s storage_key=%s size=%s max=%s",
-            label,
-            prov,
-            bucket or "",
-            key,
-            size_known,
-            hard_max_bytes,
-        )
-        raise StoredArtifactAccessError(
-            413,
-            f"{label} exceeds configured max load size ({hard_max_bytes} bytes).",
-            "payload_too_large",
-        )
-
-    def _get_object_bytes() -> bytes:
-        try:
-            downloaded = artifact_store.get_object(key)
-        except Exception as exc:
-            logger.exception(
-                "%s durable_fetch_failed mode=get_object provider=%s bucket=%s storage_key=%s",
-                label,
-                prov,
-                bucket or "",
-                key,
-            )
-            raise StoredArtifactAccessError(
-                502,
-                f"{label} could not be loaded from object storage (missing object or read error).",
-                "durable_fetch_failed",
-            ) from exc
-        data = downloaded.content
-        if hard_max_bytes is not None and len(data) > hard_max_bytes:
-            raise StoredArtifactAccessError(
-                413,
-                f"{label} exceeds configured max load size ({hard_max_bytes} bytes).",
-                "payload_too_large",
-            )
-        logger.info(
-            "%s artifact_bytes_loaded mode=get_object provider=%s bucket=%s storage_key=%s bytes=%s",
-            label,
-            prov,
-            bucket or "",
-            key,
-            len(data),
-        )
-        return data
-
-    def _download_via_tempfile() -> bytes:
-        fd, tmp_name = tempfile.mkstemp(prefix="artifact_", suffix=".bin")
-        os.close(fd)
-        tmp_path = Path(tmp_name)
-        try:
-            artifact_store.download_to_path(key, tmp_path, bucket=dl_bucket)
-        except Exception as exc:
-            tmp_path.unlink(missing_ok=True)
-            logger.exception(
-                "%s durable_fetch_failed mode=download_to_path provider=%s bucket=%s storage_key=%s",
-                label,
-                prov,
-                bucket or "",
-                key,
-            )
-            raise StoredArtifactAccessError(
-                502,
-                f"{label} could not be loaded from object storage (missing object or read error).",
-                "durable_fetch_failed",
-            ) from exc
-        try:
-            on_disk = int(tmp_path.stat().st_size)
-            if hard_max_bytes is not None and on_disk > hard_max_bytes:
-                logger.info(
-                    "%s payload_too_large (on_disk) provider=%s storage_key=%s size=%s max=%s",
-                    label,
-                    prov,
-                    key,
-                    on_disk,
-                    hard_max_bytes,
-                )
-                raise StoredArtifactAccessError(
-                    413,
-                    f"{label} exceeds configured max load size ({hard_max_bytes} bytes).",
-                    "payload_too_large",
-                )
-            data = tmp_path.read_bytes()
-        finally:
-            tmp_path.unlink(missing_ok=True)
-        logger.info(
-            "%s artifact_bytes_loaded mode=download_temp provider=%s bucket=%s storage_key=%s bytes=%s",
-            label,
-            prov,
-            bucket or "",
-            key,
-            len(data),
-        )
-        return data
-
-    if hard_max_bytes is not None:
-        if size_known is not None:
-            if size_known <= mem_threshold:
-                return _get_object_bytes()
-            return _download_via_tempfile()
-        logger.info(
-            "%s json_load size_unknown will_download_then_stat storage_key=%s max=%s",
-            label,
-            key,
-            hard_max_bytes,
-        )
-        return _download_via_tempfile()
-
-    if size_known is not None and 0 <= size_known <= mem_threshold:
-        return _get_object_bytes()
-    if size_known is not None and size_known > mem_threshold:
-        return _download_via_tempfile()
-
-    logger.warning(
-        "%s object_size_bytes unavailable; using download_temp storage_key=%s",
-        label,
-        key,
-    )
-    return _download_via_tempfile()
-
-
 def read_execution_log_events_for_job(
     job: Any,
     *,
     artifact_store: Any,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     settings = load_settings()
     rj = getattr(job, "result_json", None) or {}
     durable = rj.get("durable_artifacts") or {}
     meta = durable.get(DURABLE_ARTIFACT_KIND_EXECUTION_LOG)
-    if meta is not None and not _provider_meta_complete(meta):
+    if meta is not None and not provider_meta_complete(meta):
         raise StoredArtifactAccessError(
             404,
             "Execution log durable artifact metadata is incomplete (missing provider, key, or bucket).",
             "incomplete_metadata",
         )
 
-    if meta and _provider_meta_complete(meta):
-        _ensure_s3_bucket_matches_configured(meta, artifact_store)
+    if meta and provider_meta_complete(meta):
+        ensure_s3_bucket_matches_configured(meta, artifact_store)
         prov = (meta.get("storage_provider") or "").strip().lower()
         key = (meta.get("storage_key") or "").strip()
         bucket = (meta.get("storage_bucket") or "").strip() or None
@@ -646,108 +454,23 @@ def read_execution_log_events_for_job(
     return read_execution_log(run_dir)
 
 
-def fetch_json_from_durable_meta(
-    meta: Mapping[str, Any],
-    *,
-    artifact_store: Any,
-    label: str,
-) -> Dict[str, Any]:
-    settings = load_settings()
-    max_json = int(settings.artifact_store_max_json_load_bytes)
-    raw = load_artifact_content_from_provider_meta(
-        meta,
-        artifact_store=artifact_store,
-        label=label,
-        hard_max_bytes=max_json,
-    )
-    try:
-        return json.loads(raw.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise StoredArtifactAccessError(
-            502,
-            f"{label} payload is not valid JSON.",
-            "invalid_json",
-        ) from exc
-
-
-def load_hybrid_report_json_for_job(
-    job_id: str,
-    *,
-    job: Optional[Any] = None,
-    job_repo: Any,
-    artifact_store: Any,
-) -> Optional[Dict[str, Any]]:
-    """Load hybrid_report dict: durable metadata first, then legacy disk when allowed.
-
-    Used for best-effort enrichment (returns None on failure). For strict API semantics use
-    :func:`load_hybrid_report_json_for_api`.
-    """
-    settings = load_settings()
-    j = job if job is not None else job_repo.get_by_id(job_id)
-    if j is None:
-        return None
-    durable = (getattr(j, "result_json", None) or {}).get("durable_artifacts") or {}
-    meta = durable.get(DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON)
-    if meta and _provider_meta_complete(meta):
-        try:
-            data = fetch_json_from_durable_meta(
-                cast_mapping(meta),
-                artifact_store=artifact_store,
-                label="hybrid_report",
-            )
-            logger.info(
-                "hybrid_report_resolve source=durable_metadata job_id=%s storage_key=%s",
-                job_id,
-                meta.get("storage_key"),
-            )
-            return data
-        except StoredArtifactAccessError as e:
-            logger.warning(
-                "hybrid_report_resolve durable_failed job_id=%s reason=%s",
-                job_id,
-                e.reason_code,
-            )
-
-    if not settings.artifact_storage_legacy_local_read_enabled:
-        return None
-    path = Path(settings.output_dir) / job_id / RUN_ID / "hybrid_report.json"
-    if not path.is_file():
-        return None
-    try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        logger.info(
-            "hybrid_report_resolve source=legacy_local path=%s job_id=%s",
-            str(path),
-            job_id,
-        )
-        return data if isinstance(data, dict) else None
-    except Exception as exc:
-        logger.debug("hybrid_report legacy load failed job_id=%s: %s", job_id, exc)
-        return None
-
-
-def cast_mapping(meta: Any) -> Mapping[str, Any]:
-    return meta if isinstance(meta, Mapping) else {}
-
-
 def load_hybrid_report_json_for_api(
     job: Any,
     *,
     artifact_store: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Strict load for GET hybrid-report: durable required when present and complete; else legacy."""
     settings = load_settings()
     job_id = getattr(job, "id", "")
     durable = (getattr(job, "result_json", None) or {}).get("durable_artifacts") or {}
     meta = durable.get(DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON)
-    if meta is not None and not _provider_meta_complete(cast_mapping(meta)):
+    if meta is not None and not provider_meta_complete(cast_mapping(meta)):
         raise StoredArtifactAccessError(
             404,
             "Hybrid report durable artifact metadata is incomplete (missing provider, key, or bucket).",
             "incomplete_metadata",
         )
-    if meta and _provider_meta_complete(cast_mapping(meta)):
+    if meta and provider_meta_complete(cast_mapping(meta)):
         data = fetch_json_from_durable_meta(
             cast_mapping(meta),
             artifact_store=artifact_store,

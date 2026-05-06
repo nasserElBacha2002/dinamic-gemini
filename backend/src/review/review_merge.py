@@ -1,12 +1,11 @@
 """Stage 2.1.E — Merge report with reviews and recompute summary."""
 
-from typing import Any, Dict, List
-
+from typing import Any
 
 ACTIONS = ("SET_COUNT", "MARK_EMPTY", "MARK_INVALID")
 
 
-def _summary_from_entity_dicts(entities: List[Dict[str, Any]]) -> Dict[str, int]:
+def _summary_from_entity_dicts(entities: list[dict[str, Any]]) -> dict[str, int]:
     """Recompute summary from list of entity dicts (with count_status, entity_type)."""
     summary = {
         "total_entities": len(entities),
@@ -43,7 +42,7 @@ def _summary_from_entity_dicts(entities: List[Dict[str, Any]]) -> Dict[str, int]
     return summary
 
 
-def _apply_event_to_entity(entity: Dict[str, Any], event: Dict[str, Any]) -> None:
+def _apply_event_to_entity(entity: dict[str, Any], event: dict[str, Any]) -> None:
     """Mutate entity with after state from event."""
     after = event.get("after")
     if not isinstance(after, dict):
@@ -54,7 +53,7 @@ def _apply_event_to_entity(entity: Dict[str, Any], event: Dict[str, Any]) -> Non
         entity["final_quantity"] = after["final_quantity"]
 
 
-def merge_resolved_report(report: Dict[str, Any], reviews: Dict[str, Any]) -> Dict[str, Any]:
+def merge_resolved_report(report: dict[str, Any], reviews: dict[str, Any]) -> dict[str, Any]:
     """Merge review overrides into report and recompute summary. Does not mutate report.
 
     reviews: dict from load_reviews (entity_uid -> { entity_uid, events }).
@@ -64,7 +63,9 @@ def merge_resolved_report(report: Dict[str, Any], reviews: Dict[str, Any]) -> Di
     report = dict(report)
     entities = list(report.get("entities") or [])
     report["entities"] = entities
-    entity_by_uid: Dict[str, Dict[str, Any]] = {e.get("entity_uid"): e for e in entities if e.get("entity_uid")}
+    entity_by_uid: dict[str, dict[str, Any]] = {
+        e.get("entity_uid"): e for e in entities if e.get("entity_uid")
+    }
 
     for entity_uid, rec in (reviews or {}).items():
         if not isinstance(rec, dict):

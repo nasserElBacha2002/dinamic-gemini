@@ -1,19 +1,11 @@
 /**
  * App snackbar — Re diseño 3.3 §14.4; Sprint 5.2: default transient success feedback for mutations.
- * Use `useAppSnackbar()` from screens; keep `ErrorAlert` for failed queries and sticky action errors.
+ * Use `useAppSnackbar()` from `./useAppSnackbar`; keep `ErrorAlert` for failed queries and sticky action errors.
  */
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Alert, Snackbar } from '@mui/material';
-
-export type AppSnackbarSeverity = 'success' | 'error' | 'warning' | 'info';
+import { AppSnackbarContext, type AppSnackbarSeverity } from './appSnackbarContext';
 
 interface AppSnackbarState {
   open: boolean;
@@ -26,13 +18,6 @@ const initialState: AppSnackbarState = {
   message: '',
   severity: 'info',
 };
-
-interface AppSnackbarContextValue {
-  showSnackbar: (message: string, severity?: AppSnackbarSeverity) => void;
-  closeSnackbar: () => void;
-}
-
-const AppSnackbarContext = createContext<AppSnackbarContextValue | null>(null);
 
 export function AppSnackbarProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppSnackbarState>(initialState);
@@ -65,12 +50,4 @@ export function AppSnackbarProvider({ children }: { children: ReactNode }) {
       </Snackbar>
     </AppSnackbarContext.Provider>
   );
-}
-
-export function useAppSnackbar(): AppSnackbarContextValue {
-  const ctx = useContext(AppSnackbarContext);
-  if (!ctx) {
-    throw new Error('useAppSnackbar must be used within AppSnackbarProvider');
-  }
-  return ctx;
 }

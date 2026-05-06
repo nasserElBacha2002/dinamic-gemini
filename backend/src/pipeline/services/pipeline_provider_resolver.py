@@ -24,10 +24,10 @@ LLM harness can pass duck-typed objects. ``normalize_pipeline_provider_key`` rea
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
-from src.pipeline.provider_keys import normalize_pipeline_provider_key
 from src.pipeline.ports.llm_execution import LlmGlobalAnalysisExecutor
+from src.pipeline.provider_keys import normalize_pipeline_provider_key
 from src.pipeline.providers.registry import resolve_llm_executor
 
 
@@ -40,7 +40,7 @@ class ResolvedPipelineExecution:
 
 
 def resolve_llm_executor_for_context(
-    pipeline_provider_name: Optional[str],
+    pipeline_provider_name: str | None,
     settings: Any,
 ) -> tuple[LlmGlobalAnalysisExecutor, str]:
     """
@@ -65,7 +65,7 @@ class PipelineProviderResolver:
     @staticmethod
     def resolve_for_run(
         *,
-        pipeline_provider_name: Optional[str],
+        pipeline_provider_name: str | None,
         settings: Any,
     ) -> ResolvedPipelineExecution:
         """Resolve executor + key (see :func:`resolve_llm_executor_for_context` for ``settings`` typing note)."""
@@ -74,7 +74,7 @@ class PipelineProviderResolver:
 
     @staticmethod
     def effective_provider_key(
-        pipeline_provider_name: Optional[str],
+        pipeline_provider_name: str | None,
         settings: Any,
     ) -> str:
         """Return the normalized logical provider key without instantiating an executor."""

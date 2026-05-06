@@ -165,7 +165,7 @@ describe('QuickReviewDrawer', () => {
     await waitFor(() => {
       expect(showSnackbarMock).toHaveBeenCalledTimes(1);
     });
-    expect(showSnackbarMock).toHaveBeenCalledWith('Flagged wrong image (traceability)', 'success');
+    expect(showSnackbarMock).toHaveBeenCalledWith('Snackbar image mismatch', 'success');
   });
 
   it('confirm result triggers exactly one mutation request', async () => {
@@ -187,7 +187,7 @@ describe('QuickReviewDrawer', () => {
     await waitFor(() => {
       expect(showSnackbarMock).toHaveBeenCalledTimes(1);
     });
-    expect(showSnackbarMock).toHaveBeenCalledWith('Result confirmed', 'success');
+    expect(showSnackbarMock).toHaveBeenCalledWith('Snackbar confirmed', 'success');
   });
 
   it('rapid double-click confirm still triggers only one mutation', async () => {
@@ -228,7 +228,7 @@ describe('QuickReviewDrawer', () => {
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
     fireEvent.click(screen.getByRole('button', { name: /Correct quantity/i }));
-    fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '5' } });
+    fireEvent.change(screen.getByPlaceholderText(/qty placeholder/i), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
     expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
     expect(reviewMutateAsync).toHaveBeenCalledWith({
@@ -238,7 +238,7 @@ describe('QuickReviewDrawer', () => {
     await waitFor(() => {
       expect(showSnackbarMock).toHaveBeenCalledTimes(1);
     });
-    expect(showSnackbarMock).toHaveBeenCalledWith('Quantity updated', 'success');
+    expect(showSnackbarMock).toHaveBeenCalledWith('Snackbar qty updated', 'success');
   });
 
   it('update SKU triggers exactly one mutation request', async () => {
@@ -264,7 +264,7 @@ describe('QuickReviewDrawer', () => {
     await waitFor(() => {
       expect(showSnackbarMock).toHaveBeenCalledTimes(1);
     });
-    expect(showSnackbarMock).toHaveBeenCalledWith('SKU updated', 'success');
+    expect(showSnackbarMock).toHaveBeenCalledWith('Snackbar sku updated', 'success');
   });
 
   it('mark invalid confirm shows inline error in dialog when mutation fails', async () => {
@@ -282,8 +282,8 @@ describe('QuickReviewDrawer', () => {
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
     fireEvent.click(screen.getByRole('button', { name: /Mark result invalid/i }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Mark invalid' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/Not allowed|could not complete/i);
+    fireEvent.click(within(dialog).getByRole('button', { name: /mark invalid cta/i }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/forbidden|something went wrong|not allowed|could not complete/i);
     expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
     expect(reviewMutateAsync).toHaveBeenCalledWith({ action_type: 'delete_position' });
   });
@@ -318,7 +318,7 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    expect(screen.getByText('Evidence')).toBeInTheDocument();
+    expect(screen.getByText('Evidence section')).toBeInTheDocument();
     expect(screen.getByText(/IMG_1024.JPG/)).toBeInTheDocument();
   });
 
@@ -353,8 +353,8 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    expect(screen.getByText('Evidence')).toBeInTheDocument();
-    expect(screen.getByText(/No image evidence available/)).toBeInTheDocument();
+    expect(screen.getByText('Evidence section')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Preview$/i })).toBeNull();
   });
 
   it('opens shared confirm dialog when Mark result invalid is clicked', async () => {
@@ -370,7 +370,7 @@ describe('QuickReviewDrawer', () => {
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
     fireEvent.click(screen.getByRole('button', { name: /Mark result invalid/i }));
-    expect(await screen.findByRole('heading', { name: /Mark result invalid\?/ })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /mark invalid title/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   });
 

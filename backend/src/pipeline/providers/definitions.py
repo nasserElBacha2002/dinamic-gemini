@@ -7,15 +7,15 @@ labels. Adding a provider should start here, then wire ``resolve_llm_executor`` 
 This is **not** a plugin framework — only declarative metadata to reduce drift between registry,
 ``processing_experiment_catalog``, ``processing_provider_resolution``, and API option text.
 
-**Checklist when adding a provider:** (1) append a ``PipelineProviderSpec`` here; (2) add a branch in
-``resolve_llm_executor`` in ``registry.py``; (3) run tests that assert definition keys match the
-registry — ``registered_pipeline_provider_keys()`` is derived from this module.
+**Checklist when adding a provider:** (1) append a ``PipelineProviderSpec`` here; (2) register an
+adapter factory in ``_EXECUTOR_BUILDERS`` in ``registry.py``; (3) run tests that assert definition
+keys match the registry — ``registered_pipeline_provider_keys()`` is derived from this module.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Final, Optional, Tuple
+from typing import Any, Final
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,7 @@ class PipelineProviderSpec:
     default_model_fallback: str
 
 
-PIPELINE_PROVIDER_SPECS: Final[Tuple[PipelineProviderSpec, ...]] = (
+PIPELINE_PROVIDER_SPECS: Final[tuple[PipelineProviderSpec, ...]] = (
     PipelineProviderSpec(
         key="gemini",
         label="Gemini",
@@ -81,7 +81,7 @@ PIPELINE_PROVIDER_SPECS: Final[Tuple[PipelineProviderSpec, ...]] = (
 _SPECS_BY_KEY: Final[dict[str, PipelineProviderSpec]] = {s.key: s for s in PIPELINE_PROVIDER_SPECS}
 
 
-def pipeline_provider_spec(key: str) -> Optional[PipelineProviderSpec]:
+def pipeline_provider_spec(key: str) -> PipelineProviderSpec | None:
     return _SPECS_BY_KEY.get((key or "").strip().lower())
 
 

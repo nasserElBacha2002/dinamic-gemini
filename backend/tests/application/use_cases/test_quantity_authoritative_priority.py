@@ -19,12 +19,19 @@ from src.domain.labels.entities import RawLabel
 from src.domain.labels.merge import MergeRuleEngine
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
+from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
+    default_map_hybrid_report_to_domain,
+)
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
 from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
-from src.infrastructure.repositories.memory_normalized_label_repository import MemoryNormalizedLabelRepository
+from src.infrastructure.repositories.memory_normalized_label_repository import (
+    MemoryNormalizedLabelRepository,
+)
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
 from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
 
 
@@ -57,7 +64,9 @@ def _raw(id_: str, position_id: str, sku: str) -> RawLabel:
     )
 
 
-def _recompute_uc(raw_repo, norm_repo, final_repo, product_repo, position_repo) -> RecomputeConsolidatedCountsUseCase:
+def _recompute_uc(
+    raw_repo, norm_repo, final_repo, product_repo, position_repo
+) -> RecomputeConsolidatedCountsUseCase:
     return RecomputeConsolidatedCountsUseCase(
         raw_label_repo=raw_repo,
         normalized_label_repo=norm_repo,
@@ -85,6 +94,7 @@ def test_explicit_qty_preserved_after_persist_flow() -> None:
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
         clock=_FixedClock(now),
+        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
         raw_label_repo=raw_repo,
         recompute_consolidated_uc=recompute,
@@ -104,7 +114,11 @@ def test_explicit_qty_preserved_after_persist_flow() -> None:
             }
         ]
     }
-    uc.execute(PersistAisleResultCommand(aisle_id="a1", job_id="j1", report=report, run_dir=Path("output/j1/run")))
+    uc.execute(
+        PersistAisleResultCommand(
+            aisle_id="a1", job_id="j1", report=report, run_dir=Path("output/j1/run")
+        )
+    )
     positions = list(position_repo.list_by_aisle("a1"))
     assert len(positions) == 1
     products = list(product_repo.list_by_position(positions[0].id))
@@ -139,7 +153,11 @@ def test_explicit_qty_not_overwritten_by_recompute() -> None:
     )
     raw_repo.save_many([_raw("r1", "p1", "SKU-36")])
     uc = _recompute_uc(raw_repo, norm_repo, final_repo, product_repo, position_repo)
-    uc.execute(RecomputeConsolidatedCountsCommand(inventory_id="inv1", aisle_id="a1", apply_to_product_records=True))
+    uc.execute(
+        RecomputeConsolidatedCountsCommand(
+            inventory_id="inv1", aisle_id="a1", apply_to_product_records=True
+        )
+    )
     saved = product_repo.get_by_id("pr1")
     assert saved is not None
     assert saved.detected_quantity == 36
@@ -171,7 +189,11 @@ def test_merge_inferred_allowed_when_explicit_missing() -> None:
     )
     raw_repo.save_many([_raw("r2", "p2", "SKU-X")])
     uc = _recompute_uc(raw_repo, norm_repo, final_repo, product_repo, position_repo)
-    uc.execute(RecomputeConsolidatedCountsCommand(inventory_id="inv1", aisle_id="a1", apply_to_product_records=True))
+    uc.execute(
+        RecomputeConsolidatedCountsCommand(
+            inventory_id="inv1", aisle_id="a1", apply_to_product_records=True
+        )
+    )
     saved = product_repo.get_by_id("pr2")
     assert saved is not None
     assert saved.detected_quantity == 1
@@ -204,7 +226,11 @@ def test_manual_override_has_priority_over_merge() -> None:
     )
     raw_repo.save_many([_raw("r3", "p3", "SKU-Y")])
     uc = _recompute_uc(raw_repo, norm_repo, final_repo, product_repo, position_repo)
-    uc.execute(RecomputeConsolidatedCountsCommand(inventory_id="inv1", aisle_id="a1", apply_to_product_records=True))
+    uc.execute(
+        RecomputeConsolidatedCountsCommand(
+            inventory_id="inv1", aisle_id="a1", apply_to_product_records=True
+        )
+    )
     saved = product_repo.get_by_id("pr3")
     assert saved is not None
     assert saved.detected_quantity == 5
@@ -251,10 +277,13 @@ def test_qty_source_transition_is_valid() -> None:
     )
     raw_repo.save_many([_raw("r4a", "p4", "SKU-E"), _raw("r4b", "p4", "SKU-M")])
     uc = _recompute_uc(raw_repo, norm_repo, final_repo, product_repo, position_repo)
-    uc.execute(RecomputeConsolidatedCountsCommand(inventory_id="inv1", aisle_id="a1", apply_to_product_records=True))
+    uc.execute(
+        RecomputeConsolidatedCountsCommand(
+            inventory_id="inv1", aisle_id="a1", apply_to_product_records=True
+        )
+    )
     explicit = product_repo.get_by_id("pr4a")
     merged = product_repo.get_by_id("pr4b")
     assert explicit is not None and merged is not None
     assert explicit.qty_source == "label_explicit"
     assert merged.qty_source == "merge_inferred"
-

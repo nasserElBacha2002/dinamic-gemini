@@ -28,11 +28,10 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 
-from src.llm.errors import LLMProviderError
 from src.llm.types import LLMRequest, LLMResponse
 
 # Logical provider key returned as the second element of ``resolve_llm_executor_for_context`` when

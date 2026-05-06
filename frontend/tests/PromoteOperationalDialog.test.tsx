@@ -107,7 +107,7 @@ describe('PromoteOperationalDialog', () => {
       </WithTheme>
     );
 
-    expect(screen.getByText(/operational slice/i)).toBeInTheDocument();
-    expect(screen.getByText(/not copied automatically/i)).toBeInTheDocument();
+    /** Copy from `benchmark.promote_body` (placeholder strings in en locale). */
+    expect(screen.getByText(/Promote body/i)).toBeInTheDocument();
   });
 });

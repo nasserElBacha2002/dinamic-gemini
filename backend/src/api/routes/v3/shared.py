@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, NoReturn, Optional, Tuple
+from typing import Any, NoReturn
 
 from fastapi import HTTPException
 
@@ -19,58 +19,62 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_REVIEW_SKU_REQUIRED_FOR_UPDATE_SKU,
 )
 from src.api.errors import review_exception_to_http
-from src.utils.validation import validate_relative_path
-
-from src.api.schemas.aisle_schemas import AisleResponse, AisleJobSummary
+from src.api.schemas.aisle_schemas import AisleJobSummary, AisleResponse
 from src.api.schemas.asset_schemas import SourceAssetResponse
-from src.api.schemas.processing_schemas import AisleStatusResponse, JobSummary
 from src.api.schemas.inventory_schemas import (
     InventoryListItemResponse,
     InventoryResponse,
     PrimaryExecutionConfigResponse,
 )
-from src.application.ports.contracts import InventoryListItem
 from src.api.schemas.position_schemas import (
     EvidenceResponse,
-    PositionTechnicalSnapshot,
     PositionProductBlock,
     PositionQuantityBlock,
     PositionSummaryResponse,
+    PositionTechnicalSnapshot,
     PositionTraceabilityBlock,
+    ReviewActionRequest,
     ReviewActionResponse,
 )
+from src.api.schemas.processing_schemas import AisleStatusResponse, JobSummary
+from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 from src.application.errors import (
     AisleNotFoundError,
     InventoryNotFoundError,
+    PositionDeletedError,
     PositionNotFoundError,
     ProductNotFoundError,
-    PositionDeletedError,
 )
-from src.application.use_cases.get_aisle_processing_status import AisleProcessingStatusResult
+from src.application.mappers.position_canonical_view import (
+    PositionCanonicalView,
+    build_position_canonical_view,
+)
+from src.application.ports.contracts import InventoryListItem
+from src.application.services.inventory_primary_execution_config import (
+    primary_execution_config_for_inventory,
+)
+from src.application.services.reference_usage_from_job_result import (
+    parse_reference_usage_from_result_json,
+)
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
-from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
+from src.application.use_cases.delete_position import DeletePositionUseCase
+from src.application.use_cases.get_aisle_processing_status import AisleProcessingStatusResult
 from src.application.use_cases.mark_position_image_mismatch import MarkPositionImageMismatchUseCase
+from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
+from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
 from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
-from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
-from src.application.use_cases.delete_position import DeletePositionUseCase
-from src.api.schemas.position_schemas import ReviewActionRequest
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 from src.domain.evidence.entities import Evidence
-from src.domain.inventory.entities import Inventory, InventoryProcessingMode
+from src.domain.inventory.entities import Inventory
 from src.domain.jobs.entities import Job
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
-from src.application.mappers.position_canonical_view import (
-    PositionCanonicalView,
-    build_position_canonical_view,
-)
-from src.application.services.position_traceability import reset_traceability_cache_for_tests
-from src.application.services.result_context_resolver import ResultContextResolver
-from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
+from src.utils.validation import validate_relative_path
 
 logger = logging.getLogger(__name__)
 
@@ -79,66 +83,26 @@ _NORMALIZED_SUBDIR = "input_photos_normalized"
 _HEIC_EXTENSIONS = (".heic", ".heif")
 
 
-def _coerce_non_negative_int(value: Any) -> int:
-    """Best-effort int parsing for persisted metadata; invalid values fall back to 0."""
-    if isinstance(value, bool):
-        return 0
-    if isinstance(value, int):
-        return max(0, value)
-    if isinstance(value, float):
-        if value != value:
-            return 0
-        return max(0, int(value))
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return 0
-        try:
-            return max(0, int(stripped))
-        except ValueError:
-            return 0
-    return 0
-
-
-def _parse_reference_usage_summary(result_json: Any) -> Optional[dict[str, Any]]:
+def _parse_reference_usage_summary(result_json: Any) -> ReferenceUsageSummary | None:
     """Map persisted visual_reference_context into the compact API summary shape."""
-    if not isinstance(result_json, dict):
+    fields = parse_reference_usage_from_result_json(result_json)
+    if fields is None:
         return None
-    raw = result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT)
-    if not isinstance(raw, dict):
-        return None
-
-    reference_ids: list[str] = []
-    reference_ids_raw = raw.get("reference_ids")
-    if isinstance(reference_ids_raw, list):
-        seen: set[str] = set()
-        for item in reference_ids_raw:
-            if not isinstance(item, str):
-                continue
-            ref_id = item.strip()
-            if not ref_id or ref_id in seen:
-                continue
-            seen.add(ref_id)
-            reference_ids.append(ref_id)
-
-    resolved_count = _coerce_non_negative_int(raw.get("resolved_count"))
-    provider_consumed_count = _coerce_non_negative_int(raw.get("provider_consumed_count"))
-    resolution_error = raw.get("resolution_error")
-    return {
-        "resolved": bool(raw.get("resolved")),
-        "resolved_count": max(0, resolved_count),
-        "provider_consumed": bool(raw.get("provider_consumed")),
-        "provider_consumed_count": max(0, provider_consumed_count),
-        "reference_ids": reference_ids,
-        "resolution_error": resolution_error[:2048] if isinstance(resolution_error, str) else None,
-    }
+    return ReferenceUsageSummary(
+        resolved=fields.resolved,
+        resolved_count=fields.resolved_count,
+        provider_consumed=fields.provider_consumed,
+        provider_consumed_count=fields.provider_consumed_count,
+        reference_ids=fields.reference_ids,
+        resolution_error=fields.resolution_error,
+    )
 
 
 def _try_resolve_normalized_asset_for_job(
     output_dir: Path,
     job_id: str,
     asset_id: str,
-) -> Tuple[Optional[Path], Optional[str]]:
+) -> tuple[Path | None, str | None]:
     """Try to resolve normalized image path for one job (no job_repo/aisle_id needed).
 
     Returns (path, None) on success, (None, reason) on failure.
@@ -186,9 +150,9 @@ def resolve_normalized_asset_path(
     inventory_id: str,
     aisle: Aisle,
     asset_id: str,
-    explicit_job_id: Optional[str],
+    explicit_job_id: str | None,
     resolver: ResultContextResolver,
-) -> Optional[Path]:
+) -> Path | None:
     """Resolve normalized (browser-safe) JPEG path for HEIC/HEIF using :class:`ResultContextResolver`.
 
     Uses explicit ``job_id`` query param when provided; otherwise operational job or **legacy** slice.
@@ -281,7 +245,10 @@ def handle_update_quantity(
     update_quantity_uc: UpdateProductQuantityUseCase,
 ) -> None:
     if body.corrected_quantity is None:
-        raise HTTPException(status_code=422, detail=HTTP_DETAIL_REVIEW_CORRECTED_QUANTITY_REQUIRED_FOR_UPDATE_QUANTITY)
+        raise HTTPException(
+            status_code=422,
+            detail=HTTP_DETAIL_REVIEW_CORRECTED_QUANTITY_REQUIRED_FOR_UPDATE_QUANTITY,
+        )
     try:
         update_quantity_uc.execute(
             inventory_id,
@@ -354,7 +321,10 @@ def handle_update_position_code(
 ) -> None:
     pos_code = (body.position_code or "").strip()
     if not pos_code:
-        raise HTTPException(status_code=422, detail=HTTP_DETAIL_REVIEW_POSITION_CODE_REQUIRED_FOR_UPDATE_POSITION_CODE)
+        raise HTTPException(
+            status_code=422,
+            detail=HTTP_DETAIL_REVIEW_POSITION_CODE_REQUIRED_FOR_UPDATE_POSITION_CODE,
+        )
     try:
         update_pos_code_uc.execute(
             inventory_id,
@@ -454,30 +424,24 @@ def handle_delete_position(
         )
 
 
-def _primary_execution_config_from_inventory(inv: Inventory) -> PrimaryExecutionConfigResponse | None:
-    """Expose primary config only when the snapshot is complete (no empty-string placeholders)."""
-    if inv.processing_mode != InventoryProcessingMode.PRODUCTION:
-        return None
-    pn = (inv.primary_provider_name or "").strip()
-    pm = (inv.primary_model_name or "").strip()
-    pk = (inv.primary_prompt_key or "").strip()
-    if not pn or not pm or not pk:
-        return None
-    return PrimaryExecutionConfigResponse(
-        provider_name=pn,
-        model_name=pm,
-        prompt_key=pk,
-        prompt_version=inv.primary_prompt_version,
-    )
-
-
 def inventory_to_response(inv: Inventory) -> InventoryResponse:
+    pec = primary_execution_config_for_inventory(inv)
+    primary_execution_config = (
+        PrimaryExecutionConfigResponse(
+            provider_name=pec.provider_name,
+            model_name=pec.model_name,
+            prompt_key=pec.prompt_key,
+            prompt_version=pec.prompt_version,
+        )
+        if pec is not None
+        else None
+    )
     return InventoryResponse(
         id=inv.id,
         name=inv.name,
         status=inv.status.value,
         processing_mode=inv.processing_mode.value,
-        primary_execution_config=_primary_execution_config_from_inventory(inv),
+        primary_execution_config=primary_execution_config,
         created_at=inv.created_at,
         updated_at=inv.updated_at,
     )
@@ -500,12 +464,12 @@ def inventory_list_item_to_response(item: InventoryListItem) -> InventoryListIte
 
 def aisle_to_response(
     a: Aisle,
-    latest_job: Optional[Job] = None,
+    latest_job: Job | None = None,
     *,
     assets_count: int = 0,
     positions_count: int = 0,
     pending_review_positions_count: int = 0,
-    last_activity_at: Optional[datetime] = None,
+    last_activity_at: datetime | None = None,
 ) -> AisleResponse:
     latest = None
     if latest_job is not None:
@@ -618,7 +582,9 @@ def _position_summary_response_from_view(
     the deprecated technical snapshot for transitional/internal clients.
     """
     detected_summary_json = (
-        p.detected_summary_json if include_technical_snapshot and isinstance(p.detected_summary_json, dict) else None
+        p.detected_summary_json
+        if include_technical_snapshot and isinstance(p.detected_summary_json, dict)
+        else None
     )
     product_block = PositionProductBlock(
         id=view.product.primary_product_id,
@@ -676,7 +642,7 @@ def _position_summary_response_from_view(
 
 def technical_snapshot_from_view(
     view: PositionCanonicalView,
-) -> Optional[PositionTechnicalSnapshot]:
+) -> PositionTechnicalSnapshot | None:
     """Extract the detail/debug snapshot from the canonical view without re-reading route inputs."""
     snap = view.technical_snapshot if isinstance(view.technical_snapshot, dict) else None
     if snap is None:
@@ -692,15 +658,21 @@ def technical_snapshot_from_view(
     return PositionTechnicalSnapshot(
         entity_uid=(snap.get("entity_uid") if isinstance(snap.get("entity_uid"), str) else None),
         entity_type=(snap.get("entity_type") if isinstance(snap.get("entity_type"), str) else None),
-        internal_code=(snap.get("internal_code") if isinstance(snap.get("internal_code"), str) else None),
+        internal_code=(
+            snap.get("internal_code") if isinstance(snap.get("internal_code"), str) else None
+        ),
         review_display_label=(
-            snap.get("review_display_label") if isinstance(snap.get("review_display_label"), str) else None
+            snap.get("review_display_label")
+            if isinstance(snap.get("review_display_label"), str)
+            else None
         ),
         position_barcode=(
             snap.get("position_barcode") if isinstance(snap.get("position_barcode"), str) else None
         ),
         pallet_id=(snap.get("pallet_id") if isinstance(snap.get("pallet_id"), str) else None),
-        count_status=(snap.get("count_status") if isinstance(snap.get("count_status"), str) else None),
+        count_status=(
+            snap.get("count_status") if isinstance(snap.get("count_status"), str) else None
+        ),
         raw_qty=snap.get("raw_qty"),
         qty_parse_status=(
             snap.get("qty_parse_status") if isinstance(snap.get("qty_parse_status"), str) else None
@@ -715,8 +687,8 @@ def technical_snapshot_from_view(
 
 def position_to_summary(
     p: Position,
-    corrected_quantity: Optional[int] = None,
-    primary_product: Optional[ProductRecord] = None,
+    corrected_quantity: int | None = None,
+    primary_product: ProductRecord | None = None,
     *,
     include_technical_snapshot: bool = True,
 ) -> PositionSummaryResponse:
@@ -769,9 +741,3 @@ def review_to_response(r: ReviewAction) -> ReviewActionResponse:
 
 def heic_extensions() -> tuple[str, ...]:
     return _HEIC_EXTENSIONS
-
-
-def _reset_traceability_cache_for_tests() -> None:
-    """Delegate to :func:`reset_traceability_cache_for_tests` (backward-compatible name for tests)."""
-    reset_traceability_cache_for_tests()
-

@@ -18,7 +18,7 @@ _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
 
-from src.database.migrations.cli import main
+from src.database.migrations.cli import main  # noqa: E402
 
 if __name__ == "__main__":
     sys.exit(main())

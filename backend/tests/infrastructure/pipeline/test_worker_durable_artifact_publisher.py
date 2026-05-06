@@ -25,24 +25,31 @@ def test_canonical_storage_keys_single_run_segment_no_duplication() -> None:
     job_id = "job-abc"
     keys = worker_output_storage_keys(job_id, DEFAULT_V3_WORKER_RUN_SEGMENT)
     prefix = worker_durable_artifact_key_prefix(job_id, DEFAULT_V3_WORKER_RUN_SEGMENT)
-    assert prefix == f"{WORKER_DURABLE_LOGICAL_PREFIX_ROOT}/{job_id}/{DEFAULT_V3_WORKER_RUN_SEGMENT}"
+    assert (
+        prefix == f"{WORKER_DURABLE_LOGICAL_PREFIX_ROOT}/{job_id}/{DEFAULT_V3_WORKER_RUN_SEGMENT}"
+    )
     assert keys[DURABLE_ARTIFACT_KIND_EXECUTION_LOG] == f"{prefix}/execution_log.jsonl"
     assert keys[DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON] == f"{prefix}/hybrid_report.json"
     assert keys[DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV] == f"{prefix}/hybrid_report.csv"
-    assert f"/{DEFAULT_V3_WORKER_RUN_SEGMENT}/{DEFAULT_V3_WORKER_RUN_SEGMENT}/" not in keys[
-        DURABLE_ARTIFACT_KIND_EXECUTION_LOG
-    ]
+    assert (
+        f"/{DEFAULT_V3_WORKER_RUN_SEGMENT}/{DEFAULT_V3_WORKER_RUN_SEGMENT}/"
+        not in keys[DURABLE_ARTIFACT_KIND_EXECUTION_LOG]
+    )
 
 
 def test_worker_output_storage_keys_alternate_run_segment() -> None:
     keys = worker_output_storage_keys("job-abc", "custom-run")
-    assert keys[DURABLE_ARTIFACT_KIND_EXECUTION_LOG] == "jobs/job-abc/custom-run/execution_log.jsonl"
+    assert (
+        keys[DURABLE_ARTIFACT_KIND_EXECUTION_LOG] == "jobs/job-abc/custom-run/execution_log.jsonl"
+    )
 
 
 def test_publish_local_provider_writes_expected_keys(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "execution_log.jsonl").write_text('{"ts":"t","stage":"s","level":"info","message":"m"}\n')
+    (run_dir / "execution_log.jsonl").write_text(
+        '{"ts":"t","stage":"s","level":"info","message":"m"}\n'
+    )
     (run_dir / "hybrid_report.json").write_text('{"entities":[]}', encoding="utf-8")
     (run_dir / "hybrid_report.csv").write_text("a,b\n", encoding="utf-8")
 
@@ -69,7 +76,9 @@ def test_publish_local_provider_writes_expected_keys(tmp_path: Path) -> None:
 def test_publish_skips_optional_csv_when_missing(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "execution_log.jsonl").write_text('{"ts":"t","stage":"s","level":"info","message":"m"}\n')
+    (run_dir / "execution_log.jsonl").write_text(
+        '{"ts":"t","stage":"s","level":"info","message":"m"}\n'
+    )
     (run_dir / "hybrid_report.json").write_text("{}", encoding="utf-8")
 
     store = V3ArtifactStorageAdapter(tmp_path / "store")
@@ -95,7 +104,9 @@ def test_publish_requires_execution_log(tmp_path: Path) -> None:
 def test_publish_only_intended_keys_no_extra_uploads(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "execution_log.jsonl").write_text('{"ts":"t","stage":"s","level":"info","message":"m"}\n')
+    (run_dir / "execution_log.jsonl").write_text(
+        '{"ts":"t","stage":"s","level":"info","message":"m"}\n'
+    )
     (run_dir / "hybrid_report.json").write_text("{}", encoding="utf-8")
     (run_dir / "input_manifest.json").write_text("{}", encoding="utf-8")
     (run_dir / "noise.bin").write_bytes(b"x")

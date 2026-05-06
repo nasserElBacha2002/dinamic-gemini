@@ -7,17 +7,17 @@ Returns only successfully loaded frames; all output collections are positionally
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
-import time
-from typing import List, Optional
+from typing import Any
 
 import cv2
 import numpy as np
 
 from src.frames.sources.factory import get_frame_source
-from src.pipeline.stages.input_preparation_stage import PreparedInput
 from src.pipeline.context.run_context import RunContext
+from src.pipeline.stages.input_preparation_stage import PreparedInput
 
 # Hard cap when settings.hybrid_max_frames is unset (single source of truth for load cap)
 HYBRID_MAX_FRAMES_LOAD_CAP = 48
@@ -27,16 +27,16 @@ HYBRID_MAX_FRAMES_LOAD_CAP = 48
 class AcquiredFrames:
     """Output of FrameAcquisitionStage: frames in memory and metadata for analysis. All lists are positionally aligned."""
 
-    frames_nd: List[np.ndarray]
-    frame_paths: List[Path]
-    metadata: dict
-    frame_refs: List[str]
+    frames_nd: list[np.ndarray]
+    frame_paths: list[Path]
+    metadata: dict[str, Any]
+    frame_refs: list[str]
 
 
 class FrameAcquisitionStage:
     """Stage: select FrameSource, acquire frames, load into RAM, validate availability."""
 
-    def _read_image(self, path: Path):  # type: ignore[no-untyped-def]
+    def _read_image(self, path: Path) -> np.ndarray | None:
         """Isolated native image-read boundary for future timeout/process guarding."""
         return cv2.imread(str(path))
 
@@ -46,8 +46,8 @@ class FrameAcquisitionStage:
         *,
         substep: str,
         event: str,
-        details: Optional[dict] = None,
-        duration_ms: Optional[int] = None,
+        details: dict | None = None,
+        duration_ms: int | None = None,
         level: str = "info",
     ) -> None:
         context.emit_stage_event(
@@ -102,7 +102,10 @@ class FrameAcquisitionStage:
             substep="photos_dir_scan",
             event="substep.completed",
             duration_ms=int((time.monotonic() - scan_started) * 1000),
-            details={"bundle_frame_count": len(bundle.frames), "source": bundle.metadata.get("source")},
+            details={
+                "bundle_frame_count": len(bundle.frames),
+                "source": bundle.metadata.get("source"),
+            },
         )
 
         max_load = getattr(settings, "hybrid_max_frames", None)
@@ -110,7 +113,7 @@ class FrameAcquisitionStage:
             max_load = HYBRID_MAX_FRAMES_LOAD_CAP
         frames_to_load = bundle.frames[: int(max_load)]
         refs = bundle.frame_refs or []
-        bundle_indices: Optional[List[int]] = None
+        bundle_indices: list[int] | None = None
         if isinstance(bundle.metadata.get("frame_indices"), list):
             bundle_indices = bundle.metadata["frame_indices"]
 
@@ -125,10 +128,10 @@ class FrameAcquisitionStage:
             },
         )
 
-        loaded_frames_nd: List[np.ndarray] = []
-        loaded_frame_paths: List[Path] = []
-        loaded_frame_refs: List[str] = []
-        loaded_frame_indices: List[int] = []
+        loaded_frames_nd: list[np.ndarray] = []
+        loaded_frame_paths: list[Path] = []
+        loaded_frame_refs: list[str] = []
+        loaded_frame_indices: list[int] = []
 
         for i, p in enumerate(frames_to_load):
             context.check_cancellation(
@@ -239,7 +242,11 @@ class FrameAcquisitionStage:
                 "source": metadata.get("source", "unknown"),
             },
         )
-        logger.info("Frames loaded: %d (source=%s)", len(loaded_frames_nd), metadata.get("source", "unknown"))
+        logger.info(
+            "Frames loaded: %d (source=%s)",
+            len(loaded_frames_nd),
+            metadata.get("source", "unknown"),
+        )
 
         return AcquiredFrames(
             frames_nd=loaded_frames_nd,

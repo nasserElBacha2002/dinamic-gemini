@@ -5,7 +5,7 @@ Pipeline OpenCV: resize (opcional) → blur → Canny → morfología → contor
 → filtrado por área/aspect ratio → top-K por área → NMS por IoU.
 """
 
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -13,7 +13,7 @@ import numpy as np
 from src.models.schemas import BBox
 
 
-def _iou(a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]) -> float:
+def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
     """IoU entre dos bboxes (x1, y1, x2, y2)."""
     x1 = max(a[0], b[0])
     y1 = max(a[1], b[1])
@@ -29,13 +29,13 @@ def _iou(a: Tuple[float, float, float, float], b: Tuple[float, float, float, flo
 
 
 def _nms_bboxes(
-    bboxes: List[Tuple[float, float, float, float, float]],
+    bboxes: list[tuple[float, float, float, float, float]],
     iou_threshold: float,
-) -> List[BBox]:
+) -> list[BBox]:
     """Suprime cajas con IoU > iou_threshold (mantiene orden por área)."""
     if not bboxes:
         return []
-    kept: List[BBox] = []
+    kept: list[BBox] = []
     for b in bboxes:
         box = (b[0], b[1], b[2], b[3])
         overlap = False
@@ -57,7 +57,7 @@ def detect_pallets_heuristic(
     iou_nms_threshold: float = 0.5,
     resize_max_side: Optional[int] = None,
     confidence: float = 0.85,
-) -> List[BBox]:
+) -> list[BBox]:
     """Detecta regiones tipo pallet por contornos (OpenCV, sin ML).
 
     Args:
@@ -77,7 +77,6 @@ def detect_pallets_heuristic(
         return []
     h0, w0 = frame.shape[0], frame.shape[1]
     frame_area = h0 * w0
-    scale = 1.0
     work = frame
 
     if resize_max_side and resize_max_side > 0 and max(h0, w0) > resize_max_side:
@@ -100,11 +99,9 @@ def detect_pallets_heuristic(
     closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
     dilated = cv2.dilate(closed, kernel)
 
-    contours, _ = cv2.findContours(
-        dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
+    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    candidates: List[Tuple[float, float, float, float, float]] = []
+    candidates: list[tuple[float, float, float, float, float]] = []
     min_area = frame_area * min_area_ratio
     h_work, w_work = work.shape[0], work.shape[1]
     min_side = max(20, int(min(w_work, h_work) * 0.02))
@@ -119,17 +116,19 @@ def detect_pallets_heuristic(
         ar = bw / bh if bh > 0 else 0
         if not (aspect_ratio_min <= ar <= aspect_ratio_max):
             continue
-        x2, y2 = x + bw, y + bh
-        candidates.append((float(x), float(y), float(x2), float(y2), confidence))
+        x2_br, y2_br = x + bw, y + bh
+        candidates.append((float(x), float(y), float(x2_br), float(y2_br), confidence))
 
     candidates.sort(key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)
     candidates = candidates[: max_detections * 2]
     candidates = _nms_bboxes(candidates, iou_nms_threshold)[:max_detections]
 
-    out: List[BBox] = []
-    for (x1, y1, x2, y2, conf) in candidates:
+    out: list[BBox] = []
+    for x1f, y1f, x2f, y2f, conf in candidates:
         if scale_x != 1.0 or scale_y != 1.0:
-            x1, x2 = x1 * scale_x, x2 * scale_x
-            y1, y2 = y1 * scale_y, y2 * scale_y
+            x1, y1 = x1f * scale_x, y1f * scale_y
+            x2, y2 = x2f * scale_x, y2f * scale_y
+        else:
+            x1, y1, x2, y2 = x1f, y1f, x2f, y2f
         out.append((x1, y1, x2, y2, conf))
     return out

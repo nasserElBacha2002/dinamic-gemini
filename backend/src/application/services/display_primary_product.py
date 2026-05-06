@@ -9,12 +9,12 @@ Matches the rule used by:
 
 from __future__ import annotations
 
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 from src.domain.products.entities import ProductRecord
 
 
-def select_display_primary_product(products: Sequence[ProductRecord]) -> Optional[ProductRecord]:
+def select_display_primary_product(products: Sequence[ProductRecord]) -> ProductRecord | None:
     """Pick the canonical product row for summaries: earliest ``created_at``, then ``id``."""
     if not products:
         return None

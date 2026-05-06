@@ -2,23 +2,27 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Dict, Optional, Sequence, Union
 
 import pytest
 
-from src.application.ports.contracts import AisleAssetRollup, POSITION_LIST_JOB_ID_UNSET, PositionListQuery
-from src.application.ports.repositories import JOB_ID_FILTER_UNSET
-from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
-from src.application.use_cases.create_aisle import InventoryNotFoundError
+from src.application.ports.contracts import (
+    POSITION_LIST_JOB_ID_UNSET,
+    AisleAssetRollup,
+    PositionListQuery,
+)
 from src.application.ports.repositories import (
+    JOB_ID_FILTER_UNSET,
     AisleRepository,
     InventoryRepository,
     JobRepository,
     PositionRepository,
     SourceAssetRepository,
 )
+from src.application.services.result_context_resolver import ResultContextResolver
+from src.application.use_cases.create_aisle import InventoryNotFoundError
+from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset
 from src.domain.inventory.entities import Inventory, InventoryStatus
@@ -35,7 +39,7 @@ class StubInventoryRepo(InventoryRepository):
     def save(self, inventory: Inventory) -> None:
         self._ids.add(inventory.id)
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         if inventory_id in self._ids:
             now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
             return Inventory(inventory_id, "Stub", InventoryStatus.DRAFT, now, now)
@@ -52,13 +56,13 @@ class StubAisleRepo(AisleRepository):
     def save(self, aisle: Aisle) -> None:
         self._store[aisle.id] = aisle
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._store.get(aisle_id)
 
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         return [a for a in self._store.values() if a.inventory_id == inventory_id]
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         for a in self._store.values():
             if a.inventory_id == inventory_id and a.code == code:
                 return a
@@ -66,23 +70,21 @@ class StubAisleRepo(AisleRepository):
 
 
 class StubJobRepo(JobRepository):
-    def __init__(self, latest_by_aisle: Dict[str, Job] | None = None) -> None:
+    def __init__(self, latest_by_aisle: dict[str, Job] | None = None) -> None:
         self._latest = latest_by_aisle or {}
 
     def save(self, job: Job) -> None:
         pass
 
-    def get_by_id(self, job_id: str) -> Optional[Job]:
+    def get_by_id(self, job_id: str) -> Job | None:
         return None
 
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
+    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
         if target_type != "aisle":
             return None
         return self._latest.get(target_id)
 
-    def get_latest_by_targets(
-        self, target_type: str, target_ids: Sequence[str]
-    ) -> Dict[str, Job]:
+    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
         if target_type != "aisle":
             return {}
         return {tid: self._latest[tid] for tid in target_ids if tid in self._latest}
@@ -103,7 +105,7 @@ class StubPositionRepo(PositionRepository):
     def save(self, position: Position) -> None:
         self._positions.append(position)
 
-    def get_by_id(self, position_id: str) -> Optional[Position]:
+    def get_by_id(self, position_id: str) -> Position | None:
         for p in self._positions:
             if p.id == position_id:
                 return p
@@ -112,15 +114,15 @@ class StubPositionRepo(PositionRepository):
     def list_by_aisle(
         self,
         aisle_id: str,
-        status: Optional[str] = None,
-        needs_review: Optional[bool] = None,
-        min_confidence: Optional[float] = None,
-        sku_filter: Optional[str] = None,
+        status: str | None = None,
+        needs_review: bool | None = None,
+        min_confidence: float | None = None,
+        sku_filter: str | None = None,
         page: int = 1,
         page_size: int = 25,
         sort_by: str = "created_at",
         sort_dir: str = "asc",
-        job_id: Union[str, None, object] = JOB_ID_FILTER_UNSET,
+        job_id: str | None | object = JOB_ID_FILTER_UNSET,
     ) -> Sequence[Position]:
         positions = [p for p in self._positions if p.aisle_id == aisle_id]
         if job_id is not JOB_ID_FILTER_UNSET:
@@ -150,9 +152,11 @@ class StubPositionRepo(PositionRepository):
         start = (page - 1) * page_size
         return positions[start : start + page_size]
 
-    def list_by_aisle_query(self, aisle_id: str, query: Optional[PositionListQuery] = None) -> Sequence[Position]:
+    def list_by_aisle_query(
+        self, aisle_id: str, query: PositionListQuery | None = None
+    ) -> Sequence[Position]:
         q = query or PositionListQuery()
-        repo_job_id: Union[str, None, object] = JOB_ID_FILTER_UNSET
+        repo_job_id: str | None | object = JOB_ID_FILTER_UNSET
         if q.job_id is not POSITION_LIST_JOB_ID_UNSET:
             repo_job_id = q.job_id
         return self.list_by_aisle(
@@ -176,13 +180,13 @@ class StubPositionRepo(PositionRepository):
 class StubSourceAssetRepo(SourceAssetRepository):
     """Returns canned rollups for requested aisle ids (empty when unknown)."""
 
-    def __init__(self, rollup_by_aisle: Dict[str, AisleAssetRollup] | None = None) -> None:
+    def __init__(self, rollup_by_aisle: dict[str, AisleAssetRollup] | None = None) -> None:
         self._rollup = rollup_by_aisle or {}
 
     def save(self, asset: SourceAsset) -> None:
         pass
 
-    def get_by_id(self, asset_id: str) -> Optional[SourceAsset]:
+    def get_by_id(self, asset_id: str) -> SourceAsset | None:
         return None
 
     def delete_by_id(self, asset_id: str) -> bool:
@@ -191,7 +195,10 @@ class StubSourceAssetRepo(SourceAssetRepository):
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         return []
 
-    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> SourceAsset | None:
+        return None
+
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> dict[str, AisleAssetRollup]:
         return {aid: self._rollup[aid] for aid in aisle_ids if aid in self._rollup}
 
 
@@ -312,9 +319,7 @@ def test_list_aisles_with_status_last_activity_at_can_win_on_latest_job_only() -
     aisle_repo = StubAisleRepo([a1])
     job_repo = StubJobRepo({"a1": j1})
     pos_repo = StubPositionRepo([p1])
-    src_repo = StubSourceAssetRepo(
-        {"a1": AisleAssetRollup(count=1, last_uploaded_at=t_old)}
-    )
+    src_repo = StubSourceAssetRepo({"a1": AisleAssetRollup(count=1, last_uploaded_at=t_old)})
     use_case = ListAislesWithStatusUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,

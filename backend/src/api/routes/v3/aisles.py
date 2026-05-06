@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
@@ -16,40 +15,28 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_JOB_NOT_IN_AISLE_INVENTORY,
     HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED,
 )
-from src.api.errors import reraise_if_mapped
 from src.api.dependencies import (
     get_artifact_storage,
-    get_create_aisle_use_case,
-    get_list_aisles_with_status_use_case,
-    get_start_aisle_processing_use_case,
-    get_get_aisle_processing_status_use_case,
-    get_job_stale_reconciler,
     get_cancel_aisle_job_use_case,
-    get_retry_aisle_job_use_case,
-    get_get_aisle_merge_results_use_case,
-    get_list_aisle_jobs_use_case,
-    get_resolve_aisle_job_for_inventory_read_use_case,
-    get_run_aisle_merge_use_case,
     get_compare_aisle_runs_use_case,
     get_compare_many_aisle_runs_use_case,
-    get_promote_aisle_operational_job_use_case,
-    get_export_aisle_benchmark_run_csv_use_case,
+    get_create_aisle_use_case,
     get_export_aisle_benchmark_compare_csv_use_case,
+    get_export_aisle_benchmark_run_csv_use_case,
     get_export_aisle_results_csv_use_case,
+    get_get_aisle_merge_results_use_case,
+    get_get_aisle_processing_status_use_case,
+    get_job_stale_reconciler,
+    get_list_aisle_jobs_use_case,
+    get_list_aisles_with_status_use_case,
+    get_promote_aisle_operational_job_use_case,
+    get_resolve_aisle_job_for_inventory_read_use_case,
+    get_retry_aisle_job_use_case,
+    get_run_aisle_merge_use_case,
+    get_start_aisle_processing_use_case,
 )
-from src.api.services.v3_stored_artifact_access import (
-    StoredArtifactAccessError,
-    load_hybrid_report_json_for_api,
-    read_execution_log_events_for_job,
-)
-from src.api.schemas.merge_schemas import (
-    MergeResultItemResponse,
-    MergeResultsResponse,
-    RunMergeResponse,
-)
+from src.api.errors import reraise_if_mapped
 from src.api.schemas.aisle_schemas import AisleResponse, CreateAisleRequest
-from src.api.schemas.listing_schemas import PaginatedAisleListResponse, compute_total_pages
-from src.application.ports.contracts import AisleTableQuery
 from src.api.schemas.benchmark_schemas import (
     AisleBenchmarkCompareManyRequest,
     AisleBenchmarkCompareManyResponse,
@@ -57,13 +44,11 @@ from src.api.schemas.benchmark_schemas import (
     PromoteOperationalJobRequest,
     PromoteOperationalJobResponse,
 )
-from src.application.services.execution_log_enrichment import (
-    aisle_execution_log_attachment_filename,
-    build_enriched_aisle_aggregated_execution_log,
-    build_enriched_execution_log,
-    execution_log_attachment_filename,
-    format_execution_log_plaintext,
-    merge_raw_execution_log_events_by_ts,
+from src.api.schemas.listing_schemas import PaginatedAisleListResponse, compute_total_pages
+from src.api.schemas.merge_schemas import (
+    MergeResultItemResponse,
+    MergeResultsResponse,
+    RunMergeResponse,
 )
 from src.api.schemas.processing_schemas import (
     AisleExecutionLogResponse,
@@ -74,6 +59,11 @@ from src.api.schemas.processing_schemas import (
     ProcessAisleRequest,
     ProcessAisleResponse,
 )
+from src.api.services.v3_stored_artifact_access import (
+    StoredArtifactAccessError,
+    load_hybrid_report_json_for_api,
+    read_execution_log_events_for_job,
+)
 from src.application.errors import (
     ActiveJobExistsError,
     AisleNotFoundError,
@@ -82,87 +72,93 @@ from src.application.errors import (
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
 )
-from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
-from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
-from src.application.use_cases.start_aisle_processing import StartAisleProcessingCommand, StartAisleProcessingUseCase
-from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
-from src.application.use_cases.cancel_aisle_job import CancelAisleJobCommand, CancelAisleJobUseCase
-from src.application.use_cases.retry_aisle_job import RetryAisleJobCommand, RetryAisleJobUseCase
-from src.application.services.job_stale_reconciler import JobStaleReconciler
-from src.application.use_cases.get_aisle_merge_results import (
-    GetAisleMergeResultsCommand,
-    GetAisleMergeResultsUseCase,
+from src.application.services.aisle_aggregated_execution_log import (
+    AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT,
+    aggregate_aisle_execution_log_payload,
 )
-from src.application.use_cases.compare_aisle_runs import CompareAisleRunsCommand, CompareAisleRunsUseCase
+from src.application.services.aisle_table_query_params import (
+    build_aisle_table_query_from_route_params,
+)
+from src.application.services.execution_log_enrichment import (
+    aisle_execution_log_attachment_filename,
+    build_enriched_execution_log,
+    execution_log_attachment_filename,
+    format_execution_log_plaintext,
+)
+from src.application.services.job_stale_reconciler import JobStaleReconciler
+from src.application.use_cases.cancel_aisle_job import CancelAisleJobCommand, CancelAisleJobUseCase
+from src.application.use_cases.compare_aisle_runs import (
+    CompareAisleRunsCommand,
+    CompareAisleRunsUseCase,
+)
 from src.application.use_cases.compare_many_aisle_runs import (
     CompareManyAisleRunsCommand,
     CompareManyAisleRunsUseCase,
 )
+from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.use_cases.export_aisle_benchmark import (
     ExportAisleBenchmarkCompareCsvUseCase,
     ExportAisleBenchmarkRunCommand,
     ExportAisleBenchmarkRunCsvUseCase,
 )
 from src.application.use_cases.export_inventory_results import ExportAisleResultsCsvUseCase
-from src.application.use_cases.list_aisle_jobs import ListAisleJobsCommand, ListAisleJobsUseCase
-from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
-    ResolveAisleJobForInventoryReadUseCase,
+from src.application.use_cases.get_aisle_merge_results import (
+    GetAisleMergeResultsCommand,
+    GetAisleMergeResultsUseCase,
 )
-from src.domain.jobs.entities import Job
+from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
+from src.application.use_cases.list_aisle_jobs import ListAisleJobsCommand, ListAisleJobsUseCase
+from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.application.use_cases.promote_aisle_operational_job import (
     PromoteAisleOperationalJobCommand,
     PromoteAisleOperationalJobUseCase,
 )
+from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
+    ResolveAisleJobForInventoryReadUseCase,
+)
+from src.application.use_cases.retry_aisle_job import RetryAisleJobCommand, RetryAisleJobUseCase
 from src.application.use_cases.run_aisle_merge import (
     RunAisleMergeCommand,
     RunAisleMergeUseCase,
 )
+from src.application.use_cases.start_aisle_processing import (
+    StartAisleProcessingCommand,
+    StartAisleProcessingUseCase,
+)
+from src.domain.jobs.entities import Job
+
 from .shared import aisle_to_response, job_to_summary, status_response_from_result
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT = 500
 
-
-def _job_to_execution_log_row(job: Job) -> Dict[str, Any]:
-    return {
-        "job_id": job.id,
-        "provider_name": job.provider_name,
-        "model_name": job.model_name,
-        "prompt_key": job.prompt_key,
-        "prompt_version": job.prompt_version,
-        "execution_id": job.execution_id,
-    }
-
-
-def _aggregate_aisle_execution_log_payload(
+def _build_aisle_aggregated_execution_log_body(
+    *,
     inventory_id: str,
     aisle_id: str,
-    *,
     list_jobs_uc: ListAisleJobsUseCase,
     artifact_storage: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
+    """List jobs then merge per-job execution logs (artifact reads remain in API layer)."""
     try:
         result = list_jobs_uc.execute(
             ListAisleJobsCommand(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
-                limit=_AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT,
+                limit=AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT,
             )
         )
     except (InventoryNotFoundError, AisleNotFoundError) as e:
         reraise_if_mapped(e)
+        raise
 
-    log_sources: List[Dict[str, Any]] = []
-    streams: List[Tuple[str, datetime, List[Dict[str, Any]]]] = []
-
-    for job in result.jobs:
-        src: Dict[str, Any] = {"job_id": job.id, "status": "ok", "detail": None}
+    def try_read_events(job: Job) -> tuple[list[dict[str, Any]] | None, dict[str, Any]]:
+        src: dict[str, Any] = {"job_id": job.id, "status": "ok", "detail": None}
         try:
             raw = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
-            streams.append((job.id, job.created_at, raw))
+            return raw, src
         except StoredArtifactAccessError as e:
             if int(e.status_code) == 404:
                 src["status"] = "missing"
@@ -175,23 +171,19 @@ def _aggregate_aisle_execution_log_payload(
                 e.reason_code,
                 e.detail,
             )
+            return None, src
         except Exception as e:
             src["status"] = "error"
             src["detail"] = str(e)[:2048]
             logger.exception("aisle_execution_log_unexpected job_id=%s", job.id)
-        log_sources.append(src)
+            return None, src
 
-    merged_events, owners = merge_raw_execution_log_events_by_ts(streams)
-    seed_ids = [j.id for j in result.jobs]
-    jobs_meta = [_job_to_execution_log_row(j) for j in result.jobs]
-    return build_enriched_aisle_aggregated_execution_log(
+    return aggregate_aisle_execution_log_payload(
         inventory_id=inventory_id,
         aisle_id=aisle_id,
-        raw_events=merged_events,
-        artifact_owner_job_ids=owners,
-        seed_job_ids=seed_ids,
-        jobs=jobs_meta,
-        log_sources=log_sources,
+        jobs=result.jobs,
+        try_read_events=try_read_events,
+        logger=logger,
     )
 
 
@@ -238,14 +230,15 @@ def create_aisle(
         return aisle_to_response(aisle)
     except (InventoryNotFoundError, DuplicateAisleCodeError) as e:
         reraise_if_mapped(e)
+        raise
 
 
 @router.get("/{inventory_id}/aisles", response_model=PaginatedAisleListResponse)
 def list_aisles(
     inventory_id: str,
     use_case: ListAislesWithStatusUseCase = Depends(get_list_aisles_with_status_use_case),
-    search: Optional[str] = Query(None, description="Case-insensitive substring on aisle code."),
-    status: Optional[str] = Query(None, description="Exact aisle status (wire value)."),
+    search: str | None = Query(None, description="Case-insensitive substring on aisle code."),
+    status: str | None = Query(None, description="Exact aisle status (wire value)."),
     sort_by: str = Query(
         "code",
         description=(
@@ -263,9 +256,9 @@ def list_aisles(
     `total_pages`), not a JSON array. Intentional breaking change from the pre–1.4 array body.
     """
     try:
-        q = AisleTableQuery(
-            search=search.strip() if search and search.strip() else None,
-            status=status.strip() if status and str(status).strip() else None,
+        q = build_aisle_table_query_from_route_params(
+            search=search,
+            status=status,
             sort_by=sort_by,
             sort_dir=sort_dir,
             page=page,
@@ -292,9 +285,14 @@ def list_aisles(
         )
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)
+        raise
 
 
-@router.post("/{inventory_id}/aisles/{aisle_id}/process", response_model=ProcessAisleResponse, status_code=202)
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/process",
+    response_model=ProcessAisleResponse,
+    status_code=202,
+)
 def start_aisle_processing(
     inventory_id: str,
     aisle_id: str,
@@ -302,7 +300,11 @@ def start_aisle_processing(
     use_case: StartAisleProcessingUseCase = Depends(get_start_aisle_processing_use_case),
 ) -> ProcessAisleResponse:
     try:
-        body = payload or ProcessAisleRequest()
+        body = payload or ProcessAisleRequest(
+            provider_name=None,
+            model_name=None,
+            prompt_key=None,
+        )
         job_id = use_case.execute(
             StartAisleProcessingCommand(
                 inventory_id=inventory_id,
@@ -330,6 +332,7 @@ def get_aisle_status(
         return status_response_from_result(result)
     except AisleNotFoundError as e:
         reraise_if_mapped(e)
+        raise
 
 
 @router.get(
@@ -351,11 +354,13 @@ def list_aisle_jobs(
         return AisleJobsListResponse(
             operational_job_id=op,
             jobs=[
-                job_to_summary(j, is_operational=(op is not None and op == j.id)) for j in result.jobs
+                job_to_summary(j, is_operational=(op is not None and op == j.id))
+                for j in result.jobs
             ],
         )
     except (InventoryNotFoundError, AisleNotFoundError) as e:
         reraise_if_mapped(e)
+        raise
 
 
 @router.get(
@@ -369,9 +374,9 @@ def get_aisle_aggregated_execution_log(
     artifact_storage=Depends(get_artifact_storage),
 ) -> AisleExecutionLogResponse:
     """Merge execution logs from all jobs listed for this aisle (up to limit); per-job read failures are non-fatal."""
-    body = _aggregate_aisle_execution_log_payload(
-        inventory_id,
-        aisle_id,
+    body = _build_aisle_aggregated_execution_log_body(
+        inventory_id=inventory_id,
+        aisle_id=aisle_id,
         list_jobs_uc=list_jobs_uc,
         artifact_storage=artifact_storage,
     )
@@ -389,9 +394,9 @@ def get_aisle_aggregated_execution_log_txt(
     artifact_storage=Depends(get_artifact_storage),
 ) -> Response:
     """Plain-text merged execution log for all aisle jobs (UTF-8 download)."""
-    body = _aggregate_aisle_execution_log_payload(
-        inventory_id,
-        aisle_id,
+    body = _build_aisle_aggregated_execution_log_body(
+        inventory_id=inventory_id,
+        aisle_id=aisle_id,
         list_jobs_uc=list_jobs_uc,
         artifact_storage=artifact_storage,
     )
@@ -478,10 +483,10 @@ def get_aisle_job_detail(
     stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
 ) -> JobSummary:
     job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
-    job = stale_reconciler.reconcile(job)
-    if job is None:
+    reconciled = stale_reconciler.reconcile(job)
+    if reconciled is None:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND)
-    return job_to_summary(job)
+    return job_to_summary(reconciled)
 
 
 @router.get(
@@ -509,6 +514,7 @@ def get_job_execution_log(
             e.detail,
         )
         reraise_if_mapped(e, cause=e)
+        raise
     payload = build_enriched_execution_log(
         inventory_id=inventory_id,
         aisle_id=aisle_id,
@@ -543,6 +549,7 @@ def get_job_execution_log_txt(
             e.detail,
         )
         reraise_if_mapped(e, cause=e)
+        raise
     body = build_enriched_execution_log(
         inventory_id=inventory_id,
         aisle_id=aisle_id,
@@ -582,6 +589,7 @@ def get_job_hybrid_report(
             e.detail,
         )
         reraise_if_mapped(e, cause=e)
+        raise
 
 
 @router.post(
@@ -633,7 +641,7 @@ def run_aisle_merge(
 def get_aisle_merge_results(
     inventory_id: str,
     aisle_id: str,
-    job_id: Optional[str] = Query(
+    job_id: str | None = Query(
         None,
         description="Optional inventory job id; omitted uses operational job or legacy slice (Phase 2).",
     ),
@@ -680,7 +688,7 @@ def export_aisle_results_csv(
         False,
         description="When true, export the technical snapshot CSV (same contract as inventory export).",
     ),
-    job_id: Optional[str] = Query(
+    job_id: str | None = Query(
         None,
         description=(
             "Optional inventory job id. Omitted: same resolver as GET …/positions (operational or legacy). "
@@ -786,7 +794,9 @@ def promote_aisle_operational_job(
     inventory_id: str,
     aisle_id: str,
     body: PromoteOperationalJobRequest,
-    use_case: PromoteAisleOperationalJobUseCase = Depends(get_promote_aisle_operational_job_use_case),
+    use_case: PromoteAisleOperationalJobUseCase = Depends(
+        get_promote_aisle_operational_job_use_case
+    ),
 ) -> PromoteOperationalJobResponse:
     """Set ``aisles.operational_job_id`` to a succeeded process_aisle job; prior runs stay persisted."""
     try:
@@ -814,7 +824,9 @@ def export_aisle_benchmark(
     ),
     job_a_id: str | None = Query(None, alias="job_a_id"),
     job_b_id: str | None = Query(None, alias="job_b_id"),
-    run_exporter: ExportAisleBenchmarkRunCsvUseCase = Depends(get_export_aisle_benchmark_run_csv_use_case),
+    run_exporter: ExportAisleBenchmarkRunCsvUseCase = Depends(
+        get_export_aisle_benchmark_run_csv_use_case
+    ),
     compare_exporter: ExportAisleBenchmarkCompareCsvUseCase = Depends(
         get_export_aisle_benchmark_compare_csv_use_case
     ),

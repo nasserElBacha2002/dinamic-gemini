@@ -110,4 +110,3 @@ def test_unresolved_path_cannot_leak_as_valid_qty_zero() -> None:
     )
     assert res.is_resolved is False
     assert res.qty_final == 0
-

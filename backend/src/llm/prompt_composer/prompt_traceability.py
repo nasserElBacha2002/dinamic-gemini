@@ -36,9 +36,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -102,40 +103,99 @@ class PromptCompositionMetadata:
     profile_name: str
     pipeline_provider_key: str
     resolved_llm_provider_key: str
-    model_name: Optional[str]
-    job_prompt_key: Optional[str]
-    settings_hybrid_prompt_key: Optional[str]
-    prompt_version: Optional[str]
+    model_name: str | None
+    job_prompt_key: str | None
+    settings_hybrid_prompt_key: str | None
+    prompt_version: str | None
     prompt_parity_mode: bool
-    llm_identity: Optional[Dict[str, Any]]
+    llm_identity: dict[str, Any] | None
     base_prompt_text: str
     final_prompt_text: str
-    enrichments_applied: List[str]
-    composition_steps: List[Dict[str, Any]]
+    enrichments_applied: list[str]
+    composition_steps: list[dict[str, Any]]
     prompt_hash: str
     base_prompt_hash: str
     timestamp: str
 
-    def to_json_dict(self) -> Dict[str, Any]:
+    def to_json_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
-def build_prompt_composition_dict(
+@dataclass(frozen=True)
+class _PromptCompositionBuildArgs:
+    """Internal bundle for :func:`build_prompt_composition_dict` (B8.5 PLR0913)."""
+
+    profile_name: str
+    pipeline_provider_key: str
+    base_prompt_text: str
+    final_prompt_text: str
+    enrichments_applied: Sequence[str]
+    composition_steps: Sequence[dict[str, Any]]
+    job_prompt_key: str | None
+    settings_hybrid_prompt_key: str | None
+    prompt_version: str | None = None
+    prompt_parity_mode: bool = False
+    resolved_llm_provider_key: str = ""
+    model_name: str | None = None
+    timestamp: str | None = None
+
+
+def _build_prompt_composition_dict_impl(args: _PromptCompositionBuildArgs) -> dict[str, Any]:
+    ts = args.timestamp or datetime.now(timezone.utc).isoformat()
+    meta = PromptCompositionMetadata(
+        schema_version=PROMPT_COMPOSITION_SCHEMA_VERSION,
+        profile_name=args.profile_name,
+        pipeline_provider_key=args.pipeline_provider_key,
+        resolved_llm_provider_key=(args.resolved_llm_provider_key or "").strip().lower(),
+        model_name=(
+            str(args.model_name).strip()
+            if args.model_name and str(args.model_name).strip()
+            else None
+        ),
+        job_prompt_key=(
+            str(args.job_prompt_key).strip()
+            if args.job_prompt_key and str(args.job_prompt_key).strip()
+            else None
+        ),
+        settings_hybrid_prompt_key=(
+            str(args.settings_hybrid_prompt_key).strip()
+            if args.settings_hybrid_prompt_key and str(args.settings_hybrid_prompt_key).strip()
+            else None
+        ),
+        prompt_version=(
+            args.prompt_version.strip()
+            if isinstance(args.prompt_version, str) and args.prompt_version.strip()
+            else None
+        ),
+        prompt_parity_mode=bool(args.prompt_parity_mode),
+        llm_identity=None,
+        base_prompt_text=args.base_prompt_text,
+        final_prompt_text=args.final_prompt_text,
+        enrichments_applied=list(args.enrichments_applied),
+        composition_steps=list(args.composition_steps),
+        prompt_hash=sha256_utf8(args.final_prompt_text),
+        base_prompt_hash=sha256_utf8(args.base_prompt_text),
+        timestamp=ts,
+    )
+    return meta.to_json_dict()
+
+
+def build_prompt_composition_dict(  # noqa: PLR0913 — stable Phase 6 API surface
     *,
     profile_name: str,
     pipeline_provider_key: str,
     base_prompt_text: str,
     final_prompt_text: str,
     enrichments_applied: Sequence[str],
-    composition_steps: Sequence[Dict[str, Any]],
-    job_prompt_key: Optional[str],
-    settings_hybrid_prompt_key: Optional[str],
-    prompt_version: Optional[str] = None,
+    composition_steps: Sequence[dict[str, Any]],
+    job_prompt_key: str | None,
+    settings_hybrid_prompt_key: str | None,
+    prompt_version: str | None = None,
     prompt_parity_mode: bool = False,
     resolved_llm_provider_key: str = "",
-    model_name: Optional[str] = None,
-    timestamp: Optional[str] = None,
-) -> Dict[str, Any]:
+    model_name: str | None = None,
+    timestamp: str | None = None,
+) -> dict[str, Any]:
     """
     Build the **prompt-construction** portion of ``prompt_composition`` (hashes from prompt strings).
 
@@ -147,44 +207,27 @@ def build_prompt_composition_dict(
     ``apply_execution_layer_to_composition`` runs in the analysis strategy. Full ``base_prompt_text``
     and ``final_prompt_text`` are included on purpose for job-level audit (see module docstring).
     """
-    ts = timestamp or datetime.now(timezone.utc).isoformat()
-    meta = PromptCompositionMetadata(
-        schema_version=PROMPT_COMPOSITION_SCHEMA_VERSION,
-        profile_name=profile_name,
-        pipeline_provider_key=pipeline_provider_key,
-        resolved_llm_provider_key=(resolved_llm_provider_key or "").strip().lower(),
-        model_name=(str(model_name).strip() if model_name and str(model_name).strip() else None),
-        job_prompt_key=(str(job_prompt_key).strip() if job_prompt_key and str(job_prompt_key).strip() else None),
-        settings_hybrid_prompt_key=(
-            str(settings_hybrid_prompt_key).strip()
-            if settings_hybrid_prompt_key and str(settings_hybrid_prompt_key).strip()
-            else None
-        ),
-        prompt_version=(
-            prompt_version.strip()
-            if isinstance(prompt_version, str) and prompt_version.strip()
-            else None
-        ),
-        prompt_parity_mode=bool(prompt_parity_mode),
-        llm_identity=None,
-        base_prompt_text=base_prompt_text,
-        final_prompt_text=final_prompt_text,
-        enrichments_applied=list(enrichments_applied),
-        composition_steps=list(composition_steps),
-        prompt_hash=sha256_utf8(final_prompt_text),
-        base_prompt_hash=sha256_utf8(base_prompt_text),
-        timestamp=ts,
+    return _build_prompt_composition_dict_impl(
+        _PromptCompositionBuildArgs(
+            profile_name=profile_name,
+            pipeline_provider_key=pipeline_provider_key,
+            base_prompt_text=base_prompt_text,
+            final_prompt_text=final_prompt_text,
+            enrichments_applied=enrichments_applied,
+            composition_steps=composition_steps,
+            job_prompt_key=job_prompt_key,
+            settings_hybrid_prompt_key=settings_hybrid_prompt_key,
+            prompt_version=prompt_version,
+            prompt_parity_mode=prompt_parity_mode,
+            resolved_llm_provider_key=resolved_llm_provider_key,
+            model_name=model_name,
+            timestamp=timestamp,
+        )
     )
-    return meta.to_json_dict()
 
 
-def validate_prompt_composition_dict(meta: Mapping[str, Any]) -> List[str]:
-    """
-    Return human-readable validation errors; empty list means invariants hold.
-
-    Lightweight structural checks plus SHA-256 consistency and enrichment/base/final alignment.
-    """
-    errors: List[str] = []
+def _prompt_comp_validate_required(meta: Mapping[str, Any]) -> tuple[list[str], str | None]:
+    errors: list[str] = []
 
     sv = meta.get("schema_version")
     if not isinstance(sv, str) or not sv.strip():
@@ -209,8 +252,12 @@ def validate_prompt_composition_dict(meta: Mapping[str, Any]) -> List[str]:
     final = meta.get("final_prompt_text")
     if not isinstance(final, str):
         errors.append("final_prompt_text must be a string")
-        return errors
+        return errors, None
+    return errors, final
 
+
+def _prompt_comp_validate_hashes(meta: Mapping[str, Any], final: str) -> list[str]:
+    errors: list[str] = []
     want_ph = meta.get("prompt_hash")
     if isinstance(want_ph, str) and want_ph:
         if sha256_utf8(final) != want_ph:
@@ -222,7 +269,23 @@ def validate_prompt_composition_dict(meta: Mapping[str, Any]) -> List[str]:
         if isinstance(want_bh, str) and want_bh:
             if sha256_utf8(base) != want_bh:
                 errors.append("base_prompt_hash does not match base_prompt_text")
+    return errors
 
+
+def validate_prompt_composition_dict(meta: Mapping[str, Any]) -> list[str]:
+    """
+    Return human-readable validation errors; empty list means invariants hold.
+
+    Lightweight structural checks plus SHA-256 consistency and enrichment/base/final alignment.
+    """
+    errors, final = _prompt_comp_validate_required(meta)
+    if final is None:
+        return errors
+
+    errors.extend(_prompt_comp_validate_hashes(meta, final))
+
+    enrich = meta.get("enrichments_applied")
+    base = meta.get("base_prompt_text")
     if isinstance(enrich, list) and len(enrich) == 0:
         if isinstance(base, str) and final != base:
             errors.append("enrichments_applied is empty but base_prompt_text != final_prompt_text")
@@ -231,11 +294,11 @@ def validate_prompt_composition_dict(meta: Mapping[str, Any]) -> List[str]:
 
 
 def apply_execution_layer_to_composition(
-    composition: Dict[str, Any],
+    composition: dict[str, Any],
     *,
     resolved_llm_provider_key: str,
-    model_name: Optional[str],
-) -> Dict[str, Any]:
+    model_name: str | None,
+) -> dict[str, Any]:
     """
     Shallow-copy ``composition`` and set **execution-layer** fields.
 
@@ -259,7 +322,7 @@ def prompt_composition_summary_for_execution_log(
     full_composition: Mapping[str, Any],
     *,
     final_prompt_char_len: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Redacted subset of ``prompt_composition`` for execution logs (no full prompt bodies).
 
@@ -268,7 +331,7 @@ def prompt_composition_summary_for_execution_log(
     """
     base_text = full_composition.get("base_prompt_text")
     base_len = len(base_text) if isinstance(base_text, str) else 0
-    out: Dict[str, Any] = {
+    out: dict[str, Any] = {
         "schema_version": full_composition.get("schema_version"),
         "profile_name": full_composition.get("profile_name"),
         "pipeline_provider_key": full_composition.get("pipeline_provider_key"),

@@ -7,12 +7,12 @@ similitud coseno >= min_sim. Sin dependencias GPU por defecto.
 """
 
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
 
-def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     """Similitud coseno entre dos vectores. Devuelve 0.0 si alguna norma es 0."""
     if not vec1 or not vec2 or len(vec1) != len(vec2):
         return 0.0
@@ -21,10 +21,10 @@ def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     n2 = sum(x * x for x in vec2) ** 0.5
     if n1 == 0.0 or n2 == 0.0:
         return 0.0
-    return dot / (n1 * n2)
+    return float(dot / (n1 * n2))
 
 
-def _roi_paths_from_sig(sig: Any) -> List[str]:
+def _roi_paths_from_sig(sig: Any) -> list[str]:
     """Extrae roi_paths de una firma (TrackSignature o dict). Lista vacía si no hay."""
     if sig is None:
         return []
@@ -38,11 +38,11 @@ def _roi_paths_from_sig(sig: Any) -> List[str]:
 
 
 def verify_with_clip(
-    candidates: List[Tuple[str, str]],
-    signatures: Dict[str, Any],
+    candidates: list[tuple[str, str]],
+    signatures: dict[str, Any],
     min_sim: float = 0.92,
-    embedder: Optional[Callable[[str], List[float]]] = None,
-) -> List[Tuple[str, str]]:
+    embedder: Optional[Callable[[str], list[float]]] = None,
+) -> list[tuple[str, str]]:
     """Confirma pares de tracks por similitud CLIP (o stub si embedder es None).
 
     - Si embedder es None: modo stub, devuelve [] (comportamiento seguro para CI).
@@ -62,8 +62,8 @@ def verify_with_clip(
     if embedder is None:
         return []
 
-    result: List[Tuple[str, str]] = []
-    for (tid_a, tid_b) in candidates:
+    result: list[tuple[str, str]] = []
+    for tid_a, tid_b in candidates:
         try:
             if tid_a not in signatures or tid_b not in signatures:
                 continue

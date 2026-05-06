@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
 
 import pytest
 
@@ -22,7 +22,7 @@ class StubInventoryRepo(InventoryRepository):
     def save(self, inventory: Inventory) -> None:
         self._store[inventory.id] = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._store.get(inventory_id)
 
     def list_all(self) -> Sequence[Inventory]:
@@ -63,7 +63,9 @@ def test_get_metrics_returns_calculator_result_when_inventory_exists() -> None:
 
 def test_get_metrics_raises_when_inventory_not_found() -> None:
     inv_repo = StubInventoryRepo([])
-    calculator = StubMetricsCalculator(InventoryMetricsResult(total_positions=0, total_reviewed_positions=0))
+    calculator = StubMetricsCalculator(
+        InventoryMetricsResult(total_positions=0, total_reviewed_positions=0)
+    )
     use_case = GetInventoryMetricsUseCase(inventory_repo=inv_repo, metrics_calculator=calculator)
 
     with pytest.raises(InventoryNotFoundError):

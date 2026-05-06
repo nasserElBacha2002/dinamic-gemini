@@ -36,7 +36,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Optional
+from typing import BinaryIO
 
 
 @dataclass(frozen=True)
@@ -48,11 +48,11 @@ class StoredArtifact:
     """
 
     storage_provider: str
-    storage_bucket: Optional[str]
+    storage_bucket: str | None
     storage_key: str
     content_type: str
     file_size_bytes: int
-    etag: Optional[str] = None
+    etag: str | None = None
 
 
 @dataclass(frozen=True)
@@ -62,37 +62,32 @@ class ArtifactDownload:
     content: bytes
     content_type: str
     file_size_bytes: int
-    etag: Optional[str] = None
+    etag: str | None = None
 
 
 class ArtifactStore(ABC):
     """Storage provider contract for durable artifacts."""
 
     @abstractmethod
-    def put_object(self, key: str, file_obj: BinaryIO, content_type: str) -> StoredArtifact:
-        ...
+    def put_object(self, key: str, file_obj: BinaryIO, content_type: str) -> StoredArtifact: ...
 
     @abstractmethod
-    def get_object(self, key: str) -> ArtifactDownload:
-        ...
+    def get_object(self, key: str) -> ArtifactDownload: ...
 
     @abstractmethod
-    def object_size_bytes(self, key: str, *, bucket: Optional[str] = None) -> int:
+    def object_size_bytes(self, key: str, *, bucket: str | None = None) -> int:
         """Return object size without reading the body (e.g. S3 head or local stat)."""
 
     @abstractmethod
-    def download_to_path(self, key: str, target_path: Path, *, bucket: Optional[str] = None) -> None:
+    def download_to_path(self, key: str, target_path: Path, *, bucket: str | None = None) -> None:
         """Download object directly to local path without buffering full content in memory."""
         ...
 
     @abstractmethod
-    def delete_object(self, key: str) -> None:
-        ...
+    def delete_object(self, key: str) -> None: ...
 
     @abstractmethod
-    def object_exists(self, key: str) -> bool:
-        ...
+    def object_exists(self, key: str) -> bool: ...
 
     @abstractmethod
-    def generate_signed_url(self, key: str, expires_in_sec: int) -> str:
-        ...
+    def generate_signed_url(self, key: str, expires_in_sec: int) -> str: ...

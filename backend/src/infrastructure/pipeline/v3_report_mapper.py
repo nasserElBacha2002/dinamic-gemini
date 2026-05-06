@@ -14,9 +14,10 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
+from src.application.dto.mapped_aisle_result import MappedAisleResult
 from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.labels.entities import RawLabel
 from src.domain.positions.entities import Position, PositionStatus
@@ -35,24 +36,17 @@ logger = logging.getLogger(__name__)
 # Explicit sentinels when pipeline does not provide a value (auditable).
 SKU_UNKNOWN = "UNKNOWN"
 EVIDENCE_PATH_NO_ARTIFACT = "no_artifact"
-_ACCEPTED_COUNT_STATUSES = frozenset({"COUNTED", "COUNTED_MANUAL"})
+_ACCEPTED_COUNT_STATUSES = frozenset({"COU2NTED", "COUNTED_MANUAL"})
+# Normalized bbox lists from the hybrid report (x1,y1,x2,y2).
+_BBOX_COORD_COUNT = 4
 
 
-@dataclass
-class MappedAisleResult:
-    """Result of mapping a hybrid report to v3 domain for one aisle. v3.2.3: includes raw_labels."""
-    positions: List[Position]
-    product_records: List[ProductRecord]
-    evidences: List[Evidence]
-    raw_labels: List[RawLabel]
-
-
-def _needs_review_from_entity(entity: Dict[str, Any]) -> bool:
+def _needs_review_from_entity(entity: dict[str, Any]) -> bool:
     status = (entity.get("count_status") or "").strip().upper()
     return status in ("NEEDS_REVIEW", "NOT_COUNTABLE", "INVALID_STRUCTURE") or status == ""
 
 
-def _confidence_from_entity(entity: Dict[str, Any]) -> tuple[float, bool]:
+def _confidence_from_entity(entity: dict[str, Any]) -> tuple[float, bool]:
     """Return (confidence, confidence_was_missing). Missing or invalid -> 0.0 and needs_review."""
     raw = entity.get("confidence")
     if raw is None:
@@ -64,13 +58,51 @@ def _confidence_from_entity(entity: Dict[str, Any]) -> tuple[float, bool]:
         return 0.0, True
 
 
-def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str, Any]:
+def _summary_merge_bbox_lists(entity: dict[str, Any], out: dict[str, Any]) -> None:
+    for bbox_key in ("extent_bbox", "product_label_bbox", "position_label_bbox"):
+        bb = entity.get(bbox_key)
+        if isinstance(bb, list) and len(bb) == _BBOX_COORD_COUNT:
+            out[bbox_key] = bb
+
+
+def _summary_merge_optional_string_projections(entity: dict[str, Any], out: dict[str, Any]) -> None:
+    """Fallback display fields + traceability (see BUG_INVESTIGATION_POSITIONS_SKU_QUANTITY_NULL)."""
+    for src_key in (
+        "position_barcode",
+        "review_display_label",
+        "source_image_id",
+        "traceability_status",
+    ):
+        val = entity.get(src_key)
+        if val is not None:
+            out[src_key] = val if isinstance(val, str) else str(val)
+
+
+def _summary_merge_filename_and_int_projections(
+    entity: dict[str, Any], out: dict[str, Any]
+) -> None:
+    sof = entity.get("source_image_original_filename")
+    if sof is not None and isinstance(sof, str) and sof.strip():
+        out["source_image_original_filename"] = sof.strip()
+    for ent_key, out_key in (
+        ("source_image_sequence", "source_image_sequence"),
+        ("evidence_primary_frame_index", "evidence_primary_frame_index"),
+    ):
+        raw = entity.get(ent_key)
+        if raw is not None:
+            try:
+                out[out_key] = int(raw)
+            except (TypeError, ValueError):
+                pass
+
+
+def _detected_summary(entity: dict[str, Any], audit: dict[str, Any]) -> dict[str, Any]:
     """Build detected_summary_json for traceability; include audit flags for missing/invalid data.
 
     Includes position_barcode and review_display_label so the list API can show a sku fallback
     when internal_code is missing (aligns with derive_review_display_label: internal_code else position_barcode).
     """
-    out: Dict[str, Any] = {
+    out: dict[str, Any] = {
         "entity_uid": entity.get("entity_uid"),
         "entity_type": entity.get("entity_type"),
         "pallet_id": entity.get("pallet_id"),
@@ -82,46 +114,17 @@ def _detected_summary(entity: Dict[str, Any], audit: Dict[str, Any]) -> Dict[str
     mid = entity.get("model_entity_id")
     if mid is not None:
         out["model_entity_id"] = mid if isinstance(mid, str) else str(mid)
-    for bbox_key in ("extent_bbox", "product_label_bbox", "position_label_bbox"):
-        bb = entity.get(bbox_key)
-        if isinstance(bb, list) and len(bb) == 4:
-            out[bbox_key] = bb
-    # Fallback display fields for list API when internal_code is null (see BUG_INVESTIGATION_POSITIONS_SKU_QUANTITY_NULL).
-    pos_barcode = entity.get("position_barcode")
-    if pos_barcode is not None:
-        out["position_barcode"] = pos_barcode if isinstance(pos_barcode, str) else str(pos_barcode)
-    rdl = entity.get("review_display_label")
-    if rdl is not None:
-        out["review_display_label"] = rdl if isinstance(rdl, str) else str(rdl)
-    # Epic 3.1.B: expose in position so API/frontend can show source image and traceability status
-    sid = entity.get("source_image_id")
-    if sid is not None:
-        out["source_image_id"] = sid if isinstance(sid, str) else str(sid)
-    ts = entity.get("traceability_status")
-    if ts is not None:
-        out["traceability_status"] = ts if isinstance(ts, str) else str(ts)
-    # Epic 2 / Epic 5: persist so position API can expose source_image_original_filename at top level
-    sof = entity.get("source_image_original_filename")
-    if sof is not None and isinstance(sof, str) and sof.strip():
-        out["source_image_original_filename"] = sof.strip()
-    seq = entity.get("source_image_sequence")
-    if seq is not None:
-        try:
-            out["source_image_sequence"] = int(seq)
-        except (TypeError, ValueError):
-            pass
-    efi = entity.get("evidence_primary_frame_index")
-    if efi is not None:
-        try:
-            out["evidence_primary_frame_index"] = int(efi)
-        except (TypeError, ValueError):
-            pass
+    _summary_merge_bbox_lists(entity, out)
+    _summary_merge_optional_string_projections(entity, out)
+    _summary_merge_filename_and_int_projections(entity, out)
     if audit:
         out["_audit"] = audit
     return out
 
 
-def _qty_from_entity(entity: Dict[str, Any], *, has_valid_evidence: bool) -> tuple[int, Dict[str, Any]]:
+def _qty_from_entity(
+    entity: dict[str, Any], *, has_valid_evidence: bool
+) -> tuple[int, dict[str, Any]]:
     """Resolve final qty + provenance for one report entity (v3.2.2).
 
     ``final_quantity`` in the hybrid report is always emitted (often ``null`` when count_status left
@@ -215,7 +218,9 @@ def _qty_from_entity(entity: Dict[str, Any], *, has_valid_evidence: bool) -> tup
         # Secondary projection in detected_summary_json; ProductRecord is authoritative.
         "qty_final": res.qty_final,
         "qty_source": source_value,
-        "qty_inference_reason": res.qty_inference_reason.value if res.qty_inference_reason else None,
+        "qty_inference_reason": res.qty_inference_reason.value
+        if res.qty_inference_reason
+        else None,
         "raw_qty": res.raw_qty,
         "qty_parse_status": res.qty_parse_status.value,
         "qty_origin_field": origin,
@@ -224,9 +229,170 @@ def _qty_from_entity(entity: Dict[str, Any], *, has_valid_evidence: bool) -> tup
     return res.qty_final, meta
 
 
+@dataclass(frozen=True)
+class _HybridMapContext:
+    """Per-job mapping inputs for one hybrid report (B8.4 — reduces arity in internal mapper)."""
+
+    aisle_id: str
+    run_id: str
+    job_id: str
+    now: datetime
+    inventory_id: str
+
+
+def _first_bbox_json(entity: dict[str, Any]) -> dict[str, Any] | None:
+    for bbox_key in ("extent_bbox", "product_label_bbox", "position_label_bbox"):
+        bb = entity.get(bbox_key)
+        if isinstance(bb, list) and len(bb) == _BBOX_COORD_COUNT:
+            return {bbox_key: bb}
+    return None
+
+
+def _map_single_hybrid_entity(
+    ctx: _HybridMapContext, entity: dict[str, Any]
+) -> tuple[Position, ProductRecord, Evidence, RawLabel]:
+    """Map one hybrid_report entity to domain rows (same field semantics as pre–B8.4 loop body)."""
+    position_id = str(uuid4())
+    product_id = str(uuid4())
+    evidence_id = str(uuid4())
+
+    confidence, confidence_missing = _confidence_from_entity(entity)
+    needs_review = _needs_review_from_entity(entity) or confidence_missing
+
+    evidence_path_rel = (entity.get("evidence_path") or "").strip()
+    if evidence_path_rel:
+        storage_path = f"{ctx.job_id}/{ctx.run_id}/{evidence_path_rel}"
+        evidence_path_missing = False
+    else:
+        storage_path = EVIDENCE_PATH_NO_ARTIFACT
+        evidence_path_missing = True
+    # v3.2.2: Temporary proxy for "valid evidence". Better signal would be explicit
+    # evidence validation; for this release we use presence of evidence_path.
+    has_valid_evidence = not evidence_path_missing
+
+    internal_code_raw = entity.get("internal_code")
+    if (
+        internal_code_raw is not None
+        and isinstance(internal_code_raw, str)
+        and internal_code_raw.strip()
+    ):
+        sku = internal_code_raw.strip()
+    else:
+        sku = SKU_UNKNOWN
+    internal_code_missing = sku == SKU_UNKNOWN
+
+    quantity, qty_meta = _qty_from_entity(entity, has_valid_evidence=has_valid_evidence)
+    # "Explicit" quantity missing = raw field absent/null/invalid (not "final quantity unavailable").
+    explicit_quantity_missing = qty_meta.get("qty_parse_status") in (
+        "missing",
+        "null",
+        "invalid",
+    )
+
+    audit: dict[str, Any] = {}
+    if confidence_missing:
+        audit["confidence_missing"] = True
+    if internal_code_missing:
+        audit["internal_code_missing"] = True
+    if explicit_quantity_missing:
+        audit["explicit_quantity_missing"] = True
+    if evidence_path_missing:
+        audit["evidence_path_missing"] = True
+
+    position = Position(
+        id=position_id,
+        aisle_id=ctx.aisle_id,
+        status=PositionStatus.DETECTED,
+        confidence=confidence,
+        needs_review=needs_review,
+        primary_evidence_id=evidence_id,
+        created_at=ctx.now,
+        updated_at=ctx.now,
+        detected_summary_json={**_detected_summary(entity, audit), **qty_meta},
+        corrected_summary_json=None,
+        job_id=ctx.job_id,
+    )
+
+    # ProductRecord is the authoritative persisted record for qty and provenance.
+    product = ProductRecord(
+        id=product_id,
+        position_id=position_id,
+        sku=sku,
+        description="",
+        detected_quantity=quantity,
+        confidence=confidence,
+        created_at=ctx.now,
+        updated_at=ctx.now,
+        corrected_quantity=None,
+        qty_source=str(qty_meta.get("qty_source") or ""),
+        qty_inference_reason=qty_meta.get("qty_inference_reason"),
+        raw_qty=qty_meta.get("raw_qty"),
+        qty_parse_status=qty_meta.get("qty_parse_status"),
+    )
+
+    ev_frame: int | None = None
+    raw_efi = entity.get("evidence_primary_frame_index")
+    if raw_efi is not None:
+        try:
+            ev_frame = int(raw_efi)
+        except (TypeError, ValueError):
+            ev_frame = None
+
+    bbox_json = _first_bbox_json(entity)
+
+    evidence = Evidence(
+        id=evidence_id,
+        entity_type="position",
+        entity_id=position_id,
+        type=EvidenceType.POSITION_CROP,
+        storage_path=storage_path,
+        source_asset_id=None,
+        is_primary=True,
+        frame_index=ev_frame,
+        timestamp_ms=None,
+        bbox_json=bbox_json,
+        quality_score=entity.get("entity_quality_score"),
+    )
+
+    # v3.2.3: one RawLabel per entity for normalization/merge layer
+    raw_label_id = str(uuid4())
+    entity_uid = entity.get("entity_uid") or position_id
+    evidence_path_for_meta = (entity.get("evidence_path") or "").strip()
+    group_key = f"position:{position_id}:evidence:{evidence_id}" if evidence_id else str(entity_uid)
+    sku_raw = (
+        internal_code_raw
+        if internal_code_raw is not None and isinstance(internal_code_raw, str)
+        else None
+    )
+    raw_label = RawLabel(
+        id=raw_label_id,
+        inventory_id=ctx.inventory_id or "",
+        aisle_id=ctx.aisle_id,
+        position_id=position_id,
+        evidence_id=evidence_id,
+        group_key=group_key,
+        provider="pipeline",
+        source_type="hybrid_report",
+        source_reference=entity.get("entity_uid"),
+        sku_raw=sku_raw.strip() if sku_raw and sku_raw.strip() else None,
+        sku_candidate=sku_raw.strip() if sku_raw and sku_raw.strip() else None,
+        product_name_raw=entity.get("review_display_label")
+        if isinstance(entity.get("review_display_label"), str)
+        else None,
+        detected_text=entity.get("internal_code")
+        if isinstance(entity.get("internal_code"), str)
+        else None,
+        confidence=confidence,
+        metadata={"entity_uid": entity_uid, "evidence_path": evidence_path_for_meta},
+        created_at=ctx.now,
+        job_id=ctx.job_id,
+    )
+    return position, product, evidence, raw_label
+
+
 def map_hybrid_report_to_domain(
     aisle_id: str,
-    report: Dict[str, Any],
+    report: dict[str, Any],
     run_dir: Path,
     run_id: str,
     job_id: str,
@@ -240,146 +406,27 @@ def map_hybrid_report_to_domain(
     Storage paths for evidence are stored as relative to output root: job_id/run_id/evidence_path.
     inventory_id: required for raw_labels scope when provided.
     """
-    positions: List[Position] = []
-    product_records: List[ProductRecord] = []
-    evidences: List[Evidence] = []
-    raw_labels: List[RawLabel] = []
+    # Kept in signature for stable callers; path layout uses job_id + run_id for evidence storage_path.
+    _ = run_dir
+    positions: list[Position] = []
+    product_records: list[ProductRecord] = []
+    evidences: list[Evidence] = []
+    raw_labels: list[RawLabel] = []
 
+    ctx = _HybridMapContext(
+        aisle_id=aisle_id,
+        run_id=run_id,
+        job_id=job_id,
+        now=now,
+        inventory_id=inventory_id,
+    )
     entities = report.get("entities") or []
     for entity in entities:
-        position_id = str(uuid4())
-        product_id = str(uuid4())
-        evidence_id = str(uuid4())
-
-        confidence, confidence_missing = _confidence_from_entity(entity)
-        needs_review = _needs_review_from_entity(entity) or confidence_missing
-
-        evidence_path_rel = (entity.get("evidence_path") or "").strip()
-        if evidence_path_rel:
-            storage_path = f"{job_id}/{run_id}/{evidence_path_rel}"
-            evidence_path_missing = False
-        else:
-            storage_path = EVIDENCE_PATH_NO_ARTIFACT
-            evidence_path_missing = True
-        # v3.2.2: Temporary proxy for "valid evidence". Better signal would be explicit
-        # evidence validation; for this release we use presence of evidence_path.
-        has_valid_evidence = not evidence_path_missing
-
-        internal_code_raw = entity.get("internal_code")
-        if internal_code_raw is not None and isinstance(internal_code_raw, str) and internal_code_raw.strip():
-            sku = internal_code_raw.strip()
-        else:
-            sku = SKU_UNKNOWN
-        internal_code_missing = sku == SKU_UNKNOWN
-
-        quantity, qty_meta = _qty_from_entity(entity, has_valid_evidence=has_valid_evidence)
-        # "Explicit" quantity missing = raw field absent/null/invalid (not "final quantity unavailable").
-        explicit_quantity_missing = qty_meta.get("qty_parse_status") in (
-            "missing",
-            "null",
-            "invalid",
-        )
-
-        audit: Dict[str, Any] = {}
-        if confidence_missing:
-            audit["confidence_missing"] = True
-        if internal_code_missing:
-            audit["internal_code_missing"] = True
-        if explicit_quantity_missing:
-            audit["explicit_quantity_missing"] = True
-        if evidence_path_missing:
-            audit["evidence_path_missing"] = True
-
-        position = Position(
-            id=position_id,
-            aisle_id=aisle_id,
-            status=PositionStatus.DETECTED,
-            confidence=confidence,
-            needs_review=needs_review,
-            primary_evidence_id=evidence_id,
-            created_at=now,
-            updated_at=now,
-            detected_summary_json={**_detected_summary(entity, audit), **qty_meta},
-            corrected_summary_json=None,
-            job_id=job_id,
-        )
-        positions.append(position)
-
-        # ProductRecord is the authoritative persisted record for qty and provenance.
-        product = ProductRecord(
-            id=product_id,
-            position_id=position_id,
-            sku=sku,
-            description="",
-            detected_quantity=quantity,
-            confidence=confidence,
-            created_at=now,
-            updated_at=now,
-            corrected_quantity=None,
-            qty_source=str(qty_meta.get("qty_source") or ""),
-            qty_inference_reason=qty_meta.get("qty_inference_reason"),
-            raw_qty=qty_meta.get("raw_qty"),
-            qty_parse_status=qty_meta.get("qty_parse_status"),
-        )
-        product_records.append(product)
-
-        ev_frame: Optional[int] = None
-        raw_efi = entity.get("evidence_primary_frame_index")
-        if raw_efi is not None:
-            try:
-                ev_frame = int(raw_efi)
-            except (TypeError, ValueError):
-                ev_frame = None
-
-        bbox_json: Optional[Dict[str, Any]] = None
-        for bbox_key in ("extent_bbox", "product_label_bbox", "position_label_bbox"):
-            bb = entity.get(bbox_key)
-            if isinstance(bb, list) and len(bb) == 4:
-                bbox_json = {bbox_key: bb}
-                break
-
-        evidence = Evidence(
-            id=evidence_id,
-            entity_type="position",
-            entity_id=position_id,
-            type=EvidenceType.POSITION_CROP,
-            storage_path=storage_path,
-            source_asset_id=None,
-            is_primary=True,
-            frame_index=ev_frame,
-            timestamp_ms=None,
-            bbox_json=bbox_json,
-            quality_score=entity.get("entity_quality_score"),
-        )
-        evidences.append(evidence)
-
-        # v3.2.3: one RawLabel per entity for normalization/merge layer
-        raw_label_id = str(uuid4())
-        entity_uid = entity.get("entity_uid") or position_id
-        evidence_path_rel = (entity.get("evidence_path") or "").strip()
-        group_key = f"position:{position_id}:evidence:{evidence_id}" if evidence_id else str(entity_uid)
-        sku_raw = internal_code_raw if internal_code_raw is not None and isinstance(internal_code_raw, str) else None
-        raw_labels.append(
-            RawLabel(
-                id=raw_label_id,
-                inventory_id=inventory_id or "",
-                aisle_id=aisle_id,
-                position_id=position_id,
-                evidence_id=evidence_id,
-                group_key=group_key,
-                provider="pipeline",
-                source_type="hybrid_report",
-                source_reference=entity.get("entity_uid"),
-                sku_raw=sku_raw.strip() if sku_raw and sku_raw.strip() else None,
-                sku_candidate=sku_raw.strip() if sku_raw and sku_raw.strip() else None,
-                product_name_raw=entity.get("review_display_label") if isinstance(entity.get("review_display_label"), str) else None,
-                detected_text=entity.get("internal_code") if isinstance(entity.get("internal_code"), str) else None,
-                confidence=confidence,
-                metadata={"entity_uid": entity_uid, "evidence_path": evidence_path_rel},
-                created_at=now,
-                job_id=job_id,
-            )
-        )
+        pos, prod, ev, rl = _map_single_hybrid_entity(ctx, entity)
+        positions.append(pos)
+        product_records.append(prod)
+        evidences.append(ev)
+        raw_labels.append(rl)
 
     return MappedAisleResult(
         positions=positions,

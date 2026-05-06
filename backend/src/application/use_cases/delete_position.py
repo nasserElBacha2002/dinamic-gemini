@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 
+from src.application.errors import PositionDeletedError
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
@@ -15,7 +16,6 @@ from src.application.ports.repositories import (
     PositionRepository,
     ReviewActionRepository,
 )
-from src.application.errors import PositionDeletedError
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.use_cases.review_validation import (
     ensure_review_job_matches_position,
@@ -59,16 +59,12 @@ class DeletePositionUseCase:
             position_id,
         )
         if position.status == PositionStatus.DELETED:
-            raise PositionDeletedError(
-                f"Position {position_id} is already deleted"
-            )
+            raise PositionDeletedError(f"Position {position_id} is already deleted")
         ensure_review_job_matches_position(job_id, position)
         now = self._clock.now()
         before_status = position.status.value
         before_resolution = (
-            position.review_resolution.value
-            if position.review_resolution is not None
-            else None
+            position.review_resolution.value if position.review_resolution is not None else None
         )
         position.status = PositionStatus.DELETED
         position.review_resolution = PositionReviewResolution.DELETED

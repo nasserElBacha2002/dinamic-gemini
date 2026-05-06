@@ -54,9 +54,7 @@ class GeminiSdkAdapter:
         meta = request.metadata or {}
         prompt_parity_mode = bool(meta.get(LLM_METADATA_KEY_PROMPT_PARITY_MODE))
         use_request_prompt = (
-            request.prompt.strip()
-            if (request.prompt and request.prompt.strip())
-            else None
+            request.prompt.strip() if (request.prompt and request.prompt.strip()) else None
         )
         prompt_text = (
             use_request_prompt

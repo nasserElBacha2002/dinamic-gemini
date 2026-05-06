@@ -13,23 +13,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from src.domain.entity import Entity
 from src.jobs.image_identity import load_job_images_from_manifest
 from src.jobs.photos_paths import photos_dir_relative_for_manifest, resolve_manifest_path
+from src.pipeline.context.run_context import RunContext
 from src.reporting.artifacts import write_json, write_report_csv
 from src.reporting.hybrid_report import build_hybrid_report
-from src.pipeline.context.run_context import RunContext
 
 
 @dataclass
 class ReportingStageInput:
     """Input for ReportingStage: resolved entities plus frame count and metadata (orchestrator assembles)."""
 
-    entities: List[Entity]
+    entities: list[Entity]
     frames_count: int
-    frame_indices: Optional[List[int]]
+    frame_indices: list[int] | None
     video_path_for_report: str  # video_path or photos_{job_id}
 
 
@@ -38,7 +38,7 @@ class ReportingResult:
     """Output of ReportingStage: path and payload written."""
 
     report_path: Path
-    report: Dict[str, Any]
+    report: dict[str, Any]
 
 
 class ReportingStage:
@@ -51,8 +51,8 @@ class ReportingStage:
 
         # Epic 5: for photos jobs, build image_id -> original_filename so report/export expose source_image_original_filename.
         # Uses public path helpers (no dependency on private frame-source helpers).
-        source_image_filename_map: Optional[Dict[str, str]] = None
-        source_image_upload_order: Optional[Dict[str, int]] = None
+        source_image_filename_map: dict[str, str] | None = None
+        source_image_upload_order: dict[str, int] | None = None
         job_input = getattr(context, "job_input", None)
         if job_input and getattr(job_input, "input_type", "") == "photos":
             manifest_path = resolve_manifest_path(run_dir, job_input)

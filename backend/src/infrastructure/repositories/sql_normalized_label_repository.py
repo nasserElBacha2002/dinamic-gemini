@@ -5,15 +5,15 @@ SQL Server implementation of NormalizedLabelRepository — v3.2.3.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
 
 from src.application.ports.repositories import LabelJobScope, NormalizedLabelRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.labels.entities import NormalizedLabel
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -79,7 +79,9 @@ def _row_to_normalized_label(row) -> NormalizedLabel:
         canonical_product_name=getattr(row, "canonical_product_name", None),
         raw_label_ids=_safe_load_list(getattr(row, "raw_label_ids_json", None)),
         merge_rule_applied=getattr(row, "merge_rule_applied", "") or "",
-        merge_confidence=float(getattr(row, "merge_confidence", 0)) if getattr(row, "merge_confidence", None) is not None else None,
+        merge_confidence=float(getattr(row, "merge_confidence", 0))
+        if getattr(row, "merge_confidence", None) is not None
+        else None,
         merge_reason=getattr(row, "merge_reason", "") or "",
         review_required=bool(getattr(row, "review_required", False)),
         metadata=_safe_load_json(getattr(row, "metadata_json", None)),
@@ -172,6 +174,7 @@ class SqlNormalizedLabelRepository(NormalizedLabelRepository):
         job_id: LabelJobScope = "all",
     ) -> Sequence[NormalizedLabel]:
         extra_sql, extra_params = _sql_job_predicate(job_id)
+        # extra_sql from _sql_job_predicate only (see module helper).
         with self._client.cursor() as cur:
             cur.execute(
                 f"""
@@ -182,7 +185,7 @@ class SqlNormalizedLabelRepository(NormalizedLabelRepository):
                 FROM normalized_labels
                 WHERE inventory_id = ? AND aisle_id = ?{extra_sql}
                 ORDER BY created_at ASC, id ASC
-                """,
+                """,  # nosec B608
                 (inventory_id, aisle_id, *extra_params),
             )
             rows = cur.fetchall()
@@ -198,7 +201,6 @@ class SqlNormalizedLabelRepository(NormalizedLabelRepository):
         extra_sql, extra_params = _sql_job_predicate(job_id)
         with self._client.cursor() as cur:
             cur.execute(
-                f"DELETE FROM normalized_labels WHERE inventory_id = ? AND aisle_id = ?{extra_sql}",
+                f"DELETE FROM normalized_labels WHERE inventory_id = ? AND aisle_id = ?{extra_sql}",  # nosec B608
                 (inventory_id, aisle_id, *extra_params),
             )
-

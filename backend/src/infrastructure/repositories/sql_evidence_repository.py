@@ -6,28 +6,43 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from src.application.ports.repositories import EvidenceRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.evidence.entities import Evidence, EvidenceType
+from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_for_row
 
 logger = logging.getLogger(__name__)
 
 
-def _parse_json(raw: Optional[str], context: str = "") -> Optional[Dict[str, Any]]:
-    if not raw or not raw.strip():
+def _parse_json(raw: object, context: str = "") -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+    else:
+        text = str(raw).strip()
+    if not text:
         return None
     try:
-        return json.loads(raw)
+        parsed = json.loads(text)
     except json.JSONDecodeError as e:
         logger.warning("Invalid JSON in %s: %s", context or "evidence", e)
         return None
+    if not isinstance(parsed, dict):
+        logger.warning("JSON root is not an object in %s", context or "evidence")
+        return None
+    return parsed
 
 
 def _type_from_row(row, evidence_id: str = "?") -> EvidenceType:
-    t = getattr(row, "type", "position_crop") or "position_crop"
+    raw = getattr(row, "type", None)
+    t = normalize_db_str(raw) if raw is not None else ""
+    if not t:
+        t = "position_crop"
     try:
         return EvidenceType(t)
     except ValueError:
@@ -35,23 +50,21 @@ def _type_from_row(row, evidence_id: str = "?") -> EvidenceType:
 
 
 def _row_to_evidence(row) -> Evidence:
-    eid = getattr(row, "id", "")
-    source_asset_id = getattr(row, "source_asset_id", None)
-    if source_asset_id == "":
-        source_asset_id = None
-    storage_path = (getattr(row, "storage_path", None) or "").strip()
-    storage_provider_raw = (getattr(row, "storage_provider", None) or "").strip() or None
+    eid = normalize_db_str(getattr(row, "id", None))
+    source_asset_id = optional_nonempty_db_str(getattr(row, "source_asset_id", None))
+    storage_path = normalize_db_str(getattr(row, "storage_path", None))
+    storage_provider_raw = optional_nonempty_db_str(getattr(row, "storage_provider", None))
     storage_key = resolved_storage_key_for_row(
         storage_provider=storage_provider_raw,
         storage_key_raw=getattr(row, "storage_key", None),
         storage_path=storage_path,
     )
     # Evidence entity stores HTTP/storage metadata in content_type (no separate mime_type column).
-    content_type = (getattr(row, "content_type", None) or "").strip()
+    content_type = normalize_db_str(getattr(row, "content_type", None))
     return Evidence(
         id=eid,
-        entity_type=row.entity_type or "",
-        entity_id=row.entity_id or "",
+        entity_type=normalize_db_str(getattr(row, "entity_type", None)),
+        entity_id=normalize_db_str(getattr(row, "entity_id", None)),
         type=_type_from_row(row, eid),
         storage_path=storage_path,
         source_asset_id=source_asset_id,
@@ -61,11 +74,11 @@ def _row_to_evidence(row) -> Evidence:
         bbox_json=_parse_json(getattr(row, "bbox_json", None), f"evidence id={eid}"),
         quality_score=getattr(row, "quality_score", None),
         storage_provider=storage_provider_raw,
-        storage_bucket=(getattr(row, "storage_bucket", None) or "").strip() or None,
+        storage_bucket=optional_nonempty_db_str(getattr(row, "storage_bucket", None)),
         storage_key=storage_key or None,
         content_type=content_type or None,
         file_size_bytes=getattr(row, "file_size_bytes", None),
-        etag=(getattr(row, "etag", None) or "").strip() or None,
+        etag=optional_nonempty_db_str(getattr(row, "etag", None)),
     )
 
 
@@ -74,7 +87,9 @@ class SqlEvidenceRepository(EvidenceRepository):
         self._client = client
 
     def save(self, evidence: Evidence) -> None:
-        bbox_str = json.dumps(evidence.bbox_json, ensure_ascii=False) if evidence.bbox_json else None
+        bbox_str = (
+            json.dumps(evidence.bbox_json, ensure_ascii=False) if evidence.bbox_json else None
+        )
         source_asset_id = evidence.source_asset_id  # None stored as NULL
         with self._client.cursor() as cur:
             cur.execute(
@@ -136,7 +151,7 @@ class SqlEvidenceRepository(EvidenceRepository):
                     ),
                 )
 
-    def get_by_id(self, evidence_id: str) -> Optional[Evidence]:
+    def get_by_id(self, evidence_id: str) -> Evidence | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """

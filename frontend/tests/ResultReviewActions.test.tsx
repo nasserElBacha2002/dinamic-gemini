@@ -50,7 +50,7 @@ describe('ResultReviewActions', () => {
       </WithTheme>
     );
     fireEvent.click(screen.getByRole('button', { name: /Correct quantity/i }));
-    const qtyInput = screen.getByPlaceholderText('0');
+    const qtyInput = screen.getByPlaceholderText(/qty placeholder/i);
     fireEvent.change(qtyInput, { target: { value: '-1' } });
     expect(qtyInput).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByRole('button', { name: /^Save$/i })).toBeDisabled();
@@ -113,7 +113,7 @@ describe('ResultReviewActions', () => {
       </WithTheme>
     );
     expect(
-      screen.getByText(/non-operational run/i)
+      screen.getByText(/readonly run/i)
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Confirm result/i })).toBeNull();
   });

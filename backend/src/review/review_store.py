@@ -3,7 +3,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ def _reviews_path(run_dir: Path) -> Path:
     return run_dir / REVIEWS_FILENAME
 
 
-def load_reviews(run_dir: Path) -> Dict[str, Any]:
+def load_reviews(run_dir: Path) -> dict[str, Any]:
     """Load reviews from run_dir/reviews.json. Returns dict keyed by entity_uid with events list."""
     path = _reviews_path(run_dir)
     if not path.exists():
@@ -33,7 +33,7 @@ def load_reviews(run_dir: Path) -> Dict[str, Any]:
 def save_review(
     run_dir: Path,
     entity_uid: str,
-    review_event: Dict[str, Any],
+    review_event: dict[str, Any],
 ) -> None:
     """Append a review event for entity_uid. Creates/updates run_dir/reviews.json."""
     path = _reviews_path(run_dir)
@@ -46,12 +46,12 @@ def save_review(
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
-def get_reviews(run_dir: Path) -> Dict[str, Any]:
+def get_reviews(run_dir: Path) -> dict[str, Any]:
     """Return full reviews structure (entity_uid -> { entity_uid, events })."""
     return load_reviews(run_dir)
 
 
-def get_entity_audit(job_id: str, run_dir: Path, entity_uid: str) -> List[Dict[str, Any]]:
+def get_entity_audit(job_id: str, run_dir: Path, entity_uid: str) -> list[dict[str, Any]]:
     """Return audit events for entity_uid. Empty list if none."""
     data = load_reviews(run_dir)
     ent = data.get(entity_uid)

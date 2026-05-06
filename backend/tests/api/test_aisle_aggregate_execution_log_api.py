@@ -11,7 +11,12 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from src.api.dependencies import get_artifact_storage, get_aisle_repo, get_inventory_repo, get_job_repo
+from src.api.dependencies import (
+    get_aisle_repo,
+    get_artifact_storage,
+    get_inventory_repo,
+    get_job_repo,
+)
 from src.api.server import app
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
@@ -103,7 +108,9 @@ def test_aisle_aggregate_execution_log_merges_jobs_and_metadata() -> None:
     app.dependency_overrides[get_job_repo] = lambda: job_repo
     app.dependency_overrides[get_artifact_storage] = lambda: store
     try:
-        with patch("src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings):
+        with patch(
+            "src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings
+        ):
             c = TestClient(app)
             resp = c.get("/api/v3/inventories/inv-agg/aisles/aisle-agg/execution-log")
         assert resp.status_code == 200
@@ -189,7 +196,9 @@ def test_aisle_aggregate_skips_unreadable_job_without_failing() -> None:
     app.dependency_overrides[get_job_repo] = lambda: job_repo
     app.dependency_overrides[get_artifact_storage] = lambda: store
     try:
-        with patch("src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings):
+        with patch(
+            "src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings
+        ):
             c = TestClient(app)
             resp = c.get("/api/v3/inventories/inv-skip/aisles/aisle-skip/execution-log")
         assert resp.status_code == 200
@@ -261,7 +270,9 @@ def test_aisle_aggregate_execution_log_txt_download() -> None:
     app.dependency_overrides[get_job_repo] = lambda: job_repo
     app.dependency_overrides[get_artifact_storage] = lambda: store
     try:
-        with patch("src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings):
+        with patch(
+            "src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings
+        ):
             c = TestClient(app)
             r = c.get("/api/v3/inventories/inv-txt/aisles/aisle-txt/execution-log.txt")
         assert r.status_code == 200

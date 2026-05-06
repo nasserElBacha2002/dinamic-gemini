@@ -10,11 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class ReviewActionType(str, Enum):
     """Wire/API values; SQL ``N'…'`` lists for analytics live in ``sql_literals``."""
+
     CONFIRM = "confirm"
     UPDATE_QUANTITY = "update_quantity"
     UPDATE_SKU = "update_sku"
@@ -29,10 +30,10 @@ class ReviewAction:
     id: str
     position_id: str
     action_type: ReviewActionType
-    before_json: Dict[str, Any]
-    after_json: Dict[str, Any]
+    before_json: dict[str, Any]
+    after_json: dict[str, Any]
     created_at: datetime
-    user_id: Optional[str] = None
-    comment: Optional[str] = None
+    user_id: str | None = None
+    comment: str | None = None
     #: Storage run for this edit (``positions.job_id``); ``None`` = legacy row.
-    job_id: Optional[str] = None
+    job_id: str | None = None

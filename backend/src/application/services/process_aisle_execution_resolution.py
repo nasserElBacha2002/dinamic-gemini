@@ -7,25 +7,27 @@ fallback); test uses explicit request resolution.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from src.application.services.processing_provider_resolution import resolve_start_processing_request
-from src.application.services.production_inventory_processing import effective_production_processing_keys
+from src.application.services.production_inventory_processing import (
+    effective_production_processing_keys,
+)
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode
 
 logger = logging.getLogger(__name__)
 
 
-def _strip_optional(raw: Optional[str]) -> str:
+def _strip_optional(raw: str | None) -> str:
     return (raw or "").strip()
 
 
 def _log_production_ignored_request_overrides(
     inventory_id: str,
     *,
-    requested_provider_name: Optional[str],
-    requested_model_name: Optional[str],
-    requested_prompt_key: Optional[str],
+    requested_provider_name: str | None,
+    requested_model_name: str | None,
+    requested_prompt_key: str | None,
 ) -> None:
     ignored: list[str] = []
     if _strip_optional(requested_provider_name):
@@ -46,11 +48,11 @@ def _log_production_ignored_request_overrides(
 def resolve_process_aisle_execution_keys(
     inventory: Inventory,
     *,
-    requested_provider_name: Optional[str],
-    requested_model_name: Optional[str],
-    requested_prompt_key: Optional[str],
+    requested_provider_name: str | None,
+    requested_model_name: str | None,
+    requested_prompt_key: str | None,
     settings: Any,
-) -> Tuple[str, Optional[str], str]:
+) -> tuple[str, str | None, str]:
     """Return ``(pipeline_provider_key, model_name, prompt_key)`` for a new process-aisle job."""
     if inventory.processing_mode == InventoryProcessingMode.PRODUCTION:
         _log_production_ignored_request_overrides(

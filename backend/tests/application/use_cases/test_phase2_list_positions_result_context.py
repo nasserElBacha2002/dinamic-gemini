@@ -5,7 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.list_aisle_positions import ListAislePositionsCommand, ListAislePositionsUseCase
+from src.application.use_cases.list_aisle_positions import (
+    ListAislePositionsCommand,
+    ListAislePositionsUseCase,
+)
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
@@ -14,7 +17,9 @@ from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleR
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
 
 
 def test_list_positions_operational_job_excludes_other_runs() -> None:
@@ -183,7 +188,9 @@ def test_list_positions_explicit_job_id_returns_job_scoped_when_operational_unse
     )
 
     inv_repo.save(Inventory("inv-1", "X", InventoryStatus.DRAFT, now, now))
-    aisle_repo.save(Aisle("aisle-1", "inv-1", "A", AisleStatus.PROCESSED, now, now, operational_job_id=None))
+    aisle_repo.save(
+        Aisle("aisle-1", "inv-1", "A", AisleStatus.PROCESSED, now, now, operational_job_id=None)
+    )
     pos_repo.save(
         Position(
             "p-scoped",

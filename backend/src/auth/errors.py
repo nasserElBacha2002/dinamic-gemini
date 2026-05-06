@@ -20,4 +20,3 @@ class AuthHttpError(Exception):
 
     def to_response_body(self) -> dict:
         return AuthErrorResponse(error=self.error).model_dump()
-

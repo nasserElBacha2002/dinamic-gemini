@@ -7,14 +7,14 @@ Traceability warning: report-only diagnostic (e.g. reason when status is invalid
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from src.domain.entity import Entity
 from src.domain.traceability import compute_traceability_summary
 from src.reporting.display_label import derive_review_display_label
 
 
-def _build_summary_from_entities(entities: List[Entity]) -> Dict[str, int]:
+def _build_summary_from_entities(entities: list[Entity]) -> dict[str, int]:
     """Compute summary counts from entity list (includes counted_manual)."""
     summary = {
         "total_entities": len(entities),
@@ -51,12 +51,12 @@ def _build_summary_from_entities(entities: List[Entity]) -> Dict[str, int]:
 
 def build_hybrid_report(
     video_path: str,
-    entities: List[Entity],
+    entities: list[Entity],
     frames_selected: int,
-    frame_indices: Optional[List[int]] = None,
-    source_image_filename_map: Optional[Dict[str, str]] = None,
-    source_image_upload_order: Optional[Dict[str, int]] = None,
-) -> Dict[str, Any]:
+    frame_indices: Optional[list[int]] = None,
+    source_image_filename_map: Optional[dict[str, str]] = None,
+    source_image_upload_order: Optional[dict[str, int]] = None,
+) -> dict[str, Any]:
     """Build the authoritative hybrid report (report_version 2.1, summary, entities).
 
     Args:
@@ -79,7 +79,7 @@ def build_hybrid_report(
     entity_dicts = []
     for e in entities:
         sid = getattr(e, "source_image_id", None)
-        row: Dict[str, Any] = {
+        row: dict[str, Any] = {
             "entity_uid": e.entity_uid,
             "entity_type": e.entity_type,
             "model_entity_id": e.model_entity_id,
@@ -111,7 +111,9 @@ def build_hybrid_report(
                 (source_image_filename_map or {}).get(sid) if sid else None
             ),
             # Epic 3.1.D: single review/export display label (internal_code else position_barcode; centralized derivation)
-            "review_display_label": derive_review_display_label(e.internal_code, e.position_barcode),
+            "review_display_label": derive_review_display_label(
+                e.internal_code, e.position_barcode
+            ),
         }
         if source_image_upload_order and sid:
             seq = source_image_upload_order.get(sid)
@@ -122,7 +124,7 @@ def build_hybrid_report(
             row["evidence_primary_frame_index"] = efi
         entity_dicts.append(row)
 
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "report_version": "2.1",
         "mode": "hybrid_v2.1",
         "video": {"path": video_path, "name": path_obj.name},
@@ -134,5 +136,3 @@ def build_hybrid_report(
     if frame_indices is not None:
         report["frame_indices"] = frame_indices
     return report
-
-

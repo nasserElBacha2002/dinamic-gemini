@@ -2,27 +2,39 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Dict, Optional, Sequence
 
 import pytest
 
-from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
+from src.application.errors import (
+    ActiveJobExistsError,
+    AisleNotFoundError,
+    InventoryNotFoundError,
+    NoSourceAssetsForAisleProcessingError,
+)
+from src.application.ports.contracts import AisleAssetRollup
+from src.application.ports.repositories import (
+    AisleRepository,
+    InventoryRepository,
+    JobRepository,
+    SourceAssetRepository,
+)
+from src.application.ports.services import WorkerLaunchService
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_stale_reconciler import (
-    JobStaleReconciler,
     STALE_FAILURE_CODE,
     STALE_FAILURE_MESSAGE,
+    JobStaleReconciler,
 )
-from src.application.ports.services import WorkerLaunchService
-from src.application.errors import ActiveJobExistsError, AisleNotFoundError, InventoryNotFoundError
 from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
 from src.application.use_cases.start_aisle_processing import (
     StartAisleProcessingCommand,
     StartAisleProcessingUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
@@ -43,7 +55,7 @@ class StubInventoryRepo(InventoryRepository):
     def save(self, inventory: Inventory) -> None:
         self._store[inventory.id] = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._store.get(inventory_id)
 
     def list_all(self) -> Sequence[Inventory]:
@@ -52,35 +64,78 @@ class StubInventoryRepo(InventoryRepository):
 
 class StubAisleRepo(AisleRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Aisle] = {}
+        self._store: dict[str, Aisle] = {}
 
     def save(self, aisle: Aisle) -> None:
         self._store[aisle.id] = aisle
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._store.get(aisle_id)
 
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         return [a for a in self._store.values() if a.inventory_id == inventory_id]
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         for a in self._store.values():
             if a.inventory_id == inventory_id and a.code == code.strip():
                 return a
         return None
 
 
+class StubAssetRepo(SourceAssetRepository):
+    def __init__(self) -> None:
+        self._store: dict[str, SourceAsset] = {}
+
+    def save(self, asset: SourceAsset) -> None:
+        self._store[asset.id] = asset
+
+    def get_by_id(self, asset_id: str) -> SourceAsset | None:
+        return self._store.get(asset_id)
+
+    def delete_by_id(self, asset_id: str) -> bool:
+        if asset_id in self._store:
+            del self._store[asset_id]
+            return True
+        return False
+
+    def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
+        return [a for a in self._store.values() if a.aisle_id == aisle_id]
+
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> SourceAsset | None:
+        return None
+
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> dict[str, AisleAssetRollup]:
+        return {}
+
+
+def _stub_asset_repo_with_one_photo(*, aisle_id: str = "a1") -> StubAssetRepo:
+    repo = StubAssetRepo()
+    ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    repo.save(
+        SourceAsset(
+            id="seed-asset-1",
+            aisle_id=aisle_id,
+            type=SourceAssetType.PHOTO,
+            original_filename="seed.jpg",
+            storage_path="uploads/seed",
+            mime_type="image/jpeg",
+            uploaded_at=ts,
+        )
+    )
+    return repo
+
+
 class StubJobRepo(JobRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Job] = {}
+        self._store: dict[str, Job] = {}
 
     def save(self, job: Job) -> None:
         self._store[job.id] = job
 
-    def get_by_id(self, job_id: str) -> Optional[Job]:
+    def get_by_id(self, job_id: str) -> Job | None:
         return self._store.get(job_id)
 
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
+    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
         candidates = [
             j
             for j in self._store.values()
@@ -91,10 +146,8 @@ class StubJobRepo(JobRepository):
         candidates.sort(key=lambda j: (j.updated_at, j.created_at), reverse=True)
         return candidates[0]
 
-    def get_latest_by_targets(
-        self, target_type: str, target_ids: Sequence[str]
-    ) -> Dict[str, Job]:
-        out: Dict[str, Job] = {}
+    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
+        out: dict[str, Job] = {}
         for tid in target_ids:
             latest = self.get_latest_by_target(target_type, tid)
             if latest is not None:
@@ -123,7 +176,9 @@ class StubWorkerLaunchService(WorkerLaunchService):
         return f"exec-{job_id}"
 
 
-def make_stale_reconciler(job_repo: JobRepository, clock: FixedClock, stale_after_seconds: int = 900) -> JobStaleReconciler:
+def make_stale_reconciler(
+    job_repo: JobRepository, clock: FixedClock, stale_after_seconds: int = 900
+) -> JobStaleReconciler:
     return JobStaleReconciler(
         job_repo=job_repo,
         clock=clock,
@@ -162,6 +217,7 @@ def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
     use_case = StartAisleProcessingUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        asset_repo=_stub_asset_repo_with_one_photo(),
         job_repo=job_repo,
         launch_service=make_launch_service(
             aisle_repo=aisle_repo,
@@ -206,6 +262,7 @@ def test_start_aisle_processing_persists_explicit_provider_and_prompt() -> None:
     use_case = StartAisleProcessingUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        asset_repo=_stub_asset_repo_with_one_photo(),
         job_repo=job_repo,
         launch_service=make_launch_service(
             aisle_repo=aisle_repo,
@@ -260,6 +317,7 @@ def test_start_aisle_processing_persists_job_before_enqueue() -> None:
     use_case = StartAisleProcessingUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        asset_repo=_stub_asset_repo_with_one_photo(),
         job_repo=job_repo,
         launch_service=make_launch_service(
             aisle_repo=aisle_repo,
@@ -298,6 +356,7 @@ def test_start_aisle_processing_marks_failed_when_enqueue_fails() -> None:
     use_case = StartAisleProcessingUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        asset_repo=_stub_asset_repo_with_one_photo(),
         job_repo=job_repo,
         launch_service=make_launch_service(
             aisle_repo=aisle_repo,
@@ -352,6 +411,7 @@ def test_start_aisle_processing_persists_starting_before_worker_launch() -> None
     use_case = StartAisleProcessingUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        asset_repo=_stub_asset_repo_with_one_photo(),
         job_repo=job_repo,
         launch_service=make_launch_service(
             aisle_repo=aisle_repo,
@@ -396,6 +456,7 @@ def test_start_aisle_processing_reconciles_stale_active_job_before_new_launch() 
     use_case = StartAisleProcessingUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        asset_repo=_stub_asset_repo_with_one_photo(),
         job_repo=job_repo,
         launch_service=make_launch_service(
             aisle_repo=aisle_repo,
@@ -428,6 +489,7 @@ def test_start_aisle_processing_raises_inventory_not_found_when_resolve_executio
     use_case = StartAisleProcessingUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        asset_repo=StubAssetRepo(),
         job_repo=job_repo,
         launch_service=make_launch_service(
             aisle_repo=aisle_repo,
@@ -459,6 +521,7 @@ def test_start_aisle_processing_raises_when_aisle_not_found() -> None:
     use_case = StartAisleProcessingUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        asset_repo=StubAssetRepo(),
         job_repo=job_repo,
         launch_service=make_launch_service(
             aisle_repo=aisle_repo,
@@ -487,6 +550,7 @@ def test_start_aisle_processing_raises_when_aisle_belongs_to_other_inventory() -
     use_case = StartAisleProcessingUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        asset_repo=StubAssetRepo(),
         job_repo=job_repo,
         launch_service=make_launch_service(
             aisle_repo=aisle_repo,
@@ -500,6 +564,33 @@ def test_start_aisle_processing_raises_when_aisle_belongs_to_other_inventory() -
 
     with pytest.raises(AisleNotFoundError):
         use_case.execute(StartAisleProcessingCommand(inventory_id="other-inv", aisle_id="a1"))
+
+
+def test_start_aisle_processing_rejects_when_no_source_assets() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv_repo = StubInventoryRepo([Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)])
+    aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
+    aisle_repo = StubAisleRepo()
+    aisle_repo.save(aisle)
+    job_repo = StubJobRepo()
+    queue = StubWorkerLaunchService()
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
+    use_case = StartAisleProcessingUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        asset_repo=StubAssetRepo(),
+        job_repo=job_repo,
+        launch_service=make_launch_service(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            worker_launch_service=queue,
+            clock=FixedClock(now),
+            reconciler=reconciler,
+        ),
+        stale_reconciler=make_stale_reconciler(job_repo, FixedClock(now)),
+    )
+    with pytest.raises(NoSourceAssetsForAisleProcessingError):
+        use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
 
 
 def test_start_aisle_processing_raises_when_active_job_exists() -> None:
@@ -527,6 +618,7 @@ def test_start_aisle_processing_raises_when_active_job_exists() -> None:
     use_case = StartAisleProcessingUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        asset_repo=_stub_asset_repo_with_one_photo(),
         job_repo=job_repo,
         launch_service=make_launch_service(
             aisle_repo=aisle_repo,
@@ -569,6 +661,7 @@ def test_start_aisle_processing_allows_new_job_when_latest_is_terminal() -> None
     use_case = StartAisleProcessingUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        asset_repo=_stub_asset_repo_with_one_photo(),
         job_repo=job_repo,
         launch_service=make_launch_service(
             aisle_repo=aisle_repo,

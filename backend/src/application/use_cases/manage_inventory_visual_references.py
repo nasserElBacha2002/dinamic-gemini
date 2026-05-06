@@ -16,15 +16,18 @@ from src.application.errors import (
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
-from src.application.ports.repositories import InventoryRepository, InventoryVisualReferenceRepository
+from src.application.ports.repositories import (
+    InventoryRepository,
+    InventoryVisualReferenceRepository,
+)
 from src.application.ports.services import ArtifactStorage
 from src.application.use_cases.upload_inventory_visual_references import (
     ALLOWED_MIME_TYPES,
     UploadedVisualReferenceFile,
     _normalize_mime,
 )
+from src.application.utils.inventory_visual_reference_paths import visual_reference_storage_path
 from src.domain.inventory.visual_reference import InventoryVisualReference
-from src.infrastructure.storage.inventory_visual_reference_paths import visual_reference_storage_path
 
 logger = logging.getLogger(__name__)
 
@@ -115,9 +118,7 @@ class ReplaceInventoryVisualReferenceUseCase:
                 stored: Any = put_object(storage_path, file.file_obj, mime)
                 storage_provider = getattr(stored, "storage_provider", None)
                 storage_bucket = getattr(stored, "storage_bucket", None)
-                new_storage_key = (
-                    getattr(stored, "storage_key", None) or storage_path
-                )
+                new_storage_key = getattr(stored, "storage_key", None) or storage_path
                 content_type = getattr(stored, "content_type", None) or mime
                 file_size_bytes = int(getattr(stored, "file_size_bytes", file.size) or file.size)
                 etag = getattr(stored, "etag", None)

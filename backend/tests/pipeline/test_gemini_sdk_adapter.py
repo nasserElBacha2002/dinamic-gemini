@@ -10,8 +10,8 @@ import pytest
 
 from src.exceptions.global_analysis_exceptions import GlobalAnalysisParsingError
 from src.llm.errors import LLMProviderError
-from src.llm.types import LLMRequest
 from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
+from src.llm.types import LLMRequest
 
 
 def _settings_with_key() -> MagicMock:

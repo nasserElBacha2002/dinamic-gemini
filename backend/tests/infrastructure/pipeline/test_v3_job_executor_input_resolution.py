@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Dict, Optional, Sequence
 
 import pytest
 
@@ -99,6 +99,12 @@ class _NoopRepo(
     def get_by_id(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         return None
 
+    def delete_by_id(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        return False
+
+    def get_by_capture_session_item_id(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        return None
+
     def list_by_aisle(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         return []
 
@@ -134,7 +140,7 @@ class _InventoryRepo(InventoryRepository):
     def save(self, inventory: Inventory) -> None:
         self._inventory = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         if self._inventory.id == inventory_id:
             return self._inventory
         return None
@@ -147,7 +153,7 @@ class _VisualRepo(InventoryVisualReferenceRepository):
     def __init__(self, refs: Sequence[InventoryVisualReference]) -> None:
         self._refs = list(refs)
 
-    def get_by_id(self, reference_id: str) -> Optional[InventoryVisualReference]:
+    def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
         return next((r for r in self._refs if r.id == reference_id), None)
 
     def create(self, reference: InventoryVisualReference) -> None:
@@ -171,7 +177,7 @@ class _VisualRepo(InventoryVisualReferenceRepository):
 
 
 class _FakeArtifactStore:
-    def __init__(self, objects: Dict[str, bytes]) -> None:
+    def __init__(self, objects: dict[str, bytes]) -> None:
         self._objects = objects
         self.bucket = "bucket-a"
         self.download_calls: list[tuple[str, str, str]] = []
@@ -183,12 +189,12 @@ class _FakeArtifactStore:
             raise RuntimeError(f"missing key: {key}")
         raise AssertionError("resolver should not call get_object in streaming mode")
 
-    def object_size_bytes(self, key: str, *, bucket: Optional[str] = None) -> int:
+    def object_size_bytes(self, key: str, *, bucket: str | None = None) -> int:
         if key not in self._objects:
             raise RuntimeError(f"missing key: {key}")
         return len(self._objects[key])
 
-    def download_to_path(self, key: str, target_path: Path, *, bucket: Optional[str] = None) -> None:
+    def download_to_path(self, key: str, target_path: Path, *, bucket: str | None = None) -> None:
         if key not in self._objects:
             raise RuntimeError(f"missing key: {key}")
         self.download_calls.append((bucket or "", key, str(target_path)))
@@ -196,7 +202,9 @@ class _FakeArtifactStore:
         target_path.write_bytes(self._objects[key])
 
 
-def _executor(tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store) -> V3JobExecutor:
+def _executor(
+    tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store
+) -> V3JobExecutor:
     return V3JobExecutor(
         job_repo=_NoopJobRepo(),
         aisle_repo=_NoopAisleRepo(),
@@ -236,12 +244,15 @@ def test_build_pipeline_input_downloads_s3_source_asset_to_temp_workspace(tmp_pa
         storage_bucket="bucket-a",
         storage_key="uploads/aisles/a1/raw/asset-1.jpg",
     )
-    job_input, _ = _runner_build_pipeline_input(ex,
+    job_input, _ = _runner_build_pipeline_input(
+        ex,
         [asset],
         v3_base=tmp_path / "v3_uploads",
         job_dir=job_dir,
         job_id="job-1",
-        analysis_context=AnalysisContext(primary_evidence=[], visual_references=[], instructions=[]),
+        analysis_context=AnalysisContext(
+            primary_evidence=[], visual_references=[], instructions=[]
+        ),
         inventory_id="inv-1",
     )
     assert job_input.input_type == "photos"
@@ -252,7 +263,9 @@ def test_build_pipeline_input_downloads_s3_source_asset_to_temp_workspace(tmp_pa
     assert store.get_object_calls == 0
 
 
-def test_build_pipeline_input_accepts_sql_mapped_source_asset_with_provider_metadata(tmp_path: Path) -> None:
+def test_build_pipeline_input_accepts_sql_mapped_source_asset_with_provider_metadata(
+    tmp_path: Path,
+) -> None:
     job_dir = tmp_path / "job-sql-mapped"
     job_dir.mkdir(parents=True, exist_ok=True)
     store = _FakeArtifactStore({"uploads/aisles/a1/raw/asset-sql.jpg": b"s3-photo"})
@@ -276,12 +289,15 @@ def test_build_pipeline_input_accepts_sql_mapped_source_asset_with_provider_meta
         )
     )
 
-    job_input, _ = _runner_build_pipeline_input(ex,
+    job_input, _ = _runner_build_pipeline_input(
+        ex,
         [asset],
         v3_base=tmp_path / "v3_uploads",
         job_dir=job_dir,
         job_id="job-sql-mapped",
-        analysis_context=AnalysisContext(primary_evidence=[], visual_references=[], instructions=[]),
+        analysis_context=AnalysisContext(
+            primary_evidence=[], visual_references=[], instructions=[]
+        ),
         inventory_id="inv-sql",
     )
 
@@ -293,7 +309,9 @@ def test_build_pipeline_input_accepts_sql_mapped_source_asset_with_provider_meta
     assert asset.storage_key == "uploads/aisles/a1/raw/asset-sql.jpg"
 
 
-def test_build_pipeline_input_legacy_local_fallback_works_when_provider_absent(tmp_path: Path) -> None:
+def test_build_pipeline_input_legacy_local_fallback_works_when_provider_absent(
+    tmp_path: Path,
+) -> None:
     legacy_base = tmp_path / "v3_uploads"
     (legacy_base / "legacy").mkdir(parents=True, exist_ok=True)
     (legacy_base / "legacy" / "asset.jpg").write_bytes(b"legacy")
@@ -309,18 +327,23 @@ def test_build_pipeline_input_legacy_local_fallback_works_when_provider_absent(t
         mime_type="image/jpeg",
         uploaded_at=datetime.now(timezone.utc),
     )
-    _runner_build_pipeline_input(ex,
+    _runner_build_pipeline_input(
+        ex,
         [asset],
         v3_base=legacy_base,
         job_dir=job_dir,
         job_id="job-2",
-        analysis_context=AnalysisContext(primary_evidence=[], visual_references=[], instructions=[]),
+        analysis_context=AnalysisContext(
+            primary_evidence=[], visual_references=[], instructions=[]
+        ),
         inventory_id="inv-2",
     )
     assert (job_dir / "input_photos" / "0000_asset-2.jpg").read_bytes() == b"legacy"
 
 
-def test_build_pipeline_input_resolves_local_provider_source_asset_without_bucket(tmp_path: Path) -> None:
+def test_build_pipeline_input_resolves_local_provider_source_asset_without_bucket(
+    tmp_path: Path,
+) -> None:
     job_dir = tmp_path / "job-local-asset"
     job_dir.mkdir(parents=True, exist_ok=True)
     store = _FakeArtifactStore({"uploads/aisles/a1/raw/asset-local.jpg": b"local-photo"})
@@ -338,12 +361,15 @@ def test_build_pipeline_input_resolves_local_provider_source_asset_without_bucke
         storage_key="uploads/aisles/a1/raw/asset-local.jpg",
     )
 
-    _runner_build_pipeline_input(ex,
+    _runner_build_pipeline_input(
+        ex,
         [asset],
         v3_base=tmp_path / "v3_uploads",
         job_dir=job_dir,
         job_id="job-local-asset",
-        analysis_context=AnalysisContext(primary_evidence=[], visual_references=[], instructions=[]),
+        analysis_context=AnalysisContext(
+            primary_evidence=[], visual_references=[], instructions=[]
+        ),
         inventory_id="inv-local-asset",
     )
 
@@ -395,7 +421,8 @@ def test_build_pipeline_input_resolves_s3_visual_references_to_temp_files(tmp_pa
         ],
         instructions=[],
     )
-    job_input, _ = _runner_build_pipeline_input(ex,
+    job_input, _ = _runner_build_pipeline_input(
+        ex,
         [asset],
         v3_base=tmp_path / "v3_uploads",
         job_dir=job_dir,
@@ -407,10 +434,14 @@ def test_build_pipeline_input_resolves_s3_visual_references_to_temp_files(tmp_pa
     resolved_path = Path(refs[0]["resolved_path"])
     assert resolved_path.exists()
     assert resolved_path.read_bytes() == b"refdata"
-    assert any(call[1] == "inventories/inv-3/visual_references/ref-1.jpg" for call in store.download_calls)
+    assert any(
+        call[1] == "inventories/inv-3/visual_references/ref-1.jpg" for call in store.download_calls
+    )
 
 
-def test_build_pipeline_input_resolves_local_provider_visual_reference_without_bucket(tmp_path: Path) -> None:
+def test_build_pipeline_input_resolves_local_provider_visual_reference_without_bucket(
+    tmp_path: Path,
+) -> None:
     job_dir = tmp_path / "job-local-ref"
     job_dir.mkdir(parents=True, exist_ok=True)
     ref = InventoryVisualReference(
@@ -456,7 +487,8 @@ def test_build_pipeline_input_resolves_local_provider_visual_reference_without_b
         instructions=[],
     )
 
-    job_input, _ = _runner_build_pipeline_input(ex,
+    job_input, _ = _runner_build_pipeline_input(
+        ex,
         [asset],
         v3_base=tmp_path / "v3_uploads",
         job_dir=job_dir,
@@ -488,12 +520,15 @@ def test_build_pipeline_input_missing_s3_object_fails_with_clear_error(tmp_path:
         storage_key="uploads/aisles/a1/raw/asset-4.jpg",
     )
     with pytest.raises(RuntimeError) as exc:
-        _runner_build_pipeline_input(ex,
+        _runner_build_pipeline_input(
+            ex,
             [asset],
             v3_base=tmp_path / "v3_uploads",
             job_dir=job_dir,
             job_id="job-4",
-            analysis_context=AnalysisContext(primary_evidence=[], visual_references=[], instructions=[]),
+            analysis_context=AnalysisContext(
+                primary_evidence=[], visual_references=[], instructions=[]
+            ),
             inventory_id="inv-4",
         )
     msg = str(exc.value)
@@ -519,12 +554,15 @@ def test_build_pipeline_input_fails_when_source_asset_bucket_mismatch(tmp_path: 
         storage_key="uploads/aisles/a1/raw/asset-5.jpg",
     )
     with pytest.raises(RuntimeError, match="bucket mismatch"):
-        _runner_build_pipeline_input(ex,
+        _runner_build_pipeline_input(
+            ex,
             [asset],
             v3_base=tmp_path / "v3_uploads",
             job_dir=job_dir,
             job_id="job-5",
-            analysis_context=AnalysisContext(primary_evidence=[], visual_references=[], instructions=[]),
+            analysis_context=AnalysisContext(
+                primary_evidence=[], visual_references=[], instructions=[]
+            ),
             inventory_id="inv-5",
         )
 
@@ -570,7 +608,8 @@ def test_build_pipeline_input_fails_when_visual_reference_bucket_missing(tmp_pat
         instructions=[],
     )
     with pytest.raises(RuntimeError, match="storage_bucket is missing"):
-        _runner_build_pipeline_input(ex,
+        _runner_build_pipeline_input(
+            ex,
             [asset],
             v3_base=tmp_path / "v3_uploads",
             job_dir=job_dir,
@@ -630,7 +669,8 @@ def test_unsupported_mixed_assets_fail_before_visual_reference_download(tmp_path
         ),
     ]
     with pytest.raises(ValueError, match="single video asset"):
-        _runner_build_pipeline_input(ex,
+        _runner_build_pipeline_input(
+            ex,
             assets,
             v3_base=tmp_path / "v3_uploads",
             job_dir=job_dir,

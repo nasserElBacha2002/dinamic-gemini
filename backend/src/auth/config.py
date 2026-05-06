@@ -44,4 +44,3 @@ def get_auth_settings(settings: Settings | None = None) -> AuthSettings:
         token_expires_minutes=s.auth_token_expires_minutes,
         refresh_token_expires_minutes=s.auth_refresh_token_expires_minutes,
     )
-

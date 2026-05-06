@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Sequence
 
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.list_aisle_positions import (
     ListAislePositionsCommand,
     ListAislePositionsUseCase,
@@ -14,12 +15,13 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
-from src.application.services.result_context_resolver import ResultContextResolver
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
 
 
 class CountingProductRepo(MemoryProductRecordRepository):

@@ -4,8 +4,7 @@ Tests: parsing with/without source_image_id, traceability validation (valid/miss
 report persistence, API exposure, backward compatibility with legacy responses.
 """
 
-import pytest
-
+from src.api.schemas.responses import TRACEABILITY_STATUS_VALUES, EntityListItem
 from src.domain.entity import Entity
 from src.domain.traceability import (
     TRACEABILITY_INVALID,
@@ -17,8 +16,6 @@ from src.domain.traceability import (
 )
 from src.parsing.global_analysis_parser import parse_entities
 from src.reporting.hybrid_report import build_hybrid_report
-from src.api.schemas.responses import EntityListItem, TRACEABILITY_STATUS_VALUES
-
 
 # ---------- Parsing: source_image_id present / absent ----------
 
@@ -194,8 +191,18 @@ def test_legacy_response_without_traceability_parses_and_validates_as_missing():
     data = {
         "total_entities_detected": 2,
         "entities": [
-            {"entity_type": "PALLET", "model_entity_id": "E1", "has_boxes": True, "confidence": 0.8},
-            {"entity_type": "EMPTY_PALLET", "model_entity_id": "E2", "has_boxes": False, "confidence": 0.7},
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "has_boxes": True,
+                "confidence": 0.8,
+            },
+            {
+                "entity_type": "EMPTY_PALLET",
+                "model_entity_id": "E2",
+                "has_boxes": False,
+                "confidence": 0.7,
+            },
         ],
     }
     entities = parse_entities(data, job_id="job1")

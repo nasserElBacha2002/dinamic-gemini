@@ -1,4 +1,3 @@
-export { useDebouncedValue } from './useDebouncedValue';
 export { useDebouncedSearchInput } from './useDebouncedSearchInput';
 export { useInventoriesList, useInventoryDetail, useInventoryVisualReferences } from './useInventories';
 export {

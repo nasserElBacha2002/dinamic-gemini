@@ -14,14 +14,13 @@ Tests:
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
-from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
-
 from fastapi.testclient import TestClient
 
 from src.api.dependencies import (
@@ -29,18 +28,18 @@ from src.api.dependencies import (
     get_list_aisle_assets_use_case,
     get_result_context_resolver,
 )
+from src.api.server import app
 from src.application.services.result_context_resolver import ResultContextResolver
+from src.auth.dependencies import get_current_admin
+from src.auth.schemas import AuthUser
 from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.jobs.entities import Job, JobStatus
+from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.api.server import app
-from src.auth.dependencies import get_current_admin
-from src.auth.schemas import AuthUser
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
-from src.domain.assets.entities import SourceAsset, SourceAssetType
-from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 
 
 class StubListAisleAssetsUseCase:
@@ -77,8 +76,9 @@ def _patch_local_asset_settings(output_dir: Path):
             "artifact_store_max_json_load_bytes": 32 * 1024 * 1024,
         },
     )()
-    with patch("src.api.routes.v3.assets.load_settings", return_value=s), patch(
-        "src.api.services.v3_stored_artifact_access.load_settings", return_value=s
+    with (
+        patch("src.api.routes.v3.assets.load_settings", return_value=s),
+        patch("src.api.services.v3_stored_artifact_access.load_settings", return_value=s),
     ):
         yield
 
@@ -171,7 +171,11 @@ def test_heic_asset_file_serves_normalized_jpg_when_available(output_dir: Path) 
     manifest = {
         "input_type": "photos",
         "photos": [
-            {"image_id": asset_id, "stored_filename": "0001_x.heic", "stored_normalized_filename": normalized_name},
+            {
+                "image_id": asset_id,
+                "stored_filename": "0001_x.heic",
+                "stored_normalized_filename": normalized_name,
+            },
         ],
     }
     (job_dir / "input_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
@@ -355,7 +359,10 @@ def test_heic_asset_file_rejects_path_traversal_in_manifest(output_dir: Path) ->
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file"
             )
             assert resp.status_code == 404
-            assert "preview" in (resp.json().get("detail") or "").lower() or "not available" in (resp.json().get("detail") or "").lower()
+            assert (
+                "preview" in (resp.json().get("detail") or "").lower()
+                or "not available" in (resp.json().get("detail") or "").lower()
+            )
     finally:
         app.dependency_overrides.pop(get_list_aisle_assets_use_case, None)
         app.dependency_overrides.pop(get_result_context_resolver, None)
@@ -380,7 +387,11 @@ def test_heic_asset_file_404_when_manifest_entry_exists_but_file_missing(output_
     manifest = {
         "input_type": "photos",
         "photos": [
-            {"image_id": asset_id, "stored_filename": "0001_x.heic", "stored_normalized_filename": normalized_name},
+            {
+                "image_id": asset_id,
+                "stored_filename": "0001_x.heic",
+                "stored_normalized_filename": normalized_name,
+            },
         ],
     }
     (job_dir / "input_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
@@ -412,7 +423,9 @@ def test_heic_asset_file_404_when_manifest_entry_exists_but_file_missing(output_
         app.dependency_overrides.pop(get_result_context_resolver, None)
 
 
-def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(output_dir: Path) -> None:
+def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(
+    output_dir: Path,
+) -> None:
     """Operational pointer may differ from the run that holds the asset; explicit job_id selects the folder."""
     inv_id, aisle_id, asset_id = "inv-multi", "aisle-multi", "asset-multi-1"
     job_a = "job-position-run"
@@ -433,7 +446,11 @@ def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(out
     manifest_a = {
         "input_type": "photos",
         "photos": [
-            {"image_id": asset_id, "stored_filename": "0001_x.heic", "stored_normalized_filename": normalized_name},
+            {
+                "image_id": asset_id,
+                "stored_filename": "0001_x.heic",
+                "stored_normalized_filename": normalized_name,
+            },
         ],
     }
     (job_a_dir / "input_manifest.json").write_text(json.dumps(manifest_a), encoding="utf-8")
@@ -466,7 +483,9 @@ def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(out
             resp_no_job = client.get(
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file"
             )
-            assert resp_no_job.status_code == 404, "operational job_B has no normalized asset -> 404"
+            assert resp_no_job.status_code == 404, (
+                "operational job_B has no normalized asset -> 404"
+            )
 
             resp_with_job = client.get(
                 f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/assets/{asset_id}/file",
@@ -480,7 +499,9 @@ def test_heic_asset_file_job_id_param_uses_specified_job_when_latest_differs(out
         app.dependency_overrides.pop(get_result_context_resolver, None)
 
 
-def test_heic_asset_file_no_fallback_when_explicit_job_has_no_normalized_file(output_dir: Path) -> None:
+def test_heic_asset_file_no_fallback_when_explicit_job_has_no_normalized_file(
+    output_dir: Path,
+) -> None:
     """Explicit job_id resolves only that run's folder — no silent cross-run fallback."""
     inv_id, aisle_id, asset_id = "inv-fb", "aisle-fb", "asset-fb-1"
     job_bad = "job-old-no-normalized"
@@ -500,7 +521,11 @@ def test_heic_asset_file_no_fallback_when_explicit_job_has_no_normalized_file(ou
     manifest_old = {
         "input_type": "photos",
         "photos": [
-            {"image_id": asset_id, "stored_filename": "0001_x.heic", "stored_normalized_filename": "0001_missing.jpg"},
+            {
+                "image_id": asset_id,
+                "stored_filename": "0001_x.heic",
+                "stored_normalized_filename": "0001_missing.jpg",
+            },
         ],
     }
     (job_bad_dir / "input_manifest.json").write_text(json.dumps(manifest_old), encoding="utf-8")
@@ -512,7 +537,11 @@ def test_heic_asset_file_no_fallback_when_explicit_job_has_no_normalized_file(ou
     manifest_lat = {
         "input_type": "photos",
         "photos": [
-            {"image_id": asset_id, "stored_filename": "0001_x.heic", "stored_normalized_filename": normalized_name},
+            {
+                "image_id": asset_id,
+                "stored_filename": "0001_x.heic",
+                "stored_normalized_filename": normalized_name,
+            },
         ],
     }
     (job_lat_dir / "input_manifest.json").write_text(json.dumps(manifest_lat), encoding="utf-8")

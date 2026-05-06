@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List
-
 from pydantic import BaseModel, Field
 
 from src.api.schemas.aisle_schemas import AisleResponse
@@ -42,7 +40,7 @@ class PaginatedInventoryListResponse(PageMeta):
     fields, not a bare JSON array. Clients must read ``items`` (see OpenAPI / schema).
     """
 
-    items: List[InventoryListItemResponse]
+    items: list[InventoryListItemResponse]
 
 
 class PaginatedAisleListResponse(PageMeta):
@@ -52,7 +50,7 @@ class PaginatedAisleListResponse(PageMeta):
     not a bare JSON array.
     """
 
-    items: List[AisleResponse]
+    items: list[AisleResponse]
 
 
 def compute_total_pages(total_items: int, page_size: int) -> int:

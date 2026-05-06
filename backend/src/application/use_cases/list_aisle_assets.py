@@ -6,10 +6,10 @@ Returns source assets for an aisle. Validates that the aisle exists and belongs 
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
-from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
+from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 

@@ -13,16 +13,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from src.api.routes.v3 import router as v3_router
-from src.api.routes.v3.analytics_api import router as v3_analytics_router
-from src.api.schema_guard import schema_guard_state
-from src.api.routes.v3.review_queue import router as v3_review_queue_router
-from src.api.routes.v3.admin_ai_config import router as v3_admin_ai_config_router
 from src.api.constants.error_wire import (
     HTTP_DETAIL_API_KEY_INVALID_OR_MISSING,
     HTTP_DETAIL_UNEXPECTED_ERROR,
 )
 from src.api.errors.structured_api_http import INTERNAL_SERVER_ERROR, StructuredApiHttpError
+from src.api.routes.v3 import router as v3_router
+from src.api.routes.v3.admin_ai_config import router as v3_admin_ai_config_router
+from src.api.routes.v3.analytics_api import router as v3_analytics_router
+from src.api.routes.v3.review_queue import router as v3_review_queue_router
+from src.api.schema_guard import schema_guard_state
 from src.api.schemas.responses import HealthResponse
 from src.auth.errors import AuthHttpError
 from src.auth.routes import router as auth_router
@@ -92,7 +92,9 @@ async def auth_http_error_handler(_: Request, exc: AuthHttpError):
 
 
 @app.exception_handler(StructuredApiHttpError)
-async def structured_api_http_error_handler(request: Request, exc: StructuredApiHttpError) -> JSONResponse:
+async def structured_api_http_error_handler(
+    request: Request, exc: StructuredApiHttpError
+) -> JSONResponse:
     """Emit flat JSON ``code`` + ``detail`` for Category A, selected Category B, and direct raises.
 
     Logs at INFO with stable ``error_code`` for operations dashboards (no PII in ``detail`` here).
@@ -141,7 +143,9 @@ async def api_key_middleware(request: Request, call_next):
         return await call_next(request)
     key = request.headers.get("X-API-Key")
     if key != settings.api_key:
-        return JSONResponse(status_code=403, content={"detail": HTTP_DETAIL_API_KEY_INVALID_OR_MISSING})
+        return JSONResponse(
+            status_code=403, content={"detail": HTTP_DETAIL_API_KEY_INVALID_OR_MISSING}
+        )
     return await call_next(request)
 
 
@@ -190,6 +194,13 @@ def _worker_thread_fn() -> None:
 @app.on_event("startup")
 def start_worker() -> None:
     """Run schema compatibility guard and start optional worker."""
+    from src.application.services.position_traceability import (
+        set_traceability_stored_artifact_reader,
+    )
+    from src.runtime.v3_deps import get_stored_artifact_reader
+
+    set_traceability_stored_artifact_reader(get_stored_artifact_reader())
+
     _git_sha = (os.environ.get("GIT_SHA") or "").strip()
     if _git_sha:
         logger.info("API startup deploy_git_sha=%s", _git_sha)
@@ -201,7 +212,11 @@ def start_worker() -> None:
             sql_res.sql_server_connect_target,
             sql_res.mode,
         )
-    if settings.db_schema_guard_enabled and settings.sqlserver_enabled and sql_res.connection_string.strip():
+    if (
+        settings.db_schema_guard_enabled
+        and settings.sqlserver_enabled
+        and sql_res.connection_string.strip()
+    ):
         required_version = settings.db_schema_required_version or get_required_schema_version()
         if required_version:
             client = SqlServerClient(sql_res.connection_string.strip())
@@ -238,15 +253,23 @@ def start_worker() -> None:
                         f"current={status.current_version} reason={status.reason}"
                     )
         else:
-            logger.warning("Schema guard enabled but no migration files found; skipping required version check.")
-    elif settings.db_schema_guard_enabled and settings.sqlserver_enabled and sql_res.mode == "incomplete_split":
+            logger.warning(
+                "Schema guard enabled but no migration files found; skipping required version check."
+            )
+    elif (
+        settings.db_schema_guard_enabled
+        and settings.sqlserver_enabled
+        and sql_res.mode == "incomplete_split"
+    ):
         logger.error(
             "Schema guard skipped: SQL Server config incomplete (mode=%s missing=%s). %s",
             sql_res.mode,
             list(sql_res.missing_env_vars),
             sql_res.hint or "",
         )
-    elif settings.db_schema_guard_enabled and settings.sqlserver_enabled and sql_res.mode == "unset":
+    elif (
+        settings.db_schema_guard_enabled and settings.sqlserver_enabled and sql_res.mode == "unset"
+    ):
         logger.warning(
             "Schema guard enabled but SQL Server connection is not configured (mode=unset); "
             "skipping startup compatibility check."

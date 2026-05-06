@@ -63,6 +63,17 @@ output/
 # Data files (videos de prueba, etc.)
 data/
 
+# Audit artifacts (salidas fijas por corrida + historial versionado bajo runs/)
+audit/raw/*
+!audit/raw/.gitkeep
+!audit/raw/LATEST_RUN.txt
+!audit/raw/runs/
+!audit/raw/runs/**
+!audit/audit-report.md
+!audit/audit-backlog.md
+!audit/audit-summary.md
+!audit/audit-status.json
+
 # Test coverage
 htmlcov/
 .tox/

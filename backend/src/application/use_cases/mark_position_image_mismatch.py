@@ -64,9 +64,7 @@ class MarkPositionImageMismatchUseCase:
         now = self._clock.now()
         before_status = position.status.value
         before_resolution = (
-            position.review_resolution.value
-            if position.review_resolution is not None
-            else None
+            position.review_resolution.value if position.review_resolution is not None else None
         )
         position.status = PositionStatus.REVIEWED
         position.review_resolution = PositionReviewResolution.IMAGE_MISMATCH

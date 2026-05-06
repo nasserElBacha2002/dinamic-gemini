@@ -16,8 +16,6 @@ The prompt **registry** (``PROMPTS`` / ``HYBRID_PROMPTS``) is **not** re-exporte
 
 from __future__ import annotations
 
-from typing import Optional
-
 from src.llm.prompt_composer.composer import default_hybrid_composer
 from src.llm.prompt_composer.enrichments import (
     enrich_prompt_with_image_ids,
@@ -35,7 +33,7 @@ __all__ = [
 
 def get_hybrid_prompt(
     profile_name: str = "global_v21",
-    provider_key: Optional[str] = None,
+    provider_key: str | None = None,
 ) -> str:
     """Legacy/tests only — delegates to ``default_hybrid_composer.compose_base``."""
     return default_hybrid_composer.compose_base(profile_name, provider_key)

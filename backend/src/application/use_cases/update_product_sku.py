@@ -89,13 +89,12 @@ class UpdateProductSkuUseCase:
         before_sku = product.sku
         before_description = product.description
         before_resolution = (
-            position.review_resolution.value
-            if position.review_resolution is not None
-            else None
+            position.review_resolution.value if position.review_resolution is not None else None
         )
         product.sku = sku
         if description is not None:
-            product.description = description.strip() or None
+            clean_description = description.strip()
+            product.description = clean_description or None
         product.updated_at = now
         self._product_record_repo.save(product)
 

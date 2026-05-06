@@ -50,8 +50,10 @@ export default function ImageViewer({
   const { t } = useTranslation();
   const altText = alt ?? t('image_viewer.alt_default');
   const titleText = title ?? t('image_viewer.title_default');
-  const [zoom, setZoom] = useState(1);
+  const [zoomLevel, setZoomLevel] = useState(1);
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
+  const [zoomAnchorSrc, setZoomAnchorSrc] = useState<string | null>(src ?? null);
+  const zoom = zoomAnchorSrc === (src ?? null) ? zoomLevel : 1;
 
   useEffect(() => {
     if (!fullscreenOpen) return;
@@ -65,17 +67,14 @@ export default function ImageViewer({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [fullscreenOpen]);
 
-  /** Reset zoom when image source changes. */
-  useEffect(() => {
-    setZoom(1);
-  }, [src]);
-
   const onZoomOut = useCallback(() => {
-    setZoom((z) => Math.max(ZOOM_MIN, Math.round((z - ZOOM_STEP) * 100) / 100));
-  }, []);
+    setZoomAnchorSrc(src ?? null);
+    setZoomLevel((z) => Math.max(ZOOM_MIN, Math.round((z - ZOOM_STEP) * 100) / 100));
+  }, [src]);
   const onZoomIn = useCallback(() => {
-    setZoom((z) => Math.min(ZOOM_MAX, Math.round((z + ZOOM_STEP) * 100) / 100));
-  }, []);
+    setZoomAnchorSrc(src ?? null);
+    setZoomLevel((z) => Math.min(ZOOM_MAX, Math.round((z + ZOOM_STEP) * 100) / 100));
+  }, [src]);
 
   const isLoaded = !loading && !error && Boolean(src);
 

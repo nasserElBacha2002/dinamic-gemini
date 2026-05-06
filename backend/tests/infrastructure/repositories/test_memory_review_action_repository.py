@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
-from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+from src.infrastructure.repositories.memory_review_action_repository import (
+    MemoryReviewActionRepository,
+)
 
 
 def test_list_by_position_returns_ordered_by_created_at_then_id() -> None:

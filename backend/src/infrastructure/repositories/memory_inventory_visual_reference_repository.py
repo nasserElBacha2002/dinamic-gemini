@@ -6,7 +6,7 @@ Used when SQL is not configured. State is process-local and not persisted.
 
 from __future__ import annotations
 
-from typing import Dict, Sequence
+from collections.abc import Sequence
 
 from src.application.ports.repositories import InventoryVisualReferenceRepository
 from src.domain.inventory.visual_reference import InventoryVisualReference
@@ -14,7 +14,7 @@ from src.domain.inventory.visual_reference import InventoryVisualReference
 
 class MemoryInventoryVisualReferenceRepository(InventoryVisualReferenceRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, InventoryVisualReference] = {}
+        self._store: dict[str, InventoryVisualReference] = {}
 
     def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
         return self._store.get(reference_id)

@@ -19,7 +19,6 @@ from src.exceptions.global_analysis_exceptions import (
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
 from src.validation.global_analysis_schema import validate_global_analysis_structure
 
-
 VALID_PAYLOAD = {
     "total_pallets_detected": 2,
     "pallets": [
@@ -41,6 +40,8 @@ VALID_PAYLOAD = {
         },
     ],
 }
+
+VALID_V21_JSON = '{"total_entities_detected": 0, "entities": []}'
 
 
 def test_validate_global_analysis_structure_valid_passes():
@@ -109,19 +110,20 @@ def test_validate_global_analysis_structure_not_dict_raises():
 def test_analyzer_valid_response_passes():
     """Analyzer returns data when Gemini returns valid JSON that passes validation."""
     mock_client = MagicMock()
-    mock_client.generate_global_analysis_raw.return_value = '{"total_pallets_detected": 0, "pallets": []}'
+    mock_client.generate_global_analysis_structured.return_value = VALID_V21_JSON
     analyzer = GeminiGlobalAnalyzer(mock_client)
     one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]
 
     result = analyzer.analyze_video_frames(one_frame)
 
-    assert result == {"total_pallets_detected": 0, "pallets": []}
+    assert result["total_entities_detected"] == 0
+    assert result["entities"] == []
 
 
 def test_analyzer_invalid_json_raises_parsing_error():
     """Analyzer raises GlobalAnalysisParsingError when response is not valid JSON."""
     mock_client = MagicMock()
-    mock_client.generate_global_analysis_raw.return_value = "not json at all"
+    mock_client.generate_global_analysis_structured.return_value = "not json at all"
     analyzer = GeminiGlobalAnalyzer(mock_client)
     one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]
 
@@ -132,18 +134,18 @@ def test_analyzer_invalid_json_raises_parsing_error():
 def test_analyzer_invalid_structure_raises_validation_error():
     """Analyzer raises GlobalAnalysisValidationError when JSON is valid but structure fails."""
     mock_client = MagicMock()
-    mock_client.generate_global_analysis_raw.return_value = '{"total_pallets_detected": 1}'
+    mock_client.generate_global_analysis_structured.return_value = '{"total_entities_detected": 1}'
     analyzer = GeminiGlobalAnalyzer(mock_client)
     one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]
 
-    with pytest.raises(GlobalAnalysisValidationError, match="pallets"):
+    with pytest.raises(GlobalAnalysisValidationError, match="entities"):
         analyzer.analyze_video_frames(one_frame)
 
 
 def test_analyzer_uses_provided_logger_for_all_logs():
     """When logger= is passed, analyzer uses it for info and warning (not module logger)."""
     mock_client = MagicMock()
-    mock_client.generate_global_analysis_raw.return_value = '{"total_pallets_detected": 0, "pallets": []}'
+    mock_client.generate_global_analysis_structured.return_value = VALID_V21_JSON
     mock_logger = MagicMock()
     analyzer = GeminiGlobalAnalyzer(mock_client)
     one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]

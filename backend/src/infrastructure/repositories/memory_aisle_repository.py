@@ -7,7 +7,7 @@ list_by_inventory returns aisles in created_at DESC order for consistency with S
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Sequence
+from collections.abc import Sequence
 
 from src.application.ports.repositories import AisleRepository
 from src.domain.aisle.entities import Aisle
@@ -15,12 +15,12 @@ from src.domain.aisle.entities import Aisle
 
 class MemoryAisleRepository(AisleRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Aisle] = {}
+        self._store: dict[str, Aisle] = {}
 
     def save(self, aisle: Aisle) -> None:
         self._store[aisle.id] = aisle
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._store.get(aisle_id)
 
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
@@ -28,7 +28,7 @@ class MemoryAisleRepository(AisleRepository):
         out.sort(key=lambda a: a.created_at, reverse=True)
         return out
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         for a in self._store.values():
             if a.inventory_id == inventory_id and a.code == code:
                 return a

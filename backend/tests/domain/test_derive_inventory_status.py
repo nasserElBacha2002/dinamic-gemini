@@ -30,7 +30,10 @@ def test_queued_or_processing() -> None:
 
 
 def test_processed_implies_in_review_for_inventory() -> None:
-    assert derive_inventory_status_from_aisles((_aisle(AisleStatus.PROCESSED),)) == InventoryStatus.IN_REVIEW
+    assert (
+        derive_inventory_status_from_aisles((_aisle(AisleStatus.PROCESSED),))
+        == InventoryStatus.IN_REVIEW
+    )
 
 
 def test_all_completed() -> None:
@@ -39,7 +42,10 @@ def test_all_completed() -> None:
 
 
 def test_only_created_or_assets_uploaded_is_processing() -> None:
-    assert derive_inventory_status_from_aisles((_aisle(AisleStatus.CREATED),)) == InventoryStatus.PROCESSING
+    assert (
+        derive_inventory_status_from_aisles((_aisle(AisleStatus.CREATED),))
+        == InventoryStatus.PROCESSING
+    )
     assert (
         derive_inventory_status_from_aisles((_aisle(AisleStatus.ASSETS_UPLOADED),))
         == InventoryStatus.PROCESSING

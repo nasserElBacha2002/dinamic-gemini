@@ -9,14 +9,9 @@ Verifica:
 - Cálculo de confianza
 """
 
-import pytest
 from src.consolidate.consolidate import _mad, consolidate
 from src.consolidate.normalize import normalize_product_key
 from src.models.schemas import (
-    ConsolidationStats,
-    ConsolidatedProduct,
-    ConsolidatedPallet,
-    ConsolidatedResult,
     FrameRef,
     LLMFrameResult,
     LLMPalletObservation,
@@ -30,7 +25,7 @@ from src.models.schemas import (
 def test_normalize_product_key_with_brand():
     """Test de normalización con marca."""
     key = normalize_product_key("Cremigal", "Leche UAT Entera 12x1L")
-    
+
     assert key == "cremigal||leche uat entera 12x1l"
     assert "||" in key
 
@@ -38,7 +33,7 @@ def test_normalize_product_key_with_brand():
 def test_normalize_product_key_no_brand():
     """Test de normalización sin marca."""
     key = normalize_product_key(None, "Cajas de cartón")
-    
+
     # La normalización quita acentos, así que "cartón" -> "carton"
     assert key == "||cajas de carton"
     assert key.startswith("||")
@@ -48,7 +43,7 @@ def test_normalize_product_key_case_insensitive():
     """Test que la normalización es case-insensitive."""
     key1 = normalize_product_key("CREMIGAL", "LECHE UAT")
     key2 = normalize_product_key("cremigal", "leche uat")
-    
+
     assert key1 == key2
 
 
@@ -56,7 +51,7 @@ def test_normalize_product_key_whitespace():
     """Test que la normalización elimina espacios extra."""
     key1 = normalize_product_key("  Cremigal  ", "  Leche UAT  ")
     key2 = normalize_product_key("Cremigal", "Leche UAT")
-    
+
     assert key1 == key2
 
 
@@ -67,16 +62,16 @@ def test_mad_basic():
     """Test básico de cálculo de MAD."""
     xs = [10, 12, 11, 13, 15]
     med = 12.0
-    
+
     mad = _mad(xs, med)
-    
+
     assert mad == 1.0
 
 
 def test_mad_empty_list():
     """Test de MAD con lista vacía."""
     mad = _mad([], 0.0)
-    
+
     assert mad == 0.0
 
 
@@ -84,9 +79,9 @@ def test_mad_all_same():
     """Test de MAD cuando todos los valores son iguales."""
     xs = [10, 10, 10, 10]
     med = 10.0
-    
+
     mad = _mad(xs, med)
-    
+
     assert mad == 0.0
 
 
@@ -94,9 +89,9 @@ def test_mad_with_outliers():
     """Test de MAD con outliers."""
     xs = [10, 11, 12, 13, 14, 50]  # 50 es outlier
     med = 12.5
-    
+
     mad = _mad(xs, med)
-    
+
     # MAD debería ser robusto al outlier
     assert mad < 5.0  # No debería ser tan alto como la diferencia con el outlier
 
@@ -122,9 +117,9 @@ def test_consolidate_single_frame():
             )
         ],
     )
-    
+
     result = consolidate("VID_001", [frame])
-    
+
     assert result.video_id == "VID_001"
     assert len(result.pallets) == 1
     assert result.pallets[0].pallet_id == "P1"
@@ -153,9 +148,9 @@ def test_consolidate_multiple_frames_same_pallet():
         )
         for i in range(3)
     ]
-    
+
     result = consolidate("VID_001", frames)
-    
+
     assert len(result.pallets) == 1
     assert len(result.pallets[0].products) == 1
     # Con weighted mode, puede ser 10, 11 o 12 (depende de confidences)
@@ -185,9 +180,9 @@ def test_consolidate_filters_outliers():
         )
         for i in range(5)
     ]
-    
+
     result = consolidate("VID_001", frames)
-    
+
     assert len(result.pallets) == 1
     # Debería filtrar el outlier (20) y usar la mediana de los otros (10)
     assert result.pallets[0].products[0].estimated_boxes == 10
@@ -217,9 +212,9 @@ def test_consolidate_multiple_products():
             )
         ],
     )
-    
+
     result = consolidate("VID_001", [frame])
-    
+
     assert len(result.pallets) == 1
     assert len(result.pallets[0].products) == 2
     products = {p.product: p.estimated_boxes for p in result.pallets[0].products}
@@ -246,9 +241,9 @@ def test_consolidate_multiple_pallets():
             ),
         ],
     )
-    
+
     result = consolidate("VID_001", [frame])
-    
+
     assert len(result.pallets) == 2
     pallet_ids = {p.pallet_id for p in result.pallets}
     assert "P1" in pallet_ids
@@ -258,7 +253,7 @@ def test_consolidate_multiple_pallets():
 def test_consolidate_empty_frames():
     """Test de consolidación con lista vacía de frames."""
     result = consolidate("VID_001", [])
-    
+
     assert result.video_id == "VID_001"
     assert len(result.pallets) == 0
 
@@ -283,9 +278,9 @@ def test_consolidate_stats_included():
         )
         for i in range(5)
     ]
-    
+
     result = consolidate("VID_001", frames)
-    
+
     assert len(result.pallets) == 1
     product = result.pallets[0].products[0]
     assert product.stats is not None
@@ -317,9 +312,9 @@ def test_consolidate_confidence_calculation():
         )
         for i in range(5)
     ]
-    
+
     result = consolidate("VID_001", frames)
-    
+
     product = result.pallets[0].products[0]
     # La confianza final debería estar entre 0 y 1
     assert 0.0 <= product.confidence <= 1.0
@@ -353,9 +348,9 @@ def test_consolidate_same_product_different_brands():
             ],
         )
     ]
-    
+
     result = consolidate("VID_001", frames)
-    
+
     assert len(result.pallets) == 1
     assert len(result.pallets[0].products) == 2
     products = {p.brand: p.estimated_boxes for p in result.pallets[0].products}
@@ -431,6 +426,4 @@ def test_consolidate_custom_min_confidence_filters_ghost():
     # Con default puede estar filtrado (0 productos) o no según conf_final
     assert len(result_default.pallets) == 1
     # Solo verificamos que los parámetros se aplican: resultado puede variar
-    assert (
-        len(result_relaxed.pallets[0].products) >= len(result_default.pallets[0].products)
-    )
+    assert len(result_relaxed.pallets[0].products) >= len(result_default.pallets[0].products)

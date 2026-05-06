@@ -20,7 +20,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { ReviewQueueListQuery } from '../api/client';
-import { ApiError, type ReviewQueueItem } from '../api/types';
+import type { ReviewQueueItem } from '../api/types';
 import { PageHeader } from '../components/shell';
 import {
   ErrorAlert,
@@ -40,7 +40,6 @@ import {
 } from '../features/reviewQueue/quickReviewContext';
 import ReviewQueueTable from '../features/reviewQueue/components/ReviewQueueTable';
 import { useAislesList, useDebouncedSearchInput, useInventoriesList, useReviewQueue } from '../hooks';
-import { resolveApiErrorMessage } from '../utils/apiErrors';
 function parseOptional01(raw: string): number | null {
   const t = raw.trim();
   if (t === '') return null;
@@ -115,8 +114,6 @@ export default function ReviewQueuePage() {
   }, [
     inventoryId,
     aisleId,
-    minConfidenceStr,
-    maxConfidenceStr,
     confidenceFiltersInvalid,
     minConfParsedRQ,
     maxConfParsedRQ,
@@ -132,10 +129,9 @@ export default function ReviewQueuePage() {
   ]);
 
   const queueQuery = useReviewQueue(listQuery);
-
-  useEffect(() => {
-    setAisleId('');
-  }, [inventoryId]);
+  const totalItems = queueQuery.data?.total_items ?? 0;
+  const maxPage = Math.max(1, Math.ceil(Math.max(totalItems, 1) / pageSize));
+  const effectivePage = Math.min(page, maxPage);
 
   const handleResetFilters = useCallback(() => {
     setInventoryId('');
@@ -151,11 +147,8 @@ export default function ReviewQueuePage() {
     setApiSortBy('priority');
     setApiSortDir('desc');
     setActiveSortColumnId('priority');
-  }, [skuSearch.setInput]);
+  }, [skuSearch]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [skuSearch.applied]);
 
   const resetDisabled =
     inventoryId === '' &&
@@ -172,16 +165,8 @@ export default function ReviewQueuePage() {
     activeSortColumnId === 'priority' &&
     page === 1;
 
-  const errorMessage =
-    queueQuery.isError && queueQuery.error
-      ? queueQuery.error instanceof ApiError
-        ? resolveApiErrorMessage(queueQuery.error, 'errors.load_review_queue')
-        : String(queueQuery.error)
-      : null;
-
   const summary = queueQuery.data?.summary;
-  const items = queueQuery.data?.items ?? [];
-  const totalItems = queueQuery.data?.total_items ?? 0;
+  const items = useMemo(() => queueQuery.data?.items ?? [], [queueQuery.data?.items]);
 
   const openReviewDrawer = useCallback(
     (item: ReviewQueueItem) => {
@@ -194,6 +179,17 @@ export default function ReviewQueuePage() {
     const raw = location.state as { openReviewDrawer?: OpenReviewDrawerPayload } | null;
     const p = raw?.openReviewDrawer;
     if (!p || p.kind !== 'queue') return;
+    if (
+      !p.inventoryId?.trim() ||
+      !p.aisleId?.trim() ||
+      !p.positionId?.trim() ||
+      !p.inventoryName?.trim() ||
+      !p.aisleCode?.trim() ||
+      !Array.isArray(p.resultIds) ||
+      p.resultIds.length === 0
+    ) {
+      return;
+    }
     const key = `${p.positionId}-${p.inventoryId}-${p.aisleId}`;
     if (consumedRedirectKey.current === key) return;
     consumedRedirectKey.current = key;
@@ -209,14 +205,8 @@ export default function ReviewQueuePage() {
       returnTo: 'review_queue',
       jobId: p.jobId,
     });
-    navigate(location.pathname, { replace: true, state: {} });
-  }, [location.state, location.pathname, navigate]);
-
-  useEffect(() => {
-    if (totalItems === 0) return;
-    const pages = Math.max(1, Math.ceil(totalItems / pageSize));
-    if (page > pages) setPage(pages);
-  }, [totalItems, pageSize, page]);
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: {} });
+  }, [location.state, location.pathname, location.search, navigate]);
 
   return (
     <Box
@@ -237,8 +227,8 @@ export default function ReviewQueuePage() {
         }
       />
 
-      {errorMessage ? (
-        <ErrorAlert message={errorMessage} onRetry={() => queueQuery.refetch()} />
+      {queueQuery.isError && queueQuery.error ? (
+        <ErrorAlert error={queueQuery.error} context="reviewQueue" onRetry={() => queueQuery.refetch()} />
       ) : null}
 
       {queueQuery.isLoading && !queueQuery.data ? (
@@ -282,6 +272,7 @@ export default function ReviewQueuePage() {
                 value={inventoryId}
                 onChange={(e) => {
                   setInventoryId(String(e.target.value));
+                  setAisleId('');
                   setPage(1);
                 }}
               >
@@ -452,7 +443,10 @@ export default function ReviewQueuePage() {
               label={t('results.search_sku')}
               placeholder={t('common.contains_placeholder')}
               value={skuSearch.input}
-              onChange={(v) => skuSearch.setInput(v)}
+              onChange={(v) => {
+                skuSearch.setInput(v);
+                setPage(1);
+              }}
               data-testid="review-queue-sku-search"
             />
           </Box>
@@ -506,7 +500,7 @@ export default function ReviewQueuePage() {
               },
             }}
             pagination={{
-              page,
+              page: effectivePage,
               pageSize,
               totalItems,
               onPageChange: setPage,

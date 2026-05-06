@@ -5,6 +5,13 @@
 # Branching: feature → main → develop; DEV deploy runs from develop only.
 # main is not production. Production will use a dedicated branch later.
 #
+# CI-1.3 / CI-1.3.1: Automatic deploy runs after "Develop quality gate" completes
+# successfully (backend + frontend blocking; security-light non-blocking at job level).
+# Filters: only workflow_run from a **push** to **develop** (not PR, not
+# workflow_dispatch on the gate). Restores legacy path filter: deploy only if
+# backend/** or this workflow file changed.
+# Manual deploy: workflow_dispatch on THIS workflow (unchanged behavior).
+#
 # Secrets: DEV_HOST, DEV_USER, DEV_SSH_PRIVATE_KEY
 # Optional secret: DEV_BACKEND_URL — if set, runner curls public /health after deploy.
 #
@@ -20,12 +27,9 @@
 name: DEV — OpenCloud backend (SSH)
 
 on:
-  push:
-    branches:
-      - develop
-    paths:
-      - "backend/**"
-      - ".github/workflows/deploy-dev-opencloud-backend.yml"
+  workflow_run:
+    workflows: ["Develop quality gate"]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
@@ -34,36 +38,115 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
-  migration-presence:
-    name: Migration file guard (push only)
+  should-deploy:
+    name: Gate — after quality gate (event / branch / paths)
     runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.decide.outputs.deploy }}
+      head_sha: ${{ steps.decide.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'workflow_run'
+        with:
+          fetch-depth: 0
+
+      - id: decide
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual deploy; proceeding without quality gate."
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "head_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CONCLUSION="${{ github.event.workflow_run.conclusion }}"
+          EVENT="${{ github.event.workflow_run.event }}"
+          HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
+          HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+          echo "workflow_run: conclusion=${CONCLUSION} event=${EVENT} head_branch=${HEAD_BRANCH}"
+
+          if [ "${CONCLUSION}" != "success" ]; then
+            echo "Quality gate did not succeed; skipping deploy."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "head_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${EVENT}" != "push" ]; then
+            echo "Not a push to develop (e.g. PR or manual gate run); skipping deploy."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "head_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${HEAD_BRANCH}" != "develop" ]; then
+            echo "Push not on develop; skipping deploy."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "head_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git checkout "${HEAD_SHA}"
+          BASE=$(git rev-parse "${HEAD_SHA}^" 2>/dev/null || true)
+          if [ -z "${BASE}" ]; then
+            echo "No parent commit; deploying."
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only "${BASE}" "${HEAD_SHA}")
+          echo "Changed files:"; echo "${CHANGED}"
+          if echo "${CHANGED}" | grep -qE '^backend/|^\.github/workflows/deploy-dev-opencloud-backend\.yml'; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+          else
+            echo "No backend or deploy workflow changes; skipping deploy."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "head_sha=" >> "$GITHUB_OUTPUT"
+          fi
+
+  migration-presence:
+    name: Migration file guard (push via gate only)
+    runs-on: ubuntu-latest
+    needs: [should-deploy]
+    if: needs.should-deploy.outputs.deploy == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ needs.should-deploy.outputs.head_sha }}
 
       - name: Validate migration presence for DB-layer changes
+        env:
+          HEAD_SHA: ${{ needs.should-deploy.outputs.head_sha }}
         run: |
-          if [ "${{ github.event_name }}" != "push" ]; then
-            echo "Skipping (workflow_dispatch)."
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Skipping migration presence (manual deploy)."
             exit 0
           fi
-          BASE="${{ github.event.before }}"
-          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-            echo "Skipping migration presence check (no base ref)."
+          if [ -z "${HEAD_SHA}" ]; then
+            echo "No head_sha; skipping migration check."
+            exit 0
+          fi
+          BASE=$(git rev-parse HEAD^ 2>/dev/null || true)
+          if [ -z "${BASE}" ] || [ "${BASE}" = "0000000000000000000000000000000000000000" ]; then
+            echo "Skipping migration presence (no base ref)."
             exit 0
           fi
           python3 backend/scripts/check_migration_presence.py \
-            --base-ref "$BASE" \
-            --head-ref "${{ github.sha }}"
+            --base-ref "${BASE}" \
+            --head-ref "${HEAD_SHA}"
 
   deploy:
     name: SSH deploy + local health
     runs-on: ubuntu-latest
-    needs: [migration-presence]
+    needs: [should-deploy, migration-presence]
+    if: needs.should-deploy.outputs.deploy == 'true'
     steps:
       - name: Deploy on server (git reset + docker-compose)
         uses: appleboy/ssh-action@v1.2.0

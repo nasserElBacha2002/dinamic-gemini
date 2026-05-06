@@ -8,11 +8,17 @@ Skips when DB is not configured. Requires v3 schema to be applied (normalized_la
 from __future__ import annotations
 
 import os
+
 import pytest
 
-from src.database.sqlserver import SqlServerClient, now_utc
+from src.database.sqlserver import now_utc
 from src.domain.labels.entities import NormalizedLabel
-from src.infrastructure.repositories.sql_normalized_label_repository import SqlNormalizedLabelRepository
+from src.infrastructure.repositories.sql_normalized_label_repository import (
+    SqlNormalizedLabelRepository,
+)
+from tests.support.sql_integration import sql_server_client_or_skip
+
+pytestmark = pytest.mark.integration
 
 
 def _connection_string() -> str:
@@ -42,10 +48,7 @@ def _connection_string() -> str:
 
 @pytest.fixture(scope="module")
 def sql_client():
-    cs = _connection_string()
-    if not cs:
-        pytest.skip("SQL Server not configured (set SQLSERVER_CONNECTION_STRING or server/database/uid/pwd)")
-    return SqlServerClient(cs)
+    return sql_server_client_or_skip(_connection_string())
 
 
 @pytest.fixture
@@ -53,7 +56,9 @@ def repo(sql_client):
     return SqlNormalizedLabelRepository(sql_client)
 
 
-def test_sql_normalized_label_repository_save_list_and_replace_for_scope(repo: SqlNormalizedLabelRepository) -> None:
+def test_sql_normalized_label_repository_save_list_and_replace_for_scope(
+    repo: SqlNormalizedLabelRepository,
+) -> None:
     now = now_utc()
     inv_id = "inv-test"
     aisle_id = "aisle-test"
@@ -80,9 +85,8 @@ def test_sql_normalized_label_repository_save_list_and_replace_for_scope(repo: S
     ]
     repo.save_many(labels)
     loaded = list(repo.list_for_scope(inv_id, aisle_id))
-    assert any(l.id == "test-norm-001" for l in loaded)
+    assert any(label.id == "test-norm-001" for label in loaded)
 
     repo.replace_for_scope(inv_id, aisle_id)
     loaded2 = list(repo.list_for_scope(inv_id, aisle_id))
-    assert all(l.id != "test-norm-001" for l in loaded2)
-
+    assert all(label.id != "test-norm-001" for label in loaded2)

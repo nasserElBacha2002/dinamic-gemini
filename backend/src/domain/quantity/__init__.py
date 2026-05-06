@@ -2,4 +2,3 @@
 
 Centralizes qty parsing states, provenance, and final resolution rules.
 """
-

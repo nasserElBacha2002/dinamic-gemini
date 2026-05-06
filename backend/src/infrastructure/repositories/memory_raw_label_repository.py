@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence
+from collections.abc import Sequence
 
 from src.application.ports.repositories import LabelJobScope, RawLabelRepository
 from src.domain.labels.entities import RawLabel
@@ -18,9 +18,9 @@ def _matches_label_job(job_id: LabelJobScope, row_job: str | None) -> bool:
 
 class MemoryRawLabelRepository(RawLabelRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, RawLabel] = {}
+        self._store: dict[str, RawLabel] = {}
 
-    def save_many(self, labels: List[RawLabel]) -> None:
+    def save_many(self, labels: list[RawLabel]) -> None:
         for lb in labels:
             self._store[lb.id] = lb
 

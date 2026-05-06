@@ -6,7 +6,7 @@ Minimal queue contract for the current system. Implementations wrap in-memory or
 
 from __future__ import annotations
 
-from typing import Optional, Protocol
+from typing import Protocol
 
 
 class JobQueue(Protocol):
@@ -22,6 +22,6 @@ class JobQueue(Protocol):
         """Add job_id to the queue."""
         ...
 
-    def dequeue(self, timeout: float = 1.0) -> Optional[str]:
+    def dequeue(self, timeout: float = 1.0) -> str | None:
         """Get next job_id or None if empty (block up to timeout seconds)."""
         ...

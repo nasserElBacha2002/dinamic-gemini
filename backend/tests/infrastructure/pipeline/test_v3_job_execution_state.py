@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional, Sequence
 from unittest.mock import MagicMock
 
 import pytest
@@ -30,38 +30,40 @@ class _FixedClock(Clock):
 
 class _MemJobRepo(JobRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Job] = {}
+        self._store: dict[str, Job] = {}
 
     def save(self, job: Job) -> None:
         self._store[job.id] = job
 
-    def get_by_id(self, job_id: str) -> Optional[Job]:
+    def get_by_id(self, job_id: str) -> Job | None:
         return self._store.get(job_id)
 
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
+    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
         return None
 
-    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> Dict[str, Job]:
+    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
         return {}
 
-    def list_jobs_for_target(self, target_type: str, target_id: str, *, limit: int = 50) -> Sequence[Job]:
+    def list_jobs_for_target(
+        self, target_type: str, target_id: str, *, limit: int = 50
+    ) -> Sequence[Job]:
         return []
 
 
 class _MemAisleRepo(AisleRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Aisle] = {}
+        self._store: dict[str, Aisle] = {}
 
     def save(self, aisle: Aisle) -> None:
         self._store[aisle.id] = aisle
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._store.get(aisle_id)
 
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         return [a for a in self._store.values() if a.inventory_id == inventory_id]
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         return None
 
 
@@ -72,7 +74,7 @@ class _MemInventoryRepo(InventoryRepository):
     def save(self, inventory: Inventory) -> None:
         self._inventory = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         if self._inventory.id == inventory_id:
             return self._inventory
         return None
@@ -204,7 +206,7 @@ def test_raise_if_cancellation_requested_emits_and_raises(tmp_path: Path) -> Non
     )
     job_repo.save(job)
     exec_log = ExecutionLogWriter(tmp_path)
-    emitted: Dict[str, bool] = {"requested": False, "detected": False, "cancelled": False}
+    emitted: dict[str, bool] = {"requested": False, "detected": False, "cancelled": False}
 
     with pytest.raises(PipelineCancellationRequestedError):
         svc.raise_if_cancellation_requested(

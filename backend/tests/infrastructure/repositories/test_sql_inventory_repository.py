@@ -8,11 +8,15 @@ Skips when DB is not configured. Requires v3 schema (inventories table) to be ap
 from __future__ import annotations
 
 import os
+
 import pytest
 
-from src.database.sqlserver import SqlServerClient, now_utc
+from src.database.sqlserver import now_utc
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
+from tests.support.sql_integration import sql_server_client_or_skip
+
+pytestmark = pytest.mark.integration
 
 
 def _connection_string() -> str:
@@ -29,6 +33,7 @@ def _connection_string() -> str:
         if not driver:
             try:
                 import pyodbc
+
                 for d in pyodbc.drivers():
                     if "SQL Server" in d:
                         driver = d
@@ -42,10 +47,7 @@ def _connection_string() -> str:
 
 @pytest.fixture(scope="module")
 def sql_client():
-    cs = _connection_string()
-    if not cs:
-        pytest.skip("SQL Server not configured (set SQLSERVER_CONNECTION_STRING or server/database/uid/pwd)")
-    return SqlServerClient(cs)
+    return sql_server_client_or_skip(_connection_string())
 
 
 @pytest.fixture
@@ -85,7 +87,9 @@ def test_sql_inventory_repository_list_all_includes_saved(repo: SqlInventoryRepo
     assert "test-epica2-002" in ids
 
 
-def test_sql_inventory_repository_get_by_id_missing_returns_none(repo: SqlInventoryRepository) -> None:
+def test_sql_inventory_repository_get_by_id_missing_returns_none(
+    repo: SqlInventoryRepository,
+) -> None:
     assert repo.get_by_id("nonexistent-id-xyz") is None
 
 

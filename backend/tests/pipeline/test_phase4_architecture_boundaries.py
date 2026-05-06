@@ -7,8 +7,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from src.llm.gemini_sdk_adapter import GeminiSdkAdapter
 from src.llm.openai_sdk_adapter import OpenAiSdkAdapter
 from src.llm.types import LLMRequest, LLMResponse
@@ -44,7 +42,12 @@ def test_llm_request_response_have_no_gemini_specific_attributes() -> None:
     req = _minimal_request()
     public = {a for a in dir(req) if not a.startswith("_")}
     assert not any("gemini" in a.lower() for a in public)
-    resp = LLMResponse(provider="openai", model=None, latency_ms=0, parsed_json={"total_entities_detected": 0, "entities": []})
+    resp = LLMResponse(
+        provider="openai",
+        model=None,
+        latency_ms=0,
+        parsed_json={"total_entities_detected": 0, "entities": []},
+    )
     public_r = {a for a in dir(resp) if not a.startswith("_")}
     assert not any("gemini" in a.lower() for a in public_r)
 

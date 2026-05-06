@@ -10,9 +10,12 @@ from uuid import uuid4
 import pytest
 
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET
-from src.application.use_cases.persist_aisle_result import PersistAisleResultCommand, PersistAisleResultUseCase
 from src.application.services.final_count_builder import FinalCountBuilder
 from src.application.services.label_normalization import LabelNormalizationService
+from src.application.use_cases.persist_aisle_result import (
+    PersistAisleResultCommand,
+    PersistAisleResultUseCase,
+)
 from src.application.use_cases.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
     RecomputeConsolidatedCountsUseCase,
@@ -21,13 +24,20 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.labels.entities import RawLabel
 from src.domain.labels.merge import MergeRuleEngine
 from src.domain.positions.entities import Position, PositionStatus
+from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
+    default_map_hybrid_report_to_domain,
+)
 from src.infrastructure.pipeline.v3_report_mapper import map_hybrid_report_to_domain
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
 from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
-from src.infrastructure.repositories.memory_normalized_label_repository import MemoryNormalizedLabelRepository
+from src.infrastructure.repositories.memory_normalized_label_repository import (
+    MemoryNormalizedLabelRepository,
+)
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
 from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
 
 
@@ -86,6 +96,7 @@ def memory_stack():
         product_record_repo=prod,
         evidence_repo=ev,
         clock=clock,
+        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
         raw_label_repo=raw,
         recompute_consolidated_uc=recompute,
@@ -143,7 +154,11 @@ def test_persist_two_jobs_same_aisle_isolated_positions(memory_stack):
         )
     )
 
-    all_pos = list(s["position_repo"].list_by_aisle(aisle_id, page=1, page_size=100, job_id=JOB_ID_FILTER_UNSET))
+    all_pos = list(
+        s["position_repo"].list_by_aisle(
+            aisle_id, page=1, page_size=100, job_id=JOB_ID_FILTER_UNSET
+        )
+    )
     assert len(all_pos) == 2
     ja = list(s["position_repo"].list_by_aisle(aisle_id, page=1, page_size=100, job_id=job_a))
     jb = list(s["position_repo"].list_by_aisle(aisle_id, page=1, page_size=100, job_id=job_b))

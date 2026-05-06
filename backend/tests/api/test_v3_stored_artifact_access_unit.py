@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-from src.domain.assets.entities import SourceAsset, SourceAssetType
-from src.domain.jobs.entities import Job, JobStatus
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     read_execution_log_events_for_job,
@@ -17,10 +16,11 @@ from src.api.services.v3_stored_artifact_access import (
     resolve_source_asset_image_display,
     resolve_visual_reference_file_response,
 )
+from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.visual_reference import InventoryVisualReference
-from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
+from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_for_row
-from datetime import datetime, timezone
+from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 
 _DEFAULT_STORE_ACCESS_SETTINGS = {
     "artifact_store_max_in_memory_get_bytes": 8 * 1024 * 1024,
@@ -117,7 +117,9 @@ def test_resolve_source_asset_image_display_s3_returns_presigned_url(monkeypatch
     assert need_fetch is False
 
 
-def test_resolve_source_asset_image_display_local_requires_authenticated_fetch(tmp_path: Path, monkeypatch) -> None:
+def test_resolve_source_asset_image_display_local_requires_authenticated_fetch(
+    tmp_path: Path, monkeypatch
+) -> None:
     (tmp_path / "v3_uploads").mkdir(parents=True, exist_ok=True)
     (tmp_path / "v3_uploads" / "k.jpg").write_bytes(b"x")
     asset = SourceAsset(
@@ -150,7 +152,9 @@ def test_resolve_source_asset_image_display_local_requires_authenticated_fetch(t
     assert need_fetch is True
 
 
-def test_resolve_source_asset_image_display_local_missing_file_raises(tmp_path: Path, monkeypatch) -> None:
+def test_resolve_source_asset_image_display_local_missing_file_raises(
+    tmp_path: Path, monkeypatch
+) -> None:
     (tmp_path / "v3_uploads").mkdir(parents=True, exist_ok=True)
     asset = SourceAsset(
         id="a1",
@@ -209,7 +213,9 @@ def test_resolve_source_asset_image_display_legacy_raises_when_disabled(monkeypa
     assert ei.value.reason_code == "legacy_local_disabled"
 
 
-def test_resolve_source_asset_image_display_legacy_ok_when_file_exists(tmp_path: Path, monkeypatch) -> None:
+def test_resolve_source_asset_image_display_legacy_ok_when_file_exists(
+    tmp_path: Path, monkeypatch
+) -> None:
     rel = Path("inv/a/p.jpg")
     file_path = tmp_path / "v3_uploads" / rel
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -314,7 +320,9 @@ def test_read_execution_log_events_durable(tmp_path: Path, monkeypatch) -> None:
     assert events[0]["message"] == "hi"
 
 
-def test_read_execution_log_events_durable_preserves_analysis_request_payload(tmp_path: Path, monkeypatch) -> None:
+def test_read_execution_log_events_durable_preserves_analysis_request_payload(
+    tmp_path: Path, monkeypatch
+) -> None:
     key = "jobs/j-gemini/run/execution_log.jsonl"
     body = (
         b'{"ts":"t","stage":"AnalysisStage","level":"info","message":"Analysis request prepared","payload":'
@@ -371,7 +379,9 @@ def test_read_execution_log_events_durable_preserves_analysis_request_payload(tm
     assert payload["visual_reference_attachments"][0]["reference_id"] == "ref-1"
 
 
-def test_read_execution_log_durable_uses_download_not_get_object(tmp_path: Path, monkeypatch) -> None:
+def test_read_execution_log_durable_uses_download_not_get_object(
+    tmp_path: Path, monkeypatch
+) -> None:
     """Execution log path streams via download_to_path + temp file (no get_object)."""
     key = "jobs/j2/run/execution_log.jsonl"
     body = b'{"ts":"t","stage":"s","level":"info","message":"dl"}\n'
@@ -568,7 +578,9 @@ def test_fetch_json_when_head_fails_loads_when_under_cap(monkeypatch) -> None:
     assert out == {"ok": True}
 
 
-def test_visual_reference_incomplete_provider_metadata_fails_without_legacy_fallback(monkeypatch) -> None:
+def test_visual_reference_incomplete_provider_metadata_fails_without_legacy_fallback(
+    monkeypatch,
+) -> None:
     ref = InventoryVisualReference(
         id="vr1",
         inventory_id="inv1",

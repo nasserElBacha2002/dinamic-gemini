@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from src.application.use_cases.benchmark_compare_support import sanitize_llm_cost_snapshot_for_compare
+from src.application.use_cases.benchmark_compare_support import (
+    sanitize_llm_cost_snapshot_for_compare,
+)
 from src.llm.costing import build_llm_cost_snapshot, normalize_usage
 
 

@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import re
-from typing import Any, List, Tuple
+from typing import Any
 
 _SPLIT_DIGITS = re.compile(r"(\d+)")
 
 
-def natural_sort_key_parts(text: str) -> Tuple[Any, ...]:
+def natural_sort_key_parts(text: str) -> tuple[Any, ...]:
     """Return a tuple usable as sort key so numeric substrings compare numerically."""
     s = (text or "").strip()
     if not s:
         return ("",)
-    parts: List[Any] = []
+    parts: list[Any] = []
     for chunk in _SPLIT_DIGITS.split(s):
         if chunk == "":
             continue

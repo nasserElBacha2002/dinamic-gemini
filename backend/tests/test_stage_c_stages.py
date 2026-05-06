@@ -12,20 +12,21 @@ import numpy as np
 import pytest
 
 from src.domain.entity import Entity
-from src.pipeline.context.run_context import RunContext
-from src.pipeline.stages.frame_acquisition_stage import FrameAcquisitionStage, AcquiredFrames
-from src.pipeline.ports.analysis_provider import AnalysisResult
+from src.frames.types import FramesBundle
+from src.jobs.models import JobInput
 from src.llm.normalization.entity_normalizer import (
     EXTRACTION_CONTRACT_VERSION_KEY,
     EXTRACTION_CONTRACT_VERSION_VALUE,
 )
+from src.pipeline.context.run_context import RunContext
+from src.pipeline.hybrid_inventory_pipeline import _HybridRunParams
+from src.pipeline.ports.analysis_provider import AnalysisResult
+from src.pipeline.run_metadata import RUN_METADATA_KEY_LLM_COST_SNAPSHOT
 from src.pipeline.stages.analysis_stage import AnalysisStage, AnalysisStageResult
 from src.pipeline.stages.entity_resolution_stage import EntityResolutionStage, ResolvedEntities
-from src.pipeline.stages.reporting_stage import ReportingStage, ReportingStageInput, ReportingResult
+from src.pipeline.stages.frame_acquisition_stage import AcquiredFrames, FrameAcquisitionStage
 from src.pipeline.stages.input_preparation_stage import PreparedInput
-from src.pipeline.run_metadata import RUN_METADATA_KEY_LLM_COST_SNAPSHOT
-from src.jobs.models import JobInput
-from src.frames.types import FramesBundle
+from src.pipeline.stages.reporting_stage import ReportingResult, ReportingStage, ReportingStageInput
 from tests.support.llm_executor_harness import HARNESS_RESPONSE_PROVIDER
 
 
@@ -260,11 +261,13 @@ def test_orchestrator_returns_1_on_stage_failure() -> None:
         mock_input.run.side_effect = ValueError("input validation failed")
         result = pipeline._run_hybrid(
             "/dummy/v.mp4",
-            settings=MagicMock(),
-            video_id="j1",
-            output_path=Path("/tmp"),
-            run_id="r1",
-            logger=logger,
+            _HybridRunParams(
+                settings=MagicMock(),
+                video_id="j1",
+                output_path=Path("/tmp"),
+                run_id="r1",
+                logger=logger,
+            ),
         )
     assert result.exit_code == 1
     logger.exception.assert_called()
@@ -280,7 +283,9 @@ def test_pipeline_success_persists_llm_cost_snapshot_from_analysis_stage(tmp_pat
 
     pipeline = HybridInventoryPipeline()
     logger = MagicMock()
-    settings = MagicMock(debug_save_frames=False, debug_run_metadata=False, hybrid_prompt="global_v21")
+    settings = MagicMock(
+        debug_save_frames=False, debug_run_metadata=False, hybrid_prompt="global_v21"
+    )
     job_input = JobInput(video_path="/dummy/v.mp4", mode="hybrid", input_type="video")
     prepared = PreparedInput(job_id="j1", input_type="video", job_input=job_input)
     acquired = AcquiredFrames(
@@ -311,23 +316,31 @@ def test_pipeline_success_persists_llm_cost_snapshot_from_analysis_stage(tmp_pat
         mock_analysis.run.return_value = analysis_stage_result
         mock_resolve.run.return_value = resolved
         mock_evidence.run.return_value = None
-        mock_reporting.run.return_value = ReportingResult(report_path=tmp_path / "hybrid_report.json", report={})
+        mock_reporting.run.return_value = ReportingResult(
+            report_path=tmp_path / "hybrid_report.json", report={}
+        )
         result = pipeline._run_hybrid(
             "/dummy/v.mp4",
-            settings=settings,
-            video_id="j1",
-            output_path=tmp_path,
-            run_id="r1",
-            logger=logger,
-            job_input=job_input,
+            _HybridRunParams(
+                settings=settings,
+                video_id="j1",
+                output_path=tmp_path,
+                run_id="r1",
+                logger=logger,
+                job_input=job_input,
+            ),
         )
 
     assert result.exit_code == 0
     assert result.run_metadata is not None
-    assert result.run_metadata[RUN_METADATA_KEY_LLM_COST_SNAPSHOT] == {"capture_status": "estimated"}
+    assert result.run_metadata[RUN_METADATA_KEY_LLM_COST_SNAPSHOT] == {
+        "capture_status": "estimated"
+    }
 
 
-def test_pipeline_success_tolerates_analysis_result_without_llm_cost_snapshot_attr(tmp_path: Path) -> None:
+def test_pipeline_success_tolerates_analysis_result_without_llm_cost_snapshot_attr(
+    tmp_path: Path,
+) -> None:
     """Legacy/mocked AnalysisStage outputs without llm_cost_snapshot must not crash finalization."""
     from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 
@@ -341,7 +354,9 @@ def test_pipeline_success_tolerates_analysis_result_without_llm_cost_snapshot_at
 
     pipeline = HybridInventoryPipeline()
     logger = MagicMock()
-    settings = MagicMock(debug_save_frames=False, debug_run_metadata=False, hybrid_prompt="global_v21")
+    settings = MagicMock(
+        debug_save_frames=False, debug_run_metadata=False, hybrid_prompt="global_v21"
+    )
     job_input = JobInput(video_path="/dummy/v.mp4", mode="hybrid", input_type="video")
     prepared = PreparedInput(job_id="j1", input_type="video", job_input=job_input)
     acquired = AcquiredFrames(
@@ -365,15 +380,19 @@ def test_pipeline_success_tolerates_analysis_result_without_llm_cost_snapshot_at
         mock_analysis.run.return_value = LegacyAnalysisStageResult()
         mock_resolve.run.return_value = resolved
         mock_evidence.run.return_value = None
-        mock_reporting.run.return_value = ReportingResult(report_path=tmp_path / "hybrid_report.json", report={})
+        mock_reporting.run.return_value = ReportingResult(
+            report_path=tmp_path / "hybrid_report.json", report={}
+        )
         result = pipeline._run_hybrid(
             "/dummy/v.mp4",
-            settings=settings,
-            video_id="j1",
-            output_path=tmp_path,
-            run_id="r1",
-            logger=logger,
-            job_input=job_input,
+            _HybridRunParams(
+                settings=settings,
+                video_id="j1",
+                output_path=tmp_path,
+                run_id="r1",
+                logger=logger,
+                job_input=job_input,
+            ),
         )
 
     assert result.exit_code == 0

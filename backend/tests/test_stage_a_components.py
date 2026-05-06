@@ -60,7 +60,9 @@ def test_input_preparation_stage_video_returns_prepared_input(tmp_path: Path) ->
     assert run_dir.is_dir()
 
 
-def test_input_preparation_stage_photos_normalization_fails_without_manifest(tmp_path: Path) -> None:
+def test_input_preparation_stage_photos_normalization_fails_without_manifest(
+    tmp_path: Path,
+) -> None:
     """InputPreparationStage with photos input_type raises when manifest is missing."""
     run_dir = tmp_path / "job2" / "run1"
     run_dir.mkdir(parents=True)

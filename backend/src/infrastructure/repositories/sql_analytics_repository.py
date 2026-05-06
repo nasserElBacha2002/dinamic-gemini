@@ -12,14 +12,14 @@ Position-based metrics use the same **per-aisle operational slice** as
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from src.application.constants.review_quality import LOW_CONFIDENCE_THRESHOLD
 from src.application.dto.analytics_dto import (
+    AisleIssueRowDTO,
     AnalyticsFilters,
     AnalyticsSummaryDTO,
     AnalyticsTrendsDTO,
-    AisleIssueRowDTO,
     InventoryPerformanceRowDTO,
     ManualInterventionBreakdownDTO,
     ManualInterventionCategoryDTO,
@@ -28,12 +28,11 @@ from src.application.dto.analytics_dto import (
 )
 from src.application.ports.analytics_repository import AnalyticsRepository
 from src.application.services.analytics_aggregation_core import (
+    InventoryMetricInputs,
+    SummaryMetricInputs,
     build_inventory_metric_rates,
     build_summary_metrics,
     day_span_inclusive,
-    minutes_from_seconds,
-    InventoryMetricInputs,
-    SummaryMetricInputs,
 )
 from src.database.sqlserver import SqlServerClient
 from src.domain.reviews.sql_literals import (
@@ -50,7 +49,7 @@ from src.domain.reviews.sql_literals import (
 )
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -58,7 +57,7 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     return dt.replace(tzinfo=timezone.utc)
 
 
-def _build_scope_sql(prefix: str = "p") -> Tuple[str, List[Any]]:
+def _build_scope_sql(prefix: str = "p") -> tuple[str, list[Any]]:
     """Returns (WHERE fragment without WHERE keyword, params). Base: active positions."""
     return f"{prefix}.status <> 'deleted'", []
 
@@ -82,8 +81,8 @@ def _unidentified_product_expr(primary_alias: str = "pr_primary") -> str:
 
 
 def _append_inventory_aisle_filters(
-    conditions: List[str],
-    params: List[Any],
+    conditions: list[str],
+    params: list[Any],
     filters: AnalyticsFilters,
 ) -> None:
     if filters.inventory_id:
@@ -95,8 +94,8 @@ def _append_inventory_aisle_filters(
 
 
 def _append_ra_time_filters(
-    conditions: List[str],
-    params: List[Any],
+    conditions: list[str],
+    params: list[Any],
     filters: AnalyticsFilters,
     col: str = "ra.created_at",
 ) -> None:
@@ -109,8 +108,8 @@ def _append_ra_time_filters(
 
 
 def _append_job_finished_at_time_filters(
-    conditions: List[str],
-    params: List[Any],
+    conditions: list[str],
+    params: list[Any],
     filters: AnalyticsFilters,
     col: str = "j.finished_at",
 ) -> None:
@@ -180,16 +179,16 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         self._client = client
 
     def get_summary(self, filters: AnalyticsFilters) -> AnalyticsSummaryDTO:
-        notes: List[str] = []
+        notes: list[str] = []
         pos_where, pos_params = _build_scope_sql("p")
         conditions = [pos_where, _operational_result_slice_predicate()]
-        params: List[Any] = list(pos_params)
+        params: list[Any] = list(pos_params)
         _append_inventory_aisle_filters(conditions, params, filters)
         # Position-state metrics: entity scope only (inventory/aisle), not position.updated_at.
         where_pos = " AND ".join(conditions)
 
         cond_ra = ["p.status <> 'deleted'", _operational_result_slice_predicate()]
-        ra_params: List[Any] = []
+        ra_params: list[Any] = []
         _append_inventory_aisle_filters(cond_ra, ra_params, filters)
         _append_ra_time_filters(cond_ra, ra_params, filters, "ra.created_at")
         where_ra = " AND ".join(cond_ra)
@@ -199,12 +198,13 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             "CASE WHEN p.status IN (N'reviewed', N'corrected') OR "
             "(p.status = N'detected' AND p.needs_review = 0) THEN 1 ELSE 0 END"
         )
+        # B608 FP-P: WHERE/skeleton built from internal fragments + constants (SQL_IN_*); bind params use "?".
         sql_positions = f"""
             SELECT
               COUNT(*) AS total_positions,
               SUM({processed_expr}) AS processed_positions,
-              SUM(CASE WHEN {_unknown_resolution_expr('p')} THEN 1 ELSE 0 END) AS operator_marked_unknown_n,
-              SUM(CASE WHEN {_unidentified_product_expr('pr_primary')} THEN 1 ELSE 0 END) AS unidentified_product_n,
+              SUM(CASE WHEN {_unknown_resolution_expr("p")} THEN 1 ELSE 0 END) AS operator_marked_unknown_n,
+              SUM(CASE WHEN {_unidentified_product_expr("pr_primary")} THEN 1 ELSE 0 END) AS unidentified_product_n,
               SUM(CASE WHEN {tr_inv} THEN 1 ELSE 0 END) AS invalid_n
             FROM positions p
             OUTER APPLY (
@@ -216,7 +216,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             INNER JOIN aisles a ON a.id = p.aisle_id
             INNER JOIN inventories i ON i.id = a.inventory_id
             WHERE {where_pos}
-        """
+        """  # nosec B608
         sql_reviews = f"""
             SELECT
               COUNT(*) AS reviewed_positions,
@@ -248,9 +248,8 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               ) ra
               GROUP BY ra.position_id
             ) t
-        """
+        """  # nosec B608
         sq_params = list(params)
-        inv_params = list(params)
         rev_params = list(ra_params)
         job_proc_conditions = [
             "j.target_type = N'aisle'",
@@ -259,7 +258,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             "j.finished_at IS NOT NULL",
             "j.finished_at >= j.started_at",
         ]
-        job_proc_params: List[Any] = []
+        job_proc_params: list[Any] = []
         job_join = ""
         if filters.inventory_id or filters.aisle_id:
             job_join = (
@@ -269,30 +268,30 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             _append_inventory_aisle_filters(job_proc_conditions, job_proc_params, filters)
         _append_job_finished_at_time_filters(job_proc_conditions, job_proc_params, filters)
         job_proc_where = " AND ".join(job_proc_conditions)
+        # B608 DC: job_proc_where is AND of fixed predicates; only filter values are "?" (see _append_*).
         sql_avg_job_processing = f"""
             SELECT AVG(CAST(DATEDIFF_BIG(SECOND, j.started_at, j.finished_at) AS float)) AS avg_sec
             FROM inventory_jobs j
             {job_join}
             WHERE {job_proc_where}
-        """
+        """  # nosec B608
 
         positions_in_scope = 0
         processed_positions_count = 0
         invalid_n = 0
-        operator_marked_unknown_n = 0
         unidentified_product_n = 0
         reviewed_positions_count = 0
         auto_accepted_positions_count = 0
         manually_corrected_positions_count = 0
         unknown_positions_count = 0
         settling_actions_count = 0
-        avg_sec: Optional[float] = None
+        avg_sec: float | None = None
         with self._client.cursor() as cur:
             cur.execute(sql_positions, sq_params)
             row = cur.fetchone()
             positions_in_scope = int(getattr(row, "total_positions", 0) or 0)
             processed_positions_count = int(getattr(row, "processed_positions", 0) or 0)
-            operator_marked_unknown_n = int(getattr(row, "operator_marked_unknown_n", 0) or 0)
+            int(getattr(row, "operator_marked_unknown_n", 0) or 0)
             unidentified_product_n = int(getattr(row, "unidentified_product_n", 0) or 0)
             invalid_n = int(getattr(row, "invalid_n", 0) or 0)
 
@@ -345,12 +344,12 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             )
         )
 
-    def _processing_success_rate_sql(self, filters: AnalyticsFilters) -> Optional[float]:
+    def _processing_success_rate_sql(self, filters: AnalyticsFilters) -> float | None:
         conditions = [
             "j.target_type = N'aisle'",
             "j.status IN (N'succeeded', N'failed')",
         ]
-        params: List[Any] = []
+        params: list[Any] = []
         if filters.date_from:
             conditions.append("j.updated_at >= ?")
             params.append(_ensure_utc(filters.date_from))
@@ -362,6 +361,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             join = "INNER JOIN aisles a ON a.id = j.target_id INNER JOIN inventories i ON i.id = a.inventory_id"
             _append_inventory_aisle_filters(conditions, params, filters)
         where_j = " AND ".join(conditions)
+        # B608 DC: where_j is internal predicates; dates/ids are always passed as "?" in params.
         sql = f"""
             SELECT
               SUM(CASE WHEN j.status = N'succeeded' THEN 1 ELSE 0 END) AS ok_n,
@@ -369,7 +369,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             FROM inventory_jobs j
             {join}
             WHERE {where_j}
-        """
+        """  # nosec B608
         with self._client.cursor() as cur:
             cur.execute(sql, params)
             row = cur.fetchone()
@@ -385,7 +385,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             return AnalyticsTrendsDTO()
 
         cond_ra = ["p.status <> 'deleted'", _operational_result_slice_predicate()]
-        ra_params: List[Any] = []
+        ra_params: list[Any] = []
         _append_inventory_aisle_filters(cond_ra, ra_params, filters)
         _append_ra_time_filters(cond_ra, ra_params, filters, "ra.created_at")
         where_ra = " AND ".join(cond_ra)
@@ -403,13 +403,13 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             WHERE {where_ra}
             GROUP BY CONVERT(date, ra.created_at)
             ORDER BY d
-        """
+        """  # nosec B608
 
         cond_j = [
             "j.target_type = N'aisle'",
             "j.status IN (N'succeeded', N'failed')",
         ]
-        j_params: List[Any] = []
+        j_params: list[Any] = []
         if filters.date_from:
             cond_j.append("j.updated_at >= ?")
             j_params.append(_ensure_utc(filters.date_from))
@@ -431,9 +431,9 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             WHERE {where_j}
             GROUP BY CONVERT(date, j.updated_at)
             ORDER BY d
-        """
+        """  # nosec B608
 
-        reviewed_by_day: Dict[date, Tuple[int, int]] = {}
+        reviewed_by_day: dict[date, tuple[int, int]] = {}
         with self._client.cursor() as cur:
             cur.execute(sql_daily_reviews, ra_params)
             for row in cur.fetchall():
@@ -449,7 +449,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                     int(getattr(row, "corrections", 0) or 0),
                 )
 
-            jobs_by_day: Dict[date, Tuple[int, int]] = {}
+            jobs_by_day: dict[date, tuple[int, int]] = {}
             cur.execute(sql_daily_jobs, j_params)
             for row in cur.fetchall():
                 d_raw = getattr(row, "d", None)
@@ -465,15 +465,27 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 )
 
         all_days = sorted(set(reviewed_by_day.keys()) | set(jobs_by_day.keys()))
-        reviewed_series: List[TrendPointDTO] = []
-        correction_series: List[TrendPointDTO] = []
-        proc_series: List[TrendPointDTO] = []
+        reviewed_series: list[TrendPointDTO] = []
+        correction_series: list[TrendPointDTO] = []
+        proc_series: list[TrendPointDTO] = []
         for dkey in all_days:
             s, c = reviewed_by_day.get(dkey, (0, 0))
-            reviewed_series.append(TrendPointDTO(period=dkey.isoformat(), reviewed_results=s, correction_rate=None, processing_success_rate=None))
+            reviewed_series.append(
+                TrendPointDTO(
+                    period=dkey.isoformat(),
+                    reviewed_results=s,
+                    correction_rate=None,
+                    processing_success_rate=None,
+                )
+            )
             cr = (c / s) if s else None
             correction_series.append(
-                TrendPointDTO(period=dkey.isoformat(), reviewed_results=s, correction_rate=cr, processing_success_rate=None)
+                TrendPointDTO(
+                    period=dkey.isoformat(),
+                    reviewed_results=s,
+                    correction_rate=cr,
+                    processing_success_rate=None,
+                )
             )
             ok_n, fail_n = jobs_by_day.get(dkey, (0, 0))
             tot = ok_n + fail_n
@@ -493,10 +505,12 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             processing_success_over_time=proc_series,
         )
 
-    def get_inventory_performance(self, filters: AnalyticsFilters) -> List[InventoryPerformanceRowDTO]:
+    def get_inventory_performance(
+        self, filters: AnalyticsFilters
+    ) -> list[InventoryPerformanceRowDTO]:
         pos_where, _ = _build_scope_sql("p")
         conditions = [pos_where, _operational_result_slice_predicate()]
-        params: List[Any] = []
+        params: list[Any] = []
         _append_inventory_aisle_filters(conditions, params, filters)
         where_scope = " AND ".join(conditions)
         tr_inv = _traceability_invalid_expr("p")
@@ -513,8 +527,8 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               COUNT(*) AS total_positions,
               SUM({processed_expr}) AS processed_positions,
               AVG(CAST(p.confidence AS float)) AS avg_confidence,
-              SUM(CASE WHEN {_unknown_resolution_expr('p')} THEN 1 ELSE 0 END) AS operator_marked_unknown_n,
-              SUM(CASE WHEN {_unidentified_product_expr('pr_primary')} THEN 1 ELSE 0 END) AS unidentified_product_n,
+              SUM(CASE WHEN {_unknown_resolution_expr("p")} THEN 1 ELSE 0 END) AS operator_marked_unknown_n,
+              SUM(CASE WHEN {_unidentified_product_expr("pr_primary")} THEN 1 ELSE 0 END) AS unidentified_product_n,
               SUM(CASE WHEN {tr_inv} THEN 1 ELSE 0 END) AS invalid_n
             FROM positions p
             OUTER APPLY (
@@ -528,8 +542,8 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             WHERE {where_scope}
             GROUP BY i.id, i.name, i.created_at
             ORDER BY i.name ASC
-        """
-        rows_out: List[InventoryPerformanceRowDTO] = []
+        """  # nosec B608
+        rows_out: list[InventoryPerformanceRowDTO] = []
         with self._client.cursor() as cur:
             cur.execute(sql, params)
             for row in cur.fetchall():
@@ -586,20 +600,22 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                         invalid_traceability_rate=metric_rates["invalid_traceability_rate"],
                         avg_confidence=metric_rates["avg_confidence"],
                         processing_success_rate=metric_rates["processing_success_rate"],
-                        average_processing_time_minutes=metric_rates["average_processing_time_minutes"],
+                        average_processing_time_minutes=metric_rates[
+                            "average_processing_time_minutes"
+                        ],
                     )
                 )
         return rows_out
 
     def _inventory_review_outcomes(
         self, inventory_id: str, filters: AnalyticsFilters
-    ) -> Tuple[int, int, int, int]:
+    ) -> tuple[int, int, int, int]:
         cond = [
             "p.status <> 'deleted'",
             _operational_result_slice_predicate(),
             "i.id = ?",
         ]
-        prm: List[Any] = [inventory_id]
+        prm: list[Any] = [inventory_id]
         _append_ra_time_filters(cond, prm, filters, "ra.created_at")
         where_ra = " AND ".join(cond)
         sql = f"""
@@ -629,7 +645,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               ) ra
               GROUP BY ra.position_id
             ) t
-        """
+        """  # nosec B608
         with self._client.cursor() as cur:
             cur.execute(sql, prm)
             row = cur.fetchone()
@@ -641,7 +657,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
 
     def _inventory_average_processing_time_seconds(
         self, inventory_id: str, filters: AnalyticsFilters
-    ) -> Optional[float]:
+    ) -> float | None:
         cond = [
             "j.target_type = N'aisle'",
             "j.status IN (N'succeeded', N'failed', N'canceled')",
@@ -650,7 +666,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             "j.finished_at >= j.started_at",
             "i.id = ?",
         ]
-        params: List[Any] = [inventory_id]
+        params: list[Any] = [inventory_id]
         if filters.aisle_id:
             cond.append("a.id = ?")
             params.append(filters.aisle_id.strip())
@@ -662,7 +678,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             INNER JOIN aisles a ON a.id = j.target_id
             INNER JOIN inventories i ON i.id = a.inventory_id
             WHERE {where_sql}
-        """
+        """  # nosec B608
         with self._client.cursor() as cur:
             cur.execute(sql, params)
             row = cur.fetchone()
@@ -671,11 +687,11 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             return None
         return float(raw_avg)
 
-    def get_aisle_issues(self, filters: AnalyticsFilters) -> List[AisleIssueRowDTO]:
+    def get_aisle_issues(self, filters: AnalyticsFilters) -> list[AisleIssueRowDTO]:
         bucket = _issue_bucket_expr("p")
         pos_where, _ = _build_scope_sql("p")
         conditions = [pos_where, _operational_result_slice_predicate()]
-        params: List[Any] = []
+        params: list[Any] = []
         _append_inventory_aisle_filters(conditions, params, filters)
         where_scope = " AND ".join(conditions)
         tr_inv = _traceability_invalid_expr("p")
@@ -689,8 +705,8 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               COUNT(*) AS total_results,
               SUM(CASE WHEN p.needs_review = 1 THEN 1 ELSE 0 END) AS needs_review_count,
               SUM(CASE WHEN p.status = N'corrected' THEN 1 ELSE 0 END) AS corrected_count,
-              SUM(CASE WHEN {_unknown_resolution_expr('p')} THEN 1 ELSE 0 END) AS operator_marked_unknown_count,
-              SUM(CASE WHEN {_unidentified_product_expr('pr_primary')} THEN 1 ELSE 0 END) AS unidentified_product_count,
+              SUM(CASE WHEN {_unknown_resolution_expr("p")} THEN 1 ELSE 0 END) AS operator_marked_unknown_count,
+              SUM(CASE WHEN {_unidentified_product_expr("pr_primary")} THEN 1 ELSE 0 END) AS unidentified_product_count,
               SUM(CASE WHEN p.review_resolution IN (N'qty_corrected', N'sku_corrected') THEN 1 ELSE 0 END) AS manual_corrections_count,
               SUM(CASE WHEN {tr_inv} THEN 1 ELSE 0 END) AS invalid_traceability_count,
               SUM(CASE WHEN p.confidence < CAST({low_thr} AS float) THEN 1 ELSE 0 END) AS low_confidence_count,
@@ -712,7 +728,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             WHERE {where_scope}
             GROUP BY a.id, a.code, i.id, i.name
             ORDER BY (SUM(CASE WHEN p.needs_review = 1 THEN 1 ELSE 0 END)) DESC, total_results DESC
-        """
+        """  # nosec B608
         labels = [
             ("iss_unidentified_product", "Unidentified product"),
             ("iss_invalid", "Invalid traceability"),
@@ -721,7 +737,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             ("iss_lowc", "Low confidence"),
             ("iss_pending", "Pending review"),
         ]
-        out: List[AisleIssueRowDTO] = []
+        out: list[AisleIssueRowDTO] = []
         with self._client.cursor() as cur:
             cur.execute(sql, params)
             for row in cur.fetchall():
@@ -750,22 +766,24 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                         unidentified_product_count=int(
                             getattr(row, "unidentified_product_count", 0) or 0
                         ),
-                        unknown_count=int(
-                            getattr(row, "operator_marked_unknown_count", 0) or 0
+                        unknown_count=int(getattr(row, "operator_marked_unknown_count", 0) or 0),
+                        manual_corrections_count=int(
+                            getattr(row, "manual_corrections_count", 0) or 0
                         ),
-                        manual_corrections_count=int(getattr(row, "manual_corrections_count", 0) or 0),
-                        invalid_traceability_count=int(getattr(row, "invalid_traceability_count", 0) or 0),
+                        invalid_traceability_count=int(
+                            getattr(row, "invalid_traceability_count", 0) or 0
+                        ),
                         low_confidence_count=int(getattr(row, "low_confidence_count", 0) or 0),
                         most_common_issue=best_label,
                     )
                 )
         return out
 
-    def get_quality_patterns(self, filters: AnalyticsFilters) -> List[QualityPatternRowDTO]:
+    def get_quality_patterns(self, filters: AnalyticsFilters) -> list[QualityPatternRowDTO]:
         bucket_sql = _issue_bucket_expr("p")
         pos_where, _ = _build_scope_sql("p")
         conditions = [pos_where, _operational_result_slice_predicate()]
-        params: List[Any] = []
+        params: list[Any] = []
         _append_inventory_aisle_filters(conditions, params, filters)
         where_scope = " AND ".join(conditions)
         sql = f"""
@@ -784,7 +802,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 WHERE {where_scope}
             ) t
             GROUP BY bucket
-        """
+        """  # nosec B608
         display = {
             "unidentified_product": "Unidentified product",
             "invalid_traceability": "Invalid traceability",
@@ -804,7 +822,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             "pending_review": "needs_review flag set",
             "ok": "Did not match higher-priority buckets",
         }
-        rows: List[Tuple[str, int]] = []
+        rows: list[tuple[str, int]] = []
         with self._client.cursor() as cur:
             cur.execute(sql, params)
             for row in cur.fetchall():
@@ -812,7 +830,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
                 c = int(getattr(row, "cnt", 0) or 0)
                 rows.append((b, c))
         total = sum(c for _, c in rows) or 0
-        out: List[QualityPatternRowDTO] = []
+        out: list[QualityPatternRowDTO] = []
         for b, c in sorted(rows, key=lambda x: -x[1]):
             pct = (c / total) if total else None
             key = b.lower() if b else "ok"
@@ -830,7 +848,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         self, filters: AnalyticsFilters
     ) -> ManualInterventionBreakdownDTO:
         cond = ["p.status <> 'deleted'", _operational_result_slice_predicate()]
-        params: List[Any] = []
+        params: list[Any] = []
         _append_inventory_aisle_filters(cond, params, filters)
         _append_ra_time_filters(cond, params, filters, "ra.created_at")
         where_sql = " AND ".join(cond)
@@ -862,14 +880,14 @@ class SqlAnalyticsRepository(AnalyticsRepository):
               SUM(CASE WHEN rn = 1 AND action_type = {SQL_EQ_DELETE_POSITION} THEN 1 ELSE 0 END) AS deleted_count,
               COUNT(DISTINCT CASE WHEN action_type IN ({SQL_IN_REVIEWED_POSITIONS_ACTIONS}) THEN position_id END) AS reviewed_positions_count
             FROM scoped_actions
-        """
+        """  # nosec B608
         with self._client.cursor() as cur:
             cur.execute(sql, params)
             row = cur.fetchone()
 
         intervention_positions_count = int(getattr(row, "intervention_positions_count", 0) or 0)
 
-        def pct(count: int) -> Optional[float]:
+        def pct(count: int) -> float | None:
             return (count / intervention_positions_count) if intervention_positions_count else None
 
         confirmed_count = int(getattr(row, "confirmed_count", 0) or 0)

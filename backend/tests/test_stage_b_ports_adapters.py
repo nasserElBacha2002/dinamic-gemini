@@ -12,22 +12,21 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from src.llm.prompt_composer.prompt_traceability import sha256_utf8
 from src.jobs.adapters.job_store_adapter import JobStoreRepositoryAdapter
 from src.jobs.models import JobInput, JobRecord, JobStatus
+from src.llm.prompt_composer.prompt_traceability import sha256_utf8
 from src.parsing.global_analysis_parser import parse_entities
 from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.ports.analysis_provider import (
-    AnalysisResult,
-    AnalysisProvider,
-    ProviderCapabilities,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_AVAILABLE,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
+    AnalysisProvider,
+    AnalysisResult,
+    ProviderCapabilities,
 )
 from tests.support.llm_executor_harness import HARNESS_RESPONSE_PROVIDER
-
 
 # --- Contract: any AnalysisProvider returns expected shape ---
 
@@ -67,7 +66,9 @@ def test_analysis_provider_contract_returns_analysis_result() -> None:
         "total_entities_detected": 1,
         "entities": [{"model_entity_id": "e1", "entity_type": "PALLET"}],
     }
-    provider: AnalysisProvider = FakeAnalysisProvider(parsed_json=fixture, provider_name="contract-test")
+    provider: AnalysisProvider = FakeAnalysisProvider(
+        parsed_json=fixture, provider_name="contract-test"
+    )
     settings = MagicMock()
     job_input = MagicMock()
     context = RunContext(
@@ -97,7 +98,9 @@ def test_analysis_provider_contract_returns_analysis_result() -> None:
     assert len(entities) == 1
 
 
-def test_hybrid_global_analysis_strategy_returns_analysis_result(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hybrid_global_analysis_strategy_returns_analysis_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """HybridGlobalAnalysisStrategy with patched executor returns AnalysisResult; parsed_json usable by parse_entities."""
     from tests.support.llm_executor_harness import (
         TestLLMExecutor,
@@ -107,7 +110,11 @@ def test_hybrid_global_analysis_strategy_returns_analysis_result(monkeypatch: py
 
     patch_hybrid_resolve_llm_executor(
         monkeypatch,
-        TestLLMExecutor(response=llm_response_success(parsed_json={"total_entities_detected": 0, "entities": []})),
+        TestLLMExecutor(
+            response=llm_response_success(
+                parsed_json={"total_entities_detected": 0, "entities": []}
+            )
+        ),
     )
     settings = MagicMock()
     settings.llm_provider = "openai"

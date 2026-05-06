@@ -5,15 +5,20 @@ SQL Server implementation of ProductRecordRepository — v3.0 Épica 6.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import List, Optional, Sequence
 
 from src.application.ports.repositories import ProductRecordRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.products.entities import ProductRecord
+from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _description_from_row(raw: object) -> str | None:
+    return optional_nonempty_db_str(raw)
+
+
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -29,11 +34,13 @@ def _row_to_product(row) -> ProductRecord:
         raise ValueError("product_records row missing required created_at/updated_at")
     return ProductRecord(
         id=pid,
-        position_id=row.position_id or "",
-        sku=row.sku or "",
-        description=(getattr(row, "description", None) or ""),
+        position_id=normalize_db_str(getattr(row, "position_id", None)),
+        sku=normalize_db_str(getattr(row, "sku", None)),
+        description=_description_from_row(getattr(row, "description", None)),
         detected_quantity=int(getattr(row, "detected_quantity", 0)),
-        corrected_quantity=int(row.corrected_quantity) if getattr(row, "corrected_quantity", None) is not None else None,
+        corrected_quantity=int(row.corrected_quantity)
+        if getattr(row, "corrected_quantity", None) is not None
+        else None,
         confidence=float(getattr(row, "confidence", 0)),
         created_at=created,
         updated_at=updated,
@@ -44,7 +51,7 @@ def _row_to_product(row) -> ProductRecord:
     )
 
 
-def _safe_dump_json(v: object) -> Optional[str]:
+def _safe_dump_json(v: object) -> str | None:
     if v is None:
         return None
     try:
@@ -53,15 +60,20 @@ def _safe_dump_json(v: object) -> Optional[str]:
         return json.dumps(str(v), ensure_ascii=False)
 
 
-def _safe_load_json(raw: object) -> Optional[object]:
+def _safe_load_json(raw: object) -> object | None:
     if raw is None:
         return None
-    if isinstance(raw, str) and raw.strip():
+    if isinstance(raw, str):
+        if not raw.strip():
+            return None
         try:
-            return json.loads(raw)
+            parsed: object = json.loads(raw)
+            return parsed
         except json.JSONDecodeError:
-            return raw
-    return raw
+            out_raw: object = raw
+            return out_raw
+    out_other: object = raw
+    return out_other
 
 
 class SqlProductRecordRepository(ProductRecordRepository):
@@ -123,7 +135,7 @@ class SqlProductRecordRepository(ProductRecordRepository):
                     ),
                 )
 
-    def get_by_id(self, product_id: str) -> Optional[ProductRecord]:
+    def get_by_id(self, product_id: str) -> ProductRecord | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -154,10 +166,11 @@ class SqlProductRecordRepository(ProductRecordRepository):
     def list_by_position_ids(self, position_ids: Sequence[str]) -> Sequence[ProductRecord]:
         if not position_ids:
             return []
-        uniq: List[str] = list(dict.fromkeys(position_ids))
+        uniq: list[str] = list(dict.fromkeys(position_ids))
         if not uniq:
             return []
         placeholders = ",".join("?" * len(uniq))
+        # IN clause: ? placeholders; position ids passed as params (deduped).
         with self._client.cursor() as cur:
             cur.execute(
                 f"""
@@ -166,7 +179,7 @@ class SqlProductRecordRepository(ProductRecordRepository):
                 FROM product_records
                 WHERE position_id IN ({placeholders})
                 ORDER BY position_id, created_at ASC, id ASC
-                """,
+                """,  # nosec B608
                 tuple(uniq),
             )
             rows = cur.fetchall()

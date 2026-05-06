@@ -10,11 +10,11 @@ from src.application.errors import (
     JobNotFoundError,
     JobPromotionNotAllowedError,
 )
+from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.inventory_processing_mode import (
     require_test_inventory_for_experimental_features,
 )
-from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
 from src.domain.jobs.entities import JobStatus
 
 

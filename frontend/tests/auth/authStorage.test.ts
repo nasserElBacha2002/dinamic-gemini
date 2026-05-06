@@ -2,7 +2,7 @@
  * v3.2.1 Phase 4 — auth storage and API helpers.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import * as storage from '../../src/features/auth/storage';
 import { AuthApiError, isAuthError, getAuthErrorMessage } from '../../src/features/auth/api';
 
@@ -38,7 +38,8 @@ describe('auth API helpers', () => {
 
   it('isAuthError returns false for plain Error', () => {
     expect(isAuthError(new Error('network'))).toBe(false);
-    expect(getAuthErrorMessage(new Error('network'))).toBe('network');
+    /** Plain errors use visible-message pipeline → auth context fallback (no raw message leakage). */
+    expect(getAuthErrorMessage(new Error('network'))).toBe('Authentication failed');
   });
 
   it('getAuthErrorMessage returns fallback for unknown', () => {

@@ -21,9 +21,8 @@ from src.domain.pallet import Pallet
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
 from src.llm.types import LLMResponse
 from src.parsing.global_analysis_parser import GlobalAnalysisParseError, parse_global_analysis
-from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, HYBRID_MAX_FRAMES
+from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 from src.video.frames import extract_representative_frames
-
 
 # v2.1 shape for pipeline (parse_entities); legacy shape for parse_global_analysis tests
 SAMPLE_V21_RESPONSE = {
@@ -132,8 +131,12 @@ def test_hybrid_mode_calls_llm_provider_once():
     dummy_frames = [np.zeros((100, 100, 3), dtype=np.uint8)] * 3
     mock_executor = MagicMock()
     mock_executor.execute.return_value = LLMResponse(
-        provider="gemini", model="gemini-2.0-flash-exp", latency_ms=100,
-        parsed_json=SAMPLE_V21_RESPONSE, raw_text=None, usage=None,
+        provider="gemini",
+        model="gemini-2.0-flash-exp",
+        latency_ms=100,
+        parsed_json=SAMPLE_V21_RESPONSE,
+        raw_text=None,
+        usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
@@ -172,8 +175,12 @@ def test_hybrid_run_returns_success_and_writes_result():
     dummy_frames = [np.zeros((50, 50, 3), dtype=np.uint8)] * 2
     mock_executor = MagicMock()
     mock_executor.execute.return_value = LLMResponse(
-        provider="gemini", model="gemini-2.0-flash-exp", latency_ms=100,
-        parsed_json=SAMPLE_V21_RESPONSE, raw_text=None, usage=None,
+        provider="gemini",
+        model="gemini-2.0-flash-exp",
+        latency_ms=100,
+        parsed_json=SAMPLE_V21_RESPONSE,
+        raw_text=None,
+        usage=None,
     )
     with (
         patch("src.frames.sources.video_source.extract_representative_frames") as mock_extract,
@@ -230,7 +237,9 @@ def test_extract_representative_frames_indices_match_when_one_read_fails():
     mock_cap.read.side_effect = lambda: read()
 
     with patch("src.video.frames.cv2.VideoCapture", return_value=mock_cap):
-        frames, meta = extract_representative_frames("/fake/video.mp4", max_frames=25, strategy="uniform")
+        frames, meta = extract_representative_frames(
+            "/fake/video.mp4", max_frames=25, strategy="uniform"
+        )
 
     assert len(meta["frame_indices"]) == len(frames)
     assert fail_at_index not in meta["frame_indices"]

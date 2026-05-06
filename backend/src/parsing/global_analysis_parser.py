@@ -6,7 +6,7 @@ v2.1: convierte el dict JSON en lista de Entity con entity_uid y original_index.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from src.domain.entity import Entity
 from src.domain.pallet import Pallet
@@ -16,10 +16,11 @@ logger = logging.getLogger(__name__)
 
 class GlobalAnalysisParseError(Exception):
     """Error al parsear o validar la respuesta de análisis global."""
+
     pass
 
 
-def parse_global_analysis(data: Dict[str, Any]) -> List[Pallet]:
+def parse_global_analysis(data: dict[str, Any]) -> list[Pallet]:
     """Convierte el dict de respuesta global en lista de Pallet con validaciones.
 
     Validaciones (Stage 2 mínimas):
@@ -53,7 +54,7 @@ def parse_global_analysis(data: Dict[str, Any]) -> List[Pallet]:
             f"total_pallets_detected ({total}) != len(pallets) ({len(pallets_raw)})"
         )
     seen_ids = set()
-    result: List[Pallet] = []
+    result: list[Pallet] = []
     for i, p in enumerate(pallets_raw):
         if not isinstance(p, dict):
             raise GlobalAnalysisParseError(f"pallets[{i}] debe ser un objeto")
@@ -124,7 +125,7 @@ def _safe_int(v: Any) -> Optional[int]:
         return None
 
 
-def _safe_bbox(v: Any) -> Optional[List[float]]:
+def _safe_bbox(v: Any) -> Optional[list[float]]:
     """Return [x1,y1,x2,y2] as list of float or None. Preserves float precision (normalized coords)."""
     if v is None:
         return None
@@ -136,7 +137,7 @@ def _safe_bbox(v: Any) -> Optional[List[float]]:
         return None
 
 
-def parse_entities(data: Dict[str, Any], job_id: str = "") -> List[Entity]:
+def parse_entities(data: dict[str, Any], job_id: str = "") -> list[Entity]:
     """Convert v2.1 global analysis dict into list of Entity.
 
     Call after validate_global_analysis_structure_v21. Sets entity_uid from
@@ -161,7 +162,7 @@ def parse_entities(data: Dict[str, Any], job_id: str = "") -> List[Entity]:
     if not isinstance(entities_raw, list):
         raise GlobalAnalysisParseError("'entities' must be an array")
 
-    result: List[Entity] = []
+    result: list[Entity] = []
     for i, e in enumerate(entities_raw):
         if not isinstance(e, dict):
             raise GlobalAnalysisParseError(f"entities[{i}] must be an object")
@@ -173,9 +174,7 @@ def parse_entities(data: Dict[str, Any], job_id: str = "") -> List[Entity]:
 
         entity_type = e.get("entity_type", "PALLET")
         if entity_type not in ("PALLET", "EMPTY_PALLET", "LOOSE_BOXES"):
-            raise GlobalAnalysisParseError(
-                f"entities[{i}].entity_type invalid: {entity_type!r}"
-            )
+            raise GlobalAnalysisParseError(f"entities[{i}].entity_type invalid: {entity_type!r}")
 
         confidence = 0.0
         c = e.get("confidence")

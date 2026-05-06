@@ -40,19 +40,13 @@ def test_list_by_aisle_returns_assets_ordered_by_uploaded_at_asc() -> None:
     t2 = datetime(2025, 3, 6, 11, 0, 0, tzinfo=timezone.utc)
     t3 = datetime(2025, 3, 6, 9, 0, 0, tzinfo=timezone.utc)
     repo.save(
-        SourceAsset(
-            "a2", "aisle-1", SourceAssetType.PHOTO, "b.jpg", "/p/b.jpg", "image/jpeg", t2
-        )
+        SourceAsset("a2", "aisle-1", SourceAssetType.PHOTO, "b.jpg", "/p/b.jpg", "image/jpeg", t2)
     )
     repo.save(
-        SourceAsset(
-            "a1", "aisle-1", SourceAssetType.PHOTO, "a.jpg", "/p/a.jpg", "image/jpeg", t1
-        )
+        SourceAsset("a1", "aisle-1", SourceAssetType.PHOTO, "a.jpg", "/p/a.jpg", "image/jpeg", t1)
     )
     repo.save(
-        SourceAsset(
-            "a3", "aisle-1", SourceAssetType.VIDEO, "c.mp4", "/p/c.mp4", "video/mp4", t3
-        )
+        SourceAsset("a3", "aisle-1", SourceAssetType.VIDEO, "c.mp4", "/p/c.mp4", "video/mp4", t3)
     )
     result = repo.list_by_aisle("aisle-1")
     assert [a.id for a in result] == ["a3", "a1", "a2"]  # t3=09, t1=10, t2=11

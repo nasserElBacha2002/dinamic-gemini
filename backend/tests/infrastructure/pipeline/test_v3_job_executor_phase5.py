@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, Optional, Sequence
 from unittest.mock import MagicMock, patch
 
 from src.application.ports.clock import Clock
@@ -22,11 +22,15 @@ from src.application.ports.repositories import (
     SourceAssetRepository,
 )
 from src.application.services.aisle_analysis_context_builder import AisleAnalysisContextBuilder
-from src.application.services.inventory_visual_reference_resolver import InventoryVisualReferenceResolver
-from src.application.use_cases.manage_inventory_visual_references import DeleteInventoryVisualReferenceUseCase
+from src.application.services.inventory_visual_reference_resolver import (
+    InventoryVisualReferenceResolver,
+)
+from src.application.use_cases.manage_inventory_visual_references import (
+    DeleteInventoryVisualReferenceUseCase,
+)
 from src.application.use_cases.upload_inventory_visual_references import (
-    UploadInventoryVisualReferencesUseCase,
     UploadedVisualReferenceFile,
+    UploadInventoryVisualReferencesUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
@@ -34,15 +38,10 @@ from src.domain.inventory.entities import Inventory, InventoryProcessingMode, In
 from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID, V3JobExecutor
-from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
-    DURABLE_ARTIFACT_KIND_EXECUTION_LOG,
-    DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON,
-    worker_output_storage_keys,
-)
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 from src.jobs.models import JobInput
-from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
 from src.pipeline.context.run_context import RunContext
+from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
 from src.pipeline.run_metadata import (
     RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
@@ -53,18 +52,18 @@ from src.pipeline.run_metadata import (
 
 class InMemoryJobRepo(JobRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Job] = {}
+        self._store: dict[str, Job] = {}
 
     def save(self, job: Job) -> None:
         self._store[job.id] = job
 
-    def get_by_id(self, job_id: str) -> Optional[Job]:
+    def get_by_id(self, job_id: str) -> Job | None:
         return self._store.get(job_id)
 
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
+    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
         return None
 
-    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> Dict[str, Job]:
+    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
         return {}
 
     def list_jobs_for_target(
@@ -78,25 +77,25 @@ class CountingJobRepo(InMemoryJobRepo):
         super().__init__()
         self.get_calls = 0
 
-    def get_by_id(self, job_id: str) -> Optional[Job]:
+    def get_by_id(self, job_id: str) -> Job | None:
         self.get_calls += 1
         return super().get_by_id(job_id)
 
 
 class InMemoryAisleRepo(AisleRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Aisle] = {}
+        self._store: dict[str, Aisle] = {}
 
     def save(self, aisle: Aisle) -> None:
         self._store[aisle.id] = aisle
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._store.get(aisle_id)
 
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         return [a for a in self._store.values() if a.inventory_id == inventory_id]
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         return None
 
 
@@ -113,6 +112,12 @@ class NoopRepo(
         pass
 
     def get_by_id(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        return None
+
+    def delete_by_id(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        return False
+
+    def get_by_capture_session_item_id(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         return None
 
     def list_by_aisle(self, *args, **kwargs):  # type: ignore[no-untyped-def]
@@ -163,12 +168,12 @@ class NoopRepo(
 
 class InMemoryInventoryRepo(InventoryRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Inventory] = {}
+        self._store: dict[str, Inventory] = {}
 
     def save(self, inventory: Inventory) -> None:
         self._store[inventory.id] = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._store.get(inventory_id)
 
     def list_all(self) -> Sequence[Inventory]:
@@ -177,9 +182,9 @@ class InMemoryInventoryRepo(InventoryRepository):
 
 class InMemoryVisualReferenceRepo(InventoryVisualReferenceRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, InventoryVisualReference] = {}
+        self._store: dict[str, InventoryVisualReference] = {}
 
-    def get_by_id(self, reference_id: str) -> Optional[InventoryVisualReference]:
+    def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
         return self._store.get(reference_id)
 
     def create(self, reference: InventoryVisualReference) -> None:
@@ -284,7 +289,9 @@ def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
     updated = job_repo.get_by_id("j1")
     assert updated is not None
     assert updated.result_json["report_path"] == str(report_path)
-    assert updated.result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT) == default_empty_block()
+    assert (
+        updated.result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT) == default_empty_block()
+    )
     # Phase 7: provider key always present; None when run_metadata absent
     assert "provider" in updated.result_json
     assert updated.result_json["provider"] is None
@@ -332,7 +339,9 @@ def test_mark_success_clears_stale_aisle_error_fields_after_previous_failure() -
         inventory_visual_reference_repo=noop,
         raw_label_repo=noop,
     )
-    executor._state.mark_success("j-retry-ok", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
+    executor._state.mark_success(
+        "j-retry-ok", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None
+    )
     updated_aisle = aisle_repo.get_by_id("aisle-1")
     assert updated_aisle is not None
     assert updated_aisle.status == AisleStatus.PROCESSED
@@ -392,7 +401,9 @@ def test_mark_success_sets_operational_job_id_for_production_inventory() -> None
         inventory_visual_reference_repo=noop,
         raw_label_repo=noop,
     )
-    executor._state.mark_success("j-prod-1", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
+    executor._state.mark_success(
+        "j-prod-1", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None
+    )
     saved = aisle_repo.get_by_id("aisle-1")
     assert saved is not None
     assert saved.operational_job_id == "j-prod-1"
@@ -450,7 +461,9 @@ def test_mark_success_overwrites_operational_job_id_on_subsequent_production_run
         inventory_visual_reference_repo=noop,
         raw_label_repo=noop,
     )
-    executor._state.mark_success("j-second", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
+    executor._state.mark_success(
+        "j-second", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None
+    )
     assert aisle_repo.get_by_id("aisle-1") is not None
     assert aisle_repo.get_by_id("aisle-1").operational_job_id == "j-second"
 
@@ -506,7 +519,9 @@ def test_mark_success_does_not_set_operational_job_id_for_test_inventory() -> No
         inventory_visual_reference_repo=noop,
         raw_label_repo=noop,
     )
-    executor._state.mark_success("j-test-1", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None)
+    executor._state.mark_success(
+        "j-test-1", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None
+    )
     saved = aisle_repo.get_by_id("aisle-1")
     assert saved is not None
     assert saved.operational_job_id is None
@@ -654,13 +669,17 @@ def test_update_runtime_status_only_resets_step_started_at_when_stage_or_substep
     )
 
     clock.set_now(later)
-    executor._state.update_runtime_status("job-steps", stage="FrameAcquisitionStage", substep="image_open")
+    executor._state.update_runtime_status(
+        "job-steps", stage="FrameAcquisitionStage", substep="image_open"
+    )
     unchanged = job_repo.get_by_id("job-steps")
     assert unchanged is not None
     assert unchanged.current_step_started_at == now
 
     clock.set_now(much_later)
-    executor._state.update_runtime_status("job-steps", stage="FrameAcquisitionStage", substep="image_decode")
+    executor._state.update_runtime_status(
+        "job-steps", stage="FrameAcquisitionStage", substep="image_decode"
+    )
     changed = job_repo.get_by_id("job-steps")
     assert changed is not None
     assert changed.current_step_started_at == much_later
@@ -833,7 +852,9 @@ def test_mark_success_with_run_metadata_merges_into_result_json() -> None:
     assert updated.result_json.get("prompt_key") == "global_v21"
 
 
-def test_execute_persists_visual_reference_context_when_resolution_fails_before_pipeline(tmp_path: Path) -> None:
+def test_execute_persists_visual_reference_context_when_resolution_fails_before_pipeline(
+    tmp_path: Path,
+) -> None:
     now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
     job_id = "j-ref-resolution-fail"
     aisle_id = "aisle-1"
@@ -908,7 +929,9 @@ def test_execute_persists_visual_reference_context_when_resolution_fails_before_
         instructions=["Use references as context."],
     )
 
-    with patch.object(executor._pipeline_runner, "build_analysis_context", return_value=failing_context):
+    with patch.object(
+        executor._pipeline_runner, "build_analysis_context", return_value=failing_context
+    ):
         with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
             mock_settings.return_value.output_dir = str(base_path)
             handled = executor.execute(base_path, job_id)
@@ -960,7 +983,15 @@ def test_execute_passes_resolved_visual_reference_context_to_pipeline(tmp_path: 
     aisle_repo.save(aisle)
 
     inventory_repo = InMemoryInventoryRepo()
-    inventory_repo.save(Inventory(id=inventory_id, name="Inv", status=InventoryStatus.DRAFT, created_at=now, updated_at=now))
+    inventory_repo.save(
+        Inventory(
+            id=inventory_id,
+            name="Inv",
+            status=InventoryStatus.DRAFT,
+            created_at=now,
+            updated_at=now,
+        )
+    )
     reference_repo = InMemoryVisualReferenceRepo()
     reference = InventoryVisualReference(
         id="ref-1",
@@ -1029,10 +1060,15 @@ def test_execute_passes_resolved_visual_reference_context_to_pipeline(tmp_path: 
             captured["analysis_context"] = kwargs.get("analysis_context")
             return PipelineRunResult(exit_code=1, run_metadata=None)
 
-    with patch.object(executor._pipeline_runner, "build_analysis_context", return_value=unresolved_context):
+    with patch.object(
+        executor._pipeline_runner, "build_analysis_context", return_value=unresolved_context
+    ):
         with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
             mock_settings.return_value.output_dir = str(base_path)
-            with patch("src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline", return_value=FakePipeline()):
+            with patch(
+                "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline",
+                return_value=FakePipeline(),
+            ):
                 handled = executor.execute(base_path, job_id)
 
     assert handled is True
@@ -1120,7 +1156,9 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
         inventory_visual_reference_repo=reference_repo,
         raw_label_repo=NoopRepo(),
     )
-    executor._state.mark_success("job-a", aisle, Path("/tmp/run-a/hybrid_report.json"), run_metadata=run_metadata_a)
+    executor._state.mark_success(
+        "job-a", aisle, Path("/tmp/run-a/hybrid_report.json"), run_metadata=run_metadata_a
+    )
 
     delete_use_case.execute("inv-1", refs_a[0].id)
     refs_b = upload_use_case.execute(
@@ -1148,7 +1186,9 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
         updated_at=now,
     )
     job_repo.save(job_b)
-    executor._state.mark_success("job-b", aisle, Path("/tmp/run-b/hybrid_report.json"), run_metadata=run_metadata_b)
+    executor._state.mark_success(
+        "job-b", aisle, Path("/tmp/run-b/hybrid_report.json"), run_metadata=run_metadata_b
+    )
 
     stored_job_a = job_repo.get_by_id("job-a")
     stored_job_b = job_repo.get_by_id("job-b")
@@ -1513,7 +1553,9 @@ def test_run_context_cancellation_uses_injected_checkpoint_not_metadata_flag() -
         cancellation_checkpoint=checkpoint,
     )
 
-    context.check_cancellation(stage="AnalysisStage", substep="provider_call", reason="repo-backed cancellation")
+    context.check_cancellation(
+        stage="AnalysisStage", substep="provider_call", reason="repo-backed cancellation"
+    )
 
     assert observed == [("AnalysisStage", "provider_call", "repo-backed cancellation")]
 
@@ -1598,7 +1640,9 @@ def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
 
     with patch.object(artifact_store, "put_object", side_effect=RuntimeError("S3 unavailable")):
         with patch.object(executor, "_persist_use_case", MagicMock(return_value=None)):
-            with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
+            with patch(
+                "src.infrastructure.pipeline.v3_job_executor.load_settings"
+            ) as mock_settings:
                 mock_settings.return_value.output_dir = str(base_path)
                 with patch(
                     "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
@@ -1623,7 +1667,9 @@ def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
     assert updated_job.status == JobStatus.FAILED
     assert updated_job.error_message is not None
     assert "Durable artifact upload failed" in updated_job.error_message
-    assert updated_job.result_json is None or "durable_artifacts" not in (updated_job.result_json or {})
+    assert updated_job.result_json is None or "durable_artifacts" not in (
+        updated_job.result_json or {}
+    )
 
 
 def test_execute_durable_upload_failure_after_persist_partial_finalization_explicit() -> None:
@@ -1710,8 +1756,12 @@ def test_execute_durable_upload_failure_after_persist_partial_finalization_expli
     (v3_base / "a1" / "photo.jpg").write_bytes(b"fake")
 
     with patch.object(executor, "_persist_use_case", persist_uc):
-        with patch.object(artifact_store, "put_object", side_effect=RuntimeError("upload unavailable")):
-            with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
+        with patch.object(
+            artifact_store, "put_object", side_effect=RuntimeError("upload unavailable")
+        ):
+            with patch(
+                "src.infrastructure.pipeline.v3_job_executor.load_settings"
+            ) as mock_settings:
                 mock_settings.return_value.output_dir = str(base_path)
                 with patch(
                     "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
@@ -1735,7 +1785,9 @@ def test_execute_durable_upload_failure_after_persist_partial_finalization_expli
     assert updated_job is not None
     assert updated_job.status == JobStatus.FAILED
     assert "Durable artifact upload failed" in (updated_job.error_message or "")
-    assert updated_job.result_json is None or "durable_artifacts" not in (updated_job.result_json or {})
+    assert updated_job.result_json is None or "durable_artifacts" not in (
+        updated_job.result_json or {}
+    )
 
     updated_aisle = aisle_repo.get_by_id(aisle_id)
     assert updated_aisle is not None

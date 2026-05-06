@@ -18,7 +18,7 @@ exist and target this aisle. Stale or cross-aisle pointers fail fast (no silent 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Literal
 
 from src.application.errors import JobDoesNotBelongToAisleError, JobNotFoundError
 from src.application.ports.repositories import JobRepository, PositionRepository
@@ -31,7 +31,7 @@ ResultContextSource = Literal["explicit", "operational", "legacy"]
 class ResolvedAisleResultContext:
     """Effective job id for repository filters: ``None`` means legacy ``job_id IS NULL`` slice."""
 
-    job_id_for_slice: Optional[str]
+    job_id_for_slice: str | None
     source: ResultContextSource
 
 
@@ -41,7 +41,7 @@ class ResultContextResolver:
     def __init__(
         self,
         job_repo: JobRepository,
-        position_repo: Optional[PositionRepository] = None,
+        position_repo: PositionRepository | None = None,
     ) -> None:
         self._job_repo = job_repo
         self._position_repo = position_repo
@@ -51,11 +51,9 @@ class ResultContextResolver:
         if job is None:
             raise JobNotFoundError(f"Job not found: {job_id}")
         if job.target_type != "aisle" or job.target_id != aisle.id:
-            raise JobDoesNotBelongToAisleError(
-                f"Job {job_id} does not belong to aisle {aisle.id}"
-            )
+            raise JobDoesNotBelongToAisleError(f"Job {job_id} does not belong to aisle {aisle.id}")
 
-    def resolve(self, *, aisle: Aisle, explicit_job_id: Optional[str]) -> ResolvedAisleResultContext:
+    def resolve(self, *, aisle: Aisle, explicit_job_id: str | None) -> ResolvedAisleResultContext:
         if explicit_job_id is not None and str(explicit_job_id).strip():
             jid = str(explicit_job_id).strip()
             self._assert_job_targets_aisle(job_id=jid, aisle=aisle)

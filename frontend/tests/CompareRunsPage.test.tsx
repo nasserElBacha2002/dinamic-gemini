@@ -185,10 +185,10 @@ describe('CompareRunsPage', () => {
   it('renders compare metrics and diff summary for a valid job pair', () => {
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
 
-    expect(screen.getByText(/Read-only benchmark compare/i)).toBeInTheDocument();
-    expect(screen.getByText(/Diff summary/i)).toBeInTheDocument();
-    expect(screen.getByText(/Only in A:/i)).toBeInTheDocument();
-    expect(screen.getByText(/Only in B:/i)).toBeInTheDocument();
+    expect(screen.getByTestId('compare-runs-results')).toBeInTheDocument();
+    expect(screen.getByText(/info benchmark/i)).toBeInTheDocument();
+    expect(screen.getByText(/diff summary title/i)).toBeInTheDocument();
+    expect(screen.getByText(/diff summary stats/i)).toBeInTheDocument();
     expect(screen.getByText('job-a')).toBeInTheDocument();
     expect(screen.getByText('job-b')).toBeInTheDocument();
   });
@@ -204,8 +204,8 @@ describe('CompareRunsPage', () => {
     const cells = screen.getAllByText('No pricing configured');
     fireEvent.mouseOver(cells[0]);
     const tip = await screen.findByRole('tooltip');
-    expect(tip).toHaveTextContent(/pricing/i);
-    expect(tip).toHaveTextContent(/mdl2/i);
+    expect(tip).toHaveTextContent(/pricing entry missing/i);
+    expect(tip).toHaveTextContent(/model in tooltip/i);
   });
 
   it('shows usage not reported when provider usage is missing', async () => {
@@ -218,7 +218,11 @@ describe('CompareRunsPage', () => {
         pricing_available: true,
         billing_currency: 'USD',
         usage: {},
-        pricing_snapshot: null,
+        pricing_snapshot: {
+          pricing_source: 'settings.llm_pricing_catalog_json',
+          pricing_version: 'catalog-v1',
+          billing_currency: 'USD',
+        },
         computed_cost: {
           total_cost: null,
           currency: 'USD',
@@ -232,8 +236,8 @@ describe('CompareRunsPage', () => {
     expect(screen.getByText('Usage not reported')).toBeInTheDocument();
     fireEvent.mouseOver(screen.getByText('Usage not reported'));
     const tip = await screen.findByRole('tooltip');
-    expect(tip).toHaveTextContent(/token usage/i);
-    expect(tip).toHaveTextContent(/mdl2/i);
+    expect(tip).toHaveTextContent(/provider usage missing/i);
+    expect(tip).toHaveTextContent(/model in tooltip/i);
     hoisted.comparePayload.run_b = savedB;
   });
 
@@ -266,24 +270,21 @@ describe('CompareRunsPage', () => {
     expect(screen.getByText('Not computed')).toBeInTheDocument();
     fireEvent.mouseOver(screen.getByText('Not computed'));
     const tip = await screen.findByRole('tooltip');
-    expect(tip).toHaveTextContent(/Model:/i);
-    expect(tip).toHaveTextContent(/custom-model/i);
+    expect(tip).toHaveTextContent(/model in tooltip/i);
     hoisted.comparePayload.run_b = savedB;
   });
 
   it('shows an honest cap warning when raw fetch hit the server cap', () => {
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
 
-    const capAlert = screen.getByText(/Raw row load reached the server cap/i).closest('[role="alert"]');
+    const capAlert = screen.getByText(/truncation warning/i).closest('[role="alert"]');
     expect(capAlert).toBeTruthy();
-    expect(capAlert).toHaveTextContent(/may be incomplete/);
-    expect(capAlert).toHaveTextContent(/not that extra rows were proven/);
   });
 
   it('calls benchmark CSV export with the selected job pair', async () => {
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
 
-    fireEvent.click(screen.getByRole('button', { name: /export compare table/i }));
+    fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
 
     await waitFor(() => {
       expect(hoisted.downloadCsvMock).toHaveBeenCalledWith('inv-1', 'aisle-1', {

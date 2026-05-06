@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Optional, Sequence
 
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.repositories import AisleRepository, PositionRepository
@@ -19,7 +19,7 @@ class StubAisleRepo(AisleRepository):
     def save(self, aisle: Aisle) -> None:
         raise NotImplementedError
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         for a in self._aisles:
             if a.id == aisle_id:
                 return a
@@ -28,7 +28,7 @@ class StubAisleRepo(AisleRepository):
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         return [a for a in self._aisles if a.inventory_id == inventory_id]
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         for a in self._aisles:
             if a.inventory_id == inventory_id and a.code == code:
                 return a
@@ -42,7 +42,7 @@ class StubPositionRepo(PositionRepository):
     def save(self, position: Position) -> None:
         raise NotImplementedError
 
-    def get_by_id(self, position_id: str) -> Optional[Position]:
+    def get_by_id(self, position_id: str) -> Position | None:
         for p in self._positions:
             if p.id == position_id:
                 return p
@@ -51,10 +51,10 @@ class StubPositionRepo(PositionRepository):
     def list_by_aisle(
         self,
         aisle_id: str,
-        status: Optional[str] = None,
-        needs_review: Optional[bool] = None,
-        min_confidence: Optional[float] = None,
-        sku_filter: Optional[str] = None,
+        status: str | None = None,
+        needs_review: bool | None = None,
+        min_confidence: float | None = None,
+        sku_filter: str | None = None,
         page: int = 1,
         page_size: int = 25,
         sort_by: str = "created_at",
@@ -62,7 +62,9 @@ class StubPositionRepo(PositionRepository):
     ) -> Sequence[Position]:
         return []
 
-    def list_by_aisle_query(self, aisle_id: str, query: Optional[PositionListQuery] = None) -> Sequence[Position]:
+    def list_by_aisle_query(
+        self, aisle_id: str, query: PositionListQuery | None = None
+    ) -> Sequence[Position]:
         return []
 
     def list_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:

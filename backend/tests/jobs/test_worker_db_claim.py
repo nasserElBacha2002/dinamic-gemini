@@ -4,13 +4,12 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Optional
 
+from src.domain.jobs.entities import Job as V3Job
+from src.domain.jobs.entities import JobStatus as V3JobStatus
 from src.jobs import job_store
 from src.jobs.models import JobInput, JobRecord, JobStatus
 from src.jobs.worker import worker_loop
-from src.domain.jobs.entities import Job as V3Job
-from src.domain.jobs.entities import JobStatus as V3JobStatus
 
 
 def _make_job(job_id: str, status: JobStatus = JobStatus.QUEUED) -> JobRecord:
@@ -134,11 +133,11 @@ def test_claim_next_job_legacy_fallback_when_db_disabled(monkeypatch) -> None:
 
 
 def test_worker_loop_uses_claim_next_job(monkeypatch) -> None:
-    claimed: list[Optional[JobRecord]] = [_make_job("job-a"), None]
+    claimed: list[JobRecord | None] = [_make_job("job-a"), None]
     processed: list[str] = []
     stop_state = {"calls": 0}
 
-    def fake_claim_next_job(_base: Path) -> Optional[JobRecord]:
+    def fake_claim_next_job(_base: Path) -> JobRecord | None:
         if claimed:
             return claimed.pop(0)
         return None
@@ -190,4 +189,3 @@ def test_claim_next_job_logs_error_when_sql_mode_configured_but_repos_unavailabl
 
     assert claimed is None
     assert "SQL worker mode configured but DB repositories are unavailable" in caplog.text
-

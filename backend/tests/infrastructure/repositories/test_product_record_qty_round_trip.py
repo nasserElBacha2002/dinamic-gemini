@@ -2,10 +2,10 @@
 
 from datetime import datetime, timezone
 
-import pytest
-
 from src.domain.products.entities import ProductRecord
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
 
 
 def _now() -> datetime:

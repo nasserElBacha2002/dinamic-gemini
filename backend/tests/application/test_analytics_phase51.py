@@ -8,27 +8,31 @@ import pytest
 
 from src.application.dto.analytics_dto import AnalyticsFilters
 from src.application.services.analytics_aggregation_core import (
+    SummaryMetricInputs,
     build_summary_metrics,
     compute_manual_intervention_breakdown,
     compute_review_outcome_counts,
     day_span_inclusive,
     issue_bucket_for_position,
     processed_position,
-    SummaryMetricInputs,
 )
-from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
-from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
-from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
-from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
-from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
 from src.infrastructure.repositories.memory_analytics_repository import MemoryAnalyticsRepository
+from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
+from src.infrastructure.repositories.memory_review_action_repository import (
+    MemoryReviewActionRepository,
+)
 
 
 def _utc(minutes: int = 0) -> datetime:
@@ -146,7 +150,9 @@ def memory_analytics_setup():
             finished_at=_utc(14),
         )
     )
-    analytics = MemoryAnalyticsRepository(inv_repo, aisle_repo, pos_repo, product_repo, rev_repo, job_repo)
+    analytics = MemoryAnalyticsRepository(
+        inv_repo, aisle_repo, pos_repo, product_repo, rev_repo, job_repo
+    )
     return analytics, inv, aisle
 
 

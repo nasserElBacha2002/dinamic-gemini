@@ -19,7 +19,6 @@ from src.parsing.global_analysis_parser import parse_entities
 from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.providers import registry as pipeline_registry
-
 from tests.support.llm_executor_harness import (
     HARNESS_DEFAULT_MODEL,
     HARNESS_LOGICAL_PROVIDER_KEY,
@@ -113,7 +112,9 @@ def test_test_llm_executor_rejects_multiple_modes() -> None:
 
 def test_patch_registry_resolve_llm_executor(monkeypatch: pytest.MonkeyPatch) -> None:
     stub = TestLLMExecutor(
-        response=llm_response_success(provider="registry_stub", parsed_json={"total_entities_detected": 0, "entities": []})
+        response=llm_response_success(
+            provider="registry_stub", parsed_json={"total_entities_detected": 0, "entities": []}
+        )
     )
     patch_registry_resolve_llm_executor(monkeypatch, stub)
     # Resolve via module so monkeypatch replaces the same object the test calls.
@@ -126,7 +127,9 @@ def test_patch_registry_resolve_llm_executor(monkeypatch: pytest.MonkeyPatch) ->
     assert r.provider == "registry_stub"
 
 
-def test_patch_hybrid_strategy_uses_executor_without_fake_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patch_hybrid_strategy_uses_executor_without_fake_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """HybridGlobalAnalysisStrategy runs with a patched executor; no FakeProvider / fake registry path."""
     parsed = {
         "total_entities_detected": 1,
@@ -139,7 +142,9 @@ def test_patch_hybrid_strategy_uses_executor_without_fake_provider(monkeypatch: 
             }
         ],
     }
-    executor = TestLLMExecutor(response=llm_response_success(parsed_json=parsed, provider="harness"))
+    executor = TestLLMExecutor(
+        response=llm_response_success(parsed_json=parsed, provider="harness")
+    )
     patch_hybrid_resolve_llm_executor(monkeypatch, executor)
 
     settings = MagicMock()
@@ -221,7 +226,9 @@ def test_response_with_markdown_fenced_raw_text_preserved() -> None:
     assert out.raw_text == raw
 
 
-def test_patch_hybrid_default_resolved_key_is_harness_logical_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_patch_hybrid_default_resolved_key_is_harness_logical_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Default patch should surface ``HARNESS_LOGICAL_PROVIDER_KEY`` in execution metadata, not a vendor."""
     ex = TestLLMExecutor()
     patch_hybrid_resolve_llm_executor(monkeypatch, ex)
@@ -243,12 +250,16 @@ def test_patch_hybrid_default_resolved_key_is_harness_logical_provider(monkeypat
         metadata={"frame_count": 1},
     )
     calls = context.execution_log.info.call_args_list
-    prepared = next((c for c in calls if len(c.args) > 1 and c.args[1] == "Analysis request prepared"), None)
+    prepared = next(
+        (c for c in calls if len(c.args) > 1 and c.args[1] == "Analysis request prepared"), None
+    )
     assert prepared is not None
     assert prepared.kwargs["payload"]["pipeline_provider"] == HARNESS_LOGICAL_PROVIDER_KEY
 
 
-def test_patch_offline_hybrid_json_fixture_applies_executor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_patch_offline_hybrid_json_fixture_applies_executor(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     p = tmp_path / "fx.json"
     p.write_text('{"total_entities_detected": 0, "entities": []}', encoding="utf-8")
     patch_offline_hybrid_json_fixture(monkeypatch, p)

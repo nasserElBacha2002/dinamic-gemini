@@ -5,14 +5,10 @@ Asocia detecciones entre frames para obtener track_id estable.
 Implementación mínima con asociación por IoU; se puede sustituir por ByteTrack/SORT.
 """
 
-from typing import Dict, List, Tuple
-
-import numpy as np
-
 from src.models.schemas import BBox
 
 # Salida: (bbox, track_id)
-TrackedBBox = Tuple[BBox, str]
+TrackedBBox = tuple[BBox, str]
 
 
 def _iou_box(b1: BBox, b2: BBox) -> float:
@@ -44,17 +40,18 @@ class MultiObjectTracker:
         self.iou_threshold = iou_threshold
         self._next_id = 0
         # track_id -> [(frame_idx, bbox), ...]
-        self._tracks: Dict[str, List[Tuple[int, BBox]]] = {}
+        self._tracks: dict[str, list[tuple[int, BBox]]] = {}
         # frame_idx -> [(bbox, track_id), ...]
-        self._history: Dict[int, List[TrackedBBox]] = {}
+        self._history: dict[int, list[TrackedBBox]] = {}
         self._last_frame_idx: int = -1
 
-    def update(self, detections: List[BBox], frame_idx: int) -> List[TrackedBBox]:
+    def update(self, detections: list[BBox], frame_idx: int) -> list[TrackedBBox]:
         """Asocia detecciones al frame y devuelve (bbox, track_id) para este frame."""
         # Envejecer tracks: eliminar los que llevan más de max_age frames sin ver
         self._last_frame_idx = frame_idx
         to_drop = [
-            tid for tid, obs in self._tracks.items()
+            tid
+            for tid, obs in self._tracks.items()
             if obs and frame_idx - obs[-1][0] > self.max_age
         ]
         for tid in to_drop:
@@ -65,11 +62,9 @@ class MultiObjectTracker:
             return []
 
         # Último bbox por track (para matching)
-        last_bbox: Dict[str, BBox] = {
-            tid: obs[-1][1] for tid, obs in self._tracks.items() if obs
-        }
+        last_bbox: dict[str, BBox] = {tid: obs[-1][1] for tid, obs in self._tracks.items() if obs}
         used_tracks: set = set()
-        out: List[TrackedBBox] = []
+        out: list[TrackedBBox] = []
 
         # Asignar cada detección al track con mayor IoU por encima del umbral
         for bbox in detections:
@@ -95,6 +90,6 @@ class MultiObjectTracker:
         self._history[frame_idx] = out
         return out
 
-    def get_tracks(self) -> Dict[int, List[TrackedBBox]]:
+    def get_tracks(self) -> dict[int, list[TrackedBBox]]:
         """Devuelve el historial: frame_idx -> [(bbox, track_id), ...]."""
         return dict(self._history)

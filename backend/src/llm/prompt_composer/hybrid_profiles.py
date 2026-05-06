@@ -9,7 +9,7 @@ Registry of prompt bodies keyed for ``PROMPTS`` (hybrid + legacy).
 
 from __future__ import annotations
 
-from typing import Dict, Final, Union
+from typing import Final
 
 # ---------------------------------------------------------------------------
 # Hybrid v2.1 — global entity analysis (Prompt A / B + OpenAI-tuned variants)
@@ -169,8 +169,7 @@ def build_claude_json_output_instruction_suffix() -> str:
         "Each entity MUST be a JSON object including ALL of these keys (use null when unknown): "
         f"{keys_csv}. "
         "Follow the semantic rules in the instructions above. "
-        f"Do NOT include keys: {forb}."
-        + CLAUDE_QUANTITY_WIRE_REMINDER
+        f"Do NOT include keys: {forb}." + CLAUDE_QUANTITY_WIRE_REMINDER
     )
 
 
@@ -211,8 +210,8 @@ _CLAUDE_V21_CANONICAL_ENTITY_CONTRACT: Final[str] = (
     "location digits for quantity.\n\n"
     "VISUAL DISTINCTION (practical):\n"
     "- Position labels usually attach to the rack, post, beam, or fixed location marker — they answer "
-    "\"where\".\n"
-    "- Product labels attach to the goods (cardboard, film, case tape) — they answer \"what\" and often "
+    '"where".\n'
+    '- Product labels attach to the goods (cardboard, film, case tape) — they answer "what" and often '
     "show case/pack quantity.\n"
     "- Do not treat a location code as internal_code; do not treat a bay or slot number as "
     "product_label_quantity.\n\n"
@@ -225,7 +224,7 @@ _CLAUDE_V21_CANONICAL_ENTITY_CONTRACT: Final[str] = (
     "- internal_code (string or null): ONLY from the product label surface above. NEVER a position code.\n"
     "- position_barcode (string or null): ONLY from the location/position label. Not the SKU.\n"
     "- product_label_quantity (integer or null): ONLY digits printed on the product label in the same "
-    "context as the SKU; NOT entity count, NOT pallet count, NOT \"1\" because one PALLET row exists, NOT "
+    'context as the SKU; NOT entity count, NOT pallet count, NOT "1" because one PALLET row exists, NOT '
     "box-stack guesses, NOT numbers from location labels. If you cannot point at that digit on the "
     "product label, null. No guessed 0 or 1.\n"
     "- product_label_bbox (array of 4 numbers or null): TIGHT box on the product/SKU/qty panel only — not "
@@ -255,7 +254,7 @@ You are an expert in computer vision for logistics inventory management.
 Your task is to analyze warehouse images, identify distinct pallets, and count boxes per product.
 
 CRITICAL COUNTING LOGIC (Use the 'r' field to write this out step-by-step):
-1. GRID MAPPING: Look at all available angles. Determine the Base Footprint (Width x Depth). 
+1. GRID MAPPING: Look at all available angles. Determine the Base Footprint (Width x Depth).
    *VISUAL TIP*: Do not rely on overall shape. Look for vertical and horizontal gaps (seams) between boxes. If you see multiple labels or handles, each one belongs to a DIFFERENT box.
 2. HEIGHT: Count total layers from bottom to top.
 3. THEORETICAL MAX: Multiply Base x Layers (Format: "Base [w]x[d]=[layer_tot]. [n] layers=[total]").
@@ -281,7 +280,7 @@ REDUNDANCY AND VIEW SELECTION (Sprint A):
 """
 
 _USER_MULTI_FRAME: Final[str] = """\
-Analyze the attached sequence of images. 
+Analyze the attached sequence of images.
 CRITICAL: These images may show multiple angles of the SAME pallet, AND/OR entirely DIFFERENT pallets.
 
 Your specific tasks:
@@ -317,7 +316,7 @@ Output:
 
 # **Internal registry** — consumed only by ``HybridPromptComposer`` / ``hybrid_resolution``.
 # Do not import ``PROMPTS`` from application, adapter, or pipeline code; use ``hybrid_assembly``.
-PROMPTS: Dict[str, Union[str, Dict[str, str]]] = {
+PROMPTS: dict[str, str | dict[str, str]] = {
     "global_v21": {
         "default": _GLOBAL_V21,
         "openai": _GLOBAL_V21_OPENAI,

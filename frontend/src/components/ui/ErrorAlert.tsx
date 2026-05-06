@@ -4,15 +4,28 @@
  */
 
 import { Alert, Button } from '@mui/material';
+import { getVisibleErrorMessage, type VisibleErrorContext } from '../../utils/apiErrors';
 
 export interface ErrorAlertProps {
-  message: string;
+  message?: string;
+  error?: unknown;
+  context?: VisibleErrorContext;
   /** When provided, a "Retry" button is shown in the action area. */
   onRetry?: () => void;
+  retryLabel?: string;
   onClose?: () => void;
 }
 
-export default function ErrorAlert({ message, onRetry, onClose }: ErrorAlertProps) {
+export default function ErrorAlert({
+  message,
+  error,
+  context = 'default',
+  onRetry,
+  retryLabel = 'Retry',
+  onClose,
+}: ErrorAlertProps) {
+  const visibleMessage = message ?? getVisibleErrorMessage(error, context);
+
   return (
     <Alert
       severity="error"
@@ -21,12 +34,12 @@ export default function ErrorAlert({ message, onRetry, onClose }: ErrorAlertProp
       action={
         onRetry ? (
           <Button color="inherit" size="small" onClick={onRetry}>
-            Retry
+            {retryLabel}
           </Button>
         ) : undefined
       }
     >
-      {message}
+      {visibleMessage}
     </Alert>
   );
 }

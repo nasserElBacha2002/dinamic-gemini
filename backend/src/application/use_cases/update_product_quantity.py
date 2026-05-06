@@ -86,9 +86,7 @@ class UpdateProductQuantityUseCase:
         now = self._clock.now()
         before_quantity = product.corrected_quantity
         before_resolution = (
-            position.review_resolution.value
-            if position.review_resolution is not None
-            else None
+            position.review_resolution.value if position.review_resolution is not None else None
         )
         product.corrected_quantity = corrected_quantity
         product.updated_at = now

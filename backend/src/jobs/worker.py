@@ -7,23 +7,29 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from src.config import load_settings
+from src.io.logging import setup_logger
+from src.jobs.job_store import _db_repos, claim_next_job, get_job, update_job
+from src.jobs.models import JobStatus
 from src.jobs.worker_bootstrap import (
     append_worker_bootstrap_event,
     checkpoint_v3_job_bootstrap,
     fail_v3_job_bootstrap,
 )
-from src.jobs.job_store import _db_repos, claim_next_job, get_job, update_job
-from src.jobs.models import JobStatus
-from src.io.logging import setup_logger
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline
 
 logger = logging.getLogger(__name__)
 
 
-def _mark_v3_job_failed(job_id: str, error_message: str, *, execution_id: str | None = None, substep: str = "bootstrap_failed") -> None:
+def _mark_v3_job_failed(
+    job_id: str,
+    error_message: str,
+    *,
+    execution_id: str | None = None,
+    substep: str = "bootstrap_failed",
+) -> None:
     """Persist FAILED on the v3 job row when setup/executor fails (legacy store will not have this id)."""
     try:
         fail_v3_job_bootstrap(
@@ -52,6 +58,8 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             execution_id=execution_id,
             substep="job_load_started",
         )
+        from src.domain.jobs.entities import JobStatus as V3JobStatus
+        from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
         from src.runtime.v3_deps import (
             get_aisle_repo,
             get_artifact_store,
@@ -66,8 +74,6 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             get_recompute_consolidated_counts_use_case,
             get_source_asset_repo,
         )
-        from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
-        from src.domain.jobs.entities import JobStatus as V3JobStatus
 
         job_repo = get_job_repo()
         job = job_repo.get_by_id(job_id)
@@ -83,7 +89,11 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
                 "status": getattr(getattr(job, "status", None), "value", None),
             },
         )
-        if job is not None and job.status in (V3JobStatus.STARTING, V3JobStatus.RUNNING, V3JobStatus.CANCEL_REQUESTED):
+        if job is not None and job.status in (
+            V3JobStatus.STARTING,
+            V3JobStatus.RUNNING,
+            V3JobStatus.CANCEL_REQUESTED,
+        ):
             checkpoint_v3_job_bootstrap(
                 job_id=job_id,
                 execution_id=execution_id or job.execution_id,
@@ -116,7 +126,11 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             event="worker.executor_bootstrap_completed",
             details={},
         )
-        if job is not None and job.status in (V3JobStatus.STARTING, V3JobStatus.RUNNING, V3JobStatus.CANCEL_REQUESTED):
+        if job is not None and job.status in (
+            V3JobStatus.STARTING,
+            V3JobStatus.RUNNING,
+            V3JobStatus.CANCEL_REQUESTED,
+        ):
             checkpoint_v3_job_bootstrap(
                 job_id=job_id,
                 execution_id=execution_id or job.execution_id,
@@ -172,23 +186,27 @@ def _push_success_to_db(
         # Each entity → one pallet_results row. source_image_id/traceability_status per entity (Epic 3.1.B). traceability_warning not persisted to DB.
         entities = report_data.get("entities") or []
         for ent in entities:
-            pallets_list.append({
-                "pallet_id": ent.get("pallet_id") or "",
-                "internal_code": ent.get("internal_code"),
-                "final_quantity": ent.get("final_quantity"),
-                "quantity": ent.get("product_label_quantity"),
-                "source": "gemini",
-                "confidence": ent.get("confidence"),
-                "fallback_used": False,
-                "source_image_id": ent.get("source_image_id"),
-                "traceability_status": ent.get("traceability_status"),
-            })
+            pallets_list.append(
+                {
+                    "pallet_id": ent.get("pallet_id") or "",
+                    "internal_code": ent.get("internal_code"),
+                    "final_quantity": ent.get("final_quantity"),
+                    "quantity": ent.get("product_label_quantity"),
+                    "source": "gemini",
+                    "confidence": ent.get("confidence"),
+                    "fallback_used": False,
+                    "source_image_id": ent.get("source_image_id"),
+                    "traceability_status": ent.get("traceability_status"),
+                }
+            )
 
     try:
         jobs_repo.set_job_outputs(
             job_id,
             report_json_path=str(report_json_path) if report_json_path.exists() else None,
-            report_csv_path=str(report_csv_path) if report_csv_path and report_csv_path.exists() else None,
+            report_csv_path=str(report_csv_path)
+            if report_csv_path and report_csv_path.exists()
+            else None,
             artifacts_dir=artifacts_dir,
             frames_count_sent=frames_count,
             gemini_calls=gemini_calls,
@@ -199,7 +217,9 @@ def _push_success_to_db(
         events_repo.insert_event(job_id, "FRAMES_SELECTED", {"count": frames_count})
         events_repo.insert_event(job_id, "GEMINI_GLOBAL_CALL", {})
         if metrics.get("fallback_attempts", 0) > 0:
-            events_repo.insert_event(job_id, "FALLBACK_RUN", {"attempts": metrics.get("fallback_attempts")})
+            events_repo.insert_event(
+                job_id, "FALLBACK_RUN", {"attempts": metrics.get("fallback_attempts")}
+            )
         events_repo.insert_event(job_id, "REPORT_WRITTEN", {"path": str(report_json_path)})
     except Exception as e:
         logger.warning("DB push after success failed: %s", e)
@@ -246,7 +266,12 @@ def run_job(base_path: Path, job_id: str, execution_id: str | None = None) -> No
     def progress_cb(stage: str, percent: int) -> None:
         update_job(base_path, job_id, progress={"stage": stage, "percent": percent})
 
-    update_job(base_path, job_id, status=JobStatus.RUNNING, progress={"stage": "extract_frames", "percent": 10})
+    update_job(
+        base_path,
+        job_id,
+        status=JobStatus.RUNNING,
+        progress={"stage": "extract_frames", "percent": 10},
+    )
     try:
         pipeline = HybridInventoryPipeline()
         result = pipeline.process_video(
@@ -303,7 +328,11 @@ def run_job(base_path: Path, job_id: str, execution_id: str | None = None) -> No
                 _, _, events_repo = repos
                 events_repo.insert_event(job_id, "ERROR", {"message": str(e)})
             except Exception:
-                pass
+                logger.warning(
+                    "Could not insert ERROR job_event after pipeline failure: job_id=%s",
+                    job_id,
+                    exc_info=True,
+                )
 
 
 def worker_loop(base_path: Path, stop: Optional[Callable[[], bool]] = None) -> None:
@@ -326,9 +355,12 @@ def worker_loop(base_path: Path, stop: Optional[Callable[[], bool]] = None) -> N
         logger.info(
             "Worker claimed job %s (job_type=%s target_type=%s target_id=%s inventory_id=%s aisle_id=%s status=%s)",
             claimed.job_id,
-            ((claimed.input.metadata or {}).get("job_type") if claimed.input else None) or "process_aisle",
-            ((claimed.input.metadata or {}).get("target_type") if claimed.input else None) or "aisle",
-            ((claimed.input.metadata or {}).get("target_id") if claimed.input else None) or ((claimed.input.metadata or {}).get("aisle_id")),
+            ((claimed.input.metadata or {}).get("job_type") if claimed.input else None)
+            or "process_aisle",
+            ((claimed.input.metadata or {}).get("target_type") if claimed.input else None)
+            or "aisle",
+            ((claimed.input.metadata or {}).get("target_id") if claimed.input else None)
+            or ((claimed.input.metadata or {}).get("aisle_id")),
             (claimed.input.metadata or {}).get("inventory_id") if claimed.input else None,
             (claimed.input.metadata or {}).get("aisle_id") if claimed.input else None,
             claimed.status.value if hasattr(claimed.status, "value") else str(claimed.status),

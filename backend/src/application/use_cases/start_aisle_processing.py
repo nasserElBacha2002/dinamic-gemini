@@ -15,11 +15,19 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional, Tuple
 
-from src.application.errors import ActiveJobExistsError, InventoryNotFoundError
+from src.application.errors import (
+    ActiveJobExistsError,
+    InventoryNotFoundError,
+    NoSourceAssetsForAisleProcessingError,
+)
 from src.application.ports.contracts import ProcessAislePayload
-from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
+from src.application.ports.repositories import (
+    AisleRepository,
+    InventoryRepository,
+    JobRepository,
+    SourceAssetRepository,
+)
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
@@ -46,9 +54,7 @@ def _require_no_active_process_job_for_aisle(
     aisle_id: str,
 ) -> None:
     """Raise if an aisle-target job is already in a state that blocks a new start."""
-    latest = stale_reconciler.reconcile(
-        job_repo.get_latest_by_target("aisle", aisle_id)
-    )
+    latest = stale_reconciler.reconcile(job_repo.get_latest_by_target("aisle", aisle_id))
     if latest is not None and latest.status in _START_BLOCKING_JOB_STATUSES:
         raise ActiveJobExistsError(
             f"Aisle {aisle_id} already has an active job (status={latest.status.value})"
@@ -61,19 +67,19 @@ class StartAisleProcessingCommand:
     aisle_id: str
     #: When true (API route), load inventory and resolve execution keys from inventory + requests.
     resolve_execution_keys: bool = False
-    requested_provider_name: Optional[str] = None
-    requested_model_name: Optional[str] = None
-    requested_prompt_key: Optional[str] = None
+    requested_provider_name: str | None = None
+    requested_model_name: str | None = None
+    requested_prompt_key: str | None = None
     #: Used only when ``resolve_execution_keys`` is false (e.g. unit tests with pre-resolved keys).
     pipeline_provider_key: str = "gemini"
-    model_name: Optional[str] = None
+    model_name: str | None = None
     prompt_key: str = "global_v21"
 
 
 def _materialize_execution_keys_for_start(
     inventory_repo: InventoryRepository,
     command: StartAisleProcessingCommand,
-) -> Tuple[str, Optional[str], str]:
+) -> tuple[str, str | None, str]:
     """Resolve provider/model/prompt for a start-process command (Phase 9/10).
 
     When ``command.resolve_execution_keys`` is false, returns the command's pre-set keys.
@@ -110,12 +116,14 @@ class StartAisleProcessingUseCase:
         self,
         inventory_repo: InventoryRepository,
         aisle_repo: AisleRepository,
+        asset_repo: SourceAssetRepository,
         job_repo: JobRepository,
         launch_service: AisleJobLaunchService,
         stale_reconciler: JobStaleReconciler,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
+        self._asset_repo = asset_repo
         self._job_repo = job_repo
         self._launch_service = launch_service
         self._stale_reconciler = stale_reconciler
@@ -131,6 +139,17 @@ class StartAisleProcessingUseCase:
             aisle_id=command.aisle_id,
             detail_style="strict",
         )
+
+        aisle_assets = self._asset_repo.list_by_aisle(command.aisle_id)
+        if not aisle_assets:
+            logger.info(
+                "aisle.process_rejected_no_source_assets inventory_id=%s aisle_id=%s",
+                command.inventory_id,
+                command.aisle_id,
+            )
+            raise NoSourceAssetsForAisleProcessingError(
+                f"No source assets for aisle {command.aisle_id}; upload media before processing."
+            )
 
         _require_no_active_process_job_for_aisle(
             stale_reconciler=self._stale_reconciler,

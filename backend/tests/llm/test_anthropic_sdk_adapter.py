@@ -15,6 +15,7 @@ from src.llm.anthropic_sdk_adapter import (
     _extract_json_text,
     _extract_text_and_block_meta_from_anthropic_message,
     _first_balanced_json_object,
+    _parsed_v21_from_json_text,
     classify_anthropic_messages_api_error,
 )
 from src.llm.errors import LLMProviderError
@@ -38,7 +39,9 @@ def _settings_claude() -> MagicMock:
     return s
 
 
-def _api_status_error(status: int, *, body: dict | None = None, message: str = "err") -> APIStatusError:
+def _api_status_error(
+    status: int, *, body: dict | None = None, message: str = "err"
+) -> APIStatusError:
     req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
     r = httpx.Response(status, request=req)
     return APIStatusError(message, response=r, body=body or {})
@@ -546,7 +549,9 @@ def test_anthropic_adapter_default_prompt_includes_claude_contract_and_json_suff
         client_inst.messages.create.return_value = mock_message
         client_cls.return_value = client_inst
         adapter.execute(req, settings)
-        user_text = client_inst.messages.create.call_args.kwargs["messages"][0]["content"][0]["text"]
+        user_text = client_inst.messages.create.call_args.kwargs["messages"][0]["content"][0][
+            "text"
+        ]
 
     assert CLAUDE_CONTRACT_MARKER in user_text
     assert CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX in user_text
@@ -562,3 +567,10 @@ def test_anthropic_adapter_default_prompt_includes_claude_contract_and_json_suff
     assert "VISUAL SEARCH ORDER" in user_text
     assert "PRIMARY VISUAL TARGET" in user_text
     assert "entity count" in user_text
+
+
+def test_parsed_v21_from_json_text_rejects_non_object_root() -> None:
+    """B2.5: Global analysis JSON root must be an object for downstream validation."""
+    with pytest.raises(LLMProviderError) as ei:
+        _parsed_v21_from_json_text("[1, 2, 3]")
+    assert ei.value.code == "INVALID_JSON"

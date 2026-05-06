@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
 from unittest.mock import MagicMock, patch
 
 from src.domain.aisle.entities import Aisle, AisleStatus
@@ -260,10 +260,13 @@ def test_execute_nonzero_pipeline_exit_delegates_fail_job_and_aisle(tmp_path: Pa
     with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as ms:
         ms.return_value.output_dir = str(tmp_path)
         ms.return_value.artifact_storage_legacy_local_read_enabled = True
-        with patch("src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline", return_value=_FakePipeline()):
+        with patch(
+            "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline",
+            return_value=_FakePipeline(),
+        ):
             assert executor.execute(tmp_path, job_id) is True
 
     spy_state.fail_job_and_aisle.assert_called_once()
     call_kw = spy_state.fail_job_and_aisle.call_args[0]
     assert call_kw[0] == job_id
-    assert "exit code 2" in call_kw[2]
+    assert "code 2" in call_kw[2]

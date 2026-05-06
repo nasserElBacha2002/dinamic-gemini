@@ -23,10 +23,15 @@ Default single-provider runs do not enter this module (fast path preserves Phase
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable
 
+from src.env_settings.pipeline_analysis_execution_strings import (
+    STRATEGY_MULTI_PARALLEL,
+    STRATEGY_MULTI_SEQUENTIAL,
+)
 from src.llm.errors import LLMProviderError
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.contracts.multi_provider_trace_types import (
@@ -37,10 +42,6 @@ from src.pipeline.contracts.multi_provider_trace_types import (
     MultiProviderRunRowSkipped,
 )
 from src.pipeline.ports.analysis_provider import AnalysisResult
-from src.pipeline.services.provider_analysis_execution_config import (
-    STRATEGY_MULTI_PARALLEL,
-    STRATEGY_MULTI_SEQUENTIAL,
-)
 from src.pipeline.services.provider_result_aggregator import (
     attach_multi_provider_trace,
     model_label_from_analysis_result,
@@ -84,7 +85,9 @@ def _run_row_error(provider_key: str, exc: BaseException) -> MultiProviderRunRow
     }
 
 
-def _sequential_skipped_trace_entries(keys: List[str], successful_index: int) -> List[MultiProviderRunRowSkipped]:
+def _sequential_skipped_trace_entries(
+    keys: list[str], successful_index: int
+) -> list[MultiProviderRunRowSkipped]:
     """Trace rows for providers not attempted after a sequential fallback success at ``successful_index``."""
     return [
         {"provider_key": k2, "status": "skipped", "reason": "prior_provider_succeeded"}
@@ -94,8 +97,8 @@ def _sequential_skipped_trace_entries(keys: List[str], successful_index: int) ->
 
 def _parallel_trace_payload(
     *,
-    keys: List[str],
-    results_by_key: Dict[str, AnalysisResult],
+    keys: list[str],
+    results_by_key: dict[str, AnalysisResult],
 ) -> MultiProviderExecutionTrace:
     """Assemble the ``multi_provider_execution`` trace for a successful parallel run."""
     runs: list[MultiProviderRunRow] = [_run_row_ok(k, results_by_key[k]) for k in keys]
@@ -109,9 +112,9 @@ def _parallel_trace_payload(
 
 def _sequential_success_trace_payload(
     *,
-    keys: List[str],
+    keys: list[str],
     successful_key: str,
-    runs: List[MultiProviderRunRow],
+    runs: list[MultiProviderRunRow],
 ) -> MultiProviderExecutionTrace:
     """Assemble the ``multi_provider_execution`` trace after sequential fallback succeeds."""
     return {
@@ -125,14 +128,15 @@ def _sequential_success_trace_payload(
 def _collect_parallel_results_by_key(
     *,
     base_context: RunContext,
-    keys: List[str],
+    keys: list[str],
     analyze_once: Callable[[RunContext], AnalysisResult],
-) -> Dict[str, AnalysisResult]:
+) -> dict[str, AnalysisResult]:
     """Submit one ``analyze_once`` per key, then await each future in **key order** (all-or-nothing)."""
-    results_by_key: Dict[str, AnalysisResult] = {}
+    results_by_key: dict[str, AnalysisResult] = {}
     with ThreadPoolExecutor(max_workers=len(keys)) as pool:
-        futures_by_key: Dict[str, Future[AnalysisResult]] = {
-            k: pool.submit(analyze_once, replace(base_context, pipeline_provider_name=k)) for k in keys
+        futures_by_key: dict[str, Future[AnalysisResult]] = {
+            k: pool.submit(analyze_once, replace(base_context, pipeline_provider_name=k))
+            for k in keys
         }
         for k in keys:
             results_by_key[k] = futures_by_key[k].result()
@@ -145,7 +149,7 @@ def dispatch_multi_provider_analysis(
     base_context: RunContext,
     ordered_provider_keys: Sequence[str],
     analyze_once: Callable[[RunContext], AnalysisResult],
-    run_logger: Optional[logging.Logger],
+    run_logger: logging.Logger | None,
 ) -> AnalysisResult:
     """
     Run two or more providers and return a single primary ``AnalysisResult``.
@@ -189,9 +193,9 @@ def dispatch_multi_provider_analysis(
 def _execute_parallel(
     *,
     base_context: RunContext,
-    keys: List[str],
+    keys: list[str],
     analyze_once: Callable[[RunContext], AnalysisResult],
-    run_logger: Optional[logging.Logger],
+    run_logger: logging.Logger | None,
 ) -> AnalysisResult:
     """
     Run all keys concurrently; **all** must succeed or this function raises.
@@ -219,9 +223,9 @@ def _execute_parallel(
 def _execute_sequential_fallback(
     *,
     base_context: RunContext,
-    keys: List[str],
+    keys: list[str],
     analyze_once: Callable[[RunContext], AnalysisResult],
-    run_logger: Optional[logging.Logger],
+    run_logger: logging.Logger | None,
 ) -> AnalysisResult:
     """
     Sequential **fallback**: try ``keys[0]``, then ``keys[1]``, … until one ``analyze_once`` succeeds.
@@ -233,8 +237,8 @@ def _execute_sequential_fallback(
     This is intentionally **not** “run every provider sequentially and collect all results” (that would
     be a different strategy for a later phase).
     """
-    runs: List[MultiProviderRunRow] = []
-    last_exc: Optional[BaseException] = None
+    runs: list[MultiProviderRunRow] = []
+    last_exc: BaseException | None = None
     for idx, k in enumerate(keys):
         ctx = replace(base_context, pipeline_provider_name=k)
         try:

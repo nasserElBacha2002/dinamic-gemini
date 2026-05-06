@@ -2,6 +2,7 @@ import { matchPath } from 'react-router-dom';
 import {
   ROUTE_ADMIN_AI_CONFIG,
   ROUTE_HOME,
+  ROUTE_INGESTION_SESSIONS,
   ROUTE_INVENTORIES_ROOT,
   ROUTE_MATCH,
   ROUTE_METRICS,
@@ -38,6 +39,9 @@ export function topBarCopy(pathname: string): { titleKey: string; subtitleKey?: 
   }
   if (pathname === ROUTE_METRICS) {
     return { titleKey: 'routes.metrics.title', subtitleKey: 'routes.metrics.subtitle' };
+  }
+  if (pathname === ROUTE_INGESTION_SESSIONS || pathname.startsWith(`${ROUTE_INGESTION_SESSIONS}/`)) {
+    return { titleKey: 'routes.ingestion_sessions.title', subtitleKey: 'routes.ingestion_sessions.subtitle' };
   }
   if (pathname === ROUTE_ADMIN_AI_CONFIG) {
     return { titleKey: 'routes.admin_ai_config.title', subtitleKey: 'routes.admin_ai_config.subtitle' };

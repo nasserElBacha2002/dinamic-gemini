@@ -57,7 +57,9 @@ def _run_pipeline_sync(
     )
 
 
-def test_baseline_pipeline_smoke_minimal_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_baseline_pipeline_smoke_minimal_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """
     Baseline smoke test: pipeline runs with minimal input and produces valid report.
 
@@ -107,7 +109,9 @@ def test_baseline_pipeline_smoke_minimal_run(tmp_path: Path, monkeypatch: pytest
         mock_source.get_frames.return_value = bundle
         mock_src.return_value = mock_source
 
-        result = _run_pipeline_sync(tmp_path, job_id, run_id, settings=settings, job_input=job_input)
+        result = _run_pipeline_sync(
+            tmp_path, job_id, run_id, settings=settings, job_input=job_input
+        )
 
     assert result.exit_code == 0, "Pipeline must complete successfully (exit code 0)"
 

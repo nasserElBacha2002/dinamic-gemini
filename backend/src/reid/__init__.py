@@ -6,14 +6,14 @@ Flujo: build_track_signatures → generate_candidates → filter_with_phash → 
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional
 
 from src.models.schemas import PalletTrack
-from src.reid.signature import build_track_signatures
-from src.reid.gating import generate_candidates
-from src.reid.phash import filter_with_phash
 from src.reid.clip_embedder import verify_with_clip
-from src.reid.merge import merge_tracks_dsu, get_merge_map
+from src.reid.gating import generate_candidates
+from src.reid.merge import get_merge_map, merge_tracks_dsu
+from src.reid.phash import filter_with_phash
+from src.reid.signature import build_track_signatures
 
 if TYPE_CHECKING:
     from src.config import Settings
@@ -22,13 +22,13 @@ logger = logging.getLogger(__name__)
 
 
 def run_reid_pipeline(
-    tracks: List[PalletTrack],
+    tracks: list[PalletTrack],
     settings: "Settings",
     video_width: Optional[int] = None,
     video_height: Optional[int] = None,
     *,
     embedder: Optional[Any] = None,
-) -> Tuple[List[PalletTrack], Dict[str, Any]]:
+) -> tuple[list[PalletTrack], dict[str, Any]]:
     """Ejecuta el flujo Re-ID completo: firmas → gating → pHash → CLIP → merge.
 
     Con CLIP en stub (embedder=None) confirmed_pairs queda [] y no hay merges.
@@ -44,7 +44,7 @@ def run_reid_pipeline(
         (merged_tracks, metrics): tracks fusionados (o originales si error/stub) y métricas.
     """
     tracks_before_reid = len(tracks)
-    metrics: Dict[str, Any] = {
+    metrics: dict[str, Any] = {
         "tracks_before_reid": tracks_before_reid,
         "tracks_after_reid": tracks_before_reid,
         "tracks_merged_count": 0,
@@ -109,10 +109,10 @@ def run_reid_pipeline(
 
 
 def run_reid_passthrough(
-    tracks: List[PalletTrack],
+    tracks: list[PalletTrack],
     settings: "Settings",
     video_width: Optional[int] = None,
     video_height: Optional[int] = None,
-) -> Tuple[List[PalletTrack], Dict[str, Any]]:
+) -> tuple[list[PalletTrack], dict[str, Any]]:
     """Deprecated: use run_reid_pipeline. Mantenido por compatibilidad."""
     return run_reid_pipeline(tracks, settings, video_width, video_height)

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional, Sequence
 
 import pytest
 
@@ -22,7 +22,9 @@ from src.application.ports.repositories import (
     RawLabelRepository,
     SourceAssetRepository,
 )
-from src.application.use_cases.recompute_consolidated_counts import RecomputeConsolidatedCountsUseCase
+from src.application.use_cases.recompute_consolidated_counts import (
+    RecomputeConsolidatedCountsUseCase,
+)
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
@@ -41,18 +43,18 @@ class FixedClock(Clock):
 
 class InMemoryJobRepo(JobRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Job] = {}
+        self._store: dict[str, Job] = {}
 
     def save(self, job: Job) -> None:
         self._store[job.id] = job
 
-    def get_by_id(self, job_id: str) -> Optional[Job]:
+    def get_by_id(self, job_id: str) -> Job | None:
         return self._store.get(job_id)
 
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
+    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
         return None
 
-    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> Dict[str, Job]:
+    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
         return {}
 
     def list_jobs_for_target(
@@ -63,29 +65,29 @@ class InMemoryJobRepo(JobRepository):
 
 class InMemoryAisleRepo(AisleRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Aisle] = {}
+        self._store: dict[str, Aisle] = {}
 
     def save(self, aisle: Aisle) -> None:
         self._store[aisle.id] = aisle
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._store.get(aisle_id)
 
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         return [a for a in self._store.values() if a.inventory_id == inventory_id]
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         return None
 
 
 class InMemoryInventoryRepo(InventoryRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Inventory] = {}
+        self._store: dict[str, Inventory] = {}
 
     def save(self, inventory: Inventory) -> None:
         self._store[inventory.id] = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._store.get(inventory_id)
 
     def list_all(self) -> Sequence[Inventory]:
@@ -94,12 +96,12 @@ class InMemoryInventoryRepo(InventoryRepository):
 
 class InMemorySourceAssetRepo(SourceAssetRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, SourceAsset] = {}
+        self._store: dict[str, SourceAsset] = {}
 
     def save(self, asset: SourceAsset) -> None:
         self._store[asset.id] = asset
 
-    def get_by_id(self, asset_id: str) -> Optional[SourceAsset]:
+    def get_by_id(self, asset_id: str) -> SourceAsset | None:
         return self._store.get(asset_id)
 
     def delete_by_id(self, asset_id: str) -> bool:
@@ -108,16 +110,19 @@ class InMemorySourceAssetRepo(SourceAssetRepository):
             return True
         return False
 
+    def get_by_capture_session_item_id(self, capture_session_item_id: str) -> SourceAsset | None:
+        return None
+
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         return [a for a in self._store.values() if a.aisle_id == aisle_id]
 
-    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> Dict[str, AisleAssetRollup]:
+    def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> dict[str, AisleAssetRollup]:
         wanted = set(aisle_ids)
-        by_aisle: Dict[str, list[SourceAsset]] = defaultdict(list)
+        by_aisle: dict[str, list[SourceAsset]] = defaultdict(list)
         for a in self._store.values():
             if a.aisle_id in wanted:
                 by_aisle[a.aisle_id].append(a)
-        out: Dict[str, AisleAssetRollup] = {}
+        out: dict[str, AisleAssetRollup] = {}
         for aid, assets in by_aisle.items():
             if not assets:
                 continue
@@ -128,9 +133,9 @@ class InMemorySourceAssetRepo(SourceAssetRepository):
 
 class InMemoryInventoryVisualReferenceRepo(InventoryVisualReferenceRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, InventoryVisualReference] = {}
+        self._store: dict[str, InventoryVisualReference] = {}
 
-    def get_by_id(self, reference_id: str) -> Optional[InventoryVisualReference]:
+    def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
         return self._store.get(reference_id)
 
     def create(self, reference: InventoryVisualReference) -> None:
@@ -185,7 +190,9 @@ class DummyRecomputeCounts(RecomputeConsolidatedCountsUseCase):
         return None
 
 
-@pytest.mark.skip(reason="Integration-style test; enable when filesystem and pipeline are available in CI.")
+@pytest.mark.skip(
+    reason="Integration-style test; enable when filesystem and pipeline are available in CI."
+)
 def test_v3_job_executor_injects_analysis_context_metadata(tmp_path: Path) -> None:
     """Smoke test: when executing, JobInput.metadata carries analysis_context with visual_references."""
     now = datetime(2025, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
@@ -290,4 +297,3 @@ def test_v3_job_executor_injects_analysis_context_metadata(tmp_path: Path) -> No
     assert isinstance(ctx, dict)
     assert "visual_references" in ctx
     assert ctx["visual_references"]
-

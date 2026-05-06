@@ -33,15 +33,12 @@ describe('fetchEvidenceImageDisplay', () => {
   beforeEach(() => {
     ensureBlobUrlSupport();
     vi.mocked(authStorage.getStoredToken).mockReturnValue(null);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_input: string) => Promise.reject(new Error('network error')))
-    );
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('network error'))));
   });
 
   it('requests image-display-url with Authorization when token is set', async () => {
     vi.mocked(authStorage.getStoredToken).mockReturnValue('test-jwt-token');
-    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn((_url: string) => {
       if (typeof _url === 'string' && _url.includes('image-display-url')) {
         return Promise.resolve(
           new Response(
@@ -219,7 +216,7 @@ describe('useEvidenceImageLoad', () => {
     );
     render(<TestWrapper spec={spec} />);
     await waitFor(() => {
-      expect(screen.getByTestId('state').textContent).toBe('Source image is no longer available.');
+      expect(screen.getByTestId('state').textContent).toBe('Source image unavailable');
     });
     expect(screen.getByTestId('state').getAttribute('data-error-kind')).toBe('not_found');
   });
@@ -238,7 +235,7 @@ describe('useEvidenceImageLoad', () => {
     );
     render(<TestWrapper spec={spec} />);
     await waitFor(() => {
-      expect(screen.getByTestId('state').textContent).toBe('You do not have permission to load this image.');
+      expect(screen.getByTestId('state').textContent).toBe('Not allowed to view this image');
     });
     expect(screen.getByTestId('state').getAttribute('data-error-kind')).toBe('forbidden');
   });
@@ -247,7 +244,7 @@ describe('useEvidenceImageLoad', () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('Network error'))));
     render(<TestWrapper spec={spec} />);
     await waitFor(() => {
-      expect(screen.getByTestId('state').textContent).toBe('Image could not be loaded.');
+      expect(screen.getByTestId('state').textContent).toBe('Network error loading image');
     });
     expect(screen.getByTestId('state').getAttribute('data-error-kind')).toBe('network');
   });
@@ -319,7 +316,7 @@ describe('useEvidenceImageLoad', () => {
     );
     render(<TestWrapper spec={spec} />);
     await waitFor(() => {
-      expect(screen.getByTestId('state').textContent).toBe('Preview is not available for this image.');
+      expect(screen.getByTestId('state').textContent).toBe('Preview unavailable');
     });
     expect(screen.getByTestId('state').getAttribute('data-error-kind')).toBe('heic_preview_unavailable');
   });

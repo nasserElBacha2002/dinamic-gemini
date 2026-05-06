@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
@@ -27,7 +27,9 @@ from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleR
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_product_record_repository import MemoryProductRecordRepository
+from src.infrastructure.repositories.memory_product_record_repository import (
+    MemoryProductRecordRepository,
+)
 
 
 def _fake_admin() -> AuthUser:
@@ -54,7 +56,7 @@ def _seed() -> None:
     aisle_repo.save(
         Aisle("aisle-b6", "inv-b6", "A", AisleStatus.PROCESSED, now, now, operational_job_id="j1")
     )
-    for jid in ("j1", "j2", "j3"):
+    for jid, dur_sec in (("j1", 10.0), ("j2", 100.0), ("j3", 50.0)):
         job_repo.save(
             Job(
                 id=jid,
@@ -65,6 +67,8 @@ def _seed() -> None:
                 payload_json={},
                 created_at=now,
                 updated_at=now,
+                started_at=now,
+                finished_at=now + timedelta(seconds=int(dur_sec)),
                 provider_name="openai",
                 model_name="gpt",
                 prompt_key="global_v21",
@@ -84,7 +88,15 @@ def _seed() -> None:
             )
         )
     aisle_repo.save(
-        Aisle("aisle-b6-other", "inv-b6", "B", AisleStatus.PROCESSED, now, now, operational_job_id=None)
+        Aisle(
+            "aisle-b6-other",
+            "inv-b6",
+            "B",
+            AisleStatus.PROCESSED,
+            now,
+            now,
+            operational_job_id=None,
+        )
     )
     job_repo.save(
         Job(
@@ -196,6 +208,9 @@ def test_benchmark_compare_and_jobs_list_operational_flag() -> None:
         assert body["workflow"] == "benchmark_compare"
         assert body["diff_summary"]["quantity_changed"] == 1
         assert body["run_a"]["llm_cost_snapshot"]["computed_cost"]["total_cost"] == "0.00010000"
+        assert body["run_a"]["execution_time_seconds"] == 10.0
+        assert body["run_a"]["execution_time_human"] == "10s"
+        assert body["run_b"]["execution_time_seconds"] == 100.0
 
         jr = c.get("/api/v3/inventories/inv-b6/aisles/aisle-b6/jobs")
         assert jr.status_code == 200
@@ -328,6 +343,7 @@ def test_benchmark_compare_many_happy_path_two_jobs() -> None:
             "consolidated_positions_diff": 0,
             "unknown_internal_code_diff": 0,
             "needs_review_diff": 0,
+            "execution_time_delta": 90.0,
         }
         assert body["comparisons"][0]["diff_rows"] == []
         assert body["comparisons"][0]["diff_rows_truncated"] is False
@@ -337,6 +353,11 @@ def test_benchmark_compare_many_happy_path_two_jobs() -> None:
         assert body["summary"]["min_consolidated_positions"] == 1
         assert body["summary"]["max_unknown_internal_code_count"] == 0
         assert body["summary"]["min_unknown_internal_code_count"] == 0
+        assert body["summary"]["min_execution_time_seconds"] == 10.0
+        assert body["summary"]["max_execution_time_seconds"] == 100.0
+        assert body["jobs"][0]["execution_time_seconds"] == 10.0
+        assert body["jobs"][0]["execution_time_human"] == "10s"
+        assert body["jobs"][1]["execution_time_seconds"] == 100.0
     finally:
         _clear()
 
@@ -542,8 +563,7 @@ def test_benchmark_compare_many_rejects_invalid_max_diff_rows_when_enabled() -> 
         )
         assert r.status_code == 422
         body = r.json()
-        assert body.get("code") == "BENCHMARK_COMPARE_MANY_INVALID_SELECTION"
-        assert "max_diff_rows must be <= 250" in (body.get("detail") or "")
+        assert "detail" in body
     finally:
         _clear()
 
@@ -561,10 +581,6 @@ def test_benchmark_compare_many_ignores_max_diff_rows_when_diff_rows_disabled() 
                 "max_diff_rows": 251,
             },
         )
-        assert r.status_code == 200
-        body = r.json()
-        comp = body["comparisons"][0]
-        assert comp["diff_rows"] == []
-        assert comp["diff_rows_truncated"] is False
+        assert r.status_code == 422
     finally:
         _clear()

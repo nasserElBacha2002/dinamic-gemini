@@ -29,25 +29,96 @@ Ejemplos:
         """,
     )
     parser.add_argument("video_path", type=str, help="Ruta al archivo de video a procesar")
-    parser.add_argument("--video-id", type=str, default=None, help="ID único del video (default: nombre del archivo sin extensión).")
-    parser.add_argument("--extract-fps", type=float, default=None, help="FPS objetivo para extracción de frames.")
-    parser.add_argument("--max-frames", type=int, default=None, metavar="N", help="Máximo de frames a procesar.")
-    parser.add_argument("--frame-stride", type=int, default=None, metavar="N", help="Cada cuántos frames tomar (1 = todos).")
-    parser.add_argument("--time-limit-sec", type=float, default=None, metavar="SEC", help="Procesar solo frames con timestamp <= SEC segundos.")
-    parser.add_argument("--strategy", type=str, default="all", help="Selección de frames (actualmente solo 'all' soportado).")
-    parser.add_argument("--resize-max-side", type=int, default=None, help="Tamaño máximo del lado más largo para redimensionar.")
-    parser.add_argument("--prompt-profile", type=str, default="multi_frame_consolidated", help="Perfil de prompt a usar.")
+    parser.add_argument(
+        "--video-id",
+        type=str,
+        default=None,
+        help="ID único del video (default: nombre del archivo sin extensión).",
+    )
+    parser.add_argument(
+        "--extract-fps", type=float, default=None, help="FPS objetivo para extracción de frames."
+    )
+    parser.add_argument(
+        "--max-frames", type=int, default=None, metavar="N", help="Máximo de frames a procesar."
+    )
+    parser.add_argument(
+        "--frame-stride",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Cada cuántos frames tomar (1 = todos).",
+    )
+    parser.add_argument(
+        "--time-limit-sec",
+        type=float,
+        default=None,
+        metavar="SEC",
+        help="Procesar solo frames con timestamp <= SEC segundos.",
+    )
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        default="all",
+        help="Selección de frames (actualmente solo 'all' soportado).",
+    )
+    parser.add_argument(
+        "--resize-max-side",
+        type=int,
+        default=None,
+        help="Tamaño máximo del lado más largo para redimensionar.",
+    )
+    parser.add_argument(
+        "--prompt-profile",
+        type=str,
+        default="multi_frame_consolidated",
+        help="Perfil de prompt a usar.",
+    )
     parser.add_argument("--output-dir", type=str, default=None, help="Directorio de salida.")
-    parser.add_argument("--filter-similar", action="store_true", help="Filtrar frames similares antes de enviar a Gemini.")
-    parser.add_argument("--similarity-threshold", type=float, default=0.95, help="Umbral de similitud para filtrar frames.")
-    parser.add_argument("--debug", action="store_true", help="Modo debug: guarda frames procesados.")
-    parser.add_argument("--raw-gemini", action="store_true", help="Omitir consolidación: guardar solo lo que devuelve Gemini.")
-    parser.add_argument("--track-pipeline", action="store_true", help="Pipeline por tracks (detección → tracking → 1 request por track).")
-    parser.add_argument("--synthetic", action="store_true", help="Con --track-pipeline: 2 bboxes fijos por frame.")
-    parser.add_argument("--heuristic", action="store_true", help="Con --track-pipeline: detector heurístico OpenCV.")
-    parser.add_argument("--save-annotated", action="store_true", help="Con --track-pipeline: guardar ROIs y frames anotados.")
-    parser.add_argument("--reid-enabled", action="store_true", help="Sprint 6B: activar Re-ID. Requiere --track-pipeline.")
-    parser.add_argument("--debug-view-selection", action="store_true", help="Debug de selección de vistas. Requiere --track-pipeline.")
+    parser.add_argument(
+        "--filter-similar",
+        action="store_true",
+        help="Filtrar frames similares antes de enviar a Gemini.",
+    )
+    parser.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=0.95,
+        help="Umbral de similitud para filtrar frames.",
+    )
+    parser.add_argument(
+        "--debug", action="store_true", help="Modo debug: guarda frames procesados."
+    )
+    parser.add_argument(
+        "--raw-gemini",
+        action="store_true",
+        help="Omitir consolidación: guardar solo lo que devuelve Gemini.",
+    )
+    parser.add_argument(
+        "--track-pipeline",
+        action="store_true",
+        help="Pipeline por tracks (detección → tracking → 1 request por track).",
+    )
+    parser.add_argument(
+        "--synthetic", action="store_true", help="Con --track-pipeline: 2 bboxes fijos por frame."
+    )
+    parser.add_argument(
+        "--heuristic", action="store_true", help="Con --track-pipeline: detector heurístico OpenCV."
+    )
+    parser.add_argument(
+        "--save-annotated",
+        action="store_true",
+        help="Con --track-pipeline: guardar ROIs y frames anotados.",
+    )
+    parser.add_argument(
+        "--reid-enabled",
+        action="store_true",
+        help="Sprint 6B: activar Re-ID. Requiere --track-pipeline.",
+    )
+    parser.add_argument(
+        "--debug-view-selection",
+        action="store_true",
+        help="Debug de selección de vistas. Requiere --track-pipeline.",
+    )
     parser.add_argument("--no-summary", action="store_true", help="No mostrar resumen en consola")
     parser.add_argument(
         "--mode",
@@ -87,7 +158,9 @@ def main() -> int:
     output_path.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_hash = hashlib.md5(f"{video_id}_{timestamp}".encode()).hexdigest()[:8]
+    run_hash = hashlib.md5(f"{video_id}_{timestamp}".encode(), usedforsecurity=False).hexdigest()[
+        :8
+    ]
     run_id = f"{timestamp}_{run_hash}"
 
     logger = setup_logger(str(output_path), video_id, run_id, console=True)

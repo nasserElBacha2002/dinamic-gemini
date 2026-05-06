@@ -15,28 +15,61 @@ interface AuthProviderProps {
  *
  * Holds user + token; persists token in localStorage; bootstraps session on mount
  * via stored token + GET /auth/me. Login/logout persist or clear token.
+ *
+ * Bootstrap stays in a local effect (not TanStack Query) so this provider keeps a single source of truth
+ * for token + user + initialized; moving GET /auth/me to Query would require revisiting that contract.
  */
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [state, setState] = useState(() => createInitialAuthState());
-
-  useEffect(() => {
+  const [state, setState] = useState(() => {
     const session = getStoredSession();
     const token = session?.accessToken ?? null;
-    if (!token) {
-      setState((s) => ({ ...s, initialized: true }));
-      return;
+    return token ? { ...createInitialAuthState(), token } : createInitialAuthState(true);
+  });
+
+  useEffect(() => {
+    const bootstrapToken = state.token;
+
+    if (!bootstrapToken) {
+      let cleared = false;
+      void Promise.resolve().then(() => {
+        if (cleared) return;
+        setState((prev) => (prev.initialized ? prev : { ...prev, initialized: true }));
+      });
+      return () => {
+        cleared = true;
+      };
     }
+
+    let cancelled = false;
+
     // Fail-closed: any /auth/me failure (401, network, etc.) clears token and treats as unauthenticated.
     // We do not distinguish invalid/expired token from temporary backend failure; both result in logout.
-    getCurrentUser(token)
+    getCurrentUser(bootstrapToken)
       .then((user) => {
-        setState({ user, token, initialized: true });
+        if (cancelled) return;
+        setState((prev) => {
+          if (prev.token !== bootstrapToken) return prev;
+          return { user, token: bootstrapToken, initialized: true };
+        });
       })
       .catch(() => {
-        clearStoredSession();
-        setState(createInitialAuthState(true));
+        if (cancelled) return;
+        let invalidateSession = false;
+        setState((prev) => {
+          if (prev.token !== bootstrapToken) return prev;
+          invalidateSession = true;
+          return createInitialAuthState(true);
+        });
+        // Keep I/O out of the updater when possible; clear storage only when state transition logged out this bootstrap.
+        if (invalidateSession) {
+          clearStoredSession();
+        }
       });
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.token]);
 
   const value: AuthContextValue = useMemo(
     () => ({

@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
-from src.infrastructure.pipeline.worker_durable_artifact_publisher import publish_worker_durable_artifacts
+from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
+    publish_worker_durable_artifacts,
+)
 from src.infrastructure.storage.artifact_store import ArtifactStore
 
 logger = logging.getLogger(__name__)
@@ -20,13 +22,15 @@ logger = logging.getLogger(__name__)
 class V3ExecutionArtifactsService:
     """Uploads execution outputs (logs, reports) to the configured ArtifactStore."""
 
-    def __init__(self, artifact_store: Optional[ArtifactStore]) -> None:
+    def __init__(self, artifact_store: ArtifactStore | None) -> None:
         self._artifact_store = artifact_store
 
     def require_store(self) -> None:
         """Raise with the same message the executor used when no store is configured."""
         if self._artifact_store is None:
-            raise RuntimeError("Artifact store not configured; cannot upload durable worker outputs")
+            raise RuntimeError(
+                "Artifact store not configured; cannot upload durable worker outputs"
+            )
 
     def publish_worker_durables(
         self,
@@ -34,7 +38,7 @@ class V3ExecutionArtifactsService:
         job_id: str,
         run_segment: str,
         run_dir: Path,
-    ) -> Dict[str, Dict[str, Any]]:
+    ) -> dict[str, dict[str, Any]]:
         """Publish durable artifacts; caller must have called :meth:`require_store` first."""
         assert self._artifact_store is not None
         return publish_worker_durable_artifacts(

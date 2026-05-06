@@ -7,8 +7,8 @@ aisles with the consolidated counting model.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
 
 from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.use_cases.recompute_consolidated_counts import (
@@ -31,8 +31,8 @@ class BackfillLegacyAislesCommand:
     must be provided.
     """
 
-    inventory_id: Optional[str] = None
-    aisle_ids: Optional[Sequence[str]] = None
+    inventory_id: str | None = None
+    aisle_ids: Sequence[str] | None = None
     all_aisles: bool = False
 
 
@@ -45,7 +45,7 @@ class BackfillAisleResult:
     normalized_count: int = 0
     final_count: int = 0
     product_records_updated: int = 0
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 @dataclass
@@ -54,7 +54,7 @@ class BackfillLegacyAislesResult:
     total_aisles_recomputed: int
     total_successes: int
     total_failures: int
-    aisle_results: List[BackfillAisleResult]
+    aisle_results: list[BackfillAisleResult]
 
 
 class BackfillLegacyAislesUseCase:
@@ -86,7 +86,9 @@ class BackfillLegacyAislesUseCase:
             bool(command.all_aisles),
         ]
         if sum(1 for m in modes if m) == 0:
-            raise ValueError("BackfillLegacyAislesCommand requires aisle_ids, inventory_id, or all_aisles=True")
+            raise ValueError(
+                "BackfillLegacyAislesCommand requires aisle_ids, inventory_id, or all_aisles=True"
+            )
         if sum(1 for m in modes if m) > 1:
             raise ValueError(
                 "BackfillLegacyAislesCommand supports exactly one targeting mode: "
@@ -95,7 +97,7 @@ class BackfillLegacyAislesUseCase:
 
         aisles, unresolved_aisle_ids = self._resolve_targets(command)
 
-        results: List[BackfillAisleResult] = []
+        results: list[BackfillAisleResult] = []
         # Record explicit failures for unresolved aisle IDs (operator intent was to touch them).
         for aid in unresolved_aisle_ids:
             results.append(
@@ -123,7 +125,9 @@ class BackfillLegacyAislesUseCase:
             aisle_results=results,
         )
 
-    def _resolve_targets(self, command: BackfillLegacyAislesCommand) -> tuple[List[Aisle], List[str]]:
+    def _resolve_targets(
+        self, command: BackfillLegacyAislesCommand
+    ) -> tuple[list[Aisle], list[str]]:
         """
         Resolve target aisles from the command.
 
@@ -137,8 +141,8 @@ class BackfillLegacyAislesUseCase:
         have_aisles = bool(aisle_ids)
         have_inventory = command.inventory_id is not None
 
-        aisles: List[Aisle] = []
-        unresolved: List[str] = []
+        aisles: list[Aisle] = []
+        unresolved: list[str] = []
 
         if have_aisles:
             # Explicit aisles; unresolved ids are reported as failures by the caller.
@@ -193,4 +197,3 @@ class BackfillLegacyAislesUseCase:
                 success=False,
                 error_message=str(e),
             )
-

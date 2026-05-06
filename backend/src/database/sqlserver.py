@@ -1,9 +1,10 @@
 """Stage 8 — SQL Server client using pyodbc (parameterized queries, context manager)."""
 
 import logging
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Generator, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,8 @@ class SqlServerClient:
             if conn:
                 try:
                     conn.rollback()
-                except Exception:
+                except Exception:  # nosec B110
+                    # Best-effort rollback after primary SQL failure (connection may be invalid).
                     pass
             logger.exception("SQL Server operation failed: %s", e)
             raise
@@ -53,5 +55,6 @@ class SqlServerClient:
             if conn:
                 try:
                     conn.close()
-                except Exception:
+                except Exception:  # nosec B110
+                    # Best-effort close so original error still propagates.
                     pass

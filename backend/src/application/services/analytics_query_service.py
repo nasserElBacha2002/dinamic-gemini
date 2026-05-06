@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from typing import List
-
 from src.application.dto.analytics_dto import (
+    AisleIssueRowDTO,
     AnalyticsFilters,
     AnalyticsSummaryDTO,
     AnalyticsTrendsDTO,
-    AisleIssueRowDTO,
     InventoryPerformanceRowDTO,
     ManualInterventionBreakdownDTO,
     QualityPatternRowDTO,
@@ -18,7 +16,9 @@ from src.application.ports.analytics_repository import AnalyticsRepository
 from src.application.ports.repositories import AisleRepository
 
 
-def validate_analytics_filters_scope(filters: AnalyticsFilters, aisle_repo: AisleRepository) -> None:
+def validate_analytics_filters_scope(
+    filters: AnalyticsFilters, aisle_repo: AisleRepository
+) -> None:
     """Ensure ``aisle_id`` belongs to ``inventory_id`` when both are set (422 semantics at HTTP boundary)."""
     if filters.aisle_id and filters.inventory_id:
         aisle = aisle_repo.get_by_id(filters.aisle_id)
@@ -42,13 +42,13 @@ class AnalyticsQueryService:
     def trends(self, filters: AnalyticsFilters) -> AnalyticsTrendsDTO:
         return self._repo.get_trends(filters)
 
-    def inventory_performance(self, filters: AnalyticsFilters) -> List[InventoryPerformanceRowDTO]:
+    def inventory_performance(self, filters: AnalyticsFilters) -> list[InventoryPerformanceRowDTO]:
         return self._repo.get_inventory_performance(filters)
 
-    def aisle_issues(self, filters: AnalyticsFilters) -> List[AisleIssueRowDTO]:
+    def aisle_issues(self, filters: AnalyticsFilters) -> list[AisleIssueRowDTO]:
         return self._repo.get_aisle_issues(filters)
 
-    def quality_patterns(self, filters: AnalyticsFilters) -> List[QualityPatternRowDTO]:
+    def quality_patterns(self, filters: AnalyticsFilters) -> list[QualityPatternRowDTO]:
         return self._repo.get_quality_patterns(filters)
 
     def manual_intervention_breakdown(

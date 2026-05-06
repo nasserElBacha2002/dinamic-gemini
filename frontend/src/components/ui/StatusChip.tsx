@@ -1,5 +1,5 @@
 /**
- * **Transitional:** thin `Chip` wrapper when status → color is already computed (e.g. `getAisleStatusColor`, job status).
+ * **Transitional:** thin `Chip` wrapper when status → color is already computed (e.g. job status helpers).
  * For **new** UI, prefer **StatusBadge** + `StatusBadgeSemantic` when the state maps to redesign semantics (§8.4, §11).
  * Do not introduce additional ad-hoc Chip wrappers for domain status.
  */

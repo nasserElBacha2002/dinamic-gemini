@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Mapping, Optional
+from collections.abc import Mapping
 
 from src.application.services.inventory_visual_reference_resolver import (
     InventoryVisualReferenceResolver,
@@ -12,7 +12,6 @@ from src.pipeline.contracts.analysis_context import (
     AnalysisImage,
     VisualReferenceContext,
 )
-
 
 INVENTORY_REFERENCES_INSTRUCTION = (
     "Inventory visual references represent valid examples of the expected visual "
@@ -34,12 +33,14 @@ class AisleAnalysisContextBuilder:
         self,
         *,
         inventory_id: str,
-        primary_evidence: List[AnalysisImage],
-        metadata: Optional[Mapping[str, object]] = None,
+        primary_evidence: list[AnalysisImage],
+        metadata: Mapping[str, object] | None = None,
     ) -> AnalysisContext:
-        visual_refs: List[VisualReferenceContext] = self._reference_resolver.resolve_for_inventory(inventory_id)
+        visual_refs: list[VisualReferenceContext] = self._reference_resolver.resolve_for_inventory(
+            inventory_id
+        )
 
-        instructions: List[str] = []
+        instructions: list[str] = []
         if visual_refs:
             instructions.append(INVENTORY_REFERENCES_INSTRUCTION)
 
@@ -49,4 +50,3 @@ class AisleAnalysisContextBuilder:
             instructions=instructions,
             metadata=metadata,
         )
-

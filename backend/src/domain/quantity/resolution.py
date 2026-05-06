@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 class QtyParseStatus(str, Enum):
@@ -36,7 +36,7 @@ class QtyInferenceReason(str, Enum):
 class NormalizedQty:
     raw_qty: Any
     parse_status: QtyParseStatus
-    explicit_qty: Optional[int]
+    explicit_qty: int | None
 
 
 @dataclass(frozen=True)
@@ -45,10 +45,10 @@ class QtyResolution:
 
     qty_final: int
     qty_source: QtySource
-    qty_inference_reason: Optional[QtyInferenceReason]
+    qty_inference_reason: QtyInferenceReason | None
     raw_qty: Any
     qty_parse_status: QtyParseStatus
-    normalization_notes: Optional[str] = None
+    normalization_notes: str | None = None
     # When False, this resolution is "unresolved / not materialized"; qty_final=0 must not
     # be treated as a valid visible quantity for product-present entities.
     is_resolved: bool = True
@@ -71,13 +71,19 @@ def normalize_raw_qty(raw_qty: Any, *, field_was_present: bool) -> NormalizedQty
             raise ValueError("bool is not a valid qty")
         qty_int = int(str(raw_qty).strip()) if isinstance(raw_qty, str) else int(raw_qty)
     except Exception:
-        return NormalizedQty(raw_qty=raw_qty, parse_status=QtyParseStatus.INVALID, explicit_qty=None)
+        return NormalizedQty(
+            raw_qty=raw_qty, parse_status=QtyParseStatus.INVALID, explicit_qty=None
+        )
 
     if qty_int < 0:
-        return NormalizedQty(raw_qty=raw_qty, parse_status=QtyParseStatus.INVALID, explicit_qty=None)
+        return NormalizedQty(
+            raw_qty=raw_qty, parse_status=QtyParseStatus.INVALID, explicit_qty=None
+        )
     if qty_int == 0:
         return NormalizedQty(raw_qty=raw_qty, parse_status=QtyParseStatus.ZERO, explicit_qty=0)
-    return NormalizedQty(raw_qty=raw_qty, parse_status=QtyParseStatus.VALID_POSITIVE, explicit_qty=qty_int)
+    return NormalizedQty(
+        raw_qty=raw_qty, parse_status=QtyParseStatus.VALID_POSITIVE, explicit_qty=qty_int
+    )
 
 
 def resolve_final_qty(
@@ -85,7 +91,7 @@ def resolve_final_qty(
     has_valid_evidence: bool,
     is_product_present: bool,
     normalized_qty: NormalizedQty,
-    explicit_consolidated_qty: Optional[int] = None,
+    explicit_consolidated_qty: int | None = None,
     allow_zero_as_valid: bool = False,
 ) -> QtyResolution:
     """Resolve final qty with provenance using v3.2.2 rule set.
@@ -97,7 +103,10 @@ def resolve_final_qty(
     4) otherwise, return 0 (unresolved / not materialized as counted)
     """
     # (1) explicit detected quantity
-    if normalized_qty.parse_status == QtyParseStatus.VALID_POSITIVE and normalized_qty.explicit_qty is not None:
+    if (
+        normalized_qty.parse_status == QtyParseStatus.VALID_POSITIVE
+        and normalized_qty.explicit_qty is not None
+    ):
         return QtyResolution(
             qty_final=normalized_qty.explicit_qty,
             qty_source=QtySource.DETECTED,
@@ -157,10 +166,10 @@ def resolve_final_qty(
 
 def has_strong_identity_for_qty_inference(
     *,
-    internal_code: Optional[str] = None,
-    review_display_label: Optional[str] = None,
-    position_barcode: Optional[str] = None,
-    pallet_id: Optional[str] = None,
+    internal_code: str | None = None,
+    review_display_label: str | None = None,
+    position_barcode: str | None = None,
+    pallet_id: str | None = None,
 ) -> bool:
     """Return True when an entity has a strong identity signal for qty inference.
 
@@ -180,7 +189,7 @@ def is_product_present_for_qty_inference(
     entity_type: str,
     has_valid_evidence: bool,
     has_identity: bool,
-    traceability_status: Optional[str] = None,
+    traceability_status: str | None = None,
 ) -> bool:
     """Return True when an entity should be treated as product-present for qty inference."""
     cs = (count_status or "").strip().upper()
@@ -200,4 +209,3 @@ def is_product_present_for_qty_inference(
         return True
 
     return False
-

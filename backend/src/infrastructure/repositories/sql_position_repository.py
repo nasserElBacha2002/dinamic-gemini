@@ -6,18 +6,20 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import Any
 
 from src.application.ports.contracts import POSITION_LIST_JOB_ID_UNSET, PositionListQuery
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
+from src.infrastructure.repositories.db_row_text import normalize_db_str
 
 logger = logging.getLogger(__name__)
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -25,18 +27,34 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     return dt.replace(tzinfo=timezone.utc)
 
 
-def _parse_json(raw: Optional[str], context: str = "") -> Optional[Dict[str, Any]]:
-    if not raw or not raw.strip():
+def _parse_json(raw: object, context: str = "") -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+    else:
+        text = str(raw).strip()
+    if not text:
         return None
     try:
-        return json.loads(raw)
+        parsed = json.loads(text)
     except json.JSONDecodeError as e:
         logger.warning("Invalid JSON in %s: %s", context or "position", e)
         return None
+    if not isinstance(parsed, dict):
+        logger.warning("JSON root is not an object in %s", context or "position")
+        return None
+    return parsed
 
 
 def _status_from_row(row: Any, position_id: str = "?") -> PositionStatus:
-    s = getattr(row, "status", "detected") or "detected"
+    raw = getattr(row, "status", None)
+    if raw is None:
+        s = "detected"
+    elif isinstance(raw, str):
+        s = raw.strip() or "detected"
+    else:
+        s = str(raw).strip() or "detected"
     try:
         return PositionStatus(s)
     except ValueError:
@@ -47,7 +65,7 @@ def _status_from_row(row: Any, position_id: str = "?") -> PositionStatus:
 def _review_resolution_from_row(
     row: Any,
     position_id: str = "?",
-) -> Optional[PositionReviewResolution]:
+) -> PositionReviewResolution | None:
     raw = getattr(row, "review_resolution", None)
     if raw is None or str(raw).strip() == "":
         return None
@@ -70,7 +88,7 @@ def _row_to_position(row: Any) -> Position:
         raise ValueError("positions row missing required created_at/updated_at")
     return Position(
         id=pid,
-        aisle_id=row.aisle_id or "",
+        aisle_id=normalize_db_str(getattr(row, "aisle_id", None)),
         status=_status_from_row(row, pid),
         review_resolution=_review_resolution_from_row(row, pid),
         confidence=float(getattr(row, "confidence", 0)),
@@ -78,8 +96,12 @@ def _row_to_position(row: Any) -> Position:
         primary_evidence_id=getattr(row, "primary_evidence_id", None),
         created_at=created,
         updated_at=updated,
-        detected_summary_json=_parse_json(getattr(row, "detected_summary_json", None), f"position id={pid}"),
-        corrected_summary_json=_parse_json(getattr(row, "corrected_summary_json", None), f"position id={pid}"),
+        detected_summary_json=_parse_json(
+            getattr(row, "detected_summary_json", None), f"position id={pid}"
+        ),
+        corrected_summary_json=_parse_json(
+            getattr(row, "corrected_summary_json", None), f"position id={pid}"
+        ),
         corrected_position_code=getattr(row, "corrected_position_code", None),
         job_id=getattr(row, "job_id", None),
     )
@@ -94,8 +116,16 @@ class SqlPositionRepository(PositionRepository):
             raise ValueError("Position created_at and updated_at are required")
         created = _ensure_utc(position.created_at)
         updated = _ensure_utc(position.updated_at)
-        det_json = json.dumps(position.detected_summary_json, ensure_ascii=False) if position.detected_summary_json else None
-        corr_json = json.dumps(position.corrected_summary_json, ensure_ascii=False) if position.corrected_summary_json else None
+        det_json = (
+            json.dumps(position.detected_summary_json, ensure_ascii=False)
+            if position.detected_summary_json
+            else None
+        )
+        corr_json = (
+            json.dumps(position.corrected_summary_json, ensure_ascii=False)
+            if position.corrected_summary_json
+            else None
+        )
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -108,7 +138,9 @@ class SqlPositionRepository(PositionRepository):
                 (
                     position.aisle_id,
                     position.status.value,
-                    position.review_resolution.value if position.review_resolution is not None else None,
+                    position.review_resolution.value
+                    if position.review_resolution is not None
+                    else None,
                     position.confidence,
                     position.needs_review,
                     position.primary_evidence_id,
@@ -130,7 +162,9 @@ class SqlPositionRepository(PositionRepository):
                         position.id,
                         position.aisle_id,
                         position.status.value,
-                        position.review_resolution.value if position.review_resolution is not None else None,
+                        position.review_resolution.value
+                        if position.review_resolution is not None
+                        else None,
                         position.confidence,
                         position.needs_review,
                         position.primary_evidence_id,
@@ -143,7 +177,7 @@ class SqlPositionRepository(PositionRepository):
                     ),
                 )
 
-    def get_by_id(self, position_id: str) -> Optional[Position]:
+    def get_by_id(self, position_id: str) -> Position | None:
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -161,15 +195,15 @@ class SqlPositionRepository(PositionRepository):
     def list_by_aisle(
         self,
         aisle_id: str,
-        status: Optional[str] = None,
-        needs_review: Optional[bool] = None,
-        min_confidence: Optional[float] = None,
-        sku_filter: Optional[str] = None,
+        status: str | None = None,
+        needs_review: bool | None = None,
+        min_confidence: float | None = None,
+        sku_filter: str | None = None,
         page: int = 1,
         page_size: int = 25,
         sort_by: str = "created_at",
         sort_dir: str = "asc",
-        job_id: Union[str, None, object] = JOB_ID_FILTER_UNSET,
+        job_id: str | None | object = JOB_ID_FILTER_UNSET,
     ) -> Sequence[Position]:
         conditions = ["p.aisle_id = ?"]
         params: list = [aisle_id]
@@ -204,6 +238,7 @@ class SqlPositionRepository(PositionRepository):
         }
         order_col = col_map.get((sort_by or "created_at").strip().lower(), "p.created_at")
         order_dir = "DESC" if (sort_dir or "asc").strip().lower() == "desc" else "ASC"
+        # ORDER BY: order_col from col_map whitelist; ASC/DESC only; where uses ? params throughout.
         order_clause = f"ORDER BY {order_col} {order_dir}, p.id ASC"
         if join_product_records:
             sql = f"""
@@ -214,7 +249,7 @@ class SqlPositionRepository(PositionRepository):
                 WHERE {where}
                 {order_clause}
                 OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-                """
+                """  # nosec B608
         else:
             sql = f"""
                 SELECT p.id, p.aisle_id, p.status, p.confidence, p.needs_review, p.primary_evidence_id,
@@ -223,17 +258,17 @@ class SqlPositionRepository(PositionRepository):
                 WHERE {where}
                 {order_clause}
                 OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-                """
+                """  # nosec B608
         with self._client.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
         return [_row_to_position(row) for row in rows]
 
     def list_by_aisle_query(
-        self, aisle_id: str, query: Optional[PositionListQuery] = None
+        self, aisle_id: str, query: PositionListQuery | None = None
     ) -> Sequence[Position]:
         q = query or PositionListQuery()
-        repo_job_id: Union[str, None, object] = JOB_ID_FILTER_UNSET
+        repo_job_id: str | None | object = JOB_ID_FILTER_UNSET
         if q.job_id is not POSITION_LIST_JOB_ID_UNSET:
             repo_job_id = q.job_id
         return self.list_by_aisle(
@@ -253,6 +288,7 @@ class SqlPositionRepository(PositionRepository):
         if not aisle_ids:
             return []
         placeholders = ",".join("?" * len(aisle_ids))
+        # IN clause: placeholders only; aisle_ids bound as parameters.
         with self._client.cursor() as cur:
             cur.execute(
                 f"""
@@ -261,7 +297,7 @@ class SqlPositionRepository(PositionRepository):
                 FROM positions
                 WHERE aisle_id IN ({placeholders})
                 ORDER BY created_at ASC, id ASC
-                """,
+                """,  # nosec B608
                 list(aisle_ids),
             )
             rows = cur.fetchall()

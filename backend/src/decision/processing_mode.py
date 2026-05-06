@@ -29,11 +29,7 @@ def assign_processing_mode(pallet: Pallet) -> Pallet:
     Returns:
         New Pallet with processing_mode, source, final_quantity, fallback_used set.
     """
-    if (
-        pallet.has_label
-        and pallet.internal_code is not None
-        and pallet.quantity is not None
-    ):
+    if pallet.has_label and pallet.internal_code is not None and pallet.quantity is not None:
         return replace(
             pallet,
             processing_mode="label",

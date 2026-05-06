@@ -8,11 +8,15 @@ Skips when DB is not configured. Requires v3 schema to be applied (raw_labels ta
 from __future__ import annotations
 
 import os
+
 import pytest
 
-from src.database.sqlserver import SqlServerClient, now_utc
+from src.database.sqlserver import now_utc
 from src.domain.labels.entities import RawLabel
 from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
+from tests.support.sql_integration import sql_server_client_or_skip
+
+pytestmark = pytest.mark.integration
 
 
 def _connection_string() -> str:
@@ -42,10 +46,7 @@ def _connection_string() -> str:
 
 @pytest.fixture(scope="module")
 def sql_client():
-    cs = _connection_string()
-    if not cs:
-        pytest.skip("SQL Server not configured (set SQLSERVER_CONNECTION_STRING or server/database/uid/pwd)")
-    return SqlServerClient(cs)
+    return sql_server_client_or_skip(_connection_string())
 
 
 @pytest.fixture
@@ -77,6 +78,5 @@ def test_sql_raw_label_repository_save_and_list_for_scope(repo: SqlRawLabelRepos
     ]
     repo.save_many(labels)
     loaded = list(repo.list_for_scope("inv-test", "aisle-test"))
-    ids = [l.id for l in loaded]
+    ids = [label.id for label in loaded]
     assert "test-raw-001" in ids
-

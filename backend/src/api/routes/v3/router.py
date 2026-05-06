@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from src.api.constants.route_paths import API_V3_INVENTORIES_ROUTER_PREFIX
 from src.auth.dependencies import get_current_admin
 
-from . import inventories, aisles, assets, positions, reviews
+from . import aisles, assets, capture_sessions, inventories, positions, reviews
 
 router = APIRouter(
     prefix=API_V3_INVENTORIES_ROUTER_PREFIX,
@@ -18,6 +18,7 @@ router = APIRouter(
 )
 
 router.include_router(inventories.router)
+router.include_router(capture_sessions.router)
 router.include_router(aisles.router)
 router.include_router(assets.router)
 router.include_router(positions.router)

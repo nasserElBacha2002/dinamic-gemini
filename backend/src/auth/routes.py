@@ -18,7 +18,13 @@ from src.auth.schemas import (
     LoginResponse,
     RefreshRequest,
 )
-from src.auth.service import AuthContext, authenticate_admin, build_login_response, refresh_session, logout_session
+from src.auth.service import (
+    AuthContext,
+    authenticate_admin,
+    build_login_response,
+    logout_session,
+    refresh_session,
+)
 
 router = APIRouter(prefix=API_AUTH_ROUTER_PREFIX, tags=["auth"])
 
@@ -107,4 +113,3 @@ async def logout(
     Requires a valid access token (same as other protected endpoints).
     """
     logout_session(body.refresh_token, context)
-

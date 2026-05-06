@@ -16,7 +16,6 @@ from src.api.server import app
 from src.auth.security import create_access_token
 from src.config import reload_settings
 
-
 _PWD_CONTEXT = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 _STABLE_UNAUTHORIZED = {"error": {"code": "UNAUTHORIZED", "message": "Authentication required."}}

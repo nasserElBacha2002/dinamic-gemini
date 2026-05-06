@@ -11,10 +11,16 @@ import pytest
 from src.llm.errors import LLMProviderError
 from src.llm.types import LLMRequest
 from src.pipeline.context.run_context import RunContext
-from src.pipeline.ports.analysis_provider import PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION, AnalysisResult
+from src.pipeline.ports.analysis_provider import (
+    PROVIDER_METADATA_KEY_MULTI_PROVIDER_EXECUTION,
+    AnalysisResult,
+)
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
 from src.pipeline.services.multi_provider_analysis_execution import dispatch_multi_provider_analysis
-from src.pipeline.services.provider_analysis_execution_config import STRATEGY_MULTI_PARALLEL, STRATEGY_MULTI_SEQUENTIAL
+from src.pipeline.services.provider_analysis_execution_config import (
+    STRATEGY_MULTI_PARALLEL,
+    STRATEGY_MULTI_SEQUENTIAL,
+)
 from tests.support.llm_executor_harness import TestLLMExecutor, llm_response_success
 
 
@@ -68,7 +74,9 @@ def test_parallel_runs_each_provider_key(monkeypatch: pytest.MonkeyPatch) -> Non
     base = _ctx(settings=settings, pipeline_provider_name="openai")
 
     def analyze_once(rc: RunContext) -> AnalysisResult:
-        from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
+        from src.pipeline.adapters.hybrid_global_analysis_strategy import (
+            HybridGlobalAnalysisStrategy,
+        )
 
         return HybridGlobalAnalysisStrategy()._analyze_once(
             rc,
@@ -118,7 +126,9 @@ def test_parallel_all_must_succeed_propagates_failure(monkeypatch: pytest.Monkey
     base = _ctx(settings=settings, pipeline_provider_name="openai")
 
     def analyze_once(rc: RunContext) -> AnalysisResult:
-        from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
+        from src.pipeline.adapters.hybrid_global_analysis_strategy import (
+            HybridGlobalAnalysisStrategy,
+        )
 
         return HybridGlobalAnalysisStrategy()._analyze_once(
             rc,
@@ -165,7 +175,9 @@ def test_sequential_fallback_stops_after_first_success_without_calling_later_pro
     base = _ctx(settings=settings, pipeline_provider_name="openai")
 
     def analyze_once(rc: RunContext) -> AnalysisResult:
-        from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
+        from src.pipeline.adapters.hybrid_global_analysis_strategy import (
+            HybridGlobalAnalysisStrategy,
+        )
 
         return HybridGlobalAnalysisStrategy()._analyze_once(
             rc,
@@ -216,7 +228,9 @@ def test_sequential_uses_second_provider_after_llm_error(monkeypatch: pytest.Mon
     base = _ctx(settings=settings, pipeline_provider_name="openai")
 
     def analyze_once(rc: RunContext) -> AnalysisResult:
-        from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
+        from src.pipeline.adapters.hybrid_global_analysis_strategy import (
+            HybridGlobalAnalysisStrategy,
+        )
 
         return HybridGlobalAnalysisStrategy()._analyze_once(
             rc,
@@ -243,7 +257,9 @@ def test_hybrid_single_strategy_ignores_extras(monkeypatch: pytest.MonkeyPatch) 
     """Default single path: one provider resolution even if extras are configured on settings."""
     resolve_calls: list[str | None] = []
 
-    def counting_resolve(pipeline_provider_name: str | None, settings: object) -> tuple[object, str]:
+    def counting_resolve(
+        pipeline_provider_name: str | None, settings: object
+    ) -> tuple[object, str]:
         resolve_calls.append(pipeline_provider_name)
         key = normalize_pipeline_provider_key(pipeline_provider_name, settings)
         return TestLLMExecutor(), key
@@ -272,7 +288,9 @@ def test_hybrid_single_strategy_ignores_extras(monkeypatch: pytest.MonkeyPatch) 
 
 def test_sequential_skipped_trace_entries_matches_fallback_contract() -> None:
     """Phase 6 — skipped rows after success stay stable for execution-log consumers."""
-    from src.pipeline.services.multi_provider_analysis_execution import _sequential_skipped_trace_entries
+    from src.pipeline.services.multi_provider_analysis_execution import (
+        _sequential_skipped_trace_entries,
+    )
 
     rows = _sequential_skipped_trace_entries(["openai", "claude", "gemini"], successful_index=0)
     assert rows == [
@@ -305,5 +323,10 @@ def test_parallel_trace_satisfies_multi_provider_execution_trace_contract() -> N
         keys=["openai"],
         results_by_key={"openai": r_openai},
     )
-    assert set(trace) >= {"strategy_effective", "ordered_provider_keys", "primary_provider_key", "runs"}
+    assert set(trace) >= {
+        "strategy_effective",
+        "ordered_provider_keys",
+        "primary_provider_key",
+        "runs",
+    }
     assert trace["runs"][0]["status"] == "ok"

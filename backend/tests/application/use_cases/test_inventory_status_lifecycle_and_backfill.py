@@ -6,20 +6,25 @@ from datetime import datetime, timezone
 
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.backfill_inventory_statuses import BackfillInventoryStatusesUseCase
-from src.application.use_cases.confirm_position import ConfirmPositionUseCase
-from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.application.services.operational_execution_config_resolver import (
     OperationalPrimaryExecutionConfig,
 )
-from src.application.use_cases.create_inventory import CreateInventoryCommand, CreateInventoryUseCase
+from src.application.use_cases.backfill_inventory_statuses import BackfillInventoryStatusesUseCase
+from src.application.use_cases.confirm_position import ConfirmPositionUseCase
+from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
+from src.application.use_cases.create_inventory import (
+    CreateInventoryCommand,
+    CreateInventoryUseCase,
+)
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from src.infrastructure.repositories.memory_review_action_repository import MemoryReviewActionRepository
+from src.infrastructure.repositories.memory_review_action_repository import (
+    MemoryReviewActionRepository,
+)
 from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
 

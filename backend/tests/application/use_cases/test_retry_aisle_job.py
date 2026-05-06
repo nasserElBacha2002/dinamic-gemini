@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Dict, Optional, Sequence
 
 import pytest
 
-from src.application.errors import AisleNotFoundError, ActiveJobExistsError
+from src.application.errors import ActiveJobExistsError, AisleNotFoundError
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
 from src.application.ports.services import WorkerLaunchService
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
@@ -33,7 +33,7 @@ class StubInventoryRepo(InventoryRepository):
     def save(self, inventory: Inventory) -> None:
         self._store[inventory.id] = inventory
 
-    def get_by_id(self, inventory_id: str) -> Optional[Inventory]:
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
         return self._store.get(inventory_id)
 
     def list_all(self) -> Sequence[Inventory]:
@@ -42,18 +42,18 @@ class StubInventoryRepo(InventoryRepository):
 
 class StubAisleRepo(AisleRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Aisle] = {}
+        self._store: dict[str, Aisle] = {}
 
     def save(self, aisle: Aisle) -> None:
         self._store[aisle.id] = aisle
 
-    def get_by_id(self, aisle_id: str) -> Optional[Aisle]:
+    def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._store.get(aisle_id)
 
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
         return [a for a in self._store.values() if a.inventory_id == inventory_id]
 
-    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Optional[Aisle]:
+    def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
         for aisle in self._store.values():
             if aisle.inventory_id == inventory_id and aisle.code == code:
                 return aisle
@@ -62,17 +62,18 @@ class StubAisleRepo(AisleRepository):
 
 class StubJobRepo(JobRepository):
     def __init__(self) -> None:
-        self._store: Dict[str, Job] = {}
+        self._store: dict[str, Job] = {}
 
     def save(self, job: Job) -> None:
         self._store[job.id] = job
 
-    def get_by_id(self, job_id: str) -> Optional[Job]:
+    def get_by_id(self, job_id: str) -> Job | None:
         return self._store.get(job_id)
 
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
+    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
         matches = [
-            job for job in self._store.values()
+            job
+            for job in self._store.values()
             if job.target_type == target_type and job.target_id == target_id
         ]
         if not matches:
@@ -80,7 +81,7 @@ class StubJobRepo(JobRepository):
         matches.sort(key=lambda job: (job.updated_at, job.created_at), reverse=True)
         return matches[0]
 
-    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> Dict[str, Job]:
+    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
         return {
             target_id: latest
             for target_id in target_ids

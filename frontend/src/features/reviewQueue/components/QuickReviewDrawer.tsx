@@ -2,15 +2,13 @@
  * Canonical review surface (Sprint v3.3) — drawer with detail fetch, evidence viewer, actions, prev/next, audit.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Alert, Box, Button, Collapse, Drawer, IconButton, Typography, Stack } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
-import { ApiError } from '../../../api/types';
+import { Alert, Box, Button, Collapse, Drawer, Typography, Stack } from '@mui/material';
 import { REVIEW_ACTION_WIRE, type ReviewActionRequest } from '../../../api/types';
 import { useResultDetail, getResultNavigationContext } from '../../results';
 import { useSubmitReviewAction } from '../../../hooks';
-import { resolveApiErrorMessage } from '../../../utils/apiErrors';
+import { getVisibleErrorMessage } from '../../../utils/apiErrors';
 import {
   ResultEvidenceViewer,
   ResultSummaryCard,
@@ -23,7 +21,7 @@ import {
   ResultDetailEmptyState,
 } from '../../results/components/detail';
 import type { QuickReviewContext } from '../quickReviewContext';
-import { ConfirmDialog, useAppSnackbar } from '../../../components/ui';
+import { ConfirmDialog, DrawerHeader, useAppSnackbar } from '../../../components/ui';
 
 function DrawerCollapsibleSection({
   titleKey,
@@ -83,37 +81,19 @@ export default function QuickReviewDrawer({
   /** Prevents double-submits (e.g. rapid double-clicks) before React flips `isPending`. */
   const reviewMutationInFlightRef = useRef(false);
 
-  useEffect(() => {
-    if (context?.positionId) setActivePositionId(context.positionId);
-  }, [context?.positionId, context?.inventoryId, context?.aisleId]);
-
-  useEffect(() => {
-    if (!open) {
-      setActionError(null);
-      setInvalidConfirmOpen(false);
-      setInvalidConfirmLoading(false);
-      setInvalidConfirmError(null);
-      reviewMutationInFlightRef.current = false;
-    }
-  }, [open]);
-
   const inventoryId = context?.inventoryId ?? '';
   const aisleId = context?.aisleId ?? '';
-  const enabled = open && Boolean(context && activePositionId && inventoryId && aisleId);
+  const initialPositionId = activePositionId || context?.positionId || '';
+  const enabled = open && Boolean(context && initialPositionId && inventoryId && aisleId);
 
   const { result, isLoading, isError, error, refetch } = useResultDetail(
     inventoryId,
     aisleId,
-    activePositionId,
+    initialPositionId,
     { enabled, jobId: context?.jobId, exactPosition: context?.exactPositionDetail }
   );
-
-  useEffect(() => {
-    if (context?.exactPositionDetail) return;
-    if (result?.id && result.id !== activePositionId) {
-      setActivePositionId(result.id);
-    }
-  }, [result?.id, activePositionId, context?.exactPositionDetail]);
+  const canonicalPositionId =
+    !context?.exactPositionDetail && result?.id ? result.id : initialPositionId;
 
   // Production strategies: queue vs aisle results. (`detail` is reserved — see `ReviewMutationStrategy`.)
   const reviewStrategy =
@@ -122,14 +102,14 @@ export default function QuickReviewDrawer({
       : context?.returnTo === 'aisle_results'
         ? 'aisleResults'
         : undefined;
-  const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, activePositionId, {
+  const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, canonicalPositionId, {
     strategy: reviewStrategy,
   });
   const actionLoading = reviewMutation.isPending;
 
   const navContext = useMemo(
-    () => (context && activePositionId ? getResultNavigationContext(context.resultIds, activePositionId) : null),
-    [context, activePositionId]
+    () => (context && canonicalPositionId ? getResultNavigationContext(context.resultIds, canonicalPositionId) : null),
+    [context, canonicalPositionId]
   );
 
   /** POST ``job_id`` must match ``positions.job_id`` from loaded detail only (never URL/run_context). */
@@ -146,8 +126,9 @@ export default function QuickReviewDrawer({
     if (id) {
       return { ...body, job_id: id };
     }
-    const { job_id: _omit, ...rest } = body;
-    return rest;
+    const stripped: ReviewActionRequest = { ...body };
+    delete stripped.job_id;
+    return stripped;
   }, [storageJobIdForReview]);
 
   /**
@@ -167,8 +148,7 @@ export default function QuickReviewDrawer({
           showSnackbar(options.successMessage, 'success');
         }
       } catch (e) {
-        const err = e instanceof ApiError ? e : new ApiError(String(e));
-        setActionError(resolveApiErrorMessage(err, 'errors.review_action_failed'));
+        setActionError(getVisibleErrorMessage(e, 'reviewQueue'));
       } finally {
         reviewMutationInFlightRef.current = false;
       }
@@ -238,13 +218,12 @@ export default function QuickReviewDrawer({
       setInvalidConfirmOpen(false);
       onClose(); // Automatically close after invalidation
     } catch (e) {
-      const err = e instanceof ApiError ? e : new ApiError(String(e));
-      setInvalidConfirmError(resolveApiErrorMessage(err, 'errors.invalidate_result'));
+      setInvalidConfirmError(getVisibleErrorMessage(e, 'reviewQueue'));
     } finally {
       reviewMutationInFlightRef.current = false;
       setInvalidConfirmLoading(false);
     }
-  }, [reviewMutation, showSnackbar, t, withReviewJobId]);
+  }, [onClose, reviewMutation, showSnackbar, t, withReviewJobId]);
 
   const handleNavigateToResult = useCallback((resultId: string) => {
     setActivePositionId(resultId);
@@ -252,9 +231,7 @@ export default function QuickReviewDrawer({
 
   const errorMessage =
     isError && error
-      ? error instanceof ApiError
-        ? resolveApiErrorMessage(error, 'errors.load_result_detail')
-        : String(error)
+      ? getVisibleErrorMessage(error, 'reviewQueue')
       : null;
 
   const detailTitle = result?.sku?.trim() ? result.sku.trim() : t('review.detail_title_fallback');
@@ -283,44 +260,28 @@ export default function QuickReviewDrawer({
           </Box>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, bgcolor: 'background.paper' }}>
-            <Box
-              sx={{
-                flexShrink: 0,
-                position: 'sticky',
-                top: 0,
-                zIndex: 4,
-                bgcolor: 'background.paper',
-                borderBottom: 1,
-                borderColor: 'divider',
-                px: 2.5,
-                py: 2,
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 1,
-              }}
-            >
-              <Box sx={{ flex: 1, minWidth: 0 }}>
+            <DrawerHeader
+              sx={{ py: 2, zIndex: 4 }}
+              closeButtonSx={{ mt: -0.5 }}
+              closeLabel={t('review.quick_drawer_close')}
+              onClose={onClose}
+              closeDisabled={actionLoading}
+              overline={
                 <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5, fontWeight: 700 }}>
                   {t('review.drawer_mode_title')}
                 </Typography>
+              }
+              title={
                 <Typography component="h1" variant="h5" sx={{ fontWeight: 700, lineHeight: 1.2, mt: 0.25 }}>
                   {isLoading && !result ? t('common.loading') : detailTitle}
                 </Typography>
+              }
+              subtitle={
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, fontWeight: 500 }}>
                   {context.inventoryName} · {context.aisleCode}
                 </Typography>
-              </Box>
-              <IconButton 
-                aria-label={t('review.quick_drawer_close')} 
-                onClick={onClose} 
-                size="small" 
-                edge="end" 
-                sx={{ mt: -0.5 }}
-                disabled={actionLoading}
-              >
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Box>
+              }
+            />
 
             <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, px: 2.5, pb: 2.5, pt: 2 }}>
               {actionError ? (
@@ -393,7 +354,7 @@ export default function QuickReviewDrawer({
       </Drawer>
 
       <ConfirmDialog
-        open={invalidConfirmOpen}
+        open={open && invalidConfirmOpen}
         onClose={() => {
           setInvalidConfirmOpen(false);
           setInvalidConfirmError(null);

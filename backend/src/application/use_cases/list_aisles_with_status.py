@@ -9,10 +9,11 @@ Sprint 1.3: per-aisle rollups (positions/pending_review use the same default res
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Sequence, Tuple
 
+from src.application.errors import InventoryNotFoundError
 from src.application.ports.contracts import AisleTableQuery
 from src.application.ports.repositories import (
     AisleRepository,
@@ -21,7 +22,6 @@ from src.application.ports.repositories import (
     PositionRepository,
     SourceAssetRepository,
 )
-from src.application.errors import InventoryNotFoundError
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import Job
@@ -33,20 +33,20 @@ class AisleWithLatestJob:
     """Aisle plus its latest job and screen-oriented row rollups (list endpoint)."""
 
     aisle: Aisle
-    latest_job: Optional[Job]
+    latest_job: Job | None
     assets_count: int = 0
     positions_count: int = 0
     pending_review_positions_count: int = 0
-    last_activity_at: Optional[datetime] = None
+    last_activity_at: datetime | None = None
 
 
 def _aisle_last_activity_at(
     aisle: Aisle,
-    latest_job: Optional[Job],
+    latest_job: Job | None,
     positions: Sequence[Position],
-    asset_last_upload: Optional[datetime],
+    asset_last_upload: datetime | None,
 ) -> datetime:
-    parts: List[datetime] = [aisle.updated_at, aisle.created_at]
+    parts: list[datetime] = [aisle.updated_at, aisle.created_at]
     if latest_job is not None:
         parts.extend([latest_job.updated_at, latest_job.created_at])
     for p in positions:
@@ -60,7 +60,7 @@ def _positions_in_default_result_slice(
     aisle: Aisle,
     all_for_aisle: Sequence[Position],
     resolver: ResultContextResolver,
-) -> List[Position]:
+) -> list[Position]:
     """Filter to the same job slice as list/detail/merge default reads (Phase 2 + transitional)."""
     ctx = resolver.resolve(aisle=aisle, explicit_job_id=None)
     jid = ctx.job_id_for_slice
@@ -105,8 +105,8 @@ class ListAislesWithStatusUseCase:
         self._resolver = result_context_resolver
 
     def execute(
-        self, inventory_id: str, query: Optional[AisleTableQuery] = None
-    ) -> Tuple[List[AisleWithLatestJob], int]:
+        self, inventory_id: str, query: AisleTableQuery | None = None
+    ) -> tuple[list[AisleWithLatestJob], int]:
         if self._inventory_repo.get_by_id(inventory_id) is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
         q = query or AisleTableQuery()
@@ -124,12 +124,12 @@ class ListAislesWithStatusUseCase:
         aisle_ids: Sequence[str] = [a.id for a in aisles]
         latest_by_aisle = self._job_repo.get_latest_by_targets("aisle", aisle_ids)
         positions = self._position_repo.list_by_aisles(list(aisle_ids))
-        by_aisle_pos: Dict[str, List[Position]] = defaultdict(list)
+        by_aisle_pos: dict[str, list[Position]] = defaultdict(list)
         for p in positions:
             by_aisle_pos[p.aisle_id].append(p)
         asset_rollups = self._source_asset_repo.summarize_assets_for_aisles(list(aisle_ids))
 
-        rows: List[AisleWithLatestJob] = []
+        rows: list[AisleWithLatestJob] = []
         for a in aisles:
             lj = latest_by_aisle.get(a.id)
             all_pos = by_aisle_pos.get(a.id, [])

@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 from src.application.ports.repositories import JobRepository
 from src.application.services.job_stale_reconciler import (
@@ -20,11 +21,12 @@ from src.application.services.job_stale_reconciler import (
 )
 from src.database.sqlserver import SqlServerClient
 from src.domain.jobs.entities import Job, JobStatus
+from src.infrastructure.repositories.db_row_text import normalize_db_str
 
 logger = logging.getLogger(__name__)
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -33,7 +35,13 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 def _status_from_row(row, job_id: str = "?") -> JobStatus:
-    status_str = getattr(row, "status", "queued") or "queued"
+    raw = getattr(row, "status", None)
+    if raw is None:
+        status_str = "queued"
+    elif isinstance(raw, str):
+        status_str = raw.strip() or "queued"
+    else:
+        status_str = str(raw).strip() or "queued"
     try:
         return JobStatus(status_str)
     except ValueError:
@@ -45,25 +53,41 @@ def _status_from_row(row, job_id: str = "?") -> JobStatus:
         return JobStatus.QUEUED
 
 
-def _parse_json(raw: Optional[str]) -> Dict[str, Any]:
-    if not raw or not raw.strip():
+def _parse_json(raw: object) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    if isinstance(raw, str):
+        text = raw.strip()
+    else:
+        text = str(raw).strip()
+    if not text:
         return {}
     try:
-        return json.loads(raw)
+        parsed = json.loads(text)
     except json.JSONDecodeError:
         return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
-def _parse_optional_json(raw: Optional[str]) -> Optional[Dict[str, Any]]:
-    if not raw or not str(raw).strip():
+def _parse_optional_json(raw: object) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+    else:
+        text = str(raw).strip()
+    if not text:
         return None
     try:
-        v = json.loads(raw)
-        return v if isinstance(v, dict) else {"value": v}
+        v = json.loads(text)
     except json.JSONDecodeError:
         return None
+    if isinstance(v, dict):
+        return v
+    return {"value": v}
 
 
+# Fixed column projection for inventory_jobs reads (not user-controlled).
 _JOB_SELECT_FIELDS = (
     "id, target_type, target_id, job_type, status, "
     "payload_json, result_json, error_message, created_at, updated_at, "
@@ -86,9 +110,9 @@ def _row_to_job(row: Any) -> Job:
         raise ValueError("inventory_jobs row missing required updated_at")
     return Job(
         id=jid,
-        target_type=row.target_type or "",
-        target_id=row.target_id or "",
-        job_type=row.job_type or "",
+        target_type=normalize_db_str(getattr(row, "target_type", None)),
+        target_id=normalize_db_str(getattr(row, "target_id", None)),
+        job_type=normalize_db_str(getattr(row, "job_type", None)),
         status=_status_from_row(row, jid),
         payload_json=_parse_json(getattr(row, "payload_json", None)),
         created_at=created,
@@ -125,9 +149,7 @@ class SqlJobRepository(JobRepository):
         created = _ensure_utc(job.created_at)
         updated = _ensure_utc(job.updated_at)
         payload_str = json.dumps(job.payload_json, ensure_ascii=False) if job.payload_json else None
-        result_str = (
-            json.dumps(job.result_json, ensure_ascii=False) if job.result_json else None
-        )
+        result_str = json.dumps(job.result_json, ensure_ascii=False) if job.result_json else None
         engine_str = (
             json.dumps(job.engine_params_json, ensure_ascii=False)
             if job.engine_params_json
@@ -217,10 +239,10 @@ class SqlJobRepository(JobRepository):
                     ),
                 )
 
-    def get_by_id(self, job_id: str) -> Optional[Job]:
+    def get_by_id(self, job_id: str) -> Job | None:
         with self._client.cursor() as cur:
             cur.execute(
-                f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs WHERE id = ?",
+                f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs WHERE id = ?",  # nosec B608
                 (job_id,),
             )
             row = cur.fetchone()
@@ -228,7 +250,7 @@ class SqlJobRepository(JobRepository):
             return None
         return _row_to_job(row)
 
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Optional[Job]:
+    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
         with self._client.cursor() as cur:
             cur.execute(
                 f"""
@@ -236,7 +258,7 @@ class SqlJobRepository(JobRepository):
                 FROM inventory_jobs
                 WHERE target_type = ? AND target_id = ?
                 ORDER BY updated_at DESC, created_at DESC
-                """,
+                """,  # nosec B608
                 (target_type, target_id),
             )
             row = cur.fetchone()
@@ -247,6 +269,7 @@ class SqlJobRepository(JobRepository):
     def list_jobs_for_target(
         self, target_type: str, target_id: str, *, limit: int = 50
     ) -> Sequence[Job]:
+        # TOP n: n clamped 1..500 in Python (not request text concatenation).
         n = max(1, min(int(limit), 500))
         with self._client.cursor() as cur:
             cur.execute(
@@ -255,7 +278,7 @@ class SqlJobRepository(JobRepository):
                 FROM inventory_jobs
                 WHERE target_type = ? AND target_id = ?
                 ORDER BY updated_at DESC, created_at DESC
-                """,
+                """,  # nosec B608
                 (target_type, target_id),
             )
             rows = cur.fetchall()
@@ -263,17 +286,18 @@ class SqlJobRepository(JobRepository):
 
     def list_all_jobs(self) -> Sequence[Job]:
         with self._client.cursor() as cur:
-            cur.execute(f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs ORDER BY updated_at DESC, created_at DESC")
+            cur.execute(
+                f"SELECT {_JOB_SELECT_FIELDS} FROM inventory_jobs ORDER BY updated_at DESC, created_at DESC"  # nosec B608
+            )
             rows = cur.fetchall()
         return [_row_to_job(row) for row in rows]
 
-    def get_latest_by_targets(
-        self, target_type: str, target_ids: Sequence[str]
-    ) -> Dict[str, Job]:
+    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
         if not target_ids:
             return {}
+        # IN clause placeholders only; target_ids bound as parameters (no raw concatenation).
         placeholders = ",".join("?" * len(target_ids))
-        params: List[Any] = [target_type, *target_ids]
+        params: list[Any] = [target_type, *target_ids]
         query = f"""
             SELECT {_JOB_SELECT_FIELDS}
             FROM (
@@ -284,19 +308,19 @@ class SqlJobRepository(JobRepository):
                 WHERE target_type = ? AND target_id IN ({placeholders})
             ) t
             WHERE t.rn = 1
-        """
+        """  # nosec B608
         with self._client.cursor() as cur:
             cur.execute(query, params)
             rows = cur.fetchall()
         return {row.target_id: _row_to_job(row) for row in rows}
 
-    def claim_next_queued_job(self) -> Optional[Job]:
+    def claim_next_queued_job(self) -> Job | None:
         """Atomically claim next queued v3 job from `inventory_jobs`.
 
         This is used by the standalone worker flow so API and worker share
         the same persisted v3 job source.
         """
-        claimed_job_id: Optional[str] = None
+        claimed_job_id: str | None = None
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -331,10 +355,11 @@ class SqlJobRepository(JobRepository):
         """Fail stale active jobs using the shared stale-reconciliation contract."""
         if stale_after_seconds <= 0:
             return 0
-        stale_statuses = ", ".join(f"'{status.value}'" for status in STALE_RECONCILE_STATUSES)
+        # IN (?,?,?) must stay aligned with STALE_RECONCILE_STATUSES (three terminal states).
+        status_values = tuple(s.value for s in STALE_RECONCILE_STATUSES)
         with self._client.cursor() as cur:
             cur.execute(
-                f"""
+                """
                 UPDATE inventory_jobs
                 SET status = 'failed',
                     updated_at = ?,
@@ -342,7 +367,7 @@ class SqlJobRepository(JobRepository):
                     failure_code = ?,
                     failure_message = ?,
                     error_message = ?
-                WHERE status IN ({stale_statuses})
+                WHERE status IN (?, ?, ?)
                   AND DATEDIFF(SECOND, COALESCE(last_heartbeat_at, updated_at), ?) >= ?
                 """,
                 (
@@ -351,6 +376,7 @@ class SqlJobRepository(JobRepository):
                     STALE_FAILURE_CODE,
                     STALE_FAILURE_MESSAGE,
                     STALE_FAILURE_MESSAGE,
+                    *status_values,
                     datetime.now(timezone.utc),
                     stale_after_seconds,
                 ),

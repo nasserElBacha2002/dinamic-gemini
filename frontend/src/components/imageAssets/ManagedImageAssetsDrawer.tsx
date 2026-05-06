@@ -9,13 +9,17 @@ import {
   DialogTitle,
   Divider,
   Drawer,
-  IconButton,
   Typography,
 } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
-import { ApiError } from '../../api/types';
-import { resolveApiErrorMessage } from '../../utils/apiErrors';
-import { EmptyState, ErrorAlert, LoadingBlock, ImageAssetCard, ImagePreviewDialog } from '../ui';
+import { getVisibleErrorMessage } from '../../utils/apiErrors';
+import {
+  DrawerHeader,
+  EmptyState,
+  ErrorAlert,
+  LoadingBlock,
+  ImageAssetCard,
+  ImagePreviewDialog,
+} from '../ui';
 import type { ManagedImageAssetItem } from './types';
 
 export interface ManagedImageAssetsDrawerCopy {
@@ -94,6 +98,7 @@ export default function ManagedImageAssetsDrawer({
   formatDeleteConfirm,
 }: ManagedImageAssetsDrawerProps) {
   const { t } = useTranslation();
+  void previewErrorMessageKey;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
   const previewRevokeRef = useRef<(() => void) | null>(null);
@@ -138,13 +143,6 @@ export default function ManagedImageAssetsDrawer({
         previewRevokeRef.current();
         previewRevokeRef.current = null;
       }
-      setPreviewTarget(null);
-      setPreviewSrc(null);
-      setPreviewLoading(false);
-      setPreviewError(null);
-      setDeleteTarget(null);
-      setReplaceTarget(null);
-      setReplacingAssetId(null);
     }
   }, [open]);
 
@@ -224,8 +222,7 @@ export default function ManagedImageAssetsDrawer({
       if (!mountedRef.current || previewRequestIdRef.current !== requestId || !open) {
         return;
       }
-      const apiError = error instanceof ApiError ? error : new ApiError(String(error));
-      setPreviewError(resolveApiErrorMessage(apiError, previewErrorMessageKey));
+      setPreviewError(getVisibleErrorMessage(error, 'results'));
     } finally {
       if (mountedRef.current && previewRequestIdRef.current === requestId && open) {
         setPreviewLoading(false);
@@ -251,39 +248,28 @@ export default function ManagedImageAssetsDrawer({
       }}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, bgcolor: 'background.paper' }}>
-        <Box
-          sx={{
-            flexShrink: 0,
-            position: 'sticky',
-            top: 0,
-            zIndex: 1,
-            bgcolor: 'background.paper',
-            borderBottom: 1,
-            borderColor: 'divider',
-            px: 2.5,
-            py: 1.5,
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 1,
-          }}
-        >
-          <Box sx={{ flex: 1, minWidth: 0 }}>
+        <DrawerHeader
+          sx={{ py: 1.5, zIndex: 1 }}
+          closeLabel={copy.closeAria}
+          onClose={onClose}
+          overline={
             <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
               {copy.contextOverline}
             </Typography>
+          }
+          title={
             <Typography component="h2" variant="h6" sx={{ fontWeight: 600, lineHeight: 1.2, mt: 0.25 }}>
               {copy.title}
             </Typography>
-            {copy.subtitle ? (
+          }
+          subtitle={
+            copy.subtitle ? (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
                 {copy.subtitle}
               </Typography>
-            ) : null}
-          </Box>
-          <IconButton aria-label={copy.closeAria} onClick={onClose} size="small" edge="end">
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </Box>
+            ) : null
+          }
+        />
 
         <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, px: 2.5, py: 2 }}>
           {showUpload ? (
@@ -386,7 +372,7 @@ export default function ManagedImageAssetsDrawer({
       </Box>
 
       <ImagePreviewDialog
-        open={Boolean(previewTarget)}
+        open={open && Boolean(previewTarget)}
         onClose={clearPreview}
         title={previewTarget?.filename ?? copy.imagePreviewTitle}
         src={previewSrc}
@@ -395,22 +381,24 @@ export default function ManagedImageAssetsDrawer({
         error={previewError}
       />
 
-      <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>{copy.deleteTitle}</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2">
-            {formatDeleteConfirm(deleteTarget?.filename ?? copy.deleteFallbackName)}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteTarget(null)} disabled={isDeleting}>
-            {t('common.cancel')}
-          </Button>
-          <Button color="error" variant="contained" onClick={() => void handleDeleteConfirm()} disabled={isDeleting}>
-            {isDeleting ? t('common.deleting') : copy.delete}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {open ? (
+        <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
+          <DialogTitle>{copy.deleteTitle}</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2">
+              {formatDeleteConfirm(deleteTarget?.filename ?? copy.deleteFallbackName)}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDeleteTarget(null)} disabled={isDeleting}>
+              {t('common.cancel')}
+            </Button>
+            <Button color="error" variant="contained" onClick={() => void handleDeleteConfirm()} disabled={isDeleting}>
+              {isDeleting ? t('common.deleting') : copy.delete}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      ) : null}
     </Drawer>
   );
 }

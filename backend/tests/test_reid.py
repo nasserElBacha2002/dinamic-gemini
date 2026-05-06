@@ -7,23 +7,21 @@ US-6B.2: build_track_signatures con pHash, selección determinista, tests de pha
 
 import tempfile
 from pathlib import Path
-from typing import Tuple
 
-import pytest
 from PIL import Image
 
 from src.config import load_settings
 from src.models.schemas import PalletObservation, PalletTrack
 from src.reid import run_reid_passthrough, run_reid_pipeline
+from src.reid.clip_embedder import cosine_similarity, verify_with_clip
+from src.reid.gating import generate_candidates
+from src.reid.merge import merge_tracks_dsu
+from src.reid.phash import filter_with_phash
 from src.reid.signature import (
     TrackSignature,
     build_track_signatures,
     compute_phash,
 )
-from src.reid.gating import generate_candidates
-from src.reid.phash import filter_with_phash
-from src.reid.clip_embedder import verify_with_clip, cosine_similarity
-from src.reid.merge import merge_tracks_dsu
 
 
 def _make_track(track_id: str, n_obs: int = 3) -> PalletTrack:
@@ -35,17 +33,19 @@ def _make_track(track_id: str, n_obs: int = 3) -> PalletTrack:
             det_conf=0.9,
             track_id=track_id,
             blur_score=0.8 - i * 0.1,
-            roi_path=f"/fake/{track_id}_frame{i*10}.jpg",
+            roi_path=f"/fake/{track_id}_frame{i * 10}.jpg",
         )
         for i in range(n_obs)
     ]
-    return PalletTrack(track_id=track_id, observations=obs, start_frame=0, end_frame=(n_obs - 1) * 10)
+    return PalletTrack(
+        track_id=track_id, observations=obs, start_frame=0, end_frame=(n_obs - 1) * 10
+    )
 
 
 def _minimal_obs(
     frame_idx: int,
     track_id: str = "x",
-    bbox: Tuple[int, int, int, int] = (0, 0, 10, 10),
+    bbox: tuple[int, int, int, int] = (0, 0, 10, 10),
 ) -> PalletObservation:
     """Observación mínima para tests de merge."""
     return PalletObservation(
@@ -284,7 +284,10 @@ def test_verify_with_clip_confirms_when_similarity_high():
             end_centroid=None,
         ),
     }
-    embedder = lambda path: [1.0, 0.0, 0.0]
+
+    def embedder(path):
+        return [1.0, 0.0, 0.0]
+
     out = verify_with_clip([("a", "b")], sigs, min_sim=0.9, embedder=embedder)
     assert out == [("a", "b")]
 
@@ -295,7 +298,10 @@ def test_verify_with_clip_confirms_with_dict_signatures():
         "x": {"roi_paths": ["/img/x.jpg"], "roi_phashes": []},
         "y": {"roi_paths": ["/img/y.jpg"], "roi_phashes": []},
     }
-    embedder = lambda path: [1.0, 0.0, 0.0]
+
+    def embedder(path):
+        return [1.0, 0.0, 0.0]
+
     out = verify_with_clip([("x", "y")], sigs, min_sim=0.92, embedder=embedder)
     assert out == [("x", "y")]
 
@@ -324,10 +330,12 @@ def test_verify_with_clip_rejects_when_similarity_low():
             end_centroid=None,
         ),
     }
+
     def embedder(path):
         if "p.jpg" in path:
             return [1.0, 0.0, 0.0]
         return [0.0, 1.0, 0.0]
+
     assert cosine_similarity([1, 0, 0], [0, 1, 0]) == 0.0
     out = verify_with_clip([("p", "q")], sigs, min_sim=0.9, embedder=embedder)
     assert out == []
@@ -357,7 +365,10 @@ def test_verify_with_clip_skips_when_missing_roi_paths():
             end_centroid=None,
         ),
     }
-    embedder = lambda path: [1.0, 0.0, 0.0]
+
+    def embedder(path):
+        return [1.0, 0.0, 0.0]
+
     out = verify_with_clip([("a", "b")], sigs, min_sim=0.9, embedder=embedder)
     assert out == []
 
@@ -406,7 +417,10 @@ def test_verify_with_clip_maintains_order():
             end_centroid=None,
         ),
     }
-    embedder = lambda path: [1.0, 0.0, 0.0]
+
+    def embedder(path):
+        return [1.0, 0.0, 0.0]
+
     candidates = [("A", "B"), ("C", "D")]
     out = verify_with_clip(candidates, sigs, min_sim=0.9, embedder=embedder)
     assert out == [("A", "B"), ("C", "D")]
@@ -583,7 +597,9 @@ def test_run_reid_pipeline_with_merge():
         track_a = PalletTrack(track_id="A", observations=obs_a, start_frame=0, end_frame=10)
         track_b = PalletTrack(track_id="B", observations=obs_b, start_frame=20, end_frame=30)
         settings = load_settings()
-        embedder = lambda path: [1.0, 0.0, 0.0]
+
+        def embedder(path):
+            return [1.0, 0.0, 0.0]
 
         merged, metrics = run_reid_pipeline(
             [track_a, track_b],
@@ -763,7 +779,9 @@ def test_signatures_start_end_only_from_valid_rois():
         assert sigs["t"].end_frame == 10  # solo el frame con ROI válida
 
 
-def _sig(track_id: str, start_frame: int, end_frame: int, start_centroid, end_centroid) -> TrackSignature:
+def _sig(
+    track_id: str, start_frame: int, end_frame: int, start_centroid, end_centroid
+) -> TrackSignature:
     """TrackSignature sintético para tests de gating."""
     return TrackSignature(
         track_id=track_id,
@@ -893,7 +911,9 @@ def test_gating_gap_zero_requires_both_directions():
     """Con gap=0 (solapamiento) se exige simetría: ambas direcciones espaciales deben pasar."""
     # A y B solapan; endA->startB pasa; endB->startA falla (muy lejos)
     s1 = _sig("A", 0, 100, (0.5, 0.5), (0.5, 0.5))
-    s2 = _sig("B", 50, 150, (0.52, 0.52), (0.9, 0.9))  # start_B cerca de end_A; end_B lejos de start_A
+    s2 = _sig(
+        "B", 50, 150, (0.52, 0.52), (0.9, 0.9)
+    )  # start_B cerca de end_A; end_B lejos de start_A
     out = generate_candidates(
         {"A": s1, "B": s2},
         max_gap_frames=240,

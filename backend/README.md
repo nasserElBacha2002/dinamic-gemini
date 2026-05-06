@@ -17,7 +17,7 @@ From the **repository root**:
 python -m venv .venv
 source .venv/bin/activate   # or .venv\Scripts\activate on Windows
 pip install -e backend/
-pip install -e "backend/[dev]"   # with dev deps (pytest, black, ruff)
+pip install -e "backend/[dev]"   # with dev deps (pytest, ruff, mypy, bandit, pip-audit, etc.)
 ```
 
 ## Run

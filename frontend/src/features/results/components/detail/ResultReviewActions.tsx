@@ -3,7 +3,7 @@
  * Revised in Phase 3 for a focused decision-oriented workflow.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Box, Button, Stack, TextField, IconButton, Typography } from '@mui/material';
 import EditIcon from '@mui/icons-material/EditOutlined';
@@ -41,8 +41,8 @@ export default function ResultReviewActions({
   const posButtonRef = useRef<HTMLButtonElement>(null);
   const lastActiveEditor = useRef<'qty' | 'sku' | 'pos' | null>(null);
 
-  // Focus management: when editor closes, return focus to the trigger
-  useEffect(() => {
+  // Focus management: run before paint so focus moves back to the trigger without a visible flash.
+  useLayoutEffect(() => {
     if (activeEditor !== null) {
       lastActiveEditor.current = activeEditor;
     } else {
@@ -58,14 +58,6 @@ export default function ResultReviewActions({
   }, [activeEditor]);
 
   const isDeleted = result.reviewStatus === 'INVALID';
-
-  // Collapse editor on success (if actionLoading flips back to false and we have a result change)
-  // But we rely on the parent updating the 'result' prop which triggers a re-render.
-  useEffect(() => {
-    if (!actionLoading) {
-      setActiveEditor(null);
-    }
-  }, [result.correctedQty, result.sku, result.positionCode]);
 
   if (isDeleted) return null;
 
@@ -150,7 +142,10 @@ export default function ResultReviewActions({
            {activeEditor === 'qty' ? (
              <QuantityEditor 
                initialValue={result.correctedQty ?? result.detectedQty ?? 0}
-               onSave={onUpdateQuantity}
+               onSave={(value) => {
+                 setActiveEditor(null);
+                 onUpdateQuantity(value);
+               }}
                onCancel={() => setActiveEditor(null)}
                loading={actionLoading}
              />
@@ -179,7 +174,10 @@ export default function ResultReviewActions({
            {activeEditor === 'sku' ? (
              <SkuEditor 
                initialValue={result.sku ?? ''}
-               onSave={onUpdateSku}
+               onSave={(value) => {
+                 setActiveEditor(null);
+                 onUpdateSku(value);
+               }}
                onCancel={() => setActiveEditor(null)}
                loading={actionLoading}
              />
@@ -208,7 +206,10 @@ export default function ResultReviewActions({
            {activeEditor === 'pos' ? (
              <PositionCodeEditor 
                initialValue={result.positionCode ?? ''}
-               onSave={onUpdatePositionCode}
+               onSave={(value) => {
+                 setActiveEditor(null);
+                 onUpdatePositionCode(value);
+               }}
                onCancel={() => setActiveEditor(null)}
                loading={actionLoading}
              />
@@ -291,7 +292,7 @@ function QuantityEditor({
   const [val, setVal] = useState(String(initialValue));
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
@@ -356,7 +357,7 @@ function SkuEditor({
   const [val, setVal] = useState(initialValue);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
@@ -420,7 +421,7 @@ function PositionCodeEditor({
   const [val, setVal] = useState(initialValue);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
