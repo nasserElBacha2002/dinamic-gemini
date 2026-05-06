@@ -10,30 +10,16 @@ import { V3_ADMIN_BASE, V3_ANALYTICS_BASE, V3_INVENTORIES_BASE, V3_REVIEW_QUEUE_
 import { getStoredToken } from '../features/auth/storage';
 import i18n from '../i18n';
 import type {
-  Inventory,
-  Aisle,
-  AisleStatusResponse,
-  CreateInventoryRequest,
-  CreateAisleRequest,
   ApiErrorDetail,
-  ProcessAisleResponse,
   UploadAisleAssetsResponse,
   SourceAssetSummary,
-  UploadInventoryVisualReferencesResponse,
-  InventoryVisualReferenceListResponse,
-  InventoryVisualReference,
   PositionListResponse,
   PositionDetailResponse,
-  RunMergeResponse,
-  MergeResultsResponse,
   ReviewActionRequest,
-  InventoryMetrics,
   AisleExecutionLogResponse,
   ExecutionLogResponse,
   JobSummary,
   AisleJobsListResponse,
-  PaginatedInventoryListResponse,
-  PaginatedAisleListResponse,
   ProcessingProviderOptionsResponse,
   ReviewQueueListResponse,
   AnalyticsSummaryResponse,
@@ -49,333 +35,33 @@ import type {
   AdminAiComposedPromptResponse,
   AdminAiConfigResponse,
 } from './types';
-import { ApiError } from './types';
+import { filenameFromContentDisposition, handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
+
+export type { InventoriesListQuery } from './inventoriesApi';
+export {
+  createInventory,
+  deleteInventoryVisualReference,
+  exportInventoryResultsCsv,
+  fetchInventoryVisualReferenceFile,
+  getInventories,
+  getInventory,
+  getInventoryMetrics,
+  getInventoryVisualReferences,
+  replaceInventoryVisualReference,
+  uploadInventoryVisualReferences,
+} from './inventoriesApi';
+export type { AislesListQuery } from './aislesApi';
+export {
+  createAisle,
+  exportAisleResultsCsv,
+  getAisles,
+  getAisleMergeResults,
+  getAisleStatus,
+  runAisleMerge,
+  startAisleProcessing,
+} from './aislesApi';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
-
-/**
- * Fetch for protected v3 endpoints. Adds Authorization: Bearer <token> when a token exists.
- * Use for all /api/v3/* calls. Does not add a header when no token (avoids malformed header).
- * 401 handling (clear auth, redirect to login) can be wired here later if needed.
- */
-function protectedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const token = getStoredToken();
-  const headers = new Headers(init?.headers);
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-  return fetch(input, { ...init, headers });
-}
-
-/** FastAPI validation error item shape. */
-interface ValidationDetailItem {
-  msg?: string;
-  loc?: unknown;
-  type?: string;
-}
-
-function messageFromErrorDetail(
-  detail: unknown,
-  fallback: string
-): string {
-  if (typeof detail === 'string' && detail.trim()) return detail.trim();
-  if (Array.isArray(detail) && detail.length > 0) {
-    const first = detail[0];
-    if (first && typeof first === 'object' && typeof (first as ValidationDetailItem).msg === 'string') {
-      const msg = (first as ValidationDetailItem).msg!.trim();
-      if (msg) return msg;
-    }
-    return i18n.t('errors.validation_generic');
-  }
-  return fallback;
-}
-
-/** Throws ApiError for non-OK responses; shared by handleResponse and submitReviewAction. */
-function throwApiErrorIfNotOk(response: Response, text: string, data: ApiErrorDetail): never {
-  const message = messageFromErrorDetail(
-    data.detail,
-    text && text.length < 200 ? text : response.statusText || i18n.t('errors.request_failed')
-  );
-  throw new ApiError(message, response.status, data);
-}
-
-async function handleResponse<T>(response: Response): Promise<T> {
-  const text = await response.text();
-  let data: ApiErrorDetail & T;
-  try {
-    data = (text ? JSON.parse(text) : {}) as ApiErrorDetail & T;
-  } catch {
-    data = {} as ApiErrorDetail & T;
-  }
-  if (!response.ok) {
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  return data as T;
-}
-
-/** Query params for GET /api/v3/inventories (Sprint 1.4). */
-export interface InventoriesListQuery {
-  search?: string | null;
-  status?: string | null;
-  sort_by?: string;
-  sort_dir?: string;
-  page?: number;
-  page_size?: number;
-}
-
-function buildInventoriesListQueryString(q: InventoriesListQuery | undefined): string {
-  if (!q) return '';
-  const params = new URLSearchParams();
-  if (q.search != null && String(q.search).trim() !== '') params.set('search', String(q.search).trim());
-  if (q.status != null && String(q.status).trim() !== '') params.set('status', String(q.status).trim());
-  if (q.sort_by != null && String(q.sort_by).trim() !== '') params.set('sort_by', String(q.sort_by).trim());
-  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') params.set('sort_dir', String(q.sort_dir).trim());
-  if (q.page != null && q.page >= 1) params.set('page', String(q.page));
-  if (q.page_size != null && q.page_size >= 1) params.set('page_size', String(q.page_size));
-  const s = params.toString();
-  return s ? `?${s}` : '';
-}
-
-/**
- * GET /api/v3/inventories — paginated object (`items`, `page`, …), not a bare array (Sprint 1.4 contract).
- */
-export async function getInventories(
-  listQuery?: InventoriesListQuery
-): Promise<PaginatedInventoryListResponse> {
-  const qs = buildInventoriesListQueryString(listQuery);
-  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/${qs}`);
-  return handleResponse<PaginatedInventoryListResponse>(response);
-}
-
-export async function getInventory(id: string): Promise<Inventory> {
-  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/${id}`);
-  return handleResponse<Inventory>(response);
-}
-
-/** Get inventory metrics — Épica 9 (§9.6). Returns 404 if inventory not found. */
-export async function getInventoryMetrics(inventoryId: string): Promise<InventoryMetrics> {
-  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/metrics`);
-  return handleResponse<InventoryMetrics>(response);
-}
-
-function filenameFromContentDisposition(header: string | null, fallback: string): string {
-  if (!header) return fallback;
-  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
-  if (star?.[1]) {
-    try {
-      return decodeURIComponent(star[1].trim());
-    } catch {
-      /* ignore */
-    }
-  }
-  const quoted = /filename\s*=\s*"([^"]+)"/i.exec(header);
-  if (quoted?.[1]) return quoted[1].trim();
-  return fallback;
-}
-
-/**
- * Download consolidated inventory results as CSV (same rows as operator-facing Results, all aisles).
- * Uses Content-Disposition filename when present.
- */
-export async function exportInventoryResultsCsv(inventoryId: string): Promise<void> {
-  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/export?format=csv`;
-  const response = await protectedFetch(path);
-  const fallbackName = `inventory_${inventoryId}_results.csv`;
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-/** Aisle Results export: same CSV contract as inventory export, scoped to one aisle and optional run (`job_id`). */
-export async function exportAisleResultsCsv(
-  inventoryId: string,
-  aisleId: string,
-  options?: { jobId?: string | null; technical?: boolean }
-): Promise<void> {
-  const params = new URLSearchParams({ format: 'csv' });
-  if (options?.technical) {
-    params.set('technical', 'true');
-  }
-  const jid = options?.jobId?.trim();
-  if (jid) {
-    params.set('job_id', jid);
-  }
-  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/export?${params}`;
-  const response = await protectedFetch(path);
-  const fallbackName = `inventory_${inventoryId}_aisle_${aisleId}_results.csv`;
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-export async function createInventory(body: CreateInventoryRequest): Promise<Inventory> {
-  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return handleResponse<Inventory>(response);
-}
-
-export async function uploadInventoryVisualReferences(
-  inventoryId: string,
-  files: File[]
-): Promise<UploadInventoryVisualReferencesResponse> {
-  const form = new FormData();
-  files.forEach((file) => form.append('files', file));
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references`,
-    { method: 'POST', body: form }
-  );
-  return handleResponse<UploadInventoryVisualReferencesResponse>(response);
-}
-
-export async function getInventoryVisualReferences(
-  inventoryId: string
-): Promise<InventoryVisualReferenceListResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references`
-  );
-  return handleResponse<InventoryVisualReferenceListResponse>(response);
-}
-
-export async function deleteInventoryVisualReference(
-  inventoryId: string,
-  referenceId: string
-): Promise<void> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}`,
-    { method: 'DELETE' }
-  );
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-}
-
-export async function replaceInventoryVisualReference(
-  inventoryId: string,
-  referenceId: string,
-  file: File
-): Promise<InventoryVisualReference> {
-  const form = new FormData();
-  form.append('file', file);
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}`,
-    { method: 'PUT', body: form }
-  );
-  return handleResponse<InventoryVisualReference>(response);
-}
-
-export async function fetchInventoryVisualReferenceFile(
-  inventoryId: string,
-  referenceId: string
-): Promise<{ imageSrc: string; revoke: () => void }> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}/file`
-  );
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const imageSrc = URL.createObjectURL(blob);
-  return {
-    imageSrc,
-    revoke: () => URL.revokeObjectURL(imageSrc),
-  };
-}
-
-export interface AislesListQuery {
-  search?: string | null;
-  status?: string | null;
-  sort_by?: string;
-  sort_dir?: string;
-  page?: number;
-  page_size?: number;
-}
-
-function buildAislesListQueryString(q: AislesListQuery | undefined): string {
-  if (!q) return '';
-  const params = new URLSearchParams();
-  if (q.search != null && String(q.search).trim() !== '') params.set('search', String(q.search).trim());
-  if (q.status != null && String(q.status).trim() !== '') params.set('status', String(q.status).trim());
-  if (q.sort_by != null && String(q.sort_by).trim() !== '') params.set('sort_by', String(q.sort_by).trim());
-  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') params.set('sort_dir', String(q.sort_dir).trim());
-  if (q.page != null && q.page >= 1) params.set('page', String(q.page));
-  if (q.page_size != null && q.page_size >= 1) params.set('page_size', String(q.page_size));
-  const s = params.toString();
-  return s ? `?${s}` : '';
-}
-
-/**
- * GET .../inventories/{id}/aisles — paginated object (`items`, …), not a bare array (Sprint 1.4 contract).
- */
-export async function getAisles(
-  inventoryId: string,
-  listQuery?: AislesListQuery
-): Promise<PaginatedAisleListResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles${buildAislesListQueryString(listQuery)}`
-  );
-  return handleResponse<PaginatedAisleListResponse>(response);
-}
-
-export async function createAisle(
-  inventoryId: string,
-  body: CreateAisleRequest
-): Promise<Aisle> {
-  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return handleResponse<Aisle>(response);
-}
 
 export async function getProcessingProviderOptions(): Promise<ProcessingProviderOptionsResponse> {
   const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/processing-provider-options`);
@@ -403,78 +89,6 @@ export async function getAdminAiComposedPrompt(params: {
     `${API_BASE}${V3_ADMIN_BASE}/ai-config/composed-prompt?${q.toString()}`
   );
   return handleResponse<AdminAiComposedPromptResponse>(response);
-}
-
-export async function startAisleProcessing(
-  inventoryId: string,
-  aisleId: string,
-  options?: { providerName?: string | null; modelName?: string | null; promptKey?: string | null }
-): Promise<ProcessAisleResponse> {
-  const body: Record<string, string> = {};
-  const prov = options?.providerName;
-  if (prov != null && String(prov).trim() !== '') {
-    body.provider_name = String(prov).trim().toLowerCase();
-  }
-  const mod = options?.modelName;
-  if (mod != null && String(mod).trim() !== '') {
-    body.model_name = String(mod).trim();
-  }
-  const pk = options?.promptKey;
-  if (pk != null && String(pk).trim() !== '') {
-    body.prompt_key = String(pk).trim();
-  }
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/process`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }
-  );
-  return handleResponse<ProcessAisleResponse>(response);
-}
-
-/** Get aisle processing status (aisle + latest job). Use for polling or single-aisle status. */
-export async function getAisleStatus(
-  inventoryId: string,
-  aisleId: string
-): Promise<AisleStatusResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/status`
-  );
-  return handleResponse<AisleStatusResponse>(response);
-}
-
-/** Run manual authoritative merge for an aisle and update visible results quantities. */
-export async function runAisleMerge(
-  inventoryId: string,
-  aisleId: string,
-  options: { jobId: string | null }
-): Promise<RunMergeResponse> {
-  const raw = options.jobId != null ? String(options.jobId).trim() : '';
-  const jobId = raw !== '' ? raw : 'legacy';
-  const params = new URLSearchParams();
-  params.set('job_id', jobId);
-  const qs = params.toString();
-  const url = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/merge?${qs}`;
-  const response = await protectedFetch(url, { method: 'POST' });
-  return handleResponse<RunMergeResponse>(response);
-}
-
-/** Read merge/consolidation artifacts for an aisle. */
-export async function getAisleMergeResults(
-  inventoryId: string,
-  aisleId: string,
-  options?: { jobId?: string | null }
-): Promise<MergeResultsResponse> {
-  const params = new URLSearchParams();
-  if (options?.jobId != null && String(options.jobId).trim() !== '') {
-    params.set('job_id', String(options.jobId).trim());
-  }
-  const qs = params.toString();
-  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/merge-results${qs ? `?${qs}` : ''}`;
-  const response = await protectedFetch(path);
-  return handleResponse<MergeResultsResponse>(response);
 }
 
 /** Get execution log for a job (v3.1.1). Job must belong to the given aisle. */
