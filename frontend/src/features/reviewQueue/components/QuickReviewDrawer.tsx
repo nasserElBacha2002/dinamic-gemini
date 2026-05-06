@@ -4,8 +4,7 @@
 
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Alert, Box, Button, Collapse, Drawer, IconButton, Typography, Stack } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
+import { Alert, Box, Button, Collapse, Drawer, Typography, Stack } from '@mui/material';
 import { REVIEW_ACTION_WIRE, type ReviewActionRequest } from '../../../api/types';
 import { useResultDetail, getResultNavigationContext } from '../../results';
 import { useSubmitReviewAction } from '../../../hooks';
@@ -22,7 +21,7 @@ import {
   ResultDetailEmptyState,
 } from '../../results/components/detail';
 import type { QuickReviewContext } from '../quickReviewContext';
-import { ConfirmDialog, useAppSnackbar } from '../../../components/ui';
+import { ConfirmDialog, DrawerHeader, useAppSnackbar } from '../../../components/ui';
 
 function DrawerCollapsibleSection({
   titleKey,
@@ -261,44 +260,28 @@ export default function QuickReviewDrawer({
           </Box>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, bgcolor: 'background.paper' }}>
-            <Box
-              sx={{
-                flexShrink: 0,
-                position: 'sticky',
-                top: 0,
-                zIndex: 4,
-                bgcolor: 'background.paper',
-                borderBottom: 1,
-                borderColor: 'divider',
-                px: 2.5,
-                py: 2,
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 1,
-              }}
-            >
-              <Box sx={{ flex: 1, minWidth: 0 }}>
+            <DrawerHeader
+              sx={{ py: 2, zIndex: 4 }}
+              closeButtonSx={{ mt: -0.5 }}
+              closeLabel={t('review.quick_drawer_close')}
+              onClose={onClose}
+              closeDisabled={actionLoading}
+              overline={
                 <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5, fontWeight: 700 }}>
                   {t('review.drawer_mode_title')}
                 </Typography>
+              }
+              title={
                 <Typography component="h1" variant="h5" sx={{ fontWeight: 700, lineHeight: 1.2, mt: 0.25 }}>
                   {isLoading && !result ? t('common.loading') : detailTitle}
                 </Typography>
+              }
+              subtitle={
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, fontWeight: 500 }}>
                   {context.inventoryName} · {context.aisleCode}
                 </Typography>
-              </Box>
-              <IconButton 
-                aria-label={t('review.quick_drawer_close')} 
-                onClick={onClose} 
-                size="small" 
-                edge="end" 
-                sx={{ mt: -0.5 }}
-                disabled={actionLoading}
-              >
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Box>
+              }
+            />
 
             <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, px: 2.5, pb: 2.5, pt: 2 }}>
               {actionError ? (

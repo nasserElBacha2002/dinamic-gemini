@@ -9,12 +9,17 @@ import {
   DialogTitle,
   Divider,
   Drawer,
-  IconButton,
   Typography,
 } from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
 import { getVisibleErrorMessage } from '../../utils/apiErrors';
-import { EmptyState, ErrorAlert, LoadingBlock, ImageAssetCard, ImagePreviewDialog } from '../ui';
+import {
+  DrawerHeader,
+  EmptyState,
+  ErrorAlert,
+  LoadingBlock,
+  ImageAssetCard,
+  ImagePreviewDialog,
+} from '../ui';
 import type { ManagedImageAssetItem } from './types';
 
 export interface ManagedImageAssetsDrawerCopy {
@@ -243,39 +248,28 @@ export default function ManagedImageAssetsDrawer({
       }}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, bgcolor: 'background.paper' }}>
-        <Box
-          sx={{
-            flexShrink: 0,
-            position: 'sticky',
-            top: 0,
-            zIndex: 1,
-            bgcolor: 'background.paper',
-            borderBottom: 1,
-            borderColor: 'divider',
-            px: 2.5,
-            py: 1.5,
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 1,
-          }}
-        >
-          <Box sx={{ flex: 1, minWidth: 0 }}>
+        <DrawerHeader
+          sx={{ py: 1.5, zIndex: 1 }}
+          closeLabel={copy.closeAria}
+          onClose={onClose}
+          overline={
             <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
               {copy.contextOverline}
             </Typography>
+          }
+          title={
             <Typography component="h2" variant="h6" sx={{ fontWeight: 600, lineHeight: 1.2, mt: 0.25 }}>
               {copy.title}
             </Typography>
-            {copy.subtitle ? (
+          }
+          subtitle={
+            copy.subtitle ? (
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
                 {copy.subtitle}
               </Typography>
-            ) : null}
-          </Box>
-          <IconButton aria-label={copy.closeAria} onClick={onClose} size="small" edge="end">
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </Box>
+            ) : null
+          }
+        />
 
         <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, px: 2.5, py: 2 }}>
           {showUpload ? (

@@ -7,6 +7,7 @@
  *   `StatusChip` stays appropriate where **mapper helpers already emit MUI chip colors** (e.g. review status in results).
  * **Tables (Sprint 2.4):** `DataTable` — server sort/pagination, loading skeleton, empty fallback; compose with `SectionCard` + `FilterToolbar`.
  * **KPI bands (F7.1):** `KpiCardBand` — layout presets around `KpiCard` (flex strip vs responsive grids); no domain data.
+ * **Drawers (F7.3):** `DrawerHeader` — sticky title row + close for right-anchor drawers; no domain state.
  */
 
 export { default as PageLayout } from './PageLayout';
@@ -46,6 +47,8 @@ export { default as ConfirmDialog } from './ConfirmDialog';
 export type { ConfirmDialogProps } from './ConfirmDialog';
 export { default as WizardModal } from './WizardModal';
 export type { WizardModalProps } from './WizardModal';
+export { default as DrawerHeader } from './DrawerHeader';
+export type { DrawerHeaderProps } from './DrawerHeader';
 
 export { default as FilterToolbar } from './FilterToolbar';
 export type { FilterToolbarProps } from './FilterToolbar';
