@@ -12,6 +12,11 @@ from src.config import (
     resolve_sqlserver_connection_config,
     resolve_sqlserver_effective_connection_string,
 )
+from src.env_settings.sqlserver_resolution import (
+    odbc_connection_string_database_keyword_value,
+    resolved_sqlserver_database_name_from_env,
+    sqlserver_odbc_server_targets_loopback,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -26,6 +31,32 @@ def _clean_sql_env(monkeypatch: pytest.MonkeyPatch):
     ):
         monkeypatch.delenv(key, raising=False)
     yield
+
+
+def test_odbc_connection_string_database_keyword_value_roundtrip() -> None:
+    cs = (
+        "DRIVER={ODBC Driver 18 for SQL Server};SERVER=127.0.0.1;DATABASE=my_test_db;"
+        "UID=u;PWD=p;TrustServerCertificate=yes"
+    )
+    assert odbc_connection_string_database_keyword_value(cs) == "my_test_db"
+
+
+def test_resolved_sqlserver_database_name_prefers_connection_string(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "SQLSERVER_CONNECTION_STRING",
+        "DRIVER={x};SERVER=localhost;DATABASE=from_cs;UID=u;PWD=p;",
+    )
+    monkeypatch.setenv("SQLSERVER_DATABASE", "from_split")
+    assert resolved_sqlserver_database_name_from_env() == "from_cs"
+
+
+def test_sqlserver_odbc_server_targets_loopback() -> None:
+    assert sqlserver_odbc_server_targets_loopback(
+        "SERVER=127.0.0.1;DATABASE=db;"
+    )
+    assert not sqlserver_odbc_server_targets_loopback("SERVER=sql.mycompany.internal;DATABASE=db;")
 
 
 def test_explicit_connection_string_takes_precedence(monkeypatch: pytest.MonkeyPatch) -> None:
