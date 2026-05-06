@@ -17,6 +17,7 @@ from src.application.services.inventory_status_reconciler import InventoryStatus
 from src.application.use_cases.compute_materialized_capture_session_group_preview import (
     ComputeMaterializedCaptureSessionGroupPreviewUseCase,
     _classify_g6_preview_status,
+    _G6PreviewStatusInputs,
 )
 from src.application.use_cases.materialize_capture_session_group import (
     MaterializeCaptureSessionGroupUseCase,
@@ -174,97 +175,113 @@ def _insert_assigned_group(c, *, group_id: str | None = None) -> str:
 def test_classify_g6_preview_status_explicit_contract() -> None:
     assert (
         _classify_g6_preview_status(
-            filtered_asset_count=0,
-            resolved_row_count=0,
-            distinct_preview_imported_item_count=0,
-            has_any_unlinked_imported_in_group=False,
-            proposed_outcome_count=0,
-            conflict_outcome_count=0,
-            unassigned_outcome_count=0,
+            _G6PreviewStatusInputs(
+                filtered_asset_count=0,
+                resolved_row_count=0,
+                distinct_preview_imported_item_count=0,
+                has_any_unlinked_imported_in_group=False,
+                proposed_outcome_count=0,
+                conflict_outcome_count=0,
+                unassigned_outcome_count=0,
+            )
         )
         == "empty"
     )
     assert (
         _classify_g6_preview_status(
-            filtered_asset_count=2,
-            resolved_row_count=0,
-            distinct_preview_imported_item_count=0,
-            has_any_unlinked_imported_in_group=False,
-            proposed_outcome_count=0,
-            conflict_outcome_count=0,
-            unassigned_outcome_count=0,
+            _G6PreviewStatusInputs(
+                filtered_asset_count=2,
+                resolved_row_count=0,
+                distinct_preview_imported_item_count=0,
+                has_any_unlinked_imported_in_group=False,
+                proposed_outcome_count=0,
+                conflict_outcome_count=0,
+                unassigned_outcome_count=0,
+            )
         )
         == "empty"
     )
     assert (
         _classify_g6_preview_status(
-            filtered_asset_count=1,
-            resolved_row_count=1,
-            distinct_preview_imported_item_count=1,
-            has_any_unlinked_imported_in_group=False,
-            proposed_outcome_count=1,
-            conflict_outcome_count=0,
-            unassigned_outcome_count=0,
+            _G6PreviewStatusInputs(
+                filtered_asset_count=1,
+                resolved_row_count=1,
+                distinct_preview_imported_item_count=1,
+                has_any_unlinked_imported_in_group=False,
+                proposed_outcome_count=1,
+                conflict_outcome_count=0,
+                unassigned_outcome_count=0,
+            )
         )
         == "ready"
     )
     assert (
         _classify_g6_preview_status(
-            filtered_asset_count=2,
-            resolved_row_count=1,
-            distinct_preview_imported_item_count=1,
-            has_any_unlinked_imported_in_group=False,
-            proposed_outcome_count=1,
-            conflict_outcome_count=0,
-            unassigned_outcome_count=0,
+            _G6PreviewStatusInputs(
+                filtered_asset_count=2,
+                resolved_row_count=1,
+                distinct_preview_imported_item_count=1,
+                has_any_unlinked_imported_in_group=False,
+                proposed_outcome_count=1,
+                conflict_outcome_count=0,
+                unassigned_outcome_count=0,
+            )
         )
         == "partial"
     )
     assert (
         _classify_g6_preview_status(
-            filtered_asset_count=1,
-            resolved_row_count=1,
-            distinct_preview_imported_item_count=1,
-            has_any_unlinked_imported_in_group=True,
-            proposed_outcome_count=1,
-            conflict_outcome_count=0,
-            unassigned_outcome_count=0,
+            _G6PreviewStatusInputs(
+                filtered_asset_count=1,
+                resolved_row_count=1,
+                distinct_preview_imported_item_count=1,
+                has_any_unlinked_imported_in_group=True,
+                proposed_outcome_count=1,
+                conflict_outcome_count=0,
+                unassigned_outcome_count=0,
+            )
         )
         == "partial"
     )
     assert (
         _classify_g6_preview_status(
-            filtered_asset_count=1,
-            resolved_row_count=1,
-            distinct_preview_imported_item_count=1,
-            has_any_unlinked_imported_in_group=False,
-            proposed_outcome_count=0,
-            conflict_outcome_count=1,
-            unassigned_outcome_count=0,
+            _G6PreviewStatusInputs(
+                filtered_asset_count=1,
+                resolved_row_count=1,
+                distinct_preview_imported_item_count=1,
+                has_any_unlinked_imported_in_group=False,
+                proposed_outcome_count=0,
+                conflict_outcome_count=1,
+                unassigned_outcome_count=0,
+            )
         )
         == "partial"
     )
     assert (
         _classify_g6_preview_status(
-            filtered_asset_count=1,
-            resolved_row_count=1,
-            distinct_preview_imported_item_count=1,
-            has_any_unlinked_imported_in_group=False,
-            proposed_outcome_count=0,
-            conflict_outcome_count=0,
-            unassigned_outcome_count=1,
+            _G6PreviewStatusInputs(
+                filtered_asset_count=1,
+                resolved_row_count=1,
+                distinct_preview_imported_item_count=1,
+                has_any_unlinked_imported_in_group=False,
+                proposed_outcome_count=0,
+                conflict_outcome_count=0,
+                unassigned_outcome_count=1,
+            )
         )
         == "partial"
     )
     assert (
         _classify_g6_preview_status(
-            filtered_asset_count=1,
-            resolved_row_count=1,
-            distinct_preview_imported_item_count=2,
-            has_any_unlinked_imported_in_group=False,
-            proposed_outcome_count=1,
-            conflict_outcome_count=0,
-            unassigned_outcome_count=0,
+            _G6PreviewStatusInputs(
+                filtered_asset_count=1,
+                resolved_row_count=1,
+                distinct_preview_imported_item_count=2,
+                has_any_unlinked_imported_in_group=False,
+                proposed_outcome_count=1,
+                conflict_outcome_count=0,
+                unassigned_outcome_count=0,
+            )
         )
         == "partial"
     )

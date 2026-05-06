@@ -60,6 +60,8 @@ output/
 !frontend/src/i18n/locales/en/translation.json
 !frontend/src/i18n/locales/es/translation.json
 !frontend/scripts/i18n.overrides.en.json
+!backend/tests/fixtures/v2_1/global_analysis_ok.json
+!backend/tests/fixtures/v2_1/global_analysis_unlocalized.json
 
 # Data files (videos de prueba, etc.)
 data/
