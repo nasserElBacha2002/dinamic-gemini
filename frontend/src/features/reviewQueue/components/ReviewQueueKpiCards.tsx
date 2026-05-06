@@ -4,7 +4,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { Box } from '@mui/material';
-import { KpiCard } from '../../../components/ui';
+import { KpiCard, KpiCardBand } from '../../../components/ui';
 import type { ReviewQueueSummary } from '../../../api/types';
 
 export interface ReviewQueueKpiCardsProps {
@@ -14,21 +14,7 @@ export interface ReviewQueueKpiCardsProps {
 export default function ReviewQueueKpiCards({ summary }: ReviewQueueKpiCardsProps) {
   const { t } = useTranslation();
   return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: {
-          xs: 'repeat(2, minmax(0, 1fr))',
-          sm: 'repeat(3, minmax(0, 1fr))',
-          md: 'repeat(5, minmax(0, 1fr))',
-        },
-        gap: 1.5,
-        width: '100%',
-        minWidth: 0,
-        mb: 2,
-        alignItems: 'stretch',
-      }}
-    >
+    <KpiCardBand variant="responsiveGrid">
       <Box sx={{ minWidth: 0 }}>
         <KpiCard label={t('results.kpi_needs_review')} value={summary.pending_review} />
       </Box>
@@ -44,6 +30,6 @@ export default function ReviewQueueKpiCards({ summary }: ReviewQueueKpiCardsProp
       <Box sx={{ minWidth: 0 }}>
         <KpiCard label={t('results.kpi_missing_evidence')} value={summary.missing_evidence} />
       </Box>
-    </Box>
+    </KpiCardBand>
   );
 }
