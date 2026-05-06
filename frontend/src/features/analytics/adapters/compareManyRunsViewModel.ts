@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 import type { AisleBenchmarkCompareManyResponse, BenchmarkCompareManyDiff, JobSummary } from '../../../api/types';
-import { MAX_COMPARE_JOBS, MIN_COMPARE_JOBS } from '../../../pages/analytics/compareManyRunsDraft';
+import { MAX_COMPARE_JOBS, MIN_COMPARE_JOBS } from '../constants/compareManyRuns';
 import { formatSignedDurationHuman, wallClockSecondsFromJobTimestamps } from '../../../utils/benchmarkExecutionTime';
 
 export type AppliedState = {

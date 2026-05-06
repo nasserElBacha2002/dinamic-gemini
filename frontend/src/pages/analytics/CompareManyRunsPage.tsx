@@ -11,11 +11,8 @@ import { useAisleBenchmarkCompareMany, useAisleJobsList, useAislesList, useInven
 import { getVisibleErrorMessage } from '../../utils/apiErrors';
 import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompare } from '../../constants/appRoutes';
 import { formatExecutionDurationHuman, formatSignedDurationHuman } from '../../utils/benchmarkExecutionTime';
-import {
-  MAX_COMPARE_JOBS,
-  MIN_COMPARE_JOBS,
-  buildDraftError,
-} from './compareManyRunsDraft';
+import { MAX_COMPARE_JOBS, MIN_COMPARE_JOBS } from '../../features/analytics/constants/compareManyRuns';
+import { buildDraftError } from './compareManyRunsDraft';
 import { compareRunExecutionLabel } from '../../features/analytics/adapters/compareFormatters';
 import {
   buildJobsById,
