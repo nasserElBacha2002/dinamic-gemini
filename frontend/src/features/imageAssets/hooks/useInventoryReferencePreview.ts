@@ -3,7 +3,7 @@ import { fetchInventoryVisualReferenceFile } from '../../../api/client';
 import { ApiError } from '../../../api/types';
 import type { ManagedImageAssetItem } from '../../../components/imageAssets/types';
 
-type InventoryReferencePreviewResult = { imageSrc: string; revoke: () => void };
+type InventoryReferencePreviewResult = Awaited<ReturnType<typeof fetchInventoryVisualReferenceFile>>;
 
 export interface UseInventoryReferencePreviewOptions {
   inventoryId: string;
@@ -14,7 +14,6 @@ export function useInventoryReferencePreview({
   inventoryId,
   fetchInventoryVisualReferenceFileFn,
 }: UseInventoryReferencePreviewOptions) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
 
@@ -25,7 +24,6 @@ export function useInventoryReferencePreview({
       try {
         const doFetch = fetchInventoryVisualReferenceFileFn ?? fetchInventoryVisualReferenceFile;
         const result = await doFetch(inventoryId, item.id);
-        setPreviewUrl(result.imageSrc);
         return result;
       } catch (e) {
         const err = e instanceof ApiError ? e : new ApiError(String(e));
@@ -38,20 +36,14 @@ export function useInventoryReferencePreview({
     [fetchInventoryVisualReferenceFileFn, inventoryId]
   );
 
-  const clearPreview = useCallback(() => {
-    setPreviewUrl(null);
-  }, []);
-
   const clearError = useCallback(() => {
     setError(null);
   }, []);
 
   return {
-    previewUrl,
     isLoading,
     error,
     loadPreview,
-    clearPreview,
     clearError,
   };
 }
