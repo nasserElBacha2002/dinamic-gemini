@@ -133,7 +133,7 @@ export function getVisibleErrorMessage(
   }
 
   const raw = getApiErrorMessage(error, '');
-  const mapped = raw ? backendDetailToTranslationKey(raw) : null;
+  const mapped = raw.trim() ? backendDetailToTranslationKey(raw) : null;
   if (mapped) return i18n.t(mapped);
 
   return i18n.t(fallbackKey);

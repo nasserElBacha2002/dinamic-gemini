@@ -15,7 +15,7 @@ const AUTH_CODE_TO_KEY: Record<string, string> = {
 };
 
 export function authErrorCodeToTranslationKey(code: string): string | null {
-  const k = AUTH_CODE_TO_KEY[code.trim()];
+  const k = AUTH_CODE_TO_KEY[code.trim().toUpperCase()];
   return k ?? null;
 }
 
