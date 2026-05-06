@@ -11,7 +11,6 @@ import {
   MenuItem,
   Paper,
   Select,
-  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -47,6 +46,11 @@ import {
   sameSelection,
   sortJobsForCompareManyPicker,
 } from '../../features/analytics/adapters/compareManyRunsViewModel';
+import CompareDeltaLegend from '../../features/analytics/components/compare/CompareDeltaLegend';
+import CompareEmptyState from '../../features/analytics/components/compare/CompareEmptyState';
+import CompareErrorState from '../../features/analytics/components/compare/CompareErrorState';
+import CompareLoadingState from '../../features/analytics/components/compare/CompareLoadingState';
+import CompareNotice from '../../features/analytics/components/compare/CompareNotice';
 
 export default function CompareManyRunsPage() {
   const { t } = useTranslation();
@@ -203,15 +207,14 @@ export default function CompareManyRunsPage() {
       />
 
       {showBaselineAdjustedNotice ? (
-        <Alert
+        <CompareNotice
           severity="info"
           sx={{ mb: 2 }}
+          message={t('compare_many.baseline_adjusted_notice')}
           onClose={() => {
             setShowBaselineAdjustedNotice(false);
           }}
-        >
-          {t('compare_many.baseline_adjusted_notice')}
-        </Alert>
+        />
       ) : null}
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }} data-testid="compare-many-controls">
@@ -311,23 +314,13 @@ export default function CompareManyRunsPage() {
       </Paper>
 
       {!appliedValid ? (
-        <Alert severity="info" data-testid="compare-many-empty-state">
-          {t('compare_many.empty_instruction')}
-        </Alert>
+        <CompareEmptyState message={t('compare_many.empty_instruction')} testId="compare-many-empty-state" />
       ) : null}
 
-      {compareErrorMessage ? (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {compareErrorMessage}
-        </Alert>
-      ) : null}
+      {compareErrorMessage ? <CompareErrorState message={compareErrorMessage} sx={{ mb: 2 }} /> : null}
 
       {appliedValid && (compareQuery.isFetching || (!compareQuery.data && compareQuery.isLoading)) ? (
-        <Box sx={{ display: 'grid', gap: 2 }} data-testid="compare-many-loading">
-          <Skeleton variant="rounded" height={80} />
-          <Skeleton variant="rounded" height={120} />
-          <Skeleton variant="rounded" height={160} />
-        </Box>
+        <CompareLoadingState testId="compare-many-loading" skeletonHeights={[80, 120, 160]} />
       ) : null}
 
       {effectiveData ? (
@@ -412,17 +405,10 @@ export default function CompareManyRunsPage() {
             })}
           </Box>
 
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <Typography variant="subtitle2">{t('compare_many.delta_legend_title')}</Typography>
-              <Tooltip title={t('compare_many.delta_legend_body')}>
-                <InfoOutlinedIcon fontSize="small" color="action" />
-              </Tooltip>
-            </Box>
-            <Typography variant="caption" color="text.secondary">
-              {t('compare_many.delta_legend_body')}
-            </Typography>
-          </Paper>
+          <CompareDeltaLegend
+            title={t('compare_many.delta_legend_title')}
+            body={t('compare_many.delta_legend_body')}
+          />
 
           {orderedComparisons.map((comp) => {
             const expanded = expandedTargetJobId === comp.target_job_id;

@@ -43,6 +43,10 @@ import {
   buildCompareRunsTitleSuffix,
   computeBenchmarkWallClockDelta,
 } from '../../features/analytics/adapters/compareRunsViewModel';
+import CompareErrorState from '../../features/analytics/components/compare/CompareErrorState';
+import CompareExecutionDeltaPanel from '../../features/analytics/components/compare/CompareExecutionDeltaPanel';
+import CompareLoadingState from '../../features/analytics/components/compare/CompareLoadingState';
+import CompareNotice from '../../features/analytics/components/compare/CompareNotice';
 
 export default function CompareRunsPage() {
   const { t } = useTranslation();
@@ -210,9 +214,7 @@ export default function CompareRunsPage() {
         ) : null}
       </Paper>
 
-      <Alert severity="info" sx={{ mb: 2 }}>
-        {t('compare.info_benchmark')}
-      </Alert>
+      <CompareNotice severity="info" sx={{ mb: 2 }} message={t('compare.info_benchmark')} />
 
       {!aisleId ? (
         <Paper variant="outlined" sx={{ p: 2, mb: 2 }} data-testid="compare-runs-aisle-scope">
@@ -312,12 +314,8 @@ export default function CompareRunsPage() {
         </Alert>
       ) : null}
 
-      {compareQuery.isFetching ? <Typography sx={{ mb: 2 }}>{t('compare.loading')}</Typography> : null}
-      {errMsg ? (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {errMsg}
-        </Alert>
-      ) : null}
+      {compareQuery.isFetching ? <CompareLoadingState sx={{ mb: 2 }} message={t('compare.loading')} /> : null}
+      {errMsg ? <CompareErrorState sx={{ mb: 2 }} message={errMsg} /> : null}
 
       {compareQuery.data ? (
         <Box data-testid="compare-runs-results" sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -403,26 +401,19 @@ export default function CompareRunsPage() {
           </Box>
 
           {benchmarkWallClockDelta != null ? (
-            <Paper variant="outlined" sx={{ p: 1.5 }}>
-              <Typography
-                variant="body2"
-                sx={{
-                  color:
-                    benchmarkWallClockDelta > 0
-                      ? 'error.main'
-                      : benchmarkWallClockDelta < 0
-                        ? 'success.main'
-                        : 'text.primary',
-                }}
-              >
-                {t('compare.execution_wall_clock_delta', {
-                  value: formatSignedDurationHuman(benchmarkWallClockDelta),
-                })}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                {t('compare.execution_lower_is_better')}
-              </Typography>
-            </Paper>
+            <CompareExecutionDeltaPanel
+              tone={
+                benchmarkWallClockDelta > 0
+                  ? 'error.main'
+                  : benchmarkWallClockDelta < 0
+                    ? 'success.main'
+                    : 'text.primary'
+              }
+              value={t('compare.execution_wall_clock_delta', {
+                value: formatSignedDurationHuman(benchmarkWallClockDelta),
+              })}
+              hint={t('compare.execution_lower_is_better')}
+            />
           ) : null}
 
           <Paper sx={{ p: 2 }} variant="outlined">
