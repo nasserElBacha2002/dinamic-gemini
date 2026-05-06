@@ -17,6 +17,10 @@
 #
 # SSH: port is set explicitly below (non-default; not port 22).
 #
+# CI-1.3.2: After git reset, patch backend/docker-compose.yml in place (host port→8001:8000 by default).
+# Removes docker-compose.override.yml so Compose does not merge duplicate port mappings. Export
+# BACKEND_HOST_PORT on the server to override (container stays on 8000).
+#
 # Server: repo at /opt/dinamic/dinamic-gemini, reset to origin/develop, then:
 #   cd backend && docker-compose down ... && docker-compose up -d --build
 # git fetch origin must work non-interactively (deploy key or credentials on the server).
@@ -181,20 +185,55 @@ jobs:
               exit 1
             fi
             cd "${REPO_ROOT}/backend"
+            rm -f docker-compose.override.yml
+
+            export BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8001}"
+
+            python3 - <<'PY'
+            from pathlib import Path
+            import os
+            import re
+
+            compose_path = Path("docker-compose.yml")
+            text = compose_path.read_text()
+
+            backend_host_port = os.environ.get("BACKEND_HOST_PORT", "8001")
+
+            patterns = [
+                (r'"\d+:8000"', f'"{backend_host_port}:8000"'),
+                (r"'\d+:8000'", f"'{backend_host_port}:8000'"),
+            ]
+
+            new_text = text
+            for pattern, replacement in patterns:
+                new_text = re.sub(pattern, replacement, new_text)
+
+            if new_text == text:
+                raise SystemExit("ERROR: Could not replace backend host port mapping in docker-compose.yml")
+
+            compose_path.write_text(new_text)
+            print("Patched docker-compose.yml port mapping:")
+            for line in new_text.splitlines():
+                if "8000" in line or backend_host_port in line:
+                    print(line)
+            PY
+
+            echo "Using backend host port: ${BACKEND_HOST_PORT}"
+
             docker-compose down --remove-orphans || true
             docker-compose up -d --build
             docker-compose ps
             ok=0
             for i in $(seq 1 45); do
-              if curl -sfS --connect-timeout 5 --max-time 15 http://127.0.0.1:8000/health >/dev/null; then
+              if curl -sfS --connect-timeout 5 --max-time 15 "http://127.0.0.1:${BACKEND_HOST_PORT}/health" >/dev/null; then
                 ok=1
                 break
               fi
-              echo "Local /health attempt ${i}/45 not ready; sleeping 3s..."
+              echo "Local /health attempt ${i}/45 not ready on port ${BACKEND_HOST_PORT}; sleeping 3s..."
               sleep 3
             done
             if [ "${ok}" -ne 1 ]; then
-              echo "ERROR: GET http://127.0.0.1:8000/health did not succeed within ~135s (45 attempts x 3s; allow time after Uvicorn binds for app import/DB)." >&2
+              echo "ERROR: GET http://127.0.0.1:${BACKEND_HOST_PORT}/health did not succeed within ~135s (45 attempts x 3s; allow time after Uvicorn binds for app import/DB)." >&2
               echo "Hint: cd ${REPO_ROOT}/backend && docker-compose ps && docker-compose logs --tail=100 api" >&2
               exit 1
             fi
