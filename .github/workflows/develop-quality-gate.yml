@@ -1,0 +1,126 @@
+# =============================================================================
+# CI-1 / D1 — Develop Quality Gate (backend + frontend)
+# =============================================================================
+#
+# Runs on every push and PR targeting `develop`. Blocking jobs: backend-quality,
+# frontend-quality. Security scans run in job security-light with continue-on-error
+# at job level (CI-1.3.1) so install/audit noise cannot fail the workflow or block deploy.
+#
+# Does NOT replace the lightweight `frontend-validate.yml` (path-filtered) or
+# `deploy-dev-opencloud-backend.yml` (deploy).
+#
+# =============================================================================
+
+name: Develop quality gate
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: develop-quality-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend-quality:
+    name: Backend — compileall, ruff, mypy, pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install backend (editable + dev extras)
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Syntax / import sanity (compileall)
+        working-directory: backend
+        run: python -m compileall src
+
+      - name: Ruff
+        working-directory: backend
+        run: ruff check .
+
+      - name: Mypy
+        working-directory: backend
+        run: mypy .
+
+      # Root pytest.ini expects tests under backend/tests and pythonpath=backend.
+      - name: Pytest
+        run: pytest
+
+  frontend-quality:
+    name: Frontend — check:cache, typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run check:cache
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test -- --run
+      - run: npm run build
+
+  # Non-blocking: entire job cannot fail the workflow (CI-1.3.1); step-level
+  # continue-on-error kept on audit commands for clarity.
+  security-light:
+    name: Security light (pip-audit + npm audit high)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install backend (for pip-audit context)
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: pip-audit (non-blocking until policy tightens)
+        working-directory: backend
+        continue-on-error: true
+        run: pip-audit
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci (frontend)
+        working-directory: frontend
+        run: npm ci
+
+      - name: npm audit --audit-level=high (non-blocking until policy tightens)
+        working-directory: frontend
+        continue-on-error: true
+        run: npm audit --audit-level=high
