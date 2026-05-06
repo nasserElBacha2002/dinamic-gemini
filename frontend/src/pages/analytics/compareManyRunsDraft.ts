@@ -1,7 +1,6 @@
 /** Draft validation for compare-many URL/UI state (shared with page + tests). */
 
-export const MIN_COMPARE_JOBS = 2;
-export const MAX_COMPARE_JOBS = 3;
+import { MAX_COMPARE_JOBS, MIN_COMPARE_JOBS } from '../../features/analytics/constants/compareManyRuns';
 
 export function buildDraftError(
   aisleId: string,
