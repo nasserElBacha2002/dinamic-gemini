@@ -28,11 +28,11 @@ function renderShell(username: string | null) {
 describe('AppShell admin AI nav', () => {
   it('shows AI nav item when username is admin', () => {
     renderShell('admin');
-    expect(screen.getByText(/AI & providers|IA y proveedores/i)).toBeInTheDocument();
+    expect(screen.getByText(/AI configuration|IA y proveedores/i)).toBeInTheDocument();
   });
 
   it('hides AI nav item when username is not admin', () => {
     renderShell('ops');
-    expect(screen.queryByText(/AI & providers|IA y proveedores/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/AI configuration|IA y proveedores/i)).not.toBeInTheDocument();
   });
 });

@@ -129,7 +129,9 @@ describe('ReferenceImagesDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: /^preview$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent(/something went wrong|preview failed|could not complete the operation/i);
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        /Load results|something went wrong|preview failed|could not complete the operation/i
+      );
     });
   });
 

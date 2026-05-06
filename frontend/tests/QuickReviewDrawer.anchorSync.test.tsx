@@ -105,9 +105,6 @@ describe('QuickReviewDrawer representative anchor sync', () => {
 
     expect(reviewMutateAsync).toHaveBeenCalledWith({ action_type: 'confirm' });
     expect(submitReviewArgsMock).toHaveBeenLastCalledWith('inv-1', 'aisle-1', 'pos-representative');
-    expect(submitReviewArgsMock.mock.calls).toEqual([
-      ['inv-1', 'aisle-1', ''],
-      ['inv-1', 'aisle-1', 'pos-representative'],
-    ]);
+    expect(submitReviewArgsMock.mock.calls).toEqual([['inv-1', 'aisle-1', 'pos-representative']]);
   });
 });

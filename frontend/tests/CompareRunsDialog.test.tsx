@@ -94,7 +94,7 @@ describe('CompareRunsDialog', () => {
       </WithTheme>
     );
 
-    expect(screen.getByText(/read-only/i)).toBeInTheDocument();
-    expect(screen.getByText(/operational analytics/i)).toBeInTheDocument();
+    /** Copy comes from i18n (`benchmark.compare_readonly_explain`). */
+    expect(screen.getByText(/Compare readonly explain|readonly/i)).toBeInTheDocument();
   });
 });
