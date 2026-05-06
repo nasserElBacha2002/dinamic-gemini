@@ -231,11 +231,11 @@ describe('CompareManyRunsPage', () => {
     const { router } = renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
     await waitFor(() => expect(client.getAisleBenchmarkCompareMany).toHaveBeenCalledTimes(1));
 
-    fireEvent.mouseDown(screen.getByLabelText('Baseline'));
+    fireEvent.mouseDown(screen.getByLabelText(/baseline/i));
     fireEvent.click(await screen.findByRole('option', { name: /job-2/i }));
     expect(client.getAisleBenchmarkCompareMany).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole('button', { name: /apply comparison/i }));
+    fireEvent.click(screen.getByRole('button', { name: /apply comparison|aplicar comparación/i }));
     await waitFor(() => {
       expect(client.getAisleBenchmarkCompareMany).toHaveBeenCalledTimes(2);
       expect(new URLSearchParams(router.state.location.search).get('baseline')).toBe('job-2');
@@ -245,9 +245,9 @@ describe('CompareManyRunsPage', () => {
   it('shows changes-not-applied indicator when draft differs from applied state', async () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
     await waitFor(() => expect(client.getAisleBenchmarkCompareMany).toHaveBeenCalledTimes(1));
-    fireEvent.mouseDown(screen.getByLabelText('Baseline'));
+    fireEvent.mouseDown(screen.getByLabelText(/baseline/i));
     fireEvent.click(await screen.findByRole('option', { name: /job-2/i }));
-    expect(screen.getByText('Changes not applied')).toBeInTheDocument();
+    expect(screen.getByText(/changes not applied|hay cambios sin aplicar/i)).toBeInTheDocument();
   });
 
   it('auto-corrects invalid baseline in URL and shows one-shot notice', async () => {
@@ -255,7 +255,9 @@ describe('CompareManyRunsPage', () => {
     await waitFor(() => {
       expect(new URLSearchParams(router.state.location.search).get('baseline')).toBe('job-1');
     });
-    expect(screen.getByText('Baseline adjusted to match current selection.')).toBeInTheDocument();
+    expect(
+      screen.getByText(/baseline adjusted to match current selection|ajustó la baseline/i),
+    ).toBeInTheDocument();
   });
 
   it('does not rewrite other invalid URL states and does not fetch compare-many', async () => {
@@ -280,7 +282,7 @@ describe('CompareManyRunsPage', () => {
   it('renders status as dedicated chip and keeps provider-model metadata separate', async () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
     await screen.findByTestId('compare-many-results');
-    expect(screen.getByText('Status: running')).toBeInTheDocument();
+    expect(screen.getByText(/status: running|estado: running/i)).toBeInTheDocument();
     expect(screen.getByText(/prov-c · model-c/i)).toBeInTheDocument();
   });
 
@@ -288,11 +290,13 @@ describe('CompareManyRunsPage', () => {
     const { router } = renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
     await screen.findByTestId('compare-many-results');
 
-    fireEvent.mouseDown(screen.getByLabelText('Runs to compare'));
+    fireEvent.mouseDown(screen.getByLabelText(/runs to compare|corridas a comparar/i));
     fireEvent.click(await screen.findByRole('option', { name: /job-3/i }));
     fireEvent.click(await screen.findByRole('option', { name: /job-1/i }));
-    fireEvent.keyDown(screen.getByRole('listbox', { name: 'Runs to compare' }), { key: 'Escape' });
-    fireEvent.click(screen.getByRole('button', { name: /apply comparison/i }));
+    fireEvent.keyDown(screen.getByRole('listbox', { name: /runs to compare|corridas a comparar/i }), {
+      key: 'Escape',
+    });
+    fireEvent.click(screen.getByRole('button', { name: /apply comparison|aplicar comparación/i }));
 
     await waitFor(() => {
       const params = new URLSearchParams(router.state.location.search);
@@ -308,7 +312,7 @@ describe('CompareManyRunsPage', () => {
     await screen.findByTestId('compare-many-results');
     expect(screen.queryByTestId('compare-many-diff-rows-panel')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole('button', { name: /show diff rows/i })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: /show diff rows|ver filas con diferencias/i })[0]);
     await waitFor(() => {
       const calls = vi.mocked(client.getAisleBenchmarkCompareMany).mock.calls;
       expect(calls.some((call) => Boolean(call[2].include_diff_rows))).toBe(true);
@@ -329,24 +333,26 @@ describe('CompareManyRunsPage', () => {
     vi.mocked(client.getAisleBenchmarkCompareMany).mockRejectedValueOnce(new Error('boom'));
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
     expect(await screen.findByRole('alert')).toBeInTheDocument();
-    fireEvent.mouseDown(screen.getByLabelText('Baseline'));
+    fireEvent.mouseDown(screen.getByLabelText(/baseline/i));
     fireEvent.click(await screen.findByRole('option', { name: /job-2/i }));
-    expect(screen.getByText('Changes not applied')).toBeInTheDocument();
+    expect(screen.getByText(/changes not applied|hay cambios sin aplicar/i)).toBeInTheDocument();
   });
 
   it('renders expanded summary fields for consolidated and unknown min/max', async () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
     await screen.findByTestId('compare-many-results');
-    expect(screen.getByText(/Consolidated positions min\/max:/i)).toBeInTheDocument();
-    expect(screen.getByText(/Unknown internal code min\/max:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Consolidated positions min\/max:|Posiciones consolidadas min\/max:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Unknown internal code min\/max:|Código interno desconocido min\/max:/i)).toBeInTheDocument();
   });
 
   it('surfaces wall-clock execution time on job cards and delta when present', async () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
     await screen.findByTestId('compare-many-results');
-    expect(screen.getByText(/Execution time: 10s/i)).toBeInTheDocument();
-    expect(screen.getByText(/Execution time: 25s/i)).toBeInTheDocument();
-    expect(screen.getByText(/Wall time \(target − baseline\): \+15s/i)).toBeInTheDocument();
+    expect(screen.getByText(/Execution time: 10s|Tiempo de ejecución: 10s/i)).toBeInTheDocument();
+    expect(screen.getByText(/Execution time: 25s|Tiempo de ejecución: 25s/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Wall time \(target − baseline\): \+15s|Tiempo de pared \(target − baseline\): \+15s/i),
+    ).toBeInTheDocument();
   });
 
   it('helper validation flags duplicate and baseline-outside-selection drafts', () => {

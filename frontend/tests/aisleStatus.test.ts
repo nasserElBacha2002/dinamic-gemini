@@ -4,7 +4,7 @@ import { aisleStatusToBadgeSemantic, getAisleStatusLabel } from '../src/utils/ai
 describe('aisleStatus', () => {
   it('normalizes aisle labels', () => {
     expect(getAisleStatusLabel('processed')).toBe('Processed');
-    expect(getAisleStatusLabel('in_review')).toBe('In review');
+    expect(getAisleStatusLabel('in_review')).toBe('En revisión');
   });
 
   it('maps aisle lifecycle to StatusBadge semantics', () => {

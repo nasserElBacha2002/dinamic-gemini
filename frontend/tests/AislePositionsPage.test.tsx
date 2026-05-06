@@ -252,17 +252,17 @@ describe('AislePositionsPage (Aisle Results)', () => {
     renderPage();
     expect(screen.getByRole('heading', { name: 'A-01' })).toBeTruthy();
     expect(screen.getAllByText('Test Inventory')).toHaveLength(2);
-    expect(screen.getByText('Counted total')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /merge repeated labels/i })).toBeTruthy();
+    expect(screen.getByText(/total contabilizado|counted total/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /fusionar sku repetidos|merge repeated labels/i })).toBeTruthy();
   });
 
   it('shows operational columns including Priority and Review status', () => {
     renderPage();
-    expect(screen.getByRole('columnheader', { name: /priority/i })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /prioridad|priority/i })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: /SKU/i })).toBeTruthy();
-    expect(screen.getByRole('columnheader', { name: /quantity/i })).toBeTruthy();
-    expect(screen.getByRole('columnheader', { name: /review status/i })).toBeTruthy();
-    expect(screen.getByRole('columnheader', { name: /traceability/i })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /cantidad|quantity/i })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /review status|estado de revisión/i })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /traceability|trazabilidad/i })).toBeTruthy();
     expect(screen.getByText('SKU-001')).toBeTruthy();
     expect(screen.getAllByText('5').length).toBeGreaterThan(0);
   });
@@ -270,7 +270,9 @@ describe('AislePositionsPage (Aisle Results)', () => {
   it('opens review via SKU control without an Actions column', () => {
     renderPage();
     expect(screen.queryByRole('columnheader', { name: /^Actions$/i })).toBeNull();
-    expect(screen.getByRole('button', { name: /table review aria/i })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: /abrir revisión rápida de SKU-001|table review aria/i }),
+    ).toBeTruthy();
   });
 
   it('runs manual merge from the header and refreshes the visible results queries', async () => {
@@ -308,14 +310,14 @@ describe('AislePositionsPage (Aisle Results)', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /merge repeated labels/i }));
+    fireEvent.click(screen.getByRole('button', { name: /fusionar sku repetidos|merge repeated labels/i }));
 
     await waitFor(() => {
       expect(mutateAsync).toHaveBeenCalledWith({ aisleId: 'aisle-1', jobId: null });
       expect(getAisleMergeResultsMock).toHaveBeenCalledWith('inv-1', 'aisle-1', { jobId: null });
     });
 
-    expect(screen.getByText(/visible results updated after merge/i)).toBeTruthy();
+    expect(screen.getByText(/resultados visibles actualizados|visible results updated after merge/i)).toBeTruthy();
   });
 
   it('passes result_job_id as job_id when merging so the request matches the visible slice', async () => {
@@ -338,7 +340,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /merge repeated labels/i }));
+    fireEvent.click(screen.getByRole('button', { name: /fusionar sku repetidos|merge repeated labels/i }));
 
     await waitFor(() => {
       expect(mutateAsync).toHaveBeenCalledWith({
@@ -358,15 +360,15 @@ describe('AislePositionsPage (Aisle Results)', () => {
 
     renderPage();
 
-    const button = screen.getByRole('button', { name: /merging/i });
+    const button = screen.getByRole('button', { name: /merging|fusionando/i });
     expect(button.getAttribute('disabled')).not.toBeNull();
-    expect(button.textContent).toContain('Merging…');
+    expect(button.textContent).toMatch(/merging|fusionando/i);
   });
 
   it('keeps the merge button visible but disabled when there are no repeated sku candidates', () => {
     renderPage();
 
-    const button = screen.getByRole('button', { name: /merge repeated labels/i });
+    const button = screen.getByRole('button', { name: /fusionar sku repetidos|merge repeated labels/i });
     expect(button.getAttribute('disabled')).not.toBeNull();
   });
 
@@ -427,10 +429,10 @@ describe('AislePositionsPage (Aisle Results)', () => {
     });
 
     const view = renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /merge repeated labels/i }));
+    fireEvent.click(screen.getByRole('button', { name: /fusionar sku repetidos|merge repeated labels/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/visible results updated after merge/i)).toBeTruthy();
+      expect(screen.getByText(/resultados visibles actualizados|visible results updated after merge/i)).toBeTruthy();
     });
 
     mergeResultsState.data = { results: [] };
@@ -439,7 +441,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
     view.unmount();
     renderPageAt('/inventories/inv-2/aisles/aisle-2/positions');
 
-    expect(screen.queryByText(/visible results updated after merge/i)).toBeNull();
+    expect(screen.queryByText(/resultados visibles actualizados|visible results updated after merge/i)).toBeNull();
   });
 
   it('hides merge action when there are no results to consolidate', () => {
@@ -448,7 +450,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
 
     renderPage();
 
-    expect(screen.queryByRole('button', { name: /merge repeated labels/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /fusionar sku repetidos|merge repeated labels/i })).toBeNull();
   });
 
   it('shows run selector when jobs exist for the aisle', () => {
@@ -465,7 +467,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
       ],
     };
     renderPage();
-    expect(screen.getByLabelText(/browse run/i)).toBeTruthy();
+    expect(screen.getByLabelText(/browse run|seleccionar corrida/i)).toBeTruthy();
   });
 
   it('shows resolved context line when backend returns result_context_source', () => {
@@ -484,7 +486,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
       ],
     };
     renderPage();
-    expect(screen.getByText(/resolved: operational/i)).toBeTruthy();
+    expect(screen.getByText(/resuelto: operativo|resolved: operational/i)).toBeTruthy();
   });
 
   it('shows the backend-resolved run in the selector when there is no URL jobId and the job is listed', () => {
@@ -503,7 +505,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
       ],
     };
     renderPage();
-    const select = screen.getByLabelText(/browse run/i);
+    const select = screen.getByLabelText(/browse run|seleccionar corrida/i);
     expect(select.textContent).toMatch(/job-resolv/i);
   });
 
@@ -524,7 +526,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
     await waitFor(() => {
       expect(screen.queryByText(/not in the recent runs list/i)).toBeNull();
     });
-    const select = screen.getByLabelText(/browse run/i);
+    const select = screen.getByLabelText(/browse run|seleccionar corrida/i);
     expect(select.textContent).toMatch(/job-a/i);
   });
 
@@ -542,7 +544,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
       ],
     };
     renderPage();
-    expect(screen.queryByLabelText(/browse run/i)).toBeNull();
+    expect(screen.queryByLabelText(/browse run|seleccionar corrida/i)).toBeNull();
   });
 
   it('hides compare runs for production inventories', () => {
@@ -565,7 +567,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
       ],
     };
     renderPage();
-    expect(screen.queryByRole('button', { name: /compare runs/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /comparar corridas|compare runs/i })).toBeNull();
   });
 
   describe('Phase 6 benchmark flows', () => {
@@ -596,7 +598,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
       };
       renderPage();
       expect(screen.getByTestId('aisle-source-assets-manage-open')).toBeTruthy();
-      const mergeBtn = screen.getByRole('button', { name: /merge repeated labels/i });
+      const mergeBtn = screen.getByRole('button', { name: /fusionar sku repetidos|merge repeated labels/i });
       expect(mergeBtn.getAttribute('disabled')).not.toBeNull();
     });
 
@@ -613,7 +615,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
         ],
       };
       renderPage();
-      expect(screen.queryByRole('button', { name: /compare runs/i })).toBeNull();
+      expect(screen.queryByRole('button', { name: /comparar corridas|compare runs/i })).toBeNull();
     });
 
     it('navigates to analytics compare with preselected runs when compare runs is clicked', async () => {
@@ -657,7 +659,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
         </QueryClientProvider>
       );
 
-      fireEvent.click(screen.getByRole('button', { name: /compare runs/i }));
+      fireEvent.click(screen.getByRole('button', { name: /comparar corridas|compare runs/i }));
 
       await waitFor(() => {
         expect(router.state.location.pathname).toBe('/inventories/inv-1/analytics/compare');
@@ -691,8 +693,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
         ],
       };
       renderPage();
-      fireEvent.click(screen.getByRole('button', { name: /promote run/i }));
-      fireEvent.click(screen.getByRole('button', { name: /confirm promote/i }));
+      fireEvent.click(screen.getByRole('button', { name: /promote run|promover corrida/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm promote|confirmar promoción/i }));
 
       await waitFor(() => {
         expect(promoteMutateAsync).toHaveBeenCalledWith('job-bench');

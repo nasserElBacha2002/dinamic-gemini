@@ -310,7 +310,10 @@ export default function AdminAiConfigPage() {
                           },
                           {
                             label: t('admin_ai_config.execution_mode'),
-                            value: provider.capabilities.execution_mode,
+                            value:
+                              provider.capabilities.execution_mode === 'native'
+                                ? t('admin_ai_config.execution_mode_native')
+                                : provider.capabilities.execution_mode,
                           },
                         ]}
                       />
@@ -335,7 +338,9 @@ export default function AdminAiConfigPage() {
                       )}
                       {provider.description ? (
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                          {provider.description}
+                          {provider.key === 'gemini'
+                            ? t('admin_ai_config.provider_note_gemini')
+                            : provider.description}
                         </Typography>
                       ) : null}
                     </CardContent>

@@ -115,30 +115,36 @@ describe('ReviewQueuePage', () => {
 
   it('renders header, KPI band, filters region, and queue table', () => {
     renderPage();
-    expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /actualizar|refresh/i })).toBeInTheDocument();
     expect(screen.getByText('SKU-QUEUE-1')).toBeInTheDocument();
-    expect(screen.getByLabelText(/inventory/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/min confidence/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/max confidence/i)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /prioritized results/i })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: /priority/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/inventario|inventory/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/confianza mínima|min confidence/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/confianza máxima|max confidence/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /resultados priorizados|prioritized results/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /prioridad|priority/i })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /SKU/i })).toBeInTheDocument();
   });
 
   it('uses SKU review button as primary navigation (no Actions column)', () => {
     renderPage();
     expect(screen.queryByRole('columnheader', { name: /^Actions$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /review aria/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /abrir revisión|review/i })).toBeInTheDocument();
   });
 
   it('shows validation errors on both confidence fields when min > max', () => {
     renderPage();
-    fireEvent.change(screen.getByLabelText(/Min confidence/i), { target: { value: '0.9' } });
-    fireEvent.change(screen.getByLabelText(/Max confidence/i), { target: { value: '0.1' } });
-    expect(screen.getByText(/cannot exceed max/i)).toBeInTheDocument();
-    expect(screen.getByText(/must be gte min/i)).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: /Min confidence/i })).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByRole('textbox', { name: /Max confidence/i })).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(screen.getByLabelText(/confianza mínima|min confidence/i), { target: { value: '0.9' } });
+    fireEvent.change(screen.getByLabelText(/confianza máxima|max confidence/i), { target: { value: '0.1' } });
+    expect(screen.getByText(/no puede superar el máximo|cannot exceed max/i)).toBeInTheDocument();
+    expect(screen.getByText(/debe ser mayor o igual al mínimo|must be gte min/i)).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /confianza mínima|min confidence/i })).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    );
+    expect(screen.getByRole('textbox', { name: /confianza máxima|max confidence/i })).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    );
   });
 
   it('normalizes technical queue errors to contextual fallback', () => {

@@ -1,39 +1,24 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import es from './locales/es/translation.json';
-import en from './locales/en/translation.json';
 
 const isDev = import.meta.env.DEV;
-const SUPPORTED_LANGS = new Set(['es', 'en']);
 
-function resolveInitialLanguage(): 'es' | 'en' {
-  // Product default is always Spanish for clean starts.
-  const fallback = 'es' as const;
-  if (import.meta.env.MODE === 'test') {
-    // Keep unit tests deterministic with existing expectations.
-    return 'en';
-  }
-  try {
-    const persisted = window.localStorage.getItem('i18nextLng')?.trim().toLowerCase();
-    if (persisted && SUPPORTED_LANGS.has(persisted)) {
-      return persisted as 'es' | 'en';
-    }
-  } catch {
-    // Ignore storage access errors (SSR/sandboxed contexts) and use Spanish default.
-  }
-  return fallback;
-}
-
-const initialLng = resolveInitialLanguage();
-
-/** Await in Vitest setup so components render translated strings, not raw keys. */
+/**
+ * Runtime locale: Spanish only (no selector, no `changeLanguage` to English in production UI).
+ *
+ * `locales/en/translation.json` is kept in the repo on purpose: reference, tooling, and future
+ * bilingual support. It is not imported here so the bundle stays Spanish-only.
+ */
 export const i18nInit = i18n.use(initReactI18next).init({
   resources: {
     es: { translation: es },
-    en: { translation: en },
   },
-  lng: initialLng,
+  lng: 'es',
   fallbackLng: 'es',
+  supportedLngs: ['es'],
+  load: 'languageOnly',
+  nonExplicitSupportedLngs: false,
   interpolation: { escapeValue: false },
   returnNull: false,
   ...(isDev

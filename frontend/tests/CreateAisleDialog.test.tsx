@@ -25,8 +25,10 @@ describe('CreateAisleDialog', () => {
       </WithTheme>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
-    expect(await screen.findByText(/validation code required/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /crear pasillo|create/i }));
+    expect(
+      await screen.findByText(/ingresá el código del pasillo|validation code required|código obligatorio/i)
+    ).toBeInTheDocument();
   });
 
   it('pre-validates duplicate code when existing codes are provided', async () => {
@@ -43,9 +45,11 @@ describe('CreateAisleDialog', () => {
       </WithTheme>
     );
 
-    fireEvent.change(screen.getByLabelText(/code label/i), { target: { value: ' a-01 ' } });
-    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
-    expect(await screen.findByText(/validation duplicate/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/código|code label/i), { target: { value: ' a-01 ' } });
+    fireEvent.click(screen.getByRole('button', { name: /crear pasillo|create/i }));
+    expect(
+      await screen.findByText(/ya existe un pasillo|validation duplicate|ya existe|duplicad/i)
+    ).toBeInTheDocument();
   });
 
   it('shows success state with create another and close actions', async () => {
@@ -65,18 +69,18 @@ describe('CreateAisleDialog', () => {
       </WithTheme>
     );
 
-    fireEvent.change(screen.getByLabelText(/code label/i), { target: { value: 'A1' } });
-    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+    fireEvent.change(screen.getByLabelText(/código|code label/i), { target: { value: 'A1' } });
+    fireEvent.click(screen.getByRole('button', { name: /crear pasillo|create/i }));
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalled());
-    expect(screen.getByRole('alert')).toHaveTextContent(/success created/i);
-    expect(screen.getByRole('button', { name: /create another/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/success created|creado|A1/i);
+    expect(screen.getByRole('button', { name: /create another|crear otro/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /cerrar|close/i })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /create another/i }));
-    expect(screen.queryByText(/created/i)).not.toBeInTheDocument();
-    expect(screen.getByLabelText(/code label/i)).toHaveValue('');
-    expect(screen.getByLabelText(/code label/i)).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: /create another|crear otro/i }));
+    expect(screen.queryByText(/created|creado/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/código|code label/i)).toHaveValue('');
+    expect(screen.getByLabelText(/código|code label/i)).toHaveFocus();
   });
 });
 

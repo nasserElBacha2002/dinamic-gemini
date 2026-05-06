@@ -20,7 +20,7 @@ vi.mock('react-i18next', () => ({
       if (key === 'ingestion_sessions.detail.grouping_preview') return 'Preview';
       if (key === 'ingestion_sessions.detail.grouping_materialize') return 'Materialize';
       if (key === 'ingestion_sessions.detail.grouping_preview_disabled_materialize') {
-        return 'Materialize this group before preview';
+        return 'Materializá este grupo antes de la vista previa';
       }
       if (key === 'ingestion_sessions.detail.grouping_preview_disabled_assign') {
         return 'Assign this group to an aisle first';
@@ -174,14 +174,17 @@ describe('ImportSessionGroupingPanel — G6 preview CTA', () => {
         onRefresh={() => {}}
       />
     );
-    const previewBtn = screen.getByRole('button', { name: 'Preview' });
+    const previewBtn = screen.getByRole('button', { name: /vista previa|preview/i });
     expect(previewBtn).toBeDisabled();
     const wrap = previewBtn.closest('span');
     expect(wrap).not.toBeNull();
-    expect(within(wrap as HTMLElement).getByRole('button', { name: 'Preview' })).toBeInTheDocument();
+    expect(within(wrap as HTMLElement).getByRole('button', { name: /vista previa|preview/i })).toBeInTheDocument();
     const labelled = previewBtn.closest('[aria-label]');
     expect(labelled).not.toBeNull();
-    expect(labelled).toHaveAttribute('aria-label', 'Materialize this group before preview');
+    expect(labelled).toHaveAttribute(
+      'aria-label',
+      'Materializá este grupo antes de la vista previa'
+    );
   });
 
   it('enables Preview when the group has a materialized item link', () => {
@@ -226,7 +229,7 @@ describe('ImportSessionGroupingPanel — G6 preview CTA', () => {
         onRefresh={() => {}}
       />
     );
-    const previewBtn = screen.getByRole('button', { name: 'Preview' });
+    const previewBtn = screen.getByRole('button', { name: /vista previa|preview/i });
     expect(previewBtn).not.toBeDisabled();
   });
 
@@ -272,7 +275,7 @@ describe('ImportSessionGroupingPanel — G6 preview CTA', () => {
         onRefresh={() => {}}
       />
     );
-    expect(screen.getByRole('button', { name: 'Preview' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /vista previa|preview/i })).not.toBeDisabled();
   });
 
   it('preview dialog lists operational fields from API rows', async () => {
@@ -342,7 +345,7 @@ describe('ImportSessionGroupingPanel — G6 preview CTA', () => {
         onRefresh={() => {}}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    fireEvent.click(screen.getByRole('button', { name: /vista previa|preview/i }));
     await waitFor(() => {
       expect(screen.getByText(/Reason: preview:ordered_position_slot/)).toBeInTheDocument();
     });
@@ -400,9 +403,11 @@ describe('ImportSessionGroupingPanel — G6 preview CTA', () => {
         onRefresh={() => {}}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    fireEvent.click(screen.getByRole('button', { name: /vista previa|preview/i }));
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('Materialize this group before preview');
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Materializá este grupo antes de la vista previa'
+      );
     });
   });
 });

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import datetime, timezone
 
@@ -31,38 +30,14 @@ from src.infrastructure.repositories.sql_capture_session_repository import (
 )
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
 from tests.support.sql_integration import sql_server_client_or_skip
+from tests.support.sqlserver_test_connection import resolved_sqlserver_connection_string_for_tests
 
 pytestmark = pytest.mark.integration
 
 
-def _connection_string() -> str:
-    raw = (os.getenv("SQLSERVER_CONNECTION_STRING") or "").strip()
-    if raw:
-        return raw
-    server = (os.getenv("SQLSERVER_SERVER") or "").strip()
-    database = (os.getenv("SQLSERVER_DATABASE") or "").strip()
-    uid = (os.getenv("SQLSERVER_UID") or "").strip()
-    pwd = (os.getenv("SQLSERVER_PWD") or "").strip()
-    if server and database and uid and pwd:
-        driver = (os.getenv("SQLSERVER_DRIVER") or "").strip()
-        if not driver:
-            try:
-                import pyodbc
-
-                for d in pyodbc.drivers():
-                    if "SQL Server" in d:
-                        driver = d
-                        break
-            except Exception:
-                pass
-        if driver:
-            return f"DRIVER={{{driver}}};SERVER={server};DATABASE={database};UID={uid};PWD={pwd};TrustServerCertificate=yes"
-    return ""
-
-
 @pytest.fixture(scope="module")
 def sql_client():
-    return sql_server_client_or_skip(_connection_string())
+    return sql_server_client_or_skip(resolved_sqlserver_connection_string_for_tests())
 
 
 @pytest.fixture

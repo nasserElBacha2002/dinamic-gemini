@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Basic i18n health check for frontend.
+"""Basic i18n health check for frontend (Spanish locale is authoritative for the running app).
+
+Also notes gaps in ``locales/en/translation.json`` when present — English JSON is kept for
+reference/future use and is not loaded at runtime (see ``src/i18n/index.ts``).
 
 Checks:
 1) Missing static keys used by t()/i18n.t()/i18n.exists().
 2) Missing dynamic layout keys from navConfig + shellTopBarCopy.
-3) Structural drift between en/es locale trees.
 """
 
 from __future__ import annotations
@@ -16,8 +18,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
-LOCALE_EN = SRC / "i18n" / "locales" / "en" / "translation.json"
 LOCALE_ES = SRC / "i18n" / "locales" / "es" / "translation.json"
+LOCALE_EN = SRC / "i18n" / "locales" / "en" / "translation.json"
 LAYOUT_DYNAMIC_FILES = [SRC / "layout" / "navConfig.tsx", SRC / "layout" / "shellTopBarCopy.ts"]
 
 
@@ -69,20 +71,13 @@ def extract_layout_dynamic_keys() -> set[str]:
 
 
 def main() -> int:
-    en = json.loads(LOCALE_EN.read_text(encoding="utf-8"))
     es = json.loads(LOCALE_ES.read_text(encoding="utf-8"))
-    en_keys = flatten(en)
     es_keys = flatten(es)
-    en_values = flatten_values(en)
     es_values = flatten_values(es)
     static_keys = extract_static_keys()
     dynamic_keys = extract_layout_dynamic_keys()
     used_keys = static_keys | dynamic_keys
 
-    missing_en = sorted(k for k in used_keys if k not in en_keys)
-    missing_es = sorted(k for k in used_keys if k not in es_keys)
-    only_en = sorted(k for k in en_keys if k not in es_keys)
-    only_es = sorted(k for k in es_keys if k not in en_keys)
     placeholder_re = re.compile(
         r"""^(?:title|subtitle|label|empty title|empty message|search label|list title|list subtitle|"""
         r"""created date label|visual refs title|compare runs link|not found|"""
@@ -90,54 +85,49 @@ def main() -> int:
         re.IGNORECASE,
     )
     suspicious_es = []
-    identical_es_en_used = []
     for key in sorted(used_keys):
         es_val = es_values.get(key, "")
-        en_val = en_values.get(key, "")
         if placeholder_re.match(es_val.strip()):
             suspicious_es.append((key, es_val))
-        if es_val and en_val and es_val == en_val:
-            identical_es_en_used.append((key, es_val))
+
+    missing_es = sorted(k for k in used_keys if k not in es_keys)
+    extra_es = sorted(k for k in es_keys if k not in used_keys)
 
     has_error = False
 
-    if missing_en:
-        has_error = True
-        print("Missing keys in en:")
-        for key in missing_en:
-            print(f"  - {key}")
     if missing_es:
         has_error = True
-        print("Missing keys in es:")
+        print("Missing keys in es/translation.json:")
         for key in missing_es:
             print(f"  - {key}")
-    if only_en:
-        has_error = True
-        print("Keys only in en (structure drift):")
-        for key in only_en:
-            print(f"  - {key}")
-    if only_es:
-        has_error = True
-        print("Keys only in es (structure drift):")
-        for key in only_es:
-            print(f"  - {key}")
 
-    # Non-blocking diagnostics: helps catch regressions where Spanish locale contains placeholders/English text.
     if suspicious_es:
         print("Warnings: suspicious placeholder-like values in es:")
         for key, value in suspicious_es[:60]:
             print(f"  - {key}: {value}")
         if len(suspicious_es) > 60:
             print(f"  ... and {len(suspicious_es) - 60} more")
-    if identical_es_en_used:
-        print("Warnings: used keys with identical en/es values:")
-        for key, value in identical_es_en_used[:60]:
-            print(f"  - {key}: {value}")
-        if len(identical_es_en_used) > 60:
-            print(f"  ... and {len(identical_es_en_used) - 60} more")
+
+    if extra_es:
+        print("Note: keys defined in es but not referenced by static extraction (may be dynamic):")
+        for key in extra_es[:40]:
+            print(f"  - {key}")
+        if len(extra_es) > 40:
+            print(f"  ... and {len(extra_es) - 40} more")
+
+    if LOCALE_EN.is_file():
+        en = json.loads(LOCALE_EN.read_text(encoding="utf-8"))
+        en_keys = flatten(en)
+        missing_in_en = sorted(k for k in used_keys if k not in en_keys)
+        if missing_in_en:
+            print("Note: keys used in app but missing in en/translation.json (reference locale):")
+            for key in missing_in_en[:40]:
+                print(f"  - {key}")
+            if len(missing_in_en) > 40:
+                print(f"  ... and {len(missing_in_en) - 40} more")
 
     if not has_error:
-        print("i18n check passed: en/es structures are aligned and all used keys exist.")
+        print("i18n check passed: all used keys exist in es locale.")
         return 0
     return 1
 

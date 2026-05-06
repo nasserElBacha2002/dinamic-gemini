@@ -56,6 +56,7 @@ import {
   sortAisleRowsByAttention,
   sortInventoryRows,
 } from './adapters/metricsViewModel';
+import { localizeAnalyticsSummaryNote } from './adapters/analyticsSummaryNotes';
 import type {
   AnalyticsQueryParams,
   InventoryPerformanceRow,
@@ -371,6 +372,11 @@ export default function MetricsPage() {
     [hasUnidentifiedProductRate, summary, t]
   );
 
+  const localizedSummaryNotes = useMemo(
+    () => (summary?.notes ?? []).map((n) => localizeAnalyticsSummaryNote(n, t)),
+    [summary?.notes, t]
+  );
+
   const scopeSummary = useMemo(
     () =>
       buildScopeSummary(
@@ -517,7 +523,7 @@ export default function MetricsPage() {
       >
         <Box sx={{ minWidth: 0 }}>
           <MetricsManualInterventionSection
-            notes={summary?.notes ?? []}
+            notes={localizedSummaryNotes}
             isLoading={isLoading}
             hasManualInterventions={Boolean(manualInterventions)}
             reviewedPositionsCount={manualInterventions?.reviewed_positions_count ?? 0}
