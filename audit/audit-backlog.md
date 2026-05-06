@@ -1,5 +1,52 @@
 # Backlog de bugs y vulnerabilidades
 
+## F9 — Dependencias frontend (`npm audit`), 2026-05-06
+
+**Objetivo:** Reducir vulnerabilidades moderadas del toolchain (Vite, Vitest, esbuild, postcss, yaml) sin refactors de producto ni CI/hooks.
+
+**Archivos:** solo `frontend/package.json`, `frontend/package-lock.json`.
+
+### Versiones resueltas (antes → después, árbol efectivo)
+
+| Paquete | Antes | Después | Notas |
+|---------|-------|---------|--------|
+| vite | 5.4.21 | 6.4.2 | Major necesario: el advisory de Vite catalogaba `<=6.4.1`; **6.4.2** queda fuera del rango vulnerable; además sube **esbuild** a 0.25.x (corrige GHSA esbuild dev-server). |
+| vitest | 2.1.9 | 3.2.4 | Major alineado con Vite 6 (`vitest` 2.1.x solo declara `vite ^5`). |
+| vite-node / @vitest/mocker | 2.1.9 | 3.2.4 | Transitivos de Vitest 3. |
+| esbuild | 0.21.5 | 0.25.12 | Vía Vite 6. |
+| postcss | 8.5.8 (bajo vite) | 8.5.14 | Direct dev `^8.5.10` + dedupe (GHSA postcss stringify). |
+| yaml | 1.10.2 (emotion/cosmiconfig) | **2.8.4** (root) + **1.10.3** (debajo de ts-prune→cosmiconfig) | Root `yaml@^2.8.2` cumple peer opcional de Vite 6 y elimina el uso vulnerable 1.x en la cadena principal; **1.10.3** subsiste solo en cosmiconfig de `ts-prune` (versión parcheada para GHSA stack overflow). |
+
+### Otras devDependencies (fuera del listado original pero necesarias para resolver auditoría / installs)
+
+| Paquete | Antes | Después | Motivo |
+|---------|-------|---------|--------|
+| typescript | ~5.3.0 | ~5.4.5 | Peer opcional de **madge@8** (`^5.4.4`); sin esto `npm install` / `npm audit fix` fallaban con ERESOLVE. Sin cambio de código TS. |
+| eslint-plugin-sonarjs | ^3.0.2 | ^4.0.3 | Tras el bump del árbol aparecieron **2 high** en `minimatch` (herramienta de lint); la 4.x fija `minimatch ^10.2.5`. |
+
+### Vulnerabilidades (npm audit)
+
+- **Antes:** 7 moderadas (json: `audit/raw/frontend-npm-audit-f9-before.json`).
+- **Después:** 0 (`audit/raw/frontend-npm-audit-f9-after.json`).
+
+### Comandos de validación (todos exit 0)
+
+- `npm audit`
+- `npm run typecheck`
+- `npm run lint`
+- `npm run test -- --run` (76 archivos, 460 tests)
+- `npm run build`
+
+### Snapshots
+
+- `audit/raw/frontend-npm-audit-f9-before.json`, `frontend-npm-audit-f9-after.json`
+- `audit/raw/frontend-outdated-f9-before.txt`
+- `audit/raw/frontend-deps-f9-before.txt`, `frontend-deps-f9-after.txt`
+
+**Criterio de cierre:** **F9 CERRADA** (0 vulnerabilidades `npm audit`; riesgo residual aceptable en cadenas de solo-herramientas ya actualizadas).
+
+---
+
 ## B0 — Revalidación Bandit backend (pre-B3), 2026-05-04
 
 **Objetivo:** Estado real antes de la fase B3 (Bandit HIGH/MEDIUM). **Sin cambios de código productivo.**
