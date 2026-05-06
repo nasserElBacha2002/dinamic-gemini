@@ -5,7 +5,11 @@
 
 import i18n from '../i18n';
 import { ApiError } from '../api/types';
-import { backendDetailToTranslationKey, v3StructuredErrorCodeToTranslationKey } from './errorTranslations';
+import {
+  authErrorCodeToTranslationKey,
+  backendDetailToTranslationKey,
+  v3StructuredErrorCodeToTranslationKey,
+} from './errorTranslations';
 
 /**
  * FastAPI validation error item shape.
@@ -54,15 +58,90 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-/** User-facing Spanish message: maps known backend text to i18n; otherwise generic fallback. */
-export function resolveApiErrorMessage(error: unknown, fallbackKey: string): string {
+export type VisibleErrorContext =
+  | 'default'
+  | 'auth'
+  | 'inventory'
+  | 'aisle'
+  | 'analytics'
+  | 'reviewQueue'
+  | 'results'
+  | 'ingestionSession';
+
+const CONTEXT_FALLBACK_KEY: Record<VisibleErrorContext, string> = {
+  default: 'errors.generic',
+  auth: 'errors.auth.fallback',
+  inventory: 'errors.load_inventory',
+  aisle: 'errors.load_aisles',
+  analytics: 'errors.load_metrics',
+  reviewQueue: 'errors.load_review_queue',
+  results: 'errors.load_results',
+  ingestionSession: 'errors.request_failed',
+};
+
+interface AuthErrorEnvelopeLike {
+  error?: {
+    code?: unknown;
+    message?: unknown;
+  };
+}
+
+interface AuthApiErrorLike {
+  responseBody?: AuthErrorEnvelopeLike;
+}
+
+function isAuthApiErrorLike(value: unknown): value is AuthApiErrorLike {
+  if (!value || typeof value !== 'object') return false;
+  return 'responseBody' in value;
+}
+
+function safeTrimmedString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function authVisibleMessage(error: AuthApiErrorLike, fallbackKey: string): string {
+  const authCode = safeTrimmedString(error.responseBody?.error?.code);
+  if (authCode) {
+    const byCode = authErrorCodeToTranslationKey(authCode) ?? null;
+    if (byCode) return i18n.t(byCode);
+  }
+  const authMessage = safeTrimmedString(error.responseBody?.error?.message);
+  if (authMessage) {
+    const mapped = backendDetailToTranslationKey(authMessage);
+    if (mapped) return i18n.t(mapped);
+  }
+  return i18n.t(fallbackKey);
+}
+
+/**
+ * Public entry point for user-visible error messages.
+ * Always returns localized safe copy and avoids exposing technical raw error text.
+ */
+export function getVisibleErrorMessage(
+  error: unknown,
+  context: VisibleErrorContext = 'default'
+): string {
+  const fallbackKey = CONTEXT_FALLBACK_KEY[context] ?? CONTEXT_FALLBACK_KEY.default;
+
   if (error instanceof ApiError && typeof error.data?.code === 'string' && error.data.code.trim()) {
     const byCode = v3StructuredErrorCodeToTranslationKey(error.data.code);
     if (byCode) return i18n.t(byCode);
   }
+
+  if (isAuthApiErrorLike(error)) {
+    return authVisibleMessage(error, fallbackKey);
+  }
+
   const raw = getApiErrorMessage(error, '');
-  if (!raw.trim()) return i18n.t(fallbackKey);
-  const mapped = backendDetailToTranslationKey(raw);
+  const mapped = raw ? backendDetailToTranslationKey(raw) : null;
   if (mapped) return i18n.t(mapped);
-  return i18n.t('errors.generic');
+
+  return i18n.t(fallbackKey);
+}
+
+/** User-facing Spanish message: maps known backend text to i18n; otherwise generic fallback. */
+export function resolveApiErrorMessage(error: unknown, fallbackKey: string): string {
+  const visible = getVisibleErrorMessage(error, 'default');
+  if (visible !== i18n.t(CONTEXT_FALLBACK_KEY.default)) return visible;
+  return i18n.t(fallbackKey);
 }
