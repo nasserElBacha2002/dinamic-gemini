@@ -1,11 +1,10 @@
 import { Button, FormControl, InputLabel, MenuItem, Select, Stack } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '../../../components/shell';
 import { ErrorAlert, SectionCard } from '../../../components/ui';
 import { pathToIngestionSessionDetail } from '../../../constants/appRoutes';
-import { getVisibleErrorMessage } from '../../../utils/apiErrors';
 import ImportSessionList from '../components/ImportSessionList';
 import {
   useAisleOptions,
@@ -35,16 +34,8 @@ export default function IngestionSessionsPage() {
   );
   const createMutation = useCreateCaptureSession();
 
-  const loadErrorMessage = useMemo(() => {
-    const err = inventoriesQuery.error || aislesQuery.error || sessionsQuery.error;
-    if (!err) return null;
-    return getVisibleErrorMessage(err, 'ingestionSession');
-  }, [aislesQuery.error, inventoriesQuery.error, sessionsQuery.error]);
-
-  const createErrorMessage = useMemo(() => {
-    if (!createMutation.error) return null;
-    return getVisibleErrorMessage(createMutation.error, 'ingestionSession');
-  }, [createMutation.error]);
+  const loadError = inventoriesQuery.error || aislesQuery.error || sessionsQuery.error;
+  const createError = createMutation.error;
 
   return (
     <Stack spacing={2}>
@@ -69,8 +60,12 @@ export default function IngestionSessionsPage() {
         }
       />
 
-      {loadErrorMessage ? <ErrorAlert error={inventoriesQuery.error || aislesQuery.error || sessionsQuery.error} context="ingestionSession" onRetry={() => sessionsQuery.refetch()} /> : null}
-      {createErrorMessage ? <ErrorAlert error={createMutation.error} context="ingestionSession" onClose={() => createMutation.reset()} /> : null}
+      {loadError ? (
+        <ErrorAlert error={loadError} context="ingestionSession" onRetry={() => sessionsQuery.refetch()} />
+      ) : null}
+      {createError ? (
+        <ErrorAlert error={createError} context="ingestionSession" onClose={() => createMutation.reset()} />
+      ) : null}
 
       <SectionCard title={t('ingestion_sessions.filters.title')}>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>

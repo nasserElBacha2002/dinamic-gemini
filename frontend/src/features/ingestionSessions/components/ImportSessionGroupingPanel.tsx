@@ -19,7 +19,7 @@ import {
 } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getVisibleErrorMessage, resolveApiErrorMessage } from '../../../utils/apiErrors';
+import { getVisibleErrorMessage } from '../../../utils/apiErrors';
 import { formatDate } from '../../../utils/formatDate';
 import type {
   CaptureSessionGroupSummaryResponse,
@@ -120,7 +120,7 @@ export default function ImportSessionGroupingPanel({
       createAisleForGroup.error ||
       materializeGroup.error ||
       previewGroup.error;
-    const fromQuery = err ? resolveApiErrorMessage(err, 'errors.request_failed') : null;
+    const fromQuery = err ? getVisibleErrorMessage(err, 'ingestionSession') : null;
     return fromQuery || previewActionError;
   }, [
     assignGroup.error,

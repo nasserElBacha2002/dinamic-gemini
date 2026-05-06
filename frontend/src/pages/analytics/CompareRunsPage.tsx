@@ -154,7 +154,7 @@ export default function CompareRunsPage() {
     { label: t('analytics.compare_runs_breadcrumb') },
   ];
 
-  const errMsg =
+  const compareErrorMessage =
     compareQuery.isError && compareQuery.error
       ? getVisibleErrorMessage(compareQuery.error, 'analytics')
       : null;
@@ -250,7 +250,9 @@ export default function CompareRunsPage() {
       ) : null}
 
       {compareQuery.isFetching ? <CompareLoadingState sx={{ mb: 2 }} message={t('compare.loading')} /> : null}
-      {errMsg ? <CompareErrorState sx={{ mb: 2 }} message={errMsg} /> : null}
+      {compareErrorMessage ? (
+        <CompareErrorState sx={{ mb: 2 }} message={compareErrorMessage} />
+      ) : null}
 
       {compareQuery.data ? (
         <Box data-testid="compare-runs-results" sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

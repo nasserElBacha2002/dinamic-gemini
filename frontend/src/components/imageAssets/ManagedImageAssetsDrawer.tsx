@@ -88,7 +88,7 @@ export default function ManagedImageAssetsDrawer({
   onDelete,
   isDeleting = false,
   deleteError,
-  previewErrorMessageKey = 'errors.preview_reference_failed',
+  previewErrorMessageKey: _previewErrorMessageKey = 'errors.preview_reference_failed',
   previewBlockedMessage,
   formatDeleteConfirm,
 }: ManagedImageAssetsDrawerProps) {
@@ -216,8 +216,7 @@ export default function ManagedImageAssetsDrawer({
       if (!mountedRef.current || previewRequestIdRef.current !== requestId || !open) {
         return;
       }
-      const normalized = getVisibleErrorMessage(error, 'results');
-      setPreviewError(normalized || t(previewErrorMessageKey));
+      setPreviewError(getVisibleErrorMessage(error, 'results'));
     } finally {
       if (mountedRef.current && previewRequestIdRef.current === requestId && open) {
         setPreviewLoading(false);

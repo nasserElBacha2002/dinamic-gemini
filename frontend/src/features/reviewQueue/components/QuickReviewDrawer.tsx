@@ -22,7 +22,7 @@ import {
   ResultDetailEmptyState,
 } from '../../results/components/detail';
 import type { QuickReviewContext } from '../quickReviewContext';
-import { ConfirmDialog, useAppSnackbar, useErrorSnackbar } from '../../../components/ui';
+import { ConfirmDialog, useAppSnackbar } from '../../../components/ui';
 
 function DrawerCollapsibleSection({
   titleKey,
@@ -74,7 +74,6 @@ export default function QuickReviewDrawer({
 }: QuickReviewDrawerProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
-  const { showErrorSnackbar } = useErrorSnackbar();
   const [activePositionId, setActivePositionId] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [invalidConfirmOpen, setInvalidConfirmOpen] = useState(false);
@@ -221,7 +220,6 @@ export default function QuickReviewDrawer({
       onClose(); // Automatically close after invalidation
     } catch (e) {
       setInvalidConfirmError(getVisibleErrorMessage(e, 'reviewQueue'));
-      showErrorSnackbar(e, 'reviewQueue');
     } finally {
       reviewMutationInFlightRef.current = false;
       setInvalidConfirmLoading(false);

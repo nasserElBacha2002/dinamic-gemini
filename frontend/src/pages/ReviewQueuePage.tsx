@@ -40,7 +40,6 @@ import {
 } from '../features/reviewQueue/quickReviewContext';
 import ReviewQueueTable from '../features/reviewQueue/components/ReviewQueueTable';
 import { useAislesList, useDebouncedSearchInput, useInventoriesList, useReviewQueue } from '../hooks';
-import { getVisibleErrorMessage } from '../utils/apiErrors';
 function parseOptional01(raw: string): number | null {
   const t = raw.trim();
   if (t === '') return null;
@@ -166,10 +165,6 @@ export default function ReviewQueuePage() {
     activeSortColumnId === 'priority' &&
     page === 1;
 
-  const errorMessage = queueQuery.isError && queueQuery.error
-    ? getVisibleErrorMessage(queueQuery.error, 'reviewQueue')
-    : null;
-
   const summary = queueQuery.data?.summary;
   const items = useMemo(() => queueQuery.data?.items ?? [], [queueQuery.data?.items]);
 
@@ -232,7 +227,7 @@ export default function ReviewQueuePage() {
         }
       />
 
-      {errorMessage ? (
+      {queueQuery.isError && queueQuery.error ? (
         <ErrorAlert error={queueQuery.error} context="reviewQueue" onRetry={() => queueQuery.refetch()} />
       ) : null}
 

@@ -158,9 +158,10 @@ export default function CompareManyRunsPage() {
   const jobsById = buildJobsById(effectiveData);
   const orderedComparisons = buildOrderedComparisons(effectiveData, orderedJobIds);
 
+  const compareError = compareQuery.error || enrichedCompareManyQuery.error;
   const compareErrorMessage =
-    (compareQuery.isError || enrichedCompareManyQuery.isError) && (compareQuery.error || enrichedCompareManyQuery.error)
-      ? getVisibleErrorMessage(compareQuery.error || enrichedCompareManyQuery.error, 'analytics')
+    (compareQuery.isError || enrichedCompareManyQuery.isError) && compareError
+      ? getVisibleErrorMessage(compareError, 'analytics')
       : null;
 
   if (!inventoryId) {

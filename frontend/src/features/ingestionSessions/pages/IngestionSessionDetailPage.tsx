@@ -1,12 +1,10 @@
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
 import { Button, Stack } from '@mui/material';
-import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../../../components/shell';
 import { ErrorAlert, SectionCard } from '../../../components/ui';
 import { ROUTE_INGESTION_SESSIONS } from '../../../constants/appRoutes';
-import { getVisibleErrorMessage } from '../../../utils/apiErrors';
 import ImportSessionDetail from '../components/ImportSessionDetail';
 import { useCancelCaptureSession, useCaptureSessionDetail, useCloseCaptureSession } from '../hooks/useCaptureSessions';
 import type { CaptureSessionStatus } from '../../../types/captureSession';
@@ -39,11 +37,7 @@ export default function IngestionSessionDetailPage() {
   const closeMutation = useCloseCaptureSession();
   const cancelMutation = useCancelCaptureSession();
 
-  const errorMessage = useMemo(() => {
-    const err = detailQuery.error || closeMutation.error || cancelMutation.error;
-    if (!err) return null;
-    return getVisibleErrorMessage(err, 'ingestionSession');
-  }, [cancelMutation.error, closeMutation.error, detailQuery.error]);
+  const visibleSessionError = detailQuery.error || closeMutation.error || cancelMutation.error;
 
   if (!hasRequiredDetailParams(inventoryId, sessionId)) {
     return (
@@ -70,7 +64,9 @@ export default function IngestionSessionDetailPage() {
         }
       />
 
-      {errorMessage ? <ErrorAlert error={detailQuery.error || closeMutation.error || cancelMutation.error} context="ingestionSession" onRetry={() => detailQuery.refetch()} /> : null}
+      {visibleSessionError ? (
+        <ErrorAlert error={visibleSessionError} context="ingestionSession" onRetry={() => detailQuery.refetch()} />
+      ) : null}
 
       <SectionCard title={t('ingestion_sessions.detail.section_title')}>
         {detailQuery.data ? (
