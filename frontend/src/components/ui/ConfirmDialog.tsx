@@ -8,7 +8,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { Alert, Button, DialogContentText } from '@mui/material';
+import { Alert, Button, DialogContentText, type DialogProps } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import BaseDialog from './BaseDialog';
 
@@ -25,10 +25,12 @@ export interface ConfirmDialogProps {
   loading?: boolean;
   /** Label for the confirm button while `loading` is true (e.g. Working…). */
   confirmPendingLabel?: string;
-  /** Use error-colored confirm for destructive flows. */
-  confirmColor?: 'primary' | 'error';
+  /** Primary action color (default matches most confirms; `warning` for reversible-but-risky ops). */
+  confirmColor?: 'primary' | 'error' | 'warning';
   /** Inline error under the description (e.g. failed destructive confirm). Cleared by parent when dialog closes. */
   errorMessage?: string | null;
+  /** Dialog width; defaults to `xs` for compact confirms. */
+  maxWidth?: DialogProps['maxWidth'];
 }
 
 export default function ConfirmDialog({
@@ -43,6 +45,7 @@ export default function ConfirmDialog({
   confirmPendingLabel,
   confirmColor = 'primary',
   errorMessage,
+  maxWidth = 'xs',
 }: ConfirmDialogProps) {
   const { t } = useTranslation();
   const cancel = cancelLabel ?? t('common.cancel');
@@ -54,7 +57,7 @@ export default function ConfirmDialog({
       onClose={onClose}
       title={title}
       disableClose={loading}
-      maxWidth="xs"
+      maxWidth={maxWidth}
       fullWidth
       actionsSx={{ px: 3, pb: 2 }}
       actions={
@@ -73,7 +76,11 @@ export default function ConfirmDialog({
         </>
       }
     >
-      <DialogContentText component="div">{description}</DialogContentText>
+      {typeof description === 'string' ? (
+        <DialogContentText>{description}</DialogContentText>
+      ) : (
+        description
+      )}
       {errorMessage ? (
         <Alert severity="error" sx={{ mt: 2 }}>
           {errorMessage}

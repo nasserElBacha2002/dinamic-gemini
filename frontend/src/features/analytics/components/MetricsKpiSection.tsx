@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Box, Skeleton } from '@mui/material';
-import { KpiCard } from '../../../components/ui';
+import { KpiCard, KpiCardBand } from '../../../components/ui';
 
 export interface MetricsKpiCardView {
   label: string;
@@ -17,20 +17,7 @@ export interface MetricsKpiSectionProps {
 
 export function MetricsKpiSection({ cards, isLoading, hasSummary, skeletonCount }: MetricsKpiSectionProps) {
   return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: {
-          xs: 'minmax(0, 1fr)',
-          sm: 'repeat(2, minmax(0, 1fr))',
-          md: 'repeat(3, minmax(0, 1fr))',
-        },
-        gap: 2,
-        mb: 2,
-        minWidth: 0,
-        width: '100%',
-      }}
-    >
+    <KpiCardBand variant="metricsGrid">
       {isLoading && !hasSummary
         ? Array.from({ length: skeletonCount }).map((_, i) => (
             <Skeleton key={`sk-${i}`} variant="rounded" height={100} sx={{ minWidth: 0 }} />
@@ -40,6 +27,6 @@ export function MetricsKpiSection({ cards, isLoading, hasSummary, skeletonCount 
               <KpiCard label={k.label} value={k.value} description={k.description} />
             </Box>
           ))}
-    </Box>
+    </KpiCardBand>
   );
 }

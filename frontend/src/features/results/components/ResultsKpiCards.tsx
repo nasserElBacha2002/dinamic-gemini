@@ -4,7 +4,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { Box } from '@mui/material';
-import { KpiCard } from '../../../components/ui';
+import { KpiCard, KpiCardBand } from '../../../components/ui';
 import type { ResultsKpi } from '../selectors/resultsKpi';
 
 export interface ResultsKpiCardsProps {
@@ -14,18 +14,7 @@ export interface ResultsKpiCardsProps {
 export default function ResultsKpiCards({ kpi }: ResultsKpiCardsProps) {
   const { t } = useTranslation();
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        flexWrap: { xs: 'wrap', md: 'nowrap' },
-        gap: 1.5,
-        overflowX: { xs: 'visible', md: 'auto' },
-        width: '100%',
-        minWidth: 0,
-        mb: 2,
-        alignItems: 'stretch',
-      }}
-    >
+    <KpiCardBand variant="flexStrip">
       <Box sx={{ flex: { xs: '1 1 140px', md: '0 0 140px' } }}>
         <KpiCard label={t('results.kpi_total')} value={kpi.total} />
       </Box>
@@ -44,6 +33,6 @@ export default function ResultsKpiCards({ kpi }: ResultsKpiCardsProps) {
       <Box sx={{ flex: { xs: '1 1 140px', md: '0 0 140px' } }}>
         <KpiCard label={t('results.kpi_with_evidence')} value={kpi.withEvidence} />
       </Box>
-    </Box>
+    </KpiCardBand>
   );
 }
