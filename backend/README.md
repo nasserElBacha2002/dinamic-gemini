@@ -52,6 +52,18 @@ From this directory:
 cd backend && pytest
 ```
 
+### SQL Server (local integration tests)
+
+- Copy `backend/.env.test.example` to `backend/.env.test` and/or `.env.test` at the repository root. These files are loaded **before** tests import the app, with **override** so a dedicated test database (name should include e.g. `test` / `_test` / `pytest`) does not share your manual dev database.
+- If `SQLSERVER_*` is set but the database name is not clearly a test database, pytest stops immediately; see `src/env_settings/sqlserver_pytest_policy.py` and the allow-list env var `DINAMIC_PYTEST_SQLSERVER_DATABASE_ALLOWLIST`.
+- **Optional:** clear domain rows on a local loopback server (dry-run by default):
+
+  ```bash
+  python backend/scripts/clean_local_business_data.py
+  ```
+
+  Deletes require `--confirm`, `DINAMIC_CONFIRM_LOCAL_BUSINESS_DATA_DELETION=1`, and a loopback `SERVER=` unless `DINAMIC_ALLOW_REMOTE_BUSINESS_DATA_CLEANUP=1`.
+
 ## Local/dev worker verification
 
 For the reference-images flow, local/dev closure depends on the worker using the current backend code and local artifact paths without fake S3 requirements.

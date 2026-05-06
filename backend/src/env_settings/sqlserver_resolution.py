@@ -114,6 +114,7 @@ def remap_sqlserver_server_for_container_if_needed(server: str) -> str:
 
 
 _ODBC_SERVER_KW_RE = re.compile(r"(?i)(SERVER\s*=\s*)([^;]+)")
+_ODBC_DATABASE_KW_RE = re.compile(r"(?i)(DATABASE\s*=\s*)([^;]+)")
 
 
 def remap_sqlserver_connection_string_server_if_needed(connection_string: str) -> str:
@@ -135,6 +136,33 @@ def odbc_connection_string_server_keyword_value(connection_string: str) -> str |
     """Parse SERVER=… from an ODBC string for safe logging (no credentials)."""
     m = _ODBC_SERVER_KW_RE.search(connection_string)
     return m.group(2).strip() if m else None
+
+
+def odbc_connection_string_database_keyword_value(connection_string: str) -> str | None:
+    """Parse DATABASE=… from an ODBC string (safe for logs; no credentials)."""
+    m = _ODBC_DATABASE_KW_RE.search(connection_string or "")
+    return m.group(2).strip() if m else None
+
+
+def sqlserver_odbc_server_targets_loopback(connection_string: str) -> bool:
+    """True when SERVER= in the ODBC string points at loopback (localhost / 127.0.0.1 / ::1)."""
+    server_field = odbc_connection_string_server_keyword_value(connection_string)
+    if not server_field:
+        return False
+    return _is_loopback_server_field(server_field)
+
+
+def resolved_sqlserver_database_name_from_env() -> str | None:
+    """Resolve the database name using the same precedence as connection string resolution.
+
+    ``SQLSERVER_CONNECTION_STRING`` wins over split ``SQLSERVER_DATABASE`` when both are set,
+    matching :func:`resolve_sqlserver_connection_config`.
+    """
+    raw = (os.getenv("SQLSERVER_CONNECTION_STRING") or "").strip()
+    if raw:
+        remapped = remap_sqlserver_connection_string_server_if_needed(raw)
+        return odbc_connection_string_database_keyword_value(remapped)
+    return (os.getenv("SQLSERVER_DATABASE") or "").strip() or None
 
 
 @dataclass(frozen=True)
