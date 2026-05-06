@@ -3,7 +3,6 @@
  */
 
 import { useMemo, useState } from 'react';
-import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
@@ -45,6 +44,19 @@ import { resolveApiErrorMessage } from '../../utils/apiErrors';
 import { ApiError } from '../../api/types';
 import i18n from '../../i18n';
 import { useAnalyticsDashboard } from './hooks';
+import {
+  defaultDateRange,
+  formatAvgProcessingMinutes,
+  formatPct,
+  interventionColor,
+  interventionLabel,
+  interventionPriority,
+  numberOrZero,
+  paginateRows,
+  qualityPriority,
+  translateQualityIssueType,
+} from './adapters/metricsFormatters';
+import { sortInventoryRows } from './adapters/metricsViewModel';
 import type {
   AnalyticsQueryParams,
   InventoryPerformanceRow,
@@ -52,166 +64,6 @@ import type {
   QualityPatternRow,
   ManualInterventionCategory,
 } from './types';
-
-function defaultDateRange(): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date(to);
-  from.setUTCDate(from.getUTCDate() - 30);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
-}
-
-function formatPct(x: number | null | undefined): string {
-  if (x == null || Number.isNaN(x)) return i18n.t('common.em_dash');
-  return `${(x * 100).toFixed(1)}%`;
-}
-
-function formatAvgProcessingSec(sec: number | null | undefined): string {
-  if (sec == null || Number.isNaN(sec)) return i18n.t('common.em_dash');
-  if (sec < 60) return `${Math.round(sec)}s`;
-  return `${(sec / 60).toFixed(1)} min`;
-}
-
-/** Job duration KPI: prefer minutes from API; fall back to raw seconds. */
-function formatAvgProcessingMinutes(minutes: number | null | undefined, seconds: number | null | undefined): string {
-  if (minutes != null && !Number.isNaN(minutes)) return `${minutes.toFixed(1)} min`;
-  return formatAvgProcessingSec(seconds);
-}
-
-function numberOrZero(value: number | null | undefined): number {
-  return value ?? 0;
-}
-
-function paginateRows<T>(rows: readonly T[], page: number, pageSize: number): readonly T[] {
-  const start = (page - 1) * pageSize;
-  return rows.slice(start, start + pageSize);
-}
-
-function compareValues(a: number | string | null | undefined, b: number | string | null | undefined): number {
-  if (a == null && b == null) return 0;
-  if (a == null) return 1;
-  if (b == null) return -1;
-  if (typeof a === 'number' && typeof b === 'number') return a - b;
-  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
-}
-
-function sortInventoryRows(
-  rows: readonly InventoryPerformanceRow[],
-  sortBy: string,
-  sortDir: 'asc' | 'desc'
-): InventoryPerformanceRow[] {
-  const direction = sortDir === 'asc' ? 1 : -1;
-  const getValue = (row: InventoryPerformanceRow): number | string | null | undefined => {
-    switch (sortBy) {
-      case 'created':
-        return row.inventory_created_at;
-      case 'aisles':
-        return row.aisles_count ?? row.total_aisles;
-      case 'positions':
-        return row.positions_count ?? row.total_positions;
-      case 'processed':
-        return row.processed_count ?? row.processed_positions;
-      case 'auto_accept':
-        return row.auto_acceptance_rate ?? null;
-      case 'manual_correction':
-        return row.manual_correction_rate ?? row.correction_rate;
-      case 'unidentified_product':
-        return row.unidentified_product_rate ?? null;
-      case 'invalid_tr':
-        return row.invalid_traceability_rate;
-      case 'avg_conf':
-        return row.avg_confidence;
-      case 'avg_processing':
-        return row.average_processing_time_minutes ?? null;
-      case 'proc':
-        return row.processing_success_rate;
-      case 'name':
-      default:
-        return row.inventory_name;
-    }
-  };
-  return [...rows].sort((left, right) => {
-    const result = compareValues(getValue(left), getValue(right));
-    if (result !== 0) return result * direction;
-    return left.inventory_name.localeCompare(right.inventory_name) * direction;
-  });
-}
-
-function qualityPriority(label: string): number {
-  const normalized = label.trim().toLowerCase();
-  if (normalized === 'unidentified product') return 0;
-  if (normalized === 'pending review') return 1;
-  if (normalized === 'invalid traceability') return 2;
-  if (normalized === 'missing evidence') return 3;
-  if (normalized.includes('zero')) return 4;
-  if (normalized === 'low confidence') return 5;
-  if (normalized === 'no primary issue') return 6;
-  return 50;
-}
-
-function interventionLabel(category: string, t: TFunction): string {
-  switch (category) {
-    case 'confirmed':
-      return t('analytics.category_confirmed');
-    case 'qty_corrected':
-      return t('analytics.category_qty_corrected');
-    case 'sku_corrected':
-      return t('analytics.category_sku_corrected');
-    case 'invalid':
-      return t('analytics.category_invalid');
-    case 'operator_marked_unknown':
-      return t('analytics.category_operator_unknown');
-    case 'deleted':
-      return t('analytics.category_deleted');
-    default:
-      return category;
-  }
-}
-
-function interventionPriority(category: string): number {
-  switch (category) {
-    case 'operator_marked_unknown':
-      return 0;
-    case 'qty_corrected':
-      return 1;
-    case 'sku_corrected':
-      return 2;
-    case 'confirmed':
-      return 3;
-    case 'deleted':
-      return 4;
-    case 'invalid':
-      return 5;
-    default:
-      return 50;
-  }
-}
-
-function interventionColor(category: string): string {
-  switch (category) {
-    case 'operator_marked_unknown':
-      return 'warning.main';
-    case 'qty_corrected':
-    case 'sku_corrected':
-      return 'secondary.main';
-    case 'confirmed':
-      return 'success.main';
-    case 'deleted':
-      return 'text.secondary';
-    default:
-      return 'primary.main';
-  }
-}
-
-function translateQualityIssueType(issueType: string, t: TFunction): string {
-  const slug = issueType
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  const key = `analytics.quality_issue.${slug}`;
-  const translated = t(key);
-  return translated === key ? issueType : translated;
-}
 
 export default function MetricsPage() {
   const { t } = useTranslation();
