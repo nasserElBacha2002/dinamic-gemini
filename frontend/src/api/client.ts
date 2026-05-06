@@ -26,7 +26,6 @@ export {
   exportAisleResultsCsv,
   getAisles,
   getAisleMergeResults,
-  getAisleStatus,
   runAisleMerge,
   startAisleProcessing,
 } from './aislesApi';

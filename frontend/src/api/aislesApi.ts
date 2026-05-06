@@ -1,7 +1,6 @@
 import { V3_INVENTORIES_BASE } from '../constants/v3ApiPaths';
 import type {
   Aisle,
-  AisleStatusResponse,
   ApiErrorDetail,
   CreateAisleRequest,
   PaginatedAisleListResponse,
@@ -84,16 +83,6 @@ export async function startAisleProcessing(
     }
   );
   return handleResponse<ProcessAisleResponse>(response);
-}
-
-export async function getAisleStatus(
-  inventoryId: string,
-  aisleId: string
-): Promise<AisleStatusResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/status`
-  );
-  return handleResponse<AisleStatusResponse>(response);
 }
 
 export async function runAisleMerge(
