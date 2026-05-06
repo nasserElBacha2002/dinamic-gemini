@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -26,127 +25,28 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { PageHeader } from '../../components/shell';
 import { useAisleBenchmarkCompareMany, useAisleJobsList, useAislesList, useInventoryDetail } from '../../hooks';
-import type { BenchmarkCompareManyDiff, JobSummary } from '../../api/types';
+import type { JobSummary } from '../../api/types';
 import { ApiError } from '../../api/types';
 import { resolveApiErrorMessage } from '../../utils/apiErrors';
 import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompare } from '../../constants/appRoutes';
-import {
-  formatExecutionDurationHuman,
-  formatSignedDurationHuman,
-  wallClockSecondsFromJobTimestamps,
-} from '../../utils/benchmarkExecutionTime';
+import { formatExecutionDurationHuman, formatSignedDurationHuman } from '../../utils/benchmarkExecutionTime';
 import {
   MAX_COMPARE_JOBS,
   MIN_COMPARE_JOBS,
   buildDraftError,
 } from './compareManyRunsDraft';
-
-type AppliedState = {
-  aisleId: string;
-  jobIds: string[];
-  baseline: string;
-};
-
-function parseJobIds(raw: string | null): string[] {
-  if (!raw) return [];
-  const out: string[] = [];
-  for (const token of raw.split(',')) {
-    const trimmed = token.trim();
-    if (!trimmed) continue;
-    out.push(trimmed);
-  }
-  return out;
-}
-
-function parseAppliedState(searchParams: URLSearchParams): AppliedState {
-  return {
-    aisleId: searchParams.get('aisleId')?.trim() ?? '',
-    jobIds: parseJobIds(searchParams.get('jobIds')),
-    baseline: searchParams.get('baseline')?.trim() ?? '',
-  };
-}
-
-function isAppliedStateValid(state: AppliedState): boolean {
-  const hasDuplicates = new Set(state.jobIds).size !== state.jobIds.length;
-  return Boolean(
-    state.aisleId &&
-      state.jobIds.length >= MIN_COMPARE_JOBS &&
-      state.jobIds.length <= MAX_COMPARE_JOBS &&
-      !hasDuplicates &&
-      state.baseline &&
-      state.jobIds.includes(state.baseline)
-  );
-}
-
-/** Selection order is meaningful for compare-many; reordering counts as a real change. */
-function sameSelection(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((id, idx) => id === b[idx]);
-}
-
-function signedValue(value: number): string {
-  if (value > 0) return `+${value}`;
-  return String(value);
-}
-
-function semanticColor(value: number, higherIsWorse: boolean): 'success.main' | 'error.main' | 'text.primary' {
-  if (value === 0) return 'text.primary';
-  if (higherIsWorse) return value > 0 ? 'error.main' : 'success.main';
-  return value > 0 ? 'success.main' : 'error.main';
-}
-
-function orderJobsForDisplay(jobIds: string[], baseline: string): string[] {
-  const rest = jobIds.filter((id) => id !== baseline);
-  return baseline ? [baseline, ...rest] : jobIds;
-}
-
-function hasNoDifferences(comp: BenchmarkCompareManyDiff): boolean {
-  const s = comp.diff_summary;
-  return (
-    s.keys_only_in_a === 0 &&
-    s.keys_only_in_b === 0 &&
-    s.quantity_changed === 0 &&
-    s.sku_changed === 0 &&
-    s.position_code_changed === 0
-  );
-}
-
-function displayJobName(job: JobSummary): string {
-  return `${job.id.slice(0, 8)}…`;
-}
-
-function compareRunExecutionLabel(
-  run: { execution_time_human?: string | null; execution_time_seconds?: number | null },
-  t: TFunction
-): string {
-  if (run.execution_time_human) {
-    return run.execution_time_human;
-  }
-  if (run.execution_time_seconds != null) {
-    return formatExecutionDurationHuman(run.execution_time_seconds);
-  }
-  return t('compare.execution_unavailable');
-}
-
-function compareManyExecutionInsight(t: TFunction, comp: BenchmarkCompareManyDiff): string | null {
-  const dExec = comp.delta.execution_time_delta;
-  const dUnk = comp.delta.unknown_internal_code_diff;
-  if (dExec == null) {
-    return null;
-  }
-  if (dExec > 0 && dUnk < 0) {
-    return t('compare_many.insight_slower_but_unknown_down', {
-      time: formatSignedDurationHuman(dExec),
-      unknown: String(Math.abs(dUnk)),
-    });
-  }
-  if (dExec < 0 && dUnk > 0) {
-    return t('compare_many.insight_faster_but_unknown_up', {
-      time: formatSignedDurationHuman(dExec),
-      unknown: String(dUnk),
-    });
-  }
-  return null;
-}
+import { compareRunExecutionLabel, displayJobName, semanticColor, signedValue } from '../../features/analytics/adapters/compareFormatters';
+import {
+  buildJobsById,
+  buildOrderedComparisons,
+  compareManyExecutionInsight,
+  hasNoDifferences,
+  isAppliedStateValid,
+  orderJobsForDisplay,
+  parseAppliedState,
+  sameSelection,
+  sortJobsForCompareManyPicker,
+} from '../../features/analytics/adapters/compareManyRunsViewModel';
 
 export default function CompareManyRunsPage() {
   const { t } = useTranslation();
@@ -203,16 +103,7 @@ export default function CompareManyRunsPage() {
   const aisles = aislesQuery.data?.items ?? [];
   const jobs = useMemo(() => jobsQuery.data?.jobs ?? [], [jobsQuery.data?.jobs]);
   const sortedJobsForPicker = useMemo(() => {
-    const list = [...jobs];
-    list.sort((a, b) => {
-      const da = wallClockSecondsFromJobTimestamps(a.started_at, a.finished_at);
-      const db = wallClockSecondsFromJobTimestamps(b.started_at, b.finished_at);
-      const ra = da ?? Number.POSITIVE_INFINITY;
-      const rb = db ?? Number.POSITIVE_INFINITY;
-      if (ra !== rb) return ra - rb;
-      return b.created_at.localeCompare(a.created_at);
-    });
-    return list;
+    return sortJobsForCompareManyPicker(jobs);
   }, [jobs]);
   const aisleSelectValue = draftAisleId && aisles.some((aisle) => aisle.id === draftAisleId) ? draftAisleId : '';
   const baselineSelectValue = draftBaseline && draftJobIds.includes(draftBaseline) ? draftBaseline : '';
@@ -275,10 +166,8 @@ export default function CompareManyRunsPage() {
   };
 
   const orderedJobIds = orderJobsForDisplay(applied.jobIds, applied.baseline);
-  const jobsById = new Map((effectiveData?.jobs ?? []).map((job) => [job.job_id, job]));
-  const orderedComparisons = (effectiveData?.comparisons ?? []).slice().sort((a, b) => {
-    return orderedJobIds.indexOf(a.target_job_id) - orderedJobIds.indexOf(b.target_job_id);
-  });
+  const jobsById = buildJobsById(effectiveData);
+  const orderedComparisons = buildOrderedComparisons(effectiveData, orderedJobIds);
 
   const compareErrorMessage =
     (compareQuery.isError || enrichedCompareManyQuery.isError) && (compareQuery.error || enrichedCompareManyQuery.error)
