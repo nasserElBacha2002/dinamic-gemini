@@ -7,19 +7,10 @@
  */
 
 import { V3_ADMIN_BASE, V3_ANALYTICS_BASE, V3_INVENTORIES_BASE, V3_REVIEW_QUEUE_BASE } from '../constants/v3ApiPaths';
-import { getStoredToken } from '../features/auth/storage';
-import i18n from '../i18n';
 import type {
   ApiErrorDetail,
-  UploadAisleAssetsResponse,
-  SourceAssetSummary,
-  PositionListResponse,
   PositionDetailResponse,
   ReviewActionRequest,
-  AisleExecutionLogResponse,
-  ExecutionLogResponse,
-  JobSummary,
-  AisleJobsListResponse,
   ProcessingProviderOptionsResponse,
   ReviewQueueListResponse,
   AnalyticsSummaryResponse,
@@ -31,7 +22,6 @@ import type {
   AisleBenchmarkCompareResponse,
   AisleBenchmarkCompareManyRequest,
   AisleBenchmarkCompareManyResponse,
-  PromoteOperationalJobResponse,
   AdminAiComposedPromptResponse,
   AdminAiConfigResponse,
 } from './types';
@@ -60,6 +50,30 @@ export {
   runAisleMerge,
   startAisleProcessing,
 } from './aislesApi';
+export type { AislePositionsListQuery } from './jobsApi';
+export {
+  cancelAisleJob,
+  downloadAisleExecutionLogTxt,
+  downloadExecutionLogTxt,
+  getAisleExecutionLog,
+  getAisleExecutionLogTxtUrl,
+  getAisleJobDetail,
+  getAislePositions,
+  getExecutionLog,
+  getExecutionLogTxtUrl,
+  listAisleJobs,
+  promoteAisleOperationalJob,
+  retryAisleJob,
+} from './jobsApi';
+export type { EvidenceImageLoadSpec, FetchEvidenceImageResult } from './assetsApi';
+export {
+  deleteAisleSourceAsset,
+  fetchEvidenceImageDisplay,
+  getReferenceImageDisplayUrl,
+  getReferenceImageFileUrl,
+  listAisleAssets,
+  uploadAisleAssets,
+} from './assetsApi';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -89,373 +103,6 @@ export async function getAdminAiComposedPrompt(params: {
     `${API_BASE}${V3_ADMIN_BASE}/ai-config/composed-prompt?${q.toString()}`
   );
   return handleResponse<AdminAiComposedPromptResponse>(response);
-}
-
-/** Get execution log for a job (v3.1.1). Job must belong to the given aisle. */
-export async function getExecutionLog(
-  inventoryId: string,
-  aisleId: string,
-  jobId: string
-): Promise<ExecutionLogResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/execution-log`
-  );
-  return handleResponse<ExecutionLogResponse>(response);
-}
-
-/** Aggregated execution log for all jobs on an aisle (v3 multi-job observability). */
-export async function getAisleExecutionLog(
-  inventoryId: string,
-  aisleId: string
-): Promise<AisleExecutionLogResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/execution-log`
-  );
-  return handleResponse<AisleExecutionLogResponse>(response);
-}
-
-/** Direct URL for execution log plain-text download (use with authenticated fetch). */
-export function getExecutionLogTxtUrl(inventoryId: string, aisleId: string, jobId: string): string {
-  const inv = encodeURIComponent(inventoryId);
-  const aisle = encodeURIComponent(aisleId);
-  const job = encodeURIComponent(jobId);
-  return `${API_BASE}${V3_INVENTORIES_BASE}/${inv}/aisles/${aisle}/jobs/${job}/execution-log.txt`;
-}
-
-/** Direct URL for aisle aggregated execution log plain-text download. */
-export function getAisleExecutionLogTxtUrl(inventoryId: string, aisleId: string): string {
-  const inv = encodeURIComponent(inventoryId);
-  const aisle = encodeURIComponent(aisleId);
-  return `${API_BASE}${V3_INVENTORIES_BASE}/${inv}/aisles/${aisle}/execution-log.txt`;
-}
-
-/** Download execution log as UTF-8 text (same artifact as JSON execution-log). */
-export async function downloadExecutionLogTxt(
-  inventoryId: string,
-  aisleId: string,
-  jobId: string
-): Promise<void> {
-  const path = getExecutionLogTxtUrl(inventoryId, aisleId, jobId);
-  const response = await protectedFetch(path);
-  const fallbackName = `inventory_${inventoryId}_aisle_${aisleId}_job_${jobId}_execution_log.txt`;
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-/** Download merged aisle execution log as UTF-8 text. */
-export async function downloadAisleExecutionLogTxt(
-  inventoryId: string,
-  aisleId: string
-): Promise<void> {
-  const path = getAisleExecutionLogTxtUrl(inventoryId, aisleId);
-  const response = await protectedFetch(path);
-  const fallbackName = `inventory_${inventoryId}_aisle_${aisleId}_execution_log.txt`;
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-export async function getAisleJobDetail(
-  inventoryId: string,
-  aisleId: string,
-  jobId: string
-): Promise<JobSummary> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}`
-  );
-  return handleResponse<JobSummary>(response);
-}
-
-export async function cancelAisleJob(
-  inventoryId: string,
-  aisleId: string,
-  jobId: string
-): Promise<JobSummary> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/cancel`,
-    { method: 'POST' }
-  );
-  return handleResponse<JobSummary>(response);
-}
-
-export async function retryAisleJob(
-  inventoryId: string,
-  aisleId: string,
-  jobId: string
-): Promise<JobSummary> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/retry`,
-    { method: 'POST' }
-  );
-  return handleResponse<JobSummary>(response);
-}
-
-export async function uploadAisleAssets(
-  inventoryId: string,
-  aisleId: string,
-  files: File[]
-): Promise<UploadAisleAssetsResponse> {
-  const form = new FormData();
-  files.forEach((file) => form.append('files', file));
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/assets`,
-    { method: 'POST', body: form }
-  );
-  return handleResponse<UploadAisleAssetsResponse>(response);
-}
-
-export async function listAisleAssets(inventoryId: string, aisleId: string): Promise<SourceAssetSummary[]> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets`
-  );
-  return handleResponse<SourceAssetSummary[]>(response);
-}
-
-export async function deleteAisleSourceAsset(
-  inventoryId: string,
-  aisleId: string,
-  assetId: string
-): Promise<void> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets/${encodeURIComponent(assetId)}`,
-    { method: 'DELETE' }
-  );
-  if (response.status === 204) {
-    return;
-  }
-  const text = await response.text();
-  let data: ApiErrorDetail;
-  try {
-    data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-  } catch {
-    data = {};
-  }
-  throwApiErrorIfNotOk(response, text, data);
-}
-
-/**
- * URL for the reference image file of an aisle asset (position.source_image_id).
- * Use for <img src> or open in new tab. Backend returns 404 if asset/file missing.
- * When jobId is provided, backend uses that job to resolve HEIC normalized preview (avoids multi-job regression).
- */
-export function getReferenceImageFileUrl(
-  inventoryId: string,
-  aisleId: string,
-  assetId: string,
-  jobId?: string | null
-): string {
-  const base = import.meta.env.VITE_API_BASE_URL ?? '';
-  const path = `${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets/${encodeURIComponent(assetId)}/file`;
-  if (jobId != null && String(jobId).trim() !== '') {
-    return `${base}${path}?job_id=${encodeURIComponent(String(jobId).trim())}`;
-  }
-  return `${base}${path}`;
-}
-
-/**
- * Authenticated JSON endpoint that returns how to display a reference asset (presigned URL vs fetch /file).
- * Same ``job_id`` query semantics as {@link getReferenceImageFileUrl}.
- */
-export function getReferenceImageDisplayUrl(
-  inventoryId: string,
-  aisleId: string,
-  assetId: string,
-  jobId?: string | null
-): string {
-  const base = import.meta.env.VITE_API_BASE_URL ?? '';
-  const path = `${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets/${encodeURIComponent(assetId)}/image-display-url`;
-  if (jobId != null && String(jobId).trim() !== '') {
-    return `${base}${path}?job_id=${encodeURIComponent(String(jobId).trim())}`;
-  }
-  return `${base}${path}`;
-}
-
-/** Identifies one aisle asset image for the evidence viewer (matches reference file routing). */
-export interface EvidenceImageLoadSpec {
-  inventoryId: string;
-  aisleId: string;
-  assetId: string;
-  jobId?: string | null;
-}
-
-/** Result of resolving evidence/reference image for display. */
-export type FetchEvidenceImageResult =
-  | { ok: true; imageSrc: string; revoke?: () => void }
-  | { ok: false; status: number; detail?: string };
-
-async function fetchAuthorizedReferenceFileAsBlob(spec: EvidenceImageLoadSpec): Promise<FetchEvidenceImageResult> {
-  const fileUrl = getReferenceImageFileUrl(spec.inventoryId, spec.aisleId, spec.assetId, spec.jobId);
-  const token = getStoredToken();
-  const headers = new Headers();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-  try {
-    const response = await fetch(fileUrl, { credentials: 'omit', headers });
-    if (!response.ok) {
-      let detail: string | undefined;
-      try {
-        const data = (await response.json()) as { detail?: unknown };
-        detail = typeof data?.detail === 'string' ? data.detail : undefined;
-      } catch {
-        detail = undefined;
-      }
-      return { ok: false, status: response.status, detail };
-    }
-    const blob = await response.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    return {
-      ok: true,
-      imageSrc: blobUrl,
-      revoke: () => URL.revokeObjectURL(blobUrl),
-    };
-  } catch {
-    return { ok: false, status: 0, detail: undefined };
-  }
-}
-
-/**
- * Resolve evidence/reference image for ``<img src>`` via the JSON ``image-display-url`` contract,
- * then presigned URL or authenticated GET to ``.../file`` when the API requests it (local / legacy / HEIC preview).
- */
-export async function fetchEvidenceImageDisplay(spec: EvidenceImageLoadSpec): Promise<FetchEvidenceImageResult> {
-  const url = getReferenceImageDisplayUrl(spec.inventoryId, spec.aisleId, spec.assetId, spec.jobId);
-  try {
-    const response = await protectedFetch(url);
-    if (!response.ok) {
-      let detail: string | undefined;
-      try {
-        const data = (await response.json()) as { detail?: unknown };
-        detail = typeof data?.detail === 'string' ? data.detail : undefined;
-      } catch {
-        detail = undefined;
-      }
-      return { ok: false, status: response.status, detail };
-    }
-    let data: { image_url?: unknown; requires_authenticated_fetch?: unknown };
-    try {
-      data = (await response.json()) as typeof data;
-    } catch {
-      return { ok: false, status: 502, detail: i18n.t('errors.invalid_image_display_url') };
-    }
-    const imageUrl =
-      typeof data.image_url === 'string' && data.image_url.trim() !== '' ? data.image_url.trim() : null;
-    const needFetch = data.requires_authenticated_fetch === true;
-    if (imageUrl) {
-      return { ok: true, imageSrc: imageUrl };
-    }
-    if (needFetch) {
-      return fetchAuthorizedReferenceFileAsBlob(spec);
-    }
-    return { ok: false, status: 502, detail: i18n.t('errors.invalid_image_display_url') };
-  } catch {
-    return { ok: false, status: 0, detail: undefined };
-  }
-}
-
-/** Query params for GET aisle positions (§9.7). Omitted keys are not sent; backend defaults apply. */
-export interface AislePositionsListQuery {
-  status?: string | null;
-  needs_review?: boolean | null;
-  min_confidence?: number | null;
-  sku_filter?: string | null;
-  page?: number;
-  page_size?: number;
-  sort_by?: string;
-  sort_dir?: string;
-  /**
-   * When false, request unmerged rows (photo-accurate review). Omitted/true uses backend default
-   * (SKU consolidation on).
-   */
-  consolidate_by_sku?: boolean | null;
-  /** When set, list only this inventory job's positions (same as GET query `job_id`). */
-  job_id?: string | null;
-}
-
-function buildAislePositionsQueryString(q: AislePositionsListQuery | undefined): string {
-  if (!q) return '';
-  const params = new URLSearchParams();
-  if (q.status != null && String(q.status).trim() !== '') {
-    params.set('status', String(q.status).trim());
-  }
-  if (q.needs_review != null) {
-    params.set('needs_review', String(q.needs_review));
-  }
-  if (q.min_confidence != null && !Number.isNaN(q.min_confidence)) {
-    params.set('min_confidence', String(q.min_confidence));
-  }
-  if (q.sku_filter != null && String(q.sku_filter).trim() !== '') {
-    params.set('sku_filter', String(q.sku_filter).trim());
-  }
-  if (q.page != null && q.page >= 1) {
-    params.set('page', String(q.page));
-  }
-  if (q.page_size != null && q.page_size >= 1) {
-    params.set('page_size', String(q.page_size));
-  }
-  if (q.sort_by != null && String(q.sort_by).trim() !== '') {
-    params.set('sort_by', String(q.sort_by).trim());
-  }
-  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') {
-    params.set('sort_dir', String(q.sort_dir).trim());
-  }
-  if (q.job_id != null && String(q.job_id).trim() !== '') {
-    params.set('job_id', String(q.job_id).trim());
-  }
-  if (q.consolidate_by_sku === false) {
-    params.set('consolidate_by_sku', 'false');
-  }
-  const s = params.toString();
-  return s ? `?${s}` : '';
-}
-
-/** List process_aisle jobs for an aisle (newest first) — run browser / selector. */
-export async function listAisleJobs(
-  inventoryId: string,
-  aisleId: string,
-  options?: { limit?: number }
-): Promise<AisleJobsListResponse> {
-  const params = new URLSearchParams();
-  if (options?.limit != null && options.limit >= 1) {
-    params.set('limit', String(options.limit));
-  }
-  const qs = params.toString();
-  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs${qs ? `?${qs}` : ''}`;
-  const response = await protectedFetch(path);
-  return handleResponse<AisleJobsListResponse>(response);
 }
 
 /** Phase 6 — explicit two-run compare for an aisle (benchmark / inspection; read-only). */
@@ -497,22 +144,6 @@ export async function getAisleBenchmarkCompareMany(
     }
   );
   return handleResponse<AisleBenchmarkCompareManyResponse>(response);
-}
-
-export async function promoteAisleOperationalJob(
-  inventoryId: string,
-  aisleId: string,
-  jobId: string
-): Promise<PromoteOperationalJobResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/promote-operational`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ job_id: jobId.trim() }),
-    }
-  );
-  return handleResponse<PromoteOperationalJobResponse>(response);
 }
 
 /**
@@ -557,17 +188,6 @@ export async function downloadAisleBenchmarkExportCsv(
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-}
-
-/** List positions (results) for an aisle — Épica 6 / Aisle Results table. */
-export async function getAislePositions(
-  inventoryId: string,
-  aisleId: string,
-  listQuery?: AislePositionsListQuery
-): Promise<PositionListResponse> {
-  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions`;
-  const response = await protectedFetch(`${path}${buildAislePositionsQueryString(listQuery)}`);
-  return handleResponse<PositionListResponse>(response);
 }
 
 export interface ReviewQueueListQuery {
