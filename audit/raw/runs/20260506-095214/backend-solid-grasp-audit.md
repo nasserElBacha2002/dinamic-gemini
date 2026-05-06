@@ -83,4 +83,4 @@ Evaluación heurística de arquitectura backend sobre capas `api`, `application`
 - Priorizar refactor en módulos con complejidad C/D/E/F y code smells recurrentes.
 - Revisar rutas API con señales de orquestación excesiva y mover lógica a application/use-cases.
 - Fortalecer test de arquitectura para prevenir regresiones de acoplamiento.
-- generated_at: 2026-05-04 17:14:14
+- generated_at: 2026-05-06 09:52:07

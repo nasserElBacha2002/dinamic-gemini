@@ -52,7 +52,7 @@ describe('CreateInventoryDialog (reference images step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    expect(screen.getByRole('heading', { name: /reference images/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /reference step title/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /create without references/i }));
 
@@ -68,7 +68,7 @@ describe('CreateInventoryDialog (reference images step)', () => {
     const { createInventoryFn, onSuccess } = renderDialog();
 
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'Lab inv' } });
-    fireEvent.click(screen.getByRole('button', { name: /test mode/i }));
+    fireEvent.click(screen.getByRole('button', { name: /processing mode test/i }));
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     fireEvent.click(screen.getByRole('button', { name: /create without references/i }));
@@ -85,7 +85,7 @@ describe('CreateInventoryDialog (reference images step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    const input = screen.getByLabelText(/select reference images/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/select files/i) as HTMLInputElement;
     const bad = new File(['x'], 'doc.pdf', { type: 'application/pdf' });
     fireEvent.change(input, { target: { files: [bad] } });
     expect(screen.getByText(/only jpg/i)).toBeInTheDocument();
@@ -110,14 +110,14 @@ describe('CreateInventoryDialog (reference images step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    const input = screen.getByLabelText(/select reference images/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/select files/i) as HTMLInputElement;
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
 
     expect(
-      screen.getByRole('button', { name: /create inventory and upload references/i }),
+      screen.getByRole('button', { name: /create and upload/i }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /create inventory and upload references/i }));
+    fireEvent.click(screen.getByRole('button', { name: /create and upload/i }));
 
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
@@ -132,11 +132,11 @@ describe('CreateInventoryDialog (reference images step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    const input = screen.getByLabelText(/select reference images/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/select files/i) as HTMLInputElement;
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
 
-    fireEvent.click(screen.getByRole('button', { name: /create inventory and upload references/i }));
+    fireEvent.click(screen.getByRole('button', { name: /create and upload/i }));
 
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
@@ -155,11 +155,11 @@ describe('CreateInventoryDialog (reference images step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    const input = screen.getByLabelText(/select reference images/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/select files/i) as HTMLInputElement;
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
 
-    fireEvent.click(screen.getByRole('button', { name: /create inventory and upload references/i }));
+    fireEvent.click(screen.getByRole('button', { name: /create and upload/i }));
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByRole('button', { name: /retry upload/i })).toBeInTheDocument());
@@ -176,7 +176,7 @@ describe('CreateInventoryDialog (reference images step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    const input = screen.getByLabelText(/select reference images/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/select files/i) as HTMLInputElement;
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     const f2 = new File(['b'], 'b.png', { type: 'image/png' });
     fireEvent.change(input, { target: { files: [f1, f2] } });
@@ -197,7 +197,7 @@ describe('CreateInventoryDialog (reference images step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    const dropzone = screen.getByRole('region', { name: /reference images dropzone/i });
+    const dropzone = screen.getByRole('region', { name: /reference dropzone/i });
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.drop(dropzone, { dataTransfer: { files: [f1] } });
     expect(screen.getByText('a.jpg')).toBeInTheDocument();
@@ -209,15 +209,15 @@ describe('CreateInventoryDialog (reference images step)', () => {
     fireEvent.change(screen.getByLabelText(/inventory name/i), { target: { value: 'My inv' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    // no selected files → Create inventory
-    expect(screen.getByRole('button', { name: /^create inventory$/i })).toBeInTheDocument();
+    // no selected files → Create inventory action
+    expect(screen.getByRole('button', { name: /^create inventory action$/i })).toBeInTheDocument();
 
     // select a file → Create inventory and upload references
-    const input = screen.getByLabelText(/select reference images/i) as HTMLInputElement;
+    const input = screen.getByLabelText(/select files/i) as HTMLInputElement;
     const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
     fireEvent.change(input, { target: { files: [f1] } });
     expect(
-      screen.getByRole('button', { name: /create inventory and upload references/i }),
+      screen.getByRole('button', { name: /create and upload/i }),
     ).toBeInTheDocument();
   });
 });

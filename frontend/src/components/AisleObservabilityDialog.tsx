@@ -23,15 +23,12 @@ import {
 } from '@mui/material';
 import type { ExecutionLogEvent, JobSummary } from '../api/types';
 import { ApiError } from '../api/types';
-import {
-  downloadAisleExecutionLogTxt,
-  downloadExecutionLogTxt,
-} from '../api/client';
 import i18n from '../i18n';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import { getJobStatusLabel, jobStatusToBadgeSemantic } from '../utils/jobStatus';
 import { resolveDisplayFinishedAt } from '../utils/jobDisplayTimestamps';
+import { useExecutionLogDownloads } from '../features/executionLogs/hooks/useExecutionLogDownloads';
 import ExecutionLogPanel from './ExecutionLogPanel';
 import { ErrorAlert, StatusBadge, useAppSnackbar } from './ui';
 import {
@@ -155,9 +152,16 @@ export default function AisleObservabilityDialog({
 
   const cancelJobMutation = useCancelAisleJob(inventoryId);
   const retryJobMutation = useRetryAisleJob(inventoryId);
-
-  const [downloadingMerged, setDownloadingMerged] = useState(false);
-  const [downloadingJobLog, setDownloadingJobLog] = useState(false);
+  const {
+    downloadMergedExecutionLog,
+    downloadJobExecutionLog,
+    isDownloadingMerged,
+    isDownloadingJobLog,
+    clearError: clearDownloadError,
+  } = useExecutionLogDownloads({
+    inventoryId,
+    aisleId,
+  });
 
   const selectedJob = jobDetailQuery.data ?? null;
   const jobs = jobsListQuery.data?.jobs ?? [];
@@ -273,39 +277,35 @@ export default function AisleObservabilityDialog({
             <Button
               size="small"
               variant="outlined"
-              disabled={!inventoryId || downloadingMerged}
+              disabled={!inventoryId || isDownloadingMerged}
               onClick={async () => {
-                setDownloadingMerged(true);
+                clearDownloadError();
                 try {
-                  await downloadAisleExecutionLogTxt(inventoryId, aisleId);
+                  await downloadMergedExecutionLog();
                 } catch (e) {
                   const err = e instanceof ApiError ? e : new ApiError(String(e));
                   showSnackbar(resolveApiErrorMessage(err, 'errors.download_merged_log'), 'error');
-                } finally {
-                  setDownloadingMerged(false);
                 }
               }}
             >
-              {downloadingMerged ? t('jobs.downloading') : t('common.download_merged_log')}
+              {isDownloadingMerged ? t('jobs.downloading') : t('common.download_merged_log')}
             </Button>
             <Button
               size="small"
               variant="outlined"
-              disabled={!inventoryId || !selectedJobId || downloadingJobLog}
+              disabled={!inventoryId || !selectedJobId || isDownloadingJobLog}
               onClick={async () => {
                 if (!selectedJobId) return;
-                setDownloadingJobLog(true);
+                clearDownloadError();
                 try {
-                  await downloadExecutionLogTxt(inventoryId, aisleId, selectedJobId);
+                  await downloadJobExecutionLog(selectedJobId);
                 } catch (e) {
                   const err = e instanceof ApiError ? e : new ApiError(String(e));
                   showSnackbar(resolveApiErrorMessage(err, 'errors.download_job_log'), 'error');
-                } finally {
-                  setDownloadingJobLog(false);
                 }
               }}
             >
-              {downloadingJobLog ? t('jobs.downloading') : t('common.download_selected_job_log')}
+              {isDownloadingJobLog ? t('jobs.downloading') : t('common.download_selected_job_log')}
             </Button>
             {selectedJobId ? (
               <>

@@ -1,5 +1,5 @@
 # Frontend dead code audit
-generated_at: 2026-05-04 17:14:19
+generated_at: 2026-05-06 09:52:12
 
 src/api/client.ts:438 - getAisleStatus
 src/api/client.ts:504 - getExecutionLogTxtUrl (used in module)
@@ -9,21 +9,20 @@ src/api/client.ts:680 - getReferenceImageDisplayUrl (used in module)
 src/api/client.ts:703 - FetchEvidenceImageResult (used in module)
 src/api/queryParamCanonicalization.ts:20 - normalizePositiveInt (used in module)
 src/api/queryParamCanonicalization.ts:6 - QueryKeyParams (used in module)
-src/components/AisleObservabilityDialog.tsx:114 - AisleObservabilityDialogProps (used in module)
+src/components/AisleObservabilityDialog.tsx:111 - AisleObservabilityDialogProps (used in module)
 src/components/CreateAisleDialog.tsx:16 - CreateAisleDialogProps (used in module)
 src/components/CreateInventoryDialog.tsx:29 - CreateInventoryDialogProps (used in module)
-src/components/ExecutionLogPanel.tsx:34 - getReadableErrorMessage (used in module)
 src/components/ReferenceImagesDrawer.tsx:26 - ReferenceImagesDrawerProps (used in module)
 src/constants/appRoutes.ts:14 - ROUTE_SEGMENT_INVENTORIES (used in module)
 src/constants/v3ApiPaths.ts:6 - V3_API_PREFIX (used in module)
 src/dev/cacheMutationGuardrails.ts:14 - setCacheMutationGuardrailsTestOverride
 src/dev/cacheMutationGuardrails.ts:27 - isCacheMutationGuardrailsActive (used in module)
-src/dev/cacheMutationGuardrails.ts:51 - computeGuardrailNotices (used in module)
+src/dev/cacheMutationGuardrails.ts:50 - computeGuardrailNotices (used in module)
 src/dev/cacheMutationGuardrails.ts:11 - CacheObsRow (used in module)
 src/dev/cacheMutationObservability.ts:17 - setCacheMutationObservabilityTestOverride
 src/dev/cacheMutationObservability.ts:35 - isCacheMutationObservabilityActive (used in module)
-src/dev/cacheMutationObservability.ts:171 - getCacheMutationObservabilityEvents
-src/dev/cacheMutationObservability.ts:175 - clearCacheMutationObservabilityEvents
+src/dev/cacheMutationObservability.ts:170 - getCacheMutationObservabilityEvents
+src/dev/cacheMutationObservability.ts:174 - clearCacheMutationObservabilityEvents
 src/dev/cacheMutationObservability.ts:12 - ReviewStrategyObs (used in module)
 src/dev/cacheMutationObservability.ts:54 - ReviewActionCacheObsEvent (used in module)
 src/dev/cacheMutationObservability.ts:66 - NonReviewPatchObsEvent (used in module)
@@ -307,8 +306,8 @@ src/components/ui/index.ts:58 - DataTableProps
 src/components/ui/index.ts:59 - DataTableSortDirection
 src/components/ui/index.ts:60 - DataTableSortModel
 src/components/ui/index.ts:63 - AppSnackbarProvider
-src/components/ui/index.ts:63 - useAppSnackbar
-src/components/ui/index.ts:64 - AppSnackbarSeverity
+src/components/ui/index.ts:64 - useAppSnackbar
+src/components/ui/index.ts:65 - AppSnackbarSeverity
 src/features/analytics/types.ts:6 - AnalyticsSummaryResponse
 src/features/analytics/types.ts:7 - AnalyticsTrendsResponse
 src/features/analytics/types.ts:10 - InventoryPerformanceListResponse
@@ -332,7 +331,7 @@ src/features/auth/index.ts:28 - createInitialAuthState
 src/features/auth/index.ts:6 - AuthState
 src/features/auth/index.ts:13 - AuthContextValue
 src/features/auth/index.ts:18 - AuthContext
-src/features/auth/index.ts:19 - AuthProvider
+src/features/auth/index.ts:22 - AuthProvider
 src/features/auth/index.ts:18 - ProtectedRoute
 src/features/auth/storage.ts:68 - setStoredToken
 src/features/auth/storage.ts:73 - clearStoredToken
@@ -374,16 +373,15 @@ src/features/results/index.ts:39 - getInitialFilterFromReturnState
 src/features/results/index.ts:41 - ResultDetailNavigationState
 src/features/results/index.ts:42 - ResultDetailReturnTo
 src/features/results/index.ts:43 - ResultNavigationContext
-src/pages/analytics/CompareManyRunsPage.tsx:158 - __testables
 src/features/analytics/components/TrendBars.tsx:13 - default
 src/features/analytics/components/TrendBars.tsx:5 - TrendBarsProps (used in module)
+src/features/executionLogs/hooks/useExecutionLogDownloads.ts:8 - UseExecutionLogDownloadsOptions (used in module)
+src/features/imageAssets/hooks/useInventoryReferencePreview.ts:8 - UseInventoryReferencePreviewOptions (used in module)
 src/features/ingestionSessions/api/captureSessionsApi.ts:272 - uploadCaptureItem
 src/features/ingestionSessions/components/ImportSessionGroupingPanel.tsx:41 - ImportSessionGroupingPanelProps (used in module)
 src/features/ingestionSessions/hooks/useUploadCaptureItems.ts:38 - applyStagingChunkResult (used in module)
 src/features/ingestionSessions/hooks/useUploadCaptureItems.ts:21 - UploadItemState (used in module)
 src/features/ingestionSessions/hooks/useUploadCaptureItems.ts:31 - UploadRunResult (used in module)
-src/features/ingestionSessions/pages/IngestionSessionDetailPage.tsx:28 - hasRequiredDetailParams (used in module)
-src/features/ingestionSessions/pages/IngestionSessionsPage.tsx:19 - buildSessionsListParams (used in module)
 src/features/ingestionSessions/utils/groupingPreviewGate.ts:16 - groupHasMaterializedAssetForGroup
 src/features/ingestionSessions/utils/groupingPreviewGate.ts:28 - heuristicDetailItemsImplyNoLinkedSourceAssetForImportedGroupItems (used in module)
 src/features/ingestionSessions/utils/groupingPreviewGate.ts:64 - groupPreviewUnavailableReasonKey
@@ -416,6 +414,8 @@ src/features/inventories/components/InventoryReferenceImagesModule.tsx:15 - Inve
 src/features/inventories/hooks/useAisleAssetUploadFlow.ts:8 - UseAisleAssetUploadFlowOptions (used in module)
 src/features/inventories/hooks/useAisleProcessingFlow.ts:8 - UseAisleProcessingFlowOptions (used in module)
 src/features/inventories/hooks/useAisleProcessingFlow.ts:17 - AisleProcessingDialogTarget (used in module)
+src/features/inventories/hooks/useCreateAisleAction.ts:6 - UseCreateAisleActionOptions (used in module)
+src/features/inventories/hooks/useCreateInventoryFlow.ts:6 - UseCreateInventoryFlowOptions (used in module)
 src/features/results/components/AisleRunSelector.tsx:36 - AisleRunSelectorProps (used in module)
 src/features/results/components/index.ts:5 - ResultsOverviewHeader
 src/features/results/components/index.ts:6 - ResultsKpiCards

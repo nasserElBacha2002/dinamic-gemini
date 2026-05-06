@@ -10,10 +10,10 @@
 - Referencias a Button: 332
 - Referencias a Card: 154
 - Referencias a Dialog/Modal: 283
-- Referencias a Table/DataGrid: 341
+- Referencias a Table/DataGrid: 337
 - Referencias a TextField: 23
 - Referencias a Loading/CircularProgress: 295
-- Referencias a Alert/Snackbar/ErrorState/Empty: 302
+- Referencias a Alert/Snackbar/ErrorState/Empty: 307
 
 ## Patrones repetidos a revisar
 

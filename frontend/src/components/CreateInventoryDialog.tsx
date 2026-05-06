@@ -17,10 +17,10 @@ import {
   Typography,
 } from '@mui/material';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
-import { createInventory, uploadInventoryVisualReferences } from '../api/client';
 import type { CreateInventoryRequest, Inventory, InventoryProcessingMode } from '../api/types';
 import { ApiError } from '../api/types';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
+import { useCreateInventoryFlow } from '../features/inventories/hooks/useCreateInventoryFlow';
 import WizardModal from './ui/WizardModal';
 
 type PendingVisualReferenceFile = { file: File; previewUrl: string };
@@ -35,6 +35,10 @@ export interface CreateInventoryDialogProps {
   createInventoryFn?: (body: CreateInventoryRequest) => Promise<Inventory>;
 }
 
+function normalizeApiError(error: unknown): ApiError {
+  return error instanceof ApiError ? error : new ApiError(String(error));
+}
+
 export default function CreateInventoryDialog({
   open,
   onClose,
@@ -43,7 +47,12 @@ export default function CreateInventoryDialog({
   createInventoryFn,
 }: CreateInventoryDialogProps) {
   const { t } = useTranslation();
-  const doCreate = createInventoryFn ?? createInventory;
+  const {
+    submitCreateInventory,
+    submitUploadInventoryReferences,
+    isSubmitting: submitting,
+    clearError,
+  } = useCreateInventoryFlow({ createInventoryFn });
 
   const maxFiles = 3;
   const allowedTypes = useMemo(
@@ -53,7 +62,6 @@ export default function CreateInventoryDialog({
 
   const [activeStep, setActiveStep] = useState<0 | 1>(0);
   const [name, setName] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState('');
   const [filesError, setFilesError] = useState('');
   const [pendingFiles, setPendingFiles] = useState<PendingVisualReferenceFile[]>([]);
@@ -168,7 +176,7 @@ export default function CreateInventoryDialog({
   const createInventoryOnce = async (): Promise<Inventory> => {
     if (createdInventory) return createdInventory;
     const trimmed = (name || '').trim();
-    const created = await doCreate({
+    const created = await submitCreateInventory({
       name: trimmed,
       processing_mode: processingMode,
     } satisfies CreateInventoryRequest);
@@ -179,7 +187,7 @@ export default function CreateInventoryDialog({
   const uploadReferencesForInventory = async (inventoryId: string): Promise<void> => {
     if (pendingFiles.length === 0) return;
     setUploadState('uploading');
-    await uploadInventoryVisualReferences(inventoryId, pendingFiles.map((p) => p.file));
+    await submitUploadInventoryReferences(inventoryId, pendingFiles.map((p) => p.file));
     setUploadState('idle');
   };
 
@@ -188,22 +196,20 @@ export default function CreateInventoryDialog({
       setActiveStep(0);
       return;
     }
-    setSubmitting(true);
     setValidationError('');
     setUploadError('');
     setUploadState('idle');
+    clearError();
     onError(null);
     try {
       const created = await createInventoryOnce();
       onSuccess(created);
       handleClose();
     } catch (e) {
-      const err = e instanceof ApiError ? e : new ApiError(String(e));
+      const err = normalizeApiError(e);
       const msg = resolveApiErrorMessage(err, 'errors.create_inventory');
       setValidationError(typeof msg === 'string' ? msg : JSON.stringify(msg));
       onError(msg);
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -216,9 +222,9 @@ export default function CreateInventoryDialog({
       await handleCreateOnly();
       return;
     }
-    setSubmitting(true);
     setValidationError('');
     setUploadError('');
+    clearError();
     onError(null);
     try {
       const created = await createInventoryOnce();
@@ -229,7 +235,7 @@ export default function CreateInventoryDialog({
       } catch (e) {
         // Important: inventory exists now. Do not call onError (parent would show "create failed").
         // Keep the dialog open in "retry upload" mode.
-        const err = e instanceof ApiError ? e : new ApiError(String(e));
+        const err = normalizeApiError(e);
         const msg = resolveApiErrorMessage(err, 'errors.reference_upload_failed');
         setUploadState('failed');
         setUploadError(
@@ -239,26 +245,24 @@ export default function CreateInventoryDialog({
         );
       }
     } catch (e) {
-      const err = e instanceof ApiError ? e : new ApiError(String(e));
+      const err = normalizeApiError(e);
       const msg = resolveApiErrorMessage(err, 'errors.create_inventory');
       setValidationError(typeof msg === 'string' ? msg : JSON.stringify(msg));
       onError(msg);
-    } finally {
-      setSubmitting(false);
     }
   };
 
   const handleRetryUploadOnly = async () => {
     if (!createdInventory) return;
     if (pendingFiles.length === 0) return;
-    setSubmitting(true);
     setUploadError('');
+    clearError();
     try {
       await uploadReferencesForInventory(createdInventory.id);
       onSuccess(createdInventory);
       handleClose();
     } catch (e) {
-      const err = e instanceof ApiError ? e : new ApiError(String(e));
+      const err = normalizeApiError(e);
       const msg = resolveApiErrorMessage(err, 'errors.reference_upload_failed');
       setUploadState('failed');
       setUploadError(
@@ -266,8 +270,6 @@ export default function CreateInventoryDialog({
           ? t('dialogs.inventory.partial_failure_detail', { message: msg })
           : t('dialogs.inventory.partial_failure_generic'),
       );
-    } finally {
-      setSubmitting(false);
     }
   };
 
