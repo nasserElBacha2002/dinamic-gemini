@@ -56,7 +56,7 @@ jobs:
 
       - name: Mypy
         working-directory: backend
-        run: mypy .
+        run: mypy src
 
       # Root pytest.ini expects tests under backend/tests and pythonpath=backend.
       - name: Pytest
