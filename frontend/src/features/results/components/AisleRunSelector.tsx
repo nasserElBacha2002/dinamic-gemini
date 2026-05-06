@@ -17,13 +17,14 @@ import {
 import { useTranslation } from 'react-i18next';
 import type { JobSummary } from '../../../api/types';
 import i18n from '../../../i18n';
+import { getJobStatusLabel } from '../../../utils/jobStatus';
 
 function shortId(id: string, n = 10): string {
   return id.length <= n ? id : `${id.slice(0, n)}…`;
 }
 
 function formatJobLine(j: JobSummary): string {
-  const parts: string[] = [shortId(j.id), j.status];
+  const parts: string[] = [shortId(j.id), getJobStatusLabel(j.status)];
   const t = j.created_at?.slice(0, 16)?.replace('T', ' ');
   if (t) parts.push(t);
   if (j.provider_name) parts.push(j.provider_name);

@@ -130,7 +130,7 @@ describe('ReferenceImagesDrawer', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(
-        /Load results|something went wrong|preview failed|could not complete the operation/i
+        /resultados|cargar|ocurrió|something went wrong|preview failed|could not complete|la solicitud falló/i
       );
     });
   });

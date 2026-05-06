@@ -140,7 +140,7 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer({ ...baseContext, jobId: 'url-filter-job' });
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    fireEvent.click(screen.getByRole('button', { name: /Confirm result/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar resultado|confirm result/i }));
     expect(reviewMutateAsync).toHaveBeenCalledWith({
       action_type: 'confirm',
       job_id: 'row-storage-job',
@@ -159,13 +159,13 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    fireEvent.click(screen.getByRole('button', { name: /Wrong image/i }));
+    fireEvent.click(screen.getByRole('button', { name: /imagen incorrecta|wrong image/i }));
     expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
     expect(reviewMutateAsync).toHaveBeenCalledWith({ action_type: 'mark_image_mismatch' });
     await waitFor(() => {
       expect(showSnackbarMock).toHaveBeenCalledTimes(1);
     });
-    expect(showSnackbarMock).toHaveBeenCalledWith('Snackbar image mismatch', 'success');
+    expect(showSnackbarMock).toHaveBeenCalledWith('Imagen incorrecta', 'success');
   });
 
   it('confirm result triggers exactly one mutation request', async () => {
@@ -180,14 +180,14 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    fireEvent.click(screen.getByRole('button', { name: /Confirm result/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar resultado|confirm result/i }));
     expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
     expect(reviewMutateAsync).toHaveBeenCalledWith({ action_type: 'confirm' });
     expect(reviewMutateAsync.mock.calls[0][0]).not.toHaveProperty('job_id');
     await waitFor(() => {
       expect(showSnackbarMock).toHaveBeenCalledTimes(1);
     });
-    expect(showSnackbarMock).toHaveBeenCalledWith('Snackbar confirmed', 'success');
+    expect(showSnackbarMock).toHaveBeenCalledWith('Confirmado', 'success');
   });
 
   it('rapid double-click confirm still triggers only one mutation', async () => {
@@ -208,7 +208,7 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    const confirmBtn = screen.getByRole('button', { name: /Confirm result/i });
+    const confirmBtn = screen.getByRole('button', { name: /confirmar resultado|confirm result/i });
     fireEvent.click(confirmBtn);
     fireEvent.click(confirmBtn);
     expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
@@ -227,9 +227,9 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    fireEvent.click(screen.getByRole('button', { name: /Correct quantity/i }));
-    fireEvent.change(screen.getByPlaceholderText(/qty placeholder/i), { target: { value: '5' } });
-    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /corregir cantidad|correct quantity/i }));
+    fireEvent.change(screen.getByPlaceholderText(/qty placeholder|cantidad/i), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar|save/i }));
     expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
     expect(reviewMutateAsync).toHaveBeenCalledWith({
       action_type: 'update_quantity',
@@ -238,7 +238,7 @@ describe('QuickReviewDrawer', () => {
     await waitFor(() => {
       expect(showSnackbarMock).toHaveBeenCalledTimes(1);
     });
-    expect(showSnackbarMock).toHaveBeenCalledWith('Snackbar qty updated', 'success');
+    expect(showSnackbarMock).toHaveBeenCalledWith('Cantidad actualizada', 'success');
   });
 
   it('update SKU triggers exactly one mutation request', async () => {
@@ -253,9 +253,11 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    fireEvent.click(screen.getByRole('button', { name: /Correct SKU/i }));
-    fireEvent.change(screen.getByPlaceholderText(/Update SKU/i), { target: { value: 'NEW-SKU' } });
-    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /corregir sku|correct sku/i }));
+    fireEvent.change(screen.getByPlaceholderText(/update sku|nuevo sku|actualizar sku/i), {
+      target: { value: 'NEW-SKU' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /guardar|save/i }));
     expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
     expect(reviewMutateAsync).toHaveBeenCalledWith({
       action_type: 'update_sku',
@@ -264,7 +266,7 @@ describe('QuickReviewDrawer', () => {
     await waitFor(() => {
       expect(showSnackbarMock).toHaveBeenCalledTimes(1);
     });
-    expect(showSnackbarMock).toHaveBeenCalledWith('Snackbar sku updated', 'success');
+    expect(showSnackbarMock).toHaveBeenCalledWith('SKU actualizado', 'success');
   });
 
   it('mark invalid confirm shows inline error in dialog when mutation fails', async () => {
@@ -280,10 +282,12 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    fireEvent.click(screen.getByRole('button', { name: /Mark result invalid/i }));
+    fireEvent.click(screen.getByRole('button', { name: /marcar resultado como inválido|mark result invalid/i }));
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: /mark invalid cta/i }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/forbidden|something went wrong|not allowed|could not complete/i);
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: /marcar como inválido|mark invalid cta/i }),
+    );
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(/prohibido|ocurrió|something went wrong|not allowed|could not complete|acceso denegado/i);
     expect(reviewMutateAsync).toHaveBeenCalledTimes(1);
     expect(reviewMutateAsync).toHaveBeenCalledWith({ action_type: 'delete_position' });
   });
@@ -318,7 +322,7 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    expect(screen.getByText('Evidence section')).toBeInTheDocument();
+    expect(screen.getByText(/sección de evidencia|evidence section/i)).toBeInTheDocument();
     expect(screen.getByText(/IMG_1024.JPG/)).toBeInTheDocument();
   });
 
@@ -334,7 +338,9 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    expect(screen.getByRole('button', { name: /^Preview$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /preview|vista previa|view full image|ver imagen/i })
+    ).toBeInTheDocument();
   });
 
   it('shows no-evidence state when no source image', async () => {
@@ -353,8 +359,10 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    expect(screen.getByText('Evidence section')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Preview$/i })).toBeNull();
+    expect(screen.getByText(/sección de evidencia|evidence section/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /preview|vista previa|view full image|ver imagen/i })
+    ).toBeNull();
   });
 
   it('opens shared confirm dialog when Mark result invalid is clicked', async () => {
@@ -369,9 +377,11 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    fireEvent.click(screen.getByRole('button', { name: /Mark result invalid/i }));
-    expect(await screen.findByRole('heading', { name: /mark invalid title/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: /marcar resultado como inválido|mark result invalid/i }));
+    expect(
+      await screen.findByRole('heading', { name: /marcar como inválido|mark invalid title/i }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
   });
 
   it('shows review controls: confirm and wrong-image action', async () => {
@@ -386,8 +396,8 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    expect(screen.getByRole('button', { name: /Confirm result/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Wrong image/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /confirmar resultado|confirm result/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /imagen incorrecta|wrong image/i })).toBeInTheDocument();
   });
 
   it('shows prev/next when resultIds has multiple and position is in list', async () => {
@@ -406,9 +416,9 @@ describe('QuickReviewDrawer', () => {
       resultIds: ['pos-0', 'pos-1', 'pos-2'],
     });
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    expect(screen.getByText(/Result 2 of 3/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Previous result/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Next result/i })).toBeInTheDocument();
+    expect(screen.getByText(/resultado 2 de 3|result 2 of 3/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /resultado anterior|previous result/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /siguiente resultado|next result/i })).toBeInTheDocument();
   });
 
   it('hides prev/next when only one id in list', async () => {
@@ -423,7 +433,7 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer({ ...baseContext, resultIds: ['pos-1'] });
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    expect(screen.queryByText(/Result \d+ of \d+/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/result(ado)? \d+ (de|of) \d+/i)).not.toBeInTheDocument();
   });
 
   it('hides prev/next when current id not in resultIds', async () => {
@@ -442,7 +452,7 @@ describe('QuickReviewDrawer', () => {
       resultIds: ['other-1', 'other-2'],
     });
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    expect(screen.queryByText(/Result \d+ of \d+/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/result(ado)? \d+ (de|of) \d+/i)).not.toBeInTheDocument();
   });
 
   it('first of three disables Previous', async () => {
@@ -461,9 +471,9 @@ describe('QuickReviewDrawer', () => {
       resultIds: ['pos-1', 'pos-2', 'pos-3'],
     });
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    expect(screen.getByText(/Result 1 of 3/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Previous result/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Next result/i })).not.toBeDisabled();
+    expect(screen.getByText(/resultado 1 de 3|result 1 of 3/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /resultado anterior|previous result/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /siguiente resultado|next result/i })).not.toBeDisabled();
   });
 
   it('last of three disables Next', async () => {
@@ -482,8 +492,8 @@ describe('QuickReviewDrawer', () => {
       resultIds: ['pos-1', 'pos-2', 'pos-3'],
     });
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
-    expect(screen.getByText(/Result 3 of 3/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Previous result/i })).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: /Next result/i })).toBeDisabled();
+    expect(screen.getByText(/resultado 3 de 3|result 3 of 3/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /resultado anterior|previous result/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /siguiente resultado|next result/i })).toBeDisabled();
   });
 });

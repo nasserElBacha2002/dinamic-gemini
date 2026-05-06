@@ -51,7 +51,7 @@ describe('CompareRunsDialog', () => {
       </WithTheme>
     );
 
-    const go = screen.getByRole('button', { name: /open compare/i });
+    const go = screen.getByRole('button', { name: /abrir comparación|open compare/i });
     expect(go).toBeDisabled();
     fireEvent.click(go);
     expect(onConfirm).not.toHaveBeenCalled();
@@ -74,7 +74,7 @@ describe('CompareRunsDialog', () => {
       </WithTheme>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /open compare/i }));
+    fireEvent.click(screen.getByRole('button', { name: /abrir comparación|open compare/i }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
@@ -95,6 +95,6 @@ describe('CompareRunsDialog', () => {
     );
 
     /** Copy comes from i18n (`benchmark.compare_readonly_explain`). */
-    expect(screen.getByText(/Compare readonly explain|readonly/i)).toBeInTheDocument();
+    expect(screen.getByText(/solo lectura|compare readonly|readonly/i)).toBeInTheDocument();
   });
 });

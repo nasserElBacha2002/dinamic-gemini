@@ -30,7 +30,7 @@ describe('ConfirmDialog', () => {
         />
       </WithTheme>
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: /eliminar|delete/i }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onClose).not.toHaveBeenCalled();
   });
@@ -48,7 +48,7 @@ describe('ConfirmDialog', () => {
         />
       </WithTheme>
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -101,6 +101,6 @@ describe('ConfirmDialog', () => {
       </WithTheme>
     );
     expect(screen.getByRole('button', { name: 'Submitting…' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
   });
 });

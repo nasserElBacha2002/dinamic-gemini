@@ -3,9 +3,9 @@ import { getJobStatusLabel, jobStatusToBadgeSemantic } from '../src/utils/jobSta
 
 describe('jobStatus', () => {
   it('maps known statuses to operator labels', () => {
-    expect(getJobStatusLabel('succeeded')).toBe('Succeeded');
-    expect(getJobStatusLabel('failed')).toBe('Failed');
-    expect(getJobStatusLabel('running')).toBe('Running');
+    expect(getJobStatusLabel('succeeded')).toBe('Finalizada correctamente');
+    expect(getJobStatusLabel('failed')).toBe('Fallida');
+    expect(getJobStatusLabel('running')).toBe('En ejecución');
   });
 
   it('maps job statuses to stable StatusBadge semantics', () => {

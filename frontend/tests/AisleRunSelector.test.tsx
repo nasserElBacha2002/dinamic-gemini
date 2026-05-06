@@ -38,7 +38,7 @@ describe('AisleRunSelector', () => {
     expect(options).toHaveLength(2);
     expect(options[0]).toHaveAttribute('data-value', 'job-op');
     expect(options[1]).toHaveAttribute('data-value', 'job-bench-1');
-    expect(options[0].textContent).toMatch(/operational/i);
-    expect(options[1].textContent).toMatch(/benchmark/i);
+    expect(options[0].textContent).toMatch(/operativo|operational/i);
+    expect(options[1].textContent).toMatch(/referencia|benchmark/i);
   });
 });

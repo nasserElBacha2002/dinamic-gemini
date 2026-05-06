@@ -61,7 +61,7 @@ describe('PromoteOperationalDialog', () => {
       </WithTheme>
     );
 
-    const combo = screen.getByRole('combobox', { name: /succeeded run/i });
+    const combo = screen.getByRole('combobox', { name: /corrida exitosa|succeeded run/i });
     fireEvent.mouseDown(combo);
     const list = await screen.findByRole('listbox');
     const opts = within(list).getAllByRole('option');
@@ -87,7 +87,7 @@ describe('PromoteOperationalDialog', () => {
       </WithTheme>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /confirm promote/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar promoción|confirm promote/i }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
@@ -108,6 +108,6 @@ describe('PromoteOperationalDialog', () => {
     );
 
     /** Copy from `benchmark.promote_body` (placeholder strings in en locale). */
-    expect(screen.getByText(/Promote body/i)).toBeInTheDocument();
+    expect(screen.getByText(/promover esta corrida|promote body/i)).toBeInTheDocument();
   });
 });

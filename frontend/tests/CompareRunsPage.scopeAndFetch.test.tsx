@@ -179,7 +179,7 @@ describe('CompareRunsPage scope and fetch (integration)', () => {
     await screen.findByTestId('compare-runs-job-scope');
     expect(client.getAisleBenchmarkCompare).not.toHaveBeenCalled();
 
-    const loadBtn = await screen.findByRole('button', { name: /load comparison/i });
+    const loadBtn = await screen.findByRole('button', { name: /load comparison|cargar comparación/i });
     await waitFor(() => expect(loadBtn).not.toBeDisabled());
     fireEvent.click(loadBtn);
 

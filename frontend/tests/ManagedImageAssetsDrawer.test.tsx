@@ -58,7 +58,7 @@ describe('ManagedImageAssetsDrawer', () => {
         previewBlockedMessage={() => 'blocked-by-type'}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    fireEvent.click(screen.getByRole('button', { name: /vista previa|preview/i }));
     expect(onFetchPreview).not.toHaveBeenCalled();
   });
 
@@ -80,7 +80,7 @@ describe('ManagedImageAssetsDrawer', () => {
       );
     }
     const { rerender } = render(<Harness open />);
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: /eliminar|delete/i }));
     expect(screen.getByText('confirm-x.jpg')).toBeTruthy();
     rerender(<Harness open={false} />);
     expect(screen.queryByText('confirm-x.jpg')).toBeNull();

@@ -28,7 +28,7 @@ function renderShell(username: string | null) {
 describe('AppShell admin AI nav', () => {
   it('shows AI nav item when username is admin', () => {
     renderShell('admin');
-    expect(screen.getByText(/AI configuration|IA y proveedores/i)).toBeInTheDocument();
+    expect(screen.getByText(/Configuración de IA|AI configuration|IA y proveedores/i)).toBeInTheDocument();
   });
 
   it('hides AI nav item when username is not admin', () => {

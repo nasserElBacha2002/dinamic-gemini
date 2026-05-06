@@ -101,7 +101,7 @@ describe('QuickReviewDrawer representative anchor sync', () => {
     await waitFor(() => {
       expect(submitReviewArgsMock).toHaveBeenLastCalledWith('inv-1', 'aisle-1', 'pos-representative');
     });
-    fireEvent.click(screen.getByRole('button', { name: /Confirm result/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar resultado|confirm result/i }));
 
     expect(reviewMutateAsync).toHaveBeenCalledWith({ action_type: 'confirm' });
     expect(submitReviewArgsMock).toHaveBeenLastCalledWith('inv-1', 'aisle-1', 'pos-representative');
