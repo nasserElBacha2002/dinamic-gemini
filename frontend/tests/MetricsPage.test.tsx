@@ -4,7 +4,6 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import MetricsPage from '../src/features/analytics/MetricsPage';
-import { ApiError } from '../src/api/types';
 
 const mockUseAnalyticsDashboard = vi.fn();
 const mockUseInventoriesList = vi.fn();

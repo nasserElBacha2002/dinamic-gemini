@@ -88,11 +88,12 @@ export default function ManagedImageAssetsDrawer({
   onDelete,
   isDeleting = false,
   deleteError,
-  previewErrorMessageKey: _previewErrorMessageKey = 'errors.preview_reference_failed',
+  previewErrorMessageKey = 'errors.preview_reference_failed',
   previewBlockedMessage,
   formatDeleteConfirm,
 }: ManagedImageAssetsDrawerProps) {
   const { t } = useTranslation();
+  void previewErrorMessageKey;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
   const previewRevokeRef = useRef<(() => void) | null>(null);
