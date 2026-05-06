@@ -76,7 +76,11 @@ export default function ConfirmDialog({
         </>
       }
     >
-      <DialogContentText component="div">{description}</DialogContentText>
+      {typeof description === 'string' ? (
+        <DialogContentText>{description}</DialogContentText>
+      ) : (
+        description
+      )}
       {errorMessage ? (
         <Alert severity="error" sx={{ mt: 2 }}>
           {errorMessage}

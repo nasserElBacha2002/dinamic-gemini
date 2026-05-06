@@ -2,10 +2,11 @@
  * Sprint 5.2 — shared confirm shell (loading label, callbacks).
  */
 
-import type { ReactNode } from 'react';
+import '@testing-library/jest-dom/vitest';
+import React, { type ReactNode } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { ThemeProvider } from '@mui/material';
+import { Alert, ThemeProvider } from '@mui/material';
 import theme from '../src/theme';
 import ConfirmDialog from '../src/components/ui/ConfirmDialog';
 
@@ -65,6 +66,23 @@ describe('ConfirmDialog', () => {
       </WithTheme>
     );
     expect(screen.getByRole('alert')).toHaveTextContent(/Request failed/i);
+  });
+
+  it('renders custom ReactNode description without wrapping in DialogContentText', () => {
+    render(
+      <WithTheme>
+        <ConfirmDialog
+          open
+          title="Confirm action"
+          description={<Alert severity="warning">Warning message</Alert>}
+          confirmLabel="Confirm"
+          cancelLabel="Cancel"
+          onClose={() => {}}
+          onConfirm={() => {}}
+        />
+      </WithTheme>
+    );
+    expect(screen.getByText('Warning message')).toBeInTheDocument();
   });
 
   it('shows confirmPendingLabel and disables actions while loading', () => {
