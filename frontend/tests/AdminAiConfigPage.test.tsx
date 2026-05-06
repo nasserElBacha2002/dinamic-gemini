@@ -136,7 +136,7 @@ describe('AdminAiConfigPage', () => {
 
     renderWithAuth({ username: 'admin' });
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText(/Snapshot/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Generated at raw/i)).toBeInTheDocument());
     expect(screen.getAllByText('Gemini').length).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByRole('tab', { name: /prompts/i }));
@@ -197,9 +197,7 @@ describe('AdminAiConfigPage', () => {
     fireEvent.click(screen.getByText('OpenAI'));
     fireEvent.click(screen.getByRole('tab', { name: /prompts/i }));
     await waitFor(() =>
-      expect(
-        screen.getByText(/No composed variants|No hay variantes|empty_variants/i)
-      ).toBeInTheDocument()
+      expect(screen.getByText(/Empty variants/i)).toBeInTheDocument()
     );
   });
 });

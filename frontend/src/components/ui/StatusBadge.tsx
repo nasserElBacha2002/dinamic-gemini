@@ -3,7 +3,7 @@
  * Uses fixed **semantic → color** mapping (§6.3). Use this for new screens when status fits the semantic vocabulary.
  *
  * **vs `StatusChip`:** `StatusChip` is the **transitional / escape hatch** when a util already maps domain → MUI
- * `Chip` color (e.g. `getAisleStatusColor`). Prefer migrating call sites to `StatusBadge` + `StatusBadgeSemantic`
+ * `Chip` color. Prefer migrating call sites to `StatusBadge` + `StatusBadgeSemantic`
  * when semantics align; do not add a third status chip pattern.
  */
 

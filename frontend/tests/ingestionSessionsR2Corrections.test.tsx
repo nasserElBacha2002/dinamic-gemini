@@ -15,11 +15,18 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('../src/features/ingestionSessions/hooks/useCaptureSessions', () => ({
-  useCaptureSessionDetail: (...args: unknown[]) => mockUseCaptureSessionDetail(...args),
-  useCloseCaptureSession: (...args: unknown[]) => mockUseCloseCaptureSession(...args),
-  useCancelCaptureSession: (...args: unknown[]) => mockUseCancelCaptureSession(...args),
-}));
+vi.mock('../src/features/ingestionSessions/hooks/useCaptureSessions', async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import('../src/features/ingestionSessions/hooks/useCaptureSessions')
+    >();
+  return {
+    ...actual,
+    useCaptureSessionDetail: (...args: unknown[]) => mockUseCaptureSessionDetail(...args),
+    useCloseCaptureSession: (...args: unknown[]) => mockUseCloseCaptureSession(...args),
+    useCancelCaptureSession: (...args: unknown[]) => mockUseCancelCaptureSession(...args),
+  };
+});
 
 function renderDetail(url: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
