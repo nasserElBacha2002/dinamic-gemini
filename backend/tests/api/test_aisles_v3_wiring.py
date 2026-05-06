@@ -262,7 +262,10 @@ def test_get_processing_provider_options_reflects_env_processing_model_lists(
         config_mod._settings = None
 
 
-def test_post_process_with_explicit_gemini_provider_persisted_on_status() -> None:
+def test_post_process_with_explicit_gemini_provider_persisted_on_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit gemini requires credential gate satisfied; CI uses a fake key (no network)."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-ci-not-a-real-secret")
+    config_mod.reload_settings()
     app.dependency_overrides[get_current_admin] = _fake_admin
     try:
         opts = client.get("/api/v3/inventories/processing-provider-options")
@@ -298,6 +301,8 @@ def test_post_process_with_explicit_gemini_provider_persisted_on_status() -> Non
         assert lj.get("model_name") == gemini_default
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        config_mod.reload_settings()
 
 
 def test_post_process_production_inventory_ignores_request_provider_and_uses_snapshot() -> None:
@@ -332,7 +337,9 @@ def test_post_process_production_inventory_ignores_request_provider_and_uses_sna
     assert lj.get("provider_name") != "openai"
 
 
-def test_post_process_invalid_model_for_provider_returns_422() -> None:
+def test_post_process_invalid_model_for_provider_returns_422(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-ci-not-a-real-secret")
+    config_mod.reload_settings()
     app.dependency_overrides[get_current_admin] = _fake_admin
     try:
         create_resp = client.post(
@@ -356,6 +363,8 @@ def test_post_process_invalid_model_for_provider_returns_422() -> None:
         assert "model" in response.json()["detail"].lower()
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        config_mod.reload_settings()
 
 
 def test_post_process_unknown_provider_returns_422() -> None:
