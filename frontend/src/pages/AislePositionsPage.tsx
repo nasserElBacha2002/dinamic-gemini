@@ -6,7 +6,7 @@ import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Alert, Box, Button, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, Tooltip, Typography } from '@mui/material';
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
 import { exportAisleResultsCsv, getAisleMergeResults, type AislePositionsListQuery } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
@@ -15,7 +15,7 @@ import { recordExplicitRefreshObs, summarizeQueryKey } from '../dev/cacheMutatio
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import type { RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
-import { FilterToolbar, SectionCard, TableSearchField, useAppSnackbar } from '../components/ui';
+import { FilterToolbar, TableSearchField, useAppSnackbar } from '../components/ui';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompare } from '../constants/appRoutes';
 import {
@@ -38,16 +38,14 @@ import QuickReviewDrawer from '../features/reviewQueue/components/QuickReviewDra
 import type { OpenReviewDrawerPayload, QuickReviewContext } from '../features/reviewQueue/quickReviewContext';
 import {
   ResultsQuickFilters,
-  ResultsTable,
   ResultsEmptyState,
-  ResultsFilteredEmptyState,
   ResultsLoadingState,
   ResultsErrorState,
   AisleResultsJobSelector,
   AisleResultsRunNotFoundAlert,
   AisleResultsNoJobsAlert,
   AisleResultsHeader,
-  AisleResultsMergeFeedback,
+  AisleResultsTableSection,
 } from '../features/results/components';
 import { mergeConsolidatedDetail } from '../features/results/adapters/aislePositionsFormatters';
 import {
@@ -622,85 +620,41 @@ export default function AislePositionsPage() {
       ) : null}
 
       {!blockPositionsForTestNoJobs && !errorMessage && !resultsLoading && results.length > 0 ? (
-        <>
-          <Box sx={{ mb: 3, mt: 1 }}>
-            <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-              {t('positions.counted_total')}
-            </Typography>
-            <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>
-              {kpi.aisleTotalCounted}
-            </Typography>
-          </Box>
-
-          <AisleResultsMergeFeedback feedback={mergeFeedback} />
-
-          <FilterToolbar
-            onReset={handleResetFilters}
-            resetDisabled={filter === 'all' && !skuSearch.trim()}
-          >
-            <TableSearchField
-              label={t('positions.search_label')}
-              placeholder={t('positions.filter_sku_placeholder')}
-              value={skuSearch}
-              onChange={(v) => {
-                setSkuSearch(v);
-                setPage(1);
-              }}
-              data-testid="aisle-positions-sku-search"
-            />
-            <Tooltip title={tableSort === 'photo' ? t('positions.order_api') : t('positions.order_client')}>
-              <span>
-                <ToggleButtonGroup
-                  size="small"
-                  exclusive
-                  value={tableSort}
-                  onChange={(_, value) => {
-                    if (value != null) setTableSort(value);
-                  }}
-                  aria-label={t('common.row_order')}
-                >
-                  <ToggleButton value="photo">{t('positions.photo_order')}</ToggleButton>
-                  <ToggleButton value="priority">{t('positions.review_priority_sort')}</ToggleButton>
-                </ToggleButtonGroup>
-              </span>
-            </Tooltip>
-            <ResultsQuickFilters
-              value={filter}
-              onChange={(v) => {
-                setFilter(v);
-                setPage(1);
-              }}
-              counts={{
-                all: kpi.total,
-                needs_review: kpi.needsReview,
-                low_confidence: kpi.lowConfidence,
-                qty_zero: kpi.qtyZero,
-                invalid_traceability: kpi.invalidTraceability,
-                missing_evidence: missingEvidenceCount,
-              }}
-            />
-          </FilterToolbar>
-
-          {sortedForTable.length === 0 ? (
-            <ResultsFilteredEmptyState onClearFilter={handleClearFilterOnly} />
-          ) : (
-            <SectionCard title={t('positions.title_results')}>
-              <Box sx={{ overflow: 'auto' }}>
-                <ResultsTable
-                  results={tableRows}
-                  onOpenReview={handleOpenReview}
-                  pagination={{
-                    page: effectivePage,
-                    pageSize,
-                    totalItems: sortedForTable.length,
-                    onPageChange: setPage,
-                    onPageSizeChange: setPageSize,
-                  }}
-                />
-              </Box>
-            </SectionCard>
-          )}
-        </>
+        <AisleResultsTableSection
+          countedTotal={kpi.aisleTotalCounted}
+          mergeFeedback={mergeFeedback}
+          onResetFilters={handleResetFilters}
+          resetDisabled={filter === 'all' && !skuSearch.trim()}
+          skuSearch={skuSearch}
+          onSkuSearchChange={(v) => {
+            setSkuSearch(v);
+            setPage(1);
+          }}
+          tableSort={tableSort}
+          onTableSortChange={(value) => setTableSort(value)}
+          filter={filter}
+          onFilterChange={(v) => {
+            setFilter(v);
+            setPage(1);
+          }}
+          counts={{
+            all: kpi.total,
+            needs_review: kpi.needsReview,
+            low_confidence: kpi.lowConfidence,
+            qty_zero: kpi.qtyZero,
+            invalid_traceability: kpi.invalidTraceability,
+            missing_evidence: missingEvidenceCount,
+          }}
+          sortedForTableLength={sortedForTable.length}
+          onClearFilterOnly={handleClearFilterOnly}
+          tableRows={tableRows}
+          onOpenReview={handleOpenReview}
+          page={effectivePage}
+          pageSize={pageSize}
+          totalItems={sortedForTable.length}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       ) : null}
 
       {isTestInventory ? (

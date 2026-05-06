@@ -16,5 +16,6 @@ export { default as AisleResultsRunNotFoundAlert } from './AisleResultsRunNotFou
 export { default as AisleResultsNoJobsAlert } from './AisleResultsNoJobsAlert';
 export { default as AisleResultsHeader } from './AisleResultsHeader';
 export { default as AisleResultsMergeFeedback } from './AisleResultsMergeFeedback';
+export { default as AisleResultsTableSection } from './AisleResultsTableSection';
 
 export * from './detail';
