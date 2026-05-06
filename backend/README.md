@@ -40,29 +40,46 @@ Or use the root dev script to run backend + frontend together:
 
 ## Tests
 
-From the **repository root** (recommended; uses root `pytest.ini` and coverage):
+Create SQL Server test configuration (gitignored):
+
+```bash
+cp backend/.env.test.example backend/.env.test
+```
+
+Edit `backend/.env.test` and point `SQLSERVER_DATABASE` (or `SQLSERVER_CONNECTION_STRING`) at a **dedicated** database (name should clearly indicate test, e.g. `dinamic_inventory_test` or `dinamic-inventory-test`). Pytest loads `.env.test` **after** `.env` with override so your manual dev DB is not used.
+
+Run tests from **repository root** (recommended; uses root `pytest.ini` and coverage):
 
 ```bash
 pytest
 ```
 
-From this directory:
+Or from `backend/`:
 
 ```bash
 cd backend && pytest
 ```
 
-### SQL Server (local integration tests)
+### SQL Server behaviour
 
-- Copy `backend/.env.test.example` to `backend/.env.test` and/or `.env.test` at the repository root. These files are loaded **before** tests import the app, with **override** so a dedicated test database (name should include e.g. `test` / `_test` / `pytest`) does not share your manual dev database.
-- If `SQLSERVER_*` is set but the database name is not clearly a test database, pytest stops immediately; see `src/env_settings/sqlserver_pytest_policy.py` and the allow-list env var `DINAMIC_PYTEST_SQLSERVER_DATABASE_ALLOWLIST`.
-- **Optional:** clear domain rows on a local loopback server (dry-run by default):
+- If SQL Server is configured but the database name is not clearly a test DB (and not on `DINAMIC_PYTEST_SQLSERVER_DATABASE_ALLOWLIST`), pytest **exits before collecting tests**. Escape hatch (exceptional): `DINAMIC_PYTEST_ALLOW_NON_TEST_SQLSERVER=1` (disables automatic integration cleanup too).
+- `@pytest.mark.integration` tests that use SQL Server run **business-table cleanup before and after each test** when auto cleanup is enabled (see `backend/tests/conftest.py`). Disable with `DINAMIC_PYTEST_DISABLE_SQLSERVER_TEST_CLEANUP=1`.
 
-  ```bash
-  python backend/scripts/clean_local_business_data.py
-  ```
+### Manual local business-data cleanup (manual dev DB)
 
-  Deletes require `--confirm`, `DINAMIC_CONFIRM_LOCAL_BUSINESS_DATA_DELETION=1`, and a loopback `SERVER=` unless `DINAMIC_ALLOW_REMOTE_BUSINESS_DATA_CLEANUP=1`.
+The cleanup script loads **`.env` + `backend/.env` only** — not `.env.test`. Use `--use-env-test` only if you deliberately want the same variables as pytest.
+
+```bash
+# Dry-run (counts only, no deletes)
+python backend/scripts/clean_local_business_data.py
+
+# Destructive delete (requires confirmation env + loopback SERVER= unless remote override)
+DINAMIC_CONFIRM_LOCAL_BUSINESS_DATA_DELETION=1 python backend/scripts/clean_local_business_data.py --confirm
+```
+
+Deletes require `DINAMIC_CONFIRM_LOCAL_BUSINESS_DATA_DELETION=1`, `--confirm`, and a loopback `SERVER=` unless `DINAMIC_ALLOW_REMOTE_BUSINESS_DATA_CLEANUP=1`. After deletes, the script re-counts tables in the same transaction and aborts if critical business tables are non-empty.
+
+Optional tuning: `DINAMIC_INVENTORY_JOBS_DELETE_MAX_ITERATIONS` (default `1000`) caps iterations when resolving `inventory_jobs` self-FK deletes.
 
 ## Local/dev worker verification
 

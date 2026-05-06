@@ -6,6 +6,9 @@ Does not drop tables or modify ``schema_migrations``. Uses the same env resoluti
 
 Default mode is dry-run (row counts per table). ``--confirm`` performs deletes inside one transaction.
 
+Loads ``.env`` from repo root and ``backend/.env`` only — **not** ``.env.test`` (that file is for
+pytest). Use ``--use-env-test`` only if you intentionally want the same DB variables as tests.
+
 Safety for ``--confirm``:
 
 - ``DINAMIC_CONFIRM_LOCAL_BUSINESS_DATA_DELETION=1`` must be set.
@@ -32,135 +35,16 @@ if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
 
 
-def _load_dotenv_layers() -> None:
+def _load_dotenv_layers(*, use_env_test: bool = False) -> None:
     try:
         from dotenv import load_dotenv
     except ImportError:
         return
     load_dotenv(_REPO_ROOT / ".env", override=False)
     load_dotenv(_BACKEND_ROOT / ".env", override=False)
-
-
-def _count_if_exists(cur, schema: str, table: str) -> int:
-    cur.execute(
-        """
-        SELECT COUNT_BIG(*)
-        FROM sys.tables t
-        INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-        WHERE s.name = ? AND t.name = ?
-        """,
-        (schema, table),
-    )
-    row = cur.fetchone()
-    if not row or int(row[0]) == 0:
-        return 0
-    cur.execute(f"SELECT COUNT_BIG(*) FROM [{schema}].[{table}]")
-    row = cur.fetchone()
-    return int(row[0]) if row and row[0] is not None else 0
-
-
-_TABLES_FOR_REPORT: tuple[tuple[str, str], ...] = (
-    ("dbo", "capture_session_confirmations"),
-    ("dbo", "capture_session_items"),
-    ("dbo", "capture_session_groups"),
-    ("dbo", "capture_sessions"),
-    ("dbo", "review_actions"),
-    ("dbo", "product_records"),
-    ("dbo", "evidences"),
-    ("dbo", "positions"),
-    ("dbo", "final_count_records"),
-    ("dbo", "raw_labels"),
-    ("dbo", "normalized_labels"),
-    ("dbo", "inventory_visual_references"),
-    ("dbo", "source_assets"),
-    ("dbo", "inventory_jobs"),
-    ("dbo", "aisles"),
-    ("dbo", "inventories"),
-    ("dbo", "pallet_results"),
-    ("dbo", "job_events"),
-    ("dbo", "jobs"),
-    ("dbo", "v3_jobs"),
-)
-
-
-def _delete_inventory_jobs(cur) -> None:
-    """Delete inventory_jobs respecting nullable self-FK retry_of_job_id (referrer rows first)."""
-    while True:
-        cur.execute(
-            """
-            DELETE FROM dbo.inventory_jobs
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM dbo.inventory_jobs AS child
-                WHERE child.retry_of_job_id = dbo.inventory_jobs.id
-            )
-            """
-        )
-        if cur.rowcount == 0:
-            break
-
-
-def _exec_if_table(cur, schema: str, table: str, sql_body: str) -> None:
-    cur.execute(
-        f"""
-        IF OBJECT_ID(N'[{schema}].[{table}]', N'U') IS NOT NULL
-        BEGIN
-            {sql_body}
-        END
-        """
-    )
-
-
-def _run_delete_pipeline(cur) -> None:
-    _exec_if_table(
-        cur,
-        "dbo",
-        "source_assets",
-        "UPDATE dbo.source_assets SET capture_session_item_id = NULL WHERE capture_session_item_id IS NOT NULL;",
-    )
-    for tbl in (
-        "capture_session_confirmations",
-        "capture_session_items",
-        "capture_session_groups",
-        "capture_sessions",
-        "review_actions",
-        "product_records",
-        "evidences",
-        "positions",
-        "final_count_records",
-        "raw_labels",
-        "normalized_labels",
-        "inventory_visual_references",
-        "source_assets",
-    ):
-        _exec_if_table(cur, "dbo", tbl, f"DELETE FROM dbo.[{tbl}];")
-
-    _exec_if_table(
-        cur,
-        "dbo",
-        "aisles",
-        "UPDATE dbo.aisles SET operational_job_id = NULL WHERE operational_job_id IS NOT NULL;",
-    )
-
-    cur.execute(
-        """
-        SELECT 1
-        FROM sys.tables AS t
-        INNER JOIN sys.schemas AS s ON t.schema_id = s.schema_id
-        WHERE s.name = N'dbo' AND t.name = N'inventory_jobs'
-        """
-    )
-    if cur.fetchone():
-        _delete_inventory_jobs(cur)
-
-    for tbl in ("aisles", "inventories"):
-        _exec_if_table(cur, "dbo", tbl, f"DELETE FROM dbo.[{tbl}];")
-
-    for tbl in ("pallet_results", "job_events"):
-        _exec_if_table(cur, "dbo", tbl, f"DELETE FROM dbo.[{tbl}];")
-
-    _exec_if_table(cur, "dbo", "jobs", "DELETE FROM dbo.jobs;")
-    _exec_if_table(cur, "dbo", "v3_jobs", "DELETE FROM dbo.v3_jobs;")
+    if use_env_test:
+        load_dotenv(_REPO_ROOT / ".env.test", override=True)
+        load_dotenv(_BACKEND_ROOT / ".env.test", override=True)
 
 
 def _assert_safe_to_mutate(connection_string: str) -> None:
@@ -183,7 +67,6 @@ def _assert_safe_to_mutate(connection_string: str) -> None:
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    _load_dotenv_layers()
 
     parser = argparse.ArgumentParser(description="Clean business data from local SQL Server (dry-run by default).")
     parser.add_argument(
@@ -191,9 +74,22 @@ def main() -> int:
         action="store_true",
         help="Actually delete rows (requires DINAMIC_CONFIRM_LOCAL_BUSINESS_DATA_DELETION=1).",
     )
+    parser.add_argument(
+        "--use-env-test",
+        action="store_true",
+        help="After loading .env files, also load .env.test with override (same as pytest).",
+    )
     args = parser.parse_args()
 
+    _load_dotenv_layers(use_env_test=args.use_env_test)
+
     from src.database.sqlserver import SqlServerClient
+    from src.database.sqlserver_business_data_cleanup import (
+        collect_table_counts,
+        run_delete_pipeline,
+        summarize_totals,
+        validate_critical_tables_empty,
+    )
     from src.env_settings.sqlserver_resolution import (
         resolve_sqlserver_connection_config,
         resolved_sqlserver_database_name_from_env,
@@ -224,11 +120,10 @@ def main() -> int:
     if not args.confirm:
         logging.info("Dry-run mode (default): printing row counts. Use --confirm to delete.")
         with client.cursor() as cur:
-            total = 0
-            for schema, table in _TABLES_FOR_REPORT:
-                n = _count_if_exists(cur, schema, table)
-                total += n
-                logging.info("%s.%s: %s rows", schema, table, n)
+            before = collect_table_counts(cur)
+            total = summarize_totals(before)
+            for key in sorted(before.keys()):
+                logging.info("%s: %s rows", key, before[key])
             logging.info("TOTAL (sum of listed tables): %s rows", total)
         return 0
 
@@ -239,13 +134,30 @@ def main() -> int:
         conn = pyodbc.connect(cs, autocommit=False)
         cur = conn.cursor()
         try:
-            _run_delete_pipeline(cur)
+            before = collect_table_counts(cur)
+            before_total = summarize_totals(before)
+            run_delete_pipeline(cur)
+            after = collect_table_counts(cur)
+            after_total = summarize_totals(after)
+            validate_critical_tables_empty(cur)
             conn.commit()
         except Exception:
             conn.rollback()
             raise
         finally:
             conn.close()
+
+        approx_removed = before_total - after_total
+        logging.info(
+            "Summary: rows_before=%s rows_after=%s approx_removed=%s",
+            before_total,
+            after_total,
+            approx_removed,
+        )
+
+    except RuntimeError as exc:
+        logging.error("Cleanup verification failed: %s", exc)
+        return 4
     except Exception as exc:
         logging.exception("Cleanup failed: %s", exc)
         return 3

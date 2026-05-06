@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from pathlib import Path
+
+import pytest
 
 
 def _bootstrap_dotenv_for_pytest() -> None:
@@ -31,6 +34,32 @@ def pytest_configure(config: object) -> None:
     try:
         assert_pytest_sqlserver_database_is_safe()
     except RuntimeError as exc:
-        import pytest
-
         pytest.exit(str(exc), returncode=2)
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_sqlserver_integration_business_data(
+    request: pytest.FixtureRequest,
+) -> Generator[None, None, None]:
+    """Wipe SQL Server business rows around each integration test when using an isolated test DB."""
+    if request.node.get_closest_marker("integration") is None:
+        yield
+        return
+
+    from src.env_settings.sqlserver_pytest_policy import sqlserver_integration_auto_cleanup_enabled
+    from src.env_settings.sqlserver_resolution import resolve_sqlserver_connection_config
+
+    if not sqlserver_integration_auto_cleanup_enabled():
+        yield
+        return
+
+    cs = resolve_sqlserver_connection_config().connection_string.strip()
+    if not cs:
+        yield
+        return
+
+    from tests.support.sqlserver_integration_cleanup import cleanup_sqlserver_test_business_data
+
+    cleanup_sqlserver_test_business_data(cs)
+    yield
+    cleanup_sqlserver_test_business_data(cs)
