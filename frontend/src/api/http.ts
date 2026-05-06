@@ -17,6 +17,14 @@ interface ValidationDetailItem {
   type?: string;
 }
 
+export function parseResponseJson<T>(text: string): T {
+  try {
+    return (text ? JSON.parse(text) : {}) as T;
+  } catch {
+    return {} as T;
+  }
+}
+
 export function messageFromErrorDetail(
   detail: unknown,
   fallback: string
@@ -44,12 +52,7 @@ export function throwApiErrorIfNotOk(response: Response, text: string, data: Api
 
 export async function handleResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
-  let data: ApiErrorDetail & T;
-  try {
-    data = (text ? JSON.parse(text) : {}) as ApiErrorDetail & T;
-  } catch {
-    data = {} as ApiErrorDetail & T;
-  }
+  const data = parseResponseJson<ApiErrorDetail & T>(text);
   if (!response.ok) {
     throwApiErrorIfNotOk(response, text, data);
   }

@@ -10,8 +10,9 @@ import type {
   AuthErrorResponseDto,
 } from './types';
 import { AUTH_LOGIN_PATH, AUTH_ME_PATH } from '../../constants/authApiPaths';
-import i18n from '../../i18n';
-import { authErrorCodeToTranslationKey, backendDetailToTranslationKey } from '../../utils/errorTranslations';
+import { getVisibleErrorMessage } from '../../utils/apiErrors';
+import { parseResponseJson, throwApiErrorIfNotOk } from '../../api/http';
+import type { ApiErrorDetail } from '../../api/types';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -39,22 +40,13 @@ function isAuthErrorEnvelope(data: unknown): data is AuthErrorResponseDto {
 
 async function handleAuthResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
-  let data: unknown;
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = {};
-  }
+  const data = parseResponseJson<unknown>(text);
 
   if (!response.ok) {
     if (isAuthErrorEnvelope(data)) {
       throw new AuthApiError((data as AuthErrorResponseDto).error.message, data as AuthErrorResponseDto);
     }
-    throw new Error(
-      typeof (data as { detail?: string })?.detail === 'string'
-        ? (data as { detail: string }).detail
-        : response.statusText || i18n.t('errors.request_failed'),
-    );
+    throwApiErrorIfNotOk(response, text, data as ApiErrorDetail);
   }
 
   return data as T;
@@ -86,17 +78,5 @@ export function isAuthError(error: unknown): error is AuthApiError {
 
 /** Get user-facing message from an auth API error (localized). */
 export function getAuthErrorMessage(error: unknown): string {
-  if (error instanceof AuthApiError) {
-    const codeKey = authErrorCodeToTranslationKey(error.responseBody.error.code);
-    if (codeKey) return i18n.t(codeKey);
-    const detailKey = backendDetailToTranslationKey(error.responseBody.error.message);
-    if (detailKey) return i18n.t(detailKey);
-    return i18n.t('errors.generic');
-  }
-  if (error instanceof Error && error.message?.trim()) {
-    const detailKey = backendDetailToTranslationKey(error.message);
-    if (detailKey) return i18n.t(detailKey);
-    return error.message.trim();
-  }
-  return i18n.t('errors.auth.fallback');
+  return getVisibleErrorMessage(error, 'auth');
 }
