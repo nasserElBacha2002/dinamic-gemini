@@ -2,6 +2,7 @@ import { V3_INVENTORIES_BASE } from '../../../constants/v3ApiPaths';
 import { getStoredToken } from '../../auth/storage';
 import { ApiError } from '../../../api/types';
 import i18n from '../../../i18n';
+import { handleResponse, messageFromErrorDetail, protectedFetch } from '../../../api/http';
 import type {
   CaptureSessionDetailResponse,
   CaptureSessionGroupsListResponse,
@@ -13,39 +14,6 @@ import type {
 } from '../../../types/captureSession';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
-
-function protectedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const token = getStoredToken();
-  const headers = new Headers(init?.headers);
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-  return fetch(input, { ...init, headers });
-}
-
-function getErrorMessage(detail: unknown, statusText: string): string {
-  if (typeof detail === 'string' && detail.trim()) return detail.trim();
-  if (Array.isArray(detail) && detail.length > 0) {
-    const first = detail[0] as { msg?: unknown } | undefined;
-    if (typeof first?.msg === 'string' && first.msg.trim()) return first.msg.trim();
-  }
-  return statusText || i18n.t('errors.request_failed');
-}
-
-async function handleResponse<T>(response: Response): Promise<T> {
-  const raw = await response.text();
-  let data: Record<string, unknown>;
-  try {
-    data = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-  } catch {
-    data = {};
-  }
-  if (!response.ok) {
-    throw new ApiError(getErrorMessage(data.detail, response.statusText), response.status, {
-      code: typeof data.code === 'string' ? data.code : undefined,
-      detail: data.detail,
-    });
-  }
-  return data as T;
-}
 
 export interface CaptureSessionsListQuery {
   inventoryId: string;
@@ -258,7 +226,7 @@ export async function uploadCaptureSessionStagingFiles(
         return;
       }
       reject(
-        new ApiError(getErrorMessage(body.detail, xhr.statusText), xhr.status, {
+        new ApiError(messageFromErrorDetail(body.detail, xhr.statusText || i18n.t('errors.request_failed')), xhr.status, {
           code: typeof body.code === 'string' ? body.code : undefined,
           detail: body.detail,
         })

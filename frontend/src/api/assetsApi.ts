@@ -88,6 +88,15 @@ export type FetchEvidenceImageResult =
   | { ok: true; imageSrc: string; revoke?: () => void }
   | { ok: false; status: number; detail?: string };
 
+async function readOptionalDetail(response: Response): Promise<string | undefined> {
+  try {
+    const data = (await response.json()) as { detail?: unknown };
+    return typeof data?.detail === 'string' ? data.detail : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function fetchAuthorizedReferenceFileAsBlob(spec: EvidenceImageLoadSpec): Promise<FetchEvidenceImageResult> {
   const fileUrl = getReferenceImageFileUrl(spec.inventoryId, spec.aisleId, spec.assetId, spec.jobId);
   const token = getStoredToken();
@@ -96,13 +105,7 @@ async function fetchAuthorizedReferenceFileAsBlob(spec: EvidenceImageLoadSpec): 
   try {
     const response = await fetch(fileUrl, { credentials: 'omit', headers });
     if (!response.ok) {
-      let detail: string | undefined;
-      try {
-        const data = (await response.json()) as { detail?: unknown };
-        detail = typeof data?.detail === 'string' ? data.detail : undefined;
-      } catch {
-        detail = undefined;
-      }
+      const detail = await readOptionalDetail(response);
       return { ok: false, status: response.status, detail };
     }
     const blob = await response.blob();
@@ -122,13 +125,7 @@ export async function fetchEvidenceImageDisplay(spec: EvidenceImageLoadSpec): Pr
   try {
     const response = await protectedFetch(url);
     if (!response.ok) {
-      let detail: string | undefined;
-      try {
-        const data = (await response.json()) as { detail?: unknown };
-        detail = typeof data?.detail === 'string' ? data.detail : undefined;
-      } catch {
-        detail = undefined;
-      }
+      const detail = await readOptionalDetail(response);
       return { ok: false, status: response.status, detail };
     }
     let data: { image_url?: unknown; requires_authenticated_fetch?: unknown };

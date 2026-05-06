@@ -100,7 +100,7 @@ export default function InventoryDetail() {
             <LoadingBlock />
           ) : inventoryError && !inventory ? (
             <>
-              <ErrorAlert message={inventoryError} onRetry={() => inventoryQuery.refetch()} />
+              <ErrorAlert error={inventoryQuery.error} context="inventory" onRetry={() => inventoryQuery.refetch()} />
               <Button sx={{ mt: 2 }} onClick={() => navigate(ROUTE_HOME)}>
                 {t('inventory.back_to_list')}
               </Button>
@@ -133,7 +133,7 @@ export default function InventoryDetail() {
                   </Box>
                 ) : null}
 
-                {aislesError ? <ErrorAlert message={aislesError} onRetry={() => aislesQuery.refetch()} /> : null}
+                {aislesError ? <ErrorAlert error={aislesQuery.error} context="aisle" onRetry={() => aislesQuery.refetch()} /> : null}
 
                 <InventoryAislesSection
                   inventoryId={inventoryId ?? ''}

@@ -13,9 +13,8 @@ import {
 import { PageHeader } from '../../components/shell';
 import { useInventoryDetail, useAisleBenchmarkCompare, useAisleJobsList, useAislesList } from '../../hooks';
 import { downloadAisleBenchmarkExportCsv } from '../../api/client';
-import { ApiError } from '../../api/types';
-import { resolveApiErrorMessage } from '../../utils/apiErrors';
-import { useAppSnackbar } from '../../components/ui';
+import { getVisibleErrorMessage } from '../../utils/apiErrors';
+import { useErrorSnackbar } from '../../components/ui';
 import {
   ROUTE_HOME,
   pathToAislePositions,
@@ -44,7 +43,7 @@ export default function CompareRunsPage() {
   const { inventoryId } = useParams<{ inventoryId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { showSnackbar } = useAppSnackbar();
+  const { showErrorSnackbar } = useErrorSnackbar();
 
   const aisleId = searchParams.get('aisleId')?.trim() || '';
   const jobAId = searchParams.get('jobAId')?.trim() || '';
@@ -155,12 +154,9 @@ export default function CompareRunsPage() {
     { label: t('analytics.compare_runs_breadcrumb') },
   ];
 
-  const errMsg =
+  const compareErrorMessage =
     compareQuery.isError && compareQuery.error
-      ? resolveApiErrorMessage(
-          compareQuery.error instanceof ApiError ? compareQuery.error : new ApiError(String(compareQuery.error)),
-          'errors.load_compare'
-        )
+      ? getVisibleErrorMessage(compareQuery.error, 'analytics')
       : null;
 
   const backHref =
@@ -254,7 +250,9 @@ export default function CompareRunsPage() {
       ) : null}
 
       {compareQuery.isFetching ? <CompareLoadingState sx={{ mb: 2 }} message={t('compare.loading')} /> : null}
-      {errMsg ? <CompareErrorState sx={{ mb: 2 }} message={errMsg} /> : null}
+      {compareErrorMessage ? (
+        <CompareErrorState sx={{ mb: 2 }} message={compareErrorMessage} />
+      ) : null}
 
       {compareQuery.data ? (
         <Box data-testid="compare-runs-results" sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -266,8 +264,7 @@ export default function CompareRunsPage() {
                 try {
                   await downloadAisleBenchmarkExportCsv(inventoryId, aisleId, { jobAId, jobBId });
                 } catch (e) {
-                  const err = e instanceof ApiError ? e : new ApiError(String(e));
-                  showSnackbar(resolveApiErrorMessage(err, 'errors.export_failed'), 'error');
+                  showErrorSnackbar(e, 'analytics');
                 }
               }}
             >

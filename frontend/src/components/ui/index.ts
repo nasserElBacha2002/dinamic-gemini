@@ -62,4 +62,5 @@ export type {
 
 export { AppSnackbarProvider } from './AppSnackbarProvider';
 export { useAppSnackbar } from './useAppSnackbar';
+export { useErrorSnackbar } from './useErrorSnackbar';
 export type { AppSnackbarSeverity } from './appSnackbarContext';

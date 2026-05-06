@@ -402,7 +402,7 @@ describe('ImportSessionGroupingPanel — G6 preview CTA', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('Materialize this capture session group before preview.');
+      expect(screen.getByRole('alert')).toHaveTextContent('Materialize this group before preview');
     });
   });
 });

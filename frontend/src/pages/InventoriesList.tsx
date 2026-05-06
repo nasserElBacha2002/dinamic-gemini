@@ -161,7 +161,7 @@ export default function InventoriesList() {
         }
       />
 
-      {errorMessage && <ErrorAlert message={errorMessage} onRetry={() => refetch()} />}
+      {errorMessage && <ErrorAlert error={error} context="inventory" onRetry={() => refetch()} />}
 
       {!errorMessage ? (
       <SectionCard title={t('inventory.all_inventories')} subtitle={t('inventory.all_inventories_subtitle')}>

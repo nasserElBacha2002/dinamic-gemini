@@ -15,7 +15,7 @@ const AUTH_CODE_TO_KEY: Record<string, string> = {
 };
 
 export function authErrorCodeToTranslationKey(code: string): string | null {
-  const k = AUTH_CODE_TO_KEY[code.trim()];
+  const k = AUTH_CODE_TO_KEY[code.trim().toUpperCase()];
   return k ?? null;
 }
 
@@ -50,6 +50,11 @@ const DETAIL_TO_KEY: [RegExp, string][] = [
   [/^unauthorized$/i, 'errors.auth.unauthorized'],
   [/^not found$/i, 'errors.not_found'],
   [/^forbidden$/i, 'errors.forbidden'],
+  [/^not allowed$/i, 'errors.forbidden'],
+  [
+    /^materialize this capture session group before preview\.?$/i,
+    'ingestion_sessions.detail.grouping_preview_disabled_materialize',
+  ],
   [/^this feature is only available for test inventories\.?$/i, 'errors.benchmark_requires_test_inventory'],
 ];
 

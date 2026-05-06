@@ -1,12 +1,10 @@
 import { Button, FormControl, InputLabel, MenuItem, Select, Stack } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '../../../components/shell';
 import { ErrorAlert, SectionCard } from '../../../components/ui';
 import { pathToIngestionSessionDetail } from '../../../constants/appRoutes';
-import { resolveApiErrorMessage } from '../../../utils/apiErrors';
-import { ApiError } from '../../../api/types';
 import ImportSessionList from '../components/ImportSessionList';
 import {
   useAisleOptions,
@@ -36,17 +34,8 @@ export default function IngestionSessionsPage() {
   );
   const createMutation = useCreateCaptureSession();
 
-  const loadErrorMessage = useMemo(() => {
-    const err = inventoriesQuery.error || aislesQuery.error || sessionsQuery.error;
-    if (!err) return null;
-    return resolveApiErrorMessage(err, 'errors.request_failed');
-  }, [aislesQuery.error, inventoriesQuery.error, sessionsQuery.error]);
-
-  const createErrorMessage = useMemo(() => {
-    if (!createMutation.error) return null;
-    if (createMutation.error instanceof ApiError) return resolveApiErrorMessage(createMutation.error, 'errors.request_failed');
-    return resolveApiErrorMessage(createMutation.error, 'errors.request_failed');
-  }, [createMutation.error]);
+  const loadError = inventoriesQuery.error || aislesQuery.error || sessionsQuery.error;
+  const createError = createMutation.error;
 
   return (
     <Stack spacing={2}>
@@ -71,8 +60,12 @@ export default function IngestionSessionsPage() {
         }
       />
 
-      {loadErrorMessage ? <ErrorAlert message={loadErrorMessage} onRetry={() => sessionsQuery.refetch()} /> : null}
-      {createErrorMessage ? <ErrorAlert message={createErrorMessage} onClose={() => createMutation.reset()} /> : null}
+      {loadError ? (
+        <ErrorAlert error={loadError} context="ingestionSession" onRetry={() => sessionsQuery.refetch()} />
+      ) : null}
+      {createError ? (
+        <ErrorAlert error={createError} context="ingestionSession" onClose={() => createMutation.reset()} />
+      ) : null}
 
       <SectionCard title={t('ingestion_sessions.filters.title')}>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
