@@ -1,4 +1,6 @@
-import type { AislePositionsListQuery, InventoriesListQuery, ReviewQueueListQuery } from './client';
+import type { InventoriesListQuery } from './inventoriesApi';
+import type { AislePositionsListQuery } from './jobsApi';
+import type { ReviewQueueListQuery } from './reviewQueueApi';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 
 type QueryKeyPrimitive = string | number;
@@ -76,7 +78,7 @@ export function inventoriesListKeyPart(
 }
 
 /**
- * Canonical GET review-queue params aligned with `buildReviewQueueQueryString` in `client.ts`.
+ * Canonical GET review-queue params aligned with `buildReviewQueueQueryString` in `reviewQueueApi.ts`.
  * Omitted fields are not sent on the wire.
  */
 export function canonicalizeReviewQueueListQuery(
@@ -140,7 +142,7 @@ export function reviewQueueListKeyPart(listQuery?: ReviewQueueListQuery): QueryK
 }
 
 /**
- * Canonical GET aisle positions params aligned with `buildAislePositionsQueryString` in `client.ts`.
+ * Canonical GET aisle positions params aligned with `buildAislePositionsQueryString` in `jobsApi.ts`.
  */
 export function canonicalizeAislePositionsListQuery(
   listQuery?: AislePositionsListQuery

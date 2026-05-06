@@ -4,20 +4,18 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Alert, Box, Button, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, Tooltip, Typography } from '@mui/material';
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
 import { exportAisleResultsCsv, getAisleMergeResults, type AislePositionsListQuery } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 import { canonicalizeOptionalId } from '../api/queryParamCanonicalization';
 import { recordExplicitRefreshObs, summarizeQueryKey } from '../dev/cacheMutationObservability';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
-import type { MergeResultItemResponse, RunMergeResponse } from '../api/types';
+import type { RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
-import { PageHeader } from '../components/shell';
-import { FilterToolbar, SectionCard, TableSearchField, useAppSnackbar } from '../components/ui';
+import { FilterToolbar, TableSearchField, useAppSnackbar } from '../components/ui';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompare } from '../constants/appRoutes';
 import {
@@ -40,13 +38,21 @@ import QuickReviewDrawer from '../features/reviewQueue/components/QuickReviewDra
 import type { OpenReviewDrawerPayload, QuickReviewContext } from '../features/reviewQueue/quickReviewContext';
 import {
   ResultsQuickFilters,
-  ResultsTable,
   ResultsEmptyState,
-  ResultsFilteredEmptyState,
   ResultsLoadingState,
   ResultsErrorState,
-  AisleRunSelector,
+  AisleResultsJobSelector,
+  AisleResultsRunNotFoundAlert,
+  AisleResultsNoJobsAlert,
+  AisleResultsHeader,
+  AisleResultsTableSection,
 } from '../features/results/components';
+import { mergeConsolidatedDetail } from '../features/results/adapters/aislePositionsFormatters';
+import {
+  summarizeLikelyMergeCandidates,
+  summarizeMergeResults,
+  type MergeResultsSummary,
+} from '../features/results/adapters/aislePositionsViewModel';
 import PromoteOperationalDialog from '../features/benchmark/PromoteOperationalDialog';
 import AisleSourceAssetsManageModule from '../features/inventories/components/AisleSourceAssetsManageModule';
 
@@ -58,68 +64,6 @@ const AISLE_RESULTS_LIST_QUERY: AislePositionsListQuery = {
   sort_dir: 'asc',
   consolidate_by_sku: false,
 };
-
-type MergeCandidateSummary = {
-  groupCount: number;
-  skuExamples: string[];
-};
-
-type MergeResultsSummary = {
-  groupCount: number;
-  skuCount: number;
-  skuExamples: string[];
-};
-
-// UI-only heuristic: repeated visible SKUs are a conservative signal that manual merge
-// may be useful. This is intentionally lighter than the backend merge domain logic.
-function summarizeLikelyMergeCandidates(
-  positions: Array<{ sku?: string | null }>
-): MergeCandidateSummary {
-  const counts = new Map<string, { label: string; count: number }>();
-  for (const position of positions) {
-    const rawSku = position.sku?.trim();
-    if (!rawSku) continue;
-    const key = rawSku.toLowerCase();
-    const current = counts.get(key);
-    if (current) {
-      current.count += 1;
-    } else {
-      counts.set(key, { label: rawSku, count: 1 });
-    }
-  }
-  const repeated = Array.from(counts.values())
-    .filter((entry) => entry.count > 1)
-    .map((entry) => entry.label);
-  return {
-    groupCount: repeated.length,
-    skuExamples: repeated.slice(0, 3),
-  };
-}
-
-function summarizeMergeResults(results: MergeResultItemResponse[] | undefined): MergeResultsSummary | null {
-  const consolidated = (results ?? []).filter((item) => item.normalized_label_ids.length > 1);
-  if (consolidated.length === 0) return null;
-  const skuLabels = consolidated
-    .map((item) => item.sku?.trim())
-    .filter((sku): sku is string => Boolean(sku));
-  const uniqueSkuLabels = Array.from(new Set(skuLabels));
-  return {
-    groupCount: consolidated.length,
-    skuCount: uniqueSkuLabels.length,
-    skuExamples: uniqueSkuLabels.slice(0, 3),
-  };
-}
-
-function mergeConsolidatedDetail(t: TFunction, summary: MergeResultsSummary): string {
-  const examples =
-    summary.skuExamples.length > 0
-      ? t('positions.merge_examples_paren', { list: summary.skuExamples.join(', ') })
-      : '';
-  if (summary.groupCount === 1) {
-    return t('positions.merge_repeated_sku_one', { examples });
-  }
-  return t('positions.merge_repeated_sku_other', { count: summary.groupCount, examples });
-}
 
 export default function AislePositionsPage() {
   const { t } = useTranslation();
@@ -531,174 +475,100 @@ export default function AislePositionsPage() {
 
   return (
     <>
-      <PageHeader
+      <AisleResultsHeader
         breadcrumbs={breadcrumbs}
         title={aisle?.code ?? t('common.aisle')}
         subtitle={inventory?.name ?? (inventoryQuery.isLoading ? t('common.loading') : t('common.em_dash'))}
-        actions={
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
-            <AisleSourceAssetsManageModule
-              inventoryId={inventoryId}
-              aisleId={aisleId}
-              inventoryLabel={inventory?.name ?? t('common.em_dash')}
-              jobIdForPreview={pickedRunJobId}
-              inventoryReady={Boolean(inventoryQuery.data)}
-            >
-              {({ openSourceAssets }) => (
-                <Tooltip title={t('aisle_source_assets.action_tooltip')}>
-                  <Button
-                    data-testid="aisle-source-assets-manage-open"
-                    size="small"
-                    variant="outlined"
-                    startIcon={<PhotoLibraryOutlinedIcon fontSize="small" />}
-                    onClick={openSourceAssets}
-                  >
-                    {t('aisle_source_assets.action_label')}
-                  </Button>
-                </Tooltip>
-              )}
-            </AisleSourceAssetsManageModule>
-            {mergeButtonVisible ? (
-              <Tooltip title={mergeDisabledReason} disableHoverListener={!mergeDisabledReason}>
-                <span>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    onClick={() => void handleRunMerge()}
-                    disabled={mergeButtonDisabled}
-                  >
-                    {mergeMutation.isPending ? t('common.merging') : t('aisle.merge_repeated_labels')}
-                  </Button>
-                </span>
-              </Tooltip>
-            ) : null}
-            {isTestInventory && jobs.length >= 2 ? (
-              <Button size="small" variant="outlined" onClick={navigateToAnalyticsCompare}>
-                {t('positions.compare_runs')}
-              </Button>
-            ) : null}
-            {compareOperationalShortcut ? (
-              <Tooltip title={t('aisle.compare_runs_tooltip')}>
+        assetsAction={
+          <AisleSourceAssetsManageModule
+            inventoryId={inventoryId}
+            aisleId={aisleId}
+            inventoryLabel={inventory?.name ?? t('common.em_dash')}
+            jobIdForPreview={pickedRunJobId}
+            inventoryReady={Boolean(inventoryQuery.data)}
+          >
+            {({ openSourceAssets }) => (
+              <Tooltip title={t('aisle_source_assets.action_tooltip')}>
                 <Button
+                  data-testid="aisle-source-assets-manage-open"
                   size="small"
                   variant="outlined"
-                  onClick={() => {
-                    const params = new URLSearchParams();
-                    params.set('aisleId', aisleId!);
-                    params.set('jobAId', visibleJobId!);
-                    params.set('jobBId', operationalJobId!);
-                    navigate(`${pathToInventoryAnalyticsCompare(inventoryId)}?${params.toString()}`);
-                  }}
+                  startIcon={<PhotoLibraryOutlinedIcon fontSize="small" />}
+                  onClick={openSourceAssets}
                 >
-                  {t('positions.compare_to_operational')}
+                  {t('aisle_source_assets.action_label')}
                 </Button>
               </Tooltip>
-            ) : null}
-            {isTestInventory && canPromoteCurrentRun ? (
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => {
-                  setPromoteJobId(visibleJobId ?? '');
-                  setPromoteDialogOpen(true);
-                }}
-              >
-                {t('positions.promote_run')}
-              </Button>
-            ) : null}
-            <Button
-              size="small"
-              variant="outlined"
-              disabled={!inventoryId || !aisleId || exportingCsv}
-              onClick={async () => {
-                if (!inventoryId || !aisleId) return;
-                setExportingCsv(true);
-                try {
-                  await exportAisleResultsCsv(inventoryId, aisleId, {
-                    jobId: pickedRunJobId ?? jobIdParam,
-                  });
-                } catch (e) {
-                  const err = e instanceof ApiError ? e : new ApiError(String(e));
-                  showSnackbar(resolveApiErrorMessage(err, 'errors.export_failed'), 'error');
-                } finally {
-                  setExportingCsv(false);
-                }
-              }}
-            >
-              {exportingCsv ? t('common.exporting') : t('positions.export_aisle_csv')}
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => {
-                void refetch();
-                void aisleJobsQuery.refetch();
-              }}
-              disabled={resultsLoading}
-            >
-              {t('common.refresh')}
-            </Button>
-          </Box>
+            )}
+          </AisleSourceAssetsManageModule>
         }
+        mergeButtonVisible={mergeButtonVisible}
+        mergeDisabledReason={mergeDisabledReason}
+        mergeButtonDisabled={mergeButtonDisabled}
+        isMerging={mergeMutation.isPending}
+        onRunMerge={() => void handleRunMerge()}
+        showCompareRuns={Boolean(isTestInventory && jobs.length >= 2)}
+        onCompareRuns={navigateToAnalyticsCompare}
+        showCompareOperational={compareOperationalShortcut}
+        onCompareOperational={() => {
+          const params = new URLSearchParams();
+          params.set('aisleId', aisleId!);
+          params.set('jobAId', visibleJobId!);
+          params.set('jobBId', operationalJobId!);
+          navigate(`${pathToInventoryAnalyticsCompare(inventoryId)}?${params.toString()}`);
+        }}
+        showPromoteRun={Boolean(isTestInventory && canPromoteCurrentRun)}
+        onPromoteRun={() => {
+          setPromoteJobId(visibleJobId ?? '');
+          setPromoteDialogOpen(true);
+        }}
+        exportDisabled={!inventoryId || !aisleId || exportingCsv}
+        exportingCsv={exportingCsv}
+        onExport={() => {
+          void (async () => {
+            if (!inventoryId || !aisleId) return;
+            setExportingCsv(true);
+            try {
+              await exportAisleResultsCsv(inventoryId, aisleId, {
+                jobId: pickedRunJobId ?? jobIdParam,
+              });
+            } catch (e) {
+              const err = e instanceof ApiError ? e : new ApiError(String(e));
+              showSnackbar(resolveApiErrorMessage(err, 'errors.export_failed'), 'error');
+            } finally {
+              setExportingCsv(false);
+            }
+          })();
+        }}
+        refreshDisabled={resultsLoading}
+        onRefresh={() => {
+          void refetch();
+          void aisleJobsQuery.refetch();
+        }}
       />
 
-      {isTestInventory &&
-      (aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource)) ? (
-        <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
-          {aisleJobsQuery.isLoading && jobs.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              {t('common.loading')}
-            </Typography>
-          ) : jobs.length > 0 && pickedRunJobId ? (
-            <AisleRunSelector
-              operationalJobId={aisleJobsQuery.data?.operational_job_id ?? null}
-              jobs={jobs}
-              valueJobId={pickedRunJobId}
-              onChange={handleRunSelectionChange}
-            />
-          ) : null}
-          {resultContextSource ? (
-            <Typography variant="caption" color="text.secondary">
-              {t('positions.resolved_line', {
-                source: resultContextSource,
-                jobSuffix: visibleJobId
-                  ? t('positions.resolved_job_bit', { id: `${visibleJobId.slice(0, 10)}…` })
-                  : '',
-                noPinNote: '',
-              })}
-            </Typography>
-          ) : null}
-        </Box>
-      ) : null}
+      <AisleResultsJobSelector
+        visible={Boolean(isTestInventory && (aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource)))}
+        isJobsLoading={aisleJobsQuery.isLoading}
+        jobs={jobs}
+        pickedRunJobId={pickedRunJobId}
+        operationalJobId={aisleJobsQuery.data?.operational_job_id ?? null}
+        resultContextSource={resultContextSource}
+        visibleJobId={visibleJobId}
+        onRunSelectionChange={handleRunSelectionChange}
+      />
 
-      {positionsLoadNotFound ? (
-        <Alert
-          severity="error"
-          sx={{ mb: 2 }}
-          action={
-            <Button
-              color="inherit"
-              size="small"
-              disabled={!pickedRunJobId}
-              onClick={() => {
-                if (pickedRunJobId) handleRunSelectionChange(pickedRunJobId);
-              }}
-            >
-              {t('positions.clear_run_filter')}
-            </Button>
-          }
-        >
-          {t('positions.no_data_for_run')}
-        </Alert>
-      ) : null}
+      <AisleResultsRunNotFoundAlert
+        visible={positionsLoadNotFound}
+        canClear={Boolean(pickedRunJobId)}
+        onClear={() => {
+          if (pickedRunJobId) handleRunSelectionChange(pickedRunJobId);
+        }}
+      />
 
       {errorMessage ? <ResultsErrorState message={errorMessage} onRetry={() => refetch()} /> : null}
 
-      {blockPositionsForTestNoJobs ? (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          {t('positions.no_runs_for_aisle')}
-        </Alert>
-      ) : null}
+      <AisleResultsNoJobsAlert visible={blockPositionsForTestNoJobs} />
 
       {!blockPositionsForTestNoJobs && !errorMessage && resultsLoading ? (
         <ResultsLoadingState message={t('positions.loading_results')} />
@@ -750,89 +620,41 @@ export default function AislePositionsPage() {
       ) : null}
 
       {!blockPositionsForTestNoJobs && !errorMessage && !resultsLoading && results.length > 0 ? (
-        <>
-          <Box sx={{ mb: 3, mt: 1 }}>
-            <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-              {t('positions.counted_total')}
-            </Typography>
-            <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>
-              {kpi.aisleTotalCounted}
-            </Typography>
-          </Box>
-
-          {mergeFeedback ? (
-            <Alert severity={mergeFeedback.severity} sx={{ mb: 2 }}>
-              {mergeFeedback.text}
-            </Alert>
-          ) : null}
-
-          <FilterToolbar
-            onReset={handleResetFilters}
-            resetDisabled={filter === 'all' && !skuSearch.trim()}
-          >
-            <TableSearchField
-              label={t('positions.search_label')}
-              placeholder={t('positions.filter_sku_placeholder')}
-              value={skuSearch}
-              onChange={(v) => {
-                setSkuSearch(v);
-                setPage(1);
-              }}
-              data-testid="aisle-positions-sku-search"
-            />
-            <Tooltip title={tableSort === 'photo' ? t('positions.order_api') : t('positions.order_client')}>
-              <span>
-                <ToggleButtonGroup
-                  size="small"
-                  exclusive
-                  value={tableSort}
-                  onChange={(_, value) => {
-                    if (value != null) setTableSort(value);
-                  }}
-                  aria-label={t('common.row_order')}
-                >
-                  <ToggleButton value="photo">{t('positions.photo_order')}</ToggleButton>
-                  <ToggleButton value="priority">{t('positions.review_priority_sort')}</ToggleButton>
-                </ToggleButtonGroup>
-              </span>
-            </Tooltip>
-            <ResultsQuickFilters
-              value={filter}
-              onChange={(v) => {
-                setFilter(v);
-                setPage(1);
-              }}
-              counts={{
-                all: kpi.total,
-                needs_review: kpi.needsReview,
-                low_confidence: kpi.lowConfidence,
-                qty_zero: kpi.qtyZero,
-                invalid_traceability: kpi.invalidTraceability,
-                missing_evidence: missingEvidenceCount,
-              }}
-            />
-          </FilterToolbar>
-
-          {sortedForTable.length === 0 ? (
-            <ResultsFilteredEmptyState onClearFilter={handleClearFilterOnly} />
-          ) : (
-            <SectionCard title={t('positions.title_results')}>
-              <Box sx={{ overflow: 'auto' }}>
-                <ResultsTable
-                  results={tableRows}
-                  onOpenReview={handleOpenReview}
-                  pagination={{
-                    page: effectivePage,
-                    pageSize,
-                    totalItems: sortedForTable.length,
-                    onPageChange: setPage,
-                    onPageSizeChange: setPageSize,
-                  }}
-                />
-              </Box>
-            </SectionCard>
-          )}
-        </>
+        <AisleResultsTableSection
+          countedTotal={kpi.aisleTotalCounted}
+          mergeFeedback={mergeFeedback}
+          onResetFilters={handleResetFilters}
+          resetDisabled={filter === 'all' && !skuSearch.trim()}
+          skuSearch={skuSearch}
+          onSkuSearchChange={(v) => {
+            setSkuSearch(v);
+            setPage(1);
+          }}
+          tableSort={tableSort}
+          onTableSortChange={(value) => setTableSort(value)}
+          filter={filter}
+          onFilterChange={(v) => {
+            setFilter(v);
+            setPage(1);
+          }}
+          counts={{
+            all: kpi.total,
+            needs_review: kpi.needsReview,
+            low_confidence: kpi.lowConfidence,
+            qty_zero: kpi.qtyZero,
+            invalid_traceability: kpi.invalidTraceability,
+            missing_evidence: missingEvidenceCount,
+          }}
+          sortedForTableLength={sortedForTable.length}
+          onClearFilterOnly={handleClearFilterOnly}
+          tableRows={tableRows}
+          onOpenReview={handleOpenReview}
+          page={effectivePage}
+          pageSize={pageSize}
+          totalItems={sortedForTable.length}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       ) : null}
 
       {isTestInventory ? (

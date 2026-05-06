@@ -3,7 +3,6 @@
  */
 
 import { useMemo, useState } from 'react';
-import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
@@ -13,27 +12,19 @@ import {
 } from '../../constants/appRoutes';
 import {
   Alert,
-  Chip,
   Box,
   Button,
-  Divider,
   FormControl,
   InputLabel,
   MenuItem,
   Select,
-  Skeleton,
-  Stack,
   TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
 import {
-  DataTable,
   ErrorAlert,
   FilterToolbar,
-  KpiCard,
-  SectionCard,
-  TableSearchField,
   type DataTableColumn,
 } from '../../components/ui';
 import { PageHeader } from '../../components/shell';
@@ -45,173 +36,33 @@ import { resolveApiErrorMessage } from '../../utils/apiErrors';
 import { ApiError } from '../../api/types';
 import i18n from '../../i18n';
 import { useAnalyticsDashboard } from './hooks';
+import { MetricsAislesAttentionSection } from './components/MetricsAislesAttentionSection';
+import { MetricsInventoryPerformanceSection } from './components/MetricsInventoryPerformanceSection';
+import { MetricsKpiSection } from './components/MetricsKpiSection';
+import { MetricsManualInterventionSection } from './components/MetricsManualInterventionSection';
+import { MetricsQualitySection } from './components/MetricsQualitySection';
+import { MetricsResolutionFlowSection } from './components/MetricsResolutionFlowSection';
+import {
+  defaultDateRange,
+  formatAvgProcessingMinutes,
+  formatPct,
+  numberOrZero,
+  paginateRows,
+} from './adapters/metricsFormatters';
+import {
+  buildManualInterventionViewModel,
+  buildMetricsKpiCards,
+  buildResolutionFlowStages,
+  buildScopeSummary,
+  orderQualityRows,
+  sortAisleRowsByAttention,
+  sortInventoryRows,
+} from './adapters/metricsViewModel';
 import type {
   AnalyticsQueryParams,
   InventoryPerformanceRow,
   AisleIssueRow,
-  QualityPatternRow,
-  ManualInterventionCategory,
 } from './types';
-
-function defaultDateRange(): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date(to);
-  from.setUTCDate(from.getUTCDate() - 30);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
-}
-
-function formatPct(x: number | null | undefined): string {
-  if (x == null || Number.isNaN(x)) return i18n.t('common.em_dash');
-  return `${(x * 100).toFixed(1)}%`;
-}
-
-function formatAvgProcessingSec(sec: number | null | undefined): string {
-  if (sec == null || Number.isNaN(sec)) return i18n.t('common.em_dash');
-  if (sec < 60) return `${Math.round(sec)}s`;
-  return `${(sec / 60).toFixed(1)} min`;
-}
-
-/** Job duration KPI: prefer minutes from API; fall back to raw seconds. */
-function formatAvgProcessingMinutes(minutes: number | null | undefined, seconds: number | null | undefined): string {
-  if (minutes != null && !Number.isNaN(minutes)) return `${minutes.toFixed(1)} min`;
-  return formatAvgProcessingSec(seconds);
-}
-
-function numberOrZero(value: number | null | undefined): number {
-  return value ?? 0;
-}
-
-function paginateRows<T>(rows: readonly T[], page: number, pageSize: number): readonly T[] {
-  const start = (page - 1) * pageSize;
-  return rows.slice(start, start + pageSize);
-}
-
-function compareValues(a: number | string | null | undefined, b: number | string | null | undefined): number {
-  if (a == null && b == null) return 0;
-  if (a == null) return 1;
-  if (b == null) return -1;
-  if (typeof a === 'number' && typeof b === 'number') return a - b;
-  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
-}
-
-function sortInventoryRows(
-  rows: readonly InventoryPerformanceRow[],
-  sortBy: string,
-  sortDir: 'asc' | 'desc'
-): InventoryPerformanceRow[] {
-  const direction = sortDir === 'asc' ? 1 : -1;
-  const getValue = (row: InventoryPerformanceRow): number | string | null | undefined => {
-    switch (sortBy) {
-      case 'created':
-        return row.inventory_created_at;
-      case 'aisles':
-        return row.aisles_count ?? row.total_aisles;
-      case 'positions':
-        return row.positions_count ?? row.total_positions;
-      case 'processed':
-        return row.processed_count ?? row.processed_positions;
-      case 'auto_accept':
-        return row.auto_acceptance_rate ?? null;
-      case 'manual_correction':
-        return row.manual_correction_rate ?? row.correction_rate;
-      case 'unidentified_product':
-        return row.unidentified_product_rate ?? null;
-      case 'invalid_tr':
-        return row.invalid_traceability_rate;
-      case 'avg_conf':
-        return row.avg_confidence;
-      case 'avg_processing':
-        return row.average_processing_time_minutes ?? null;
-      case 'proc':
-        return row.processing_success_rate;
-      case 'name':
-      default:
-        return row.inventory_name;
-    }
-  };
-  return [...rows].sort((left, right) => {
-    const result = compareValues(getValue(left), getValue(right));
-    if (result !== 0) return result * direction;
-    return left.inventory_name.localeCompare(right.inventory_name) * direction;
-  });
-}
-
-function qualityPriority(label: string): number {
-  const normalized = label.trim().toLowerCase();
-  if (normalized === 'unidentified product') return 0;
-  if (normalized === 'pending review') return 1;
-  if (normalized === 'invalid traceability') return 2;
-  if (normalized === 'missing evidence') return 3;
-  if (normalized.includes('zero')) return 4;
-  if (normalized === 'low confidence') return 5;
-  if (normalized === 'no primary issue') return 6;
-  return 50;
-}
-
-function interventionLabel(category: string, t: TFunction): string {
-  switch (category) {
-    case 'confirmed':
-      return t('analytics.category_confirmed');
-    case 'qty_corrected':
-      return t('analytics.category_qty_corrected');
-    case 'sku_corrected':
-      return t('analytics.category_sku_corrected');
-    case 'invalid':
-      return t('analytics.category_invalid');
-    case 'operator_marked_unknown':
-      return t('analytics.category_operator_unknown');
-    case 'deleted':
-      return t('analytics.category_deleted');
-    default:
-      return category;
-  }
-}
-
-function interventionPriority(category: string): number {
-  switch (category) {
-    case 'operator_marked_unknown':
-      return 0;
-    case 'qty_corrected':
-      return 1;
-    case 'sku_corrected':
-      return 2;
-    case 'confirmed':
-      return 3;
-    case 'deleted':
-      return 4;
-    case 'invalid':
-      return 5;
-    default:
-      return 50;
-  }
-}
-
-function interventionColor(category: string): string {
-  switch (category) {
-    case 'operator_marked_unknown':
-      return 'warning.main';
-    case 'qty_corrected':
-    case 'sku_corrected':
-      return 'secondary.main';
-    case 'confirmed':
-      return 'success.main';
-    case 'deleted':
-      return 'text.secondary';
-    default:
-      return 'primary.main';
-  }
-}
-
-function translateQualityIssueType(issueType: string, t: TFunction): string {
-  const slug = issueType
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  const key = `analytics.quality_issue.${slug}`;
-  const translated = t(key);
-  return translated === key ? issueType : translated;
-}
 
 export default function MetricsPage() {
   const { t } = useTranslation();
@@ -314,20 +165,7 @@ export default function MetricsPage() {
   }, [aisleIssues?.items, aisleMetricsTableSearch]);
 
   const aisleRowsSorted = useMemo(
-    () =>
-      [...aisleRowsFiltered].sort(
-        (left, right) =>
-          (numberOrZero(right.needs_review_count) +
-            numberOrZero(right.unidentified_product_count ?? right.unknown_count) +
-            numberOrZero(right.manual_corrections_count ?? right.corrected_count) +
-            numberOrZero(right.invalid_traceability_count)) -
-            (numberOrZero(left.needs_review_count) +
-              numberOrZero(left.unidentified_product_count ?? left.unknown_count) +
-              numberOrZero(left.manual_corrections_count ?? left.corrected_count) +
-              numberOrZero(left.invalid_traceability_count)) ||
-          numberOrZero(right.needs_review_count) - numberOrZero(left.needs_review_count) ||
-          numberOrZero(right.total_results) - numberOrZero(left.total_results)
-      ),
+    () => sortAisleRowsByAttention(aisleRowsFiltered),
     [aisleRowsFiltered]
   );
   const maxAislePage = Math.max(1, Math.ceil(Math.max(aisleRowsSorted.length, 1) / aislePageSize));
@@ -337,45 +175,12 @@ export default function MetricsPage() {
     [aisleRowsSorted, effectiveAislePage, aislePageSize]
   );
 
-  const qualityRowsOrdered = useMemo(
-    () =>
-      [...(quality?.items ?? [])].sort(
-        (left, right) =>
-          qualityPriority(left.issue_type) - qualityPriority(right.issue_type) ||
-          numberOrZero(right.count) - numberOrZero(left.count)
-      ),
-    [quality?.items]
-  );
-  const supportedInterventions = useMemo(
-    () =>
-      (manualInterventions?.items ?? []).filter(
-        (item: ManualInterventionCategory) => item.available && (item.count ?? 0) > 0
-      ),
+  const qualityRowsOrdered = useMemo(() => orderQualityRows(quality?.items ?? []), [quality?.items]);
+  const manualInterventionViewModel = useMemo(
+    () => buildManualInterventionViewModel(manualInterventions?.items),
     [manualInterventions?.items]
   );
-  const unsupportedInterventions = useMemo(
-    () => (manualInterventions?.items ?? []).filter((item: ManualInterventionCategory) => !item.available),
-    [manualInterventions?.items]
-  );
-  const orderedSupportedInterventions = useMemo(
-    () =>
-      [...supportedInterventions].sort(
-        (left, right) =>
-          interventionPriority(left.category) - interventionPriority(right.category) ||
-          numberOrZero(right.count) - numberOrZero(left.count)
-      ),
-    [supportedInterventions]
-  );
-  const manualCorrectionCount = useMemo(
-    () =>
-      numberOrZero(
-        manualInterventions?.items?.find((item: ManualInterventionCategory) => item.category === 'qty_corrected')?.count
-      ) +
-      numberOrZero(
-        manualInterventions?.items?.find((item: ManualInterventionCategory) => item.category === 'sku_corrected')?.count
-      ),
-    [manualInterventions?.items]
-  );
+  const { unsupportedInterventions, orderedSupportedInterventions, manualCorrectionCount } = manualInterventionViewModel;
   const pendingReviewCount = useMemo(
     () => (aisleIssues?.items ?? []).reduce((sum, row) => sum + numberOrZero(row.needs_review_count), 0),
     [aisleIssues?.items]
@@ -387,42 +192,19 @@ export default function MetricsPage() {
   const reviewedPositionsCount = summary?.reviewed_positions_count ?? 0;
   const interventionPositionsCount = manualInterventions?.intervention_positions_count ?? 0;
   const resolutionFlowStages = useMemo(
-    () => [
-      {
-        label: t('analytics.positions_in_scope'),
-        value: totalPositionsCount,
-        helper: t('analytics.positions_in_scope_help'),
-      },
-      {
-        label: t('analytics.pending_review'),
-        value: pendingReviewCount,
-        helper: t('analytics.pending_review_help'),
-      },
-      {
-        label: t('analytics.processed'),
-        value: processedPositionsCount,
-        helper: t('analytics.processed_help'),
-      },
-      {
-        label: t('analytics.reviewed'),
-        value: reviewedPositionsCount,
-        helper: t('analytics.reviewed_help'),
-      },
-      {
-        label: t('analytics.manual_touch'),
-        value: interventionPositionsCount,
-        helper: t('analytics.manual_touch_help'),
-      },
-      ...((summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null
-        ? [
-            {
-              label: t('analytics.operator_unknown'),
-              value: operatorMarkedUnknownCount,
-              helper: t('analytics.operator_unknown_help'),
-            },
-          ]
-        : []),
-    ],
+    () =>
+      buildResolutionFlowStages(
+        {
+          totalPositionsCount,
+          pendingReviewCount,
+          processedPositionsCount,
+          reviewedPositionsCount,
+          interventionPositionsCount,
+          operatorMarkedUnknownCount,
+          hasOperatorUnknownRate: (summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null,
+        },
+        t
+      ),
     [
       t,
       totalPositionsCount,
@@ -592,82 +374,21 @@ export default function MetricsPage() {
   );
 
   const kpiCards = useMemo(
-    () => [
-      {
-        label: t('analytics.kpi_auto_accept_title'),
-        value: formatPct(summary?.auto_acceptance_rate),
-        description: summary?.reviewed_positions_count
-          ? t('analytics.kpi_fraction_reviewed', {
-              numerator: Math.round((summary.auto_acceptance_rate ?? 0) * summary.reviewed_positions_count),
-              denominator: summary.reviewed_positions_count,
-            })
-          : t('analytics.kpi_auto_accept_desc'),
-      },
-      {
-        label: t('analytics.kpi_manual_correction_title'),
-        value: formatPct(summary?.manual_correction_rate),
-        description: summary?.reviewed_positions_count
-          ? t('analytics.kpi_fraction_reviewed', {
-              numerator: Math.round((summary.manual_correction_rate ?? 0) * summary.reviewed_positions_count),
-              denominator: summary.reviewed_positions_count,
-            })
-          : t('analytics.kpi_manual_correction_desc'),
-      },
-      ...(hasUnidentifiedProductRate
-        ? [
-            {
-              label: t('analytics.kpi_unidentified_title'),
-              value: formatPct(summary?.unidentified_product_rate),
-              description:
-                summary?.unidentified_product_count != null && summary?.total_positions_in_scope
-                  ? t('analytics.kpi_fraction_scope', {
-                      numerator: summary.unidentified_product_count,
-                      denominator: summary.total_positions_in_scope,
-                    })
-                  : t('analytics.kpi_unidentified_desc'),
-            },
-          ]
-        : []),
-      {
-        label: t('analytics.kpi_processing_success_title'),
-        value: formatPct(summary?.processing_success_rate),
-        description: t('analytics.kpi_processing_success_desc'),
-      },
-      {
-        label: t('analytics.kpi_avg_processing_title'),
-        value: formatAvgProcessingMinutes(
-          summary?.average_processing_time_minutes,
-          summary?.average_processing_time_seconds
-        ),
-        description: t('analytics.kpi_avg_processing_desc'),
-      },
-      {
-        label: t('analytics.kpi_invalid_tr_title'),
-        value: formatPct(summary?.invalid_traceability_rate),
-        description: summary?.total_positions_in_scope
-          ? t('analytics.kpi_fraction_scope', {
-              numerator: Math.round((summary.invalid_traceability_rate ?? 0) * summary.total_positions_in_scope),
-              denominator: summary.total_positions_in_scope,
-            })
-          : t('analytics.kpi_invalid_tr_desc'),
-      },
-    ],
+    () => buildMetricsKpiCards(summary, hasUnidentifiedProductRate, t),
     [hasUnidentifiedProductRate, summary, t]
   );
 
   const scopeSummary = useMemo(
     () =>
-      summary
-        ? {
-            inventoryLabel: selectedInventory ? selectedInventory.name : t('analytics.scope_inventory_all'),
-            aisleLabel: selectedAisle
-              ? selectedAisle.code
-              : inventoryId
-                ? t('analytics.scope_aisle_inventory')
-                : t('analytics.scope_aisle_all'),
-            positions: summary.total_positions_in_scope ?? summary.positions_in_scope,
-          }
-        : null,
+      buildScopeSummary(
+        {
+          summary,
+          selectedInventoryName: selectedInventory?.name ?? null,
+          selectedAisleCode: selectedAisle?.code ?? null,
+          hasInventorySelected: Boolean(inventoryId),
+        },
+        t
+      ),
     [summary, selectedInventory, selectedAisle, inventoryId, t]
   );
 
@@ -782,36 +503,12 @@ export default function MetricsPage() {
         </Typography>
       ) : null}
 
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: {
-            xs: 'minmax(0, 1fr)',
-            sm: 'repeat(2, minmax(0, 1fr))',
-            md: 'repeat(3, minmax(0, 1fr))',
-          },
-          gap: 2,
-          mb: 2,
-          minWidth: 0,
-          width: '100%',
-        }}
-      >
-        {isLoading && !summary
-          ? Array.from({ length: hasUnidentifiedProductRate ? 6 : 5 }).map((_, i) => (
-              <Skeleton key={`sk-${i}`} variant="rounded" height={100} sx={{ minWidth: 0 }} />
-            ))
-          : kpiCards.map((k) => (
-              <Box key={k.label} sx={{ minWidth: 0 }}>
-                <KpiCard label={k.label} value={k.value} description={k.description} />
-              </Box>
-            ))}
-      </Box>
-
-      {summary?.notes?.length ? (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          {summary.notes.join(' ')}
-        </Alert>
-      ) : null}
+      <MetricsKpiSection
+        cards={kpiCards}
+        isLoading={isLoading}
+        hasSummary={Boolean(summary)}
+        skeletonCount={hasUnidentifiedProductRate ? 6 : 5}
+      />
 
       <Box
         sx={{
@@ -824,235 +521,54 @@ export default function MetricsPage() {
         }}
       >
         <Box sx={{ minWidth: 0 }}>
-          <SectionCard
-            title={t('analytics.manual_intervention_title')}
-            subtitle={t('analytics.manual_intervention_subtitle')}
-          >
-            {isLoading && !manualInterventions ? (
-              <Skeleton variant="rounded" height={220} />
-            ) : supportedInterventions.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                {t('analytics.no_manual_interventions_scope')}
-              </Typography>
-            ) : (
-              <Stack spacing={1.5}>
-                <Box
-                  sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    gap: 2,
-                    flexWrap: 'wrap',
-                    p: 1.5,
-                    border: 1,
-                    borderColor: 'divider',
-                    borderRadius: 1.5,
-                    bgcolor: 'background.default',
-                  }}
-                >
-                  <Typography variant="body2" color="text.secondary">
-                    {t('analytics.reviewed_positions_label')}
-                  </Typography>
-                  <Typography variant="body2" fontWeight={600}>
-                    {manualInterventions?.reviewed_positions_count ?? 0}
-                  </Typography>
-                </Box>
-                {orderedSupportedInterventions.map((item: ManualInterventionCategory) => (
-                  <Box key={item.category}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mb: 0.5 }}>
-                      <Typography variant="body2" fontWeight={600}>
-                        {interventionLabel(item.category, t)}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-                        {item.count ?? 0}
-                        {item.percentage != null ? ` · ${(item.percentage * 100).toFixed(1)}%` : ''}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ height: 8, bgcolor: 'action.hover', borderRadius: 999, overflow: 'hidden' }}>
-                      <Box
-                        sx={{
-                          height: '100%',
-                          width: `${Math.min(100, (item.percentage ?? 0) * 100)}%`,
-                          bgcolor: interventionColor(item.category),
-                        }}
-                      />
-                    </Box>
-                    {item.notes ? (
-                      <Typography variant="caption" color="text.secondary">
-                        {item.notes}
-                      </Typography>
-                    ) : null}
-                  </Box>
-                ))}
-                {unsupportedInterventions.length ? (
-                  <>
-                    <Divider />
-                    <Typography variant="caption" color="text.secondary">
-                      {t('analytics.awaiting_backend_support')}
-                    </Typography>
-                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                      {unsupportedInterventions.map((item: ManualInterventionCategory) => (
-                        <Chip
-                          key={item.category}
-                          label={t('analytics.intervention_unavailable_chip', {
-                            label: interventionLabel(item.category, t),
-                          })}
-                          size="small"
-                          variant="outlined"
-                        />
-                      ))}
-                    </Stack>
-                  </>
-                ) : null}
-              </Stack>
-            )}
-          </SectionCard>
-        </Box>
-        <Box sx={{ minWidth: 0 }}>
-          <SectionCard
-            title={t('analytics.resolution_flow_title')}
-            subtitle={t('analytics.resolution_flow_subtitle')}
-          >
-            {isLoading && !summary ? (
-              <Skeleton variant="rounded" height={220} />
-            ) : (
-              <Stack spacing={1.25}>
-                <Box
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: {
-                      xs: 'repeat(2, minmax(0, 1fr))',
-                      md:
-                        (summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null
-                          ? 'repeat(3, minmax(0, 1fr))'
-                          : 'repeat(4, minmax(0, 1fr))',
-                    },
-                    gap: 1.5,
-                    minWidth: 0,
-                    width: '100%',
-                  }}
-                >
-                  {resolutionFlowStages.map((item) => (
-                    <Box key={item.label} sx={{ minWidth: 0 }}>
-                      <Box
-                        sx={{
-                          border: 1,
-                          borderColor: 'divider',
-                          borderRadius: 1.5,
-                          p: 1.5,
-                          height: '100%',
-                          bgcolor: 'background.default',
-                        }}
-                      >
-                        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                          {item.label}
-                        </Typography>
-                        <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                          {item.value}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {item.helper}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  ))}
-                </Box>
-                <Box
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: `repeat(${resolutionFlowStages.length}, minmax(0, 1fr))`,
-                    gap: 1,
-                  }}
-                >
-                  {resolutionFlowStages.map((item, index) => (
-                    <Box
-                      key={`${item.label}-bar`}
-                      sx={{
-                        minWidth: 0,
-                      }}
-                    >
-                      <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
-                        {index < resolutionFlowStages.length - 1
-                          ? t('analytics.resolution_step')
-                          : t('analytics.resolution_outcome')}
-                      </Typography>
-                      <Box sx={{ height: 10, bgcolor: 'action.hover', borderRadius: 999, overflow: 'hidden' }}>
-                        <Box
-                          sx={{
-                            height: '100%',
-                            width: `${totalPositionsCount > 0 ? Math.min(100, (item.value / totalPositionsCount) * 100) : 0}%`,
-                            bgcolor:
-                              index === resolutionFlowStages.length - 1 &&
-                              (summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null
-                                ? 'warning.main'
-                                : 'primary.main',
-                          }}
-                        />
-                      </Box>
-                    </Box>
-                  ))}
-                </Box>
-                <Typography variant="caption" color="text.secondary">
-                  {t('analytics.manual_corrections_in_scope', { count: manualCorrectionCount })}
-                  {(summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null
-                    ? t('analytics.operator_unknown_outcomes', { count: operatorMarkedUnknownCount })
-                    : ''}
-                </Typography>
-              </Stack>
-            )}
-          </SectionCard>
-        </Box>
-      </Box>
-
-      <SectionCard
-        title={t('analytics.inventory_performance_title')}
-        subtitle={t('analytics.inventory_performance_subtitle')}
-      >
-        <FilterToolbar
-          onReset={() => {
-            setPerfTableSearch('');
-            setInventoryPage(1);
-          }}
-          resetDisabled={!perfTableSearch.trim()}
-        >
-          <TableSearchField
-            label={t('table.search_label')}
-            placeholder={t('analytics.search_inventory_performance_placeholder')}
-            value={perfTableSearch}
-            onChange={(value) => {
-              setPerfTableSearch(value);
-              setInventoryPage(1);
-            }}
-            data-testid="metrics-inventory-performance-search"
+          <MetricsManualInterventionSection
+            notes={summary?.notes ?? []}
+            isLoading={isLoading}
+            hasManualInterventions={Boolean(manualInterventions)}
+            reviewedPositionsCount={manualInterventions?.reviewed_positions_count ?? 0}
+            supportedInterventions={orderedSupportedInterventions}
+            unsupportedInterventions={unsupportedInterventions}
           />
-        </FilterToolbar>
-        <DataTable<InventoryPerformanceRow>
-          rows={inventoryRowsPaged}
-          rowKey={(r) => r.inventory_id}
-          columns={invColumns}
-          loading={isLoading}
-          sort={{
-            sortBy: inventorySortBy,
-            sortDir: inventorySortDir,
-            onSortChange: (sortBy, sortDir) => {
-              setInventorySortBy(sortBy);
-              setInventorySortDir(sortDir);
-              setInventoryPage(1);
-            },
-          }}
-          pagination={{
-            page: effectiveInventoryPage,
-            pageSize: inventoryPageSize,
-            totalItems: inventoryRowsSorted.length,
-            onPageChange: setInventoryPage,
-            onPageSizeChange: setInventoryPageSize,
-          }}
-          emptyState={
-            perfTableSearch.trim() && !isLoading && inventoryRowsSorted.length === 0
-              ? { message: t('table.empty_no_match') }
-              : { message: t('analytics.empty_inventory_performance') }
-          }
-        />
-      </SectionCard>
+        </Box>
+        <Box sx={{ minWidth: 0 }}>
+          <MetricsResolutionFlowSection
+            isLoading={isLoading}
+            hasSummary={Boolean(summary)}
+            hasOperatorUnknownRate={(summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null}
+            resolutionFlowStages={resolutionFlowStages}
+            totalPositionsCount={totalPositionsCount}
+            manualCorrectionCount={manualCorrectionCount}
+            operatorMarkedUnknownCount={operatorMarkedUnknownCount}
+          />
+        </Box>
+      </Box>
+
+      <MetricsInventoryPerformanceSection
+        search={perfTableSearch}
+        onSearchChange={(value) => {
+          setPerfTableSearch(value);
+          setInventoryPage(1);
+        }}
+        onResetSearch={() => {
+          setPerfTableSearch('');
+          setInventoryPage(1);
+        }}
+        rows={inventoryRowsPaged}
+        columns={invColumns}
+        isLoading={isLoading}
+        sortBy={inventorySortBy}
+        sortDir={inventorySortDir}
+        onSortChange={(sortBy, sortDir) => {
+          setInventorySortBy(sortBy);
+          setInventorySortDir(sortDir);
+          setInventoryPage(1);
+        }}
+        page={effectiveInventoryPage}
+        pageSize={inventoryPageSize}
+        totalItems={inventoryRowsSorted.length}
+        onPageChange={setInventoryPage}
+        onPageSizeChange={setInventoryPageSize}
+      />
 
       <Box
         sx={{
@@ -1065,101 +581,28 @@ export default function MetricsPage() {
         }}
       >
         <Box sx={{ minWidth: 0 }}>
-          <SectionCard
-            title={t('analytics.quality_patterns_title')}
-            subtitle={t('analytics.quality_patterns_subtitle')}
-          >
-            {isLoading && !quality ? (
-              <Skeleton variant="rounded" height={160} />
-            ) : !quality?.items.length ? (
-              <Typography variant="body2" color="text.secondary">
-                {t('analytics.empty_quality_filter')}
-              </Typography>
-            ) : (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                {qualityRowsOrdered.map((row: QualityPatternRow) => (
-                  <Box
-                    key={row.issue_type}
-                    sx={{
-                      p: 1.25,
-                      border: 1,
-                      borderColor: 'divider',
-                      borderRadius: 1.5,
-                      bgcolor: qualityPriority(row.issue_type) <= 2 ? 'background.default' : 'transparent',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                      <Typography variant="body2" fontWeight={qualityPriority(row.issue_type) <= 2 ? 600 : 500}>
-                        {translateQualityIssueType(row.issue_type, t)}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-                        {row.count}
-                        {row.percentage != null ? ` · ${(row.percentage * 100).toFixed(1)}%` : ''}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ height: 6, bgcolor: 'action.hover', borderRadius: 1, overflow: 'hidden' }}>
-                      <Box
-                        sx={{
-                          height: '100%',
-                          width: `${Math.min(100, (row.percentage ?? 0) * 100)}%`,
-                          bgcolor: 'secondary.main',
-                        }}
-                      />
-                    </Box>
-                    {row.notes ? (
-                      <Typography variant="caption" color="text.secondary">
-                        {row.notes}
-                      </Typography>
-                    ) : null}
-                  </Box>
-                ))}
-              </Box>
-            )}
-          </SectionCard>
+          <MetricsQualitySection isLoading={isLoading} hasQualityData={Boolean(quality)} rows={qualityRowsOrdered} />
         </Box>
         <Box sx={{ minWidth: 0 }}>
-          <SectionCard
-            title={t('analytics.aisles_attention_title')}
-            subtitle={t('analytics.aisles_attention_subtitle')}
-          >
-            <FilterToolbar
-              onReset={() => {
-                setAisleMetricsTableSearch('');
-                setAislePage(1);
-              }}
-              resetDisabled={!aisleMetricsTableSearch.trim()}
-            >
-              <TableSearchField
-                label={t('table.search_label')}
-                placeholder={t('analytics.search_aisle_metrics_placeholder')}
-                value={aisleMetricsTableSearch}
-                onChange={(value) => {
-                  setAisleMetricsTableSearch(value);
-                  setAislePage(1);
-                }}
-                data-testid="metrics-aisle-issues-search"
-              />
-            </FilterToolbar>
-            <DataTable<AisleIssueRow>
-              rows={aisleRowsPaged}
-              rowKey={(r) => `${r.inventory_id}-${r.aisle_id}`}
-              columns={aisleColumns}
-              loading={isLoading}
-              size="small"
-              pagination={{
-                page: effectiveAislePage,
-                pageSize: aislePageSize,
-                totalItems: aisleRowsSorted.length,
-                onPageChange: setAislePage,
-                onPageSizeChange: setAislePageSize,
-              }}
-              emptyState={
-                aisleMetricsTableSearch.trim() && !isLoading && aisleRowsSorted.length === 0
-                  ? { message: t('table.empty_no_match') }
-                  : { message: t('analytics.empty_aisle_metrics') }
-              }
-            />
-          </SectionCard>
+          <MetricsAislesAttentionSection
+            search={aisleMetricsTableSearch}
+            onSearchChange={(value) => {
+              setAisleMetricsTableSearch(value);
+              setAislePage(1);
+            }}
+            onResetSearch={() => {
+              setAisleMetricsTableSearch('');
+              setAislePage(1);
+            }}
+            rows={aisleRowsPaged}
+            columns={aisleColumns}
+            isLoading={isLoading}
+            page={effectiveAislePage}
+            pageSize={aislePageSize}
+            totalItems={aisleRowsSorted.length}
+            onPageChange={setAislePage}
+            onPageSizeChange={setAislePageSize}
+          />
         </Box>
       </Box>
     </Box>
