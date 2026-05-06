@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import type { CreateInventoryRequest, Inventory, InventoryProcessingMode } from '../api/types';
+import { ApiError } from '../api/types';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { useCreateInventoryFlow } from '../features/inventories/hooks/useCreateInventoryFlow';
 import WizardModal from './ui/WizardModal';
@@ -34,6 +35,10 @@ export interface CreateInventoryDialogProps {
   createInventoryFn?: (body: CreateInventoryRequest) => Promise<Inventory>;
 }
 
+function normalizeApiError(error: unknown): ApiError {
+  return error instanceof ApiError ? error : new ApiError(String(error));
+}
+
 export default function CreateInventoryDialog({
   open,
   onClose,
@@ -45,11 +50,9 @@ export default function CreateInventoryDialog({
   const {
     submitCreateInventory,
     submitUploadInventoryReferences,
-    isCreating,
-    isUploadingReferences,
+    isSubmitting: submitting,
     clearError,
   } = useCreateInventoryFlow({ createInventoryFn });
-  const submitting = isCreating || isUploadingReferences;
 
   const maxFiles = 3;
   const allowedTypes = useMemo(
@@ -203,7 +206,7 @@ export default function CreateInventoryDialog({
       onSuccess(created);
       handleClose();
     } catch (e) {
-      const err = e as unknown;
+      const err = normalizeApiError(e);
       const msg = resolveApiErrorMessage(err, 'errors.create_inventory');
       setValidationError(typeof msg === 'string' ? msg : JSON.stringify(msg));
       onError(msg);
@@ -232,7 +235,7 @@ export default function CreateInventoryDialog({
       } catch (e) {
         // Important: inventory exists now. Do not call onError (parent would show "create failed").
         // Keep the dialog open in "retry upload" mode.
-        const err = e as unknown;
+        const err = normalizeApiError(e);
         const msg = resolveApiErrorMessage(err, 'errors.reference_upload_failed');
         setUploadState('failed');
         setUploadError(
@@ -242,7 +245,7 @@ export default function CreateInventoryDialog({
         );
       }
     } catch (e) {
-      const err = e as unknown;
+      const err = normalizeApiError(e);
       const msg = resolveApiErrorMessage(err, 'errors.create_inventory');
       setValidationError(typeof msg === 'string' ? msg : JSON.stringify(msg));
       onError(msg);
@@ -259,7 +262,7 @@ export default function CreateInventoryDialog({
       onSuccess(createdInventory);
       handleClose();
     } catch (e) {
-      const err = e as unknown;
+      const err = normalizeApiError(e);
       const msg = resolveApiErrorMessage(err, 'errors.reference_upload_failed');
       setUploadState('failed');
       setUploadError(

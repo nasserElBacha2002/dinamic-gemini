@@ -5,9 +5,13 @@ import { ApiError } from '../../../api/types';
 
 export interface UseCreateInventoryFlowOptions {
   createInventoryFn?: (body: CreateInventoryRequest) => Promise<Inventory>;
+  uploadInventoryVisualReferencesFn?: (inventoryId: string, files: File[]) => Promise<void>;
 }
 
-export function useCreateInventoryFlow({ createInventoryFn }: UseCreateInventoryFlowOptions = {}) {
+export function useCreateInventoryFlow({
+  createInventoryFn,
+  uploadInventoryVisualReferencesFn,
+}: UseCreateInventoryFlowOptions = {}) {
   const [isCreating, setIsCreating] = useState(false);
   const [isUploadingReferences, setIsUploadingReferences] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
@@ -35,7 +39,8 @@ export function useCreateInventoryFlow({ createInventoryFn }: UseCreateInventory
       setIsUploadingReferences(true);
       setError(null);
       try {
-        await uploadInventoryVisualReferences(inventoryId, files);
+        const doUpload = uploadInventoryVisualReferencesFn ?? uploadInventoryVisualReferences;
+        await doUpload(inventoryId, files);
       } catch (e) {
         const err = e instanceof ApiError ? e : new ApiError(String(e));
         setError(err);
@@ -44,7 +49,7 @@ export function useCreateInventoryFlow({ createInventoryFn }: UseCreateInventory
         setIsUploadingReferences(false);
       }
     },
-    []
+    [uploadInventoryVisualReferencesFn]
   );
 
   const clearError = useCallback(() => setError(null), []);
@@ -54,6 +59,7 @@ export function useCreateInventoryFlow({ createInventoryFn }: UseCreateInventory
     submitUploadInventoryReferences,
     isCreating,
     isUploadingReferences,
+    isSubmitting: isCreating || isUploadingReferences,
     error,
     clearError,
   };

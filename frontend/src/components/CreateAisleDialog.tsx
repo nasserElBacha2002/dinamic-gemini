@@ -8,6 +8,7 @@ import {
   CircularProgress,
 } from '@mui/material';
 import type { CreateAisleRequest } from '../api/types';
+import { ApiError } from '../api/types';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { useCreateAisleAction } from '../features/inventories/hooks/useCreateAisleAction';
 import BaseDialog from './ui/BaseDialog';
@@ -23,6 +24,10 @@ export interface CreateAisleDialogProps {
   createAisleFn?: (body: CreateAisleRequest) => Promise<unknown>;
   /** Optional pre-validation: existing aisle codes in this inventory (from the current list view). */
   existingAisleCodes?: string[];
+}
+
+function normalizeApiError(error: unknown): ApiError {
+  return error instanceof ApiError ? error : new ApiError(String(error));
 }
 
 export default function CreateAisleDialog({
@@ -98,7 +103,7 @@ export default function CreateAisleDialog({
       onSuccess();
       setCreatedCode(trimmed);
     } catch (e) {
-      const err = e as { status?: number };
+      const err = normalizeApiError(e);
       const msg = resolveApiErrorMessage(err, 'errors.create_aisle');
       if (err.status === 409) {
         setValidationError(typeof msg === 'string' ? msg : t('dialogs.aisle.validation_duplicate'));
