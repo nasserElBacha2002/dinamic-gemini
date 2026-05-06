@@ -1,0 +1,27 @@
+{
+  "total_entities_detected": 2,
+  "entities": [
+    {
+      "model_entity_id": "fixture_m1",
+      "entity_type": "PALLET",
+      "position_barcode": null,
+      "internal_code": "FIX-A",
+      "product_label_quantity": 2,
+      "position_label_bbox": [0.05, 0.05, 0.45, 0.45],
+      "product_label_bbox": [0.1, 0.1, 0.4, 0.5],
+      "has_boxes": true,
+      "confidence": 0.95
+    },
+    {
+      "model_entity_id": "fixture_m2",
+      "entity_type": "PALLET",
+      "position_barcode": null,
+      "internal_code": "FIX-B",
+      "product_label_quantity": 1,
+      "position_label_bbox": [0.5, 0.05, 0.9, 0.45],
+      "product_label_bbox": [0.55, 0.1, 0.85, 0.5],
+      "has_boxes": true,
+      "confidence": 0.9
+    }
+  ]
+}

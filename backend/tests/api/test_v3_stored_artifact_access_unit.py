@@ -475,7 +475,7 @@ def test_fetch_json_rejects_from_head_before_get_or_download(monkeypatch) -> Non
 
     store = _Store()
     monkeypatch.setattr(
-        "src.api.services.v3_stored_artifact_access.load_settings",
+        "src.infrastructure.artifacts.stored_artifact_reader.load_settings",
         lambda: type(
             "S",
             (),
@@ -522,7 +522,7 @@ def test_fetch_json_when_head_fails_rejects_from_on_disk_stat(monkeypatch) -> No
 
     store = _Store()
     monkeypatch.setattr(
-        "src.api.services.v3_stored_artifact_access.load_settings",
+        "src.infrastructure.artifacts.stored_artifact_reader.load_settings",
         lambda: type(
             "S",
             (),

@@ -1,0 +1,27 @@
+{
+  "total_entities_detected": 2,
+  "entities": [
+    {
+      "model_entity_id": "fixture_u1",
+      "entity_type": "PALLET",
+      "position_barcode": null,
+      "internal_code": "UNLOC-A",
+      "product_label_quantity": 1,
+      "position_label_bbox": null,
+      "product_label_bbox": null,
+      "has_boxes": false,
+      "confidence": 0.82
+    },
+    {
+      "model_entity_id": "fixture_u2",
+      "entity_type": "PALLET",
+      "position_barcode": null,
+      "internal_code": "UNLOC-B",
+      "product_label_quantity": 1,
+      "position_label_bbox": null,
+      "product_label_bbox": null,
+      "has_boxes": false,
+      "confidence": 0.81
+    }
+  ]
+}
