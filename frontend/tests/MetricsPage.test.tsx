@@ -205,11 +205,12 @@ describe('MetricsPage', () => {
     mockUseAnalyticsDashboard.mockReturnValue({
       ...dashboardLoaded,
       isError: true,
-      errors: [new ApiError('Server error', 500)],
+      errors: [new Error('TypeError internal stack file.ts:99')],
     });
     renderMetrics();
     expect(screen.getAllByRole('alert').length).toBeGreaterThan(0);
-    expect(screen.getByText(/something went wrong|server error|load metrics|request failed|unexpected/i)).toBeInTheDocument();
+    expect(screen.getByText(/something went wrong|load metrics|request failed|unexpected/i)).toBeInTheDocument();
+    expect(screen.queryByText(/TypeError internal stack file\.ts:99/i)).not.toBeInTheDocument();
   });
 
   it('renders inventory performance link and aisle issue link', () => {

@@ -5,6 +5,13 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ExecutionLogPanel from '../src/components/ExecutionLogPanel';
 
 describe('ExecutionLogPanel', () => {
+  it('does not expose technical query errors in the primary load-failed message', () => {
+    render(<ExecutionLogPanel error={new Error('TypeError internal stack file.ts:99')} />);
+
+    expect(screen.queryByText(/TypeError internal stack file\.ts:99/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/load failed|request failed|something went wrong|could not load/i)).toBeInTheDocument();
+  });
+
   it('renders operator-friendly Gemini request details above the timeline', () => {
     render(
       <ExecutionLogPanel

@@ -11,13 +11,24 @@ describe('errorTranslations mappings', () => {
     expect(v3StructuredErrorCodeToTranslationKey('INTERNAL_SERVER_ERROR')).toBe('errors.unexpected');
   });
 
+  it('returns null for unknown v3 structured code', () => {
+    expect(v3StructuredErrorCodeToTranslationKey('SOME_UNKNOWN_CODE')).toBeNull();
+  });
+
   it('maps auth envelope codes', () => {
     expect(authErrorCodeToTranslationKey('INVALID_CREDENTIALS')).toBe('errors.auth.invalid_credentials');
+  });
+
+  it('returns null for unknown auth code', () => {
     expect(authErrorCodeToTranslationKey('UNKNOWN_AUTH_CODE')).toBeNull();
   });
 
-  it('maps known backend details and ignores unknown text', () => {
+  it('maps known backend details', () => {
     expect(backendDetailToTranslationKey('Unauthorized')).toBe('errors.auth.unauthorized');
+    expect(backendDetailToTranslationKey('Forbidden')).toBe('errors.forbidden');
+  });
+
+  it('returns null for unknown backend detail', () => {
     expect(backendDetailToTranslationKey('some internal detail')).toBeNull();
   });
 });

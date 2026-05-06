@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material';
 import theme from '../../src/theme';
 import { ApiError } from '../../src/api/types';
+import i18n from '../../src/i18n';
 import ErrorAlert from '../../src/components/ui/ErrorAlert';
 
 function WithTheme({ children }: { children: ReactNode }) {
@@ -30,7 +31,7 @@ describe('ErrorAlert', () => {
     );
 
     expect(screen.getByRole('alert').textContent ?? '').not.toContain('Not Found');
-    expect(screen.getByRole('alert').textContent?.trim()).toBeTruthy();
+    expect(screen.getByText(i18n.t('errors.not_found'))).toBeInTheDocument();
   });
 
   it('does not expose raw technical message for unknown errors', () => {
@@ -41,6 +42,7 @@ describe('ErrorAlert', () => {
     );
 
     expect(screen.getByRole('alert').textContent ?? '').not.toContain('technical stack trace message');
+    expect(screen.getByText(i18n.t('errors.load_metrics'))).toBeInTheDocument();
   });
 
   it('keeps retry button behavior', () => {
@@ -53,6 +55,18 @@ describe('ErrorAlert', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes onClose to the underlying alert close action', () => {
+    const onClose = vi.fn();
+    render(
+      <WithTheme>
+        <ErrorAlert message="Closable error" onClose={onClose} />
+      </WithTheme>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /close|cerrar/i }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
 
