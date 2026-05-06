@@ -36,6 +36,7 @@ import {
   useMaterializeCaptureSessionGroup,
   usePreviewMaterializedCaptureSessionGroup,
 } from '../hooks/useCaptureSessions';
+import { ConfirmDialog } from '../../../components/ui';
 import { heuristicGroupPreviewCtaBlockedReasonKey } from '../utils/groupingPreviewGate';
 
 export interface ImportSessionGroupingPanelProps {
@@ -320,22 +321,21 @@ export default function ImportSessionGroupingPanel({
         </Stack>
       )}
 
-      <Dialog open={recomputeConfirmOpen} onClose={() => setRecomputeConfirmOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>{t('ingestion_sessions.detail.grouping_recompute_confirm_title')}</DialogTitle>
-        <DialogContent>
+      <ConfirmDialog
+        open={recomputeConfirmOpen}
+        onClose={() => setRecomputeConfirmOpen(false)}
+        title={t('ingestion_sessions.detail.grouping_recompute_confirm_title')}
+        description={
           <Alert severity="warning" sx={{ mt: 1 }}>
             {t('ingestion_sessions.detail.grouping_recompute_confirm_body')}
           </Alert>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRecomputeConfirmOpen(false)}>
-            {t('ingestion_sessions.detail.grouping_recompute_confirm_cancel')}
-          </Button>
-          <Button color="warning" variant="contained" onClick={confirmRecompute}>
-            {t('ingestion_sessions.detail.grouping_recompute_confirm_proceed')}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        }
+        cancelLabel={t('ingestion_sessions.detail.grouping_recompute_confirm_cancel')}
+        confirmLabel={t('ingestion_sessions.detail.grouping_recompute_confirm_proceed')}
+        confirmColor="warning"
+        maxWidth="sm"
+        onConfirm={confirmRecompute}
+      />
 
       <Dialog open={assignGroupId != null} onClose={() => setAssignGroupId(null)} fullWidth maxWidth="sm">
         <DialogTitle>{t('ingestion_sessions.detail.grouping_assign_dialog_title')}</DialogTitle>
