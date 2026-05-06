@@ -4,7 +4,6 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
@@ -14,7 +13,7 @@ import { queryKeys } from '../api/queryKeys';
 import { canonicalizeOptionalId } from '../api/queryParamCanonicalization';
 import { recordExplicitRefreshObs, summarizeQueryKey } from '../dev/cacheMutationObservability';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
-import type { MergeResultItemResponse, RunMergeResponse } from '../api/types';
+import type { RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
 import { PageHeader } from '../components/shell';
 import { FilterToolbar, SectionCard, TableSearchField, useAppSnackbar } from '../components/ui';
@@ -47,6 +46,12 @@ import {
   ResultsErrorState,
   AisleRunSelector,
 } from '../features/results/components';
+import { mergeConsolidatedDetail } from '../features/results/adapters/aislePositionsFormatters';
+import {
+  summarizeLikelyMergeCandidates,
+  summarizeMergeResults,
+  type MergeResultsSummary,
+} from '../features/results/adapters/aislePositionsViewModel';
 import PromoteOperationalDialog from '../features/benchmark/PromoteOperationalDialog';
 import AisleSourceAssetsManageModule from '../features/inventories/components/AisleSourceAssetsManageModule';
 
@@ -58,68 +63,6 @@ const AISLE_RESULTS_LIST_QUERY: AislePositionsListQuery = {
   sort_dir: 'asc',
   consolidate_by_sku: false,
 };
-
-type MergeCandidateSummary = {
-  groupCount: number;
-  skuExamples: string[];
-};
-
-type MergeResultsSummary = {
-  groupCount: number;
-  skuCount: number;
-  skuExamples: string[];
-};
-
-// UI-only heuristic: repeated visible SKUs are a conservative signal that manual merge
-// may be useful. This is intentionally lighter than the backend merge domain logic.
-function summarizeLikelyMergeCandidates(
-  positions: Array<{ sku?: string | null }>
-): MergeCandidateSummary {
-  const counts = new Map<string, { label: string; count: number }>();
-  for (const position of positions) {
-    const rawSku = position.sku?.trim();
-    if (!rawSku) continue;
-    const key = rawSku.toLowerCase();
-    const current = counts.get(key);
-    if (current) {
-      current.count += 1;
-    } else {
-      counts.set(key, { label: rawSku, count: 1 });
-    }
-  }
-  const repeated = Array.from(counts.values())
-    .filter((entry) => entry.count > 1)
-    .map((entry) => entry.label);
-  return {
-    groupCount: repeated.length,
-    skuExamples: repeated.slice(0, 3),
-  };
-}
-
-function summarizeMergeResults(results: MergeResultItemResponse[] | undefined): MergeResultsSummary | null {
-  const consolidated = (results ?? []).filter((item) => item.normalized_label_ids.length > 1);
-  if (consolidated.length === 0) return null;
-  const skuLabels = consolidated
-    .map((item) => item.sku?.trim())
-    .filter((sku): sku is string => Boolean(sku));
-  const uniqueSkuLabels = Array.from(new Set(skuLabels));
-  return {
-    groupCount: consolidated.length,
-    skuCount: uniqueSkuLabels.length,
-    skuExamples: uniqueSkuLabels.slice(0, 3),
-  };
-}
-
-function mergeConsolidatedDetail(t: TFunction, summary: MergeResultsSummary): string {
-  const examples =
-    summary.skuExamples.length > 0
-      ? t('positions.merge_examples_paren', { list: summary.skuExamples.join(', ') })
-      : '';
-  if (summary.groupCount === 1) {
-    return t('positions.merge_repeated_sku_one', { examples });
-  }
-  return t('positions.merge_repeated_sku_other', { count: summary.groupCount, examples });
-}
 
 export default function AislePositionsPage() {
   const { t } = useTranslation();
