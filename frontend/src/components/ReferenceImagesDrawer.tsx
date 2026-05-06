@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { InventoryVisualReference } from '../api/types';
-import { fetchInventoryVisualReferenceFile } from '../api/client';
 import { formatDate } from '../utils/formatDate';
+import { useInventoryReferencePreview } from '../features/imageAssets/hooks/useInventoryReferencePreview';
 import ManagedImageAssetsDrawer from './imageAssets/ManagedImageAssetsDrawer';
 import type { ManagedImageAssetItem } from './imageAssets/types';
 
@@ -61,6 +61,7 @@ export default function ReferenceImagesDrawer({
   replaceError,
 }: ReferenceImagesDrawerProps) {
   const { t } = useTranslation();
+  const { loadPreview } = useInventoryReferencePreview({ inventoryId });
   const managedItems = useMemo(() => toManagedItems(items), [items]);
 
   const copy = useMemo(
@@ -101,7 +102,7 @@ export default function ReferenceImagesDrawer({
       isLoading={isLoading}
       errorMessage={errorMessage}
       onRetry={onRetry}
-      onFetchPreview={async (item) => fetchInventoryVisualReferenceFile(inventoryId, item.id)}
+      onFetchPreview={loadPreview}
       showUpload
       onUpload={onUpload}
       isUploading={isUploading}
