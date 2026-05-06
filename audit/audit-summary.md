@@ -85,3 +85,7 @@ Severidad máxima: critical
 - Los principios SOLID/GRASP/React se interpretan como señales heurísticas.
 - Algunos reportes pueden depender de herramientas instaladas localmente.
 - No implica corrección automática.
+
+## F9 — Dependencias frontend (cierre manual, 2026-05-06)
+
+**Estado:** `npm audit` en `frontend/` queda en **0 vulnerabilidades** tras actualización controlada (Vite 6.4.2, Vitest 3.2.4, `postcss` / `yaml` / TypeScript / `eslint-plugin-sonarjs` en `devDependencies`). Evidencia: `audit/raw/frontend-npm-audit-f9-before.json` (7 moderadas) vs `audit/raw/frontend-npm-audit-f9-after.json` (0). Validación: `typecheck`, `lint`, `test -- --run`, `build` OK. Detalle y excepciones: `audit/audit-backlog.md` (sección F9).
