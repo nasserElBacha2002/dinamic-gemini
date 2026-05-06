@@ -33,16 +33,16 @@ describe('auth API helpers', () => {
       error: { code: 'INVALID_CREDENTIALS', message: 'Invalid credentials.' },
     });
     expect(isAuthError(err)).toBe(true);
-    expect(getAuthErrorMessage(err)).toBe('Invalid credentials');
+    expect(getAuthErrorMessage(err)).toBe('Credenciales inválidas');
   });
 
   it('isAuthError returns false for plain Error', () => {
     expect(isAuthError(new Error('network'))).toBe(false);
     /** Plain errors use visible-message pipeline → auth context fallback (no raw message leakage). */
-    expect(getAuthErrorMessage(new Error('network'))).toBe('Authentication failed');
+    expect(getAuthErrorMessage(new Error('network'))).toBe('Error de autenticación');
   });
 
   it('getAuthErrorMessage returns fallback for unknown', () => {
-    expect(getAuthErrorMessage(null)).toBe('Authentication failed');
+    expect(getAuthErrorMessage(null)).toBe('Error de autenticación');
   });
 });

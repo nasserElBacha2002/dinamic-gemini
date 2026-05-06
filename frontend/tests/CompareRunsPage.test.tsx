@@ -186,9 +186,11 @@ describe('CompareRunsPage', () => {
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
 
     expect(screen.getByTestId('compare-runs-results')).toBeInTheDocument();
-    expect(screen.getByText(/info benchmark/i)).toBeInTheDocument();
-    expect(screen.getByText(/diff summary title/i)).toBeInTheDocument();
-    expect(screen.getByText(/diff summary stats/i)).toBeInTheDocument();
+    expect(screen.getByText(/info benchmark|comparación de corridas benchmark/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /diff summary title|resumen de diferencias/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/diff summary stats|solo en a:/i)).toBeInTheDocument();
     expect(screen.getByText('job-a')).toBeInTheDocument();
     expect(screen.getByText('job-b')).toBeInTheDocument();
   });
@@ -196,16 +198,16 @@ describe('CompareRunsPage', () => {
   it('renders total LLM cost and no-pricing fallback for run B', () => {
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
     expect(screen.getByText('0.00125000 USD')).toBeInTheDocument();
-    expect(screen.getByText('No pricing configured')).toBeInTheDocument();
+    expect(screen.getByText(/no pricing configured|sin pricing configurado/i)).toBeInTheDocument();
   });
 
   it('shows operator-friendly tooltip text for cost details', async () => {
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
-    const cells = screen.getAllByText('No pricing configured');
+    const cells = screen.getAllByText(/no pricing configured|sin pricing configurado/i);
     fireEvent.mouseOver(cells[0]);
     const tip = await screen.findByRole('tooltip');
-    expect(tip).toHaveTextContent(/pricing entry missing/i);
-    expect(tip).toHaveTextContent(/model in tooltip/i);
+    expect(tip).toHaveTextContent(/pricing entry missing|falta entrada de pricing/i);
+    expect(tip).toHaveTextContent(/model in tooltip|modelo:/i);
   });
 
   it('shows usage not reported when provider usage is missing', async () => {
@@ -233,11 +235,11 @@ describe('CompareRunsPage', () => {
       },
     };
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
-    expect(screen.getByText('Usage not reported')).toBeInTheDocument();
-    fireEvent.mouseOver(screen.getByText('Usage not reported'));
+    expect(screen.getByText(/usage not reported|uso no reportado/i)).toBeInTheDocument();
+    fireEvent.mouseOver(screen.getByText(/usage not reported|uso no reportado/i));
     const tip = await screen.findByRole('tooltip');
-    expect(tip).toHaveTextContent(/provider usage missing/i);
-    expect(tip).toHaveTextContent(/model in tooltip/i);
+    expect(tip).toHaveTextContent(/provider usage missing|faltan datos de uso del proveedor/i);
+    expect(tip).toHaveTextContent(/model in tooltip|modelo:/i);
     hoisted.comparePayload.run_b = savedB;
   });
 
@@ -267,24 +269,26 @@ describe('CompareRunsPage', () => {
       },
     };
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
-    expect(screen.getByText('Not computed')).toBeInTheDocument();
-    fireEvent.mouseOver(screen.getByText('Not computed'));
+    expect(screen.getByText(/not computed|no calculado/i)).toBeInTheDocument();
+    fireEvent.mouseOver(screen.getByText(/not computed|no calculado/i));
     const tip = await screen.findByRole('tooltip');
-    expect(tip).toHaveTextContent(/model in tooltip/i);
+    expect(tip).toHaveTextContent(/model in tooltip|modelo:/i);
     hoisted.comparePayload.run_b = savedB;
   });
 
   it('shows an honest cap warning when raw fetch hit the server cap', () => {
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
 
-    const capAlert = screen.getByText(/truncation warning/i).closest('[role="alert"]');
+    const capAlert = screen
+      .getByText(/truncation warning|carga de filas crudas|límite del servidor/i)
+      .closest('[role="alert"]');
     expect(capAlert).toBeTruthy();
   });
 
   it('calls benchmark CSV export with the selected job pair', async () => {
     renderAt('?aisleId=aisle-1&jobAId=job-a&jobBId=job-b');
 
-    fireEvent.click(screen.getByRole('button', { name: /export csv/i }));
+    fireEvent.click(screen.getByRole('button', { name: /export csv|exportar tabla comparativa/i }));
 
     await waitFor(() => {
       expect(hoisted.downloadCsvMock).toHaveBeenCalledWith('inv-1', 'aisle-1', {

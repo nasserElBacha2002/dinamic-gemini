@@ -49,11 +49,11 @@ describe('ResultReviewActions', () => {
         />
       </WithTheme>
     );
-    fireEvent.click(screen.getByRole('button', { name: /Correct quantity/i }));
-    const qtyInput = screen.getByPlaceholderText(/qty placeholder/i);
+    fireEvent.click(screen.getByRole('button', { name: /corregir cantidad|correct quantity/i }));
+    const qtyInput = screen.getByPlaceholderText(/qty placeholder|cantidad/i);
     fireEvent.change(qtyInput, { target: { value: '-1' } });
     expect(qtyInput).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByRole('button', { name: /^Save$/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /guardar|save/i })).toBeDisabled();
     expect(onUpdateQuantity).not.toHaveBeenCalled();
   });
 
@@ -73,8 +73,8 @@ describe('ResultReviewActions', () => {
         />
       </WithTheme>
     );
-    fireEvent.click(screen.getByRole('button', { name: /Correct SKU/i }));
-    expect(screen.getByRole('button', { name: /^Save$/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /corregir sku|correct sku/i }));
+    expect(screen.getByRole('button', { name: /guardar|save/i })).toBeDisabled();
     expect(onUpdateSku).not.toHaveBeenCalled();
   });
 
@@ -93,7 +93,7 @@ describe('ResultReviewActions', () => {
         />
       </WithTheme>
     );
-    expect(screen.getByRole('button', { name: /Confirming/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /confirmando|confirming/i })).toBeDisabled();
   });
 
   it('readOnly shows non-operational message and hides confirm', () => {
@@ -112,10 +112,8 @@ describe('ResultReviewActions', () => {
         />
       </WithTheme>
     );
-    expect(
-      screen.getByText(/readonly run/i)
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Confirm result/i })).toBeNull();
+    expect(screen.getByText(/modo lectura|readonly run/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /confirmar resultado|confirm result/i })).toBeNull();
   });
 
   it('Wrong image calls onMarkImageMismatch', () => {
@@ -134,7 +132,7 @@ describe('ResultReviewActions', () => {
         />
       </WithTheme>
     );
-    fireEvent.click(screen.getByRole('button', { name: /Wrong image/i }));
+    fireEvent.click(screen.getByRole('button', { name: /imagen incorrecta|wrong image/i }));
     expect(onMarkImageMismatch).toHaveBeenCalledTimes(1);
   });
 });

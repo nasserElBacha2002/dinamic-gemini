@@ -304,7 +304,7 @@ describe('InventoryDetail', () => {
     expect(useInventoryVisualReferencesMock).toHaveBeenCalled();
     expect(useInventoryVisualReferencesMock.mock.calls[0]?.[1]).toMatchObject({ enabled: false });
 
-    fireEvent.click(screen.getByRole('button', { name: /visual refs title/i }));
+    fireEvent.click(screen.getByRole('button', { name: /visual refs title|referencias visuales/i }));
 
     const lastCall = useInventoryVisualReferencesMock.mock.calls.at(-1);
     expect(lastCall?.[1]).toMatchObject({ enabled: true });
@@ -333,8 +333,8 @@ describe('InventoryDetail', () => {
     renderPage();
 
     expect(screen.getByRole('heading', { name: 'Inventory One' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /visual refs title/i })).toBeInTheDocument();
-    expect(screen.getByText('List title')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /visual refs title|referencias visuales/i })).toBeInTheDocument();
+    expect(screen.getByText(/^(list title|pasillos)$/i)).toBeInTheDocument();
 
     expect(screen.queryByText('Total aisles')).not.toBeInTheDocument();
     expect(screen.queryByText('Review completion rate')).not.toBeInTheDocument();
@@ -384,7 +384,7 @@ describe('InventoryDetail', () => {
 
     expect(screen.queryByText('front-pallet.jpg')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /visual refs title/i }));
+    fireEvent.click(screen.getByRole('button', { name: /visual refs title|referencias visuales/i }));
 
     expect(screen.getByRole('heading', { name: /drawer title/i })).toBeInTheDocument();
     expect(screen.getByText('front-pallet.jpg')).toBeInTheDocument();
@@ -392,7 +392,7 @@ describe('InventoryDetail', () => {
       screen.getByText(/management body/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/management title/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /close|cerrar/i })).toBeInTheDocument();
   });
 
   it('loads observability queries only after opening the unified dialog (no polling)', async () => {
@@ -456,15 +456,15 @@ describe('InventoryDetail', () => {
     expect(useAisleExecutionLogMock).not.toHaveBeenCalled();
     expect(useAisleJobsListMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
 
     await waitFor(() => {
       const lastLogCall = useExecutionLogMock.mock.calls.at(-1);
       const lastDetailCall = useAisleJobDetailMock.mock.calls.at(-1);
       expect(lastLogCall?.[3]).toMatchObject({ enabled: true });
       expect(lastDetailCall?.[3]).toMatchObject({ enabled: true });
-      expect(screen.getByRole('button', { name: /^refresh$/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^refresh$|^actualizar$/i })).toBeInTheDocument();
     });
     expect(useExecutionLogMock.mock.calls.at(-1)?.[3]).not.toHaveProperty('refetchInterval');
   });
@@ -494,16 +494,16 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /dialog title aisle/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /dialog title aisle|observabilidad del pasillo/i })).toBeInTheDocument();
     });
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
 
-    const scopeControl = screen.getByRole('combobox', { name: /log scope/i });
-    expect(scopeControl.textContent).toMatch(/scope merged/i);
+    const scopeControl = screen.getByRole('combobox', { name: /log scope|alcance del log/i });
+    expect(scopeControl.textContent).toMatch(/scope merged|consolidado/i);
 
     const lastAisleLog = useAisleExecutionLogMock.mock.calls.at(-1);
     expect(lastAisleLog?.[2]).toMatchObject({ enabled: true });
@@ -574,19 +574,23 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /download merged log/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /download merged log|descargar log consolidado/i })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /download merged log/i }));
+    fireEvent.click(screen.getByRole('button', { name: /download merged log|descargar log consolidado/i }));
     await waitFor(() => {
       expect(vi.mocked(downloadAisleExecutionLogTxt)).toHaveBeenCalledWith('inv-1', 'aisle-1');
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /download selected job log/i }));
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /download selected job log|descargar log de la ejecución seleccionada/i,
+      }),
+    );
     await waitFor(() => {
       expect(vi.mocked(downloadExecutionLogTxt)).toHaveBeenCalledWith('inv-1', 'aisle-1', 'job-1');
     });
@@ -652,15 +656,15 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
 
     await waitFor(() => {
       expect(useExecutionLogMock.mock.calls.at(-1)?.[3]).toMatchObject({ enabled: true });
     });
 
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: /log scope/i }));
-    fireEvent.click(screen.getByRole('option', { name: /scope merged/i }));
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: /log scope|alcance del log/i }));
+    fireEvent.click(screen.getByRole('option', { name: /scope merged|consolidado/i }));
 
     await waitFor(() => {
       expect(useExecutionLogMock.mock.calls.at(-1)?.[3]).toMatchObject({ enabled: false });
@@ -769,11 +773,11 @@ describe('InventoryDetail', () => {
 
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /dialog title aisle/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /dialog title aisle|observabilidad del pasillo/i })).toBeInTheDocument();
     });
     expect(screen.getByText('job-0')).toBeInTheDocument();
     expect(screen.getAllByText('AnalysisStage').length).toBeGreaterThan(0);
@@ -846,12 +850,12 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /cancel job/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /cancel job|cancelar ejecución/i })).toBeInTheDocument();
     });
-    expect(screen.queryByRole('button', { name: /retry job/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /retry job|reintentar ejecución/i })).not.toBeInTheDocument();
   });
 
   it('shows retry for retryable terminal jobs', async () => {
@@ -918,10 +922,10 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /retry job/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /retry job|reintentar ejecución/i })).toBeInTheDocument();
     });
     expect(screen.queryByRole('button', { name: /cancel job/i })).not.toBeInTheDocument();
   });
@@ -1010,12 +1014,12 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /cancel job/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /cancel job|cancelar ejecución/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /cancel job/i }));
+    fireEvent.click(screen.getByRole('button', { name: /cancel job|cancelar ejecución/i }));
 
     await waitFor(() => {
       expect(cancelMutateAsync).toHaveBeenCalledWith({ aisleId: 'aisle-1', jobId: 'job-1' });
@@ -1125,12 +1129,12 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /retry job/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /retry job|reintentar ejecución/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /retry job/i }));
+    fireEvent.click(screen.getByRole('button', { name: /retry job|reintentar ejecución/i }));
 
     await waitFor(() => {
       expect(retryMutateAsync).toHaveBeenCalledWith({ aisleId: 'aisle-1', jobId: 'job-1' });
@@ -1215,11 +1219,11 @@ describe('InventoryDetail', () => {
 
     renderPage();
 
-    expect(screen.getByText('Column reference usage')).toBeInTheDocument();
+    expect(screen.getByText(/column reference usage|uso de referencias/i)).toBeInTheDocument();
     expect(screen.getByText('Sent many')).toBeInTheDocument();
     expect(screen.getByText('Prepared many')).toBeInTheDocument();
     expect(screen.getByText('Reference setup failed')).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /row actions a11y/i })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /row actions a11y|acciones del pasillo/i })).toHaveLength(2);
   });
 
   it('shows a pending summary label when a queued or running job has no reference_usage yet', () => {
@@ -1325,19 +1329,19 @@ describe('InventoryDetail', () => {
     });
 
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
-    const processItem = screen.getByRole('menuitem', { name: /process aisle/i });
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    const processItem = screen.getByRole('menuitem', { name: /process aisle|procesar pasillo/i });
     expect(processItem).toHaveAttribute('aria-disabled', 'true');
     expect(processItem.textContent).toMatch(/upload_need_image/i);
   });
 
   it('process dialog shows resolved default model id in the model placeholder option', async () => {
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /process aisle/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /process aisle|procesar pasillo/i }));
     expect(await screen.findByText(/process dialog title/i)).toBeInTheDocument();
 
-    const modelSelect = screen.getByLabelText(/^model$/i, { selector: '[role="combobox"]' });
+    const modelSelect = screen.getByLabelText(/^model$|^modelo$/i, { selector: '[role="combobox"]' });
     fireEvent.mouseDown(modelSelect);
     expect(
       await screen.findByRole('option', { name: /process default model em/i })
@@ -1347,17 +1351,17 @@ describe('InventoryDetail', () => {
   it('process aisle opens provider dialog and passes provider/model/prompt to start mutation', async () => {
     renderPage();
 
-    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /process aisle/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /process aisle|procesar pasillo/i }));
 
     expect(await screen.findByText(/process dialog title/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/^provider$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^provider$|^proveedor$/i)).toBeInTheDocument();
 
-    fireEvent.mouseDown(screen.getByLabelText(/^provider$/i));
+    fireEvent.mouseDown(screen.getByLabelText(/^provider$|^proveedor$/i));
     const openaiOption = await screen.findByRole('option', { name: /openai/i });
     fireEvent.click(openaiOption);
 
-    fireEvent.mouseDown(screen.getByLabelText(/^model$/i));
+    fireEvent.mouseDown(screen.getByLabelText(/^model$|^modelo$/i));
     fireEvent.click(await screen.findByRole('option', { name: /^gpt-4o-mini$/i }));
 
     fireEvent.mouseDown(screen.getByLabelText(/prompt profile/i));
@@ -1378,8 +1382,8 @@ describe('InventoryDetail', () => {
   it('production inventory starts aisle processing without opening the provider dialog', async () => {
     inventoryDetailHookState.data.processing_mode = 'production';
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /row actions a11y/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /process aisle/i }));
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /process aisle|procesar pasillo/i }));
 
     await waitFor(() => {
       expect(processAisleMutateAsyncMock).toHaveBeenCalledWith({
@@ -1389,6 +1393,6 @@ describe('InventoryDetail', () => {
         promptKey: null,
       });
     });
-    expect(screen.queryByLabelText(/^provider$/i)).toBeNull();
+    expect(screen.queryByLabelText(/^provider$|^proveedor$/i)).toBeNull();
   });
 });

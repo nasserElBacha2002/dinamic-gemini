@@ -45,8 +45,12 @@ export default function AisleResultsJobSelector({
       {resultContextSource ? (
         <Typography variant="caption" color="text.secondary">
           {t('positions.resolved_line', {
-            source: resultContextSource,
-            jobSuffix: visibleJobId ? t('positions.resolved_job_bit', { id: `${visibleJobId.slice(0, 10)}…` }) : '',
+            source: t(`positions.result_context.${resultContextSource}`, {
+              defaultValue: resultContextSource,
+            }),
+            jobSuffix: visibleJobId
+              ? t('positions.resolved_job_bit', { jobId: `${visibleJobId.slice(0, 10)}…` })
+              : '',
             noPinNote: '',
           })}
         </Typography>

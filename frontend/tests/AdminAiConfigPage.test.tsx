@@ -135,8 +135,10 @@ describe('AdminAiConfigPage', () => {
     } as never);
 
     renderWithAuth({ username: 'admin' });
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText(/Generated at raw/i)).toBeInTheDocument());
+    expect(screen.getByText(/loading|cargando/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText(/Generated at raw|Timestamp original/i)).toBeInTheDocument(),
+    );
     expect(screen.getAllByText('Gemini').length).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByRole('tab', { name: /prompts/i }));
@@ -153,8 +155,10 @@ describe('AdminAiConfigPage', () => {
   it('shows global instructions on Instructions tab', async () => {
     vi.mocked(client.getAdminAiConfig).mockResolvedValue(samplePayload as never);
     renderWithAuth({ username: 'admin' });
-    await waitFor(() => expect(screen.getByRole('tab', { name: /instructions/i })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('tab', { name: /instructions/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /instrucciones|instructions/i })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole('tab', { name: /instrucciones|instructions/i }));
     await waitFor(() => expect(screen.getByLabelText('global-instructions')).toBeInTheDocument());
     expect(screen.getByLabelText('global-instructions').textContent).toContain('Global note');
   });
@@ -169,11 +173,13 @@ describe('AdminAiConfigPage', () => {
   it('copy button triggers clipboard write on instructions tab', async () => {
     vi.mocked(client.getAdminAiConfig).mockResolvedValue(samplePayload as never);
     renderWithAuth({ username: 'admin' });
-    await waitFor(() => expect(screen.getByRole('tab', { name: /instructions/i })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('tab', { name: /instructions/i }));
-    await waitFor(() => expect(screen.getAllByLabelText(/copy/i).length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /instrucciones|instructions/i })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole('tab', { name: /instrucciones|instructions/i }));
+    await waitFor(() => expect(screen.getAllByLabelText(/copy|copiar/i).length).toBeGreaterThan(0));
     await act(async () => {
-      fireEvent.click(screen.getAllByLabelText(/copy/i)[0]);
+      fireEvent.click(screen.getAllByLabelText(/copy|copiar/i)[0]);
     });
     expect(navigator.clipboard.writeText).toHaveBeenCalled();
   });
@@ -197,7 +203,7 @@ describe('AdminAiConfigPage', () => {
     fireEvent.click(screen.getByText('OpenAI'));
     fireEvent.click(screen.getByRole('tab', { name: /prompts/i }));
     await waitFor(() =>
-      expect(screen.getByText(/Empty variants/i)).toBeInTheDocument()
+      expect(screen.getByText(/empty variants|no hay variantes/i)).toBeInTheDocument(),
     );
   });
 });

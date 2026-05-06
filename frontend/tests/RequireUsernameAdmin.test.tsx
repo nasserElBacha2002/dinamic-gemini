@@ -43,7 +43,7 @@ describe('RequireUsernameAdmin', () => {
   it('blocks non-admin username with message', () => {
     renderGate('other');
     expect(screen.queryByTestId('secret')).not.toBeInTheDocument();
-    expect(screen.getByText(/unauthorized title/i)).toBeInTheDocument();
+    expect(screen.getByText(/acceso restringido|unauthorized title/i)).toBeInTheDocument();
   });
 
   it('does not render children when user is null (redirect to login)', () => {

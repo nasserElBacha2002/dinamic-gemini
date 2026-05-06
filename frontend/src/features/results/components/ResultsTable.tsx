@@ -31,7 +31,11 @@ export interface ResultsTableProps {
 }
 
 function displaySku(r: ResultSummary): string {
-  if (r.sku != null && r.sku.trim() !== '') return r.sku.trim();
+  if (r.sku != null && r.sku.trim() !== '') {
+    const s = r.sku.trim();
+    if (s.toUpperCase() === 'UNKNOWN') return i18n.t('results.sku_unknown');
+    return s;
+  }
   return i18n.t('common.em_dash');
 }
 

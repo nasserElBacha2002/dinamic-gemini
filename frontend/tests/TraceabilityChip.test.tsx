@@ -10,29 +10,29 @@ import TraceabilityChip from '../src/components/ui/TraceabilityChip';
 describe('TraceabilityChip', () => {
   it('renders Valid label for status valid', () => {
     render(<TraceabilityChip status="valid" />);
-    expect(screen.getByText('Valid')).toBeInTheDocument();
+    expect(screen.getByText('Válida')).toBeInTheDocument();
   });
 
   it('renders Missing label for status missing', () => {
     render(<TraceabilityChip status="missing" />);
-    expect(screen.getByText('Missing')).toBeInTheDocument();
+    expect(screen.getByText('Ausente')).toBeInTheDocument();
   });
 
   it('renders Invalid label for status invalid', () => {
     render(<TraceabilityChip status="invalid" />);
-    expect(screen.getByText('Invalid')).toBeInTheDocument();
+    expect(screen.getByText('Inválida')).toBeInTheDocument();
   });
 
   it('renders Unvalidated label for status unvalidated', () => {
     render(<TraceabilityChip status="unvalidated" />);
-    expect(screen.getByText('Unvalidated')).toBeInTheDocument();
+    expect(screen.getByText('Sin validar')).toBeInTheDocument();
   });
 
   it('shows tooltip when tooltip prop is provided', () => {
     render(
       <TraceabilityChip status="invalid" tooltip="Image not found in job" />
     );
-    expect(screen.getByText('Invalid')).toBeInTheDocument();
+    expect(screen.getByText('Inválida')).toBeInTheDocument();
     expect(screen.getByLabelText('Image not found in job')).toBeInTheDocument();
   });
 
