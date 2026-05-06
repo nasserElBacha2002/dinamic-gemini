@@ -7,10 +7,9 @@ import {
   TextField,
   CircularProgress,
 } from '@mui/material';
-import { createAisle } from '../api/client';
 import type { CreateAisleRequest } from '../api/types';
-import { ApiError } from '../api/types';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
+import { useCreateAisleAction } from '../features/inventories/hooks/useCreateAisleAction';
 import BaseDialog from './ui/BaseDialog';
 
 export interface CreateAisleDialogProps {
@@ -36,12 +35,14 @@ export default function CreateAisleDialog({
   existingAisleCodes,
 }: CreateAisleDialogProps) {
   const { t } = useTranslation();
-  const doCreate = createAisleFn ?? ((body: CreateAisleRequest) => createAisle(inventoryId, body));
   const [code, setCode] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState('');
   const [createdCode, setCreatedCode] = useState<string | null>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
+  const { submitCreateAisle, isSubmitting, clearError } = useCreateAisleAction({
+    inventoryId,
+    createAisleFn,
+  });
 
   const normalizedExistingCodes = useMemo(() => {
     const list = existingAisleCodes ?? [];
@@ -55,7 +56,7 @@ export default function CreateAisleDialog({
   };
 
   const handleClose = () => {
-    if (!submitting) {
+    if (!isSubmitting) {
       reset();
       onClose();
     }
@@ -90,14 +91,14 @@ export default function CreateAisleDialog({
       setValidationError(errMsg);
       return;
     }
-    setSubmitting(true);
     setValidationError('');
+    clearError();
     try {
-      await doCreate({ code: trimmed });
+      await submitCreateAisle({ code: trimmed });
       onSuccess();
       setCreatedCode(trimmed);
     } catch (e) {
-      const err = e instanceof ApiError ? e : new ApiError(String(e));
+      const err = e as { status?: number };
       const msg = resolveApiErrorMessage(err, 'errors.create_aisle');
       if (err.status === 409) {
         setValidationError(typeof msg === 'string' ? msg : t('dialogs.aisle.validation_duplicate'));
@@ -106,8 +107,6 @@ export default function CreateAisleDialog({
         setValidationError(inline);
         onError?.(inline);
       }
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -115,7 +114,7 @@ export default function CreateAisleDialog({
     <BaseDialog
       open={open}
       onClose={handleClose}
-      disableClose={submitting}
+      disableClose={isSubmitting}
       title={t('aisle.create_title')}
       subtitle={t('aisle.create_subtitle')}
       actionsSx={{ px: 3, pb: 2 }}
@@ -140,14 +139,14 @@ export default function CreateAisleDialog({
           </>
         ) : (
           <>
-            <Button onClick={handleClose} disabled={submitting}>
+            <Button onClick={handleClose} disabled={isSubmitting}>
               {t('common.cancel')}
             </Button>
             <Button
               onClick={handleSubmit}
               variant="contained"
-              disabled={submitting}
-              startIcon={submitting ? <CircularProgress size={16} /> : undefined}
+              disabled={isSubmitting}
+              startIcon={isSubmitting ? <CircularProgress size={16} /> : undefined}
             >
               {t('aisle.create')}
             </Button>
@@ -179,7 +178,7 @@ export default function CreateAisleDialog({
           }}
           error={Boolean(validationError)}
           helperText={validationError || ' '}
-          disabled={submitting || Boolean(createdCode)}
+          disabled={isSubmitting || Boolean(createdCode)}
           inputProps={{ maxLength: 64 }}
           inputRef={codeInputRef}
           onBlur={() => {
