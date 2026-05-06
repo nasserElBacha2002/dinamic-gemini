@@ -44,7 +44,9 @@ import {
   ResultsFilteredEmptyState,
   ResultsLoadingState,
   ResultsErrorState,
-  AisleRunSelector,
+  AisleResultsJobSelector,
+  AisleResultsRunNotFoundAlert,
+  AisleResultsNoJobsAlert,
 } from '../features/results/components';
 import { mergeConsolidatedDetail } from '../features/results/adapters/aislePositionsFormatters';
 import {
@@ -585,63 +587,28 @@ export default function AislePositionsPage() {
         }
       />
 
-      {isTestInventory &&
-      (aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource)) ? (
-        <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
-          {aisleJobsQuery.isLoading && jobs.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              {t('common.loading')}
-            </Typography>
-          ) : jobs.length > 0 && pickedRunJobId ? (
-            <AisleRunSelector
-              operationalJobId={aisleJobsQuery.data?.operational_job_id ?? null}
-              jobs={jobs}
-              valueJobId={pickedRunJobId}
-              onChange={handleRunSelectionChange}
-            />
-          ) : null}
-          {resultContextSource ? (
-            <Typography variant="caption" color="text.secondary">
-              {t('positions.resolved_line', {
-                source: resultContextSource,
-                jobSuffix: visibleJobId
-                  ? t('positions.resolved_job_bit', { id: `${visibleJobId.slice(0, 10)}…` })
-                  : '',
-                noPinNote: '',
-              })}
-            </Typography>
-          ) : null}
-        </Box>
-      ) : null}
+      <AisleResultsJobSelector
+        visible={Boolean(isTestInventory && (aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource)))}
+        isJobsLoading={aisleJobsQuery.isLoading}
+        jobs={jobs}
+        pickedRunJobId={pickedRunJobId}
+        operationalJobId={aisleJobsQuery.data?.operational_job_id ?? null}
+        resultContextSource={resultContextSource}
+        visibleJobId={visibleJobId}
+        onRunSelectionChange={handleRunSelectionChange}
+      />
 
-      {positionsLoadNotFound ? (
-        <Alert
-          severity="error"
-          sx={{ mb: 2 }}
-          action={
-            <Button
-              color="inherit"
-              size="small"
-              disabled={!pickedRunJobId}
-              onClick={() => {
-                if (pickedRunJobId) handleRunSelectionChange(pickedRunJobId);
-              }}
-            >
-              {t('positions.clear_run_filter')}
-            </Button>
-          }
-        >
-          {t('positions.no_data_for_run')}
-        </Alert>
-      ) : null}
+      <AisleResultsRunNotFoundAlert
+        visible={positionsLoadNotFound}
+        canClear={Boolean(pickedRunJobId)}
+        onClear={() => {
+          if (pickedRunJobId) handleRunSelectionChange(pickedRunJobId);
+        }}
+      />
 
       {errorMessage ? <ResultsErrorState message={errorMessage} onRetry={() => refetch()} /> : null}
 
-      {blockPositionsForTestNoJobs ? (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          {t('positions.no_runs_for_aisle')}
-        </Alert>
-      ) : null}
+      <AisleResultsNoJobsAlert visible={blockPositionsForTestNoJobs} />
 
       {!blockPositionsForTestNoJobs && !errorMessage && resultsLoading ? (
         <ResultsLoadingState message={t('positions.loading_results')} />
