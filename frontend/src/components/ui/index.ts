@@ -8,8 +8,10 @@
  * **Tables (Sprint 2.4):** `DataTable` — server sort/pagination, loading skeleton, empty fallback; compose with `SectionCard` + `FilterToolbar`.
  * **KPI bands (F7.1):** `KpiCardBand` — layout presets around `KpiCard` (flex strip vs responsive grids); no domain data.
  * **Drawers (F7.3):** `DrawerHeader` — sticky title row + close for right-anchor drawers; no domain state.
+ * **Layout / metrics (F7.4):** `StatCard` and `PageLayout` are **deprecated** (see their JSDoc); prefer `KpiCard` + `KpiCardBand` for KPIs and existing page composition for shells.
  */
 
+/** @deprecated See `PageLayout` JSDoc — not used by app pages as of F7.4. */
 export { default as PageLayout } from './PageLayout';
 export type { PageLayoutProps } from './PageLayout';
 export { default as LoadingBlock } from './LoadingBlock';
@@ -25,6 +27,7 @@ export type { ImageAssetCardProps } from './ImageAssetCard';
 export { default as ImagePreviewDialog } from './ImagePreviewDialog';
 export type { ImagePreviewDialogProps } from './ImagePreviewDialog';
 
+/** @deprecated See `StatCard` JSDoc — use `KpiCard` instead. */
 export { default as StatCard } from './StatCard';
 export type { StatCardProps } from './StatCard';
 export { default as KpiCard } from './KpiCard';
