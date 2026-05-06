@@ -14,5 +14,7 @@ export { default as AisleRunSelector } from './AisleRunSelector';
 export { default as AisleResultsJobSelector } from './AisleResultsJobSelector';
 export { default as AisleResultsRunNotFoundAlert } from './AisleResultsRunNotFoundAlert';
 export { default as AisleResultsNoJobsAlert } from './AisleResultsNoJobsAlert';
+export { default as AisleResultsHeader } from './AisleResultsHeader';
+export { default as AisleResultsMergeFeedback } from './AisleResultsMergeFeedback';
 
 export * from './detail';

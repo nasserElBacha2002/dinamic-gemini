@@ -15,7 +15,6 @@ import { recordExplicitRefreshObs, summarizeQueryKey } from '../dev/cacheMutatio
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import type { RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
-import { PageHeader } from '../components/shell';
 import { FilterToolbar, SectionCard, TableSearchField, useAppSnackbar } from '../components/ui';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompare } from '../constants/appRoutes';
@@ -47,6 +46,8 @@ import {
   AisleResultsJobSelector,
   AisleResultsRunNotFoundAlert,
   AisleResultsNoJobsAlert,
+  AisleResultsHeader,
+  AisleResultsMergeFeedback,
 } from '../features/results/components';
 import { mergeConsolidatedDetail } from '../features/results/adapters/aislePositionsFormatters';
 import {
@@ -476,115 +477,76 @@ export default function AislePositionsPage() {
 
   return (
     <>
-      <PageHeader
+      <AisleResultsHeader
         breadcrumbs={breadcrumbs}
         title={aisle?.code ?? t('common.aisle')}
         subtitle={inventory?.name ?? (inventoryQuery.isLoading ? t('common.loading') : t('common.em_dash'))}
-        actions={
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
-            <AisleSourceAssetsManageModule
-              inventoryId={inventoryId}
-              aisleId={aisleId}
-              inventoryLabel={inventory?.name ?? t('common.em_dash')}
-              jobIdForPreview={pickedRunJobId}
-              inventoryReady={Boolean(inventoryQuery.data)}
-            >
-              {({ openSourceAssets }) => (
-                <Tooltip title={t('aisle_source_assets.action_tooltip')}>
-                  <Button
-                    data-testid="aisle-source-assets-manage-open"
-                    size="small"
-                    variant="outlined"
-                    startIcon={<PhotoLibraryOutlinedIcon fontSize="small" />}
-                    onClick={openSourceAssets}
-                  >
-                    {t('aisle_source_assets.action_label')}
-                  </Button>
-                </Tooltip>
-              )}
-            </AisleSourceAssetsManageModule>
-            {mergeButtonVisible ? (
-              <Tooltip title={mergeDisabledReason} disableHoverListener={!mergeDisabledReason}>
-                <span>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    onClick={() => void handleRunMerge()}
-                    disabled={mergeButtonDisabled}
-                  >
-                    {mergeMutation.isPending ? t('common.merging') : t('aisle.merge_repeated_labels')}
-                  </Button>
-                </span>
-              </Tooltip>
-            ) : null}
-            {isTestInventory && jobs.length >= 2 ? (
-              <Button size="small" variant="outlined" onClick={navigateToAnalyticsCompare}>
-                {t('positions.compare_runs')}
-              </Button>
-            ) : null}
-            {compareOperationalShortcut ? (
-              <Tooltip title={t('aisle.compare_runs_tooltip')}>
+        assetsAction={
+          <AisleSourceAssetsManageModule
+            inventoryId={inventoryId}
+            aisleId={aisleId}
+            inventoryLabel={inventory?.name ?? t('common.em_dash')}
+            jobIdForPreview={pickedRunJobId}
+            inventoryReady={Boolean(inventoryQuery.data)}
+          >
+            {({ openSourceAssets }) => (
+              <Tooltip title={t('aisle_source_assets.action_tooltip')}>
                 <Button
+                  data-testid="aisle-source-assets-manage-open"
                   size="small"
                   variant="outlined"
-                  onClick={() => {
-                    const params = new URLSearchParams();
-                    params.set('aisleId', aisleId!);
-                    params.set('jobAId', visibleJobId!);
-                    params.set('jobBId', operationalJobId!);
-                    navigate(`${pathToInventoryAnalyticsCompare(inventoryId)}?${params.toString()}`);
-                  }}
+                  startIcon={<PhotoLibraryOutlinedIcon fontSize="small" />}
+                  onClick={openSourceAssets}
                 >
-                  {t('positions.compare_to_operational')}
+                  {t('aisle_source_assets.action_label')}
                 </Button>
               </Tooltip>
-            ) : null}
-            {isTestInventory && canPromoteCurrentRun ? (
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => {
-                  setPromoteJobId(visibleJobId ?? '');
-                  setPromoteDialogOpen(true);
-                }}
-              >
-                {t('positions.promote_run')}
-              </Button>
-            ) : null}
-            <Button
-              size="small"
-              variant="outlined"
-              disabled={!inventoryId || !aisleId || exportingCsv}
-              onClick={async () => {
-                if (!inventoryId || !aisleId) return;
-                setExportingCsv(true);
-                try {
-                  await exportAisleResultsCsv(inventoryId, aisleId, {
-                    jobId: pickedRunJobId ?? jobIdParam,
-                  });
-                } catch (e) {
-                  const err = e instanceof ApiError ? e : new ApiError(String(e));
-                  showSnackbar(resolveApiErrorMessage(err, 'errors.export_failed'), 'error');
-                } finally {
-                  setExportingCsv(false);
-                }
-              }}
-            >
-              {exportingCsv ? t('common.exporting') : t('positions.export_aisle_csv')}
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => {
-                void refetch();
-                void aisleJobsQuery.refetch();
-              }}
-              disabled={resultsLoading}
-            >
-              {t('common.refresh')}
-            </Button>
-          </Box>
+            )}
+          </AisleSourceAssetsManageModule>
         }
+        mergeButtonVisible={mergeButtonVisible}
+        mergeDisabledReason={mergeDisabledReason}
+        mergeButtonDisabled={mergeButtonDisabled}
+        isMerging={mergeMutation.isPending}
+        onRunMerge={() => void handleRunMerge()}
+        showCompareRuns={Boolean(isTestInventory && jobs.length >= 2)}
+        onCompareRuns={navigateToAnalyticsCompare}
+        showCompareOperational={compareOperationalShortcut}
+        onCompareOperational={() => {
+          const params = new URLSearchParams();
+          params.set('aisleId', aisleId!);
+          params.set('jobAId', visibleJobId!);
+          params.set('jobBId', operationalJobId!);
+          navigate(`${pathToInventoryAnalyticsCompare(inventoryId)}?${params.toString()}`);
+        }}
+        showPromoteRun={Boolean(isTestInventory && canPromoteCurrentRun)}
+        onPromoteRun={() => {
+          setPromoteJobId(visibleJobId ?? '');
+          setPromoteDialogOpen(true);
+        }}
+        exportDisabled={!inventoryId || !aisleId || exportingCsv}
+        exportingCsv={exportingCsv}
+        onExport={() => {
+          void (async () => {
+            if (!inventoryId || !aisleId) return;
+            setExportingCsv(true);
+            try {
+              await exportAisleResultsCsv(inventoryId, aisleId, {
+                jobId: pickedRunJobId ?? jobIdParam,
+              });
+            } catch (e) {
+              const err = e instanceof ApiError ? e : new ApiError(String(e));
+              showSnackbar(resolveApiErrorMessage(err, 'errors.export_failed'), 'error');
+            } finally {
+              setExportingCsv(false);
+            }
+          })();
+        }}
+        refreshDisabled={resultsLoading}
+        onRefresh={() => {
+          void refetch();
+          void aisleJobsQuery.refetch();
+        }}
       />
 
       <AisleResultsJobSelector
@@ -670,11 +632,7 @@ export default function AislePositionsPage() {
             </Typography>
           </Box>
 
-          {mergeFeedback ? (
-            <Alert severity={mergeFeedback.severity} sx={{ mb: 2 }}>
-              {mergeFeedback.text}
-            </Alert>
-          ) : null}
+          <AisleResultsMergeFeedback feedback={mergeFeedback} />
 
           <FilterToolbar
             onReset={handleResetFilters}
