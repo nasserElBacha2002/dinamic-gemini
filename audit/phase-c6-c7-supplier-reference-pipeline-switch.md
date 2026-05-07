@@ -135,6 +135,62 @@ python3 -m ruff check src tests scripts
 
 ---
 
+## C7.1 Validation hardening
+
+### Anti-regression tests
+
+Added to **`backend/tests/infrastructure/pipeline/test_v3_process_aisle_pipeline_runner.py`**:
+
+- **`test_c71_supplier_pipeline_never_calls_inventory_visual_reference_list_by_inventory`** — `aisle.client_supplier_id` set, in-memory **`supplier_reference_images`** has one row; **`InventoryVisualReferenceRepository`** strict mock raises if **`list_by_inventory`** were invoked via an unwired legacy resolver pair; **`InventoryVisualReferenceResolver.resolve_for_inventory`** and concrete **`MemoryInventoryVisualReferenceRepository` / `SqlInventoryVisualReferenceRepository.list_by_inventory`** are patched to fault during **`build_pipeline_input`**; asserts job metadata resolves the supplier reference and **`strict_inventory_visual_repo.list_by_inventory`** stays unused.
+- **`test_c71_supplier_with_no_images_builds_empty_visual_references`** — supplier id set, **`list_by_supplier`** returns **`[]`**; **`resolve_for_inventory`** patch forbids legacy path; asserts empty **`visual_references`** and successful **`JobInput`**.
+- **`test_c71_no_supplier_skips_supplier_repo_lookup_and_legacy_fallback`** — **`client_supplier_id`** **`None`**; asserts **`list_by_supplier`** never called and legacy resolver patch unused.
+
+Builder-level coverage remains for supplier-empty (**`test_builder_with_no_visual_references`**) and no-supplier (**`test_builder_with_no_supplier_skips_resolution`**) in **`test_aisle_analysis_context_builder.py`**.
+
+### Grep audit (`rg`, scoped paths)
+
+**`list_by_inventory`** under **`src/infrastructure`**, **`src/application`**, **`src/jobs`:**
+
+| Bucketing | Occurrences |
+|-----------|--------------|
+| **Aisle / session / analytics `list_by_inventory`** | Normal inventory-scoped listing (**`AisleRepository`**, **`CaptureSessionRepository`**, **`memory_analytics_repository`**, **`inventory_metrics_service`**, related use cases). Not **`inventory_visual_references`**. |
+| **`inventory_visual_references`** | **`InventoryVisualReferenceRepository.list_by_inventory`** in **`ports/repositories.py`** (contract); implementations **`memory_inventory_visual_reference_repository`**, **`sql_inventory_visual_reference_repository`**; **`upload_inventory_visual_references`** use case; **`inventory_visual_reference_resolver`** (**legacy service**, not imported by **`src/infrastructure/pipeline`** or **`src/jobs`** active aisle executor after C7). |
+| **`src/jobs`** | No **`list_by_inventory`** hits — worker pipeline path does not list legacy inventory refs. |
+
+**`InventoryVisualReferenceResolver`** under **`src/infrastructure`**, **`src/jobs`**, **`src/application`:**
+
+| Bucket | Finding |
+|--------|---------|
+| **Definition only** | **`src/application/services/inventory_visual_reference_resolver.py`** — not referenced by **`v3_job_executor`**, **`v3_process_aisle_pipeline_runner`**, or **`jobs/`**. |
+
+**`inventory_visual_reference_repo`** under **`src/infrastructure`**, **`src/jobs`**, **`src/runtime`:**
+
+| Bucket | Finding |
+|--------|---------|
+| **Legacy API / DI** | **`runtime/app_container.py`**, **`runtime/v3_deps.py`**, **`runtime/__init__.py`** expose **`get_inventory_visual_reference_repo()`** for inventory visual reference routes and legacy uploads (**expected until C8**). |
+| **Jobs / pipeline** | **`worker.py`** does **not** pass **`inventory_visual_reference_repo`** into **`V3JobExecutor`** after C7 (`grep` confirms none under **`src/jobs`** besides unrelated hits — none). |
+
+**Active pipeline risk:** **None identified** — **`inventory_visual_reference_repo.list_by_inventory`** is not part of the v3 **`process_aisle`** executor/runner stack.
+
+### Validation commands / results (recorded pass unless noted)
+
+From **`backend/`** (environment: sandbox **`Python 3.9.6`**):
+
+| Command | Result |
+|---------|--------|
+| **`pytest`** targeted modules: resolver, aisle builder, **`test_v3_job_executor_input_resolution`**, **`test_v3_process_aisle_pipeline_runner`** (**7** tests incl. C7.1), **`test_run_metadata`** | **Pass** — **35** tests |
+| **`pytest`** **`test_upload_inventory_visual_references`**, **`test_manage_inventory_visual_references`** | **Pass** — **15** tests |
+| **`pytest`** **`test_upload_supplier_reference_images`**, **`test_manage_supplier_reference_images`** | **Pass** — **20** tests |
+| **`pytest tests/api/test_inventory_visual_references_api.py`**, **`tests/api/test_supplier_reference_images_api.py`** | **Not run in this environment** — API **`conftest`** import fails on Python **3.9** (`Settings | None` typing). Run under **Python 3.10+** / CI. |
+| **`pytest --collect-only`** | **Interrupted**: **24** collection errors on this interpreter (same **`\|` union** / dataclass issues); **1502** tests collected before failures — CI matrix expected green on supported Python. |
+| **`ruff check src tests scripts`** | **Pass** (after import sort on touched test file). |
+
+### Confirmation
+
+- **`inventory_visual_reference_repo.list_by_inventory`** is **not** used by **`V3JobExecutor`** / **`V3ProcessAislePipelineRunner`** / **`worker`** pipeline wiring post-C7; grep + tests corroborate.
+
+---
+
 ## 14. Recommended next phase
 
 **C8 — Disable legacy writes and hide old inventory reference UI**
