@@ -5,7 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from src.application.ports.repositories import InventoryRepository
+import pytest
+
+from src.application.errors import ClientNotFoundError
+from src.application.ports.repositories import ClientRepository, InventoryRepository
 from src.application.services.operational_execution_config_resolver import (
     OperationalPrimaryExecutionConfig,
 )
@@ -13,6 +16,7 @@ from src.application.use_cases.create_inventory import (
     CreateInventoryCommand,
     CreateInventoryUseCase,
 )
+from src.domain.client.entities import Client, ClientStatus
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
@@ -54,12 +58,27 @@ def _dummy_settings() -> object:
     return object()
 
 
+class StubClientRepo(ClientRepository):
+    def __init__(self, clients: list[Client] | None = None) -> None:
+        self._store = {c.id: c for c in (clients or [])}
+
+    def save(self, client: Client) -> None:
+        self._store[client.id] = client
+
+    def get_by_id(self, client_id: str) -> Client | None:
+        return self._store.get(client_id)
+
+    def list_all(self):
+        return list(self._store.values())
+
+
 def test_create_inventory_production_snapshots_operational_config() -> None:
     repo = StubInventoryRepo()
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     clock = FixedClock(now)
     use_case = CreateInventoryUseCase(
         inventory_repo=repo,
+        client_repo=StubClientRepo(),
         clock=clock,
         operational_resolver=StubOperationalResolver(),
         settings_loader=_dummy_settings,
@@ -86,6 +105,7 @@ def test_create_inventory_test_leaves_primary_fields_null() -> None:
     clock = FixedClock(now)
     use_case = CreateInventoryUseCase(
         inventory_repo=repo,
+        client_repo=StubClientRepo(),
         clock=clock,
         operational_resolver=StubOperationalResolver(),
         settings_loader=_dummy_settings,
@@ -101,3 +121,58 @@ def test_create_inventory_test_leaves_primary_fields_null() -> None:
     assert result.primary_prompt_key is None
     assert result.primary_prompt_version is None
     assert result.client_id is None
+
+
+def test_create_inventory_with_explicit_null_client_id_keeps_legacy_behavior() -> None:
+    repo = StubInventoryRepo()
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    clock = FixedClock(now)
+    use_case = CreateInventoryUseCase(
+        inventory_repo=repo,
+        client_repo=StubClientRepo(),
+        clock=clock,
+        operational_resolver=StubOperationalResolver(),
+        settings_loader=_dummy_settings,
+    )
+
+    result = use_case.execute(CreateInventoryCommand(name="Warehouse B", client_id=None))
+    assert result.client_id is None
+    assert repo.get_by_id(result.id) == result
+
+
+def test_create_inventory_with_valid_client_id_persists_association() -> None:
+    repo = StubInventoryRepo()
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    client = Client(
+        id="client-1",
+        name="Retail A",
+        status=ClientStatus.ACTIVE,
+        created_at=now,
+        updated_at=now,
+    )
+    use_case = CreateInventoryUseCase(
+        inventory_repo=repo,
+        client_repo=StubClientRepo([client]),
+        clock=FixedClock(now),
+        operational_resolver=StubOperationalResolver(),
+        settings_loader=_dummy_settings,
+    )
+
+    result = use_case.execute(CreateInventoryCommand(name="Warehouse C", client_id="client-1"))
+    assert result.client_id == "client-1"
+    assert repo.get_by_id(result.id) == result
+
+
+def test_create_inventory_with_invalid_client_id_raises_client_not_found() -> None:
+    repo = StubInventoryRepo()
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    use_case = CreateInventoryUseCase(
+        inventory_repo=repo,
+        client_repo=StubClientRepo(),
+        clock=FixedClock(now),
+        operational_resolver=StubOperationalResolver(),
+        settings_loader=_dummy_settings,
+    )
+
+    with pytest.raises(ClientNotFoundError):
+        use_case.execute(CreateInventoryCommand(name="Warehouse D", client_id="missing-client"))

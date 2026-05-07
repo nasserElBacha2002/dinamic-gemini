@@ -186,6 +186,7 @@ export default function InventoryDetail() {
           <CreateAisleDialog
             open={createAisleOpen}
             inventoryId={inventoryId ?? ''}
+            inventoryClientId={inventory?.client_id ?? null}
             onClose={() => setCreateAisleOpen(false)}
             onSuccess={handleCreateAisleSuccess}
             existingAisleCodes={aisles.map((a) => a.code)}

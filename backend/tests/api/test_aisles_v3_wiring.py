@@ -102,6 +102,106 @@ def test_post_aisle_returns_201_and_entity() -> None:
     assert "created_at" in data
 
 
+def test_post_aisle_with_valid_client_supplier_id_returns_201_and_persists_supplier() -> None:
+    client_resp = client.post("/api/v3/clients/", json={"name": "Client A"})
+    assert client_resp.status_code == 201
+    client_id = client_resp.json()["id"]
+    supplier_resp = client.post(
+        f"/api/v3/clients/{client_id}/suppliers",
+        json={"name": "Supplier A"},
+    )
+    assert supplier_resp.status_code == 201
+    supplier_id = supplier_resp.json()["id"]
+    inv_resp = client.post(
+        "/api/v3/inventories",
+        json={"name": "For Supplier Aisle", "client_id": client_id},
+    )
+    assert inv_resp.status_code == 201
+    inv_id = inv_resp.json()["id"]
+
+    response = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "A-02", "client_supplier_id": supplier_id},
+    )
+    assert response.status_code == 201
+    assert response.json()["client_supplier_id"] == supplier_id
+
+
+def test_post_aisle_with_missing_client_supplier_id_returns_404_structured() -> None:
+    client_resp = client.post("/api/v3/clients/", json={"name": "Client B"})
+    assert client_resp.status_code == 201
+    client_id = client_resp.json()["id"]
+    inv_resp = client.post(
+        "/api/v3/inventories",
+        json={"name": "For Missing Supplier", "client_id": client_id},
+    )
+    assert inv_resp.status_code == 201
+    inv_id = inv_resp.json()["id"]
+
+    response = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "A-03", "client_supplier_id": "supplier-does-not-exist"},
+    )
+    assert response.status_code == 404
+    body = response.json()
+    assert body.get("code") == "CLIENT_SUPPLIER_NOT_FOUND"
+    assert body.get("detail") == "Client supplier not found"
+
+
+def test_post_aisle_with_supplier_when_inventory_has_no_client_returns_409_structured() -> None:
+    client_resp = client.post("/api/v3/clients/", json={"name": "Client C"})
+    assert client_resp.status_code == 201
+    client_id = client_resp.json()["id"]
+    supplier_resp = client.post(
+        f"/api/v3/clients/{client_id}/suppliers",
+        json={"name": "Supplier C"},
+    )
+    assert supplier_resp.status_code == 201
+    supplier_id = supplier_resp.json()["id"]
+    inv_resp = client.post("/api/v3/inventories", json={"name": "Inventory Without Client"})
+    assert inv_resp.status_code == 201
+    inv_id = inv_resp.json()["id"]
+
+    response = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "A-04", "client_supplier_id": supplier_id},
+    )
+    assert response.status_code == 409
+    body = response.json()
+    assert body.get("code") == "INVENTORY_CLIENT_REQUIRED_FOR_SUPPLIER"
+    assert body.get("detail") == "Inventory must have a client before assigning a supplier"
+
+
+def test_post_aisle_with_supplier_from_other_client_returns_409_structured() -> None:
+    client_a_resp = client.post("/api/v3/clients/", json={"name": "Client D1"})
+    assert client_a_resp.status_code == 201
+    client_a_id = client_a_resp.json()["id"]
+    client_b_resp = client.post("/api/v3/clients/", json={"name": "Client D2"})
+    assert client_b_resp.status_code == 201
+    client_b_id = client_b_resp.json()["id"]
+    supplier_resp = client.post(
+        f"/api/v3/clients/{client_b_id}/suppliers",
+        json={"name": "Supplier D2"},
+    )
+    assert supplier_resp.status_code == 201
+    supplier_id = supplier_resp.json()["id"]
+    inv_resp = client.post(
+        "/api/v3/inventories",
+        json={"name": "Mismatch Supplier", "client_id": client_a_id},
+    )
+    assert inv_resp.status_code == 201
+    inv_id = inv_resp.json()["id"]
+
+    response = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "A-05", "client_supplier_id": supplier_id},
+    )
+    assert response.status_code == 409
+    body = response.json()
+    assert body.get("code") == "CLIENT_SUPPLIER_CLIENT_MISMATCH"
+    assert body.get("detail") == "Client supplier does not belong to the inventory client"
+
+
 def test_get_aisles_returns_list_and_includes_created() -> None:
     create_resp = client.post("/api/v3/inventories", json={"name": "For List Aisles"})
     assert create_resp.status_code == 201
@@ -159,6 +259,24 @@ def test_post_aisle_empty_code_returns_422() -> None:
         json={"code": ""},
     )
     assert response.status_code == 422
+
+
+def test_post_aisle_blank_client_supplier_id_returns_422() -> None:
+    create_resp = client.post("/api/v3/inventories", json={"name": "Val Supplier"})
+    assert create_resp.status_code == 201
+    inv_id = create_resp.json()["id"]
+
+    empty_response = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "A-06", "client_supplier_id": ""},
+    )
+    assert empty_response.status_code == 422
+
+    whitespace_response = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "A-07", "client_supplier_id": "   "},
+    )
+    assert whitespace_response.status_code == 422
 
 
 def test_post_aisle_process_without_source_assets_returns_409() -> None:

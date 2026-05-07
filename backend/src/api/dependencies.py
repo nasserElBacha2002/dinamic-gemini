@@ -163,6 +163,7 @@ def get_operational_execution_config_resolver() -> OperationalExecutionConfigRes
 
 def get_create_inventory_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
+    client_repo: ClientRepository = Depends(get_client_repo),
     clock: Clock = Depends(get_clock),
     operational_resolver: OperationalExecutionConfigResolver = Depends(
         get_operational_execution_config_resolver
@@ -172,6 +173,7 @@ def get_create_inventory_use_case(
 
     return CreateInventoryUseCase(
         inventory_repo=repo,
+        client_repo=client_repo,
         clock=clock,
         operational_resolver=operational_resolver,
         settings_loader=_load_settings,
@@ -331,12 +333,14 @@ def get_aisle_review_lifecycle_sync(
 def get_create_aisle_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
     clock: Clock = Depends(get_clock),
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
 ) -> CreateAisleUseCase:
     return CreateAisleUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        client_supplier_repo=client_supplier_repo,
         clock=clock,
         status_reconciler=status_reconciler,
     )

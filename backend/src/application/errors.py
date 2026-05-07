@@ -32,6 +32,14 @@ class ClientSupplierNotFoundError(Exception):
     """Raised when a client supplier does not exist in the scoped client."""
 
 
+class InventoryClientRequiredForSupplierError(Exception):
+    """Raised when assigning a supplier to an inventory that has no client association."""
+
+
+class ClientSupplierClientMismatchError(Exception):
+    """Raised when supplier.client_id does not match inventory.client_id."""
+
+
 class InvalidClientSupplierNameError(Exception):
     """Raised when supplier name is missing or invalid."""
 

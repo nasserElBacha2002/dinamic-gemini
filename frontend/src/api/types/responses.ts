@@ -63,6 +63,7 @@ export interface PrimaryExecutionConfig {
 export interface Inventory {
   id: string;
   name: string;
+  client_id?: string | null;
   status: InventoryStatus | string;
   processing_mode?: InventoryProcessingMode | string;
   primary_execution_config?: PrimaryExecutionConfig | null;
@@ -158,6 +159,7 @@ export interface AisleJobSummary {
 export interface Aisle {
   id: string;
   inventory_id: string;
+  client_supplier_id?: string | null;
   code: string;
   status: AisleStatus | string;
   created_at: string;

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CreateInventoryRequest(BaseModel):
@@ -14,6 +14,20 @@ class CreateInventoryRequest(BaseModel):
         "production",
         description="production = operational defaults and no benchmark UX; test = multi-run experiments.",
     )
+    client_id: str | None = Field(
+        None,
+        description="Optional client association. Null/omitted preserves legacy behavior.",
+    )
+
+    @field_validator("client_id")
+    @classmethod
+    def validate_client_id_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("client_id must not be empty")
+        return normalized
 
 
 class PrimaryExecutionConfigResponse(BaseModel):
@@ -32,6 +46,7 @@ class InventoryResponse(BaseModel):
     name: str
     status: str
     processing_mode: str = "production"
+    client_id: str | None = None
     primary_execution_config: Optional[PrimaryExecutionConfigResponse] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -48,6 +63,7 @@ class InventoryListItemResponse(BaseModel):
     id: str
     name: str
     status: str
+    client_id: str | None = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     aisles_count: int = Field(0, ge=0, description="Number of aisles in this inventory.")

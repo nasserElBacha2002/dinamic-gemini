@@ -17,6 +17,12 @@ HTTP_DETAIL_UNEXPECTED_ERROR = "An unexpected error occurred."
 HTTP_DETAIL_INVENTORY_NOT_FOUND = "Inventory not found"
 HTTP_DETAIL_CLIENT_NOT_FOUND = "Client not found"
 HTTP_DETAIL_CLIENT_SUPPLIER_NOT_FOUND = "Client supplier not found"
+HTTP_DETAIL_INVENTORY_CLIENT_REQUIRED_FOR_SUPPLIER = (
+    "Inventory must have a client before assigning a supplier"
+)
+HTTP_DETAIL_CLIENT_SUPPLIER_CLIENT_MISMATCH = (
+    "Client supplier does not belong to the inventory client"
+)
 HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY = "Aisle not found or does not belong to this inventory"
 HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE = "Position not found or does not belong to this aisle"
 HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION = "Product not found or does not belong to this position"

@@ -10,6 +10,7 @@ import {
   CircularProgress,
   FormLabel,
   IconButton,
+  MenuItem,
   Stack,
   TextField,
   ToggleButton,
@@ -20,6 +21,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import type { CreateInventoryRequest, Inventory, InventoryProcessingMode } from '../api/types';
 import { getVisibleErrorMessage } from '../utils/apiErrors';
 import { useCreateInventoryFlow } from '../features/inventories/hooks/useCreateInventoryFlow';
+import { useClients } from '../hooks/useClients';
 import WizardModal from './ui/WizardModal';
 
 type PendingVisualReferenceFile = { file: File; previewUrl: string };
@@ -65,8 +67,16 @@ export default function CreateInventoryDialog({
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [processingMode, setProcessingMode] = useState<InventoryProcessingMode>('production');
+  const [selectedClientId, setSelectedClientId] = useState('');
   const dragDepthRef = useRef(0);
   const dropzoneHelpId = useId();
+  const clientSelectorHelpId = useId();
+  const {
+    data: clientsData,
+    isLoading: isClientsLoading,
+    isError: isClientsError,
+  } = useClients({ page: 1, page_size: 200 });
+  const clients = clientsData?.items ?? [];
 
   const pendingFilesRef = useRef<PendingVisualReferenceFile[]>([]);
   useEffect(() => {
@@ -101,6 +111,7 @@ export default function CreateInventoryDialog({
     setUploadError('');
     setUploadState('idle');
     setProcessingMode('production');
+    setSelectedClientId('');
   };
 
   const handleClose = () => {
@@ -171,9 +182,11 @@ export default function CreateInventoryDialog({
   const createInventoryOnce = async (): Promise<Inventory> => {
     if (createdInventory) return createdInventory;
     const trimmed = (name || '').trim();
+    const normalizedClientId = selectedClientId.trim();
     const created = await submitCreateInventory({
       name: trimmed,
       processing_mode: processingMode,
+      ...(normalizedClientId ? { client_id: normalizedClientId } : {}),
     } satisfies CreateInventoryRequest);
     setCreatedInventory(created);
     return created;
@@ -344,6 +357,30 @@ export default function CreateInventoryDialog({
             disabled={submitting || createdInventory != null}
             inputProps={{ maxLength: 255 }}
           />
+          <TextField
+            select
+            label={t('dialogs.inventory.client_label')}
+            value={selectedClientId}
+            onChange={(e) => setSelectedClientId(e.target.value)}
+            disabled={submitting || createdInventory != null || isClientsLoading}
+            helperText={
+              isClientsError
+                ? t('dialogs.inventory.client_load_error')
+                : clients.length === 0
+                  ? t('dialogs.inventory.client_empty')
+                  : t('dialogs.inventory.client_helper')
+            }
+            error={isClientsError}
+            FormHelperTextProps={{ id: clientSelectorHelpId }}
+            inputProps={{ 'aria-describedby': clientSelectorHelpId }}
+          >
+            <MenuItem value="">{t('dialogs.inventory.client_none_option')}</MenuItem>
+            {clients.map((client) => (
+              <MenuItem key={client.id} value={client.id}>
+                {client.name}
+              </MenuItem>
+            ))}
+          </TextField>
           <Box>
             <FormLabel component="legend">{t('dialogs.inventory.processing_mode_label')}</FormLabel>
             <ToggleButtonGroup

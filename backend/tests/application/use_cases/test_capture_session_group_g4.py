@@ -41,6 +41,9 @@ from src.infrastructure.repositories.memory_capture_session_item_repository impo
 from src.infrastructure.repositories.memory_capture_session_repository import (
     MemoryCaptureSessionRepository,
 )
+from src.infrastructure.repositories.memory_client_supplier_repository import (
+    MemoryClientSupplierRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 
 UTC = timezone.utc
@@ -291,6 +294,7 @@ def test_create_aisle_and_assign_group() -> None:
     create_aisle = CreateAisleUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
+        client_supplier_repo=MemoryClientSupplierRepository(),
         clock=clock,
         status_reconciler=reconciler,
     )
