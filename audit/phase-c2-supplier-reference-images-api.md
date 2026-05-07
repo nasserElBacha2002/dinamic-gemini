@@ -46,7 +46,8 @@ Phase C2 exposes supplier-level reference image management under the existing v3
 ### Upload — `POST .../reference-images`
 
 - **Content-Type:** `multipart/form-data`
-- **Fields:** `files` (one or more parts, same convention as inventory visual references), optional `label`, optional `description` (applied to every file in the batch).
+- **Fields:** `files` (one or more parts, same convention as inventory visual references), optional `label`, optional `description`.
+- **Batch metadata:** When multiple files are uploaded in one POST, **`label` and `description` are applied to every file in the batch** (the same values are persisted on each created row). A single-file upload uses the same rule: optional metadata applies to that sole row.
 - **Response:** `{ "items": [ ... ] }` with HTTP **201**.
 
 ### Delete — `DELETE .../reference-images/{image_id}`
@@ -151,3 +152,39 @@ Database migration `scripts/db_migrate.py status` / `validate`: **not validated 
 ## 13. Recommended next phase
 
 **C3 — Frontend supplier reference images:** API client, hooks, and UI against these endpoints (no pipeline activation).
+
+---
+
+## C2.1 Review fixes
+
+### Tests added
+
+- **`test_upload_supplier_reference_images_without_files_field_returns_422`** — POST with form fields only (no `files` parts): **422** (FastAPI / validation layer).
+- **`test_upload_supplier_reference_images_invalid_multipart_part_returns_422`** — multipart part encoded as a file with whitespace-only filename and content type so the route’s `_to_uploaded_supplier_reference_image_files` guard runs; **422** with detail referencing missing filename/content type.  
+  *(Truly empty filename/type tuples are not reliably represented as upload parts by `TestClient`; whitespace-only is used as the stable edge case.)*
+
+### Metadata semantics documented
+
+- **`audit/phase-c2-supplier-reference-images-api.md`** — explicit batch metadata bullet under §4 Upload.
+- **`backend/src/api/routes/v3/clients.py`** — OpenAPI descriptions on `File` / `Form` parameters for `upload_supplier_reference_images`.
+- **`backend/src/api/schemas/supplier_reference_image_schemas.py`** — `UploadSupplierReferenceImagesResponse` docstring.
+
+### Validation results (C2.1)
+
+From `backend/`:
+
+- `python -m pytest tests/api/test_supplier_reference_images_api.py` — pass (**21** tests collected).
+- `python -m pytest tests/api/test_inventory_visual_references_api.py` — pass.
+- `python -m pytest tests/application/use_cases/test_upload_supplier_reference_images.py` — pass.
+- `python -m pytest tests/application/use_cases/test_manage_supplier_reference_images.py` — pass.
+- `python -m pytest --collect-only` — pass (**2003** tests collected in this environment).
+- `python -m ruff check src tests` — pass.
+
+`scripts/db_migrate.py status` / `validate`: **not run successfully here** — SQL Server connection failed with **HYT00** login timeout (environment / connectivity). Re-run when the database is reachable.
+
+### Unchanged boundaries
+
+- Frontend: **unchanged**
+- Pipeline: **unchanged**
+- `inventory_visual_references` behavior: **unchanged**
+- No legacy reference migration/copy

@@ -302,9 +302,26 @@ def list_supplier_reference_images(
 async def upload_supplier_reference_images(
     client_id: str,
     supplier_id: str,
-    files: list[UploadFile] = File(..., description="One or more image files"),
-    label: str | None = Form(None),
-    description: str | None = Form(None),
+    files: list[UploadFile] = File(
+        ...,
+        description=(
+            "One or more image parts named `files`. Optional form fields `label` and `description` "
+            "apply to every `files` part in this request (same metadata on each created row when "
+            "multiple files are uploaded)."
+        ),
+    ),
+    label: str | None = Form(
+        None,
+        description=(
+            "Optional label applied to every uploaded file in this request (same value for each `files` part)."
+        ),
+    ),
+    description: str | None = Form(
+        None,
+        description=(
+            "Optional description applied to every uploaded file in this request (same value for each `files` part)."
+        ),
+    ),
     use_case: UploadSupplierReferenceImagesUseCase = Depends(
         get_upload_supplier_reference_images_use_case
     ),

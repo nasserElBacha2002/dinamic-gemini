@@ -237,6 +237,33 @@ def test_upload_supplier_reference_images_zero_byte() -> None:
     assert "zero-byte" in detail or "empty" in detail
 
 
+def test_upload_supplier_reference_images_without_files_field_returns_422() -> None:
+    """Multipart route requires ``files`` parts; metadata-only form body yields FastAPI validation 422."""
+    cid = _create_client()
+    sid = _create_supplier(cid)
+    r = client.post(
+        f"/api/v3/clients/{cid}/suppliers/{sid}/reference-images",
+        data={"label": "Solo etiqueta", "description": "Sin archivos"},
+        headers=_auth_headers(),
+    )
+    assert r.status_code == 422
+
+
+def test_upload_supplier_reference_images_invalid_multipart_part_returns_422() -> None:
+    """Whitespace-only filename + content type yield no usable identifiers — route rejects."""
+    cid = _create_client()
+    sid = _create_supplier(cid)
+    # Empty strings are not reliably encoded as file parts by TestClient; whitespace-only still parses as UploadFile.
+    r = client.post(
+        f"/api/v3/clients/{cid}/suppliers/{sid}/reference-images",
+        files=[("files", (" ", BytesIO(b"x"), " "))],
+        headers=_auth_headers(),
+    )
+    assert r.status_code == 422
+    detail = str(r.json().get("detail", "")).lower()
+    assert "filename" in detail and "content type" in detail
+
+
 def test_delete_supplier_reference_image_returns_contract_shape() -> None:
     cid = _create_client()
     sid = _create_supplier(cid)

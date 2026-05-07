@@ -31,7 +31,11 @@ class SupplierReferenceImagesListResponse(BaseModel):
 
 
 class UploadSupplierReferenceImagesResponse(BaseModel):
-    """Response for POST .../reference-images (same shape as list items wrapper)."""
+    """Response for POST .../reference-images (same shape as list items wrapper).
+
+    Upload semantics: each multipart request may include several ``files`` parts; optional ``label``
+    and ``description`` form fields are copied onto **every** created row in ``items`` for that batch.
+    """
 
     items: list[SupplierReferenceImageResponse]
 
