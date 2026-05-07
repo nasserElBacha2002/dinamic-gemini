@@ -41,6 +41,7 @@ class Inventory:
     primary_model_name: str | None = None
     primary_prompt_key: str | None = None
     primary_prompt_version: str | None = None
+    client_id: str | None = None
 
     def mark_processing(self, now: datetime) -> None:
         self.status = InventoryStatus.PROCESSING

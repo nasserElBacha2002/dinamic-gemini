@@ -10,7 +10,9 @@ from __future__ import annotations
 import pytest
 
 from src.database.sqlserver import now_utc
+from src.domain.client.entities import Client, ClientStatus
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
+from src.infrastructure.repositories.sql_client_repository import SqlClientRepository
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
 from tests.support.sql_integration import sql_server_client_or_skip
 from tests.support.sqlserver_test_connection import resolved_sqlserver_connection_string_for_tests
@@ -26,6 +28,11 @@ def sql_client():
 @pytest.fixture
 def repo(sql_client):
     return SqlInventoryRepository(sql_client)
+
+
+@pytest.fixture
+def client_repo(sql_client):
+    return SqlClientRepository(sql_client)
 
 
 def test_sql_inventory_repository_save_and_get_by_id(repo: SqlInventoryRepository) -> None:
@@ -90,3 +97,50 @@ def test_sql_inventory_repository_round_trips_processing_mode_and_primary_snapsh
     assert loaded.primary_model_name == "model-y"
     assert loaded.primary_prompt_key == "prompt-z"
     assert loaded.primary_prompt_version == "pv1"
+    assert loaded.client_id is None
+
+
+def test_sql_inventory_repository_round_trips_nullable_client_id_none(
+    repo: SqlInventoryRepository,
+) -> None:
+    now = now_utc()
+    inv = Inventory(
+        id="test-epica2-client-null",
+        name="Client Null",
+        status=InventoryStatus.DRAFT,
+        created_at=now,
+        updated_at=now,
+        client_id=None,
+    )
+    repo.save(inv)
+    loaded = repo.get_by_id("test-epica2-client-null")
+    assert loaded is not None
+    assert loaded.client_id is None
+
+
+def test_sql_inventory_repository_round_trips_non_null_client_id(
+    repo: SqlInventoryRepository,
+    client_repo: SqlClientRepository,
+) -> None:
+    now = now_utc()
+    client_repo.save(
+        Client(
+            id="test-client-a3-1",
+            name="A3 Parent",
+            status=ClientStatus.ACTIVE,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    inv = Inventory(
+        id="test-epica2-client-set",
+        name="Client Set",
+        status=InventoryStatus.DRAFT,
+        created_at=now,
+        updated_at=now,
+        client_id="test-client-a3-1",
+    )
+    repo.save(inv)
+    loaded = repo.get_by_id("test-epica2-client-set")
+    assert loaded is not None
+    assert loaded.client_id == "test-client-a3-1"
