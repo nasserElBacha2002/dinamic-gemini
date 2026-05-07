@@ -7,31 +7,31 @@ GET /{id} and POST / return InventoryResponse (entity without list aggregates).
 from __future__ import annotations
 
 import logging
-from io import BytesIO
+from typing import NoReturn
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
 from src.api.constants.error_wire import (
-    HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED,
-    HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
+    HTTP_DETAIL_LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
     HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED,
     HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
 )
 from src.api.dependencies import (
     get_artifact_storage,
     get_create_inventory_use_case,
-    get_delete_inventory_visual_reference_use_case,
     get_export_inventory_results_use_case,
     get_get_inventory_metrics_use_case,
     get_get_inventory_use_case,
     get_list_inventory_list_items_use_case,
     get_list_inventory_visual_references_use_case,
-    get_replace_inventory_visual_reference_use_case,
-    get_upload_inventory_visual_references_use_case,
 )
 from src.api.errors import reraise_if_mapped
-from src.api.errors.structured_api_http import VISUAL_REFERENCE_NOT_FOUND, StructuredApiHttpError
+from src.api.errors.structured_api_http import (
+    LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
+    VISUAL_REFERENCE_NOT_FOUND,
+    StructuredApiHttpError,
+)
 from src.api.schemas.inventory_schemas import (
     CreateInventoryRequest,
     InventoryMetricsResponse,
@@ -51,11 +51,7 @@ from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     resolve_visual_reference_file_response,
 )
-from src.application.errors import (
-    ClientNotFoundError,
-    InventoryNotFoundError,
-    InventoryVisualReferenceNotFoundError,
-)
+from src.application.errors import ClientNotFoundError, InventoryNotFoundError
 from src.application.services.inventory_table_query_params import (
     build_inventory_table_query_from_route_params,
 )
@@ -76,14 +72,8 @@ from src.application.use_cases.export_inventory_results import ExportInventoryRe
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
-from src.application.use_cases.manage_inventory_visual_references import (
-    DeleteInventoryVisualReferenceUseCase,
-    ReplaceInventoryVisualReferenceUseCase,
-)
 from src.application.use_cases.upload_inventory_visual_references import (
     ListInventoryVisualReferencesUseCase,
-    UploadedVisualReferenceFile,
-    UploadInventoryVisualReferencesUseCase,
 )
 from src.config import load_settings
 from src.domain.inventory.entities import InventoryProcessingMode
@@ -109,40 +99,6 @@ def _visual_reference_to_response(
         file_size=ref.file_size,
         created_at=ref.created_at,
     )
-
-
-async def _to_uploaded_visual_reference_files(
-    files: list[UploadFile],
-) -> list[UploadedVisualReferenceFile]:
-    """Convert request files to use-case DTOs. Fails clearly on invalid or malformed input."""
-    if not files:
-        raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
-    result: list[UploadedVisualReferenceFile] = []
-    for i, u in enumerate(files):
-        has_name = bool(u.filename and u.filename.strip())
-        has_type = bool(getattr(u, "content_type", None) and str(u.content_type).strip())
-        if not has_name and not has_type:
-            raise HTTPException(
-                status_code=422,
-                detail=f"File at index {i} has no filename and no content type; each part must be a valid file.",
-            )
-        content = await u.read()
-        size = len(content)
-        if size <= 0:
-            raise HTTPException(
-                status_code=422, detail=HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED
-            )
-        result.append(
-            UploadedVisualReferenceFile(
-                original_filename=(u.filename or "file").strip(),
-                file_obj=BytesIO(content),
-                content_type=u.content_type or "application/octet-stream",
-                size=size,
-            )
-        )
-    if not result:
-        raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
-    return result
 
 
 @router.post("/", response_model=InventoryResponse, status_code=201)
@@ -300,40 +256,34 @@ def get_inventory_metrics(
 @router.post(
     "/{inventory_id}/visual-references",
     response_model=UploadInventoryVisualReferencesResponse,
-    status_code=201,
 )
 async def upload_inventory_visual_references(
     inventory_id: str,
     files: list[UploadFile] = File(..., description="One or more image files"),
-    use_case: UploadInventoryVisualReferencesUseCase = Depends(
-        get_upload_inventory_visual_references_use_case
-    ),
-) -> UploadInventoryVisualReferencesResponse:
-    """Upload one or more visual reference images for an inventory."""
-    uploaded = await _to_uploaded_visual_reference_files(files)
-    try:
-        created = use_case.execute(inventory_id, uploaded)
-        return UploadInventoryVisualReferencesResponse(
-            items=[_visual_reference_to_response(ref) for ref in created]
-        )
-    except Exception as e:
-        reraise_if_mapped(e)
-        raise
+) -> NoReturn:
+    """Upload one or more visual reference images for an inventory.
+
+    Phase C8: inventory-scoped visual reference writes are retired; use supplier reference images.
+    """
+    del inventory_id, files
+    raise StructuredApiHttpError(
+        status_code=410,
+        error_code=LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
+        detail=HTTP_DETAIL_LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
+    )
 
 
-@router.delete("/{inventory_id}/visual-references/{reference_id}", status_code=204)
+@router.delete("/{inventory_id}/visual-references/{reference_id}")
 def delete_inventory_visual_reference(
     inventory_id: str,
     reference_id: str,
-    use_case: DeleteInventoryVisualReferenceUseCase = Depends(
-        get_delete_inventory_visual_reference_use_case
-    ),
-) -> Response:
-    try:
-        use_case.execute(inventory_id, reference_id)
-    except (InventoryNotFoundError, InventoryVisualReferenceNotFoundError) as e:
-        reraise_if_mapped(e)
-    return Response(status_code=204)
+) -> NoReturn:
+    del inventory_id, reference_id
+    raise StructuredApiHttpError(
+        status_code=410,
+        error_code=LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
+        detail=HTTP_DETAIL_LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
+    )
 
 
 @router.put(
@@ -344,17 +294,13 @@ async def replace_inventory_visual_reference(
     inventory_id: str,
     reference_id: str,
     file: UploadFile = File(..., description="Replacement image file"),
-    use_case: ReplaceInventoryVisualReferenceUseCase = Depends(
-        get_replace_inventory_visual_reference_use_case
-    ),
-) -> InventoryVisualReferenceResponse:
-    uploaded = await _to_uploaded_visual_reference_files([file])
-    try:
-        updated = use_case.execute(inventory_id, reference_id, uploaded[0])
-        return _visual_reference_to_response(updated)
-    except Exception as e:
-        reraise_if_mapped(e)
-        raise
+) -> NoReturn:
+    del inventory_id, reference_id, file
+    raise StructuredApiHttpError(
+        status_code=410,
+        error_code=LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
+        detail=HTTP_DETAIL_LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
+    )
 
 
 @router.get(

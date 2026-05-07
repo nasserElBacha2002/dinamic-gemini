@@ -1,4 +1,4 @@
-"""API tests for inventory visual references endpoints — v3.2.4."""
+"""API tests for inventory visual references endpoints — v3.2.4 + Phase C8 (writes disabled via HTTP)."""
 
 from __future__ import annotations
 
@@ -10,11 +10,17 @@ from fastapi.testclient import TestClient
 from passlib.context import CryptContext
 
 import src.config as config_module
+from src.api.constants.error_wire import HTTP_DETAIL_LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED
 from src.api.dependencies import get_artifact_storage
+from src.api.errors.structured_api_http import LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED
 from src.api.server import app
+from src.application.use_cases.upload_inventory_visual_references import (
+    UploadedVisualReferenceFile,
+    UploadInventoryVisualReferencesUseCase,
+)
 from src.config import AppSettings, reload_settings
 from src.infrastructure.storage.artifact_store import StoredArtifact
-from src.runtime.app_container import reset_app_container_for_tests
+from src.runtime.app_container import get_app_container, reset_app_container_for_tests
 
 client = TestClient(app)
 
@@ -23,11 +29,6 @@ _PWD_CONTEXT = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 @pytest.fixture(autouse=True)
 def _auth_env(monkeypatch: pytest.MonkeyPatch):
-    """Ensure auth env vars are set for environments that expect them.
-
-    When auth is fully enabled, these tests may run under a different contract;
-    in that case we skip API-level checks and rely on lower-layer tests.
-    """
     monkeypatch.setenv("ADMIN_USERNAME", "admin")
     monkeypatch.setenv("ADMIN_PASSWORD_HASH", _PWD_CONTEXT.hash("correct-password"))
     monkeypatch.setenv("AUTH_TOKEN_SECRET", "t" * 40)
@@ -37,7 +38,6 @@ def _auth_env(monkeypatch: pytest.MonkeyPatch):
 
 
 def _auth_headers() -> dict[str, str]:
-    # Mirror route protection tests: log in as admin and reuse token.
     login_r = client.post("/auth/login", json={"username": "admin", "password": "correct-password"})
     if login_r.status_code == 401:
         pytest.skip("Auth is enabled; visual reference API wiring tests are skipped in this mode.")
@@ -52,6 +52,37 @@ def _create_inventory() -> str:
     )
     assert resp.status_code == 201
     return resp.json()["id"]
+
+
+def _assert_legacy_writes_disabled(resp) -> None:
+    assert resp.status_code == 410
+    body = resp.json()
+    assert body["code"] == LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED
+    assert body["detail"] == HTTP_DETAIL_LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED
+
+
+def _seed_visual_reference(inventory_id: str, *, artifact_storage=None) -> str:
+    """Insert a visual reference row + artifact without using the disabled POST endpoint."""
+    c = get_app_container()
+    storage = artifact_storage if artifact_storage is not None else c.get_artifact_storage()
+    uc = UploadInventoryVisualReferencesUseCase(
+        inventory_repo=c.get_inventory_repo(),
+        reference_repo=c.get_inventory_visual_reference_repo(),
+        artifact_storage=storage,
+        clock=c.get_clock(),
+    )
+    refs = uc.execute(
+        inventory_id,
+        [
+            UploadedVisualReferenceFile(
+                original_filename="ref1.jpg",
+                file_obj=BytesIO(b"jpeg-data"),
+                content_type="image/jpeg",
+                size=len(b"jpeg-data"),
+            )
+        ],
+    )
+    return refs[0].id
 
 
 class StubSignedUrlArtifactStorage:
@@ -81,104 +112,62 @@ class StubSignedUrlArtifactStorage:
         return f"https://signed.example/{key}?exp={expires_in_sec}"
 
 
-def test_upload_inventory_visual_references_and_list_success() -> None:
+def test_post_inventory_visual_references_returns_410_structured_error() -> None:
     inventory_id = _create_inventory()
     files = [
         ("files", ("ref1.jpg", BytesIO(b"jpeg-data"), "image/jpeg")),
-        ("files", ("ref2.png", BytesIO(b"png-data"), "image/png")),
     ]
-    upload_resp = client.post(
+    resp = client.post(
         f"/api/v3/inventories/{inventory_id}/visual-references",
         files=files,
         headers=_auth_headers(),
     )
-    assert upload_resp.status_code == 201
-    data = upload_resp.json()
-    assert "items" in data
-    assert len(data["items"]) == 2
-    for item in data["items"]:
-        assert "id" in item
-        assert item["inventory_id"] == inventory_id
-        assert "filename" in item
-        assert "file_size" in item
-        assert "storage_path" not in item
+    _assert_legacy_writes_disabled(resp)
 
     list_resp = client.get(
         f"/api/v3/inventories/{inventory_id}/visual-references",
         headers=_auth_headers(),
     )
     assert list_resp.status_code == 200
-    listed = list_resp.json()
-    assert "items" in listed
-    assert len(listed["items"]) == 2
-    for item in listed["items"]:
-        assert "storage_path" not in item
+    assert list_resp.json()["items"] == []
 
 
-def test_upload_inventory_visual_references_zero_byte_file_returns_422() -> None:
+def test_put_inventory_visual_reference_returns_410_structured_error() -> None:
     inventory_id = _create_inventory()
-    files = [("files", ("empty.jpg", BytesIO(b""), "image/jpeg"))]
-    resp = client.post(
-        f"/api/v3/inventories/{inventory_id}/visual-references",
-        files=files,
+    reference_id = _seed_visual_reference(inventory_id)
+    resp = client.put(
+        f"/api/v3/inventories/{inventory_id}/visual-references/{reference_id}",
+        files={"file": ("replacement.png", BytesIO(b"png-data"), "image/png")},
         headers=_auth_headers(),
     )
-    assert resp.status_code == 422
-    assert (
-        "zero-byte" in resp.json().get("detail", "").lower()
-        or "empty" in resp.json().get("detail", "").lower()
-    )
+    _assert_legacy_writes_disabled(resp)
 
 
-def test_upload_inventory_visual_references_max_exceeded_returns_400() -> None:
+def test_delete_inventory_visual_reference_returns_410_structured_error() -> None:
     inventory_id = _create_inventory()
-    # Upload 3 (max), then one more should return 400
-    for _ in range(3):
-        r = client.post(
-            f"/api/v3/inventories/{inventory_id}/visual-references",
-            files=[("files", ("ref.jpg", BytesIO(b"x"), "image/jpeg"))],
-            headers=_auth_headers(),
-        )
-        assert r.status_code == 201
-    fourth = client.post(
-        f"/api/v3/inventories/{inventory_id}/visual-references",
-        files=[("files", ("fourth.jpg", BytesIO(b"xx"), "image/jpeg"))],
+    reference_id = _seed_visual_reference(inventory_id)
+    resp = client.delete(
+        f"/api/v3/inventories/{inventory_id}/visual-references/{reference_id}",
         headers=_auth_headers(),
     )
-    assert fourth.status_code == 400
-    assert "Maximum" in fourth.json().get("detail", "")
+    _assert_legacy_writes_disabled(resp)
 
-
-def test_upload_inventory_visual_references_invalid_mime_type_returns_400() -> None:
-    inventory_id = _create_inventory()
-    files = [("files", ("doc.pdf", BytesIO(b"pdf"), "application/pdf"))]
-    resp = client.post(
+    list_resp = client.get(
         f"/api/v3/inventories/{inventory_id}/visual-references",
-        files=files,
         headers=_auth_headers(),
     )
-    assert resp.status_code == 400
-    assert "Unsupported image content type" in resp.json().get("detail", "")
+    assert list_resp.status_code == 200
+    assert len(list_resp.json()["items"]) == 1
 
 
-def test_upload_inventory_visual_references_inventory_not_found_returns_404() -> None:
+def test_post_inventory_visual_references_unknown_inventory_still_returns_410() -> None:
     files = [("files", ("ref.jpg", BytesIO(b"jpeg-data"), "image/jpeg"))]
     resp = client.post(
         "/api/v3/inventories/nonexistent/visual-references",
         files=files,
         headers=_auth_headers(),
     )
-    assert resp.status_code == 404
-
-
-def test_upload_inventory_visual_references_empty_files_returns_422() -> None:
-    inventory_id = _create_inventory()
-    resp = client.post(
-        f"/api/v3/inventories/{inventory_id}/visual-references",
-        files=[],
-        headers=_auth_headers(),
-    )
-    assert resp.status_code == 422
+    _assert_legacy_writes_disabled(resp)
 
 
 def test_list_inventory_visual_references_inventory_not_found_returns_404() -> None:
@@ -189,61 +178,19 @@ def test_list_inventory_visual_references_inventory_not_found_returns_404() -> N
     assert resp.status_code == 404
 
 
-def test_delete_inventory_visual_reference_removes_it_from_list() -> None:
+def test_list_inventory_visual_references_returns_seeded_rows() -> None:
     inventory_id = _create_inventory()
-    upload_resp = client.post(
-        f"/api/v3/inventories/{inventory_id}/visual-references",
-        files=[("files", ("ref1.jpg", BytesIO(b"jpeg-data"), "image/jpeg"))],
-        headers=_auth_headers(),
-    )
-    assert upload_resp.status_code == 201
-    reference_id = upload_resp.json()["items"][0]["id"]
-
-    delete_resp = client.delete(
-        f"/api/v3/inventories/{inventory_id}/visual-references/{reference_id}",
-        headers=_auth_headers(),
-    )
-    assert delete_resp.status_code == 204
-
+    reference_id = _seed_visual_reference(inventory_id)
     list_resp = client.get(
         f"/api/v3/inventories/{inventory_id}/visual-references",
         headers=_auth_headers(),
     )
     assert list_resp.status_code == 200
-    assert list_resp.json()["items"] == []
-
-
-def test_replace_inventory_visual_reference_updates_metadata() -> None:
-    inventory_id = _create_inventory()
-    upload_resp = client.post(
-        f"/api/v3/inventories/{inventory_id}/visual-references",
-        files=[("files", ("ref1.jpg", BytesIO(b"jpeg-data"), "image/jpeg"))],
-        headers=_auth_headers(),
-    )
-    assert upload_resp.status_code == 201
-    original = upload_resp.json()["items"][0]
-    reference_id = original["id"]
-
-    replace_resp = client.put(
-        f"/api/v3/inventories/{inventory_id}/visual-references/{reference_id}",
-        files={"file": ("replacement.png", BytesIO(b"png-data"), "image/png")},
-        headers=_auth_headers(),
-    )
-    assert replace_resp.status_code == 200
-    updated = replace_resp.json()
-    assert updated["id"] == reference_id
-    assert updated["filename"] == "replacement.png"
-    assert updated["mime_type"] == "image/png"
-    assert updated["inventory_id"] == inventory_id
-
-    list_resp = client.get(
-        f"/api/v3/inventories/{inventory_id}/visual-references",
-        headers=_auth_headers(),
-    )
-    assert list_resp.status_code == 200
-    assert len(list_resp.json()["items"]) == 1
-    assert list_resp.json()["items"][0]["id"] == reference_id
-    assert list_resp.json()["items"][0]["filename"] == "replacement.png"
+    items = list_resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["id"] == reference_id
+    assert items[0]["inventory_id"] == inventory_id
+    assert "storage_path" not in items[0]
 
 
 def test_visual_reference_file_endpoint_redirects_to_signed_url_for_s3_backed_reference(
@@ -253,17 +200,12 @@ def test_visual_reference_file_endpoint_redirects_to_signed_url_for_s3_backed_re
     monkeypatch.setenv("ARTIFACT_S3_BUCKET", "bucket-x")
     monkeypatch.setenv("ARTIFACT_S3_SIGNED_URL_TTL_SEC", "777")
     reload_settings()
-    app.dependency_overrides[get_artifact_storage] = lambda: StubSignedUrlArtifactStorage()
+    reset_app_container_for_tests()
+    stub = StubSignedUrlArtifactStorage()
+    app.dependency_overrides[get_artifact_storage] = lambda: stub
     try:
         inventory_id = _create_inventory()
-        files = [("files", ("ref1.jpg", BytesIO(b"jpeg-data"), "image/jpeg"))]
-        upload_resp = client.post(
-            f"/api/v3/inventories/{inventory_id}/visual-references",
-            files=files,
-            headers=_auth_headers(),
-        )
-        assert upload_resp.status_code == 201
-        reference_id = upload_resp.json()["items"][0]["id"]
+        reference_id = _seed_visual_reference(inventory_id, artifact_storage=stub)
 
         file_resp = client.get(
             f"/api/v3/inventories/{inventory_id}/visual-references/{reference_id}/file",
@@ -279,6 +221,7 @@ def test_visual_reference_file_endpoint_redirects_to_signed_url_for_s3_backed_re
         monkeypatch.delenv("ARTIFACT_S3_BUCKET", raising=False)
         monkeypatch.delenv("ARTIFACT_S3_SIGNED_URL_TTL_SEC", raising=False)
         reload_settings()
+        reset_app_container_for_tests()
 
 
 def test_visual_reference_file_endpoint_signed_url_handles_prefixed_persisted_key_without_double_prefix(
@@ -288,19 +231,12 @@ def test_visual_reference_file_endpoint_signed_url_handles_prefixed_persisted_ke
     monkeypatch.setenv("ARTIFACT_S3_BUCKET", "bucket-x")
     monkeypatch.setenv("ARTIFACT_S3_SIGNED_URL_TTL_SEC", "555")
     reload_settings()
-    app.dependency_overrides[get_artifact_storage] = lambda: StubSignedUrlArtifactStorage(
-        return_prefixed_key=True
-    )
+    reset_app_container_for_tests()
+    stub = StubSignedUrlArtifactStorage(return_prefixed_key=True)
+    app.dependency_overrides[get_artifact_storage] = lambda: stub
     try:
         inventory_id = _create_inventory()
-        files = [("files", ("ref1.jpg", BytesIO(b"jpeg-data"), "image/jpeg"))]
-        upload_resp = client.post(
-            f"/api/v3/inventories/{inventory_id}/visual-references",
-            files=files,
-            headers=_auth_headers(),
-        )
-        assert upload_resp.status_code == 201
-        reference_id = upload_resp.json()["items"][0]["id"]
+        reference_id = _seed_visual_reference(inventory_id, artifact_storage=stub)
 
         file_resp = client.get(
             f"/api/v3/inventories/{inventory_id}/visual-references/{reference_id}/file",
@@ -317,6 +253,7 @@ def test_visual_reference_file_endpoint_signed_url_handles_prefixed_persisted_ke
         monkeypatch.delenv("ARTIFACT_S3_BUCKET", raising=False)
         monkeypatch.delenv("ARTIFACT_S3_SIGNED_URL_TTL_SEC", raising=False)
         reload_settings()
+        reset_app_container_for_tests()
 
 
 def test_visual_reference_file_endpoint_falls_back_to_local_when_legacy_enabled(
@@ -325,18 +262,10 @@ def test_visual_reference_file_endpoint_falls_back_to_local_when_legacy_enabled(
     monkeypatch.setenv("ARTIFACT_STORAGE_PROVIDER", "local")
     monkeypatch.setenv("ARTIFACT_STORAGE_LEGACY_LOCAL_READ_ENABLED", "true")
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
-    # Avoid reload_settings(): dotenv reload can restore OUTPUT_DIR from .env; refresh cached settings + container.
     config_module._settings = AppSettings()
     reset_app_container_for_tests()
     inventory_id = _create_inventory()
-    files = [("files", ("ref1.jpg", BytesIO(b"jpeg-data"), "image/jpeg"))]
-    upload_resp = client.post(
-        f"/api/v3/inventories/{inventory_id}/visual-references",
-        files=files,
-        headers=_auth_headers(),
-    )
-    assert upload_resp.status_code == 201
-    reference_id = upload_resp.json()["items"][0]["id"]
+    reference_id = _seed_visual_reference(inventory_id)
 
     rel = f"inventories/{inventory_id}/visual_references/{reference_id}.jpg"
     p = tmp_path / "v3_uploads" / rel

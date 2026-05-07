@@ -27,6 +27,10 @@ HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY = "Aisle not found or does not belong t
 HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE = "Position not found or does not belong to this aisle"
 HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION = "Product not found or does not belong to this position"
 HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND = "Visual reference not found"
+HTTP_DETAIL_LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED = (
+    "Inventory-level visual reference writes are disabled. Manage reference images from the "
+    "supplier reference images section."
+)
 HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND = "Supplier reference image not found"
 
 # Structured Category B — fixed 422 ``detail`` (must match mapper / use-case emitters).

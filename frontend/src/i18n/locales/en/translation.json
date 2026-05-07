@@ -454,7 +454,7 @@
       "retry_upload": "Retry upload",
       "select_files": "Select files",
       "selected_ratio": "{{count}} / {{max}} files",
-      "step_labels": "Inventory details|Visual references",
+      "step_labels": "Inventory details",
       "upload_references": "Upload references",
       "validation_name_max": "The name cannot exceed 255 characters.",
       "validation_name_required": "Enter an inventory name.",

@@ -467,7 +467,7 @@
       "retry_upload": "Reintentar subida",
       "select_files": "Elegir archivos",
       "selected_ratio": "{{count}} / {{max}} archivos",
-      "step_labels": "Datos del inventario|Referencias visuales",
+      "step_labels": "Datos del inventario",
       "upload_references": "Subir referencias",
       "validation_name_max": "El nombre no puede superar los 255 caracteres.",
       "validation_name_required": "Ingresá un nombre para el inventario.",

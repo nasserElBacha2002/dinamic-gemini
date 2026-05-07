@@ -5,15 +5,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import CreateInventoryDialog from '../src/components/CreateInventoryDialog';
 
-const mockUpload = vi.fn();
-const mockUseClients = vi.fn();
+const mockUploadInventoryVisualReferences = vi.fn();
 vi.mock('../src/api/client', async () => {
   const actual = await vi.importActual<typeof import('../src/api/client')>('../src/api/client');
   return {
     ...actual,
-    uploadInventoryVisualReferences: (inventoryId: string, files: File[]) => mockUpload(inventoryId, files),
+    uploadInventoryVisualReferences: (...args: unknown[]) =>
+      mockUploadInventoryVisualReferences(...args),
   };
 });
+const mockUseClients = vi.fn();
 vi.mock('../src/hooks/useClients', () => ({
   useClients: (...args: unknown[]) => mockUseClients(...args),
 }));
@@ -41,7 +42,7 @@ function renderDialog(props?: Partial<ComponentProps<typeof CreateInventoryDialo
   return { onClose, onSuccess, onError, createInventoryFn };
 }
 
-describe('CreateInventoryDialog (reference images step)', () => {
+describe('CreateInventoryDialog (inventory creation without legacy visual references)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseClients.mockReturnValue({
@@ -54,27 +55,21 @@ describe('CreateInventoryDialog (reference images step)', () => {
       isLoading: false,
       isError: false,
     });
-    // Make object URLs deterministic and assertable for lifecycle tests.
-    let i = 0;
-    URL.createObjectURL = vi.fn(() => `blob:test-${++i}`);
-    URL.revokeObjectURL = vi.fn();
   });
 
-  it('allows continuing to step 2 and skipping upload', async () => {
+  it('creates inventory from the single-step dialog without calling legacy visual reference upload', async () => {
     const { createInventoryFn, onSuccess } = renderDialog();
 
-    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), { target: { value: 'My inv' } });
-    fireEvent.click(screen.getByRole('button', { name: /continue|continuar/i }));
-
-    expect(screen.getByRole('heading', { name: /referencias visuales|reference step title/i })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /crear sin referencias|create without refs/i }));
+    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), {
+      target: { value: 'My inv' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /crear inventario|create inventory action/i }));
 
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     expect(createInventoryFn).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'My inv', processing_mode: 'production' }),
     );
-    expect(mockUpload).not.toHaveBeenCalled();
+    expect(mockUploadInventoryVisualReferences).not.toHaveBeenCalled();
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
   });
 
@@ -120,16 +115,17 @@ describe('CreateInventoryDialog (reference images step)', () => {
   it('sends processing_mode test when Test mode is selected', async () => {
     const { createInventoryFn, onSuccess } = renderDialog();
 
-    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), { target: { value: 'Lab inv' } });
+    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), {
+      target: { value: 'Lab inv' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /^prueba$/i }));
-    fireEvent.click(screen.getByRole('button', { name: /continue|continuar/i }));
-
-    fireEvent.click(screen.getByRole('button', { name: /crear sin referencias|create without refs/i }));
+    fireEvent.click(screen.getByRole('button', { name: /crear inventario|create inventory action/i }));
 
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     expect(createInventoryFn).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Lab inv', processing_mode: 'test' }),
     );
+    expect(mockUploadInventoryVisualReferences).not.toHaveBeenCalled();
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
   });
 
@@ -137,169 +133,39 @@ describe('CreateInventoryDialog (reference images step)', () => {
     const { createInventoryFn, onSuccess } = renderDialog();
     fireEvent.mouseDown(screen.getByRole('combobox', { name: /^cliente$/i }));
     fireEvent.click(screen.getByRole('option', { name: /cliente dos/i }));
-    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), { target: { value: 'My inv' } });
-    fireEvent.click(screen.getByRole('button', { name: /continue|continuar/i }));
-    fireEvent.click(screen.getByRole('button', { name: /crear sin referencias|create without refs/i }));
+    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), {
+      target: { value: 'My inv' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /crear inventario|create inventory action/i }));
 
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     expect(createInventoryFn).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'My inv', processing_mode: 'production', client_id: 'client-2' }),
     );
+    expect(mockUploadInventoryVisualReferences).not.toHaveBeenCalled();
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
   });
 
   it('does not send empty client_id when no client is selected', async () => {
     const { createInventoryFn } = renderDialog();
-    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), { target: { value: 'No client' } });
-    fireEvent.click(screen.getByRole('button', { name: /continue|continuar/i }));
-    fireEvent.click(screen.getByRole('button', { name: /crear sin referencias|create without refs/i }));
+    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), {
+      target: { value: 'No client' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /crear inventario|create inventory action/i }));
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     const payload = createInventoryFn.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(payload.client_id).toBeUndefined();
+    expect(mockUploadInventoryVisualReferences).not.toHaveBeenCalled();
   });
 
-  it('validates max 3 files and invalid mime type', async () => {
+  it('does not offer a second wizard step for reference images', () => {
     renderDialog();
-    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), { target: { value: 'My inv' } });
-    fireEvent.click(screen.getByRole('button', { name: /continue|continuar/i }));
-
-    const input = screen.getByLabelText(/elegir archivos|select files/i) as HTMLInputElement;
-    const bad = new File(['x'], 'doc.pdf', { type: 'application/pdf' });
-    fireEvent.change(input, { target: { files: [bad] } });
-    expect(screen.getByText(/solo se permiten|files type error/i)).toBeInTheDocument();
-
-    const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
-    const f2 = new File(['b'], 'b.png', { type: 'image/png' });
-    const f3 = new File(['c'], 'c.webp', { type: 'image/webp' });
-    const f4 = new File(['d'], 'd.jpg', { type: 'image/jpeg' });
-    fireEvent.change(input, { target: { files: [f1, f2, f3] } });
-    expect(screen.getByText('a.jpg')).toBeInTheDocument();
-    expect(screen.getByText('b.png')).toBeInTheDocument();
-    expect(screen.getByText('c.webp')).toBeInTheDocument();
-
-    fireEvent.change(input, { target: { files: [f4] } });
-    expect(screen.getByText(/como máximo|max files error/i)).toBeInTheDocument();
-  });
-
-  it('creates inventory then uploads references (in order)', async () => {
-    const { createInventoryFn, onSuccess } = renderDialog();
-    mockUpload.mockResolvedValue({ items: [] });
-
-    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), { target: { value: 'My inv' } });
-    fireEvent.click(screen.getByRole('button', { name: /continue|continuar/i }));
-
-    const input = screen.getByLabelText(/elegir archivos|select files/i) as HTMLInputElement;
-    const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
-    fireEvent.change(input, { target: { files: [f1] } });
-
-    expect(screen.getByRole('button', { name: /crear y subir|create and upload/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /crear y subir|create and upload/i }));
-
-    await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
-    expect(mockUpload).toHaveBeenCalledWith('inv-1', [f1]);
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
-  });
-
-  it('surfaces upload failure after inventory creation', async () => {
-    const { createInventoryFn, onError } = renderDialog();
-    mockUpload.mockRejectedValue(new Error('upload failed'));
-
-    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), { target: { value: 'My inv' } });
-    fireEvent.click(screen.getByRole('button', { name: /continue|continuar/i }));
-
-    const input = screen.getByLabelText(/elegir archivos|select files/i) as HTMLInputElement;
-    const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
-    fireEvent.change(input, { target: { files: [f1] } });
-
-    fireEvent.click(screen.getByRole('button', { name: /crear y subir|create and upload/i }));
-
-    await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
-    // Upload error surfaces inline + enables retry (inventory already created).
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /reintentar subida|retry upload/i })).toBeInTheDocument(),
-    );
-    // Partial failure should not bubble as a "create failed" page-level error.
-    expect(onError).not.toHaveBeenCalledWith(expect.stringMatching(/reference image upload failed/i));
-  });
-
-  it('after upload failure, retry does not create a second inventory', async () => {
-    const { createInventoryFn } = renderDialog();
-    mockUpload.mockRejectedValueOnce(new Error('upload failed'));
-    mockUpload.mockResolvedValueOnce({ items: [] });
-
-    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), { target: { value: 'My inv' } });
-    fireEvent.click(screen.getByRole('button', { name: /continue|continuar/i }));
-
-    const input = screen.getByLabelText(/elegir archivos|select files/i) as HTMLInputElement;
-    const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
-    fireEvent.change(input, { target: { files: [f1] } });
-
-    fireEvent.click(screen.getByRole('button', { name: /crear y subir|create and upload/i }));
-    await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /reintentar subida|retry upload/i })).toBeInTheDocument()
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /reintentar subida|retry upload/i }));
-    await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(2));
-    // Key assertion: inventory creation is NOT retriggered on retry.
-    expect(createInventoryFn).toHaveBeenCalledTimes(1);
-  });
-
-  it('revokes object URLs when removing and closing', async () => {
-    const { onClose } = renderDialog();
-
-    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), { target: { value: 'My inv' } });
-    fireEvent.click(screen.getByRole('button', { name: /continue|continuar/i }));
-
-    const input = screen.getByLabelText(/elegir archivos|select files/i) as HTMLInputElement;
-    const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
-    const f2 = new File(['b'], 'b.png', { type: 'image/png' });
-    fireEvent.change(input, { target: { files: [f1, f2] } });
-
-    // remove first file -> revoke its preview URL
-    fireEvent.click(screen.getAllByRole('button', { name: /quitar a\.jpg|remove file a11y/i })[0]);
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-1');
-
-    // close dialog -> revoke remaining preview URL
-    fireEvent.click(screen.getByRole('button', { name: /back|volver/i }));
-    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-2');
-  });
-
-  it('accepts drag-and-drop into dropzone', async () => {
-    renderDialog();
-    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), { target: { value: 'My inv' } });
-    fireEvent.click(screen.getByRole('button', { name: /continue|continuar/i }));
-
-    const dropzone = screen.getByRole('region', {
-      name: /zona para imágenes de referencia|reference dropzone/i,
+    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), {
+      target: { value: 'My inv' },
     });
-    const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
-    fireEvent.drop(dropzone, { dataTransfer: { files: [f1] } });
-    expect(screen.getByText('a.jpg')).toBeInTheDocument();
-    expect(screen.getByText(/1 \/ 3 archivos|selected ratio/i)).toBeInTheDocument();
-  });
-
-  it('Step 2 primary CTA label is context-aware', async () => {
-    renderDialog();
-    fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), { target: { value: 'My inv' } });
-    fireEvent.click(screen.getByRole('button', { name: /continue|continuar/i }));
-
-    // no selected files → Create inventory action
+    expect(screen.queryByRole('button', { name: /continue|continuar/i })).not.toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /^crear inventario$|^create inventory action$/i }),
-    ).toBeInTheDocument();
-
-    // select a file → Create inventory and upload references
-    const input = screen.getByLabelText(/elegir archivos|select files/i) as HTMLInputElement;
-    const f1 = new File(['a'], 'a.jpg', { type: 'image/jpeg' });
-    fireEvent.change(input, { target: { files: [f1] } });
-    expect(screen.getByRole('button', { name: /crear y subir|create and upload/i })).toBeInTheDocument();
+      screen.queryByRole('heading', { name: /referencias visuales|reference step title/i }),
+    ).not.toBeInTheDocument();
   });
 });
-

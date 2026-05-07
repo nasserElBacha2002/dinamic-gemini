@@ -9,18 +9,6 @@ import { AppSnackbarProvider } from '../src/components/ui';
 import type { ExecutionLogResponse } from '../src/api/types';
 import { downloadAisleExecutionLogTxt, downloadExecutionLogTxt } from '../src/api/client';
 
-const { useInventoryVisualReferencesMock } = vi.hoisted(() => ({
-  useInventoryVisualReferencesMock: vi.fn(),
-}));
-const { useUploadInventoryVisualReferencesMock } = vi.hoisted(() => ({
-  useUploadInventoryVisualReferencesMock: vi.fn(),
-}));
-const { useDeleteInventoryVisualReferenceMock } = vi.hoisted(() => ({
-  useDeleteInventoryVisualReferenceMock: vi.fn(),
-}));
-const { useReplaceInventoryVisualReferenceMock } = vi.hoisted(() => ({
-  useReplaceInventoryVisualReferenceMock: vi.fn(),
-}));
 const { useExecutionLogMock } = vi.hoisted(() => ({
   useExecutionLogMock: vi.fn(),
 }));
@@ -67,7 +55,6 @@ vi.mock('../src/hooks', async (importOriginal) => {
   return {
     ...actual,
     useInventoryDetail: () => inventoryDetailHookState,
-    useInventoryVisualReferences: useInventoryVisualReferencesMock,
     useAislesList: useAislesListMock,
     useAisleJobsList: useAisleJobsListMock,
     useExecutionLog: useExecutionLogMock,
@@ -79,9 +66,6 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useCancelAisleJob: useCancelAisleJobMock,
     useRetryAisleJob: useRetryAisleJobMock,
     useUploadAisleAssetsFlex: () => ({ mutateAsync: vi.fn() }),
-    useUploadInventoryVisualReferences: useUploadInventoryVisualReferencesMock,
-    useDeleteInventoryVisualReference: useDeleteInventoryVisualReferenceMock,
-    useReplaceInventoryVisualReference: useReplaceInventoryVisualReferenceMock,
   };
 });
 
@@ -145,18 +129,7 @@ function renderPageWithCompareRoute() {
 describe('InventoryDetail', () => {
   beforeEach(() => {
     inventoryDetailHookState.data.processing_mode = 'test';
-    useInventoryVisualReferencesMock.mockReset();
-    useInventoryVisualReferencesMock.mockReturnValue({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
     useAislesListMock.mockReset();
-    useUploadInventoryVisualReferencesMock.mockReset();
-    useDeleteInventoryVisualReferenceMock.mockReset();
-    useReplaceInventoryVisualReferenceMock.mockReset();
     useExecutionLogMock.mockReset();
     useAisleExecutionLogMock.mockReset();
     useAisleJobsListMock.mockReset();
@@ -194,27 +167,6 @@ describe('InventoryDetail', () => {
       isLoading: false,
       isError: false,
       error: null,
-    });
-    useUploadInventoryVisualReferencesMock.mockReturnValue({
-      mutateAsync: vi.fn(),
-      isPending: false,
-      isError: false,
-      error: null,
-      reset: vi.fn(),
-    });
-    useDeleteInventoryVisualReferenceMock.mockReturnValue({
-      mutateAsync: vi.fn(),
-      isPending: false,
-      isError: false,
-      error: null,
-      reset: vi.fn(),
-    });
-    useReplaceInventoryVisualReferenceMock.mockReturnValue({
-      mutateAsync: vi.fn(),
-      isPending: false,
-      isError: false,
-      error: null,
-      reset: vi.fn(),
     });
     useExecutionLogMock.mockReturnValue({
       data: emptyExecutionLog(),
@@ -278,69 +230,19 @@ describe('InventoryDetail', () => {
     });
   });
 
-  it('keeps reference images lazy until the drawer opens', () => {
-    useInventoryVisualReferencesMock.mockImplementation((_inventoryId, options) => ({
-      data: {
-        items: [
-          {
-            id: 'ref-1',
-            inventory_id: 'inv-1',
-            filename: 'front-pallet.jpg',
-            mime_type: 'image/jpeg',
-            file_size: 1024,
-            created_at: '2024-01-02T00:00:00Z',
-          },
-        ],
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-      enabled: options?.enabled,
-    }));
-
-    renderPage();
-
-    expect(useInventoryVisualReferencesMock).toHaveBeenCalled();
-    expect(useInventoryVisualReferencesMock.mock.calls[0]?.[1]).toMatchObject({ enabled: false });
-
-    fireEvent.click(screen.getByRole('button', { name: /visual refs title|referencias visuales/i }));
-
-    const lastCall = useInventoryVisualReferencesMock.mock.calls.at(-1);
-    expect(lastCall?.[1]).toMatchObject({ enabled: true });
-  });
-
-  it('keeps the page focused on header and aisles, with a header action for reference images', () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: {
-        items: [
-          {
-            id: 'ref-1',
-            inventory_id: 'inv-1',
-            filename: 'front-pallet.jpg',
-            mime_type: 'image/jpeg',
-            file_size: 1024,
-            created_at: '2024-01-02T00:00:00Z',
-          },
-        ],
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
-
+  it('does not expose legacy inventory-level reference image management on the inventory detail screen', () => {
     renderPage();
 
     expect(screen.getByRole('heading', { name: 'Inventory One' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /visual refs title|referencias visuales/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /visual refs title|referencias visuales/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/^(list title|pasillos)$/i)).toBeInTheDocument();
 
     expect(screen.queryByText('Total aisles')).not.toBeInTheDocument();
     expect(screen.queryByText('Review completion rate')).not.toBeInTheDocument();
     expect(screen.queryByText('Activity')).not.toBeInTheDocument();
     expect(screen.queryByText('Logs summary')).not.toBeInTheDocument();
-    expect(screen.queryByText('front-pallet.jpg')).not.toBeInTheDocument();
     expect(screen.queryByText(/Analytics & benchmarks/i)).not.toBeInTheDocument();
     expect(screen.getByTestId('inventory-header-compare-runs')).toBeInTheDocument();
   });
@@ -360,49 +262,7 @@ describe('InventoryDetail', () => {
     });
   });
 
-  it('opens the reference images drawer and renders inventory reference data there', () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: {
-        items: [
-          {
-            id: 'ref-1',
-            inventory_id: 'inv-1',
-            filename: 'front-pallet.jpg',
-            mime_type: 'image/jpeg',
-            file_size: 1024,
-            created_at: '2024-01-02T00:00:00Z',
-          },
-        ],
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
-
-    renderPage();
-
-    expect(screen.queryByText('front-pallet.jpg')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /visual refs title|referencias visuales/i }));
-
-    expect(screen.getByRole('heading', { name: /drawer title/i })).toBeInTheDocument();
-    expect(screen.getByText('front-pallet.jpg')).toBeInTheDocument();
-    expect(
-      screen.getByText(/management body/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/management title/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /close|cerrar/i })).toBeInTheDocument();
-  });
-
   it('loads observability queries only after opening the unified dialog (no polling)', async () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -672,13 +532,6 @@ describe('InventoryDetail', () => {
   });
 
   it('renders job metadata and execution log inside the unified observability dialog', async () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -787,13 +640,6 @@ describe('InventoryDetail', () => {
   });
 
   it('shows cancel for active jobs', async () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -859,13 +705,6 @@ describe('InventoryDetail', () => {
   });
 
   it('shows retry for retryable terminal jobs', async () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -940,13 +779,6 @@ describe('InventoryDetail', () => {
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
     });
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -1039,13 +871,6 @@ describe('InventoryDetail', () => {
       updated_at: '2024-01-01T00:00:00Z',
       attempt_count: 2,
     });
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -1147,13 +972,6 @@ describe('InventoryDetail', () => {
   });
 
   it('renders compact reference usage summaries in the aisles table while keeping the log as the detail path', () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -1227,13 +1045,6 @@ describe('InventoryDetail', () => {
   });
 
   it('shows a pending summary label when a queued or running job has no reference_usage yet', () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -1266,13 +1077,6 @@ describe('InventoryDetail', () => {
   });
 
   it('shows summary unavailable when a completed job has no reference_usage payload', () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
