@@ -6,6 +6,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   createInventory,
   createAisle,
+  createClient,
+  createClientSupplier,
   startAisleProcessing,
   cancelAisleJob,
   retryAisleJob,
@@ -18,7 +20,13 @@ import {
   submitReviewAction,
   promoteAisleOperationalJob,
 } from '../api/client';
-import type { CreateInventoryRequest, CreateAisleRequest, ReviewActionRequest } from '../api/types';
+import type {
+  CreateClientRequest,
+  CreateClientSupplierRequest,
+  CreateInventoryRequest,
+  CreateAisleRequest,
+  ReviewActionRequest,
+} from '../api/types';
 import { queryKeys } from '../api/queryKeys';
 import {
   applySubmitReviewActionCacheEffects,
@@ -33,6 +41,30 @@ export function useCreateInventory() {
     mutationFn: (body: CreateInventoryRequest) => createInventory(body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.list() });
+    },
+  });
+}
+
+export function useCreateClient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateClientRequest) => createClient(body),
+    onSuccess: (createdClient) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.clients.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.clients.detail(createdClient.id) });
+    },
+  });
+}
+
+export function useCreateClientSupplier(clientId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateClientSupplierRequest) => createClientSupplier(clientId, body),
+    onSuccess: (createdSupplier) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.clients.suppliers.all(clientId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.detail(clientId, createdSupplier.id),
+      });
     },
   });
 }
