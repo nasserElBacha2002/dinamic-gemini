@@ -13,6 +13,8 @@ export interface CreateInventoryRequest {
   name: string;
   /** Defaults to production (real operational mode). */
   processing_mode?: InventoryProcessingMode;
+  /** Optional association to a client; omitted/null preserves legacy behavior. */
+  client_id?: string | null;
 }
 
 export interface CreateAisleRequest {
