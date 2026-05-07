@@ -3,11 +3,19 @@ import { Button } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink } from 'react-router-dom';
 import type { Client } from '../api/types';
+import CreateClientDialog from '../components/CreateClientDialog';
 import { PageHeader } from '../components/shell';
-import { DataTable, ErrorAlert, SectionCard, StatusBadge, type DataTableColumn } from '../components/ui';
+import {
+  DataTable,
+  ErrorAlert,
+  SectionCard,
+  StatusBadge,
+  useAppSnackbar,
+  type DataTableColumn,
+} from '../components/ui';
 import { pathToClient } from '../constants/appRoutes';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
-import { useClients } from '../hooks';
+import { useClients, useCreateClient } from '../hooks';
 import { formatDate } from '../utils/formatDate';
 
 function clientStatusLabel(status: string, t: (key: string) => string): string {
@@ -20,6 +28,9 @@ function clientStatusSemantic(status: string): 'success' | 'neutral' {
 
 export default function ClientsList() {
   const { t } = useTranslation();
+  const { showSnackbar } = useAppSnackbar();
+  const createClientMutation = useCreateClient();
+  const [createOpen, setCreateOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
 
@@ -86,7 +97,7 @@ export default function ClientsList() {
       <PageHeader
         a11yTitle={t('clients.page.a11y')}
         actions={
-          <Button variant="contained" disabled title={t('clients.actions.create_disabled_hint')}>
+          <Button variant="contained" onClick={() => setCreateOpen(true)}>
             {t('clients.actions.create')}
           </Button>
         }
@@ -112,7 +123,7 @@ export default function ClientsList() {
               title: t('clients.list.empty_title'),
               message: t('clients.list.empty_description'),
               action: (
-                <Button variant="contained" disabled title={t('clients.actions.create_disabled_hint')}>
+                <Button variant="contained" onClick={() => setCreateOpen(true)}>
                   {t('clients.actions.create')}
                 </Button>
               ),
@@ -131,6 +142,19 @@ export default function ClientsList() {
           />
         </SectionCard>
       ) : null}
+
+      <CreateClientDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSuccess={() => {
+          showSnackbar(t('clients.dialogs.create.success'), 'success');
+        }}
+        onError={(msg) => {
+          if (!msg) return;
+          showSnackbar(msg, 'error');
+        }}
+        createClientFn={createClientMutation.mutateAsync}
+      />
     </>
   );
 }

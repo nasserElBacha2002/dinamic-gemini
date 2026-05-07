@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Box, Button, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink, useParams } from 'react-router-dom';
 import type { ClientSupplier } from '../api/types';
+import CreateClientSupplierDialog from '../components/CreateClientSupplierDialog';
 import { PageHeader } from '../components/shell';
 import {
   DataTable,
@@ -11,10 +12,11 @@ import {
   LoadingBlock,
   SectionCard,
   StatusBadge,
+  useAppSnackbar,
   type DataTableColumn,
 } from '../components/ui';
 import { ROUTE_CLIENTS } from '../constants/appRoutes';
-import { useClient, useClientSuppliers } from '../hooks';
+import { useClient, useClientSuppliers, useCreateClientSupplier } from '../hooks';
 import { formatDate } from '../utils/formatDate';
 
 function statusLabel(status: string, t: (key: string) => string): string {
@@ -27,8 +29,10 @@ function statusSemantic(status: string): 'success' | 'neutral' {
 
 export default function ClientDetail() {
   const { t } = useTranslation();
+  const { showSnackbar } = useAppSnackbar();
   const { clientId } = useParams<{ clientId: string }>();
   const safeClientId = (clientId ?? '').trim();
+  const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
 
   const invalidClientId = safeClientId === '';
 
@@ -36,6 +40,7 @@ export default function ClientDetail() {
   const suppliersQuery = useClientSuppliers(safeClientId || undefined, undefined, {
     enabled: !invalidClientId,
   });
+  const createSupplierMutation = useCreateClientSupplier(safeClientId);
 
   const supplierColumns = useMemo<DataTableColumn<ClientSupplier>[]>(
     () => [
@@ -121,7 +126,11 @@ export default function ClientDetail() {
           title={t('clients.suppliers.title')}
           subtitle={t('clients.suppliers.subtitle')}
           actions={
-            <Button variant="contained" disabled title={t('clients.suppliers.actions.create_disabled_hint')}>
+            <Button
+              variant="contained"
+              onClick={() => setCreateSupplierOpen(true)}
+              disabled={!safeClientId}
+            >
               {t('clients.suppliers.actions.create')}
             </Button>
           }
@@ -140,7 +149,11 @@ export default function ClientDetail() {
               title={t('clients.suppliers.empty_title')}
               message={t('clients.suppliers.empty_description')}
               action={
-                <Button variant="contained" disabled title={t('clients.suppliers.actions.create_disabled_hint')}>
+                <Button
+                  variant="contained"
+                  onClick={() => setCreateSupplierOpen(true)}
+                  disabled={!safeClientId}
+                >
                   {t('clients.suppliers.actions.create')}
                 </Button>
               }
@@ -155,6 +168,20 @@ export default function ClientDetail() {
           )}
         </SectionCard>
       ) : null}
+
+      <CreateClientSupplierDialog
+        open={createSupplierOpen}
+        clientId={safeClientId}
+        onClose={() => setCreateSupplierOpen(false)}
+        onSuccess={() => {
+          showSnackbar(t('clients.suppliers.dialogs.create.success'), 'success');
+        }}
+        onError={(msg) => {
+          if (!msg) return;
+          showSnackbar(msg, 'error');
+        }}
+        createClientSupplierFn={createSupplierMutation.mutateAsync}
+      />
     </>
   );
 }

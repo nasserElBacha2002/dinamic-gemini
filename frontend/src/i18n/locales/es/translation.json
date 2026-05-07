@@ -604,6 +604,21 @@
       "create_disabled_hint": "Disponible en la próxima etapa",
       "view_detail": "Ver detalle"
     },
+    "dialogs": {
+      "create": {
+        "title": "Crear cliente",
+        "subtitle": "Ingresá el nombre del cliente.",
+        "name_label": "Nombre del cliente",
+        "name_placeholder": "Ej: Cliente Norte",
+        "cancel": "Cancelar",
+        "submit": "Crear",
+        "submitting": "Creando...",
+        "success": "Cliente creado correctamente.",
+        "error": "No se pudo crear el cliente.",
+        "validation_name_required": "El nombre del cliente es obligatorio.",
+        "validation_name_max": "El nombre del cliente no puede superar los 255 caracteres."
+      }
+    },
     "common": {
       "no_information": "Sin información"
     },
@@ -637,6 +652,22 @@
       "actions": {
         "create": "Crear proveedor",
         "create_disabled_hint": "Disponible en la próxima etapa"
+      },
+      "dialogs": {
+        "create": {
+          "title": "Crear proveedor",
+          "subtitle": "Ingresá el nombre del proveedor.",
+          "name_label": "Nombre del proveedor",
+          "name_placeholder": "Ej: Proveedor Norte",
+          "cancel": "Cancelar",
+          "submit": "Crear",
+          "submitting": "Creando...",
+          "success": "Proveedor creado correctamente.",
+          "error": "No se pudo crear el proveedor.",
+          "validation_name_required": "El nombre del proveedor es obligatorio.",
+          "validation_name_max": "El nombre del proveedor no puede superar los 255 caracteres.",
+          "validation_client_required": "No se pudo determinar el cliente para crear el proveedor."
+        }
       }
     }
   },

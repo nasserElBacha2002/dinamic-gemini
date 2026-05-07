@@ -1,13 +1,15 @@
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import ClientsList from '../src/pages/ClientsList';
+import { AppSnackbarProvider } from '../src/components/ui';
 
-const { useClientsMock } = vi.hoisted(() => ({
+const { useClientsMock, useCreateClientMock } = vi.hoisted(() => ({
   useClientsMock: vi.fn(),
+  useCreateClientMock: vi.fn(),
 }));
 
 vi.mock('../src/hooks', async (importOriginal) => {
@@ -15,6 +17,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
   return {
     ...actual,
     useClients: useClientsMock,
+    useCreateClient: useCreateClientMock,
   };
 });
 
@@ -22,9 +25,11 @@ function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <ClientsList />
-      </MemoryRouter>
+      <AppSnackbarProvider>
+        <MemoryRouter>
+          <ClientsList />
+        </MemoryRouter>
+      </AppSnackbarProvider>
     </QueryClientProvider>
   );
 }
@@ -32,6 +37,8 @@ function renderPage() {
 describe('ClientsList page', () => {
   beforeEach(() => {
     useClientsMock.mockReset();
+    useCreateClientMock.mockReset();
+    useCreateClientMock.mockReturnValue({ mutateAsync: vi.fn() });
   });
 
   it('renders loading state', () => {
@@ -73,9 +80,54 @@ describe('ClientsList page', () => {
     renderPage();
     expect(screen.getByText(/todavía no hay clientes cargados/i)).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /crear cliente/i })).toHaveLength(2);
-    screen.getAllByRole('button', { name: /crear cliente/i }).forEach((button) => {
-      expect(button).toBeDisabled();
+  });
+
+  it('opens create dialog from clients page action', () => {
+    useClientsMock.mockReturnValue({
+      data: { items: [], page: 1, page_size: 25, total_items: 0, total_pages: 0 },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
     });
+
+    renderPage();
+    fireEvent.click(screen.getAllByRole('button', { name: /crear cliente/i })[0]);
+    expect(screen.getByRole('dialog', { name: /crear cliente/i })).toBeInTheDocument();
+  });
+
+  it('validates empty name in create client dialog', async () => {
+    useClientsMock.mockReturnValue({
+      data: { items: [], page: 1, page_size: 25, total_items: 0, total_pages: 0 },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+    fireEvent.click(screen.getAllByRole('button', { name: /crear cliente/i })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /^crear$/i }));
+    expect(await screen.findByText(/nombre del cliente es obligatorio/i)).toBeInTheDocument();
+  });
+
+  it('submits valid name through create mutation', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ id: 'client-2' });
+    useCreateClientMock.mockReturnValue({ mutateAsync });
+    useClientsMock.mockReturnValue({
+      data: { items: [], page: 1, page_size: 25, total_items: 0, total_pages: 0 },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+    fireEvent.click(screen.getAllByRole('button', { name: /crear cliente/i })[0]);
+    fireEvent.change(screen.getByLabelText(/nombre del cliente/i), { target: { value: 'Cliente Centro' } });
+    fireEvent.click(screen.getByRole('button', { name: /^crear$/i }));
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith({ name: 'Cliente Centro' }));
   });
 
   it('renders client rows when data exists', () => {
