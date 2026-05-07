@@ -38,6 +38,19 @@ Or use the root dev script to run backend + frontend together:
 ./dev.sh
 ```
 
+### Manual maintenance backfills
+
+Backfills are explicit one-shot commands and do not run automatically on API startup.
+
+```bash
+# A5: ensure legacy/default client + supplier and fill NULL links
+python -m src.backfill_legacy_client_supplier_defaults
+```
+
+This command is idempotent: it reuses existing legacy records when present, updates only
+`inventories.client_id IS NULL` and `aisles.client_supplier_id IS NULL`, prints before/after
+counts, and does not modify pipeline prompts/providers/models, assets, or frontend flows.
+
 ## Tests
 
 Create SQL Server test configuration (gitignored):
