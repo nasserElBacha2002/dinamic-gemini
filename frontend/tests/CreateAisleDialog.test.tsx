@@ -159,6 +159,7 @@ describe('CreateAisleDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /crear pasillo|create/i }));
 
     await waitFor(() => {
+      expect(createAisleFn).toHaveBeenCalledTimes(1);
       expect(createAisleFn).toHaveBeenCalledWith({ code: 'A1', client_supplier_id: 'sup-2' });
     });
   });
@@ -292,6 +293,7 @@ describe('CreateAisleDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /crear pasillo|create/i }));
 
     await waitFor(() => {
+      expect(createAisleFn).toHaveBeenCalledTimes(1);
       expect(createAisleFn).toHaveBeenCalledWith({ code: 'A1' });
     });
   });
