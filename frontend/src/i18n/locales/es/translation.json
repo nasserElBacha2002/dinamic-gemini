@@ -421,11 +421,19 @@
   "dialogs": {
     "aisle": {
       "create_another": "Crear otro",
+      "supplier_empty": "Este cliente todavía no tiene proveedores cargados.",
+      "supplier_helper": "Seleccioná el proveedor al que pertenece este pasillo.",
+      "supplier_label": "Proveedor",
+      "supplier_legacy_helper": "Este inventario no tiene cliente asociado. Podés crear el pasillo sin proveedor por ahora.",
+      "supplier_load_error": "No se pudieron cargar los proveedores del cliente.",
+      "supplier_loading": "Cargando proveedores del cliente...",
+      "supplier_none_option": "Seleccioná un proveedor",
       "success_created": "Pasillo {{code}} creado correctamente.",
       "validation_code_max": "El código no puede superar los 64 caracteres.",
       "validation_code_required": "Ingresá el código del pasillo.",
       "validation_duplicate": "Ya existe un pasillo con ese código.",
-      "validation_inventory_missing": "Falta el inventario asociado."
+      "validation_inventory_missing": "Falta el inventario asociado.",
+      "validation_supplier_required": "Seleccioná un proveedor para crear el pasillo."
     },
     "inventory": {
       "client_empty": "No hay clientes disponibles. Podés continuar sin cliente por ahora.",

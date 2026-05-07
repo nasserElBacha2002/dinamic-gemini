@@ -159,6 +159,7 @@ export interface AisleJobSummary {
 export interface Aisle {
   id: string;
   inventory_id: string;
+  client_supplier_id?: string | null;
   code: string;
   status: AisleStatus | string;
   created_at: string;

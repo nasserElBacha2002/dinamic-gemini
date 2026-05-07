@@ -19,6 +19,7 @@ export interface CreateInventoryRequest {
 
 export interface CreateAisleRequest {
   code: string;
+  client_supplier_id?: string | null;
 }
 
 export interface CreateClientRequest {
