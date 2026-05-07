@@ -12,14 +12,16 @@ from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
     InventoryRepository,
-    InventoryVisualReferenceRepository,
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
     SourceAssetRepository,
+    SupplierReferenceImageRepository,
 )
+from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
@@ -38,13 +40,23 @@ def _runner_build_pipeline_input(
     inventory_id: str,
 ):
     """Call runner input builder with the same ``run_id`` segment the executor uses in production."""
+    now = datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle(
+        id="aisle-pipeline-test",
+        inventory_id=inventory_id,
+        code="T",
+        status=AisleStatus.CREATED,
+        created_at=now,
+        updated_at=now,
+        client_supplier_id="sup-1" if analysis_context.visual_references else None,
+    )
     return ex._pipeline_runner.build_pipeline_input(
         assets,
         v3_base,
         job_dir,
         job_id,
         analysis_context=analysis_context,
-        inventory_id=inventory_id,
+        aisle=aisle,
         run_id="run",
         legacy_local_read_enabled=True,
     )
@@ -149,31 +161,42 @@ class _InventoryRepo(InventoryRepository):
         return [self._inventory]
 
 
-class _VisualRepo(InventoryVisualReferenceRepository):
-    def __init__(self, refs: Sequence[InventoryVisualReference]) -> None:
+class _SupplierRepo(SupplierReferenceImageRepository):
+    def __init__(self, refs: Sequence[SupplierReferenceImage]) -> None:
         self._refs = list(refs)
 
-    def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
-        return next((r for r in self._refs if r.id == reference_id), None)
+    def get_by_id(self, reference_image_id: str) -> SupplierReferenceImage | None:
+        return next((r for r in self._refs if r.id == reference_image_id), None)
 
-    def create(self, reference: InventoryVisualReference) -> None:
-        self._refs.append(reference)
+    def create(self, reference_image: SupplierReferenceImage) -> None:
+        self._refs.append(reference_image)
 
-    def create_many(self, references: Sequence[InventoryVisualReference]) -> None:
-        self._refs.extend(references)
+    def create_many(self, reference_images: Sequence[SupplierReferenceImage]) -> None:
+        self._refs.extend(reference_images)
 
-    def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
-        return [r for r in self._refs if r.inventory_id == inventory_id]
+    def list_by_supplier(self, client_supplier_id: str) -> Sequence[SupplierReferenceImage]:
+        out = [r for r in self._refs if r.client_supplier_id == client_supplier_id]
+        out.sort(key=lambda r: (r.created_at, r.id))
+        return out
 
-    def update(self, reference: InventoryVisualReference) -> None:
-        for i, existing in enumerate(self._refs):
-            if existing.id == reference.id:
-                self._refs[i] = reference
-                return
-        raise KeyError(reference.id)
+    def delete(self, reference_image_id: str) -> None:
+        self._refs = [r for r in self._refs if r.id != reference_image_id]
 
-    def delete(self, reference_id: str) -> None:
-        self._refs = [r for r in self._refs if r.id != reference_id]
+
+def _iv_to_supplier(r: InventoryVisualReference, supplier_id: str = "sup-1") -> SupplierReferenceImage:
+    return SupplierReferenceImage(
+        id=r.id,
+        client_supplier_id=supplier_id,
+        filename=r.filename,
+        storage_path=r.storage_path,
+        mime_type=r.mime_type,
+        file_size=r.file_size,
+        created_at=r.created_at,
+        updated_at=r.created_at,
+        storage_provider=r.storage_provider,
+        storage_bucket=r.storage_bucket,
+        storage_key=r.storage_key,
+    )
 
 
 class _FakeArtifactStore:
@@ -205,6 +228,7 @@ class _FakeArtifactStore:
 def _executor(
     tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store
 ) -> V3JobExecutor:
+    supplier_rows = [_iv_to_supplier(r, "sup-1") for r in visual_refs]
     return V3JobExecutor(
         job_repo=_NoopJobRepo(),
         aisle_repo=_NoopAisleRepo(),
@@ -222,7 +246,7 @@ def _executor(
                 updated_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
             )
         ),
-        inventory_visual_reference_repo=_VisualRepo(visual_refs),
+        supplier_reference_image_repo=_SupplierRepo(supplier_rows),
         artifact_store=artifact_store,
     )
 

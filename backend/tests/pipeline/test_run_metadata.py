@@ -241,3 +241,18 @@ def test_build_visual_reference_context_analysis_context_instance_with_refs_and_
     assert block["reference_ids"] == ["ctx-r1"]
     assert block["resolved_count"] == 1
     assert block["provider_consumed"] is True
+
+
+def test_build_visual_reference_context_sets_reference_source_for_supplier_role() -> None:
+    ac = _minimal_analysis_context(
+        visual_refs=[
+            VisualReferenceContext(
+                reference_id="sr-1",
+                source_path="suppliers/sup/refs/a.jpg",
+                mime_type="image/jpeg",
+                role="supplier_reference",
+            ),
+        ],
+    )
+    block = build_visual_reference_context(ac, provider_metadata=None)
+    assert block.get("reference_source") == "supplier_reference_images"

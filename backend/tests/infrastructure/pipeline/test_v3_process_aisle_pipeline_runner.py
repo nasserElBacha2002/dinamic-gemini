@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.application.services.aisle_analysis_context_builder import AisleAnalysisContextBuilder
+from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
@@ -26,9 +27,22 @@ from src.pipeline.contracts.analysis_context import (
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
 
 
+def _aisle(*, inv: str = "inv-1", supplier_id: str | None = None) -> Aisle:
+    now = datetime.now(timezone.utc)
+    return Aisle(
+        id="aisle-1",
+        inventory_id=inv,
+        code="A01",
+        status=AisleStatus.CREATED,
+        created_at=now,
+        updated_at=now,
+        client_supplier_id=supplier_id,
+    )
+
+
 def test_build_pipeline_input_rejects_multi_video_or_mixed_video_sets() -> None:
     runner = V3ProcessAislePipelineRunner(
-        inventory_visual_reference_repo=MagicMock(),
+        supplier_reference_image_repo=MagicMock(),
         artifact_store=None,
         context_builder=MagicMock(spec=AisleAnalysisContextBuilder),
     )
@@ -58,7 +72,7 @@ def test_build_pipeline_input_rejects_multi_video_or_mixed_video_sets() -> None:
             Path("/tmp/job"),
             "job-1",
             analysis_context=ctx,
-            inventory_id="inv-1",
+            aisle=_aisle(),
             run_id="run",
             legacy_local_read_enabled=True,
         )
@@ -79,12 +93,12 @@ def test_build_pipeline_input_photos_writes_manifest_and_job_input(tmp_path: Pat
         uploaded_at=now,
     )
     ref_repo = MagicMock()
-    ref_repo.list_by_inventory.return_value = []
+    ref_repo.list_by_supplier.return_value = []
     cb = MagicMock(spec=AisleAnalysisContextBuilder)
     ac = AnalysisContext(primary_evidence=[], visual_references=[], instructions=[])
     cb.build.return_value = ac
     runner = V3ProcessAislePipelineRunner(
-        inventory_visual_reference_repo=ref_repo,
+        supplier_reference_image_repo=ref_repo,
         artifact_store=None,
         context_builder=cb,
     )
@@ -96,7 +110,7 @@ def test_build_pipeline_input_photos_writes_manifest_and_job_input(tmp_path: Pat
         job_dir,
         "job-1",
         analysis_context=ac,
-        inventory_id="inv-1",
+        aisle=_aisle(supplier_id=None),
         run_id="run",
         legacy_local_read_enabled=True,
     )
@@ -151,7 +165,7 @@ def test_resolve_visual_reference_paths_sets_resolved_path_from_resolver(tmp_pat
 
 def test_run_hybrid_pipeline_delegates_to_process_video_with_executor_kwds() -> None:
     runner = V3ProcessAislePipelineRunner(
-        inventory_visual_reference_repo=MagicMock(),
+        supplier_reference_image_repo=MagicMock(),
         artifact_store=None,
         context_builder=MagicMock(),
     )

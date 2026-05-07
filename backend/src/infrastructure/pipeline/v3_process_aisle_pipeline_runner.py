@@ -14,13 +14,15 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from src.application.ports.repositories import InventoryVisualReferenceRepository
+from src.application.ports.repositories import SupplierReferenceImageRepository
 from src.application.services.aisle_analysis_context_builder import AisleAnalysisContextBuilder
 from src.config import Settings
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset, SourceAssetType
-from src.domain.inventory.visual_reference import InventoryVisualReference
-from src.infrastructure.pipeline.input_artifact_resolver import WorkerInputArtifactResolver
+from src.infrastructure.pipeline.input_artifact_resolver import (
+    ReferenceImageRecord,
+    WorkerInputArtifactResolver,
+)
 from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import (
     AnalysisContext,
@@ -64,7 +66,7 @@ def resolve_visual_reference_paths(
     ctx: AnalysisContext,
     *,
     resolver: WorkerInputArtifactResolver,
-    references_by_id: dict[str, InventoryVisualReference],
+    references_by_id: dict[str, ReferenceImageRecord],
     target_dir: Path,
 ) -> AnalysisContext:
     """Return AnalysisContext with provider/local resolved temp paths for visual references."""
@@ -104,21 +106,20 @@ class V3ProcessAislePipelineRunner:
     def __init__(
         self,
         *,
-        inventory_visual_reference_repo: InventoryVisualReferenceRepository,
+        supplier_reference_image_repo: SupplierReferenceImageRepository,
         # Runtime accepts ArtifactStore adapters and lightweight test doubles (not always ArtifactStore ABC).
         artifact_store: Any | None,
         context_builder: AisleAnalysisContextBuilder,
     ) -> None:
-        self._inventory_visual_reference_repo = inventory_visual_reference_repo
+        self._supplier_reference_image_repo = supplier_reference_image_repo
         self._artifact_store = artifact_store
         self._context_builder = context_builder
 
     def build_analysis_context(self, aisle: Aisle) -> AnalysisContext:
-        """Construct AnalysisContext for this aisle's inventory. Primary evidence left empty in v3.2.4."""
-        inventory_id = aisle.inventory_id
+        """Construct AnalysisContext for this aisle (supplier-linked visual references). Primary evidence empty."""
         primary: list[AnalysisImage] = []
         return self._context_builder.build(
-            inventory_id=inventory_id,
+            aisle=aisle,
             primary_evidence=primary,
             metadata=None,
         )
@@ -131,7 +132,7 @@ class V3ProcessAislePipelineRunner:
         job_id: str,
         *,
         analysis_context: AnalysisContext,
-        inventory_id: str,
+        aisle: Aisle,
         run_id: str,
         legacy_local_read_enabled: bool,
     ) -> tuple[JobInput, str]:
@@ -153,8 +154,13 @@ class V3ProcessAislePipelineRunner:
                 "Invalid aisle assets: videos must be uploaded/processed as a single video asset; "
                 "mixed or multi-video sets are not supported in photos normalization flow."
             )
-        refs = self._inventory_visual_reference_repo.list_by_inventory(inventory_id)
-        refs_by_id = {r.id: r for r in refs}
+        supplier_id = (aisle.client_supplier_id or "").strip()
+        refs = (
+            list(self._supplier_reference_image_repo.list_by_supplier(supplier_id))
+            if supplier_id
+            else []
+        )
+        refs_by_id: dict[str, ReferenceImageRecord] = {r.id: r for r in refs}
         resolved_ctx = resolve_visual_reference_paths(
             analysis_context,
             resolver=resolver,

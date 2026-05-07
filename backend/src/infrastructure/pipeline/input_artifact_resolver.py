@@ -2,11 +2,23 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Protocol
 
 from src.domain.assets.entities import SourceAsset
-from src.domain.inventory.visual_reference import InventoryVisualReference
 
 logger = logging.getLogger(__name__)
+
+
+class ReferenceImageRecord(Protocol):
+    """Duck-typed storage row for inventory or supplier reference images (artifact resolution)."""
+
+    id: str
+    storage_path: str
+    storage_provider: str | None
+    storage_bucket: str | None
+    storage_key: str | None
+    filename: str
+    mime_type: str
 
 
 class WorkerInputArtifactResolver:
@@ -149,7 +161,7 @@ class WorkerInputArtifactResolver:
         self,
         reference_id: str,
         *,
-        reference_record: InventoryVisualReference | None,
+        reference_record: ReferenceImageRecord | None,
         source_path: str,
         target_path: Path,
     ) -> Path:

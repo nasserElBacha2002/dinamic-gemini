@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from datetime import datetime, timezone
-from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -20,24 +19,22 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     RawLabelRepository,
     SourceAssetRepository,
+    SupplierReferenceImageRepository,
 )
 from src.application.services.aisle_analysis_context_builder import AisleAnalysisContextBuilder
-from src.application.services.inventory_visual_reference_resolver import (
-    InventoryVisualReferenceResolver,
-)
-from src.application.use_cases.manage_inventory_visual_references import (
-    DeleteInventoryVisualReferenceUseCase,
-)
-from src.application.use_cases.upload_inventory_visual_references import (
-    UploadedVisualReferenceFile,
-    UploadInventoryVisualReferencesUseCase,
+from src.application.services.supplier_reference_image_resolver import (
+    SupplierReferenceImageResolver,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID, V3JobExecutor
+from src.infrastructure.repositories.memory_supplier_reference_image_repository import (
+    MemorySupplierReferenceImageRepository,
+)
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 from src.jobs.models import JobInput
 from src.pipeline.context.run_context import RunContext
@@ -106,7 +103,7 @@ class NoopRepo(
     RawLabelRepository,
     SourceAssetRepository,
     InventoryRepository,
-    InventoryVisualReferenceRepository,
+    SupplierReferenceImageRepository,
 ):
     def save(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         pass
@@ -161,6 +158,9 @@ class NoopRepo(
 
     def delete(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         pass
+
+    def list_by_supplier(self, client_supplier_id: str):  # type: ignore[override]
+        return []
 
     def summarize_assets_for_aisles(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         return {}
@@ -280,7 +280,7 @@ def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
     report_path = Path("/tmp/run/hybrid_report.json")
@@ -336,7 +336,7 @@ def test_mark_success_clears_stale_aisle_error_fields_after_previous_failure() -
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
     executor._state.mark_success(
@@ -398,7 +398,7 @@ def test_mark_success_sets_operational_job_id_for_production_inventory() -> None
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=inv_repo,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
     executor._state.mark_success(
@@ -458,7 +458,7 @@ def test_mark_success_overwrites_operational_job_id_on_subsequent_production_run
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=inv_repo,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
     executor._state.mark_success(
@@ -516,7 +516,7 @@ def test_mark_success_does_not_set_operational_job_id_for_test_inventory() -> No
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=inv_repo,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
     executor._state.mark_success(
@@ -575,7 +575,7 @@ def test_failed_job_does_not_update_operational_job_id() -> None:
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=inv_repo,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
     executor._state.fail_job_and_aisle("j-fail-1", aisle, "boom")
@@ -620,7 +620,7 @@ def test_mark_running_transitions_starting_job_to_running() -> None:
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
 
@@ -664,7 +664,7 @@ def test_update_runtime_status_only_resets_step_started_at_when_stage_or_substep
         evidence_repo=noop,
         clock=clock,
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
 
@@ -713,7 +713,7 @@ def test_heartbeat_reads_job_once_and_updates_timestamp() -> None:
         evidence_repo=noop,
         clock=clock,
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
 
@@ -759,7 +759,7 @@ def test_mark_success_persists_provider_and_prompt_key_in_result_json() -> None:
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
     run_metadata = {
@@ -818,7 +818,7 @@ def test_mark_success_with_run_metadata_merges_into_result_json() -> None:
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
 
@@ -908,7 +908,7 @@ def test_execute_persists_visual_reference_context_when_resolution_fails_before_
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
 
@@ -978,6 +978,7 @@ def test_execute_passes_resolved_visual_reference_context_to_pipeline(tmp_path: 
         status=AisleStatus.CREATED,
         created_at=now,
         updated_at=now,
+        client_supplier_id="sup-1",
     )
     aisle_repo = InMemoryAisleRepo()
     aisle_repo.save(aisle)
@@ -992,17 +993,19 @@ def test_execute_passes_resolved_visual_reference_context_to_pipeline(tmp_path: 
             updated_at=now,
         )
     )
-    reference_repo = InMemoryVisualReferenceRepo()
-    reference = InventoryVisualReference(
-        id="ref-1",
-        inventory_id=inventory_id,
-        filename="ref.jpg",
-        storage_path="inventories/inv-1/visual_references/ref.jpg",
-        mime_type="image/jpeg",
-        file_size=7,
-        created_at=now,
+    supplier_ref_repo = MemorySupplierReferenceImageRepository()
+    supplier_ref_repo.create(
+        SupplierReferenceImage(
+            id="ref-1",
+            client_supplier_id="sup-1",
+            filename="ref.jpg",
+            storage_path="inventories/inv-1/visual_references/ref.jpg",
+            mime_type="image/jpeg",
+            file_size=7,
+            created_at=now,
+            updated_at=now,
+        )
     )
-    reference_repo.create(reference)
 
     class AssetRepoWithOnePhoto:
         def list_by_aisle(self, aid: str):
@@ -1030,7 +1033,7 @@ def test_execute_passes_resolved_visual_reference_context_to_pipeline(tmp_path: 
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=inventory_repo,
-        inventory_visual_reference_repo=reference_repo,
+        supplier_reference_image_repo=supplier_ref_repo,
         artifact_store=StubArtifactStorage(),
         raw_label_repo=noop,
     )
@@ -1049,6 +1052,7 @@ def test_execute_passes_resolved_visual_reference_context_to_pipeline(tmp_path: 
                 reference_id="ref-1",
                 source_path="inventories/inv-1/visual_references/ref.jpg",
                 mime_type="image/jpeg",
+                role="supplier_reference",
             )
         ],
         instructions=["Use references as context."],
@@ -1092,28 +1096,32 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
             updated_at=now,
         )
     )
-    reference_repo = InMemoryVisualReferenceRepo()
-    artifact_storage = StubArtifactStorage()
-    upload_use_case = UploadInventoryVisualReferencesUseCase(
-        inventory_repo=inventory_repo,
-        reference_repo=reference_repo,
-        artifact_storage=artifact_storage,
-        clock=clock,
+    supplier_repo = MemorySupplierReferenceImageRepository()
+    refs_a = SupplierReferenceImage(
+        id="ref-a",
+        client_supplier_id="sup-1",
+        filename="front-a.jpg",
+        storage_path="sup/front-a.jpg",
+        mime_type="image/jpeg",
+        file_size=7,
+        created_at=now,
+        updated_at=now,
     )
-    delete_use_case = DeleteInventoryVisualReferenceUseCase(
-        inventory_repo=inventory_repo,
-        reference_repo=reference_repo,
-        artifact_storage=artifact_storage,
-    )
-    resolver = InventoryVisualReferenceResolver(inventory_repo, reference_repo)
+    supplier_repo.create(refs_a)
+    resolver = SupplierReferenceImageResolver(supplier_repo)
     context_builder = AisleAnalysisContextBuilder(resolver)
 
-    refs_a = upload_use_case.execute(
-        "inv-1",
-        [UploadedVisualReferenceFile("front-a.jpg", BytesIO(b"image-a"), "image/jpeg", size=7)],
+    aisle_for_ctx = Aisle(
+        id="aisle-1",
+        inventory_id="inv-1",
+        code="A01",
+        status=AisleStatus.PROCESSED,
+        created_at=now,
+        updated_at=now,
+        client_supplier_id="sup-1",
     )
-    ctx_a = context_builder.build(inventory_id="inv-1", primary_evidence=[], metadata=None)
-    assert [ref.reference_id for ref in ctx_a.visual_references] == [refs_a[0].id]
+    ctx_a = context_builder.build(aisle=aisle_for_ctx, primary_evidence=[], metadata=None)
+    assert [ref.reference_id for ref in ctx_a.visual_references] == [refs_a.id]
     run_metadata_a = build_run_metadata(
         ctx_a,
         {
@@ -1124,15 +1132,7 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
 
     job_repo = InMemoryJobRepo()
     aisle_repo = InMemoryAisleRepo()
-    aisle = Aisle(
-        id="aisle-1",
-        inventory_id="inv-1",
-        code="A01",
-        status=AisleStatus.PROCESSED,
-        created_at=now,
-        updated_at=now,
-    )
-    aisle_repo.save(aisle)
+    aisle_repo.save(aisle_for_ctx)
     job_a = Job(
         id="job-a",
         target_type="aisle",
@@ -1153,20 +1153,27 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
         evidence_repo=NoopRepo(),
         clock=clock,
         inventory_repo=inventory_repo,
-        inventory_visual_reference_repo=reference_repo,
+        supplier_reference_image_repo=supplier_repo,
         raw_label_repo=NoopRepo(),
     )
     executor._state.mark_success(
-        "job-a", aisle, Path("/tmp/run-a/hybrid_report.json"), run_metadata=run_metadata_a
+        "job-a", aisle_for_ctx, Path("/tmp/run-a/hybrid_report.json"), run_metadata=run_metadata_a
     )
 
-    delete_use_case.execute("inv-1", refs_a[0].id)
-    refs_b = upload_use_case.execute(
-        "inv-1",
-        [UploadedVisualReferenceFile("front-b.png", BytesIO(b"image-b"), "image/png", size=7)],
+    supplier_repo.delete(refs_a.id)
+    refs_b = SupplierReferenceImage(
+        id="ref-b",
+        client_supplier_id="sup-1",
+        filename="front-b.png",
+        storage_path="sup/front-b.png",
+        mime_type="image/png",
+        file_size=7,
+        created_at=now,
+        updated_at=now,
     )
-    ctx_b = context_builder.build(inventory_id="inv-1", primary_evidence=[], metadata=None)
-    assert [ref.reference_id for ref in ctx_b.visual_references] == [refs_b[0].id]
+    supplier_repo.create(refs_b)
+    ctx_b = context_builder.build(aisle=aisle_for_ctx, primary_evidence=[], metadata=None)
+    assert [ref.reference_id for ref in ctx_b.visual_references] == [refs_b.id]
     run_metadata_b = build_run_metadata(
         ctx_b,
         {
@@ -1187,7 +1194,7 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
     )
     job_repo.save(job_b)
     executor._state.mark_success(
-        "job-b", aisle, Path("/tmp/run-b/hybrid_report.json"), run_metadata=run_metadata_b
+        "job-b", aisle_for_ctx, Path("/tmp/run-b/hybrid_report.json"), run_metadata=run_metadata_b
     )
 
     stored_job_a = job_repo.get_by_id("job-a")
@@ -1199,12 +1206,12 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
 
     vrc_a = stored_job_a.result_json[RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT]
     vrc_b = stored_job_b.result_json[RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT]
-    assert vrc_a["reference_ids"] == [refs_a[0].id]
-    assert vrc_b["reference_ids"] == [refs_b[0].id]
-    assert refs_a[0].id != refs_b[0].id
+    assert vrc_a["reference_ids"] == [refs_a.id]
+    assert vrc_b["reference_ids"] == [refs_b.id]
+    assert refs_a.id != refs_b.id
     assert vrc_a["provider_consumed_count"] == 1
     assert vrc_b["provider_consumed_count"] == 1
-    assert [ref.id for ref in reference_repo.list_by_inventory("inv-1")] == [refs_b[0].id]
+    assert [img.id for img in supplier_repo.list_by_supplier("sup-1")] == [refs_b.id]
 
 
 def test_persist_failure_sets_error_message_with_persist_prefix() -> None:
@@ -1262,7 +1269,7 @@ def test_persist_failure_sets_error_message_with_persist_prefix() -> None:
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
 
@@ -1370,7 +1377,7 @@ def test_execute_rejects_running_status_reentry() -> None:
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
         artifact_store=artifact_store,
     )
@@ -1472,7 +1479,7 @@ def test_execute_cooperatively_cancels_when_cancel_requested_detected(tmp_path: 
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
         artifact_store=artifact_store,
     )
@@ -1619,7 +1626,7 @@ def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
         artifact_store=artifact_store,
     )
@@ -1736,7 +1743,7 @@ def test_execute_durable_upload_failure_after_persist_partial_finalization_expli
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
         artifact_store=artifact_store,
     )
@@ -1856,7 +1863,7 @@ def test_execute_rejects_mixed_video_and_photo_assets() -> None:
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=noop,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         raw_label_repo=noop,
     )
 
