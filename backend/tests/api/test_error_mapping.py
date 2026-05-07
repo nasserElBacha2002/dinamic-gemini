@@ -13,6 +13,7 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
     HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
     HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
+    HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
 )
 from src.api.dependencies import (
     get_compare_aisle_runs_use_case,
@@ -55,6 +56,7 @@ from src.api.errors.structured_api_http import (
     JOB_PROMOTION_NOT_ALLOWED,
     POSITION_NOT_FOUND,
     PRODUCT_NOT_FOUND,
+    SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
     UNSUPPORTED_ASSET_TYPE,
     VISUAL_REFERENCE_NOT_FOUND,
     ZERO_BYTE_FILE,
@@ -89,6 +91,7 @@ from src.application.errors import (
     NoSourceAssetsForAisleProcessingError,
     PositionNotFoundError,
     ProductNotFoundError,
+    SupplierReferenceImageNotFoundError,
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
@@ -206,6 +209,11 @@ def test_mapped_inventory_not_found() -> None:
             InventoryVisualReferenceNotFoundError(),
             "Visual reference not found",
             VISUAL_REFERENCE_NOT_FOUND,
+        ),
+        (
+            SupplierReferenceImageNotFoundError(),
+            HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
+            SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
         ),
     ],
 )
@@ -384,6 +392,12 @@ def test_mapped_job_promotion_not_allowed_non_canonical_detail_is_generic() -> N
             404,
             VISUAL_REFERENCE_NOT_FOUND,
             "Visual reference not found",
+        ),
+        (
+            SupplierReferenceImageNotFoundError(),
+            404,
+            SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
+            HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
         ),
         (JobNotFoundError("Job not found: z1"), 404, JOB_NOT_FOUND, "Job not found: z1"),
         (

@@ -90,6 +90,7 @@ from src.application.use_cases.manage_inventory_visual_references import (
 )
 from src.application.use_cases.manage_supplier_reference_images import (
     DeleteSupplierReferenceImageUseCase,
+    GetSupplierReferenceImageUseCase,
 )
 from src.application.use_cases.mark_position_image_mismatch import MarkPositionImageMismatchUseCase
 from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
@@ -581,6 +582,20 @@ def get_list_supplier_reference_images_use_case(
     ),
 ) -> ListSupplierReferenceImagesUseCase:
     return ListSupplierReferenceImagesUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        reference_repo=reference_repo,
+    )
+
+
+def get_get_supplier_reference_image_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    reference_repo: SupplierReferenceImageRepository = Depends(
+        get_supplier_reference_image_repo
+    ),
+) -> GetSupplierReferenceImageUseCase:
+    return GetSupplierReferenceImageUseCase(
         client_repo=client_repo,
         client_supplier_repo=client_supplier_repo,
         reference_repo=reference_repo,

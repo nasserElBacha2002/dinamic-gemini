@@ -9,10 +9,12 @@ import pytest
 from fastapi.testclient import TestClient
 from passlib.context import CryptContext
 
+import src.config as config_module
 from src.api.dependencies import get_artifact_storage
 from src.api.server import app
-from src.config import reload_settings
+from src.config import AppSettings, reload_settings
 from src.infrastructure.storage.artifact_store import StoredArtifact
+from src.runtime.app_container import reset_app_container_for_tests
 
 client = TestClient(app)
 
@@ -323,7 +325,9 @@ def test_visual_reference_file_endpoint_falls_back_to_local_when_legacy_enabled(
     monkeypatch.setenv("ARTIFACT_STORAGE_PROVIDER", "local")
     monkeypatch.setenv("ARTIFACT_STORAGE_LEGACY_LOCAL_READ_ENABLED", "true")
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
-    reload_settings()
+    # Avoid reload_settings(): dotenv reload can restore OUTPUT_DIR from .env; refresh cached settings + container.
+    config_module._settings = AppSettings()
+    reset_app_container_for_tests()
     inventory_id = _create_inventory()
     files = [("files", ("ref1.jpg", BytesIO(b"jpeg-data"), "image/jpeg"))]
     upload_resp = client.post(
@@ -352,3 +356,4 @@ def test_visual_reference_file_endpoint_falls_back_to_local_when_legacy_enabled(
         monkeypatch.delenv("ARTIFACT_STORAGE_LEGACY_LOCAL_READ_ENABLED", raising=False)
         monkeypatch.delenv("OUTPUT_DIR", raising=False)
         reload_settings()
+        reset_app_container_for_tests()

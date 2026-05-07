@@ -385,6 +385,15 @@ def resolve_visual_reference_file_response(
     )
 
 
+def resolve_supplier_reference_image_file_response(
+    image: Any,
+    *,
+    artifact_store: Any,
+) -> Response:
+    """Serve a SupplierReferenceImage using the same provider / legacy rules as visual references."""
+    return resolve_visual_reference_file_response(image, artifact_store=artifact_store)
+
+
 def read_execution_log_events_for_job(
     job: Any,
     *,
