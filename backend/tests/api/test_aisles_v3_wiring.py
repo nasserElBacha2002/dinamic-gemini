@@ -98,6 +98,7 @@ def test_post_aisle_returns_201_and_entity() -> None:
     assert data["inventory_id"] == inv_id
     assert data["code"] == "A-01"
     assert data["status"] == "created"
+    assert data["client_supplier_id"] is None
     assert "created_at" in data
 
 
@@ -112,6 +113,7 @@ def test_get_aisles_returns_list_and_includes_created() -> None:
     data = response.json()
     items = data["items"]
     assert isinstance(items, list)
+    assert items[0]["client_supplier_id"] is None
     codes = [a["code"] for a in items]
     assert "B-01" in codes
 

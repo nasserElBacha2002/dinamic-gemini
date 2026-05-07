@@ -81,6 +81,7 @@ def test_create_aisle_persists_and_returns_entity() -> None:
     assert result.code == "A-01"
     assert result.status == AisleStatus.CREATED
     assert result.created_at == now
+    assert result.client_supplier_id is None
     assert aisle_repo.get_by_id(result.id) == result
     assert len(aisle_repo.list_by_inventory("inv-1")) == 1
     updated_inv = inv_repo.get_by_id("inv-1")

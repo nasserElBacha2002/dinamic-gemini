@@ -352,6 +352,23 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_aisles_operational_job
     CREATE INDEX IX_aisles_operational_job_id ON aisles(operational_job_id);
 GO
 
+-- Phase A4 — aisles.client_supplier_id (nullable foundation only).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('aisles') AND name = 'client_supplier_id')
+    ALTER TABLE aisles ADD client_supplier_id VARCHAR(36) NULL;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.foreign_keys WHERE name = 'FK_aisles_client_supplier'
+)
+BEGIN
+    ALTER TABLE aisles
+    ADD CONSTRAINT FK_aisles_client_supplier
+    FOREIGN KEY (client_supplier_id) REFERENCES client_suppliers(id);
+END;
+GO
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_aisles_client_supplier_id' AND object_id = OBJECT_ID('aisles'))
+    CREATE INDEX IX_aisles_client_supplier_id ON aisles(client_supplier_id);
+GO
+
 -- v3.0 — Source assets (Épica 4, Documento técnico §7.3)
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'source_assets')
 BEGIN
