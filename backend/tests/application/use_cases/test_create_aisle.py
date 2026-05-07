@@ -230,6 +230,35 @@ def test_create_aisle_with_valid_supplier_persists_client_supplier_id() -> None:
     assert result.client_supplier_id == "sup-1"
 
 
+def test_create_aisle_normalizes_client_supplier_id_before_lookup_and_persist() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.DRAFT, now, now, client_id="client-1")
+    supplier = ClientSupplier(
+        id="sup-1",
+        client_id="client-1",
+        name="Supplier A",
+        status=ClientSupplierStatus.ACTIVE,
+        created_at=now,
+        updated_at=now,
+    )
+    inv_repo = StubInventoryRepo([inv])
+    aisle_repo = StubAisleRepo()
+    supplier_repo = StubClientSupplierRepo([supplier])
+    reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, FixedClock(now))
+    use_case = CreateAisleUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        client_supplier_repo=supplier_repo,
+        clock=FixedClock(now),
+        status_reconciler=reconciler,
+    )
+
+    result = use_case.execute(
+        CreateAisleCommand(inventory_id="inv-1", code="A-03-N", client_supplier_id=" sup-1 ")
+    )
+    assert result.client_supplier_id == "sup-1"
+
+
 def test_create_aisle_with_missing_supplier_raises_not_found() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     inv = Inventory("inv-1", "Warehouse", InventoryStatus.DRAFT, now, now, client_id="client-1")

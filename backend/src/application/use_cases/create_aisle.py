@@ -60,7 +60,11 @@ class CreateAisleUseCase:
             raise DuplicateAisleCodeError(
                 f"An aisle with code {code!r} already exists in this inventory"
             )
-        client_supplier_id = command.client_supplier_id
+        client_supplier_id = (
+            command.client_supplier_id.strip()
+            if command.client_supplier_id is not None
+            else None
+        )
         if client_supplier_id is not None:
             supplier = self._client_supplier_repo.get_by_id(client_supplier_id)
             if supplier is None:
