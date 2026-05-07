@@ -4,6 +4,8 @@
  */
 
 import type {
+  ClientStatus,
+  ClientSupplierStatus,
   InventoryStatus,
   InventoryProcessingMode,
   AisleStatus,
@@ -13,6 +15,41 @@ import type {
   ReviewActionType,
   ApiTraceabilityStatus,
 } from './shared';
+
+// ─── Clients ───────────────────────────────────────────────────────────────
+
+export interface Client {
+  id: string;
+  name: string;
+  status: ClientStatus | string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClientsListResponse {
+  items: Client[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+}
+
+export interface ClientSupplier {
+  id: string;
+  client_id: string;
+  name: string;
+  status: ClientSupplierStatus | string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClientSuppliersListResponse {
+  items: ClientSupplier[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+}
 
 // ─── Inventory ─────────────────────────────────────────────────────────────
 

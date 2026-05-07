@@ -77,4 +77,12 @@ export {
   getReviewQueuePositions,
   submitReviewAction,
 } from './reviewQueueApi';
+export type { ClientsListQuery } from './clientsApi';
+export { createClient, getClient, listClients } from './clientsApi';
+export type { ClientSuppliersListQuery } from './clientSuppliersApi';
+export {
+  createClientSupplier,
+  getClientSupplier,
+  listClientSuppliers,
+} from './clientSuppliersApi';
 

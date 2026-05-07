@@ -187,6 +187,8 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND,
     HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
     HTTP_DETAIL_CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
+    HTTP_DETAIL_CLIENT_NOT_FOUND,
+    HTTP_DETAIL_CLIENT_SUPPLIER_NOT_FOUND,
     HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
     HTTP_DETAIL_INVENTORY_NOT_FOUND,
     HTTP_DETAIL_JOB_NOT_FOUND,
@@ -228,6 +230,8 @@ from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
     CAPTURE_SESSION_STATUS_FILTER_INVALID,
     CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
+    CLIENT_NOT_FOUND,
+    CLIENT_SUPPLIER_NOT_FOUND,
     EMPTY_UPLOAD,
     INTERNAL_SERVER_ERROR,
     INVENTORY_NOT_FOUND,
@@ -274,6 +278,8 @@ from src.application.errors import (
     CaptureSessionStagingFileTooLargeError,
     CaptureSessionStatusFilterInvalidError,
     CaptureSessionUploadBatchTooLargeError,
+    ClientNotFoundError,
+    ClientSupplierNotFoundError,
     DuplicateAisleCodeError,
     EmptyUploadError,
     InvalidProcessingModelError,
@@ -414,6 +420,14 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
     StoredArtifactAccessError: _map_stored_artifact_access,
     InventoryNotFoundError: _structured_fixed(
         404, error_code=INVENTORY_NOT_FOUND, detail=HTTP_DETAIL_INVENTORY_NOT_FOUND
+    ),
+    ClientNotFoundError: _structured_fixed(
+        404, error_code=CLIENT_NOT_FOUND, detail=HTTP_DETAIL_CLIENT_NOT_FOUND
+    ),
+    ClientSupplierNotFoundError: _structured_fixed(
+        404,
+        error_code=CLIENT_SUPPLIER_NOT_FOUND,
+        detail=HTTP_DETAIL_CLIENT_SUPPLIER_NOT_FOUND,
     ),
     AisleNotFoundError: _structured_fixed(
         404, error_code=AISLE_NOT_FOUND, detail=HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY

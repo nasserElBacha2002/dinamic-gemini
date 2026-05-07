@@ -60,7 +60,7 @@ class SqlInventoryRepository(InventoryRepository):
                 UPDATE inventories
                 SET name = ?, status = ?, updated_at = ?, completed_at = ?,
                     processing_mode = ?, primary_provider_name = ?, primary_model_name = ?,
-                    primary_prompt_key = ?, primary_prompt_version = ?
+                    primary_prompt_key = ?, primary_prompt_version = ?, client_id = ?
                 WHERE id = ?
                 """,
                 (
@@ -73,6 +73,7 @@ class SqlInventoryRepository(InventoryRepository):
                     inventory.primary_model_name,
                     inventory.primary_prompt_key,
                     inventory.primary_prompt_version,
+                    inventory.client_id,
                     inventory.id,
                 ),
             )
@@ -82,9 +83,9 @@ class SqlInventoryRepository(InventoryRepository):
                     INSERT INTO inventories (
                         id, name, status, created_at, updated_at, completed_at,
                         processing_mode, primary_provider_name, primary_model_name,
-                        primary_prompt_key, primary_prompt_version
+                        primary_prompt_key, primary_prompt_version, client_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         inventory.id,
@@ -98,6 +99,7 @@ class SqlInventoryRepository(InventoryRepository):
                         inventory.primary_model_name,
                         inventory.primary_prompt_key,
                         inventory.primary_prompt_version,
+                        inventory.client_id,
                     ),
                 )
 
@@ -107,7 +109,7 @@ class SqlInventoryRepository(InventoryRepository):
                 """
                 SELECT id, name, status, created_at, updated_at, completed_at,
                        processing_mode, primary_provider_name, primary_model_name,
-                       primary_prompt_key, primary_prompt_version
+                       primary_prompt_key, primary_prompt_version, client_id
                 FROM inventories WHERE id = ?
                 """,
                 (inventory_id,),
@@ -138,6 +140,7 @@ class SqlInventoryRepository(InventoryRepository):
             primary_model_name=getattr(row, "primary_model_name", None),
             primary_prompt_key=getattr(row, "primary_prompt_key", None),
             primary_prompt_version=getattr(row, "primary_prompt_version", None),
+            client_id=getattr(row, "client_id", None),
         )
 
     def list_all(self) -> Sequence[Inventory]:
@@ -147,7 +150,7 @@ class SqlInventoryRepository(InventoryRepository):
                 """
                 SELECT id, name, status, created_at, updated_at, completed_at,
                        processing_mode, primary_provider_name, primary_model_name,
-                       primary_prompt_key, primary_prompt_version
+                       primary_prompt_key, primary_prompt_version, client_id
                 FROM inventories ORDER BY created_at DESC
                 """
             )
@@ -179,6 +182,7 @@ class SqlInventoryRepository(InventoryRepository):
                     primary_model_name=getattr(row, "primary_model_name", None),
                     primary_prompt_key=getattr(row, "primary_prompt_key", None),
                     primary_prompt_version=getattr(row, "primary_prompt_version", None),
+                    client_id=getattr(row, "client_id", None),
                 )
             )
         return out

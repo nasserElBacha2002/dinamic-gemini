@@ -24,6 +24,8 @@ from src.application.ports.capture_repositories import (
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
+    ClientRepository,
+    ClientSupplierRepository,
     EvidenceRepository,
     FinalCountRepository,
     InventoryRepository,
@@ -74,6 +76,8 @@ class AppContainer:
         self._settings = settings
         self._v3_sql_client: SqlServerClient | None = None
         self._inventory_repo: InventoryRepository | None = None
+        self._client_repo: ClientRepository | None = None
+        self._client_supplier_repo: ClientSupplierRepository | None = None
         self._aisle_repo: AisleRepository | None = None
         self._job_repo: JobRepository | None = None
         self._asset_repo: SourceAssetRepository | None = None
@@ -175,6 +179,56 @@ class AppContainer:
             build_memory=_memory,
         )
         return self._inventory_repo
+
+    def get_client_repo(self) -> ClientRepository:
+        if self._client_repo is not None:
+            return self._client_repo
+
+        def _sql(client: SqlServerClient) -> ClientRepository:
+            from src.infrastructure.repositories.sql_client_repository import SqlClientRepository
+
+            return SqlClientRepository(client)
+
+        def _memory() -> ClientRepository:
+            from src.infrastructure.repositories.memory_client_repository import (
+                MemoryClientRepository,
+            )
+
+            return MemoryClientRepository()
+
+        self._client_repo = self._build_sql_repository_or_memory(
+            backend_info_name="ClientRepository",
+            sql_error_subject="client repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
+        return self._client_repo
+
+    def get_client_supplier_repo(self) -> ClientSupplierRepository:
+        if self._client_supplier_repo is not None:
+            return self._client_supplier_repo
+
+        def _sql(client: SqlServerClient) -> ClientSupplierRepository:
+            from src.infrastructure.repositories.sql_client_supplier_repository import (
+                SqlClientSupplierRepository,
+            )
+
+            return SqlClientSupplierRepository(client)
+
+        def _memory() -> ClientSupplierRepository:
+            from src.infrastructure.repositories.memory_client_supplier_repository import (
+                MemoryClientSupplierRepository,
+            )
+
+            return MemoryClientSupplierRepository()
+
+        self._client_supplier_repo = self._build_sql_repository_or_memory(
+            backend_info_name="ClientSupplierRepository",
+            sql_error_subject="client_supplier repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
+        return self._client_supplier_repo
 
     def get_aisle_repo(self) -> AisleRepository:
         if self._aisle_repo is not None:

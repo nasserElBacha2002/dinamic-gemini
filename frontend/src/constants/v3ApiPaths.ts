@@ -6,6 +6,11 @@
 export const V3_API_PREFIX = '/api/v3';
 
 export const V3_INVENTORIES_BASE = `${V3_API_PREFIX}/inventories`;
+export const V3_CLIENTS_BASE = `${V3_API_PREFIX}/clients`;
 export const V3_ADMIN_BASE = `${V3_API_PREFIX}/admin`;
 export const V3_ANALYTICS_BASE = `${V3_API_PREFIX}/analytics`;
 export const V3_REVIEW_QUEUE_BASE = `${V3_API_PREFIX}/review-queue`;
+
+export function pathToClientSuppliersBase(clientId: string): string {
+  return `${V3_CLIENTS_BASE}/${encodeURIComponent(clientId)}/suppliers`;
+}

@@ -59,6 +59,7 @@ class AisleResponse(BaseModel):
     operational_job_id: Optional[str] = Field(
         None, description="Canonical run for default result reads (Phase 2); null = legacy aisle."
     )
+    client_supplier_id: Optional[str] = None
     latest_job: Optional[AisleJobSummary] = None
     assets_count: int = 0
     positions_count: int = 0

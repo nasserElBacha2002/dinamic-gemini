@@ -506,6 +506,7 @@ def aisle_to_response(
         error_code=a.error_code,
         error_message=a.error_message,
         operational_job_id=a.operational_job_id,
+        client_supplier_id=a.client_supplier_id,
         latest_job=latest,
         assets_count=assets_count,
         positions_count=positions_count,

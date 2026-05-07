@@ -86,3 +86,11 @@ export const REVIEW_ACTION_WIRE = {
  * For the visible Result model (uppercase), use features/results types. */
 export const TRACEABILITY_STATUSES = ['valid', 'missing', 'invalid', 'unvalidated'] as const;
 export type ApiTraceabilityStatus = (typeof TRACEABILITY_STATUSES)[number];
+
+/** Backend client status values (Phase A foundation). */
+export const CLIENT_STATUSES = ['active', 'inactive'] as const;
+export type ClientStatus = (typeof CLIENT_STATUSES)[number];
+
+/** Backend client supplier status values (Phase A foundation). */
+export const CLIENT_SUPPLIER_STATUSES = ['active', 'inactive'] as const;
+export type ClientSupplierStatus = (typeof CLIENT_SUPPLIER_STATUSES)[number];

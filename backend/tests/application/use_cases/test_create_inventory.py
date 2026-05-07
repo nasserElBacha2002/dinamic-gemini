@@ -75,6 +75,7 @@ def test_create_inventory_production_snapshots_operational_config() -> None:
     assert result.primary_prompt_key == "global_v21"
     assert result.created_at == now
     assert result.updated_at == now
+    assert result.client_id is None
     assert repo.get_by_id(result.id) == result
     assert len(repo.list_all()) == 1
 
@@ -99,3 +100,4 @@ def test_create_inventory_test_leaves_primary_fields_null() -> None:
     assert result.primary_model_name is None
     assert result.primary_prompt_key is None
     assert result.primary_prompt_version is None
+    assert result.client_id is None

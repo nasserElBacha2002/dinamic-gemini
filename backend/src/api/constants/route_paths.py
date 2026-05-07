@@ -8,6 +8,7 @@ API_V3_PREFIX = "/api/v3"
 
 # Mounted router prefixes (each is a full prefix string for ``APIRouter``).
 API_V3_INVENTORIES_ROUTER_PREFIX = f"{API_V3_PREFIX}/inventories"
+API_V3_CLIENTS_ROUTER_PREFIX = f"{API_V3_PREFIX}/clients"
 API_V3_ANALYTICS_ROUTER_PREFIX = f"{API_V3_PREFIX}/analytics"
 API_V3_REVIEW_QUEUE_ROUTER_PREFIX = f"{API_V3_PREFIX}/review-queue"
 API_V3_ADMIN_ROUTER_PREFIX = f"{API_V3_PREFIX}/admin"

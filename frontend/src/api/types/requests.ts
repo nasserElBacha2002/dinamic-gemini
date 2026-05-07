@@ -2,7 +2,12 @@
  * API request DTOs — request body contracts sent to the backend.
  */
 
-import type { InventoryProcessingMode, ReviewActionType } from './shared';
+import type {
+  ClientStatus,
+  ClientSupplierStatus,
+  InventoryProcessingMode,
+  ReviewActionType,
+} from './shared';
 
 export interface CreateInventoryRequest {
   name: string;
@@ -12,6 +17,16 @@ export interface CreateInventoryRequest {
 
 export interface CreateAisleRequest {
   code: string;
+}
+
+export interface CreateClientRequest {
+  name: string;
+  status?: ClientStatus;
+}
+
+export interface CreateClientSupplierRequest {
+  name: string;
+  status?: ClientSupplierStatus;
 }
 
 /** Request body for POST .../positions/{position_id}/reviews. */

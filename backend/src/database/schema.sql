@@ -166,6 +166,69 @@ IF NOT EXISTS (
 )
     ALTER TABLE inventories ADD CONSTRAINT DF_inventories_processing_mode DEFAULT ('production') FOR processing_mode;
 GO
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'client_id')
+    ALTER TABLE inventories ADD client_id VARCHAR(36) NULL;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.foreign_keys WHERE name = 'FK_inventories_client'
+)
+BEGIN
+    ALTER TABLE inventories
+    ADD CONSTRAINT FK_inventories_client
+    FOREIGN KEY (client_id) REFERENCES clients(id);
+END;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes WHERE name = 'IX_inventories_client_id' AND object_id = OBJECT_ID('inventories')
+)
+    CREATE INDEX IX_inventories_client_id ON inventories(client_id);
+GO
+
+-- Phase A1 — Clients foundation (mirror migrations/versions/0024_clients_foundation.sql).
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'clients')
+BEGIN
+    CREATE TABLE clients (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        name NVARCHAR(255) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL
+    );
+    CREATE INDEX IX_clients_created_at ON clients(created_at DESC);
+END;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.default_constraints
+    WHERE parent_object_id = OBJECT_ID('clients') AND name = 'DF_clients_status'
+)
+    ALTER TABLE clients ADD CONSTRAINT DF_clients_status DEFAULT ('active') FOR status;
+GO
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_clients_name' AND object_id = OBJECT_ID('clients'))
+    CREATE INDEX IX_clients_name ON clients(name);
+GO
+
+-- Phase A2 — Client suppliers foundation (mirror migrations/versions/0025_client_suppliers_foundation.sql).
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'client_suppliers')
+BEGIN
+    CREATE TABLE client_suppliers (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        client_id VARCHAR(36) NOT NULL,
+        name NVARCHAR(255) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT FK_client_suppliers_client FOREIGN KEY (client_id) REFERENCES clients(id),
+        CONSTRAINT UQ_client_suppliers_client_name UNIQUE (client_id, name)
+    );
+    CREATE INDEX IX_client_suppliers_client_id ON client_suppliers(client_id);
+END;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.default_constraints
+    WHERE parent_object_id = OBJECT_ID('client_suppliers') AND name = 'DF_client_suppliers_status'
+)
+    ALTER TABLE client_suppliers ADD CONSTRAINT DF_client_suppliers_status DEFAULT ('active') FOR status;
+GO
 
 -- v3.0 — Aisles (Épica 2, Documento técnico §7.2; FK for future AisleRepository)
 -- Domain assumption: one code per inventory (UNIQUE inventory_id, code).
@@ -287,6 +350,23 @@ END;
 GO
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_aisles_operational_job_id' AND object_id = OBJECT_ID('aisles'))
     CREATE INDEX IX_aisles_operational_job_id ON aisles(operational_job_id);
+GO
+
+-- Phase A4 — aisles.client_supplier_id (nullable foundation only).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('aisles') AND name = 'client_supplier_id')
+    ALTER TABLE aisles ADD client_supplier_id VARCHAR(36) NULL;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.foreign_keys WHERE name = 'FK_aisles_client_supplier'
+)
+BEGIN
+    ALTER TABLE aisles
+    ADD CONSTRAINT FK_aisles_client_supplier
+    FOREIGN KEY (client_supplier_id) REFERENCES client_suppliers(id);
+END;
+GO
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_aisles_client_supplier_id' AND object_id = OBJECT_ID('aisles'))
+    CREATE INDEX IX_aisles_client_supplier_id ON aisles(client_supplier_id);
 GO
 
 -- v3.0 — Source assets (Épica 4, Documento técnico §7.3)

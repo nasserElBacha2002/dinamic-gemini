@@ -1,4 +1,10 @@
 export { useDebouncedSearchInput } from './useDebouncedSearchInput';
+export {
+  useClients,
+  useClient,
+  useClientSuppliers,
+  useClientSupplier,
+} from './useClients';
 export { useInventoriesList, useInventoryDetail, useInventoryVisualReferences } from './useInventories';
 export {
   useInventoryMetrics,
@@ -20,6 +26,8 @@ export {
 } from './usePositions';
 export { useReviewQueue } from './useReviewQueue';
 export {
+  useCreateClient,
+  useCreateClientSupplier,
   useCreateInventory,
   useCreateAisle,
   useStartAisleProcessing,

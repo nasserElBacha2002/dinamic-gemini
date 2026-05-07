@@ -486,6 +486,7 @@
     "load_aisle_source_assets": "No se pudieron cargar los activos del pasillo",
     "load_aisles": "No se pudieron cargar los pasillos",
     "load_compare": "No se pudo cargar la comparación",
+    "load_clients": "No se pudieron cargar los clientes",
     "load_inventories": "No se pudieron cargar los inventarios",
     "load_inventory": "No se pudo cargar el inventario",
     "load_job_details": "No se pudieron cargar los detalles de la ejecución",
@@ -577,6 +578,98 @@
     "primary_config_title": "Configuración del inventario",
     "processing_mode_production": "Producción",
     "processing_mode_test": "Test"
+  },
+  "clients": {
+    "page": {
+      "title": "Clientes",
+      "subtitle": "Administrá clientes para la futura organización por cliente y proveedor.",
+      "a11y": "Listado de clientes"
+    },
+    "list": {
+      "empty_title": "Todavía no hay clientes cargados",
+      "empty_description": "Creá tu primer cliente para empezar a organizar inventarios por cliente y proveedor."
+    },
+    "fields": {
+      "name": "Cliente",
+      "status": "Estado",
+      "created_at": "Creado",
+      "updated_at": "Actualizado"
+    },
+    "status": {
+      "active": "Activo",
+      "inactive": "Inactivo"
+    },
+    "actions": {
+      "create": "Crear cliente",
+      "create_disabled_hint": "Disponible en la próxima etapa",
+      "view_detail": "Ver detalle"
+    },
+    "dialogs": {
+      "create": {
+        "title": "Crear cliente",
+        "subtitle": "Ingresá el nombre del cliente.",
+        "name_label": "Nombre del cliente",
+        "name_placeholder": "Ej: Cliente Norte",
+        "cancel": "Cancelar",
+        "submit": "Crear",
+        "submitting": "Creando...",
+        "success": "Cliente creado correctamente.",
+        "error": "No se pudo crear el cliente.",
+        "validation_name_required": "El nombre del cliente es obligatorio.",
+        "validation_name_max": "El nombre del cliente no puede superar los 255 caracteres."
+      }
+    },
+    "common": {
+      "no_information": "Sin información"
+    },
+    "detail": {
+      "title": "Detalle de cliente",
+      "loading": "Cargando cliente...",
+      "error": "No se pudo cargar el cliente.",
+      "invalid": "Cliente inválido.",
+      "back_to_list": "Volver a clientes",
+      "info_title": "Información del cliente",
+      "fields": {
+        "name": "Nombre",
+        "status": "Estado",
+        "created_at": "Creado",
+        "updated_at": "Actualizado"
+      }
+    },
+    "suppliers": {
+      "title": "Proveedores del cliente",
+      "subtitle": "Listado de proveedores asociados al cliente seleccionado.",
+      "loading": "Cargando proveedores...",
+      "error": "No se pudieron cargar los proveedores del cliente.",
+      "empty_title": "Todavía no hay proveedores cargados para este cliente.",
+      "empty_description": "Los proveedores permitirán organizar pasillos, referencias e instrucciones específicas en próximas etapas.",
+      "fields": {
+        "name": "Proveedor",
+        "status": "Estado",
+        "created_at": "Creado",
+        "updated_at": "Actualizado"
+      },
+      "actions": {
+        "create": "Crear proveedor",
+        "create_disabled_hint": "Disponible en la próxima etapa"
+      },
+      "dialogs": {
+        "create": {
+          "title": "Crear proveedor",
+          "subtitle": "Ingresá el nombre del proveedor.",
+          "name_label": "Nombre del proveedor",
+          "name_placeholder": "Ej: Proveedor Norte",
+          "cancel": "Cancelar",
+          "submit": "Crear",
+          "submitting": "Creando...",
+          "success": "Proveedor creado correctamente.",
+          "error": "No se pudo crear el proveedor.",
+          "validation_name_required": "El nombre del proveedor es obligatorio.",
+          "validation_name_max": "El nombre del proveedor no puede superar los 255 caracteres.",
+          "validation_client_required": "No se pudo determinar el cliente para crear el proveedor."
+        }
+      }
+    }
   },
   "jobs": {
     "attempt_number": "Intento {{count}}",
@@ -884,6 +977,7 @@
     "ingestion_sessions": "Sesiones de importación",
     "review_queue": "Cola de revisión",
     "metrics": "Métricas",
+    "clients": "Clientes",
     "ai_config": "Configuración de IA"
   },
   "root": {
@@ -917,6 +1011,14 @@
     "metrics": {
       "title": "Métricas",
       "subtitle": "Desempeño operativo y tendencias de calidad"
+    },
+    "clients": {
+      "title": "Clientes",
+      "subtitle": "Base administrativa de clientes"
+    },
+    "client_detail": {
+      "title": "Detalle de cliente",
+      "subtitle": "Información del cliente y sus proveedores asociados"
     },
     "ingestion_sessions": {
       "title": "Sesiones de importación",

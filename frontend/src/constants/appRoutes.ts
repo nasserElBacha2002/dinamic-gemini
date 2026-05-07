@@ -7,6 +7,7 @@ export const ROUTE_LOGIN = '/login';
 export const ROUTE_HOME = '/';
 export const ROUTE_REVIEW_QUEUE = '/review-queue';
 export const ROUTE_METRICS = '/metrics';
+export const ROUTE_CLIENTS = '/clientes';
 export const ROUTE_ADMIN_AI_CONFIG = '/admin/ai-config';
 export const ROUTE_INGESTION_SESSIONS = '/ingestion-sessions';
 
@@ -18,6 +19,8 @@ export const ROUTE_PATH = {
   inventories: 'inventories',
   reviewQueue: 'review-queue',
   metrics: 'metrics',
+  clients: 'clientes',
+  clientDetail: 'clientes/:clientId',
   ingestionSessions: 'ingestion-sessions',
   adminAiConfig: 'admin/ai-config',
   dashboard: 'dashboard',
@@ -43,6 +46,7 @@ export const ROUTE_MATCH = {
   legacyAisleCompare: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/aisles/:aisleId/compare`,
   positionDetail: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/aisles/:aisleId/positions/:positionId`,
   ingestionSessionDetail: `/ingestion-sessions/:sessionId`,
+  clientDetail: '/clientes/:clientId',
 } as const;
 
 export function pathToInventory(inventoryId: string): string {
@@ -64,4 +68,8 @@ export function pathToAislePositions(inventoryId: string, aisleId: string): stri
 export function pathToIngestionSessionDetail(sessionId: string, inventoryId: string): string {
   const params = new URLSearchParams({ inventoryId });
   return `${ROUTE_INGESTION_SESSIONS}/${encodeURIComponent(sessionId)}?${params.toString()}`;
+}
+
+export function pathToClient(clientId: string): string {
+  return `${ROUTE_CLIENTS}/${encodeURIComponent(clientId)}`;
 }

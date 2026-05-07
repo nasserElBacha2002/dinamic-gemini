@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest';
+import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -26,6 +27,11 @@ function renderShell(username: string | null) {
 }
 
 describe('AppShell admin AI nav', () => {
+  it('shows Clients nav entry', () => {
+    renderShell('ops');
+    expect(screen.getByRole('link', { name: /clientes/i })).toHaveAttribute('href', '/clientes');
+  });
+
   it('shows AI nav item when username is admin', () => {
     renderShell('admin');
     expect(screen.getByText(/Configuración de IA|AI configuration|IA y proveedores/i)).toBeInTheDocument();

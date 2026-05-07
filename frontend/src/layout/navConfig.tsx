@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   ROUTE_ADMIN_AI_CONFIG,
+  ROUTE_CLIENTS,
   ROUTE_HOME,
   ROUTE_INGESTION_SESSIONS,
   ROUTE_METRICS,
@@ -11,6 +12,7 @@ import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import AnalyticsOutlinedIcon from '@mui/icons-material/AnalyticsOutlined';
 import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
+import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
 
 export const DRAWER_WIDTH = 260;
 
@@ -31,6 +33,7 @@ export const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
   },
   { labelKey: 'nav.review_queue', to: ROUTE_REVIEW_QUEUE, icon: <FactCheckOutlinedIcon fontSize="small" /> },
   { labelKey: 'nav.metrics', to: ROUTE_METRICS, icon: <AnalyticsOutlinedIcon fontSize="small" /> },
+  { labelKey: 'nav.clients', to: ROUTE_CLIENTS, icon: <BusinessRoundedIcon fontSize="small" /> },
 ];
 
 /** Shown only when `user.username === 'admin'` (must match backend gate). */
