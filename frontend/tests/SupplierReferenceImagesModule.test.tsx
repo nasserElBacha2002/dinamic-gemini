@@ -58,4 +58,21 @@ describe('SupplierReferenceImagesModule', () => {
     expect(screen.getByText(/proveedor:\s*proveedor test/i)).toBeInTheDocument();
     expect(screen.getByText(/no hay imágenes de referencia/i)).toBeInTheDocument();
   });
+
+  it('shows Spanish load error copy when the list query is in error', async () => {
+    const hooks = await import('../src/hooks');
+    vi.mocked(hooks.useSupplierReferenceImages).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('network'),
+      refetch: vi.fn(),
+    } as unknown as ReturnType<typeof hooks.useSupplierReferenceImages>);
+
+    renderModule();
+
+    expect(
+      screen.getByText('No se pudieron cargar las imágenes de referencia.', { exact: true })
+    ).toBeInTheDocument();
+  });
 });

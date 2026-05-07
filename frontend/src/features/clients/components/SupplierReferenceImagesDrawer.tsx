@@ -144,6 +144,8 @@ export default function SupplierReferenceImagesDrawer({
           label: trimmedLabel || undefined,
           description: trimmedDesc || undefined,
         });
+        setLabel('');
+        setDescription('');
       }}
       isUploading={isUploading}
       uploadError={uploadError}

@@ -50,12 +50,8 @@ export default function SupplierReferenceImagesModule({
 
   const handleUpload = useCallback(
     async (payload: Parameters<SupplierReferenceImagesDrawerProps['onUpload']>[0]) => {
-      try {
-        await uploadMutation.mutateAsync(payload);
-        showSnackbar(t('clients.suppliers.reference_images.upload_success'), 'success');
-      } catch {
-        /* Drawer surfaces uploadMutation error */
-      }
+      await uploadMutation.mutateAsync(payload);
+      showSnackbar(t('clients.suppliers.reference_images.upload_success'), 'success');
     },
     [showSnackbar, t, uploadMutation]
   );

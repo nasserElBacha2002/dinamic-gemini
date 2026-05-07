@@ -2,7 +2,7 @@
 
 ## 1. Executive summary
 
-**Status:** READY_FOR_C4
+**Status:** READY_FOR_C4 (C3.1 review fixes applied)
 
 The frontend consumes the C2 supplier reference images API: typed client helpers, scoped React Query keys and hooks, and a **Cliente → Proveedores** workflow on `ClientDetail` that opens a drawer to list, upload (single file per action with optional etiqueta/descripción), preview via authenticated `GET …/file` (blob through `protectedFetch`), and delete with confirmation. Inventory visual references UI is unchanged aside from a non-breaking optional extension on `ManagedImageAssetsDrawer`. Backend and pipeline were not modified.
 
@@ -121,11 +121,52 @@ All new visible strings live under `clients.suppliers.reference_images` (Spanish
 
 ## 11. Observations / blockers
 
-- Full `npm test -- --run` not executed in this pass; targeted suites above passed. Run full suite in CI if required.
+- Full `npm test -- --run` executed in C3.1; pass (see C3.1 validation table).
 - Multi-file upload remains available server-side; UI intentionally single-select to avoid ambiguous batch metadata unless product asks for multi + batch notice.
+- Vitest logs an existing MUI `DialogTitle` / `Typography` nesting warning when opening `ImagePreviewDialog` from tests; behavior matches production Reference Images coverage.
 
 ---
 
 ## 12. Recommended next phase
 
 **C4 — Legacy coexistence hardening / regression review** (coexistence of supplier vs inventory references, docs, optional pipeline activation when approved).
+
+---
+
+## C3.1 Review fixes
+
+Small UX and test hardening before C4; backend, pipeline, prompts, and inventory visual references behavior unchanged.
+
+### UX fixes
+
+- After a **successful** supplier reference upload, **Etiqueta** and **Descripción** are cleared. Failed uploads leave the fields intact.
+- `SupplierReferenceImagesModule.handleUpload` no longer swallows `mutateAsync` errors (removed empty `catch`), so the drawer’s upload wrapper only clears metadata when the mutation resolves successfully.
+
+### Tests added
+
+| File | Coverage |
+|------|----------|
+| `frontend/tests/SupplierReferenceImagesDrawer.test.tsx` | Label/description input; `onUpload` receives files + metadata; `uploadMultiple=false` on file input; fields cleared on success, retained on rejection; delete confirmation calls `onDelete` with id |
+| `frontend/tests/ManagedImageAssetsDrawer.previewRevoke.test.tsx` | Preview `revoke()` when dialog closes, when switching preview target, and on drawer unmount |
+| `frontend/tests/useSupplierReferenceImageMutations.test.tsx` | Upload and delete mutations invalidate `queryKeys.clients.suppliers.referenceImages(clientId, supplierId)` |
+| `frontend/tests/SupplierReferenceImagesModule.test.tsx` | List query `isError` shows Spanish `load_error` copy |
+
+### Validation results
+
+| Command | Result |
+|---------|--------|
+| `npm run typecheck` | Pass |
+| `npm run lint` | Pass |
+| `npm run build` | Pass |
+| `npm test -- --run` | Pass |
+| `npm test -- SupplierReferenceImages --run` | Pass |
+| `npm test -- ClientDetailPage --run` | Pass |
+
+### Boundaries preserved
+
+- Backend unchanged
+- Pipeline unchanged
+- Prompts unchanged
+- `inventory_visual_references` behavior unchanged (shared drawer only exercised via existing revoke paths; no inventory-specific changes)
+- No legacy migration/copy
+- PUT replace not implemented
