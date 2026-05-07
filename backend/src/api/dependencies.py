@@ -29,7 +29,6 @@ from src.application.ports.repositories import (
     ClientSupplierRepository,
     EvidenceRepository,
     InventoryRepository,
-    InventoryVisualReferenceRepository,
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
@@ -84,10 +83,6 @@ from src.application.use_cases.list_clients import ListClientsUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
 from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
 from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
-from src.application.use_cases.manage_inventory_visual_references import (
-    DeleteInventoryVisualReferenceUseCase,
-    ReplaceInventoryVisualReferenceUseCase,
-)
 from src.application.use_cases.manage_supplier_reference_images import (
     DeleteSupplierReferenceImageUseCase,
     GetSupplierReferenceImageUseCase,
@@ -107,10 +102,6 @@ from src.application.use_cases.update_position_code import UpdatePositionCodeUse
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
 from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase
-from src.application.use_cases.upload_inventory_visual_references import (
-    ListInventoryVisualReferencesUseCase,
-    UploadInventoryVisualReferencesUseCase,
-)
 from src.application.use_cases.upload_supplier_reference_images import (
     ListSupplierReferenceImagesUseCase,
     UploadSupplierReferenceImagesUseCase,
@@ -129,7 +120,6 @@ from src.runtime.v3_deps import (
     get_evidence_repo,
     get_final_count_repo,
     get_inventory_repo,
-    get_inventory_visual_reference_repo,
     get_job_repo,
     get_metrics_calculator,
     get_position_repo,
@@ -497,62 +487,6 @@ def get_delete_aisle_source_asset_use_case(
         artifact_storage=artifact_storage,
         clock=clock,
         status_reconciler=status_reconciler,
-    )
-
-
-def get_upload_inventory_visual_references_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    reference_repo: InventoryVisualReferenceRepository = Depends(
-        get_inventory_visual_reference_repo
-    ),
-    artifact_storage=Depends(get_artifact_storage),
-    clock: Clock = Depends(get_clock),
-) -> UploadInventoryVisualReferencesUseCase:
-    return UploadInventoryVisualReferencesUseCase(
-        inventory_repo=inventory_repo,
-        reference_repo=reference_repo,
-        artifact_storage=artifact_storage,
-        clock=clock,
-    )
-
-
-def get_list_inventory_visual_references_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    reference_repo: InventoryVisualReferenceRepository = Depends(
-        get_inventory_visual_reference_repo
-    ),
-) -> ListInventoryVisualReferencesUseCase:
-    return ListInventoryVisualReferencesUseCase(
-        inventory_repo=inventory_repo,
-        reference_repo=reference_repo,
-    )
-
-
-def get_delete_inventory_visual_reference_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    reference_repo: InventoryVisualReferenceRepository = Depends(
-        get_inventory_visual_reference_repo
-    ),
-    artifact_storage=Depends(get_artifact_storage),
-) -> DeleteInventoryVisualReferenceUseCase:
-    return DeleteInventoryVisualReferenceUseCase(
-        inventory_repo=inventory_repo,
-        reference_repo=reference_repo,
-        artifact_storage=artifact_storage,
-    )
-
-
-def get_replace_inventory_visual_reference_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    reference_repo: InventoryVisualReferenceRepository = Depends(
-        get_inventory_visual_reference_repo
-    ),
-    artifact_storage=Depends(get_artifact_storage),
-) -> ReplaceInventoryVisualReferenceUseCase:
-    return ReplaceInventoryVisualReferenceUseCase(
-        inventory_repo=inventory_repo,
-        reference_repo=reference_repo,
-        artifact_storage=artifact_storage,
     )
 
 

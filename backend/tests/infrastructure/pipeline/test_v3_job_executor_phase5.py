@@ -13,7 +13,6 @@ from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
     InventoryRepository,
-    InventoryVisualReferenceRepository,
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
@@ -29,7 +28,6 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
-from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID, V3JobExecutor
 from src.infrastructure.repositories.memory_supplier_reference_image_repository import (
@@ -178,32 +176,6 @@ class InMemoryInventoryRepo(InventoryRepository):
 
     def list_all(self) -> Sequence[Inventory]:
         return list(self._store.values())
-
-
-class InMemoryVisualReferenceRepo(InventoryVisualReferenceRepository):
-    def __init__(self) -> None:
-        self._store: dict[str, InventoryVisualReference] = {}
-
-    def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
-        return self._store.get(reference_id)
-
-    def create(self, reference: InventoryVisualReference) -> None:
-        self._store[reference.id] = reference
-
-    def create_many(self, references: Sequence[InventoryVisualReference]) -> None:
-        for reference in references:
-            self._store[reference.id] = reference
-
-    def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
-        refs = [r for r in self._store.values() if r.inventory_id == inventory_id]
-        refs.sort(key=lambda r: (r.created_at, r.id))
-        return refs
-
-    def update(self, reference: InventoryVisualReference) -> None:
-        self._store[reference.id] = reference
-
-    def delete(self, reference_id: str) -> None:
-        self._store.pop(reference_id, None)
 
 
 class StubArtifactStorage:

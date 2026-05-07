@@ -661,42 +661,6 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_normalized_labels_scop
     CREATE INDEX IX_normalized_labels_scope_job ON normalized_labels(inventory_id, aisle_id, job_id);
 GO
 
--- v3.2.4 — Inventory visual references (optional reference images per inventory)
-IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'inventory_visual_references')
-BEGIN
-    CREATE TABLE inventory_visual_references (
-        id VARCHAR(36) NOT NULL PRIMARY KEY,
-        inventory_id VARCHAR(36) NOT NULL,
-        filename NVARCHAR(512) NOT NULL,
-        storage_path NVARCHAR(1024) NOT NULL,
-        storage_provider VARCHAR(16) NULL,
-        storage_bucket NVARCHAR(255) NULL,
-        storage_key NVARCHAR(1024) NULL,
-        content_type VARCHAR(128) NULL,
-        file_size_bytes BIGINT NULL,
-        etag NVARCHAR(128) NULL,
-        mime_type VARCHAR(128) NOT NULL,
-        file_size BIGINT NOT NULL,
-        created_at DATETIME2 NOT NULL,
-        CONSTRAINT FK_inventory_visual_references_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id)
-    );
-    CREATE INDEX IX_inventory_visual_references_inventory_id ON inventory_visual_references(inventory_id);
-END;
-GO
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'storage_provider')
-    ALTER TABLE inventory_visual_references ADD storage_provider VARCHAR(16) NULL;
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'storage_bucket')
-    ALTER TABLE inventory_visual_references ADD storage_bucket NVARCHAR(255) NULL;
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'storage_key')
-    ALTER TABLE inventory_visual_references ADD storage_key NVARCHAR(1024) NULL;
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'content_type')
-    ALTER TABLE inventory_visual_references ADD content_type VARCHAR(128) NULL;
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'file_size_bytes')
-    ALTER TABLE inventory_visual_references ADD file_size_bytes BIGINT NULL;
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'etag')
-    ALTER TABLE inventory_visual_references ADD etag NVARCHAR(128) NULL;
-GO
-
 -- Phase C1 — supplier reference images (additive foundation).
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'supplier_reference_images')
 BEGIN

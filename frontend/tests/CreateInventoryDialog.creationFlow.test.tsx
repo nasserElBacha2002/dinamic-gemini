@@ -5,15 +5,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import CreateInventoryDialog from '../src/components/CreateInventoryDialog';
 
-const mockUploadInventoryVisualReferences = vi.fn();
-vi.mock('../src/api/client', async () => {
-  const actual = await vi.importActual<typeof import('../src/api/client')>('../src/api/client');
-  return {
-    ...actual,
-    uploadInventoryVisualReferences: (...args: unknown[]) =>
-      mockUploadInventoryVisualReferences(...args),
-  };
-});
 const mockUseClients = vi.fn();
 vi.mock('../src/hooks/useClients', () => ({
   useClients: (...args: unknown[]) => mockUseClients(...args),
@@ -42,7 +33,7 @@ function renderDialog(props?: Partial<ComponentProps<typeof CreateInventoryDialo
   return { onClose, onSuccess, onError, createInventoryFn };
 }
 
-describe('CreateInventoryDialog (inventory creation without legacy visual references)', () => {
+describe('CreateInventoryDialog (inventory creation flow)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseClients.mockReturnValue({
@@ -57,7 +48,7 @@ describe('CreateInventoryDialog (inventory creation without legacy visual refere
     });
   });
 
-  it('creates inventory from the single-step dialog without calling legacy visual reference upload', async () => {
+  it('creates inventory from the single-step dialog', async () => {
     const { createInventoryFn, onSuccess } = renderDialog();
 
     fireEvent.change(screen.getByLabelText(/nombre del inventario|inventory name/i), {
@@ -69,7 +60,6 @@ describe('CreateInventoryDialog (inventory creation without legacy visual refere
     expect(createInventoryFn).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'My inv', processing_mode: 'production' }),
     );
-    expect(mockUploadInventoryVisualReferences).not.toHaveBeenCalled();
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
   });
 
@@ -125,7 +115,6 @@ describe('CreateInventoryDialog (inventory creation without legacy visual refere
     expect(createInventoryFn).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Lab inv', processing_mode: 'test' }),
     );
-    expect(mockUploadInventoryVisualReferences).not.toHaveBeenCalled();
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
   });
 
@@ -142,7 +131,6 @@ describe('CreateInventoryDialog (inventory creation without legacy visual refere
     expect(createInventoryFn).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'My inv', processing_mode: 'production', client_id: 'client-2' }),
     );
-    expect(mockUploadInventoryVisualReferences).not.toHaveBeenCalled();
     await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
   });
 
@@ -155,7 +143,6 @@ describe('CreateInventoryDialog (inventory creation without legacy visual refere
     await waitFor(() => expect(createInventoryFn).toHaveBeenCalledTimes(1));
     const payload = createInventoryFn.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(payload.client_id).toBeUndefined();
-    expect(mockUploadInventoryVisualReferences).not.toHaveBeenCalled();
   });
 
   it('does not offer a second wizard step for reference images', () => {

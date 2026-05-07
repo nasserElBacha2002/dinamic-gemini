@@ -346,12 +346,12 @@ def resolve_source_asset_image_display(
     return (None, True)
 
 
-def resolve_visual_reference_file_response(
+def resolve_reference_image_file_response(
     ref: Any,
     *,
     artifact_store: Any,
 ) -> Response:
-    """Serve an InventoryVisualReference (same rules as source assets)."""
+    """Serve a stored reference image record (supplier images and legacy-shaped rows; same rules as source assets)."""
     prov = (getattr(ref, "storage_provider", None) or "").strip().lower()
     key = (getattr(ref, "storage_key", None) or "").strip()
     bucket = (getattr(ref, "storage_bucket", None) or "").strip() or None
@@ -390,8 +390,8 @@ def resolve_supplier_reference_image_file_response(
     *,
     artifact_store: Any,
 ) -> Response:
-    """Serve a SupplierReferenceImage using the same provider / legacy rules as visual references."""
-    return resolve_visual_reference_file_response(image, artifact_store=artifact_store)
+    """Serve a SupplierReferenceImage using the same provider / legacy rules as other reference images."""
+    return resolve_reference_image_file_response(image, artifact_store=artifact_store)
 
 
 def read_execution_log_events_for_job(

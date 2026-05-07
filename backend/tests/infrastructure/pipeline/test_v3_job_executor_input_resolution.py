@@ -23,7 +23,6 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.inventory.entities import Inventory, InventoryStatus
-from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
 from src.infrastructure.repositories.sql_source_asset_repository import _row_to_asset
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
@@ -183,22 +182,6 @@ class _SupplierRepo(SupplierReferenceImageRepository):
         self._refs = [r for r in self._refs if r.id != reference_image_id]
 
 
-def _iv_to_supplier(r: InventoryVisualReference, supplier_id: str = "sup-1") -> SupplierReferenceImage:
-    return SupplierReferenceImage(
-        id=r.id,
-        client_supplier_id=supplier_id,
-        filename=r.filename,
-        storage_path=r.storage_path,
-        mime_type=r.mime_type,
-        file_size=r.file_size,
-        created_at=r.created_at,
-        updated_at=r.created_at,
-        storage_provider=r.storage_provider,
-        storage_bucket=r.storage_bucket,
-        storage_key=r.storage_key,
-    )
-
-
 class _FakeArtifactStore:
     def __init__(self, objects: dict[str, bytes]) -> None:
         self._objects = objects
@@ -226,9 +209,8 @@ class _FakeArtifactStore:
 
 
 def _executor(
-    tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store
+    tmp_inventory_id: str, supplier_refs: Sequence[SupplierReferenceImage], artifact_store
 ) -> V3JobExecutor:
-    supplier_rows = [_iv_to_supplier(r, "sup-1") for r in visual_refs]
     return V3JobExecutor(
         job_repo=_NoopJobRepo(),
         aisle_repo=_NoopAisleRepo(),
@@ -246,7 +228,7 @@ def _executor(
                 updated_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
             )
         ),
-        supplier_reference_image_repo=_SupplierRepo(supplier_rows),
+        supplier_reference_image_repo=_SupplierRepo(list(supplier_refs)),
         artifact_store=artifact_store,
     )
 
@@ -403,14 +385,16 @@ def test_build_pipeline_input_resolves_local_provider_source_asset_without_bucke
 def test_build_pipeline_input_resolves_s3_visual_references_to_temp_files(tmp_path: Path) -> None:
     job_dir = tmp_path / "job-3"
     job_dir.mkdir(parents=True, exist_ok=True)
-    ref = InventoryVisualReference(
+    now_ref = datetime.now(timezone.utc)
+    ref = SupplierReferenceImage(
         id="ref-1",
-        inventory_id="inv-3",
+        client_supplier_id="sup-1",
         filename="ref.jpg",
         storage_path="inventories/inv-3/visual_references/ref-1.jpg",
         mime_type="image/jpeg",
         file_size=7,
-        created_at=datetime.now(timezone.utc),
+        created_at=now_ref,
+        updated_at=now_ref,
         storage_provider="s3",
         storage_bucket="bucket-a",
         storage_key="inventories/inv-3/visual_references/ref-1.jpg",
@@ -468,14 +452,16 @@ def test_build_pipeline_input_resolves_local_provider_visual_reference_without_b
 ) -> None:
     job_dir = tmp_path / "job-local-ref"
     job_dir.mkdir(parents=True, exist_ok=True)
-    ref = InventoryVisualReference(
+    now_ref = datetime.now(timezone.utc)
+    ref = SupplierReferenceImage(
         id="ref-local",
-        inventory_id="inv-local-ref",
+        client_supplier_id="sup-1",
         filename="ref-local.jpg",
         storage_path="inventories/inv-local-ref/visual_references/ref-local.jpg",
         mime_type="image/jpeg",
         file_size=8,
-        created_at=datetime.now(timezone.utc),
+        created_at=now_ref,
+        updated_at=now_ref,
         storage_provider="local",
         storage_bucket=None,
         storage_key="inventories/inv-local-ref/visual_references/ref-local.jpg",
@@ -594,14 +580,16 @@ def test_build_pipeline_input_fails_when_source_asset_bucket_mismatch(tmp_path: 
 def test_build_pipeline_input_fails_when_visual_reference_bucket_missing(tmp_path: Path) -> None:
     job_dir = tmp_path / "job-6"
     job_dir.mkdir(parents=True, exist_ok=True)
-    ref = InventoryVisualReference(
+    now_ref = datetime.now(timezone.utc)
+    ref = SupplierReferenceImage(
         id="ref-x",
-        inventory_id="inv-6",
+        client_supplier_id="sup-1",
         filename="ref.jpg",
         storage_path="inventories/inv-6/visual_references/ref-x.jpg",
         mime_type="image/jpeg",
         file_size=7,
-        created_at=datetime.now(timezone.utc),
+        created_at=now_ref,
+        updated_at=now_ref,
         storage_provider="s3",
         storage_bucket=None,
         storage_key="inventories/inv-6/visual_references/ref-x.jpg",
@@ -646,14 +634,16 @@ def test_build_pipeline_input_fails_when_visual_reference_bucket_missing(tmp_pat
 def test_unsupported_mixed_assets_fail_before_visual_reference_download(tmp_path: Path) -> None:
     job_dir = tmp_path / "job-7"
     job_dir.mkdir(parents=True, exist_ok=True)
-    ref = InventoryVisualReference(
+    now_ref = datetime.now(timezone.utc)
+    ref = SupplierReferenceImage(
         id="ref-mixed",
-        inventory_id="inv-7",
+        client_supplier_id="sup-1",
         filename="ref.jpg",
         storage_path="inventories/inv-7/visual_references/ref-mixed.jpg",
         mime_type="image/jpeg",
         file_size=7,
-        created_at=datetime.now(timezone.utc),
+        created_at=now_ref,
+        updated_at=now_ref,
         storage_provider="s3",
         storage_bucket="bucket-a",
         storage_key="inventories/inv-7/visual_references/ref-mixed.jpg",

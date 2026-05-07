@@ -6,7 +6,7 @@ export {
   useClientSupplier,
   useSupplierReferenceImages,
 } from './useClients';
-export { useInventoriesList, useInventoryDetail, useInventoryVisualReferences } from './useInventories';
+export { useInventoriesList, useInventoryDetail } from './useInventories';
 export {
   useInventoryMetrics,
   useAislesList,
@@ -40,9 +40,6 @@ export {
   useUploadAisleAssets,
   useUploadAisleAssetsFlex,
   useDeleteAisleSourceAsset,
-  useUploadInventoryVisualReferences,
-  useDeleteInventoryVisualReference,
-  useReplaceInventoryVisualReference,
   useSubmitReviewAction,
   usePromoteAisleOperationalJob,
 } from './useMutations';

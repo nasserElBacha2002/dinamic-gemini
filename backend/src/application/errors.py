@@ -76,14 +76,6 @@ class ZeroByteFileError(Exception):
     """Raised when an uploaded file has size zero or negative (empty file not allowed)."""
 
 
-class MaxInventoryVisualReferencesExceededError(Exception):
-    """Raised when uploading would exceed the maximum visual references per inventory."""
-
-
-class InventoryVisualReferenceNotFoundError(Exception):
-    """Raised when the requested inventory visual reference does not exist or is not owned by the inventory."""
-
-
 class SupplierReferenceImageNotFoundError(Exception):
     """Raised when the requested supplier reference image does not exist or is not owned by the supplier."""
 

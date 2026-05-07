@@ -29,7 +29,6 @@ from src.application.ports.repositories import (
     EvidenceRepository,
     FinalCountRepository,
     InventoryRepository,
-    InventoryVisualReferenceRepository,
     JobRepository,
     NormalizedLabelRepository,
     PositionRepository,
@@ -82,7 +81,6 @@ class AppContainer:
         self._aisle_repo: AisleRepository | None = None
         self._job_repo: JobRepository | None = None
         self._asset_repo: SourceAssetRepository | None = None
-        self._visual_reference_repo: InventoryVisualReferenceRepository | None = None
         self._supplier_reference_image_repo: SupplierReferenceImageRepository | None = None
         self._position_repo: PositionRepository | None = None
         self._product_record_repo: ProductRecordRepository | None = None
@@ -303,32 +301,6 @@ class AppContainer:
             build_memory=_memory,
         )
         return self._asset_repo
-
-    def get_inventory_visual_reference_repo(self) -> InventoryVisualReferenceRepository:
-        if self._visual_reference_repo is not None:
-            return self._visual_reference_repo
-
-        def _sql(client: SqlServerClient) -> InventoryVisualReferenceRepository:
-            from src.infrastructure.repositories.sql_inventory_visual_reference_repository import (
-                SqlInventoryVisualReferenceRepository,
-            )
-
-            return SqlInventoryVisualReferenceRepository(client)
-
-        def _memory() -> InventoryVisualReferenceRepository:
-            from src.infrastructure.repositories.memory_inventory_visual_reference_repository import (
-                MemoryInventoryVisualReferenceRepository,
-            )
-
-            return MemoryInventoryVisualReferenceRepository()
-
-        self._visual_reference_repo = self._build_sql_repository_or_memory(
-            backend_info_name="InventoryVisualReferenceRepository",
-            sql_error_subject="inventory_visual_reference repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
-        return self._visual_reference_repo
 
     def get_supplier_reference_image_repo(self) -> SupplierReferenceImageRepository:
         if self._supplier_reference_image_repo is not None:

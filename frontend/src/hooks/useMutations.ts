@@ -15,10 +15,7 @@ import {
   runAisleMerge,
   uploadAisleAssets,
   deleteAisleSourceAsset,
-  uploadInventoryVisualReferences,
   uploadSupplierReferenceImages,
-  deleteInventoryVisualReference,
-  replaceInventoryVisualReference,
   submitReviewAction,
   promoteAisleOperationalJob,
 } from '../api/client';
@@ -247,40 +244,6 @@ export function useDeleteAisleSourceAsset(inventoryId: string, aisleId: string) 
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.aisleSourceAssets(inventoryId, aisleId),
       });
-    },
-  });
-}
-
-export function useUploadInventoryVisualReferences(inventoryId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (files: File[]) => uploadInventoryVisualReferences(inventoryId, files),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.visualReferences(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
-    },
-  });
-}
-
-export function useDeleteInventoryVisualReference(inventoryId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (referenceId: string) => deleteInventoryVisualReference(inventoryId, referenceId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.visualReferences(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
-    },
-  });
-}
-
-export function useReplaceInventoryVisualReference(inventoryId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ referenceId, file }: { referenceId: string; file: File }) =>
-      replaceInventoryVisualReference(inventoryId, referenceId, file),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.visualReferences(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
     },
   });
 }

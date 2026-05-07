@@ -23,9 +23,9 @@ from src.application.ports.repositories import (
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import ArtifactStorage
-from src.application.use_cases.upload_inventory_visual_references import (
+from src.application.utils.reference_image_mime import (
     ALLOWED_MIME_TYPES,
-    _normalize_mime,
+    normalize_reference_image_mime,
 )
 from src.application.utils.supplier_reference_image_paths import (
     supplier_reference_image_storage_path,
@@ -75,7 +75,7 @@ class UploadSupplierReferenceImagesUseCase:
         for f in files:
             if f.size <= 0:
                 raise ZeroByteFileError("Empty or zero-byte files are not allowed")
-            mime = _normalize_mime(f.content_type)
+            mime = normalize_reference_image_mime(f.content_type)
             if mime not in ALLOWED_MIME_TYPES:
                 raise UnsupportedAssetTypeError(
                     f"Unsupported image content type for supplier reference image: {f.content_type}"
@@ -86,7 +86,7 @@ class UploadSupplierReferenceImagesUseCase:
         written_paths: list[str] = []
         try:
             for f in files:
-                mime = _normalize_mime(f.content_type)
+                mime = normalize_reference_image_mime(f.content_type)
                 reference_image_id = str(uuid4())
                 storage_path = supplier_reference_image_storage_path(
                     client_supplier_id=supplier_id,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.application.utils.inventory_visual_reference_paths import extension_from_mime_type
+from src.application.utils.reference_image_mime import extension_from_mime_type
 
 
 def supplier_reference_image_storage_path(

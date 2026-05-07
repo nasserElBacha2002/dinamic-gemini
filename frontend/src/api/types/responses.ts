@@ -118,25 +118,6 @@ export interface PaginatedInventoryListResponse {
   total_pages: number;
 }
 
-// ─── Inventory visual references (v3.2.4 Phase 2/8) ─────────────────────────
-
-export interface InventoryVisualReference {
-  id: string;
-  inventory_id: string;
-  filename: string;
-  mime_type: string;
-  file_size: number;
-  created_at: string;
-}
-
-export interface UploadInventoryVisualReferencesResponse {
-  items: InventoryVisualReference[];
-}
-
-export interface InventoryVisualReferenceListResponse {
-  items: InventoryVisualReference[];
-}
-
 export interface ReferenceUsageSummary {
   resolved: boolean;
   resolved_count: number;

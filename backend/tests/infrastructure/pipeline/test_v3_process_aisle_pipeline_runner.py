@@ -6,26 +6,18 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.ports.repositories import (
-    InventoryRepository,
-    InventoryVisualReferenceRepository,
-    SupplierReferenceImageRepository,
-)
+from src.application.ports.repositories import SupplierReferenceImageRepository
 from src.application.services.aisle_analysis_context_builder import AisleAnalysisContextBuilder
-from src.application.services.inventory_visual_reference_resolver import (
-    InventoryVisualReferenceResolver,
-)
 from src.application.services.supplier_reference_image_resolver import (
     SupplierReferenceImageResolver,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
-from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
     V3ProcessAislePipelineRunner,
     resolve_visual_reference_paths,
@@ -55,10 +47,8 @@ def _aisle(*, inv: str = "inv-1", supplier_id: str | None = None) -> Aisle:
     )
 
 
-def test_c71_supplier_pipeline_never_calls_inventory_visual_reference_list_by_inventory(
-    tmp_path: Path,
-) -> None:
-    """Active v3 aisle input path must not load legacy inventory_visual_references."""
+def test_c71_supplier_pipeline_resolves_supplier_reference_images(tmp_path: Path) -> None:
+    """v3 aisle processing resolves references exclusively via supplier_reference_images."""
     now = datetime.now(timezone.utc)
     supplier_repo = MemorySupplierReferenceImageRepository()
     supplier_repo.create(
@@ -73,13 +63,6 @@ def test_c71_supplier_pipeline_never_calls_inventory_visual_reference_list_by_in
             updated_at=now,
         )
     )
-    strict_inventory_visual_repo = MagicMock(spec=InventoryVisualReferenceRepository)
-    strict_inventory_visual_repo.list_by_inventory.side_effect = AssertionError(
-        "inventory_visual_reference_repo.list_by_inventory must not run during v3 aisle pipeline"
-    )
-    inventory_repo = MagicMock(spec=InventoryRepository)
-    inventory_repo.get_by_id.return_value = MagicMock(id="inv-1")
-    _ = InventoryVisualReferenceResolver(inventory_repo, strict_inventory_visual_repo)
 
     context_builder = AisleAnalysisContextBuilder(SupplierReferenceImageResolver(supplier_repo))
     runner = V3ProcessAislePipelineRunner(
@@ -110,37 +93,16 @@ def test_c71_supplier_pipeline_never_calls_inventory_visual_reference_list_by_in
     job_dir = tmp_path / "job"
     job_dir.mkdir()
 
-    with (
-        patch.object(
-            InventoryVisualReferenceResolver,
-            "resolve_for_inventory",
-            side_effect=AssertionError(
-                "InventoryVisualReferenceResolver.resolve_for_inventory must not run during v3 aisle pipeline"
-            ),
-        ),
-        patch(
-            "src.infrastructure.repositories.memory_inventory_visual_reference_repository.MemoryInventoryVisualReferenceRepository.list_by_inventory",
-            side_effect=AssertionError(
-                "MemoryInventoryVisualReferenceRepository.list_by_inventory unexpectedly invoked"
-            ),
-        ),
-        patch(
-            "src.infrastructure.repositories.sql_inventory_visual_reference_repository.SqlInventoryVisualReferenceRepository.list_by_inventory",
-            side_effect=AssertionError(
-                "SqlInventoryVisualReferenceRepository.list_by_inventory unexpectedly invoked"
-            ),
-        ),
-    ):
-        job_input, video_path = runner.build_pipeline_input(
-            [asset],
-            v3_base,
-            job_dir,
-            "job-1",
-            analysis_context=analysis_ctx,
-            aisle=aisle,
-            run_id="run",
-            legacy_local_read_enabled=True,
-        )
+    job_input, video_path = runner.build_pipeline_input(
+        [asset],
+        v3_base,
+        job_dir,
+        "job-1",
+        analysis_context=analysis_ctx,
+        aisle=aisle,
+        run_id="run",
+        legacy_local_read_enabled=True,
+    )
 
     assert video_path == ""
     meta_ctx = (job_input.metadata or {}).get("analysis_context")
@@ -148,7 +110,6 @@ def test_c71_supplier_pipeline_never_calls_inventory_visual_reference_list_by_in
     refs = meta_ctx.get("visual_references")
     assert isinstance(refs, list) and len(refs) == 1
     assert refs[0].get("resolved_path")
-    strict_inventory_visual_repo.list_by_inventory.assert_not_called()
 
 
 def test_c71_supplier_with_no_images_builds_empty_visual_references(tmp_path: Path) -> None:
@@ -185,21 +146,16 @@ def test_c71_supplier_with_no_images_builds_empty_visual_references(tmp_path: Pa
     job_dir = tmp_path / "job"
     job_dir.mkdir()
 
-    with patch.object(
-        InventoryVisualReferenceResolver,
-        "resolve_for_inventory",
-        side_effect=AssertionError("legacy inventory visual references must not be resolved"),
-    ):
-        job_input, _ = runner.build_pipeline_input(
-            [asset],
-            v3_base,
-            job_dir,
-            "job-1",
-            analysis_context=analysis_ctx,
-            aisle=aisle,
-            run_id="run",
-            legacy_local_read_enabled=True,
-        )
+    job_input, _ = runner.build_pipeline_input(
+        [asset],
+        v3_base,
+        job_dir,
+        "job-1",
+        analysis_context=analysis_ctx,
+        aisle=aisle,
+        run_id="run",
+        legacy_local_read_enabled=True,
+    )
 
     assert supplier_repo.list_by_supplier.call_count == 2
     assert all(c.args == ("sup-1",) for c in supplier_repo.list_by_supplier.call_args_list)
@@ -242,21 +198,16 @@ def test_c71_no_supplier_skips_supplier_repo_lookup_and_legacy_fallback(tmp_path
     job_dir = tmp_path / "job"
     job_dir.mkdir()
 
-    with patch.object(
-        InventoryVisualReferenceResolver,
-        "resolve_for_inventory",
-        side_effect=AssertionError("legacy inventory visual references must not be resolved"),
-    ):
-        job_input, _ = runner.build_pipeline_input(
-            [asset],
-            v3_base,
-            job_dir,
-            "job-1",
-            analysis_context=analysis_ctx,
-            aisle=aisle,
-            run_id="run",
-            legacy_local_read_enabled=True,
-        )
+    job_input, _ = runner.build_pipeline_input(
+        [asset],
+        v3_base,
+        job_dir,
+        "job-1",
+        analysis_context=analysis_ctx,
+        aisle=aisle,
+        run_id="run",
+        legacy_local_read_enabled=True,
+    )
 
     supplier_repo.list_by_supplier.assert_not_called()
     meta_ctx = (job_input.metadata or {}).get("analysis_context")
@@ -351,14 +302,15 @@ def test_build_pipeline_input_photos_writes_manifest_and_job_input(tmp_path: Pat
 
 def test_resolve_visual_reference_paths_sets_resolved_path_from_resolver(tmp_path: Path) -> None:
     now = datetime.now(timezone.utc)
-    ref_rec = InventoryVisualReference(
+    ref_rec = SupplierReferenceImage(
         id="ref-1",
-        inventory_id="inv-1",
+        client_supplier_id="sup-1",
         filename="r.jpg",
         storage_path="inventories/inv-1/visual_references/r.jpg",
         mime_type="image/jpeg",
         file_size=1,
         created_at=now,
+        updated_at=now,
     )
     ctx = AnalysisContext(
         primary_evidence=[],

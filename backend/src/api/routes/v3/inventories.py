@@ -1,4 +1,4 @@
-"""v3 inventory CRUD, metrics, and visual references.
+"""v3 inventory CRUD, metrics, and processing options.
 
 GET / (collection) returns InventoryListItemResponse — screen-ready list rows with aggregates.
 GET /{id} and POST / return InventoryResponse (entity without list aggregates).
@@ -6,39 +6,22 @@ GET /{id} and POST / return InventoryResponse (entity without list aggregates).
 
 from __future__ import annotations
 
-import logging
-from typing import NoReturn
-
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
-from src.api.constants.error_wire import (
-    HTTP_DETAIL_LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
-    HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED,
-    HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
-)
+from src.api.constants.error_wire import HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED
 from src.api.dependencies import (
-    get_artifact_storage,
     get_create_inventory_use_case,
     get_export_inventory_results_use_case,
     get_get_inventory_metrics_use_case,
     get_get_inventory_use_case,
     get_list_inventory_list_items_use_case,
-    get_list_inventory_visual_references_use_case,
 )
 from src.api.errors import reraise_if_mapped
-from src.api.errors.structured_api_http import (
-    LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
-    VISUAL_REFERENCE_NOT_FOUND,
-    StructuredApiHttpError,
-)
 from src.api.schemas.inventory_schemas import (
     CreateInventoryRequest,
     InventoryMetricsResponse,
     InventoryResponse,
-    InventoryVisualReferenceListResponse,
-    InventoryVisualReferenceResponse,
-    UploadInventoryVisualReferencesResponse,
 )
 from src.api.schemas.listing_schemas import PaginatedInventoryListResponse, compute_total_pages
 from src.api.schemas.processing_schemas import (
@@ -47,16 +30,9 @@ from src.api.schemas.processing_schemas import (
     ProcessingProviderOptionItem,
     ProcessingProviderOptionsResponse,
 )
-from src.api.services.v3_stored_artifact_access import (
-    StoredArtifactAccessError,
-    resolve_visual_reference_file_response,
-)
 from src.application.errors import ClientNotFoundError, InventoryNotFoundError
 from src.application.services.inventory_table_query_params import (
     build_inventory_table_query_from_route_params,
-)
-from src.application.services.inventory_visual_reference_lookup import (
-    select_visual_reference_by_id,
 )
 from src.application.services.processing_experiment_catalog import (
     default_model_for_provider,
@@ -72,33 +48,14 @@ from src.application.use_cases.export_inventory_results import ExportInventoryRe
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
-from src.application.use_cases.upload_inventory_visual_references import (
-    ListInventoryVisualReferencesUseCase,
-)
 from src.config import load_settings
 from src.domain.inventory.entities import InventoryProcessingMode
-from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
 from src.pipeline.providers.definitions import PIPELINE_PROVIDER_SPECS
 
 from .shared import inventory_list_item_to_response, inventory_to_response
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter()
-
-
-def _visual_reference_to_response(
-    ref: InventoryVisualReference,
-) -> InventoryVisualReferenceResponse:
-    return InventoryVisualReferenceResponse(
-        id=ref.id,
-        inventory_id=ref.inventory_id,
-        filename=ref.filename,
-        mime_type=ref.mime_type,
-        file_size=ref.file_size,
-        created_at=ref.created_at,
-    )
 
 
 @router.post("/", response_model=InventoryResponse, status_code=201)
@@ -250,113 +207,4 @@ def get_inventory_metrics(
         return InventoryMetricsResponse(**metrics)
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)
-        raise
-
-
-@router.post(
-    "/{inventory_id}/visual-references",
-    response_model=UploadInventoryVisualReferencesResponse,
-)
-async def upload_inventory_visual_references(
-    inventory_id: str,
-    files: list[UploadFile] = File(..., description="One or more image files"),
-) -> NoReturn:
-    """Upload one or more visual reference images for an inventory.
-
-    Phase C8: inventory-scoped visual reference writes are retired; use supplier reference images.
-    """
-    del inventory_id, files
-    raise StructuredApiHttpError(
-        status_code=410,
-        error_code=LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
-        detail=HTTP_DETAIL_LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
-    )
-
-
-@router.delete("/{inventory_id}/visual-references/{reference_id}")
-def delete_inventory_visual_reference(
-    inventory_id: str,
-    reference_id: str,
-) -> NoReturn:
-    del inventory_id, reference_id
-    raise StructuredApiHttpError(
-        status_code=410,
-        error_code=LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
-        detail=HTTP_DETAIL_LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
-    )
-
-
-@router.put(
-    "/{inventory_id}/visual-references/{reference_id}",
-    response_model=InventoryVisualReferenceResponse,
-)
-async def replace_inventory_visual_reference(
-    inventory_id: str,
-    reference_id: str,
-    file: UploadFile = File(..., description="Replacement image file"),
-) -> NoReturn:
-    del inventory_id, reference_id, file
-    raise StructuredApiHttpError(
-        status_code=410,
-        error_code=LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
-        detail=HTTP_DETAIL_LEGACY_INVENTORY_VISUAL_REFERENCES_DISABLED,
-    )
-
-
-@router.get(
-    "/{inventory_id}/visual-references",
-    response_model=InventoryVisualReferenceListResponse,
-)
-def list_inventory_visual_references(
-    inventory_id: str,
-    use_case: ListInventoryVisualReferencesUseCase = Depends(
-        get_list_inventory_visual_references_use_case
-    ),
-) -> InventoryVisualReferenceListResponse:
-    """List visual references for an inventory (ordered by created_at ASC, id ASC)."""
-    try:
-        refs = use_case.execute(inventory_id)
-        return InventoryVisualReferenceListResponse(
-            items=[_visual_reference_to_response(ref) for ref in refs]
-        )
-    except InventoryNotFoundError as e:
-        reraise_if_mapped(e)
-        raise
-
-
-@router.get("/{inventory_id}/visual-references/{reference_id}/file")
-def get_inventory_visual_reference_file(
-    inventory_id: str,
-    reference_id: str,
-    use_case: ListInventoryVisualReferencesUseCase = Depends(
-        get_list_inventory_visual_references_use_case
-    ),
-    artifact_storage=Depends(get_artifact_storage),
-) -> Response:
-    """Resolve a visual reference file URL/stream for operators and UI."""
-    try:
-        refs = use_case.execute(inventory_id)
-    except InventoryNotFoundError as e:
-        reraise_if_mapped(e)
-        raise
-    ref = select_visual_reference_by_id(refs, reference_id)
-    # Same VISUAL_REFERENCE_NOT_FOUND contract as ``InventoryVisualReferenceNotFoundError`` via mapper (DELETE/PUT).
-    if ref is None:
-        raise StructuredApiHttpError(
-            404,
-            error_code=VISUAL_REFERENCE_NOT_FOUND,
-            detail=HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
-        )
-
-    try:
-        return resolve_visual_reference_file_response(ref, artifact_store=artifact_storage)
-    except StoredArtifactAccessError as e:
-        logger.warning(
-            "Visual reference file resolution failed: inventory_id=%s reference_id=%s reason=%s detail=%s",
-            inventory_id,
-            reference_id,
-            e.reason_code,
-            e.detail,
-        )
-        reraise_if_mapped(e, cause=e)
         raise

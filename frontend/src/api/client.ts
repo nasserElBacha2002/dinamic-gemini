@@ -10,15 +10,10 @@
 export type { InventoriesListQuery } from './inventoriesApi';
 export {
   createInventory,
-  deleteInventoryVisualReference,
   exportInventoryResultsCsv,
-  fetchInventoryVisualReferenceFile,
   getInventories,
   getInventory,
   getInventoryMetrics,
-  getInventoryVisualReferences,
-  replaceInventoryVisualReference,
-  uploadInventoryVisualReferences,
 } from './inventoriesApi';
 export type { AislesListQuery } from './aislesApi';
 export {

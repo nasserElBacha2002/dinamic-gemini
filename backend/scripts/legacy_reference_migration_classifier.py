@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-# Align with upload_inventory_visual_references (subset check for invalid MIME).
+# Align with supplier reference image MIME allow-list (subset check for invalid MIME).
 _ALLOWED_MIME = frozenset(
     {
         "image/jpeg",

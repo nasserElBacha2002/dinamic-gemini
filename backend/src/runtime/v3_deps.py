@@ -22,7 +22,6 @@ from src.application.ports.repositories import (
     EvidenceRepository,
     FinalCountRepository,
     InventoryRepository,
-    InventoryVisualReferenceRepository,
     JobRepository,
     NormalizedLabelRepository,
     PositionRepository,
@@ -59,10 +58,6 @@ def get_job_repo() -> JobRepository:
 
 def get_source_asset_repo() -> SourceAssetRepository:
     return get_app_container().get_source_asset_repo()
-
-
-def get_inventory_visual_reference_repo() -> InventoryVisualReferenceRepository:
-    return get_app_container().get_inventory_visual_reference_repo()
 
 
 def get_supplier_reference_image_repo() -> SupplierReferenceImageRepository:
