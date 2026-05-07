@@ -14,6 +14,7 @@ import LegacyAisleCompareRedirect from './pages/analytics/LegacyAisleCompareRedi
 import PositionDetailPage from './pages/PositionDetailPage';
 import ReviewQueuePage from './pages/ReviewQueuePage';
 import MetricsPage from './pages/MetricsPage';
+import ClientsList from './pages/ClientsList';
 import AdminAiConfigPage from './pages/AdminAiConfigPage';
 import RequireUsernameAdmin from './features/auth/RequireUsernameAdmin';
 import IngestionSessionsPage from './features/ingestionSessions/pages/IngestionSessionsPage';
@@ -49,6 +50,7 @@ function App() {
   const positionDetailEl = useMemo(() => <PositionDetailPage />, []);
   const reviewQueueEl = useMemo(() => <ReviewQueuePage />, []);
   const metricsEl = useMemo(() => <MetricsPage />, []);
+  const clientsEl = useMemo(() => <ClientsList />, []);
   const adminAiConfigEl = useMemo(
     () => (
       <RequireUsernameAdmin>
@@ -78,6 +80,7 @@ function App() {
         <Route path={ROUTE_PATH.inventories} element={listEl} />
         <Route path={ROUTE_PATH.reviewQueue} element={reviewQueueEl} />
         <Route path={ROUTE_PATH.metrics} element={metricsEl} />
+        <Route path={ROUTE_PATH.clients} element={clientsEl} />
         <Route path={ROUTE_PATH.ingestionSessions} element={ingestionSessionsEl} />
         <Route path={ROUTE_PATH.ingestionSessionDetail} element={ingestionSessionDetailEl} />
         <Route path={ROUTE_PATH.adminAiConfig} element={adminAiConfigEl} />

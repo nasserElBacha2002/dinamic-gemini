@@ -486,6 +486,7 @@
     "load_aisle_source_assets": "No se pudieron cargar los activos del pasillo",
     "load_aisles": "No se pudieron cargar los pasillos",
     "load_compare": "No se pudo cargar la comparación",
+    "load_clients": "No se pudieron cargar los clientes",
     "load_inventories": "No se pudieron cargar los inventarios",
     "load_inventory": "No se pudo cargar el inventario",
     "load_job_details": "No se pudieron cargar los detalles de la ejecución",
@@ -577,6 +578,31 @@
     "primary_config_title": "Configuración del inventario",
     "processing_mode_production": "Producción",
     "processing_mode_test": "Test"
+  },
+  "clients": {
+    "page": {
+      "title": "Clientes",
+      "subtitle": "Administrá clientes para la futura organización por cliente y proveedor.",
+      "a11y": "Listado de clientes"
+    },
+    "list": {
+      "empty_title": "Todavía no hay clientes cargados",
+      "empty_description": "Creá tu primer cliente para empezar a organizar inventarios por cliente y proveedor."
+    },
+    "fields": {
+      "name": "Cliente",
+      "status": "Estado",
+      "created_at": "Creado",
+      "updated_at": "Actualizado"
+    },
+    "status": {
+      "active": "Activo",
+      "inactive": "Inactivo"
+    },
+    "actions": {
+      "create": "Crear cliente",
+      "create_disabled_hint": "Disponible en la próxima etapa"
+    }
   },
   "jobs": {
     "attempt_number": "Intento {{count}}",
@@ -884,6 +910,7 @@
     "ingestion_sessions": "Sesiones de importación",
     "review_queue": "Cola de revisión",
     "metrics": "Métricas",
+    "clients": "Clientes",
     "ai_config": "Configuración de IA"
   },
   "root": {
@@ -917,6 +944,10 @@
     "metrics": {
       "title": "Métricas",
       "subtitle": "Desempeño operativo y tendencias de calidad"
+    },
+    "clients": {
+      "title": "Clientes",
+      "subtitle": "Base administrativa de clientes"
     },
     "ingestion_sessions": {
       "title": "Sesiones de importación",
