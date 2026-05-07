@@ -106,6 +106,8 @@ export const queryKeys = {
         [...queryKeys.clients.suppliers.all(clientId), 'list', params] as const,
       detail: (clientId: string, supplierId: string) =>
         [...queryKeys.clients.suppliers.all(clientId), 'detail', supplierId] as const,
+      referenceImages: (clientId: string, supplierId: string) =>
+        [...queryKeys.clients.suppliers.all(clientId), 'reference-images', supplierId] as const,
     },
   },
 

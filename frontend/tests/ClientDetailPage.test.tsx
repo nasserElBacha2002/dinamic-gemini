@@ -7,10 +7,20 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import ClientDetail from '../src/pages/ClientDetail';
 import { AppSnackbarProvider } from '../src/components/ui';
 
-const { useClientMock, useClientSuppliersMock, useCreateClientSupplierMock } = vi.hoisted(() => ({
+const {
+  useClientMock,
+  useClientSuppliersMock,
+  useCreateClientSupplierMock,
+  useSupplierReferenceImagesMock,
+  useUploadSupplierReferenceImagesMock,
+  useDeleteSupplierReferenceImageMock,
+} = vi.hoisted(() => ({
   useClientMock: vi.fn(),
   useClientSuppliersMock: vi.fn(),
   useCreateClientSupplierMock: vi.fn(),
+  useSupplierReferenceImagesMock: vi.fn(),
+  useUploadSupplierReferenceImagesMock: vi.fn(),
+  useDeleteSupplierReferenceImageMock: vi.fn(),
 }));
 
 vi.mock('../src/hooks', async (importOriginal) => {
@@ -20,6 +30,9 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useClient: useClientMock,
     useClientSuppliers: useClientSuppliersMock,
     useCreateClientSupplier: useCreateClientSupplierMock,
+    useSupplierReferenceImages: useSupplierReferenceImagesMock,
+    useUploadSupplierReferenceImages: useUploadSupplierReferenceImagesMock,
+    useDeleteSupplierReferenceImage: useDeleteSupplierReferenceImageMock,
   };
 });
 
@@ -45,6 +58,30 @@ describe('ClientDetail page', () => {
     useClientSuppliersMock.mockReset();
     useCreateClientSupplierMock.mockReset();
     useCreateClientSupplierMock.mockReturnValue({ mutateAsync: vi.fn() });
+    useSupplierReferenceImagesMock.mockReset();
+    useSupplierReferenceImagesMock.mockReturnValue({
+      data: { items: [] },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useUploadSupplierReferenceImagesMock.mockReset();
+    useUploadSupplierReferenceImagesMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ items: [] }),
+      isPending: false,
+      reset: vi.fn(),
+      isError: false,
+      error: null,
+    });
+    useDeleteSupplierReferenceImageMock.mockReset();
+    useDeleteSupplierReferenceImageMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({ deleted: true, id: 'x' }),
+      isPending: false,
+      reset: vi.fn(),
+      isError: false,
+      error: null,
+    });
   });
 
   it('renders client information and suppliers rows', () => {
@@ -90,6 +127,7 @@ describe('ClientDetail page', () => {
     expect(screen.getByText(/proveedores del cliente/i)).toBeInTheDocument();
     expect(screen.getByText(/proveedor norte/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /crear proveedor/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /gestionar imágenes/i })).toBeInTheDocument();
   });
 
   it('renders client loading state', () => {
@@ -217,5 +255,50 @@ describe('ClientDetail page', () => {
     fireEvent.click(screen.getByRole('button', { name: /^crear$/i }));
 
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith({ name: 'Proveedor Centro' }));
+  });
+
+  it('opens supplier reference images drawer from supplier row action', async () => {
+    useClientMock.mockReturnValue({
+      data: {
+        id: 'client-1',
+        name: 'Cliente Norte',
+        status: 'active',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useClientSuppliersMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'supplier-1',
+            client_id: 'client-1',
+            name: 'Proveedor Norte',
+            status: 'active',
+            created_at: '2024-01-03T00:00:00Z',
+            updated_at: '2024-01-04T00:00:00Z',
+          },
+        ],
+        page: 1,
+        page_size: 25,
+        total_items: 1,
+        total_pages: 1,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage('/clientes/client-1');
+    fireEvent.click(screen.getByRole('button', { name: /gestionar imágenes/i }));
+    await waitFor(() =>
+      expect(screen.getByText('Imágenes de referencia', { exact: true })).toBeInTheDocument()
+    );
+    expect(useSupplierReferenceImagesMock).toHaveBeenCalled();
   });
 });

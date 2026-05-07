@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Link as RouterLink, useParams } from 'react-router-dom';
 import type { ClientSupplier } from '../api/types';
 import CreateClientSupplierDialog from '../components/CreateClientSupplierDialog';
+import SupplierReferenceImagesModule from '../features/clients/components/SupplierReferenceImagesModule';
 import { PageHeader } from '../components/shell';
 import {
   DataTable,
@@ -33,6 +34,10 @@ export default function ClientDetail() {
   const { clientId } = useParams<{ clientId: string }>();
   const safeClientId = (clientId ?? '').trim();
   const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
+  const [referenceImagesTarget, setReferenceImagesTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const invalidClientId = safeClientId === '';
 
@@ -68,6 +73,23 @@ export default function ClientDetail() {
         id: 'updated_at',
         label: t('clients.suppliers.fields.updated_at'),
         cell: (supplier) => formatDate(supplier.updated_at),
+      },
+      {
+        id: 'reference_images',
+        label: t('clients.suppliers.reference_images.column_label'),
+        align: 'right',
+        cell: (supplier) => (
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={(event) => {
+              event.stopPropagation();
+              setReferenceImagesTarget({ id: supplier.id, name: supplier.name });
+            }}
+          >
+            {t('clients.suppliers.reference_images.manage')}
+          </Button>
+        ),
       },
     ],
     [t]
@@ -182,6 +204,16 @@ export default function ClientDetail() {
         }}
         createClientSupplierFn={createSupplierMutation.mutateAsync}
       />
+
+      {referenceImagesTarget ? (
+        <SupplierReferenceImagesModule
+          clientId={safeClientId}
+          supplierId={referenceImagesTarget.id}
+          supplierName={referenceImagesTarget.name}
+          open
+          onClose={() => setReferenceImagesTarget(null)}
+        />
+      ) : null}
     </>
   );
 }

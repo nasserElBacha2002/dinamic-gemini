@@ -681,6 +681,37 @@
           "validation_name_max": "El nombre del proveedor no puede superar los 255 caracteres.",
           "validation_client_required": "No se pudo determinar el cliente para crear el proveedor."
         }
+      },
+      "reference_images": {
+        "column_label": "Referencias",
+        "manage": "Gestionar imágenes",
+        "close": "Cerrar panel de imágenes de referencia",
+        "context_overline": "Proveedor del cliente",
+        "title": "Imágenes de referencia",
+        "subtitle": "Proveedor: {{name}}",
+        "management_title": "Carga y administración",
+        "management_body": "Estas imágenes sirven como referencia visual del proveedor. No se utilizan automáticamente en el procesamiento hasta una etapa posterior.",
+        "upload": "Subir imagen",
+        "upload_multiple": "Subir imágenes",
+        "empty_title": "No hay imágenes de referencia",
+        "empty_description": "Este proveedor todavía no tiene imágenes de referencia cargadas.",
+        "delete": "Eliminar imagen",
+        "delete_confirm_title": "Eliminar imagen de referencia",
+        "delete_confirm_body": "¿Eliminar «{{name}}»? Esta acción eliminará la imagen de referencia del proveedor.",
+        "delete_fallback_name": "esta imagen",
+        "upload_success": "Imagen de referencia cargada correctamente.",
+        "upload_error": "No se pudo cargar la imagen de referencia.",
+        "delete_success": "Imagen de referencia eliminada correctamente.",
+        "delete_error": "No se pudo eliminar la imagen de referencia.",
+        "load_error": "No se pudieron cargar las imágenes de referencia.",
+        "label": "Etiqueta",
+        "description": "Descripción",
+        "optional_metadata_hint": "La etiqueta y la descripción son opcionales y se guardan con la imagen.",
+        "batch_metadata_notice": "La etiqueta y la descripción se aplicarán a todas las imágenes seleccionadas.",
+        "subtitle_uploaded": "{{mime}} · {{size}} · {{date}}",
+        "preview": "Vista previa",
+        "image_preview_title": "Vista previa",
+        "image_preview_alt": "Imagen de referencia del proveedor"
       }
     }
   },

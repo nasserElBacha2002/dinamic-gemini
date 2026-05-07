@@ -8,6 +8,7 @@ import {
   createAisle,
   createClient,
   createClientSupplier,
+  deleteSupplierReferenceImage,
   startAisleProcessing,
   cancelAisleJob,
   retryAisleJob,
@@ -15,6 +16,7 @@ import {
   uploadAisleAssets,
   deleteAisleSourceAsset,
   uploadInventoryVisualReferences,
+  uploadSupplierReferenceImages,
   deleteInventoryVisualReference,
   replaceInventoryVisualReference,
   submitReviewAction,
@@ -26,6 +28,7 @@ import type {
   CreateInventoryRequest,
   CreateAisleRequest,
   ReviewActionRequest,
+  UploadSupplierReferenceImagesRequest,
 } from '../api/types';
 import { queryKeys } from '../api/queryKeys';
 import {
@@ -64,6 +67,31 @@ export function useCreateClientSupplier(clientId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.clients.suppliers.all(clientId) });
       queryClient.invalidateQueries({
         queryKey: queryKeys.clients.suppliers.detail(clientId, createdSupplier.id),
+      });
+    },
+  });
+}
+
+export function useUploadSupplierReferenceImages(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UploadSupplierReferenceImagesRequest) =>
+      uploadSupplierReferenceImages(clientId, supplierId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.referenceImages(clientId, supplierId),
+      });
+    },
+  });
+}
+
+export function useDeleteSupplierReferenceImage(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (imageId: string) => deleteSupplierReferenceImage(clientId, supplierId, imageId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.referenceImages(clientId, supplierId),
       });
     },
   });

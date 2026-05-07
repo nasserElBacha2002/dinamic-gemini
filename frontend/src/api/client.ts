@@ -82,7 +82,12 @@ export { createClient, getClient, listClients } from './clientsApi';
 export type { ClientSuppliersListQuery } from './clientSuppliersApi';
 export {
   createClientSupplier,
+  deleteSupplierReferenceImage,
+  fetchSupplierReferenceImageFile,
   getClientSupplier,
+  getSupplierReferenceImageFileUrl,
   listClientSuppliers,
+  listSupplierReferenceImages,
+  uploadSupplierReferenceImages,
 } from './clientSuppliersApi';
 

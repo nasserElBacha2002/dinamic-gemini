@@ -9,6 +9,7 @@ import {
   getClientSupplier,
   listClients,
   listClientSuppliers,
+  listSupplierReferenceImages,
 } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 
@@ -65,6 +66,18 @@ export function useClientSupplier(
   return useQuery({
     queryKey: queryKeys.clients.suppliers.detail(clientId ?? '', supplierId ?? ''),
     queryFn: () => getClientSupplier(clientId!, supplierId!),
+    enabled: Boolean(clientId && supplierId) && (options?.enabled !== false),
+  });
+}
+
+export function useSupplierReferenceImages(
+  clientId: string | undefined,
+  supplierId: string | undefined,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: queryKeys.clients.suppliers.referenceImages(clientId ?? '', supplierId ?? ''),
+    queryFn: () => listSupplierReferenceImages(clientId!, supplierId!),
     enabled: Boolean(clientId && supplierId) && (options?.enabled !== false),
   });
 }

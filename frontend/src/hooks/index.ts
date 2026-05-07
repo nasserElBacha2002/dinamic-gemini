@@ -4,6 +4,7 @@ export {
   useClient,
   useClientSuppliers,
   useClientSupplier,
+  useSupplierReferenceImages,
 } from './useClients';
 export { useInventoriesList, useInventoryDetail, useInventoryVisualReferences } from './useInventories';
 export {
@@ -28,6 +29,8 @@ export { useReviewQueue } from './useReviewQueue';
 export {
   useCreateClient,
   useCreateClientSupplier,
+  useUploadSupplierReferenceImages,
+  useDeleteSupplierReferenceImage,
   useCreateInventory,
   useCreateAisle,
   useStartAisleProcessing,

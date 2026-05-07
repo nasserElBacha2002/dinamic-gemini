@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
@@ -58,6 +58,10 @@ export interface ManagedImageAssetsDrawerProps {
   uploadError?: string | null;
   /** e.g. image/* only or include video */
   uploadAccept?: string;
+  /** When false, file input does not allow multi-select (default true). */
+  uploadMultiple?: boolean;
+  /** Rendered inside the management panel before the upload button (e.g. optional metadata fields). */
+  uploadExtras?: ReactNode;
   showReplace?: boolean;
   onReplace?: (assetId: string, file: File) => Promise<unknown>;
   isReplacing?: boolean;
@@ -86,6 +90,8 @@ export default function ManagedImageAssetsDrawer({
   isUploading = false,
   uploadError,
   uploadAccept = 'image/jpeg,image/jpg,image/png,image/webp',
+  uploadMultiple = true,
+  uploadExtras,
   showReplace = false,
   onReplace,
   isReplacing = false,
@@ -277,7 +283,7 @@ export default function ManagedImageAssetsDrawer({
               ref={fileInputRef}
               type="file"
               accept={uploadAccept}
-              multiple
+              multiple={uploadMultiple}
               style={{ display: 'none' }}
               onChange={handleFileChange}
             />
@@ -311,6 +317,7 @@ export default function ManagedImageAssetsDrawer({
                 <Typography variant="body2" color="text.secondary">
                   {copy.managementBody}
                 </Typography>
+                {uploadExtras ?? null}
                 {showUpload && onUpload ? (
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Button variant="contained" size="small" onClick={handleUploadClick} disabled={busy}>
