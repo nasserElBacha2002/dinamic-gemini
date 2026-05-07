@@ -95,6 +95,12 @@ class StubArtifactStorage(ArtifactStorage):
         self.deleted.append(path)
 
 
+class FailingDeleteArtifactStorage(StubArtifactStorage):
+    def delete_file(self, path: str) -> None:
+        self.deleted.append(path)
+        raise RuntimeError("simulated storage delete failure")
+
+
 def _now() -> datetime:
     return datetime(2026, 5, 7, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -223,3 +229,53 @@ def test_delete_supplier_reference_image_rejects_image_from_another_supplier() -
     )
     with pytest.raises(SupplierReferenceImageNotFoundError):
         use_case.execute("cli-1", "sup-1", "img-1")
+
+
+def test_delete_supplier_reference_image_falls_back_to_storage_path_when_key_is_missing() -> None:
+    client_repo = StubClientRepo()
+    client_repo.save(_client())
+    supplier_repo = StubClientSupplierRepo()
+    supplier_repo.save(_supplier())
+    reference_repo = StubSupplierReferenceRepo()
+    reference_repo.create(
+        SupplierReferenceImage(
+            id="img-1",
+            client_supplier_id="sup-1",
+            filename="front.jpg",
+            storage_path="client_suppliers/sup-1/reference_images/img-1.jpg",
+            storage_key=None,
+            mime_type="image/jpeg",
+            file_size=5,
+            created_at=_now(),
+            updated_at=_now(),
+        )
+    )
+    storage = StubArtifactStorage()
+    use_case = _build_use_case(
+        client_repo=client_repo,
+        supplier_repo=supplier_repo,
+        reference_repo=reference_repo,
+        storage=storage,
+    )
+    use_case.execute("cli-1", "sup-1", "img-1")
+    assert reference_repo.get_by_id("img-1") is None
+    assert storage.deleted == ["client_suppliers/sup-1/reference_images/img-1.jpg"]
+
+
+def test_delete_supplier_reference_image_keeps_db_delete_when_cleanup_fails() -> None:
+    client_repo = StubClientRepo()
+    client_repo.save(_client())
+    supplier_repo = StubClientSupplierRepo()
+    supplier_repo.save(_supplier())
+    reference_repo = StubSupplierReferenceRepo()
+    reference_repo.create(_image())
+    storage = FailingDeleteArtifactStorage()
+    use_case = _build_use_case(
+        client_repo=client_repo,
+        supplier_repo=supplier_repo,
+        reference_repo=reference_repo,
+        storage=storage,
+    )
+    use_case.execute("cli-1", "sup-1", "img-1")
+    assert reference_repo.get_by_id("img-1") is None
+    assert storage.deleted == ["client_suppliers/sup-1/reference_images/img-1.jpg"]

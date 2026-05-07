@@ -391,3 +391,44 @@ def test_list_supplier_reference_images_validates_scope_and_returns_rows() -> No
     )
     listed = use_case.execute("cli-1", "sup-1")
     assert [row.id for row in listed] == ["img-1"]
+
+
+def test_list_supplier_reference_images_rejects_missing_client() -> None:
+    now = datetime(2026, 5, 7, 12, 0, 0, tzinfo=timezone.utc)
+    supplier_repo = StubClientSupplierRepo()
+    supplier_repo.save(_supplier(now))
+    use_case = ListSupplierReferenceImagesUseCase(
+        client_repo=StubClientRepo(),
+        client_supplier_repo=supplier_repo,
+        reference_repo=StubSupplierReferenceRepo(),
+    )
+    with pytest.raises(ClientNotFoundError):
+        use_case.execute("cli-missing", "sup-1")
+
+
+def test_list_supplier_reference_images_rejects_missing_supplier() -> None:
+    now = datetime(2026, 5, 7, 12, 0, 0, tzinfo=timezone.utc)
+    client_repo = StubClientRepo()
+    client_repo.save(_client(now))
+    use_case = ListSupplierReferenceImagesUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=StubClientSupplierRepo(),
+        reference_repo=StubSupplierReferenceRepo(),
+    )
+    with pytest.raises(ClientSupplierNotFoundError):
+        use_case.execute("cli-1", "sup-missing")
+
+
+def test_list_supplier_reference_images_rejects_supplier_client_mismatch() -> None:
+    now = datetime(2026, 5, 7, 12, 0, 0, tzinfo=timezone.utc)
+    client_repo = StubClientRepo()
+    client_repo.save(_client(now))
+    supplier_repo = StubClientSupplierRepo()
+    supplier_repo.save(_supplier(now, client_id="cli-other"))
+    use_case = ListSupplierReferenceImagesUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=supplier_repo,
+        reference_repo=StubSupplierReferenceRepo(),
+    )
+    with pytest.raises(ClientSupplierClientMismatchError):
+        use_case.execute("cli-1", "sup-1")

@@ -116,3 +116,25 @@ Executed:
 
 ## 12. Recommended next phase
 - C2 — Backend API contract and validations
+
+## C1.1 Review fixes
+- Tests added:
+  - `test_delete_supplier_reference_image_falls_back_to_storage_path_when_key_is_missing`
+  - `test_delete_supplier_reference_image_keeps_db_delete_when_cleanup_fails`
+  - `test_list_supplier_reference_images_rejects_missing_client`
+  - `test_list_supplier_reference_images_rejects_missing_supplier`
+  - `test_list_supplier_reference_images_rejects_supplier_client_mismatch`
+- Delete storage semantics:
+  - Reviewed against `DeleteInventoryVisualReferenceUseCase`.
+  - Confirmed consistent behavior: delete key selection uses `(storage_key or storage_path)` with `.strip()`.
+  - No code change required for delete-key selection semantics.
+- Validation commands and results:
+  - `.venv/bin/python -m pytest tests/application/use_cases/test_manage_supplier_reference_images.py` → PASS
+  - `.venv/bin/python -m pytest tests/application/use_cases/test_upload_supplier_reference_images.py` → PASS
+  - `.venv/bin/python -m pytest tests/domain/test_supplier_reference_image_entity.py` → PASS
+  - `.venv/bin/python -m pytest tests/infrastructure/repositories/test_memory_supplier_reference_image_repository.py` → PASS
+  - `.venv/bin/python -m pytest tests/infrastructure/repositories/test_sql_supplier_reference_image_repository_unit.py` → PASS
+  - `.venv/bin/python -m pytest tests/database/test_migration_0028_supplier_reference_images.py` → PASS
+  - `.venv/bin/python -m pytest --collect-only` → PASS
+  - `.venv/bin/python -m ruff check backend/src backend/tests` → PASS
+  - `python scripts/db_migrate.py status` / `validate` → environment-blocked (`HYT00`) when SQL Server is unavailable.
