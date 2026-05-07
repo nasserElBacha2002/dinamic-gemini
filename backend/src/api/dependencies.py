@@ -333,12 +333,14 @@ def get_aisle_review_lifecycle_sync(
 def get_create_aisle_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
     clock: Clock = Depends(get_clock),
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
 ) -> CreateAisleUseCase:
     return CreateAisleUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        client_supplier_repo=client_supplier_repo,
         clock=clock,
         status_reconciler=status_reconciler,
     )

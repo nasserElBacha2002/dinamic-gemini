@@ -21,6 +21,9 @@ from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_client_repository import MemoryClientRepository
+from src.infrastructure.repositories.memory_client_supplier_repository import (
+    MemoryClientSupplierRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.repositories.memory_review_action_repository import (
@@ -73,7 +76,13 @@ def test_inventory_aggregate_lifecycle_through_completed() -> None:
     assert inv.status == InventoryStatus.DRAFT
     assert reconciler.reconcile(inv.id) is False
 
-    create_aisle_uc = CreateAisleUseCase(inv_repo, aisle_repo, clock, reconciler)
+    create_aisle_uc = CreateAisleUseCase(
+        inv_repo,
+        aisle_repo,
+        MemoryClientSupplierRepository(),
+        clock,
+        reconciler,
+    )
     aisle = create_aisle_uc.execute(CreateAisleCommand(inventory_id=inv.id, code="L1"))
     inv_refreshed = inv_repo.get_by_id(inv.id)
     assert inv_refreshed is not None

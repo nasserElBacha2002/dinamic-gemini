@@ -67,7 +67,10 @@ from src.api.services.v3_stored_artifact_access import (
 from src.application.errors import (
     ActiveJobExistsError,
     AisleNotFoundError,
+    ClientSupplierClientMismatchError,
+    ClientSupplierNotFoundError,
     DuplicateAisleCodeError,
+    InventoryClientRequiredForSupplierError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
@@ -226,9 +229,21 @@ def create_aisle(
 ) -> AisleResponse:
     """Create an aisle in an inventory (v3.0). Returns 404 if inventory not found, 409 if code duplicate."""
     try:
-        aisle = use_case.execute(CreateAisleCommand(inventory_id=inventory_id, code=payload.code))
+        aisle = use_case.execute(
+            CreateAisleCommand(
+                inventory_id=inventory_id,
+                code=payload.code,
+                client_supplier_id=payload.client_supplier_id,
+            )
+        )
         return aisle_to_response(aisle)
-    except (InventoryNotFoundError, DuplicateAisleCodeError) as e:
+    except (
+        InventoryNotFoundError,
+        DuplicateAisleCodeError,
+        ClientSupplierNotFoundError,
+        InventoryClientRequiredForSupplierError,
+        ClientSupplierClientMismatchError,
+    ) as e:
         reraise_if_mapped(e)
         raise
 

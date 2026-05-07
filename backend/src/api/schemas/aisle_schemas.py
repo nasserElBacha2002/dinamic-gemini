@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 
@@ -12,6 +12,19 @@ class CreateAisleRequest(BaseModel):
     """POST /api/v3/inventories/{inventory_id}/aisles body."""
 
     code: str = Field(..., min_length=1, max_length=64)
+    client_supplier_id: str | None = Field(
+        None, description="Optional supplier association. Null/omitted preserves legacy behavior."
+    )
+
+    @field_validator("client_supplier_id")
+    @classmethod
+    def validate_client_supplier_id_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("client_supplier_id must not be empty")
+        return normalized
 
 
 class AisleJobSummary(BaseModel):
