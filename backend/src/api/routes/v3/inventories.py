@@ -151,7 +151,13 @@ def create_inventory(
 ) -> InventoryResponse:
     """Create a new inventory (v3.0)."""
     mode = InventoryProcessingMode(payload.processing_mode)
-    inventory = use_case.execute(CreateInventoryCommand(name=payload.name, processing_mode=mode))
+    inventory = use_case.execute(
+        CreateInventoryCommand(
+            name=payload.name,
+            processing_mode=mode,
+            client_id=payload.client_id,
+        )
+    )
     return inventory_to_response(inventory)
 
 

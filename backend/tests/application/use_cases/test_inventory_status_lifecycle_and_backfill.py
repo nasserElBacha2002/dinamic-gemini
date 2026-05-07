@@ -20,6 +20,7 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_client_repository import MemoryClientRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.repositories.memory_review_action_repository import (
@@ -63,6 +64,7 @@ def test_inventory_aggregate_lifecycle_through_completed() -> None:
 
     create_inv_uc = CreateInventoryUseCase(
         inv_repo,
+        MemoryClientRepository(),
         clock,
         operational_resolver=_StubOperationalResolver(),
         settings_loader=_settings_loader,

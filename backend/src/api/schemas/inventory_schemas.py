@@ -14,6 +14,10 @@ class CreateInventoryRequest(BaseModel):
         "production",
         description="production = operational defaults and no benchmark UX; test = multi-run experiments.",
     )
+    client_id: str | None = Field(
+        None,
+        description="Optional client association. Null/omitted preserves legacy behavior.",
+    )
 
 
 class PrimaryExecutionConfigResponse(BaseModel):
@@ -32,6 +36,7 @@ class InventoryResponse(BaseModel):
     name: str
     status: str
     processing_mode: str = "production"
+    client_id: str | None = None
     primary_execution_config: Optional[PrimaryExecutionConfigResponse] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -48,6 +53,7 @@ class InventoryListItemResponse(BaseModel):
     id: str
     name: str
     status: str
+    client_id: str | None = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     aisles_count: int = Field(0, ge=0, description="Number of aisles in this inventory.")
