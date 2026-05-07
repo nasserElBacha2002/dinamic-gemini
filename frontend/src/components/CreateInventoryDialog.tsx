@@ -8,7 +8,6 @@ import {
   CardContent,
   CardMedia,
   CircularProgress,
-  FormControl,
   FormLabel,
   IconButton,
   MenuItem,
@@ -358,32 +357,30 @@ export default function CreateInventoryDialog({
             disabled={submitting || createdInventory != null}
             inputProps={{ maxLength: 255 }}
           />
-          <FormControl>
-            <TextField
-              select
-              label={t('dialogs.inventory.client_label')}
-              value={selectedClientId}
-              onChange={(e) => setSelectedClientId(e.target.value)}
-              disabled={submitting || createdInventory != null || isClientsLoading}
-              helperText={
-                isClientsError
-                  ? t('dialogs.inventory.client_load_error')
-                  : clients.length === 0
-                    ? t('dialogs.inventory.client_empty')
-                    : t('dialogs.inventory.client_helper')
-              }
-              error={isClientsError}
-              FormHelperTextProps={{ id: clientSelectorHelpId }}
-              inputProps={{ 'aria-describedby': clientSelectorHelpId }}
-            >
-              <MenuItem value="">{t('dialogs.inventory.client_none_option')}</MenuItem>
-              {clients.map((client) => (
-                <MenuItem key={client.id} value={client.id}>
-                  {client.name}
-                </MenuItem>
-              ))}
-            </TextField>
-          </FormControl>
+          <TextField
+            select
+            label={t('dialogs.inventory.client_label')}
+            value={selectedClientId}
+            onChange={(e) => setSelectedClientId(e.target.value)}
+            disabled={submitting || createdInventory != null || isClientsLoading}
+            helperText={
+              isClientsError
+                ? t('dialogs.inventory.client_load_error')
+                : clients.length === 0
+                  ? t('dialogs.inventory.client_empty')
+                  : t('dialogs.inventory.client_helper')
+            }
+            error={isClientsError}
+            FormHelperTextProps={{ id: clientSelectorHelpId }}
+            inputProps={{ 'aria-describedby': clientSelectorHelpId }}
+          >
+            <MenuItem value="">{t('dialogs.inventory.client_none_option')}</MenuItem>
+            {clients.map((client) => (
+              <MenuItem key={client.id} value={client.id}>
+                {client.name}
+              </MenuItem>
+            ))}
+          </TextField>
           <Box>
             <FormLabel component="legend">{t('dialogs.inventory.processing_mode_label')}</FormLabel>
             <ToggleButtonGroup
