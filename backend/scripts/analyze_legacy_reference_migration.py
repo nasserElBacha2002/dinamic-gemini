@@ -5,10 +5,12 @@
 Safety:
   - SELECT queries only (no INSERT/UPDATE/DELETE/MERGE/DDL).
   - No file copy/move/delete.
-  - Exit code 0 on successful analysis (including zero rows). Non-zero only for infra errors.
+  - Default: exit 0 even when DB is unavailable (writes ``db_connected=false`` artifacts for audits).
+  - ``--require-db``: exit non-zero if pyodbc/settings/connect/query fails (CI / gated runs).
 
 Run from ``backend/``:
   python scripts/analyze_legacy_reference_migration.py --output-dir ../audit/raw
+  python scripts/analyze_legacy_reference_migration.py --output-dir ../audit/raw --require-db
 """
 
 from __future__ import annotations
@@ -42,6 +44,11 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_REPO_RAW = _BACKEND_ROOT.parent / "audit" / "raw"
 _LEGACY_DEFAULT_SUPPLIER_NAME = "Legacy Default Supplier"
+_DRY_RUN_VERSION = "C5.1"
+
+
+def _exit_db_failure(*, require_db: bool) -> int:
+    return 1 if require_db else 0
 
 
 def _json_sanitize(obj: Any) -> Any:
@@ -120,6 +127,7 @@ def analyze(
     limit_examples: int,
     check_local_files: bool,
     accept_default_supplier_fallback: bool,
+    require_db: bool,
 ) -> int:
     sql_log_lines: list[str] = []
     db_error: str | None = None
@@ -139,8 +147,10 @@ def analyze(
             sql_log_lines=sql_log_lines,
             db_error=db_error,
             limit_examples=limit_examples,
+            accept_default_supplier_fallback=accept_default_supplier_fallback,
+            require_db_mode=require_db,
         )
-        return 0
+        return _exit_db_failure(require_db=require_db)
 
     try:
         from src.config import load_settings  # noqa: PLC0415
@@ -156,8 +166,10 @@ def analyze(
             sql_log_lines=sql_log_lines,
             db_error=db_error,
             limit_examples=limit_examples,
+            accept_default_supplier_fallback=accept_default_supplier_fallback,
+            require_db_mode=require_db,
         )
-        return 0
+        return _exit_db_failure(require_db=require_db)
 
     try:
         conn = pyodbc.connect(cs)
@@ -185,20 +197,16 @@ def analyze(
             sql_log_lines.append(f"OK {q1} rows={len(legacy_refs)}")
 
             inv_ids = sorted({str(r.get("inventory_id")) for r in legacy_refs if r.get("inventory_id")})
-            if inv_ids:
-                placeholders = ",".join("?" * len(inv_ids))
-                aisles_rows, q2 = _execute_select(
-                    conn,
-                    f"""
-                    SELECT inventory_id, client_supplier_id
-                    FROM dbo.aisles
-                    WHERE inventory_id IN ({placeholders})
-                    """,
-                    inv_ids,
-                )
-                sql_log_lines.append(f"OK aisles query rows={len(aisles_rows)}")
-            else:
-                sql_log_lines.append("SKIP aisles query (no inventory ids)")
+            aisles_rows, q2 = _execute_select(
+                conn,
+                """
+                SELECT DISTINCT a.inventory_id, a.client_supplier_id
+                FROM dbo.aisles AS a
+                INNER JOIN dbo.inventory_visual_references AS v ON v.inventory_id = a.inventory_id
+                WHERE a.client_supplier_id IS NOT NULL
+                """,
+            )
+            sql_log_lines.append(f"OK aisles_suppliers_join query rows={len(aisles_rows)}")
 
             default_suppliers, q3 = _execute_select(
                 conn,
@@ -238,8 +246,10 @@ def analyze(
             sql_log_lines=sql_log_lines,
             db_error=db_error,
             limit_examples=limit_examples,
+            accept_default_supplier_fallback=accept_default_supplier_fallback,
+            require_db_mode=require_db,
         )
-        return 0
+        return _exit_db_failure(require_db=require_db)
 
     supplier_client_map = {str(r["id"]): str(r["client_id"]) for r in all_suppliers if r.get("id")}
     legacy_default_by_client = {
@@ -404,7 +414,8 @@ def analyze(
     missing_storage = counts[MigrationCategory.SKIP_MISSING_STORAGE]
 
     summary_json: dict[str, Any] = {
-        "dry_run_version": "C5-1",
+        "dry_run_version": _DRY_RUN_VERSION,
+        "require_db_mode": require_db,
         "db_connected": db_error is None,
         "db_error": db_error,
         "accept_default_supplier_fallback": accept_default_supplier_fallback,
@@ -509,13 +520,16 @@ def _write_reports_without_db(
     sql_log_lines: list[str],
     db_error: str | None,
     limit_examples: int,
+    accept_default_supplier_fallback: bool,
+    require_db_mode: bool,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     summary_json = {
-        "dry_run_version": "C5-1",
+        "dry_run_version": _DRY_RUN_VERSION,
+        "require_db_mode": require_db_mode,
         "db_connected": False,
         "db_error": db_error,
-        "accept_default_supplier_fallback": True,
+        "accept_default_supplier_fallback": accept_default_supplier_fallback,
         "legacy_default_supplier_name": _LEGACY_DEFAULT_SUPPLIER_NAME,
         "note": "Database unavailable — counts are zero; classification not executed.",
         "total_legacy_reference_rows": 0,
@@ -648,6 +662,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Classify no-aisle-supplier rows as AMBIGUOUS_NO_SUPPLIER even if default exists",
     )
+    parser.add_argument(
+        "--require-db",
+        action="store_true",
+        help="Exit non-zero when DB driver/config/connect/query fails (strict mode)",
+    )
     args = parser.parse_args(argv)
     accept = not args.no_accept_default_supplier_fallback
     check_local = args.check_local_files and not args.no_check_local_files
@@ -656,6 +675,7 @@ def main(argv: list[str] | None = None) -> int:
         limit_examples=args.limit_examples,
         check_local_files=check_local,
         accept_default_supplier_fallback=accept,
+        require_db=args.require_db,
     )
     _derive_filtered_csvs(args.output_dir.resolve())
     return rc

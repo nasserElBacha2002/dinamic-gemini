@@ -5,8 +5,22 @@
 **Status:** **READY_WITH_OBSERVATIONS**
 
 - **Deliverables complete:** read-only classifier, SQL SELECT analyzer script, unit tests, CSV/JSON templates, and migration recommendations for C6.
-- **Observation:** Real production counts are **environment-dependent**. In this pass the analyzer could not complete SQL (`HYT00` login timeout against SQL Server), so `phase-c5-legacy-reference-migration-summary.json` currently reflects **`db_connected: false`** and **zero rows**. Re-run locally or in CI with valid `SQLSERVER_*` / `SQLSERVER_CONNECTION_STRING` and network access to populate counts.
-- **Not blocked:** Classification rules and tooling are implemented; product still must sign off ambiguous-inventory policies before C6 execution.
+- **C5.1 (strict dry-run mode):** `--require-db` enforces non-zero exit on driver/config/connect/query failure; aisles linkage uses a JOIN on `inventory_visual_references` (no huge `IN (...)`). Classifier edge-case tests cover supplier/client mismatch, ambiguous-no-supplier with fallback off, and storage-metadata skips.
+- **Tooling vs production data:** A validation run achieved **`db_connected: true`** and successful SELECTs (see **`audit/raw/phase-c5-legacy-reference-migration-sql-results.txt`**). Summary counts in this workspace snapshot show **`total_legacy_reference_rows: 0`** because **`inventory_visual_references`** returned no rows here—that reflects **this database’s contents**, not a guarantee about production. **Do not treat zero counts as production truth** until the same analyzer is executed against the authoritative SQL Server (or a full replica) that holds legacy references.
+- **C6 execution blocker:** None for **connectivity/tooling** in environments where strict runs succeed. **Production migration readiness** still requires a strict dry-run against the real legacy dataset plus product sign-off on ambiguous-inventory policies.
+
+---
+
+## 1b. C5.1 — Dry-run hardening (changelog)
+
+| Change | Detail |
+|--------|--------|
+| **`--require-db`** | When set, pyodbc/import failures, missing DB settings, connection failure, or any analyzer SQL failure → **exit non-zero**. Omit flag for audit-friendly runs that write `db_connected: false` artifacts and **exit 0**. |
+| **Q2 aisles query** | `SELECT DISTINCT a.inventory_id, a.client_supplier_id FROM dbo.aisles a INNER JOIN dbo.inventory_visual_references v ON v.inventory_id = a.inventory_id WHERE a.client_supplier_id IS NOT NULL` — avoids passing large inventory id lists into `IN (...)`. |
+| **Tests** | `backend/tests/scripts/test_analyze_legacy_reference_migration.py` extended with `supplier_client_mismatch`, fallback-off ambiguous default-supplier case, and `SKIP_MISSING_STORAGE` scenarios (S3 incomplete, local incomplete, unsupported provider). |
+| **`dry_run_version`** | Summary JSON includes `"dry_run_version": "C5.1"` and `"require_db_mode"` when applicable. |
+
+**Boundaries preserved (C5.1):** no INSERT/UPDATE/DELETE, no schema DDL, no file copy/delete, no pipeline or frontend changes.
 
 ---
 
@@ -25,8 +39,10 @@
 
 Values below mirror **`audit/raw/phase-c5-legacy-reference-migration-summary.json`** at report time.
 
-| Metric | Value (stub run) |
-|--------|------------------|
+**Latest strict snapshot (`require_db_mode: true`):** `db_connected` **true**; legacy-row counts **zero in this DB** (see §1 — not inferred production totals).
+
+| Metric | Value (latest artifact snapshot) |
+|--------|----------------------------------|
 | `total_legacy_reference_rows` | 0 |
 | `distinct_inventories_with_legacy_references` | 0 |
 | `inventories_with_client_id` | 0 |
@@ -152,10 +168,12 @@ Optional CSVs appear when non-empty: see §5.
 
 ```bash
 cd backend
-python3 -m pytest tests/scripts/test_analyze_legacy_reference_migration.py -q
+python3 -m pytest tests/scripts/test_analyze_legacy_reference_migration.py -q --no-cov
 python3 -m ruff check scripts/legacy_reference_migration_classifier.py scripts/analyze_legacy_reference_migration.py tests/scripts/test_analyze_legacy_reference_migration.py
-python3 scripts/analyze_legacy_reference_migration.py --output-dir ../audit/raw --limit-examples 20 --no-check-local-files
+python3 scripts/analyze_legacy_reference_migration.py --output-dir ../audit/raw --limit-examples 20 --no-check-local-files --require-db
 ```
+
+**C5.1 validation:** Targeted pytest and ruff passed; strict analyzer run completed with exit code **0** when SQL Server was reachable from this environment.
 
 **Note:** Full-suite `pytest --collect-only` / frontend checks were **not** required for C5 scope (data/backend analyzer focus).
 
