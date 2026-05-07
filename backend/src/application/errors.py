@@ -84,6 +84,10 @@ class InventoryVisualReferenceNotFoundError(Exception):
     """Raised when the requested inventory visual reference does not exist or is not owned by the inventory."""
 
 
+class SupplierReferenceImageNotFoundError(Exception):
+    """Raised when the requested supplier reference image does not exist or is not owned by the supplier."""
+
+
 class PositionNotFoundError(Exception):
     """Raised when the position does not exist or does not belong to the given aisle."""
 

@@ -37,6 +37,7 @@ from src.application.ports.repositories import (
     RawLabelRepository,
     ReviewActionRepository,
     SourceAssetRepository,
+    SupplierReferenceImageRepository,
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
@@ -82,6 +83,7 @@ class AppContainer:
         self._job_repo: JobRepository | None = None
         self._asset_repo: SourceAssetRepository | None = None
         self._visual_reference_repo: InventoryVisualReferenceRepository | None = None
+        self._supplier_reference_image_repo: SupplierReferenceImageRepository | None = None
         self._position_repo: PositionRepository | None = None
         self._product_record_repo: ProductRecordRepository | None = None
         self._evidence_repo: EvidenceRepository | None = None
@@ -327,6 +329,32 @@ class AppContainer:
             build_memory=_memory,
         )
         return self._visual_reference_repo
+
+    def get_supplier_reference_image_repo(self) -> SupplierReferenceImageRepository:
+        if self._supplier_reference_image_repo is not None:
+            return self._supplier_reference_image_repo
+
+        def _sql(client: SqlServerClient) -> SupplierReferenceImageRepository:
+            from src.infrastructure.repositories.sql_supplier_reference_image_repository import (
+                SqlSupplierReferenceImageRepository,
+            )
+
+            return SqlSupplierReferenceImageRepository(client)
+
+        def _memory() -> SupplierReferenceImageRepository:
+            from src.infrastructure.repositories.memory_supplier_reference_image_repository import (
+                MemorySupplierReferenceImageRepository,
+            )
+
+            return MemorySupplierReferenceImageRepository()
+
+        self._supplier_reference_image_repo = self._build_sql_repository_or_memory(
+            backend_info_name="SupplierReferenceImageRepository",
+            sql_error_subject="supplier_reference_image repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
+        return self._supplier_reference_image_repo
 
     def get_position_repo(self) -> PositionRepository:
         if self._position_repo is not None:

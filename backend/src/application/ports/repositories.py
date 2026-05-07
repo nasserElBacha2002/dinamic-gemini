@@ -16,6 +16,7 @@ from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 from src.domain.client.entities import Client
 from src.domain.client_supplier.entities import ClientSupplier
+from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
 from src.domain.inventory.visual_reference import InventoryVisualReference
@@ -350,4 +351,33 @@ class InventoryVisualReferenceRepository(ABC):
     @abstractmethod
     def delete(self, reference_id: str) -> None:
         """Delete one reference by id. Should be idempotent for storage cleanup callers."""
+        ...
+
+
+class SupplierReferenceImageRepository(ABC):
+    """Persist and list reference images per supplier (Phase C1)."""
+
+    @abstractmethod
+    def get_by_id(self, reference_image_id: str) -> SupplierReferenceImage | None:
+        """Return one supplier reference image by id, or None when it does not exist."""
+        ...
+
+    @abstractmethod
+    def create(self, reference_image: SupplierReferenceImage) -> None:
+        """Insert one supplier reference image. Must fail if the id already exists."""
+        ...
+
+    @abstractmethod
+    def create_many(self, reference_images: Sequence[SupplierReferenceImage]) -> None:
+        """Insert images atomically if supported. Must fail if any id already exists."""
+        ...
+
+    @abstractmethod
+    def list_by_supplier(self, client_supplier_id: str) -> Sequence[SupplierReferenceImage]:
+        """Return supplier reference images ordered by created_at ASC, id ASC."""
+        ...
+
+    @abstractmethod
+    def delete(self, reference_image_id: str) -> None:
+        """Delete one supplier reference image by id. Idempotent for storage cleanup callers."""
         ...

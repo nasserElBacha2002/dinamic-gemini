@@ -30,6 +30,7 @@ from src.application.ports.repositories import (
     RawLabelRepository,
     ReviewActionRepository,
     SourceAssetRepository,
+    SupplierReferenceImageRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
@@ -62,6 +63,10 @@ def get_source_asset_repo() -> SourceAssetRepository:
 
 def get_inventory_visual_reference_repo() -> InventoryVisualReferenceRepository:
     return get_app_container().get_inventory_visual_reference_repo()
+
+
+def get_supplier_reference_image_repo() -> SupplierReferenceImageRepository:
+    return get_app_container().get_supplier_reference_image_repo()
 
 
 def get_position_repo() -> PositionRepository:
