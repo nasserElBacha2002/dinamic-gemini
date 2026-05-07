@@ -52,6 +52,7 @@ from src.api.services.v3_stored_artifact_access import (
     resolve_visual_reference_file_response,
 )
 from src.application.errors import (
+    ClientNotFoundError,
     InventoryNotFoundError,
     InventoryVisualReferenceNotFoundError,
 )
@@ -150,15 +151,19 @@ def create_inventory(
     use_case: CreateInventoryUseCase = Depends(get_create_inventory_use_case),
 ) -> InventoryResponse:
     """Create a new inventory (v3.0)."""
-    mode = InventoryProcessingMode(payload.processing_mode)
-    inventory = use_case.execute(
-        CreateInventoryCommand(
-            name=payload.name,
-            processing_mode=mode,
-            client_id=payload.client_id,
+    try:
+        mode = InventoryProcessingMode(payload.processing_mode)
+        inventory = use_case.execute(
+            CreateInventoryCommand(
+                name=payload.name,
+                processing_mode=mode,
+                client_id=payload.client_id,
+            )
         )
-    )
-    return inventory_to_response(inventory)
+        return inventory_to_response(inventory)
+    except ClientNotFoundError as e:
+        reraise_if_mapped(e)
+        raise
 
 
 @router.get("/", response_model=PaginatedInventoryListResponse)
