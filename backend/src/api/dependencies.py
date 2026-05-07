@@ -26,6 +26,7 @@ from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
+    ClientSupplierRepository,
     EvidenceRepository,
     InventoryRepository,
     InventoryVisualReferenceRepository,
@@ -51,6 +52,7 @@ from src.application.use_cases.compare_many_aisle_runs import CompareManyAisleRu
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.create_aisle import CreateAisleUseCase
 from src.application.use_cases.create_client import CreateClientUseCase
+from src.application.use_cases.create_client_supplier import CreateClientSupplierUseCase
 from src.application.use_cases.create_inventory import CreateInventoryUseCase
 from src.application.use_cases.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
 from src.application.use_cases.delete_position import DeletePositionUseCase
@@ -67,6 +69,7 @@ from src.application.use_cases.get_aisle_merge_results import (
 )
 from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
 from src.application.use_cases.get_client import GetClientUseCase
+from src.application.use_cases.get_client_supplier import GetClientSupplierUseCase
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
@@ -75,6 +78,7 @@ from src.application.use_cases.list_aisle_jobs import ListAisleJobsUseCase
 from src.application.use_cases.list_aisle_positions import ListAislePositionsUseCase
 from src.application.use_cases.list_aisles_by_inventory import ListAislesByInventoryUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
+from src.application.use_cases.list_client_suppliers import ListClientSuppliersUseCase
 from src.application.use_cases.list_clients import ListClientsUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
 from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
@@ -111,6 +115,7 @@ from src.runtime.v3_deps import (
     get_capture_session_item_repo,
     get_capture_session_repo,
     get_client_repo,
+    get_client_supplier_repo,
     get_clock,
     get_evidence_repo,
     get_final_count_repo,
@@ -180,6 +185,18 @@ def get_create_client_use_case(
     return CreateClientUseCase(client_repo=repo, clock=clock)
 
 
+def get_create_client_supplier_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    clock: Clock = Depends(get_clock),
+) -> CreateClientSupplierUseCase:
+    return CreateClientSupplierUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        clock=clock,
+    )
+
+
 def get_list_inventories_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> ListInventoriesUseCase:
@@ -190,6 +207,16 @@ def get_list_clients_use_case(
     repo: ClientRepository = Depends(get_client_repo),
 ) -> ListClientsUseCase:
     return ListClientsUseCase(client_repo=repo)
+
+
+def get_list_client_suppliers_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+) -> ListClientSuppliersUseCase:
+    return ListClientSuppliersUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+    )
 
 
 def get_list_inventory_list_items_use_case(
@@ -221,6 +248,16 @@ def get_get_client_use_case(
     repo: ClientRepository = Depends(get_client_repo),
 ) -> GetClientUseCase:
     return GetClientUseCase(client_repo=repo)
+
+
+def get_get_client_supplier_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+) -> GetClientSupplierUseCase:
+    return GetClientSupplierUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+    )
 
 
 def get_export_inventory_results_use_case(

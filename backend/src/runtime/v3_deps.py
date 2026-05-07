@@ -18,6 +18,7 @@ from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
+    ClientSupplierRepository,
     EvidenceRepository,
     FinalCountRepository,
     InventoryRepository,
@@ -41,6 +42,10 @@ def get_inventory_repo() -> InventoryRepository:
 
 def get_client_repo() -> ClientRepository:
     return get_app_container().get_client_repo()
+
+
+def get_client_supplier_repo() -> ClientSupplierRepository:
+    return get_app_container().get_client_supplier_repo()
 
 
 def get_aisle_repo() -> AisleRepository:

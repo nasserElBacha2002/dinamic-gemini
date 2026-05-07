@@ -15,6 +15,7 @@ from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 from src.domain.client.entities import Client
+from src.domain.client_supplier.entities import ClientSupplier
 from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
 from src.domain.inventory.visual_reference import InventoryVisualReference
@@ -58,6 +59,22 @@ class ClientRepository(ABC):
     @abstractmethod
     def list_all(self) -> Sequence[Client]:
         """Return all clients. Order is implementation-defined (SQL impl: created_at DESC)."""
+        ...
+
+
+class ClientSupplierRepository(ABC):
+    @abstractmethod
+    def save(self, supplier: ClientSupplier) -> None: ...
+
+    @abstractmethod
+    def get_by_id(self, supplier_id: str) -> ClientSupplier | None: ...
+
+    @abstractmethod
+    def get_by_client_and_name(self, client_id: str, name: str) -> ClientSupplier | None: ...
+
+    @abstractmethod
+    def list_by_client(self, client_id: str) -> Sequence[ClientSupplier]:
+        """Return suppliers for one client. Order is implementation-defined (SQL impl: created_at DESC)."""
         ...
 
 

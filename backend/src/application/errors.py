@@ -28,6 +28,18 @@ class InvalidClientNameError(Exception):
     """Raised when client name is missing or invalid."""
 
 
+class ClientSupplierNotFoundError(Exception):
+    """Raised when a client supplier does not exist in the scoped client."""
+
+
+class InvalidClientSupplierNameError(Exception):
+    """Raised when supplier name is missing or invalid."""
+
+
+class DuplicateClientSupplierNameError(Exception):
+    """Raised when a supplier with the same name already exists under a client."""
+
+
 class DuplicateAisleCodeError(Exception):
     """Raised when an aisle with the same code already exists in the inventory."""
 

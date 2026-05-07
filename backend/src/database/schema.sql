@@ -190,6 +190,29 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_clients_name' AND obje
     CREATE INDEX IX_clients_name ON clients(name);
 GO
 
+-- Phase A2 — Client suppliers foundation (mirror migrations/versions/0025_client_suppliers_foundation.sql).
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'client_suppliers')
+BEGIN
+    CREATE TABLE client_suppliers (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        client_id VARCHAR(36) NOT NULL,
+        name NVARCHAR(255) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT FK_client_suppliers_client FOREIGN KEY (client_id) REFERENCES clients(id),
+        CONSTRAINT UQ_client_suppliers_client_name UNIQUE (client_id, name)
+    );
+    CREATE INDEX IX_client_suppliers_client_id ON client_suppliers(client_id);
+END;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.default_constraints
+    WHERE parent_object_id = OBJECT_ID('client_suppliers') AND name = 'DF_client_suppliers_status'
+)
+    ALTER TABLE client_suppliers ADD CONSTRAINT DF_client_suppliers_status DEFAULT ('active') FOR status;
+GO
+
 -- v3.0 — Aisles (Épica 2, Documento técnico §7.2; FK for future AisleRepository)
 -- Domain assumption: one code per inventory (UNIQUE inventory_id, code).
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'aisles')
