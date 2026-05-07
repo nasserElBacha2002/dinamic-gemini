@@ -20,6 +20,14 @@ class InventoryNotFoundError(Exception):
     """Raised when the parent inventory does not exist."""
 
 
+class ClientNotFoundError(Exception):
+    """Raised when a client does not exist."""
+
+
+class InvalidClientNameError(Exception):
+    """Raised when client name is missing or invalid."""
+
+
 class DuplicateAisleCodeError(Exception):
     """Raised when an aisle with the same code already exists in the inventory."""
 

@@ -21,6 +21,7 @@ from src.api.errors.structured_api_http import INTERNAL_SERVER_ERROR, Structured
 from src.api.routes.v3 import router as v3_router
 from src.api.routes.v3.admin_ai_config import router as v3_admin_ai_config_router
 from src.api.routes.v3.analytics_api import router as v3_analytics_router
+from src.api.routes.v3.clients import router as v3_clients_router
 from src.api.routes.v3.review_queue import router as v3_review_queue_router
 from src.api.schema_guard import schema_guard_state
 from src.api.schemas.responses import HealthResponse
@@ -80,6 +81,7 @@ if _forwarded:
 
 # Include routers (v3 only for inventory operations; legacy v1 jobs/entities removed in Stage 3).
 app.include_router(v3_router)
+app.include_router(v3_clients_router)
 app.include_router(v3_analytics_router)
 app.include_router(v3_review_queue_router)
 app.include_router(auth_router)
