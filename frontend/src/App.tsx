@@ -15,6 +15,7 @@ import PositionDetailPage from './pages/PositionDetailPage';
 import ReviewQueuePage from './pages/ReviewQueuePage';
 import MetricsPage from './pages/MetricsPage';
 import ClientsList from './pages/ClientsList';
+import ClientDetail from './pages/ClientDetail';
 import AdminAiConfigPage from './pages/AdminAiConfigPage';
 import RequireUsernameAdmin from './features/auth/RequireUsernameAdmin';
 import IngestionSessionsPage from './features/ingestionSessions/pages/IngestionSessionsPage';
@@ -51,6 +52,7 @@ function App() {
   const reviewQueueEl = useMemo(() => <ReviewQueuePage />, []);
   const metricsEl = useMemo(() => <MetricsPage />, []);
   const clientsEl = useMemo(() => <ClientsList />, []);
+  const clientDetailEl = useMemo(() => <ClientDetail />, []);
   const adminAiConfigEl = useMemo(
     () => (
       <RequireUsernameAdmin>
@@ -81,6 +83,7 @@ function App() {
         <Route path={ROUTE_PATH.reviewQueue} element={reviewQueueEl} />
         <Route path={ROUTE_PATH.metrics} element={metricsEl} />
         <Route path={ROUTE_PATH.clients} element={clientsEl} />
+        <Route path={ROUTE_PATH.clientDetail} element={clientDetailEl} />
         <Route path={ROUTE_PATH.ingestionSessions} element={ingestionSessionsEl} />
         <Route path={ROUTE_PATH.ingestionSessionDetail} element={ingestionSessionDetailEl} />
         <Route path={ROUTE_PATH.adminAiConfig} element={adminAiConfigEl} />

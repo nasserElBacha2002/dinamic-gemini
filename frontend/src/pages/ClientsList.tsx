@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@mui/material';
 import { useTranslation } from 'react-i18next';
+import { Link as RouterLink } from 'react-router-dom';
 import type { Client } from '../api/types';
 import { PageHeader } from '../components/shell';
 import { DataTable, ErrorAlert, SectionCard, StatusBadge, type DataTableColumn } from '../components/ui';
+import { pathToClient } from '../constants/appRoutes';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import { useClients } from '../hooks';
 import { formatDate } from '../utils/formatDate';
@@ -34,7 +36,17 @@ export default function ClientsList() {
       {
         id: 'name',
         label: t('clients.fields.name'),
-        cell: (client) => client.name,
+        cell: (client) => (
+          <Button
+            component={RouterLink}
+            to={pathToClient(client.id)}
+            size="small"
+            variant="text"
+            sx={{ px: 0, minWidth: 0, textTransform: 'none' }}
+          >
+            {client.name}
+          </Button>
+        ),
       },
       {
         id: 'status',
@@ -50,6 +62,15 @@ export default function ClientsList() {
         id: 'created_at',
         label: t('clients.fields.created_at'),
         cell: (client) => formatDate(client.created_at),
+      },
+      {
+        id: 'actions',
+        label: t('common.actions'),
+        cell: (client) => (
+          <Button component={RouterLink} to={pathToClient(client.id)} size="small" variant="text">
+            {t('clients.actions.view_detail')}
+          </Button>
+        ),
       },
       {
         id: 'updated_at',

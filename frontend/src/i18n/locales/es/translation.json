@@ -601,7 +601,43 @@
     },
     "actions": {
       "create": "Crear cliente",
-      "create_disabled_hint": "Disponible en la próxima etapa"
+      "create_disabled_hint": "Disponible en la próxima etapa",
+      "view_detail": "Ver detalle"
+    },
+    "common": {
+      "no_information": "Sin información"
+    },
+    "detail": {
+      "title": "Detalle de cliente",
+      "loading": "Cargando cliente...",
+      "error": "No se pudo cargar el cliente.",
+      "invalid": "Cliente inválido.",
+      "back_to_list": "Volver a clientes",
+      "info_title": "Información del cliente",
+      "fields": {
+        "name": "Nombre",
+        "status": "Estado",
+        "created_at": "Creado",
+        "updated_at": "Actualizado"
+      }
+    },
+    "suppliers": {
+      "title": "Proveedores del cliente",
+      "subtitle": "Listado de proveedores asociados al cliente seleccionado.",
+      "loading": "Cargando proveedores...",
+      "error": "No se pudieron cargar los proveedores del cliente.",
+      "empty_title": "Todavía no hay proveedores cargados para este cliente.",
+      "empty_description": "Los proveedores permitirán organizar pasillos, referencias e instrucciones específicas en próximas etapas.",
+      "fields": {
+        "name": "Proveedor",
+        "status": "Estado",
+        "created_at": "Creado",
+        "updated_at": "Actualizado"
+      },
+      "actions": {
+        "create": "Crear proveedor",
+        "create_disabled_hint": "Disponible en la próxima etapa"
+      }
     }
   },
   "jobs": {
@@ -948,6 +984,10 @@
     "clients": {
       "title": "Clientes",
       "subtitle": "Base administrativa de clientes"
+    },
+    "client_detail": {
+      "title": "Detalle de cliente",
+      "subtitle": "Información del cliente y sus proveedores asociados"
     },
     "ingestion_sessions": {
       "title": "Sesiones de importación",

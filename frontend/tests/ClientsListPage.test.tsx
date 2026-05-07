@@ -104,5 +104,6 @@ describe('ClientsList page', () => {
     renderPage();
     expect(screen.getByText('Cliente Norte')).toBeInTheDocument();
     expect(screen.getByText(/activo/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /ver detalle/i })).toHaveAttribute('href', '/clientes/client-1');
   });
 });
