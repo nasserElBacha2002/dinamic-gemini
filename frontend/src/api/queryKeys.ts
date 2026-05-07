@@ -95,6 +95,20 @@ export const queryKeys = {
       [...queryKeys.inventories.all, 'benchmark-compare', inventoryId] as const,
   },
 
+  clients: {
+    all: ['v3', 'clients'] as const,
+    list: (params: Record<string, string | number>) =>
+      [...queryKeys.clients.all, 'list', params] as const,
+    detail: (clientId: string) => [...queryKeys.clients.all, 'detail', clientId] as const,
+    suppliers: {
+      all: (clientId: string) => [...queryKeys.clients.all, 'suppliers', clientId] as const,
+      list: (clientId: string, params: Record<string, string | number>) =>
+        [...queryKeys.clients.suppliers.all(clientId), 'list', params] as const,
+      detail: (clientId: string, supplierId: string) =>
+        [...queryKeys.clients.suppliers.all(clientId), 'detail', supplierId] as const,
+    },
+  },
+
   reviewQueue: {
     // Keep root compatible with existing invalidation prefixes.
     all: ['reviewQueue'] as const,
