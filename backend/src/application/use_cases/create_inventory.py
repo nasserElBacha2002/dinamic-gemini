@@ -61,9 +61,6 @@ class CreateInventoryUseCase:
             primary_prompt_key = snap.prompt_key
             primary_prompt_version = snap.prompt_version
         client_id = command.client_id
-        if client_id is not None:
-            normalized_client_id = str(client_id).strip()
-            client_id = normalized_client_id or None
         if client_id is not None and self._client_repo.get_by_id(client_id) is None:
             raise ClientNotFoundError(f"Client not found: {client_id}")
         inventory = Inventory(

@@ -81,6 +81,33 @@ def test_post_inventories_with_invalid_client_id_returns_structured_not_found() 
     assert payload.get("detail") == "Client not found"
 
 
+def test_post_inventories_with_null_client_id_keeps_legacy_behavior() -> None:
+    response = client.post(
+        "/api/v3/inventories",
+        json={"name": "Legacy Null Client", "client_id": None},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == "Legacy Null Client"
+    assert data["client_id"] is None
+
+
+def test_post_inventories_with_empty_client_id_returns_422() -> None:
+    response = client.post(
+        "/api/v3/inventories",
+        json={"name": "Invalid Empty Client", "client_id": ""},
+    )
+    assert response.status_code == 422
+
+
+def test_post_inventories_with_whitespace_client_id_returns_422() -> None:
+    response = client.post(
+        "/api/v3/inventories",
+        json={"name": "Invalid Whitespace Client", "client_id": "   "},
+    )
+    assert response.status_code == 422
+
+
 def test_post_inventories_empty_name_returns_422() -> None:
     response = client.post("/api/v3/inventories", json={"name": ""})
     assert response.status_code == 422
