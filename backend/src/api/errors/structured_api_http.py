@@ -51,7 +51,8 @@ from fastapi import HTTPException
 # Do not fork near-duplicates: extend an existing code only with an explicit API note.
 #
 # Catalog groups (for maintainers; not an enum wire contract):
-#   Not-found (Category A): INVENTORY_*, AISLE_*, POSITION_*, PRODUCT_*, VISUAL_REFERENCE_*, ASSET_*.
+#   Not-found (Category A): INVENTORY_*, AISLE_*, POSITION_*, PRODUCT_*,
+#   SUPPLIER_REFERENCE_IMAGE_*, ASSET_*.
 #   Jobs / scope / conflict (structured Category B): JOB_*, ACTIVE_JOB_*, JOB_PROMOTION_*.
 #   Analytics / benchmark: BENCHMARK_COMPARE_*, ANALYTICS_SCOPE_*.
 #   Infrastructure: INTERNAL_SERVER_ERROR (global unhandled path).
@@ -64,7 +65,7 @@ CLIENT_SUPPLIER_CLIENT_MISMATCH = "CLIENT_SUPPLIER_CLIENT_MISMATCH"
 AISLE_NOT_FOUND = "AISLE_NOT_FOUND"
 POSITION_NOT_FOUND = "POSITION_NOT_FOUND"
 PRODUCT_NOT_FOUND = "PRODUCT_NOT_FOUND"
-VISUAL_REFERENCE_NOT_FOUND = "VISUAL_REFERENCE_NOT_FOUND"
+SUPPLIER_REFERENCE_IMAGE_NOT_FOUND = "SUPPLIER_REFERENCE_IMAGE_NOT_FOUND"
 ASSET_NOT_FOUND = "ASSET_NOT_FOUND"
 INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
 JOB_NOT_FOUND = "JOB_NOT_FOUND"

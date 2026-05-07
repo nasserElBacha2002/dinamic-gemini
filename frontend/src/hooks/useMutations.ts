@@ -8,15 +8,14 @@ import {
   createAisle,
   createClient,
   createClientSupplier,
+  deleteSupplierReferenceImage,
   startAisleProcessing,
   cancelAisleJob,
   retryAisleJob,
   runAisleMerge,
   uploadAisleAssets,
   deleteAisleSourceAsset,
-  uploadInventoryVisualReferences,
-  deleteInventoryVisualReference,
-  replaceInventoryVisualReference,
+  uploadSupplierReferenceImages,
   submitReviewAction,
   promoteAisleOperationalJob,
 } from '../api/client';
@@ -26,6 +25,7 @@ import type {
   CreateInventoryRequest,
   CreateAisleRequest,
   ReviewActionRequest,
+  UploadSupplierReferenceImagesRequest,
 } from '../api/types';
 import { queryKeys } from '../api/queryKeys';
 import {
@@ -64,6 +64,31 @@ export function useCreateClientSupplier(clientId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.clients.suppliers.all(clientId) });
       queryClient.invalidateQueries({
         queryKey: queryKeys.clients.suppliers.detail(clientId, createdSupplier.id),
+      });
+    },
+  });
+}
+
+export function useUploadSupplierReferenceImages(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UploadSupplierReferenceImagesRequest) =>
+      uploadSupplierReferenceImages(clientId, supplierId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.referenceImages(clientId, supplierId),
+      });
+    },
+  });
+}
+
+export function useDeleteSupplierReferenceImage(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (imageId: string) => deleteSupplierReferenceImage(clientId, supplierId, imageId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.referenceImages(clientId, supplierId),
       });
     },
   });
@@ -219,40 +244,6 @@ export function useDeleteAisleSourceAsset(inventoryId: string, aisleId: string) 
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.aisleSourceAssets(inventoryId, aisleId),
       });
-    },
-  });
-}
-
-export function useUploadInventoryVisualReferences(inventoryId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (files: File[]) => uploadInventoryVisualReferences(inventoryId, files),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.visualReferences(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
-    },
-  });
-}
-
-export function useDeleteInventoryVisualReference(inventoryId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (referenceId: string) => deleteInventoryVisualReference(inventoryId, referenceId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.visualReferences(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
-    },
-  });
-}
-
-export function useReplaceInventoryVisualReference(inventoryId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ referenceId, file }: { referenceId: string; file: File }) =>
-      replaceInventoryVisualReference(inventoryId, referenceId, file),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.visualReferences(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
     },
   });
 }

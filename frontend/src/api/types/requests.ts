@@ -32,6 +32,13 @@ export interface CreateClientSupplierRequest {
   status?: ClientSupplierStatus;
 }
 
+/** Multipart POST …/clients/{clientId}/suppliers/{supplierId}/reference-images — built client-side as FormData. */
+export interface UploadSupplierReferenceImagesRequest {
+  files: File[];
+  label?: string;
+  description?: string;
+}
+
 /** Request body for POST .../positions/{position_id}/reviews. */
 export interface ReviewActionRequest {
   action_type: ReviewActionType;

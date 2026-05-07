@@ -19,21 +19,21 @@ from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
     InventoryRepository,
-    InventoryVisualReferenceRepository,
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
     SourceAssetRepository,
+    SupplierReferenceImageRepository,
 )
 from src.application.services.aisle_analysis_context_builder import (
     AisleAnalysisContextBuilder,
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.services.inventory_visual_reference_resolver import (
-    InventoryVisualReferenceResolver,
-)
 from src.application.services.job_engine_params import coerce_prompt_parity_mode
+from src.application.services.supplier_reference_image_resolver import (
+    SupplierReferenceImageResolver,
+)
 from src.application.use_cases.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
@@ -167,7 +167,7 @@ class V3JobExecutor:
         evidence_repo: EvidenceRepository,
         clock: Clock,
         inventory_repo: InventoryRepository,
-        inventory_visual_reference_repo: InventoryVisualReferenceRepository,
+        supplier_reference_image_repo: SupplierReferenceImageRepository,
         artifact_store=None,
         raw_label_repo: RawLabelRepository | None = None,
         recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
@@ -191,13 +191,10 @@ class V3JobExecutor:
             inventory_status_reconciler=inventory_status_reconciler,
         )
         self._artifacts = V3ExecutionArtifactsService(artifact_store)
-        resolver = InventoryVisualReferenceResolver(
-            inventory_repo=inventory_repo,
-            reference_repo=inventory_visual_reference_repo,
-        )
-        context_builder = AisleAnalysisContextBuilder(resolver)
+        supplier_resolver = SupplierReferenceImageResolver(supplier_reference_image_repo)
+        context_builder = AisleAnalysisContextBuilder(supplier_resolver)
         self._pipeline_runner = V3ProcessAislePipelineRunner(
-            inventory_visual_reference_repo=inventory_visual_reference_repo,
+            supplier_reference_image_repo=supplier_reference_image_repo,
             artifact_store=artifact_store,
             context_builder=context_builder,
         )
@@ -331,7 +328,7 @@ class V3JobExecutor:
                 req.job_dir,
                 req.job_id,
                 analysis_context=analysis_context,
-                inventory_id=req.aisle.inventory_id,
+                aisle=req.aisle,
                 run_id=RUN_ID,
                 legacy_local_read_enabled=req.settings.artifact_storage_legacy_local_read_enabled,
             )

@@ -4,10 +4,7 @@ import type {
   CreateInventoryRequest,
   Inventory,
   InventoryMetrics,
-  InventoryVisualReference,
-  InventoryVisualReferenceListResponse,
   PaginatedInventoryListResponse,
-  UploadInventoryVisualReferencesResponse,
 } from './types';
 import { filenameFromContentDisposition, handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
 
@@ -86,85 +83,4 @@ export async function createInventory(body: CreateInventoryRequest): Promise<Inv
     body: JSON.stringify(body),
   });
   return handleResponse<Inventory>(response);
-}
-
-export async function uploadInventoryVisualReferences(
-  inventoryId: string,
-  files: File[]
-): Promise<UploadInventoryVisualReferencesResponse> {
-  const form = new FormData();
-  files.forEach((file) => form.append('files', file));
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references`,
-    { method: 'POST', body: form }
-  );
-  return handleResponse<UploadInventoryVisualReferencesResponse>(response);
-}
-
-export async function getInventoryVisualReferences(
-  inventoryId: string
-): Promise<InventoryVisualReferenceListResponse> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references`
-  );
-  return handleResponse<InventoryVisualReferenceListResponse>(response);
-}
-
-export async function deleteInventoryVisualReference(
-  inventoryId: string,
-  referenceId: string
-): Promise<void> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}`,
-    { method: 'DELETE' }
-  );
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-}
-
-export async function replaceInventoryVisualReference(
-  inventoryId: string,
-  referenceId: string,
-  file: File
-): Promise<InventoryVisualReference> {
-  const form = new FormData();
-  form.append('file', file);
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}`,
-    { method: 'PUT', body: form }
-  );
-  return handleResponse<InventoryVisualReference>(response);
-}
-
-export async function fetchInventoryVisualReferenceFile(
-  inventoryId: string,
-  referenceId: string
-): Promise<{ imageSrc: string; revoke: () => void }> {
-  const response = await protectedFetch(
-    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/visual-references/${encodeURIComponent(referenceId)}/file`
-  );
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const imageSrc = URL.createObjectURL(blob);
-  return {
-    imageSrc,
-    revoke: () => URL.revokeObjectURL(imageSrc),
-  };
 }

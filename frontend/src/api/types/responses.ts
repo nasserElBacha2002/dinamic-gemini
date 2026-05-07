@@ -51,6 +51,34 @@ export interface ClientSuppliersListResponse {
   total_pages: number;
 }
 
+/** Supplier-scoped reference images (Phase C — not used by CV pipeline until explicitly wired). */
+export interface SupplierReferenceImage {
+  id: string;
+  client_supplier_id: string;
+  filename: string;
+  mime_type: string;
+  file_size: number;
+  content_type?: string | null;
+  file_size_bytes?: number | null;
+  label?: string | null;
+  description?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupplierReferenceImagesListResponse {
+  items: SupplierReferenceImage[];
+}
+
+export interface UploadSupplierReferenceImagesResponse {
+  items: SupplierReferenceImage[];
+}
+
+export interface DeleteSupplierReferenceImageResponse {
+  deleted: boolean;
+  id: string;
+}
+
 // ─── Inventory ─────────────────────────────────────────────────────────────
 
 export interface PrimaryExecutionConfig {
@@ -88,25 +116,6 @@ export interface PaginatedInventoryListResponse {
   page_size: number;
   total_items: number;
   total_pages: number;
-}
-
-// ─── Inventory visual references (v3.2.4 Phase 2/8) ─────────────────────────
-
-export interface InventoryVisualReference {
-  id: string;
-  inventory_id: string;
-  filename: string;
-  mime_type: string;
-  file_size: number;
-  created_at: string;
-}
-
-export interface UploadInventoryVisualReferencesResponse {
-  items: InventoryVisualReference[];
-}
-
-export interface InventoryVisualReferenceListResponse {
-  items: InventoryVisualReference[];
 }
 
 export interface ReferenceUsageSummary {

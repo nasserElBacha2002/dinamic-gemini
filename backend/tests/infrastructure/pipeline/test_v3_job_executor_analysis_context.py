@@ -15,20 +15,20 @@ from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
     InventoryRepository,
-    InventoryVisualReferenceRepository,
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
     SourceAssetRepository,
+    SupplierReferenceImageRepository,
 )
 from src.application.use_cases.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.inventory.entities import Inventory, InventoryStatus
-from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
 
@@ -131,30 +131,27 @@ class InMemorySourceAssetRepo(SourceAssetRepository):
         return out
 
 
-class InMemoryInventoryVisualReferenceRepo(InventoryVisualReferenceRepository):
+class InMemorySupplierReferenceImageRepo(SupplierReferenceImageRepository):
     def __init__(self) -> None:
-        self._store: dict[str, InventoryVisualReference] = {}
+        self._store: dict[str, SupplierReferenceImage] = {}
 
-    def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
-        return self._store.get(reference_id)
+    def get_by_id(self, reference_image_id: str) -> SupplierReferenceImage | None:
+        return self._store.get(reference_image_id)
 
-    def create(self, reference: InventoryVisualReference) -> None:
-        self._store[reference.id] = reference
+    def create(self, reference_image: SupplierReferenceImage) -> None:
+        self._store[reference_image.id] = reference_image
 
-    def create_many(self, references: Sequence[InventoryVisualReference]) -> None:
-        for r in references:
-            self._store[r.id] = r
+    def create_many(self, reference_images: Sequence[SupplierReferenceImage]) -> None:
+        for img in reference_images:
+            self._store[img.id] = img
 
-    def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
-        refs = [r for r in self._store.values() if r.inventory_id == inventory_id]
+    def list_by_supplier(self, client_supplier_id: str) -> Sequence[SupplierReferenceImage]:
+        refs = [r for r in self._store.values() if r.client_supplier_id == client_supplier_id]
         refs.sort(key=lambda r: (r.created_at, r.id))
         return refs
 
-    def update(self, reference: InventoryVisualReference) -> None:
-        self._store[reference.id] = reference
-
-    def delete(self, reference_id: str) -> None:
-        self._store.pop(reference_id, None)
+    def delete(self, reference_image_id: str) -> None:
+        self._store.pop(reference_image_id, None)
 
 
 class NoopRepo(
@@ -201,7 +198,7 @@ def test_v3_job_executor_injects_analysis_context_metadata(tmp_path: Path) -> No
     aisle_repo = InMemoryAisleRepo()
     inv_repo = InMemoryInventoryRepo()
     asset_repo = InMemorySourceAssetRepo()
-    visual_repo = InMemoryInventoryVisualReferenceRepo()
+    supplier_repo = InMemorySupplierReferenceImageRepo()
     noop = NoopRepo()
 
     inv = Inventory(
@@ -220,6 +217,7 @@ def test_v3_job_executor_injects_analysis_context_metadata(tmp_path: Path) -> No
         status=AisleStatus.CREATED,
         created_at=now,
         updated_at=now,
+        client_supplier_id="sup-1",
     )
     aisle_repo.save(aisle)
 
@@ -235,16 +233,18 @@ def test_v3_job_executor_injects_analysis_context_metadata(tmp_path: Path) -> No
     )
     asset_repo.save(asset)
 
-    ref = InventoryVisualReference(
-        id="ref-1",
-        inventory_id="inv-1",
-        filename="ref.jpg",
-        storage_path="inventories/inv-1/visual_references/ref-1.jpg",
-        mime_type="image/jpeg",
-        file_size=10,
-        created_at=now,
+    supplier_repo.create(
+        SupplierReferenceImage(
+            id="ref-1",
+            client_supplier_id="sup-1",
+            filename="ref.jpg",
+            storage_path="inventories/inv-1/visual_references/ref-1.jpg",
+            mime_type="image/jpeg",
+            file_size=10,
+            created_at=now,
+            updated_at=now,
+        )
     )
-    visual_repo.create(ref)
 
     payload = {"aisle_id": "aisle-1"}
     job = Job(
@@ -268,7 +268,7 @@ def test_v3_job_executor_injects_analysis_context_metadata(tmp_path: Path) -> No
         evidence_repo=noop,
         clock=clock,
         inventory_repo=inv_repo,
-        inventory_visual_reference_repo=visual_repo,
+        supplier_reference_image_repo=supplier_repo,
         raw_label_repo=noop,
         recompute_consolidated_uc=DummyRecomputeCounts(),
     )
@@ -286,7 +286,7 @@ def test_v3_job_executor_injects_analysis_context_metadata(tmp_path: Path) -> No
         tmp_path,
         "job-1",
         analysis_context=analysis_context,
-        inventory_id="inv-1",
+        aisle=aisle,
         run_id="run",
         legacy_local_read_enabled=True,
     )

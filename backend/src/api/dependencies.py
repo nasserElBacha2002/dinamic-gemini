@@ -29,12 +29,12 @@ from src.application.ports.repositories import (
     ClientSupplierRepository,
     EvidenceRepository,
     InventoryRepository,
-    InventoryVisualReferenceRepository,
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
     ReviewActionRepository,
     SourceAssetRepository,
+    SupplierReferenceImageRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
@@ -83,9 +83,9 @@ from src.application.use_cases.list_clients import ListClientsUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
 from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
 from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
-from src.application.use_cases.manage_inventory_visual_references import (
-    DeleteInventoryVisualReferenceUseCase,
-    ReplaceInventoryVisualReferenceUseCase,
+from src.application.use_cases.manage_supplier_reference_images import (
+    DeleteSupplierReferenceImageUseCase,
+    GetSupplierReferenceImageUseCase,
 )
 from src.application.use_cases.mark_position_image_mismatch import MarkPositionImageMismatchUseCase
 from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
@@ -102,9 +102,9 @@ from src.application.use_cases.update_position_code import UpdatePositionCodeUse
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
 from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase
-from src.application.use_cases.upload_inventory_visual_references import (
-    ListInventoryVisualReferencesUseCase,
-    UploadInventoryVisualReferencesUseCase,
+from src.application.use_cases.upload_supplier_reference_images import (
+    ListSupplierReferenceImagesUseCase,
+    UploadSupplierReferenceImagesUseCase,
 )
 from src.runtime.app_container import get_app_container
 from src.runtime.v3_deps import (
@@ -120,7 +120,6 @@ from src.runtime.v3_deps import (
     get_evidence_repo,
     get_final_count_repo,
     get_inventory_repo,
-    get_inventory_visual_reference_repo,
     get_job_repo,
     get_metrics_calculator,
     get_position_repo,
@@ -128,6 +127,7 @@ from src.runtime.v3_deps import (
     get_recompute_consolidated_counts_use_case,
     get_review_action_repo,
     get_source_asset_repo,
+    get_supplier_reference_image_repo,
     get_worker_launch_service,
 )
 
@@ -490,57 +490,63 @@ def get_delete_aisle_source_asset_use_case(
     )
 
 
-def get_upload_inventory_visual_references_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    reference_repo: InventoryVisualReferenceRepository = Depends(
-        get_inventory_visual_reference_repo
+def get_upload_supplier_reference_images_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    reference_repo: SupplierReferenceImageRepository = Depends(
+        get_supplier_reference_image_repo
     ),
     artifact_storage=Depends(get_artifact_storage),
     clock: Clock = Depends(get_clock),
-) -> UploadInventoryVisualReferencesUseCase:
-    return UploadInventoryVisualReferencesUseCase(
-        inventory_repo=inventory_repo,
+) -> UploadSupplierReferenceImagesUseCase:
+    return UploadSupplierReferenceImagesUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
         reference_repo=reference_repo,
         artifact_storage=artifact_storage,
         clock=clock,
     )
 
 
-def get_list_inventory_visual_references_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    reference_repo: InventoryVisualReferenceRepository = Depends(
-        get_inventory_visual_reference_repo
+def get_list_supplier_reference_images_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    reference_repo: SupplierReferenceImageRepository = Depends(
+        get_supplier_reference_image_repo
     ),
-) -> ListInventoryVisualReferencesUseCase:
-    return ListInventoryVisualReferencesUseCase(
-        inventory_repo=inventory_repo,
+) -> ListSupplierReferenceImagesUseCase:
+    return ListSupplierReferenceImagesUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
         reference_repo=reference_repo,
     )
 
 
-def get_delete_inventory_visual_reference_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    reference_repo: InventoryVisualReferenceRepository = Depends(
-        get_inventory_visual_reference_repo
+def get_get_supplier_reference_image_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    reference_repo: SupplierReferenceImageRepository = Depends(
+        get_supplier_reference_image_repo
     ),
-    artifact_storage=Depends(get_artifact_storage),
-) -> DeleteInventoryVisualReferenceUseCase:
-    return DeleteInventoryVisualReferenceUseCase(
-        inventory_repo=inventory_repo,
+) -> GetSupplierReferenceImageUseCase:
+    return GetSupplierReferenceImageUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
         reference_repo=reference_repo,
-        artifact_storage=artifact_storage,
     )
 
 
-def get_replace_inventory_visual_reference_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    reference_repo: InventoryVisualReferenceRepository = Depends(
-        get_inventory_visual_reference_repo
+def get_delete_supplier_reference_image_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    reference_repo: SupplierReferenceImageRepository = Depends(
+        get_supplier_reference_image_repo
     ),
     artifact_storage=Depends(get_artifact_storage),
-) -> ReplaceInventoryVisualReferenceUseCase:
-    return ReplaceInventoryVisualReferenceUseCase(
-        inventory_repo=inventory_repo,
+) -> DeleteSupplierReferenceImageUseCase:
+    return DeleteSupplierReferenceImageUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
         reference_repo=reference_repo,
         artifact_storage=artifact_storage,
     )

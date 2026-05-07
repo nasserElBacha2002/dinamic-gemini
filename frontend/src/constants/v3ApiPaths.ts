@@ -14,3 +14,18 @@ export const V3_REVIEW_QUEUE_BASE = `${V3_API_PREFIX}/review-queue`;
 export function pathToClientSuppliersBase(clientId: string): string {
   return `${V3_CLIENTS_BASE}/${encodeURIComponent(clientId)}/suppliers`;
 }
+
+/** GET|POST …/clients/{clientId}/suppliers/{supplierId}/reference-images */
+export function supplierReferenceImagesPath(clientId: string, supplierId: string): string {
+  return `${pathToClientSuppliersBase(clientId)}/${encodeURIComponent(supplierId)}/reference-images`;
+}
+
+/** DELETE …/reference-images/{imageId} */
+export function supplierReferenceImagePath(clientId: string, supplierId: string, imageId: string): string {
+  return `${supplierReferenceImagesPath(clientId, supplierId)}/${encodeURIComponent(imageId)}`;
+}
+
+/** GET …/reference-images/{imageId}/file */
+export function supplierReferenceImageFilePath(clientId: string, supplierId: string, imageId: string): string {
+  return `${supplierReferenceImagePath(clientId, supplierId, imageId)}/file`;
+}

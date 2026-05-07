@@ -4,8 +4,9 @@ export {
   useClient,
   useClientSuppliers,
   useClientSupplier,
+  useSupplierReferenceImages,
 } from './useClients';
-export { useInventoriesList, useInventoryDetail, useInventoryVisualReferences } from './useInventories';
+export { useInventoriesList, useInventoryDetail } from './useInventories';
 export {
   useInventoryMetrics,
   useAislesList,
@@ -28,6 +29,8 @@ export { useReviewQueue } from './useReviewQueue';
 export {
   useCreateClient,
   useCreateClientSupplier,
+  useUploadSupplierReferenceImages,
+  useDeleteSupplierReferenceImage,
   useCreateInventory,
   useCreateAisle,
   useStartAisleProcessing,
@@ -37,9 +40,6 @@ export {
   useUploadAisleAssets,
   useUploadAisleAssetsFlex,
   useDeleteAisleSourceAsset,
-  useUploadInventoryVisualReferences,
-  useDeleteInventoryVisualReference,
-  useReplaceInventoryVisualReference,
   useSubmitReviewAction,
   usePromoteAisleOperationalJob,
 } from './useMutations';

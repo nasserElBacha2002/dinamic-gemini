@@ -16,9 +16,9 @@ from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 from src.domain.client.entities import Client
 from src.domain.client_supplier.entities import ClientSupplier
+from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
-from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.domain.jobs.entities import Job
 from src.domain.labels.entities import FinalCountRecord, NormalizedLabel, RawLabel
 from src.domain.positions.entities import Position
@@ -313,41 +313,30 @@ class FinalCountRepository(ABC):
         ...
 
 
-class InventoryVisualReferenceRepository(ABC):
-    """Persist and list visual reference images per inventory (v3.2.4).
-
-    list_by_inventory must return references ordered by created_at ASC, id ASC.
-    """
+class SupplierReferenceImageRepository(ABC):
+    """Persist and list reference images per supplier (Phase C1)."""
 
     @abstractmethod
-    def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
-        """Return one reference by id, or None when it does not exist."""
+    def get_by_id(self, reference_image_id: str) -> SupplierReferenceImage | None:
+        """Return one supplier reference image by id, or None when it does not exist."""
         ...
 
     @abstractmethod
-    def create(self, reference: InventoryVisualReference) -> None:
-        """Insert a new reference. Must fail if the id already exists."""
+    def create(self, reference_image: SupplierReferenceImage) -> None:
+        """Insert one supplier reference image. Must fail if the id already exists."""
         ...
 
     @abstractmethod
-    def create_many(self, references: Sequence[InventoryVisualReference]) -> None:
-        """Insert references atomically if supported by the implementation.
-
-        Must fail if any id already exists. Implementations should avoid partial writes.
-        """
+    def create_many(self, reference_images: Sequence[SupplierReferenceImage]) -> None:
+        """Insert images atomically if supported. Must fail if any id already exists."""
         ...
 
     @abstractmethod
-    def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
-        """Return all visual references for the given inventory ordered by created_at ASC, id ASC."""
+    def list_by_supplier(self, client_supplier_id: str) -> Sequence[SupplierReferenceImage]:
+        """Return supplier reference images ordered by created_at ASC, id ASC."""
         ...
 
     @abstractmethod
-    def update(self, reference: InventoryVisualReference) -> None:
-        """Update an existing reference in place. Must fail when the id does not exist."""
-        ...
-
-    @abstractmethod
-    def delete(self, reference_id: str) -> None:
-        """Delete one reference by id. Should be idempotent for storage cleanup callers."""
+    def delete(self, reference_image_id: str) -> None:
+        """Delete one supplier reference image by id. Idempotent for storage cleanup callers."""
         ...

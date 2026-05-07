@@ -25,7 +25,11 @@ class AnalysisImage:
 
 @dataclass
 class VisualReferenceContext:
-    """Provider-agnostic representation of an inventory visual reference."""
+    """Provider-agnostic representation of a visual reference image.
+
+    ``role`` is commonly ``inventory_reference`` (historical jobs / legacy table) or
+    ``supplier_reference`` when loaded from ``supplier_reference_images`` (Phase C7+).
+    """
 
     reference_id: str
     source_path: str

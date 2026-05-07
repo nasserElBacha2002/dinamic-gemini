@@ -132,7 +132,7 @@ templates + tests per type: ``PositionResultContextMismatchError``, ``PositionDe
 ``EmptyUploadError``, ``ZeroByteFileError``, ``UnknownProcessingProviderError``,
 ``InvalidProcessingModelError``, ``InvalidProcessingPromptKeyError``,
 ``ProcessingProviderNotConfiguredError``, ``MergeJobScopeAmbiguousError``,
-``UnsupportedAssetTypeError``, ``MaxInventoryVisualReferencesExceededError``,
+``UnsupportedAssetTypeError``,
 ``StoredArtifactAccessError``. Broad ``ValueError`` stays route-local.
 
 **When adding a new route:** prefer ``reraise_if_mapped`` for domain exceptions already in this
@@ -197,8 +197,8 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_OPEN_CAPTURE_SESSION_EXISTS,
     HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE,
     HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION,
+    HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
     HTTP_DETAIL_UNEXPECTED_ERROR,
-    HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
 )
 from src.api.errors.structured_api_http import (
     ACTIVE_JOB_EXISTS,
@@ -245,8 +245,8 @@ from src.api.errors.structured_api_http import (
     OPEN_CAPTURE_SESSION_EXISTS,
     POSITION_NOT_FOUND,
     PRODUCT_NOT_FOUND,
+    SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
     UNSUPPORTED_ASSET_TYPE,
-    VISUAL_REFERENCE_NOT_FOUND,
     ZERO_BYTE_FILE,
     StructuredApiHttpError,
 )
@@ -291,11 +291,9 @@ from src.application.errors import (
     InvalidProcessingPromptKeyError,
     InventoryClientRequiredForSupplierError,
     InventoryNotFoundError,
-    InventoryVisualReferenceNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
     JobPromotionNotAllowedError,
-    MaxInventoryVisualReferencesExceededError,
     MergeJobScopeAmbiguousError,
     NoSourceAssetsForAisleProcessingError,
     OpenCaptureSessionExistsError,
@@ -306,6 +304,7 @@ from src.application.errors import (
     ProductNotFoundError,
     ReviewMutationNotAllowedError,
     SourceAssetNotFoundForAisleError,
+    SupplierReferenceImageNotFoundError,
     UnknownProcessingProviderError,
     UnsupportedAssetTypeError,
     ZeroByteFileError,
@@ -454,8 +453,10 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
     ProductNotFoundError: _structured_fixed(
         404, error_code=PRODUCT_NOT_FOUND, detail=HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION
     ),
-    InventoryVisualReferenceNotFoundError: _structured_fixed(
-        404, error_code=VISUAL_REFERENCE_NOT_FOUND, detail=HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND
+    SupplierReferenceImageNotFoundError: _structured_fixed(
+        404,
+        error_code=SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
+        detail=HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
     ),
     SourceAssetNotFoundForAisleError: _structured_fixed(
         404, error_code=ASSET_NOT_FOUND, detail=HTTP_DETAIL_ASSET_NOT_FOUND
@@ -650,7 +651,6 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         error_code=UNSUPPORTED_ASSET_TYPE,
         detail=lambda e: str(e),
     ),
-    MaxInventoryVisualReferencesExceededError: _plain_http(400),
 }
 
 

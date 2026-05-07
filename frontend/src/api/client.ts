@@ -10,15 +10,10 @@
 export type { InventoriesListQuery } from './inventoriesApi';
 export {
   createInventory,
-  deleteInventoryVisualReference,
   exportInventoryResultsCsv,
-  fetchInventoryVisualReferenceFile,
   getInventories,
   getInventory,
   getInventoryMetrics,
-  getInventoryVisualReferences,
-  replaceInventoryVisualReference,
-  uploadInventoryVisualReferences,
 } from './inventoriesApi';
 export type { AislesListQuery } from './aislesApi';
 export {
@@ -82,7 +77,12 @@ export { createClient, getClient, listClients } from './clientsApi';
 export type { ClientSuppliersListQuery } from './clientSuppliersApi';
 export {
   createClientSupplier,
+  deleteSupplierReferenceImage,
+  fetchSupplierReferenceImageFile,
   getClientSupplier,
+  getSupplierReferenceImageFileUrl,
   listClientSuppliers,
+  listSupplierReferenceImages,
+  uploadSupplierReferenceImages,
 } from './clientSuppliersApi';
 

@@ -14,7 +14,6 @@ export interface InventoryDetailHeaderProps {
   inventory: Inventory;
   inventoryId: string;
   headerVm: InventoryHeaderViewModel;
-  onOpenReferenceImages: () => void;
   onOpenCreateAisle: () => void;
 }
 
@@ -22,7 +21,6 @@ export default function InventoryDetailHeader({
   inventory,
   inventoryId,
   headerVm,
-  onOpenReferenceImages,
   onOpenCreateAisle,
 }: InventoryDetailHeaderProps) {
   const { t } = useTranslation();
@@ -52,9 +50,6 @@ export default function InventoryDetailHeader({
       }
       actions={
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
-          <Button variant="outlined" size="small" onClick={onOpenReferenceImages}>
-            {t('aisle.visual_refs_title')}
-          </Button>
           {inventory.processing_mode === 'test' ? (
             <Button
               variant="outlined"

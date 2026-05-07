@@ -108,29 +108,3 @@ class InventoryMetricsResponse(BaseModel):
     deletion_rate: float = Field(
         ..., description="Percentage deleted / total_reviewed (0 if total_reviewed=0)."
     )
-
-
-class InventoryVisualReferenceResponse(BaseModel):
-    """Single visual reference associated with an inventory.
-
-    Does not expose internal storage paths; use dedicated file/serving endpoints if needed.
-    """
-
-    id: str
-    inventory_id: str
-    filename: str
-    mime_type: str
-    file_size: int
-    created_at: datetime
-
-
-class InventoryVisualReferenceListResponse(BaseModel):
-    """Wrapper for listing inventory visual references."""
-
-    items: list[InventoryVisualReferenceResponse]
-
-
-class UploadInventoryVisualReferencesResponse(BaseModel):
-    """Response for POST /api/v3/inventories/{inventory_id}/visual-references."""
-
-    items: list[InventoryVisualReferenceResponse]

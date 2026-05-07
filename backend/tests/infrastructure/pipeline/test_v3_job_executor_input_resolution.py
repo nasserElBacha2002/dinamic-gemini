@@ -12,16 +12,17 @@ from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
     InventoryRepository,
-    InventoryVisualReferenceRepository,
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
     SourceAssetRepository,
+    SupplierReferenceImageRepository,
 )
+from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.inventory.entities import Inventory, InventoryStatus
-from src.domain.inventory.visual_reference import InventoryVisualReference
 from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
 from src.infrastructure.repositories.sql_source_asset_repository import _row_to_asset
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
@@ -38,13 +39,23 @@ def _runner_build_pipeline_input(
     inventory_id: str,
 ):
     """Call runner input builder with the same ``run_id`` segment the executor uses in production."""
+    now = datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
+    aisle = Aisle(
+        id="aisle-pipeline-test",
+        inventory_id=inventory_id,
+        code="T",
+        status=AisleStatus.CREATED,
+        created_at=now,
+        updated_at=now,
+        client_supplier_id="sup-1" if analysis_context.visual_references else None,
+    )
     return ex._pipeline_runner.build_pipeline_input(
         assets,
         v3_base,
         job_dir,
         job_id,
         analysis_context=analysis_context,
-        inventory_id=inventory_id,
+        aisle=aisle,
         run_id="run",
         legacy_local_read_enabled=True,
     )
@@ -149,31 +160,26 @@ class _InventoryRepo(InventoryRepository):
         return [self._inventory]
 
 
-class _VisualRepo(InventoryVisualReferenceRepository):
-    def __init__(self, refs: Sequence[InventoryVisualReference]) -> None:
+class _SupplierRepo(SupplierReferenceImageRepository):
+    def __init__(self, refs: Sequence[SupplierReferenceImage]) -> None:
         self._refs = list(refs)
 
-    def get_by_id(self, reference_id: str) -> InventoryVisualReference | None:
-        return next((r for r in self._refs if r.id == reference_id), None)
+    def get_by_id(self, reference_image_id: str) -> SupplierReferenceImage | None:
+        return next((r for r in self._refs if r.id == reference_image_id), None)
 
-    def create(self, reference: InventoryVisualReference) -> None:
-        self._refs.append(reference)
+    def create(self, reference_image: SupplierReferenceImage) -> None:
+        self._refs.append(reference_image)
 
-    def create_many(self, references: Sequence[InventoryVisualReference]) -> None:
-        self._refs.extend(references)
+    def create_many(self, reference_images: Sequence[SupplierReferenceImage]) -> None:
+        self._refs.extend(reference_images)
 
-    def list_by_inventory(self, inventory_id: str) -> Sequence[InventoryVisualReference]:
-        return [r for r in self._refs if r.inventory_id == inventory_id]
+    def list_by_supplier(self, client_supplier_id: str) -> Sequence[SupplierReferenceImage]:
+        out = [r for r in self._refs if r.client_supplier_id == client_supplier_id]
+        out.sort(key=lambda r: (r.created_at, r.id))
+        return out
 
-    def update(self, reference: InventoryVisualReference) -> None:
-        for i, existing in enumerate(self._refs):
-            if existing.id == reference.id:
-                self._refs[i] = reference
-                return
-        raise KeyError(reference.id)
-
-    def delete(self, reference_id: str) -> None:
-        self._refs = [r for r in self._refs if r.id != reference_id]
+    def delete(self, reference_image_id: str) -> None:
+        self._refs = [r for r in self._refs if r.id != reference_image_id]
 
 
 class _FakeArtifactStore:
@@ -203,7 +209,7 @@ class _FakeArtifactStore:
 
 
 def _executor(
-    tmp_inventory_id: str, visual_refs: Sequence[InventoryVisualReference], artifact_store
+    tmp_inventory_id: str, supplier_refs: Sequence[SupplierReferenceImage], artifact_store
 ) -> V3JobExecutor:
     return V3JobExecutor(
         job_repo=_NoopJobRepo(),
@@ -222,7 +228,7 @@ def _executor(
                 updated_at=datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc),
             )
         ),
-        inventory_visual_reference_repo=_VisualRepo(visual_refs),
+        supplier_reference_image_repo=_SupplierRepo(list(supplier_refs)),
         artifact_store=artifact_store,
     )
 
@@ -379,14 +385,16 @@ def test_build_pipeline_input_resolves_local_provider_source_asset_without_bucke
 def test_build_pipeline_input_resolves_s3_visual_references_to_temp_files(tmp_path: Path) -> None:
     job_dir = tmp_path / "job-3"
     job_dir.mkdir(parents=True, exist_ok=True)
-    ref = InventoryVisualReference(
+    now_ref = datetime.now(timezone.utc)
+    ref = SupplierReferenceImage(
         id="ref-1",
-        inventory_id="inv-3",
+        client_supplier_id="sup-1",
         filename="ref.jpg",
         storage_path="inventories/inv-3/visual_references/ref-1.jpg",
         mime_type="image/jpeg",
         file_size=7,
-        created_at=datetime.now(timezone.utc),
+        created_at=now_ref,
+        updated_at=now_ref,
         storage_provider="s3",
         storage_bucket="bucket-a",
         storage_key="inventories/inv-3/visual_references/ref-1.jpg",
@@ -444,14 +452,16 @@ def test_build_pipeline_input_resolves_local_provider_visual_reference_without_b
 ) -> None:
     job_dir = tmp_path / "job-local-ref"
     job_dir.mkdir(parents=True, exist_ok=True)
-    ref = InventoryVisualReference(
+    now_ref = datetime.now(timezone.utc)
+    ref = SupplierReferenceImage(
         id="ref-local",
-        inventory_id="inv-local-ref",
+        client_supplier_id="sup-1",
         filename="ref-local.jpg",
         storage_path="inventories/inv-local-ref/visual_references/ref-local.jpg",
         mime_type="image/jpeg",
         file_size=8,
-        created_at=datetime.now(timezone.utc),
+        created_at=now_ref,
+        updated_at=now_ref,
         storage_provider="local",
         storage_bucket=None,
         storage_key="inventories/inv-local-ref/visual_references/ref-local.jpg",
@@ -570,14 +580,16 @@ def test_build_pipeline_input_fails_when_source_asset_bucket_mismatch(tmp_path: 
 def test_build_pipeline_input_fails_when_visual_reference_bucket_missing(tmp_path: Path) -> None:
     job_dir = tmp_path / "job-6"
     job_dir.mkdir(parents=True, exist_ok=True)
-    ref = InventoryVisualReference(
+    now_ref = datetime.now(timezone.utc)
+    ref = SupplierReferenceImage(
         id="ref-x",
-        inventory_id="inv-6",
+        client_supplier_id="sup-1",
         filename="ref.jpg",
         storage_path="inventories/inv-6/visual_references/ref-x.jpg",
         mime_type="image/jpeg",
         file_size=7,
-        created_at=datetime.now(timezone.utc),
+        created_at=now_ref,
+        updated_at=now_ref,
         storage_provider="s3",
         storage_bucket=None,
         storage_key="inventories/inv-6/visual_references/ref-x.jpg",
@@ -622,14 +634,16 @@ def test_build_pipeline_input_fails_when_visual_reference_bucket_missing(tmp_pat
 def test_unsupported_mixed_assets_fail_before_visual_reference_download(tmp_path: Path) -> None:
     job_dir = tmp_path / "job-7"
     job_dir.mkdir(parents=True, exist_ok=True)
-    ref = InventoryVisualReference(
+    now_ref = datetime.now(timezone.utc)
+    ref = SupplierReferenceImage(
         id="ref-mixed",
-        inventory_id="inv-7",
+        client_supplier_id="sup-1",
         filename="ref.jpg",
         storage_path="inventories/inv-7/visual_references/ref-mixed.jpg",
         mime_type="image/jpeg",
         file_size=7,
-        created_at=datetime.now(timezone.utc),
+        created_at=now_ref,
+        updated_at=now_ref,
         storage_provider="s3",
         storage_bucket="bucket-a",
         storage_key="inventories/inv-7/visual_references/ref-mixed.jpg",
