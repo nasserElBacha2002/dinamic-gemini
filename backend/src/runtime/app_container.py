@@ -773,6 +773,7 @@ class AppContainer:
             client_repo=self.get_client_repo(),
             client_supplier_repo=self.get_client_supplier_repo(),
             prompt_config_repo=self.get_supplier_prompt_config_repo(),
+            settings=self._settings,
         )
 
     def get_create_supplier_prompt_config_version_use_case(self):
@@ -806,6 +807,17 @@ class AppContainer:
         )
 
         return ActivateSupplierPromptConfigVersionUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+        )
+
+    def get_get_supplier_prompt_config_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            GetSupplierPromptConfigUseCase,
+        )
+
+        return GetSupplierPromptConfigUseCase(
             client_repo=self.get_client_repo(),
             client_supplier_repo=self.get_client_supplier_repo(),
             prompt_config_repo=self.get_supplier_prompt_config_repo(),

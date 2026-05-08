@@ -34,6 +34,7 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     ReviewActionRepository,
     SourceAssetRepository,
+    SupplierPromptConfigRepository,
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
@@ -83,6 +84,13 @@ from src.application.use_cases.list_clients import ListClientsUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
 from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
 from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
+from src.application.use_cases.manage_supplier_prompt_configs import (
+    ActivateSupplierPromptConfigVersionUseCase,
+    CreateSupplierPromptConfigVersionUseCase,
+    GetActiveSupplierPromptConfigUseCase,
+    GetSupplierPromptConfigUseCase,
+    ListSupplierPromptConfigsUseCase,
+)
 from src.application.use_cases.manage_supplier_reference_images import (
     DeleteSupplierReferenceImageUseCase,
     GetSupplierReferenceImageUseCase,
@@ -127,6 +135,7 @@ from src.runtime.v3_deps import (
     get_recompute_consolidated_counts_use_case,
     get_review_action_repo,
     get_source_asset_repo,
+    get_supplier_prompt_config_repo,
     get_supplier_reference_image_repo,
     get_worker_launch_service,
 )
@@ -549,6 +558,77 @@ def get_delete_supplier_reference_image_use_case(
         client_supplier_repo=client_supplier_repo,
         reference_repo=reference_repo,
         artifact_storage=artifact_storage,
+    )
+
+
+def get_list_supplier_prompt_configs_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
+) -> ListSupplierPromptConfigsUseCase:
+    from src.config import load_settings
+
+    return ListSupplierPromptConfigsUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        prompt_config_repo=prompt_config_repo,
+        settings=load_settings(),
+    )
+
+
+def get_create_supplier_prompt_config_version_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
+    clock: Clock = Depends(get_clock),
+) -> CreateSupplierPromptConfigVersionUseCase:
+    from src.config import load_settings
+
+    return CreateSupplierPromptConfigVersionUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        prompt_config_repo=prompt_config_repo,
+        clock=clock,
+        settings=load_settings(),
+    )
+
+
+def get_get_active_supplier_prompt_config_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
+) -> GetActiveSupplierPromptConfigUseCase:
+    from src.config import load_settings
+
+    return GetActiveSupplierPromptConfigUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        prompt_config_repo=prompt_config_repo,
+        settings=load_settings(),
+    )
+
+
+def get_activate_supplier_prompt_config_version_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
+) -> ActivateSupplierPromptConfigVersionUseCase:
+    return ActivateSupplierPromptConfigVersionUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        prompt_config_repo=prompt_config_repo,
+    )
+
+
+def get_get_supplier_prompt_config_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
+) -> GetSupplierPromptConfigUseCase:
+    return GetSupplierPromptConfigUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        prompt_config_repo=prompt_config_repo,
     )
 
 

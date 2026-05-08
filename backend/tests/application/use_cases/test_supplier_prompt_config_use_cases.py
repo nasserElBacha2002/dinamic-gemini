@@ -9,6 +9,7 @@ from src.application.errors import (
     SupplierPromptConfigEmptyInstructionsError,
     SupplierPromptConfigInvalidModelError,
     SupplierPromptConfigInvalidProviderError,
+    SupplierPromptConfigInvalidScopeError,
     SupplierPromptConfigNotFoundError,
 )
 from src.application.use_cases.manage_supplier_prompt_configs import (
@@ -18,6 +19,8 @@ from src.application.use_cases.manage_supplier_prompt_configs import (
     CreateSupplierPromptConfigVersionUseCase,
     GetActiveSupplierPromptConfigCommand,
     GetActiveSupplierPromptConfigUseCase,
+    GetSupplierPromptConfigCommand,
+    GetSupplierPromptConfigUseCase,
     ListSupplierPromptConfigsCommand,
     ListSupplierPromptConfigsUseCase,
 )
@@ -221,7 +224,9 @@ def test_ownership_validation_rejects_supplier_from_other_client() -> None:
     create_uc = CreateSupplierPromptConfigVersionUseCase(
         client_repo, supplier_repo, prompt_repo, clock, settings
     )
-    list_uc = ListSupplierPromptConfigsUseCase(client_repo, supplier_repo, prompt_repo)
+    list_uc = ListSupplierPromptConfigsUseCase(
+        client_repo, supplier_repo, prompt_repo, settings
+    )
     with pytest.raises(ClientSupplierClientMismatchError):
         create_uc.execute(
             CreateSupplierPromptConfigVersionCommand(
@@ -384,3 +389,105 @@ def test_normalization_and_scope_for_versioning() -> None:
         )
     )
     assert active is not None and active.id == v1.id
+
+
+def test_list_rejects_model_without_provider() -> None:
+    client_repo, supplier_repo, prompt_repo, _, settings = _deps()
+    list_uc = ListSupplierPromptConfigsUseCase(
+        client_repo, supplier_repo, prompt_repo, settings
+    )
+    with pytest.raises(SupplierPromptConfigInvalidScopeError):
+        list_uc.execute(
+            ListSupplierPromptConfigsCommand(
+                client_id="client-1",
+                supplier_id="supplier-1",
+                provider_name=None,
+                model_name="gemini-2.0-flash-exp",
+            )
+        )
+
+
+def test_list_rejects_invalid_provider_when_filtering() -> None:
+    client_repo, supplier_repo, prompt_repo, _, settings = _deps()
+    list_uc = ListSupplierPromptConfigsUseCase(
+        client_repo, supplier_repo, prompt_repo, settings
+    )
+    with pytest.raises(SupplierPromptConfigInvalidProviderError):
+        list_uc.execute(
+            ListSupplierPromptConfigsCommand(
+                client_id="client-1",
+                supplier_id="supplier-1",
+                provider_name="unsupported-provider",
+                model_name=None,
+            )
+        )
+
+
+def test_list_rejects_invalid_model_for_provider() -> None:
+    client_repo, supplier_repo, prompt_repo, _, settings = _deps()
+    list_uc = ListSupplierPromptConfigsUseCase(
+        client_repo, supplier_repo, prompt_repo, settings
+    )
+    with pytest.raises(SupplierPromptConfigInvalidModelError):
+        list_uc.execute(
+            ListSupplierPromptConfigsCommand(
+                client_id="client-1",
+                supplier_id="supplier-1",
+                provider_name="gemini",
+                model_name="gpt-4o",
+            )
+        )
+
+
+def test_get_supplier_prompt_config_rejects_config_outside_supplier_scope() -> None:
+    client_repo, supplier_repo, prompt_repo, clock, settings = _deps()
+    create_uc = CreateSupplierPromptConfigVersionUseCase(
+        client_repo, supplier_repo, prompt_repo, clock, settings
+    )
+    created = create_uc.execute(
+        CreateSupplierPromptConfigVersionCommand(
+            client_id="client-1",
+            supplier_id="supplier-1",
+            provider_name="gemini",
+            model_name=None,
+            instructions_text="scope test",
+            activate=False,
+        )
+    )
+    supplier_repo.save(
+        ClientSupplier(
+            id="supplier-3",
+            client_id="client-1",
+            name="Supplier 3",
+            status=ClientSupplierStatus.ACTIVE,
+            created_at=clock.now(),
+            updated_at=clock.now(),
+        )
+    )
+    get_uc = GetSupplierPromptConfigUseCase(client_repo, supplier_repo, prompt_repo)
+    with pytest.raises(SupplierPromptConfigNotFoundError):
+        get_uc.execute(
+            GetSupplierPromptConfigCommand(
+                client_id="client-1",
+                supplier_id="supplier-3",
+                config_id=created.id,
+            )
+        )
+
+
+def test_create_trims_outer_whitespace_from_instructions() -> None:
+    client_repo, supplier_repo, prompt_repo, clock, settings = _deps()
+    uc = CreateSupplierPromptConfigVersionUseCase(
+        client_repo, supplier_repo, prompt_repo, clock, settings
+    )
+    created = uc.execute(
+        CreateSupplierPromptConfigVersionCommand(
+            client_id="client-1",
+            supplier_id="supplier-1",
+            provider_name="gemini",
+            model_name=None,
+            instructions_text="  line 1\nline 2  ",
+            activate=False,
+        )
+    )
+    assert created.instructions_text == "line 1\nline 2"

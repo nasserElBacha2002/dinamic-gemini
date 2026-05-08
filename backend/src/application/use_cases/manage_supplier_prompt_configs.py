@@ -129,10 +129,12 @@ class ListSupplierPromptConfigsUseCase:
         client_repo: ClientRepository,
         client_supplier_repo: ClientSupplierRepository,
         prompt_config_repo: SupplierPromptConfigRepository,
+        settings: Any,
     ) -> None:
         self._client_repo = client_repo
         self._client_supplier_repo = client_supplier_repo
         self._prompt_config_repo = prompt_config_repo
+        self._settings = settings
 
     def execute(self, command: ListSupplierPromptConfigsCommand) -> list[SupplierPromptConfig]:
         _validate_supplier_in_client_scope(
@@ -153,6 +155,11 @@ class ListSupplierPromptConfigsUseCase:
             )
         if provider_name is None:
             return list(self._prompt_config_repo.list_by_supplier(command.supplier_id))
+        _validate_provider_model_scope(
+            provider_name=provider_name,
+            model_name=model_name,
+            settings=self._settings,
+        )
         return list(
             self._prompt_config_repo.list_versions_by_scope(
                 command.supplier_id,
@@ -187,6 +194,7 @@ class CreateSupplierPromptConfigVersionUseCase:
         provider_name = _normalize_provider(command.provider_name)
         model_name = _normalize_model(command.model_name)
         _ensure_non_empty_instructions(command.instructions_text)
+        normalized_instructions_text = command.instructions_text.strip()
         _validate_provider_model_scope(
             provider_name=provider_name,
             model_name=model_name,
@@ -207,13 +215,16 @@ class CreateSupplierPromptConfigVersionUseCase:
                 client_supplier_id=command.supplier_id,
                 provider_name=provider_name,
                 model_name=model_name,
-                instructions_text=command.instructions_text,
+                instructions_text=normalized_instructions_text,
                 version=next_version,
                 is_active=False,
                 created_at=now,
                 updated_at=now,
             )
         )
+        # Note: create + activate is not wrapped in a broader application transaction.
+        # If activation fails after create, a new inactive version can remain persisted.
+        # Repository invariants still guarantee one-active-per-scope safety.
         if not command.activate:
             return created
         activated = self._prompt_config_repo.activate_version(created.id)
