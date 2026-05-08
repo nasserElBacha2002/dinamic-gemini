@@ -64,6 +64,25 @@
     "transport_notes_heading": "Notas de transporte",
     "unauthorized_body": "Tu usuario no tiene permisos de administrador.",
     "unauthorized_title": "Acceso restringido",
+    "global_prompt_configs": {
+      "title": "Instrucciones globales",
+      "description": "Estas instrucciones se aplican como base general para todos los proveedores y modelos cuando no exista una configuración más específica.",
+      "protected_boundary_warning": "Estas instrucciones se suman al prompt técnico del sistema. No modifican el formato de respuesta ni las reglas internas de procesamiento.",
+      "active_version": "Versión activa",
+      "version_history": "Historial de versiones",
+      "empty_description": "Todavía no hay instrucciones globales configuradas.",
+      "instructions_label": "Instrucciones globales",
+      "save_and_activate": "Guardar y activar",
+      "save_without_activating": "Guardar sin activar",
+      "activate_version": "Activar versión",
+      "version_label": "Versión {{version}}",
+      "no_active_title": "Todavía no hay instrucciones globales configuradas.",
+      "request_failed": "No se pudo completar la operación de instrucciones globales.",
+      "not_found_error": "No se encontró la configuración global solicitada.",
+      "blank_instructions_error": "Las instrucciones no pueden estar vacías.",
+      "invalid_scope_error": "El alcance solicitado para instrucciones globales no es válido en esta fase.",
+      "activation_failed_error": "No se pudo activar la versión global seleccionada."
+    },
     "validation_fn": "Función de validación"
   },
   "aisle": {

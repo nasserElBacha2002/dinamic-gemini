@@ -90,4 +90,11 @@ export {
   listSupplierReferenceImages,
   uploadSupplierReferenceImages,
 } from './clientSuppliersApi';
+export {
+  activateGlobalPromptConfigVersion,
+  createGlobalPromptConfigVersion,
+  getActiveGlobalPromptConfig,
+  getGlobalPromptConfigById,
+  listGlobalPromptConfigs,
+} from './globalPromptConfigsApi';
 

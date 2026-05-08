@@ -4,7 +4,9 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
+  activateGlobalPromptConfigVersion,
   activateSupplierPromptConfigVersion,
+  createGlobalPromptConfigVersion,
   createSupplierPromptConfigVersion,
   createInventory,
   createAisle,
@@ -24,6 +26,7 @@ import {
 import type {
   CreateClientRequest,
   CreateClientSupplierRequest,
+  CreateGlobalPromptConfigRequest,
   CreateSupplierPromptConfigRequest,
   CreateInventoryRequest,
   CreateAisleRequest,
@@ -151,6 +154,43 @@ export function useActivateSupplierPromptConfigVersion(clientId: string, supplie
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.clients.suppliers.promptConfigs.all(clientId, supplierId),
+      });
+    },
+  });
+}
+
+export function useCreateGlobalPromptConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateGlobalPromptConfigRequest) =>
+      createGlobalPromptConfigVersion(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.admin.globalPromptConfigs.list(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.admin.globalPromptConfigs.active(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.admin.globalPromptConfigs.all,
+      });
+    },
+  });
+}
+
+export function useActivateGlobalPromptConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (configId: string) => activateGlobalPromptConfigVersion(configId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.admin.globalPromptConfigs.list(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.admin.globalPromptConfigs.active(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.admin.globalPromptConfigs.all,
       });
     },
   });

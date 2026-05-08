@@ -40,6 +40,10 @@ const V3_STRUCTURED_CODE_TO_KEY: Record<string, string> = {
   SUPPLIER_PROMPT_CONFIG_EMPTY_INSTRUCTIONS: 'clients.suppliers.prompt_configs.blank_instructions_error',
   SUPPLIER_PROMPT_CONFIG_INVALID_SCOPE: 'clients.suppliers.prompt_configs.invalid_scope_error',
   SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED: 'clients.suppliers.prompt_configs.activation_failed_error',
+  GLOBAL_PROMPT_CONFIG_NOT_FOUND: 'admin_ai_config.global_prompt_configs.not_found_error',
+  GLOBAL_PROMPT_CONFIG_EMPTY_INSTRUCTIONS: 'admin_ai_config.global_prompt_configs.blank_instructions_error',
+  GLOBAL_PROMPT_CONFIG_INVALID_SCOPE: 'admin_ai_config.global_prompt_configs.invalid_scope_error',
+  GLOBAL_PROMPT_CONFIG_ACTIVATION_FAILED: 'admin_ai_config.global_prompt_configs.activation_failed_error',
   INTERNAL_SERVER_ERROR: 'errors.unexpected',
 };
 

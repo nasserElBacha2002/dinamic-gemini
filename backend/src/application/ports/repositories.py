@@ -19,6 +19,7 @@ from src.domain.client_supplier.entities import ClientSupplier
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.evidence.entities import Evidence
+from src.domain.global_prompt_config import GlobalPromptConfig
 from src.domain.inventory.entities import Inventory
 from src.domain.jobs.entities import Job
 from src.domain.labels.entities import FinalCountRecord, NormalizedLabel, RawLabel
@@ -403,5 +404,64 @@ class SupplierPromptConfigRepository(ABC):
 
     @abstractmethod
     def activate_version(self, config_id: str) -> SupplierPromptConfig | None:
+        """Set one version active (and other scope rows inactive), returning the activated row."""
+        ...
+
+
+class GlobalPromptConfigRepository(ABC):
+    """Persist and query global prompt configurations (Phase D9)."""
+
+    @abstractmethod
+    def create(self, config: GlobalPromptConfig) -> GlobalPromptConfig:
+        """Insert one global prompt config row and return the stored entity."""
+        ...
+
+    @abstractmethod
+    def list_versions(
+        self,
+        scope_type: str = "global",
+        provider_name: str | None = None,
+        model_name: str | None = None,
+    ) -> Sequence[GlobalPromptConfig]:
+        """Return versions for one global scope (newest first)."""
+        ...
+
+    @abstractmethod
+    def get_by_id(self, config_id: str) -> GlobalPromptConfig | None:
+        """Return one config by id, or None."""
+        ...
+
+    @abstractmethod
+    def get_active(
+        self,
+        scope_type: str = "global",
+        provider_name: str | None = None,
+        model_name: str | None = None,
+    ) -> GlobalPromptConfig | None:
+        """Return active config for exact scope, or None."""
+        ...
+
+    @abstractmethod
+    def get_latest_version_number(
+        self,
+        scope_type: str = "global",
+        provider_name: str | None = None,
+        model_name: str | None = None,
+    ) -> int | None:
+        """Return max version for exact scope, or None when no rows exist."""
+        ...
+
+    @abstractmethod
+    def deactivate_scope(
+        self,
+        scope_type: str = "global",
+        provider_name: str | None = None,
+        model_name: str | None = None,
+    ) -> None:
+        """Set is_active=0 for all rows in exact scope."""
+        ...
+
+    @abstractmethod
+    def activate_version(self, config_id: str) -> GlobalPromptConfig | None:
         """Set one version active (and other scope rows inactive), returning the activated row."""
         ...

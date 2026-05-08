@@ -5,9 +5,11 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ClientsListQuery, ClientSuppliersListQuery, SupplierPromptConfigsListQuery } from '../api/client';
 import {
+  getActiveGlobalPromptConfig,
   getActiveSupplierPromptConfig,
   getClient,
   getClientSupplier,
+  listGlobalPromptConfigs,
   listClients,
   listClientSuppliers,
   listSupplierPromptConfigs,
@@ -123,6 +125,23 @@ export function useActiveSupplierPromptConfig(
     queryFn: () =>
       getActiveSupplierPromptConfig(clientId!, supplierId!, normalizedProviderName, normalizedModelName),
     enabled: Boolean(clientId && supplierId && normalizedProviderName) && (options?.enabled !== false),
+    retry: false,
+  });
+}
+
+export function useGlobalPromptConfigs(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: queryKeys.admin.globalPromptConfigs.list(),
+    queryFn: listGlobalPromptConfigs,
+    enabled: options?.enabled !== false,
+  });
+}
+
+export function useActiveGlobalPromptConfig(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: queryKeys.admin.globalPromptConfigs.active(),
+    queryFn: getActiveGlobalPromptConfig,
+    enabled: options?.enabled !== false,
     retry: false,
   });
 }

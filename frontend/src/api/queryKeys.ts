@@ -150,6 +150,11 @@ export const queryKeys = {
     aiConfig: () => [...queryKeys.admin.all, 'ai-config'] as const,
     aiComposedPrompt: (providerKey: string, promptKey: string, parity: boolean) =>
       [...queryKeys.admin.all, 'ai-config', 'composed-prompt', providerKey, promptKey, parity] as const,
+    globalPromptConfigs: {
+      all: ['v3', 'admin', 'global-prompt-configs'] as const,
+      list: () => [...queryKeys.admin.globalPromptConfigs.all, 'list'] as const,
+      active: () => [...queryKeys.admin.globalPromptConfigs.all, 'active'] as const,
+    },
   },
 
   analytics: {

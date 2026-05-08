@@ -11,6 +11,7 @@ import {
   Stack,
   Tab,
   Tabs,
+  TextField,
   Typography,
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
@@ -22,6 +23,12 @@ import {
   type AdminAiConfigProviderDetail,
 } from '../api/types';
 import {
+  useActivateGlobalPromptConfig,
+  useActiveGlobalPromptConfig,
+  useCreateGlobalPromptConfig,
+  useGlobalPromptConfigs,
+} from '../hooks';
+import {
   BulletList,
   CopyableMonospaceBlock,
   EmptyInspectorState,
@@ -29,6 +36,7 @@ import {
   SelectableOutlineCard,
 } from '../components/adminAiInspector/InspectorPrimitives';
 import PageHeader from '../components/shell/PageHeader';
+import { resolveApiErrorMessage } from '../utils/apiErrors';
 
 const INSPECTOR_TAB_KEYS = ['overview', 'instructions', 'response_contract', 'prompts', 'composition'] as const;
 type InspectorTabKey = (typeof INSPECTOR_TAB_KEYS)[number];
@@ -82,12 +90,20 @@ export default function AdminAiConfigPage() {
   const [selectedProviderKey, setSelectedProviderKey] = useState<string | null>(null);
   const [selectedPromptKey, setSelectedPromptKey] = useState<string | null>(null);
   const [tab, setTab] = useState<InspectorTabKey>('overview');
+  const [globalInstructionsDraft, setGlobalInstructionsDraft] = useState('');
+  const [globalFormValidationError, setGlobalFormValidationError] = useState<string | null>(
+    null
+  );
   const [composeTarget, setComposeTarget] = useState<{
     prompt_key: string;
     prompt_parity_mode: boolean;
   } | null>(null);
 
   const data = q.data;
+  const globalListQ = useGlobalPromptConfigs({ enabled: !q.isLoading && !q.isError });
+  const globalActiveQ = useActiveGlobalPromptConfig({ enabled: !q.isLoading && !q.isError });
+  const createGlobalMutation = useCreateGlobalPromptConfig();
+  const activateGlobalMutation = useActivateGlobalPromptConfig();
 
   const effectiveProviderKey = useMemo(() => {
     if (selectedProviderKey) return selectedProviderKey;
@@ -132,6 +148,56 @@ export default function AdminAiConfigPage() {
   }, [provider, effectivePromptKey]);
 
   const generatedDisplay = data ? formatGeneratedAtDisplay(data.generated_at, i18n.language) : '';
+  const globalVersions = globalListQ.data?.items ?? [];
+  const activeGlobalConfig = globalActiveQ.data ?? null;
+  const globalActiveIsMissing =
+    globalActiveQ.error instanceof ApiError && globalActiveQ.error.status === 404;
+  const globalInstructionsErrorMessage = createGlobalMutation.isError
+    ? resolveApiErrorMessage(
+        createGlobalMutation.error,
+        'admin_ai_config.global_prompt_configs.request_failed'
+      )
+    : null;
+  const globalActivationErrorMessage = activateGlobalMutation.isError
+    ? resolveApiErrorMessage(
+        activateGlobalMutation.error,
+        'admin_ai_config.global_prompt_configs.request_failed'
+      )
+    : null;
+
+  const handleCreateGlobalPrompt = useCallback(
+    async (activate: boolean) => {
+      const normalized = globalInstructionsDraft.trim();
+      if (!normalized) {
+        setGlobalFormValidationError(
+          t('admin_ai_config.global_prompt_configs.blank_instructions_error')
+        );
+        return;
+      }
+      setGlobalFormValidationError(null);
+      try {
+        await createGlobalMutation.mutateAsync({
+          instructions_text: normalized,
+          activate,
+        });
+        setGlobalInstructionsDraft('');
+      } catch {
+        // Error surfaced via mutation state and translated alert.
+      }
+    },
+    [createGlobalMutation, globalInstructionsDraft, t]
+  );
+
+  const handleActivateGlobalVersion = useCallback(
+    async (configId: string) => {
+      try {
+        await activateGlobalMutation.mutateAsync(configId);
+      } catch {
+        // Error surfaced via mutation state and translated alert.
+      }
+    },
+    [activateGlobalMutation]
+  );
 
   if (q.isLoading) {
     return (
@@ -350,6 +416,164 @@ export default function AdminAiConfigPage() {
 
               <TabPanel value={tab} id="instructions">
                 <Stack spacing={2}>
+                  <Card variant="outlined">
+                    <CardContent>
+                      <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                        {t('admin_ai_config.global_prompt_configs.title')}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        {t('admin_ai_config.global_prompt_configs.description')}
+                      </Typography>
+                      <Alert severity="info" sx={{ mb: 2 }}>
+                        {t('admin_ai_config.global_prompt_configs.protected_boundary_warning')}
+                      </Alert>
+
+                      <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+                        {t('admin_ai_config.global_prompt_configs.active_version')}
+                      </Typography>
+                      {globalActiveQ.isLoading ? (
+                        <Typography variant="body2" color="text.secondary">
+                          {t('common.loading')}
+                        </Typography>
+                      ) : globalActiveIsMissing ? (
+                        <Typography variant="body2" color="text.secondary">
+                          {t('admin_ai_config.global_prompt_configs.no_active_title')}
+                        </Typography>
+                      ) : activeGlobalConfig ? (
+                        <Stack spacing={1} sx={{ mb: 2 }}>
+                          <Chip
+                            size="small"
+                            color="success"
+                            variant="outlined"
+                            label={t('admin_ai_config.global_prompt_configs.version_label', {
+                              version: activeGlobalConfig.version,
+                            })}
+                          />
+                          <CopyableMonospaceBlock
+                            text={activeGlobalConfig.instructions_text}
+                            aria-label="global-editable-instructions-active"
+                            copyLabel={t('admin_ai_config.copy')}
+                          />
+                        </Stack>
+                      ) : null}
+                      {globalActiveQ.isError && !globalActiveIsMissing ? (
+                        <Alert severity="error" sx={{ mb: 2 }}>
+                          {resolveApiErrorMessage(
+                            globalActiveQ.error,
+                            'admin_ai_config.global_prompt_configs.request_failed'
+                          )}
+                        </Alert>
+                      ) : null}
+
+                      <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+                        {t('admin_ai_config.global_prompt_configs.version_history')}
+                      </Typography>
+                      {globalListQ.isLoading ? (
+                        <Typography variant="body2" color="text.secondary">
+                          {t('common.loading')}
+                        </Typography>
+                      ) : globalVersions.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                          {t('admin_ai_config.global_prompt_configs.empty_description')}
+                        </Typography>
+                      ) : (
+                        <Stack spacing={1.5} sx={{ mb: 2 }}>
+                          {globalVersions.map((row) => (
+                            <Card variant="outlined" key={row.id}>
+                              <CardContent sx={{ py: 1.5 }}>
+                                <Stack
+                                  direction={{ xs: 'column', sm: 'row' }}
+                                  spacing={1}
+                                  justifyContent="space-between"
+                                  alignItems={{ xs: 'flex-start', sm: 'center' }}
+                                  sx={{ mb: 1 }}
+                                >
+                                  <Typography variant="body2" fontWeight={600}>
+                                    {t('admin_ai_config.global_prompt_configs.version_label', {
+                                      version: row.version,
+                                    })}
+                                  </Typography>
+                                  {row.is_active ? (
+                                    <Chip
+                                      size="small"
+                                      label={t('clients.suppliers.prompt_configs.active_badge')}
+                                      color="success"
+                                      variant="outlined"
+                                    />
+                                  ) : (
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
+                                      onClick={() => handleActivateGlobalVersion(row.id)}
+                                      disabled={activateGlobalMutation.isPending}
+                                    >
+                                      {t('admin_ai_config.global_prompt_configs.activate_version')}
+                                    </Button>
+                                  )}
+                                </Stack>
+                                <CopyableMonospaceBlock
+                                  text={row.instructions_text}
+                                  aria-label={`global-editable-instructions-version-${row.version}`}
+                                  copyLabel={t('admin_ai_config.copy')}
+                                />
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </Stack>
+                      )}
+                      {globalListQ.isError ? (
+                        <Alert severity="error" sx={{ mb: 2 }}>
+                          {resolveApiErrorMessage(
+                            globalListQ.error,
+                            'admin_ai_config.global_prompt_configs.request_failed'
+                          )}
+                        </Alert>
+                      ) : null}
+
+                      <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+                        {t('clients.suppliers.prompt_configs.new_version')}
+                      </Typography>
+                      <TextField
+                        label={t('admin_ai_config.global_prompt_configs.instructions_label')}
+                        value={globalInstructionsDraft}
+                        onChange={(e) => setGlobalInstructionsDraft(e.target.value)}
+                        fullWidth
+                        minRows={5}
+                        multiline
+                      />
+                      {globalFormValidationError ? (
+                        <Typography color="error.main" variant="body2" sx={{ mt: 1 }}>
+                          {globalFormValidationError}
+                        </Typography>
+                      ) : null}
+                      {globalInstructionsErrorMessage ? (
+                        <Alert severity="error" sx={{ mt: 1 }}>
+                          {globalInstructionsErrorMessage}
+                        </Alert>
+                      ) : null}
+                      {globalActivationErrorMessage ? (
+                        <Alert severity="error" sx={{ mt: 1 }}>
+                          {globalActivationErrorMessage}
+                        </Alert>
+                      ) : null}
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 2 }}>
+                        <Button
+                          variant="contained"
+                          onClick={() => void handleCreateGlobalPrompt(true)}
+                          disabled={createGlobalMutation.isPending}
+                        >
+                          {t('admin_ai_config.global_prompt_configs.save_and_activate')}
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          onClick={() => void handleCreateGlobalPrompt(false)}
+                          disabled={createGlobalMutation.isPending}
+                        >
+                          {t('admin_ai_config.global_prompt_configs.save_without_activating')}
+                        </Button>
+                      </Stack>
+                    </CardContent>
+                  </Card>
                   <Card variant="outlined">
                     <CardContent>
                       <Typography variant="subtitle1" fontWeight={600} gutterBottom>

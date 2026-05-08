@@ -28,6 +28,7 @@ from src.application.ports.repositories import (
     ClientRepository,
     ClientSupplierRepository,
     EvidenceRepository,
+    GlobalPromptConfigRepository,
     InventoryRepository,
     JobRepository,
     PositionRepository,
@@ -84,6 +85,13 @@ from src.application.use_cases.list_clients import ListClientsUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
 from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
 from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
+from src.application.use_cases.manage_global_prompt_configs import (
+    ActivateGlobalPromptConfigVersionUseCase,
+    CreateGlobalPromptConfigVersionUseCase,
+    GetActiveGlobalPromptConfigUseCase,
+    GetGlobalPromptConfigUseCase,
+    ListGlobalPromptConfigsUseCase,
+)
 from src.application.use_cases.manage_supplier_prompt_configs import (
     ActivateSupplierPromptConfigVersionUseCase,
     CreateSupplierPromptConfigVersionUseCase,
@@ -127,6 +135,7 @@ from src.runtime.v3_deps import (
     get_clock,
     get_evidence_repo,
     get_final_count_repo,
+    get_global_prompt_config_repo,
     get_inventory_repo,
     get_job_repo,
     get_metrics_calculator,
@@ -630,6 +639,40 @@ def get_get_supplier_prompt_config_use_case(
         client_supplier_repo=client_supplier_repo,
         prompt_config_repo=prompt_config_repo,
     )
+
+
+def get_list_global_prompt_configs_use_case(
+    prompt_config_repo: GlobalPromptConfigRepository = Depends(get_global_prompt_config_repo),
+) -> ListGlobalPromptConfigsUseCase:
+    return ListGlobalPromptConfigsUseCase(prompt_config_repo=prompt_config_repo)
+
+
+def get_create_global_prompt_config_version_use_case(
+    prompt_config_repo: GlobalPromptConfigRepository = Depends(get_global_prompt_config_repo),
+    clock: Clock = Depends(get_clock),
+) -> CreateGlobalPromptConfigVersionUseCase:
+    return CreateGlobalPromptConfigVersionUseCase(
+        prompt_config_repo=prompt_config_repo,
+        clock=clock,
+    )
+
+
+def get_get_active_global_prompt_config_use_case(
+    prompt_config_repo: GlobalPromptConfigRepository = Depends(get_global_prompt_config_repo),
+) -> GetActiveGlobalPromptConfigUseCase:
+    return GetActiveGlobalPromptConfigUseCase(prompt_config_repo=prompt_config_repo)
+
+
+def get_activate_global_prompt_config_version_use_case(
+    prompt_config_repo: GlobalPromptConfigRepository = Depends(get_global_prompt_config_repo),
+) -> ActivateGlobalPromptConfigVersionUseCase:
+    return ActivateGlobalPromptConfigVersionUseCase(prompt_config_repo=prompt_config_repo)
+
+
+def get_get_global_prompt_config_use_case(
+    prompt_config_repo: GlobalPromptConfigRepository = Depends(get_global_prompt_config_repo),
+) -> GetGlobalPromptConfigUseCase:
+    return GetGlobalPromptConfigUseCase(prompt_config_repo=prompt_config_repo)
 
 
 def get_list_aisle_positions_use_case(
