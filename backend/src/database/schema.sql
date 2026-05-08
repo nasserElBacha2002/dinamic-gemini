@@ -701,14 +701,17 @@ BEGIN
     CREATE TABLE supplier_prompt_configs (
         id VARCHAR(36) NOT NULL PRIMARY KEY,
         client_supplier_id VARCHAR(36) NOT NULL,
-        provider_name VARCHAR(32) NOT NULL,
+        provider_name VARCHAR(32) NULL,
         model_name VARCHAR(128) NULL,
-        model_scope_key AS (CASE WHEN model_name IS NULL THEN '#NULL#' ELSE 'M:' + model_name END) PERSISTED,
+        provider_scope_key AS (CASE WHEN provider_name IS NULL THEN '#ALL_PROVIDERS#' ELSE 'P:' + LOWER(provider_name) END) PERSISTED,
+        model_scope_key AS (CASE WHEN model_name IS NULL THEN '#ALL_MODELS#' ELSE 'M:' + model_name END) PERSISTED,
         instructions_text NVARCHAR(MAX) NOT NULL,
         version INT NOT NULL,
         is_active BIT NOT NULL CONSTRAINT DF_supplier_prompt_configs_is_active DEFAULT (0),
         created_at DATETIME2 NOT NULL,
         updated_at DATETIME2 NOT NULL,
+        CONSTRAINT CK_supplier_prompt_configs_valid_scope
+            CHECK (NOT (provider_name IS NULL AND model_name IS NOT NULL)),
         CONSTRAINT FK_supplier_prompt_configs_client_supplier
             FOREIGN KEY (client_supplier_id) REFERENCES client_suppliers(id)
     );
@@ -720,7 +723,7 @@ IF NOT EXISTS (
       AND object_id = OBJECT_ID('supplier_prompt_configs')
 )
     CREATE INDEX IX_supplier_prompt_configs_supplier_scope
-        ON supplier_prompt_configs(client_supplier_id, provider_name, model_name, created_at DESC);
+        ON supplier_prompt_configs(client_supplier_id, provider_scope_key, model_scope_key, created_at DESC);
 GO
 IF NOT EXISTS (
     SELECT * FROM sys.indexes
@@ -728,7 +731,7 @@ IF NOT EXISTS (
       AND object_id = OBJECT_ID('supplier_prompt_configs')
 )
     CREATE UNIQUE INDEX UQ_supplier_prompt_configs_scope_version
-        ON supplier_prompt_configs(client_supplier_id, provider_name, model_scope_key, version);
+        ON supplier_prompt_configs(client_supplier_id, provider_scope_key, model_scope_key, version);
 GO
 IF NOT EXISTS (
     SELECT * FROM sys.indexes
@@ -736,54 +739,7 @@ IF NOT EXISTS (
       AND object_id = OBJECT_ID('supplier_prompt_configs')
 )
     CREATE UNIQUE INDEX UQ_supplier_prompt_configs_one_active
-        ON supplier_prompt_configs(client_supplier_id, provider_name, model_scope_key)
-        WHERE is_active = 1;
-GO
-
--- Phase D9 — Global prompt configs foundation (mirror migrations/versions/0031_global_prompt_configs_foundation.sql).
-IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'global_prompt_configs')
-BEGIN
-    CREATE TABLE global_prompt_configs (
-        id VARCHAR(36) NOT NULL PRIMARY KEY,
-        scope_type VARCHAR(32) NOT NULL CONSTRAINT DF_global_prompt_configs_scope_type DEFAULT ('global'),
-        provider_name VARCHAR(32) NULL,
-        model_name VARCHAR(128) NULL,
-        model_scope_key AS (CASE WHEN model_name IS NULL THEN '#NULL#' ELSE 'M:' + model_name END) PERSISTED,
-        instructions_text NVARCHAR(MAX) NOT NULL,
-        version INT NOT NULL,
-        is_active BIT NOT NULL CONSTRAINT DF_global_prompt_configs_is_active DEFAULT (0),
-        created_at DATETIME2 NOT NULL,
-        updated_at DATETIME2 NOT NULL,
-        CONSTRAINT CK_global_prompt_configs_scope_type_global
-            CHECK (scope_type = 'global'),
-        CONSTRAINT CK_global_prompt_configs_global_null_provider_model
-            CHECK (scope_type <> 'global' OR (provider_name IS NULL AND model_name IS NULL))
-    );
-END;
-GO
-IF NOT EXISTS (
-    SELECT * FROM sys.indexes
-    WHERE name = 'IX_global_prompt_configs_scope'
-      AND object_id = OBJECT_ID('global_prompt_configs')
-)
-    CREATE INDEX IX_global_prompt_configs_scope
-        ON global_prompt_configs(scope_type, provider_name, model_name, created_at DESC);
-GO
-IF NOT EXISTS (
-    SELECT * FROM sys.indexes
-    WHERE name = 'UQ_global_prompt_configs_scope_version'
-      AND object_id = OBJECT_ID('global_prompt_configs')
-)
-    CREATE UNIQUE INDEX UQ_global_prompt_configs_scope_version
-        ON global_prompt_configs(scope_type, provider_name, model_scope_key, version);
-GO
-IF NOT EXISTS (
-    SELECT * FROM sys.indexes
-    WHERE name = 'UQ_global_prompt_configs_one_active'
-      AND object_id = OBJECT_ID('global_prompt_configs')
-)
-    CREATE UNIQUE INDEX UQ_global_prompt_configs_one_active
-        ON global_prompt_configs(scope_type, provider_name, model_scope_key)
+        ON supplier_prompt_configs(client_supplier_id, provider_scope_key, model_scope_key)
         WHERE is_active = 1;
 GO
 

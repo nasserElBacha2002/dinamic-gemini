@@ -439,6 +439,7 @@ def get_supplier_reference_image_file(
 def list_supplier_prompt_configs(
     client_id: str,
     supplier_id: str,
+    scope: str | None = Query(None),
     provider_name: str | None = Query(None),
     model_name: str | None = Query(None),
     use_case: ListSupplierPromptConfigsUseCase = Depends(get_list_supplier_prompt_configs_use_case),
@@ -448,6 +449,7 @@ def list_supplier_prompt_configs(
             ListSupplierPromptConfigsCommand(
                 client_id=client_id,
                 supplier_id=supplier_id,
+                scope=scope,
                 provider_name=provider_name,
                 model_name=model_name,
             )
@@ -497,7 +499,7 @@ def create_supplier_prompt_config(
 def get_active_supplier_prompt_config(
     client_id: str,
     supplier_id: str,
-    provider_name: str = Query(...),
+    provider_name: str | None = Query(None),
     model_name: str | None = Query(None),
     use_case: GetActiveSupplierPromptConfigUseCase = Depends(
         get_get_active_supplier_prompt_config_use_case

@@ -10,7 +10,6 @@ export const V3_CLIENTS_BASE = `${V3_API_PREFIX}/clients`;
 export const V3_ADMIN_BASE = `${V3_API_PREFIX}/admin`;
 export const V3_ANALYTICS_BASE = `${V3_API_PREFIX}/analytics`;
 export const V3_REVIEW_QUEUE_BASE = `${V3_API_PREFIX}/review-queue`;
-export const V3_PROMPT_CONFIGS_BASE = `${V3_API_PREFIX}/prompt-configs`;
 
 export function pathToClientSuppliersBase(clientId: string): string {
   return `${V3_CLIENTS_BASE}/${encodeURIComponent(clientId)}/suppliers`;
@@ -59,22 +58,3 @@ export function supplierPromptConfigActivatePath(
   return `${supplierPromptConfigByIdPath(clientId, supplierId, configId)}/activate`;
 }
 
-/** GET|POST .../prompt-configs/global */
-export function globalPromptConfigsPath(): string {
-  return `${V3_PROMPT_CONFIGS_BASE}/global`;
-}
-
-/** GET .../prompt-configs/global/active */
-export function globalPromptConfigsActivePath(): string {
-  return `${globalPromptConfigsPath()}/active`;
-}
-
-/** GET .../prompt-configs/global/{configId} */
-export function globalPromptConfigByIdPath(configId: string): string {
-  return `${globalPromptConfigsPath()}/${encodeURIComponent(configId)}`;
-}
-
-/** POST .../prompt-configs/global/{configId}/activate */
-export function globalPromptConfigActivatePath(configId: string): string {
-  return `${globalPromptConfigByIdPath(configId)}/activate`;
-}

@@ -82,7 +82,7 @@ export interface DeleteSupplierReferenceImageResponse {
 export interface SupplierPromptConfig {
   id: string;
   client_supplier_id: string;
-  provider_name: string;
+  provider_name?: string | null;
   model_name?: string | null;
   instructions_text: string;
   version: number;
@@ -93,22 +93,6 @@ export interface SupplierPromptConfig {
 
 export interface SupplierPromptConfigsListResponse {
   items: SupplierPromptConfig[];
-}
-
-export interface GlobalPromptConfig {
-  id: string;
-  scope_type: string;
-  provider_name?: string | null;
-  model_name?: string | null;
-  instructions_text: string;
-  version: number;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface GlobalPromptConfigsListResponse {
-  items: GlobalPromptConfig[];
 }
 
 // ─── Inventory ─────────────────────────────────────────────────────────────

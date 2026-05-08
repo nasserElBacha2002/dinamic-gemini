@@ -152,13 +152,3 @@ HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_SCOPE = (
 HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED = (
     "Supplier prompt config activation failed"
 )
-
-# Global prompt configs (Phase D9)
-HTTP_DETAIL_GLOBAL_PROMPT_CONFIG_NOT_FOUND = "Global prompt config not found"
-HTTP_DETAIL_GLOBAL_PROMPT_CONFIG_EMPTY_INSTRUCTIONS = "instructions_text is required"
-HTTP_DETAIL_GLOBAL_PROMPT_CONFIG_INVALID_SCOPE = (
-    "provider_name and model_name are not supported for global scope in this phase"
-)
-HTTP_DETAIL_GLOBAL_PROMPT_CONFIG_ACTIVATION_FAILED = (
-    "Global prompt config activation failed"
-)

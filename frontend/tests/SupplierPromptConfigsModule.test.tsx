@@ -168,7 +168,7 @@ describe('SupplierPromptConfigsModule', () => {
     await waitFor(() =>
       expect(mutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({
-          provider_name: 'gemini',
+          provider_name: null,
           model_name: null,
           instructions_text: 'línea 1\nlínea 2',
           activate: true,
@@ -287,6 +287,10 @@ describe('SupplierPromptConfigsModule', () => {
     });
 
     renderModule();
+
+    const scopeSelect = screen.getByLabelText(/alcance de aplicación/i);
+    fireEvent.mouseDown(scopeSelect);
+    fireEvent.click(await screen.findByRole('option', { name: /proveedor de ia \+ modelo/i }));
 
     const modelSelect = screen.getByLabelText(/^modelo$/i);
     expect(modelSelect.tagName.toLowerCase()).toBe('div');

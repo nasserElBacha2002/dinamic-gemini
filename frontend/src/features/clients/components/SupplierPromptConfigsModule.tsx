@@ -51,6 +51,7 @@ export default function SupplierPromptConfigsModule({
   );
 
   const [formValues, setFormValues] = useState<SupplierPromptConfigFormValues>({
+    scopeType: 'all_providers_models',
     providerName: '',
     modelName: '',
     instructionsText: '',
@@ -66,7 +67,7 @@ export default function SupplierPromptConfigsModule({
       return {
         ...prev,
         providerName: providerOptions[0].value,
-        modelName: '',
+        modelName: prev.scopeType === 'provider_model' ? prev.modelName : '',
       };
     });
   }, [providerOptions]);
@@ -92,22 +93,34 @@ export default function SupplierPromptConfigsModule({
 
   const selectedProvider = formValues.providerName.trim();
   const selectedModel = normalizeModelName(formValues.modelName);
+  const scopeQuery =
+    formValues.scopeType === 'all_providers_models'
+      ? { scope: 'all' as const }
+      : {
+          provider_name: selectedProvider,
+          model_name: formValues.scopeType === 'provider_model' ? selectedModel : null,
+        };
 
   const versionsQuery = useSupplierPromptConfigs(
     clientId,
     supplierId,
+    scopeQuery,
     {
-      provider_name: selectedProvider,
-      model_name: selectedModel,
-    },
-    { enabled: Boolean(open && clientId && supplierId && selectedProvider) }
+      enabled:
+        Boolean(open && clientId && supplierId) &&
+        (formValues.scopeType === 'all_providers_models' || Boolean(selectedProvider)),
+    }
   );
   const activeQuery = useActiveSupplierPromptConfig(
     clientId,
     supplierId,
-    selectedProvider,
-    selectedModel,
-    { enabled: Boolean(open && clientId && supplierId && selectedProvider) }
+    formValues.scopeType === 'all_providers_models' ? undefined : selectedProvider,
+    formValues.scopeType === 'provider_model' ? selectedModel : null,
+    {
+      enabled:
+        Boolean(open && clientId && supplierId) &&
+        (formValues.scopeType === 'all_providers_models' || Boolean(selectedProvider)),
+    }
   );
   const createMutation = useCreateSupplierPromptConfigVersion(clientId, supplierId);
   const activateMutation = useActivateSupplierPromptConfigVersion(clientId, supplierId);
@@ -144,7 +157,7 @@ export default function SupplierPromptConfigsModule({
   const handleCreateVersion = useCallback(
     (activate: boolean) => {
       const normalizedInstructions = formValues.instructionsText.trim();
-      if (!selectedProvider) {
+      if (formValues.scopeType !== 'all_providers_models' && !selectedProvider) {
         setFormValidationError(t('clients.suppliers.prompt_configs.invalid_provider_error'));
         return;
       }
@@ -155,8 +168,9 @@ export default function SupplierPromptConfigsModule({
       setFormValidationError(null);
       void createMutation
         .mutateAsync({
-          provider_name: selectedProvider,
-          model_name: selectedModel,
+          provider_name:
+            formValues.scopeType === 'all_providers_models' ? null : selectedProvider,
+          model_name: formValues.scopeType === 'provider_model' ? selectedModel : null,
           instructions_text: normalizedInstructions,
           activate,
         })
@@ -178,7 +192,15 @@ export default function SupplierPromptConfigsModule({
           /* Drawer surfaces mutation error */
         });
     },
-    [createMutation, formValues.instructionsText, selectedModel, selectedProvider, showSnackbar, t]
+    [
+      createMutation,
+      formValues.instructionsText,
+      formValues.scopeType,
+      selectedModel,
+      selectedProvider,
+      showSnackbar,
+      t,
+    ]
   );
 
   const handleActivateVersion = useCallback(
@@ -199,7 +221,8 @@ export default function SupplierPromptConfigsModule({
       open={open}
       onClose={handleClose}
       providerName={selectedProvider}
-      modelName={formValues.modelName}
+      modelName={formValues.scopeType === 'provider_model' ? formValues.modelName : ''}
+      scopeType={formValues.scopeType}
       formValues={formValues}
       onFormChange={(next) => {
         setFormValues(next);

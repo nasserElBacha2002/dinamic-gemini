@@ -21,7 +21,6 @@ from src.application.ports.repositories import (
     ClientSupplierRepository,
     EvidenceRepository,
     FinalCountRepository,
-    GlobalPromptConfigRepository,
     InventoryRepository,
     JobRepository,
     NormalizedLabelRepository,
@@ -68,11 +67,6 @@ def get_supplier_reference_image_repo() -> SupplierReferenceImageRepository:
 
 def get_supplier_prompt_config_repo() -> SupplierPromptConfigRepository:
     return get_app_container().get_supplier_prompt_config_repo()
-
-
-def get_global_prompt_config_repo() -> GlobalPromptConfigRepository:
-    return get_app_container().get_global_prompt_config_repo()
-
 
 def get_position_repo() -> PositionRepository:
     return get_app_container().get_position_repo()

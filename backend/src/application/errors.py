@@ -104,22 +104,6 @@ class SupplierPromptConfigActivationFailedError(Exception):
     """Raised when prompt-config activation does not return an activated row."""
 
 
-class GlobalPromptConfigNotFoundError(Exception):
-    """Raised when a global prompt config does not exist in the global scope."""
-
-
-class GlobalPromptConfigEmptyInstructionsError(Exception):
-    """Raised when instructions_text is empty or blank for global prompt configs."""
-
-
-class GlobalPromptConfigInvalidScopeError(Exception):
-    """Raised when global prompt-config scope is invalid for this phase."""
-
-
-class GlobalPromptConfigActivationFailedError(Exception):
-    """Raised when global prompt-config activation does not return an activated row."""
-
-
 class PositionNotFoundError(Exception):
     """Raised when the position does not exist or does not belong to the given aisle."""
 

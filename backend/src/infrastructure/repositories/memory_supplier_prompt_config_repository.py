@@ -8,22 +8,30 @@ from datetime import datetime, timezone
 from src.application.ports.repositories import SupplierPromptConfigRepository
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 
-DEFAULT_MODEL_SCOPE_KEY = "#NULL#"
+DEFAULT_PROVIDER_SCOPE_KEY = "#ALL_PROVIDERS#"
+PROVIDER_SCOPE_PREFIX = "P:"
+DEFAULT_MODEL_SCOPE_KEY = "#ALL_MODELS#"
 MODEL_SCOPE_PREFIX = "M:"
 
 
 def _scope_key(
     client_supplier_id: str,
-    provider_name: str,
+    provider_name: str | None,
     model_name: str | None,
 ) -> tuple[str, str, str]:
+    normalized_provider = (provider_name or "").strip().lower()
     normalized_model = (model_name or "").strip()
+    provider_scope_key = (
+        DEFAULT_PROVIDER_SCOPE_KEY
+        if not normalized_provider
+        else f"{PROVIDER_SCOPE_PREFIX}{normalized_provider}"
+    )
     model_scope_key = (
         DEFAULT_MODEL_SCOPE_KEY
         if not normalized_model
         else f"{MODEL_SCOPE_PREFIX}{normalized_model}"
     )
-    return (client_supplier_id.strip(), provider_name.strip(), model_scope_key)
+    return (client_supplier_id.strip(), provider_scope_key, model_scope_key)
 
 
 def _ensure_utc(dt: datetime) -> datetime:
@@ -36,7 +44,7 @@ def _normalize_config(config: SupplierPromptConfig) -> SupplierPromptConfig:
     return SupplierPromptConfig(
         id=config.id,
         client_supplier_id=config.client_supplier_id,
-        provider_name=config.provider_name.strip(),
+        provider_name=(config.provider_name or "").strip().lower() or None,
         model_name=(config.model_name or "").strip() or None,
         instructions_text=config.instructions_text,
         version=config.version,
@@ -94,7 +102,7 @@ class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
     def list_versions_by_scope(
         self,
         client_supplier_id: str,
-        provider_name: str,
+        provider_name: str | None,
         model_name: str | None,
     ) -> Sequence[SupplierPromptConfig]:
         sk = _scope_key(client_supplier_id, provider_name, model_name)
@@ -114,7 +122,7 @@ class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
     def get_active_by_scope(
         self,
         client_supplier_id: str,
-        provider_name: str,
+        provider_name: str | None,
         model_name: str | None,
     ) -> SupplierPromptConfig | None:
         sk = _scope_key(client_supplier_id, provider_name, model_name)
@@ -132,7 +140,7 @@ class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
     def get_latest_version_number(
         self,
         client_supplier_id: str,
-        provider_name: str,
+        provider_name: str | None,
         model_name: str | None,
     ) -> int | None:
         sk = _scope_key(client_supplier_id, provider_name, model_name)
@@ -146,7 +154,7 @@ class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
     def deactivate_scope(
         self,
         client_supplier_id: str,
-        provider_name: str,
+        provider_name: str | None,
         model_name: str | None,
     ) -> None:
         sk = _scope_key(client_supplier_id, provider_name, model_name)

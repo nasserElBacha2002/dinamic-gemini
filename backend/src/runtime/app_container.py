@@ -28,7 +28,6 @@ from src.application.ports.repositories import (
     ClientSupplierRepository,
     EvidenceRepository,
     FinalCountRepository,
-    GlobalPromptConfigRepository,
     InventoryRepository,
     JobRepository,
     NormalizedLabelRepository,
@@ -85,7 +84,6 @@ class AppContainer:
         self._asset_repo: SourceAssetRepository | None = None
         self._supplier_reference_image_repo: SupplierReferenceImageRepository | None = None
         self._supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None
-        self._global_prompt_config_repo: GlobalPromptConfigRepository | None = None
         self._position_repo: PositionRepository | None = None
         self._product_record_repo: ProductRecordRepository | None = None
         self._evidence_repo: EvidenceRepository | None = None
@@ -357,32 +355,6 @@ class AppContainer:
             build_memory=_memory,
         )
         return self._supplier_prompt_config_repo
-
-    def get_global_prompt_config_repo(self) -> GlobalPromptConfigRepository:
-        if self._global_prompt_config_repo is not None:
-            return self._global_prompt_config_repo
-
-        def _sql(client: SqlServerClient) -> GlobalPromptConfigRepository:
-            from src.infrastructure.repositories.sql_global_prompt_config_repository import (
-                SqlGlobalPromptConfigRepository,
-            )
-
-            return SqlGlobalPromptConfigRepository(client)
-
-        def _memory() -> GlobalPromptConfigRepository:
-            from src.infrastructure.repositories.memory_global_prompt_config_repository import (
-                MemoryGlobalPromptConfigRepository,
-            )
-
-            return MemoryGlobalPromptConfigRepository()
-
-        self._global_prompt_config_repo = self._build_sql_repository_or_memory(
-            backend_info_name="GlobalPromptConfigRepository",
-            sql_error_subject="global_prompt_config repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
-        return self._global_prompt_config_repo
 
     def get_position_repo(self) -> PositionRepository:
         if self._position_repo is not None:
@@ -851,48 +823,3 @@ class AppContainer:
             prompt_config_repo=self.get_supplier_prompt_config_repo(),
         )
 
-    def get_list_global_prompt_configs_use_case(self):
-        from src.application.use_cases.manage_global_prompt_configs import (
-            ListGlobalPromptConfigsUseCase,
-        )
-
-        return ListGlobalPromptConfigsUseCase(
-            prompt_config_repo=self.get_global_prompt_config_repo(),
-        )
-
-    def get_create_global_prompt_config_version_use_case(self):
-        from src.application.use_cases.manage_global_prompt_configs import (
-            CreateGlobalPromptConfigVersionUseCase,
-        )
-
-        return CreateGlobalPromptConfigVersionUseCase(
-            prompt_config_repo=self.get_global_prompt_config_repo(),
-            clock=self.get_clock(),
-        )
-
-    def get_get_active_global_prompt_config_use_case(self):
-        from src.application.use_cases.manage_global_prompt_configs import (
-            GetActiveGlobalPromptConfigUseCase,
-        )
-
-        return GetActiveGlobalPromptConfigUseCase(
-            prompt_config_repo=self.get_global_prompt_config_repo(),
-        )
-
-    def get_activate_global_prompt_config_version_use_case(self):
-        from src.application.use_cases.manage_global_prompt_configs import (
-            ActivateGlobalPromptConfigVersionUseCase,
-        )
-
-        return ActivateGlobalPromptConfigVersionUseCase(
-            prompt_config_repo=self.get_global_prompt_config_repo(),
-        )
-
-    def get_get_global_prompt_config_use_case(self):
-        from src.application.use_cases.manage_global_prompt_configs import (
-            GetGlobalPromptConfigUseCase,
-        )
-
-        return GetGlobalPromptConfigUseCase(
-            prompt_config_repo=self.get_global_prompt_config_repo(),
-        )

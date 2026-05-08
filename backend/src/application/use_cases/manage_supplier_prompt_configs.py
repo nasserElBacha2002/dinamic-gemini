@@ -32,7 +32,7 @@ from src.pipeline.providers.definitions import registered_pipeline_provider_keys
 class CreateSupplierPromptConfigVersionCommand:
     client_id: str
     supplier_id: str
-    provider_name: str
+    provider_name: str | None
     model_name: str | None
     instructions_text: str
     activate: bool = True
@@ -44,13 +44,14 @@ class ListSupplierPromptConfigsCommand:
     supplier_id: str
     provider_name: str | None = None
     model_name: str | None = None
+    scope: str | None = None
 
 
 @dataclass
 class GetActiveSupplierPromptConfigCommand:
     client_id: str
     supplier_id: str
-    provider_name: str
+    provider_name: str | None
     model_name: str | None
 
 
@@ -68,11 +69,9 @@ class GetSupplierPromptConfigCommand:
     config_id: str
 
 
-def _normalize_provider(provider_name: str) -> str:
+def _normalize_optional_provider(provider_name: str | None) -> str | None:
     normalized = (provider_name or "").strip().lower()
-    if not normalized:
-        raise SupplierPromptConfigInvalidProviderError("provider_name is required")
-    return normalized
+    return normalized or None
 
 
 def _normalize_model(model_name: str | None) -> str | None:
@@ -86,10 +85,16 @@ def _ensure_non_empty_instructions(instructions_text: str) -> None:
 
 def _validate_provider_model_scope(
     *,
-    provider_name: str,
+    provider_name: str | None,
     model_name: str | None,
     settings: Any,
 ) -> None:
+    if provider_name is None:
+        if model_name is not None:
+            raise SupplierPromptConfigInvalidScopeError(
+                "provider_name is required when model_name is provided"
+            )
+        return
     known = registered_pipeline_provider_keys_from_definitions()
     if provider_name not in known:
         raise SupplierPromptConfigInvalidProviderError(
@@ -144,17 +149,32 @@ class ListSupplierPromptConfigsUseCase:
             supplier_id=command.supplier_id,
         )
         provider_name = (
-            _normalize_provider(command.provider_name)
+            _normalize_optional_provider(command.provider_name)
             if command.provider_name is not None
             else None
         )
         model_name = _normalize_model(command.model_name)
+        scope = (command.scope or "").strip().lower() or None
+        if scope not in (None, "all"):
+            raise SupplierPromptConfigInvalidScopeError(
+                "scope must be 'all' when provided"
+            )
+        if scope == "all" and (provider_name is not None or model_name is not None):
+            raise SupplierPromptConfigInvalidScopeError(
+                "scope=all cannot be combined with provider_name/model_name"
+            )
         if provider_name is None and model_name is not None:
             raise SupplierPromptConfigInvalidScopeError(
                 "provider_name is required when model_name is provided"
             )
-        if provider_name is None:
+        if scope is None and provider_name is None and model_name is None:
             return list(self._prompt_config_repo.list_by_supplier(command.supplier_id))
+        if scope == "all":
+            return list(
+                self._prompt_config_repo.list_versions_by_scope(
+                    command.supplier_id, None, None
+                )
+            )
         _validate_provider_model_scope(
             provider_name=provider_name,
             model_name=model_name,
@@ -191,7 +211,7 @@ class CreateSupplierPromptConfigVersionUseCase:
             client_id=command.client_id,
             supplier_id=command.supplier_id,
         )
-        provider_name = _normalize_provider(command.provider_name)
+        provider_name = _normalize_optional_provider(command.provider_name)
         model_name = _normalize_model(command.model_name)
         _ensure_non_empty_instructions(command.instructions_text)
         normalized_instructions_text = command.instructions_text.strip()
@@ -257,7 +277,7 @@ class GetActiveSupplierPromptConfigUseCase:
             client_id=command.client_id,
             supplier_id=command.supplier_id,
         )
-        provider_name = _normalize_provider(command.provider_name)
+        provider_name = _normalize_optional_provider(command.provider_name)
         model_name = _normalize_model(command.model_name)
         _validate_provider_model_scope(
             provider_name=provider_name,

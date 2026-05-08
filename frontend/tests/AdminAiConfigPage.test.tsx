@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest';
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -7,7 +8,6 @@ import AdminAiConfigPage from '../src/pages/AdminAiConfigPage';
 import { AppSnackbarProvider } from '../src/components/ui';
 import { AuthContext, createInitialAuthState } from '../src/features/auth/store';
 import type { AuthContextValue } from '../src/features/auth/store';
-import { ApiError } from '../src/api/types';
 import * as client from '../src/api/client';
 
 vi.mock('../src/api/client', async (importOriginal) => {
@@ -16,10 +16,6 @@ vi.mock('../src/api/client', async (importOriginal) => {
     ...actual,
     getAdminAiConfig: vi.fn(),
     getAdminAiComposedPrompt: vi.fn(),
-    listGlobalPromptConfigs: vi.fn(),
-    getActiveGlobalPromptConfig: vi.fn(),
-    createGlobalPromptConfigVersion: vi.fn(),
-    activateGlobalPromptConfigVersion: vi.fn(),
   };
 });
 
@@ -126,36 +122,6 @@ describe('AdminAiConfigPage', () => {
   beforeEach(() => {
     vi.mocked(client.getAdminAiConfig).mockReset();
     vi.mocked(client.getAdminAiComposedPrompt).mockReset();
-    vi.mocked(client.listGlobalPromptConfigs).mockReset();
-    vi.mocked(client.getActiveGlobalPromptConfig).mockReset();
-    vi.mocked(client.createGlobalPromptConfigVersion).mockReset();
-    vi.mocked(client.activateGlobalPromptConfigVersion).mockReset();
-    vi.mocked(client.listGlobalPromptConfigs).mockResolvedValue({ items: [] } as never);
-    vi.mocked(client.getActiveGlobalPromptConfig).mockRejectedValue(
-      new ApiError('none', 404, {}) as never
-    );
-    vi.mocked(client.createGlobalPromptConfigVersion).mockResolvedValue({
-      id: 'g-1',
-      scope_type: 'global',
-      provider_name: null,
-      model_name: null,
-      instructions_text: 'Nueva base global',
-      version: 1,
-      is_active: true,
-      created_at: '2026-05-08T00:00:00Z',
-      updated_at: '2026-05-08T00:00:00Z',
-    } as never);
-    vi.mocked(client.activateGlobalPromptConfigVersion).mockResolvedValue({
-      id: 'g-1',
-      scope_type: 'global',
-      provider_name: null,
-      model_name: null,
-      instructions_text: 'Nueva base global',
-      version: 1,
-      is_active: true,
-      created_at: '2026-05-08T00:00:00Z',
-      updated_at: '2026-05-08T00:00:00Z',
-    } as never);
     Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
   });
 
@@ -198,56 +164,6 @@ describe('AdminAiConfigPage', () => {
     expect(screen.getByLabelText('global-instructions').textContent).toContain('Global note');
   });
 
-  it('renders global prompt editor empty state and boundary copy', async () => {
-    vi.mocked(client.getAdminAiConfig).mockResolvedValue(samplePayload as never);
-    renderWithAuth({ username: 'admin' });
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: /instrucciones|instructions/i })).toBeInTheDocument(),
-    );
-    fireEvent.click(screen.getByRole('tab', { name: /instrucciones|instructions/i }));
-    await waitFor(() =>
-      expect(screen.getAllByText('Instrucciones globales').length).toBeGreaterThan(0)
-    );
-    expect(
-      screen.getByText(/se aplican como base general para todos los proveedores y modelos/i)
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/no modifican el formato de respuesta ni las reglas internas de procesamiento/i)
-    ).toBeInTheDocument();
-    expect(screen.queryByLabelText(/proveedor de ia/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/^modelo$/i)).not.toBeInTheDocument();
-  });
-
-  it('submits global prompt create with activate true and false', async () => {
-    vi.mocked(client.getAdminAiConfig).mockResolvedValue(samplePayload as never);
-    renderWithAuth({ username: 'admin' });
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: /instrucciones|instructions/i })).toBeInTheDocument(),
-    );
-    fireEvent.click(screen.getByRole('tab', { name: /instrucciones|instructions/i }));
-
-    fireEvent.change(screen.getByLabelText('Instrucciones globales'), {
-      target: { value: '  linea 1\\nlinea 2  ' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /guardar y activar/i }));
-    await waitFor(() =>
-      expect(client.createGlobalPromptConfigVersion).toHaveBeenCalledWith({
-        instructions_text: 'linea 1\\nlinea 2',
-        activate: true,
-      })
-    );
-
-    fireEvent.change(screen.getByLabelText('Instrucciones globales'), {
-      target: { value: 'otra global' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /guardar sin activar/i }));
-    await waitFor(() =>
-      expect(client.createGlobalPromptConfigVersion).toHaveBeenCalledWith({
-        instructions_text: 'otra global',
-        activate: false,
-      })
-    );
-  });
 
   it('shows forbidden message when API returns 403', async () => {
     const { ApiError } = await import('../src/api/types');

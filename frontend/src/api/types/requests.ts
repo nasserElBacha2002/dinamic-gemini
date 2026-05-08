@@ -40,13 +40,8 @@ export interface UploadSupplierReferenceImagesRequest {
 }
 
 export interface CreateSupplierPromptConfigRequest {
-  provider_name: string;
+  provider_name?: string | null;
   model_name?: string | null;
-  instructions_text: string;
-  activate: boolean;
-}
-
-export interface CreateGlobalPromptConfigRequest {
   instructions_text: string;
   activate: boolean;
 }

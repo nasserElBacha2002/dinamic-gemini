@@ -4,9 +4,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  activateGlobalPromptConfigVersion,
   activateSupplierPromptConfigVersion,
-  createGlobalPromptConfigVersion,
   createSupplierPromptConfigVersion,
   createInventory,
   createAisle,
@@ -26,7 +24,6 @@ import {
 import type {
   CreateClientRequest,
   CreateClientSupplierRequest,
-  CreateGlobalPromptConfigRequest,
   CreateSupplierPromptConfigRequest,
   CreateInventoryRequest,
   CreateAisleRequest,
@@ -106,12 +103,20 @@ export function useCreateSupplierPromptConfigVersion(clientId: string, supplierI
     mutationFn: (body: CreateSupplierPromptConfigRequest) =>
       createSupplierPromptConfigVersion(clientId, supplierId, body),
     onSuccess: (created) => {
+      const normalizedProviderName = (created.provider_name ?? '').trim() || null;
       const normalizedModelName = (created.model_name ?? '').trim() || null;
+      const scope =
+        !normalizedProviderName
+          ? 'all_providers_models'
+          : normalizedModelName
+            ? 'provider_model'
+            : 'provider';
       queryClient.invalidateQueries({
         queryKey: queryKeys.clients.suppliers.promptConfigs.listByScope(
           clientId,
           supplierId,
-          created.provider_name,
+          scope,
+          normalizedProviderName,
           normalizedModelName
         ),
       });
@@ -119,7 +124,8 @@ export function useCreateSupplierPromptConfigVersion(clientId: string, supplierI
         queryKey: queryKeys.clients.suppliers.promptConfigs.activeByScope(
           clientId,
           supplierId,
-          created.provider_name,
+          scope,
+          normalizedProviderName,
           normalizedModelName
         ),
       });
@@ -135,12 +141,20 @@ export function useActivateSupplierPromptConfigVersion(clientId: string, supplie
   return useMutation({
     mutationFn: (configId: string) => activateSupplierPromptConfigVersion(clientId, supplierId, configId),
     onSuccess: (activated) => {
+      const normalizedProviderName = (activated.provider_name ?? '').trim() || null;
       const normalizedModelName = (activated.model_name ?? '').trim() || null;
+      const scope =
+        !normalizedProviderName
+          ? 'all_providers_models'
+          : normalizedModelName
+            ? 'provider_model'
+            : 'provider';
       queryClient.invalidateQueries({
         queryKey: queryKeys.clients.suppliers.promptConfigs.listByScope(
           clientId,
           supplierId,
-          activated.provider_name,
+          scope,
+          normalizedProviderName,
           normalizedModelName
         ),
       });
@@ -148,49 +162,13 @@ export function useActivateSupplierPromptConfigVersion(clientId: string, supplie
         queryKey: queryKeys.clients.suppliers.promptConfigs.activeByScope(
           clientId,
           supplierId,
-          activated.provider_name,
+          scope,
+          normalizedProviderName,
           normalizedModelName
         ),
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.clients.suppliers.promptConfigs.all(clientId, supplierId),
-      });
-    },
-  });
-}
-
-export function useCreateGlobalPromptConfig() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CreateGlobalPromptConfigRequest) =>
-      createGlobalPromptConfigVersion(body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.admin.globalPromptConfigs.list(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.admin.globalPromptConfigs.active(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.admin.globalPromptConfigs.all,
-      });
-    },
-  });
-}
-
-export function useActivateGlobalPromptConfig() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (configId: string) => activateGlobalPromptConfigVersion(configId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.admin.globalPromptConfigs.list(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.admin.globalPromptConfigs.active(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.admin.globalPromptConfigs.all,
       });
     },
   });

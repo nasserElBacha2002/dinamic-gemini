@@ -6,8 +6,6 @@ export {
   useClientSupplier,
   useSupplierPromptConfigs,
   useActiveSupplierPromptConfig,
-  useGlobalPromptConfigs,
-  useActiveGlobalPromptConfig,
   useSupplierReferenceImages,
 } from './useClients';
 export { useInventoriesList, useInventoryDetail } from './useInventories';
@@ -35,8 +33,6 @@ export {
   useCreateClientSupplier,
   useCreateSupplierPromptConfigVersion,
   useActivateSupplierPromptConfigVersion,
-  useCreateGlobalPromptConfig,
-  useActivateGlobalPromptConfig,
   useUploadSupplierReferenceImages,
   useDeleteSupplierReferenceImage,
   useCreateInventory,
