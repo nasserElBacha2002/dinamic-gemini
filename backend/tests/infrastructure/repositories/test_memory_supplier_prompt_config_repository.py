@@ -6,7 +6,10 @@ import pytest
 
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 from src.infrastructure.repositories.memory_supplier_prompt_config_repository import (
+    DEFAULT_MODEL_SCOPE_KEY,
+    MODEL_SCOPE_PREFIX,
     MemorySupplierPromptConfigRepository,
+    _scope_key,
 )
 
 
@@ -213,3 +216,90 @@ def test_uniqueness_invariants_are_enforced() -> None:
                 created_at=now + timedelta(seconds=3),
             )
         )
+
+
+def test_create_normalizes_provider_and_blank_model_to_none() -> None:
+    repo = MemorySupplierPromptConfigRepository()
+    now = datetime(2026, 5, 8, 12, 0, 0, tzinfo=timezone.utc)
+    created = repo.create(
+        _cfg(
+            config_id="cfg-normalized",
+            supplier_id="sup-1",
+            provider=" gemini ",
+            model="   ",
+            version=1,
+            active=False,
+            created_at=now,
+        )
+    )
+    assert created.provider_name == "gemini"
+    assert created.model_name is None
+
+    loaded = repo.get_by_id("cfg-normalized")
+    assert loaded is not None
+    assert loaded.provider_name == "gemini"
+    assert loaded.model_name is None
+
+
+def test_blank_model_name_and_none_share_same_scope() -> None:
+    repo = MemorySupplierPromptConfigRepository()
+    now = datetime(2026, 5, 8, 12, 0, 0, tzinfo=timezone.utc)
+    repo.create(
+        _cfg(
+            config_id="cfg-none-model",
+            supplier_id="sup-1",
+            provider="gemini",
+            model=None,
+            version=1,
+            active=False,
+            created_at=now,
+        )
+    )
+    with pytest.raises(ValueError):
+        repo.create(
+            _cfg(
+                config_id="cfg-blank-model-same-version",
+                supplier_id="sup-1",
+                provider="gemini",
+                model="  ",
+                version=1,
+                active=False,
+                created_at=now + timedelta(seconds=1),
+            )
+        )
+
+
+def test_model_specific_scope_remains_distinct_from_default_scope() -> None:
+    repo = MemorySupplierPromptConfigRepository()
+    now = datetime(2026, 5, 8, 12, 0, 0, tzinfo=timezone.utc)
+    repo.create(
+        _cfg(
+            config_id="cfg-default-scope",
+            supplier_id="sup-1",
+            provider="gemini",
+            model=None,
+            version=1,
+            active=True,
+            created_at=now,
+        )
+    )
+    repo.create(
+        _cfg(
+            config_id="cfg-model-scope",
+            supplier_id="sup-1",
+            provider="gemini",
+            model="gemini-2.0-flash-exp",
+            version=1,
+            active=True,
+            created_at=now + timedelta(seconds=1),
+        )
+    )
+    assert repo.get_active_by_scope("sup-1", "gemini", None) is not None
+    assert (
+        repo.get_active_by_scope("sup-1", "gemini", "gemini-2.0-flash-exp") is not None
+    )
+
+    default_scope_key = _scope_key("sup-1", "gemini", None)[2]
+    model_scope_key = _scope_key("sup-1", "gemini", "gemini-2.0-flash-exp")[2]
+    assert default_scope_key == DEFAULT_MODEL_SCOPE_KEY
+    assert model_scope_key == f"{MODEL_SCOPE_PREFIX}gemini-2.0-flash-exp"

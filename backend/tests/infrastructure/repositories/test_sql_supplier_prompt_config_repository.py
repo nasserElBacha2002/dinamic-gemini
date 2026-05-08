@@ -160,3 +160,140 @@ def test_sql_supplier_prompt_config_repository_scope_and_activation(repos) -> No
     assert cfg_default_v2.id in ids
     assert cfg_default_v1.id in ids
     assert cfg_model_v1.id in ids
+
+
+def test_sql_duplicate_version_in_same_scope_fails(repos) -> None:
+    client_repo, supplier_repo, prompt_repo = repos
+    _, supplier_id = _ensure_supplier(client_repo, supplier_repo)
+    now = now_utc()
+    prompt_repo.create(
+        _cfg(
+            config_id=f"cfg-dup-ver-1-{uuid4()}",
+            supplier_id=supplier_id,
+            provider="gemini",
+            model=None,
+            version=1,
+            active=False,
+            created_at=now,
+        )
+    )
+    with pytest.raises(Exception):
+        prompt_repo.create(
+            _cfg(
+                config_id=f"cfg-dup-ver-2-{uuid4()}",
+                supplier_id=supplier_id,
+                provider="gemini",
+                model=None,
+                version=1,
+                active=False,
+                created_at=now_utc(),
+            )
+        )
+
+
+def test_sql_duplicate_active_in_same_scope_fails(repos) -> None:
+    client_repo, supplier_repo, prompt_repo = repos
+    _, supplier_id = _ensure_supplier(client_repo, supplier_repo)
+    now = now_utc()
+    prompt_repo.create(
+        _cfg(
+            config_id=f"cfg-dup-active-1-{uuid4()}",
+            supplier_id=supplier_id,
+            provider="gemini",
+            model=None,
+            version=1,
+            active=True,
+            created_at=now,
+        )
+    )
+    with pytest.raises(Exception):
+        prompt_repo.create(
+            _cfg(
+                config_id=f"cfg-dup-active-2-{uuid4()}",
+                supplier_id=supplier_id,
+                provider="gemini",
+                model=None,
+                version=2,
+                active=True,
+                created_at=now_utc(),
+            )
+        )
+
+
+def test_sql_default_and_model_specific_active_can_coexist(repos) -> None:
+    client_repo, supplier_repo, prompt_repo = repos
+    _, supplier_id = _ensure_supplier(client_repo, supplier_repo)
+    now = now_utc()
+    cfg_default = _cfg(
+        config_id=f"cfg-default-active-{uuid4()}",
+        supplier_id=supplier_id,
+        provider="gemini",
+        model=None,
+        version=1,
+        active=True,
+        created_at=now,
+    )
+    cfg_model = _cfg(
+        config_id=f"cfg-model-active-{uuid4()}",
+        supplier_id=supplier_id,
+        provider="gemini",
+        model="gemini-2.0-flash-exp",
+        version=1,
+        active=True,
+        created_at=now_utc(),
+    )
+    prompt_repo.create(cfg_default)
+    prompt_repo.create(cfg_model)
+
+    active_default = prompt_repo.get_active_by_scope(supplier_id, "gemini", None)
+    active_model = prompt_repo.get_active_by_scope(
+        supplier_id, "gemini", "gemini-2.0-flash-exp"
+    )
+    assert active_default is not None and active_default.id == cfg_default.id
+    assert active_model is not None and active_model.id == cfg_model.id
+
+
+def test_sql_activate_default_does_not_deactivate_model_specific(repos) -> None:
+    client_repo, supplier_repo, prompt_repo = repos
+    _, supplier_id = _ensure_supplier(client_repo, supplier_repo)
+    now = now_utc()
+    cfg_default_v1 = _cfg(
+        config_id=f"cfg-default-v1-{uuid4()}",
+        supplier_id=supplier_id,
+        provider="gemini",
+        model=None,
+        version=1,
+        active=True,
+        created_at=now,
+    )
+    cfg_default_v2 = _cfg(
+        config_id=f"cfg-default-v2-{uuid4()}",
+        supplier_id=supplier_id,
+        provider="gemini",
+        model=None,
+        version=2,
+        active=False,
+        created_at=now_utc(),
+    )
+    cfg_model_v1 = _cfg(
+        config_id=f"cfg-model-v1-{uuid4()}",
+        supplier_id=supplier_id,
+        provider="gemini",
+        model="gemini-2.0-flash-exp",
+        version=1,
+        active=True,
+        created_at=now_utc(),
+    )
+    prompt_repo.create(cfg_default_v1)
+    prompt_repo.create(cfg_default_v2)
+    prompt_repo.create(cfg_model_v1)
+
+    activated = prompt_repo.activate_version(cfg_default_v2.id)
+    assert activated is not None and activated.id == cfg_default_v2.id
+
+    active_default = prompt_repo.get_active_by_scope(supplier_id, "gemini", None)
+    active_model = prompt_repo.get_active_by_scope(
+        supplier_id, "gemini", "gemini-2.0-flash-exp"
+    )
+    assert active_default is not None and active_default.id == cfg_default_v2.id
+    assert active_model is not None and active_model.id == cfg_model_v1.id

@@ -193,6 +193,8 @@ class SqlSupplierPromptConfigRepository(SupplierPromptConfigRepository):
             )
 
     def activate_version(self, config_id: str) -> SupplierPromptConfig | None:
+        # Atomic by project convention: SqlServerClient.cursor commits once on success
+        # and rolls back the full block on any exception.
         with self._client.cursor() as cur:
             cur.execute(
                 """

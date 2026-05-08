@@ -8,6 +8,9 @@ from datetime import datetime, timezone
 from src.application.ports.repositories import SupplierPromptConfigRepository
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 
+DEFAULT_MODEL_SCOPE_KEY = "#NULL#"
+MODEL_SCOPE_PREFIX = "M:"
+
 
 def _scope_key(
     client_supplier_id: str,
@@ -15,7 +18,11 @@ def _scope_key(
     model_name: str | None,
 ) -> tuple[str, str, str]:
     normalized_model = (model_name or "").strip()
-    model_scope_key = "#NULL#" if not normalized_model else f"M:{normalized_model}"
+    model_scope_key = (
+        DEFAULT_MODEL_SCOPE_KEY
+        if not normalized_model
+        else f"{MODEL_SCOPE_PREFIX}{normalized_model}"
+    )
     return (client_supplier_id.strip(), provider_name.strip(), model_scope_key)
 
 
@@ -25,28 +32,47 @@ def _ensure_utc(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+def _normalize_config(config: SupplierPromptConfig) -> SupplierPromptConfig:
+    return SupplierPromptConfig(
+        id=config.id,
+        client_supplier_id=config.client_supplier_id,
+        provider_name=config.provider_name.strip(),
+        model_name=(config.model_name or "").strip() or None,
+        instructions_text=config.instructions_text,
+        version=config.version,
+        is_active=config.is_active,
+        created_at=config.created_at,
+        updated_at=config.updated_at,
+    )
+
+
 class MemorySupplierPromptConfigRepository(SupplierPromptConfigRepository):
     def __init__(self) -> None:
         self._store: dict[str, SupplierPromptConfig] = {}
 
     def create(self, config: SupplierPromptConfig) -> SupplierPromptConfig:
-        if config.id in self._store:
-            raise ValueError(f"SupplierPromptConfig with id={config.id!r} already exists")
-        sk = _scope_key(config.client_supplier_id, config.provider_name, config.model_name)
+        normalized = _normalize_config(config)
+        if normalized.id in self._store:
+            raise ValueError(f"SupplierPromptConfig with id={normalized.id!r} already exists")
+        sk = _scope_key(
+            normalized.client_supplier_id,
+            normalized.provider_name,
+            normalized.model_name,
+        )
         if any(
             _scope_key(row.client_supplier_id, row.provider_name, row.model_name) == sk
-            and row.version == config.version
+            and row.version == normalized.version
             for row in self._store.values()
         ):
             raise ValueError("SupplierPromptConfig version already exists in scope")
-        if config.is_active and any(
+        if normalized.is_active and any(
             _scope_key(row.client_supplier_id, row.provider_name, row.model_name) == sk
             and row.is_active
             for row in self._store.values()
         ):
             raise ValueError("Only one active SupplierPromptConfig is allowed per scope")
-        self._store[config.id] = config
-        return config
+        self._store[normalized.id] = normalized
+        return normalized
 
     def list_by_supplier(self, client_supplier_id: str) -> Sequence[SupplierPromptConfig]:
         rows = [
