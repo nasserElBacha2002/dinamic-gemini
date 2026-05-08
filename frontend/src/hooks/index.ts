@@ -4,6 +4,8 @@ export {
   useClient,
   useClientSuppliers,
   useClientSupplier,
+  useSupplierPromptConfigs,
+  useActiveSupplierPromptConfig,
   useSupplierReferenceImages,
 } from './useClients';
 export { useInventoriesList, useInventoryDetail } from './useInventories';
@@ -29,6 +31,8 @@ export { useReviewQueue } from './useReviewQueue';
 export {
   useCreateClient,
   useCreateClientSupplier,
+  useCreateSupplierPromptConfigVersion,
+  useActivateSupplierPromptConfigVersion,
   useUploadSupplierReferenceImages,
   useDeleteSupplierReferenceImage,
   useCreateInventory,

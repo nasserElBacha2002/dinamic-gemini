@@ -106,6 +106,36 @@ export const queryKeys = {
         [...queryKeys.clients.suppliers.all(clientId), 'detail', supplierId] as const,
       referenceImages: (clientId: string, supplierId: string) =>
         [...queryKeys.clients.suppliers.all(clientId), 'reference-images', supplierId] as const,
+      promptConfigs: {
+        all: (clientId: string, supplierId: string) =>
+          [...queryKeys.clients.suppliers.all(clientId), 'prompt-configs', supplierId] as const,
+        listByScope: (
+          clientId: string,
+          supplierId: string,
+          providerName: string,
+          modelName: string | null
+        ) =>
+          [
+            ...queryKeys.clients.suppliers.promptConfigs.all(clientId, supplierId),
+            'scope',
+            providerName,
+            modelName ?? '__default__',
+            'list',
+          ] as const,
+        activeByScope: (
+          clientId: string,
+          supplierId: string,
+          providerName: string,
+          modelName: string | null
+        ) =>
+          [
+            ...queryKeys.clients.suppliers.promptConfigs.all(clientId, supplierId),
+            'scope',
+            providerName,
+            modelName ?? '__default__',
+            'active',
+          ] as const,
+      },
     },
   },
 

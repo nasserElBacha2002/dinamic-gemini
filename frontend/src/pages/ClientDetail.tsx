@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Link as RouterLink, useParams } from 'react-router-dom';
 import type { ClientSupplier } from '../api/types';
 import CreateClientSupplierDialog from '../components/CreateClientSupplierDialog';
+import SupplierPromptConfigsModule from '../features/clients/components/SupplierPromptConfigsModule';
 import SupplierReferenceImagesModule from '../features/clients/components/SupplierReferenceImagesModule';
 import { PageHeader } from '../components/shell';
 import {
@@ -35,6 +36,10 @@ export default function ClientDetail() {
   const safeClientId = (clientId ?? '').trim();
   const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
   const [referenceImagesTarget, setReferenceImagesTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [promptConfigsTarget, setPromptConfigsTarget] = useState<{
     id: string;
     name: string;
   } | null>(null);
@@ -73,6 +78,23 @@ export default function ClientDetail() {
         id: 'updated_at',
         label: t('clients.suppliers.fields.updated_at'),
         cell: (supplier) => formatDate(supplier.updated_at),
+      },
+      {
+        id: 'prompt_configs',
+        label: t('clients.suppliers.prompt_configs.column_label'),
+        align: 'right',
+        cell: (supplier) => (
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={(event) => {
+              event.stopPropagation();
+              setPromptConfigsTarget({ id: supplier.id, name: supplier.name });
+            }}
+          >
+            {t('clients.suppliers.prompt_configs.open_action')}
+          </Button>
+        ),
       },
       {
         id: 'reference_images',
@@ -212,6 +234,15 @@ export default function ClientDetail() {
           supplierName={referenceImagesTarget.name}
           open
           onClose={() => setReferenceImagesTarget(null)}
+        />
+      ) : null}
+      {promptConfigsTarget ? (
+        <SupplierPromptConfigsModule
+          clientId={safeClientId}
+          supplierId={promptConfigsTarget.id}
+          supplierName={promptConfigsTarget.name}
+          open
+          onClose={() => setPromptConfigsTarget(null)}
         />
       ) : null}
     </>

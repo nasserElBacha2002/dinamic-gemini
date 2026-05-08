@@ -1,5 +1,9 @@
 import {
   pathToClientSuppliersBase,
+  supplierPromptConfigActivatePath,
+  supplierPromptConfigByIdPath,
+  supplierPromptConfigsActivePath,
+  supplierPromptConfigsPath,
   supplierReferenceImageFilePath,
   supplierReferenceImagesPath,
   supplierReferenceImagePath,
@@ -9,8 +13,11 @@ import type {
   ApiErrorDetail,
   ClientSupplier,
   ClientSuppliersListResponse,
+  CreateSupplierPromptConfigRequest,
   CreateClientSupplierRequest,
   DeleteSupplierReferenceImageResponse,
+  SupplierPromptConfig,
+  SupplierPromptConfigsListResponse,
   SupplierReferenceImagesListResponse,
   UploadSupplierReferenceImagesRequest,
   UploadSupplierReferenceImagesResponse,
@@ -142,4 +149,87 @@ export async function fetchSupplierReferenceImageFile(
     imageSrc,
     revoke: () => URL.revokeObjectURL(imageSrc),
   };
+}
+
+export interface SupplierPromptConfigsListQuery {
+  provider_name?: string;
+  model_name?: string | null;
+}
+
+function buildSupplierPromptConfigsQueryString(q: SupplierPromptConfigsListQuery | undefined): string {
+  if (!q) return '';
+  const params = new URLSearchParams();
+  const provider = (q.provider_name ?? '').trim();
+  const model = (q.model_name ?? '').trim();
+  if (provider) params.set('provider_name', provider);
+  if (model) params.set('model_name', model);
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
+export async function listSupplierPromptConfigs(
+  clientId: string,
+  supplierId: string,
+  listQuery?: SupplierPromptConfigsListQuery
+): Promise<SupplierPromptConfigsListResponse> {
+  const qs = buildSupplierPromptConfigsQueryString(listQuery);
+  const response = await protectedFetch(
+    `${API_BASE}${supplierPromptConfigsPath(clientId, supplierId)}${qs}`
+  );
+  return handleResponse<SupplierPromptConfigsListResponse>(response);
+}
+
+export async function createSupplierPromptConfigVersion(
+  clientId: string,
+  supplierId: string,
+  body: CreateSupplierPromptConfigRequest
+): Promise<SupplierPromptConfig> {
+  const response = await protectedFetch(
+    `${API_BASE}${supplierPromptConfigsPath(clientId, supplierId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  );
+  return handleResponse<SupplierPromptConfig>(response);
+}
+
+export async function getActiveSupplierPromptConfig(
+  clientId: string,
+  supplierId: string,
+  providerName: string,
+  modelName?: string | null
+): Promise<SupplierPromptConfig> {
+  const params = new URLSearchParams();
+  params.set('provider_name', providerName.trim());
+  const normalizedModelName = (modelName ?? '').trim();
+  if (normalizedModelName) params.set('model_name', normalizedModelName);
+  const response = await protectedFetch(
+    `${API_BASE}${supplierPromptConfigsActivePath(clientId, supplierId)}?${params.toString()}`
+  );
+  return handleResponse<SupplierPromptConfig>(response);
+}
+
+export async function getSupplierPromptConfigById(
+  clientId: string,
+  supplierId: string,
+  configId: string
+): Promise<SupplierPromptConfig> {
+  const response = await protectedFetch(
+    `${API_BASE}${supplierPromptConfigByIdPath(clientId, supplierId, configId)}`
+  );
+  return handleResponse<SupplierPromptConfig>(response);
+}
+
+export async function activateSupplierPromptConfigVersion(
+  clientId: string,
+  supplierId: string,
+  configId: string
+): Promise<SupplierPromptConfig> {
+  const response = await protectedFetch(
+    `${API_BASE}${supplierPromptConfigActivatePath(clientId, supplierId, configId)}`,
+    { method: 'POST' }
+  );
+  return handleResponse<SupplierPromptConfig>(response);
 }

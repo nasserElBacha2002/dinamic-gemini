@@ -3,12 +3,14 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import type { ClientsListQuery, ClientSuppliersListQuery } from '../api/client';
+import type { ClientsListQuery, ClientSuppliersListQuery, SupplierPromptConfigsListQuery } from '../api/client';
 import {
+  getActiveSupplierPromptConfig,
   getClient,
   getClientSupplier,
   listClients,
   listClientSuppliers,
+  listSupplierPromptConfigs,
   listSupplierReferenceImages,
 } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
@@ -79,5 +81,48 @@ export function useSupplierReferenceImages(
     queryKey: queryKeys.clients.suppliers.referenceImages(clientId ?? '', supplierId ?? ''),
     queryFn: () => listSupplierReferenceImages(clientId!, supplierId!),
     enabled: Boolean(clientId && supplierId) && (options?.enabled !== false),
+  });
+}
+
+export function useSupplierPromptConfigs(
+  clientId: string | undefined,
+  supplierId: string | undefined,
+  listQuery: SupplierPromptConfigsListQuery | undefined,
+  options?: { enabled?: boolean }
+) {
+  const providerName = (listQuery?.provider_name ?? '').trim();
+  const modelName = (listQuery?.model_name ?? '').trim() || null;
+  return useQuery({
+    queryKey: queryKeys.clients.suppliers.promptConfigs.listByScope(
+      clientId ?? '',
+      supplierId ?? '',
+      providerName,
+      modelName
+    ),
+    queryFn: () => listSupplierPromptConfigs(clientId!, supplierId!, listQuery),
+    enabled: Boolean(clientId && supplierId && providerName) && (options?.enabled !== false),
+  });
+}
+
+export function useActiveSupplierPromptConfig(
+  clientId: string | undefined,
+  supplierId: string | undefined,
+  providerName: string | undefined,
+  modelName: string | null | undefined,
+  options?: { enabled?: boolean }
+) {
+  const normalizedProviderName = (providerName ?? '').trim();
+  const normalizedModelName = (modelName ?? '').trim() || null;
+  return useQuery({
+    queryKey: queryKeys.clients.suppliers.promptConfigs.activeByScope(
+      clientId ?? '',
+      supplierId ?? '',
+      normalizedProviderName,
+      normalizedModelName
+    ),
+    queryFn: () =>
+      getActiveSupplierPromptConfig(clientId!, supplierId!, normalizedProviderName, normalizedModelName),
+    enabled: Boolean(clientId && supplierId && normalizedProviderName) && (options?.enabled !== false),
+    retry: false,
   });
 }

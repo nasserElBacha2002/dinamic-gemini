@@ -39,6 +39,13 @@ export interface UploadSupplierReferenceImagesRequest {
   description?: string;
 }
 
+export interface CreateSupplierPromptConfigRequest {
+  provider_name: string;
+  model_name?: string | null;
+  instructions_text: string;
+  activate: boolean;
+}
+
 /** Request body for POST .../positions/{position_id}/reviews. */
 export interface ReviewActionRequest {
   action_type: ReviewActionType;
