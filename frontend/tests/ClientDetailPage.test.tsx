@@ -14,6 +14,11 @@ const {
   useSupplierReferenceImagesMock,
   useUploadSupplierReferenceImagesMock,
   useDeleteSupplierReferenceImageMock,
+  useSupplierPromptConfigsMock,
+  useActiveSupplierPromptConfigMock,
+  useCreateSupplierPromptConfigVersionMock,
+  useActivateSupplierPromptConfigVersionMock,
+  useProcessingProviderOptionsMock,
 } = vi.hoisted(() => ({
   useClientMock: vi.fn(),
   useClientSuppliersMock: vi.fn(),
@@ -21,6 +26,11 @@ const {
   useSupplierReferenceImagesMock: vi.fn(),
   useUploadSupplierReferenceImagesMock: vi.fn(),
   useDeleteSupplierReferenceImageMock: vi.fn(),
+  useSupplierPromptConfigsMock: vi.fn(),
+  useActiveSupplierPromptConfigMock: vi.fn(),
+  useCreateSupplierPromptConfigVersionMock: vi.fn(),
+  useActivateSupplierPromptConfigVersionMock: vi.fn(),
+  useProcessingProviderOptionsMock: vi.fn(),
 }));
 
 vi.mock('../src/hooks', async (importOriginal) => {
@@ -33,6 +43,11 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useSupplierReferenceImages: useSupplierReferenceImagesMock,
     useUploadSupplierReferenceImages: useUploadSupplierReferenceImagesMock,
     useDeleteSupplierReferenceImage: useDeleteSupplierReferenceImageMock,
+    useSupplierPromptConfigs: useSupplierPromptConfigsMock,
+    useActiveSupplierPromptConfig: useActiveSupplierPromptConfigMock,
+    useCreateSupplierPromptConfigVersion: useCreateSupplierPromptConfigVersionMock,
+    useActivateSupplierPromptConfigVersion: useActivateSupplierPromptConfigVersionMock,
+    useProcessingProviderOptions: useProcessingProviderOptionsMock,
   };
 });
 
@@ -82,6 +97,57 @@ describe('ClientDetail page', () => {
       isError: false,
       error: null,
     });
+    useSupplierPromptConfigsMock.mockReset();
+    useSupplierPromptConfigsMock.mockReturnValue({
+      data: { items: [] },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useActiveSupplierPromptConfigMock.mockReset();
+    useActiveSupplierPromptConfigMock.mockReturnValue({
+      data: null,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useCreateSupplierPromptConfigVersionMock.mockReset();
+    useCreateSupplierPromptConfigVersionMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({}),
+      isPending: false,
+      isError: false,
+      error: null,
+      reset: vi.fn(),
+    });
+    useActivateSupplierPromptConfigVersionMock.mockReset();
+    useActivateSupplierPromptConfigVersionMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({}),
+      isPending: false,
+      isError: false,
+      error: null,
+      reset: vi.fn(),
+    });
+    useProcessingProviderOptionsMock.mockReset();
+    useProcessingProviderOptionsMock.mockReturnValue({
+      data: {
+        default_provider_key: 'gemini',
+        default_prompt_key: 'hybrid_v1',
+        prompt_profiles: [],
+        providers: [
+          {
+            key: 'gemini',
+            label: 'Gemini',
+            execution_mode: 'native',
+            models: [{ id: 'gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp' }],
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
   });
 
   it('renders client information and suppliers rows', () => {
@@ -128,6 +194,7 @@ describe('ClientDetail page', () => {
     expect(screen.getByText(/proveedor norte/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /crear proveedor/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /gestionar imágenes/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /configurar instrucciones/i })).toBeInTheDocument();
   });
 
   it('renders client loading state', () => {
@@ -300,5 +367,53 @@ describe('ClientDetail page', () => {
       expect(screen.getByText('Imágenes de referencia', { exact: true })).toBeInTheDocument()
     );
     expect(useSupplierReferenceImagesMock).toHaveBeenCalled();
+  });
+
+  it('opens supplier prompt-config drawer from supplier row action', async () => {
+    useClientMock.mockReturnValue({
+      data: {
+        id: 'client-1',
+        name: 'Cliente Norte',
+        status: 'active',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useClientSuppliersMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'supplier-1',
+            client_id: 'client-1',
+            name: 'Proveedor Norte',
+            status: 'active',
+            created_at: '2024-01-03T00:00:00Z',
+            updated_at: '2024-01-04T00:00:00Z',
+          },
+        ],
+        page: 1,
+        page_size: 25,
+        total_items: 1,
+        total_pages: 1,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage('/clientes/client-1');
+    fireEvent.click(screen.getByRole('button', { name: /configurar instrucciones/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Instrucciones del proveedor', level: 6 })
+      ).toBeInTheDocument()
+    );
+    expect(useSupplierPromptConfigsMock).toHaveBeenCalled();
+    expect(useActiveSupplierPromptConfigMock).toHaveBeenCalled();
   });
 });

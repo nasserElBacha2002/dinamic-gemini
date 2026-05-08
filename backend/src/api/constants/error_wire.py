@@ -27,6 +27,7 @@ HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY = "Aisle not found or does not belong t
 HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE = "Position not found or does not belong to this aisle"
 HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION = "Product not found or does not belong to this position"
 HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND = "Supplier reference image not found"
+HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_NOT_FOUND = "Supplier prompt config not found"
 
 # Structured Category B — fixed 422 ``detail`` (must match mapper / use-case emitters).
 HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER = (
@@ -138,3 +139,16 @@ HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW = (
     "Materialize this capture session group before preview."
 )
 HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION = "Capture session group data consistency check failed; retry is not recommended until data is reviewed."
+
+# Supplier prompt configs (Phase D4)
+HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_PROVIDER = "provider_name is not supported"
+HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_MODEL = (
+    "model_name is not valid for provider_name"
+)
+HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_EMPTY_INSTRUCTIONS = "instructions_text is required"
+HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_SCOPE = (
+    "provider_name is required when model_name is provided"
+)
+HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED = (
+    "Supplier prompt config activation failed"
+)

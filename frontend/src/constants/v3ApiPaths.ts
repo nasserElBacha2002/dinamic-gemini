@@ -29,3 +29,31 @@ export function supplierReferenceImagePath(clientId: string, supplierId: string,
 export function supplierReferenceImageFilePath(clientId: string, supplierId: string, imageId: string): string {
   return `${supplierReferenceImagePath(clientId, supplierId, imageId)}/file`;
 }
+
+/** GET|POST .../clients/{clientId}/suppliers/{supplierId}/prompt-configs */
+export function supplierPromptConfigsPath(clientId: string, supplierId: string): string {
+  return `${pathToClientSuppliersBase(clientId)}/${encodeURIComponent(supplierId)}/prompt-configs`;
+}
+
+/** GET .../prompt-configs/active */
+export function supplierPromptConfigsActivePath(clientId: string, supplierId: string): string {
+  return `${supplierPromptConfigsPath(clientId, supplierId)}/active`;
+}
+
+/** GET .../prompt-configs/{configId} */
+export function supplierPromptConfigByIdPath(
+  clientId: string,
+  supplierId: string,
+  configId: string
+): string {
+  return `${supplierPromptConfigsPath(clientId, supplierId)}/${encodeURIComponent(configId)}`;
+}
+
+/** POST .../prompt-configs/{configId}/activate */
+export function supplierPromptConfigActivatePath(
+  clientId: string,
+  supplierId: string,
+  configId: string
+): string {
+  return `${supplierPromptConfigByIdPath(clientId, supplierId, configId)}/activate`;
+}

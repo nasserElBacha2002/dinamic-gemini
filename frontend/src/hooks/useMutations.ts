@@ -4,6 +4,8 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
+  activateSupplierPromptConfigVersion,
+  createSupplierPromptConfigVersion,
   createInventory,
   createAisle,
   createClient,
@@ -22,6 +24,7 @@ import {
 import type {
   CreateClientRequest,
   CreateClientSupplierRequest,
+  CreateSupplierPromptConfigRequest,
   CreateInventoryRequest,
   CreateAisleRequest,
   ReviewActionRequest,
@@ -89,6 +92,65 @@ export function useDeleteSupplierReferenceImage(clientId: string, supplierId: st
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.clients.suppliers.referenceImages(clientId, supplierId),
+      });
+    },
+  });
+}
+
+export function useCreateSupplierPromptConfigVersion(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateSupplierPromptConfigRequest) =>
+      createSupplierPromptConfigVersion(clientId, supplierId, body),
+    onSuccess: (created) => {
+      const normalizedModelName = (created.model_name ?? '').trim() || null;
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.promptConfigs.listByScope(
+          clientId,
+          supplierId,
+          created.provider_name,
+          normalizedModelName
+        ),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.promptConfigs.activeByScope(
+          clientId,
+          supplierId,
+          created.provider_name,
+          normalizedModelName
+        ),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.promptConfigs.all(clientId, supplierId),
+      });
+    },
+  });
+}
+
+export function useActivateSupplierPromptConfigVersion(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (configId: string) => activateSupplierPromptConfigVersion(clientId, supplierId, configId),
+    onSuccess: (activated) => {
+      const normalizedModelName = (activated.model_name ?? '').trim() || null;
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.promptConfigs.listByScope(
+          clientId,
+          supplierId,
+          activated.provider_name,
+          normalizedModelName
+        ),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.promptConfigs.activeByScope(
+          clientId,
+          supplierId,
+          activated.provider_name,
+          normalizedModelName
+        ),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.promptConfigs.all(clientId, supplierId),
       });
     },
   });

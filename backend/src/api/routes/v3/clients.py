@@ -14,15 +14,20 @@ from src.api.constants.error_wire import (
 )
 from src.api.constants.route_paths import API_V3_CLIENTS_ROUTER_PREFIX
 from src.api.dependencies import (
+    get_activate_supplier_prompt_config_version_use_case,
     get_artifact_storage,
     get_create_client_supplier_use_case,
     get_create_client_use_case,
+    get_create_supplier_prompt_config_version_use_case,
     get_delete_supplier_reference_image_use_case,
+    get_get_active_supplier_prompt_config_use_case,
     get_get_client_supplier_use_case,
     get_get_client_use_case,
+    get_get_supplier_prompt_config_use_case,
     get_get_supplier_reference_image_use_case,
     get_list_client_suppliers_use_case,
     get_list_clients_use_case,
+    get_list_supplier_prompt_configs_use_case,
     get_list_supplier_reference_images_use_case,
     get_upload_supplier_reference_images_use_case,
 )
@@ -38,6 +43,11 @@ from src.api.schemas.client_supplier_schemas import (
     PaginatedClientSupplierListResponse,
 )
 from src.api.schemas.listing_schemas import compute_total_pages
+from src.api.schemas.supplier_prompt_config_schemas import (
+    CreateSupplierPromptConfigRequest,
+    SupplierPromptConfigResponse,
+    SupplierPromptConfigsListResponse,
+)
 from src.api.schemas.supplier_reference_image_schemas import (
     DeleteSupplierReferenceImageResponse,
     SupplierReferenceImageResponse,
@@ -52,6 +62,7 @@ from src.application.errors import (
     DuplicateClientSupplierNameError,
     InvalidClientNameError,
     InvalidClientSupplierNameError,
+    SupplierPromptConfigNotFoundError,
 )
 from src.application.use_cases.create_client import CreateClientCommand, CreateClientUseCase
 from src.application.use_cases.create_client_supplier import (
@@ -62,6 +73,18 @@ from src.application.use_cases.get_client import GetClientUseCase
 from src.application.use_cases.get_client_supplier import GetClientSupplierUseCase
 from src.application.use_cases.list_client_suppliers import ListClientSuppliersUseCase
 from src.application.use_cases.list_clients import ListClientsUseCase
+from src.application.use_cases.manage_supplier_prompt_configs import (
+    ActivateSupplierPromptConfigVersionCommand,
+    ActivateSupplierPromptConfigVersionUseCase,
+    CreateSupplierPromptConfigVersionCommand,
+    CreateSupplierPromptConfigVersionUseCase,
+    GetActiveSupplierPromptConfigCommand,
+    GetActiveSupplierPromptConfigUseCase,
+    GetSupplierPromptConfigCommand,
+    GetSupplierPromptConfigUseCase,
+    ListSupplierPromptConfigsCommand,
+    ListSupplierPromptConfigsUseCase,
+)
 from src.application.use_cases.manage_supplier_reference_images import (
     DeleteSupplierReferenceImageUseCase,
     GetSupplierReferenceImageUseCase,
@@ -74,6 +97,7 @@ from src.application.use_cases.upload_supplier_reference_images import (
 from src.auth.dependencies import get_current_admin
 from src.domain.client.entities import Client, ClientStatus
 from src.domain.client_supplier.entities import ClientSupplier, ClientSupplierStatus
+from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 
 logger = logging.getLogger(__name__)
@@ -119,6 +143,22 @@ def _supplier_reference_image_to_response(ref: SupplierReferenceImage) -> Suppli
         description=ref.description,
         created_at=ref.created_at,
         updated_at=ref.updated_at,
+    )
+
+
+def _supplier_prompt_config_to_response(
+    config: SupplierPromptConfig,
+) -> SupplierPromptConfigResponse:
+    return SupplierPromptConfigResponse(
+        id=config.id,
+        client_supplier_id=config.client_supplier_id,
+        provider_name=config.provider_name,
+        model_name=config.model_name,
+        instructions_text=config.instructions_text,
+        version=config.version,
+        is_active=config.is_active,
+        created_at=config.created_at,
+        updated_at=config.updated_at,
     )
 
 
@@ -389,5 +429,141 @@ def get_supplier_reference_image_file(
             e.detail,
         )
         reraise_if_mapped(e, cause=e)
+        raise
+
+
+@router.get(
+    "/{client_id}/suppliers/{supplier_id}/prompt-configs",
+    response_model=SupplierPromptConfigsListResponse,
+)
+def list_supplier_prompt_configs(
+    client_id: str,
+    supplier_id: str,
+    provider_name: str | None = Query(None),
+    model_name: str | None = Query(None),
+    use_case: ListSupplierPromptConfigsUseCase = Depends(get_list_supplier_prompt_configs_use_case),
+) -> SupplierPromptConfigsListResponse:
+    try:
+        rows = use_case.execute(
+            ListSupplierPromptConfigsCommand(
+                client_id=client_id,
+                supplier_id=supplier_id,
+                provider_name=provider_name,
+                model_name=model_name,
+            )
+        )
+        return SupplierPromptConfigsListResponse(
+            items=[_supplier_prompt_config_to_response(row) for row in rows]
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.post(
+    "/{client_id}/suppliers/{supplier_id}/prompt-configs",
+    response_model=SupplierPromptConfigResponse,
+    status_code=201,
+)
+def create_supplier_prompt_config(
+    client_id: str,
+    supplier_id: str,
+    payload: CreateSupplierPromptConfigRequest,
+    use_case: CreateSupplierPromptConfigVersionUseCase = Depends(
+        get_create_supplier_prompt_config_version_use_case
+    ),
+) -> SupplierPromptConfigResponse:
+    try:
+        created = use_case.execute(
+            CreateSupplierPromptConfigVersionCommand(
+                client_id=client_id,
+                supplier_id=supplier_id,
+                provider_name=payload.provider_name,
+                model_name=payload.model_name,
+                instructions_text=payload.instructions_text,
+                activate=payload.activate,
+            )
+        )
+        return _supplier_prompt_config_to_response(created)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.get(
+    "/{client_id}/suppliers/{supplier_id}/prompt-configs/active",
+    response_model=SupplierPromptConfigResponse,
+)
+def get_active_supplier_prompt_config(
+    client_id: str,
+    supplier_id: str,
+    provider_name: str = Query(...),
+    model_name: str | None = Query(None),
+    use_case: GetActiveSupplierPromptConfigUseCase = Depends(
+        get_get_active_supplier_prompt_config_use_case
+    ),
+) -> SupplierPromptConfigResponse:
+    try:
+        active = use_case.execute(
+            GetActiveSupplierPromptConfigCommand(
+                client_id=client_id,
+                supplier_id=supplier_id,
+                provider_name=provider_name,
+                model_name=model_name,
+            )
+        )
+        if active is None:
+            raise SupplierPromptConfigNotFoundError(
+                "Supplier prompt config not found in requested scope"
+            )
+        return _supplier_prompt_config_to_response(active)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.get(
+    "/{client_id}/suppliers/{supplier_id}/prompt-configs/{config_id}",
+    response_model=SupplierPromptConfigResponse,
+)
+def get_supplier_prompt_config(
+    client_id: str,
+    supplier_id: str,
+    config_id: str,
+    use_case: GetSupplierPromptConfigUseCase = Depends(get_get_supplier_prompt_config_use_case),
+) -> SupplierPromptConfigResponse:
+    try:
+        row = use_case.execute(
+            GetSupplierPromptConfigCommand(
+                client_id=client_id, supplier_id=supplier_id, config_id=config_id
+            )
+        )
+        return _supplier_prompt_config_to_response(row)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.post(
+    "/{client_id}/suppliers/{supplier_id}/prompt-configs/{config_id}/activate",
+    response_model=SupplierPromptConfigResponse,
+)
+def activate_supplier_prompt_config(
+    client_id: str,
+    supplier_id: str,
+    config_id: str,
+    use_case: ActivateSupplierPromptConfigVersionUseCase = Depends(
+        get_activate_supplier_prompt_config_version_use_case
+    ),
+) -> SupplierPromptConfigResponse:
+    try:
+        activated = use_case.execute(
+            ActivateSupplierPromptConfigVersionCommand(
+                client_id=client_id, supplier_id=supplier_id, config_id=config_id
+            )
+        )
+        return _supplier_prompt_config_to_response(activated)
+    except Exception as e:
+        reraise_if_mapped(e)
         raise
 

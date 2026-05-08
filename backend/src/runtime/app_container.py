@@ -36,6 +36,7 @@ from src.application.ports.repositories import (
     RawLabelRepository,
     ReviewActionRepository,
     SourceAssetRepository,
+    SupplierPromptConfigRepository,
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
@@ -82,6 +83,7 @@ class AppContainer:
         self._job_repo: JobRepository | None = None
         self._asset_repo: SourceAssetRepository | None = None
         self._supplier_reference_image_repo: SupplierReferenceImageRepository | None = None
+        self._supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None
         self._position_repo: PositionRepository | None = None
         self._product_record_repo: ProductRecordRepository | None = None
         self._evidence_repo: EvidenceRepository | None = None
@@ -327,6 +329,32 @@ class AppContainer:
             build_memory=_memory,
         )
         return self._supplier_reference_image_repo
+
+    def get_supplier_prompt_config_repo(self) -> SupplierPromptConfigRepository:
+        if self._supplier_prompt_config_repo is not None:
+            return self._supplier_prompt_config_repo
+
+        def _sql(client: SqlServerClient) -> SupplierPromptConfigRepository:
+            from src.infrastructure.repositories.sql_supplier_prompt_config_repository import (
+                SqlSupplierPromptConfigRepository,
+            )
+
+            return SqlSupplierPromptConfigRepository(client)
+
+        def _memory() -> SupplierPromptConfigRepository:
+            from src.infrastructure.repositories.memory_supplier_prompt_config_repository import (
+                MemorySupplierPromptConfigRepository,
+            )
+
+            return MemorySupplierPromptConfigRepository()
+
+        self._supplier_prompt_config_repo = self._build_sql_repository_or_memory(
+            backend_info_name="SupplierPromptConfigRepository",
+            sql_error_subject="supplier_prompt_config repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
+        return self._supplier_prompt_config_repo
 
     def get_position_repo(self) -> PositionRepository:
         if self._position_repo is not None:
@@ -734,4 +762,63 @@ class AppContainer:
             position_repo=self.get_position_repo(),
             normalization_service=LabelNormalizationService(merge_rule_engine=MergeRuleEngine()),
             final_count_builder=FinalCountBuilder(),
+        )
+
+    def get_list_supplier_prompt_configs_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            ListSupplierPromptConfigsUseCase,
+        )
+
+        return ListSupplierPromptConfigsUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+            settings=self._settings,
+        )
+
+    def get_create_supplier_prompt_config_version_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            CreateSupplierPromptConfigVersionUseCase,
+        )
+
+        return CreateSupplierPromptConfigVersionUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+            clock=self.get_clock(),
+            settings=self._settings,
+        )
+
+    def get_get_active_supplier_prompt_config_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            GetActiveSupplierPromptConfigUseCase,
+        )
+
+        return GetActiveSupplierPromptConfigUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+            settings=self._settings,
+        )
+
+    def get_activate_supplier_prompt_config_version_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            ActivateSupplierPromptConfigVersionUseCase,
+        )
+
+        return ActivateSupplierPromptConfigVersionUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+        )
+
+    def get_get_supplier_prompt_config_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            GetSupplierPromptConfigUseCase,
+        )
+
+        return GetSupplierPromptConfigUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
         )

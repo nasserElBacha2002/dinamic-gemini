@@ -29,6 +29,7 @@ from src.application.ports.repositories import (
     RawLabelRepository,
     ReviewActionRepository,
     SourceAssetRepository,
+    SupplierPromptConfigRepository,
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
@@ -62,6 +63,10 @@ def get_source_asset_repo() -> SourceAssetRepository:
 
 def get_supplier_reference_image_repo() -> SupplierReferenceImageRepository:
     return get_app_container().get_supplier_reference_image_repo()
+
+
+def get_supplier_prompt_config_repo() -> SupplierPromptConfigRepository:
+    return get_app_container().get_supplier_prompt_config_repo()
 
 
 def get_position_repo() -> PositionRepository:

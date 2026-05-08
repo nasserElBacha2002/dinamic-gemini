@@ -74,14 +74,19 @@ export {
 } from './reviewQueueApi';
 export type { ClientsListQuery } from './clientsApi';
 export { createClient, getClient, listClients } from './clientsApi';
-export type { ClientSuppliersListQuery } from './clientSuppliersApi';
+export type { ClientSuppliersListQuery, SupplierPromptConfigsListQuery } from './clientSuppliersApi';
 export {
+  activateSupplierPromptConfigVersion,
+  createSupplierPromptConfigVersion,
   createClientSupplier,
   deleteSupplierReferenceImage,
   fetchSupplierReferenceImageFile,
+  getActiveSupplierPromptConfig,
   getClientSupplier,
+  getSupplierPromptConfigById,
   getSupplierReferenceImageFileUrl,
   listClientSuppliers,
+  listSupplierPromptConfigs,
   listSupplierReferenceImages,
   uploadSupplierReferenceImages,
 } from './clientSuppliersApi';

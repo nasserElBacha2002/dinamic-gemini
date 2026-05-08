@@ -16,6 +16,7 @@ from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 from src.domain.client.entities import Client
 from src.domain.client_supplier.entities import ClientSupplier
+from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
@@ -339,4 +340,68 @@ class SupplierReferenceImageRepository(ABC):
     @abstractmethod
     def delete(self, reference_image_id: str) -> None:
         """Delete one supplier reference image by id. Idempotent for storage cleanup callers."""
+        ...
+
+
+class SupplierPromptConfigRepository(ABC):
+    """Persist and query supplier prompt configurations (Phase D2)."""
+
+    @abstractmethod
+    def create(self, config: SupplierPromptConfig) -> SupplierPromptConfig:
+        """Insert one supplier prompt config row and return the stored entity."""
+        ...
+
+    @abstractmethod
+    def list_by_supplier(self, client_supplier_id: str) -> Sequence[SupplierPromptConfig]:
+        """Return configs ordered deterministically by provider/scope/version recency."""
+        ...
+
+    @abstractmethod
+    def list_versions_by_scope(
+        self,
+        client_supplier_id: str,
+        provider_name: str,
+        model_name: str | None,
+    ) -> Sequence[SupplierPromptConfig]:
+        """Return versions for one supplier/provider/model scope (newest first)."""
+        ...
+
+    @abstractmethod
+    def get_by_id(self, config_id: str) -> SupplierPromptConfig | None:
+        """Return one config by id, or None."""
+        ...
+
+    @abstractmethod
+    def get_active_by_scope(
+        self,
+        client_supplier_id: str,
+        provider_name: str,
+        model_name: str | None,
+    ) -> SupplierPromptConfig | None:
+        """Return active config for exact scope, or None."""
+        ...
+
+    @abstractmethod
+    def get_latest_version_number(
+        self,
+        client_supplier_id: str,
+        provider_name: str,
+        model_name: str | None,
+    ) -> int | None:
+        """Return max version for exact scope, or None when no rows exist."""
+        ...
+
+    @abstractmethod
+    def deactivate_scope(
+        self,
+        client_supplier_id: str,
+        provider_name: str,
+        model_name: str | None,
+    ) -> None:
+        """Set is_active=0 for all rows in exact scope."""
+        ...
+
+    @abstractmethod
+    def activate_version(self, config_id: str) -> SupplierPromptConfig | None:
+        """Set one version active (and other scope rows inactive), returning the activated row."""
         ...
