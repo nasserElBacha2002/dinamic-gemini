@@ -36,6 +36,7 @@ from src.application.ports.repositories import (
     RawLabelRepository,
     ReviewActionRepository,
     SourceAssetRepository,
+    SupplierPromptConfigRepository,
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
@@ -82,6 +83,7 @@ class AppContainer:
         self._job_repo: JobRepository | None = None
         self._asset_repo: SourceAssetRepository | None = None
         self._supplier_reference_image_repo: SupplierReferenceImageRepository | None = None
+        self._supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None
         self._position_repo: PositionRepository | None = None
         self._product_record_repo: ProductRecordRepository | None = None
         self._evidence_repo: EvidenceRepository | None = None
@@ -327,6 +329,32 @@ class AppContainer:
             build_memory=_memory,
         )
         return self._supplier_reference_image_repo
+
+    def get_supplier_prompt_config_repo(self) -> SupplierPromptConfigRepository:
+        if self._supplier_prompt_config_repo is not None:
+            return self._supplier_prompt_config_repo
+
+        def _sql(client: SqlServerClient) -> SupplierPromptConfigRepository:
+            from src.infrastructure.repositories.sql_supplier_prompt_config_repository import (
+                SqlSupplierPromptConfigRepository,
+            )
+
+            return SqlSupplierPromptConfigRepository(client)
+
+        def _memory() -> SupplierPromptConfigRepository:
+            from src.infrastructure.repositories.memory_supplier_prompt_config_repository import (
+                MemorySupplierPromptConfigRepository,
+            )
+
+            return MemorySupplierPromptConfigRepository()
+
+        self._supplier_prompt_config_repo = self._build_sql_repository_or_memory(
+            backend_info_name="SupplierPromptConfigRepository",
+            sql_error_subject="supplier_prompt_config repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
+        return self._supplier_prompt_config_repo
 
     def get_position_repo(self) -> PositionRepository:
         if self._position_repo is not None:
