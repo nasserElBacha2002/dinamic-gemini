@@ -168,6 +168,62 @@ def test_default_and_model_specific_scopes_are_independent() -> None:
     assert default_v1["id"] != default_v2["id"]
 
 
+def test_get_prompt_config_by_id_success() -> None:
+    cid = _create_client("GetById Client")
+    sid = _create_supplier(cid, "GetById Supplier")
+    created = _create_prompt_config(
+        cid,
+        sid,
+        provider_name="gemini",
+        model_name="gemini-2.0-flash-exp",
+        instructions_text="  line 1\nline 2  ",
+        activate=False,
+    )
+    r = client.get(
+        f"/api/v3/clients/{cid}/suppliers/{sid}/prompt-configs/{created['id']}",
+        headers=_auth_headers(),
+    )
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["id"] == created["id"]
+    assert payload["client_supplier_id"] == sid
+    assert payload["provider_name"] == "gemini"
+    assert payload["model_name"] == "gemini-2.0-flash-exp"
+    assert payload["instructions_text"] == "line 1\nline 2"
+    assert payload["version"] == 1
+    assert payload["is_active"] is False
+    for forbidden in (
+        "protected_prompt",
+        "system_prompt",
+        "composed_prompt",
+        "prompt_key",
+        "prompt_profile",
+        "adapter_instructions",
+        "normalization_rules",
+    ):
+        assert forbidden not in payload
+
+
+def test_get_active_prompt_config_returns_404_when_none_exists() -> None:
+    cid = _create_client("NoActive Client")
+    sid = _create_supplier(cid, "NoActive Supplier")
+    _create_prompt_config(
+        cid,
+        sid,
+        provider_name="gemini",
+        model_name=None,
+        instructions_text="inactive only",
+        activate=False,
+    )
+    r = client.get(
+        f"/api/v3/clients/{cid}/suppliers/{sid}/prompt-configs/active",
+        params={"provider_name": "gemini"},
+        headers=_auth_headers(),
+    )
+    assert r.status_code == 404
+    assert r.json().get("code") == SUPPLIER_PROMPT_CONFIG_NOT_FOUND
+
+
 def test_list_validation_errors_for_scope_provider_model() -> None:
     cid = _create_client("List Rules Client")
     sid = _create_supplier(cid, "List Rules Supplier")

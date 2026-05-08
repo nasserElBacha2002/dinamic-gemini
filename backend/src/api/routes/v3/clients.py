@@ -512,14 +512,14 @@ def get_active_supplier_prompt_config(
                 model_name=model_name,
             )
         )
+        if active is None:
+            raise SupplierPromptConfigNotFoundError(
+                "Supplier prompt config not found in requested scope"
+            )
+        return _supplier_prompt_config_to_response(active)
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    if active is None:
-        raise SupplierPromptConfigNotFoundError(
-            "Supplier prompt config not found in requested scope"
-        )
-    return _supplier_prompt_config_to_response(active)
 
 
 @router.get(
