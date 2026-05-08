@@ -763,3 +763,50 @@ class AppContainer:
             normalization_service=LabelNormalizationService(merge_rule_engine=MergeRuleEngine()),
             final_count_builder=FinalCountBuilder(),
         )
+
+    def get_list_supplier_prompt_configs_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            ListSupplierPromptConfigsUseCase,
+        )
+
+        return ListSupplierPromptConfigsUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+        )
+
+    def get_create_supplier_prompt_config_version_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            CreateSupplierPromptConfigVersionUseCase,
+        )
+
+        return CreateSupplierPromptConfigVersionUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+            clock=self.get_clock(),
+            settings=self._settings,
+        )
+
+    def get_get_active_supplier_prompt_config_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            GetActiveSupplierPromptConfigUseCase,
+        )
+
+        return GetActiveSupplierPromptConfigUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+            settings=self._settings,
+        )
+
+    def get_activate_supplier_prompt_config_version_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            ActivateSupplierPromptConfigVersionUseCase,
+        )
+
+        return ActivateSupplierPromptConfigVersionUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+        )

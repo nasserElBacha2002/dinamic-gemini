@@ -80,6 +80,30 @@ class SupplierReferenceImageNotFoundError(Exception):
     """Raised when the requested supplier reference image does not exist or is not owned by the supplier."""
 
 
+class SupplierPromptConfigNotFoundError(Exception):
+    """Raised when a supplier prompt config does not exist or is out of the requested supplier scope."""
+
+
+class SupplierPromptConfigInvalidProviderError(Exception):
+    """Raised when provider_name is empty or not supported."""
+
+
+class SupplierPromptConfigInvalidModelError(Exception):
+    """Raised when model_name is not valid for the selected provider."""
+
+
+class SupplierPromptConfigEmptyInstructionsError(Exception):
+    """Raised when instructions_text is empty or blank."""
+
+
+class SupplierPromptConfigInvalidScopeError(Exception):
+    """Raised when prompt-config scope filters are inconsistent (e.g. model without provider)."""
+
+
+class SupplierPromptConfigActivationFailedError(Exception):
+    """Raised when prompt-config activation does not return an activated row."""
+
+
 class PositionNotFoundError(Exception):
     """Raised when the position does not exist or does not belong to the given aisle."""
 
