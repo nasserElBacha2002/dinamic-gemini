@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppSnackbar } from '../../../components/ui';
 import {
   useActivateSupplierPromptConfigVersion,
   useActiveSupplierPromptConfig,
   useCreateSupplierPromptConfigVersion,
+  useProcessingProviderOptions,
   useSupplierPromptConfigs,
 } from '../../../hooks';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
@@ -18,13 +19,6 @@ export interface SupplierPromptConfigsModuleProps {
   open: boolean;
   onClose: () => void;
 }
-
-const PROVIDER_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'claude', label: 'Claude' },
-  { value: 'deepseek', label: 'DeepSeek' },
-];
 
 function normalizeModelName(value: string): string | null {
   return value.trim() || null;
@@ -45,13 +39,56 @@ export default function SupplierPromptConfigsModule({
 }: SupplierPromptConfigsModuleProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
+  const processingOptionsQuery = useProcessingProviderOptions({ enabled: open });
+
+  const providerOptions = useMemo(
+    () =>
+      (processingOptionsQuery.data?.providers ?? []).map((provider) => ({
+        value: provider.key,
+        label: provider.label || provider.key,
+      })),
+    [processingOptionsQuery.data?.providers]
+  );
 
   const [formValues, setFormValues] = useState<SupplierPromptConfigFormValues>({
-    providerName: PROVIDER_OPTIONS[0].value,
+    providerName: '',
     modelName: '',
     instructionsText: '',
   });
   const [formValidationError, setFormValidationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (providerOptions.length === 0) return;
+    setFormValues((prev) => {
+      if (prev.providerName && providerOptions.some((provider) => provider.value === prev.providerName)) {
+        return prev;
+      }
+      return {
+        ...prev,
+        providerName: providerOptions[0].value,
+        modelName: '',
+      };
+    });
+  }, [providerOptions]);
+
+  const selectedProviderConfig = useMemo(
+    () =>
+      (processingOptionsQuery.data?.providers ?? []).find((provider) => provider.key === formValues.providerName),
+    [formValues.providerName, processingOptionsQuery.data?.providers]
+  );
+  const modelOptions = useMemo(
+    () => [
+      {
+        value: '',
+        label: t('clients.suppliers.prompt_configs.default_model_label'),
+      },
+      ...((selectedProviderConfig?.models ?? []).map((model) => ({
+        value: model.id,
+        label: model.label || model.id,
+      })) as Array<{ value: string; label: string }>),
+    ],
+    [selectedProviderConfig?.models, t]
+  );
 
   const selectedProvider = formValues.providerName.trim();
   const selectedModel = normalizeModelName(formValues.modelName);
@@ -170,7 +207,9 @@ export default function SupplierPromptConfigsModule({
       }}
       formValidationError={formValidationError}
       warningMessage={warningMessage}
-      providerOptions={PROVIDER_OPTIONS}
+      providerOptions={providerOptions}
+      modelOptions={modelOptions}
+      isModelOptionsLoading={processingOptionsQuery.isLoading}
       activeConfig={activeQuery.data ?? null}
       versions={versionsQuery.data?.items ?? []}
       isLoadingVersions={versionsQuery.isLoading}

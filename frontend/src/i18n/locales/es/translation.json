@@ -703,6 +703,8 @@
         "provider_label": "Proveedor de IA",
         "model_label": "Modelo",
         "default_model_label": "Default del proveedor",
+        "model_helper": "Seleccioná un modelo específico o usá la configuración default del proveedor.",
+        "models_loading": "Cargando modelos...",
         "instructions_label": "Instrucciones del proveedor",
         "instructions_specific": "Instrucciones específicas",
         "active_version": "Versión activa",

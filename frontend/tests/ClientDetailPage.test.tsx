@@ -18,6 +18,7 @@ const {
   useActiveSupplierPromptConfigMock,
   useCreateSupplierPromptConfigVersionMock,
   useActivateSupplierPromptConfigVersionMock,
+  useProcessingProviderOptionsMock,
 } = vi.hoisted(() => ({
   useClientMock: vi.fn(),
   useClientSuppliersMock: vi.fn(),
@@ -29,6 +30,7 @@ const {
   useActiveSupplierPromptConfigMock: vi.fn(),
   useCreateSupplierPromptConfigVersionMock: vi.fn(),
   useActivateSupplierPromptConfigVersionMock: vi.fn(),
+  useProcessingProviderOptionsMock: vi.fn(),
 }));
 
 vi.mock('../src/hooks', async (importOriginal) => {
@@ -45,6 +47,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useActiveSupplierPromptConfig: useActiveSupplierPromptConfigMock,
     useCreateSupplierPromptConfigVersion: useCreateSupplierPromptConfigVersionMock,
     useActivateSupplierPromptConfigVersion: useActivateSupplierPromptConfigVersionMock,
+    useProcessingProviderOptions: useProcessingProviderOptionsMock,
   };
 });
 
@@ -125,6 +128,25 @@ describe('ClientDetail page', () => {
       isError: false,
       error: null,
       reset: vi.fn(),
+    });
+    useProcessingProviderOptionsMock.mockReset();
+    useProcessingProviderOptionsMock.mockReturnValue({
+      data: {
+        default_provider_key: 'gemini',
+        default_prompt_key: 'hybrid_v1',
+        prompt_profiles: [],
+        providers: [
+          {
+            key: 'gemini',
+            label: 'Gemini',
+            execution_mode: 'native',
+            models: [{ id: 'gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp' }],
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
     });
   });
 
@@ -387,7 +409,9 @@ describe('ClientDetail page', () => {
     renderPage('/clientes/client-1');
     fireEvent.click(screen.getByRole('button', { name: /configurar instrucciones/i }));
     await waitFor(() =>
-      expect(screen.getByText('Instrucciones del proveedor', { exact: true })).toBeInTheDocument()
+      expect(
+        screen.getByRole('heading', { name: 'Instrucciones del proveedor', level: 6 })
+      ).toBeInTheDocument()
     );
     expect(useSupplierPromptConfigsMock).toHaveBeenCalled();
     expect(useActiveSupplierPromptConfigMock).toHaveBeenCalled();

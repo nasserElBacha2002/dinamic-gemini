@@ -16,6 +16,8 @@ interface SupplierPromptConfigsDrawerProps {
   formValidationError?: string | null;
   warningMessage?: string | null;
   providerOptions: Array<{ value: string; label: string }>;
+  modelOptions: Array<{ value: string; label: string }>;
+  isModelOptionsLoading?: boolean;
   activeConfig?: SupplierPromptConfig | null;
   versions: SupplierPromptConfig[];
   isLoadingVersions: boolean;
@@ -45,6 +47,8 @@ export default function SupplierPromptConfigsDrawer({
   formValidationError,
   warningMessage,
   providerOptions,
+  modelOptions,
+  isModelOptionsLoading = false,
   activeConfig,
   versions,
   isLoadingVersions,
@@ -89,6 +93,8 @@ export default function SupplierPromptConfigsDrawer({
             onChange={onFormChange}
             onSubmit={onCreateVersion}
             providerOptions={providerOptions}
+            modelOptions={modelOptions}
+            isModelOptionsLoading={isModelOptionsLoading}
             warningMessage={warningMessage}
             validationError={formValidationError}
             errorMessage={createError}

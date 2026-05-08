@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { Alert, Box, Button, FormControl, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
@@ -16,6 +15,8 @@ interface SupplierPromptConfigFormProps {
   errorMessage?: string | null;
   warningMessage?: string | null;
   providerOptions: Array<{ value: string; label: string }>;
+  modelOptions: Array<{ value: string; label: string }>;
+  isModelOptionsLoading?: boolean;
   validationError?: string | null;
 }
 
@@ -27,16 +28,11 @@ export default function SupplierPromptConfigForm({
   errorMessage,
   warningMessage,
   providerOptions,
+  modelOptions,
+  isModelOptionsLoading = false,
   validationError,
 }: SupplierPromptConfigFormProps) {
   const { t } = useTranslation();
-  const helperText = useMemo(
-    () =>
-      values.modelName.trim()
-        ? t('clients.suppliers.prompt_configs.instructions_specific')
-        : t('clients.suppliers.prompt_configs.default_model_label'),
-    [t, values.modelName]
-  );
 
   return (
     <Stack spacing={2}>
@@ -53,6 +49,7 @@ export default function SupplierPromptConfigForm({
             onChange({
               ...values,
               providerName: String(event.target.value),
+              modelName: '',
             })
           }
         >
@@ -64,20 +61,33 @@ export default function SupplierPromptConfigForm({
         </Select>
       </FormControl>
 
-      <TextField
-        label={t('clients.suppliers.prompt_configs.model_label')}
-        size="small"
-        fullWidth
-        disabled={isSubmitting}
-        value={values.modelName}
-        onChange={(event) =>
-          onChange({
-            ...values,
-            modelName: event.target.value,
-          })
-        }
-        helperText={helperText}
-      />
+      <FormControl size="small" fullWidth disabled={isSubmitting || isModelOptionsLoading}>
+        <InputLabel id="supplier-prompt-model-label">
+          {t('clients.suppliers.prompt_configs.model_label')}
+        </InputLabel>
+        <Select
+          labelId="supplier-prompt-model-label"
+          value={values.modelName}
+          label={t('clients.suppliers.prompt_configs.model_label')}
+          onChange={(event) =>
+            onChange({
+              ...values,
+              modelName: String(event.target.value),
+            })
+          }
+        >
+          {modelOptions.map((model) => (
+            <MenuItem key={model.value || 'default-provider-model'} value={model.value}>
+              {model.label}
+            </MenuItem>
+          ))}
+        </Select>
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+          {isModelOptionsLoading
+            ? t('clients.suppliers.prompt_configs.models_loading')
+            : t('clients.suppliers.prompt_configs.model_helper')}
+        </Typography>
+      </FormControl>
 
       <TextField
         label={t('clients.suppliers.prompt_configs.instructions_label')}

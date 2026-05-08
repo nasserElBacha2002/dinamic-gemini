@@ -11,11 +11,13 @@ const {
   useActiveSupplierPromptConfigMock,
   useCreateSupplierPromptConfigVersionMock,
   useActivateSupplierPromptConfigVersionMock,
+  useProcessingProviderOptionsMock,
 } = vi.hoisted(() => ({
   useSupplierPromptConfigsMock: vi.fn(),
   useActiveSupplierPromptConfigMock: vi.fn(),
   useCreateSupplierPromptConfigVersionMock: vi.fn(),
   useActivateSupplierPromptConfigVersionMock: vi.fn(),
+  useProcessingProviderOptionsMock: vi.fn(),
 }));
 
 vi.mock('../src/hooks', async (importOriginal) => {
@@ -26,6 +28,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useActiveSupplierPromptConfig: useActiveSupplierPromptConfigMock,
     useCreateSupplierPromptConfigVersion: useCreateSupplierPromptConfigVersionMock,
     useActivateSupplierPromptConfigVersion: useActivateSupplierPromptConfigVersionMock,
+    useProcessingProviderOptions: useProcessingProviderOptionsMock,
   };
 });
 
@@ -47,7 +50,38 @@ function renderModule() {
 }
 
 describe('SupplierPromptConfigsModule', () => {
+  function mockProcessingProviders() {
+    useProcessingProviderOptionsMock.mockReturnValue({
+      data: {
+        default_provider_key: 'gemini',
+        default_prompt_key: 'hybrid_v1',
+        prompt_profiles: [],
+        providers: [
+          {
+            key: 'gemini',
+            label: 'Gemini',
+            execution_mode: 'native',
+            models: [
+              { id: 'gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp' },
+              { id: 'gemini-1.5-pro', label: 'gemini-1.5-pro' },
+            ],
+          },
+          {
+            key: 'openai',
+            label: 'OpenAI',
+            execution_mode: 'native',
+            models: [{ id: 'gpt-4o-mini', label: 'gpt-4o-mini' }],
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+  }
+
   it('renders boundary text and empty states', () => {
+    mockProcessingProviders();
     useSupplierPromptConfigsMock.mockReturnValue({
       data: { items: [] },
       isLoading: false,
@@ -79,18 +113,21 @@ describe('SupplierPromptConfigsModule', () => {
 
     renderModule();
 
-    expect(screen.getByText('Instrucciones del proveedor', { exact: true })).toBeInTheDocument();
     expect(
-      screen.getByText(
+      screen.getByRole('heading', { name: 'Instrucciones del proveedor', level: 6 })
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText(
         'Estas instrucciones se suman al prompt técnico del sistema. No modifican el formato de respuesta ni las reglas internas de procesamiento.',
         { exact: true }
-      )
-    ).toBeInTheDocument();
+      ).length
+    ).toBeGreaterThan(0);
     expect(screen.getByText(/no hay una versión activa/i)).toBeInTheDocument();
     expect(screen.getByText(/este proveedor todavía no tiene instrucciones específicas/i)).toBeInTheDocument();
   });
 
   it('submits create with activate true and false', async () => {
+    mockProcessingProviders();
     const mutateAsync = vi.fn().mockResolvedValue({});
     useSupplierPromptConfigsMock.mockReturnValue({
       data: { items: [] },
@@ -155,6 +192,7 @@ describe('SupplierPromptConfigsModule', () => {
   });
 
   it('shows blank validation and can activate an inactive version', async () => {
+    mockProcessingProviders();
     const activateMutate = vi.fn().mockResolvedValue({});
     useSupplierPromptConfigsMock.mockReturnValue({
       data: {
@@ -214,6 +252,80 @@ describe('SupplierPromptConfigsModule', () => {
 
     expect(screen.queryByText(/system_prompt/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/composed_prompt/i)).not.toBeInTheDocument();
+  });
+
+  it('renders model as provider-dependent dropdown and resets on provider change', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({});
+    mockProcessingProviders();
+    useSupplierPromptConfigsMock.mockReturnValue({
+      data: { items: [] },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useActiveSupplierPromptConfigMock.mockReturnValue({
+      data: null,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useCreateSupplierPromptConfigVersionMock.mockReturnValue({
+      mutateAsync,
+      isPending: false,
+      isError: false,
+      error: null,
+      reset: vi.fn(),
+    });
+    useActivateSupplierPromptConfigVersionMock.mockReturnValue({
+      mutateAsync: vi.fn().mockResolvedValue({}),
+      isPending: false,
+      isError: false,
+      error: null,
+      reset: vi.fn(),
+    });
+
+    renderModule();
+
+    const modelSelect = screen.getByLabelText(/^modelo$/i);
+    expect(modelSelect.tagName.toLowerCase()).toBe('div');
+    expect(screen.queryByRole('textbox', { name: /^modelo$/i })).not.toBeInTheDocument();
+
+    fireEvent.mouseDown(modelSelect);
+    expect(await screen.findByRole('option', { name: /default del proveedor/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /gemini-2.0-flash-exp/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('option', { name: /gemini-2.0-flash-exp/i }));
+
+    fireEvent.change(screen.getByLabelText(/instrucciones del proveedor/i), {
+      target: { value: 'con modelo' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /guardar y activar/i }));
+    await waitFor(() =>
+      expect(mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ provider_name: 'gemini', model_name: 'gemini-2.0-flash-exp' })
+      )
+    );
+
+    const providerSelect = screen.getByLabelText(/proveedor de ia/i);
+    fireEvent.mouseDown(providerSelect);
+    fireEvent.click(await screen.findByRole('option', { name: /openai/i }));
+
+    const refreshedModelSelect = screen.getByLabelText(/^modelo$/i);
+    fireEvent.mouseDown(refreshedModelSelect);
+    expect(await screen.findByRole('option', { name: /default del proveedor/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /gpt-4o-mini/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('option', { name: /default del proveedor/i }));
+
+    fireEvent.change(screen.getByLabelText(/instrucciones del proveedor/i), {
+      target: { value: 'openai default' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /guardar sin activar/i }));
+    await waitFor(() =>
+      expect(mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ provider_name: 'openai', model_name: null, activate: false })
+      )
+    );
   });
 });
 
