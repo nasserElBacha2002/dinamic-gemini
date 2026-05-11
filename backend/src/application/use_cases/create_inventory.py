@@ -27,8 +27,8 @@ from src.domain.inventory.entities import (
 @dataclass
 class CreateInventoryCommand:
     name: str
+    client_id: str
     processing_mode: InventoryProcessingMode = InventoryProcessingMode.PRODUCTION
-    client_id: str | None = None
 
 
 class CreateInventoryUseCase:
@@ -60,8 +60,10 @@ class CreateInventoryUseCase:
             primary_model_name = snap.model_name
             primary_prompt_key = snap.prompt_key
             primary_prompt_version = snap.prompt_version
-        client_id = command.client_id
-        if client_id is not None and self._client_repo.get_by_id(client_id) is None:
+        client_id = command.client_id.strip()
+        if not client_id:
+            raise ValueError("client_id must not be empty")
+        if self._client_repo.get_by_id(client_id) is None:
             raise ClientNotFoundError(f"Client not found: {client_id}")
         inventory = Inventory(
             id=str(uuid4()),

@@ -72,19 +72,30 @@ class StubClientRepo(ClientRepository):
         return list(self._store.values())
 
 
+def _active_client(now: datetime, client_id: str = "client-1") -> Client:
+    return Client(
+        id=client_id,
+        name="Retail A",
+        status=ClientStatus.ACTIVE,
+        created_at=now,
+        updated_at=now,
+    )
+
+
 def test_create_inventory_production_snapshots_operational_config() -> None:
     repo = StubInventoryRepo()
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     clock = FixedClock(now)
+    client = _active_client(now)
     use_case = CreateInventoryUseCase(
         inventory_repo=repo,
-        client_repo=StubClientRepo(),
+        client_repo=StubClientRepo([client]),
         clock=clock,
         operational_resolver=StubOperationalResolver(),
         settings_loader=_dummy_settings,
     )
 
-    result = use_case.execute(CreateInventoryCommand(name="Warehouse A"))
+    result = use_case.execute(CreateInventoryCommand(name="Warehouse A", client_id=client.id))
 
     assert result.name == "Warehouse A"
     assert result.status == InventoryStatus.DRAFT
@@ -94,7 +105,7 @@ def test_create_inventory_production_snapshots_operational_config() -> None:
     assert result.primary_prompt_key == "global_v21"
     assert result.created_at == now
     assert result.updated_at == now
-    assert result.client_id is None
+    assert result.client_id == client.id
     assert repo.get_by_id(result.id) == result
     assert len(repo.list_all()) == 1
 
@@ -103,16 +114,21 @@ def test_create_inventory_test_leaves_primary_fields_null() -> None:
     repo = StubInventoryRepo()
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     clock = FixedClock(now)
+    client = _active_client(now, client_id="c-test")
     use_case = CreateInventoryUseCase(
         inventory_repo=repo,
-        client_repo=StubClientRepo(),
+        client_repo=StubClientRepo([client]),
         clock=clock,
         operational_resolver=StubOperationalResolver(),
         settings_loader=_dummy_settings,
     )
 
     result = use_case.execute(
-        CreateInventoryCommand(name="Lab", processing_mode=InventoryProcessingMode.TEST)
+        CreateInventoryCommand(
+            name="Lab",
+            processing_mode=InventoryProcessingMode.TEST,
+            client_id=client.id,
+        )
     )
 
     assert result.processing_mode == InventoryProcessingMode.TEST
@@ -120,24 +136,22 @@ def test_create_inventory_test_leaves_primary_fields_null() -> None:
     assert result.primary_model_name is None
     assert result.primary_prompt_key is None
     assert result.primary_prompt_version is None
-    assert result.client_id is None
+    assert result.client_id == client.id
 
 
-def test_create_inventory_with_explicit_null_client_id_keeps_legacy_behavior() -> None:
+def test_create_inventory_with_blank_client_id_after_strip_raises_value_error() -> None:
     repo = StubInventoryRepo()
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
-    clock = FixedClock(now)
     use_case = CreateInventoryUseCase(
         inventory_repo=repo,
         client_repo=StubClientRepo(),
-        clock=clock,
+        clock=FixedClock(now),
         operational_resolver=StubOperationalResolver(),
         settings_loader=_dummy_settings,
     )
 
-    result = use_case.execute(CreateInventoryCommand(name="Warehouse B", client_id=None))
-    assert result.client_id is None
-    assert repo.get_by_id(result.id) == result
+    with pytest.raises(ValueError, match="client_id must not be empty"):
+        use_case.execute(CreateInventoryCommand(name="Warehouse B", client_id="   "))
 
 
 def test_create_inventory_with_valid_client_id_persists_association() -> None:

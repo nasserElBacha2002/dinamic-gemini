@@ -43,7 +43,8 @@ export default function CreateInventoryDialog({
   });
 
   const [name, setName] = useState('');
-  const [validationError, setValidationError] = useState('');
+  const [nameError, setNameError] = useState('');
+  const [clientError, setClientError] = useState('');
   const [processingMode, setProcessingMode] = useState<InventoryProcessingMode>('production');
   const [selectedClientId, setSelectedClientId] = useState('');
   const clientSelectorHelpId = useId();
@@ -56,7 +57,8 @@ export default function CreateInventoryDialog({
 
   const reset = () => {
     setName('');
-    setValidationError('');
+    setNameError('');
+    setClientError('');
     setProcessingMode('production');
     setSelectedClientId('');
   };
@@ -75,13 +77,27 @@ export default function CreateInventoryDialog({
   };
 
   const validate = (): boolean => {
+    setNameError('');
+    setClientError('');
     const trimmed = (name || '').trim();
     if (!trimmed) {
-      setValidationError(t('dialogs.inventory.validation_name_required'));
+      setNameError(t('dialogs.inventory.validation_name_required'));
       return false;
     }
     if (trimmed.length > 255) {
-      setValidationError(t('dialogs.inventory.validation_name_max'));
+      setNameError(t('dialogs.inventory.validation_name_max'));
+      return false;
+    }
+    if (isClientsError) {
+      setClientError(t('dialogs.inventory.client_load_error'));
+      return false;
+    }
+    if (!isClientsLoading && clients.length === 0) {
+      setClientError(t('dialogs.inventory.validation_client_required_create_first'));
+      return false;
+    }
+    if (!selectedClientId.trim()) {
+      setClientError(t('dialogs.inventory.validation_client_required'));
       return false;
     }
     return true;
@@ -89,7 +105,8 @@ export default function CreateInventoryDialog({
 
   const handleSubmit = async () => {
     if (!validate()) return;
-    setValidationError('');
+    setNameError('');
+    setClientError('');
     clearError();
     onError(null);
     try {
@@ -98,16 +115,24 @@ export default function CreateInventoryDialog({
       const created = await submitCreateInventory({
         name: trimmed,
         processing_mode: processingMode,
-        ...(normalizedClientId ? { client_id: normalizedClientId } : {}),
+        client_id: normalizedClientId,
       } satisfies CreateInventoryRequest);
       onSuccess(created);
       handleClose();
     } catch (e) {
       const msg = getVisibleErrorMessage(e, 'inventory');
-      setValidationError(msg);
+      setNameError(msg);
       onError(msg);
     }
   };
+
+  const clientHelperText = clientError
+    ? clientError
+    : isClientsError
+      ? t('dialogs.inventory.client_load_error')
+      : clients.length === 0
+        ? t('dialogs.inventory.client_empty')
+        : t('dialogs.inventory.client_helper');
 
   const stepLabels = t('dialogs.inventory.step_labels').split('|');
 
@@ -123,7 +148,16 @@ export default function CreateInventoryDialog({
           <Button onClick={handleClose} disabled={submitting}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={() => void handleSubmit()} variant="contained" disabled={submitting}>
+          <Button
+            onClick={() => void handleSubmit()}
+            variant="contained"
+            disabled={
+              submitting ||
+              isClientsLoading ||
+              isClientsError ||
+              clients.length === 0
+            }
+          >
             {submitting ? <CircularProgress size={24} /> : t('dialogs.inventory.create_inventory_action')}
           </Button>
         </>
@@ -139,9 +173,12 @@ export default function CreateInventoryDialog({
           fullWidth
           variant="outlined"
           value={name}
-          onChange={(e) => setName(e.target.value)}
-          error={Boolean(validationError)}
-          helperText={validationError}
+          onChange={(e) => {
+            setName(e.target.value);
+            if (nameError) setNameError('');
+          }}
+          error={Boolean(nameError)}
+          helperText={nameError}
           disabled={submitting}
           inputProps={{ maxLength: 255 }}
         />
@@ -149,20 +186,19 @@ export default function CreateInventoryDialog({
           select
           label={t('dialogs.inventory.client_label')}
           value={selectedClientId}
-          onChange={(e) => setSelectedClientId(e.target.value)}
+          onChange={(e) => {
+            setSelectedClientId(e.target.value);
+            if (clientError) setClientError('');
+          }}
           disabled={submitting || isClientsLoading}
-          helperText={
-            isClientsError
-              ? t('dialogs.inventory.client_load_error')
-              : clients.length === 0
-                ? t('dialogs.inventory.client_empty')
-                : t('dialogs.inventory.client_helper')
-          }
-          error={isClientsError}
+          helperText={clientHelperText}
+          error={Boolean(clientError) || isClientsError}
           FormHelperTextProps={{ id: clientSelectorHelpId }}
           inputProps={{ 'aria-describedby': clientSelectorHelpId }}
         >
-          <MenuItem value="">{t('dialogs.inventory.client_none_option')}</MenuItem>
+          <MenuItem value="" disabled>
+            {t('dialogs.inventory.client_placeholder')}
+          </MenuItem>
           {clients.map((client) => (
             <MenuItem key={client.id} value={client.id}>
               {client.name}

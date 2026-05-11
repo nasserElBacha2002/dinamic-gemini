@@ -1,8 +1,11 @@
 """API wiring tests: v3 aisle endpoints and inventory get by id."""
 
 import tempfile
+from collections.abc import Sequence
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -24,6 +27,7 @@ from src.api.dependencies import (
 )
 from src.api.errors.structured_api_http import AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING
 from src.api.server import app
+from src.application.ports.repositories import InventoryRepository
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
 from src.domain.aisle.entities import Aisle, AisleStatus
@@ -46,9 +50,35 @@ from src.infrastructure.repositories.memory_review_action_repository import (
 from src.infrastructure.repositories.memory_source_asset_repository import (
     MemorySourceAssetRepository,
 )
+from src.runtime.app_container import get_app_container
+from tests.support.api_v3_test_helpers import create_test_inventory
 from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
 client = TestClient(app)
+
+
+class _InventoryReadProxyClearClient(InventoryRepository):
+    """Wraps a real repo; exposes one inventory as client-less (legacy read simulation)."""
+
+    def __init__(self, inner: InventoryRepository, inventory_id: str) -> None:
+        self._inner = inner
+        self._inventory_id = inventory_id
+
+    def get_by_id(self, inventory_id: str) -> Inventory | None:
+        inv = self._inner.get_by_id(inventory_id)
+        if inv is None or inventory_id != self._inventory_id:
+            return inv
+        return replace(inv, client_id=None)
+
+    def save(self, inventory: Inventory) -> None:
+        self._inner.save(inventory)
+
+    def list_all(self) -> Sequence[Inventory]:
+        return self._inner.list_all()
+
+
+def _pinv(name: str, **kwargs: Any):
+    return create_test_inventory(client, name=name, **kwargs)
 
 
 def _upload_minimal_aisle_asset_for_process(inv_id: str, aisle_id: str) -> None:
@@ -65,7 +95,7 @@ def _fake_admin() -> AuthUser:
 
 
 def test_get_inventory_returns_200_when_found() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For Get"})
+    create_resp = _pinv("For Get")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
 
@@ -84,7 +114,7 @@ def test_get_inventory_returns_404_when_not_found() -> None:
 
 
 def test_post_aisle_returns_201_and_entity() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For Aisles"})
+    create_resp = _pinv("For Aisles")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
 
@@ -112,10 +142,7 @@ def test_post_aisle_with_valid_client_supplier_id_returns_201_and_persists_suppl
     )
     assert supplier_resp.status_code == 201
     supplier_id = supplier_resp.json()["id"]
-    inv_resp = client.post(
-        "/api/v3/inventories",
-        json={"name": "For Supplier Aisle", "client_id": client_id},
-    )
+    inv_resp = _pinv("For Supplier Aisle", client_id=client_id)
     assert inv_resp.status_code == 201
     inv_id = inv_resp.json()["id"]
 
@@ -131,10 +158,7 @@ def test_post_aisle_with_missing_client_supplier_id_returns_404_structured() -> 
     client_resp = client.post("/api/v3/clients/", json={"name": "Client B"})
     assert client_resp.status_code == 201
     client_id = client_resp.json()["id"]
-    inv_resp = client.post(
-        "/api/v3/inventories",
-        json={"name": "For Missing Supplier", "client_id": client_id},
-    )
+    inv_resp = _pinv("For Missing Supplier", client_id=client_id)
     assert inv_resp.status_code == 201
     inv_id = inv_resp.json()["id"]
 
@@ -158,18 +182,26 @@ def test_post_aisle_with_supplier_when_inventory_has_no_client_returns_409_struc
     )
     assert supplier_resp.status_code == 201
     supplier_id = supplier_resp.json()["id"]
-    inv_resp = client.post("/api/v3/inventories", json={"name": "Inventory Without Client"})
+    inv_resp = _pinv("Inventory Simulated Legacy", client_id=client_id)
     assert inv_resp.status_code == 201
     inv_id = inv_resp.json()["id"]
 
-    response = client.post(
-        f"/api/v3/inventories/{inv_id}/aisles",
-        json={"code": "A-04", "client_supplier_id": supplier_id},
+    base_repo = get_app_container().get_inventory_repo()
+    app.dependency_overrides[get_inventory_repo] = lambda: _InventoryReadProxyClearClient(
+        base_repo,
+        inv_id,
     )
-    assert response.status_code == 409
-    body = response.json()
-    assert body.get("code") == "INVENTORY_CLIENT_REQUIRED_FOR_SUPPLIER"
-    assert body.get("detail") == "Inventory must have a client before assigning a supplier"
+    try:
+        response = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles",
+            json={"code": "A-04", "client_supplier_id": supplier_id},
+        )
+        assert response.status_code == 409
+        body = response.json()
+        assert body.get("code") == "INVENTORY_CLIENT_REQUIRED_FOR_SUPPLIER"
+        assert body.get("detail") == "Inventory must have a client before assigning a supplier"
+    finally:
+        app.dependency_overrides.pop(get_inventory_repo, None)
 
 
 def test_post_aisle_with_supplier_from_other_client_returns_409_structured() -> None:
@@ -185,10 +217,7 @@ def test_post_aisle_with_supplier_from_other_client_returns_409_structured() -> 
     )
     assert supplier_resp.status_code == 201
     supplier_id = supplier_resp.json()["id"]
-    inv_resp = client.post(
-        "/api/v3/inventories",
-        json={"name": "Mismatch Supplier", "client_id": client_a_id},
-    )
+    inv_resp = _pinv("Mismatch Supplier", client_id=client_a_id)
     assert inv_resp.status_code == 201
     inv_id = inv_resp.json()["id"]
 
@@ -203,7 +232,7 @@ def test_post_aisle_with_supplier_from_other_client_returns_409_structured() -> 
 
 
 def test_get_aisles_returns_list_and_includes_created() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For List Aisles"})
+    create_resp = _pinv("For List Aisles")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     client.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "B-01"})
@@ -228,7 +257,7 @@ def test_post_aisle_inventory_not_found_returns_404() -> None:
 
 
 def test_post_aisle_duplicate_code_returns_409() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "Dup Test"})
+    create_resp = _pinv("Dup Test")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     client.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "DUP-1"})
@@ -250,7 +279,7 @@ def test_get_aisles_inventory_not_found_returns_404() -> None:
 
 
 def test_post_aisle_empty_code_returns_422() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "Val"})
+    create_resp = _pinv("Val")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
 
@@ -262,7 +291,7 @@ def test_post_aisle_empty_code_returns_422() -> None:
 
 
 def test_post_aisle_blank_client_supplier_id_returns_422() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "Val Supplier"})
+    create_resp = _pinv("Val Supplier")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
 
@@ -281,7 +310,7 @@ def test_post_aisle_blank_client_supplier_id_returns_422() -> None:
 
 def test_post_aisle_process_without_source_assets_returns_409() -> None:
     """Sprint 1: preflight rejects process when aisle has no SourceAsset rows (409 = state conflict)."""
-    create_resp = client.post("/api/v3/inventories", json={"name": "No Assets Process"})
+    create_resp = _pinv("No Assets Process")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(
@@ -306,7 +335,7 @@ def test_post_aisle_process_inventory_not_found_returns_404() -> None:
 
 
 def test_post_aisle_process_returns_202_and_job_id() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For Process"})
+    create_resp = _pinv("For Process")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(
@@ -394,10 +423,7 @@ def test_post_process_with_explicit_gemini_provider_persisted_on_status(monkeypa
             "default_model"
         ]
 
-        create_resp = client.post(
-            "/api/v3/inventories",
-            json={"name": "For Prov Gemini", "processing_mode": "test"},
-        )
+        create_resp = _pinv("For Prov Gemini", processing_mode="test")
         assert create_resp.status_code == 201
         inv_id = create_resp.json()["id"]
         aisle_resp = client.post(
@@ -427,10 +453,7 @@ def test_post_process_with_explicit_gemini_provider_persisted_on_status(monkeypa
 
 def test_post_process_production_inventory_ignores_request_provider_and_uses_snapshot() -> None:
     """Production must not honor experimental provider/model selection from the request body."""
-    create_resp = client.post(
-        "/api/v3/inventories",
-        json={"name": "Prod Snap Body Ignored", "processing_mode": "production"},
-    )
+    create_resp = _pinv("Prod Snap Body Ignored", processing_mode="production")
     assert create_resp.status_code == 201
     inv_body = create_resp.json()
     inv_id = inv_body["id"]
@@ -462,10 +485,7 @@ def test_post_process_invalid_model_for_provider_returns_422(monkeypatch: pytest
     config_mod.reload_settings()
     app.dependency_overrides[get_current_admin] = _fake_admin
     try:
-        create_resp = client.post(
-            "/api/v3/inventories",
-            json={"name": "For Bad Model", "processing_mode": "test"},
-        )
+        create_resp = _pinv("For Bad Model", processing_mode="test")
         assert create_resp.status_code == 201
         inv_id = create_resp.json()["id"]
         aisle_resp = client.post(
@@ -490,10 +510,7 @@ def test_post_process_invalid_model_for_provider_returns_422(monkeypatch: pytest
 def test_post_process_unknown_provider_returns_422() -> None:
     app.dependency_overrides[get_current_admin] = _fake_admin
     try:
-        create_resp = client.post(
-            "/api/v3/inventories",
-            json={"name": "For Prov 422", "processing_mode": "test"},
-        )
+        create_resp = _pinv("For Prov 422", processing_mode="test")
         assert create_resp.status_code == 201
         inv_id = create_resp.json()["id"]
         aisle_resp = client.post(
@@ -515,7 +532,7 @@ def test_post_process_unknown_provider_returns_422() -> None:
 
 
 def test_post_aisle_process_aisle_not_found_returns_404() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For 404"})
+    create_resp = _pinv("For 404")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
 
@@ -527,7 +544,7 @@ def test_post_aisle_process_aisle_not_found_returns_404() -> None:
 
 
 def test_post_aisle_process_duplicate_returns_409() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For 409"})
+    create_resp = _pinv("For 409")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(
@@ -547,7 +564,7 @@ def test_post_aisle_process_duplicate_returns_409() -> None:
 
 
 def test_get_aisle_status_returns_aisle_and_latest_job() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For Status"})
+    create_resp = _pinv("For Status")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(
@@ -717,7 +734,7 @@ def test_reference_usage_summary_tolerates_malformed_persisted_counts() -> None:
 
 def test_list_aisles_latest_job_includes_created_at() -> None:
     """v3.2.5 Phase 2 Block 2: GET .../aisles returns latest_job.created_at when present."""
-    create_resp = client.post("/api/v3/inventories", json={"name": "For List Job CreatedAt"})
+    create_resp = _pinv("For List Job CreatedAt")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(
@@ -740,7 +757,7 @@ def test_list_aisles_latest_job_includes_created_at() -> None:
 
 def test_list_and_status_latest_job_created_at_aligned() -> None:
     """v3.2.5 Phase 2 Block 2: list and status expose the same latest_job.created_at for the same job."""
-    create_resp = client.post("/api/v3/inventories", json={"name": "For Aligned CreatedAt"})
+    create_resp = _pinv("For Aligned CreatedAt")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(
@@ -766,7 +783,7 @@ def test_list_and_status_latest_job_created_at_aligned() -> None:
 
 def test_cancel_queued_job_returns_202_and_list_and_status_show_canceled() -> None:
     """Phase 3 Block 1 Case 1: Cancel QUEUED job -> 202; list and status expose latest_job.status = canceled."""
-    create_resp = client.post("/api/v3/inventories", json={"name": "For Cancel"})
+    create_resp = _pinv("For Cancel")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(
@@ -808,7 +825,7 @@ def test_cancel_queued_job_returns_202_and_list_and_status_show_canceled() -> No
 
 def test_cancel_after_cancel_requested_is_idempotent_returns_202() -> None:
     """Phase 3 Block 1 Case 3: Second cancel on same job is idempotent -> 202."""
-    create_resp = client.post("/api/v3/inventories", json={"name": "For Cancel 409"})
+    create_resp = _pinv("For Cancel 409")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(
@@ -1307,7 +1324,7 @@ def test_post_process_when_latest_job_running_returns_409() -> None:
 
 def test_post_process_after_cancel_requested_blocked_by_active_job_returns_409() -> None:
     """Phase 3 Case 5: While latest job is still active (cancel_requested), POST process is rejected with 409."""
-    create_resp = client.post("/api/v3/inventories", json={"name": "For Re-process"})
+    create_resp = _pinv("For Re-process")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(
@@ -1864,7 +1881,7 @@ def test_phase6_inventory_job_read_routes_wrong_inventory_same_404_detail() -> N
 
 
 def test_get_aisle_status_not_found_returns_404() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For Status 404"})
+    create_resp = _pinv("For Status 404")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
 
@@ -1875,7 +1892,7 @@ def test_get_aisle_status_not_found_returns_404() -> None:
 
 
 def test_list_aisles_includes_latest_job_when_present() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For List Job"})
+    create_resp = _pinv("For List Job")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(
@@ -1906,7 +1923,7 @@ def test_list_aisles_includes_latest_job_when_present() -> None:
 
 
 def test_upload_aisle_assets_returns_201_and_assets() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For Upload"})
+    create_resp = _pinv("For Upload")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(
@@ -1930,7 +1947,7 @@ def test_upload_aisle_assets_returns_201_and_assets() -> None:
 
 
 def test_upload_aisle_assets_aisle_not_found_returns_404() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For 404 Assets"})
+    create_resp = _pinv("For 404 Assets")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
 
@@ -1942,7 +1959,7 @@ def test_upload_aisle_assets_aisle_not_found_returns_404() -> None:
 
 
 def test_list_aisle_assets_returns_list() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For List Assets"})
+    create_resp = _pinv("For List Assets")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(
@@ -1968,7 +1985,7 @@ def test_list_aisle_assets_returns_list() -> None:
 
 
 def test_list_aisle_assets_aisle_not_found_returns_404() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For List 404"})
+    create_resp = _pinv("For List 404")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
 
@@ -1981,7 +1998,7 @@ def test_list_aisle_assets_aisle_not_found_returns_404() -> None:
 
 def test_list_aisle_positions_returns_200_and_empty_list() -> None:
     """List positions returns 200 and positions array (empty when no results)."""
-    create_resp = client.post("/api/v3/inventories", json={"name": "For Positions List"})
+    create_resp = _pinv("For Positions List")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(
@@ -2006,7 +2023,7 @@ def test_list_aisle_positions_inventory_not_found_returns_404() -> None:
 
 
 def test_list_aisle_positions_aisle_not_found_returns_404() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For Positions 404"})
+    create_resp = _pinv("For Positions 404")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
 
@@ -2016,7 +2033,7 @@ def test_list_aisle_positions_aisle_not_found_returns_404() -> None:
 
 
 def test_get_position_detail_not_found_returns_404() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For Detail 404"})
+    create_resp = _pinv("For Detail 404")
     assert create_resp.status_code == 201
     inv_id = create_resp.json()["id"]
     aisle_resp = client.post(

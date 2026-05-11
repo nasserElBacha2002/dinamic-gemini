@@ -444,11 +444,11 @@
       "validation_supplier_required": "Seleccioná un proveedor para crear el pasillo."
     },
     "inventory": {
-      "client_empty": "No hay clientes disponibles. Podés continuar sin cliente por ahora.",
+      "client_empty": "No hay clientes disponibles. Creá un cliente antes de crear un inventario.",
       "client_helper": "Seleccioná el cliente al que pertenece este inventario.",
       "client_label": "Cliente",
-      "client_load_error": "No se pudieron cargar los clientes. Podés continuar sin cliente por ahora.",
-      "client_none_option": "Sin cliente (comportamiento legado)",
+      "client_load_error": "No se pudieron cargar los clientes. Reintentá o verificá la conexión.",
+      "client_placeholder": "Seleccioná un cliente",
       "create_inventory_action": "Crear inventario",
       "inventory_name": "Nombre del inventario",
       "processing_mode_label": "Modo de procesamiento",
@@ -459,6 +459,8 @@
       "step_labels": "Datos del inventario",
       "validation_name_max": "El nombre no puede superar los 255 caracteres.",
       "validation_name_required": "Ingresá un nombre para el inventario.",
+      "validation_client_required": "Seleccioná un cliente para crear el inventario.",
+      "validation_client_required_create_first": "No hay clientes. Creá un cliente primero y volvé a intentar.",
       "wizard_title": "Crear inventario"
     }
   },

@@ -14,6 +14,7 @@ from src.application.services.csv_inventory_exporter import (
 )
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
+from tests.support.api_v3_test_helpers import create_test_inventory
 
 
 @pytest.fixture
@@ -36,7 +37,7 @@ def _parse_csv_body(raw: bytes) -> tuple[list[str], list[dict[str, str]]]:
 
 
 def test_export_csv_success_headers_and_disposition(client_v3: TestClient) -> None:
-    create = client_v3.post("/api/v3/inventories", json={"name": "Export CSV API"})
+    create = create_test_inventory(client_v3, name="Export CSV API")
     assert create.status_code == 201
     inv_id = create.json()["id"]
 
@@ -55,7 +56,7 @@ def test_export_csv_success_headers_and_disposition(client_v3: TestClient) -> No
 
 
 def test_export_csv_default_format_explicit_csv(client_v3: TestClient) -> None:
-    create = client_v3.post("/api/v3/inventories", json={"name": "Fmt Default"})
+    create = create_test_inventory(client_v3, name="Fmt Default")
     assert create.status_code == 201
     inv_id = create.json()["id"]
 
@@ -72,7 +73,7 @@ def test_export_csv_404_when_inventory_missing(client_v3: TestClient) -> None:
 
 
 def test_export_csv_422_invalid_format(client_v3: TestClient) -> None:
-    create = client_v3.post("/api/v3/inventories", json={"name": "Bad Fmt"})
+    create = create_test_inventory(client_v3, name="Bad Fmt")
     assert create.status_code == 201
     inv_id = create.json()["id"]
     resp = client_v3.get(f"/api/v3/inventories/{inv_id}/export?format=xlsx")
@@ -81,7 +82,7 @@ def test_export_csv_422_invalid_format(client_v3: TestClient) -> None:
 
 def test_export_aisle_csv_empty_positions(client_v3: TestClient) -> None:
     """Aisle-scoped export uses same headers as inventory export; one aisle, no rows."""
-    create = client_v3.post("/api/v3/inventories", json={"name": "Aisle scoped"})
+    create = create_test_inventory(client_v3, name="Aisle scoped")
     assert create.status_code == 201
     inv_id = create.json()["id"]
     aisle_resp = client_v3.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "A1"})
@@ -99,7 +100,7 @@ def test_export_aisle_csv_empty_positions(client_v3: TestClient) -> None:
 
 
 def test_export_csv_headers_only_inventory_with_aisle_no_positions(client_v3: TestClient) -> None:
-    create = client_v3.post("/api/v3/inventories", json={"name": "Empty positions"})
+    create = create_test_inventory(client_v3, name="Empty positions")
     assert create.status_code == 201
     inv_id = create.json()["id"]
     aisle_resp = client_v3.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "A1"})
@@ -115,7 +116,7 @@ def test_export_csv_headers_only_inventory_with_aisle_no_positions(client_v3: Te
 def test_export_csv_technical_mode_uses_technical_headers_and_filename(
     client_v3: TestClient,
 ) -> None:
-    create = client_v3.post("/api/v3/inventories", json={"name": "Technical export"})
+    create = create_test_inventory(client_v3, name="Technical export")
     assert create.status_code == 201
     inv_id = create.json()["id"]
 

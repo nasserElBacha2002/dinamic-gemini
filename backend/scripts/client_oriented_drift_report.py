@@ -155,10 +155,19 @@ def run_report(
             "Sampling job_events is optional and may not correlate to v3 inventory_jobs ids."
         ),
         "static_legacy_exposure": {
-            "frontend_client_none_option_i18n_key": "dialogs.inventory.client_none_option",
-            "backend_optional_client_id_schema": "backend/src/api/schemas/inventory_schemas.py",
+            "frontend_inventory_create_client_note": (
+                "Phase G2: client required in CreateInventoryDialog; "
+                "dialogs.inventory.client_placeholder replaces legacy none option."
+            ),
+            "backend_create_inventory_client_id_note": (
+                "Phase G2: CreateInventoryRequest.client_id required for POST /api/v3/inventories; "
+                "inventories.client_id column remains nullable for historical rows."
+            ),
             "backend_optional_aisle_supplier_schema": "backend/src/api/schemas/aisle_schemas.py",
-            "tests_legacy_null_client_inventory": "backend/tests/application/use_cases/test_create_inventory.py",
+            "tests_legacy_null_client_inventory_note": (
+                "Legacy null-client creation tests removed in G2; "
+                "see test_create_inventory.py and API tests for required-client coverage."
+            ),
         },
     }
 

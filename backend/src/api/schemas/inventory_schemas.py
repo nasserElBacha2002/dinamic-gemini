@@ -14,16 +14,15 @@ class CreateInventoryRequest(BaseModel):
         "production",
         description="production = operational defaults and no benchmark UX; test = multi-run experiments.",
     )
-    client_id: str | None = Field(
-        None,
-        description="Optional client association. Null/omitted preserves legacy behavior.",
+    client_id: str = Field(
+        ...,
+        min_length=1,
+        description="Required client association for new inventories (historical rows may still have null client_id).",
     )
 
     @field_validator("client_id")
     @classmethod
-    def validate_client_id_not_blank(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
+    def validate_client_id_not_blank(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
             raise ValueError("client_id must not be empty")

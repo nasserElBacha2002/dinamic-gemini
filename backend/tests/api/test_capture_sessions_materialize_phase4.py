@@ -41,6 +41,7 @@ from src.runtime.v3_deps import (
     get_position_repo,
     get_source_asset_repo,
 )
+from tests.support.api_v3_test_helpers import create_test_inventory
 
 client = TestClient(app)
 
@@ -73,7 +74,7 @@ def materialize_capture_ctx(tmp_path: Path):
 
 
 def _create_inv_aisle() -> tuple[str, str]:
-    r = client.post("/api/v3/inventories", json={"name": "Cap materialize"})
+    r = create_test_inventory(client, name="Cap materialize")
     assert r.status_code == 201, r.text
     inv_id = r.json()["id"]
     r2 = client.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "M-01"})
