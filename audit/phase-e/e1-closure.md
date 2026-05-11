@@ -70,3 +70,13 @@ Environment: Python 3.9.6 in sandbox (full repo collection on 3.9 may still hit 
 ## 8. Recommended next phase
 
 **E2 — SupplierPromptResolver** — resolve inventory → aisle → client → client_supplier → active `supplier_prompt_configs` for `(provider, model)` with explicit fallback and ownership checks; **still no** replacement of protected hybrid base text.
+
+---
+
+## 9. E1.x review cleanup (2026-05-11)
+
+Post–code-review corrections; **no runtime prompt behavior change**:
+
+- **`_GOLDEN_BASE`:** enforced exactly four distinct `(profile, provider)` keys via `_GOLDEN_BASE_EXPECTED_KEYS` + module-level assertion so duplicate dict literals cannot silently overwrite an entry.
+- **Substitution guard test:** renamed to `test_future_supplier_text_must_not_substitute_protected_base`; docstring clarifies this is not the final E3/E4 ordering contract; example uses `base + "\\n\\n" + fake_supplier`.
+- **Markers:** added `EMPTY_PALLET` to `HYBRID_V21_SHARED_CONTRACT_MARKERS` (present on all `global_v21` resolution branches including OpenAI overlay).

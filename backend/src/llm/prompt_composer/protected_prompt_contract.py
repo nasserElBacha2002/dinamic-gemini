@@ -37,6 +37,7 @@ PROTECTED_PROMPT_CONTRACT_VERSION: Final[str] = "e1-1"
 # default branch or default+Claude supplement.
 HYBRID_V21_SHARED_CONTRACT_MARKERS: Final[tuple[str, ...]] = (
     "PALLET",
+    "EMPTY_PALLET",
     "LOOSE_BOXES",
     "confidence",
 )

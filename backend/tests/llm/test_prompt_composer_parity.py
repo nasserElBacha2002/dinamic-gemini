@@ -35,12 +35,22 @@ def _sha256(text: str) -> str:
 
 # Fingerprints of ``default_hybrid_composer.compose_base`` outputs (update only when intentionally changing prompts).
 # Refreshed Phase E1 (2026-05): align with current ``hybrid_profiles`` bodies on main; E1 did not edit prompt wording.
+# E1.x: exactly one literal per (profile, provider) — duplicate keys in a dict literal silently overwrite.
+_GOLDEN_BASE_EXPECTED_KEYS: frozenset[tuple[str, str | None]] = frozenset(
+    {
+        ("global_v21", None),
+        ("global_v21", "openai"),
+        ("global_v21_b", None),
+        ("global_v21_b", "openai"),
+    }
+)
 _GOLDEN_BASE: dict[tuple[str, str | None], str] = {
     ("global_v21", None): "1d5fdcc02f96e56dd1d68470fab498d9a79db582695faa8ba4903c85e4fc81ba",
     ("global_v21", "openai"): "151b9dbf548a7f9592e94becd0c37936d93e7bc3a9b0d95d551f40a986f850c3",
     ("global_v21_b", None): "4b93c9947d330f6fadb4fbb4a9f303a6ac7c9b404833a0467a2a487956596ab5",
     ("global_v21_b", "openai"): "df06569a993ca0a390aef5e93d349a6305e3f508d3323bd253fbd078280855b5",
 }
+assert frozenset(_GOLDEN_BASE) == _GOLDEN_BASE_EXPECTED_KEYS and len(_GOLDEN_BASE) == 4
 
 # Distinctive substrings per variant — if a hash fails, missing phrase hints which profile broke.
 _GOLDEN_PHRASES: dict[tuple[str, str | None], tuple[str, ...]] = {
