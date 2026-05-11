@@ -35,7 +35,10 @@ from tests.pipeline.test_hybrid_analysis_prompt_e4_integration import (
 
 def test_e6_supplier_instruction_spacing() -> None:
     assert "evidence.They" not in SUPPLIER_REFERENCES_INSTRUCTION
-    assert "evidence. They" in SUPPLIER_REFERENCES_INSTRUCTION
+    assert "comparative context only" in SUPPLIER_REFERENCES_INSTRUCTION
+    assert "not primary evidence" in SUPPLIER_REFERENCES_INSTRUCTION
+    assert "not inventoried product listings" in SUPPLIER_REFERENCES_INSTRUCTION
+    assert "must not be used as proof" in SUPPLIER_REFERENCES_INSTRUCTION
 
 
 def test_e6_emit_stage_event_includes_ids_from_job_input_metadata(tmp_path: Path) -> None:
@@ -101,6 +104,33 @@ def test_e6_emit_stage_event_falls_back_to_supplier_resolution_ids(tmp_path: Pat
     payload = json.loads(line)["payload"]
     assert payload["inventory_id"] == "inv-fb"
     assert payload["aisle_id"] == "aisle-fb"
+
+
+def test_e61_prompt_composition_summary_filters_effective_prompt_to_allowlist() -> None:
+    full = {
+        "prompt_hash": "abc",
+        "effective_prompt": {
+            "supplier_instructions_applied": True,
+            "fallback_used": False,
+            "resolution_status": "resolved",
+            "supplier_prompt_config_id": "cfg-1",
+            "effective_prompt_hash": "effh",
+            "editable_instructions": "SHOULD_NOT_LEAK",
+            "effective_prompt_text": "FULL_PROMPT_SHOULD_NOT_LEAK",
+            "unexpected_future_key": "DROP_ME",
+        },
+    }
+    summary = prompt_composition_summary_for_execution_log(full, final_prompt_char_len=100)
+    eff = summary["effective_prompt"]
+    assert eff["supplier_instructions_applied"] is True
+    assert eff["resolution_status"] == "resolved"
+    assert eff["supplier_prompt_config_id"] == "cfg-1"
+    assert "editable_instructions" not in eff
+    assert "effective_prompt_text" not in eff
+    assert "unexpected_future_key" not in eff
+    dumped = json.dumps(summary, ensure_ascii=False)
+    assert "SHOULD_NOT_LEAK" not in dumped
+    assert "FULL_PROMPT_SHOULD_NOT_LEAK" not in dumped
 
 
 def test_e6_prompt_composition_summary_includes_effective_prompt_redacted() -> None:

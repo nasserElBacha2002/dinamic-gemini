@@ -49,6 +49,27 @@ LLM_METADATA_KEY_PROMPT_COMPOSITION = "prompt_composition"
 LLM_METADATA_KEY_PROMPT_PARITY_MODE = "prompt_parity_mode"
 LLM_IDENTITY_METADATA_KEY = "llm_identity"
 
+# E6.1 — only these keys may appear under ``effective_prompt`` in execution log summaries.
+# Blocks accidental leakage of prompt bodies or future ad-hoc keys from the full composition dict.
+EFFECTIVE_PROMPT_EXECUTION_LOG_KEYS = frozenset(
+    {
+        "protected_prompt_contract_key",
+        "protected_prompt_contract_version",
+        "effective_prompt_hash",
+        "supplier_prompt_config_id",
+        "supplier_prompt_config_version",
+        "supplier_instructions_applied",
+        "fallback_used",
+        "fallback_reason",
+        "resolution_status",
+        "resolution_error_code",
+        "reference_source",
+        "reference_image_ids",
+        "warnings",
+        "sections",
+    }
+)
+
 PROMPT_COMPOSITION_SCHEMA_VERSION = "prompt_composition_v1"
 
 # --- composition_steps: lightweight ordered audit trail (not a workflow engine) ---
@@ -358,8 +379,14 @@ def prompt_composition_summary_for_execution_log(
     lid = full_composition.get("llm_identity")
     if isinstance(lid, dict) and lid:
         out["llm_identity"] = dict(lid)
-    # E6: surface redacted effective_prompt subtree (hashes/flags only; no instruction body).
+    # E6 / E6.1: surface allowlisted ``effective_prompt`` keys only (no prompt bodies).
     eff = full_composition.get("effective_prompt")
     if isinstance(eff, dict) and eff:
-        out["effective_prompt"] = dict(eff)
+        safe_eff = {
+            key: value
+            for key, value in eff.items()
+            if key in EFFECTIVE_PROMPT_EXECUTION_LOG_KEYS
+        }
+        if safe_eff:
+            out["effective_prompt"] = safe_eff
     return out

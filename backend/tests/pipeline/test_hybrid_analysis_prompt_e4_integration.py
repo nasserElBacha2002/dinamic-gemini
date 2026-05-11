@@ -29,7 +29,6 @@ from src.llm.prompt_composer.prompt_traceability import (
 )
 from src.llm.prompt_composer.protected_prompt_contract import HYBRID_V21_SHARED_CONTRACT_MARKERS
 from src.llm.types import LLMRequest
-from src.pipeline.adapters.hybrid_global_analysis_strategy import _prepare_hybrid_llm_visual_bundle
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
 from src.pipeline.services.hybrid_analysis_prompt import (
@@ -375,6 +374,10 @@ def test_e5_e4_combined_image_ids_supplier_prompt_and_visual_reference_bundle(tm
     assert IMAGE_ID_TRACEABILITY_ENRICHMENT_ID in enrich
     assert SUPPLIER_EDITABLE_INSTRUCTIONS_ENRICHMENT_ID in enrich
     assert "Prefer SKU from left label." in text
+
+    from src.pipeline.adapters.hybrid_global_analysis_strategy import (
+        _prepare_hybrid_llm_visual_bundle,
+    )
 
     vb = _prepare_hybrid_llm_visual_bundle(
         supports_visual_reference_context=True,
