@@ -13,6 +13,7 @@ from typing import Any, Callable, Optional, Union
 
 import cv2
 
+from src.application.services.supplier_prompt_resolver import SupplierPromptResolution
 from src.config import Settings
 from src.jobs.models import JobInput
 from src.llm.errors import LLMProviderError
@@ -74,6 +75,7 @@ class _HybridRunParams:
     job_prompt_version: Optional[str] = None
     job_prompt_parity_mode: bool = False
     cancellation_checkpoint: Any = None
+    supplier_prompt_resolution: Optional[SupplierPromptResolution] = None
 
 
 def _hybrid_run_params_from_kwargs(kwargs: Mapping[str, Any]) -> _HybridRunParams:
@@ -101,6 +103,7 @@ def _hybrid_run_params_from_kwargs(kwargs: Mapping[str, Any]) -> _HybridRunParam
         job_prompt_version=kwargs.get("job_prompt_version"),
         job_prompt_parity_mode=bool(kwargs.get("job_prompt_parity_mode", False)),
         cancellation_checkpoint=kwargs.get("cancellation_checkpoint"),
+        supplier_prompt_resolution=kwargs.get("supplier_prompt_resolution"),
     )
 
 
@@ -429,6 +432,7 @@ class HybridInventoryPipeline:
             job_prompt_key=params.job_prompt_key,
             job_prompt_version=params.job_prompt_version,
             job_prompt_parity_mode=params.job_prompt_parity_mode,
+            supplier_prompt_resolution=params.supplier_prompt_resolution,
         )
         run_dir.mkdir(parents=True, exist_ok=True)
         exec_log = ExecutionLogWriter(run_dir)

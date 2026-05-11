@@ -59,6 +59,8 @@ COMPOSITION_STEP_NORMALIZE_PIPELINE_PROVIDER = "normalize_pipeline_provider"
 COMPOSITION_STEP_COMPOSE_HYBRID_BASE = "compose_hybrid_base"
 COMPOSITION_STEP_ENRICH_IMAGE_IDS = "enrich_image_ids"
 COMPOSITION_STEP_PROMPT_PARITY_MODE = "prompt_parity_mode"
+# Phase E4: optional supplier-editable block appended after protected hybrid + enrichments (metadata only).
+COMPOSITION_STEP_EFFECTIVE_SUPPLIER_PROMPT = "effective_supplier_prompt"
 
 
 def sha256_utf8(text: str) -> str:

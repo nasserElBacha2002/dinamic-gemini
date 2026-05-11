@@ -16,6 +16,7 @@ from typing import Any, Callable, Optional
 
 from src.application.ports.repositories import SupplierReferenceImageRepository
 from src.application.services.aisle_analysis_context_builder import AisleAnalysisContextBuilder
+from src.application.services.supplier_prompt_resolver import SupplierPromptResolution
 from src.config import Settings
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset, SourceAssetType
@@ -242,6 +243,7 @@ class V3ProcessAislePipelineRunner:
         job_prompt_key: str | None,
         job_prompt_version: str | None,
         job_prompt_parity_mode: bool,
+        supplier_prompt_resolution: SupplierPromptResolution | None = None,
     ) -> PipelineRunResult:
         """Invoke ``process_video`` (hybrid mode) with the same arguments the executor used."""
         return pipeline.process_video(
@@ -262,4 +264,5 @@ class V3ProcessAislePipelineRunner:
             job_prompt_key=job_prompt_key,
             job_prompt_version=job_prompt_version,
             job_prompt_parity_mode=job_prompt_parity_mode,
+            supplier_prompt_resolution=supplier_prompt_resolution,
         )

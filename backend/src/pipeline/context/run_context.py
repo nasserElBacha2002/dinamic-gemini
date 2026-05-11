@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from src.application.services.supplier_prompt_resolver import SupplierPromptResolution
 from src.jobs.models import JobInput
 
 JobExecutionObserver = Callable[[str, Optional[str], str, Optional[dict[str, Any]]], None]
@@ -72,6 +73,8 @@ class RunContext:
     # Phase 4 — multi-provider analysis execution (optional; unset = use settings defaults).
     analysis_execution_strategy: str | None = None
     analysis_extra_provider_keys: tuple[str, ...] | None = None
+    # Phase E4: supplier prompt resolution from v3 executor (repositories). None = skip effective compose.
+    supplier_prompt_resolution: SupplierPromptResolution | None = None
 
     def emit_stage_event(
         self,

@@ -17,6 +17,7 @@ from typing import Any, Callable
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
+    ClientSupplierRepository,
     EvidenceRepository,
     InventoryRepository,
     JobRepository,
@@ -24,6 +25,7 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     RawLabelRepository,
     SourceAssetRepository,
+    SupplierPromptConfigRepository,
     SupplierReferenceImageRepository,
 )
 from src.application.services.aisle_analysis_context_builder import (
@@ -31,6 +33,7 @@ from src.application.services.aisle_analysis_context_builder import (
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_engine_params import coerce_prompt_parity_mode
+from src.application.services.supplier_prompt_resolver import SupplierPromptResolver
 from src.application.services.supplier_reference_image_resolver import (
     SupplierReferenceImageResolver,
 )
@@ -171,6 +174,8 @@ class V3JobExecutor:
         artifact_store=None,
         raw_label_repo: RawLabelRepository | None = None,
         recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
+        client_supplier_repo: ClientSupplierRepository | None = None,
+        supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None,
     ) -> None:
         self._job_repo = job_repo
         self._aisle_repo = aisle_repo
@@ -198,6 +203,14 @@ class V3JobExecutor:
             artifact_store=artifact_store,
             context_builder=context_builder,
         )
+        self._supplier_prompt_resolver: SupplierPromptResolver | None = None
+        if client_supplier_repo is not None and supplier_prompt_config_repo is not None:
+            self._supplier_prompt_resolver = SupplierPromptResolver(
+                inventory_repo=inventory_repo,
+                aisle_repo=aisle_repo,
+                client_supplier_repo=client_supplier_repo,
+                supplier_prompt_config_repo=supplier_prompt_config_repo,
+            )
         self._persist_use_case = PersistAisleResultUseCase(
             position_repo=position_repo,
             product_record_repo=product_record_repo,
@@ -389,6 +402,30 @@ class V3JobExecutor:
         job_prompt = (p.job.prompt_key or "").strip() or None
         job_prompt_version = (p.job.prompt_version or "").strip() or None
         job_prompt_parity_mode = coerce_prompt_parity_mode(p.job.engine_params_json)
+        supplier_prompt_resolution = None
+        spr = self._supplier_prompt_resolver
+        if spr is not None:
+            supplier_prompt_resolution = spr.resolve(
+                inventory_id=p.aisle.inventory_id,
+                aisle_id=p.aisle_id,
+                provider_name=pipeline_provider_name,
+                model_name=job_model,
+            )
+            if supplier_prompt_resolution.resolution_status == "error":
+                err_code = supplier_prompt_resolution.error_code or "UNKNOWN"
+                logger.error(
+                    "v3 supplier prompt resolution error job_id=%s inventory_id=%s aisle_id=%s code=%s",
+                    p.job_id,
+                    p.aisle.inventory_id,
+                    p.aisle_id,
+                    err_code,
+                )
+                self._state.fail_job_and_aisle(
+                    p.job_id,
+                    p.aisle,
+                    f"Supplier prompt resolution error: {err_code}",
+                )
+                return None
         result = self._pipeline_runner.run_hybrid_pipeline(
             pipeline=pipeline,
             video_path=p.pipeline_video_path,
@@ -406,6 +443,7 @@ class V3JobExecutor:
             job_prompt_key=job_prompt,
             job_prompt_version=job_prompt_version,
             job_prompt_parity_mode=job_prompt_parity_mode,
+            supplier_prompt_resolution=supplier_prompt_resolution,
         )
         logger.info(
             "v3 executor finished: job_id=%s exit_code=%s inventory_id=%s aisle_id=%s",
