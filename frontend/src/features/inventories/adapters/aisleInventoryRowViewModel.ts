@@ -26,6 +26,8 @@ export interface LatestRunSnapshotViewModel {
 export interface AisleInventoryRowPresentation {
   id: string;
   code: string;
+  /** Aisle `client_supplier_id` when present (supplier-linked prompt context). */
+  clientSupplierId: string | null;
   aisleStatusLabel: string;
   aisleStatusSemantic: StatusBadgeSemantic;
   assetsCount: number | undefined;
@@ -67,6 +69,7 @@ export function toAisleInventoryRowPresentation(aisle: Aisle, emptyLabel: string
   return {
     id: aisle.id,
     code: aisle.code,
+    clientSupplierId: aisle.client_supplier_id ?? null,
     aisleStatusLabel: getAisleStatusLabel(String(aisle.status)),
     aisleStatusSemantic: aisleStatusToBadgeSemantic(String(aisle.status)),
     assetsCount: aisle.assets_count,

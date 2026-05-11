@@ -17,6 +17,7 @@ export interface UseAisleProcessingFlowOptions {
 export interface AisleProcessingDialogTarget {
   aisleId: string;
   aisleCode: string;
+  clientSupplierId: string | null;
 }
 
 export function useAisleProcessingFlow({
@@ -54,12 +55,12 @@ export function useAisleProcessingFlow({
   );
 
   const openDialogForAisle = useCallback(
-    (aisleId: string, aisleCode: string) => {
+    (aisleId: string, aisleCode: string, clientSupplierId: string | null) => {
       setProcessError(null);
       setProviderKey('');
       setModelKey('');
       setPromptKey('');
-      setDialogTarget({ aisleId, aisleCode });
+      setDialogTarget({ aisleId, aisleCode, clientSupplierId });
     },
     [setProcessError]
   );
@@ -98,12 +99,12 @@ export function useAisleProcessingFlow({
   );
 
   const requestProcess = useCallback(
-    async (aisleId: string, aisleCode: string) => {
+    async (aisleId: string, aisleCode: string, clientSupplierId: string | null = null) => {
       if (isProductionInventory) {
         await startProductionProcess(aisleId);
         return;
       }
-      openDialogForAisle(aisleId, aisleCode);
+      openDialogForAisle(aisleId, aisleCode, clientSupplierId);
     },
     [isProductionInventory, openDialogForAisle, startProductionProcess]
   );

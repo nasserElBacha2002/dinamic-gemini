@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 import { ROUTE_HOME, ROUTE_LOGIN, ROUTE_PATH } from './constants/appRoutes';
+import AisleObservabilityPage from './pages/AisleObservabilityPage';
 import { useAuth } from './features/auth';
 import LoginPage from './features/auth/LoginPage';
 import AppShell from './layout/AppShell';
@@ -63,6 +64,7 @@ function App() {
   );
   const ingestionSessionsEl = useMemo(() => <IngestionSessionsPage />, []);
   const ingestionSessionDetailEl = useMemo(() => <IngestionSessionDetailPage />, []);
+  const aisleObservabilityEl = useMemo(() => <AisleObservabilityPage />, []);
 
   if (!initialized) {
     return <AuthLoading />;
@@ -95,6 +97,7 @@ function App() {
         <Route path={ROUTE_PATH.analyticsCompareMany} element={compareManyRunsEl} />
         <Route path={ROUTE_PATH.legacyAisleCompare} element={legacyCompareRedirectEl} />
         <Route path={ROUTE_PATH.positionDetail} element={positionDetailEl} />
+        <Route path={ROUTE_PATH.aisleObservability} element={aisleObservabilityEl} />
       </Route>
     </Routes>
   );

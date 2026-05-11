@@ -5,6 +5,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import InventoryDetail from '../src/pages/InventoryDetail';
+import AisleObservabilityPage from '../src/pages/AisleObservabilityPage';
 import { AppSnackbarProvider } from '../src/components/ui';
 import type { ExecutionLogResponse } from '../src/api/types';
 import { downloadAisleExecutionLogTxt, downloadExecutionLogTxt } from '../src/api/client';
@@ -100,6 +101,10 @@ function renderPage() {
         <MemoryRouter initialEntries={['/inventories/inv-1']}>
           <Routes>
             <Route path="/inventories/:inventoryId" element={<InventoryDetail />} />
+            <Route
+              path="/inventories/:inventoryId/aisles/:aisleId/observability"
+              element={<AisleObservabilityPage />}
+            />
           </Routes>
         </MemoryRouter>
       </AppSnackbarProvider>
@@ -317,7 +322,7 @@ describe('InventoryDetail', () => {
     expect(useAisleJobsListMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
 
     await waitFor(() => {
       const lastLogCall = useExecutionLogMock.mock.calls.at(-1);
@@ -355,12 +360,13 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /dialog title aisle|observabilidad del pasillo/i })).toBeInTheDocument();
+      expect(screen.getByTestId('aisle-observability-page')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /observabilidad del pasillo a-01/i })).toBeInTheDocument();
     });
-    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.queryAllByRole('dialog')).toHaveLength(0);
 
     const scopeControl = screen.getByRole('combobox', { name: /log scope|alcance del log/i });
     expect(scopeControl.textContent).toMatch(/scope merged|consolidado/i);
@@ -435,7 +441,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /download merged log|descargar log consolidado/i })).toBeInTheDocument();
@@ -517,7 +523,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
 
     await waitFor(() => {
       expect(useExecutionLogMock.mock.calls.at(-1)?.[3]).toMatchObject({ enabled: true });
@@ -627,10 +633,11 @@ describe('InventoryDetail', () => {
     renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /dialog title aisle|observabilidad del pasillo/i })).toBeInTheDocument();
+      expect(screen.getByTestId('aisle-observability-page')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /observabilidad del pasillo a-01/i })).toBeInTheDocument();
     });
     expect(screen.getByText('job-0')).toBeInTheDocument();
     expect(screen.getAllByText('AnalysisStage').length).toBeGreaterThan(0);
@@ -697,7 +704,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /cancel job|cancelar ejecución/i })).toBeInTheDocument();
     });
@@ -762,7 +769,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /retry job|reintentar ejecución/i })).toBeInTheDocument();
     });
@@ -847,7 +854,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /cancel job|cancelar ejecución/i })).toBeInTheDocument();
     });
@@ -955,7 +962,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /retry job|reintentar ejecución/i })).toBeInTheDocument();
     });
@@ -1143,42 +1150,53 @@ describe('InventoryDetail', () => {
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /process aisle|procesar pasillo/i }));
-    expect(await screen.findByText(/process dialog title/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /procesar pasillo a-01/i })).toBeInTheDocument();
 
     const modelSelect = screen.getByLabelText(/^model$|^modelo$/i, { selector: '[role="combobox"]' });
     fireEvent.mouseDown(modelSelect);
     expect(
-      await screen.findByRole('option', { name: /process default model em/i })
+      await screen.findByRole('option', { name: /usar modelo predeterminado \(gemini-2.0-flash-exp\)/i })
     ).toBeInTheDocument();
   });
 
-  it('process aisle opens provider dialog and passes provider/model/prompt to start mutation', async () => {
+  it('process dialog explains automatic prompt and hides profile until advanced options are opened', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /process aisle|procesar pasillo/i }));
+    await screen.findByRole('heading', { name: /procesar pasillo a-01/i });
+    expect(screen.getByText('Prompt utilizado')).toBeInTheDocument();
+    expect(screen.getByText(/instrucciones activas del proveedor asociado a este pasillo/i)).toBeInTheDocument();
+    expect(screen.queryByText(/prompt a/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /perfil base del prompt/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /opciones avanzadas/i }));
+    fireEvent.mouseDown(await screen.findByRole('combobox', { name: /perfil base del prompt/i }));
+    expect(await screen.findByRole('option', { name: /prompt b/i })).toBeInTheDocument();
+  });
+
+  it('process aisle opens provider dialog and passes provider/model with default prompt key', async () => {
     renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /process aisle|procesar pasillo/i }));
 
-    expect(await screen.findByText(/process dialog title/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/^provider$|^proveedor$/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /procesar pasillo a-01/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/proveedor de ia/i)).toBeInTheDocument();
 
-    fireEvent.mouseDown(screen.getByLabelText(/^provider$|^proveedor$/i));
+    fireEvent.mouseDown(screen.getByLabelText(/proveedor de ia/i));
     const openaiOption = await screen.findByRole('option', { name: /openai/i });
     fireEvent.click(openaiOption);
 
     fireEvent.mouseDown(screen.getByLabelText(/^model$|^modelo$/i));
     fireEvent.click(await screen.findByRole('option', { name: /^gpt-4o-mini$/i }));
 
-    fireEvent.mouseDown(screen.getByLabelText(/prompt profile/i));
-    fireEvent.click(await screen.findByRole('option', { name: /prompt b/i }));
-
-    fireEvent.click(screen.getByRole('button', { name: /process start/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^procesar$/i }));
 
     await waitFor(() => {
       expect(processAisleMutateAsyncMock).toHaveBeenCalledWith({
         aisleId: 'aisle-1',
         providerName: 'openai',
         modelName: 'gpt-4o-mini',
-        promptKey: 'global_v21_b',
+        promptKey: null,
       });
     });
   });

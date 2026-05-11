@@ -48,6 +48,7 @@ describe('inventory view-model adapters', () => {
 
     const pres = toAisleInventoryRowPresentation(aisle, '—');
     expect(pres.latestRun?.providerDisplay).toBe('gemini');
+    expect(pres.clientSupplierId).toBeNull();
     expect((pres as { observabilityInitialRunId?: string }).observabilityInitialRunId).toBeUndefined();
   });
 

@@ -12,6 +12,7 @@ import {
   TableSearchField,
   type DataTableColumn,
 } from '../../../components/ui';
+import { pathToAisleObservability } from '../../../constants/appRoutes';
 import { pathToAislePositions } from '../../../utils/resultRoutes';
 import {
   computeProcessAisleMenuState,
@@ -30,13 +31,8 @@ export interface InventoryAislesSectionProps {
   onRefreshAisles: () => void;
   fileInputRef: RefObject<HTMLInputElement>;
   onFileInputChange: (e: ChangeEvent<HTMLInputElement>) => void;
-  onOpenObservability: (p: {
-    aisleId: string;
-    aisleCode: string;
-    initialSelectedRunId: string | null;
-  }) => void;
   onRequestUpload: (aisleId: string) => void;
-  onRequestProcess: (aisleId: string, aisleCode: string) => void;
+  onRequestProcess: (aisleId: string, aisleCode: string, clientSupplierId: string | null) => void;
   aislesDataLoaded: boolean;
   processingAisleId: string | null;
   uploadingAisleId: string | null;
@@ -53,7 +49,6 @@ export default function InventoryAislesSection({
   onRefreshAisles,
   fileInputRef,
   onFileInputChange,
-  onOpenObservability,
   onRequestUpload,
   onRequestProcess,
   aislesDataLoaded,
@@ -194,18 +189,16 @@ export default function InventoryAislesSection({
                 },
                 {
                   id: 'execution_logs',
-                  label: t('aisle.view_logs'),
+                  label: t('aisle.view_observability'),
                   onClick: () =>
-                    onOpenObservability({
-                      aisleId: p.id,
-                      aisleCode: p.code,
-                      initialSelectedRunId: row.action.observabilityInitialRunId,
-                    }),
+                    navigate(
+                      pathToAisleObservability(inventoryId, p.id, row.action.observabilityInitialRunId)
+                    ),
                 },
                 {
                   id: 'process',
                   label: processingAisleId === p.id ? t('common.starting') : t('aisle.process_aisle'),
-                  onClick: () => void onRequestProcess(p.id, p.code),
+                  onClick: () => void onRequestProcess(p.id, p.code, p.clientSupplierId ?? null),
                   disabled: processState.disabled,
                   disabledReason:
                     processState.disabledReasonKey !== undefined
@@ -223,7 +216,6 @@ export default function InventoryAislesSection({
       inventoryId,
       menuCtx,
       navigate,
-      onOpenObservability,
       onRequestProcess,
       onRequestUpload,
       processingAisleId,

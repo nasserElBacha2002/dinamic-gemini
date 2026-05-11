@@ -27,6 +27,11 @@ import type {
 } from '../api/types';
 import i18n from '../i18n';
 import { getVisibleErrorMessage } from '../utils/apiErrors';
+import {
+  parseProviderRequestPayload,
+  type GeminiAttachmentSlice,
+  type ProviderRequestLogPayload,
+} from '../utils/parseExecutionLogProviderRequest';
 
 const JOB_FILTER_REQUESTED = '__job_filter_requested__';
 const JOB_FILTER_ALL = '__job_filter_all__';
@@ -64,11 +69,11 @@ function shouldShowPayloadLine(payload: unknown): boolean {
   return Object.keys(payload as object).length > 0;
 }
 
-function safePayloadString(payload: unknown): string {
+function safePayloadString(payload: unknown, pretty: boolean): string {
   if (payload == null) return '';
   if (typeof payload === 'object') {
     try {
-      return JSON.stringify(payload);
+      return JSON.stringify(payload, null, pretty ? 2 : undefined);
     } catch {
       return i18n.t('execution_log.payload_unreadable');
     }
@@ -80,79 +85,7 @@ function safePayloadString(payload: unknown): string {
   }
 }
 
-interface AttachmentSummary {
-  primary_evidence_count?: number;
-  visual_reference_count?: number;
-  total_count?: number;
-}
-
-interface GeminiAttachment {
-  role?: string;
-  frame_ref?: string | null;
-  reference_id?: string | null;
-  filename?: string | null;
-  mime_type?: string | null;
-  resolved?: boolean;
-}
-
-interface GeminiRequestPayload {
-  event_type?: string;
-  prompt_text?: string;
-  context_instruction?: string | null;
-  attachment_summary?: AttachmentSummary;
-  primary_evidence_attachments?: GeminiAttachment[];
-  visual_reference_attachments?: GeminiAttachment[];
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value : null;
-}
-
-function asNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function asAttachments(value: unknown): GeminiAttachment[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => asRecord(item))
-    .filter((item): item is Record<string, unknown> => item != null)
-    .map((item) => ({
-      role: asString(item.role) ?? undefined,
-      frame_ref: asString(item.frame_ref) ?? undefined,
-      reference_id: asString(item.reference_id) ?? undefined,
-      filename: asString(item.filename) ?? undefined,
-      mime_type: asString(item.mime_type) ?? undefined,
-      resolved: typeof item.resolved === 'boolean' ? item.resolved : undefined,
-    }));
-}
-
-function parseGeminiRequestPayload(event: ExecutionLogEvent): GeminiRequestPayload | null {
-  const payload = asRecord(event.payload);
-  if (!payload || payload.event_type !== 'gemini_request') return null;
-  const summary = asRecord(payload.attachment_summary);
-  return {
-    event_type: 'gemini_request',
-    prompt_text: asString(payload.prompt_text) ?? undefined,
-    context_instruction: asString(payload.context_instruction),
-    attachment_summary: summary
-      ? {
-          primary_evidence_count: asNumber(summary.primary_evidence_count) ?? undefined,
-          visual_reference_count: asNumber(summary.visual_reference_count) ?? undefined,
-          total_count: asNumber(summary.total_count) ?? undefined,
-        }
-      : undefined,
-    primary_evidence_attachments: asAttachments(payload.primary_evidence_attachments),
-    visual_reference_attachments: asAttachments(payload.visual_reference_attachments),
-  };
-}
-
-function formatAttachmentLabel(item: GeminiAttachment): string {
+function formatAttachmentLabel(item: GeminiAttachmentSlice): string {
   const id =
     item.reference_id ?? item.frame_ref ?? item.role ?? i18n.t('execution_log.attachment_id_fallback');
   const filename = item.filename ?? i18n.t('execution_log.unknown_file');
@@ -206,6 +139,8 @@ interface ExecutionLogPanelProps {
   isLoading?: boolean;
   error?: unknown;
   emptyMessage?: string;
+  /** When true, object payloads in the timeline are JSON-formatted with indentation. */
+  prettyPrintPayload?: boolean;
 }
 
 export default function ExecutionLogPanel({
@@ -214,6 +149,7 @@ export default function ExecutionLogPanel({
   isLoading,
   error,
   emptyMessage: emptyMessageProp,
+  prettyPrintPayload = false,
 }: ExecutionLogPanelProps) {
   const { t } = useTranslation();
   const emptyMessage = emptyMessageProp ?? t('execution_log.empty_default');
@@ -334,14 +270,14 @@ export default function ExecutionLogPanel({
 
   const parsedEvents = filteredEvents.map((evt) => ({
     event: evt,
-    geminiRequest: parseGeminiRequestPayload(evt),
+    providerRequest: parseProviderRequestPayload(evt),
   }));
-  const geminiRequests = parsedEvents.filter(
-    (entry): entry is { event: ExecutionLogEvent; geminiRequest: GeminiRequestPayload } =>
-      entry.geminiRequest != null
+  const providerRequests = parsedEvents.filter(
+    (entry): entry is { event: ExecutionLogEvent; providerRequest: ProviderRequestLogPayload } =>
+      entry.providerRequest != null
   );
   const timelineEvents = parsedEvents
-    .filter((entry) => entry.geminiRequest == null)
+    .filter((entry) => entry.providerRequest == null)
     .map((entry) => entry.event);
 
   const summaryParts: string[] = [];
@@ -465,7 +401,7 @@ export default function ExecutionLogPanel({
         </>
       ) : null}
 
-      {geminiRequests.map(({ event, geminiRequest }, requestIndex) => (
+      {providerRequests.map(({ event, providerRequest }, requestIndex) => (
         <Paper
           key={`g|${event.ts}|${event.stage}|${requestIndex}|${event.message.slice(0, 64)}`}
           variant="outlined"
@@ -473,7 +409,7 @@ export default function ExecutionLogPanel({
         >
           <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
             <Typography variant="subtitle2">
-              {geminiRequests.length > 1
+              {providerRequests.length > 1
                 ? t('execution_log.gemini_request_n', { n: requestIndex + 1 })
                 : t('execution_log.gemini_request')}
             </Typography>
@@ -501,15 +437,22 @@ export default function ExecutionLogPanel({
                 bgcolor: 'action.hover',
               }}
             >
-              {geminiRequest.prompt_text ?? t('execution_log.prompt_missing')}
+              {providerRequest.prompt_text
+                ? providerRequest.prompt_text
+                : providerRequest.prompt_text_sha256 || providerRequest.prompt_text_len != null
+                  ? t('execution_log.prompt_redacted_body', {
+                      hash: providerRequest.prompt_text_sha256 ?? '—',
+                      len: providerRequest.prompt_text_len ?? '—',
+                    })
+                  : t('execution_log.prompt_missing')}
             </Box>
           </Box>
 
-          {geminiRequest.context_instruction ? (
+          {providerRequest.context_instruction ? (
             <Box>
               <Typography variant="subtitle2">{t('execution_log.reference_guidance')}</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, whiteSpace: 'pre-wrap' }}>
-                {geminiRequest.context_instruction}
+                {providerRequest.context_instruction}
               </Typography>
             </Box>
           ) : null}
@@ -520,9 +463,9 @@ export default function ExecutionLogPanel({
             <Typography variant="subtitle2">{t('execution_log.attached_files')}</Typography>
             <Typography variant="body2" color="text.secondary">
               {t('execution_log.attachment_counts', {
-                primary: geminiRequest.attachment_summary?.primary_evidence_count ?? 0,
-                refs: geminiRequest.attachment_summary?.visual_reference_count ?? 0,
-                total: geminiRequest.attachment_summary?.total_count ?? 0,
+                primary: providerRequest.attachment_summary?.primary_evidence_count ?? 0,
+                refs: providerRequest.attachment_summary?.visual_reference_count ?? 0,
+                total: providerRequest.attachment_summary?.total_count ?? 0,
               })}
             </Typography>
 
@@ -530,9 +473,9 @@ export default function ExecutionLogPanel({
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
                 {t('execution_log.primary_evidence')}
               </Typography>
-              {geminiRequest.primary_evidence_attachments?.length ? (
+              {providerRequest.primary_evidence_attachments?.length ? (
                 <List dense disablePadding>
-                  {geminiRequest.primary_evidence_attachments.map((item, index) => (
+                  {providerRequest.primary_evidence_attachments.map((item, index) => (
                     <ListItem key={`primary-${requestIndex}-${index}`} disableGutters sx={{ py: 0.25 }}>
                       <ListItemText primary={formatAttachmentLabel(item)} />
                     </ListItem>
@@ -549,9 +492,9 @@ export default function ExecutionLogPanel({
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
                 {t('execution_log.reference_images')}
               </Typography>
-              {geminiRequest.visual_reference_attachments?.length ? (
+              {providerRequest.visual_reference_attachments?.length ? (
                 <List dense disablePadding>
-                  {geminiRequest.visual_reference_attachments.map((item, index) => (
+                  {providerRequest.visual_reference_attachments.map((item, index) => (
                     <ListItem key={`reference-${requestIndex}-${index}`} disableGutters sx={{ py: 0.25 }}>
                       <ListItemText primary={formatAttachmentLabel(item)} />
                     </ListItem>
@@ -646,7 +589,7 @@ export default function ExecutionLogPanel({
                         component="span"
                         sx={{ display: 'block', color: 'text.secondary', fontFamily: 'monospace' }}
                       >
-                        {safePayloadString(evt.payload)}
+                        {safePayloadString(evt.payload, prettyPrintPayload)}
                       </Typography>
                     ) : null}
                   </>
