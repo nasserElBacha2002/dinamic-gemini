@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
@@ -25,6 +25,8 @@ export interface CreateInventoryDialogProps {
   onError: (message: string | null) => void;
   /** If provided, used instead of direct createInventory (e.g. TanStack Query mutation). */
   createInventoryFn?: (body: CreateInventoryRequest) => Promise<Inventory>;
+  /** When opening from client detail, preselect this client in the selector. */
+  defaultClientId?: string | null;
 }
 
 export default function CreateInventoryDialog({
@@ -33,6 +35,7 @@ export default function CreateInventoryDialog({
   onSuccess,
   onError,
   createInventoryFn,
+  defaultClientId = null,
 }: CreateInventoryDialogProps) {
   const { t } = useTranslation();
   const { submitCreateInventory, isSubmitting: submitting, clearError } = useCreateInventoryFlow({
@@ -57,6 +60,13 @@ export default function CreateInventoryDialog({
     setProcessingMode('production');
     setSelectedClientId('');
   };
+
+  useEffect(() => {
+    if (!open) return;
+    const trimmed = (defaultClientId ?? '').trim();
+    if (trimmed) setSelectedClientId(trimmed);
+    else setSelectedClientId('');
+  }, [open, defaultClientId]);
 
   const handleClose = () => {
     if (submitting) return;

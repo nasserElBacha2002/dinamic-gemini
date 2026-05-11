@@ -6,11 +6,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import ClientDetail from '../src/pages/ClientDetail';
 import { AppSnackbarProvider } from '../src/components/ui';
+import { pathToClientSupplier, pathToInventory } from '../src/constants/appRoutes';
 
 const {
   useClientMock,
   useClientSuppliersMock,
   useCreateClientSupplierMock,
+  useInventoriesListMock,
   useSupplierReferenceImagesMock,
   useUploadSupplierReferenceImagesMock,
   useDeleteSupplierReferenceImageMock,
@@ -23,6 +25,7 @@ const {
   useClientMock: vi.fn(),
   useClientSuppliersMock: vi.fn(),
   useCreateClientSupplierMock: vi.fn(),
+  useInventoriesListMock: vi.fn(),
   useSupplierReferenceImagesMock: vi.fn(),
   useUploadSupplierReferenceImagesMock: vi.fn(),
   useDeleteSupplierReferenceImageMock: vi.fn(),
@@ -40,6 +43,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useClient: useClientMock,
     useClientSuppliers: useClientSuppliersMock,
     useCreateClientSupplier: useCreateClientSupplierMock,
+    useInventoriesList: useInventoriesListMock,
     useSupplierReferenceImages: useSupplierReferenceImagesMock,
     useUploadSupplierReferenceImages: useUploadSupplierReferenceImagesMock,
     useDeleteSupplierReferenceImage: useDeleteSupplierReferenceImageMock,
@@ -73,6 +77,14 @@ describe('ClientDetail page', () => {
     useClientSuppliersMock.mockReset();
     useCreateClientSupplierMock.mockReset();
     useCreateClientSupplierMock.mockReturnValue({ mutateAsync: vi.fn() });
+    useInventoriesListMock.mockReset();
+    useInventoriesListMock.mockReturnValue({
+      data: { items: [], page: 1, page_size: 200, total_items: 0, total_pages: 0 },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
     useSupplierReferenceImagesMock.mockReset();
     useSupplierReferenceImagesMock.mockReturnValue({
       data: { items: [] },
@@ -189,12 +201,70 @@ describe('ClientDetail page', () => {
 
     renderPage('/clientes/client-1');
     expect(screen.getByText(/información del cliente/i)).toBeInTheDocument();
-    expect(screen.getByText(/cliente norte/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /cliente norte/i })).toBeInTheDocument();
     expect(screen.getByText(/proveedores del cliente/i)).toBeInTheDocument();
     expect(screen.getByText(/proveedor norte/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /crear proveedor/i })).toBeEnabled();
-    expect(screen.getByRole('button', { name: /gestionar imágenes/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /configurar instrucciones/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /gestionar imágenes/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /configurar instrucciones/i })).not.toBeInTheDocument();
+    const supplierLink = screen.getByRole('link', { name: /proveedor norte/i });
+    expect(supplierLink).toHaveAttribute('href', pathToClientSupplier('client-1', 'supplier-1'));
+  });
+
+  it('shows client inventories section, row link, and create inventory actions', () => {
+    useClientMock.mockReturnValue({
+      data: {
+        id: 'client-1',
+        name: 'Cliente Norte',
+        status: 'active',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useClientSuppliersMock.mockReturnValue({
+      data: { items: [], page: 1, page_size: 25, total_items: 0, total_pages: 0 },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useInventoriesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'inv-1',
+            name: 'Inventario Uno',
+            client_id: 'client-1',
+            status: 'draft',
+            aisles_count: 2,
+            pending_review_count: 0,
+            last_activity_at: '2024-01-05T00:00:00Z',
+            created_at: '2024-01-04T00:00:00Z',
+            updated_at: '2024-01-05T00:00:00Z',
+          },
+        ],
+        page: 1,
+        page_size: 200,
+        total_items: 1,
+        total_pages: 1,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage('/clientes/client-1');
+    expect(screen.getByText(/inventarios del cliente/i)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /crear inventario para este cliente/i }).length).toBeGreaterThanOrEqual(
+      1
+    );
+    const invLink = screen.getByRole('link', { name: /inventario uno/i });
+    expect(invLink).toHaveAttribute('href', pathToInventory('inv-1'));
   });
 
   it('renders client loading state', () => {
@@ -324,96 +394,4 @@ describe('ClientDetail page', () => {
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith({ name: 'Proveedor Centro' }));
   });
 
-  it('opens supplier reference images drawer from supplier row action', async () => {
-    useClientMock.mockReturnValue({
-      data: {
-        id: 'client-1',
-        name: 'Cliente Norte',
-        status: 'active',
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-02T00:00:00Z',
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-    useClientSuppliersMock.mockReturnValue({
-      data: {
-        items: [
-          {
-            id: 'supplier-1',
-            client_id: 'client-1',
-            name: 'Proveedor Norte',
-            status: 'active',
-            created_at: '2024-01-03T00:00:00Z',
-            updated_at: '2024-01-04T00:00:00Z',
-          },
-        ],
-        page: 1,
-        page_size: 25,
-        total_items: 1,
-        total_pages: 1,
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-
-    renderPage('/clientes/client-1');
-    fireEvent.click(screen.getByRole('button', { name: /gestionar imágenes/i }));
-    await waitFor(() =>
-      expect(screen.getByText('Imágenes de referencia', { exact: true })).toBeInTheDocument()
-    );
-    expect(useSupplierReferenceImagesMock).toHaveBeenCalled();
-  });
-
-  it('opens supplier prompt-config drawer from supplier row action', async () => {
-    useClientMock.mockReturnValue({
-      data: {
-        id: 'client-1',
-        name: 'Cliente Norte',
-        status: 'active',
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-02T00:00:00Z',
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-    useClientSuppliersMock.mockReturnValue({
-      data: {
-        items: [
-          {
-            id: 'supplier-1',
-            client_id: 'client-1',
-            name: 'Proveedor Norte',
-            status: 'active',
-            created_at: '2024-01-03T00:00:00Z',
-            updated_at: '2024-01-04T00:00:00Z',
-          },
-        ],
-        page: 1,
-        page_size: 25,
-        total_items: 1,
-        total_pages: 1,
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-
-    renderPage('/clientes/client-1');
-    fireEvent.click(screen.getByRole('button', { name: /configurar instrucciones/i }));
-    await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: 'Instrucciones del proveedor', level: 6 })
-      ).toBeInTheDocument()
-    );
-    expect(useSupplierPromptConfigsMock).toHaveBeenCalled();
-    expect(useActiveSupplierPromptConfigMock).toHaveBeenCalled();
-  });
 });

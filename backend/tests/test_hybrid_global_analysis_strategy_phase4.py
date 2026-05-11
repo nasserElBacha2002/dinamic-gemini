@@ -49,6 +49,7 @@ def _run_context(metadata: dict | None = None, settings_output_dir: str = "/tmp/
     settings.output_dir = settings_output_dir
     settings.hybrid_prompt = "global_v21"
     settings.debug_log_full_analysis_prompt = False
+    settings.execution_log_include_full_prompt = False
     return RunContext(
         job_id="j1",
         run_id="r1",
@@ -300,6 +301,64 @@ def test_hybrid_strategy_logs_exact_prompt_and_attachments(tmp_path: Path) -> No
     assert payload["visual_reference_attachments"][0]["resolved"] is True
     assert "source_path" not in payload["visual_reference_attachments"][0]
     assert "resolved_path" not in payload["visual_reference_attachments"][0]
+    assert payload["prompt_text_sha256"]
+    assert payload["prompt_text_len"] > 0
+
+
+def test_hybrid_strategy_execution_log_includes_full_prompt_when_execution_log_flag_enabled(
+    tmp_path: Path,
+) -> None:
+    """EXECUTION_LOG_INCLUDE_FULL_PROMPT adds prompt_text plus hash and length (no debug flag)."""
+    import cv2
+
+    ref_full = tmp_path / "reference-image.jpg"
+    ref_full.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(ref_full), np.zeros((24, 24, 3), dtype=np.uint8))
+
+    context = _run_context(
+        metadata={
+            "analysis_context": {
+                "primary_evidence": [],
+                "visual_references": [
+                    {
+                        "reference_id": "ref-1",
+                        "source_path": "inventories/inv-1/visual_references/reference-image.jpg",
+                        "mime_type": "image/jpeg",
+                        "resolved_path": str(ref_full),
+                    },
+                ],
+                "instructions": ["Use refs as context."],
+            },
+        },
+    )
+    context.execution_log = MagicMock()
+    context.settings.debug_log_full_analysis_prompt = False
+    context.settings.execution_log_include_full_prompt = True
+
+    provider = HybridGlobalAnalysisStrategy()
+    provider.analyze(
+        context=context,
+        frames_nd=[np.zeros((64, 64, 3), dtype=np.uint8)],
+        frame_paths=[Path("/tmp/input/photo-01.jpg")],
+        frame_refs=["img_001"],
+        metadata={"frame_count": 1},
+    )
+
+    prepared_call = next(
+        (
+            call
+            for call in context.execution_log.info.call_args_list
+            if call.args[1] == "Analysis request prepared"
+        ),
+        None,
+    )
+    assert prepared_call is not None
+    payload = prepared_call.kwargs["payload"]
+    assert "prompt_text" in payload
+    assert "Entity types:" in payload["prompt_text"]
+    assert payload["prompt_text_sha256"]
+    assert payload["prompt_text_len"] > 0
+    assert payload["prompt_text_sha256"] == sha256_utf8(payload["prompt_text"])
 
 
 def test_hybrid_strategy_execution_log_hashes_prompt_when_debug_full_prompt_disabled(

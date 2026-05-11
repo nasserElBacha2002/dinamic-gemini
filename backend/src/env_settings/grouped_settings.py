@@ -930,6 +930,17 @@ class DebugRuntimeSettings(BaseModel):
             "'Analysis request prepared'. Default False (hash + length only)."
         ),
     )
+    execution_log_include_full_prompt: bool = Field(
+        default_factory=lambda: (
+            os.getenv("EXECUTION_LOG_INCLUDE_FULL_PROMPT", "false").lower() in ("true", "1", "yes")
+        ),
+        description=(
+            "When True, execution_log 'Analysis request prepared' includes full prompt_text plus "
+            "SHA-256 and length (operator audit; may contain supplier-editable instructions). "
+            "Default False. Env: EXECUTION_LOG_INCLUDE_FULL_PROMPT. Independent of "
+            "DEBUG_LOG_FULL_ANALYSIS_PROMPT."
+        ),
+    )
 
 
 class AuthSettings(BaseModel):

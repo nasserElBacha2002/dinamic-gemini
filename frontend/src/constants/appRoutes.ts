@@ -21,6 +21,8 @@ export const ROUTE_PATH = {
   metrics: 'metrics',
   clients: 'clientes',
   clientDetail: 'clientes/:clientId',
+  /** Detalle de proveedor del cliente (Phase F). */
+  clientSupplierDetail: 'clientes/:clientId/proveedores/:supplierId',
   ingestionSessions: 'ingestion-sessions',
   adminAiConfig: 'admin/ai-config',
   dashboard: 'dashboard',
@@ -31,6 +33,7 @@ export const ROUTE_PATH = {
   analyticsCompareMany: 'inventories/:inventoryId/analytics/compare-many',
   legacyAisleCompare: 'inventories/:inventoryId/aisles/:aisleId/compare',
   positionDetail: 'inventories/:inventoryId/aisles/:aisleId/positions/:positionId',
+  aisleObservability: 'inventories/:inventoryId/aisles/:aisleId/observability',
   ingestionSessionDetail: 'ingestion-sessions/:sessionId',
 } as const;
 
@@ -45,8 +48,10 @@ export const ROUTE_MATCH = {
   analyticsCompareMany: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/analytics/compare-many`,
   legacyAisleCompare: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/aisles/:aisleId/compare`,
   positionDetail: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/aisles/:aisleId/positions/:positionId`,
+  aisleObservability: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/aisles/:aisleId/observability`,
   ingestionSessionDetail: `/ingestion-sessions/:sessionId`,
   clientDetail: '/clientes/:clientId',
+  clientSupplierDetail: '/clientes/:clientId/proveedores/:supplierId',
 } as const;
 
 export function pathToInventory(inventoryId: string): string {
@@ -65,6 +70,18 @@ export function pathToAislePositions(inventoryId: string, aisleId: string): stri
   return `${ROUTE_INVENTORIES_ROOT}/${inventoryId}/aisles/${aisleId}/positions`;
 }
 
+export function pathToAisleObservability(
+  inventoryId: string,
+  aisleId: string,
+  jobId?: string | null
+): string {
+  const base = `${ROUTE_INVENTORIES_ROOT}/${inventoryId}/aisles/${aisleId}/observability`;
+  if (jobId != null && String(jobId).trim() !== '') {
+    return `${base}?jobId=${encodeURIComponent(String(jobId).trim())}`;
+  }
+  return base;
+}
+
 export function pathToIngestionSessionDetail(sessionId: string, inventoryId: string): string {
   const params = new URLSearchParams({ inventoryId });
   return `${ROUTE_INGESTION_SESSIONS}/${encodeURIComponent(sessionId)}?${params.toString()}`;
@@ -72,4 +89,8 @@ export function pathToIngestionSessionDetail(sessionId: string, inventoryId: str
 
 export function pathToClient(clientId: string): string {
   return `${ROUTE_CLIENTS}/${encodeURIComponent(clientId)}`;
+}
+
+export function pathToClientSupplier(clientId: string, supplierId: string): string {
+  return `${ROUTE_CLIENTS}/${encodeURIComponent(clientId)}/proveedores/${encodeURIComponent(supplierId)}`;
 }

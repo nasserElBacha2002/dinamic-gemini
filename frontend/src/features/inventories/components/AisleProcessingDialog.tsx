@@ -1,4 +1,5 @@
 import {
+  Alert,
   Button,
   Dialog,
   DialogActions,
@@ -26,12 +27,12 @@ export interface ProcessingProviderOptionsQueryLike {
 export interface AisleProcessingDialogProps {
   open: boolean;
   aisleCode: string | null;
+  /** When set, the aisle is linked to a client supplier (supplier-aware prompts may apply). */
+  clientSupplierId: string | null;
   providerKey: string;
   onProviderKeyChange: (v: string) => void;
   modelKey: string;
   onModelKeyChange: (v: string) => void;
-  promptKey: string;
-  onPromptKeyChange: (v: string) => void;
   providerOptsQuery: ProcessingProviderOptionsQueryLike;
   providerConfig:
     | ProcessingProviderOptionsResponse['providers'][number]
@@ -45,12 +46,11 @@ export interface AisleProcessingDialogProps {
 export default function AisleProcessingDialog({
   open,
   aisleCode,
+  clientSupplierId,
   providerKey,
   onProviderKeyChange,
   modelKey,
   onModelKeyChange,
-  promptKey,
-  onPromptKeyChange,
   providerOptsQuery,
   providerConfig,
   onClose,
@@ -70,16 +70,13 @@ export default function AisleProcessingDialog({
       <DialogContent dividers>
         <Stack spacing={2}>
           <Typography variant="body2" color="text.secondary">
-            {t('aisle.process_dialog_help', {
-              defaultProvider: providerOptsQuery.data?.default_provider_key ?? '…',
-              defaultPrompt: providerOptsQuery.data?.default_prompt_key ?? '…',
-            })}
+            {t('aisle.process_dialog_help')}
           </Typography>
           <FormControl fullWidth size="small" disabled={providerOptsQuery.isLoading}>
-            <InputLabel id="process-provider-label">{t('common.provider')}</InputLabel>
+            <InputLabel id="process-provider-label">{t('aisle.process_ai_provider')}</InputLabel>
             <Select
               labelId="process-provider-label"
-              label={t('common.provider')}
+              label={t('aisle.process_ai_provider')}
               value={providerKey}
               onChange={(e) => onProviderKeyChange(String(e.target.value))}
             >
@@ -124,28 +121,25 @@ export default function AisleProcessingDialog({
               ))}
             </Select>
           </FormControl>
-          <FormControl fullWidth size="small" disabled={providerOptsQuery.isLoading}>
-            <InputLabel id="process-prompt-label">{t('aisle.prompt_profile')}</InputLabel>
-            <Select
-              labelId="process-prompt-label"
-              label={t('aisle.prompt_profile')}
-              value={promptKey}
-              onChange={(e) => onPromptKeyChange(String(e.target.value))}
-            >
-              <MenuItem value="">
-                <em>
-                  {t('aisle.process_default_prompt_em', {
-                    prompt: providerOptsQuery.data?.default_prompt_key ?? '…',
-                  })}
-                </em>
-              </MenuItem>
-              {(providerOptsQuery.data?.prompt_profiles ?? []).map((p) => (
-                <MenuItem key={p.key} value={p.key}>
-                  {p.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+
+          <Alert severity="info" variant="outlined">
+            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+              {t('aisle.process_prompt_used_heading')}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {t('aisle.process_prompt_auto_body')}
+            </Typography>
+            {clientSupplierId ? (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                {t('aisle.process_prompt_supplier_linked')}
+              </Typography>
+            ) : (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                {t('aisle.process_prompt_no_supplier')}
+              </Typography>
+            )}
+          </Alert>
+
           {providerOptsQuery.isError ? (
             <Typography variant="caption" color="error">
               {resolveApiErrorMessage(providerOptsQuery.error, 'common.provider_list_error')}
