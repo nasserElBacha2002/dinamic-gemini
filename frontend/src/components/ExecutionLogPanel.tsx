@@ -32,6 +32,7 @@ import {
   type GeminiAttachmentSlice,
   type ProviderRequestLogPayload,
 } from '../utils/parseExecutionLogProviderRequest';
+import { buildProviderRequestPaperTitle } from '../utils/executionLogProviderTitle';
 
 const JOB_FILTER_REQUESTED = '__job_filter_requested__';
 const JOB_FILTER_ALL = '__job_filter_all__';
@@ -409,9 +410,13 @@ export default function ExecutionLogPanel({
         >
           <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
             <Typography variant="subtitle2">
-              {providerRequests.length > 1
-                ? t('execution_log.gemini_request_n', { n: requestIndex + 1 })
-                : t('execution_log.gemini_request')}
+              {buildProviderRequestPaperTitle(
+                t,
+                event,
+                providerRequest,
+                requestIndex,
+                providerRequests.length
+              )}
             </Typography>
             <Typography variant="caption" color="text.secondary">
               {formatTs(event.ts)}

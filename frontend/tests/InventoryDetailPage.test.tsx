@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import InventoryDetail from '../src/pages/InventoryDetail';
@@ -1159,18 +1159,19 @@ describe('InventoryDetail', () => {
     ).toBeInTheDocument();
   });
 
-  it('process dialog explains automatic prompt and hides profile until advanced options are opened', async () => {
+  it('process dialog explains automatic prompt and does not show advanced prompt controls', async () => {
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /process aisle|procesar pasillo/i }));
-    await screen.findByRole('heading', { name: /procesar pasillo a-01/i });
-    expect(screen.getByText('Prompt utilizado')).toBeInTheDocument();
-    expect(screen.getByText(/instrucciones activas del proveedor asociado a este pasillo/i)).toBeInTheDocument();
-    expect(screen.queryByText(/prompt a/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('combobox', { name: /perfil base del prompt/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /opciones avanzadas/i }));
-    fireEvent.mouseDown(await screen.findByRole('combobox', { name: /perfil base del prompt/i }));
-    expect(await screen.findByRole('option', { name: /prompt b/i })).toBeInTheDocument();
+    const dialog = await screen.findByRole('dialog');
+    const view = within(dialog);
+    expect(view.getByText('Prompt utilizado')).toBeInTheDocument();
+    expect(view.getByText(/instrucciones activas del proveedor asociado a este pasillo/i)).toBeInTheDocument();
+    expect(view.queryByText(/opciones avanzadas/i)).not.toBeInTheDocument();
+    expect(view.queryByText(/perfil base del prompt/i)).not.toBeInTheDocument();
+    // Exact labels only: /prompt b/i would match "prompt base" in Spanish helper copy.
+    expect(view.queryByText(/^Prompt A$/i)).not.toBeInTheDocument();
+    expect(view.queryByText(/^Prompt B$/i)).not.toBeInTheDocument();
   });
 
   it('process aisle opens provider dialog and passes provider/model with default prompt key', async () => {

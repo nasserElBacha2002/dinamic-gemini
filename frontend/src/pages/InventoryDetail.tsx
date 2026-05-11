@@ -154,8 +154,6 @@ export default function InventoryDetail() {
         onProviderKeyChange={processFlow.setProviderKey}
         modelKey={processFlow.modelKey}
         onModelKeyChange={processFlow.setModelKey}
-        promptKey={processFlow.promptKey}
-        onPromptKeyChange={processFlow.setPromptKey}
         providerOptsQuery={processFlow.providerOptsQuery}
         providerConfig={processFlow.providerConfig}
         onClose={processFlow.closeDialog}

@@ -603,6 +603,7 @@ export default function AisleObservabilityWorkspace({
                   </Paper>
                   {lastProviderRequest.request.prompt_text ? (
                     <>
+                      <Typography variant="subtitle2">{t('jobs.obs_prompt_complete_heading')}</Typography>
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                         <Button size="small" variant="outlined" onClick={() => void copyPrompt()}>
                           {t('jobs.obs_copy_prompt')}
@@ -633,7 +634,7 @@ export default function AisleObservabilityWorkspace({
                     </>
                   ) : (
                     <Typography variant="body2" color="text.secondary">
-                      {t('jobs.obs_full_prompt_unavailable')}
+                      {t('jobs.obs_full_prompt_unavailable_actionable')}
                     </Typography>
                   )}
                 </>

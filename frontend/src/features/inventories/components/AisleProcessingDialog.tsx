@@ -1,7 +1,4 @@
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Alert,
   Button,
   Dialog,
@@ -15,7 +12,6 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useTranslation } from 'react-i18next';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import type { ProcessingProviderOptionsResponse } from '../../../api/types';
@@ -37,8 +33,6 @@ export interface AisleProcessingDialogProps {
   onProviderKeyChange: (v: string) => void;
   modelKey: string;
   onModelKeyChange: (v: string) => void;
-  promptKey: string;
-  onPromptKeyChange: (v: string) => void;
   providerOptsQuery: ProcessingProviderOptionsQueryLike;
   providerConfig:
     | ProcessingProviderOptionsResponse['providers'][number]
@@ -57,8 +51,6 @@ export default function AisleProcessingDialog({
   onProviderKeyChange,
   modelKey,
   onModelKeyChange,
-  promptKey,
-  onPromptKeyChange,
   providerOptsQuery,
   providerConfig,
   onClose,
@@ -147,41 +139,6 @@ export default function AisleProcessingDialog({
               </Typography>
             )}
           </Alert>
-
-          <Accordion disableGutters elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography variant="subtitle2">{t('aisle.process_advanced_options')}</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Stack spacing={1.5}>
-                <Typography variant="caption" color="text.secondary">
-                  {t('aisle.process_advanced_prompt_hint')}
-                </Typography>
-                <FormControl fullWidth size="small" disabled={providerOptsQuery.isLoading}>
-                  <InputLabel id="process-prompt-label">{t('aisle.base_prompt_profile')}</InputLabel>
-                  <Select
-                    labelId="process-prompt-label"
-                    label={t('aisle.base_prompt_profile')}
-                    value={promptKey}
-                    onChange={(e) => onPromptKeyChange(String(e.target.value))}
-                  >
-                    <MenuItem value="">
-                      <em>
-                        {t('aisle.process_default_prompt_em', {
-                          prompt: providerOptsQuery.data?.default_prompt_key ?? '…',
-                        })}
-                      </em>
-                    </MenuItem>
-                    {(providerOptsQuery.data?.prompt_profiles ?? []).map((p) => (
-                      <MenuItem key={p.key} value={p.key}>
-                        {p.label}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Stack>
-            </AccordionDetails>
-          </Accordion>
 
           {providerOptsQuery.isError ? (
             <Typography variant="caption" color="error">

@@ -40,7 +40,6 @@ export function useAisleProcessingFlow({
   const [dialogTarget, setDialogTarget] = useState<AisleProcessingDialogTarget | null>(null);
   const [providerKey, setProviderKey] = useState('');
   const [modelKey, setModelKey] = useState('');
-  const [promptKey, setPromptKey] = useState('');
 
   const processMutation = useStartAisleProcessing(inventoryId);
   const providerOptsQuery = useProcessingProviderOptions({
@@ -59,7 +58,6 @@ export function useAisleProcessingFlow({
       setProcessError(null);
       setProviderKey('');
       setModelKey('');
-      setPromptKey('');
       setDialogTarget({ aisleId, aisleCode, clientSupplierId });
     },
     [setProcessError]
@@ -119,7 +117,7 @@ export function useAisleProcessingFlow({
         aisleId: dialogTarget.aisleId,
         providerName: providerKey.trim() === '' ? null : providerKey.trim().toLowerCase(),
         modelName: modelKey.trim() === '' ? null : modelKey.trim(),
-        promptKey: promptKey.trim() === '' ? null : promptKey.trim(),
+        promptKey: null,
       });
       showSnackbar(t('aisle.processing_started_snackbar'), 'success');
       setDialogTarget(null);
@@ -136,7 +134,6 @@ export function useAisleProcessingFlow({
     onAfterSuccess,
     onBeforeProcessMutation,
     processMutation,
-    promptKey,
     providerKey,
     setProcessError,
     showSnackbar,
@@ -155,8 +152,6 @@ export function useAisleProcessingFlow({
     setProviderKey: handleProviderKeyChange,
     modelKey,
     setModelKey,
-    promptKey,
-    setPromptKey,
     providerOptsQuery,
     providerConfig,
     processMutation,

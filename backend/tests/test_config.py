@@ -36,6 +36,7 @@ def test_settings_default_values():
         # output_dir se normaliza a path absoluto
         assert Path(settings.output_dir).resolve() == Path("output").resolve()
         assert settings.debug_save_frames is False
+        assert settings.execution_log_include_full_prompt is False
         assert settings.gemini_model_name == "gemini-2.0-flash-exp"
         assert settings.gemini_max_retries == 3
         assert settings.gemini_retry_delay == 1.0

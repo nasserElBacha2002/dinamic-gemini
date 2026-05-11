@@ -26,6 +26,8 @@ export interface ProviderRequestLogPayload {
   prompt_text?: string;
   prompt_text_sha256?: string;
   prompt_text_len?: number;
+  /** Optional wire-level provider hint (legacy gemini_request payloads). */
+  provider?: string;
   pipeline_provider?: string;
   context_instruction?: string | null;
   attachment_summary?: AttachmentSummarySlice;
@@ -83,6 +85,7 @@ export function parseProviderRequestPayload(event: ExecutionLogEvent): ProviderR
     prompt_text: asString(payload.prompt_text) ?? undefined,
     prompt_text_sha256: asString(payload.prompt_text_sha256) ?? undefined,
     prompt_text_len: asNumber(payload.prompt_text_len) ?? undefined,
+    provider: asString(payload.provider) ?? undefined,
     pipeline_provider: asString(payload.pipeline_provider) ?? undefined,
     context_instruction: asString(payload.context_instruction),
     attachment_summary: summary
