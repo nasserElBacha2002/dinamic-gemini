@@ -14,7 +14,7 @@ from src.application.services.csv_inventory_exporter import (
 )
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
-from tests.support.api_v3_test_helpers import create_test_inventory
+from tests.support.api_v3_test_helpers import create_test_inventory, create_test_supplier
 
 
 @pytest.fixture
@@ -84,8 +84,13 @@ def test_export_aisle_csv_empty_positions(client_v3: TestClient) -> None:
     """Aisle-scoped export uses same headers as inventory export; one aisle, no rows."""
     create = create_test_inventory(client_v3, name="Aisle scoped")
     assert create.status_code == 201
-    inv_id = create.json()["id"]
-    aisle_resp = client_v3.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "A1"})
+    inv = create.json()
+    inv_id = inv["id"]
+    sid = create_test_supplier(client_v3, inv["client_id"])
+    aisle_resp = client_v3.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "A1", "client_supplier_id": sid},
+    )
     assert aisle_resp.status_code == 201
     aisle_id = aisle_resp.json()["id"]
 
@@ -102,8 +107,13 @@ def test_export_aisle_csv_empty_positions(client_v3: TestClient) -> None:
 def test_export_csv_headers_only_inventory_with_aisle_no_positions(client_v3: TestClient) -> None:
     create = create_test_inventory(client_v3, name="Empty positions")
     assert create.status_code == 201
-    inv_id = create.json()["id"]
-    aisle_resp = client_v3.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "A1"})
+    inv = create.json()
+    inv_id = inv["id"]
+    sid = create_test_supplier(client_v3, inv["client_id"])
+    aisle_resp = client_v3.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "A1", "client_supplier_id": sid},
+    )
     assert aisle_resp.status_code == 201
 
     resp = client_v3.get(f"/api/v3/inventories/{inv_id}/export")

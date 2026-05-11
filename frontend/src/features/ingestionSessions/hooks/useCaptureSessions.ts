@@ -103,12 +103,15 @@ export function useCreateAisleFromCaptureSessionGroup() {
       sessionId,
       groupId,
       code,
+      client_supplier_id,
     }: {
       inventoryId: string;
       sessionId: string;
       groupId: string;
       code: string;
-    }) => createAisleFromCaptureSessionGroup(inventoryId, sessionId, groupId, code),
+      client_supplier_id: string;
+    }) =>
+      createAisleFromCaptureSessionGroup(inventoryId, sessionId, groupId, code, client_supplier_id),
     onSuccess: (data, { inventoryId, sessionId }) => {
       queryClient.setQueryData(queryKeys.captureSessions.groups(inventoryId, sessionId), data);
       void queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.detail(inventoryId, sessionId) });

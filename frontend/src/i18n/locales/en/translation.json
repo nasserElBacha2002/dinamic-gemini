@@ -420,11 +420,19 @@
   "dialogs": {
     "aisle": {
       "create_another": "Create another",
+      "supplier_empty": "This client has no suppliers yet.",
+      "supplier_helper": "Select the supplier this aisle belongs to.",
+      "supplier_label": "Supplier",
+      "inventory_requires_client": "This inventory has no client linked. Associate the inventory with a client before creating new aisles.",
+      "supplier_load_error": "Could not load suppliers for this client.",
+      "supplier_loading": "Loading suppliers…",
+      "supplier_placeholder": "Select a supplier",
       "success_created": "Aisle {{code}} created successfully.",
       "validation_code_max": "The aisle code cannot exceed 64 characters.",
       "validation_code_required": "Enter an aisle code.",
       "validation_duplicate": "An aisle with this code already exists.",
-      "validation_inventory_missing": "The inventory is missing."
+      "validation_inventory_missing": "The inventory is missing.",
+      "validation_supplier_required": "Select a supplier to create the aisle."
     },
     "inventory": {
       "create_inventory_action": "Create inventory",

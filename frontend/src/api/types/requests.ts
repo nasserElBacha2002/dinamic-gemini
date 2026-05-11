@@ -19,7 +19,8 @@ export interface CreateInventoryRequest {
 
 export interface CreateAisleRequest {
   code: string;
-  client_supplier_id?: string | null;
+  /** Required when the inventory has a client (normal flow after G3). */
+  client_supplier_id: string;
 }
 
 export interface CreateClientRequest {

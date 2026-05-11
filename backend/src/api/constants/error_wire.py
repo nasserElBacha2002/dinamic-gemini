@@ -23,6 +23,12 @@ HTTP_DETAIL_INVENTORY_CLIENT_REQUIRED_FOR_SUPPLIER = (
 HTTP_DETAIL_CLIENT_SUPPLIER_CLIENT_MISMATCH = (
     "Client supplier does not belong to the inventory client"
 )
+HTTP_DETAIL_CLIENT_SUPPLIER_REQUIRED_FOR_AISLE = (
+    "Client supplier is required for new aisles when the inventory has a client"
+)
+HTTP_DETAIL_INVENTORY_CLIENT_REQUIRED_FOR_AISLE = (
+    "Inventory must be associated with a client before creating aisles"
+)
 HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY = "Aisle not found or does not belong to this inventory"
 HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE = "Position not found or does not belong to this aisle"
 HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION = "Product not found or does not belong to this position"

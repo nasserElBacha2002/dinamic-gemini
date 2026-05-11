@@ -32,7 +32,7 @@ from src.runtime.v3_deps import (
     get_capture_session_repo,
     get_position_repo,
 )
-from tests.support.api_v3_test_helpers import create_test_inventory
+from tests.support.api_v3_test_helpers import create_test_inventory, create_test_supplier
 
 client = TestClient(app)
 
@@ -62,8 +62,13 @@ def memory_capture_s3(tmp_path: Path):
 def _create_inv_aisle() -> tuple[str, str]:
     r = create_test_inventory(client, name="Cap S3")
     assert r.status_code == 201, r.text
-    inv_id = r.json()["id"]
-    r2 = client.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "S3-01"})
+    inv = r.json()
+    inv_id = inv["id"]
+    sid = create_test_supplier(client, inv["client_id"])
+    r2 = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "S3-01", "client_supplier_id": sid},
+    )
     assert r2.status_code == 201, r2.text
     return inv_id, r2.json()["id"]
 

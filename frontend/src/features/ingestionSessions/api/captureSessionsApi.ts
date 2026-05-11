@@ -127,13 +127,14 @@ export async function createAisleFromCaptureSessionGroup(
   inventoryId: string,
   sessionId: string,
   groupId: string,
-  code: string
+  code: string,
+  client_supplier_id: string
 ): Promise<CaptureSessionGroupsListResponse> {
   const base = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/groups/${encodeURIComponent(groupId)}/create-aisle`;
   const response = await protectedFetch(base, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, client_supplier_id }),
   });
   return handleResponse<CaptureSessionGroupsListResponse>(response);
 }

@@ -13,7 +13,11 @@ class CreateAisleRequest(BaseModel):
 
     code: str = Field(..., min_length=1, max_length=64)
     client_supplier_id: str | None = Field(
-        None, description="Optional supplier association. Null/omitted preserves legacy behavior."
+        None,
+        description=(
+            "Supplier for this aisle. Required when the inventory has a client; "
+            "omit only if supported by legacy tooling (API validates against inventory)."
+        ),
     )
 
     @field_validator("client_supplier_id")

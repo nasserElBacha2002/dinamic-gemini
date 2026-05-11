@@ -50,7 +50,13 @@ class CreateAisleAndAssignCaptureSessionGroupUseCase:
         )
 
     def execute(
-        self, *, inventory_id: str, session_id: str, group_id: str, aisle_code: str
+        self,
+        *,
+        inventory_id: str,
+        session_id: str,
+        group_id: str,
+        aisle_code: str,
+        client_supplier_id: str | None = None,
     ) -> Sequence[CaptureSessionGroupSummary]:
         session = self._session_repo.get_by_id_for_inventory(session_id, inventory_id)
         if session is None:
@@ -73,7 +79,11 @@ class CreateAisleAndAssignCaptureSessionGroupUseCase:
             )
 
         aisle = self._create_aisle.execute(
-            CreateAisleCommand(inventory_id=inventory_id, code=aisle_code)
+            CreateAisleCommand(
+                inventory_id=inventory_id,
+                code=aisle_code,
+                client_supplier_id=client_supplier_id,
+            )
         )
         now = self._clock.now()
         group.assigned_aisle_id = aisle.id

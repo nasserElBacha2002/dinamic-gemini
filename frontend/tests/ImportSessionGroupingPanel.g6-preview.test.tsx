@@ -13,6 +13,8 @@ const mockUseAssignCaptureSessionGroupToExistingAisle = vi.fn();
 const mockUseCreateAisleFromCaptureSessionGroup = vi.fn();
 const mockUseMaterializeCaptureSessionGroup = vi.fn();
 const mockUsePreviewMaterializedCaptureSessionGroup = vi.fn();
+const mockUseInventoryDetail = vi.fn();
+const mockUseClientSuppliers = vi.fn();
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -61,6 +63,14 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+vi.mock('../src/hooks/useInventories', () => ({
+  useInventoryDetail: (...args: unknown[]) => mockUseInventoryDetail(...args),
+}));
+
+vi.mock('../src/hooks/useClients', () => ({
+  useClientSuppliers: (...args: unknown[]) => mockUseClientSuppliers(...args),
+}));
+
 vi.mock('../src/features/ingestionSessions/hooks/useCaptureSessions', () => ({
   useCaptureSessionGroups: (...args: unknown[]) => mockUseCaptureSessionGroups(...args),
   useComputeCaptureSessionGroups: () => mockUseComputeCaptureSessionGroups(),
@@ -100,6 +110,8 @@ describe('ImportSessionGroupingPanel — G6 preview CTA', () => {
     mockUseCreateAisleFromCaptureSessionGroup.mockReset();
     mockUseMaterializeCaptureSessionGroup.mockReset();
     mockUsePreviewMaterializedCaptureSessionGroup.mockReset();
+    mockUseInventoryDetail.mockReset();
+    mockUseClientSuppliers.mockReset();
     mockUseComputeCaptureSessionGroups.mockReturnValue({
       mutateAsync: vi.fn(),
       isPending: false,
@@ -129,6 +141,23 @@ describe('ImportSessionGroupingPanel — G6 preview CTA', () => {
       mutateAsync: vi.fn(),
       isPending: false,
       error: null,
+    });
+    mockUseInventoryDetail.mockReturnValue({
+      data: {
+        id: 'inv-1',
+        client_id: 'c1',
+        name: 'Inv',
+        status: 'draft',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseClientSuppliers.mockReturnValue({
+      data: { items: [], page: 1, page_size: 200, total_items: 0, total_pages: 0 },
+      isLoading: false,
+      isError: false,
     });
   });
 

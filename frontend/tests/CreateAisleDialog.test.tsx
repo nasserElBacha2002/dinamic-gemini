@@ -35,16 +35,17 @@ describe('CreateAisleDialog', () => {
         <CreateAisleDialog
           open
           inventoryId="inv_1"
+          inventoryClientId="cli-1"
           onClose={() => {}}
           onSuccess={() => {}}
           createAisleFn={async () => ({})}
         />
-      </WithTheme>
+      </WithTheme>,
     );
 
     fireEvent.click(screen.getByRole('button', { name: /crear pasillo|create/i }));
     expect(
-      await screen.findByText(/ingresá el código del pasillo|validation code required|código obligatorio/i)
+      await screen.findByText(/ingresá el código del pasillo|validation code required|código obligatorio/i),
     ).toBeInTheDocument();
   });
 
@@ -54,18 +55,19 @@ describe('CreateAisleDialog', () => {
         <CreateAisleDialog
           open
           inventoryId="inv_1"
+          inventoryClientId="cli-1"
           existingAisleCodes={['A-01']}
           onClose={() => {}}
           onSuccess={() => {}}
           createAisleFn={async () => ({})}
         />
-      </WithTheme>
+      </WithTheme>,
     );
 
     fireEvent.change(screen.getByLabelText(/código|code label/i), { target: { value: ' a-01 ' } });
     fireEvent.click(screen.getByRole('button', { name: /crear pasillo|create/i }));
     expect(
-      await screen.findByText(/ya existe un pasillo|validation duplicate|ya existe|duplicad/i)
+      await screen.findByText(/ya existe un pasillo|validation duplicate|ya existe|duplicad/i),
     ).toBeInTheDocument();
   });
 
@@ -73,19 +75,27 @@ describe('CreateAisleDialog', () => {
     const createAisleFn = vi.fn(async () => ({ id: 'a1' }));
     const onSuccess = vi.fn();
     const onClose = vi.fn();
+    useClientSuppliersMock.mockReturnValue({
+      data: { items: [{ id: 'sup-1', name: 'Proveedor Uno' }] },
+      isLoading: false,
+      isError: false,
+    });
 
     render(
       <WithTheme>
         <CreateAisleDialog
           open
           inventoryId="inv_1"
+          inventoryClientId="cli-1"
           onClose={onClose}
           onSuccess={onSuccess}
           createAisleFn={createAisleFn}
         />
-      </WithTheme>
+      </WithTheme>,
     );
 
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: /^proveedor$/i }));
+    fireEvent.click(screen.getByRole('option', { name: /proveedor uno/i }));
     fireEvent.change(screen.getByLabelText(/código|code label/i), { target: { value: 'A1' } });
     fireEvent.click(screen.getByRole('button', { name: /crear pasillo|create/i }));
 
@@ -117,14 +127,14 @@ describe('CreateAisleDialog', () => {
           onSuccess={() => {}}
           createAisleFn={async () => ({})}
         />
-      </WithTheme>
+      </WithTheme>,
     );
 
     expect(screen.getByRole('combobox', { name: /^proveedor$/i })).toBeInTheDocument();
     expect(useClientSuppliersMock).toHaveBeenCalledWith(
       'cli-1',
       { page: 1, page_size: 200 },
-      { enabled: true }
+      { enabled: true },
     );
   });
 
@@ -150,7 +160,7 @@ describe('CreateAisleDialog', () => {
           onSuccess={() => {}}
           createAisleFn={createAisleFn}
         />
-      </WithTheme>
+      </WithTheme>,
     );
 
     fireEvent.change(screen.getByLabelText(/código|code label/i), { target: { value: 'A1' } });
@@ -181,7 +191,7 @@ describe('CreateAisleDialog', () => {
           onSuccess={() => {}}
           createAisleFn={createAisleFn}
         />
-      </WithTheme>
+      </WithTheme>,
     );
 
     fireEvent.change(screen.getByLabelText(/código|code label/i), { target: { value: 'A1' } });
@@ -208,7 +218,7 @@ describe('CreateAisleDialog', () => {
           onSuccess={() => {}}
           createAisleFn={createAisleFn}
         />
-      </WithTheme>
+      </WithTheme>,
     );
 
     const supplierSelect = screen.getByRole('combobox', { name: /^proveedor$/i });
@@ -236,7 +246,7 @@ describe('CreateAisleDialog', () => {
           onSuccess={() => {}}
           createAisleFn={createAisleFn}
         />
-      </WithTheme>
+      </WithTheme>,
     );
 
     fireEvent.change(screen.getByLabelText(/código|code label/i), { target: { value: 'A1' } });
@@ -262,7 +272,7 @@ describe('CreateAisleDialog', () => {
           onSuccess={() => {}}
           createAisleFn={createAisleFn}
         />
-      </WithTheme>
+      </WithTheme>,
     );
 
     expect(screen.getByText(/este cliente todavía no tiene proveedores cargados/i)).toBeInTheDocument();
@@ -271,7 +281,7 @@ describe('CreateAisleDialog', () => {
     expect(createAisleFn).not.toHaveBeenCalled();
   });
 
-  it('keeps legacy flow without client and never sends empty client_supplier_id', async () => {
+  it('blocks creation when inventory has no client', async () => {
     const createAisleFn = vi.fn(async () => ({ id: 'a1' }));
     render(
       <WithTheme>
@@ -283,19 +293,21 @@ describe('CreateAisleDialog', () => {
           onSuccess={() => {}}
           createAisleFn={createAisleFn}
         />
-      </WithTheme>
+      </WithTheme>,
     );
 
     expect(
-      screen.getByText(/este inventario no tiene cliente asociado\. podés crear el pasillo sin proveedor por ahora/i)
+      screen.getByText(/este inventario no tiene cliente asociado\. asociá el inventario/i),
     ).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/código|code label/i), { target: { value: 'A1' } });
     fireEvent.click(screen.getByRole('button', { name: /crear pasillo|create/i }));
 
-    await waitFor(() => {
-      expect(createAisleFn).toHaveBeenCalledTimes(1);
-      expect(createAisleFn).toHaveBeenCalledWith({ code: 'A1' });
-    });
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(/asociá el inventario a un cliente antes de crear pasillos|associate the inventory with a client/i)
+          .length,
+      ).toBeGreaterThan(0),
+    );
+    expect(createAisleFn).not.toHaveBeenCalled();
   });
 });
-

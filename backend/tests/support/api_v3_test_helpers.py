@@ -30,3 +30,17 @@ def create_test_inventory(
     body: dict[str, object] = {"name": name, "client_id": cid}
     body.update(extra)
     return client.post("/api/v3/inventories", json=body)
+
+
+def create_test_supplier(
+    client: TestClient,
+    client_id: str,
+    name: str | None = None,
+) -> str:
+    """POST /api/v3/clients/{client_id}/suppliers and return the new supplier id."""
+    r = client.post(
+        f"/api/v3/clients/{client_id}/suppliers",
+        json={"name": name or f"Supplier-{uuid.uuid4().hex[:6]}"},
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
