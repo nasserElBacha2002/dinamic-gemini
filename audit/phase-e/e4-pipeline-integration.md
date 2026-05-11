@@ -104,7 +104,7 @@ Existing **`prompt_hash`**, **`base_prompt_hash`**, **`base_prompt_text`**, prof
 
 ## 11. Remaining risks
 
-- **Multi-provider:** Resolution uses the job’s primary provider/model once; alternate provider branches reuse the same resolution (documented tradeoff).  
+- **Multi-provider:** Resolution uses the job’s primary provider/model once; alternate provider branches reuse the same resolution — see **E4.1 technical debt** in `audit/phase-e/e4-closure.md` §12.  
 - **Metadata size:** `prompt_composition` still carries full prompt strings per Phase 6 policy; E6 may trim.
 
 ---

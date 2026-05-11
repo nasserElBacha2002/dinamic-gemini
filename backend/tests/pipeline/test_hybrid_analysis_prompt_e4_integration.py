@@ -15,9 +15,12 @@ from src.application.services.supplier_prompt_resolver import (
 from src.jobs.models import JobInput
 from src.llm.prompt_composer.prompt_traceability import (
     COMPOSITION_STEP_EFFECTIVE_SUPPLIER_PROMPT,
+    LLM_METADATA_KEY_PROMPT_COMPOSITION,
+    apply_execution_layer_to_composition,
     validate_prompt_composition_dict,
 )
 from src.llm.prompt_composer.protected_prompt_contract import HYBRID_V21_SHARED_CONTRACT_MARKERS
+from src.llm.types import LLMRequest
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
 from src.pipeline.services.hybrid_analysis_prompt import (
@@ -216,3 +219,73 @@ def test_e4_error_resolution_should_not_reach_prompt_builder_in_production() -> 
     eff = comp.get("effective_prompt") or {}
     assert eff.get("resolution_status") == "error"
     assert "RESOLUTION_STATUS_ERROR" in eff.get("warnings", [])
+
+
+def test_e41_llm_request_metadata_includes_effective_prompt_resolved() -> None:
+    """Same merge + ``LLMRequest`` attachment as ``HybridGlobalAnalysisStrategy._analyze_once`` (L249–277).
+
+    Importing ``HybridGlobalAnalysisStrategy`` can hit ``src.pipeline.providers`` package init cycles
+    under some pytest collection orders; this test pins the observable ``metadata`` shape instead.
+    """
+    res = _resolution(
+        resolution_status="resolved",
+        editable_instructions="Prefer SKU from left label.",
+        supplier_prompt_config_id="cfg-1",
+        supplier_prompt_config_version=2,
+    )
+    ctx = _minimal_run_context(supplier_prompt_resolution=res)
+    prompt_text, comp = build_hybrid_analysis_prompt_with_traceability(ctx)
+    merged = apply_execution_layer_to_composition(
+        comp,
+        resolved_llm_provider_key="gemini",
+        model_name="gemini-2.0-flash",
+    )
+    req = LLMRequest(
+        job_id=ctx.job_id,
+        frames=[Path("/tmp/f0.jpg")],
+        frame_refs=["f0"],
+        prompt=prompt_text,
+        schema_version="v2.1",
+        metadata={LLM_METADATA_KEY_PROMPT_COMPOSITION: merged},
+    )
+    pc = req.metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION]
+    ep = pc["effective_prompt"]
+    assert ep["supplier_instructions_applied"] is True
+    assert ep["supplier_prompt_config_id"] == "cfg-1"
+    assert ep["supplier_prompt_config_version"] == 2
+    assert ep["resolution_status"] == "resolved"
+    assert ep["fallback_used"] is False
+    assert ep["effective_prompt_hash"] == pc["prompt_hash"]
+    assert "Prefer SKU from left label." in req.prompt
+    assert "Prefer SKU from left label." not in str(ep)
+
+
+def test_e41_llm_request_metadata_includes_effective_prompt_fallback() -> None:
+    res = _resolution(
+        resolution_status="fallback",
+        fallback_used=True,
+        fallback_reason=SupplierPromptFallbackReason.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG,
+    )
+    ctx = _minimal_run_context(supplier_prompt_resolution=res)
+    prompt_text, comp = build_hybrid_analysis_prompt_with_traceability(ctx)
+    merged = apply_execution_layer_to_composition(
+        comp,
+        resolved_llm_provider_key="gemini",
+        model_name="gemini-2.0-flash",
+    )
+    req = LLMRequest(
+        job_id=ctx.job_id,
+        frames=[Path("/tmp/f0.jpg")],
+        frame_refs=["f0"],
+        prompt=prompt_text,
+        schema_version="v2.1",
+        metadata={LLM_METADATA_KEY_PROMPT_COMPOSITION: merged},
+    )
+    ctx_base = _minimal_run_context(supplier_prompt_resolution=None)
+    baseline_prompt, _ = build_hybrid_analysis_prompt_with_traceability(ctx_base)
+    assert req.prompt == baseline_prompt
+    ep = req.metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION]["effective_prompt"]
+    assert ep["supplier_instructions_applied"] is False
+    assert ep["fallback_used"] is True
+    assert ep["fallback_reason"] == SupplierPromptFallbackReason.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG
+    assert ep["resolution_status"] == "fallback"

@@ -77,3 +77,23 @@ From `backend/`:
 ## 10. Recommended next phase
 
 **E5 — Supplier reference image resolution in pipeline** (per roadmap).
+
+---
+
+## 11. E4.1 — Minor corrections (2026-05-11)
+
+| Item | Detail |
+|------|--------|
+| Prompt builder | Defensive comment in `hybrid_analysis_prompt.py`: executor aborts v3 on resolver `error`; builder still composes protected-only if called with an error resolution (tests / non-standard paths). |
+| Tests | `test_hybrid_analysis_prompt_e4_integration.py` — `test_e41_*` builds the same merged composition as ``HybridGlobalAnalysisStrategy`` (``apply_execution_layer_to_composition`` + ``LLMRequest`` metadata key); supplier text not duplicated inside `effective_prompt`; fallback prompt matches baseline. |
+| Status strings | No shared enum beyond existing `Literal` on `SupplierPromptResolution`; string comparisons unchanged. |
+
+---
+
+## 12. E4.1 Technical debt — multi-provider resolution
+
+E4 resolves supplier prompt instructions **once** before the hybrid pipeline using the primary job provider/model. Multi-provider fan-out branches currently **reuse** that resolution.
+
+This is acceptable for E4 because the goal is to integrate supplier instructions into the v3 worker path without changing provider execution semantics.
+
+**Future work:** evaluate resolving supplier prompt configuration per effective provider/model branch if supplier configs become provider/model-specific in multi-provider analysis.

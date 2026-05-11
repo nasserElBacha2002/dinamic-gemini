@@ -183,6 +183,10 @@ def build_hybrid_analysis_prompt_with_traceability(
         prompt_parity_mode=parity,
     )
 
+    # V3JobExecutor aborts v3 jobs before the hybrid pipeline when SupplierPromptResolver returns
+    # resolution_status == "error". This builder still handles error resolutions defensively so
+    # direct/unit calls preserve the protected-only prompt instead of appending supplier text.
+    # Production v3 jobs must not rely on this path for resolver errors.
     supplier_resolution = getattr(context, "supplier_prompt_resolution", None)
     if supplier_resolution is not None:
         inv_id, aisle_id = _job_metadata_inventory_aisle(context)
