@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { ApiError } from '../src/api/types';
 import ClientSupplierDetail from '../src/pages/ClientSupplierDetail';
 import { AppSnackbarProvider } from '../src/components/ui';
 
@@ -170,6 +171,18 @@ describe('ClientSupplierDetail page', () => {
       isError: false,
       error: null,
     });
+  });
+
+  it('shows warning when active prompt query returns 404', () => {
+    useActiveSupplierPromptConfigMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new ApiError('Not found', 404),
+      refetch: vi.fn(),
+    });
+    renderPage('/clientes/client-1/proveedores/supplier-1');
+    expect(screen.getByRole('status')).toHaveTextContent(/sin prompt activo/i);
   });
 
   it('shows summary tab by default and does not show drawer management buttons', () => {

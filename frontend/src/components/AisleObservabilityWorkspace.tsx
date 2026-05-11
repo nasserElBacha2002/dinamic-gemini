@@ -331,11 +331,23 @@ export default function AisleObservabilityWorkspace({
     const k = String(raw ?? '').trim();
     if (!k) return t('common.em_dash');
     const map: Record<string, string> = {
+      INVENTORY_WITHOUT_CLIENT: t('jobs.trace_fb_inventory_without_client'),
+      AISLE_WITHOUT_CLIENT_SUPPLIER: t('jobs.trace_fb_aisle_without_supplier'),
+      NO_ACTIVE_SUPPLIER_PROMPT_CONFIG: t('jobs.trace_fb_no_active_supplier_prompt_config'),
       fallback_inventory_without_client: t('jobs.trace_fb_inventory_without_client'),
       fallback_aisle_without_client_supplier: t('jobs.trace_fb_aisle_without_supplier'),
       fallback_no_active_reference_images: t('jobs.trace_fb_no_active_reference_images'),
     };
     return map[k] ?? t('jobs.trace_fb_other', { code: k });
+  };
+
+  const translateResolutionErrorCode = (raw: string | undefined): string => {
+    const k = String(raw ?? '').trim();
+    if (!k) return t('common.em_dash');
+    const map: Record<string, string> = {
+      NO_ACTIVE_SUPPLIER_PROMPT_CONFIG: t('jobs.trace_err_no_active_supplier_prompt_config'),
+    };
+    return map[k] ?? t('jobs.trace_err_resolution_other', { code: k });
   };
 
   const referenceSourceDisplay = (raw: string) => {
@@ -712,6 +724,14 @@ export default function AisleObservabilityWorkspace({
                             : undefined
                         )}
                       </Typography>
+                      {String(effectivePrompt.resolution_status ?? '').toLowerCase() === 'error' &&
+                      typeof effectivePrompt.resolution_error_code === 'string' &&
+                      effectivePrompt.resolution_error_code.trim() ? (
+                        <Typography variant="body2" color="error">
+                          <strong>{t('jobs.trace_resolution_error_detail')}</strong>{' '}
+                          {translateResolutionErrorCode(effectivePrompt.resolution_error_code)}
+                        </Typography>
+                      ) : null}
                       <Typography variant="body2">
                         <strong>{t('jobs.trace_supplier_instructions_applied')}</strong>{' '}
                         {typeof effectivePrompt.supplier_instructions_applied === 'boolean'

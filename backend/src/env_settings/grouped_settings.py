@@ -293,6 +293,18 @@ class PipelineVisionSettings(BaseModel):
         default_factory=parse_hybrid_max_frames,
         description="Máximo de frames representativos en modo hybrid (None = sin límite). Env: HYBRID_MAX_FRAMES ('' o '0' = sin límite, 1..10000).",
     )
+    v3_allow_missing_supplier_prompt_fallback: bool = Field(
+        default_factory=lambda: os.getenv("V3_ALLOW_MISSING_SUPPLIER_PROMPT_FALLBACK", "")
+        .strip()
+        .lower()
+        in ("1", "true", "yes"),
+        description=(
+            "Emergency only: when true, v3 process_aisle jobs continue with protected-base-only prompts "
+            "if no active supplier_prompt_configs row matches scope (fallback_used=true in metadata). "
+            "Default false: jobs fail before the pipeline with NO_ACTIVE_SUPPLIER_PROMPT_CONFIG. "
+            "Env: V3_ALLOW_MISSING_SUPPLIER_PROMPT_FALLBACK."
+        ),
+    )
 
     # Image Preprocessing (Bloque 7)
     resize_max_side: int = Field(

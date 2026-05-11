@@ -38,6 +38,7 @@ class SupplierPromptResolutionErrorCode:
     CLIENT_SUPPLIER_NOT_FOUND = "CLIENT_SUPPLIER_NOT_FOUND"
     CLIENT_SUPPLIER_OWNERSHIP_MISMATCH = "CLIENT_SUPPLIER_OWNERSHIP_MISMATCH"
     INVALID_SCOPE_INPUT = "INVALID_SCOPE_INPUT"
+    NO_ACTIVE_SUPPLIER_PROMPT_CONFIG = "NO_ACTIVE_SUPPLIER_PROMPT_CONFIG"
 
 
 def _normalize_provider(provider_name: str | None) -> str | None:
@@ -117,6 +118,7 @@ class SupplierPromptResolver:
         aisle_id: str,
         provider_name: str | None,
         model_name: str | None,
+        allow_missing_supplier_prompt_fallback: bool = False,
     ) -> SupplierPromptResolution:
         norm_provider = _normalize_provider(provider_name)
         norm_model = _normalize_model(model_name)
@@ -275,6 +277,21 @@ class SupplierPromptResolver:
             norm_model,
         )
         if active is None:
+            if allow_missing_supplier_prompt_fallback:
+                return SupplierPromptResolution(
+                    inventory_id=inventory_id,
+                    aisle_id=aisle_id,
+                    client_id=client_id,
+                    client_supplier_id=client_supplier_id,
+                    provider_name=norm_provider,
+                    model_name=norm_model,
+                    supplier_prompt_config_id=None,
+                    supplier_prompt_config_version=None,
+                    editable_instructions=None,
+                    fallback_used=True,
+                    fallback_reason=SupplierPromptFallbackReason.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG,
+                    resolution_status="fallback",
+                )
             return SupplierPromptResolution(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
@@ -285,9 +302,11 @@ class SupplierPromptResolver:
                 supplier_prompt_config_id=None,
                 supplier_prompt_config_version=None,
                 editable_instructions=None,
-                fallback_used=True,
-                fallback_reason=SupplierPromptFallbackReason.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG,
-                resolution_status="fallback",
+                fallback_used=False,
+                fallback_reason=None,
+                resolution_status="error",
+                warnings=(),
+                error_code=SupplierPromptResolutionErrorCode.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG,
             )
 
         return SupplierPromptResolution(
