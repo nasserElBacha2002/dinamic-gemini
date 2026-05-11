@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { SyntheticEvent } from 'react';
-import { Box, Button, Tab, Tabs, Typography } from '@mui/material';
+import { Alert, Box, Button, Tab, Tabs, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../api/types';
@@ -131,6 +131,15 @@ export default function ClientSupplierDetail() {
           onRetry={() => supplierQuery.refetch()}
           retryLabel={t('common.retry')}
         />
+      ) : null}
+
+      {supplierQuery.data &&
+      activePromptQuery.isError &&
+      activePromptQuery.error instanceof ApiError &&
+      activePromptQuery.error.status === 404 ? (
+        <Alert severity="warning" sx={{ mb: 2 }} role="status">
+          {t('clients.supplier_page.prompt_required_warning')}
+        </Alert>
       ) : null}
 
       {supplierQuery.data ? (

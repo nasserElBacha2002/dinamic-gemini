@@ -33,7 +33,11 @@ from src.application.services.aisle_analysis_context_builder import (
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_engine_params import coerce_prompt_parity_mode
-from src.application.services.supplier_prompt_resolver import SupplierPromptResolver
+from src.application.services.supplier_prompt_resolver import (
+    SupplierPromptResolution,
+    SupplierPromptResolutionErrorCode,
+    SupplierPromptResolver,
+)
 from src.application.services.supplier_reference_image_resolver import (
     SupplierReferenceImageResolver,
 )
@@ -71,6 +75,23 @@ logger = logging.getLogger(__name__)
 
 # Pipeline/output directory segment under {base}/{job_id}/; must match DEFAULT_V3_WORKER_RUN_SEGMENT.
 RUN_ID = DEFAULT_V3_WORKER_RUN_SEGMENT
+
+
+def _supplier_prompt_resolution_failure_message(resolution: SupplierPromptResolution) -> str:
+    """Human-readable job failure text for observability (worker logs + job row)."""
+    code = resolution.error_code or "UNKNOWN"
+    base = (
+        f"Supplier prompt resolution failed ({code}) "
+        f"inventory_id={resolution.inventory_id} aisle_id={resolution.aisle_id}"
+    )
+    if code == SupplierPromptResolutionErrorCode.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG:
+        return (
+            f"{base}: No active supplier_prompt_configs for client_supplier_id="
+            f"{resolution.client_supplier_id!r} provider={resolution.provider_name!r} "
+            f"model={resolution.model_name!r}. Configure and activate a supplier prompt "
+            f"(Client → Supplier → Instrucciones / prompts)."
+        )
+    return f"{base}."
 
 
 @dataclass(frozen=True)
@@ -415,6 +436,9 @@ class V3JobExecutor:
                 aisle_id=p.aisle_id,
                 provider_name=pipeline_provider_name,
                 model_name=job_model,
+                allow_missing_supplier_prompt_fallback=bool(
+                    getattr(p.settings, "v3_allow_missing_supplier_prompt_fallback", False)
+                ),
             )
             if supplier_prompt_resolution.resolution_status == "error":
                 err_code = supplier_prompt_resolution.error_code or "UNKNOWN"
@@ -428,7 +452,7 @@ class V3JobExecutor:
                 self._state.fail_job_and_aisle(
                     p.job_id,
                     p.aisle,
-                    f"Supplier prompt resolution error: {err_code}",
+                    _supplier_prompt_resolution_failure_message(supplier_prompt_resolution),
                 )
                 return None
         result = self._pipeline_runner.run_hybrid_pipeline(

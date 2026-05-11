@@ -11,6 +11,8 @@ const mockUseComputeCaptureSessionGroups = vi.fn();
 const mockUseAisleOptions = vi.fn();
 const mockUseAssignCaptureSessionGroupToExistingAisle = vi.fn();
 const mockUseCreateAisleFromCaptureSessionGroup = vi.fn();
+const mockUseInventoryDetail = vi.fn();
+const mockUseClientSuppliers = vi.fn();
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -36,6 +38,13 @@ vi.mock('react-i18next', () => ({
       if (key === 'ingestion_sessions.detail.grouping_assign_select_aisle') return 'Select aisle';
       if (key === 'ingestion_sessions.detail.grouping_create_dialog_title') return 'Create dialog title';
       if (key === 'ingestion_sessions.detail.grouping_create_dialog_code_label') return 'Aisle code';
+      if (key === 'dialogs.aisle.supplier_label') return 'Supplier';
+      if (key === 'dialogs.aisle.supplier_placeholder') return 'Select supplier';
+      if (key === 'dialogs.aisle.supplier_helper') return 'Supplier helper';
+      if (key === 'dialogs.aisle.supplier_loading') return 'Loading suppliers';
+      if (key === 'dialogs.aisle.supplier_load_error') return 'Supplier load failed';
+      if (key === 'dialogs.aisle.supplier_empty') return 'No suppliers for client';
+      if (key === 'dialogs.aisle.inventory_requires_client') return 'Inventory needs client';
       if (key === 'ingestion_sessions.detail.grouping_recompute_confirm_title') return 'Lose assignments title';
       if (key === 'ingestion_sessions.detail.grouping_recompute_confirm_body') return 'Lose assignments body';
       if (key === 'ingestion_sessions.detail.grouping_recompute_confirm_cancel') return 'Recompute cancel';
@@ -55,6 +64,14 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../src/features/ingestionSessions/components/ImportSessionUpload', () => ({
   default: () => null,
+}));
+
+vi.mock('../src/hooks/useInventories', () => ({
+  useInventoryDetail: (...args: unknown[]) => mockUseInventoryDetail(...args),
+}));
+
+vi.mock('../src/hooks/useClients', () => ({
+  useClientSuppliers: (...args: unknown[]) => mockUseClientSuppliers(...args),
 }));
 
 vi.mock('../src/features/ingestionSessions/hooks/useCaptureSessions', () => ({
@@ -114,6 +131,8 @@ describe('ImportSessionDetail — G4 group → aisle', () => {
     mockUseAisleOptions.mockReset();
     mockUseAssignCaptureSessionGroupToExistingAisle.mockReset();
     mockUseCreateAisleFromCaptureSessionGroup.mockReset();
+    mockUseInventoryDetail.mockReset();
+    mockUseClientSuppliers.mockReset();
     mockUseComputeCaptureSessionGroups.mockReturnValue({
       mutateAsync: vi.fn(),
       isPending: false,
@@ -133,6 +152,29 @@ describe('ImportSessionDetail — G4 group → aisle', () => {
       mutateAsync: vi.fn().mockResolvedValue({ groups: [] }),
       isPending: false,
       error: null,
+    });
+    mockUseInventoryDetail.mockReturnValue({
+      data: {
+        id: 'inv-1',
+        client_id: 'client-1',
+        name: 'Inv',
+        status: 'draft',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseClientSuppliers.mockReturnValue({
+      data: {
+        items: [{ id: 'sup-1', name: 'Supplier One', status: 'active', client_id: 'client-1', created_at: '', updated_at: '' }],
+        page: 1,
+        page_size: 200,
+        total_items: 1,
+        total_pages: 1,
+      },
+      isLoading: false,
+      isError: false,
     });
   });
 
@@ -217,6 +259,7 @@ describe('ImportSessionDetail — G4 group → aisle', () => {
     fireEvent.click(screen.getByText('Create aisle'));
     expect(screen.getByText('Create dialog title')).toBeInTheDocument();
     expect(screen.getByLabelText('Aisle code')).toBeInTheDocument();
+    expect(screen.getByLabelText('Supplier')).toBeInTheDocument();
   });
 
   it('calls assign mutation with expected payload after confirming in assign dialog', async () => {

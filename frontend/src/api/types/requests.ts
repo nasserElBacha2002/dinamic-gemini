@@ -13,13 +13,14 @@ export interface CreateInventoryRequest {
   name: string;
   /** Defaults to production (real operational mode). */
   processing_mode?: InventoryProcessingMode;
-  /** Optional association to a client; omitted/null preserves legacy behavior. */
-  client_id?: string | null;
+  /** Required for new inventories (API rejects omit/null/blank). */
+  client_id: string;
 }
 
 export interface CreateAisleRequest {
   code: string;
-  client_supplier_id?: string | null;
+  /** Required when the inventory has a client (normal flow after G3). */
+  client_supplier_id: string;
 }
 
 export interface CreateClientRequest {

@@ -69,8 +69,9 @@ from src.application.errors import (
     AisleNotFoundError,
     ClientSupplierClientMismatchError,
     ClientSupplierNotFoundError,
+    ClientSupplierRequiredForAisleError,
     DuplicateAisleCodeError,
-    InventoryClientRequiredForSupplierError,
+    InventoryClientRequiredForAisleError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
@@ -241,7 +242,8 @@ def create_aisle(
         InventoryNotFoundError,
         DuplicateAisleCodeError,
         ClientSupplierNotFoundError,
-        InventoryClientRequiredForSupplierError,
+        ClientSupplierRequiredForAisleError,
+        InventoryClientRequiredForAisleError,
         ClientSupplierClientMismatchError,
     ) as e:
         reraise_if_mapped(e)

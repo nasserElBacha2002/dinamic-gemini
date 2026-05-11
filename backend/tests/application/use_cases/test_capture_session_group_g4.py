@@ -30,6 +30,7 @@ from src.domain.capture.entities import (
     CaptureSessionItemImportStatus,
     CaptureSessionStatus,
 )
+from src.domain.client_supplier.entities import ClientSupplier, ClientSupplierStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_capture_session_group_repository import (
@@ -281,20 +282,33 @@ def test_create_aisle_and_assign_group() -> None:
     gr = MemoryCaptureSessionGroupRepository(ir)
     inv_repo = MemoryInventoryRepository()
     aisle_repo = MemoryAisleRepository()
+    supplier_repo = MemoryClientSupplierRepository()
     now = datetime(2025, 1, 1, 9, 0, 0, tzinfo=UTC)
+    client_id = "client-1"
+    supplier_repo.save(
+        ClientSupplier(
+            id="sup-1",
+            client_id=client_id,
+            name="Supplier",
+            status=ClientSupplierStatus.ACTIVE,
+            created_at=now,
+            updated_at=now,
+        )
+    )
     inv = Inventory(
         id="inv-1",
         name="Inv",
         status=InventoryStatus.DRAFT,
         created_at=now,
         updated_at=now,
+        client_id=client_id,
     )
     inv_repo.save(inv)
     reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
     create_aisle = CreateAisleUseCase(
         inventory_repo=inv_repo,
         aisle_repo=aisle_repo,
-        client_supplier_repo=MemoryClientSupplierRepository(),
+        client_supplier_repo=supplier_repo,
         clock=clock,
         status_reconciler=reconciler,
     )
@@ -318,7 +332,13 @@ def test_create_aisle_and_assign_group() -> None:
     )
     ir.save(_imported_item("i1", sid, gid, t0))
 
-    out = uc.execute(inventory_id="inv-1", session_id=sid, group_id=gid, aisle_code="NEW-AISLE")
+    out = uc.execute(
+        inventory_id="inv-1",
+        session_id=sid,
+        group_id=gid,
+        aisle_code="NEW-AISLE",
+        client_supplier_id="sup-1",
+    )
     assert len(out) == 1
     assert out[0].assignment_status == "assigned_new"
     assert out[0].assigned_aisle_id

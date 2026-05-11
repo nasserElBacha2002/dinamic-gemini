@@ -74,6 +74,8 @@ def create_inventory(
             )
         )
         return inventory_to_response(inventory)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except ClientNotFoundError as e:
         reraise_if_mapped(e)
         raise

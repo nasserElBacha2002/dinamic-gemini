@@ -36,6 +36,14 @@ class InventoryClientRequiredForSupplierError(Exception):
     """Raised when assigning a supplier to an inventory that has no client association."""
 
 
+class ClientSupplierRequiredForAisleError(Exception):
+    """Raised when creating an aisle under a client-oriented inventory without a supplier."""
+
+
+class InventoryClientRequiredForAisleError(Exception):
+    """Raised when creating an aisle under a legacy inventory that has no client association."""
+
+
 class ClientSupplierClientMismatchError(Exception):
     """Raised when supplier.client_id does not match inventory.client_id."""
 

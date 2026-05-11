@@ -16,9 +16,12 @@ import {
   TextField,
   Tooltip,
   Typography,
+  CircularProgress,
 } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useClientSuppliers } from '../../../hooks/useClients';
+import { useInventoryDetail } from '../../../hooks/useInventories';
 import { getVisibleErrorMessage } from '../../../utils/apiErrors';
 import { formatDate } from '../../../utils/formatDate';
 import type {
@@ -102,6 +105,7 @@ export default function ImportSessionGroupingPanel({
   const [createGroupId, setCreateGroupId] = useState<string | null>(null);
   const [selectedAisleId, setSelectedAisleId] = useState('');
   const [newAisleCode, setNewAisleCode] = useState('');
+  const [newAisleSupplierId, setNewAisleSupplierId] = useState('');
   const [recomputeConfirmOpen, setRecomputeConfirmOpen] = useState(false);
   const [previewGroupId, setPreviewGroupId] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<MaterializedCaptureSessionGroupPreviewResponse | null>(null);
@@ -112,6 +116,55 @@ export default function ImportSessionGroupingPanel({
     () => buildAisleCodeById(aislesQuery.data?.items),
     [aislesQuery.data?.items]
   );
+
+  const inventoryQuery = useInventoryDetail(inventoryId, { enabled: groupingEnabled });
+  const inventoryClientId = inventoryQuery.data?.client_id?.trim() || null;
+  const hasInventoryClient = Boolean(inventoryClientId);
+  const {
+    data: suppliersData,
+    isLoading: isSuppliersLoading,
+    isError: isSuppliersError,
+  } = useClientSuppliers(
+    inventoryClientId ?? undefined,
+    { page: 1, page_size: 200 },
+    { enabled: groupingEnabled && hasInventoryClient }
+  );
+  const suppliers = useMemo(() => suppliersData?.items ?? [], [suppliersData?.items]);
+
+  useEffect(() => {
+    if (createGroupId == null) return;
+    setNewAisleSupplierId('');
+  }, [inventoryClientId, createGroupId]);
+
+  useEffect(() => {
+    const sid = newAisleSupplierId.trim();
+    if (!sid) return;
+    if (!suppliers.some((s) => s.id === sid)) {
+      setNewAisleSupplierId('');
+    }
+  }, [suppliers, newAisleSupplierId]);
+
+  const createSupplierHelperText = !hasInventoryClient
+    ? t('dialogs.aisle.inventory_requires_client')
+    : isSuppliersLoading
+      ? t('dialogs.aisle.supplier_loading')
+      : isSuppliersError
+        ? t('dialogs.aisle.supplier_load_error')
+        : suppliers.length === 0
+          ? t('dialogs.aisle.supplier_empty')
+          : t('dialogs.aisle.supplier_helper');
+
+  const createAisleSubmitDisabled =
+    !newAisleCode.trim() ||
+    newAisleCode.trim().length > 64 ||
+    createAisleForGroup.isPending ||
+    !createGroupId ||
+    inventoryQuery.isLoading ||
+    !hasInventoryClient ||
+    isSuppliersLoading ||
+    isSuppliersError ||
+    suppliers.length === 0 ||
+    !newAisleSupplierId.trim();
 
   const groupingError = useMemo(() => {
     const err =
@@ -239,6 +292,7 @@ export default function ImportSessionGroupingPanel({
                         variant="text"
                         onClick={() => {
                           setNewAisleCode('');
+                          setNewAisleSupplierId('');
                           setCreateGroupId(g.group_id);
                         }}
                       >
@@ -391,6 +445,11 @@ export default function ImportSessionGroupingPanel({
       <Dialog open={createGroupId != null} onClose={() => setCreateGroupId(null)} fullWidth maxWidth="sm">
         <DialogTitle>{t('ingestion_sessions.detail.grouping_create_dialog_title')}</DialogTitle>
         <DialogContent>
+          {!hasInventoryClient && !inventoryQuery.isLoading ? (
+            <Alert severity="warning" sx={{ mb: 1 }}>
+              {t('dialogs.aisle.inventory_requires_client')}
+            </Alert>
+          ) : null}
           <TextField
             fullWidth
             margin="normal"
@@ -401,33 +460,58 @@ export default function ImportSessionGroupingPanel({
             helperText={t('ingestion_sessions.detail.grouping_create_code_helper')}
             inputProps={{ maxLength: 64 }}
           />
+          <TextField
+            sx={{ mt: 1 }}
+            select
+            fullWidth
+            margin="normal"
+            size="small"
+            label={t('dialogs.aisle.supplier_label')}
+            value={newAisleSupplierId}
+            onChange={(e) => setNewAisleSupplierId(e.target.value)}
+            disabled={
+              createAisleForGroup.isPending ||
+              inventoryQuery.isLoading ||
+              !hasInventoryClient ||
+              isSuppliersLoading
+            }
+            error={hasInventoryClient && (Boolean(isSuppliersError) || suppliers.length === 0)}
+            helperText={createSupplierHelperText}
+          >
+            <MenuItem value="" disabled>
+              {t('dialogs.aisle.supplier_placeholder')}
+            </MenuItem>
+            {suppliers.map((supplier) => (
+              <MenuItem key={supplier.id} value={supplier.id}>
+                {supplier.name}
+              </MenuItem>
+            ))}
+          </TextField>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateGroupId(null)}>{t('ingestion_sessions.detail.grouping_assign_dialog_cancel')}</Button>
           <Button
             variant="contained"
-            disabled={
-              !newAisleCode.trim() ||
-              newAisleCode.trim().length > 64 ||
-              createAisleForGroup.isPending ||
-              !createGroupId
-            }
+            disabled={createAisleSubmitDisabled}
             onClick={() => {
               if (!createGroupId) return;
               const code = newAisleCode.trim();
-              if (code.length < 1 || code.length > 64) return;
+              const supplierId = newAisleSupplierId.trim();
+              if (code.length < 1 || code.length > 64 || !supplierId) return;
               void createAisleForGroup
                 .mutateAsync({
                   inventoryId,
                   sessionId,
                   groupId: createGroupId,
                   code,
+                  client_supplier_id: supplierId,
                 })
                 .then(() => {
                   setCreateGroupId(null);
                   onRefresh();
                 });
             }}
+            startIcon={createAisleForGroup.isPending ? <CircularProgress size={16} /> : undefined}
           >
             {t('ingestion_sessions.detail.grouping_create_dialog_confirm')}
           </Button>

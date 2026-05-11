@@ -17,6 +17,7 @@ from src.application.use_cases.create_inventory import (
     CreateInventoryUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.client.entities import Client, ClientStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
@@ -65,14 +66,26 @@ def test_inventory_aggregate_lifecycle_through_completed() -> None:
     review_repo = MemoryReviewActionRepository()
     reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
 
+    client_repo = MemoryClientRepository()
+    client_repo.save(
+        Client(
+            id="lifecycle-client",
+            name="Lifecycle Client",
+            status=ClientStatus.ACTIVE,
+            created_at=now,
+            updated_at=now,
+        )
+    )
     create_inv_uc = CreateInventoryUseCase(
         inv_repo,
-        MemoryClientRepository(),
+        client_repo,
         clock,
         operational_resolver=_StubOperationalResolver(),
         settings_loader=_settings_loader,
     )
-    inv = create_inv_uc.execute(CreateInventoryCommand(name="Lifecycle inv"))
+    inv = create_inv_uc.execute(
+        CreateInventoryCommand(name="Lifecycle inv", client_id="lifecycle-client")
+    )
     assert inv.status == InventoryStatus.DRAFT
     assert reconciler.reconcile(inv.id) is False
 

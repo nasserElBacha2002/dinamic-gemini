@@ -6,24 +6,27 @@ from fastapi.testclient import TestClient
 
 from src.api.dependencies import get_create_inventory_use_case
 from src.api.server import app
+from tests.support.api_v3_test_helpers import create_test_client, create_test_inventory, create_test_supplier
 
 client = TestClient(app)
 
 
 def test_post_inventories_returns_201_and_entity() -> None:
-    response = client.post("/api/v3/inventories", json={"name": "Test Inventory"})
+    cid = create_test_client(client, name="Retail Wiring A")
+    response = create_test_inventory(client, name="Test Inventory", client_id=cid)
     assert response.status_code == 201
     data = response.json()
     assert "id" in data
     assert data["name"] == "Test Inventory"
     assert data["status"] == "draft"
     assert data.get("processing_mode") == "production"
-    assert data.get("client_id") is None
+    assert data.get("client_id") == cid
     assert data.get("primary_execution_config") is not None
 
 
 def test_post_inventories_test_mode_and_list_row_includes_processing_mode() -> None:
-    create = client.post("/api/v3/inventories", json={"name": "Lab", "processing_mode": "test"})
+    cid = create_test_client(client, name="Retail Wiring B")
+    create = create_test_inventory(client, name="Lab", client_id=cid, processing_mode="test")
     assert create.status_code == 201
     created = create.json()
     assert created["processing_mode"] == "test"
@@ -43,7 +46,7 @@ def test_get_create_inventory_use_case_factory_matches_constructor() -> None:
 
 
 def test_get_inventories_returns_list_and_includes_created() -> None:
-    create_resp = client.post("/api/v3/inventories", json={"name": "For List"})
+    create_resp = create_test_inventory(client, name="For List")
     assert create_resp.status_code == 201
     created_id = create_resp.json()["id"]
 
@@ -81,15 +84,17 @@ def test_post_inventories_with_invalid_client_id_returns_structured_not_found() 
     assert payload.get("detail") == "Client not found"
 
 
-def test_post_inventories_with_null_client_id_keeps_legacy_behavior() -> None:
+def test_post_inventories_with_null_client_id_returns_422() -> None:
     response = client.post(
         "/api/v3/inventories",
         json={"name": "Legacy Null Client", "client_id": None},
     )
-    assert response.status_code == 201
-    data = response.json()
-    assert data["name"] == "Legacy Null Client"
-    assert data["client_id"] is None
+    assert response.status_code == 422
+
+
+def test_post_inventories_missing_client_id_returns_422() -> None:
+    response = client.post("/api/v3/inventories", json={"name": "Missing Client Id"})
+    assert response.status_code == 422
 
 
 def test_post_inventories_with_empty_client_id_returns_422() -> None:
@@ -109,21 +114,28 @@ def test_post_inventories_with_whitespace_client_id_returns_422() -> None:
 
 
 def test_post_inventories_empty_name_returns_422() -> None:
-    response = client.post("/api/v3/inventories", json={"name": ""})
+    cid = create_test_client(client, name="Retail Wiring D")
+    response = client.post("/api/v3/inventories", json={"name": "", "client_id": cid})
     assert response.status_code == 422
 
 
 def test_post_inventories_name_too_long_returns_422() -> None:
-    response = client.post("/api/v3/inventories", json={"name": "x" * 256})
+    cid = create_test_client(client, name="Retail Wiring E")
+    response = client.post("/api/v3/inventories", json={"name": "x" * 256, "client_id": cid})
     assert response.status_code == 422
 
 
 def test_get_aisle_asset_file_returns_404_when_asset_not_found() -> None:
     """Reference image endpoint returns 404 when aisle has no such asset."""
-    create_resp = client.post("/api/v3/inventories", json={"name": "Ref Image Test"})
+    create_resp = create_test_inventory(client, name="Ref Image Test")
     assert create_resp.status_code == 201
-    inv_id = create_resp.json()["id"]
-    aisle_resp = client.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "A1"})
+    inv_body = create_resp.json()
+    inv_id = inv_body["id"]
+    sid = create_test_supplier(client, inv_body["client_id"])
+    aisle_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "A1", "client_supplier_id": sid},
+    )
     assert aisle_resp.status_code == 201
     aisle_id = aisle_resp.json()["id"]
 
@@ -136,10 +148,15 @@ def test_get_aisle_asset_file_returns_404_when_asset_not_found() -> None:
 
 def test_get_aisle_asset_image_display_url_returns_404_when_asset_not_found() -> None:
     """image-display-url matches file endpoint when asset is missing."""
-    create_resp = client.post("/api/v3/inventories", json={"name": "Display URL Test"})
+    create_resp = create_test_inventory(client, name="Display URL Test")
     assert create_resp.status_code == 201
-    inv_id = create_resp.json()["id"]
-    aisle_resp = client.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "A1"})
+    inv_body = create_resp.json()
+    inv_id = inv_body["id"]
+    sid = create_test_supplier(client, inv_body["client_id"])
+    aisle_resp = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "A1", "client_supplier_id": sid},
+    )
     assert aisle_resp.status_code == 201
     aisle_id = aisle_resp.json()["id"]
 

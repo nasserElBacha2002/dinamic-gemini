@@ -13,8 +13,9 @@ from uuid import uuid4
 from src.application.errors import (
     ClientSupplierClientMismatchError,
     ClientSupplierNotFoundError,
+    ClientSupplierRequiredForAisleError,
     DuplicateAisleCodeError,
-    InventoryClientRequiredForSupplierError,
+    InventoryClientRequiredForAisleError,
     InventoryNotFoundError,
 )
 from src.application.ports.clock import Clock
@@ -60,25 +61,28 @@ class CreateAisleUseCase:
             raise DuplicateAisleCodeError(
                 f"An aisle with code {code!r} already exists in this inventory"
             )
-        client_supplier_id = (
-            command.client_supplier_id.strip()
-            if command.client_supplier_id is not None
-            else None
-        )
-        if client_supplier_id is not None:
-            supplier = self._client_supplier_repo.get_by_id(client_supplier_id)
-            if supplier is None:
-                raise ClientSupplierNotFoundError(
-                    f"Client supplier not found: {client_supplier_id}"
-                )
-            if inventory.client_id is None:
-                raise InventoryClientRequiredForSupplierError(
-                    "Inventory must have a client before assigning a supplier"
-                )
-            if supplier.client_id != inventory.client_id:
-                raise ClientSupplierClientMismatchError(
-                    "Client supplier does not belong to the inventory client"
-                )
+
+        raw_supplier = command.client_supplier_id
+        client_supplier_id = raw_supplier.strip() if raw_supplier is not None else None
+
+        inv_client_id = inventory.client_id
+        if inv_client_id is None:
+            raise InventoryClientRequiredForAisleError(
+                "Inventory must be associated with a client before creating aisles"
+            )
+
+        if not client_supplier_id:
+            raise ClientSupplierRequiredForAisleError(
+                "Client supplier is required for new aisles when the inventory has a client"
+            )
+
+        supplier = self._client_supplier_repo.get_by_id(client_supplier_id)
+        if supplier is None:
+            raise ClientSupplierNotFoundError(f"Client supplier not found: {client_supplier_id}")
+        if supplier.client_id != inv_client_id:
+            raise ClientSupplierClientMismatchError(
+                "Client supplier does not belong to the inventory client"
+            )
 
         now = self._clock.now()
         aisle = Aisle(

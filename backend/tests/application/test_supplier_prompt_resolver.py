@@ -185,7 +185,7 @@ def test_falls_back_to_all_provider_scope() -> None:
     assert r.supplier_prompt_config_id == "c-all"
 
 
-def test_fallback_when_no_active_config() -> None:
+def test_error_when_no_active_config_default() -> None:
     inv_r, aisle_r, sup_r, prompt_r = (
         MemoryInventoryRepository(),
         MemoryAisleRepository(),
@@ -201,6 +201,29 @@ def test_fallback_when_no_active_config() -> None:
         aisle_id="aisle-1",
         provider_name="gemini",
         model_name=None,
+    )
+    assert r.resolution_status == "error"
+    assert r.fallback_used is False
+    assert r.error_code == SupplierPromptResolutionErrorCode.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG
+
+
+def test_allow_missing_supplier_prompt_fallback_true_keeps_fallback_when_no_config() -> None:
+    inv_r, aisle_r, sup_r, prompt_r = (
+        MemoryInventoryRepository(),
+        MemoryAisleRepository(),
+        MemoryClientSupplierRepository(),
+        MemorySupplierPromptConfigRepository(),
+    )
+    inv_r.save(_inv())
+    aisle_r.save(_aisle())
+    sup_r.save(_supplier())
+
+    r = _resolver(inv_r, aisle_r, sup_r, prompt_r).resolve(
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        provider_name="gemini",
+        model_name=None,
+        allow_missing_supplier_prompt_fallback=True,
     )
     assert r.resolution_status == "fallback"
     assert r.fallback_used is True
@@ -288,8 +311,8 @@ def test_ignores_inactive_config() -> None:
         provider_name="gemini",
         model_name=None,
     )
-    assert r.resolution_status == "fallback"
-    assert r.fallback_reason == SupplierPromptFallbackReason.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG
+    assert r.resolution_status == "error"
+    assert r.error_code == SupplierPromptResolutionErrorCode.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG
 
 
 def test_model_name_whitespace_normalized() -> None:
@@ -358,7 +381,8 @@ def test_never_resolves_config_from_other_supplier() -> None:
         provider_name="gemini",
         model_name=None,
     )
-    assert r.resolution_status == "fallback"
+    assert r.resolution_status == "error"
+    assert r.error_code == SupplierPromptResolutionErrorCode.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG
     assert r.supplier_prompt_config_id is None
 
 

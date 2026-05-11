@@ -474,6 +474,7 @@ def create_aisle_and_assign_capture_session_group_inventory_scope(
             session_id=session_id,
             group_id=group_id,
             aisle_code=body.code,
+            client_supplier_id=body.client_supplier_id,
         )
     except Exception as e:
         reraise_if_mapped(e)
