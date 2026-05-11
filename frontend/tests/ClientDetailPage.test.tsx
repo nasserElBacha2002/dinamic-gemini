@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import ClientDetail from '../src/pages/ClientDetail';
 import { AppSnackbarProvider } from '../src/components/ui';
-import { pathToClientSupplier } from '../src/constants/appRoutes';
+import { pathToClientSupplier, pathToInventory } from '../src/constants/appRoutes';
 
 const {
   useClientMock,
@@ -209,6 +209,62 @@ describe('ClientDetail page', () => {
     expect(screen.queryByRole('button', { name: /configurar instrucciones/i })).not.toBeInTheDocument();
     const supplierLink = screen.getByRole('link', { name: /proveedor norte/i });
     expect(supplierLink).toHaveAttribute('href', pathToClientSupplier('client-1', 'supplier-1'));
+  });
+
+  it('shows client inventories section, row link, and create inventory actions', () => {
+    useClientMock.mockReturnValue({
+      data: {
+        id: 'client-1',
+        name: 'Cliente Norte',
+        status: 'active',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useClientSuppliersMock.mockReturnValue({
+      data: { items: [], page: 1, page_size: 25, total_items: 0, total_pages: 0 },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useInventoriesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'inv-1',
+            name: 'Inventario Uno',
+            client_id: 'client-1',
+            status: 'draft',
+            aisles_count: 2,
+            pending_review_count: 0,
+            last_activity_at: '2024-01-05T00:00:00Z',
+            created_at: '2024-01-04T00:00:00Z',
+            updated_at: '2024-01-05T00:00:00Z',
+          },
+        ],
+        page: 1,
+        page_size: 200,
+        total_items: 1,
+        total_pages: 1,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage('/clientes/client-1');
+    expect(screen.getByText(/inventarios del cliente/i)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /crear inventario para este cliente/i }).length).toBeGreaterThanOrEqual(
+      1
+    );
+    const invLink = screen.getByRole('link', { name: /inventario uno/i });
+    expect(invLink).toHaveAttribute('href', pathToInventory('inv-1'));
   });
 
   it('renders client loading state', () => {
