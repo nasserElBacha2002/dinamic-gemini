@@ -207,6 +207,7 @@ def test_v3_job_executor_injects_analysis_context_metadata(tmp_path: Path) -> No
         status=InventoryStatus.DRAFT,
         created_at=now,
         updated_at=now,
+        client_id="client-1",
     )
     inv_repo.save(inv)
 
@@ -275,7 +276,10 @@ def test_v3_job_executor_injects_analysis_context_metadata(tmp_path: Path) -> No
 
     # We don't actually run the full pipeline in this test; we only assert that
     # the pipeline runner attaches analysis_context to JobInput.metadata.
-    analysis_context = executor._pipeline_runner.build_analysis_context(aisle)
+    analysis_context = executor._pipeline_runner.build_analysis_context(
+        aisle,
+        inventory_client_id=inv.client_id,
+    )
     (tmp_path / "some" / "path").mkdir(parents=True, exist_ok=True)
     (tmp_path / "some" / "path" / "f.jpg").write_bytes(b"asset")
     (tmp_path / "inventories" / "inv-1" / "visual_references").mkdir(parents=True, exist_ok=True)

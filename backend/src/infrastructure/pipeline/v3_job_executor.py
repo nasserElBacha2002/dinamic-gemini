@@ -334,7 +334,12 @@ class V3JobExecutor:
         """Build analysis context + pipeline input. None => fail_job_and_aisle already applied."""
         analysis_context: AnalysisContext | None = None
         try:
-            analysis_context = self._pipeline_runner.build_analysis_context(req.aisle)
+            inv = self._inventory_repo.get_by_id(req.aisle.inventory_id)
+            inv_client = (inv.client_id or "").strip() if inv is not None else ""
+            analysis_context = self._pipeline_runner.build_analysis_context(
+                req.aisle,
+                inventory_client_id=inv_client or None,
+            )
             job_input, video_path = self._pipeline_runner.build_pipeline_input(
                 req.assets,
                 req.v3_base,

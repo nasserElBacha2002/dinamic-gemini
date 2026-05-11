@@ -11,7 +11,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.application.ports.repositories import SupplierReferenceImageRepository
-from src.application.services.aisle_analysis_context_builder import AisleAnalysisContextBuilder
+from src.application.services.aisle_analysis_context_builder import (
+    SUPPLIER_REFERENCE_RESOLUTION_FALLBACK_INVENTORY_WITHOUT_CLIENT,
+    AisleAnalysisContextBuilder,
+)
 from src.application.services.supplier_reference_image_resolver import (
     SupplierReferenceImageResolver,
 )
@@ -44,6 +47,37 @@ def _aisle(*, inv: str = "inv-1", supplier_id: str | None = None) -> Aisle:
         created_at=now,
         updated_at=now,
         client_supplier_id=supplier_id,
+    )
+
+
+def test_e5_inventory_without_client_skips_supplier_reference_images(tmp_path: Path) -> None:
+    """E5: no inventory client — supplier rows exist but visual references must stay empty."""
+    now = datetime.now(timezone.utc)
+    supplier_repo = MemorySupplierReferenceImageRepository()
+    supplier_repo.create(
+        SupplierReferenceImage(
+            id="sr-1",
+            client_supplier_id="sup-1",
+            filename="ref.jpg",
+            storage_path="sub/ref.jpg",
+            mime_type="image/jpeg",
+            file_size=5,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    context_builder = AisleAnalysisContextBuilder(SupplierReferenceImageResolver(supplier_repo))
+    runner = V3ProcessAislePipelineRunner(
+        supplier_reference_image_repo=supplier_repo,
+        artifact_store=None,
+        context_builder=context_builder,
+    )
+    aisle = _aisle(inv="inv-1", supplier_id="sup-1")
+    ctx = runner.build_analysis_context(aisle, inventory_client_id=None)
+    assert ctx.visual_references == []
+    meta = ctx.metadata or {}
+    assert meta.get("supplier_reference_resolution_status") == (
+        SUPPLIER_REFERENCE_RESOLUTION_FALLBACK_INVENTORY_WITHOUT_CLIENT
     )
 
 
@@ -87,7 +121,7 @@ def test_c71_supplier_pipeline_resolves_supplier_reference_images(tmp_path: Path
         uploaded_at=now,
     )
 
-    analysis_ctx = runner.build_analysis_context(aisle)
+    analysis_ctx = runner.build_analysis_context(aisle, inventory_client_id="client-1")
     assert len(analysis_ctx.visual_references) == 1
 
     job_dir = tmp_path / "job"
@@ -140,7 +174,7 @@ def test_c71_supplier_with_no_images_builds_empty_visual_references(tmp_path: Pa
         uploaded_at=now,
     )
 
-    analysis_ctx = runner.build_analysis_context(aisle)
+    analysis_ctx = runner.build_analysis_context(aisle, inventory_client_id="client-1")
     assert analysis_ctx.visual_references == []
 
     job_dir = tmp_path / "job"
@@ -191,7 +225,7 @@ def test_c71_no_supplier_skips_supplier_repo_lookup_and_legacy_fallback(tmp_path
         uploaded_at=now,
     )
 
-    analysis_ctx = runner.build_analysis_context(aisle)
+    analysis_ctx = runner.build_analysis_context(aisle, inventory_client_id="client-1")
     assert analysis_ctx.visual_references == []
     supplier_repo.list_by_supplier.assert_not_called()
 

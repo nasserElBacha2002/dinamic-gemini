@@ -1066,6 +1066,7 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
             status=InventoryStatus.DRAFT,
             created_at=now,
             updated_at=now,
+            client_id="client-1",
         )
     )
     supplier_repo = MemorySupplierReferenceImageRepository()
@@ -1092,7 +1093,12 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
         updated_at=now,
         client_supplier_id="sup-1",
     )
-    ctx_a = context_builder.build(aisle=aisle_for_ctx, primary_evidence=[], metadata=None)
+    ctx_a = context_builder.build(
+        aisle=aisle_for_ctx,
+        primary_evidence=[],
+        metadata=None,
+        inventory_client_id="client-1",
+    )
     assert [ref.reference_id for ref in ctx_a.visual_references] == [refs_a.id]
     run_metadata_a = build_run_metadata(
         ctx_a,
@@ -1144,7 +1150,12 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
         updated_at=now,
     )
     supplier_repo.create(refs_b)
-    ctx_b = context_builder.build(aisle=aisle_for_ctx, primary_evidence=[], metadata=None)
+    ctx_b = context_builder.build(
+        aisle=aisle_for_ctx,
+        primary_evidence=[],
+        metadata=None,
+        inventory_client_id="client-1",
+    )
     assert [ref.reference_id for ref in ctx_b.visual_references] == [refs_b.id]
     run_metadata_b = build_run_metadata(
         ctx_b,

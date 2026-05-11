@@ -116,13 +116,23 @@ class V3ProcessAislePipelineRunner:
         self._artifact_store = artifact_store
         self._context_builder = context_builder
 
-    def build_analysis_context(self, aisle: Aisle) -> AnalysisContext:
-        """Construct AnalysisContext for this aisle (supplier-linked visual references). Primary evidence empty."""
+    def build_analysis_context(
+        self,
+        aisle: Aisle,
+        *,
+        inventory_client_id: str | None = None,
+    ) -> AnalysisContext:
+        """Construct AnalysisContext for this aisle (supplier-linked visual references).
+
+        ``inventory_client_id`` is the inventory's ``client_id``; when blank, supplier reference
+        images are not attached (safe fallback — E5).
+        """
         primary: list[AnalysisImage] = []
         return self._context_builder.build(
             aisle=aisle,
             primary_evidence=primary,
             metadata=None,
+            inventory_client_id=inventory_client_id,
         )
 
     def build_pipeline_input(

@@ -3,16 +3,24 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+from PIL import Image
+
+from src.application.services.aisle_analysis_context_builder import SUPPLIER_REFERENCES_INSTRUCTION
 from src.application.services.supplier_prompt_resolver import (
     SupplierPromptFallbackReason,
     SupplierPromptResolution,
     SupplierPromptResolutionErrorCode,
 )
 from src.jobs.models import JobInput
+from src.llm.prompt_composer.enrichments import (
+    IMAGE_ID_TRACEABILITY_ENRICHMENT_ID,
+    SUPPLIER_EDITABLE_INSTRUCTIONS_ENRICHMENT_ID,
+)
 from src.llm.prompt_composer.prompt_traceability import (
     COMPOSITION_STEP_EFFECTIVE_SUPPLIER_PROMPT,
     LLM_METADATA_KEY_PROMPT_COMPOSITION,
@@ -21,6 +29,7 @@ from src.llm.prompt_composer.prompt_traceability import (
 )
 from src.llm.prompt_composer.protected_prompt_contract import HYBRID_V21_SHARED_CONTRACT_MARKERS
 from src.llm.types import LLMRequest
+from src.pipeline.adapters.hybrid_global_analysis_strategy import _prepare_hybrid_llm_visual_bundle
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
 from src.pipeline.services.hybrid_analysis_prompt import (
@@ -289,3 +298,90 @@ def test_e41_llm_request_metadata_includes_effective_prompt_fallback() -> None:
     assert ep["fallback_used"] is True
     assert ep["fallback_reason"] == SupplierPromptFallbackReason.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG
     assert ep["resolution_status"] == "fallback"
+
+
+def test_e5_e4_combined_image_ids_supplier_prompt_and_visual_reference_bundle(tmp_path: Path) -> None:
+    """E5 + E4: photos manifest enrichment, supplier editable block, and supplier visual references."""
+    job_root = tmp_path / "job-1"
+    run_dir = job_root / "run-1"
+    run_dir.mkdir(parents=True)
+    photos_dir = job_root / "input_photos"
+    photos_dir.mkdir()
+    Image.new("RGB", (8, 8)).save(photos_dir / "0000_a.jpg")
+    manifest = {
+        "input_type": "photos",
+        "photos": [
+            {
+                "index": 1,
+                "image_id": "asset-1",
+                "original_filename": "a.jpg",
+                "stored_filename": "0000_a.jpg",
+            }
+        ],
+    }
+    (job_root / "input_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    ref_path = tmp_path / "supplier_ref.png"
+    Image.new("RGB", (8, 8), color=(2, 3, 4)).save(ref_path)
+
+    res = _resolution(
+        resolution_status="resolved",
+        editable_instructions="Prefer SKU from left label.",
+        supplier_prompt_config_id="cfg-1",
+        supplier_prompt_config_version=2,
+    )
+    ac = AnalysisContext(
+        primary_evidence=[],
+        visual_references=[
+            VisualReferenceContext(
+                reference_id="sr-1",
+                source_path=str(ref_path),
+                mime_type="image/png",
+                role="supplier_reference",
+                resolved_path=str(ref_path),
+            )
+        ],
+        instructions=[SUPPLIER_REFERENCES_INSTRUCTION],
+        metadata={"reference_source": "supplier_reference_images"},
+    )
+    log = MagicMock()
+    settings = MagicMock()
+    settings.hybrid_prompt = "global_v21"
+    settings.llm_provider = "gemini"
+    settings.artifact_storage_legacy_local_read_enabled = False
+    job_input = JobInput(
+        video_path="",
+        mode="hybrid",
+        input_type="photos",
+        input_manifest_path="input_manifest.json",
+        photos_dir="input_photos",
+        metadata={"inventory_id": "inv-1", "aisle_id": "aisle-1"},
+    )
+    ctx = RunContext(
+        job_id="job-1",
+        run_id="run-1",
+        workspace_path=job_root,
+        run_dir=run_dir,
+        job_input=job_input,
+        settings=settings,
+        logger=log,
+        pipeline_provider_name="gemini",
+        job_model_name="gemini-2.0-flash",
+        supplier_prompt_resolution=res,
+        analysis_context=ac,
+    )
+    text, comp = build_hybrid_analysis_prompt_with_traceability(ctx)
+    enrich = list(comp.get("enrichments_applied") or [])
+    assert IMAGE_ID_TRACEABILITY_ENRICHMENT_ID in enrich
+    assert SUPPLIER_EDITABLE_INSTRUCTIONS_ENRICHMENT_ID in enrich
+    assert "Prefer SKU from left label." in text
+
+    vb = _prepare_hybrid_llm_visual_bundle(
+        supports_visual_reference_context=True,
+        analysis_context=ac,
+        job_id="job-1",
+    )
+    assert vb.consumed_count == 1
+    assert vb.visual_reference_attachments[0]["resolved"] is True
+    assert vb.visual_reference_attachments[0]["role"] == "visual_reference"
+    assert SUPPLIER_REFERENCES_INSTRUCTION in (vb.context_instruction or "")
