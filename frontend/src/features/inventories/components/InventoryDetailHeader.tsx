@@ -1,13 +1,19 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Box, Button, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ROUTE_HOME, pathToInventoryAnalyticsCompare } from '../../../constants/appRoutes';
+import {
+  ROUTE_CLIENTS,
+  ROUTE_HOME,
+  pathToClient,
+  pathToInventoryAnalyticsCompare,
+} from '../../../constants/appRoutes';
 import { ApiError, type Inventory } from '../../../api/types';
 import { exportInventoryResultsCsv } from '../../../api/client';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
-import { PageHeader } from '../../../components/shell';
+import { PageHeader, type PageHeaderBreadcrumb } from '../../../components/shell';
 import { StatusBadge, useAppSnackbar } from '../../../components/ui';
+import { useClient } from '../../../hooks';
 import type { InventoryHeaderViewModel } from '../adapters';
 
 export interface InventoryDetailHeaderProps {
@@ -27,10 +33,23 @@ export default function InventoryDetailHeader({
   const navigate = useNavigate();
   const { showSnackbar } = useAppSnackbar();
   const [exportingCsv, setExportingCsv] = useState(false);
+  const clientId = (inventory.client_id ?? '').trim();
+  const clientQuery = useClient(clientId || undefined, { enabled: Boolean(clientId) });
+
+  const breadcrumbs = useMemo((): PageHeaderBreadcrumb[] => {
+    const crumbs: PageHeaderBreadcrumb[] = [{ label: t('aisle.breadcrumb_inventories'), to: ROUTE_HOME }];
+    if (clientId) {
+      crumbs.push({ label: t('clients.breadcrumb_list'), to: ROUTE_CLIENTS });
+      if (clientQuery.data?.name) {
+        crumbs.push({ label: clientQuery.data.name, to: pathToClient(clientId) });
+      }
+    }
+    return crumbs;
+  }, [clientId, clientQuery.data?.name, t]);
 
   return (
     <PageHeader
-      breadcrumbs={[{ label: t('aisle.breadcrumb_inventories'), to: ROUTE_HOME }]}
+      breadcrumbs={breadcrumbs}
       title={headerVm.title}
       subtitle={
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>

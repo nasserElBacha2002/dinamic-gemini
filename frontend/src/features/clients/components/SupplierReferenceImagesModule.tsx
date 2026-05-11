@@ -17,6 +17,7 @@ export interface SupplierReferenceImagesModuleProps {
   supplierName: string;
   open: boolean;
   onClose: () => void;
+  presentation?: 'drawer' | 'inline';
 }
 
 /**
@@ -28,11 +29,14 @@ export default function SupplierReferenceImagesModule({
   supplierName,
   open,
   onClose,
+  presentation = 'drawer',
 }: SupplierReferenceImagesModuleProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
+  const moduleActive = presentation === 'inline' || open;
+  const embedded = presentation === 'inline';
   const imagesQuery = useSupplierReferenceImages(clientId, supplierId, {
-    enabled: Boolean(open && clientId && supplierId),
+    enabled: Boolean(moduleActive && clientId && supplierId),
   });
   const uploadMutation = useUploadSupplierReferenceImages(clientId, supplierId);
   const deleteMutation = useDeleteSupplierReferenceImage(clientId, supplierId);
@@ -73,7 +77,8 @@ export default function SupplierReferenceImagesModule({
       clientId={clientId}
       supplierId={supplierId}
       supplierName={supplierName}
-      open={open}
+      open={embedded ? true : open}
+      embedded={embedded}
       onClose={handleClose}
       items={imagesQuery.data?.items ?? []}
       isLoading={imagesQuery.isLoading}

@@ -12,6 +12,8 @@ import SupplierPromptConfigVersionList from './SupplierPromptConfigVersionList';
 interface SupplierPromptConfigsDrawerProps {
   supplierName: string;
   open: boolean;
+  /** When true, render as an in-page panel (no right Drawer shell). */
+  embedded?: boolean;
   onClose: () => void;
   scopeType: SupplierPromptScopeType;
   providerName: string;
@@ -48,6 +50,7 @@ function providerLabel(providerName: string | null | undefined, fallback: string
 export default function SupplierPromptConfigsDrawer({
   supplierName,
   open,
+  embedded = false,
   onClose,
   scopeType,
   providerName,
@@ -80,24 +83,40 @@ export default function SupplierPromptConfigsDrawer({
       ? `${allProvidersLabel} · ${defaultModelLabel}`
       : `${providerName} · ${modelLabel(modelName, defaultModelLabel)}`;
 
-  return (
-    <Drawer anchor="right" open={open} onClose={onClose} PaperProps={{ sx: { width: { xs: '100%', sm: 620 } } }}>
-      <DrawerHeader
-        overline={
-          <Typography variant="caption" color="text.secondary">
-            {supplierName}
-          </Typography>
-        }
-        title={<Typography variant="h6">{t('clients.suppliers.prompt_configs.title')}</Typography>}
-        subtitle={
-          <Typography variant="body2" color="text.secondary">
-            {t('clients.suppliers.prompt_configs.description')}
-          </Typography>
-        }
-        onClose={onClose}
-        closeLabel={t('common.close')}
-      />
-      <Stack spacing={2} sx={{ p: 2.5, overflow: 'auto' }}>
+  const headerBlock = embedded ? (
+    <Box sx={{ px: 2.5, pt: 2, pb: 1.5, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
+      <Typography variant="caption" color="text.secondary">
+        {supplierName}
+      </Typography>
+      <Typography variant="h6" sx={{ mt: 0.5 }}>
+        {t('clients.suppliers.prompt_configs.title')}
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+        {t('clients.suppliers.prompt_configs.description')}
+      </Typography>
+    </Box>
+  ) : (
+    <DrawerHeader
+      overline={
+        <Typography variant="caption" color="text.secondary">
+          {supplierName}
+        </Typography>
+      }
+      title={<Typography variant="h6">{t('clients.suppliers.prompt_configs.title')}</Typography>}
+      subtitle={
+        <Typography variant="body2" color="text.secondary">
+          {t('clients.suppliers.prompt_configs.description')}
+        </Typography>
+      }
+      onClose={onClose}
+      closeLabel={t('common.close')}
+    />
+  );
+
+  const body = (
+    <>
+      {headerBlock}
+      <Stack spacing={2} sx={{ p: 2.5, overflow: 'auto', flex: embedded ? 1 : undefined, minHeight: 0 }}>
         <Alert severity="info">{t('clients.suppliers.prompt_configs.protected_boundary_warning')}</Alert>
 
         <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
@@ -179,6 +198,30 @@ export default function SupplierPromptConfigsDrawer({
           {activateError ? <Alert severity="error">{activateError}</Alert> : null}
         </Stack>
       </Stack>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 1,
+          bgcolor: 'background.paper',
+        }}
+      >
+        {body}
+      </Box>
+    );
+  }
+
+  return (
+    <Drawer anchor="right" open={open} onClose={onClose} PaperProps={{ sx: { width: { xs: '100%', sm: 620 } } }}>
+      {body}
     </Drawer>
   );
 }

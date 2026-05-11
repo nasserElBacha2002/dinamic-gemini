@@ -18,6 +18,8 @@ export interface SupplierPromptConfigsModuleProps {
   supplierName: string;
   open: boolean;
   onClose: () => void;
+  /** `drawer`: slide-over. `inline`: embedded in page/tab (queries active while mounted). */
+  presentation?: 'drawer' | 'inline';
 }
 
 function normalizeModelName(value: string): string | null {
@@ -36,10 +38,13 @@ export default function SupplierPromptConfigsModule({
   supplierName,
   open,
   onClose,
+  presentation = 'drawer',
 }: SupplierPromptConfigsModuleProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
-  const processingOptionsQuery = useProcessingProviderOptions({ enabled: open });
+  const moduleActive = presentation === 'inline' || open;
+  const embedded = presentation === 'inline';
+  const processingOptionsQuery = useProcessingProviderOptions({ enabled: moduleActive });
 
   const providerOptions = useMemo(
     () =>
@@ -107,7 +112,7 @@ export default function SupplierPromptConfigsModule({
     scopeQuery,
     {
       enabled:
-        Boolean(open && clientId && supplierId) &&
+        Boolean(moduleActive && clientId && supplierId) &&
         (formValues.scopeType === 'all_providers_models' || Boolean(selectedProvider)),
     }
   );
@@ -118,7 +123,7 @@ export default function SupplierPromptConfigsModule({
     formValues.scopeType === 'provider_model' ? selectedModel : null,
     {
       enabled:
-        Boolean(open && clientId && supplierId) &&
+        Boolean(moduleActive && clientId && supplierId) &&
         (formValues.scopeType === 'all_providers_models' || Boolean(selectedProvider)),
     }
   );
@@ -218,7 +223,8 @@ export default function SupplierPromptConfigsModule({
   return (
     <SupplierPromptConfigsDrawer
       supplierName={supplierName}
-      open={open}
+      open={embedded ? true : open}
+      embedded={embedded}
       onClose={handleClose}
       providerName={selectedProvider}
       modelName={formValues.scopeType === 'provider_model' ? formValues.modelName : ''}

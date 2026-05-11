@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Button, Typography } from '@mui/material';
+import { Alert, Box, Button, Typography } from '@mui/material';
 import { ApiError } from '../api/types';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { rowMatchesSearchQuery } from '../utils/tableSearch';
@@ -101,6 +101,11 @@ export default function InventoryDetail() {
             onOpenCreateAisle={() => setCreateAisleOpen(true)}
           />
           <Box sx={{ display: 'grid', gap: 2 }}>
+            {!inventory.client_id ? (
+              <Alert severity="warning" data-testid="inventory-legacy-no-client">
+                {t('inventory.legacy_no_client_warning')}
+              </Alert>
+            ) : null}
             {processError ? (
               <Box data-testid="inventory-process-error">
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
@@ -125,6 +130,7 @@ export default function InventoryDetail() {
 
             <InventoryAislesSection
               inventoryId={inventoryId ?? ''}
+              inventoryClientId={inventory.client_id ?? null}
               tableRows={tableRows}
               filteredTableRows={filteredTableRows}
               aislesLoading={aislesLoading}

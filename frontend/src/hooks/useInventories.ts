@@ -12,11 +12,15 @@ import { canonicalizeInventoriesListQuery, inventoriesListKeyPart } from '../api
  * Paginated / sortable inventories table (GET /api/v3/inventories).
  * Pass `listQuery` for server-driven page, page_size, sort_by, sort_dir, search, status.
  */
-export function useInventoriesList(listQuery?: InventoriesListQuery) {
+export function useInventoriesList(
+  listQuery?: InventoriesListQuery,
+  options?: { enabled?: boolean }
+) {
   const q = canonicalizeInventoriesListQuery(listQuery);
   return useQuery({
     queryKey: queryKeys.inventories.listWithParams(inventoriesListKeyPart(q)),
     queryFn: () => getInventories(q),
+    enabled: options?.enabled !== false,
   });
 }
 

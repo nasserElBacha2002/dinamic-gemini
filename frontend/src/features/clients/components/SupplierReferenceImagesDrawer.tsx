@@ -29,6 +29,7 @@ export interface SupplierReferenceImagesDrawerProps {
   supplierId: string;
   supplierName: string;
   open: boolean;
+  embedded?: boolean;
   onClose: () => void;
   items: SupplierReferenceImage[];
   isLoading: boolean;
@@ -51,6 +52,7 @@ export default function SupplierReferenceImagesDrawer({
   supplierId,
   supplierName,
   open,
+  embedded = false,
   onClose,
   items,
   isLoading,
@@ -118,7 +120,8 @@ export default function SupplierReferenceImagesDrawer({
 
   return (
     <ManagedImageAssetsDrawer
-      open={open}
+      open={embedded ? true : open}
+      embedded={embedded}
       onClose={onClose}
       copy={copy}
       items={managedItems}

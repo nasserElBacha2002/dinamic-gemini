@@ -583,9 +583,41 @@
     "primary_config_summary": "Configuración principal",
     "primary_config_title": "Configuración del inventario",
     "processing_mode_production": "Producción",
-    "processing_mode_test": "Test"
+    "processing_mode_test": "Test",
+    "legacy_no_client_warning": "Este inventario no tiene cliente asociado. Fue creado antes del modelo cliente/proveedor: algunas funciones usarán la configuración base hasta que asignes un cliente.",
+    "column_aisle_supplier": "Proveedor del pasillo",
+    "aisle_no_supplier": "Sin proveedor asignado",
+    "aisle_supplier_assigned_no_nav": "Proveedor asignado (asociá un cliente al inventario para abrir la ficha)",
+    "aisle_supplier_view_link": "Ver proveedor"
   },
   "clients": {
+    "breadcrumb_list": "Clientes",
+    "supplier_page": {
+      "title_fallback": "Proveedor",
+      "invalid": "Cliente o proveedor inválido en la URL.",
+      "back_to_client": "Volver al cliente",
+      "config_section_title": "Configuración del proveedor",
+      "field_client": "Cliente",
+      "field_status": "Estado",
+      "field_created": "Creado",
+      "field_updated": "Actualizado",
+      "field_prompt": "Prompt del proveedor",
+      "field_reference_images": "Imágenes de referencia",
+      "tab_summary": "Resumen",
+      "tab_prompts": "Prompts",
+      "tab_reference_images": "Imágenes de referencia",
+      "prompts_section_title": "Prompts del proveedor",
+      "reference_section_title": "Imágenes de referencia del proveedor",
+      "reference_section_intro": "Estas imágenes se usan como contexto visual comparativo durante el procesamiento.",
+      "reference_section_policy": "Las imágenes de referencia no son evidencia del inventario. Sirven para orientar al modelo sobre formatos esperados, etiquetas o estándares visuales del proveedor.",
+      "summary_prompt_active": "Configuración activa",
+      "summary_prompt_none": "Sin configuración activa",
+      "summary_prompt_error": "No se pudo consultar la configuración activa.",
+      "summary_refs_count": "{{count}} imágenes de referencia",
+      "summary_refs_none": "Sin imágenes de referencia",
+      "loading": "Cargando proveedor...",
+      "error": "No se pudo cargar el proveedor."
+    },
     "page": {
       "title": "Clientes",
       "subtitle": "Administrá clientes para la futura organización por cliente y proveedor.",
@@ -593,7 +625,10 @@
     },
     "list": {
       "empty_title": "Todavía no hay clientes cargados",
-      "empty_description": "Creá tu primer cliente para empezar a organizar inventarios por cliente y proveedor."
+      "empty_description": "Creá tu primer cliente para empezar a organizar inventarios por cliente y proveedor.",
+      "search_placeholder": "Buscar cliente",
+      "search_hint_page": "Filtrá por nombre o ID entre los clientes de esta página.",
+      "search_no_results_title": "Sin coincidencias"
     },
     "fields": {
       "name": "Cliente",
@@ -634,6 +669,12 @@
       "error": "No se pudo cargar el cliente.",
       "invalid": "Cliente inválido.",
       "back_to_list": "Volver a clientes",
+      "create_inventory": "Crear inventario para este cliente",
+      "inventories_title": "Inventarios del cliente",
+      "inventories_subtitle": "Inventarios operativos asociados a este cliente.",
+      "inventories_empty": "Este cliente todavía no tiene inventarios asociados.",
+      "inventories_empty_hint": "Creá un inventario y asociá este cliente para verlo aquí.",
+      "inventories_error": "No se pudieron cargar los inventarios.",
       "info_title": "Información del cliente",
       "fields": {
         "name": "Nombre",
@@ -1144,6 +1185,10 @@
     "client_detail": {
       "title": "Detalle de cliente",
       "subtitle": "Información del cliente y sus proveedores asociados"
+    },
+    "client_supplier_detail": {
+      "title": "Proveedor del cliente",
+      "subtitle": "Prompt, referencias y configuración operativa"
     },
     "ingestion_sessions": {
       "title": "Sesiones de importación",

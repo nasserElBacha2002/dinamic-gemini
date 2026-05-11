@@ -44,6 +44,12 @@ export function topBarCopy(pathname: string): { titleKey: string; subtitleKey?: 
   if (pathname === ROUTE_CLIENTS) {
     return { titleKey: 'routes.clients.title', subtitleKey: 'routes.clients.subtitle' };
   }
+  if (matchPath(ROUTE_MATCH.clientSupplierDetail, pathname)) {
+    return {
+      titleKey: 'routes.client_supplier_detail.title',
+      subtitleKey: 'routes.client_supplier_detail.subtitle',
+    };
+  }
   if (matchPath(ROUTE_MATCH.clientDetail, pathname)) {
     return { titleKey: 'routes.client_detail.title', subtitleKey: 'routes.client_detail.subtitle' };
   }

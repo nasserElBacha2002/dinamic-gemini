@@ -1,7 +1,7 @@
 import type { ChangeEvent, RefObject } from 'react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { Box, Button, Typography } from '@mui/material';
 import {
   DataTable,
@@ -12,7 +12,7 @@ import {
   TableSearchField,
   type DataTableColumn,
 } from '../../../components/ui';
-import { pathToAisleObservability } from '../../../constants/appRoutes';
+import { pathToAisleObservability, pathToClientSupplier } from '../../../constants/appRoutes';
 import { pathToAislePositions } from '../../../utils/resultRoutes';
 import {
   computeProcessAisleMenuState,
@@ -22,6 +22,8 @@ import {
 
 export interface InventoryAislesSectionProps {
   inventoryId: string;
+  /** When set, aisle rows can link to supplier detail for `client_supplier_id`. */
+  inventoryClientId?: string | null;
   /** All aisles (for empty vs filter-empty). */
   tableRows: AisleInventoryTableRow[];
   filteredTableRows: AisleInventoryTableRow[];
@@ -41,6 +43,7 @@ export interface InventoryAislesSectionProps {
 
 export default function InventoryAislesSection({
   inventoryId,
+  inventoryClientId = null,
   tableRows,
   filteredTableRows,
   aislesLoading,
@@ -94,6 +97,40 @@ export default function InventoryAislesSection({
             {row.presentation.code}
           </Button>
         ),
+      },
+      {
+        id: 'client_supplier',
+        label: t('inventory.column_aisle_supplier'),
+        cell: (row) => {
+          const sid = row.presentation.clientSupplierId;
+          if (!sid) {
+            return (
+              <Typography variant="body2" color="text.secondary">
+                {t('inventory.aisle_no_supplier')}
+              </Typography>
+            );
+          }
+          const cid = (inventoryClientId ?? '').trim();
+          if (!cid) {
+            return (
+              <Typography variant="body2" color="text.secondary">
+                {t('inventory.aisle_supplier_assigned_no_nav')}
+              </Typography>
+            );
+          }
+          return (
+            <Button
+              component={RouterLink}
+              to={pathToClientSupplier(cid, sid)}
+              size="small"
+              variant="text"
+              onClick={(e) => e.stopPropagation()}
+              sx={{ px: 0, minWidth: 0, textTransform: 'none' }}
+            >
+              {t('inventory.aisle_supplier_view_link')}
+            </Button>
+          );
+        },
       },
       {
         id: 'aisle_status',
@@ -213,6 +250,7 @@ export default function InventoryAislesSection({
     ],
     [
       emptyLabel,
+      inventoryClientId,
       inventoryId,
       menuCtx,
       navigate,

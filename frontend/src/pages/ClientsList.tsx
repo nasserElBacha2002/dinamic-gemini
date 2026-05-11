@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Button } from '@mui/material';
+import { useEffect, useMemo, useState } from 'react';
+import { Button, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink } from 'react-router-dom';
 import type { Client } from '../api/types';
@@ -8,8 +8,10 @@ import { PageHeader } from '../components/shell';
 import {
   DataTable,
   ErrorAlert,
+  FilterToolbar,
   SectionCard,
   StatusBadge,
+  TableSearchField,
   useAppSnackbar,
   type DataTableColumn,
 } from '../components/ui';
@@ -17,6 +19,7 @@ import { pathToClient } from '../constants/appRoutes';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import { useClients, useCreateClient } from '../hooks';
 import { formatDate } from '../utils/formatDate';
+import { rowMatchesSearchQuery } from '../utils/tableSearch';
 
 function clientStatusLabel(status: string, t: (key: string) => string): string {
   return status === 'inactive' ? t('clients.status.inactive') : t('clients.status.active');
@@ -33,6 +36,7 @@ export default function ClientsList() {
   const [createOpen, setCreateOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const [clientSearch, setClientSearch] = useState('');
 
   const listQuery = useMemo(
     () => ({ page, page_size: pageSize }),
@@ -40,7 +44,16 @@ export default function ClientsList() {
   );
 
   const clientsQuery = useClients(listQuery);
-  const clients: Client[] = clientsQuery.data?.items ?? [];
+  const clientItems = useMemo(() => clientsQuery.data?.items ?? [], [clientsQuery.data?.items]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [clientSearch]);
+
+  const displayedClients = useMemo(
+    () => clientItems.filter((c) => rowMatchesSearchQuery(clientSearch, [c.name, c.id])),
+    [clientItems, clientSearch]
+  );
 
   const columns = useMemo<DataTableColumn<Client>[]>(
     () => [
@@ -114,30 +127,53 @@ export default function ClientsList() {
 
       {!clientsQuery.isError ? (
         <SectionCard title={t('clients.page.title')} subtitle={t('clients.page.subtitle')}>
+          <FilterToolbar onReset={() => setClientSearch('')} resetDisabled={!clientSearch.trim()}>
+            <TableSearchField
+              label={t('clients.list.search_placeholder')}
+              placeholder={t('clients.list.search_placeholder')}
+              value={clientSearch}
+              onChange={setClientSearch}
+              data-testid="clients-list-search"
+            />
+          </FilterToolbar>
+          {clientSearch.trim() ? (
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              {t('clients.list.search_hint_page')}
+            </Typography>
+          ) : null}
           <DataTable<Client>
-            rows={clients}
+            rows={displayedClients}
             rowKey={(client) => client.id}
             columns={columns}
             loading={clientsQuery.isLoading}
-            emptyState={{
-              title: t('clients.list.empty_title'),
-              message: t('clients.list.empty_description'),
-              action: (
-                <Button variant="contained" onClick={() => setCreateOpen(true)}>
-                  {t('clients.actions.create')}
-                </Button>
-              ),
-            }}
-            pagination={
-              clientsQuery.data
+            emptyState={
+              clientSearch.trim() && clientItems.length > 0 && displayedClients.length === 0
                 ? {
-                    page,
-                    pageSize,
-                    totalItems: clientsQuery.data.total_items,
-                    onPageChange: setPage,
-                    onPageSizeChange: setPageSize,
+                    title: t('clients.list.search_no_results_title'),
+                    message: t('table.empty_no_match'),
                   }
-                : undefined
+                : {
+                    title: t('clients.list.empty_title'),
+                    message: t('clients.list.empty_description'),
+                    action: (
+                      <Button variant="contained" onClick={() => setCreateOpen(true)}>
+                        {t('clients.actions.create')}
+                      </Button>
+                    ),
+                  }
+            }
+            pagination={
+              clientSearch.trim()
+                ? undefined
+                : clientsQuery.data
+                  ? {
+                      page,
+                      pageSize,
+                      totalItems: clientsQuery.data.total_items,
+                      onPageChange: setPage,
+                      onPageSizeChange: setPageSize,
+                    }
+                  : undefined
             }
           />
         </SectionCard>

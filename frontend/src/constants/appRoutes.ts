@@ -21,6 +21,8 @@ export const ROUTE_PATH = {
   metrics: 'metrics',
   clients: 'clientes',
   clientDetail: 'clientes/:clientId',
+  /** Detalle de proveedor del cliente (Phase F). */
+  clientSupplierDetail: 'clientes/:clientId/proveedores/:supplierId',
   ingestionSessions: 'ingestion-sessions',
   adminAiConfig: 'admin/ai-config',
   dashboard: 'dashboard',
@@ -49,6 +51,7 @@ export const ROUTE_MATCH = {
   aisleObservability: `${ROUTE_INVENTORIES_ROOT}/:inventoryId/aisles/:aisleId/observability`,
   ingestionSessionDetail: `/ingestion-sessions/:sessionId`,
   clientDetail: '/clientes/:clientId',
+  clientSupplierDetail: '/clientes/:clientId/proveedores/:supplierId',
 } as const;
 
 export function pathToInventory(inventoryId: string): string {
@@ -86,4 +89,8 @@ export function pathToIngestionSessionDetail(sessionId: string, inventoryId: str
 
 export function pathToClient(clientId: string): string {
   return `${ROUTE_CLIENTS}/${encodeURIComponent(clientId)}`;
+}
+
+export function pathToClientSupplier(clientId: string, supplierId: string): string {
+  return `${ROUTE_CLIENTS}/${encodeURIComponent(clientId)}/proveedores/${encodeURIComponent(supplierId)}`;
 }
