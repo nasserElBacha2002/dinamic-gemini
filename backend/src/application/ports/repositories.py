@@ -360,7 +360,7 @@ class SupplierPromptConfigRepository(ABC):
     def list_versions_by_scope(
         self,
         client_supplier_id: str,
-        provider_name: str,
+        provider_name: str | None,
         model_name: str | None,
     ) -> Sequence[SupplierPromptConfig]:
         """Return versions for one supplier/provider/model scope (newest first)."""
@@ -375,7 +375,7 @@ class SupplierPromptConfigRepository(ABC):
     def get_active_by_scope(
         self,
         client_supplier_id: str,
-        provider_name: str,
+        provider_name: str | None,
         model_name: str | None,
     ) -> SupplierPromptConfig | None:
         """Return active config for exact scope, or None."""
@@ -385,7 +385,7 @@ class SupplierPromptConfigRepository(ABC):
     def get_latest_version_number(
         self,
         client_supplier_id: str,
-        provider_name: str,
+        provider_name: str | None,
         model_name: str | None,
     ) -> int | None:
         """Return max version for exact scope, or None when no rows exist."""
@@ -395,7 +395,7 @@ class SupplierPromptConfigRepository(ABC):
     def deactivate_scope(
         self,
         client_supplier_id: str,
-        provider_name: str,
+        provider_name: str | None,
         model_name: str | None,
     ) -> None:
         """Set is_active=0 for all rows in exact scope."""
@@ -405,3 +405,4 @@ class SupplierPromptConfigRepository(ABC):
     def activate_version(self, config_id: str) -> SupplierPromptConfig | None:
         """Set one version active (and other scope rows inactive), returning the activated row."""
         ...
+

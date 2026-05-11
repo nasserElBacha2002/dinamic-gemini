@@ -16,6 +16,13 @@ function modelLabel(
   return (modelName ?? '').trim() || t('clients.suppliers.prompt_configs.default_model_label');
 }
 
+function providerLabel(
+  providerName: string | null | undefined,
+  t: (key: string) => string
+): string {
+  return (providerName ?? '').trim() || t('clients.suppliers.prompt_configs.all_providers_label');
+}
+
 export default function SupplierPromptConfigVersionList({
   items,
   onActivate,
@@ -48,7 +55,8 @@ export default function SupplierPromptConfigVersionList({
             ) : null}
           </Box>
           <Typography variant="caption" color="text.secondary">
-            {item.provider_name} · {modelLabel(item.model_name, t)} · {formatDate(item.updated_at)}
+            {providerLabel(item.provider_name, t)} · {modelLabel(item.model_name, t)} ·{' '}
+            {formatDate(item.updated_at)}
           </Typography>
           <Typography
             variant="body2"

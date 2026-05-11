@@ -46,6 +46,9 @@ logger = logging.getLogger(__name__)
 # ``product_label_bbox``) so PALLET rows persist for UNKNOWN-SKU jobs. Prefer canonical v2.1 keys
 # from the model when possible.
 
+# Phase E1: **ProviderPromptRules** — wire-level JSON root + canonical keys appended after hybrid
+# base + optional context_instruction. Must stay consistent with ``validate_global_analysis_structure_v21``
+# and ``normalize_llm_response`` expectations.
 _JSON_OBJECT_SUFFIX = (
     "\n\nOutput requirement: respond with a single JSON object only (no markdown fences). "
     'Root keys: "total_entities_detected" (non-negative integer) and "entities" (array). '

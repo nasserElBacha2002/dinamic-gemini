@@ -57,3 +57,4 @@ export function supplierPromptConfigActivatePath(
 ): string {
   return `${supplierPromptConfigByIdPath(clientId, supplierId, configId)}/activate`;
 }
+

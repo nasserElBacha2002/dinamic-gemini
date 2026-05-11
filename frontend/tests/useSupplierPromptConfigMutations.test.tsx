@@ -49,10 +49,22 @@ describe('supplier prompt config mutations', () => {
 
     const invalidations = invalidateSpy.mock.calls.map((c) => c[0]);
     expect(invalidations).toContainEqual({
-      queryKey: queryKeys.clients.suppliers.promptConfigs.listByScope('client-1', 'supplier-1', 'gemini', null),
+      queryKey: queryKeys.clients.suppliers.promptConfigs.listByScope(
+        'client-1',
+        'supplier-1',
+        'provider',
+        'gemini',
+        null
+      ),
     });
     expect(invalidations).toContainEqual({
-      queryKey: queryKeys.clients.suppliers.promptConfigs.activeByScope('client-1', 'supplier-1', 'gemini', null),
+      queryKey: queryKeys.clients.suppliers.promptConfigs.activeByScope(
+        'client-1',
+        'supplier-1',
+        'provider',
+        'gemini',
+        null
+      ),
     });
     expect(invalidations).toContainEqual({
       queryKey: queryKeys.clients.suppliers.promptConfigs.all('client-1', 'supplier-1'),
@@ -86,6 +98,7 @@ describe('supplier prompt config mutations', () => {
       queryKey: queryKeys.clients.suppliers.promptConfigs.listByScope(
         'client-1',
         'supplier-1',
+        'provider_model',
         'gemini',
         'gemini-2.0-flash-exp'
       ),
@@ -94,6 +107,7 @@ describe('supplier prompt config mutations', () => {
       queryKey: queryKeys.clients.suppliers.promptConfigs.activeByScope(
         'client-1',
         'supplier-1',
+        'provider_model',
         'gemini',
         'gemini-2.0-flash-exp'
       ),

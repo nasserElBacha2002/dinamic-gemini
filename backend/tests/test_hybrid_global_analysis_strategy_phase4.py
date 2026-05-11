@@ -530,3 +530,98 @@ def test_prepare_hybrid_llm_visual_bundle_no_context() -> None:
     )
     assert vb.context_instruction is None
     assert vb.visual_reference_attachments == []
+
+
+def test_prepare_hybrid_llm_visual_bundle_resolves_supplier_reference_files(
+    tmp_path,
+) -> None:
+    """E5: resolved_path images load; attachment roles stay visual_reference (not primary_evidence)."""
+    from PIL import Image
+
+    from src.pipeline.adapters.hybrid_global_analysis_strategy import (
+        _prepare_hybrid_llm_visual_bundle,
+    )
+    from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
+    from src.pipeline.services.analysis_visual_reference_prep import (
+        build_primary_evidence_attachments,
+    )
+
+    p1 = tmp_path / "r1.png"
+    p2 = tmp_path / "r2.png"
+    Image.new("RGB", (8, 8), color=(1, 2, 3)).save(p1)
+    Image.new("RGB", (8, 8), color=(4, 5, 6)).save(p2)
+    ctx = AnalysisContext(
+        primary_evidence=[],
+        visual_references=[
+            VisualReferenceContext(
+                reference_id="id-1",
+                source_path=str(p1),
+                mime_type="image/png",
+                role="supplier_reference",
+                resolved_path=str(p1),
+            ),
+            VisualReferenceContext(
+                reference_id="id-2",
+                source_path=str(p2),
+                mime_type="image/png",
+                role="supplier_reference",
+                resolved_path=str(p2),
+            ),
+        ],
+        instructions=["Supplier reference images illustrate"],
+        metadata=None,
+    )
+    vb = _prepare_hybrid_llm_visual_bundle(
+        supports_visual_reference_context=True,
+        analysis_context=ctx,
+        job_id="job-e5",
+    )
+    assert vb.consumed_count == 2
+    assert len(vb.visual_reference_attachments) == 2
+    for a in vb.visual_reference_attachments:
+        assert a["role"] == "visual_reference"
+        assert a["role"] != "primary_evidence"
+        assert a["resolved"] is True
+    primary = build_primary_evidence_attachments(
+        [tmp_path / "f0.jpg", tmp_path / "f1.jpg"],
+        ["a", "b"],
+    )
+    assert len(primary) == 2
+    assert all(x["role"] == "primary_evidence" for x in primary)
+    assert len(primary) + vb.consumed_count == 4
+
+
+def test_prepare_hybrid_llm_visual_bundle_missing_reference_file_still_emits_attachment(
+    tmp_path,
+) -> None:
+    """E5: unreadable / missing file → resolved false; bundle still lists attachment for logs."""
+    from src.pipeline.adapters.hybrid_global_analysis_strategy import (
+        _prepare_hybrid_llm_visual_bundle,
+    )
+    from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
+
+    missing = tmp_path / "nope.png"
+    ctx = AnalysisContext(
+        primary_evidence=[],
+        visual_references=[
+            VisualReferenceContext(
+                reference_id="gone",
+                source_path="gone.png",
+                mime_type="image/png",
+                role="supplier_reference",
+                resolved_path=str(missing),
+            )
+        ],
+        instructions=["ctx"],
+        metadata=None,
+    )
+    vb = _prepare_hybrid_llm_visual_bundle(
+        supports_visual_reference_context=True,
+        analysis_context=ctx,
+        job_id="job-e5",
+    )
+    assert vb.consumed_count == 0
+    assert len(vb.visual_reference_attachments) == 1
+    att = vb.visual_reference_attachments[0]
+    assert att["resolved"] is False
+    assert att["role"] == "visual_reference"

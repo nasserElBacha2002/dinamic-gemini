@@ -1,6 +1,11 @@
 """
 Provider-neutral hybrid global-analysis strategy implementing ``AnalysisProvider`` (Stage 2.3.B, Phase 4–6).
 
+**Phase E1 / E4:** ``LLMRequest.prompt`` carries the **ProtectedSystemContractBlock** (hybrid base +
+image enrichments + optional supplier-editable block from ``build_hybrid_analysis_prompt_with_traceability``
+when v3 passes ``RunContext.supplier_prompt_resolution``). ``context_instruction`` remains
+non-protected context (e.g. reference copy). OpenAI JSON suffix is still appended only in the adapter.
+
 Builds the shared ``LLMRequest`` (prompt, context images, primary frames) and delegates the vendor
 call to ``LlmGlobalAnalysisExecutor`` resolved by :mod:`src.pipeline.services.pipeline_provider_resolver`
 (Gemini, OpenAI, Claude, DeepSeek).

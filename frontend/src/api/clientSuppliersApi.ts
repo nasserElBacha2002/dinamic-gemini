@@ -152,13 +152,15 @@ export async function fetchSupplierReferenceImageFile(
 }
 
 export interface SupplierPromptConfigsListQuery {
-  provider_name?: string;
+  scope?: 'all';
+  provider_name?: string | null;
   model_name?: string | null;
 }
 
 function buildSupplierPromptConfigsQueryString(q: SupplierPromptConfigsListQuery | undefined): string {
   if (!q) return '';
   const params = new URLSearchParams();
+  if (q.scope === 'all') params.set('scope', 'all');
   const provider = (q.provider_name ?? '').trim();
   const model = (q.model_name ?? '').trim();
   if (provider) params.set('provider_name', provider);
@@ -198,11 +200,12 @@ export async function createSupplierPromptConfigVersion(
 export async function getActiveSupplierPromptConfig(
   clientId: string,
   supplierId: string,
-  providerName: string,
+  providerName?: string | null,
   modelName?: string | null
 ): Promise<SupplierPromptConfig> {
   const params = new URLSearchParams();
-  params.set('provider_name', providerName.trim());
+  const normalizedProviderName = (providerName ?? '').trim();
+  if (normalizedProviderName) params.set('provider_name', normalizedProviderName);
   const normalizedModelName = (modelName ?? '').trim();
   if (normalizedModelName) params.set('model_name', normalizedModelName);
   const response = await protectedFetch(

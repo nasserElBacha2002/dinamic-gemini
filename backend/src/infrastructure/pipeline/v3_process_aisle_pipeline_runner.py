@@ -16,6 +16,7 @@ from typing import Any, Callable, Optional
 
 from src.application.ports.repositories import SupplierReferenceImageRepository
 from src.application.services.aisle_analysis_context_builder import AisleAnalysisContextBuilder
+from src.application.services.supplier_prompt_resolver import SupplierPromptResolution
 from src.config import Settings
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset, SourceAssetType
@@ -60,6 +61,14 @@ def visual_reference_failure_metadata(
     block["resolution_error"] = error_message[:2048] if len(error_message) > 2048 else error_message
     block["resolution_stage"] = "input_artifact_resolution"
     return block
+
+
+def _v3_job_input_trace_metadata(aisle: Aisle) -> dict[str, str]:
+    """Stable inventory/aisle identifiers on JobInput.metadata for execution logs (E6)."""
+    return {
+        "inventory_id": aisle.inventory_id,
+        "aisle_id": aisle.id,
+    }
 
 
 def resolve_visual_reference_paths(
@@ -115,13 +124,23 @@ class V3ProcessAislePipelineRunner:
         self._artifact_store = artifact_store
         self._context_builder = context_builder
 
-    def build_analysis_context(self, aisle: Aisle) -> AnalysisContext:
-        """Construct AnalysisContext for this aisle (supplier-linked visual references). Primary evidence empty."""
+    def build_analysis_context(
+        self,
+        aisle: Aisle,
+        *,
+        inventory_client_id: str | None = None,
+    ) -> AnalysisContext:
+        """Construct AnalysisContext for this aisle (supplier-linked visual references).
+
+        ``inventory_client_id`` is the inventory's ``client_id``; when blank, supplier reference
+        images are not attached (safe fallback — E5).
+        """
         primary: list[AnalysisImage] = []
         return self._context_builder.build(
             aisle=aisle,
             primary_evidence=primary,
             metadata=None,
+            inventory_client_id=inventory_client_id,
         )
 
     def build_pipeline_input(
@@ -178,7 +197,10 @@ class V3ProcessAislePipelineRunner:
                     video_path=video_path,
                     mode="hybrid",
                     input_type="video",
-                    metadata={"analysis_context": analysis_context_to_dict(resolved_ctx)},
+                    metadata={
+                        **_v3_job_input_trace_metadata(aisle),
+                        "analysis_context": analysis_context_to_dict(resolved_ctx),
+                    },
                 ),
                 video_path,
             )
@@ -218,7 +240,10 @@ class V3ProcessAislePipelineRunner:
                 input_type="photos",
                 input_manifest_path="input_manifest.json",
                 photos_dir="input_photos",
-                metadata={"analysis_context": analysis_context_to_dict(resolved_ctx)},
+                metadata={
+                    **_v3_job_input_trace_metadata(aisle),
+                    "analysis_context": analysis_context_to_dict(resolved_ctx),
+                },
             ),
             "",  # video_path empty for photos
         )
@@ -242,6 +267,7 @@ class V3ProcessAislePipelineRunner:
         job_prompt_key: str | None,
         job_prompt_version: str | None,
         job_prompt_parity_mode: bool,
+        supplier_prompt_resolution: SupplierPromptResolution | None = None,
     ) -> PipelineRunResult:
         """Invoke ``process_video`` (hybrid mode) with the same arguments the executor used."""
         return pipeline.process_video(
@@ -262,4 +288,5 @@ class V3ProcessAislePipelineRunner:
             job_prompt_key=job_prompt_key,
             job_prompt_version=job_prompt_version,
             job_prompt_parity_mode=job_prompt_parity_mode,
+            supplier_prompt_resolution=supplier_prompt_resolution,
         )

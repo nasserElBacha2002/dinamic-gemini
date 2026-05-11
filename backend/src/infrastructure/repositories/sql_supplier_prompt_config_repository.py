@@ -28,7 +28,7 @@ def _row_to_supplier_prompt_config(row) -> SupplierPromptConfig:
     return SupplierPromptConfig(
         id=getattr(row, "id", None),
         client_supplier_id=getattr(row, "client_supplier_id", None),
-        provider_name=(getattr(row, "provider_name", None) or "").strip(),
+        provider_name=(getattr(row, "provider_name", None) or "").strip() or None,
         model_name=(getattr(row, "model_name", None) or "").strip() or None,
         instructions_text=getattr(row, "instructions_text", None),
         version=int(getattr(row, "version", 0)),
@@ -61,7 +61,7 @@ class SqlSupplierPromptConfigRepository(SupplierPromptConfigRepository):
                 (
                     config.id,
                     config.client_supplier_id,
-                    config.provider_name.strip(),
+                    (config.provider_name or "").strip() or None,
                     (config.model_name or "").strip() or None,
                     config.instructions_text,
                     int(config.version),
@@ -80,7 +80,7 @@ class SqlSupplierPromptConfigRepository(SupplierPromptConfigRepository):
                        version, is_active, created_at, updated_at
                 FROM supplier_prompt_configs
                 WHERE client_supplier_id = ?
-                ORDER BY provider_name ASC,
+                ORDER BY provider_scope_key ASC,
                          model_scope_key ASC,
                          version DESC,
                          created_at DESC,
@@ -94,7 +94,7 @@ class SqlSupplierPromptConfigRepository(SupplierPromptConfigRepository):
     def list_versions_by_scope(
         self,
         client_supplier_id: str,
-        provider_name: str,
+        provider_name: str | None,
         model_name: str | None,
     ) -> Sequence[SupplierPromptConfig]:
         with self._client.cursor() as cur:
@@ -104,11 +104,11 @@ class SqlSupplierPromptConfigRepository(SupplierPromptConfigRepository):
                        version, is_active, created_at, updated_at
                 FROM supplier_prompt_configs
                 WHERE client_supplier_id = ?
-                  AND provider_name = ?
+                  AND ((? IS NULL AND provider_name IS NULL) OR provider_name = ?)
                   AND ((? IS NULL AND model_name IS NULL) OR model_name = ?)
                 ORDER BY version DESC, created_at DESC, id ASC
                 """,
-                (client_supplier_id, provider_name, model_name, model_name),
+                (client_supplier_id, provider_name, provider_name, model_name, model_name),
             )
             rows = cur.fetchall()
         return [_row_to_supplier_prompt_config(row) for row in rows]
@@ -130,7 +130,7 @@ class SqlSupplierPromptConfigRepository(SupplierPromptConfigRepository):
     def get_active_by_scope(
         self,
         client_supplier_id: str,
-        provider_name: str,
+        provider_name: str | None,
         model_name: str | None,
     ) -> SupplierPromptConfig | None:
         with self._client.cursor() as cur:
@@ -140,12 +140,12 @@ class SqlSupplierPromptConfigRepository(SupplierPromptConfigRepository):
                        version, is_active, created_at, updated_at
                 FROM supplier_prompt_configs
                 WHERE client_supplier_id = ?
-                  AND provider_name = ?
+                  AND ((? IS NULL AND provider_name IS NULL) OR provider_name = ?)
                   AND ((? IS NULL AND model_name IS NULL) OR model_name = ?)
                   AND is_active = 1
                 ORDER BY version DESC, created_at DESC, id ASC
                 """,
-                (client_supplier_id, provider_name, model_name, model_name),
+                (client_supplier_id, provider_name, provider_name, model_name, model_name),
             )
             row = cur.fetchone()
         return _row_to_supplier_prompt_config(row) if row else None
@@ -153,7 +153,7 @@ class SqlSupplierPromptConfigRepository(SupplierPromptConfigRepository):
     def get_latest_version_number(
         self,
         client_supplier_id: str,
-        provider_name: str,
+        provider_name: str | None,
         model_name: str | None,
     ) -> int | None:
         with self._client.cursor() as cur:
@@ -162,10 +162,10 @@ class SqlSupplierPromptConfigRepository(SupplierPromptConfigRepository):
                 SELECT MAX(version) AS max_version
                 FROM supplier_prompt_configs
                 WHERE client_supplier_id = ?
-                  AND provider_name = ?
+                  AND ((? IS NULL AND provider_name IS NULL) OR provider_name = ?)
                   AND ((? IS NULL AND model_name IS NULL) OR model_name = ?)
                 """,
-                (client_supplier_id, provider_name, model_name, model_name),
+                (client_supplier_id, provider_name, provider_name, model_name, model_name),
             )
             row = cur.fetchone()
         if not row or getattr(row, "max_version", None) is None:
@@ -175,7 +175,7 @@ class SqlSupplierPromptConfigRepository(SupplierPromptConfigRepository):
     def deactivate_scope(
         self,
         client_supplier_id: str,
-        provider_name: str,
+        provider_name: str | None,
         model_name: str | None,
     ) -> None:
         with self._client.cursor() as cur:
@@ -185,11 +185,11 @@ class SqlSupplierPromptConfigRepository(SupplierPromptConfigRepository):
                 SET is_active = 0,
                     updated_at = SYSUTCDATETIME()
                 WHERE client_supplier_id = ?
-                  AND provider_name = ?
+                  AND ((? IS NULL AND provider_name IS NULL) OR provider_name = ?)
                   AND ((? IS NULL AND model_name IS NULL) OR model_name = ?)
                   AND is_active = 1
                 """,
-                (client_supplier_id, provider_name, model_name, model_name),
+                (client_supplier_id, provider_name, provider_name, model_name, model_name),
             )
 
     def activate_version(self, config_id: str) -> SupplierPromptConfig | None:
@@ -219,11 +219,11 @@ class SqlSupplierPromptConfigRepository(SupplierPromptConfigRepository):
                 SET is_active = 0,
                     updated_at = SYSUTCDATETIME()
                 WHERE client_supplier_id = ?
-                  AND provider_name = ?
+                  AND ((? IS NULL AND provider_name IS NULL) OR provider_name = ?)
                   AND ((? IS NULL AND model_name IS NULL) OR model_name = ?)
                   AND is_active = 1
                 """,
-                (supplier_id, provider_name, model_name, model_name),
+                (supplier_id, provider_name, provider_name, model_name, model_name),
             )
             cur.execute(
                 """

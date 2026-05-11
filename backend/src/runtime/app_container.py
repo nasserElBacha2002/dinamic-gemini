@@ -822,3 +822,4 @@ class AppContainer:
             client_supplier_repo=self.get_client_supplier_repo(),
             prompt_config_repo=self.get_supplier_prompt_config_repo(),
         )
+

@@ -1,7 +1,10 @@
 import { Alert, Box, Button, FormControl, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
+export type SupplierPromptScopeType = 'all_providers_models' | 'provider' | 'provider_model';
+
 export interface SupplierPromptConfigFormValues {
+  scopeType: SupplierPromptScopeType;
   providerName: string;
   modelName: string;
   instructionsText: string;
@@ -38,6 +41,43 @@ export default function SupplierPromptConfigForm({
     <Stack spacing={2}>
       <Typography variant="subtitle2">{t('clients.suppliers.prompt_configs.new_version')}</Typography>
       <FormControl size="small" fullWidth disabled={isSubmitting}>
+        <InputLabel id="supplier-prompt-scope-label">
+          {t('clients.suppliers.prompt_configs.scope_label')}
+        </InputLabel>
+        <Select
+          labelId="supplier-prompt-scope-label"
+          value={values.scopeType}
+          label={t('clients.suppliers.prompt_configs.scope_label')}
+          onChange={(event) => {
+            const scopeType = String(event.target.value) as SupplierPromptScopeType;
+            onChange({
+              ...values,
+              scopeType,
+              providerName: scopeType === 'all_providers_models' ? '' : values.providerName,
+              modelName: '',
+            });
+          }}
+        >
+          <MenuItem value="all_providers_models">
+            {t('clients.suppliers.prompt_configs.scope_all_providers_models')}
+          </MenuItem>
+          <MenuItem value="provider">
+            {t('clients.suppliers.prompt_configs.scope_provider')}
+          </MenuItem>
+          <MenuItem value="provider_model">
+            {t('clients.suppliers.prompt_configs.scope_provider_model')}
+          </MenuItem>
+        </Select>
+      </FormControl>
+
+      {values.scopeType === 'all_providers_models' ? (
+        <Typography variant="body2" color="text.secondary">
+          {t('clients.suppliers.prompt_configs.scope_all_description')}
+        </Typography>
+      ) : null}
+
+      {values.scopeType !== 'all_providers_models' ? (
+      <FormControl size="small" fullWidth disabled={isSubmitting}>
         <InputLabel id="supplier-prompt-provider-label">
           {t('clients.suppliers.prompt_configs.provider_label')}
         </InputLabel>
@@ -60,7 +100,9 @@ export default function SupplierPromptConfigForm({
           ))}
         </Select>
       </FormControl>
+      ) : null}
 
+      {values.scopeType === 'provider_model' ? (
       <FormControl size="small" fullWidth disabled={isSubmitting || isModelOptionsLoading}>
         <InputLabel id="supplier-prompt-model-label">
           {t('clients.suppliers.prompt_configs.model_label')}
@@ -88,6 +130,7 @@ export default function SupplierPromptConfigForm({
             : t('clients.suppliers.prompt_configs.model_helper')}
         </Typography>
       </FormControl>
+      ) : null}
 
       <TextField
         label={t('clients.suppliers.prompt_configs.instructions_label')}

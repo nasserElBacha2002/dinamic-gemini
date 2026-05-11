@@ -109,30 +109,42 @@ export const queryKeys = {
       promptConfigs: {
         all: (clientId: string, supplierId: string) =>
           [...queryKeys.clients.suppliers.all(clientId), 'prompt-configs', supplierId] as const,
+        scope: (
+          clientId: string,
+          supplierId: string,
+          scopeType: 'all_providers_models' | 'provider' | 'provider_model',
+          providerName: string | null,
+          modelName: string | null
+        ) =>
+          [
+            ...queryKeys.clients.suppliers.promptConfigs.all(clientId, supplierId),
+            'scope',
+            scopeType,
+            providerName ?? '__all_providers__',
+            modelName ?? '__default__',
+          ] as const,
         listByScope: (
           clientId: string,
           supplierId: string,
-          providerName: string,
+          scopeType: 'all_providers_models' | 'provider' | 'provider_model',
+          providerName: string | null,
           modelName: string | null
-        ) =>
-          [
-            ...queryKeys.clients.suppliers.promptConfigs.all(clientId, supplierId),
-            'scope',
-            providerName,
-            modelName ?? '__default__',
-            'list',
-          ] as const,
+        ) => [...queryKeys.clients.suppliers.promptConfigs.scope(clientId, supplierId, scopeType, providerName, modelName), 'list'] as const,
         activeByScope: (
           clientId: string,
           supplierId: string,
-          providerName: string,
+          scopeType: 'all_providers_models' | 'provider' | 'provider_model',
+          providerName: string | null,
           modelName: string | null
         ) =>
           [
-            ...queryKeys.clients.suppliers.promptConfigs.all(clientId, supplierId),
-            'scope',
-            providerName,
-            modelName ?? '__default__',
+            ...queryKeys.clients.suppliers.promptConfigs.scope(
+              clientId,
+              supplierId,
+              scopeType,
+              providerName,
+              modelName
+            ),
             'active',
           ] as const,
       },

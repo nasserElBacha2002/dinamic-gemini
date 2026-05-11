@@ -3,13 +3,17 @@ import { useTranslation } from 'react-i18next';
 import type { SupplierPromptConfig } from '../../../api/types';
 import { DrawerHeader, ErrorAlert, LoadingBlock } from '../../../components/ui';
 import { formatDate } from '../../../utils/formatDate';
-import SupplierPromptConfigForm, { type SupplierPromptConfigFormValues } from './SupplierPromptConfigForm';
+import SupplierPromptConfigForm, {
+  type SupplierPromptConfigFormValues,
+  type SupplierPromptScopeType,
+} from './SupplierPromptConfigForm';
 import SupplierPromptConfigVersionList from './SupplierPromptConfigVersionList';
 
 interface SupplierPromptConfigsDrawerProps {
   supplierName: string;
   open: boolean;
   onClose: () => void;
+  scopeType: SupplierPromptScopeType;
   providerName: string;
   modelName: string;
   formValues: SupplierPromptConfigFormValues;
@@ -37,10 +41,15 @@ function modelLabel(modelName: string | null | undefined, fallback: string): str
   return (modelName ?? '').trim() || fallback;
 }
 
+function providerLabel(providerName: string | null | undefined, fallback: string): string {
+  return (providerName ?? '').trim() || fallback;
+}
+
 export default function SupplierPromptConfigsDrawer({
   supplierName,
   open,
   onClose,
+  scopeType,
   providerName,
   modelName,
   formValues,
@@ -65,7 +74,11 @@ export default function SupplierPromptConfigsDrawer({
 }: SupplierPromptConfigsDrawerProps) {
   const { t } = useTranslation();
   const defaultModelLabel = t('clients.suppliers.prompt_configs.default_model_label');
-  const selectedScopeLabel = modelLabel(modelName, defaultModelLabel);
+  const allProvidersLabel = t('clients.suppliers.prompt_configs.all_providers_label');
+  const selectedScopeLabel =
+    scopeType === 'all_providers_models'
+      ? `${allProvidersLabel} · ${defaultModelLabel}`
+      : `${providerName} · ${modelLabel(modelName, defaultModelLabel)}`;
 
   return (
     <Drawer anchor="right" open={open} onClose={onClose} PaperProps={{ sx: { width: { xs: '100%', sm: 620 } } }}>
@@ -102,7 +115,7 @@ export default function SupplierPromptConfigsDrawer({
           />
           <Stack spacing={1.5}>
             <Typography variant="subtitle2">{t('clients.suppliers.prompt_configs.scope_title')}</Typography>
-            <Chip label={`${providerName} · ${selectedScopeLabel}`} variant="outlined" />
+            <Chip label={selectedScopeLabel} variant="outlined" />
             <Typography variant="body2" color="text.secondary">
               {t('clients.suppliers.prompt_configs.scope_hint')}
             </Typography>
@@ -128,7 +141,8 @@ export default function SupplierPromptConfigsDrawer({
                 />
               </Box>
               <Typography variant="caption" color="text.secondary">
-                {activeConfig.provider_name} · {modelLabel(activeConfig.model_name, defaultModelLabel)} ·{' '}
+                {providerLabel(activeConfig.provider_name, allProvidersLabel)} ·{' '}
+                {modelLabel(activeConfig.model_name, defaultModelLabel)} ·{' '}
                 {formatDate(activeConfig.updated_at)}
               </Typography>
               <Typography variant="body2" sx={{ mt: 1, whiteSpace: 'pre-wrap' }}>

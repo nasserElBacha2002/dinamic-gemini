@@ -63,6 +63,7 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
         from src.runtime.v3_deps import (
             get_aisle_repo,
             get_artifact_store,
+            get_client_supplier_repo,
             get_clock,
             get_evidence_repo,
             get_inventory_repo,
@@ -72,6 +73,7 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             get_raw_label_repo,
             get_recompute_consolidated_counts_use_case,
             get_source_asset_repo,
+            get_supplier_prompt_config_repo,
             get_supplier_reference_image_repo,
         )
 
@@ -119,6 +121,8 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             artifact_store=get_artifact_store(),
             raw_label_repo=get_raw_label_repo(),
             recompute_consolidated_uc=get_recompute_consolidated_counts_use_case(),
+            client_supplier_repo=get_client_supplier_repo(),
+            supplier_prompt_config_repo=get_supplier_prompt_config_repo(),
         )
         append_worker_bootstrap_event(
             job_id=job_id,

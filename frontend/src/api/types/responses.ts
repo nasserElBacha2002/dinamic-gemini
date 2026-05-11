@@ -82,7 +82,7 @@ export interface DeleteSupplierReferenceImageResponse {
 export interface SupplierPromptConfig {
   id: string;
   client_supplier_id: string;
-  provider_name: string;
+  provider_name?: string | null;
   model_name?: string | null;
   instructions_text: string;
   version: number;

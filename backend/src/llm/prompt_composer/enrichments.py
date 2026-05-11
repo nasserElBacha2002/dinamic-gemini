@@ -12,6 +12,8 @@ from src.jobs.image_identity import JobImage
 
 # Traceability id for Phase 6 metadata (when ``enrich_prompt_with_image_ids`` applies).
 IMAGE_ID_TRACEABILITY_ENRICHMENT_ID = "image_id_traceability_v31"
+# Phase E4: supplier-editable block appended after protected hybrid + optional image IDs (metadata only).
+SUPPLIER_EDITABLE_INSTRUCTIONS_ENRICHMENT_ID = "supplier_editable_instructions_e4"
 
 # Epic 3.1.A — image ID traceability
 _TRACEABILITY_INSTRUCTION: str = """

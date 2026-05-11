@@ -5,6 +5,11 @@ Registry of prompt bodies keyed for ``PROMPTS`` (hybrid + legacy).
   — resolved only through ``HybridPromptComposer`` + ``resolve_hybrid_entry_for_provider``.
 * **Legacy** (pallet / multi-frame experiments): ``system`` / ``user`` pairs below — **not** used by
   the hybrid global-analysis composer; kept in one dict for historical imports and tooling.
+
+**Phase E1 — Protected system contract:** The ``default`` / ``openai`` / ``claude`` bodies for
+``global_v21`` and ``global_v21_b`` are the **ProtectedSystemContractBlock** (plus provider-specific
+fragments). They must never be replaced or weakened by supplier-editable instructions; terminology
+and regression markers live in ``protected_prompt_contract`` (see ``audit/phase-e/e1-protected-prompt-contract.md``).
 """
 
 from __future__ import annotations

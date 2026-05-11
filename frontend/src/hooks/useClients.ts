@@ -92,15 +92,24 @@ export function useSupplierPromptConfigs(
 ) {
   const providerName = (listQuery?.provider_name ?? '').trim();
   const modelName = (listQuery?.model_name ?? '').trim() || null;
+  const scope = listQuery?.scope === 'all'
+    ? 'all_providers_models'
+    : providerName && modelName
+      ? 'provider_model'
+      : 'provider';
   return useQuery({
     queryKey: queryKeys.clients.suppliers.promptConfigs.listByScope(
       clientId ?? '',
       supplierId ?? '',
-      providerName,
+      scope,
+      providerName || null,
       modelName
     ),
     queryFn: () => listSupplierPromptConfigs(clientId!, supplierId!, listQuery),
-    enabled: Boolean(clientId && supplierId && providerName) && (options?.enabled !== false),
+    enabled:
+      Boolean(clientId && supplierId) &&
+      (scope === 'all_providers_models' || Boolean(providerName)) &&
+      (options?.enabled !== false),
   });
 }
 
@@ -113,16 +122,25 @@ export function useActiveSupplierPromptConfig(
 ) {
   const normalizedProviderName = (providerName ?? '').trim();
   const normalizedModelName = (modelName ?? '').trim() || null;
+  const scope = !normalizedProviderName
+    ? 'all_providers_models'
+    : normalizedModelName
+      ? 'provider_model'
+      : 'provider';
   return useQuery({
     queryKey: queryKeys.clients.suppliers.promptConfigs.activeByScope(
       clientId ?? '',
       supplierId ?? '',
-      normalizedProviderName,
+      scope,
+      normalizedProviderName || null,
       normalizedModelName
     ),
     queryFn: () =>
       getActiveSupplierPromptConfig(clientId!, supplierId!, normalizedProviderName, normalizedModelName),
-    enabled: Boolean(clientId && supplierId && normalizedProviderName) && (options?.enabled !== false),
+    enabled:
+      Boolean(clientId && supplierId) &&
+      (scope === 'all_providers_models' || Boolean(normalizedProviderName)) &&
+      (options?.enabled !== false),
     retry: false,
   });
 }
