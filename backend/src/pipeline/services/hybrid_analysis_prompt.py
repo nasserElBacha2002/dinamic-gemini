@@ -1,6 +1,10 @@
 """
 Hybrid global-analysis prompt assembly (provider-neutral).
 
+**Phase E1:** The string returned here is the **ProtectedSystemContractBlock** (hybrid base from
+``compose_hybrid_base``) plus optional **image-id enrichments** only. Supplier-editable instructions
+from ``supplier_prompt_configs`` are **not** merged here yet (E3/E4).
+
 Uses ``prompt_composer.hybrid_assembly`` for profile + base composition; applies photo enrichments
 once here (step 4 of the Phase 5 flow).
 

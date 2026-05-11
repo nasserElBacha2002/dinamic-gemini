@@ -34,11 +34,12 @@ def _sha256(text: str) -> str:
 
 
 # Fingerprints of ``default_hybrid_composer.compose_base`` outputs (update only when intentionally changing prompts).
+# Refreshed Phase E1 (2026-05): align with current ``hybrid_profiles`` bodies on main; E1 did not edit prompt wording.
 _GOLDEN_BASE: dict[tuple[str, str | None], str] = {
-    ("global_v21", None): "0b902e46b3c2b57507d423e075a6c96482ba83c8710718b15eb642e4c6033f34",
+    ("global_v21", None): "1d5fdcc02f96e56dd1d68470fab498d9a79db582695faa8ba4903c85e4fc81ba",
     ("global_v21", "openai"): "151b9dbf548a7f9592e94becd0c37936d93e7bc3a9b0d95d551f40a986f850c3",
-    ("global_v21_b", None): "e8ffba99272ebf0e4ee3bbfc239ee35fd3645cf4599a0659f689c4f7391a110a",
-    ("global_v21_b", "openai"): "73f35647625e5259d32bd0af54ce577e4d50f2b301cbbd5af55f30ccb9408c89",
+    ("global_v21_b", None): "4b93c9947d330f6fadb4fbb4a9f303a6ac7c9b404833a0467a2a487956596ab5",
+    ("global_v21_b", "openai"): "df06569a993ca0a390aef5e93d349a6305e3f508d3323bd253fbd078280855b5",
 }
 
 # Distinctive substrings per variant — if a hash fails, missing phrase hints which profile broke.
@@ -110,4 +111,4 @@ def test_image_id_enrichment_parity_sample() -> None:
     assert "img_001" in enriched
     assert "TRACEABILITY (v3.1)" in enriched
     assert "source_image_id" in enriched
-    assert _sha256(enriched) == "db433a90f3c2eeed054c4650efcf12213c375e1c250f7b6612e9d17e5d96644d"
+    assert _sha256(enriched) == "b830fed11815f65ae57783f4a32166c13014c37445afddfcca2d4b865158cece"

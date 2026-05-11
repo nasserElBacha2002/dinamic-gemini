@@ -1,6 +1,10 @@
 """
 Provider policy overlay for hybrid registry entries (``default`` vs ``openai`` branch).
 
+**Phase E1:** These overlays are **ProviderPromptRules** (non–supplier-editable). Protected base
+fragments live in ``hybrid_profiles``; stable substring markers for regression tests are defined in
+``protected_prompt_contract``.
+
 **Overlay rules:**
 * ``openai`` (when ``prompt_parity_mode`` is false) selects the ``openai`` **replacement** fragment.
 * ``claude`` (when ``prompt_parity_mode`` is false) appends the registry ``claude`` supplement to the
