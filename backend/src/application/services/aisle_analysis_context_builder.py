@@ -31,9 +31,9 @@ SUPPLIER_REFERENCE_RESOLUTION_FALLBACK_NO_ACTIVE_REFERENCE_IMAGES = (
 SUPPLIER_REFERENCES_INSTRUCTION = (
     "Supplier reference images illustrate the expected visual standard for products from "
     "the supplier linked to this aisle (for example pallet labels or typical tag formats). "
-    "They are not primary evidence. They are comparative context only, not inventoried "
-    "product listings, and must not be used as proof that a product is physically present "
-    "in the aisle."
+    "They should be treated as comparative context and not as primary evidence. "
+    "They are comparative context only, not inventoried product listings, and must not be used "
+    "as proof that a product is physically present in the aisle."
 )
 
 

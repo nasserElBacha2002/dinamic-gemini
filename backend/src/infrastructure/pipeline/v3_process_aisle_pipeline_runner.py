@@ -63,6 +63,14 @@ def visual_reference_failure_metadata(
     return block
 
 
+def _v3_job_input_trace_metadata(aisle: Aisle) -> dict[str, str]:
+    """Stable inventory/aisle identifiers on JobInput.metadata for execution logs (E6)."""
+    return {
+        "inventory_id": aisle.inventory_id,
+        "aisle_id": aisle.id,
+    }
+
+
 def resolve_visual_reference_paths(
     ctx: AnalysisContext,
     *,
@@ -189,7 +197,10 @@ class V3ProcessAislePipelineRunner:
                     video_path=video_path,
                     mode="hybrid",
                     input_type="video",
-                    metadata={"analysis_context": analysis_context_to_dict(resolved_ctx)},
+                    metadata={
+                        **_v3_job_input_trace_metadata(aisle),
+                        "analysis_context": analysis_context_to_dict(resolved_ctx),
+                    },
                 ),
                 video_path,
             )
@@ -229,7 +240,10 @@ class V3ProcessAislePipelineRunner:
                 input_type="photos",
                 input_manifest_path="input_manifest.json",
                 photos_dir="input_photos",
-                metadata={"analysis_context": analysis_context_to_dict(resolved_ctx)},
+                metadata={
+                    **_v3_job_input_trace_metadata(aisle),
+                    "analysis_context": analysis_context_to_dict(resolved_ctx),
+                },
             ),
             "",  # video_path empty for photos
         )

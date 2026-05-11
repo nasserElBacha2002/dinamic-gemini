@@ -358,4 +358,8 @@ def prompt_composition_summary_for_execution_log(
     lid = full_composition.get("llm_identity")
     if isinstance(lid, dict) and lid:
         out["llm_identity"] = dict(lid)
+    # E6: surface redacted effective_prompt subtree (hashes/flags only; no instruction body).
+    eff = full_composition.get("effective_prompt")
+    if isinstance(eff, dict) and eff:
+        out["effective_prompt"] = dict(eff)
     return out

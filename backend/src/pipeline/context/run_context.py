@@ -76,6 +76,30 @@ class RunContext:
     # Phase E4: supplier prompt resolution from v3 executor (repositories). None = skip effective compose.
     supplier_prompt_resolution: SupplierPromptResolution | None = None
 
+    def _execution_log_inventory_aisle_ids(self) -> tuple[str | None, str | None]:
+        """Resolve inventory/aisle ids for execution log events (E6).
+
+        Prefer ``job_input.metadata`` (v3 canonical). When missing, fall back to
+        ``supplier_prompt_resolution`` so pipeline stage events stay traceable.
+        """
+        md = self.job_input.metadata or {}
+
+        def _pick_str(key: str) -> str | None:
+            raw = md.get(key)
+            if raw is None:
+                return None
+            s = str(raw).strip()
+            return s or None
+
+        inventory_id = _pick_str("inventory_id")
+        aisle_id = _pick_str("aisle_id")
+        spr = self.supplier_prompt_resolution
+        if inventory_id is None and spr is not None:
+            inventory_id = (spr.inventory_id or "").strip() or None
+        if aisle_id is None and spr is not None:
+            aisle_id = (spr.aisle_id or "").strip() or None
+        return inventory_id, aisle_id
+
     def emit_stage_event(
         self,
         *,
@@ -88,10 +112,11 @@ class RunContext:
     ) -> None:
         if self.execution_log is not None:
             metadata = self.job_input.metadata or {}
+            inv_id, aisle_id = self._execution_log_inventory_aisle_ids()
             self.execution_log.structured_event(
                 job_id=self.job_id,
-                inventory_id=metadata.get("inventory_id"),
-                aisle_id=metadata.get("aisle_id"),
+                inventory_id=inv_id,
+                aisle_id=aisle_id,
                 attempt=int(metadata.get("attempt_count") or 1),
                 stage=stage,
                 substep=substep,

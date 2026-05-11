@@ -85,6 +85,11 @@ def test_builder_with_no_supplier_skips_resolution() -> None:
     )
 
 
+def test_supplier_references_instruction_has_sentence_spacing_e6() -> None:
+    assert "evidence.They" not in SUPPLIER_REFERENCES_INSTRUCTION
+    assert "evidence. They" in SUPPLIER_REFERENCES_INSTRUCTION
+
+
 def test_builder_with_visual_references_adds_instruction_and_roles() -> None:
     now = datetime(2025, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
     row = SupplierReferenceImage(

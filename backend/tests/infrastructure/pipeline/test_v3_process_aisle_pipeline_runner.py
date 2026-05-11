@@ -139,6 +139,8 @@ def test_c71_supplier_pipeline_resolves_supplier_reference_images(tmp_path: Path
     )
 
     assert video_path == ""
+    assert (job_input.metadata or {}).get("inventory_id") == "inv-1"
+    assert (job_input.metadata or {}).get("aisle_id") == "aisle-1"
     meta_ctx = (job_input.metadata or {}).get("analysis_context")
     assert isinstance(meta_ctx, dict)
     refs = meta_ctx.get("visual_references")

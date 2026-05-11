@@ -21,6 +21,7 @@ from src.jobs.photos_paths import photos_dir_relative_for_manifest, resolve_mani
 from src.pipeline.context.run_context import RunContext
 from src.reporting.artifacts import write_json, write_report_csv
 from src.reporting.hybrid_report import build_hybrid_report
+from src.reporting.supplier_traceability import build_supplier_traceability_report_block
 
 
 @dataclass
@@ -69,6 +70,9 @@ class ReportingStage:
             source_image_filename_map=source_image_filename_map,
             source_image_upload_order=source_image_upload_order,
         )
+        trace = build_supplier_traceability_report_block(context)
+        if trace:
+            report["supplier_traceability"] = trace
         report_path = run_dir / "hybrid_report.json"
         write_json(report_path, report)
         csv_path = run_dir / "hybrid_report.csv"
