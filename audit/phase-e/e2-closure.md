@@ -51,3 +51,11 @@ Commands run (from `backend/`):
 ## 6. Recommended next phase
 
 **E3 — EffectivePromptComposer** — compose final request text from protected base + optional supplier instructions with explicit ordering and regression tests; still no mandatory pipeline wiring until E4.
+
+---
+
+## 7. E2.x cleanup (post–code review, 2026-05-11)
+
+- Normalized `supplier.client_id` with `str(...).strip()` before ownership comparison against inventory `client_id`.
+- Added `test_model_name_whitespace_normalized` for resolver input `model_name` with surrounding whitespace.
+- **No** prompt runtime behavior change (resolver remains unwired from pipeline; composition unchanged).

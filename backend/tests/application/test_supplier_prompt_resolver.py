@@ -292,6 +292,29 @@ def test_ignores_inactive_config() -> None:
     assert r.fallback_reason == SupplierPromptFallbackReason.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG
 
 
+def test_model_name_whitespace_normalized() -> None:
+    inv_r, aisle_r, sup_r, prompt_r = (
+        MemoryInventoryRepository(),
+        MemoryAisleRepository(),
+        MemoryClientSupplierRepository(),
+        MemorySupplierPromptConfigRepository(),
+    )
+    inv_r.save(_inv())
+    aisle_r.save(_aisle())
+    sup_r.save(_supplier())
+    prompt_r.create(_cfg(cid="c-exact", provider_name="gemini", model_name="m1", text="exact-model"))
+
+    r = _resolver(inv_r, aisle_r, sup_r, prompt_r).resolve(
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        provider_name="gemini",
+        model_name=" m1 ",
+    )
+    assert r.resolution_status == "resolved"
+    assert r.supplier_prompt_config_id == "c-exact"
+    assert r.model_name == "m1"
+
+
 def test_provider_name_case_normalized() -> None:
     inv_r, aisle_r, sup_r, prompt_r = (
         MemoryInventoryRepository(),

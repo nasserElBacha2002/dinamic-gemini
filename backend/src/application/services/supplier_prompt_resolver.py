@@ -249,7 +249,8 @@ class SupplierPromptResolver:
                 error_code=SupplierPromptResolutionErrorCode.CLIENT_SUPPLIER_NOT_FOUND,
             )
 
-        if supplier.client_id != client_id:
+        supplier_client_id = str(supplier.client_id).strip()
+        if supplier_client_id != client_id:
             return SupplierPromptResolution(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
