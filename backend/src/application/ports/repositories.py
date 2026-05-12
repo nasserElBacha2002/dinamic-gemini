@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from datetime import datetime, timezone
 from typing import Literal, Union
 
 from src.application.ports.contracts import PositionListQuery
@@ -233,6 +234,32 @@ class JobRepository(ABC):
     def list_all_jobs(self) -> Sequence[Job]:
         """Bulk read for analytics. Default empty; SQL/memory implementations scan ``inventory_jobs``."""
         return []
+
+    def list_jobs_for_metrics(
+        self,
+        *,
+        created_from: datetime,
+        created_to: datetime,
+        job_type: str = "process_aisle",
+        target_type: str = "aisle",
+        limit: int = 5000,
+    ) -> Sequence[Job]:
+        """Bounded read for observability metrics (default: filter ``list_all_jobs()`` in memory)."""
+        cf = created_from if created_from.tzinfo else created_from.replace(tzinfo=timezone.utc)
+        ct = created_to if created_to.tzinfo else created_to.replace(tzinfo=timezone.utc)
+        lim = max(1, min(int(limit), 10_000))
+        rows: list[Job] = []
+        for job in self.list_all_jobs():
+            if job.job_type != job_type or job.target_type != target_type:
+                continue
+            jc = job.created_at
+            if jc.tzinfo is None:
+                jc = jc.replace(tzinfo=timezone.utc)
+            if jc < cf or jc > ct:
+                continue
+            rows.append(job)
+        rows.sort(key=lambda j: j.created_at, reverse=True)
+        return rows[:lim]
 
 
 # --- v3.2.3 Label consolidation layers ---

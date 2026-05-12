@@ -31,6 +31,9 @@ const { useCancelAisleJobMock } = vi.hoisted(() => ({
 const { useRetryAisleJobMock } = vi.hoisted(() => ({
   useRetryAisleJobMock: vi.fn(),
 }));
+const { useJobAuditabilityMock } = vi.hoisted(() => ({
+  useJobAuditabilityMock: vi.fn(),
+}));
 const { processAisleMutateAsyncMock, useProcessingProviderOptionsMock } = vi.hoisted(() => ({
   processAisleMutateAsyncMock: vi.fn().mockResolvedValue({ job_id: 'job-new' }),
   useProcessingProviderOptionsMock: vi.fn(),
@@ -66,6 +69,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useStartAisleProcessing: () => ({ mutateAsync: processAisleMutateAsyncMock }),
     useCancelAisleJob: useCancelAisleJobMock,
     useRetryAisleJob: useRetryAisleJobMock,
+    useJobAuditability: useJobAuditabilityMock,
     useUploadAisleAssetsFlex: () => ({ mutateAsync: vi.fn() }),
   };
 });
@@ -141,6 +145,7 @@ describe('InventoryDetail', () => {
     useAisleJobDetailMock.mockReset();
     useCancelAisleJobMock.mockReset();
     useRetryAisleJobMock.mockReset();
+    useJobAuditabilityMock.mockReset();
     processAisleMutateAsyncMock.mockReset();
     processAisleMutateAsyncMock.mockResolvedValue({ job_id: 'job-new' });
     useProcessingProviderOptionsMock.mockReset();
@@ -210,6 +215,14 @@ describe('InventoryDetail', () => {
     useRetryAisleJobMock.mockReturnValue({
       mutateAsync: vi.fn(),
       isPending: false,
+    });
+    useJobAuditabilityMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
     });
     useAislesListMock.mockReturnValue({
       data: {
@@ -644,6 +657,138 @@ describe('InventoryDetail', () => {
     expect(screen.getByText('provider_call')).toBeInTheDocument();
     expect(screen.getByText('exec-1')).toBeInTheDocument();
     expect(screen.getByText('stage.started')).toBeInTheDocument();
+  });
+
+  it('shows Auditabilidad tab and auditability summary when tab is selected', async () => {
+    useAislesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'aisle-1',
+            inventory_id: 'inv-1',
+            code: 'A-01',
+            status: 'processing',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            latest_job: {
+              id: 'job-1',
+              status: 'succeeded',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+            },
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useAisleJobsListMock.mockReturnValue({
+      data: {
+        jobs: [
+          {
+            id: 'job-1',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useAisleJobDetailMock.mockReturnValue({
+      data: {
+        id: 'job-1',
+        status: 'succeeded',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useExecutionLogMock.mockReturnValue({
+      data: emptyExecutionLog(),
+      isLoading: false,
+      isFetching: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useJobAuditabilityMock.mockReturnValue({
+      data: {
+        job_id: 'job-1',
+        status: 'succeeded',
+        target_type: 'aisle',
+        target_id: 'aisle-1',
+        created_at: '2024-01-01T00:00:00Z',
+        started_at: null,
+        finished_at: '2024-01-01T00:05:00Z',
+        inventory_id: 'inv-1',
+        aisle_id: 'aisle-1',
+        client_id: 'client-x',
+        client_supplier_id: 'cs-x',
+        provider_name: 'gemini',
+        model_name: 'm1',
+        prompt_key: 'pk',
+        prompt_version: 'pv',
+        supplier_prompt_config_id: 'spc-audit',
+        supplier_prompt_config_version: '3',
+        supplier_prompt_fallback_used: false,
+        supplier_prompt_fallback_reason: null,
+        protected_prompt_contract_key: 'ppc',
+        protected_prompt_contract_version: '1',
+        effective_prompt_hash: 'hash-audit-panel',
+        prompt_composition_available: true,
+        reference_usage: null,
+        supplier_reference_images_used: true,
+        inventory_visual_references_used: null,
+        reference_source: 'supplier_reference_images',
+        reference_image_count: 1,
+        reference_ids: ['r1'],
+        warnings: [],
+        metadata_sources: {
+          job_row: true,
+          result_json: true,
+          aisle_join: true,
+          inventory_join: true,
+          hybrid_report: false,
+          execution_log: false,
+          run_audit_snapshot: false,
+        },
+        missing_metadata: ['hybrid_report', 'execution_log'],
+        legacy_mode: false,
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('aisle-observability-page')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('tab', { name: /auditabilidad/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('job-auditability-panel')).toBeInTheDocument();
+      expect(screen.getByText('hash-audit-panel')).toBeInTheDocument();
+      expect(screen.getByText('spc-audit')).toBeInTheDocument();
+      expect(screen.getByText('hybrid_report')).toBeInTheDocument();
+      expect(screen.getByText('execution_log')).toBeInTheDocument();
+    });
   });
 
   it('shows cancel for active jobs', async () => {

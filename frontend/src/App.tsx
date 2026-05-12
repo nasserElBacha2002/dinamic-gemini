@@ -22,6 +22,7 @@ import AdminAiConfigPage from './pages/AdminAiConfigPage';
 import RequireUsernameAdmin from './features/auth/RequireUsernameAdmin';
 import IngestionSessionsPage from './features/ingestionSessions/pages/IngestionSessionsPage';
 import IngestionSessionDetailPage from './features/ingestionSessions/pages/IngestionSessionDetailPage';
+import ObservabilityMetricsPage from './pages/ObservabilityMetricsPage';
 
 /** Minimal full-screen loading while auth bootstrap runs. */
 function AuthLoading() {
@@ -67,6 +68,7 @@ function App() {
   const ingestionSessionsEl = useMemo(() => <IngestionSessionsPage />, []);
   const ingestionSessionDetailEl = useMemo(() => <IngestionSessionDetailPage />, []);
   const aisleObservabilityEl = useMemo(() => <AisleObservabilityPage />, []);
+  const observabilityMetricsEl = useMemo(() => <ObservabilityMetricsPage />, []);
 
   if (!initialized) {
     return <AuthLoading />;
@@ -94,6 +96,7 @@ function App() {
         <Route path={ROUTE_PATH.adminAiConfig} element={adminAiConfigEl} />
         <Route path={ROUTE_PATH.dashboard} element={<Navigate to={ROUTE_HOME} replace />} />
         <Route path={ROUTE_PATH.settings} element={<Navigate to={ROUTE_HOME} replace />} />
+        <Route path={ROUTE_PATH.observabilidad} element={observabilityMetricsEl} />
         <Route path={ROUTE_PATH.inventoryDetail} element={detailEl} />
         <Route path={ROUTE_PATH.aislePositions} element={positionsEl} />
         <Route path={ROUTE_PATH.analyticsCompare} element={compareRunsEl} />

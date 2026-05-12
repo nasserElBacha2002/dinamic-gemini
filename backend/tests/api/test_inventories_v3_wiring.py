@@ -6,7 +6,11 @@ from fastapi.testclient import TestClient
 
 from src.api.dependencies import get_create_inventory_use_case
 from src.api.server import app
-from tests.support.api_v3_test_helpers import create_test_client, create_test_inventory, create_test_supplier
+from tests.support.api_v3_test_helpers import (
+    create_test_client,
+    create_test_inventory,
+    create_test_supplier,
+)
 
 client = TestClient(app)
 

@@ -7,6 +7,7 @@ import {
   ROUTE_INVENTORIES_ROOT,
   ROUTE_MATCH,
   ROUTE_METRICS,
+  ROUTE_OBSERVABILIDAD,
   ROUTE_REVIEW_QUEUE,
 } from '../constants/appRoutes';
 
@@ -40,6 +41,12 @@ export function topBarCopy(pathname: string): { titleKey: string; subtitleKey?: 
   }
   if (pathname === ROUTE_METRICS) {
     return { titleKey: 'routes.metrics.title', subtitleKey: 'routes.metrics.subtitle' };
+  }
+  if (pathname === ROUTE_OBSERVABILIDAD) {
+    return {
+      titleKey: 'routes.observability_metrics.title',
+      subtitleKey: 'routes.observability_metrics.subtitle',
+    };
   }
   if (pathname === ROUTE_CLIENTS) {
     return { titleKey: 'routes.clients.title', subtitleKey: 'routes.clients.subtitle' };

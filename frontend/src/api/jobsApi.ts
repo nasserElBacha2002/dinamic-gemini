@@ -7,6 +7,7 @@ import type {
   JobSummary,
   PositionListResponse,
   PromoteOperationalJobResponse,
+  RunAuditabilityView,
 } from './types';
 import { filenameFromContentDisposition, handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
 
@@ -34,6 +35,23 @@ export async function getExecutionLog(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/execution-log`
   );
   return handleResponse<ExecutionLogResponse>(response);
+}
+
+/** Path suffix (after API base) for GET job auditability (Phase H) — exposed for tests. */
+export function getJobAuditabilityPath(inventoryId: string, aisleId: string, jobId: string): string {
+  const inv = encodeURIComponent(inventoryId);
+  const aisle = encodeURIComponent(aisleId);
+  const job = encodeURIComponent(jobId);
+  return `${V3_INVENTORIES_BASE}/${inv}/aisles/${aisle}/jobs/${job}/auditability`;
+}
+
+export async function getJobAuditability(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string
+): Promise<RunAuditabilityView> {
+  const response = await protectedFetch(`${API_BASE}${getJobAuditabilityPath(inventoryId, aisleId, jobId)}`);
+  return handleResponse<RunAuditabilityView>(response);
 }
 
 export async function getAisleExecutionLog(

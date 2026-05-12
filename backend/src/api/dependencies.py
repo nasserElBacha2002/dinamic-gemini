@@ -867,6 +867,43 @@ def get_resolve_aisle_job_for_inventory_read_use_case(
     return ResolveAisleJobForInventoryReadUseCase(job_repo=job_repo, aisle_repo=aisle_repo)
 
 
+def get_run_auditability_service(
+    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    artifact_storage=Depends(get_artifact_storage),
+):
+    """Read-only job auditability aggregation (Phase H2)."""
+    from src.application.services.run_auditability_service import RunAuditabilityService
+    from src.infrastructure.artifacts.run_audit_execution_log_loader import (
+        DefaultRunAuditExecutionLogLoader,
+    )
+    from src.infrastructure.artifacts.stored_artifact_reader import DefaultStoredArtifactReader
+
+    return RunAuditabilityService(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
+        stored_artifact_reader=DefaultStoredArtifactReader(job_repo, artifact_storage),
+        execution_log_loader=DefaultRunAuditExecutionLogLoader(artifact_storage),
+    )
+
+
+def get_observability_metrics_service(
+    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+):
+    """Read-only observability metrics (Phase H5)."""
+    from src.application.services.observability_metrics_service import ObservabilityMetricsService
+
+    return ObservabilityMetricsService(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
+    )
+
+
 def get_compare_aisle_runs_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),

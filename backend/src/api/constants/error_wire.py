@@ -68,6 +68,14 @@ HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO = (
     "date_from must be on or before date_to"
 )
 
+# Observability metrics (v3 observability routes — Phase H5).
+HTTP_DETAIL_OBSERVABILITY_METRICS_FROM_MUST_BE_ON_OR_BEFORE_TO = (
+    "from must be on or before to for observability metrics"
+)
+HTTP_DETAIL_OBSERVABILITY_METRICS_RANGE_EXCEEDS_MAX_DAYS = (
+    "observability metrics date range must not exceed 90 days"
+)
+
 # Admin AI inspection (v3 admin routes).
 HTTP_DETAIL_ADMIN_AI_UNKNOWN_PROMPT_PROFILE_COMBINATION = (
     "Unknown prompt profile, provider, or parity combination for inspection."

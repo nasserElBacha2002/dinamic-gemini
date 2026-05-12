@@ -265,3 +265,57 @@ def test_mark_success_sets_operational_job_id_in_production(tmp_path: Path) -> N
     saved_job = job_repo.get_by_id("job-1")
     assert saved_job is not None
     assert saved_job.status == JobStatus.SUCCEEDED
+
+
+def test_mark_success_persists_run_audit_snapshot(tmp_path: Path) -> None:
+    from src.pipeline.run_metadata import (
+        RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT,
+        RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
+        default_empty_block,
+    )
+
+    svc, job_repo, aisle_repo, t0, _ = _make_svc()
+    job = Job(
+        id="job-1",
+        job_type="process_aisle",
+        target_type="aisle",
+        target_id="aisle-1",
+        status=JobStatus.RUNNING,
+        payload_json={},
+        created_at=t0,
+        updated_at=t0,
+        attempt_count=1,
+        execution_id="ex-1",
+    )
+    job_repo.save(job)
+    aisle = Aisle(
+        id="aisle-1",
+        inventory_id="inv-1",
+        code="A1",
+        status=AisleStatus.PROCESSING,
+        created_at=t0,
+        updated_at=t0,
+    )
+    aisle_repo.save(aisle)
+
+    snapshot = {"schema_version": "h4.v1", "client_id": "c1", "effective_prompt_hash": "hx"}
+    svc.mark_success(
+        "job-1",
+        aisle,
+        report_path=tmp_path / "hybrid_report.json",
+        run_metadata={
+            "provider": "gemini",
+            "prompt_key": "pk",
+            RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT: default_empty_block(),
+            RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT: snapshot,
+        },
+        durable_artifacts=None,
+    )
+
+    saved_job = job_repo.get_by_id("job-1")
+    assert saved_job is not None
+    assert saved_job.result_json.get(RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT) == snapshot
+    vrc = saved_job.result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT)
+    assert isinstance(vrc, dict)
+    assert vrc.get("resolved") is False
+    assert saved_job.result_json.get("provider") == "gemini"

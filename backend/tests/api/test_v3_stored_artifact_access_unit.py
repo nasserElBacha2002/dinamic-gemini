@@ -11,7 +11,6 @@ import pytest
 
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
-    read_execution_log_events_for_job,
     resolve_reference_image_file_response,
     resolve_source_asset_file_response,
     resolve_source_asset_image_display,
@@ -19,6 +18,7 @@ from src.api.services.v3_stored_artifact_access import (
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.jobs.entities import Job, JobStatus
+from src.infrastructure.artifacts.stored_artifact_reader import read_execution_log_events_for_job
 from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_for_row
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 
