@@ -2,9 +2,9 @@
 
 ## Executive summary
 
-**Status:** `FRONTEND_QUERY_HELPER_P4_1_IMPLEMENTED`
+**Status:** `FRONTEND_QUERY_HELPER_P4_2_IMPLEMENTED`
 
-P1–P3.2 as before; **P4.1** migrates `buildReviewQueueQueryString` to `buildQueryString` with golden tests (`tests/api/reviewQueueApi.test.ts`). `min_confidence` / `max_confidence` use **string** wire values when defined and not NaN (with `{ trim: false }`) to preserve legacy `String(Infinity)` etc., which numeric-only serialization would drop. `queryParamCanonicalization.ts` unchanged. Focused tests including review queue: **38** pass. Full `npm run test -- --run`: **575 passed**, **4 failed** in `CreateAisleDialog.test.tsx` only (unrelated).
+P1–P4.1 as before; **P4.2** migrates `buildAislePositionsQueryString` and `listAisleJobs` limit query in `jobsApi.ts` to `buildQueryString`, with golden tests (`tests/api/jobsApi.test.ts`). `min_confidence` uses **string** wire when `!= null && !Number.isNaN` + `{ trim: false }` for parity with legacy `String(Infinity)`. `queryParamCanonicalization.ts` unchanged. Focused tests (queryString + canonicalization + review queue + jobs): **49** pass. Full `npm run test -- --run`: **586 passed**, **4 failed** in `CreateAisleDialog.test.tsx` only (unrelated).
 
 ---
 
@@ -38,6 +38,7 @@ Module doc in `queryString.ts` notes alignment with `queryParamCanonicalization.
 | `frontend/src/api/aislesApi.ts` | `buildAislesListQueryString` | same shape as inventories list; merge/export builders **unchanged** |
 | `frontend/src/api/clientSuppliersApi.ts` | `buildClientSuppliersListQueryString`, `buildSupplierPromptConfigsQueryString`, `getActiveSupplierPromptConfig` | P3.1: see § P3.1 for scope/active URL notes |
 | `frontend/src/api/reviewQueueApi.ts` | `buildReviewQueueQueryString`, `getPositionDetail` | P4.1: list query via `buildQueryString` + `transform` for `traceability` / `position_status`; confidence as string wire when not NaN; P3.2: `getPositionDetail` |
+| `frontend/src/api/jobsApi.ts` | `buildAislePositionsQueryString`, `listAisleJobs` | P4.2: aisle positions list + optional `limit` on aisle jobs list |
 
 ---
 
@@ -45,7 +46,6 @@ Module doc in `queryString.ts` notes alignment with `queryParamCanonicalization.
 
 | File | Reason deferred |
 |------|-----------------|
-| `jobsApi.ts` | `buildAislePositionsQueryString` + `consolidate_by_sku` false-only — **P4.2** |
 | `observabilityApi.ts` | Truthy vs trim-empty semantics |
 | `adminAiApi.ts` | Required fixed query keys object |
 | `captureSessionsApi.ts` | `page > 0` vs `>= 1` needs explicit parity review |
@@ -64,8 +64,8 @@ Module doc in `queryString.ts` notes alignment with `queryParamCanonicalization.
 |---------|--------|
 | `npm run typecheck` | Pass |
 | `npm run lint` | Pass |
-| `npm run test -- --run tests/api/queryString.test.ts tests/queryParamCanonicalization.test.ts tests/api/reviewQueueApi.test.ts` | Pass (**38** tests) |
-| `npm run test -- --run` (full suite) | **575 passed**, **4 failed** (`CreateAisleDialog.test.tsx` only; unrelated) |
+| `npm run test -- --run tests/api/queryString.test.ts tests/queryParamCanonicalization.test.ts tests/api/reviewQueueApi.test.ts tests/api/jobsApi.test.ts` | Pass (**49** tests) |
+| `npm run test -- --run` (full suite) | **586 passed**, **4 failed** (`CreateAisleDialog.test.tsx` only; unrelated) |
 | `npm run build` | Pass |
 
 ---
@@ -151,7 +151,7 @@ Module doc in `queryString.ts` notes alignment with `queryParamCanonicalization.
 | File | Reason |
 |------|--------|
 | `reviewQueueApi.ts` | `buildReviewQueueQueryString` — **migrated in P4.1** |
-| `jobsApi.ts` | `buildAislePositionsQueryString` — P4 parity |
+| `jobsApi.ts` | `buildAislePositionsQueryString` — **migrated in P4.2** |
 | `observabilityApi.ts` | Truthy string semantics vs helper trim |
 | `captureSessionsApi.ts` | Explicit `page > 0` parity sign-off |
 | `adminAiApi.ts` | Unchanged from prior deferral |
@@ -206,7 +206,7 @@ Module doc in `queryString.ts` notes alignment with `queryParamCanonicalization.
 
 | File | Reason |
 |------|--------|
-| `jobsApi.ts` | Deferred to **P4.2** — aisle positions query + `consolidate_by_sku` false-only and extra branches. |
+| `jobsApi.ts` | Migrated in **P4.2** — see § P4.2. |
 
 ### Validation
 
@@ -224,12 +224,67 @@ Module doc in `queryString.ts` notes alignment with `queryParamCanonicalization.
 
 ---
 
+## P4.2 Jobs API / aisle positions parity migration
+
+### Current behavior captured
+
+| Case | Expected output |
+|------|-----------------|
+| `q` undefined | `''` |
+| `{}` (no fields) | `''` |
+| Blank `status` / `sku_filter` | omitted |
+| `status` / `sku_filter` | Trimmed; **no** lowercasing on `status` |
+| `needs_review` | Both `true` and `false` when non-null; `null` omitted |
+| `min_confidence` | Omitted when `null`/`undefined` or **NaN**; else `String(value)` (including `Infinity`) |
+| `page` / `page_size` | Omitted when `< 1` |
+| `sort_by` / `sort_dir` / `job_id` | Trimmed non-empty |
+| `consolidate_by_sku` | Only `?consolidate_by_sku=false` when exactly `false` |
+| Multi-field order | `status`, `needs_review`, `min_confidence`, `sku_filter`, `page`, `page_size`, `sort_by`, `sort_dir`, `job_id`, `consolidate_by_sku` |
+| `listAisleJobs` `limit` | `?limit=N` only when `limit >= 1`; else no query |
+
+### Migrated
+
+| File | Function | Notes |
+|------|----------|-------|
+| `frontend/src/api/jobsApi.ts` | `buildAislePositionsQueryString` | Exported; `consolidate_by_sku` via `{ emit: 'false-only' }`; `min_confidence` string wire + `{ trim: false }` |
+| `frontend/src/api/jobsApi.ts` | `listAisleJobs` | `buildQueryString([['limit', options?.limit, { min: 1 }]])`; path uses returned `?…` or empty |
+
+### Left manual / deferred
+
+| Function / area | Reason |
+|-----------------|--------|
+| Merge / merge-results URL builders | None in `jobsApi.ts` (aisles API owns merge paths). |
+
+### Canonicalization alignment
+
+`canonicalizeAislePositionsListQuery` was **re-read**; omission rules match wire (`needs_review` when non-null, `consolidate_by_sku` only `false`, positive pagination, trimmed text). Canonicalizer still uses `normalizeFiniteConfidence` for cache keys (drops `Infinity` on wire that is rare); **no** change to `queryParamCanonicalization.ts`.
+
+### Tests added
+
+`frontend/tests/api/jobsApi.test.ts` (11): undefined/empty; blank filters; trim / no lowercasing on status; pagination; `needs_review` true/false; `consolidate_by_sku` false-only; `min_confidence` NaN/finite/Infinity; combined param order.
+
+### Validation
+
+| Command | Result |
+|---------|--------|
+| `npm run typecheck` | Pass |
+| `npm run lint` | Pass |
+| `npm run test -- --run tests/api/queryString.test.ts tests/queryParamCanonicalization.test.ts tests/api/reviewQueueApi.test.ts tests/api/jobsApi.test.ts` | Pass (**49** tests) |
+| `npm run build` | Pass |
+| `npm run test -- --run` (full suite) | **586 passed**, **4 failed** (`CreateAisleDialog.test.tsx` only; unrelated) |
+
+### Status
+
+`FRONTEND_QUERY_HELPER_P4_2_IMPLEMENTED`
+
+---
+
 ## Final recommendation
 
-Migrate **`buildAislePositionsQueryString`** in **P4.2** with parity tests (`consolidate_by_sku` false-only, `needs_review`, etc.). Observability and capture-sessions remain deferred until explicit truthy / pagination parity is specified.
+Defer **observability** and **capture-sessions** wire builders until explicit truthy / `page > 0` parity is specified; optional P5+.
 
 ---
 
 ## Final status tag
 
-`FRONTEND_QUERY_HELPER_P4_1_IMPLEMENTED`
+`FRONTEND_QUERY_HELPER_P4_2_IMPLEMENTED`

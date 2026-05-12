@@ -1,4 +1,5 @@
 import { V3_INVENTORIES_BASE } from '../constants/v3ApiPaths';
+import { buildQueryString } from './queryString';
 import type {
   AisleExecutionLogResponse,
   AisleJobsListResponse,
@@ -128,41 +129,23 @@ export interface AislePositionsListQuery {
   job_id?: string | null;
 }
 
-function buildAislePositionsQueryString(q: AislePositionsListQuery | undefined): string {
-  if (!q) return '';
-  const params = new URLSearchParams();
-  if (q.status != null && String(q.status).trim() !== '') {
-    params.set('status', String(q.status).trim());
-  }
-  if (q.needs_review != null) {
-    params.set('needs_review', String(q.needs_review));
-  }
-  if (q.min_confidence != null && !Number.isNaN(q.min_confidence)) {
-    params.set('min_confidence', String(q.min_confidence));
-  }
-  if (q.sku_filter != null && String(q.sku_filter).trim() !== '') {
-    params.set('sku_filter', String(q.sku_filter).trim());
-  }
-  if (q.page != null && q.page >= 1) {
-    params.set('page', String(q.page));
-  }
-  if (q.page_size != null && q.page_size >= 1) {
-    params.set('page_size', String(q.page_size));
-  }
-  if (q.sort_by != null && String(q.sort_by).trim() !== '') {
-    params.set('sort_by', String(q.sort_by).trim());
-  }
-  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') {
-    params.set('sort_dir', String(q.sort_dir).trim());
-  }
-  if (q.job_id != null && String(q.job_id).trim() !== '') {
-    params.set('job_id', String(q.job_id).trim());
-  }
-  if (q.consolidate_by_sku === false) {
-    params.set('consolidate_by_sku', 'false');
-  }
-  const s = params.toString();
-  return s ? `?${s}` : '';
+/** Wire aisle positions list query — omission and boolean rules stay aligned with `canonicalizeAislePositionsListQuery`. */
+export function buildAislePositionsQueryString(q?: AislePositionsListQuery): string {
+  const minConfidenceWire =
+    q?.min_confidence != null && !Number.isNaN(q.min_confidence) ? String(q.min_confidence) : undefined;
+
+  return buildQueryString([
+    ['status', q?.status],
+    ['needs_review', q?.needs_review],
+    ['min_confidence', minConfidenceWire, { trim: false }],
+    ['sku_filter', q?.sku_filter],
+    ['page', q?.page, { min: 1 }],
+    ['page_size', q?.page_size, { min: 1 }],
+    ['sort_by', q?.sort_by],
+    ['sort_dir', q?.sort_dir],
+    ['job_id', q?.job_id],
+    ['consolidate_by_sku', q?.consolidate_by_sku, { emit: 'false-only' }],
+  ]);
 }
 
 export async function listAisleJobs(
@@ -170,12 +153,8 @@ export async function listAisleJobs(
   aisleId: string,
   options?: { limit?: number }
 ): Promise<AisleJobsListResponse> {
-  const params = new URLSearchParams();
-  if (options?.limit != null && options.limit >= 1) {
-    params.set('limit', String(options.limit));
-  }
-  const qs = params.toString();
-  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs${qs ? `?${qs}` : ''}`;
+  const qs = buildQueryString([['limit', options?.limit, { min: 1 }]]);
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs${qs}`;
   return apiRequestJson<AisleJobsListResponse>(path);
 }
 
