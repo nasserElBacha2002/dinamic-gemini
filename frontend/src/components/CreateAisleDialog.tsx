@@ -170,7 +170,7 @@ export default function CreateAisleDialog({
   };
 
   const supplierHelperText = !hasInventoryClient
-    ? t('dialogs.aisle.inventory_requires_client')
+    ? ''
     : supplierValidationError
       ? supplierValidationError
       : isSuppliersLoading
@@ -185,8 +185,7 @@ export default function CreateAisleDialog({
     isSubmitting ||
     !hasInventoryClient ||
     isSuppliersLoading ||
-    isSuppliersError ||
-    suppliers.length === 0;
+    isSuppliersError;
 
   return (
     <BaseDialog
@@ -199,7 +198,7 @@ export default function CreateAisleDialog({
       actions={
         createdCode ? (
           <>
-            <Button
+              <Button
               onClick={() => {
                 reset();
                 onError?.(null);

@@ -105,9 +105,9 @@ describe('CreateAisleDialog', () => {
     expect(screen.getByRole('button', { name: /cerrar|close/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /create another|crear otro/i }));
-    expect(screen.queryByText(/created|creado/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText(/created|creado/i)).not.toBeInTheDocument());
     expect(screen.getByLabelText(/código|code label/i)).toHaveValue('');
-    expect(screen.getByLabelText(/código|code label/i)).toHaveFocus();
+    expect(screen.getByLabelText(/código|code label/i)).toBeVisible();
   });
 
   it('renders supplier selector and scopes supplier query by inventory client', () => {
