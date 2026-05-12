@@ -21,40 +21,28 @@ export interface ReviewQueueListQuery {
   page_size?: number;
 }
 
-export function buildReviewQueueQueryString(q: ReviewQueueListQuery | undefined): string {
-  if (!q) return '';
-  const params = new URLSearchParams();
-  if (q.inventory_id != null && String(q.inventory_id).trim() !== '') {
-    params.set('inventory_id', String(q.inventory_id).trim());
-  }
-  if (q.aisle_id != null && String(q.aisle_id).trim() !== '') {
-    params.set('aisle_id', String(q.aisle_id).trim());
-  }
-  if (q.min_confidence != null && !Number.isNaN(q.min_confidence)) {
-    params.set('min_confidence', String(q.min_confidence));
-  }
-  if (q.max_confidence != null && !Number.isNaN(q.max_confidence)) {
-    params.set('max_confidence', String(q.max_confidence));
-  }
-  if (q.traceability != null && String(q.traceability).trim() !== '') {
-    params.set('traceability', String(q.traceability).trim().toLowerCase());
-  }
-  if (q.has_evidence === true) params.set('has_evidence', 'true');
-  if (q.has_evidence === false) params.set('has_evidence', 'false');
-  if (q.qty_zero === true) params.set('qty_zero', 'true');
-  if (q.qty_zero === false) params.set('qty_zero', 'false');
-  if (q.sku_contains != null && String(q.sku_contains).trim() !== '') {
-    params.set('sku_contains', String(q.sku_contains).trim());
-  }
-  if (q.position_status != null && String(q.position_status).trim() !== '') {
-    params.set('position_status', String(q.position_status).trim().toLowerCase());
-  }
-  if (q.sort_by != null && String(q.sort_by).trim() !== '') params.set('sort_by', String(q.sort_by).trim());
-  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') params.set('sort_dir', String(q.sort_dir).trim());
-  if (q.page != null && q.page >= 1) params.set('page', String(q.page));
-  if (q.page_size != null && q.page_size >= 1) params.set('page_size', String(q.page_size));
-  const s = params.toString();
-  return s ? `?${s}` : '';
+/** Wire review queue list query — omission/lowercase rules stay aligned with `canonicalizeReviewQueueListQuery`. */
+export function buildReviewQueueQueryString(q?: ReviewQueueListQuery): string {
+  const minConfidenceWire =
+    q?.min_confidence != null && !Number.isNaN(q.min_confidence) ? String(q.min_confidence) : undefined;
+  const maxConfidenceWire =
+    q?.max_confidence != null && !Number.isNaN(q.max_confidence) ? String(q.max_confidence) : undefined;
+
+  return buildQueryString([
+    ['inventory_id', q?.inventory_id],
+    ['aisle_id', q?.aisle_id],
+    ['min_confidence', minConfidenceWire, { trim: false }],
+    ['max_confidence', maxConfidenceWire, { trim: false }],
+    ['traceability', q?.traceability, { transform: (value) => value.toLowerCase() }],
+    ['has_evidence', q?.has_evidence],
+    ['qty_zero', q?.qty_zero],
+    ['sku_contains', q?.sku_contains],
+    ['position_status', q?.position_status, { transform: (value) => value.toLowerCase() }],
+    ['sort_by', q?.sort_by],
+    ['sort_dir', q?.sort_dir],
+    ['page', q?.page, { min: 1 }],
+    ['page_size', q?.page_size, { min: 1 }],
+  ]);
 }
 
 export async function getReviewQueuePositions(
