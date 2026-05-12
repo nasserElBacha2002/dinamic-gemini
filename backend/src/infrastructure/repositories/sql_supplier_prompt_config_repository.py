@@ -18,7 +18,21 @@ def _to_utc(dt: datetime | None) -> datetime | None:
     return dt.astimezone(timezone.utc)
 
 
-def _row_to_supplier_prompt_config(row) -> SupplierPromptConfig:
+def _require_str(row: object, column: str) -> str:
+    """Map a required DB column to a non-empty str; never coerce None into \"None\"."""
+    raw = getattr(row, column, None)
+    if raw is None:
+        raise ValueError(f"supplier_prompt_configs row missing required column {column!r}")
+    if isinstance(raw, str):
+        value = raw.strip()
+    else:
+        value = str(raw).strip()
+    if not value:
+        raise ValueError(f"supplier_prompt_configs row has empty {column!r}")
+    return value
+
+
+def _row_to_supplier_prompt_config(row: object) -> SupplierPromptConfig:
     created_at = _to_utc(getattr(row, "created_at", None))
     updated_at = _to_utc(getattr(row, "updated_at", None))
     if created_at is None:
@@ -26,11 +40,11 @@ def _row_to_supplier_prompt_config(row) -> SupplierPromptConfig:
     if updated_at is None:
         raise ValueError("supplier_prompt_configs row missing required updated_at")
     return SupplierPromptConfig(
-        id=getattr(row, "id", None),
-        client_supplier_id=getattr(row, "client_supplier_id", None),
+        id=_require_str(row, "id"),
+        client_supplier_id=_require_str(row, "client_supplier_id"),
         provider_name=(getattr(row, "provider_name", None) or "").strip() or None,
         model_name=(getattr(row, "model_name", None) or "").strip() or None,
-        instructions_text=getattr(row, "instructions_text", None),
+        instructions_text=_require_str(row, "instructions_text"),
         version=int(getattr(row, "version", 0)),
         is_active=bool(getattr(row, "is_active", False)),
         created_at=created_at,
