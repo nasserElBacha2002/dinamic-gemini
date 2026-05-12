@@ -1,17 +1,17 @@
 import { V3_ADMIN_BASE, V3_INVENTORIES_BASE } from '../constants/v3ApiPaths';
 import type { AdminAiComposedPromptResponse, AdminAiConfigResponse, ProcessingProviderOptionsResponse } from './types';
-import { handleResponse, protectedFetch } from './http';
+import { apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
 export async function getProcessingProviderOptions(): Promise<ProcessingProviderOptionsResponse> {
-  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/processing-provider-options`);
-  return handleResponse<ProcessingProviderOptionsResponse>(response);
+  return apiRequestJson<ProcessingProviderOptionsResponse>(
+    `${API_BASE}${V3_INVENTORIES_BASE}/processing-provider-options`
+  );
 }
 
 export async function getAdminAiConfig(): Promise<AdminAiConfigResponse> {
-  const response = await protectedFetch(`${API_BASE}${V3_ADMIN_BASE}/ai-config`);
-  return handleResponse<AdminAiConfigResponse>(response);
+  return apiRequestJson<AdminAiConfigResponse>(`${API_BASE}${V3_ADMIN_BASE}/ai-config`);
 }
 
 export async function getAdminAiComposedPrompt(params: {
@@ -24,8 +24,7 @@ export async function getAdminAiComposedPrompt(params: {
     pipeline_provider_key: params.pipeline_provider_key,
     prompt_parity_mode: String(params.prompt_parity_mode),
   });
-  const response = await protectedFetch(
+  return apiRequestJson<AdminAiComposedPromptResponse>(
     `${API_BASE}${V3_ADMIN_BASE}/ai-config/composed-prompt?${q.toString()}`
   );
-  return handleResponse<AdminAiComposedPromptResponse>(response);
 }

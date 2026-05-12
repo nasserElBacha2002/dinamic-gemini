@@ -1,12 +1,11 @@
 import { V3_INVENTORIES_BASE } from '../constants/v3ApiPaths';
 import type {
-  ApiErrorDetail,
   CreateInventoryRequest,
   Inventory,
   InventoryMetrics,
   PaginatedInventoryListResponse,
 } from './types';
-import { filenameFromContentDisposition, handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
+import { apiDownloadBlob, apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -36,51 +35,27 @@ export async function getInventories(
   listQuery?: InventoriesListQuery
 ): Promise<PaginatedInventoryListResponse> {
   const qs = buildInventoriesListQueryString(listQuery);
-  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/${qs}`);
-  return handleResponse<PaginatedInventoryListResponse>(response);
+  return apiRequestJson<PaginatedInventoryListResponse>(`${API_BASE}${V3_INVENTORIES_BASE}/${qs}`);
 }
 
 export async function getInventory(id: string): Promise<Inventory> {
-  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/${id}`);
-  return handleResponse<Inventory>(response);
+  return apiRequestJson<Inventory>(`${API_BASE}${V3_INVENTORIES_BASE}/${id}`);
 }
 
 export async function getInventoryMetrics(inventoryId: string): Promise<InventoryMetrics> {
-  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/metrics`);
-  return handleResponse<InventoryMetrics>(response);
+  return apiRequestJson<InventoryMetrics>(`${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/metrics`);
 }
 
 export async function exportInventoryResultsCsv(inventoryId: string): Promise<void> {
   const path = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/export?format=csv`;
-  const response = await protectedFetch(path);
-  const fallbackName = `inventory_${inventoryId}_results.csv`;
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  return apiDownloadBlob(path, {
+    fallbackFilename: `inventory_${inventoryId}_results.csv`,
+  });
 }
 
 export async function createInventory(body: CreateInventoryRequest): Promise<Inventory> {
-  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/`, {
+  return apiRequestJson<Inventory>(`${API_BASE}${V3_INVENTORIES_BASE}/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body,
   });
-  return handleResponse<Inventory>(response);
 }

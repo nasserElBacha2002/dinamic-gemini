@@ -22,7 +22,8 @@ import type {
   UploadSupplierReferenceImagesRequest,
   UploadSupplierReferenceImagesResponse,
 } from './types';
-import { handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
+import { protectedFetch, throwApiErrorIfNotOk } from './http';
+import { apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -45,45 +46,40 @@ export async function listClientSuppliers(
   listQuery?: ClientSuppliersListQuery
 ): Promise<ClientSuppliersListResponse> {
   const qs = buildClientSuppliersListQueryString(listQuery);
-  const response = await protectedFetch(
+  return apiRequestJson<ClientSuppliersListResponse>(
     `${API_BASE}${pathToClientSuppliersBase(clientId)}${qs}`
   );
-  return handleResponse<ClientSuppliersListResponse>(response);
 }
 
 export async function getClientSupplier(
   clientId: string,
   supplierId: string
 ): Promise<ClientSupplier> {
-  const response = await protectedFetch(
+  return apiRequestJson<ClientSupplier>(
     `${API_BASE}${pathToClientSuppliersBase(clientId)}/${encodeURIComponent(supplierId)}`
   );
-  return handleResponse<ClientSupplier>(response);
 }
 
 export async function createClientSupplier(
   clientId: string,
   body: CreateClientSupplierRequest
 ): Promise<ClientSupplier> {
-  const response = await protectedFetch(
+  return apiRequestJson<ClientSupplier>(
     `${API_BASE}${V3_CLIENTS_BASE}/${encodeURIComponent(clientId)}/suppliers`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body,
     }
   );
-  return handleResponse<ClientSupplier>(response);
 }
 
 export async function listSupplierReferenceImages(
   clientId: string,
   supplierId: string
 ): Promise<SupplierReferenceImagesListResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<SupplierReferenceImagesListResponse>(
     `${API_BASE}${supplierReferenceImagesPath(clientId, supplierId)}`
   );
-  return handleResponse<SupplierReferenceImagesListResponse>(response);
 }
 
 export async function uploadSupplierReferenceImages(
@@ -97,11 +93,10 @@ export async function uploadSupplierReferenceImages(
   const description = (payload.description ?? '').trim();
   if (label) form.append('label', label);
   if (description) form.append('description', description);
-  const response = await protectedFetch(
+  return apiRequestJson<UploadSupplierReferenceImagesResponse>(
     `${API_BASE}${supplierReferenceImagesPath(clientId, supplierId)}`,
     { method: 'POST', body: form }
   );
-  return handleResponse<UploadSupplierReferenceImagesResponse>(response);
 }
 
 export async function deleteSupplierReferenceImage(
@@ -109,11 +104,10 @@ export async function deleteSupplierReferenceImage(
   supplierId: string,
   imageId: string
 ): Promise<DeleteSupplierReferenceImageResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<DeleteSupplierReferenceImageResponse>(
     `${API_BASE}${supplierReferenceImagePath(clientId, supplierId, imageId)}`,
     { method: 'DELETE' }
   );
-  return handleResponse<DeleteSupplierReferenceImageResponse>(response);
 }
 
 /** Absolute URL for GET …/reference-images/{imageId}/file (Bearer not included — prefer fetchSupplierReferenceImageFile for preview). */
@@ -175,10 +169,9 @@ export async function listSupplierPromptConfigs(
   listQuery?: SupplierPromptConfigsListQuery
 ): Promise<SupplierPromptConfigsListResponse> {
   const qs = buildSupplierPromptConfigsQueryString(listQuery);
-  const response = await protectedFetch(
+  return apiRequestJson<SupplierPromptConfigsListResponse>(
     `${API_BASE}${supplierPromptConfigsPath(clientId, supplierId)}${qs}`
   );
-  return handleResponse<SupplierPromptConfigsListResponse>(response);
 }
 
 export async function createSupplierPromptConfigVersion(
@@ -186,15 +179,13 @@ export async function createSupplierPromptConfigVersion(
   supplierId: string,
   body: CreateSupplierPromptConfigRequest
 ): Promise<SupplierPromptConfig> {
-  const response = await protectedFetch(
+  return apiRequestJson<SupplierPromptConfig>(
     `${API_BASE}${supplierPromptConfigsPath(clientId, supplierId)}`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body,
     }
   );
-  return handleResponse<SupplierPromptConfig>(response);
 }
 
 export async function getActiveSupplierPromptConfig(
@@ -208,10 +199,9 @@ export async function getActiveSupplierPromptConfig(
   if (normalizedProviderName) params.set('provider_name', normalizedProviderName);
   const normalizedModelName = (modelName ?? '').trim();
   if (normalizedModelName) params.set('model_name', normalizedModelName);
-  const response = await protectedFetch(
+  return apiRequestJson<SupplierPromptConfig>(
     `${API_BASE}${supplierPromptConfigsActivePath(clientId, supplierId)}?${params.toString()}`
   );
-  return handleResponse<SupplierPromptConfig>(response);
 }
 
 export async function getSupplierPromptConfigById(
@@ -219,10 +209,9 @@ export async function getSupplierPromptConfigById(
   supplierId: string,
   configId: string
 ): Promise<SupplierPromptConfig> {
-  const response = await protectedFetch(
+  return apiRequestJson<SupplierPromptConfig>(
     `${API_BASE}${supplierPromptConfigByIdPath(clientId, supplierId, configId)}`
   );
-  return handleResponse<SupplierPromptConfig>(response);
 }
 
 export async function activateSupplierPromptConfigVersion(
@@ -230,9 +219,8 @@ export async function activateSupplierPromptConfigVersion(
   supplierId: string,
   configId: string
 ): Promise<SupplierPromptConfig> {
-  const response = await protectedFetch(
+  return apiRequestJson<SupplierPromptConfig>(
     `${API_BASE}${supplierPromptConfigActivatePath(clientId, supplierId, configId)}`,
     { method: 'POST' }
   );
-  return handleResponse<SupplierPromptConfig>(response);
 }
