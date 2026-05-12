@@ -1,4 +1,4 @@
-"""Aggregate persisted job audit metadata for Phase H1 (read-only, no pipeline changes)."""
+"""Aggregate persisted job audit metadata (Phase H1 read model; Phase H4 snapshot merge)."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from src.application.services.reference_usage_from_job_result import (
     VISUAL_REFERENCE_CONTEXT_RESULT_JSON_KEY,
     parse_reference_usage_from_result_json,
 )
+from src.application.services.run_audit_snapshot import RUN_AUDIT_SNAPSHOT_SCHEMA_VERSION
 from src.application.services.run_auditability_execution_log import (
     extract_prompt_composition_from_analysis_request,
     find_last_analysis_request_prepared_event,
@@ -27,6 +28,7 @@ from src.application.services.run_auditability_models import (
     RunAuditReferenceUsage,
 )
 from src.domain.jobs.entities import Job
+from src.pipeline.run_metadata import RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,38 @@ def _coerce_warnings(raw: Any) -> list[str]:
                 out.append(item.strip())
         return out
     return []
+
+
+def _coerce_h4_snapshot(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    if raw.get("schema_version") != RUN_AUDIT_SNAPSHOT_SCHEMA_VERSION:
+        return None
+    return raw
+
+
+def _snap_bool(snap: dict[str, Any] | None, key: str) -> bool | None:
+    if snap is None or key not in snap:
+        return None
+    v = snap[key]
+    return v if isinstance(v, bool) else None
+
+
+def _snap_str(snap: dict[str, Any] | None, key: str) -> str | None:
+    if snap is None:
+        return None
+    return _strip_str(snap.get(key))
+
+
+def _snap_optional_int(snap: dict[str, Any] | None, key: str) -> int | None:
+    if snap is None or key not in snap:
+        return None
+    v = snap[key]
+    if isinstance(v, int):
+        return v
+    if isinstance(v, str) and v.strip().isdigit():
+        return int(v.strip())
+    return None
 
 
 def _merge_supplier_prompt_from_hybrid(
@@ -137,6 +171,10 @@ class RunAuditabilityService:
         if result_json:
             sources.result_json = True
 
+        snap = _coerce_h4_snapshot(result_json.get(RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT))
+        if snap is not None:
+            sources.run_audit_snapshot = True
+
         aisle_id: str | None = None
         inventory_id: str | None = None
         client_supplier_id: str | None = None
@@ -168,17 +206,25 @@ class RunAuditabilityService:
         analysis_payload = find_last_analysis_request_prepared_event(exec_events or [])
         prompt_comp = extract_prompt_composition_from_analysis_request(analysis_payload)
         eff_fields = merge_effective_prompt_fields(prompt_comp)
-        prompt_composition_available = bool(prompt_comp)
+        prompt_composition_available = bool(prompt_comp) or (
+            bool(snap.get("prompt_composition_available")) if snap else False
+        )
 
-        supplier_prompt_config_id = _strip_str(eff_fields.get("supplier_prompt_config_id"))
-        if supplier_prompt_config_id is None:
-            supplier_prompt_config_id = _strip_str(hybrid_supplier.get("supplier_prompt_config_id"))
+        supplier_prompt_config_id = (
+            _snap_str(snap, "supplier_prompt_config_id")
+            or _strip_str(eff_fields.get("supplier_prompt_config_id"))
+            or _strip_str(hybrid_supplier.get("supplier_prompt_config_id"))
+        )
 
-        supplier_prompt_config_version = _strip_str(eff_fields.get("supplier_prompt_config_version"))
-        if supplier_prompt_config_version is None:
-            supplier_prompt_config_version = _strip_str(hybrid_supplier.get("supplier_prompt_config_version"))
+        supplier_prompt_config_version = (
+            _snap_str(snap, "supplier_prompt_config_version")
+            or _strip_str(eff_fields.get("supplier_prompt_config_version"))
+            or _strip_str(hybrid_supplier.get("supplier_prompt_config_version"))
+        )
 
-        fb_used = eff_fields.get("fallback_used")
+        fb_used: Any = _snap_bool(snap, "supplier_prompt_fallback_used")
+        if fb_used is None:
+            fb_used = eff_fields.get("fallback_used")
         if fb_used is None and "fallback_used" in hybrid_supplier:
             fb_used = hybrid_supplier.get("fallback_used")
         supplier_prompt_fallback_used: bool | None
@@ -187,32 +233,48 @@ class RunAuditabilityService:
         else:
             supplier_prompt_fallback_used = None
 
-        fb_reason = _strip_str(eff_fields.get("fallback_reason"))
-        if fb_reason is None:
-            fb_reason = _strip_str(hybrid_supplier.get("fallback_reason"))
+        fb_reason = (
+            _snap_str(snap, "supplier_prompt_fallback_reason")
+            or _strip_str(eff_fields.get("fallback_reason"))
+            or _strip_str(hybrid_supplier.get("fallback_reason"))
+        )
 
-        protected_key = _strip_str(eff_fields.get("protected_prompt_contract_key"))
-        protected_ver = _strip_str(eff_fields.get("protected_prompt_contract_version"))
-        effective_hash = _strip_str(eff_fields.get("effective_prompt_hash"))
+        protected_key = (
+            _snap_str(snap, "protected_prompt_contract_key")
+            or _strip_str(eff_fields.get("protected_prompt_contract_key"))
+        )
+        protected_ver = (
+            _snap_str(snap, "protected_prompt_contract_version")
+            or _strip_str(eff_fields.get("protected_prompt_contract_version"))
+        )
+        effective_hash = (
+            _snap_str(snap, "effective_prompt_hash") or _strip_str(eff_fields.get("effective_prompt_hash"))
+        )
 
-        warnings = _coerce_warnings(eff_fields.get("warnings"))
+        warnings: list[str] = []
+        for w in _coerce_warnings(snap.get("warnings") if snap else None):
+            warnings.append(w)
+        for w in _coerce_warnings(eff_fields.get("warnings")):
+            if w not in warnings:
+                warnings.append(w)
 
         trace_cs = _strip_str(hybrid_supplier.get("trace_client_supplier_id"))
         if client_supplier_id is None and trace_cs:
             client_supplier_id = trace_cs
 
-        ref_source = _strip_str(eff_fields.get("reference_source"))
-        if ref_source is None:
-            ref_source = _strip_str(hybrid_supplier.get("trace_reference_source"))
+        ref_source = (
+            _snap_str(snap, "reference_source")
+            or _strip_str(eff_fields.get("reference_source"))
+            or _strip_str(hybrid_supplier.get("trace_reference_source"))
+        )
 
+        reference_image_count = _snap_optional_int(snap, "reference_image_count")
         trace_img_count = hybrid_supplier.get("trace_image_count")
-        reference_image_count: int | None
-        if isinstance(trace_img_count, int):
-            reference_image_count = trace_img_count
-        elif isinstance(trace_img_count, str) and trace_img_count.strip().isdigit():
-            reference_image_count = int(trace_img_count.strip())
-        else:
-            reference_image_count = None
+        if reference_image_count is None:
+            if isinstance(trace_img_count, int):
+                reference_image_count = trace_img_count
+            elif isinstance(trace_img_count, str) and trace_img_count.strip().isdigit():
+                reference_image_count = int(trace_img_count.strip())
 
         ref_usage_fields = parse_reference_usage_from_result_json(job.result_json)
         reference_usage: RunAuditReferenceUsage | None = None
@@ -236,26 +298,48 @@ class RunAuditabilityService:
                     reference_image_count = rc
 
         ref_ids: list[str] = []
-        if ref_usage_fields is not None and ref_usage_fields.reference_ids:
+        if snap and isinstance(snap.get("reference_ids"), list):
+            for x in snap["reference_ids"]:
+                if isinstance(x, str) and x.strip():
+                    ref_ids.append(x.strip())
+        if not ref_ids and ref_usage_fields is not None and ref_usage_fields.reference_ids:
             ref_ids = list(ref_usage_fields.reference_ids)
-        elif isinstance(eff_fields.get("reference_image_ids"), list):
+        elif not ref_ids and isinstance(eff_fields.get("reference_image_ids"), list):
             for x in eff_fields["reference_image_ids"]:
                 if isinstance(x, str) and x.strip():
                     ref_ids.append(x.strip())
 
-        supplier_reference_images_used: bool | None = None
-        if ref_source == "supplier_reference_images":
-            if reference_image_count is not None:
-                supplier_reference_images_used = reference_image_count > 0
-            elif ref_usage_fields is not None:
-                supplier_reference_images_used = ref_usage_fields.resolved_count > 0
-        elif ref_source is not None:
-            supplier_reference_images_used = False
+        supplier_reference_images_used = _snap_bool(snap, "supplier_reference_images_used")
+        if supplier_reference_images_used is None:
+            if ref_source == "supplier_reference_images":
+                if reference_image_count is not None:
+                    supplier_reference_images_used = reference_image_count > 0
+                elif ref_usage_fields is not None:
+                    supplier_reference_images_used = ref_usage_fields.resolved_count > 0
+            elif ref_source is not None:
+                supplier_reference_images_used = False
 
-        provider_name = _strip_str(job.provider_name) or _strip_str(result_json.get("provider"))
-        model_name = _strip_str(job.model_name)
-        prompt_key = _strip_str(job.prompt_key) or _strip_str(result_json.get("prompt_key"))
-        prompt_version = _strip_str(job.prompt_version) or _strip_str(result_json.get("prompt_version"))
+        inventory_visual_references_used: bool | None = None
+        if snap is not None and "inventory_visual_references_used" in snap:
+            iv = snap["inventory_visual_references_used"]
+            inventory_visual_references_used = iv if isinstance(iv, bool) else None
+
+        provider_name = (
+            _snap_str(snap, "provider_name")
+            or _strip_str(job.provider_name)
+            or _strip_str(result_json.get("provider"))
+        )
+        model_name = _snap_str(snap, "model_name") or _strip_str(job.model_name)
+        prompt_key = (
+            _snap_str(snap, "prompt_key")
+            or _strip_str(job.prompt_key)
+            or _strip_str(result_json.get("prompt_key"))
+        )
+        prompt_version = (
+            _snap_str(snap, "prompt_version")
+            or _strip_str(job.prompt_version)
+            or _strip_str(result_json.get("prompt_version"))
+        )
 
         legacy_mode = not bool(client_id) and not bool(client_supplier_id)
 
@@ -285,7 +369,7 @@ class RunAuditabilityService:
             prompt_composition_available=prompt_composition_available,
             reference_usage=reference_usage,
             supplier_reference_images_used=supplier_reference_images_used,
-            inventory_visual_references_used=None,
+            inventory_visual_references_used=inventory_visual_references_used,
             reference_source=ref_source,
             reference_image_count=reference_image_count,
             reference_ids=ref_ids,

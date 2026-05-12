@@ -52,6 +52,7 @@ const SOURCE_KEYS: (keyof RunAuditMetadataSources)[] = [
   'inventory_join',
   'hybrid_report',
   'execution_log',
+  'run_audit_snapshot',
 ];
 
 export default function JobAuditabilityPanel({

@@ -17,6 +17,7 @@ class RunAuditMetadataSources:
     inventory_join: bool = False
     hybrid_report: bool = False
     execution_log: bool = False
+    run_audit_snapshot: bool = False
 
 
 @dataclass
@@ -87,6 +88,7 @@ class RunAuditabilityView:
                 "inventory_join": s.inventory_join,
                 "hybrid_report": s.hybrid_report,
                 "execution_log": s.execution_log,
+                "run_audit_snapshot": s.run_audit_snapshot,
             }
 
         ru: dict[str, Any] | None = None

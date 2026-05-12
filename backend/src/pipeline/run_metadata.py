@@ -27,6 +27,8 @@ RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT = "visual_reference_context"
 RUN_METADATA_KEY_PROMPT_COMPOSITION = "prompt_composition"
 # Phase 10 — provider-agnostic one-call usage/pricing/cost snapshot
 RUN_METADATA_KEY_LLM_COST_SNAPSHOT = "llm_cost_snapshot"
+# Phase H4 — compact persisted audit snapshot (safe metadata only; no prompt bodies)
+RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT = "run_audit_snapshot"
 
 
 def default_empty_block() -> dict[str, Any]:

@@ -556,6 +556,7 @@ export interface RunAuditMetadataSources {
   inventory_join: boolean;
   hybrid_report: boolean;
   execution_log: boolean;
+  run_audit_snapshot: boolean;
 }
 
 export interface RunAuditReferenceUsage {

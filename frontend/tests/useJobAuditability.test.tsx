@@ -56,6 +56,7 @@ describe('useJobAuditability', () => {
         inventory_join: false,
         hybrid_report: false,
         execution_log: false,
+        run_audit_snapshot: false,
       },
       missing_metadata: [],
       legacy_mode: false,

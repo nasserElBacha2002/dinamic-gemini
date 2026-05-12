@@ -944,6 +944,7 @@
       "source_inventory_join": "Join de inventario",
       "source_hybrid_report": "Hybrid report",
       "source_execution_log": "Execution log",
+      "source_run_audit_snapshot": "Snapshot de auditoría (H4)",
       "yes": "Sí",
       "no": "No",
       "unknown": "No informado",

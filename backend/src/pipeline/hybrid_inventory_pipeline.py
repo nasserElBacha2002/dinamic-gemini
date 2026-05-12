@@ -8,11 +8,13 @@ import json
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
 import cv2
 
+from src.application.services.run_audit_snapshot import build_run_audit_snapshot
 from src.application.services.supplier_prompt_resolver import SupplierPromptResolution
 from src.config import Settings
 from src.jobs.models import JobInput
@@ -25,6 +27,7 @@ from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.ports.analysis_provider import AnalysisProvider
 from src.pipeline.providers.registry import default_analysis_provider
 from src.pipeline.run_metadata import (
+    RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT,
     build_run_metadata,
 )
 from src.pipeline.stages.analysis_stage import AnalysisStage, AnalysisStageResult
@@ -220,6 +223,26 @@ def _build_success_run_metadata(
         pk = str(prompt_key).strip()
         run_metadata["prompt_key"] = pk
         run_metadata["prompt_version"] = f"{pk}@v2.1"
+    inv_id, aisle_id = context._execution_log_inventory_aisle_ids()
+    spr = context.supplier_prompt_resolution
+    pc = analysis_result.prompt_composition
+    pc = pc if isinstance(pc, dict) else None
+    resolved_model = (pc.get("model_name") if pc else None) or getattr(context, "job_model_name", None)
+    resolved_model = str(resolved_model).strip() if resolved_model else None
+
+    run_metadata[RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT] = build_run_audit_snapshot(
+        run_metadata=run_metadata,
+        inventory_id=inv_id,
+        aisle_id=aisle_id,
+        client_id=spr.client_id if spr else None,
+        client_supplier_id=spr.client_supplier_id if spr else None,
+        provider_name=provider,
+        model_name=resolved_model or None,
+        supplier_prompt_resolution=spr,
+        analysis_context_available=context.analysis_context is not None,
+        created_at_iso=datetime.now(timezone.utc).isoformat(),
+    )
+
     if getattr(settings, "debug_run_metadata", False):
         try:
             (context.run_dir / "run_metadata.json").write_text(

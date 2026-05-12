@@ -760,6 +760,7 @@ describe('InventoryDetail', () => {
           inventory_join: true,
           hybrid_report: false,
           execution_log: false,
+          run_audit_snapshot: false,
         },
         missing_metadata: ['hybrid_report', 'execution_log'],
         legacy_mode: false,

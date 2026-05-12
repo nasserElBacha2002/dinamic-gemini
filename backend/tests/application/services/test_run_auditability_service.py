@@ -12,6 +12,7 @@ from src.application.services.run_auditability_service import RunAuditabilitySer
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
+from src.pipeline.run_metadata import RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT
 
 _NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
@@ -187,6 +188,7 @@ def test_happy_path_full_metadata() -> None:
     assert view.prompt_composition_available is True
     assert view.metadata_sources.hybrid_report is True
     assert view.metadata_sources.execution_log is True
+    assert view.metadata_sources.run_audit_snapshot is False
     assert view.reference_usage is not None
     assert view.reference_usage.resolved is True
     assert "hybrid_report" not in view.missing_metadata
@@ -238,6 +240,86 @@ def test_missing_execution_log() -> None:
     assert view.metadata_sources.execution_log is False
     assert "execution_log" in view.missing_metadata
     assert view.prompt_composition_available is False
+    assert view.effective_prompt_hash is None
+
+
+def test_h4_snapshot_fills_when_exec_and_hybrid_missing() -> None:
+    snap: dict[str, Any] = {
+        "schema_version": "h4.v1",
+        "effective_prompt_hash": "snap-hash",
+        "supplier_prompt_config_id": "sp-snap",
+        "supplier_prompt_config_version": "9",
+        "supplier_prompt_fallback_used": True,
+        "supplier_prompt_fallback_reason": "NO_ACTIVE_SUPPLIER_PROMPT_CONFIG",
+        "prompt_composition_available": True,
+        "warnings": ["w-snap"],
+        "provider_name": "openai",
+        "model_name": "gpt-4o",
+        "prompt_key": "k-snap",
+        "prompt_version": "k-snap@v2.1",
+        "reference_source": "supplier_reference_images",
+        "reference_image_count": 2,
+        "reference_ids": ["r1", "r2"],
+        "supplier_reference_images_used": True,
+    }
+    job = _base_job(
+        "job-h4",
+        result_json={
+            "provider": "gemini",
+            RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT: snap,
+            VISUAL_REFERENCE_CONTEXT_RESULT_JSON_KEY: {
+                "resolved": True,
+                "resolved_count": 2,
+                "reference_ids": ["r1", "r2"],
+                "provider_consumed": True,
+                "provider_consumed_count": 2,
+            },
+        },
+    )
+    aisle = _base_aisle("aisle-1", "inv-1")
+    inv = _base_inventory("inv-1")
+    svc = RunAuditabilityService(
+        job_repo=_FakeJobRepo(job),
+        aisle_repo=_FakeAisleRepo({"aisle-1": aisle}),
+        inventory_repo=_FakeInventoryRepo({"inv-1": inv}),
+        stored_artifact_reader=_FakeArtifactReader(None),
+        execution_log_loader=_FakeExecLogLoader(None),
+    )
+    view = svc.build("job-h4")
+    assert view is not None
+    assert view.metadata_sources.run_audit_snapshot is True
+    assert view.metadata_sources.execution_log is False
+    assert view.metadata_sources.hybrid_report is False
+    assert view.effective_prompt_hash == "snap-hash"
+    assert view.supplier_prompt_config_id == "sp-snap"
+    assert view.supplier_prompt_config_version == "9"
+    assert view.supplier_prompt_fallback_used is True
+    assert view.prompt_composition_available is True
+    assert view.warnings == ["w-snap"]
+    assert view.provider_name == "openai"
+    assert view.model_name == "gpt-4o"
+    assert "effective_prompt_hash" not in view.missing_metadata
+    assert "supplier_prompt_config_id" not in view.missing_metadata
+    assert "prompt_composition_summary" not in view.missing_metadata
+
+
+def test_h4_snapshot_wrong_schema_ignored() -> None:
+    job = _base_job(
+        "job-bad-snap",
+        result_json={RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT: {"schema_version": "x", "effective_prompt_hash": "nope"}},
+    )
+    aisle = _base_aisle("aisle-1", "inv-1")
+    inv = _base_inventory("inv-1")
+    svc = RunAuditabilityService(
+        job_repo=_FakeJobRepo(job),
+        aisle_repo=_FakeAisleRepo({"aisle-1": aisle}),
+        inventory_repo=_FakeInventoryRepo({"inv-1": inv}),
+        stored_artifact_reader=_FakeArtifactReader(None),
+        execution_log_loader=_FakeExecLogLoader(None),
+    )
+    view = svc.build("job-bad-snap")
+    assert view is not None
+    assert view.metadata_sources.run_audit_snapshot is False
     assert view.effective_prompt_hash is None
 
 

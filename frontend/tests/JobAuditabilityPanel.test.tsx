@@ -58,6 +58,7 @@ function fullView(overrides: Partial<RunAuditabilityView> = {}): RunAuditability
       inventory_join: true,
       hybrid_report: true,
       execution_log: true,
+      run_audit_snapshot: false,
     },
     missing_metadata: [],
     legacy_mode: false,
@@ -104,6 +105,7 @@ describe('JobAuditabilityPanel', () => {
             inventory_join: true,
             hybrid_report: false,
             execution_log: false,
+            run_audit_snapshot: false,
           },
           missing_metadata: ['hybrid_report', 'execution_log'],
         })}

@@ -200,6 +200,7 @@ def test_get_job_auditability_happy_path_200(audit_ctx: dict[str, Any]) -> None:
     assert data["supplier_prompt_config_version"] == "1"
     assert data["metadata_sources"]["execution_log"] is True
     assert data["metadata_sources"]["hybrid_report"] is False
+    assert data["metadata_sources"]["run_audit_snapshot"] is False
 
 
 def test_get_job_auditability_missing_hybrid_and_execution_log_200(audit_ctx: dict[str, Any]) -> None:
