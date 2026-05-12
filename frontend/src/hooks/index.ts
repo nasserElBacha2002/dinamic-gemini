@@ -16,6 +16,7 @@ export {
   useExecutionLog,
   useAisleExecutionLog,
   useAisleJobDetail,
+  useJobAuditability,
   useAisleJobsList,
   useAisleBenchmarkCompare,
   useAisleBenchmarkCompareMany,

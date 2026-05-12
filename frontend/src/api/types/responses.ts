@@ -548,6 +548,68 @@ export interface PromoteOperationalJobResponse {
   operational_job_id: string;
 }
 
+/** GET .../jobs/{job_id}/auditability — Phase H read model (snake_case matches backend `to_jsonable`). */
+export interface RunAuditMetadataSources {
+  job_row: boolean;
+  result_json: boolean;
+  aisle_join: boolean;
+  inventory_join: boolean;
+  hybrid_report: boolean;
+  execution_log: boolean;
+}
+
+export interface RunAuditReferenceUsage {
+  resolved: boolean;
+  resolved_count: number;
+  provider_consumed: boolean;
+  provider_consumed_count: number;
+  reference_ids: string[];
+  resolution_error: string | null;
+}
+
+export interface RunAuditabilityView {
+  job_id: string;
+  status: string;
+  target_type: string;
+  target_id: string;
+  created_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+
+  inventory_id: string | null;
+  aisle_id: string | null;
+  client_id: string | null;
+  client_supplier_id: string | null;
+
+  provider_name: string | null;
+  model_name: string | null;
+  prompt_key: string | null;
+  prompt_version: string | null;
+
+  supplier_prompt_config_id: string | null;
+  supplier_prompt_config_version: string | null;
+  supplier_prompt_fallback_used: boolean | null;
+  supplier_prompt_fallback_reason: string | null;
+
+  protected_prompt_contract_key: string | null;
+  protected_prompt_contract_version: string | null;
+  effective_prompt_hash: string | null;
+  prompt_composition_available: boolean;
+
+  reference_usage: RunAuditReferenceUsage | null;
+  supplier_reference_images_used: boolean | null;
+  inventory_visual_references_used: boolean | null;
+  reference_source: string | null;
+  reference_image_count: number | null;
+  reference_ids: string[];
+
+  warnings: string[];
+
+  metadata_sources: RunAuditMetadataSources;
+  missing_metadata: string[];
+  legacy_mode: boolean;
+}
+
 /** Single execution log event (raw row + derived metadata for filters / export). */
 export interface ExecutionLogEvent {
   ts: string;

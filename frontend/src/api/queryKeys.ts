@@ -54,6 +54,9 @@ export const queryKeys = {
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle', aisleId, 'aisle-execution-log'] as const,
     jobDetail: (inventoryId: string, aisleId: string, jobId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, aisleId, 'jobs', jobId, 'detail'] as const,
+    /** GET .../jobs/{jobId}/auditability (Phase H). */
+    jobAuditability: (inventoryId: string, aisleId: string, jobId: string) =>
+      [...queryKeys.inventories.all, 'aisles', inventoryId, 'aisle', aisleId, 'jobs', jobId, 'auditability'] as const,
     mergeResults: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'merge-results', aisleId] as const,
     mergeResultsForJob: (inventoryId: string, aisleId: string, jobId: string | null) =>

@@ -35,6 +35,8 @@ export {
   getAislePositions,
   getExecutionLog,
   getExecutionLogTxtUrl,
+  getJobAuditability,
+  getJobAuditabilityPath,
   listAisleJobs,
   promoteAisleOperationalJob,
   retryAisleJob,

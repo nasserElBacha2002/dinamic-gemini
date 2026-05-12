@@ -28,6 +28,7 @@ import { resolveDisplayFinishedAt } from '../utils/jobDisplayTimestamps';
 import { useExecutionLogDownloads } from '../features/executionLogs/hooks/useExecutionLogDownloads';
 import ExecutionLogPanel from './ExecutionLogPanel';
 import { ErrorAlert, StatusBadge, useAppSnackbar } from './ui';
+import JobAuditabilityPanel from './JobAuditabilityPanel';
 import {
   useAisleExecutionLog,
   useAisleJobDetail,
@@ -551,6 +552,7 @@ export default function AisleObservabilityWorkspace({
             <Tab label={t('jobs.obs_tab_prompt')} />
             <Tab label={t('jobs.obs_tab_attachments')} />
             <Tab label={t('jobs.obs_tab_traceability')} />
+            <Tab label={t('jobs.obs_tab_auditability')} />
           </Tabs>
 
           {mainTab === 0 ? (
@@ -786,6 +788,21 @@ export default function AisleObservabilityWorkspace({
                 </>
               )}
             </Stack>
+          ) : null}
+
+          {mainTab === 4 ? (
+            logScope === 'job' && selectedJobId ? (
+              <JobAuditabilityPanel
+                inventoryId={inventoryId}
+                aisleId={aisleId}
+                jobId={selectedJobId}
+                active={active}
+              />
+            ) : (
+              <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                {t('jobs.obs_choose_job_for_log')}
+              </Typography>
+            )
           ) : null}
         </Box>
       </Box>
