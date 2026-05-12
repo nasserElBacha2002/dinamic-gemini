@@ -1,6 +1,6 @@
 import { V3_CLIENTS_BASE } from '../constants/v3ApiPaths';
 import type { Client, ClientsListResponse, CreateClientRequest } from './types';
-import { handleResponse, protectedFetch } from './http';
+import { apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -20,20 +20,16 @@ function buildClientsListQueryString(q: ClientsListQuery | undefined): string {
 
 export async function listClients(listQuery?: ClientsListQuery): Promise<ClientsListResponse> {
   const qs = buildClientsListQueryString(listQuery);
-  const response = await protectedFetch(`${API_BASE}${V3_CLIENTS_BASE}/${qs}`);
-  return handleResponse<ClientsListResponse>(response);
+  return apiRequestJson<ClientsListResponse>(`${API_BASE}${V3_CLIENTS_BASE}/${qs}`);
 }
 
 export async function getClient(clientId: string): Promise<Client> {
-  const response = await protectedFetch(`${API_BASE}${V3_CLIENTS_BASE}/${encodeURIComponent(clientId)}`);
-  return handleResponse<Client>(response);
+  return apiRequestJson<Client>(`${API_BASE}${V3_CLIENTS_BASE}/${encodeURIComponent(clientId)}`);
 }
 
 export async function createClient(body: CreateClientRequest): Promise<Client> {
-  const response = await protectedFetch(`${API_BASE}${V3_CLIENTS_BASE}/`, {
+  return apiRequestJson<Client>(`${API_BASE}${V3_CLIENTS_BASE}/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body,
   });
-  return handleResponse<Client>(response);
 }
