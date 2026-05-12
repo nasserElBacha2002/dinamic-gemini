@@ -1,5 +1,6 @@
 import { V3_INVENTORIES_BASE, V3_REVIEW_QUEUE_BASE } from '../constants/v3ApiPaths';
 import type { PositionDetailResponse, ReviewActionRequest, ReviewQueueListResponse } from './types';
+import { buildQueryString } from './queryString';
 import { apiRequestJson, apiRequestVoid } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -70,15 +71,11 @@ export async function getPositionDetail(
   positionId: string,
   options?: { jobId?: string | null; exactPosition?: boolean }
 ): Promise<PositionDetailResponse> {
-  const params = new URLSearchParams();
-  if (options?.jobId != null && String(options.jobId).trim() !== '') {
-    params.set('job_id', String(options.jobId).trim());
-  }
-  if (options?.exactPosition) {
-    params.set('exact_position', 'true');
-  }
-  const qs = params.toString();
-  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions/${positionId}${qs ? `?${qs}` : ''}`;
+  const qs = buildQueryString([
+    ['job_id', options?.jobId],
+    ['exact_position', options?.exactPosition === true ? true : undefined, { emit: 'true-only' }],
+  ]);
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions/${positionId}${qs}`;
   return apiRequestJson<PositionDetailResponse>(path);
 }
 

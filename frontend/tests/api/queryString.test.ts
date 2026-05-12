@@ -59,4 +59,60 @@ describe('buildQueryString', () => {
     expect(buildQueryString([['scope', undefined]])).toBe('');
     expect(buildQueryString([['scope', 'all']])).toBe('?scope=all');
   });
+
+  it('applies transform after trim for strings', () => {
+    expect(
+      buildQueryString([
+        ['status', '  PENDING  ', { transform: (value) => value.toLowerCase() }],
+      ])
+    ).toBe('?status=pending');
+  });
+
+  it('omits string entry when transform returns empty string', () => {
+    expect(
+      buildQueryString([
+        ['status', 'ignored', { transform: () => '' }],
+      ])
+    ).toBe('');
+  });
+
+  it('serializes both booleans when present (default emit always)', () => {
+    expect(
+      buildQueryString([
+        ['has_evidence', true],
+        ['has_conflict', false],
+      ])
+    ).toBe('?has_evidence=true&has_conflict=false');
+  });
+
+  it('emit true-only omits false booleans', () => {
+    expect(
+      buildQueryString([
+        ['include_details', true, { emit: 'true-only' }],
+        ['include_rows', false, { emit: 'true-only' }],
+      ])
+    ).toBe('?include_details=true');
+  });
+
+  it('emit false-only omits true booleans', () => {
+    expect(
+      buildQueryString([
+        ['consolidate_by_sku', false, { emit: 'false-only' }],
+        ['show_empty', true, { emit: 'false-only' }],
+      ])
+    ).toBe('?consolidate_by_sku=false');
+  });
+
+  it('emit does not change string serialization', () => {
+    expect(buildQueryString([['status', 'active', { emit: 'false-only' }]])).toBe('?status=active');
+  });
+
+  it('allows page 0 when min is 0 and omits page_size below its min', () => {
+    expect(
+      buildQueryString([
+        ['page', 0, { min: 0 }],
+        ['page_size', 0, { min: 1 }],
+      ])
+    ).toBe('?page=0');
+  });
 });

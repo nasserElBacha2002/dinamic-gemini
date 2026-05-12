@@ -2,9 +2,9 @@
 
 ## Executive summary
 
-**Status:** `FRONTEND_QUERY_HELPER_P3_1_IMPLEMENTED`
+**Status:** `FRONTEND_QUERY_HELPER_P3_2_IMPLEMENTED`
 
-P1 (`buildQueryString` in `frontend/src/api/queryString.ts` + unit tests), P2 (migrated list builders in **clients**, **analytics**, **inventories**, **aisles** API modules), and **P3.1** (`clientSuppliersApi.ts` simple builders + active-config URL suffix parity) are **implemented**. `queryParamCanonicalization.ts` was **not** modified. Focused helper/canonicalization tests: **20** pass (9 `buildQueryString` tests). Full `npm run test -- --run`: **557 passed**, **4 failed** in `CreateAisleDialog.test.tsx` only (unchanged / unrelated to query-string work).
+P1–P3.1 as before; **P3.2** adds `transform` and `emit` on `buildQueryString`, unit tests, and a **small** migration: `getPositionDetail` in `reviewQueueApi.ts`. `queryParamCanonicalization.ts` unchanged. Focused helper/canonicalization tests: **27** pass (16 `buildQueryString`). Full `npm run test -- --run`: **564 passed**, **4 failed** in `CreateAisleDialog.test.tsx` only (unrelated).
 
 ---
 
@@ -19,7 +19,8 @@ Repeated pattern across API modules: `new URLSearchParams` → conditional `para
 | Export | Role |
 |--------|------|
 | `QueryParamValue` | `string \| number \| boolean \| null \| undefined` |
-| `QueryParamOptions` | `{ min?: number; trim?: boolean }` (default trim for strings) |
+| `BooleanEmitMode` | `'always' \| 'true-only' \| 'false-only'` (booleans only) |
+| `QueryParamOptions` | `{ min?, trim?, transform?, emit? }` — default string trim; default boolean `emit: 'always'` |
 | `QueryParamEntry` | `readonly [key, value, options?]` |
 | `buildQueryString(entries)` | Returns `''` or `'?…'` using `URLSearchParams` only (no path encoding) |
 
@@ -36,6 +37,7 @@ Module doc in `queryString.ts` notes alignment with `queryParamCanonicalization.
 | `frontend/src/api/inventoriesApi.ts` | `buildInventoriesListQueryString` | search, status, sort, pagination + canonicalization comment |
 | `frontend/src/api/aislesApi.ts` | `buildAislesListQueryString` | same shape as inventories list; merge/export builders **unchanged** |
 | `frontend/src/api/clientSuppliersApi.ts` | `buildClientSuppliersListQueryString`, `buildSupplierPromptConfigsQueryString`, `getActiveSupplierPromptConfig` | P3.1: see § P3.1 for scope/active URL notes |
+| `frontend/src/api/reviewQueueApi.ts` | `getPositionDetail` (query only) | P3.2: `job_id` + `exact_position` via `buildQueryString` with `emit: 'true-only'` for `exact_position` |
 
 ---
 
@@ -43,8 +45,8 @@ Module doc in `queryString.ts` notes alignment with `queryParamCanonicalization.
 
 | File | Reason deferred |
 |------|-----------------|
-| `reviewQueueApi.ts` | Booleans, `.toLowerCase()`, canonicalizer coupling |
-| `jobsApi.ts` | Many fields, `consolidate_by_sku` only-when-false |
+| `reviewQueueApi.ts` | `buildReviewQueueQueryString` still manual (P4 parity); `getPositionDetail` migrated in P3.2 |
+| `jobsApi.ts` | `buildAislePositionsQueryString` + `consolidate_by_sku` false-only; many fields — P4 |
 | `observabilityApi.ts` | Truthy vs trim-empty semantics |
 | `adminAiApi.ts` | Required fixed query keys object |
 | `captureSessionsApi.ts` | `page > 0` vs `>= 1` needs explicit parity review |
@@ -63,8 +65,8 @@ Module doc in `queryString.ts` notes alignment with `queryParamCanonicalization.
 |---------|--------|
 | `npm run typecheck` | Pass |
 | `npm run lint` | Pass |
-| `npm run test -- --run tests/api/queryString.test.ts tests/queryParamCanonicalization.test.ts` | Pass (**20** tests: 9 `buildQueryString`, 11 canonicalization) |
-| `npm run test -- --run` (full suite) | **557 passed**, **4 failed** (`CreateAisleDialog.test.tsx` only; unrelated) |
+| `npm run test -- --run tests/api/queryString.test.ts tests/queryParamCanonicalization.test.ts` | Pass (**27** tests: 16 `buildQueryString`, 11 canonicalization) |
+| `npm run test -- --run` (full suite) | **564 passed**, **4 failed** (`CreateAisleDialog.test.tsx` only; unrelated) |
 | `npm run build` | Pass |
 
 ---
@@ -107,12 +109,76 @@ Module doc in `queryString.ts` notes alignment with `queryParamCanonicalization.
 
 ---
 
+## P3.2 Helper options design
+
+### Complex patterns reviewed
+
+| File | Pattern | Helper support needed |
+|------|---------|------------------------|
+| `reviewQueueApi.ts` | `traceability` / `position_status`: trim + `.toLowerCase()` | `transform: (v) => v.toLowerCase()` (P4) |
+| `reviewQueueApi.ts` | `has_evidence` / `qty_zero`: emit when `=== true` or `=== false`, skip when null | Default boolean `emit: 'always'` + null skip (P4) |
+| `reviewQueueApi.ts` | `exact_position` only when truthy | `emit: 'true-only'` (used in P3.2 for `getPositionDetail`) |
+| `jobsApi.ts` | `needs_review` when non-null | `emit: 'always'` (P4) |
+| `jobsApi.ts` | `consolidate_by_sku` only when `=== false` | `emit: 'false-only'` (P4) |
+| `jobsApi.ts` | `page` / `page_size` with `>= 1` | Existing `{ min: 1 }` (P4) |
+| `observabilityApi.ts` | `if (params.from)` etc. (truthy, no trim) | Parity review: differs from trim-to-empty; migrate carefully or keep manual (P4+) |
+| `captureSessionsApi.ts` | `page > 0`, `pageSize > 0` | Integer `> 0` matches `{ min: 1 }` for positive pages; still verify edge cases in P4 |
+
+### Helper changes
+
+- **`transform`:** string-only; runs after trim (or raw string when `trim: false`); omit if result is `''`.
+- **`emit`:** `'always' \| 'true-only' \| 'false-only'` for **booleans only**; strings and numbers ignore `emit`. Default **`always`** preserves pre–P3.2 behavior.
+
+### Tests added
+
+- Transform after trim (`PENDING` → `pending`).
+- Transform returns `''` → omit.
+- Two booleans default → `?has_evidence=true&has_conflict=false`.
+- `emit: 'true-only'` (only true emitted).
+- `emit: 'false-only'` (only false emitted).
+- `emit` on string unchanged (`?status=active`).
+- `min: 0` allows `page=0` while `min: 1` drops `page_size=0`.
+
+### Migrations performed
+
+| File | Function |
+|------|----------|
+| `frontend/src/api/reviewQueueApi.ts` | `getPositionDetail` — `job_id` (trim/blank rules via helper) + `exact_position` with `{ emit: 'true-only' }` |
+
+`buildReviewQueueQueryString` was **not** migrated in P3.2.
+
+### Deferred migrations
+
+| File | Reason |
+|------|--------|
+| `reviewQueueApi.ts` | `buildReviewQueueQueryString` — many branches + canonicalizer coupling; P4 parity |
+| `jobsApi.ts` | `buildAislePositionsQueryString` — P4 parity |
+| `observabilityApi.ts` | Truthy string semantics vs helper trim |
+| `captureSessionsApi.ts` | Explicit `page > 0` parity sign-off |
+| `adminAiApi.ts` | Unchanged from prior deferral |
+
+### Validation
+
+| Command | Result |
+|---------|--------|
+| `npm run typecheck` | Pass |
+| `npm run lint` | Pass |
+| `npm run test -- --run tests/api/queryString.test.ts tests/queryParamCanonicalization.test.ts` | Pass (**27** tests) |
+| `npm run build` | Pass |
+| `npm run test -- --run` (full suite) | **564 passed**, **4 failed** (`CreateAisleDialog.test.tsx` only; unrelated) |
+
+### Status
+
+`FRONTEND_QUERY_HELPER_P3_2_IMPLEMENTED`
+
+---
+
 ## Final recommendation
 
-Proceed with **P4** (`reviewQueueApi`, `jobsApi`) only after adding **options** for lowercase / conditional booleans / special numeric rules, with parity tests against current URLs or golden vectors. `clientSuppliersApi` simple builders are done in **P3.1**.
+Proceed with **P4**: migrate `buildReviewQueueQueryString` and `buildAislePositionsQueryString` using `transform` + `emit`, with golden parity tests. Observability and capture-sessions builders need explicit truthy/`page > 0` parity before swapping wire serialization.
 
 ---
 
 ## Final status tag
 
-`FRONTEND_QUERY_HELPER_P3_1_IMPLEMENTED`
+`FRONTEND_QUERY_HELPER_P3_2_IMPLEMENTED`
