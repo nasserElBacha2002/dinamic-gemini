@@ -29,6 +29,7 @@ export {
   positionsListQueryKeyPart,
 } from './usePositions';
 export { useReviewQueue } from './useReviewQueue';
+export { useObservabilityMetrics } from './useObservabilityMetrics';
 export {
   useCreateClient,
   useCreateClientSupplier,

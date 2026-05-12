@@ -949,6 +949,50 @@
       "no": "No",
       "unknown": "No informado",
       "notAvailable": "No disponible"
+    },
+    "metrics": {
+      "title": "Métricas de observabilidad",
+      "subtitle": "Resumen operativo de procesamientos por cliente, proveedor y modelo.",
+      "filtersTitle": "Filtros",
+      "dateFrom": "Desde",
+      "dateTo": "Hasta",
+      "clientId": "Cliente (id)",
+      "supplierId": "Proveedor del cliente (id)",
+      "provider": "Provider",
+      "model": "Modelo",
+      "applyFilters": "Aplicar filtros",
+      "loading": "Cargando métricas de observabilidad…",
+      "loadError": "No se pudieron cargar las métricas de observabilidad.",
+      "empty": "No hay procesamientos para los filtros seleccionados.",
+      "partialDataNote": "Algunas métricas pueden ser parciales porque existen jobs sin snapshot de auditoría.",
+      "kpiRuns": "Procesamientos",
+      "kpiSucceeded": "Exitosos",
+      "kpiFailed": "Fallidos",
+      "kpiFailureRate": "Tasa de error",
+      "kpiFallbacks": "Fallbacks",
+      "kpiMissingPrompt": "Sin config de prompt",
+      "kpiMissingRef": "Referencias faltantes",
+      "kpiLegacy": "Jobs legacy",
+      "dataQualityTitle": "Calidad de datos",
+      "dataQualitySnapshot": "Jobs con snapshot de auditoría: {{count}}",
+      "dataQualityNoSnapshot": "Jobs sin snapshot: {{count}}",
+      "dataQualityMissingMeta": "Jobs con metadata faltante: {{count}}",
+      "dataQualityArtifact": "Jobs dependientes de artifacts: {{count}}",
+      "dataQualityHelper": "Los jobs antiguos pueden no tener snapshot de auditoría. En esos casos algunas métricas pueden ser parciales.",
+      "tableClients": "Por cliente",
+      "tableSuppliers": "Por proveedor del cliente",
+      "tableProviderModel": "Por provider y modelo",
+      "colClient": "Cliente",
+      "colSupplier": "Proveedor",
+      "colProvider": "Provider",
+      "colModel": "Modelo",
+      "colRuns": "Procesamientos",
+      "colSucceeded": "Exitosos",
+      "colFailed": "Fallidos",
+      "colFailureRate": "Tasa de error",
+      "colFallbacks": "Fallbacks",
+      "colMissingRef": "Refs. faltantes",
+      "unknownId": "Sin id"
     }
   },
   "positions": {
@@ -1211,6 +1255,7 @@
     "ingestion_sessions": "Sesiones de importación",
     "review_queue": "Cola de revisión",
     "metrics": "Métricas",
+    "observability": "Observabilidad",
     "clients": "Clientes",
     "ai_config": "Configuración de IA"
   },
@@ -1245,6 +1290,10 @@
     "metrics": {
       "title": "Métricas",
       "subtitle": "Desempeño operativo y tendencias de calidad"
+    },
+    "observability_metrics": {
+      "title": "Métricas de observabilidad",
+      "subtitle": "Resumen operativo de procesamientos por cliente, proveedor y modelo"
     },
     "clients": {
       "title": "Clientes",

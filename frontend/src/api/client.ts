@@ -92,4 +92,6 @@ export {
   listSupplierReferenceImages,
   uploadSupplierReferenceImages,
 } from './clientSuppliersApi';
+export type { ObservabilityMetricsQueryParams } from './observabilityApi';
+export { getObservabilityMetrics, getObservabilityMetricsPath } from './observabilityApi';
 

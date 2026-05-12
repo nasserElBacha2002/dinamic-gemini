@@ -154,6 +154,12 @@ export const queryKeys = {
     },
   },
 
+  observability: {
+    all: ['v3', 'observability'] as const,
+    metrics: (params: Record<string, string | undefined>) =>
+      [...queryKeys.observability.all, 'metrics', params] as const,
+  },
+
   reviewQueue: {
     // Keep root compatible with existing invalidation prefixes.
     all: ['reviewQueue'] as const,

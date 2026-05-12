@@ -611,6 +611,76 @@ export interface RunAuditabilityView {
   legacy_mode: boolean;
 }
 
+/** GET /api/v3/observability/metrics — Phase H5 (snake_case matches backend). */
+export interface ObservabilityMetricsRange {
+  from: string;
+  to: string;
+}
+
+export interface ObservabilityMetricsFiltersState {
+  client_id: string | null;
+  client_supplier_id: string | null;
+  provider_name: string | null;
+  model_name: string | null;
+}
+
+export interface ObservabilityMetricsTotals {
+  runs_total: number;
+  runs_succeeded: number;
+  runs_failed: number;
+  success_rate: number | null;
+  failure_rate: number | null;
+  fallback_runs: number;
+  missing_prompt_config_runs: number;
+  missing_reference_runs: number;
+  legacy_runs: number;
+}
+
+export interface ObservabilityMetricsByClientRow {
+  client_id: string | null;
+  runs_total: number;
+  runs_succeeded: number;
+  runs_failed: number;
+  failure_rate: number | null;
+}
+
+export interface ObservabilityMetricsBySupplierRow {
+  client_supplier_id: string | null;
+  client_id: string | null;
+  runs_total: number;
+  runs_succeeded: number;
+  runs_failed: number;
+  fallback_runs: number;
+  missing_reference_runs: number;
+  failure_rate: number | null;
+}
+
+export interface ObservabilityMetricsByProviderModelRow {
+  provider_name: string | null;
+  model_name: string | null;
+  runs_total: number;
+  runs_succeeded: number;
+  runs_failed: number;
+  failure_rate: number | null;
+}
+
+export interface ObservabilityMetricsDataQuality {
+  jobs_with_audit_snapshot: number;
+  jobs_without_audit_snapshot: number;
+  jobs_with_missing_metadata: number;
+  artifact_dependent_jobs: number;
+}
+
+export interface ObservabilityMetricsResponse {
+  range: ObservabilityMetricsRange;
+  filters: ObservabilityMetricsFiltersState;
+  totals: ObservabilityMetricsTotals;
+  by_client: ObservabilityMetricsByClientRow[];
+  by_supplier: ObservabilityMetricsBySupplierRow[];
+  by_provider_model: ObservabilityMetricsByProviderModelRow[];
+  data_quality: ObservabilityMetricsDataQuality;
+}
+
 /** Single execution log event (raw row + derived metadata for filters / export). */
 export interface ExecutionLogEvent {
   ts: string;
