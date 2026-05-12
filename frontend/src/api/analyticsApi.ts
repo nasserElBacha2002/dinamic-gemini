@@ -6,12 +6,12 @@ import type {
   AisleIssueListResponse,
   AnalyticsSummaryResponse,
   AnalyticsTrendsResponse,
-  ApiErrorDetail,
   InventoryPerformanceListResponse,
   ManualInterventionBreakdownResponse,
   QualityPatternListResponse,
 } from './types';
-import { filenameFromContentDisposition, handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
+import { handleResponse, protectedFetch } from './http';
+import { apiDownloadBlob } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -129,29 +129,9 @@ export async function downloadAisleBenchmarkExportCsv(
     params.set('job_b_id', options.jobBId.trim());
   }
   const path = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/benchmark/export?${params}`;
-  const response = await protectedFetch(path);
-  const fallbackName =
+  const fallbackFilename =
     'runJobId' in options
       ? `benchmark_run_${inventoryId}_${aisleId}_${options.runJobId}.csv`
       : `benchmark_compare_${inventoryId}_${aisleId}_${options.jobAId}_${options.jobBId}.csv`;
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  return apiDownloadBlob(path, { fallbackFilename });
 }

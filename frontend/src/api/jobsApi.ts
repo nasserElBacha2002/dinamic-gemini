@@ -2,14 +2,14 @@ import { V3_INVENTORIES_BASE } from '../constants/v3ApiPaths';
 import type {
   AisleExecutionLogResponse,
   AisleJobsListResponse,
-  ApiErrorDetail,
   ExecutionLogResponse,
   JobSummary,
   PositionListResponse,
   PromoteOperationalJobResponse,
   RunAuditabilityView,
 } from './types';
-import { filenameFromContentDisposition, handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
+import { handleResponse, protectedFetch } from './http';
+import { apiDownloadBlob } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -70,28 +70,9 @@ export async function downloadExecutionLogTxt(
   jobId: string
 ): Promise<void> {
   const path = getExecutionLogTxtUrl(inventoryId, aisleId, jobId);
-  const response = await protectedFetch(path);
-  const fallbackName = `inventory_${inventoryId}_aisle_${aisleId}_job_${jobId}_execution_log.txt`;
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  return apiDownloadBlob(path, {
+    fallbackFilename: `inventory_${inventoryId}_aisle_${aisleId}_job_${jobId}_execution_log.txt`,
+  });
 }
 
 export async function downloadAisleExecutionLogTxt(
@@ -99,28 +80,9 @@ export async function downloadAisleExecutionLogTxt(
   aisleId: string
 ): Promise<void> {
   const path = getAisleExecutionLogTxtUrl(inventoryId, aisleId);
-  const response = await protectedFetch(path);
-  const fallbackName = `inventory_${inventoryId}_aisle_${aisleId}_execution_log.txt`;
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  return apiDownloadBlob(path, {
+    fallbackFilename: `inventory_${inventoryId}_aisle_${aisleId}_execution_log.txt`,
+  });
 }
 
 export async function getAisleJobDetail(
