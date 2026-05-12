@@ -1,6 +1,7 @@
 import { V3_INVENTORIES_BASE, V3_REVIEW_QUEUE_BASE } from '../constants/v3ApiPaths';
-import type { ApiErrorDetail, PositionDetailResponse, ReviewActionRequest, ReviewQueueListResponse } from './types';
-import { handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
+import type { PositionDetailResponse, ReviewActionRequest, ReviewQueueListResponse } from './types';
+import { handleResponse, protectedFetch } from './http';
+import { apiRequestVoid } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -90,22 +91,11 @@ export async function submitReviewAction(
   positionId: string,
   body: ReviewActionRequest
 ): Promise<void> {
-  const response = await protectedFetch(
+  return apiRequestVoid(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions/${positionId}/reviews`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body,
     }
   );
-  const text = await response.text();
-  let data: ApiErrorDetail;
-  try {
-    data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-  } catch {
-    data = {};
-  }
-  if (!response.ok) {
-    throwApiErrorIfNotOk(response, text, data);
-  }
 }

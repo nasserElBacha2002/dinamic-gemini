@@ -1,5 +1,5 @@
 /**
- * Higher-level JSON and blob-download helpers built on ``protectedFetch`` + ``handleResponse``.
+ * Higher-level JSON, void, and blob-download helpers built on ``protectedFetch`` + ``handleResponse``.
  * Phase F0.1 — keep ``http.ts`` as the low-level module; do not use these for auth or XHR uploads.
  */
 
@@ -16,6 +16,9 @@ export interface ApiRequestJsonOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
 }
 
+/** Same body/header rules as {@link apiRequestJson}; successful responses ignore the parsed body. */
+export type ApiRequestVoidOptions = ApiRequestJsonOptions;
+
 function isFormData(body: unknown): body is FormData {
   return typeof FormData !== 'undefined' && body instanceof FormData;
 }
@@ -26,18 +29,8 @@ function isBinaryLikeBody(body: unknown): boolean {
   return typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(body as ArrayBufferView);
 }
 
-/**
- * Authenticated fetch with JSON-friendly defaults: merges headers, stringifies plain objects,
- * and parses responses via ``handleResponse`` (same ``ApiError`` pipeline as direct callers).
- *
- * - Does **not** set ``Content-Type: application/json`` for ``FormData`` (browser sets multipart boundary).
- * - Does **not** stringify ``FormData`` / ``Blob`` / typed arrays.
- * - **String** ``body`` is sent **as-is** (e.g. pre-serialized JSON). No default ``Content-Type`` is set;
- *   set ``Content-Type`` in ``headers`` when the server requires it.
- * - Object/array/primitive JSON bodies: ``JSON.stringify`` plus ``Content-Type: application/json`` only
- *   when ``Content-Type`` is not already set.
- */
-export async function apiRequestJson<T>(url: string, options: ApiRequestJsonOptions = {}): Promise<T> {
+/** Shared ``RequestInit`` for ``apiRequestJson`` / ``apiRequestVoid`` (body normalization only). */
+function buildProtectedFetchInitFromApiRequestOptions(options: ApiRequestJsonOptions): RequestInit {
   const { body, headers: inputHeaders, ...rest } = options;
   const headers = new Headers(inputHeaders);
 
@@ -62,12 +55,36 @@ export async function apiRequestJson<T>(url: string, options: ApiRequestJsonOpti
     }
   }
 
-  const response = await protectedFetch(url, {
+  return {
     ...rest,
     headers,
     body: outgoingBody,
-  });
+  };
+}
+
+/**
+ * Authenticated fetch with JSON-friendly defaults: merges headers, stringifies plain objects,
+ * and parses responses via ``handleResponse`` (same ``ApiError`` pipeline as direct callers).
+ *
+ * - Does **not** set ``Content-Type: application/json`` for ``FormData`` (browser sets multipart boundary).
+ * - Does **not** stringify ``FormData`` / ``Blob`` / typed arrays.
+ * - **String** ``body`` is sent **as-is** (e.g. pre-serialized JSON). No default ``Content-Type`` is set;
+ *   set ``Content-Type`` in ``headers`` when the server requires it.
+ * - Object/array/primitive JSON bodies: ``JSON.stringify`` plus ``Content-Type: application/json`` only
+ *   when ``Content-Type`` is not already set.
+ */
+export async function apiRequestJson<T>(url: string, options: ApiRequestJsonOptions = {}): Promise<T> {
+  const response = await protectedFetch(url, buildProtectedFetchInitFromApiRequestOptions(options));
   return handleResponse<T>(response);
+}
+
+/**
+ * Like {@link apiRequestJson} for request preparation, but discards the response body on success.
+ * Uses ``handleResponse`` so errors match the same ``ApiError`` path; ``204`` / empty / ``202`` / ``200`` OK bodies are ignored.
+ */
+export async function apiRequestVoid(url: string, options: ApiRequestVoidOptions = {}): Promise<void> {
+  const response = await protectedFetch(url, buildProtectedFetchInitFromApiRequestOptions(options));
+  await handleResponse<unknown>(response);
 }
 
 export interface ApiDownloadBlobOptions extends RequestInit {

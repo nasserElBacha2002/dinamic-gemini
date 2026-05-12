@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { ApiError } from '../../src/api/types';
 import * as http from '../../src/api/http';
-import { apiDownloadBlob, apiRequestJson } from '../../src/api/request';
+import { apiDownloadBlob, apiRequestJson, apiRequestVoid } from '../../src/api/request';
 
 describe('api/request apiRequestJson', () => {
   afterEach(() => {
@@ -109,6 +109,86 @@ describe('api/request apiRequestJson', () => {
       new Response(JSON.stringify({ detail: 'nope' }), { status: 400, statusText: 'Bad Request' })
     );
     await expect(apiRequestJson('https://api.example/x')).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe('api/request apiRequestVoid', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('resolves on 204 No Content without requiring JSON', async () => {
+    vi.spyOn(http, 'protectedFetch').mockResolvedValue(new Response(null, { status: 204 }));
+    await expect(apiRequestVoid('https://api.example/v1/action')).resolves.toBeUndefined();
+  });
+
+  it('resolves on 200 OK with empty body', async () => {
+    vi.spyOn(http, 'protectedFetch').mockResolvedValue(new Response('', { status: 200 }));
+    await expect(apiRequestVoid('https://api.example/v1/action')).resolves.toBeUndefined();
+  });
+
+  it('resolves on 202 Accepted', async () => {
+    vi.spyOn(http, 'protectedFetch').mockResolvedValue(new Response('', { status: 202 }));
+    await expect(apiRequestVoid('https://api.example/v1/action')).resolves.toBeUndefined();
+  });
+
+  it('POST with object body sets Content-Type and JSON.stringify (same as apiRequestJson)', async () => {
+    const fetchSpy = vi.spyOn(http, 'protectedFetch').mockResolvedValue(new Response(null, { status: 204 }));
+    await apiRequestVoid('https://api.example/v1/action', {
+      method: 'POST',
+      body: { reason: 'ok' },
+    });
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(new Headers(init.headers).get('Content-Type')).toContain('application/json');
+    expect(init.body).toBe(JSON.stringify({ reason: 'ok' }));
+  });
+
+  it('FormData does not set application/json and passes body through', async () => {
+    const fetchSpy = vi.spyOn(http, 'protectedFetch').mockResolvedValue(new Response(null, { status: 204 }));
+    const form = new FormData();
+    form.append('files', new Blob(['x']), 'f.txt');
+    await apiRequestVoid('https://api.example/upload', { method: 'POST', body: form });
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(init.body).toBe(form);
+    expect(new Headers(init.headers).get('Content-Type')).toBeNull();
+  });
+
+  it('strips conflicting application/json Content-Type when body is FormData', async () => {
+    const fetchSpy = vi.spyOn(http, 'protectedFetch').mockResolvedValue(new Response(null, { status: 204 }));
+    const form = new FormData();
+    await apiRequestVoid('https://api.example/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: form,
+    });
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(new Headers(init.headers).get('Content-Type')).toBeNull();
+    expect(init.body).toBe(form);
+  });
+
+  it('error responses throw ApiError via handleResponse', async () => {
+    vi.spyOn(http, 'protectedFetch').mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'bad' }), { status: 422 })
+    );
+    await expect(apiRequestVoid('https://api.example/x', { method: 'POST' })).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('preserves custom non-Content-Type headers', async () => {
+    const fetchSpy = vi.spyOn(http, 'protectedFetch').mockResolvedValue(new Response(null, { status: 204 }));
+    await apiRequestVoid('https://api.example/v1', {
+      method: 'DELETE',
+      headers: { 'X-Request-Id': 'void-1' },
+    });
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(new Headers(init.headers).get('X-Request-Id')).toBe('void-1');
+  });
+
+  it('ignores JSON success body on 200', async () => {
+    vi.spyOn(http, 'protectedFetch').mockResolvedValue(
+      new Response(JSON.stringify({ ignored: true }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    );
+    await expect(apiRequestVoid('https://api.example/v1/done')).resolves.toBeUndefined();
   });
 });
 
