@@ -4,7 +4,7 @@
 
 import { V3_OBSERVABILITY_BASE } from '../constants/v3ApiPaths';
 import type { ObservabilityMetricsResponse } from './types';
-import { handleResponse, protectedFetch } from './http';
+import { apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -34,6 +34,5 @@ export async function getObservabilityMetrics(
   if (params.modelName) qs.set('model_name', params.modelName);
   const q = qs.toString();
   const path = `${getObservabilityMetricsPath()}${q ? `?${q}` : ''}`;
-  const response = await protectedFetch(`${API_BASE}${path}`);
-  return handleResponse<ObservabilityMetricsResponse>(response);
+  return apiRequestJson<ObservabilityMetricsResponse>(`${API_BASE}${path}`);
 }
