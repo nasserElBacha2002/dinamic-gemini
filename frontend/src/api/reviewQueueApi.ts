@@ -1,7 +1,6 @@
 import { V3_INVENTORIES_BASE, V3_REVIEW_QUEUE_BASE } from '../constants/v3ApiPaths';
 import type { PositionDetailResponse, ReviewActionRequest, ReviewQueueListResponse } from './types';
-import { handleResponse, protectedFetch } from './http';
-import { apiRequestVoid } from './request';
+import { apiRequestJson, apiRequestVoid } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -60,10 +59,9 @@ export function buildReviewQueueQueryString(q: ReviewQueueListQuery | undefined)
 export async function getReviewQueuePositions(
   listQuery?: ReviewQueueListQuery
 ): Promise<ReviewQueueListResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<ReviewQueueListResponse>(
     `${API_BASE}${V3_REVIEW_QUEUE_BASE}/positions${buildReviewQueueQueryString(listQuery)}`
   );
-  return handleResponse<ReviewQueueListResponse>(response);
 }
 
 export async function getPositionDetail(
@@ -81,8 +79,7 @@ export async function getPositionDetail(
   }
   const qs = params.toString();
   const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions/${positionId}${qs ? `?${qs}` : ''}`;
-  const response = await protectedFetch(path);
-  return handleResponse<PositionDetailResponse>(response);
+  return apiRequestJson<PositionDetailResponse>(path);
 }
 
 export async function submitReviewAction(

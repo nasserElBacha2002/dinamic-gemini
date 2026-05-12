@@ -1,6 +1,16 @@
 /**
  * Higher-level JSON, void, and blob-download helpers built on ``protectedFetch`` + ``handleResponse``.
- * Phase F0.1 — keep ``http.ts`` as the low-level module; do not use these for auth or XHR uploads.
+ *
+ * **F0 conventions (Dinamic v3 frontend API layer)**
+ *
+ * - **JSON** (GET/POST/PUT/PATCH with JSON bodies or JSON responses): prefer {@link apiRequestJson}.
+ * - **Browser file download** (CSV, TXT, anchor + object URL): prefer {@link apiDownloadBlob}.
+ * - **Success with no meaningful body** (void actions, typical ``response.ok``): prefer {@link apiRequestVoid}.
+ * - **Simple multipart uploads** (no progress): use {@link apiRequestJson} with ``body: FormData`` (never set ``Content-Type`` for FormData).
+ * - **Upload progress**: keep ``XMLHttpRequest`` (or other explicit paths) outside this module; ``fetch`` has no standard upload progress.
+ * - **Auth**, **evidence/blob preview**, **DELETE with non-standard success** (e.g. 204-only): may keep direct ``protectedFetch`` / ``fetch`` in their modules; see ``http.ts`` for primitives.
+ *
+ * Do not remove or bypass ``protectedFetch`` / ``handleResponse`` here; helpers delegate to them for one ``ApiError`` pipeline.
  */
 
 import {
