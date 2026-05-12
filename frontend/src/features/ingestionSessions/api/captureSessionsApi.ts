@@ -3,6 +3,7 @@ import { getStoredToken } from '../../auth/storage';
 import { ApiError } from '../../../api/types';
 import i18n from '../../../i18n';
 import { messageFromErrorDetail } from '../../../api/http';
+import { buildQueryString } from '../../../api/queryString';
 import { apiRequestJson } from '../../../api/request';
 import type {
   CaptureSessionDetailResponse,
@@ -24,14 +25,14 @@ export interface CaptureSessionsListQuery {
   statusCsv?: string;
 }
 
-function buildCaptureSessionsQuery(params: CaptureSessionsListQuery): string {
-  const q = new URLSearchParams();
-  if (params.aisleId?.trim()) q.set('aisle_id', params.aisleId.trim());
-  if (params.statusCsv?.trim()) q.set('status', params.statusCsv.trim());
-  if (params.page != null && params.page > 0) q.set('page', String(params.page));
-  if (params.pageSize != null && params.pageSize > 0) q.set('page_size', String(params.pageSize));
-  const s = q.toString();
-  return s ? `?${s}` : '';
+/** Wire capture-session list query — `page` / `pageSize` use `{ min: 1 }` (same as legacy `> 0` for integer pages). */
+export function buildCaptureSessionsQuery(params: CaptureSessionsListQuery): string {
+  return buildQueryString([
+    ['aisle_id', params.aisleId],
+    ['status', params.statusCsv],
+    ['page', params.page, { min: 1 }],
+    ['page_size', params.pageSize, { min: 1 }],
+  ]);
 }
 
 export async function getCaptureSessions(params: CaptureSessionsListQuery): Promise<PaginatedCaptureSessionListResponse> {

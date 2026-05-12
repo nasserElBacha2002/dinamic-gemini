@@ -2,9 +2,9 @@
 
 ## Executive summary
 
-**Status:** `FRONTEND_QUERY_HELPER_P4_2_IMPLEMENTED`
+**Status:** `FRONTEND_QUERY_HELPER_P5_CLOSED_WITH_OBSERVATIONS`
 
-P1–P4.1 as before; **P4.2** migrates `buildAislePositionsQueryString` and `listAisleJobs` limit query in `jobsApi.ts` to `buildQueryString`, with golden tests (`tests/api/jobsApi.test.ts`). `min_confidence` uses **string** wire when `!= null && !Number.isNaN` + `{ trim: false }` for parity with legacy `String(Infinity)`. `queryParamCanonicalization.ts` unchanged. Focused tests (queryString + canonicalization + review queue + jobs): **49** pass. Full `npm run test -- --run`: **586 passed**, **4 failed** in `CreateAisleDialog.test.tsx` only (unrelated).
+P1–P4.2 complete; **P5** decision pass: migrated **observability** metrics query and **capture-sessions** list query to `buildQueryString` with documented parity (`trim: false` on observability for legacy truthy semantics; capture `page`/`page_size` use `{ min: 1 }` ≡ legacy `> 0` for integer pages). **adminAi** composed-prompt query stays manual (required keys). **aislesApi** / **analyticsApi** download/merge `URLSearchParams` remain manual (see § P5). `queryParamCanonicalization.ts` unchanged. Targeted helper + canonicalization + observability + capture tests: **36** in that bundle; full suite **593 passed**, **4 failed** (`CreateAisleDialog.test.tsx`, unrelated).
 
 ---
 
@@ -39,16 +39,16 @@ Module doc in `queryString.ts` notes alignment with `queryParamCanonicalization.
 | `frontend/src/api/clientSuppliersApi.ts` | `buildClientSuppliersListQueryString`, `buildSupplierPromptConfigsQueryString`, `getActiveSupplierPromptConfig` | P3.1: see § P3.1 for scope/active URL notes |
 | `frontend/src/api/reviewQueueApi.ts` | `buildReviewQueueQueryString`, `getPositionDetail` | P4.1: list query via `buildQueryString` + `transform` for `traceability` / `position_status`; confidence as string wire when not NaN; P3.2: `getPositionDetail` |
 | `frontend/src/api/jobsApi.ts` | `buildAislePositionsQueryString`, `listAisleJobs` | P4.2: aisle positions list + optional `limit` on aisle jobs list |
+| `frontend/src/api/observabilityApi.ts` | `buildObservabilityMetricsQueryString`, `getObservabilityMetrics` | P5: optional filters; **`trim: false`** preserves legacy truthy / whitespace wire behavior |
+| `frontend/src/features/ingestionSessions/api/captureSessionsApi.ts` | `buildCaptureSessionsQuery`, `getCaptureSessions` | P5: list filters; `{ min: 1 }` for `page` / `page_size` (integer parity with `> 0`) |
 
 ---
 
 ## Deferred files
 
-| File | Reason deferred |
-|------|-----------------|
-| `observabilityApi.ts` | Truthy vs trim-empty semantics |
-| `adminAiApi.ts` | Required fixed query keys object |
-| `captureSessionsApi.ts` | `page > 0` vs `>= 1` needs explicit parity review |
+| Note |
+|------|
+| No optional list-query modules remain deferred for migration; non-migrated `URLSearchParams` usages are classified in **§ P5** (manual by design). |
 
 ---
 
@@ -64,8 +64,8 @@ Module doc in `queryString.ts` notes alignment with `queryParamCanonicalization.
 |---------|--------|
 | `npm run typecheck` | Pass |
 | `npm run lint` | Pass |
-| `npm run test -- --run tests/api/queryString.test.ts tests/queryParamCanonicalization.test.ts tests/api/reviewQueueApi.test.ts tests/api/jobsApi.test.ts` | Pass (**49** tests) |
-| `npm run test -- --run` (full suite) | **586 passed**, **4 failed** (`CreateAisleDialog.test.tsx` only; unrelated) |
+| `npm run test -- --run tests/api/queryString.test.ts tests/queryParamCanonicalization.test.ts tests/observabilityMetricsApi.test.ts tests/api/captureSessionsApi.test.ts` | Pass (**36** tests in this bundle) |
+| `npm run test -- --run` (full suite) | **593 passed**, **4 failed** (`CreateAisleDialog.test.tsx` only; unrelated) |
 | `npm run build` | Pass |
 
 ---
@@ -279,12 +279,75 @@ Module doc in `queryString.ts` notes alignment with `queryParamCanonicalization.
 
 ---
 
-## Final recommendation
+## P5 Deferred builders decision pass
 
-Defer **observability** and **capture-sessions** wire builders until explicit truthy / `page > 0` parity is specified; optional P5+.
+### Remaining usages inspected
+
+| File | Function / area | Decision | Reason |
+|------|-----------------|----------|--------|
+| `observabilityApi.ts` | Metrics GET query | **MIGRATE** | Optional filters; parity preserved with **`trim: false`** on all string fields (legacy `if (params.from)` truthy semantics, including whitespace-only strings). |
+| `captureSessionsApi.ts` | `buildCaptureSessionsQuery` | **MIGRATE** | Optional list filters; `{ min: 1 }` matches legacy `page > 0` / `pageSize > 0` for **integer** pages (non-integer `0 < page < 1` edge differs — documented observation). |
+| `adminAiApi.ts` | `getAdminAiComposedPrompt` query | **KEEP_MANUAL** | Required fixed keys; `new URLSearchParams({ … })` is clearer than optional-filter helper. |
+| `aislesApi.ts` | merge / merge-results / export CSV query | **KEEP_MANUAL** | Mixed required/conditional keys (`job_id`, `format`, `technical`); small and explicit. |
+| `analyticsApi.ts` | benchmark CSV / compare-many query | **KEEP_MANUAL** | Same pattern — explicit `URLSearchParams` for download/compare flows. |
+
+### Migrated in P5
+
+| File | Function | Notes |
+|------|----------|-------|
+| `frontend/src/api/observabilityApi.ts` | `buildObservabilityMetricsQueryString` | Exported; all params `trim: false`; `getObservabilityMetrics` composes path + query. |
+| `frontend/src/features/ingestionSessions/api/captureSessionsApi.ts` | `buildCaptureSessionsQuery` (exported) | `aisle_id`, `status`, `page`, `page_size`; default trim for strings. |
+
+### Kept manual
+
+| File | Function / area | Reason |
+|------|-----------------|--------|
+| `adminAiApi.ts` | `getAdminAiComposedPrompt` | Required query keys; object constructor is minimal and explicit. |
+| `aislesApi.ts` | Merge / export-related query construction | Conditional keys tied to job/run context; not optional-filter lists. |
+| `analyticsApi.ts` | CSV / multi-job compare queries | Explicit `URLSearchParams` for fixed download shapes. |
+
+### Deferred
+
+| File | Function / area | Reason |
+|------|-----------------|--------|
+| *(none)* | — | Remaining `URLSearchParams` in scoped API dirs are either migrated or **KEEP_MANUAL** above. |
+
+### Final frontend query-string convention
+
+Future API work: follow this section as the project norm.
+
+Use **`buildQueryString`** for API-client **optional** query filters when params are independently optional and omission rules match helper capabilities (trim, `min`, `transform`, boolean `emit`).
+
+Keep **`URLSearchParams` manual** when:
+
+- query keys are **required** for the request shape;
+- the builder is **not** an optional filter list;
+- behavior depends on **multiple fields** or non-standard truthy rules (if migrating, document parity — e.g. observability **`trim: false`**);
+- manual code is **clearer** or migration would need one-off helper options.
+
+Do **not** use `buildQueryString` for **path segments**; continue using **`encodeURIComponent`** for dynamic path IDs.
+
+### Tests added / updated
+
+- `tests/observabilityMetricsApi.test.ts`: `buildObservabilityMetricsQueryString` whitespace + empty-string cases.
+- `tests/api/captureSessionsApi.test.ts`: capture list query goldens (parsed `URLSearchParams` where encoding differs).
+
+### Validation
+
+| Command | Result |
+|---------|--------|
+| `npm run typecheck` | Pass |
+| `npm run lint` | Pass |
+| `npm run test -- --run tests/api/queryString.test.ts tests/queryParamCanonicalization.test.ts tests/observabilityMetricsApi.test.ts tests/api/captureSessionsApi.test.ts` | Pass (**36** tests) |
+| `npm run build` | Pass |
+| `npm run test -- --run` (full suite) | **593 passed**, **4 failed** (`CreateAisleDialog.test.tsx` only; unrelated) |
+
+### Final status
+
+`FRONTEND_QUERY_HELPER_P5_CLOSED_WITH_OBSERVATIONS`
 
 ---
 
 ## Final status tag
 
-`FRONTEND_QUERY_HELPER_P4_2_IMPLEMENTED`
+`FRONTEND_QUERY_HELPER_P5_CLOSED_WITH_OBSERVATIONS`

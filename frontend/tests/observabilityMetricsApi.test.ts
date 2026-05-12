@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { V3_API_PREFIX } from '../src/constants/v3ApiPaths';
-import { getObservabilityMetrics, getObservabilityMetricsPath } from '../src/api/observabilityApi';
+import {
+  buildObservabilityMetricsQueryString,
+  getObservabilityMetrics,
+  getObservabilityMetricsPath,
+} from '../src/api/observabilityApi';
 import * as http from '../src/api/http';
 
 describe('observability metrics API', () => {
@@ -10,6 +14,15 @@ describe('observability metrics API', () => {
 
   it('getObservabilityMetricsPath is under v3 observability', () => {
     expect(getObservabilityMetricsPath()).toBe(`${V3_API_PREFIX}/observability/metrics`);
+  });
+
+  it('buildObservabilityMetricsQueryString preserves truthy semantics with trim disabled (whitespace from is emitted)', () => {
+    const qs = buildObservabilityMetricsQueryString({ from: '   ' });
+    expect(new URL(`http://local${qs}`).searchParams.get('from')).toBe('   ');
+  });
+
+  it('buildObservabilityMetricsQueryString omits empty string filters', () => {
+    expect(buildObservabilityMetricsQueryString({ from: '', to: undefined })).toBe('');
   });
 
   it('getObservabilityMetrics sends snake_case query params', async () => {
