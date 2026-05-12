@@ -18,6 +18,7 @@ from src.application.use_cases.create_inventory import (
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.client.entities import Client, ClientStatus
+from src.domain.client_supplier.entities import ClientSupplier, ClientSupplierStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
@@ -89,14 +90,31 @@ def test_inventory_aggregate_lifecycle_through_completed() -> None:
     assert inv.status == InventoryStatus.DRAFT
     assert reconciler.reconcile(inv.id) is False
 
+    supplier_repo = MemoryClientSupplierRepository()
+    supplier_repo.save(
+        ClientSupplier(
+            id="lifecycle-supplier",
+            client_id="lifecycle-client",
+            name="Lifecycle Supplier",
+            status=ClientSupplierStatus.ACTIVE,
+            created_at=now,
+            updated_at=now,
+        )
+    )
     create_aisle_uc = CreateAisleUseCase(
         inv_repo,
         aisle_repo,
-        MemoryClientSupplierRepository(),
+        supplier_repo,
         clock,
         reconciler,
     )
-    aisle = create_aisle_uc.execute(CreateAisleCommand(inventory_id=inv.id, code="L1"))
+    aisle = create_aisle_uc.execute(
+        CreateAisleCommand(
+            inventory_id=inv.id,
+            code="L1",
+            client_supplier_id="lifecycle-supplier",
+        )
+    )
     inv_refreshed = inv_repo.get_by_id(inv.id)
     assert inv_refreshed is not None
     assert inv_refreshed.status == InventoryStatus.PROCESSING
