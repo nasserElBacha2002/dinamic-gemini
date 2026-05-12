@@ -1454,7 +1454,7 @@ def test_execution_log_returns_200_empty_events_when_run_dir_exists_but_file_mis
             },
         )()
         mock_load = patch(
-            "src.api.services.v3_stored_artifact_access.load_settings",
+            "src.infrastructure.artifacts.stored_artifact_reader.load_settings",
             return_value=fake_settings,
         )
         store = V3ArtifactStorageAdapter(base.parent / "artifact_store_unused")
@@ -1543,35 +1543,36 @@ def test_execution_log_returns_events_for_canceled_job() -> None:
         app.dependency_overrides[get_job_repo] = lambda: job_repo
         app.dependency_overrides[get_artifact_storage] = lambda: store
         with patch(
-            "src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings
+            "src.infrastructure.artifacts.stored_artifact_reader.load_settings",
+            return_value=fake_settings,
         ):
             c = TestClient(app)
             response = c.get(
                 "/api/v3/inventories/inv-cancel-log/aisles/aisle-cancel-log/jobs/job-cancel-log/execution-log"
             )
-        assert response.status_code == 200
-        body = response.json()
-        messages = [event["message"] for event in body["events"]]
-        assert "job.cancel_requested" in messages
-        assert "job.canceled" in messages
-        assert body["inventory_id"] == "inv-cancel-log"
-        assert body["aisle_id"] == "aisle-cancel-log"
-        assert body["requested_job_id"] == "job-cancel-log"
-        for ev in body["events"]:
-            assert "is_requested_job_event" in ev
-            assert "event_job_id" in ev
+            assert response.status_code == 200
+            body = response.json()
+            messages = [event["message"] for event in body["events"]]
+            assert "job.cancel_requested" in messages
+            assert "job.canceled" in messages
+            assert body["inventory_id"] == "inv-cancel-log"
+            assert body["aisle_id"] == "aisle-cancel-log"
+            assert body["requested_job_id"] == "job-cancel-log"
+            for ev in body["events"]:
+                assert "is_requested_job_event" in ev
+                assert "event_job_id" in ev
 
-        txt_resp = c.get(
-            "/api/v3/inventories/inv-cancel-log/aisles/aisle-cancel-log/jobs/job-cancel-log/execution-log.txt"
-        )
-        assert txt_resp.status_code == 200
-        assert "text/plain" in txt_resp.headers.get("content-type", "").lower()
-        cd = txt_resp.headers.get("content-disposition", "")
-        assert "attachment" in cd.lower()
-        assert (
-            "inventory_inv-cancel-log_aisle_aisle-cancel-log_job_job-cancel-log_execution_log.txt"
-            in cd
-        )
+            txt_resp = c.get(
+                "/api/v3/inventories/inv-cancel-log/aisles/aisle-cancel-log/jobs/job-cancel-log/execution-log.txt"
+            )
+            assert txt_resp.status_code == 200
+            assert "text/plain" in txt_resp.headers.get("content-type", "").lower()
+            cd = txt_resp.headers.get("content-disposition", "")
+            assert "attachment" in cd.lower()
+            assert (
+                "inventory_inv-cancel-log_aisle_aisle-cancel-log_job_job-cancel-log_execution_log.txt"
+                in cd
+            )
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
         app.dependency_overrides.pop(get_inventory_repo, None)
@@ -1634,7 +1635,8 @@ def test_execution_log_json_lists_multiple_job_contexts_from_payload() -> None:
     app.dependency_overrides[get_artifact_storage] = lambda: store
     try:
         with patch(
-            "src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings
+            "src.infrastructure.artifacts.stored_artifact_reader.load_settings",
+            return_value=fake_settings,
         ):
             c = TestClient(app)
             response = c.get(
@@ -2217,7 +2219,7 @@ def test_execution_log_from_durable_metadata_not_local_disk() -> None:
         },
     )()
     mock_st = patch(
-        "src.api.services.v3_stored_artifact_access.load_settings",
+        "src.infrastructure.artifacts.stored_artifact_reader.load_settings",
         return_value=fake_settings,
     )
     app.dependency_overrides[get_current_admin] = _fake_admin
@@ -2289,7 +2291,7 @@ def test_execution_log_legacy_disabled_without_durable_returns_404() -> None:
         },
     )()
     mock_st = patch(
-        "src.api.services.v3_stored_artifact_access.load_settings",
+        "src.infrastructure.artifacts.stored_artifact_reader.load_settings",
         return_value=fake_settings,
     )
     app.dependency_overrides[get_current_admin] = _fake_admin

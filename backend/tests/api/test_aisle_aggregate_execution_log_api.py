@@ -109,7 +109,8 @@ def test_aisle_aggregate_execution_log_merges_jobs_and_metadata() -> None:
     app.dependency_overrides[get_artifact_storage] = lambda: store
     try:
         with patch(
-            "src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings
+            "src.infrastructure.artifacts.stored_artifact_reader.load_settings",
+            return_value=fake_settings,
         ):
             c = TestClient(app)
             resp = c.get("/api/v3/inventories/inv-agg/aisles/aisle-agg/execution-log")
@@ -197,7 +198,8 @@ def test_aisle_aggregate_skips_unreadable_job_without_failing() -> None:
     app.dependency_overrides[get_artifact_storage] = lambda: store
     try:
         with patch(
-            "src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings
+            "src.infrastructure.artifacts.stored_artifact_reader.load_settings",
+            return_value=fake_settings,
         ):
             c = TestClient(app)
             resp = c.get("/api/v3/inventories/inv-skip/aisles/aisle-skip/execution-log")
@@ -271,7 +273,8 @@ def test_aisle_aggregate_execution_log_txt_download() -> None:
     app.dependency_overrides[get_artifact_storage] = lambda: store
     try:
         with patch(
-            "src.api.services.v3_stored_artifact_access.load_settings", return_value=fake_settings
+            "src.infrastructure.artifacts.stored_artifact_reader.load_settings",
+            return_value=fake_settings,
         ):
             c = TestClient(app)
             r = c.get("/api/v3/inventories/inv-txt/aisles/aisle-txt/execution-log.txt")
