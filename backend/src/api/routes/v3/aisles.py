@@ -62,7 +62,6 @@ from src.api.schemas.processing_schemas import (
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     load_hybrid_report_json_for_api,
-    read_execution_log_events_for_job,
 )
 from src.application.errors import (
     ActiveJobExistsError,
@@ -130,6 +129,7 @@ from src.application.use_cases.start_aisle_processing import (
     StartAisleProcessingUseCase,
 )
 from src.domain.jobs.entities import Job
+from src.infrastructure.artifacts.stored_artifact_reader import read_execution_log_events_for_job
 
 from .shared import aisle_to_response, job_to_summary, status_response_from_result
 

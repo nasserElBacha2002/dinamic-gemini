@@ -23,8 +23,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -41,10 +39,8 @@ from src.infrastructure.artifacts.stored_artifact_reader import (
 )
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
-    DURABLE_ARTIFACT_KIND_EXECUTION_LOG,
     DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON,
 )
-from src.pipeline.execution_log import read_execution_log, read_execution_log_file
 
 logger = logging.getLogger(__name__)
 
@@ -392,75 +388,6 @@ def resolve_supplier_reference_image_file_response(
 ) -> Response:
     """Serve a SupplierReferenceImage using the same provider / legacy rules as other reference images."""
     return resolve_reference_image_file_response(image, artifact_store=artifact_store)
-
-
-def read_execution_log_events_for_job(
-    job: Any,
-    *,
-    artifact_store: Any,
-) -> list[dict[str, Any]]:
-    settings = load_settings()
-    rj = getattr(job, "result_json", None) or {}
-    durable = rj.get("durable_artifacts") or {}
-    meta = durable.get(DURABLE_ARTIFACT_KIND_EXECUTION_LOG)
-    if meta is not None and not provider_meta_complete(meta):
-        raise StoredArtifactAccessError(
-            404,
-            "Execution log durable artifact metadata is incomplete (missing provider, key, or bucket).",
-            "incomplete_metadata",
-        )
-
-    if meta and provider_meta_complete(meta):
-        ensure_s3_bucket_matches_configured(meta, artifact_store)
-        prov = (meta.get("storage_provider") or "").strip().lower()
-        key = (meta.get("storage_key") or "").strip()
-        bucket = (meta.get("storage_bucket") or "").strip() or None
-        dl_bucket = bucket if prov == "s3" else None
-        logger.info(
-            "execution_log_resolve source=durable_download provider=%s bucket=%s storage_key=%s job_id=%s",
-            prov,
-            bucket or "",
-            key,
-            getattr(job, "id", "?"),
-        )
-        fd, tmp_name = tempfile.mkstemp(prefix="exec_log_", suffix=".jsonl")
-        os.close(fd)
-        tmp_path = Path(tmp_name)
-        try:
-            artifact_store.download_to_path(key, tmp_path, bucket=dl_bucket)
-        except Exception as exc:
-            tmp_path.unlink(missing_ok=True)
-            logger.exception(
-                "execution_log durable_fetch_failed provider=%s bucket=%s storage_key=%s job_id=%s",
-                prov,
-                bucket or "",
-                key,
-                getattr(job, "id", "?"),
-            )
-            raise StoredArtifactAccessError(
-                502,
-                "Execution log could not be loaded from object storage.",
-                "durable_fetch_failed",
-            ) from exc
-        try:
-            return read_execution_log_file(tmp_path)
-        finally:
-            tmp_path.unlink(missing_ok=True)
-
-    if not settings.artifact_storage_legacy_local_read_enabled:
-        raise StoredArtifactAccessError(
-            404,
-            "Execution log is not available: incomplete or missing durable metadata and legacy local read is disabled.",
-            "no_durable_metadata_legacy_disabled",
-        )
-
-    run_dir = Path(settings.output_dir) / getattr(job, "id", "") / RUN_ID
-    logger.info(
-        "execution_log_resolve source=legacy_local run_dir=%s job_id=%s",
-        str(run_dir),
-        getattr(job, "id", "?"),
-    )
-    return read_execution_log(run_dir)
 
 
 def load_hybrid_report_json_for_api(
