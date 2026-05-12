@@ -1,19 +1,18 @@
-"""HTTP-level tests for GET …/jobs/{job_id}/auditability (Phase H2).
+"""HTTP-level tests for GET …/jobs/{job_id}/auditability (Phase H2 / H2.1).
+
+**Location:** ``tests/application/api/`` (not ``tests/api/``). The ``tests/api/conftest.py`` module
+imports ``src.api.server:app`` at import time, which fails on Python 3.9 (e.g. ``Settings | None`` in
+auth settings) *before* this module's ``pytest.skip`` runs. Keeping this file here allows targeted
+``pytest tests/application/api/test_job_auditability_endpoint.py`` on 3.9 (whole module skipped) and
+full execution on 3.10+ without loading ``tests/api/conftest`` first.
 
 Skip entire module on Python < 3.10: importing the FastAPI app pulls domain modules that use
-``dataclass(kw_only=True)`` (not supported on 3.9). ``pytest_ignore_collect`` does not prevent that
-import, so we use module-level ``pytest.skip``.
+``dataclass(kw_only=True)`` (not supported on 3.9).
 """
 
 from __future__ import annotations
 
 import sys
-
-import pytest
-
-if sys.version_info < (3, 10):
-    pytest.skip("HTTP auditability tests require Python 3.10+.", allow_module_level=True)
-
 from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import MagicMock
@@ -21,6 +20,10 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
+if sys.version_info < (3, 10):
+    pytest.skip("HTTP auditability tests require Python 3.10+.", allow_module_level=True)
+
+from src.api.constants.error_wire import HTTP_DETAIL_JOB_NOT_IN_AISLE_CATEGORY_C
 from src.api.dependencies import (
     get_aisle_repo,
     get_artifact_storage,
@@ -235,12 +238,24 @@ def test_get_job_auditability_404_unknown_job(audit_ctx: dict[str, Any]) -> None
     assert r.status_code == 404
 
 
-def test_get_job_auditability_legacy_job_200(audit_ctx: dict[str, Any]) -> None:
+def test_get_job_auditability_cross_scope_wrong_aisle_404(audit_ctx: dict[str, Any]) -> None:
+    """Job targets another aisle: URL must not return auditability for a mismatched aisle scope."""
     jobs: MemoryJobRepository = audit_ctx["jobs"]
-    legacy = Job(
-        id="job-legacy",
+    aisles: MemoryAisleRepository = audit_ctx["aisles"]
+    aisle_b = Aisle(
+        id="aisle-b-scope",
+        inventory_id=audit_ctx["inv_id"],
+        code="B",
+        status=AisleStatus.CREATED,
+        created_at=_NOW,
+        updated_at=_NOW,
+        client_supplier_id="cs-b",
+    )
+    aisles.save(aisle_b)
+    job_on_b = Job(
+        id="job-on-b",
         target_type="aisle",
-        target_id=audit_ctx["aisle_id"],
+        target_id=aisle_b.id,
         job_type="process_aisle",
         status=JobStatus.SUCCEEDED,
         payload_json={},
@@ -248,12 +263,63 @@ def test_get_job_auditability_legacy_job_200(audit_ctx: dict[str, Any]) -> None:
         updated_at=_NOW,
         result_json={},
     )
-    jobs.save(legacy)
+    jobs.save(job_on_b)
     r = client.get(
-        f"/api/v3/inventories/{audit_ctx['inv_id']}/aisles/{audit_ctx['aisle_id']}/jobs/job-legacy/auditability"
+        f"/api/v3/inventories/{audit_ctx['inv_id']}/aisles/{audit_ctx['aisle_id']}/jobs/job-on-b/auditability"
+    )
+    assert r.status_code == 404
+    assert r.json().get("detail") == HTTP_DETAIL_JOB_NOT_IN_AISLE_CATEGORY_C
+
+
+def test_get_job_auditability_legacy_job_200(audit_ctx: dict[str, Any]) -> None:
+    """Legacy: no client_id / client_supplier_id from joins (null inventory client, null aisle CS)."""
+    jobs: MemoryJobRepository = audit_ctx["jobs"]
+    aisles: MemoryAisleRepository = audit_ctx["aisles"]
+    inventories: MemoryInventoryRepository = audit_ctx["inventories"]
+
+    inv_legacy = Inventory(
+        id="inv-legacy",
+        name="Legacy inventory",
+        status=InventoryStatus.PROCESSING,
+        created_at=_NOW,
+        updated_at=_NOW,
+        client_id=None,
+        processing_mode=InventoryProcessingMode.PRODUCTION,
+    )
+    inventories.save(inv_legacy)
+
+    aisle_legacy = Aisle(
+        id="aisle-legacy",
+        inventory_id=inv_legacy.id,
+        code="LEG",
+        status=AisleStatus.PROCESSED,
+        created_at=_NOW,
+        updated_at=_NOW,
+        client_supplier_id=None,
+    )
+    aisles.save(aisle_legacy)
+
+    legacy_job = Job(
+        id="job-legacy",
+        target_type="aisle",
+        target_id=aisle_legacy.id,
+        job_type="process_aisle",
+        status=JobStatus.SUCCEEDED,
+        payload_json={},
+        created_at=_NOW,
+        updated_at=_NOW,
+        result_json={},
+    )
+    jobs.save(legacy_job)
+
+    r = client.get(
+        f"/api/v3/inventories/{inv_legacy.id}/aisles/{aisle_legacy.id}/jobs/job-legacy/auditability"
     )
     assert r.status_code == 200, r.text
-    assert r.json()["legacy_mode"] is True
+    data = r.json()
+    assert data["legacy_mode"] is True
+    assert data["client_id"] is None
+    assert data["client_supplier_id"] is None
 
 
 def test_get_job_auditability_failed_job_200(audit_ctx: dict[str, Any]) -> None:
