@@ -10,6 +10,7 @@ import type {
   ManualInterventionBreakdownResponse,
   QualityPatternListResponse,
 } from './types';
+import { buildQueryString } from './queryString';
 import { apiDownloadBlob, apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -21,23 +22,13 @@ export interface AnalyticsQueryParams {
   aisle_id?: string | null;
 }
 
-function buildAnalyticsQueryString(q: AnalyticsQueryParams | undefined): string {
-  if (!q) return '';
-  const params = new URLSearchParams();
-  if (q.date_from != null && String(q.date_from).trim() !== '') {
-    params.set('date_from', String(q.date_from).trim());
-  }
-  if (q.date_to != null && String(q.date_to).trim() !== '') {
-    params.set('date_to', String(q.date_to).trim());
-  }
-  if (q.inventory_id != null && String(q.inventory_id).trim() !== '') {
-    params.set('inventory_id', String(q.inventory_id).trim());
-  }
-  if (q.aisle_id != null && String(q.aisle_id).trim() !== '') {
-    params.set('aisle_id', String(q.aisle_id).trim());
-  }
-  const s = params.toString();
-  return s ? `?${s}` : '';
+function buildAnalyticsQueryString(q?: AnalyticsQueryParams): string {
+  return buildQueryString([
+    ['date_from', q?.date_from],
+    ['date_to', q?.date_to],
+    ['inventory_id', q?.inventory_id],
+    ['aisle_id', q?.aisle_id],
+  ]);
 }
 
 export async function getAnalyticsSummary(q?: AnalyticsQueryParams): Promise<AnalyticsSummaryResponse> {
