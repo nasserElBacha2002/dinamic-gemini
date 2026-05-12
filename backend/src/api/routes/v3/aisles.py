@@ -33,6 +33,7 @@ from src.api.dependencies import (
     get_resolve_aisle_job_for_inventory_read_use_case,
     get_retry_aisle_job_use_case,
     get_run_aisle_merge_use_case,
+    get_run_auditability_service,
     get_start_aisle_processing_use_case,
 )
 from src.api.errors import reraise_if_mapped
@@ -89,6 +90,7 @@ from src.application.services.execution_log_enrichment import (
     format_execution_log_plaintext,
 )
 from src.application.services.job_stale_reconciler import JobStaleReconciler
+from src.application.services.run_auditability_service import RunAuditabilityService
 from src.application.use_cases.cancel_aisle_job import CancelAisleJobCommand, CancelAisleJobUseCase
 from src.application.use_cases.compare_aisle_runs import (
     CompareAisleRunsCommand,
@@ -607,6 +609,26 @@ def get_job_hybrid_report(
         )
         reraise_if_mapped(e, cause=e)
         raise
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/auditability",
+)
+def get_job_run_auditability(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
+    audit_svc: RunAuditabilityService = Depends(get_run_auditability_service),
+) -> dict[str, Any]:
+    """Aggregated run observability (Phase H): job row, joins, ``result_json``, hybrid_report, execution_log."""
+    _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
+    view = audit_svc.build(job_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND)
+    return view.to_jsonable()
 
 
 @router.post(

@@ -5,11 +5,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from src.application.services.reference_usage_from_job_result import (
+    VISUAL_REFERENCE_CONTEXT_RESULT_JSON_KEY,
+)
 from src.application.services.run_auditability_service import RunAuditabilityService
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
-from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
 
 _NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
@@ -139,7 +141,7 @@ def test_happy_path_full_metadata() -> None:
         job_id,
         result_json={
             "provider": "gemini",
-            RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT: {
+            VISUAL_REFERENCE_CONTEXT_RESULT_JSON_KEY: {
                 "resolved": True,
                 "resolved_count": 1,
                 "reference_ids": ["rid-1"],
@@ -276,6 +278,64 @@ def test_failed_job_no_crash() -> None:
     assert view is not None
     assert view.status == "failed"
     assert view.effective_prompt_hash is None
+
+
+def test_non_aisle_target_skips_joins() -> None:
+    job = Job(
+        id="job-other",
+        target_type="inventory",
+        target_id="inv-x",
+        job_type="other",
+        status=JobStatus.SUCCEEDED,
+        payload_json={},
+        created_at=_NOW,
+        updated_at=_NOW,
+        provider_name="openai",
+    )
+    svc = RunAuditabilityService(
+        job_repo=_FakeJobRepo(job),
+        aisle_repo=_FakeAisleRepo({}),
+        inventory_repo=_FakeInventoryRepo({}),
+        stored_artifact_reader=_FakeArtifactReader(None),
+        execution_log_loader=_FakeExecLogLoader(None),
+    )
+    view = svc.build("job-other")
+    assert view is not None
+    assert view.aisle_id is None
+    assert view.inventory_id is None
+    assert view.client_id is None
+    assert view.metadata_sources.aisle_join is False
+    assert view.metadata_sources.inventory_join is False
+
+
+def test_missing_aisle_row_marks_aisle_row_missing() -> None:
+    job = _base_job("job-miss-aisle", target_id="aisle-missing")
+    svc = RunAuditabilityService(
+        job_repo=_FakeJobRepo(job),
+        aisle_repo=_FakeAisleRepo({}),
+        inventory_repo=_FakeInventoryRepo({}),
+        stored_artifact_reader=_FakeArtifactReader(None),
+        execution_log_loader=_FakeExecLogLoader(None),
+    )
+    view = svc.build("job-miss-aisle")
+    assert view is not None
+    assert "aisle_row" in view.missing_metadata
+
+
+def test_missing_inventory_row_marks_inventory_row_missing() -> None:
+    aisle = _base_aisle("aisle-1", "inv-missing")
+    job = _base_job("job-miss-inv")
+    svc = RunAuditabilityService(
+        job_repo=_FakeJobRepo(job),
+        aisle_repo=_FakeAisleRepo({"aisle-1": aisle}),
+        inventory_repo=_FakeInventoryRepo({}),
+        stored_artifact_reader=_FakeArtifactReader(None),
+        execution_log_loader=_FakeExecLogLoader(None),
+    )
+    view = svc.build("job-miss-inv")
+    assert view is not None
+    assert view.inventory_id == "inv-missing"
+    assert "inventory_row" in view.missing_metadata
 
 
 def test_unknown_job_returns_none() -> None:

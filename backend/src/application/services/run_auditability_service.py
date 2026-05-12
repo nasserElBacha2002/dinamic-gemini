@@ -13,6 +13,7 @@ from src.application.ports.repositories import (
 from src.application.ports.run_audit_execution_log_loader import RunAuditExecutionLogLoader
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
 from src.application.services.reference_usage_from_job_result import (
+    VISUAL_REFERENCE_CONTEXT_RESULT_JSON_KEY,
     parse_reference_usage_from_result_json,
 )
 from src.application.services.run_auditability_execution_log import (
@@ -26,7 +27,6 @@ from src.application.services.run_auditability_models import (
     RunAuditReferenceUsage,
 )
 from src.domain.jobs.entities import Job
-from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +226,7 @@ class RunAuditabilityService:
                 resolution_error=ref_usage_fields.resolution_error,
             )
 
-        vrc = result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT)
+        vrc = result_json.get(VISUAL_REFERENCE_CONTEXT_RESULT_JSON_KEY)
         if isinstance(vrc, dict):
             if ref_source is None:
                 ref_source = _strip_str(vrc.get("reference_source"))
@@ -317,8 +317,14 @@ class RunAuditabilityService:
             missing.append("supplier_prompt_config_version")
         if view.effective_prompt_hash is None:
             missing.append("effective_prompt_hash")
-        if view.supplier_prompt_fallback_used is None and view.status == "succeeded":
-            missing.append("supplier_prompt_fallback_used")
         if not view.prompt_composition_available:
             missing.append("prompt_composition_summary")
+        if (
+            view.target_type == AISLE_TARGET
+            and (view.aisle_id or "").strip()
+            and not sources.aisle_join
+        ):
+            missing.append("aisle_row")
+        if view.inventory_id and not sources.inventory_join:
+            missing.append("inventory_row")
         return missing

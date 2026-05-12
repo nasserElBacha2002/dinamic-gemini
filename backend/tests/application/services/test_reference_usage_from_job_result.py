@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from src.application.services.reference_usage_from_job_result import (
+    VISUAL_REFERENCE_CONTEXT_RESULT_JSON_KEY,
     parse_reference_usage_from_result_json,
 )
-from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
 
 
 def test_parse_none_when_not_dict() -> None:
@@ -20,7 +20,7 @@ def test_parse_none_when_context_missing() -> None:
 
 def test_parse_deduplicates_reference_ids_preserves_order() -> None:
     raw = {
-        RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT: {
+        VISUAL_REFERENCE_CONTEXT_RESULT_JSON_KEY: {
             "resolved": True,
             "resolved_count": "3",
             "provider_consumed": 0,
