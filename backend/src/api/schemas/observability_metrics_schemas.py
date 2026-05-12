@@ -6,14 +6,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ObservabilityMetricsRange(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, ser_json_by_alias=True)
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
     from_: str = Field(..., alias="from")
     to: str
 
 
 class ObservabilityMetricsFiltersOut(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, ser_json_by_alias=True)
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
     client_id: str | None = None
     client_supplier_id: str | None = None
@@ -22,7 +22,7 @@ class ObservabilityMetricsFiltersOut(BaseModel):
 
 
 class ObservabilityMetricsTotals(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, ser_json_by_alias=True)
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
     runs_total: int
     runs_succeeded: int
@@ -36,7 +36,7 @@ class ObservabilityMetricsTotals(BaseModel):
 
 
 class ObservabilityMetricsByClientRow(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, ser_json_by_alias=True)
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
     client_id: str | None = None
     runs_total: int
@@ -46,7 +46,7 @@ class ObservabilityMetricsByClientRow(BaseModel):
 
 
 class ObservabilityMetricsBySupplierRow(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, ser_json_by_alias=True)
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
     client_supplier_id: str | None = None
     client_id: str | None = None
@@ -59,7 +59,7 @@ class ObservabilityMetricsBySupplierRow(BaseModel):
 
 
 class ObservabilityMetricsByProviderModelRow(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, ser_json_by_alias=True)
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
     provider_name: str | None = None
     model_name: str | None = None
@@ -70,7 +70,7 @@ class ObservabilityMetricsByProviderModelRow(BaseModel):
 
 
 class ObservabilityMetricsDataQuality(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, ser_json_by_alias=True)
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
     jobs_with_audit_snapshot: int
     jobs_without_audit_snapshot: int
@@ -79,7 +79,7 @@ class ObservabilityMetricsDataQuality(BaseModel):
 
 
 class ObservabilityMetricsResponse(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, ser_json_by_alias=True)
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
     range_: ObservabilityMetricsRange = Field(..., alias="range")
     filters: ObservabilityMetricsFiltersOut
