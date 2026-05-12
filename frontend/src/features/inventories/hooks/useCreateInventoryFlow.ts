@@ -1,19 +1,14 @@
 import { useCallback, useState } from 'react';
-import { createInventory, uploadInventoryVisualReferences } from '../../../api/client';
+import { createInventory } from '../../../api/client';
 import type { CreateInventoryRequest, Inventory } from '../../../api/types';
 import { ApiError } from '../../../api/types';
 
 export interface UseCreateInventoryFlowOptions {
   createInventoryFn?: (body: CreateInventoryRequest) => Promise<Inventory>;
-  uploadInventoryVisualReferencesFn?: (inventoryId: string, files: File[]) => Promise<void>;
 }
 
-export function useCreateInventoryFlow({
-  createInventoryFn,
-  uploadInventoryVisualReferencesFn,
-}: UseCreateInventoryFlowOptions = {}) {
+export function useCreateInventoryFlow({ createInventoryFn }: UseCreateInventoryFlowOptions = {}) {
   const [isCreating, setIsCreating] = useState(false);
-  const [isUploadingReferences, setIsUploadingReferences] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
 
   const submitCreateInventory = useCallback(
@@ -34,32 +29,12 @@ export function useCreateInventoryFlow({
     [createInventoryFn]
   );
 
-  const submitUploadInventoryReferences = useCallback(
-    async (inventoryId: string, files: File[]): Promise<void> => {
-      setIsUploadingReferences(true);
-      setError(null);
-      try {
-        const doUpload = uploadInventoryVisualReferencesFn ?? uploadInventoryVisualReferences;
-        await doUpload(inventoryId, files);
-      } catch (e) {
-        const err = e instanceof ApiError ? e : new ApiError(String(e));
-        setError(err);
-        throw err;
-      } finally {
-        setIsUploadingReferences(false);
-      }
-    },
-    [uploadInventoryVisualReferencesFn]
-  );
-
   const clearError = useCallback(() => setError(null), []);
 
   return {
     submitCreateInventory,
-    submitUploadInventoryReferences,
     isCreating,
-    isUploadingReferences,
-    isSubmitting: isCreating || isUploadingReferences,
+    isSubmitting: isCreating,
     error,
     clearError,
   };

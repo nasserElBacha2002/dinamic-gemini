@@ -1,14 +1,14 @@
 import { V3_INVENTORIES_BASE } from '../constants/v3ApiPaths';
 import type {
   Aisle,
-  ApiErrorDetail,
   CreateAisleRequest,
   PaginatedAisleListResponse,
   ProcessAisleResponse,
   MergeResultsResponse,
   RunMergeResponse,
 } from './types';
-import { filenameFromContentDisposition, handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
+import { buildQueryString } from './queryString';
+import { apiDownloadBlob, apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -21,39 +21,35 @@ export interface AislesListQuery {
   page_size?: number;
 }
 
-function buildAislesListQueryString(q: AislesListQuery | undefined): string {
-  if (!q) return '';
-  const params = new URLSearchParams();
-  if (q.search != null && String(q.search).trim() !== '') params.set('search', String(q.search).trim());
-  if (q.status != null && String(q.status).trim() !== '') params.set('status', String(q.status).trim());
-  if (q.sort_by != null && String(q.sort_by).trim() !== '') params.set('sort_by', String(q.sort_by).trim());
-  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') params.set('sort_dir', String(q.sort_dir).trim());
-  if (q.page != null && q.page >= 1) params.set('page', String(q.page));
-  if (q.page_size != null && q.page_size >= 1) params.set('page_size', String(q.page_size));
-  const s = params.toString();
-  return s ? `?${s}` : '';
+/** Wire aisles list query — must stay aligned with list omission rules (see ``queryParamCanonicalization`` for related keys). */
+function buildAislesListQueryString(q?: AislesListQuery): string {
+  return buildQueryString([
+    ['search', q?.search],
+    ['status', q?.status],
+    ['sort_by', q?.sort_by],
+    ['sort_dir', q?.sort_dir],
+    ['page', q?.page, { min: 1 }],
+    ['page_size', q?.page_size, { min: 1 }],
+  ]);
 }
 
 export async function getAisles(
   inventoryId: string,
   listQuery?: AislesListQuery
 ): Promise<PaginatedAisleListResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<PaginatedAisleListResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles${buildAislesListQueryString(listQuery)}`
   );
-  return handleResponse<PaginatedAisleListResponse>(response);
 }
 
 export async function createAisle(
   inventoryId: string,
   body: CreateAisleRequest
 ): Promise<Aisle> {
-  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles`, {
+  return apiRequestJson<Aisle>(`${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body,
   });
-  return handleResponse<Aisle>(response);
 }
 
 export async function startAisleProcessing(
@@ -74,15 +70,13 @@ export async function startAisleProcessing(
   if (pk != null && String(pk).trim() !== '') {
     body.prompt_key = String(pk).trim();
   }
-  const response = await protectedFetch(
+  return apiRequestJson<ProcessAisleResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/process`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body,
     }
   );
-  return handleResponse<ProcessAisleResponse>(response);
 }
 
 export async function runAisleMerge(
@@ -96,8 +90,7 @@ export async function runAisleMerge(
   params.set('job_id', jobId);
   const qs = params.toString();
   const url = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/merge?${qs}`;
-  const response = await protectedFetch(url, { method: 'POST' });
-  return handleResponse<RunMergeResponse>(response);
+  return apiRequestJson<RunMergeResponse>(url, { method: 'POST' });
 }
 
 export async function getAisleMergeResults(
@@ -111,8 +104,7 @@ export async function getAisleMergeResults(
   }
   const qs = params.toString();
   const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/merge-results${qs ? `?${qs}` : ''}`;
-  const response = await protectedFetch(path);
-  return handleResponse<MergeResultsResponse>(response);
+  return apiRequestJson<MergeResultsResponse>(path);
 }
 
 export async function exportAisleResultsCsv(
@@ -129,26 +121,7 @@ export async function exportAisleResultsCsv(
     params.set('job_id', jid);
   }
   const path = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/export?${params}`;
-  const response = await protectedFetch(path);
-  const fallbackName = `inventory_${inventoryId}_aisle_${aisleId}_results.csv`;
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  return apiDownloadBlob(path, {
+    fallbackFilename: `inventory_${inventoryId}_aisle_${aisleId}_results.csv`,
+  });
 }

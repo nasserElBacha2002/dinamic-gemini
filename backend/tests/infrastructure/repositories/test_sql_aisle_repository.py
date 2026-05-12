@@ -42,6 +42,38 @@ def aisle_repo(sql_client, inventory_repo):
         updated_at=now,
     )
     inventory_repo.save(inv)
+    with sql_client.cursor() as cur:
+        cur.execute(
+            """
+            IF NOT EXISTS (SELECT 1 FROM clients WHERE id = ?)
+                INSERT INTO clients (id, name, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                "test-epica3-client-001",
+                "test-epica3-client-001",
+                "SQL Aisle Test Client",
+                "active",
+                now,
+                now,
+            ),
+        )
+        cur.execute(
+            """
+            IF NOT EXISTS (SELECT 1 FROM client_suppliers WHERE id = ?)
+                INSERT INTO client_suppliers (id, client_id, name, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "test-epica3-client-supplier-001",
+                "test-epica3-client-supplier-001",
+                "test-epica3-client-001",
+                "SQL Aisle Test Supplier",
+                "active",
+                now,
+                now,
+            ),
+        )
     return SqlAisleRepository(sql_client)
 
 
@@ -62,6 +94,7 @@ def test_sql_aisle_repository_save_and_get_by_id(aisle_repo: SqlAisleRepository)
     assert loaded.code == "A-01"
     assert loaded.inventory_id == "test-epica3-inv-001"
     assert loaded.status == AisleStatus.CREATED
+    assert loaded.client_supplier_id is None
 
 
 def test_sql_aisle_repository_list_by_inventory_includes_saved(
@@ -103,3 +136,22 @@ def test_sql_aisle_repository_get_by_id_missing_returns_none(
     aisle_repo: SqlAisleRepository,
 ) -> None:
     assert aisle_repo.get_by_id("nonexistent-aisle-id") is None
+
+
+def test_sql_aisle_repository_round_trip_with_client_supplier_id(
+    aisle_repo: SqlAisleRepository,
+) -> None:
+    now = now_utc()
+    aisle = Aisle(
+        id="test-epica3-aisle-004",
+        inventory_id="test-epica3-inv-001",
+        code="A-04",
+        status=AisleStatus.CREATED,
+        created_at=now,
+        updated_at=now,
+        client_supplier_id="test-epica3-client-supplier-001",
+    )
+    aisle_repo.save(aisle)
+    loaded = aisle_repo.get_by_id("test-epica3-aisle-004")
+    assert loaded is not None
+    assert loaded.client_supplier_id == "test-epica3-client-supplier-001"

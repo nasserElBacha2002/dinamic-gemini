@@ -25,14 +25,17 @@ from src.application.ports.capture_repositories import (
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
+    ClientRepository,
+    ClientSupplierRepository,
     EvidenceRepository,
     InventoryRepository,
-    InventoryVisualReferenceRepository,
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
     ReviewActionRepository,
     SourceAssetRepository,
+    SupplierPromptConfigRepository,
+    SupplierReferenceImageRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
@@ -49,6 +52,8 @@ from src.application.use_cases.compare_aisle_runs import CompareAisleRunsUseCase
 from src.application.use_cases.compare_many_aisle_runs import CompareManyAisleRunsUseCase
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.create_aisle import CreateAisleUseCase
+from src.application.use_cases.create_client import CreateClientUseCase
+from src.application.use_cases.create_client_supplier import CreateClientSupplierUseCase
 from src.application.use_cases.create_inventory import CreateInventoryUseCase
 from src.application.use_cases.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
 from src.application.use_cases.delete_position import DeletePositionUseCase
@@ -64,6 +69,8 @@ from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsUseCase,
 )
 from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
+from src.application.use_cases.get_client import GetClientUseCase
+from src.application.use_cases.get_client_supplier import GetClientSupplierUseCase
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
@@ -72,12 +79,21 @@ from src.application.use_cases.list_aisle_jobs import ListAisleJobsUseCase
 from src.application.use_cases.list_aisle_positions import ListAislePositionsUseCase
 from src.application.use_cases.list_aisles_by_inventory import ListAislesByInventoryUseCase
 from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
+from src.application.use_cases.list_client_suppliers import ListClientSuppliersUseCase
+from src.application.use_cases.list_clients import ListClientsUseCase
 from src.application.use_cases.list_inventories import ListInventoriesUseCase
 from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
 from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
-from src.application.use_cases.manage_inventory_visual_references import (
-    DeleteInventoryVisualReferenceUseCase,
-    ReplaceInventoryVisualReferenceUseCase,
+from src.application.use_cases.manage_supplier_prompt_configs import (
+    ActivateSupplierPromptConfigVersionUseCase,
+    CreateSupplierPromptConfigVersionUseCase,
+    GetActiveSupplierPromptConfigUseCase,
+    GetSupplierPromptConfigUseCase,
+    ListSupplierPromptConfigsUseCase,
+)
+from src.application.use_cases.manage_supplier_reference_images import (
+    DeleteSupplierReferenceImageUseCase,
+    GetSupplierReferenceImageUseCase,
 )
 from src.application.use_cases.mark_position_image_mismatch import MarkPositionImageMismatchUseCase
 from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
@@ -94,9 +110,9 @@ from src.application.use_cases.update_position_code import UpdatePositionCodeUse
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
 from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
 from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase
-from src.application.use_cases.upload_inventory_visual_references import (
-    ListInventoryVisualReferencesUseCase,
-    UploadInventoryVisualReferencesUseCase,
+from src.application.use_cases.upload_supplier_reference_images import (
+    ListSupplierReferenceImagesUseCase,
+    UploadSupplierReferenceImagesUseCase,
 )
 from src.runtime.app_container import get_app_container
 from src.runtime.v3_deps import (
@@ -106,11 +122,12 @@ from src.runtime.v3_deps import (
     get_capture_session_group_repo,
     get_capture_session_item_repo,
     get_capture_session_repo,
+    get_client_repo,
+    get_client_supplier_repo,
     get_clock,
     get_evidence_repo,
     get_final_count_repo,
     get_inventory_repo,
-    get_inventory_visual_reference_repo,
     get_job_repo,
     get_metrics_calculator,
     get_position_repo,
@@ -118,6 +135,8 @@ from src.runtime.v3_deps import (
     get_recompute_consolidated_counts_use_case,
     get_review_action_repo,
     get_source_asset_repo,
+    get_supplier_prompt_config_repo,
+    get_supplier_reference_image_repo,
     get_worker_launch_service,
 )
 
@@ -153,6 +172,7 @@ def get_operational_execution_config_resolver() -> OperationalExecutionConfigRes
 
 def get_create_inventory_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
+    client_repo: ClientRepository = Depends(get_client_repo),
     clock: Clock = Depends(get_clock),
     operational_resolver: OperationalExecutionConfigResolver = Depends(
         get_operational_execution_config_resolver
@@ -162,9 +182,29 @@ def get_create_inventory_use_case(
 
     return CreateInventoryUseCase(
         inventory_repo=repo,
+        client_repo=client_repo,
         clock=clock,
         operational_resolver=operational_resolver,
         settings_loader=_load_settings,
+    )
+
+
+def get_create_client_use_case(
+    repo: ClientRepository = Depends(get_client_repo),
+    clock: Clock = Depends(get_clock),
+) -> CreateClientUseCase:
+    return CreateClientUseCase(client_repo=repo, clock=clock)
+
+
+def get_create_client_supplier_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    clock: Clock = Depends(get_clock),
+) -> CreateClientSupplierUseCase:
+    return CreateClientSupplierUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        clock=clock,
     )
 
 
@@ -172,6 +212,22 @@ def get_list_inventories_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> ListInventoriesUseCase:
     return ListInventoriesUseCase(inventory_repo=repo)
+
+
+def get_list_clients_use_case(
+    repo: ClientRepository = Depends(get_client_repo),
+) -> ListClientsUseCase:
+    return ListClientsUseCase(client_repo=repo)
+
+
+def get_list_client_suppliers_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+) -> ListClientSuppliersUseCase:
+    return ListClientSuppliersUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+    )
 
 
 def get_list_inventory_list_items_use_case(
@@ -197,6 +253,22 @@ def get_get_inventory_use_case(
     repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> GetInventoryUseCase:
     return GetInventoryUseCase(inventory_repo=repo)
+
+
+def get_get_client_use_case(
+    repo: ClientRepository = Depends(get_client_repo),
+) -> GetClientUseCase:
+    return GetClientUseCase(client_repo=repo)
+
+
+def get_get_client_supplier_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+) -> GetClientSupplierUseCase:
+    return GetClientSupplierUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+    )
 
 
 def get_export_inventory_results_use_case(
@@ -270,12 +342,14 @@ def get_aisle_review_lifecycle_sync(
 def get_create_aisle_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
     clock: Clock = Depends(get_clock),
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
 ) -> CreateAisleUseCase:
     return CreateAisleUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
+        client_supplier_repo=client_supplier_repo,
         clock=clock,
         status_reconciler=status_reconciler,
     )
@@ -425,59 +499,136 @@ def get_delete_aisle_source_asset_use_case(
     )
 
 
-def get_upload_inventory_visual_references_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    reference_repo: InventoryVisualReferenceRepository = Depends(
-        get_inventory_visual_reference_repo
+def get_upload_supplier_reference_images_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    reference_repo: SupplierReferenceImageRepository = Depends(
+        get_supplier_reference_image_repo
     ),
     artifact_storage=Depends(get_artifact_storage),
     clock: Clock = Depends(get_clock),
-) -> UploadInventoryVisualReferencesUseCase:
-    return UploadInventoryVisualReferencesUseCase(
-        inventory_repo=inventory_repo,
+) -> UploadSupplierReferenceImagesUseCase:
+    return UploadSupplierReferenceImagesUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
         reference_repo=reference_repo,
         artifact_storage=artifact_storage,
         clock=clock,
     )
 
 
-def get_list_inventory_visual_references_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    reference_repo: InventoryVisualReferenceRepository = Depends(
-        get_inventory_visual_reference_repo
+def get_list_supplier_reference_images_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    reference_repo: SupplierReferenceImageRepository = Depends(
+        get_supplier_reference_image_repo
     ),
-) -> ListInventoryVisualReferencesUseCase:
-    return ListInventoryVisualReferencesUseCase(
-        inventory_repo=inventory_repo,
+) -> ListSupplierReferenceImagesUseCase:
+    return ListSupplierReferenceImagesUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
         reference_repo=reference_repo,
     )
 
 
-def get_delete_inventory_visual_reference_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    reference_repo: InventoryVisualReferenceRepository = Depends(
-        get_inventory_visual_reference_repo
+def get_get_supplier_reference_image_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    reference_repo: SupplierReferenceImageRepository = Depends(
+        get_supplier_reference_image_repo
+    ),
+) -> GetSupplierReferenceImageUseCase:
+    return GetSupplierReferenceImageUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        reference_repo=reference_repo,
+    )
+
+
+def get_delete_supplier_reference_image_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    reference_repo: SupplierReferenceImageRepository = Depends(
+        get_supplier_reference_image_repo
     ),
     artifact_storage=Depends(get_artifact_storage),
-) -> DeleteInventoryVisualReferenceUseCase:
-    return DeleteInventoryVisualReferenceUseCase(
-        inventory_repo=inventory_repo,
+) -> DeleteSupplierReferenceImageUseCase:
+    return DeleteSupplierReferenceImageUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
         reference_repo=reference_repo,
         artifact_storage=artifact_storage,
     )
 
 
-def get_replace_inventory_visual_reference_use_case(
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    reference_repo: InventoryVisualReferenceRepository = Depends(
-        get_inventory_visual_reference_repo
-    ),
-    artifact_storage=Depends(get_artifact_storage),
-) -> ReplaceInventoryVisualReferenceUseCase:
-    return ReplaceInventoryVisualReferenceUseCase(
-        inventory_repo=inventory_repo,
-        reference_repo=reference_repo,
-        artifact_storage=artifact_storage,
+def get_list_supplier_prompt_configs_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
+) -> ListSupplierPromptConfigsUseCase:
+    from src.config import load_settings
+
+    return ListSupplierPromptConfigsUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        prompt_config_repo=prompt_config_repo,
+        settings=load_settings(),
+    )
+
+
+def get_create_supplier_prompt_config_version_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
+    clock: Clock = Depends(get_clock),
+) -> CreateSupplierPromptConfigVersionUseCase:
+    from src.config import load_settings
+
+    return CreateSupplierPromptConfigVersionUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        prompt_config_repo=prompt_config_repo,
+        clock=clock,
+        settings=load_settings(),
+    )
+
+
+def get_get_active_supplier_prompt_config_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
+) -> GetActiveSupplierPromptConfigUseCase:
+    from src.config import load_settings
+
+    return GetActiveSupplierPromptConfigUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        prompt_config_repo=prompt_config_repo,
+        settings=load_settings(),
+    )
+
+
+def get_activate_supplier_prompt_config_version_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
+) -> ActivateSupplierPromptConfigVersionUseCase:
+    return ActivateSupplierPromptConfigVersionUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        prompt_config_repo=prompt_config_repo,
+    )
+
+
+def get_get_supplier_prompt_config_use_case(
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    prompt_config_repo: SupplierPromptConfigRepository = Depends(get_supplier_prompt_config_repo),
+) -> GetSupplierPromptConfigUseCase:
+    return GetSupplierPromptConfigUseCase(
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        prompt_config_repo=prompt_config_repo,
     )
 
 
@@ -714,6 +865,43 @@ def get_resolve_aisle_job_for_inventory_read_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
 ) -> ResolveAisleJobForInventoryReadUseCase:
     return ResolveAisleJobForInventoryReadUseCase(job_repo=job_repo, aisle_repo=aisle_repo)
+
+
+def get_run_auditability_service(
+    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    artifact_storage=Depends(get_artifact_storage),
+):
+    """Read-only job auditability aggregation (Phase H2)."""
+    from src.application.services.run_auditability_service import RunAuditabilityService
+    from src.infrastructure.artifacts.run_audit_execution_log_loader import (
+        DefaultRunAuditExecutionLogLoader,
+    )
+    from src.infrastructure.artifacts.stored_artifact_reader import DefaultStoredArtifactReader
+
+    return RunAuditabilityService(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
+        stored_artifact_reader=DefaultStoredArtifactReader(job_repo, artifact_storage),
+        execution_log_loader=DefaultRunAuditExecutionLogLoader(artifact_storage),
+    )
+
+
+def get_observability_metrics_service(
+    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+):
+    """Read-only observability metrics (Phase H5)."""
+    from src.application.services.observability_metrics_service import ObservabilityMetricsService
+
+    return ObservabilityMetricsService(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
+    )
 
 
 def get_compare_aisle_runs_use_case(

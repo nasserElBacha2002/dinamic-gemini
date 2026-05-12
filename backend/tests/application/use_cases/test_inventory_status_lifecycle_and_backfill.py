@@ -17,9 +17,14 @@ from src.application.use_cases.create_inventory import (
     CreateInventoryUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.client.entities import Client, ClientStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_client_repository import MemoryClientRepository
+from src.infrastructure.repositories.memory_client_supplier_repository import (
+    MemoryClientSupplierRepository,
+)
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.repositories.memory_review_action_repository import (
@@ -61,17 +66,36 @@ def test_inventory_aggregate_lifecycle_through_completed() -> None:
     review_repo = MemoryReviewActionRepository()
     reconciler = InventoryStatusReconciler(inv_repo, aisle_repo, clock)
 
+    client_repo = MemoryClientRepository()
+    client_repo.save(
+        Client(
+            id="lifecycle-client",
+            name="Lifecycle Client",
+            status=ClientStatus.ACTIVE,
+            created_at=now,
+            updated_at=now,
+        )
+    )
     create_inv_uc = CreateInventoryUseCase(
         inv_repo,
+        client_repo,
         clock,
         operational_resolver=_StubOperationalResolver(),
         settings_loader=_settings_loader,
     )
-    inv = create_inv_uc.execute(CreateInventoryCommand(name="Lifecycle inv"))
+    inv = create_inv_uc.execute(
+        CreateInventoryCommand(name="Lifecycle inv", client_id="lifecycle-client")
+    )
     assert inv.status == InventoryStatus.DRAFT
     assert reconciler.reconcile(inv.id) is False
 
-    create_aisle_uc = CreateAisleUseCase(inv_repo, aisle_repo, clock, reconciler)
+    create_aisle_uc = CreateAisleUseCase(
+        inv_repo,
+        aisle_repo,
+        MemoryClientSupplierRepository(),
+        clock,
+        reconciler,
+    )
     aisle = create_aisle_uc.execute(CreateAisleCommand(inventory_id=inv.id, code="L1"))
     inv_refreshed = inv_repo.get_by_id(inv.id)
     assert inv_refreshed is not None

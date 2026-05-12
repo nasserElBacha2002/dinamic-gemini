@@ -4,6 +4,8 @@
  */
 
 import type {
+  ClientStatus,
+  ClientSupplierStatus,
   InventoryStatus,
   InventoryProcessingMode,
   AisleStatus,
@@ -13,6 +15,85 @@ import type {
   ReviewActionType,
   ApiTraceabilityStatus,
 } from './shared';
+
+// ─── Clients ───────────────────────────────────────────────────────────────
+
+export interface Client {
+  id: string;
+  name: string;
+  status: ClientStatus | string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClientsListResponse {
+  items: Client[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+}
+
+export interface ClientSupplier {
+  id: string;
+  client_id: string;
+  name: string;
+  status: ClientSupplierStatus | string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClientSuppliersListResponse {
+  items: ClientSupplier[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+}
+
+/** Supplier-scoped reference images (Phase C — not used by CV pipeline until explicitly wired). */
+export interface SupplierReferenceImage {
+  id: string;
+  client_supplier_id: string;
+  filename: string;
+  mime_type: string;
+  file_size: number;
+  content_type?: string | null;
+  file_size_bytes?: number | null;
+  label?: string | null;
+  description?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupplierReferenceImagesListResponse {
+  items: SupplierReferenceImage[];
+}
+
+export interface UploadSupplierReferenceImagesResponse {
+  items: SupplierReferenceImage[];
+}
+
+export interface DeleteSupplierReferenceImageResponse {
+  deleted: boolean;
+  id: string;
+}
+
+export interface SupplierPromptConfig {
+  id: string;
+  client_supplier_id: string;
+  provider_name?: string | null;
+  model_name?: string | null;
+  instructions_text: string;
+  version: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupplierPromptConfigsListResponse {
+  items: SupplierPromptConfig[];
+}
 
 // ─── Inventory ─────────────────────────────────────────────────────────────
 
@@ -26,6 +107,7 @@ export interface PrimaryExecutionConfig {
 export interface Inventory {
   id: string;
   name: string;
+  client_id?: string | null;
   status: InventoryStatus | string;
   processing_mode?: InventoryProcessingMode | string;
   primary_execution_config?: PrimaryExecutionConfig | null;
@@ -50,25 +132,6 @@ export interface PaginatedInventoryListResponse {
   page_size: number;
   total_items: number;
   total_pages: number;
-}
-
-// ─── Inventory visual references (v3.2.4 Phase 2/8) ─────────────────────────
-
-export interface InventoryVisualReference {
-  id: string;
-  inventory_id: string;
-  filename: string;
-  mime_type: string;
-  file_size: number;
-  created_at: string;
-}
-
-export interface UploadInventoryVisualReferencesResponse {
-  items: InventoryVisualReference[];
-}
-
-export interface InventoryVisualReferenceListResponse {
-  items: InventoryVisualReference[];
 }
 
 export interface ReferenceUsageSummary {
@@ -121,6 +184,7 @@ export interface AisleJobSummary {
 export interface Aisle {
   id: string;
   inventory_id: string;
+  client_supplier_id?: string | null;
   code: string;
   status: AisleStatus | string;
   created_at: string;
@@ -482,6 +546,139 @@ export interface AisleBenchmarkCompareManyResponse {
 export interface PromoteOperationalJobResponse {
   aisle_id: string;
   operational_job_id: string;
+}
+
+/** GET .../jobs/{job_id}/auditability — Phase H read model (snake_case matches backend `to_jsonable`). */
+export interface RunAuditMetadataSources {
+  job_row: boolean;
+  result_json: boolean;
+  aisle_join: boolean;
+  inventory_join: boolean;
+  hybrid_report: boolean;
+  execution_log: boolean;
+  run_audit_snapshot: boolean;
+}
+
+export interface RunAuditReferenceUsage {
+  resolved: boolean;
+  resolved_count: number;
+  provider_consumed: boolean;
+  provider_consumed_count: number;
+  reference_ids: string[];
+  resolution_error: string | null;
+}
+
+export interface RunAuditabilityView {
+  job_id: string;
+  status: string;
+  target_type: string;
+  target_id: string;
+  created_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+
+  inventory_id: string | null;
+  aisle_id: string | null;
+  client_id: string | null;
+  client_supplier_id: string | null;
+
+  provider_name: string | null;
+  model_name: string | null;
+  prompt_key: string | null;
+  prompt_version: string | null;
+
+  supplier_prompt_config_id: string | null;
+  supplier_prompt_config_version: string | null;
+  supplier_prompt_fallback_used: boolean | null;
+  supplier_prompt_fallback_reason: string | null;
+
+  protected_prompt_contract_key: string | null;
+  protected_prompt_contract_version: string | null;
+  effective_prompt_hash: string | null;
+  prompt_composition_available: boolean;
+
+  reference_usage: RunAuditReferenceUsage | null;
+  supplier_reference_images_used: boolean | null;
+  inventory_visual_references_used: boolean | null;
+  reference_source: string | null;
+  reference_image_count: number | null;
+  reference_ids: string[];
+
+  warnings: string[];
+
+  metadata_sources: RunAuditMetadataSources;
+  missing_metadata: string[];
+  legacy_mode: boolean;
+}
+
+/** GET /api/v3/observability/metrics — Phase H5 (snake_case matches backend). */
+export interface ObservabilityMetricsRange {
+  from: string;
+  to: string;
+}
+
+export interface ObservabilityMetricsFiltersState {
+  client_id: string | null;
+  client_supplier_id: string | null;
+  provider_name: string | null;
+  model_name: string | null;
+}
+
+export interface ObservabilityMetricsTotals {
+  runs_total: number;
+  runs_succeeded: number;
+  runs_failed: number;
+  success_rate: number | null;
+  failure_rate: number | null;
+  fallback_runs: number;
+  missing_prompt_config_runs: number;
+  missing_reference_runs: number;
+  legacy_runs: number;
+}
+
+export interface ObservabilityMetricsByClientRow {
+  client_id: string | null;
+  runs_total: number;
+  runs_succeeded: number;
+  runs_failed: number;
+  failure_rate: number | null;
+}
+
+export interface ObservabilityMetricsBySupplierRow {
+  client_supplier_id: string | null;
+  client_id: string | null;
+  runs_total: number;
+  runs_succeeded: number;
+  runs_failed: number;
+  fallback_runs: number;
+  missing_reference_runs: number;
+  failure_rate: number | null;
+}
+
+export interface ObservabilityMetricsByProviderModelRow {
+  provider_name: string | null;
+  model_name: string | null;
+  runs_total: number;
+  runs_succeeded: number;
+  runs_failed: number;
+  failure_rate: number | null;
+}
+
+export interface ObservabilityMetricsDataQuality {
+  jobs_with_audit_snapshot: number;
+  jobs_without_audit_snapshot: number;
+  jobs_with_missing_metadata: number;
+  artifact_dependent_jobs: number;
+}
+
+export interface ObservabilityMetricsResponse {
+  range: ObservabilityMetricsRange;
+  filters: ObservabilityMetricsFiltersState;
+  totals: ObservabilityMetricsTotals;
+  by_client: ObservabilityMetricsByClientRow[];
+  by_supplier: ObservabilityMetricsBySupplierRow[];
+  by_provider_model: ObservabilityMetricsByProviderModelRow[];
+  data_quality: ObservabilityMetricsDataQuality;
 }
 
 /** Single execution log event (raw row + derived metadata for filters / export). */

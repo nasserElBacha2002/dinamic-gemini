@@ -47,7 +47,7 @@ describe('Phase 6 mutation cache behavior', () => {
 
     const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
     const { result } = renderHook(() => useCreateAisle('inv-1'), { wrapper: wrapper(qc) });
-    await result.current.mutateAsync({ code: 'A-02' });
+    await result.current.mutateAsync({ code: 'A-02', client_supplier_id: 'sup-1' });
     await waitFor(() => expect(client.createAisle).toHaveBeenCalled());
 
     const patched = qc.getQueryData<{ items: Array<{ id: string }> }>(aislesKey);
@@ -70,7 +70,7 @@ describe('Phase 6 mutation cache behavior', () => {
     const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
     const { result } = renderHook(() => useCreateAisle('inv-1'), { wrapper: wrapper(qc) });
 
-    await result.current.mutateAsync({ code: 'A-02' });
+    await result.current.mutateAsync({ code: 'A-02', client_supplier_id: 'sup-1' });
     await waitFor(() => expect(client.createAisle).toHaveBeenCalled());
 
     expect(invalidateSpy.mock.calls.map((c) => c[0])).toEqual([

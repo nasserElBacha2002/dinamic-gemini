@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 import { ROUTE_HOME, ROUTE_LOGIN, ROUTE_PATH } from './constants/appRoutes';
+import AisleObservabilityPage from './pages/AisleObservabilityPage';
 import { useAuth } from './features/auth';
 import LoginPage from './features/auth/LoginPage';
 import AppShell from './layout/AppShell';
@@ -14,10 +15,14 @@ import LegacyAisleCompareRedirect from './pages/analytics/LegacyAisleCompareRedi
 import PositionDetailPage from './pages/PositionDetailPage';
 import ReviewQueuePage from './pages/ReviewQueuePage';
 import MetricsPage from './pages/MetricsPage';
+import ClientsList from './pages/ClientsList';
+import ClientDetail from './pages/ClientDetail';
+import ClientSupplierDetail from './pages/ClientSupplierDetail';
 import AdminAiConfigPage from './pages/AdminAiConfigPage';
 import RequireUsernameAdmin from './features/auth/RequireUsernameAdmin';
 import IngestionSessionsPage from './features/ingestionSessions/pages/IngestionSessionsPage';
 import IngestionSessionDetailPage from './features/ingestionSessions/pages/IngestionSessionDetailPage';
+import ObservabilityMetricsPage from './pages/ObservabilityMetricsPage';
 
 /** Minimal full-screen loading while auth bootstrap runs. */
 function AuthLoading() {
@@ -49,6 +54,9 @@ function App() {
   const positionDetailEl = useMemo(() => <PositionDetailPage />, []);
   const reviewQueueEl = useMemo(() => <ReviewQueuePage />, []);
   const metricsEl = useMemo(() => <MetricsPage />, []);
+  const clientsEl = useMemo(() => <ClientsList />, []);
+  const clientDetailEl = useMemo(() => <ClientDetail />, []);
+  const clientSupplierDetailEl = useMemo(() => <ClientSupplierDetail />, []);
   const adminAiConfigEl = useMemo(
     () => (
       <RequireUsernameAdmin>
@@ -59,6 +67,8 @@ function App() {
   );
   const ingestionSessionsEl = useMemo(() => <IngestionSessionsPage />, []);
   const ingestionSessionDetailEl = useMemo(() => <IngestionSessionDetailPage />, []);
+  const aisleObservabilityEl = useMemo(() => <AisleObservabilityPage />, []);
+  const observabilityMetricsEl = useMemo(() => <ObservabilityMetricsPage />, []);
 
   if (!initialized) {
     return <AuthLoading />;
@@ -78,17 +88,22 @@ function App() {
         <Route path={ROUTE_PATH.inventories} element={listEl} />
         <Route path={ROUTE_PATH.reviewQueue} element={reviewQueueEl} />
         <Route path={ROUTE_PATH.metrics} element={metricsEl} />
+        <Route path={ROUTE_PATH.clients} element={clientsEl} />
+        <Route path={ROUTE_PATH.clientSupplierDetail} element={clientSupplierDetailEl} />
+        <Route path={ROUTE_PATH.clientDetail} element={clientDetailEl} />
         <Route path={ROUTE_PATH.ingestionSessions} element={ingestionSessionsEl} />
         <Route path={ROUTE_PATH.ingestionSessionDetail} element={ingestionSessionDetailEl} />
         <Route path={ROUTE_PATH.adminAiConfig} element={adminAiConfigEl} />
         <Route path={ROUTE_PATH.dashboard} element={<Navigate to={ROUTE_HOME} replace />} />
         <Route path={ROUTE_PATH.settings} element={<Navigate to={ROUTE_HOME} replace />} />
+        <Route path={ROUTE_PATH.observabilidad} element={observabilityMetricsEl} />
         <Route path={ROUTE_PATH.inventoryDetail} element={detailEl} />
         <Route path={ROUTE_PATH.aislePositions} element={positionsEl} />
         <Route path={ROUTE_PATH.analyticsCompare} element={compareRunsEl} />
         <Route path={ROUTE_PATH.analyticsCompareMany} element={compareManyRunsEl} />
         <Route path={ROUTE_PATH.legacyAisleCompare} element={legacyCompareRedirectEl} />
         <Route path={ROUTE_PATH.positionDetail} element={positionDetailEl} />
+        <Route path={ROUTE_PATH.aisleObservability} element={aisleObservabilityEl} />
       </Route>
     </Routes>
   );

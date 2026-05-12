@@ -24,6 +24,7 @@ from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.run_metadata import (
     RUN_METADATA_KEY_LLM_COST_SNAPSHOT,
+    RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT,
     RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT,
     default_empty_block,
 )
@@ -117,6 +118,9 @@ class V3JobExecutionStateService:
             llm_cost_snapshot = meta.get(RUN_METADATA_KEY_LLM_COST_SNAPSHOT)
             if isinstance(llm_cost_snapshot, dict):
                 job.result_json[RUN_METADATA_KEY_LLM_COST_SNAPSHOT] = llm_cost_snapshot
+            snap = meta.get(RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT)
+            if isinstance(snap, dict):
+                job.result_json[RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT] = snap
             if durable_artifacts:
                 merge_durable_into_result_json(job.result_json, durable_artifacts)
                 logger.info(

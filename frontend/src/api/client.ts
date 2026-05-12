@@ -10,15 +10,10 @@
 export type { InventoriesListQuery } from './inventoriesApi';
 export {
   createInventory,
-  deleteInventoryVisualReference,
   exportInventoryResultsCsv,
-  fetchInventoryVisualReferenceFile,
   getInventories,
   getInventory,
   getInventoryMetrics,
-  getInventoryVisualReferences,
-  replaceInventoryVisualReference,
-  uploadInventoryVisualReferences,
 } from './inventoriesApi';
 export type { AislesListQuery } from './aislesApi';
 export {
@@ -40,6 +35,8 @@ export {
   getAislePositions,
   getExecutionLog,
   getExecutionLogTxtUrl,
+  getJobAuditability,
+  getJobAuditabilityPath,
   listAisleJobs,
   promoteAisleOperationalJob,
   retryAisleJob,
@@ -77,4 +74,24 @@ export {
   getReviewQueuePositions,
   submitReviewAction,
 } from './reviewQueueApi';
+export type { ClientsListQuery } from './clientsApi';
+export { createClient, getClient, listClients } from './clientsApi';
+export type { ClientSuppliersListQuery, SupplierPromptConfigsListQuery } from './clientSuppliersApi';
+export {
+  activateSupplierPromptConfigVersion,
+  createSupplierPromptConfigVersion,
+  createClientSupplier,
+  deleteSupplierReferenceImage,
+  fetchSupplierReferenceImageFile,
+  getActiveSupplierPromptConfig,
+  getClientSupplier,
+  getSupplierPromptConfigById,
+  getSupplierReferenceImageFileUrl,
+  listClientSuppliers,
+  listSupplierPromptConfigs,
+  listSupplierReferenceImages,
+  uploadSupplierReferenceImages,
+} from './clientSuppliersApi';
+export type { ObservabilityMetricsQueryParams } from './observabilityApi';
+export { getObservabilityMetrics, getObservabilityMetricsPath } from './observabilityApi';
 

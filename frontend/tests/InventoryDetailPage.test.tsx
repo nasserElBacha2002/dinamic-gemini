@@ -1,26 +1,15 @@
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import InventoryDetail from '../src/pages/InventoryDetail';
+import AisleObservabilityPage from '../src/pages/AisleObservabilityPage';
 import { AppSnackbarProvider } from '../src/components/ui';
 import type { ExecutionLogResponse } from '../src/api/types';
 import { downloadAisleExecutionLogTxt, downloadExecutionLogTxt } from '../src/api/client';
 
-const { useInventoryVisualReferencesMock } = vi.hoisted(() => ({
-  useInventoryVisualReferencesMock: vi.fn(),
-}));
-const { useUploadInventoryVisualReferencesMock } = vi.hoisted(() => ({
-  useUploadInventoryVisualReferencesMock: vi.fn(),
-}));
-const { useDeleteInventoryVisualReferenceMock } = vi.hoisted(() => ({
-  useDeleteInventoryVisualReferenceMock: vi.fn(),
-}));
-const { useReplaceInventoryVisualReferenceMock } = vi.hoisted(() => ({
-  useReplaceInventoryVisualReferenceMock: vi.fn(),
-}));
 const { useExecutionLogMock } = vi.hoisted(() => ({
   useExecutionLogMock: vi.fn(),
 }));
@@ -41,6 +30,9 @@ const { useCancelAisleJobMock } = vi.hoisted(() => ({
 }));
 const { useRetryAisleJobMock } = vi.hoisted(() => ({
   useRetryAisleJobMock: vi.fn(),
+}));
+const { useJobAuditabilityMock } = vi.hoisted(() => ({
+  useJobAuditabilityMock: vi.fn(),
 }));
 const { processAisleMutateAsyncMock, useProcessingProviderOptionsMock } = vi.hoisted(() => ({
   processAisleMutateAsyncMock: vi.fn().mockResolvedValue({ job_id: 'job-new' }),
@@ -67,7 +59,6 @@ vi.mock('../src/hooks', async (importOriginal) => {
   return {
     ...actual,
     useInventoryDetail: () => inventoryDetailHookState,
-    useInventoryVisualReferences: useInventoryVisualReferencesMock,
     useAislesList: useAislesListMock,
     useAisleJobsList: useAisleJobsListMock,
     useExecutionLog: useExecutionLogMock,
@@ -78,10 +69,8 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useStartAisleProcessing: () => ({ mutateAsync: processAisleMutateAsyncMock }),
     useCancelAisleJob: useCancelAisleJobMock,
     useRetryAisleJob: useRetryAisleJobMock,
+    useJobAuditability: useJobAuditabilityMock,
     useUploadAisleAssetsFlex: () => ({ mutateAsync: vi.fn() }),
-    useUploadInventoryVisualReferences: useUploadInventoryVisualReferencesMock,
-    useDeleteInventoryVisualReference: useDeleteInventoryVisualReferenceMock,
-    useReplaceInventoryVisualReference: useReplaceInventoryVisualReferenceMock,
   };
 });
 
@@ -116,6 +105,10 @@ function renderPage() {
         <MemoryRouter initialEntries={['/inventories/inv-1']}>
           <Routes>
             <Route path="/inventories/:inventoryId" element={<InventoryDetail />} />
+            <Route
+              path="/inventories/:inventoryId/aisles/:aisleId/observability"
+              element={<AisleObservabilityPage />}
+            />
           </Routes>
         </MemoryRouter>
       </AppSnackbarProvider>
@@ -145,24 +138,14 @@ function renderPageWithCompareRoute() {
 describe('InventoryDetail', () => {
   beforeEach(() => {
     inventoryDetailHookState.data.processing_mode = 'test';
-    useInventoryVisualReferencesMock.mockReset();
-    useInventoryVisualReferencesMock.mockReturnValue({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
     useAislesListMock.mockReset();
-    useUploadInventoryVisualReferencesMock.mockReset();
-    useDeleteInventoryVisualReferenceMock.mockReset();
-    useReplaceInventoryVisualReferenceMock.mockReset();
     useExecutionLogMock.mockReset();
     useAisleExecutionLogMock.mockReset();
     useAisleJobsListMock.mockReset();
     useAisleJobDetailMock.mockReset();
     useCancelAisleJobMock.mockReset();
     useRetryAisleJobMock.mockReset();
+    useJobAuditabilityMock.mockReset();
     processAisleMutateAsyncMock.mockReset();
     processAisleMutateAsyncMock.mockResolvedValue({ job_id: 'job-new' });
     useProcessingProviderOptionsMock.mockReset();
@@ -194,27 +177,6 @@ describe('InventoryDetail', () => {
       isLoading: false,
       isError: false,
       error: null,
-    });
-    useUploadInventoryVisualReferencesMock.mockReturnValue({
-      mutateAsync: vi.fn(),
-      isPending: false,
-      isError: false,
-      error: null,
-      reset: vi.fn(),
-    });
-    useDeleteInventoryVisualReferenceMock.mockReturnValue({
-      mutateAsync: vi.fn(),
-      isPending: false,
-      isError: false,
-      error: null,
-      reset: vi.fn(),
-    });
-    useReplaceInventoryVisualReferenceMock.mockReturnValue({
-      mutateAsync: vi.fn(),
-      isPending: false,
-      isError: false,
-      error: null,
-      reset: vi.fn(),
     });
     useExecutionLogMock.mockReturnValue({
       data: emptyExecutionLog(),
@@ -254,6 +216,14 @@ describe('InventoryDetail', () => {
       mutateAsync: vi.fn(),
       isPending: false,
     });
+    useJobAuditabilityMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -278,69 +248,19 @@ describe('InventoryDetail', () => {
     });
   });
 
-  it('keeps reference images lazy until the drawer opens', () => {
-    useInventoryVisualReferencesMock.mockImplementation((_inventoryId, options) => ({
-      data: {
-        items: [
-          {
-            id: 'ref-1',
-            inventory_id: 'inv-1',
-            filename: 'front-pallet.jpg',
-            mime_type: 'image/jpeg',
-            file_size: 1024,
-            created_at: '2024-01-02T00:00:00Z',
-          },
-        ],
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-      enabled: options?.enabled,
-    }));
-
-    renderPage();
-
-    expect(useInventoryVisualReferencesMock).toHaveBeenCalled();
-    expect(useInventoryVisualReferencesMock.mock.calls[0]?.[1]).toMatchObject({ enabled: false });
-
-    fireEvent.click(screen.getByRole('button', { name: /visual refs title|referencias visuales/i }));
-
-    const lastCall = useInventoryVisualReferencesMock.mock.calls.at(-1);
-    expect(lastCall?.[1]).toMatchObject({ enabled: true });
-  });
-
-  it('keeps the page focused on header and aisles, with a header action for reference images', () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: {
-        items: [
-          {
-            id: 'ref-1',
-            inventory_id: 'inv-1',
-            filename: 'front-pallet.jpg',
-            mime_type: 'image/jpeg',
-            file_size: 1024,
-            created_at: '2024-01-02T00:00:00Z',
-          },
-        ],
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
-
+  it('does not expose legacy inventory-level reference image management on the inventory detail screen', () => {
     renderPage();
 
     expect(screen.getByRole('heading', { name: 'Inventory One' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /visual refs title|referencias visuales/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /visual refs title|referencias visuales/i }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText(/^(list title|pasillos)$/i)).toBeInTheDocument();
 
     expect(screen.queryByText('Total aisles')).not.toBeInTheDocument();
     expect(screen.queryByText('Review completion rate')).not.toBeInTheDocument();
     expect(screen.queryByText('Activity')).not.toBeInTheDocument();
     expect(screen.queryByText('Logs summary')).not.toBeInTheDocument();
-    expect(screen.queryByText('front-pallet.jpg')).not.toBeInTheDocument();
     expect(screen.queryByText(/Analytics & benchmarks/i)).not.toBeInTheDocument();
     expect(screen.getByTestId('inventory-header-compare-runs')).toBeInTheDocument();
   });
@@ -360,49 +280,7 @@ describe('InventoryDetail', () => {
     });
   });
 
-  it('opens the reference images drawer and renders inventory reference data there', () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: {
-        items: [
-          {
-            id: 'ref-1',
-            inventory_id: 'inv-1',
-            filename: 'front-pallet.jpg',
-            mime_type: 'image/jpeg',
-            file_size: 1024,
-            created_at: '2024-01-02T00:00:00Z',
-          },
-        ],
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
-
-    renderPage();
-
-    expect(screen.queryByText('front-pallet.jpg')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /visual refs title|referencias visuales/i }));
-
-    expect(screen.getByRole('heading', { name: /drawer title/i })).toBeInTheDocument();
-    expect(screen.getByText('front-pallet.jpg')).toBeInTheDocument();
-    expect(
-      screen.getByText(/management body/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/management title/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /close|cerrar/i })).toBeInTheDocument();
-  });
-
   it('loads observability queries only after opening the unified dialog (no polling)', async () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -457,7 +335,7 @@ describe('InventoryDetail', () => {
     expect(useAisleJobsListMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
 
     await waitFor(() => {
       const lastLogCall = useExecutionLogMock.mock.calls.at(-1);
@@ -495,12 +373,13 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /dialog title aisle|observabilidad del pasillo/i })).toBeInTheDocument();
+      expect(screen.getByTestId('aisle-observability-page')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /observabilidad del pasillo a-01/i })).toBeInTheDocument();
     });
-    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.queryAllByRole('dialog')).toHaveLength(0);
 
     const scopeControl = screen.getByRole('combobox', { name: /log scope|alcance del log/i });
     expect(scopeControl.textContent).toMatch(/scope merged|consolidado/i);
@@ -575,7 +454,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /download merged log|descargar log consolidado/i })).toBeInTheDocument();
@@ -657,7 +536,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
 
     await waitFor(() => {
       expect(useExecutionLogMock.mock.calls.at(-1)?.[3]).toMatchObject({ enabled: true });
@@ -672,13 +551,6 @@ describe('InventoryDetail', () => {
   });
 
   it('renders job metadata and execution log inside the unified observability dialog', async () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -774,10 +646,11 @@ describe('InventoryDetail', () => {
     renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /dialog title aisle|observabilidad del pasillo/i })).toBeInTheDocument();
+      expect(screen.getByTestId('aisle-observability-page')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /observabilidad del pasillo a-01/i })).toBeInTheDocument();
     });
     expect(screen.getByText('job-0')).toBeInTheDocument();
     expect(screen.getAllByText('AnalysisStage').length).toBeGreaterThan(0);
@@ -786,14 +659,139 @@ describe('InventoryDetail', () => {
     expect(screen.getByText('stage.started')).toBeInTheDocument();
   });
 
-  it('shows cancel for active jobs', async () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
+  it('shows Auditabilidad tab and auditability summary when tab is selected', async () => {
+    useAislesListMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'aisle-1',
+            inventory_id: 'inv-1',
+            code: 'A-01',
+            status: 'processing',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+            latest_job: {
+              id: 'job-1',
+              status: 'succeeded',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+            },
+          },
+        ],
+      },
       isLoading: false,
       isError: false,
       error: null,
       refetch: vi.fn(),
-    }));
+    });
+    useAisleJobsListMock.mockReturnValue({
+      data: {
+        jobs: [
+          {
+            id: 'job-1',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useAisleJobDetailMock.mockReturnValue({
+      data: {
+        id: 'job-1',
+        status: 'succeeded',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useExecutionLogMock.mockReturnValue({
+      data: emptyExecutionLog(),
+      isLoading: false,
+      isFetching: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useJobAuditabilityMock.mockReturnValue({
+      data: {
+        job_id: 'job-1',
+        status: 'succeeded',
+        target_type: 'aisle',
+        target_id: 'aisle-1',
+        created_at: '2024-01-01T00:00:00Z',
+        started_at: null,
+        finished_at: '2024-01-01T00:05:00Z',
+        inventory_id: 'inv-1',
+        aisle_id: 'aisle-1',
+        client_id: 'client-x',
+        client_supplier_id: 'cs-x',
+        provider_name: 'gemini',
+        model_name: 'm1',
+        prompt_key: 'pk',
+        prompt_version: 'pv',
+        supplier_prompt_config_id: 'spc-audit',
+        supplier_prompt_config_version: '3',
+        supplier_prompt_fallback_used: false,
+        supplier_prompt_fallback_reason: null,
+        protected_prompt_contract_key: 'ppc',
+        protected_prompt_contract_version: '1',
+        effective_prompt_hash: 'hash-audit-panel',
+        prompt_composition_available: true,
+        reference_usage: null,
+        supplier_reference_images_used: true,
+        inventory_visual_references_used: null,
+        reference_source: 'supplier_reference_images',
+        reference_image_count: 1,
+        reference_ids: ['r1'],
+        warnings: [],
+        metadata_sources: {
+          job_row: true,
+          result_json: true,
+          aisle_join: true,
+          inventory_join: true,
+          hybrid_report: false,
+          execution_log: false,
+          run_audit_snapshot: false,
+        },
+        missing_metadata: ['hybrid_report', 'execution_log'],
+        legacy_mode: false,
+      },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('aisle-observability-page')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('tab', { name: /auditabilidad/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('job-auditability-panel')).toBeInTheDocument();
+      expect(screen.getByText('hash-audit-panel')).toBeInTheDocument();
+      expect(screen.getByText('spc-audit')).toBeInTheDocument();
+      expect(screen.getByText('hybrid_report')).toBeInTheDocument();
+      expect(screen.getByText('execution_log')).toBeInTheDocument();
+    });
+  });
+
+  it('shows cancel for active jobs', async () => {
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -851,7 +849,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /cancel job|cancelar ejecución/i })).toBeInTheDocument();
     });
@@ -859,13 +857,6 @@ describe('InventoryDetail', () => {
   });
 
   it('shows retry for retryable terminal jobs', async () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -923,7 +914,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /retry job|reintentar ejecución/i })).toBeInTheDocument();
     });
@@ -940,13 +931,6 @@ describe('InventoryDetail', () => {
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
     });
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -1015,7 +999,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /cancel job|cancelar ejecución/i })).toBeInTheDocument();
     });
@@ -1039,13 +1023,6 @@ describe('InventoryDetail', () => {
       updated_at: '2024-01-01T00:00:00Z',
       attempt_count: 2,
     });
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -1130,7 +1107,7 @@ describe('InventoryDetail', () => {
 
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^view logs$|^ver logs$|^ver observabilidad$/i }));
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /retry job|reintentar ejecución/i })).toBeInTheDocument();
     });
@@ -1147,13 +1124,6 @@ describe('InventoryDetail', () => {
   });
 
   it('renders compact reference usage summaries in the aisles table while keeping the log as the detail path', () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -1227,13 +1197,6 @@ describe('InventoryDetail', () => {
   });
 
   it('shows a pending summary label when a queued or running job has no reference_usage yet', () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -1266,13 +1229,6 @@ describe('InventoryDetail', () => {
   });
 
   it('shows summary unavailable when a completed job has no reference_usage payload', () => {
-    useInventoryVisualReferencesMock.mockImplementation(() => ({
-      data: { items: [] },
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    }));
     useAislesListMock.mockReturnValue({
       data: {
         items: [
@@ -1339,42 +1295,54 @@ describe('InventoryDetail', () => {
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /process aisle|procesar pasillo/i }));
-    expect(await screen.findByText(/process dialog title/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /procesar pasillo a-01/i })).toBeInTheDocument();
 
     const modelSelect = screen.getByLabelText(/^model$|^modelo$/i, { selector: '[role="combobox"]' });
     fireEvent.mouseDown(modelSelect);
     expect(
-      await screen.findByRole('option', { name: /process default model em/i })
+      await screen.findByRole('option', { name: /usar modelo predeterminado \(gemini-2.0-flash-exp\)/i })
     ).toBeInTheDocument();
   });
 
-  it('process aisle opens provider dialog and passes provider/model/prompt to start mutation', async () => {
+  it('process dialog explains automatic prompt and does not show advanced prompt controls', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /process aisle|procesar pasillo/i }));
+    const dialog = await screen.findByRole('dialog');
+    const view = within(dialog);
+    expect(view.getByText('Prompt utilizado')).toBeInTheDocument();
+    expect(view.getByText(/instrucciones activas del proveedor asociado a este pasillo/i)).toBeInTheDocument();
+    expect(view.queryByText(/opciones avanzadas/i)).not.toBeInTheDocument();
+    expect(view.queryByText(/perfil base del prompt/i)).not.toBeInTheDocument();
+    // Exact labels only: /prompt b/i would match "prompt base" in Spanish helper copy.
+    expect(view.queryByText(/^Prompt A$/i)).not.toBeInTheDocument();
+    expect(view.queryByText(/^Prompt B$/i)).not.toBeInTheDocument();
+  });
+
+  it('process aisle opens provider dialog and passes provider/model with default prompt key', async () => {
     renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /row actions a11y|acciones del pasillo/i }));
     fireEvent.click(screen.getByRole('menuitem', { name: /process aisle|procesar pasillo/i }));
 
-    expect(await screen.findByText(/process dialog title/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/^provider$|^proveedor$/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /procesar pasillo a-01/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/proveedor de ia/i)).toBeInTheDocument();
 
-    fireEvent.mouseDown(screen.getByLabelText(/^provider$|^proveedor$/i));
+    fireEvent.mouseDown(screen.getByLabelText(/proveedor de ia/i));
     const openaiOption = await screen.findByRole('option', { name: /openai/i });
     fireEvent.click(openaiOption);
 
     fireEvent.mouseDown(screen.getByLabelText(/^model$|^modelo$/i));
     fireEvent.click(await screen.findByRole('option', { name: /^gpt-4o-mini$/i }));
 
-    fireEvent.mouseDown(screen.getByLabelText(/prompt profile/i));
-    fireEvent.click(await screen.findByRole('option', { name: /prompt b/i }));
-
-    fireEvent.click(screen.getByRole('button', { name: /process start/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^procesar$/i }));
 
     await waitFor(() => {
       expect(processAisleMutateAsyncMock).toHaveBeenCalledWith({
         aisleId: 'aisle-1',
         providerName: 'openai',
         modelName: 'gpt-4o-mini',
-        promptKey: 'global_v21_b',
+        promptKey: null,
       });
     });
   });

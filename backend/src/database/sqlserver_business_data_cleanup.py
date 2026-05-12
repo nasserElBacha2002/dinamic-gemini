@@ -35,7 +35,6 @@ TABLES_FOR_REPORT: tuple[tuple[str, str], ...] = (
     ("dbo", "final_count_records"),
     ("dbo", "raw_labels"),
     ("dbo", "normalized_labels"),
-    ("dbo", "inventory_visual_references"),
     ("dbo", "source_assets"),
     ("dbo", "inventory_jobs"),
     ("dbo", "aisles"),
@@ -143,7 +142,6 @@ def run_delete_pipeline(cur: Any) -> None:
         "final_count_records",
         "raw_labels",
         "normalized_labels",
-        "inventory_visual_references",
         "source_assets",
     ):
         exec_if_table(cur, "dbo", tbl, f"DELETE FROM dbo.[{tbl}];")

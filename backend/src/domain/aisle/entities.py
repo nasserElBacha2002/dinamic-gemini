@@ -34,6 +34,7 @@ class Aisle:
     updated_at: datetime
     #: Canonical inventory_jobs row for default result reads (Phase 2); NULL = legacy aisle (null job_id rows).
     operational_job_id: str | None = None
+    client_supplier_id: str | None = None
     error_code: str | None = None
     error_message: str | None = None
     retryable: bool | None = None

@@ -11,6 +11,8 @@ const mockUseComputeCaptureSessionGroups = vi.fn();
 const mockUseAisleOptions = vi.fn();
 const mockUseAssignCaptureSessionGroupToExistingAisle = vi.fn();
 const mockUseCreateAisleFromCaptureSessionGroup = vi.fn();
+const mockUseInventoryDetail = vi.fn();
+const mockUseClientSuppliers = vi.fn();
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -39,6 +41,14 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../src/features/ingestionSessions/components/ImportSessionUpload', () => ({
   default: () => null,
+}));
+
+vi.mock('../src/hooks/useInventories', () => ({
+  useInventoryDetail: (...args: unknown[]) => mockUseInventoryDetail(...args),
+}));
+
+vi.mock('../src/hooks/useClients', () => ({
+  useClientSuppliers: (...args: unknown[]) => mockUseClientSuppliers(...args),
 }));
 
 vi.mock('../src/features/ingestionSessions/hooks/useCaptureSessions', () => ({
@@ -98,6 +108,8 @@ describe('ImportSessionDetail — G3 grouping', () => {
     mockUseAisleOptions.mockReset();
     mockUseAssignCaptureSessionGroupToExistingAisle.mockReset();
     mockUseCreateAisleFromCaptureSessionGroup.mockReset();
+    mockUseInventoryDetail.mockReset();
+    mockUseClientSuppliers.mockReset();
     mockUseComputeCaptureSessionGroups.mockReturnValue({
       mutateAsync: vi.fn(),
       isPending: false,
@@ -117,6 +129,29 @@ describe('ImportSessionDetail — G3 grouping', () => {
       mutateAsync: vi.fn(),
       isPending: false,
       error: null,
+    });
+    mockUseInventoryDetail.mockReturnValue({
+      data: {
+        id: 'inv-1',
+        client_id: 'client-1',
+        name: 'Inv',
+        status: 'draft',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseClientSuppliers.mockReturnValue({
+      data: {
+        items: [{ id: 'sup-1', name: 'S', status: 'active', client_id: 'client-1', created_at: '', updated_at: '' }],
+        page: 1,
+        page_size: 200,
+        total_items: 1,
+        total_pages: 1,
+      },
+      isLoading: false,
+      isError: false,
     });
   });
 

@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest';
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -162,6 +163,7 @@ describe('AdminAiConfigPage', () => {
     await waitFor(() => expect(screen.getByLabelText('global-instructions')).toBeInTheDocument());
     expect(screen.getByLabelText('global-instructions').textContent).toContain('Global note');
   });
+
 
   it('shows forbidden message when API returns 403', async () => {
     const { ApiError } = await import('../src/api/types');

@@ -20,6 +20,42 @@ class InventoryNotFoundError(Exception):
     """Raised when the parent inventory does not exist."""
 
 
+class ClientNotFoundError(Exception):
+    """Raised when a client does not exist."""
+
+
+class InvalidClientNameError(Exception):
+    """Raised when client name is missing or invalid."""
+
+
+class ClientSupplierNotFoundError(Exception):
+    """Raised when a client supplier does not exist in the scoped client."""
+
+
+class InventoryClientRequiredForSupplierError(Exception):
+    """Raised when assigning a supplier to an inventory that has no client association."""
+
+
+class ClientSupplierRequiredForAisleError(Exception):
+    """Raised when creating an aisle under a client-oriented inventory without a supplier."""
+
+
+class InventoryClientRequiredForAisleError(Exception):
+    """Raised when creating an aisle under a legacy inventory that has no client association."""
+
+
+class ClientSupplierClientMismatchError(Exception):
+    """Raised when supplier.client_id does not match inventory.client_id."""
+
+
+class InvalidClientSupplierNameError(Exception):
+    """Raised when supplier name is missing or invalid."""
+
+
+class DuplicateClientSupplierNameError(Exception):
+    """Raised when a supplier with the same name already exists under a client."""
+
+
 class DuplicateAisleCodeError(Exception):
     """Raised when an aisle with the same code already exists in the inventory."""
 
@@ -48,12 +84,32 @@ class ZeroByteFileError(Exception):
     """Raised when an uploaded file has size zero or negative (empty file not allowed)."""
 
 
-class MaxInventoryVisualReferencesExceededError(Exception):
-    """Raised when uploading would exceed the maximum visual references per inventory."""
+class SupplierReferenceImageNotFoundError(Exception):
+    """Raised when the requested supplier reference image does not exist or is not owned by the supplier."""
 
 
-class InventoryVisualReferenceNotFoundError(Exception):
-    """Raised when the requested inventory visual reference does not exist or is not owned by the inventory."""
+class SupplierPromptConfigNotFoundError(Exception):
+    """Raised when a supplier prompt config does not exist or is out of the requested supplier scope."""
+
+
+class SupplierPromptConfigInvalidProviderError(Exception):
+    """Raised when provider_name is empty or not supported."""
+
+
+class SupplierPromptConfigInvalidModelError(Exception):
+    """Raised when model_name is not valid for the selected provider."""
+
+
+class SupplierPromptConfigEmptyInstructionsError(Exception):
+    """Raised when instructions_text is empty or blank."""
+
+
+class SupplierPromptConfigInvalidScopeError(Exception):
+    """Raised when prompt-config scope filters are inconsistent (e.g. model without provider)."""
+
+
+class SupplierPromptConfigActivationFailedError(Exception):
+    """Raised when prompt-config activation does not return an activated row."""
 
 
 class PositionNotFoundError(Exception):

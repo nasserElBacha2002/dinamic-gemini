@@ -92,7 +92,7 @@ def test_execute_success_invokes_state_runner_and_artifacts(tmp_path: Path) -> N
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=inv_repo,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         artifact_store=StubArtifactStorage(),
         raw_label_repo=noop,
     )
@@ -227,7 +227,7 @@ def test_execute_nonzero_pipeline_exit_delegates_fail_job_and_aisle(tmp_path: Pa
         evidence_repo=noop,
         clock=FixedClock(now),
         inventory_repo=inv_repo,
-        inventory_visual_reference_repo=noop,
+        supplier_reference_image_repo=noop,
         artifact_store=StubArtifactStorage(),
         raw_label_repo=noop,
     )

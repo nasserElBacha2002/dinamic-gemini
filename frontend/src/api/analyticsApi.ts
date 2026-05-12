@@ -6,12 +6,12 @@ import type {
   AisleIssueListResponse,
   AnalyticsSummaryResponse,
   AnalyticsTrendsResponse,
-  ApiErrorDetail,
   InventoryPerformanceListResponse,
   ManualInterventionBreakdownResponse,
   QualityPatternListResponse,
 } from './types';
-import { filenameFromContentDisposition, handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
+import { buildQueryString } from './queryString';
+import { apiDownloadBlob, apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -22,59 +22,53 @@ export interface AnalyticsQueryParams {
   aisle_id?: string | null;
 }
 
-function buildAnalyticsQueryString(q: AnalyticsQueryParams | undefined): string {
-  if (!q) return '';
-  const params = new URLSearchParams();
-  if (q.date_from != null && String(q.date_from).trim() !== '') {
-    params.set('date_from', String(q.date_from).trim());
-  }
-  if (q.date_to != null && String(q.date_to).trim() !== '') {
-    params.set('date_to', String(q.date_to).trim());
-  }
-  if (q.inventory_id != null && String(q.inventory_id).trim() !== '') {
-    params.set('inventory_id', String(q.inventory_id).trim());
-  }
-  if (q.aisle_id != null && String(q.aisle_id).trim() !== '') {
-    params.set('aisle_id', String(q.aisle_id).trim());
-  }
-  const s = params.toString();
-  return s ? `?${s}` : '';
+function buildAnalyticsQueryString(q?: AnalyticsQueryParams): string {
+  return buildQueryString([
+    ['date_from', q?.date_from],
+    ['date_to', q?.date_to],
+    ['inventory_id', q?.inventory_id],
+    ['aisle_id', q?.aisle_id],
+  ]);
 }
 
 export async function getAnalyticsSummary(q?: AnalyticsQueryParams): Promise<AnalyticsSummaryResponse> {
-  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/summary${buildAnalyticsQueryString(q)}`);
-  return handleResponse<AnalyticsSummaryResponse>(response);
+  return apiRequestJson<AnalyticsSummaryResponse>(
+    `${API_BASE}${V3_ANALYTICS_BASE}/summary${buildAnalyticsQueryString(q)}`
+  );
 }
 
 export async function getAnalyticsTrends(q?: AnalyticsQueryParams): Promise<AnalyticsTrendsResponse> {
-  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/trends${buildAnalyticsQueryString(q)}`);
-  return handleResponse<AnalyticsTrendsResponse>(response);
+  return apiRequestJson<AnalyticsTrendsResponse>(
+    `${API_BASE}${V3_ANALYTICS_BASE}/trends${buildAnalyticsQueryString(q)}`
+  );
 }
 
 export async function getAnalyticsInventoryPerformance(
   q?: AnalyticsQueryParams
 ): Promise<InventoryPerformanceListResponse> {
-  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/inventories${buildAnalyticsQueryString(q)}`);
-  return handleResponse<InventoryPerformanceListResponse>(response);
+  return apiRequestJson<InventoryPerformanceListResponse>(
+    `${API_BASE}${V3_ANALYTICS_BASE}/inventories${buildAnalyticsQueryString(q)}`
+  );
 }
 
 export async function getAnalyticsAisleIssues(q?: AnalyticsQueryParams): Promise<AisleIssueListResponse> {
-  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/aisles${buildAnalyticsQueryString(q)}`);
-  return handleResponse<AisleIssueListResponse>(response);
+  return apiRequestJson<AisleIssueListResponse>(
+    `${API_BASE}${V3_ANALYTICS_BASE}/aisles${buildAnalyticsQueryString(q)}`
+  );
 }
 
 export async function getAnalyticsQualityPatterns(q?: AnalyticsQueryParams): Promise<QualityPatternListResponse> {
-  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/quality${buildAnalyticsQueryString(q)}`);
-  return handleResponse<QualityPatternListResponse>(response);
+  return apiRequestJson<QualityPatternListResponse>(
+    `${API_BASE}${V3_ANALYTICS_BASE}/quality${buildAnalyticsQueryString(q)}`
+  );
 }
 
 export async function getAnalyticsManualInterventions(
   q?: AnalyticsQueryParams
 ): Promise<ManualInterventionBreakdownResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<ManualInterventionBreakdownResponse>(
     `${API_BASE}${V3_ANALYTICS_BASE}/manual-interventions${buildAnalyticsQueryString(q)}`
   );
-  return handleResponse<ManualInterventionBreakdownResponse>(response);
 }
 
 export async function getAisleBenchmarkCompare(
@@ -88,8 +82,7 @@ export async function getAisleBenchmarkCompare(
     job_b_id: jobBId.trim(),
   });
   const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/benchmark/compare?${params}`;
-  const response = await protectedFetch(path);
-  return handleResponse<AisleBenchmarkCompareResponse>(response);
+  return apiRequestJson<AisleBenchmarkCompareResponse>(path);
 }
 
 export async function getAisleBenchmarkCompareMany(
@@ -105,15 +98,13 @@ export async function getAisleBenchmarkCompareMany(
   if (body.max_diff_rows != null) {
     payload.max_diff_rows = body.max_diff_rows;
   }
-  const response = await protectedFetch(
+  return apiRequestJson<AisleBenchmarkCompareManyResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/benchmark/compare-many`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: payload,
     }
   );
-  return handleResponse<AisleBenchmarkCompareManyResponse>(response);
 }
 
 export async function downloadAisleBenchmarkExportCsv(
@@ -129,29 +120,9 @@ export async function downloadAisleBenchmarkExportCsv(
     params.set('job_b_id', options.jobBId.trim());
   }
   const path = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/benchmark/export?${params}`;
-  const response = await protectedFetch(path);
-  const fallbackName =
+  const fallbackFilename =
     'runJobId' in options
       ? `benchmark_run_${inventoryId}_${aisleId}_${options.runJobId}.csv`
       : `benchmark_compare_${inventoryId}_${aisleId}_${options.jobAId}_${options.jobBId}.csv`;
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  return apiDownloadBlob(path, { fallbackFilename });
 }

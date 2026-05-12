@@ -1,5 +1,14 @@
 export { useDebouncedSearchInput } from './useDebouncedSearchInput';
-export { useInventoriesList, useInventoryDetail, useInventoryVisualReferences } from './useInventories';
+export {
+  useClients,
+  useClient,
+  useClientSuppliers,
+  useClientSupplier,
+  useSupplierPromptConfigs,
+  useActiveSupplierPromptConfig,
+  useSupplierReferenceImages,
+} from './useClients';
+export { useInventoriesList, useInventoryDetail } from './useInventories';
 export {
   useInventoryMetrics,
   useAislesList,
@@ -7,6 +16,7 @@ export {
   useExecutionLog,
   useAisleExecutionLog,
   useAisleJobDetail,
+  useJobAuditability,
   useAisleJobsList,
   useAisleBenchmarkCompare,
   useAisleBenchmarkCompareMany,
@@ -19,7 +29,14 @@ export {
   positionsListQueryKeyPart,
 } from './usePositions';
 export { useReviewQueue } from './useReviewQueue';
+export { useObservabilityMetrics } from './useObservabilityMetrics';
 export {
+  useCreateClient,
+  useCreateClientSupplier,
+  useCreateSupplierPromptConfigVersion,
+  useActivateSupplierPromptConfigVersion,
+  useUploadSupplierReferenceImages,
+  useDeleteSupplierReferenceImage,
   useCreateInventory,
   useCreateAisle,
   useStartAisleProcessing,
@@ -29,9 +46,6 @@ export {
   useUploadAisleAssets,
   useUploadAisleAssetsFlex,
   useDeleteAisleSourceAsset,
-  useUploadInventoryVisualReferences,
-  useDeleteInventoryVisualReference,
-  useReplaceInventoryVisualReference,
   useSubmitReviewAction,
   usePromoteAisleOperationalJob,
 } from './useMutations';

@@ -34,6 +34,12 @@ const V3_STRUCTURED_CODE_TO_KEY: Record<string, string> = {
   JOB_PROMOTION_NOT_ALLOWED: 'errors.promotion_failed',
   BENCHMARK_COMPARE_JOBS_MUST_DIFFER: 'errors.load_compare',
   ANALYTICS_SCOPE_VALIDATION_FAILED: 'errors.validation_generic',
+  SUPPLIER_PROMPT_CONFIG_NOT_FOUND: 'clients.suppliers.prompt_configs.not_found_error',
+  SUPPLIER_PROMPT_CONFIG_INVALID_PROVIDER: 'clients.suppliers.prompt_configs.invalid_provider_error',
+  SUPPLIER_PROMPT_CONFIG_INVALID_MODEL: 'clients.suppliers.prompt_configs.invalid_model_error',
+  SUPPLIER_PROMPT_CONFIG_EMPTY_INSTRUCTIONS: 'clients.suppliers.prompt_configs.blank_instructions_error',
+  SUPPLIER_PROMPT_CONFIG_INVALID_SCOPE: 'clients.suppliers.prompt_configs.invalid_scope_error',
+  SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED: 'clients.suppliers.prompt_configs.activation_failed_error',
   INTERNAL_SERVER_ERROR: 'errors.unexpected',
 };
 

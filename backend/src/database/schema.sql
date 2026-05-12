@@ -166,6 +166,69 @@ IF NOT EXISTS (
 )
     ALTER TABLE inventories ADD CONSTRAINT DF_inventories_processing_mode DEFAULT ('production') FOR processing_mode;
 GO
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'client_id')
+    ALTER TABLE inventories ADD client_id VARCHAR(36) NULL;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.foreign_keys WHERE name = 'FK_inventories_client'
+)
+BEGIN
+    ALTER TABLE inventories
+    ADD CONSTRAINT FK_inventories_client
+    FOREIGN KEY (client_id) REFERENCES clients(id);
+END;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes WHERE name = 'IX_inventories_client_id' AND object_id = OBJECT_ID('inventories')
+)
+    CREATE INDEX IX_inventories_client_id ON inventories(client_id);
+GO
+
+-- Phase A1 — Clients foundation (mirror migrations/versions/0024_clients_foundation.sql).
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'clients')
+BEGIN
+    CREATE TABLE clients (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        name NVARCHAR(255) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL
+    );
+    CREATE INDEX IX_clients_created_at ON clients(created_at DESC);
+END;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.default_constraints
+    WHERE parent_object_id = OBJECT_ID('clients') AND name = 'DF_clients_status'
+)
+    ALTER TABLE clients ADD CONSTRAINT DF_clients_status DEFAULT ('active') FOR status;
+GO
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_clients_name' AND object_id = OBJECT_ID('clients'))
+    CREATE INDEX IX_clients_name ON clients(name);
+GO
+
+-- Phase A2 — Client suppliers foundation (mirror migrations/versions/0025_client_suppliers_foundation.sql).
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'client_suppliers')
+BEGIN
+    CREATE TABLE client_suppliers (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        client_id VARCHAR(36) NOT NULL,
+        name NVARCHAR(255) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT FK_client_suppliers_client FOREIGN KEY (client_id) REFERENCES clients(id),
+        CONSTRAINT UQ_client_suppliers_client_name UNIQUE (client_id, name)
+    );
+    CREATE INDEX IX_client_suppliers_client_id ON client_suppliers(client_id);
+END;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.default_constraints
+    WHERE parent_object_id = OBJECT_ID('client_suppliers') AND name = 'DF_client_suppliers_status'
+)
+    ALTER TABLE client_suppliers ADD CONSTRAINT DF_client_suppliers_status DEFAULT ('active') FOR status;
+GO
 
 -- v3.0 — Aisles (Épica 2, Documento técnico §7.2; FK for future AisleRepository)
 -- Domain assumption: one code per inventory (UNIQUE inventory_id, code).
@@ -287,6 +350,23 @@ END;
 GO
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_aisles_operational_job_id' AND object_id = OBJECT_ID('aisles'))
     CREATE INDEX IX_aisles_operational_job_id ON aisles(operational_job_id);
+GO
+
+-- Phase A4 — aisles.client_supplier_id (nullable foundation only).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('aisles') AND name = 'client_supplier_id')
+    ALTER TABLE aisles ADD client_supplier_id VARCHAR(36) NULL;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.foreign_keys WHERE name = 'FK_aisles_client_supplier'
+)
+BEGIN
+    ALTER TABLE aisles
+    ADD CONSTRAINT FK_aisles_client_supplier
+    FOREIGN KEY (client_supplier_id) REFERENCES client_suppliers(id);
+END;
+GO
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_aisles_client_supplier_id' AND object_id = OBJECT_ID('aisles'))
+    CREATE INDEX IX_aisles_client_supplier_id ON aisles(client_supplier_id);
 GO
 
 -- v3.0 — Source assets (Épica 4, Documento técnico §7.3)
@@ -581,12 +661,12 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_normalized_labels_scop
     CREATE INDEX IX_normalized_labels_scope_job ON normalized_labels(inventory_id, aisle_id, job_id);
 GO
 
--- v3.2.4 — Inventory visual references (optional reference images per inventory)
-IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'inventory_visual_references')
+-- Phase C1 — supplier reference images (additive foundation).
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'supplier_reference_images')
 BEGIN
-    CREATE TABLE inventory_visual_references (
+    CREATE TABLE supplier_reference_images (
         id VARCHAR(36) NOT NULL PRIMARY KEY,
-        inventory_id VARCHAR(36) NOT NULL,
+        client_supplier_id VARCHAR(36) NOT NULL,
         filename NVARCHAR(512) NOT NULL,
         storage_path NVARCHAR(1024) NOT NULL,
         storage_provider VARCHAR(16) NULL,
@@ -597,24 +677,70 @@ BEGIN
         etag NVARCHAR(128) NULL,
         mime_type VARCHAR(128) NOT NULL,
         file_size BIGINT NOT NULL,
+        label NVARCHAR(255) NULL,
+        description NVARCHAR(1024) NULL,
         created_at DATETIME2 NOT NULL,
-        CONSTRAINT FK_inventory_visual_references_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id)
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT FK_supplier_reference_images_client_supplier
+            FOREIGN KEY (client_supplier_id) REFERENCES client_suppliers(id)
     );
-    CREATE INDEX IX_inventory_visual_references_inventory_id ON inventory_visual_references(inventory_id);
 END;
 GO
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'storage_provider')
-    ALTER TABLE inventory_visual_references ADD storage_provider VARCHAR(16) NULL;
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'storage_bucket')
-    ALTER TABLE inventory_visual_references ADD storage_bucket NVARCHAR(255) NULL;
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'storage_key')
-    ALTER TABLE inventory_visual_references ADD storage_key NVARCHAR(1024) NULL;
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'content_type')
-    ALTER TABLE inventory_visual_references ADD content_type VARCHAR(128) NULL;
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'file_size_bytes')
-    ALTER TABLE inventory_visual_references ADD file_size_bytes BIGINT NULL;
-IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_visual_references') AND name = 'etag')
-    ALTER TABLE inventory_visual_references ADD etag NVARCHAR(128) NULL;
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_supplier_reference_images_client_supplier_id'
+      AND object_id = OBJECT_ID('supplier_reference_images')
+)
+    CREATE INDEX IX_supplier_reference_images_client_supplier_id
+        ON supplier_reference_images(client_supplier_id);
+GO
+
+-- Phase D1 — supplier prompt configs (additive foundation).
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'supplier_prompt_configs')
+BEGIN
+    CREATE TABLE supplier_prompt_configs (
+        id VARCHAR(36) NOT NULL PRIMARY KEY,
+        client_supplier_id VARCHAR(36) NOT NULL,
+        provider_name VARCHAR(32) NULL,
+        model_name VARCHAR(128) NULL,
+        provider_scope_key AS (CASE WHEN provider_name IS NULL THEN '#ALL_PROVIDERS#' ELSE 'P:' + LOWER(provider_name) END) PERSISTED,
+        model_scope_key AS (CASE WHEN model_name IS NULL THEN '#ALL_MODELS#' ELSE 'M:' + model_name END) PERSISTED,
+        instructions_text NVARCHAR(MAX) NOT NULL,
+        version INT NOT NULL,
+        is_active BIT NOT NULL CONSTRAINT DF_supplier_prompt_configs_is_active DEFAULT (0),
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT CK_supplier_prompt_configs_valid_scope
+            CHECK (NOT (provider_name IS NULL AND model_name IS NOT NULL)),
+        CONSTRAINT FK_supplier_prompt_configs_client_supplier
+            FOREIGN KEY (client_supplier_id) REFERENCES client_suppliers(id)
+    );
+END;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_supplier_prompt_configs_supplier_scope'
+      AND object_id = OBJECT_ID('supplier_prompt_configs')
+)
+    CREATE INDEX IX_supplier_prompt_configs_supplier_scope
+        ON supplier_prompt_configs(client_supplier_id, provider_scope_key, model_scope_key, created_at DESC);
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_supplier_prompt_configs_scope_version'
+      AND object_id = OBJECT_ID('supplier_prompt_configs')
+)
+    CREATE UNIQUE INDEX UQ_supplier_prompt_configs_scope_version
+        ON supplier_prompt_configs(client_supplier_id, provider_scope_key, model_scope_key, version);
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_supplier_prompt_configs_one_active'
+      AND object_id = OBJECT_ID('supplier_prompt_configs')
+)
+    CREATE UNIQUE INDEX UQ_supplier_prompt_configs_one_active
+        ON supplier_prompt_configs(client_supplier_id, provider_scope_key, model_scope_key)
+        WHERE is_active = 1;
 GO
 
 -- Sprint 1 — Field capture sessions (mirror migrations/versions/0016_capture_sessions.sql).

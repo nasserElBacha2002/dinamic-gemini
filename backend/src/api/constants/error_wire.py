@@ -15,10 +15,25 @@ HTTP_DETAIL_UNEXPECTED_ERROR = "An unexpected error occurred."
 
 # Structured Category A — 404 ``detail`` (mapper contract; some routes reuse the same text).
 HTTP_DETAIL_INVENTORY_NOT_FOUND = "Inventory not found"
+HTTP_DETAIL_CLIENT_NOT_FOUND = "Client not found"
+HTTP_DETAIL_CLIENT_SUPPLIER_NOT_FOUND = "Client supplier not found"
+HTTP_DETAIL_INVENTORY_CLIENT_REQUIRED_FOR_SUPPLIER = (
+    "Inventory must have a client before assigning a supplier"
+)
+HTTP_DETAIL_CLIENT_SUPPLIER_CLIENT_MISMATCH = (
+    "Client supplier does not belong to the inventory client"
+)
+HTTP_DETAIL_CLIENT_SUPPLIER_REQUIRED_FOR_AISLE = (
+    "Client supplier is required for new aisles when the inventory has a client"
+)
+HTTP_DETAIL_INVENTORY_CLIENT_REQUIRED_FOR_AISLE = (
+    "Inventory must be associated with a client before creating aisles"
+)
 HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY = "Aisle not found or does not belong to this inventory"
 HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE = "Position not found or does not belong to this aisle"
 HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION = "Product not found or does not belong to this position"
-HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND = "Visual reference not found"
+HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND = "Supplier reference image not found"
+HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_NOT_FOUND = "Supplier prompt config not found"
 
 # Structured Category B — fixed 422 ``detail`` (must match mapper / use-case emitters).
 HTTP_DETAIL_BENCHMARK_COMPARE_JOBS_MUST_DIFFER = (
@@ -51,6 +66,14 @@ HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED = "Empty or zero-byte files are
 # Analytics query validation (v3 analytics routes).
 HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO = (
     "date_from must be on or before date_to"
+)
+
+# Observability metrics (v3 observability routes — Phase H5).
+HTTP_DETAIL_OBSERVABILITY_METRICS_FROM_MUST_BE_ON_OR_BEFORE_TO = (
+    "from must be on or before to for observability metrics"
+)
+HTTP_DETAIL_OBSERVABILITY_METRICS_RANGE_EXCEEDS_MAX_DAYS = (
+    "observability metrics date range must not exceed 90 days"
 )
 
 # Admin AI inspection (v3 admin routes).
@@ -130,3 +153,16 @@ HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW = (
     "Materialize this capture session group before preview."
 )
 HTTP_DETAIL_CAPTURE_SESSION_GROUP_INTEGRITY_VIOLATION = "Capture session group data consistency check failed; retry is not recommended until data is reviewed."
+
+# Supplier prompt configs (Phase D4)
+HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_PROVIDER = "provider_name is not supported"
+HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_MODEL = (
+    "model_name is not valid for provider_name"
+)
+HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_EMPTY_INSTRUCTIONS = "instructions_text is required"
+HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_SCOPE = (
+    "provider_name is required when model_name is provided"
+)
+HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED = (
+    "Supplier prompt config activation failed"
+)

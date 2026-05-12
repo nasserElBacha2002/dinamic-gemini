@@ -24,10 +24,11 @@ from src.application.ports.capture_repositories import (
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
+    ClientRepository,
+    ClientSupplierRepository,
     EvidenceRepository,
     FinalCountRepository,
     InventoryRepository,
-    InventoryVisualReferenceRepository,
     JobRepository,
     NormalizedLabelRepository,
     PositionRepository,
@@ -35,6 +36,8 @@ from src.application.ports.repositories import (
     RawLabelRepository,
     ReviewActionRepository,
     SourceAssetRepository,
+    SupplierPromptConfigRepository,
+    SupplierReferenceImageRepository,
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
@@ -74,10 +77,13 @@ class AppContainer:
         self._settings = settings
         self._v3_sql_client: SqlServerClient | None = None
         self._inventory_repo: InventoryRepository | None = None
+        self._client_repo: ClientRepository | None = None
+        self._client_supplier_repo: ClientSupplierRepository | None = None
         self._aisle_repo: AisleRepository | None = None
         self._job_repo: JobRepository | None = None
         self._asset_repo: SourceAssetRepository | None = None
-        self._visual_reference_repo: InventoryVisualReferenceRepository | None = None
+        self._supplier_reference_image_repo: SupplierReferenceImageRepository | None = None
+        self._supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None
         self._position_repo: PositionRepository | None = None
         self._product_record_repo: ProductRecordRepository | None = None
         self._evidence_repo: EvidenceRepository | None = None
@@ -176,6 +182,56 @@ class AppContainer:
         )
         return self._inventory_repo
 
+    def get_client_repo(self) -> ClientRepository:
+        if self._client_repo is not None:
+            return self._client_repo
+
+        def _sql(client: SqlServerClient) -> ClientRepository:
+            from src.infrastructure.repositories.sql_client_repository import SqlClientRepository
+
+            return SqlClientRepository(client)
+
+        def _memory() -> ClientRepository:
+            from src.infrastructure.repositories.memory_client_repository import (
+                MemoryClientRepository,
+            )
+
+            return MemoryClientRepository()
+
+        self._client_repo = self._build_sql_repository_or_memory(
+            backend_info_name="ClientRepository",
+            sql_error_subject="client repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
+        return self._client_repo
+
+    def get_client_supplier_repo(self) -> ClientSupplierRepository:
+        if self._client_supplier_repo is not None:
+            return self._client_supplier_repo
+
+        def _sql(client: SqlServerClient) -> ClientSupplierRepository:
+            from src.infrastructure.repositories.sql_client_supplier_repository import (
+                SqlClientSupplierRepository,
+            )
+
+            return SqlClientSupplierRepository(client)
+
+        def _memory() -> ClientSupplierRepository:
+            from src.infrastructure.repositories.memory_client_supplier_repository import (
+                MemoryClientSupplierRepository,
+            )
+
+            return MemoryClientSupplierRepository()
+
+        self._client_supplier_repo = self._build_sql_repository_or_memory(
+            backend_info_name="ClientSupplierRepository",
+            sql_error_subject="client_supplier repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
+        return self._client_supplier_repo
+
     def get_aisle_repo(self) -> AisleRepository:
         if self._aisle_repo is not None:
             return self._aisle_repo
@@ -248,31 +304,57 @@ class AppContainer:
         )
         return self._asset_repo
 
-    def get_inventory_visual_reference_repo(self) -> InventoryVisualReferenceRepository:
-        if self._visual_reference_repo is not None:
-            return self._visual_reference_repo
+    def get_supplier_reference_image_repo(self) -> SupplierReferenceImageRepository:
+        if self._supplier_reference_image_repo is not None:
+            return self._supplier_reference_image_repo
 
-        def _sql(client: SqlServerClient) -> InventoryVisualReferenceRepository:
-            from src.infrastructure.repositories.sql_inventory_visual_reference_repository import (
-                SqlInventoryVisualReferenceRepository,
+        def _sql(client: SqlServerClient) -> SupplierReferenceImageRepository:
+            from src.infrastructure.repositories.sql_supplier_reference_image_repository import (
+                SqlSupplierReferenceImageRepository,
             )
 
-            return SqlInventoryVisualReferenceRepository(client)
+            return SqlSupplierReferenceImageRepository(client)
 
-        def _memory() -> InventoryVisualReferenceRepository:
-            from src.infrastructure.repositories.memory_inventory_visual_reference_repository import (
-                MemoryInventoryVisualReferenceRepository,
+        def _memory() -> SupplierReferenceImageRepository:
+            from src.infrastructure.repositories.memory_supplier_reference_image_repository import (
+                MemorySupplierReferenceImageRepository,
             )
 
-            return MemoryInventoryVisualReferenceRepository()
+            return MemorySupplierReferenceImageRepository()
 
-        self._visual_reference_repo = self._build_sql_repository_or_memory(
-            backend_info_name="InventoryVisualReferenceRepository",
-            sql_error_subject="inventory_visual_reference repo",
+        self._supplier_reference_image_repo = self._build_sql_repository_or_memory(
+            backend_info_name="SupplierReferenceImageRepository",
+            sql_error_subject="supplier_reference_image repo",
             build_sql=_sql,
             build_memory=_memory,
         )
-        return self._visual_reference_repo
+        return self._supplier_reference_image_repo
+
+    def get_supplier_prompt_config_repo(self) -> SupplierPromptConfigRepository:
+        if self._supplier_prompt_config_repo is not None:
+            return self._supplier_prompt_config_repo
+
+        def _sql(client: SqlServerClient) -> SupplierPromptConfigRepository:
+            from src.infrastructure.repositories.sql_supplier_prompt_config_repository import (
+                SqlSupplierPromptConfigRepository,
+            )
+
+            return SqlSupplierPromptConfigRepository(client)
+
+        def _memory() -> SupplierPromptConfigRepository:
+            from src.infrastructure.repositories.memory_supplier_prompt_config_repository import (
+                MemorySupplierPromptConfigRepository,
+            )
+
+            return MemorySupplierPromptConfigRepository()
+
+        self._supplier_prompt_config_repo = self._build_sql_repository_or_memory(
+            backend_info_name="SupplierPromptConfigRepository",
+            sql_error_subject="supplier_prompt_config repo",
+            build_sql=_sql,
+            build_memory=_memory,
+        )
+        return self._supplier_prompt_config_repo
 
     def get_position_repo(self) -> PositionRepository:
         if self._position_repo is not None:
@@ -681,3 +763,63 @@ class AppContainer:
             normalization_service=LabelNormalizationService(merge_rule_engine=MergeRuleEngine()),
             final_count_builder=FinalCountBuilder(),
         )
+
+    def get_list_supplier_prompt_configs_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            ListSupplierPromptConfigsUseCase,
+        )
+
+        return ListSupplierPromptConfigsUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+            settings=self._settings,
+        )
+
+    def get_create_supplier_prompt_config_version_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            CreateSupplierPromptConfigVersionUseCase,
+        )
+
+        return CreateSupplierPromptConfigVersionUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+            clock=self.get_clock(),
+            settings=self._settings,
+        )
+
+    def get_get_active_supplier_prompt_config_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            GetActiveSupplierPromptConfigUseCase,
+        )
+
+        return GetActiveSupplierPromptConfigUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+            settings=self._settings,
+        )
+
+    def get_activate_supplier_prompt_config_version_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            ActivateSupplierPromptConfigVersionUseCase,
+        )
+
+        return ActivateSupplierPromptConfigVersionUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+        )
+
+    def get_get_supplier_prompt_config_use_case(self):
+        from src.application.use_cases.manage_supplier_prompt_configs import (
+            GetSupplierPromptConfigUseCase,
+        )
+
+        return GetSupplierPromptConfigUseCase(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            prompt_config_repo=self.get_supplier_prompt_config_repo(),
+        )
+

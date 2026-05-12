@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
+# Persisted ``job.result_json`` key for visual reference summary blocks.
+# Must stay aligned with ``src.pipeline.run_metadata.RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT``.
+VISUAL_REFERENCE_CONTEXT_RESULT_JSON_KEY = "visual_reference_context"
 
 
 def _coerce_non_negative_int(value: Any) -> int:
@@ -45,7 +47,7 @@ def parse_reference_usage_from_result_json(result_json: Any) -> ReferenceUsageFi
     """Map persisted ``result_json`` into compact reference-usage fields, or ``None`` if absent."""
     if not isinstance(result_json, dict):
         return None
-    raw = result_json.get(RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT)
+    raw = result_json.get(VISUAL_REFERENCE_CONTEXT_RESULT_JSON_KEY)
     if not isinstance(raw, dict):
         return None
 

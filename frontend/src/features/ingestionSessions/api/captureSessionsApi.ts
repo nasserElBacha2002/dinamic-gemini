@@ -2,7 +2,9 @@ import { V3_INVENTORIES_BASE } from '../../../constants/v3ApiPaths';
 import { getStoredToken } from '../../auth/storage';
 import { ApiError } from '../../../api/types';
 import i18n from '../../../i18n';
-import { handleResponse, messageFromErrorDetail, protectedFetch } from '../../../api/http';
+import { messageFromErrorDetail } from '../../../api/http';
+import { buildQueryString } from '../../../api/queryString';
+import { apiRequestJson } from '../../../api/request';
 import type {
   CaptureSessionDetailResponse,
   CaptureSessionGroupsListResponse,
@@ -23,22 +25,21 @@ export interface CaptureSessionsListQuery {
   statusCsv?: string;
 }
 
-function buildCaptureSessionsQuery(params: CaptureSessionsListQuery): string {
-  const q = new URLSearchParams();
-  if (params.aisleId?.trim()) q.set('aisle_id', params.aisleId.trim());
-  if (params.statusCsv?.trim()) q.set('status', params.statusCsv.trim());
-  if (params.page != null && params.page > 0) q.set('page', String(params.page));
-  if (params.pageSize != null && params.pageSize > 0) q.set('page_size', String(params.pageSize));
-  const s = q.toString();
-  return s ? `?${s}` : '';
+/** Wire capture-session list query — `page` / `pageSize` use `{ min: 1 }` (same as legacy `> 0` for integer pages). */
+export function buildCaptureSessionsQuery(params: CaptureSessionsListQuery): string {
+  return buildQueryString([
+    ['aisle_id', params.aisleId],
+    ['status', params.statusCsv],
+    ['page', params.page, { min: 1 }],
+    ['page_size', params.pageSize, { min: 1 }],
+  ]);
 }
 
 export async function getCaptureSessions(params: CaptureSessionsListQuery): Promise<PaginatedCaptureSessionListResponse> {
   const inventoryId = encodeURIComponent(params.inventoryId);
-  const response = await protectedFetch(
+  return apiRequestJson<PaginatedCaptureSessionListResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/capture-sessions${buildCaptureSessionsQuery(params)}`
   );
-  return handleResponse<PaginatedCaptureSessionListResponse>(response);
 }
 
 export async function createCaptureSession(
@@ -49,18 +50,16 @@ export async function createCaptureSession(
   const path = resolvedAisleId
     ? `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(resolvedAisleId)}/capture-sessions`
     : `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions`;
-  const response = await protectedFetch(path, { method: 'POST' });
-  return handleResponse<CaptureSessionResponse>(response);
+  return apiRequestJson<CaptureSessionResponse>(path, { method: 'POST' });
 }
 
 export async function getCaptureSessionDetail(
   inventoryId: string,
   sessionId: string
 ): Promise<CaptureSessionDetailResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<CaptureSessionDetailResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}`
   );
-  return handleResponse<CaptureSessionDetailResponse>(response);
 }
 
 export async function closeCaptureSession(
@@ -72,40 +71,36 @@ export async function closeCaptureSession(
   const path = resolvedAisleId
     ? `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(resolvedAisleId)}/capture-sessions/${encodeURIComponent(sessionId)}/close`
     : `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/close`;
-  const response = await protectedFetch(path, { method: 'POST' });
-  return handleResponse<CaptureSessionDetailResponse>(response);
+  return apiRequestJson<CaptureSessionDetailResponse>(path, { method: 'POST' });
 }
 
 export async function cancelCaptureSession(
   inventoryId: string,
   sessionId: string
 ): Promise<CaptureSessionDetailResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<CaptureSessionDetailResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/cancel`,
     { method: 'POST' }
   );
-  return handleResponse<CaptureSessionDetailResponse>(response);
 }
 
 export async function getCaptureSessionGroups(
   inventoryId: string,
   sessionId: string
 ): Promise<CaptureSessionGroupsListResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<CaptureSessionGroupsListResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/groups`
   );
-  return handleResponse<CaptureSessionGroupsListResponse>(response);
 }
 
 export async function computeCaptureSessionGroups(
   inventoryId: string,
   sessionId: string
 ): Promise<CaptureSessionGroupsListResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<CaptureSessionGroupsListResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/compute-groups`,
     { method: 'POST' }
   );
-  return handleResponse<CaptureSessionGroupsListResponse>(response);
 }
 
 export async function assignCaptureSessionGroupToExistingAisle(
@@ -115,27 +110,24 @@ export async function assignCaptureSessionGroupToExistingAisle(
   aisleId: string
 ): Promise<CaptureSessionGroupsListResponse> {
   const base = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/groups/${encodeURIComponent(groupId)}/assign-existing`;
-  const response = await protectedFetch(base, {
+  return apiRequestJson<CaptureSessionGroupsListResponse>(base, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ aisle_id: aisleId }),
+    body: { aisle_id: aisleId },
   });
-  return handleResponse<CaptureSessionGroupsListResponse>(response);
 }
 
 export async function createAisleFromCaptureSessionGroup(
   inventoryId: string,
   sessionId: string,
   groupId: string,
-  code: string
+  code: string,
+  client_supplier_id: string
 ): Promise<CaptureSessionGroupsListResponse> {
   const base = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/groups/${encodeURIComponent(groupId)}/create-aisle`;
-  const response = await protectedFetch(base, {
+  return apiRequestJson<CaptureSessionGroupsListResponse>(base, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }),
+    body: { code, client_supplier_id },
   });
-  return handleResponse<CaptureSessionGroupsListResponse>(response);
 }
 
 export async function materializeCaptureSessionGroup(
@@ -144,8 +136,7 @@ export async function materializeCaptureSessionGroup(
   groupId: string
 ): Promise<MaterializeCaptureSessionGroupResponse> {
   const base = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/groups/${encodeURIComponent(groupId)}/materialize`;
-  const response = await protectedFetch(base, { method: 'POST' });
-  return handleResponse<MaterializeCaptureSessionGroupResponse>(response);
+  return apiRequestJson<MaterializeCaptureSessionGroupResponse>(base, { method: 'POST' });
 }
 
 export async function previewMaterializedCaptureSessionGroup(
@@ -154,8 +145,7 @@ export async function previewMaterializedCaptureSessionGroup(
   groupId: string
 ): Promise<MaterializedCaptureSessionGroupPreviewResponse> {
   const base = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/groups/${encodeURIComponent(groupId)}/preview`;
-  const response = await protectedFetch(base, { method: 'POST' });
-  return handleResponse<MaterializedCaptureSessionGroupPreviewResponse>(response);
+  return apiRequestJson<MaterializedCaptureSessionGroupPreviewResponse>(base, { method: 'POST' });
 }
 
 /**
@@ -181,6 +171,7 @@ function parseUploadStagingResponse(body: Record<string, unknown>): UploadCaptur
   return { items, errors };
 }
 
+/** Uses ``XMLHttpRequest`` (not ``fetch`` / ``apiRequestJson``) so ``xhr.upload`` can report upload progress; keep separate from generic helpers. */
 export async function uploadCaptureSessionStagingFiles(
   inventoryId: string,
   sessionId: string,

@@ -10,12 +10,23 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.services.aisle_analysis_context_builder import AisleAnalysisContextBuilder
+from src.application.ports.repositories import SupplierReferenceImageRepository
+from src.application.services.aisle_analysis_context_builder import (
+    SUPPLIER_REFERENCE_RESOLUTION_FALLBACK_INVENTORY_WITHOUT_CLIENT,
+    AisleAnalysisContextBuilder,
+)
+from src.application.services.supplier_reference_image_resolver import (
+    SupplierReferenceImageResolver,
+)
+from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
-from src.domain.inventory.visual_reference import InventoryVisualReference
+from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
     V3ProcessAislePipelineRunner,
     resolve_visual_reference_paths,
+)
+from src.infrastructure.repositories.memory_supplier_reference_image_repository import (
+    MemorySupplierReferenceImageRepository,
 )
 from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import (
@@ -26,9 +37,223 @@ from src.pipeline.contracts.analysis_context import (
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
 
 
+def _aisle(*, inv: str = "inv-1", supplier_id: str | None = None) -> Aisle:
+    now = datetime.now(timezone.utc)
+    return Aisle(
+        id="aisle-1",
+        inventory_id=inv,
+        code="A01",
+        status=AisleStatus.CREATED,
+        created_at=now,
+        updated_at=now,
+        client_supplier_id=supplier_id,
+    )
+
+
+def test_e5_inventory_without_client_skips_supplier_reference_images(tmp_path: Path) -> None:
+    """E5: no inventory client — supplier rows exist but visual references must stay empty."""
+    now = datetime.now(timezone.utc)
+    supplier_repo = MemorySupplierReferenceImageRepository()
+    supplier_repo.create(
+        SupplierReferenceImage(
+            id="sr-1",
+            client_supplier_id="sup-1",
+            filename="ref.jpg",
+            storage_path="sub/ref.jpg",
+            mime_type="image/jpeg",
+            file_size=5,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    context_builder = AisleAnalysisContextBuilder(SupplierReferenceImageResolver(supplier_repo))
+    runner = V3ProcessAislePipelineRunner(
+        supplier_reference_image_repo=supplier_repo,
+        artifact_store=None,
+        context_builder=context_builder,
+    )
+    aisle = _aisle(inv="inv-1", supplier_id="sup-1")
+    ctx = runner.build_analysis_context(aisle, inventory_client_id=None)
+    assert ctx.visual_references == []
+    meta = ctx.metadata or {}
+    assert meta.get("supplier_reference_resolution_status") == (
+        SUPPLIER_REFERENCE_RESOLUTION_FALLBACK_INVENTORY_WITHOUT_CLIENT
+    )
+
+
+def test_c71_supplier_pipeline_resolves_supplier_reference_images(tmp_path: Path) -> None:
+    """v3 aisle processing resolves references exclusively via supplier_reference_images."""
+    now = datetime.now(timezone.utc)
+    supplier_repo = MemorySupplierReferenceImageRepository()
+    supplier_repo.create(
+        SupplierReferenceImage(
+            id="sr-1",
+            client_supplier_id="sup-1",
+            filename="ref.jpg",
+            storage_path="sub/ref.jpg",
+            mime_type="image/jpeg",
+            file_size=5,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+    context_builder = AisleAnalysisContextBuilder(SupplierReferenceImageResolver(supplier_repo))
+    runner = V3ProcessAislePipelineRunner(
+        supplier_reference_image_repo=supplier_repo,
+        artifact_store=None,
+        context_builder=context_builder,
+    )
+    aisle = _aisle(inv="inv-1", supplier_id="sup-1")
+
+    v3_base = tmp_path / "v3_uploads"
+    (v3_base / "sub").mkdir(parents=True)
+    (v3_base / "sub" / "ref.jpg").write_bytes(b"ref-bytes")
+    (v3_base / "sub" / "pic.jpg").write_bytes(b"pic-bytes")
+
+    asset = SourceAsset(
+        id="asset-1",
+        aisle_id="a1",
+        type=SourceAssetType.PHOTO,
+        original_filename="pic.jpg",
+        storage_path="sub/pic.jpg",
+        mime_type="image/jpeg",
+        uploaded_at=now,
+    )
+
+    analysis_ctx = runner.build_analysis_context(aisle, inventory_client_id="client-1")
+    assert len(analysis_ctx.visual_references) == 1
+
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+
+    job_input, video_path = runner.build_pipeline_input(
+        [asset],
+        v3_base,
+        job_dir,
+        "job-1",
+        analysis_context=analysis_ctx,
+        aisle=aisle,
+        run_id="run",
+        legacy_local_read_enabled=True,
+    )
+
+    assert video_path == ""
+    assert (job_input.metadata or {}).get("inventory_id") == "inv-1"
+    assert (job_input.metadata or {}).get("aisle_id") == "aisle-1"
+    meta_ctx = (job_input.metadata or {}).get("analysis_context")
+    assert isinstance(meta_ctx, dict)
+    refs = meta_ctx.get("visual_references")
+    assert isinstance(refs, list) and len(refs) == 1
+    assert refs[0].get("resolved_path")
+
+
+def test_c71_supplier_with_no_images_builds_empty_visual_references(tmp_path: Path) -> None:
+    """C7.1: supplier id present but zero reference rows — no legacy fallback."""
+    now = datetime.now(timezone.utc)
+    supplier_repo = MagicMock(spec=SupplierReferenceImageRepository)
+    supplier_repo.list_by_supplier.return_value = []
+
+    context_builder = AisleAnalysisContextBuilder(SupplierReferenceImageResolver(supplier_repo))
+    runner = V3ProcessAislePipelineRunner(
+        supplier_reference_image_repo=supplier_repo,
+        artifact_store=None,
+        context_builder=context_builder,
+    )
+    aisle = _aisle(inv="inv-1", supplier_id="sup-1")
+
+    v3_base = tmp_path / "v3_uploads"
+    (v3_base / "sub").mkdir(parents=True)
+    (v3_base / "sub" / "pic.jpg").write_bytes(b"pic")
+
+    asset = SourceAsset(
+        id="asset-1",
+        aisle_id="a1",
+        type=SourceAssetType.PHOTO,
+        original_filename="pic.jpg",
+        storage_path="sub/pic.jpg",
+        mime_type="image/jpeg",
+        uploaded_at=now,
+    )
+
+    analysis_ctx = runner.build_analysis_context(aisle, inventory_client_id="client-1")
+    assert analysis_ctx.visual_references == []
+
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+
+    job_input, _ = runner.build_pipeline_input(
+        [asset],
+        v3_base,
+        job_dir,
+        "job-1",
+        analysis_context=analysis_ctx,
+        aisle=aisle,
+        run_id="run",
+        legacy_local_read_enabled=True,
+    )
+
+    assert supplier_repo.list_by_supplier.call_count == 2
+    assert all(c.args == ("sup-1",) for c in supplier_repo.list_by_supplier.call_args_list)
+    meta_ctx = (job_input.metadata or {}).get("analysis_context")
+    assert isinstance(meta_ctx, dict)
+    assert meta_ctx.get("visual_references") == []
+
+
+def test_c71_no_supplier_skips_supplier_repo_lookup_and_legacy_fallback(tmp_path: Path) -> None:
+    """C7.1: null client_supplier_id — zero refs without supplier repo access."""
+    now = datetime.now(timezone.utc)
+    supplier_repo = MagicMock(spec=SupplierReferenceImageRepository)
+
+    context_builder = AisleAnalysisContextBuilder(SupplierReferenceImageResolver(supplier_repo))
+    runner = V3ProcessAislePipelineRunner(
+        supplier_reference_image_repo=supplier_repo,
+        artifact_store=None,
+        context_builder=context_builder,
+    )
+    aisle = _aisle(inv="inv-1", supplier_id=None)
+
+    v3_base = tmp_path / "v3_uploads"
+    (v3_base / "sub").mkdir(parents=True)
+    (v3_base / "sub" / "pic.jpg").write_bytes(b"pic")
+
+    asset = SourceAsset(
+        id="asset-1",
+        aisle_id="a1",
+        type=SourceAssetType.PHOTO,
+        original_filename="pic.jpg",
+        storage_path="sub/pic.jpg",
+        mime_type="image/jpeg",
+        uploaded_at=now,
+    )
+
+    analysis_ctx = runner.build_analysis_context(aisle, inventory_client_id="client-1")
+    assert analysis_ctx.visual_references == []
+    supplier_repo.list_by_supplier.assert_not_called()
+
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+
+    job_input, _ = runner.build_pipeline_input(
+        [asset],
+        v3_base,
+        job_dir,
+        "job-1",
+        analysis_context=analysis_ctx,
+        aisle=aisle,
+        run_id="run",
+        legacy_local_read_enabled=True,
+    )
+
+    supplier_repo.list_by_supplier.assert_not_called()
+    meta_ctx = (job_input.metadata or {}).get("analysis_context")
+    assert isinstance(meta_ctx, dict)
+    assert meta_ctx.get("visual_references") == []
+
+
 def test_build_pipeline_input_rejects_multi_video_or_mixed_video_sets() -> None:
     runner = V3ProcessAislePipelineRunner(
-        inventory_visual_reference_repo=MagicMock(),
+        supplier_reference_image_repo=MagicMock(),
         artifact_store=None,
         context_builder=MagicMock(spec=AisleAnalysisContextBuilder),
     )
@@ -58,7 +283,7 @@ def test_build_pipeline_input_rejects_multi_video_or_mixed_video_sets() -> None:
             Path("/tmp/job"),
             "job-1",
             analysis_context=ctx,
-            inventory_id="inv-1",
+            aisle=_aisle(),
             run_id="run",
             legacy_local_read_enabled=True,
         )
@@ -79,12 +304,12 @@ def test_build_pipeline_input_photos_writes_manifest_and_job_input(tmp_path: Pat
         uploaded_at=now,
     )
     ref_repo = MagicMock()
-    ref_repo.list_by_inventory.return_value = []
+    ref_repo.list_by_supplier.return_value = []
     cb = MagicMock(spec=AisleAnalysisContextBuilder)
     ac = AnalysisContext(primary_evidence=[], visual_references=[], instructions=[])
     cb.build.return_value = ac
     runner = V3ProcessAislePipelineRunner(
-        inventory_visual_reference_repo=ref_repo,
+        supplier_reference_image_repo=ref_repo,
         artifact_store=None,
         context_builder=cb,
     )
@@ -96,7 +321,7 @@ def test_build_pipeline_input_photos_writes_manifest_and_job_input(tmp_path: Pat
         job_dir,
         "job-1",
         analysis_context=ac,
-        inventory_id="inv-1",
+        aisle=_aisle(supplier_id=None),
         run_id="run",
         legacy_local_read_enabled=True,
     )
@@ -113,14 +338,15 @@ def test_build_pipeline_input_photos_writes_manifest_and_job_input(tmp_path: Pat
 
 def test_resolve_visual_reference_paths_sets_resolved_path_from_resolver(tmp_path: Path) -> None:
     now = datetime.now(timezone.utc)
-    ref_rec = InventoryVisualReference(
+    ref_rec = SupplierReferenceImage(
         id="ref-1",
-        inventory_id="inv-1",
+        client_supplier_id="sup-1",
         filename="r.jpg",
         storage_path="inventories/inv-1/visual_references/r.jpg",
         mime_type="image/jpeg",
         file_size=1,
         created_at=now,
+        updated_at=now,
     )
     ctx = AnalysisContext(
         primary_evidence=[],
@@ -151,7 +377,7 @@ def test_resolve_visual_reference_paths_sets_resolved_path_from_resolver(tmp_pat
 
 def test_run_hybrid_pipeline_delegates_to_process_video_with_executor_kwds() -> None:
     runner = V3ProcessAislePipelineRunner(
-        inventory_visual_reference_repo=MagicMock(),
+        supplier_reference_image_repo=MagicMock(),
         artifact_store=None,
         context_builder=MagicMock(),
     )

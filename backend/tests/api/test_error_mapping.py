@@ -13,13 +13,13 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_ASSIGNED_FOR_PREVIEW,
     HTTP_DETAIL_CAPTURE_SESSION_GROUP_NOT_MATERIALIZED_FOR_PREVIEW,
     HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
+    HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
 )
 from src.api.dependencies import (
     get_compare_aisle_runs_use_case,
     get_get_aisle_processing_status_use_case,
     get_get_inventory_use_case,
     get_get_position_detail_use_case,
-    get_list_inventory_visual_references_use_case,
     get_promote_aisle_operational_job_use_case,
     get_resolve_aisle_job_for_inventory_read_use_case,
     get_start_aisle_processing_use_case,
@@ -55,8 +55,8 @@ from src.api.errors.structured_api_http import (
     JOB_PROMOTION_NOT_ALLOWED,
     POSITION_NOT_FOUND,
     PRODUCT_NOT_FOUND,
+    SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
     UNSUPPORTED_ASSET_TYPE,
-    VISUAL_REFERENCE_NOT_FOUND,
     ZERO_BYTE_FILE,
     StructuredApiHttpError,
 )
@@ -81,7 +81,6 @@ from src.application.errors import (
     CaptureSessionPreviewNotAllowedError,
     EmptyUploadError,
     InventoryNotFoundError,
-    InventoryVisualReferenceNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
     JobPromotionNotAllowedError,
@@ -89,6 +88,7 @@ from src.application.errors import (
     NoSourceAssetsForAisleProcessingError,
     PositionNotFoundError,
     ProductNotFoundError,
+    SupplierReferenceImageNotFoundError,
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
@@ -203,9 +203,9 @@ def test_mapped_inventory_not_found() -> None:
             PRODUCT_NOT_FOUND,
         ),
         (
-            InventoryVisualReferenceNotFoundError(),
-            "Visual reference not found",
-            VISUAL_REFERENCE_NOT_FOUND,
+            SupplierReferenceImageNotFoundError(),
+            HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
+            SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
         ),
     ],
 )
@@ -380,10 +380,10 @@ def test_mapped_job_promotion_not_allowed_non_canonical_detail_is_generic() -> N
             "Product not found or does not belong to this position",
         ),
         (
-            InventoryVisualReferenceNotFoundError(),
+            SupplierReferenceImageNotFoundError(),
             404,
-            VISUAL_REFERENCE_NOT_FOUND,
-            "Visual reference not found",
+            SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
+            HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
         ),
         (JobNotFoundError("Job not found: z1"), 404, JOB_NOT_FOUND, "Job not found: z1"),
         (
@@ -646,27 +646,6 @@ def test_get_position_detail_product_not_found_returns_structured_json() -> None
         }
     finally:
         app.dependency_overrides.pop(get_get_position_detail_use_case, None)
-
-
-def test_get_visual_reference_file_unknown_id_returns_structured_json() -> None:
-    """Integration: ``VISUAL_REFERENCE_NOT_FOUND`` when id is absent from list (route + handler)."""
-
-    class _EmptyRefs:
-        def execute(self, inventory_id: str) -> list:
-            return []
-
-    app.dependency_overrides[get_list_inventory_visual_references_use_case] = lambda: _EmptyRefs()
-    try:
-        r = TestClient(app, raise_server_exceptions=False).get(
-            "/api/v3/inventories/inv-1/visual-references/missing-ref-id/file"
-        )
-        assert r.status_code == 404
-        assert r.json() == {
-            "code": VISUAL_REFERENCE_NOT_FOUND,
-            "detail": "Visual reference not found",
-        }
-    finally:
-        app.dependency_overrides.pop(get_list_inventory_visual_references_use_case, None)
 
 
 def test_start_aisle_processing_active_job_exists_returns_structured_json() -> None:

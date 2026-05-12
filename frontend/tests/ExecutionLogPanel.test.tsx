@@ -61,6 +61,7 @@ describe('ExecutionLogPanel', () => {
       />,
     );
 
+    expect(screen.getByText('Solicitud a Gemini')).toBeInTheDocument();
     expect(screen.getByText(/encabezado del prompt|prompt heading/i)).toBeInTheDocument();
     expect(screen.getByText('Exact prompt text sent to Gemini.')).toBeInTheDocument();
     expect(screen.getByText(/guía de referencias|reference guidance/i)).toBeInTheDocument();
@@ -118,7 +119,7 @@ describe('ExecutionLogPanel', () => {
       />,
     );
 
-    expect(screen.getAllByText(/solicitud a gemini #|gemini request n/i)).toHaveLength(2);
+    expect(screen.getAllByText(/solicitud a gemini/i)).toHaveLength(2);
     expect(screen.getByText('Retry prompt text')).toBeInTheDocument();
     expect(screen.getByText(/ref-two\.jpg/i)).toBeInTheDocument();
     expect(screen.getByText(/\(sin resolver\)|not resolved suffix/i)).toBeInTheDocument();
@@ -380,5 +381,35 @@ describe('ExecutionLogPanel', () => {
       />
     );
     expect(screen.getByText(/"note"/)).toBeInTheDocument();
+  });
+
+  it('titles analysis_request using pipeline_provider (Claude, not Gemini)', () => {
+    render(
+      <ExecutionLogPanel
+        events={[
+          {
+            ts: '2026-03-31T12:00:00Z',
+            stage: 'AnalysisStage',
+            level: 'info',
+            message: 'Analysis request prepared',
+            payload: {
+              event_type: 'analysis_request',
+              pipeline_provider: 'claude',
+              prompt_text_sha256: 'deadbeef',
+              prompt_text_len: 99,
+              attachment_summary: {
+                primary_evidence_count: 0,
+                visual_reference_count: 0,
+                total_count: 0,
+              },
+              primary_evidence_attachments: [],
+              visual_reference_attachments: [],
+            },
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText('Solicitud a Claude')).toBeInTheDocument();
+    expect(screen.queryByText('Solicitud a Gemini')).not.toBeInTheDocument();
   });
 });

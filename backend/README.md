@@ -38,6 +38,19 @@ Or use the root dev script to run backend + frontend together:
 ./dev.sh
 ```
 
+### Manual maintenance backfills
+
+Backfills are explicit one-shot commands and do not run automatically on API startup.
+
+```bash
+# A5: ensure legacy/default client + supplier and fill NULL links
+python -m src.backfill_legacy_client_supplier_defaults
+```
+
+This command is idempotent: it reuses existing legacy records when present, updates only
+`inventories.client_id IS NULL` and `aisles.client_supplier_id IS NULL`, prints before/after
+counts, and does not modify pipeline prompts/providers/models, assets, or frontend flows.
+
 ## Tests
 
 Create SQL Server test configuration (gitignored):
@@ -83,14 +96,14 @@ Optional tuning: `DINAMIC_INVENTORY_JOBS_DELETE_MAX_ITERATIONS` (default `1000`)
 
 ## Local/dev worker verification
 
-For the reference-images flow, local/dev closure depends on the worker using the current backend code and local artifact paths without fake S3 requirements.
+For the supplier reference-images flow, local/dev closure depends on the worker using the current backend code and local artifact paths without fake S3 requirements. Reference images are scoped to **client suppliers** (`supplier_reference_images`), not inventories.
 
 ### Expected local/dev behavior
 
 - `ARTIFACT_STORAGE_PROVIDER=local` works without an S3 bucket.
 - `python -m src.jobs.run_worker_dev` watches the backend directory and restarts the standard worker entrypoint on code changes.
 - The standard worker still logs the active storage mode through `src.jobs.run_worker.main()`.
-- A local run with reference images should resolve artifacts from the local filesystem and persist the same `visual_reference_context` / execution-log traceability used in other environments.
+- A local run with supplier reference images should resolve artifacts from the local filesystem and persist the same `visual_reference_context` / execution-log traceability used in other environments (aisles must have `client_supplier_id` when references should attach).
 
 ### Smoke verification checklist
 
@@ -101,9 +114,9 @@ Run from the repository root:
 uvicorn src.api.server:app --reload --port 8000
 python -m src.jobs.run_worker_dev
 
-# 2) Create an inventory and upload 1-3 reference images
-# 3) Create an aisle and upload aisle assets
-# 4) Start aisle processing
+# 2) Create client + supplier; upload supplier reference images (API or UI under Client detail)
+# 3) Create an inventory (optional client link); create an aisle assigned to that supplier (client_supplier_id)
+# 4) Upload aisle source assets and start aisle processing
 ```
 
 Verify all of the following:
@@ -113,7 +126,7 @@ Verify all of the following:
 - processing completes without requiring `artifact_s3_bucket`
 - job execution log contains the Gemini request payload with `visual_reference_attachments`
 - aisle status/list exposes `latest_job.reference_usage`
-- replacing or deleting references changes only future jobs, not historical `job.result_json`
+- replacing or deleting supplier reference images changes only future jobs, not historical `job.result_json`
 
 ### Regression tests that support this checklist
 

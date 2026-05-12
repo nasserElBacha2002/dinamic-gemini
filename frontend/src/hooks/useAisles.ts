@@ -13,6 +13,7 @@ import {
   getExecutionLog,
   getAisleExecutionLog,
   getAisleJobDetail,
+  getJobAuditability,
   getProcessingProviderOptions,
   listAisleJobs,
   listAisleAssets,
@@ -95,6 +96,21 @@ export function useAisleJobDetail(
   return useQuery({
     queryKey: queryKeys.inventories.jobDetail(inventoryId ?? '', aisleId ?? '', jobId ?? ''),
     queryFn: () => getAisleJobDetail(inventoryId!, aisleId!, jobId!),
+    enabled: Boolean(inventoryId && aisleId && jobId) && (options?.enabled !== false),
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Phase H — aggregated job audit metadata (read-only). */
+export function useJobAuditability(
+  inventoryId: string | undefined,
+  aisleId: string | undefined,
+  jobId: string | undefined,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: queryKeys.inventories.jobAuditability(inventoryId ?? '', aisleId ?? '', jobId ?? ''),
+    queryFn: () => getJobAuditability(inventoryId!, aisleId!, jobId!),
     enabled: Boolean(inventoryId && aisleId && jobId) && (options?.enabled !== false),
     refetchOnWindowFocus: false,
   });

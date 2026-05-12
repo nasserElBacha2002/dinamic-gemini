@@ -2,7 +2,8 @@ import { V3_INVENTORIES_BASE } from '../constants/v3ApiPaths';
 import { getStoredToken } from '../features/auth/storage';
 import i18n from '../i18n';
 import type { ApiErrorDetail, SourceAssetSummary, UploadAisleAssetsResponse } from './types';
-import { handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
+import { protectedFetch, throwApiErrorIfNotOk } from './http';
+import { apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -13,18 +14,16 @@ export async function uploadAisleAssets(
 ): Promise<UploadAisleAssetsResponse> {
   const form = new FormData();
   files.forEach((file) => form.append('files', file));
-  const response = await protectedFetch(
+  return apiRequestJson<UploadAisleAssetsResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/assets`,
     { method: 'POST', body: form }
   );
-  return handleResponse<UploadAisleAssetsResponse>(response);
 }
 
 export async function listAisleAssets(inventoryId: string, aisleId: string): Promise<SourceAssetSummary[]> {
-  const response = await protectedFetch(
+  return apiRequestJson<SourceAssetSummary[]>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/assets`
   );
-  return handleResponse<SourceAssetSummary[]>(response);
 }
 
 export async function deleteAisleSourceAsset(

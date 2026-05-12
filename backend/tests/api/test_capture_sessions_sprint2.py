@@ -34,6 +34,7 @@ from src.runtime.v3_deps import (
     get_capture_session_item_repo,
     get_capture_session_repo,
 )
+from tests.support.api_v3_test_helpers import create_test_inventory, create_test_supplier
 
 client = TestClient(app)
 
@@ -58,10 +59,15 @@ def memory_capture(tmp_path: Path):
 
 
 def _create_inv_aisle() -> tuple[str, str]:
-    r = client.post("/api/v3/inventories", json={"name": "Cap Inv"})
+    r = create_test_inventory(client, name="Cap Inv")
     assert r.status_code == 201, r.text
-    inv_id = r.json()["id"]
-    r2 = client.post(f"/api/v3/inventories/{inv_id}/aisles", json={"code": "C-01"})
+    inv = r.json()
+    inv_id = inv["id"]
+    sid = create_test_supplier(client, inv["client_id"])
+    r2 = client.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "C-01", "client_supplier_id": sid},
+    )
     assert r2.status_code == 201, r2.text
     return inv_id, r2.json()["id"]
 
@@ -390,6 +396,8 @@ def test_assign_group_twice_returns_409(memory_capture: None) -> None:
 
 def test_create_aisle_from_group_flow(memory_capture: None) -> None:
     inv_id, _aisle_id = _create_inv_aisle()
+    inv = client.get(f"/api/v3/inventories/{inv_id}").json()
+    supplier_for_new_aisle = create_test_supplier(client, inv["client_id"])
     sid = client.post(f"/api/v3/inventories/{inv_id}/capture-sessions").json()["id"]
     assert (
         client.post(
@@ -406,7 +414,7 @@ def test_create_aisle_from_group_flow(memory_capture: None) -> None:
     ][0]["group_id"]
     r = client.post(
         f"/api/v3/inventories/{inv_id}/capture-sessions/{sid}/groups/{gid}/create-aisle",
-        json={"code": "G4-NEW-AISLE"},
+        json={"code": "G4-NEW-AISLE", "client_supplier_id": supplier_for_new_aisle},
     )
     assert r.status_code == 200, r.text
     row = r.json()["groups"][0]

@@ -10,9 +10,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import uuid4
 
-from src.application.errors import DuplicateAisleCodeError, InventoryNotFoundError
+from src.application.errors import (
+    ClientSupplierClientMismatchError,
+    ClientSupplierNotFoundError,
+    ClientSupplierRequiredForAisleError,
+    DuplicateAisleCodeError,
+    InventoryClientRequiredForAisleError,
+    InventoryNotFoundError,
+)
 from src.application.ports.clock import Clock
-from src.application.ports.repositories import AisleRepository, InventoryRepository
+from src.application.ports.repositories import (
+    AisleRepository,
+    ClientSupplierRepository,
+    InventoryRepository,
+)
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.domain.aisle.entities import Aisle, AisleStatus
 
@@ -21,6 +32,7 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 class CreateAisleCommand:
     inventory_id: str
     code: str
+    client_supplier_id: str | None = None
 
 
 class CreateAisleUseCase:
@@ -28,11 +40,13 @@ class CreateAisleUseCase:
         self,
         inventory_repo: InventoryRepository,
         aisle_repo: AisleRepository,
+        client_supplier_repo: ClientSupplierRepository,
         clock: Clock,
         status_reconciler: InventoryStatusReconciler,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
+        self._client_supplier_repo = client_supplier_repo
         self._clock = clock
         self._status_reconciler = status_reconciler
 
@@ -48,6 +62,28 @@ class CreateAisleUseCase:
                 f"An aisle with code {code!r} already exists in this inventory"
             )
 
+        raw_supplier = command.client_supplier_id
+        client_supplier_id = raw_supplier.strip() if raw_supplier is not None else None
+
+        inv_client_id = inventory.client_id
+        if inv_client_id is None:
+            raise InventoryClientRequiredForAisleError(
+                "Inventory must be associated with a client before creating aisles"
+            )
+
+        if not client_supplier_id:
+            raise ClientSupplierRequiredForAisleError(
+                "Client supplier is required for new aisles when the inventory has a client"
+            )
+
+        supplier = self._client_supplier_repo.get_by_id(client_supplier_id)
+        if supplier is None:
+            raise ClientSupplierNotFoundError(f"Client supplier not found: {client_supplier_id}")
+        if supplier.client_id != inv_client_id:
+            raise ClientSupplierClientMismatchError(
+                "Client supplier does not belong to the inventory client"
+            )
+
         now = self._clock.now()
         aisle = Aisle(
             id=str(uuid4()),
@@ -56,6 +92,7 @@ class CreateAisleUseCase:
             status=AisleStatus.CREATED,
             created_at=now,
             updated_at=now,
+            client_supplier_id=client_supplier_id,
         )
         self._aisle_repo.save(aisle)
         self._status_reconciler.reconcile(command.inventory_id)

@@ -17,23 +17,30 @@ from typing import Any, Callable
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import (
     AisleRepository,
+    ClientSupplierRepository,
     EvidenceRepository,
     InventoryRepository,
-    InventoryVisualReferenceRepository,
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
     SourceAssetRepository,
+    SupplierPromptConfigRepository,
+    SupplierReferenceImageRepository,
 )
 from src.application.services.aisle_analysis_context_builder import (
     AisleAnalysisContextBuilder,
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.services.inventory_visual_reference_resolver import (
-    InventoryVisualReferenceResolver,
-)
 from src.application.services.job_engine_params import coerce_prompt_parity_mode
+from src.application.services.supplier_prompt_resolver import (
+    SupplierPromptResolution,
+    SupplierPromptResolutionErrorCode,
+    SupplierPromptResolver,
+)
+from src.application.services.supplier_reference_image_resolver import (
+    SupplierReferenceImageResolver,
+)
 from src.application.use_cases.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
@@ -68,6 +75,23 @@ logger = logging.getLogger(__name__)
 
 # Pipeline/output directory segment under {base}/{job_id}/; must match DEFAULT_V3_WORKER_RUN_SEGMENT.
 RUN_ID = DEFAULT_V3_WORKER_RUN_SEGMENT
+
+
+def _supplier_prompt_resolution_failure_message(resolution: SupplierPromptResolution) -> str:
+    """Human-readable job failure text for observability (worker logs + job row)."""
+    code = resolution.error_code or "UNKNOWN"
+    base = (
+        f"Supplier prompt resolution failed ({code}) "
+        f"inventory_id={resolution.inventory_id} aisle_id={resolution.aisle_id}"
+    )
+    if code == SupplierPromptResolutionErrorCode.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG:
+        return (
+            f"{base}: No active supplier_prompt_configs for client_supplier_id="
+            f"{resolution.client_supplier_id!r} provider={resolution.provider_name!r} "
+            f"model={resolution.model_name!r}. Configure and activate a supplier prompt "
+            f"(Client → Supplier → Instrucciones / prompts)."
+        )
+    return f"{base}."
 
 
 @dataclass(frozen=True)
@@ -167,10 +191,12 @@ class V3JobExecutor:
         evidence_repo: EvidenceRepository,
         clock: Clock,
         inventory_repo: InventoryRepository,
-        inventory_visual_reference_repo: InventoryVisualReferenceRepository,
+        supplier_reference_image_repo: SupplierReferenceImageRepository,
         artifact_store=None,
         raw_label_repo: RawLabelRepository | None = None,
         recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
+        client_supplier_repo: ClientSupplierRepository | None = None,
+        supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None,
     ) -> None:
         self._job_repo = job_repo
         self._aisle_repo = aisle_repo
@@ -191,16 +217,21 @@ class V3JobExecutor:
             inventory_status_reconciler=inventory_status_reconciler,
         )
         self._artifacts = V3ExecutionArtifactsService(artifact_store)
-        resolver = InventoryVisualReferenceResolver(
-            inventory_repo=inventory_repo,
-            reference_repo=inventory_visual_reference_repo,
-        )
-        context_builder = AisleAnalysisContextBuilder(resolver)
+        supplier_resolver = SupplierReferenceImageResolver(supplier_reference_image_repo)
+        context_builder = AisleAnalysisContextBuilder(supplier_resolver)
         self._pipeline_runner = V3ProcessAislePipelineRunner(
-            inventory_visual_reference_repo=inventory_visual_reference_repo,
+            supplier_reference_image_repo=supplier_reference_image_repo,
             artifact_store=artifact_store,
             context_builder=context_builder,
         )
+        self._supplier_prompt_resolver: SupplierPromptResolver | None = None
+        if client_supplier_repo is not None and supplier_prompt_config_repo is not None:
+            self._supplier_prompt_resolver = SupplierPromptResolver(
+                inventory_repo=inventory_repo,
+                aisle_repo=aisle_repo,
+                client_supplier_repo=client_supplier_repo,
+                supplier_prompt_config_repo=supplier_prompt_config_repo,
+            )
         self._persist_use_case = PersistAisleResultUseCase(
             position_repo=position_repo,
             product_record_repo=product_record_repo,
@@ -324,14 +355,19 @@ class V3JobExecutor:
         """Build analysis context + pipeline input. None => fail_job_and_aisle already applied."""
         analysis_context: AnalysisContext | None = None
         try:
-            analysis_context = self._pipeline_runner.build_analysis_context(req.aisle)
+            inv = self._inventory_repo.get_by_id(req.aisle.inventory_id)
+            inv_client = (inv.client_id or "").strip() if inv is not None else ""
+            analysis_context = self._pipeline_runner.build_analysis_context(
+                req.aisle,
+                inventory_client_id=inv_client or None,
+            )
             job_input, video_path = self._pipeline_runner.build_pipeline_input(
                 req.assets,
                 req.v3_base,
                 req.job_dir,
                 req.job_id,
                 analysis_context=analysis_context,
-                inventory_id=req.aisle.inventory_id,
+                aisle=req.aisle,
                 run_id=RUN_ID,
                 legacy_local_read_enabled=req.settings.artifact_storage_legacy_local_read_enabled,
             )
@@ -392,6 +428,33 @@ class V3JobExecutor:
         job_prompt = (p.job.prompt_key or "").strip() or None
         job_prompt_version = (p.job.prompt_version or "").strip() or None
         job_prompt_parity_mode = coerce_prompt_parity_mode(p.job.engine_params_json)
+        supplier_prompt_resolution = None
+        spr = self._supplier_prompt_resolver
+        if spr is not None:
+            supplier_prompt_resolution = spr.resolve(
+                inventory_id=p.aisle.inventory_id,
+                aisle_id=p.aisle_id,
+                provider_name=pipeline_provider_name,
+                model_name=job_model,
+                allow_missing_supplier_prompt_fallback=bool(
+                    getattr(p.settings, "v3_allow_missing_supplier_prompt_fallback", False)
+                ),
+            )
+            if supplier_prompt_resolution.resolution_status == "error":
+                err_code = supplier_prompt_resolution.error_code or "UNKNOWN"
+                logger.error(
+                    "v3 supplier prompt resolution error job_id=%s inventory_id=%s aisle_id=%s code=%s",
+                    p.job_id,
+                    p.aisle.inventory_id,
+                    p.aisle_id,
+                    err_code,
+                )
+                self._state.fail_job_and_aisle(
+                    p.job_id,
+                    p.aisle,
+                    _supplier_prompt_resolution_failure_message(supplier_prompt_resolution),
+                )
+                return None
         result = self._pipeline_runner.run_hybrid_pipeline(
             pipeline=pipeline,
             video_path=p.pipeline_video_path,
@@ -409,6 +472,7 @@ class V3JobExecutor:
             job_prompt_key=job_prompt,
             job_prompt_version=job_prompt_version,
             job_prompt_parity_mode=job_prompt_parity_mode,
+            supplier_prompt_resolution=supplier_prompt_resolution,
         )
         logger.info(
             "v3 executor finished: job_id=%s exit_code=%s inventory_id=%s aisle_id=%s",

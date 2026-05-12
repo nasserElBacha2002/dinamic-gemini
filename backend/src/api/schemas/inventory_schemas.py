@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CreateInventoryRequest(BaseModel):
@@ -14,6 +14,19 @@ class CreateInventoryRequest(BaseModel):
         "production",
         description="production = operational defaults and no benchmark UX; test = multi-run experiments.",
     )
+    client_id: str = Field(
+        ...,
+        min_length=1,
+        description="Required client association for new inventories (historical rows may still have null client_id).",
+    )
+
+    @field_validator("client_id")
+    @classmethod
+    def validate_client_id_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("client_id must not be empty")
+        return normalized
 
 
 class PrimaryExecutionConfigResponse(BaseModel):
@@ -32,6 +45,7 @@ class InventoryResponse(BaseModel):
     name: str
     status: str
     processing_mode: str = "production"
+    client_id: str | None = None
     primary_execution_config: Optional[PrimaryExecutionConfigResponse] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -48,6 +62,7 @@ class InventoryListItemResponse(BaseModel):
     id: str
     name: str
     status: str
+    client_id: str | None = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     aisles_count: int = Field(0, ge=0, description="Number of aisles in this inventory.")
@@ -92,29 +107,3 @@ class InventoryMetricsResponse(BaseModel):
     deletion_rate: float = Field(
         ..., description="Percentage deleted / total_reviewed (0 if total_reviewed=0)."
     )
-
-
-class InventoryVisualReferenceResponse(BaseModel):
-    """Single visual reference associated with an inventory.
-
-    Does not expose internal storage paths; use dedicated file/serving endpoints if needed.
-    """
-
-    id: str
-    inventory_id: str
-    filename: str
-    mime_type: str
-    file_size: int
-    created_at: datetime
-
-
-class InventoryVisualReferenceListResponse(BaseModel):
-    """Wrapper for listing inventory visual references."""
-
-    items: list[InventoryVisualReferenceResponse]
-
-
-class UploadInventoryVisualReferencesResponse(BaseModel):
-    """Response for POST /api/v3/inventories/{inventory_id}/visual-references."""
-
-    items: list[InventoryVisualReferenceResponse]

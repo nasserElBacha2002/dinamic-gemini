@@ -1,6 +1,11 @@
 """
 Provider-neutral hybrid global-analysis strategy implementing ``AnalysisProvider`` (Stage 2.3.B, Phase 4–6).
 
+**Phase E1 / E4:** ``LLMRequest.prompt`` carries the **ProtectedSystemContractBlock** (hybrid base +
+image enrichments + optional supplier-editable block from ``build_hybrid_analysis_prompt_with_traceability``
+when v3 passes ``RunContext.supplier_prompt_resolution``). ``context_instruction`` remains
+non-protected context (e.g. reference copy). OpenAI JSON suffix is still appended only in the adapter.
+
 Builds the shared ``LLMRequest`` (prompt, context images, primary frames) and delegates the vendor
 call to ``LlmGlobalAnalysisExecutor`` resolved by :mod:`src.pipeline.services.pipeline_provider_resolver`
 (Gemini, OpenAI, Claude, DeepSeek).
@@ -292,8 +297,11 @@ class HybridGlobalAnalysisStrategy:
             run_logger.info(fmt, *log_parts)
         exec_log = getattr(run_ctx, "execution_log", None)
         # Full prompt strings live on ``prompt_composition`` in request/job metadata (audit).
-        # Execution log uses a redacted summary plus hash/len unless debug enables full ``prompt_text``.
+        # Execution log uses hash + length by default; full ``prompt_text`` when debug or
+        # ``execution_log_include_full_prompt`` is enabled (explicit operator audit).
         debug_full_prompt = getattr(settings, "debug_log_full_analysis_prompt", None) is True
+        include_full_prompt = getattr(settings, "execution_log_include_full_prompt", False) is True
+        expose_full_prompt = debug_full_prompt or include_full_prompt
         if exec_log:
             primary_attachments = build_primary_evidence_attachments(frame_paths, frame_refs)
             log_payload: dict[str, Any] = {
@@ -312,11 +320,10 @@ class HybridGlobalAnalysisStrategy:
                     final_prompt_char_len=len(prompt_text),
                 ),
             }
-            if debug_full_prompt:
+            log_payload["prompt_text_sha256"] = sha256_utf8(prompt_text)
+            log_payload["prompt_text_len"] = len(prompt_text)
+            if expose_full_prompt:
                 log_payload["prompt_text"] = prompt_text
-            else:
-                log_payload["prompt_text_sha256"] = sha256_utf8(prompt_text)
-                log_payload["prompt_text_len"] = len(prompt_text)
             exec_log.info(
                 "AnalysisStage",
                 "Analysis request prepared",

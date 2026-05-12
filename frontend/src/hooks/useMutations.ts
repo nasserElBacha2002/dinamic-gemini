@@ -4,21 +4,32 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
+  activateSupplierPromptConfigVersion,
+  createSupplierPromptConfigVersion,
   createInventory,
   createAisle,
+  createClient,
+  createClientSupplier,
+  deleteSupplierReferenceImage,
   startAisleProcessing,
   cancelAisleJob,
   retryAisleJob,
   runAisleMerge,
   uploadAisleAssets,
   deleteAisleSourceAsset,
-  uploadInventoryVisualReferences,
-  deleteInventoryVisualReference,
-  replaceInventoryVisualReference,
+  uploadSupplierReferenceImages,
   submitReviewAction,
   promoteAisleOperationalJob,
 } from '../api/client';
-import type { CreateInventoryRequest, CreateAisleRequest, ReviewActionRequest } from '../api/types';
+import type {
+  CreateClientRequest,
+  CreateClientSupplierRequest,
+  CreateSupplierPromptConfigRequest,
+  CreateInventoryRequest,
+  CreateAisleRequest,
+  ReviewActionRequest,
+  UploadSupplierReferenceImagesRequest,
+} from '../api/types';
 import { queryKeys } from '../api/queryKeys';
 import {
   applySubmitReviewActionCacheEffects,
@@ -33,6 +44,132 @@ export function useCreateInventory() {
     mutationFn: (body: CreateInventoryRequest) => createInventory(body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.list() });
+    },
+  });
+}
+
+export function useCreateClient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateClientRequest) => createClient(body),
+    onSuccess: (createdClient) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.clients.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.clients.detail(createdClient.id) });
+    },
+  });
+}
+
+export function useCreateClientSupplier(clientId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateClientSupplierRequest) => createClientSupplier(clientId, body),
+    onSuccess: (createdSupplier) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.clients.suppliers.all(clientId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.detail(clientId, createdSupplier.id),
+      });
+    },
+  });
+}
+
+export function useUploadSupplierReferenceImages(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: UploadSupplierReferenceImagesRequest) =>
+      uploadSupplierReferenceImages(clientId, supplierId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.referenceImages(clientId, supplierId),
+      });
+    },
+  });
+}
+
+export function useDeleteSupplierReferenceImage(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (imageId: string) => deleteSupplierReferenceImage(clientId, supplierId, imageId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.referenceImages(clientId, supplierId),
+      });
+    },
+  });
+}
+
+export function useCreateSupplierPromptConfigVersion(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateSupplierPromptConfigRequest) =>
+      createSupplierPromptConfigVersion(clientId, supplierId, body),
+    onSuccess: (created) => {
+      const normalizedProviderName = (created.provider_name ?? '').trim() || null;
+      const normalizedModelName = (created.model_name ?? '').trim() || null;
+      const scope =
+        !normalizedProviderName
+          ? 'all_providers_models'
+          : normalizedModelName
+            ? 'provider_model'
+            : 'provider';
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.promptConfigs.listByScope(
+          clientId,
+          supplierId,
+          scope,
+          normalizedProviderName,
+          normalizedModelName
+        ),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.promptConfigs.activeByScope(
+          clientId,
+          supplierId,
+          scope,
+          normalizedProviderName,
+          normalizedModelName
+        ),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.promptConfigs.all(clientId, supplierId),
+      });
+    },
+  });
+}
+
+export function useActivateSupplierPromptConfigVersion(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (configId: string) => activateSupplierPromptConfigVersion(clientId, supplierId, configId),
+    onSuccess: (activated) => {
+      const normalizedProviderName = (activated.provider_name ?? '').trim() || null;
+      const normalizedModelName = (activated.model_name ?? '').trim() || null;
+      const scope =
+        !normalizedProviderName
+          ? 'all_providers_models'
+          : normalizedModelName
+            ? 'provider_model'
+            : 'provider';
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.promptConfigs.listByScope(
+          clientId,
+          supplierId,
+          scope,
+          normalizedProviderName,
+          normalizedModelName
+        ),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.promptConfigs.activeByScope(
+          clientId,
+          supplierId,
+          scope,
+          normalizedProviderName,
+          normalizedModelName
+        ),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.promptConfigs.all(clientId, supplierId),
+      });
     },
   });
 }
@@ -187,40 +324,6 @@ export function useDeleteAisleSourceAsset(inventoryId: string, aisleId: string) 
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.aisleSourceAssets(inventoryId, aisleId),
       });
-    },
-  });
-}
-
-export function useUploadInventoryVisualReferences(inventoryId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (files: File[]) => uploadInventoryVisualReferences(inventoryId, files),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.visualReferences(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
-    },
-  });
-}
-
-export function useDeleteInventoryVisualReference(inventoryId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (referenceId: string) => deleteInventoryVisualReference(inventoryId, referenceId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.visualReferences(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
-    },
-  });
-}
-
-export function useReplaceInventoryVisualReference(inventoryId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ referenceId, file }: { referenceId: string; file: File }) =>
-      replaceInventoryVisualReference(inventoryId, referenceId, file),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.visualReferences(inventoryId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
     },
   });
 }

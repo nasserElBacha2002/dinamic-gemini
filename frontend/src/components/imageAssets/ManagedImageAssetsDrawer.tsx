@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
@@ -44,6 +44,8 @@ export interface ManagedImageAssetsDrawerCopy {
 
 export interface ManagedImageAssetsDrawerProps {
   open: boolean;
+  /** When true, render as an in-page panel instead of a right Drawer. */
+  embedded?: boolean;
   onClose: () => void;
   copy: ManagedImageAssetsDrawerCopy;
   items: ManagedImageAssetItem[];
@@ -58,6 +60,10 @@ export interface ManagedImageAssetsDrawerProps {
   uploadError?: string | null;
   /** e.g. image/* only or include video */
   uploadAccept?: string;
+  /** When false, file input does not allow multi-select (default true). */
+  uploadMultiple?: boolean;
+  /** Rendered inside the management panel before the upload button (e.g. optional metadata fields). */
+  uploadExtras?: ReactNode;
   showReplace?: boolean;
   onReplace?: (assetId: string, file: File) => Promise<unknown>;
   isReplacing?: boolean;
@@ -73,6 +79,7 @@ export interface ManagedImageAssetsDrawerProps {
 
 export default function ManagedImageAssetsDrawer({
   open,
+  embedded = false,
   onClose,
   copy,
   items,
@@ -86,6 +93,8 @@ export default function ManagedImageAssetsDrawer({
   isUploading = false,
   uploadError,
   uploadAccept = 'image/jpeg,image/jpg,image/png,image/webp',
+  uploadMultiple = true,
+  uploadExtras,
   showReplace = false,
   onReplace,
   isReplacing = false,
@@ -98,6 +107,7 @@ export default function ManagedImageAssetsDrawer({
   formatDeleteConfirm,
 }: ManagedImageAssetsDrawerProps) {
   const { t } = useTranslation();
+  const effectiveOpen = embedded || open;
   void previewErrorMessageKey;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
@@ -137,14 +147,14 @@ export default function ManagedImageAssetsDrawer({
   };
 
   useEffect(() => {
-    if (!open) {
+    if (!effectiveOpen) {
       previewRequestIdRef.current += 1;
       if (previewRevokeRef.current) {
         previewRevokeRef.current();
         previewRevokeRef.current = null;
       }
     }
-  }, [open]);
+  }, [effectiveOpen]);
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -212,19 +222,19 @@ export default function ManagedImageAssetsDrawer({
     setPreviewLoading(true);
     try {
       const result = await onFetchPreview(item);
-      if (!mountedRef.current || previewRequestIdRef.current !== requestId || !open) {
+      if (!mountedRef.current || previewRequestIdRef.current !== requestId || !effectiveOpen) {
         result.revoke?.();
         return;
       }
       previewRevokeRef.current = result.revoke ?? null;
       setPreviewSrc(result.imageSrc);
     } catch (error) {
-      if (!mountedRef.current || previewRequestIdRef.current !== requestId || !open) {
+      if (!mountedRef.current || previewRequestIdRef.current !== requestId || !effectiveOpen) {
         return;
       }
       setPreviewError(getVisibleErrorMessage(error, 'results'));
     } finally {
-      if (mountedRef.current && previewRequestIdRef.current === requestId && open) {
+      if (mountedRef.current && previewRequestIdRef.current === requestId && effectiveOpen) {
         setPreviewLoading(false);
       }
     }
@@ -232,52 +242,63 @@ export default function ManagedImageAssetsDrawer({
 
   const busy = isUploading || isDeleting || isReplacing;
 
-  return (
-    <Drawer
-      anchor="right"
-      open={open}
-      onClose={onClose}
-      PaperProps={{
-        sx: {
-          width: { xs: '100%', sm: 'min(720px, 96vw)', lg: 'min(840px, 88vw)' },
-          maxWidth: '100vw',
-          display: 'flex',
-          flexDirection: 'column',
-          p: 0,
-        },
+  const headerSection = embedded ? (
+    <Box
+      sx={{
+        py: 1.5,
+        px: 2.5,
+        zIndex: 1,
+        flexShrink: 0,
+        borderBottom: 1,
+        borderColor: 'divider',
+        bgcolor: 'background.paper',
       }}
     >
-      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, bgcolor: 'background.paper' }}>
-        <DrawerHeader
-          sx={{ py: 1.5, zIndex: 1 }}
-          closeLabel={copy.closeAria}
-          onClose={onClose}
-          overline={
-            <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
-              {copy.contextOverline}
-            </Typography>
-          }
-          title={
-            <Typography component="h2" variant="h6" sx={{ fontWeight: 600, lineHeight: 1.2, mt: 0.25 }}>
-              {copy.title}
-            </Typography>
-          }
-          subtitle={
-            copy.subtitle ? (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                {copy.subtitle}
-              </Typography>
-            ) : null
-          }
-        />
+      <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
+        {copy.contextOverline}
+      </Typography>
+      <Typography component="h2" variant="h6" sx={{ fontWeight: 600, lineHeight: 1.2, mt: 0.25 }}>
+        {copy.title}
+      </Typography>
+      {copy.subtitle ? (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+          {copy.subtitle}
+        </Typography>
+      ) : null}
+    </Box>
+  ) : (
+    <DrawerHeader
+      sx={{ py: 1.5, zIndex: 1 }}
+      closeLabel={copy.closeAria}
+      onClose={onClose}
+      overline={
+        <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
+          {copy.contextOverline}
+        </Typography>
+      }
+      title={
+        <Typography component="h2" variant="h6" sx={{ fontWeight: 600, lineHeight: 1.2, mt: 0.25 }}>
+          {copy.title}
+        </Typography>
+      }
+      subtitle={
+        copy.subtitle ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+            {copy.subtitle}
+          </Typography>
+        ) : null
+      }
+    />
+  );
 
-        <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, px: 2.5, py: 2 }}>
+  const scrollSection = (
+    <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, px: 2.5, py: 2 }}>
           {showUpload ? (
             <input
               ref={fileInputRef}
               type="file"
               accept={uploadAccept}
-              multiple
+              multiple={uploadMultiple}
               style={{ display: 'none' }}
               onChange={handleFileChange}
             />
@@ -311,6 +332,7 @@ export default function ManagedImageAssetsDrawer({
                 <Typography variant="body2" color="text.secondary">
                   {copy.managementBody}
                 </Typography>
+                {uploadExtras ?? null}
                 {showUpload && onUpload ? (
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Button variant="contained" size="small" onClick={handleUploadClick} disabled={busy}>
@@ -368,11 +390,53 @@ export default function ManagedImageAssetsDrawer({
               )}
             </Box>
           ) : null}
-        </Box>
-      </Box>
+    </Box>
+  );
+
+  const shell = (
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: embedded ? 'auto' : '100%',
+        minHeight: embedded ? 320 : 0,
+        maxHeight: embedded ? 'min(70vh, 720px)' : undefined,
+        bgcolor: 'background.paper',
+        ...(embedded
+          ? { border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }
+          : {}),
+      }}
+    >
+      {headerSection}
+      {scrollSection}
+    </Box>
+  );
+
+  return (
+    <>
+      {embedded ? (
+        shell
+      ) : (
+        <Drawer
+          anchor="right"
+          open={open}
+          onClose={onClose}
+          PaperProps={{
+            sx: {
+              width: { xs: '100%', sm: 'min(720px, 96vw)', lg: 'min(840px, 88vw)' },
+              maxWidth: '100vw',
+              display: 'flex',
+              flexDirection: 'column',
+              p: 0,
+            },
+          }}
+        >
+          {shell}
+        </Drawer>
+      )}
 
       <ImagePreviewDialog
-        open={open && Boolean(previewTarget)}
+        open={effectiveOpen && Boolean(previewTarget)}
         onClose={clearPreview}
         title={previewTarget?.filename ?? copy.imagePreviewTitle}
         src={previewSrc}
@@ -381,7 +445,7 @@ export default function ManagedImageAssetsDrawer({
         error={previewError}
       />
 
-      {open ? (
+      {effectiveOpen ? (
         <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
           <DialogTitle>{copy.deleteTitle}</DialogTitle>
           <DialogContent>
@@ -399,6 +463,6 @@ export default function ManagedImageAssetsDrawer({
           </DialogActions>
         </Dialog>
       ) : null}
-    </Drawer>
+    </>
   );
 }

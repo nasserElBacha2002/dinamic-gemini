@@ -132,7 +132,7 @@ templates + tests per type: ``PositionResultContextMismatchError``, ``PositionDe
 ``EmptyUploadError``, ``ZeroByteFileError``, ``UnknownProcessingProviderError``,
 ``InvalidProcessingModelError``, ``InvalidProcessingPromptKeyError``,
 ``ProcessingProviderNotConfiguredError``, ``MergeJobScopeAmbiguousError``,
-``UnsupportedAssetTypeError``, ``MaxInventoryVisualReferencesExceededError``,
+``UnsupportedAssetTypeError``,
 ``StoredArtifactAccessError``. Broad ``ValueError`` stays route-local.
 
 **When adding a new route:** prefer ``reraise_if_mapped`` for domain exceptions already in this
@@ -187,14 +187,26 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND,
     HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
     HTTP_DETAIL_CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
+    HTTP_DETAIL_CLIENT_NOT_FOUND,
+    HTTP_DETAIL_CLIENT_SUPPLIER_CLIENT_MISMATCH,
+    HTTP_DETAIL_CLIENT_SUPPLIER_NOT_FOUND,
+    HTTP_DETAIL_CLIENT_SUPPLIER_REQUIRED_FOR_AISLE,
     HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
+    HTTP_DETAIL_INVENTORY_CLIENT_REQUIRED_FOR_AISLE,
+    HTTP_DETAIL_INVENTORY_CLIENT_REQUIRED_FOR_SUPPLIER,
     HTTP_DETAIL_INVENTORY_NOT_FOUND,
     HTTP_DETAIL_JOB_NOT_FOUND,
     HTTP_DETAIL_OPEN_CAPTURE_SESSION_EXISTS,
     HTTP_DETAIL_POSITION_NOT_FOUND_IN_AISLE,
     HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION,
+    HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED,
+    HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_EMPTY_INSTRUCTIONS,
+    HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_MODEL,
+    HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_PROVIDER,
+    HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_SCOPE,
+    HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_NOT_FOUND,
+    HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
     HTTP_DETAIL_UNEXPECTED_ERROR,
-    HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND,
 )
 from src.api.errors.structured_api_http import (
     ACTIVE_JOB_EXISTS,
@@ -228,8 +240,14 @@ from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
     CAPTURE_SESSION_STATUS_FILTER_INVALID,
     CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
+    CLIENT_NOT_FOUND,
+    CLIENT_SUPPLIER_CLIENT_MISMATCH,
+    CLIENT_SUPPLIER_NOT_FOUND,
+    CLIENT_SUPPLIER_REQUIRED_FOR_AISLE,
     EMPTY_UPLOAD,
     INTERNAL_SERVER_ERROR,
+    INVENTORY_CLIENT_REQUIRED_FOR_AISLE,
+    INVENTORY_CLIENT_REQUIRED_FOR_SUPPLIER,
     INVENTORY_NOT_FOUND,
     JOB_NOT_FOUND,
     JOB_NOT_IN_AISLE_SCOPE,
@@ -237,8 +255,14 @@ from src.api.errors.structured_api_http import (
     OPEN_CAPTURE_SESSION_EXISTS,
     POSITION_NOT_FOUND,
     PRODUCT_NOT_FOUND,
+    SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED,
+    SUPPLIER_PROMPT_CONFIG_EMPTY_INSTRUCTIONS,
+    SUPPLIER_PROMPT_CONFIG_INVALID_MODEL,
+    SUPPLIER_PROMPT_CONFIG_INVALID_PROVIDER,
+    SUPPLIER_PROMPT_CONFIG_INVALID_SCOPE,
+    SUPPLIER_PROMPT_CONFIG_NOT_FOUND,
+    SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
     UNSUPPORTED_ASSET_TYPE,
-    VISUAL_REFERENCE_NOT_FOUND,
     ZERO_BYTE_FILE,
     StructuredApiHttpError,
 )
@@ -274,16 +298,20 @@ from src.application.errors import (
     CaptureSessionStagingFileTooLargeError,
     CaptureSessionStatusFilterInvalidError,
     CaptureSessionUploadBatchTooLargeError,
+    ClientNotFoundError,
+    ClientSupplierClientMismatchError,
+    ClientSupplierNotFoundError,
+    ClientSupplierRequiredForAisleError,
     DuplicateAisleCodeError,
     EmptyUploadError,
     InvalidProcessingModelError,
     InvalidProcessingPromptKeyError,
+    InventoryClientRequiredForAisleError,
+    InventoryClientRequiredForSupplierError,
     InventoryNotFoundError,
-    InventoryVisualReferenceNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
     JobPromotionNotAllowedError,
-    MaxInventoryVisualReferencesExceededError,
     MergeJobScopeAmbiguousError,
     NoSourceAssetsForAisleProcessingError,
     OpenCaptureSessionExistsError,
@@ -294,6 +322,13 @@ from src.application.errors import (
     ProductNotFoundError,
     ReviewMutationNotAllowedError,
     SourceAssetNotFoundForAisleError,
+    SupplierPromptConfigActivationFailedError,
+    SupplierPromptConfigEmptyInstructionsError,
+    SupplierPromptConfigInvalidModelError,
+    SupplierPromptConfigInvalidProviderError,
+    SupplierPromptConfigInvalidScopeError,
+    SupplierPromptConfigNotFoundError,
+    SupplierReferenceImageNotFoundError,
     UnknownProcessingProviderError,
     UnsupportedAssetTypeError,
     ZeroByteFileError,
@@ -415,6 +450,34 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
     InventoryNotFoundError: _structured_fixed(
         404, error_code=INVENTORY_NOT_FOUND, detail=HTTP_DETAIL_INVENTORY_NOT_FOUND
     ),
+    ClientNotFoundError: _structured_fixed(
+        404, error_code=CLIENT_NOT_FOUND, detail=HTTP_DETAIL_CLIENT_NOT_FOUND
+    ),
+    ClientSupplierNotFoundError: _structured_fixed(
+        404,
+        error_code=CLIENT_SUPPLIER_NOT_FOUND,
+        detail=HTTP_DETAIL_CLIENT_SUPPLIER_NOT_FOUND,
+    ),
+    InventoryClientRequiredForSupplierError: _structured_fixed(
+        409,
+        error_code=INVENTORY_CLIENT_REQUIRED_FOR_SUPPLIER,
+        detail=HTTP_DETAIL_INVENTORY_CLIENT_REQUIRED_FOR_SUPPLIER,
+    ),
+    ClientSupplierClientMismatchError: _structured_fixed(
+        409,
+        error_code=CLIENT_SUPPLIER_CLIENT_MISMATCH,
+        detail=HTTP_DETAIL_CLIENT_SUPPLIER_CLIENT_MISMATCH,
+    ),
+    ClientSupplierRequiredForAisleError: _structured_fixed(
+        422,
+        error_code=CLIENT_SUPPLIER_REQUIRED_FOR_AISLE,
+        detail=HTTP_DETAIL_CLIENT_SUPPLIER_REQUIRED_FOR_AISLE,
+    ),
+    InventoryClientRequiredForAisleError: _structured_fixed(
+        422,
+        error_code=INVENTORY_CLIENT_REQUIRED_FOR_AISLE,
+        detail=HTTP_DETAIL_INVENTORY_CLIENT_REQUIRED_FOR_AISLE,
+    ),
     AisleNotFoundError: _structured_fixed(
         404, error_code=AISLE_NOT_FOUND, detail=HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY
     ),
@@ -424,8 +487,15 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
     ProductNotFoundError: _structured_fixed(
         404, error_code=PRODUCT_NOT_FOUND, detail=HTTP_DETAIL_PRODUCT_NOT_FOUND_ON_POSITION
     ),
-    InventoryVisualReferenceNotFoundError: _structured_fixed(
-        404, error_code=VISUAL_REFERENCE_NOT_FOUND, detail=HTTP_DETAIL_VISUAL_REFERENCE_NOT_FOUND
+    SupplierReferenceImageNotFoundError: _structured_fixed(
+        404,
+        error_code=SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
+        detail=HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
+    ),
+    SupplierPromptConfigNotFoundError: _structured_fixed(
+        404,
+        error_code=SUPPLIER_PROMPT_CONFIG_NOT_FOUND,
+        detail=HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_NOT_FOUND,
     ),
     SourceAssetNotFoundForAisleError: _structured_fixed(
         404, error_code=ASSET_NOT_FOUND, detail=HTTP_DETAIL_ASSET_NOT_FOUND
@@ -615,12 +685,36 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         error_code=CAPTURE_SESSION_STATUS_FILTER_INVALID,
         detail=HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
     ),
+    SupplierPromptConfigInvalidProviderError: _structured_fixed(
+        400,
+        error_code=SUPPLIER_PROMPT_CONFIG_INVALID_PROVIDER,
+        detail=HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_PROVIDER,
+    ),
+    SupplierPromptConfigInvalidModelError: _structured_fixed(
+        400,
+        error_code=SUPPLIER_PROMPT_CONFIG_INVALID_MODEL,
+        detail=HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_MODEL,
+    ),
+    SupplierPromptConfigEmptyInstructionsError: _structured_fixed(
+        400,
+        error_code=SUPPLIER_PROMPT_CONFIG_EMPTY_INSTRUCTIONS,
+        detail=HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_EMPTY_INSTRUCTIONS,
+    ),
+    SupplierPromptConfigInvalidScopeError: _structured_fixed(
+        400,
+        error_code=SUPPLIER_PROMPT_CONFIG_INVALID_SCOPE,
+        detail=HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_SCOPE,
+    ),
+    SupplierPromptConfigActivationFailedError: _structured_fixed(
+        409,
+        error_code=SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED,
+        detail=HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED,
+    ),
     UnsupportedAssetTypeError: _structured_detail(
         400,
         error_code=UNSUPPORTED_ASSET_TYPE,
         detail=lambda e: str(e),
     ),
-    MaxInventoryVisualReferencesExceededError: _plain_http(400),
 }
 
 

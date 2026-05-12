@@ -1,11 +1,13 @@
 import { matchPath } from 'react-router-dom';
 import {
   ROUTE_ADMIN_AI_CONFIG,
+  ROUTE_CLIENTS,
   ROUTE_HOME,
   ROUTE_INGESTION_SESSIONS,
   ROUTE_INVENTORIES_ROOT,
   ROUTE_MATCH,
   ROUTE_METRICS,
+  ROUTE_OBSERVABILIDAD,
   ROUTE_REVIEW_QUEUE,
 } from '../constants/appRoutes';
 
@@ -39,6 +41,24 @@ export function topBarCopy(pathname: string): { titleKey: string; subtitleKey?: 
   }
   if (pathname === ROUTE_METRICS) {
     return { titleKey: 'routes.metrics.title', subtitleKey: 'routes.metrics.subtitle' };
+  }
+  if (pathname === ROUTE_OBSERVABILIDAD) {
+    return {
+      titleKey: 'routes.observability_metrics.title',
+      subtitleKey: 'routes.observability_metrics.subtitle',
+    };
+  }
+  if (pathname === ROUTE_CLIENTS) {
+    return { titleKey: 'routes.clients.title', subtitleKey: 'routes.clients.subtitle' };
+  }
+  if (matchPath(ROUTE_MATCH.clientSupplierDetail, pathname)) {
+    return {
+      titleKey: 'routes.client_supplier_detail.title',
+      subtitleKey: 'routes.client_supplier_detail.subtitle',
+    };
+  }
+  if (matchPath(ROUTE_MATCH.clientDetail, pathname)) {
+    return { titleKey: 'routes.client_detail.title', subtitleKey: 'routes.client_detail.subtitle' };
   }
   if (pathname === ROUTE_INGESTION_SESSIONS || pathname.startsWith(`${ROUTE_INGESTION_SESSIONS}/`)) {
     return { titleKey: 'routes.ingestion_sessions.title', subtitleKey: 'routes.ingestion_sessions.subtitle' };

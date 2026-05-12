@@ -1,14 +1,15 @@
 import { V3_INVENTORIES_BASE } from '../constants/v3ApiPaths';
+import { buildQueryString } from './queryString';
 import type {
   AisleExecutionLogResponse,
   AisleJobsListResponse,
-  ApiErrorDetail,
   ExecutionLogResponse,
   JobSummary,
   PositionListResponse,
   PromoteOperationalJobResponse,
+  RunAuditabilityView,
 } from './types';
-import { filenameFromContentDisposition, handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
+import { apiDownloadBlob, apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -30,20 +31,36 @@ export async function getExecutionLog(
   aisleId: string,
   jobId: string
 ): Promise<ExecutionLogResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<ExecutionLogResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/execution-log`
   );
-  return handleResponse<ExecutionLogResponse>(response);
+}
+
+/** Path suffix (after API base) for GET job auditability (Phase H) — exposed for tests. */
+export function getJobAuditabilityPath(inventoryId: string, aisleId: string, jobId: string): string {
+  const inv = encodeURIComponent(inventoryId);
+  const aisle = encodeURIComponent(aisleId);
+  const job = encodeURIComponent(jobId);
+  return `${V3_INVENTORIES_BASE}/${inv}/aisles/${aisle}/jobs/${job}/auditability`;
+}
+
+export async function getJobAuditability(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string
+): Promise<RunAuditabilityView> {
+  return apiRequestJson<RunAuditabilityView>(
+    `${API_BASE}${getJobAuditabilityPath(inventoryId, aisleId, jobId)}`
+  );
 }
 
 export async function getAisleExecutionLog(
   inventoryId: string,
   aisleId: string
 ): Promise<AisleExecutionLogResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<AisleExecutionLogResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/execution-log`
   );
-  return handleResponse<AisleExecutionLogResponse>(response);
 }
 
 export async function downloadExecutionLogTxt(
@@ -52,28 +69,9 @@ export async function downloadExecutionLogTxt(
   jobId: string
 ): Promise<void> {
   const path = getExecutionLogTxtUrl(inventoryId, aisleId, jobId);
-  const response = await protectedFetch(path);
-  const fallbackName = `inventory_${inventoryId}_aisle_${aisleId}_job_${jobId}_execution_log.txt`;
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  return apiDownloadBlob(path, {
+    fallbackFilename: `inventory_${inventoryId}_aisle_${aisleId}_job_${jobId}_execution_log.txt`,
+  });
 }
 
 export async function downloadAisleExecutionLogTxt(
@@ -81,28 +79,9 @@ export async function downloadAisleExecutionLogTxt(
   aisleId: string
 ): Promise<void> {
   const path = getAisleExecutionLogTxtUrl(inventoryId, aisleId);
-  const response = await protectedFetch(path);
-  const fallbackName = `inventory_${inventoryId}_aisle_${aisleId}_execution_log.txt`;
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
-  }
-  const blob = await response.blob();
-  const filename = filenameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  return apiDownloadBlob(path, {
+    fallbackFilename: `inventory_${inventoryId}_aisle_${aisleId}_execution_log.txt`,
+  });
 }
 
 export async function getAisleJobDetail(
@@ -110,10 +89,9 @@ export async function getAisleJobDetail(
   aisleId: string,
   jobId: string
 ): Promise<JobSummary> {
-  const response = await protectedFetch(
+  return apiRequestJson<JobSummary>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}`
   );
-  return handleResponse<JobSummary>(response);
 }
 
 export async function cancelAisleJob(
@@ -121,11 +99,10 @@ export async function cancelAisleJob(
   aisleId: string,
   jobId: string
 ): Promise<JobSummary> {
-  const response = await protectedFetch(
+  return apiRequestJson<JobSummary>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/cancel`,
     { method: 'POST' }
   );
-  return handleResponse<JobSummary>(response);
 }
 
 export async function retryAisleJob(
@@ -133,11 +110,10 @@ export async function retryAisleJob(
   aisleId: string,
   jobId: string
 ): Promise<JobSummary> {
-  const response = await protectedFetch(
+  return apiRequestJson<JobSummary>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs/${encodeURIComponent(jobId)}/retry`,
     { method: 'POST' }
   );
-  return handleResponse<JobSummary>(response);
 }
 
 export interface AislePositionsListQuery {
@@ -153,41 +129,23 @@ export interface AislePositionsListQuery {
   job_id?: string | null;
 }
 
-function buildAislePositionsQueryString(q: AislePositionsListQuery | undefined): string {
-  if (!q) return '';
-  const params = new URLSearchParams();
-  if (q.status != null && String(q.status).trim() !== '') {
-    params.set('status', String(q.status).trim());
-  }
-  if (q.needs_review != null) {
-    params.set('needs_review', String(q.needs_review));
-  }
-  if (q.min_confidence != null && !Number.isNaN(q.min_confidence)) {
-    params.set('min_confidence', String(q.min_confidence));
-  }
-  if (q.sku_filter != null && String(q.sku_filter).trim() !== '') {
-    params.set('sku_filter', String(q.sku_filter).trim());
-  }
-  if (q.page != null && q.page >= 1) {
-    params.set('page', String(q.page));
-  }
-  if (q.page_size != null && q.page_size >= 1) {
-    params.set('page_size', String(q.page_size));
-  }
-  if (q.sort_by != null && String(q.sort_by).trim() !== '') {
-    params.set('sort_by', String(q.sort_by).trim());
-  }
-  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') {
-    params.set('sort_dir', String(q.sort_dir).trim());
-  }
-  if (q.job_id != null && String(q.job_id).trim() !== '') {
-    params.set('job_id', String(q.job_id).trim());
-  }
-  if (q.consolidate_by_sku === false) {
-    params.set('consolidate_by_sku', 'false');
-  }
-  const s = params.toString();
-  return s ? `?${s}` : '';
+/** Wire aisle positions list query — omission and boolean rules stay aligned with `canonicalizeAislePositionsListQuery`. */
+export function buildAislePositionsQueryString(q?: AislePositionsListQuery): string {
+  const minConfidenceWire =
+    q?.min_confidence != null && !Number.isNaN(q.min_confidence) ? String(q.min_confidence) : undefined;
+
+  return buildQueryString([
+    ['status', q?.status],
+    ['needs_review', q?.needs_review],
+    ['min_confidence', minConfidenceWire, { trim: false }],
+    ['sku_filter', q?.sku_filter],
+    ['page', q?.page, { min: 1 }],
+    ['page_size', q?.page_size, { min: 1 }],
+    ['sort_by', q?.sort_by],
+    ['sort_dir', q?.sort_dir],
+    ['job_id', q?.job_id],
+    ['consolidate_by_sku', q?.consolidate_by_sku, { emit: 'false-only' }],
+  ]);
 }
 
 export async function listAisleJobs(
@@ -195,14 +153,9 @@ export async function listAisleJobs(
   aisleId: string,
   options?: { limit?: number }
 ): Promise<AisleJobsListResponse> {
-  const params = new URLSearchParams();
-  if (options?.limit != null && options.limit >= 1) {
-    params.set('limit', String(options.limit));
-  }
-  const qs = params.toString();
-  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs${qs ? `?${qs}` : ''}`;
-  const response = await protectedFetch(path);
-  return handleResponse<AisleJobsListResponse>(response);
+  const qs = buildQueryString([['limit', options?.limit, { min: 1 }]]);
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/jobs${qs}`;
+  return apiRequestJson<AisleJobsListResponse>(path);
 }
 
 export async function promoteAisleOperationalJob(
@@ -210,15 +163,13 @@ export async function promoteAisleOperationalJob(
   aisleId: string,
   jobId: string
 ): Promise<PromoteOperationalJobResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<PromoteOperationalJobResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/promote-operational`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ job_id: jobId.trim() }),
+      body: { job_id: jobId.trim() },
     }
   );
-  return handleResponse<PromoteOperationalJobResponse>(response);
 }
 
 export async function getAislePositions(
@@ -227,6 +178,5 @@ export async function getAislePositions(
   listQuery?: AislePositionsListQuery
 ): Promise<PositionListResponse> {
   const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions`;
-  const response = await protectedFetch(`${path}${buildAislePositionsQueryString(listQuery)}`);
-  return handleResponse<PositionListResponse>(response);
+  return apiRequestJson<PositionListResponse>(`${path}${buildAislePositionsQueryString(listQuery)}`);
 }

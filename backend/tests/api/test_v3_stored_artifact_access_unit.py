@@ -11,14 +11,14 @@ import pytest
 
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
-    read_execution_log_events_for_job,
+    resolve_reference_image_file_response,
     resolve_source_asset_file_response,
     resolve_source_asset_image_display,
-    resolve_visual_reference_file_response,
 )
 from src.domain.assets.entities import SourceAsset, SourceAssetType
-from src.domain.inventory.visual_reference import InventoryVisualReference
+from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.jobs.entities import Job, JobStatus
+from src.infrastructure.artifacts.stored_artifact_reader import read_execution_log_events_for_job
 from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_for_row
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 
@@ -581,14 +581,16 @@ def test_fetch_json_when_head_fails_loads_when_under_cap(monkeypatch) -> None:
 def test_visual_reference_incomplete_provider_metadata_fails_without_legacy_fallback(
     monkeypatch,
 ) -> None:
-    ref = InventoryVisualReference(
+    now = datetime.now(timezone.utc)
+    ref = SupplierReferenceImage(
         id="vr1",
-        inventory_id="inv1",
+        client_supplier_id="sup1",
         filename="ref.jpg",
         storage_path="legacy/path.jpg",
         mime_type="image/jpeg",
         file_size=100,
-        created_at=datetime.now(timezone.utc),
+        created_at=now,
+        updated_at=now,
         storage_provider="s3",
         storage_bucket="bucket-a",
         storage_key=None,
@@ -608,7 +610,7 @@ def test_visual_reference_incomplete_provider_metadata_fails_without_legacy_fall
         )(),
     )
     with pytest.raises(StoredArtifactAccessError) as ei:
-        resolve_visual_reference_file_response(ref, artifact_store=mock_store)
+        resolve_reference_image_file_response(ref, artifact_store=mock_store)
     assert ei.value.reason_code == "incomplete_metadata"
 
 
@@ -625,14 +627,16 @@ def test_source_and_visual_reference_incomplete_metadata_are_consistent(monkeypa
         storage_bucket="bucket-a",
         storage_key="",
     )
-    ref = InventoryVisualReference(
+    now_r = datetime.now(timezone.utc)
+    ref = SupplierReferenceImage(
         id="vr-inc",
-        inventory_id="inv",
+        client_supplier_id="sup1",
         filename="r.jpg",
         storage_path="legacy/r.jpg",
         mime_type="image/jpeg",
         file_size=1,
-        created_at=datetime.now(timezone.utc),
+        created_at=now_r,
+        updated_at=now_r,
         storage_provider="s3",
         storage_bucket="bucket-a",
         storage_key="",
@@ -654,7 +658,7 @@ def test_source_and_visual_reference_incomplete_metadata_are_consistent(monkeypa
     with pytest.raises(StoredArtifactAccessError) as asset_e:
         resolve_source_asset_file_response(asset, artifact_store=mock_store)
     with pytest.raises(StoredArtifactAccessError) as ref_e:
-        resolve_visual_reference_file_response(ref, artifact_store=mock_store)
+        resolve_reference_image_file_response(ref, artifact_store=mock_store)
 
     assert asset_e.value.reason_code == "incomplete_metadata"
     assert ref_e.value.reason_code == "incomplete_metadata"

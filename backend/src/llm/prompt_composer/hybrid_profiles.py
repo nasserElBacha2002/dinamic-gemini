@@ -5,6 +5,11 @@ Registry of prompt bodies keyed for ``PROMPTS`` (hybrid + legacy).
   — resolved only through ``HybridPromptComposer`` + ``resolve_hybrid_entry_for_provider``.
 * **Legacy** (pallet / multi-frame experiments): ``system`` / ``user`` pairs below — **not** used by
   the hybrid global-analysis composer; kept in one dict for historical imports and tooling.
+
+**Phase E1 — Protected system contract:** The ``default`` / ``openai`` / ``claude`` bodies for
+``global_v21`` and ``global_v21_b`` are the **ProtectedSystemContractBlock** (plus provider-specific
+fragments). They must never be replaced or weakened by supplier-editable instructions; terminology
+and regression markers live in ``protected_prompt_contract`` (see ``audit/phase-e/e1-protected-prompt-contract.md``).
 """
 
 from __future__ import annotations
@@ -34,7 +39,7 @@ Rules:
 - model_entity_id: unique string (e.g. E1, E2). confidence: 0 to 1.
 - Bbox: if you provide position_label_bbox or product_label_bbox, use NORMALIZED coords only: [x1,y1,x2,y2] with floats in [0,1], x1<x2, y1<y2. Use null if region unknown.
 - has_boxes: true if boxes visible on pallet or for LOOSE_BOXES.
-- Inventory visual reference images, when provided, are comparative context only. They may help interpret label style, packaging conventions, or the expected visual standard, but they are NOT primary evidence and must not be treated as direct evidence for detections.
+- Supplier-provided visual reference images, when attached to the job input, are comparative context only. They may help interpret label style, packaging conventions, or the expected visual standard, but they are NOT primary evidence and must not be treated as direct evidence for detections.
 """
 
 # --- Prompt B (global_v21_b) — default (conservative / anti-hallucination) ---
@@ -51,7 +56,7 @@ Conservative rules (NON-NEGOTIABLE):
 - **Bbox discipline**: only output position_label_bbox / product_label_bbox when the region is clearly visible; use NORMALIZED [x1,y1,x2,y2] in [0,1] or null.
 - **Quantity**: never return quantity 0 for a visible unit unless the evidence clearly supports emptiness; if uncertain, prefer null + low confidence rather than a numeric guess.
 - model_entity_id: unique string (E1, E2, …). confidence: 0 to 1 — use **≤0.5** when evidence is partial.
-- Inventory visual references are **context only**, not primary evidence (same as Prompt A).
+- Supplier visual reference images are **context only**, not primary evidence (same as Prompt A).
 
 This profile prioritizes traceability and null-handling over aggressive extraction.
 """
@@ -106,7 +111,7 @@ Rules:
 - If occlusion, blur, or missing angles make a count unknowable, use null for quantity, confidence ≤0.5, and you may note INSUFFICIENT_EVIDENCE in reasoning.
 - Never return quantity = 0 unless you are certain there are zero items.
 - model_entity_id: unique string (E1, E2, …). Bbox: normalized [x1,y1,x2,y2] in [0,1] or null.
-- Inventory visual references are context only, not primary evidence.
+- Supplier visual reference images are context only, not primary evidence.
 
 Output:
 Return valid JSON matching the required entity schema (total_entities_detected + entities array).

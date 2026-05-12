@@ -27,6 +27,8 @@ RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT = "visual_reference_context"
 RUN_METADATA_KEY_PROMPT_COMPOSITION = "prompt_composition"
 # Phase 10 — provider-agnostic one-call usage/pricing/cost snapshot
 RUN_METADATA_KEY_LLM_COST_SNAPSHOT = "llm_cost_snapshot"
+# Phase H4 — compact persisted audit snapshot (safe metadata only; no prompt bodies)
+RUN_METADATA_KEY_RUN_AUDIT_SNAPSHOT = "run_audit_snapshot"
 
 
 def default_empty_block() -> dict[str, Any]:
@@ -131,13 +133,19 @@ def build_visual_reference_context(
         reference_ids = reference_ids[:provider_consumed_count]
     resolved = resolved_count > 0
 
-    return {
+    block: dict[str, Any] = {
         "resolved": resolved,
         "reference_ids": reference_ids,
         "resolved_count": resolved_count,
         "provider_consumed": provider_consumed,
         "provider_consumed_count": provider_consumed_count,
     }
+    # Optional traceability for C7+ jobs; omitted for legacy inventory_reference-only contexts.
+    if ctx and ctx.visual_references and any(
+        getattr(ref, "role", "") == "supplier_reference" for ref in ctx.visual_references
+    ):
+        block["reference_source"] = "supplier_reference_images"
+    return block
 
 
 def build_run_metadata(

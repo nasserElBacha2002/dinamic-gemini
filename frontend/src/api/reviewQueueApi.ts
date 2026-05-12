@@ -1,6 +1,7 @@
 import { V3_INVENTORIES_BASE, V3_REVIEW_QUEUE_BASE } from '../constants/v3ApiPaths';
-import type { ApiErrorDetail, PositionDetailResponse, ReviewActionRequest, ReviewQueueListResponse } from './types';
-import { handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
+import type { PositionDetailResponse, ReviewActionRequest, ReviewQueueListResponse } from './types';
+import { buildQueryString } from './queryString';
+import { apiRequestJson, apiRequestVoid } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -20,49 +21,36 @@ export interface ReviewQueueListQuery {
   page_size?: number;
 }
 
-export function buildReviewQueueQueryString(q: ReviewQueueListQuery | undefined): string {
-  if (!q) return '';
-  const params = new URLSearchParams();
-  if (q.inventory_id != null && String(q.inventory_id).trim() !== '') {
-    params.set('inventory_id', String(q.inventory_id).trim());
-  }
-  if (q.aisle_id != null && String(q.aisle_id).trim() !== '') {
-    params.set('aisle_id', String(q.aisle_id).trim());
-  }
-  if (q.min_confidence != null && !Number.isNaN(q.min_confidence)) {
-    params.set('min_confidence', String(q.min_confidence));
-  }
-  if (q.max_confidence != null && !Number.isNaN(q.max_confidence)) {
-    params.set('max_confidence', String(q.max_confidence));
-  }
-  if (q.traceability != null && String(q.traceability).trim() !== '') {
-    params.set('traceability', String(q.traceability).trim().toLowerCase());
-  }
-  if (q.has_evidence === true) params.set('has_evidence', 'true');
-  if (q.has_evidence === false) params.set('has_evidence', 'false');
-  if (q.qty_zero === true) params.set('qty_zero', 'true');
-  if (q.qty_zero === false) params.set('qty_zero', 'false');
-  if (q.sku_contains != null && String(q.sku_contains).trim() !== '') {
-    params.set('sku_contains', String(q.sku_contains).trim());
-  }
-  if (q.position_status != null && String(q.position_status).trim() !== '') {
-    params.set('position_status', String(q.position_status).trim().toLowerCase());
-  }
-  if (q.sort_by != null && String(q.sort_by).trim() !== '') params.set('sort_by', String(q.sort_by).trim());
-  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') params.set('sort_dir', String(q.sort_dir).trim());
-  if (q.page != null && q.page >= 1) params.set('page', String(q.page));
-  if (q.page_size != null && q.page_size >= 1) params.set('page_size', String(q.page_size));
-  const s = params.toString();
-  return s ? `?${s}` : '';
+/** Wire review queue list query — omission/lowercase rules stay aligned with `canonicalizeReviewQueueListQuery`. */
+export function buildReviewQueueQueryString(q?: ReviewQueueListQuery): string {
+  const minConfidenceWire =
+    q?.min_confidence != null && !Number.isNaN(q.min_confidence) ? String(q.min_confidence) : undefined;
+  const maxConfidenceWire =
+    q?.max_confidence != null && !Number.isNaN(q.max_confidence) ? String(q.max_confidence) : undefined;
+
+  return buildQueryString([
+    ['inventory_id', q?.inventory_id],
+    ['aisle_id', q?.aisle_id],
+    ['min_confidence', minConfidenceWire, { trim: false }],
+    ['max_confidence', maxConfidenceWire, { trim: false }],
+    ['traceability', q?.traceability, { transform: (value) => value.toLowerCase() }],
+    ['has_evidence', q?.has_evidence],
+    ['qty_zero', q?.qty_zero],
+    ['sku_contains', q?.sku_contains],
+    ['position_status', q?.position_status, { transform: (value) => value.toLowerCase() }],
+    ['sort_by', q?.sort_by],
+    ['sort_dir', q?.sort_dir],
+    ['page', q?.page, { min: 1 }],
+    ['page_size', q?.page_size, { min: 1 }],
+  ]);
 }
 
 export async function getReviewQueuePositions(
   listQuery?: ReviewQueueListQuery
 ): Promise<ReviewQueueListResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<ReviewQueueListResponse>(
     `${API_BASE}${V3_REVIEW_QUEUE_BASE}/positions${buildReviewQueueQueryString(listQuery)}`
   );
-  return handleResponse<ReviewQueueListResponse>(response);
 }
 
 export async function getPositionDetail(
@@ -71,17 +59,12 @@ export async function getPositionDetail(
   positionId: string,
   options?: { jobId?: string | null; exactPosition?: boolean }
 ): Promise<PositionDetailResponse> {
-  const params = new URLSearchParams();
-  if (options?.jobId != null && String(options.jobId).trim() !== '') {
-    params.set('job_id', String(options.jobId).trim());
-  }
-  if (options?.exactPosition) {
-    params.set('exact_position', 'true');
-  }
-  const qs = params.toString();
-  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions/${positionId}${qs ? `?${qs}` : ''}`;
-  const response = await protectedFetch(path);
-  return handleResponse<PositionDetailResponse>(response);
+  const qs = buildQueryString([
+    ['job_id', options?.jobId],
+    ['exact_position', options?.exactPosition === true ? true : undefined, { emit: 'true-only' }],
+  ]);
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions/${positionId}${qs}`;
+  return apiRequestJson<PositionDetailResponse>(path);
 }
 
 export async function submitReviewAction(
@@ -90,22 +73,11 @@ export async function submitReviewAction(
   positionId: string,
   body: ReviewActionRequest
 ): Promise<void> {
-  const response = await protectedFetch(
+  return apiRequestVoid(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions/${positionId}/reviews`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body,
     }
   );
-  const text = await response.text();
-  let data: ApiErrorDetail;
-  try {
-    data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-  } catch {
-    data = {};
-  }
-  if (!response.ok) {
-    throwApiErrorIfNotOk(response, text, data);
-  }
 }

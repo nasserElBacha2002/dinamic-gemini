@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Button, Typography } from '@mui/material';
+import { Alert, Box, Button, Typography } from '@mui/material';
 import { ApiError } from '../api/types';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { rowMatchesSearchQuery } from '../utils/tableSearch';
 import { ErrorAlert, LoadingBlock, useAppSnackbar } from '../components/ui';
-import AisleObservabilityDialog from '../components/AisleObservabilityDialog';
 import CreateAisleDialog from '../components/CreateAisleDialog';
 import { useInventoryDetail, useAislesList, useCreateAisle } from '../hooks';
 import { ROUTE_HOME } from '../constants/appRoutes';
@@ -15,7 +14,6 @@ import { useAisleAssetUploadFlow } from '../features/inventories/hooks/useAisleA
 import { useAisleProcessingFlow } from '../features/inventories/hooks/useAisleProcessingFlow';
 import AisleProcessingDialog from '../features/inventories/components/AisleProcessingDialog';
 import InventoryAislesSection from '../features/inventories/components/InventoryAislesSection';
-import InventoryReferenceImagesModule from '../features/inventories/components/InventoryReferenceImagesModule';
 import InventoryDetailHeader from '../features/inventories/components/InventoryDetailHeader';
 
 export default function InventoryDetail() {
@@ -24,12 +22,6 @@ export default function InventoryDetail() {
   const navigate = useNavigate();
   const { showSnackbar } = useAppSnackbar();
   const [createAisleOpen, setCreateAisleOpen] = useState(false);
-  /** `initialSelectedRunId` is UI naming; v3 API still identifies runs as jobs on the wire. */
-  const [observabilityDialog, setObservabilityDialog] = useState<{
-    aisleId: string;
-    aisleCode: string;
-    initialSelectedRunId: string | null;
-  } | null>(null);
   const [aisleTableSearch, setAisleTableSearch] = useState('');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [processError, setProcessError] = useState<string | null>(null);
@@ -90,123 +82,105 @@ export default function InventoryDetail() {
   };
 
   return (
-    <InventoryReferenceImagesModule
-      inventoryId={inventoryId ?? ''}
-      inventoryReady={Boolean(inventoryQuery.data)}
-    >
-      {({ openReferenceImages }) => (
+    <>
+      {inventoryLoading && !inventory ? (
+        <LoadingBlock />
+      ) : inventoryError && !inventory ? (
         <>
-          {inventoryLoading && !inventory ? (
-            <LoadingBlock />
-          ) : inventoryError && !inventory ? (
-            <>
-              <ErrorAlert error={inventoryQuery.error} context="inventory" onRetry={() => inventoryQuery.refetch()} />
-              <Button sx={{ mt: 2 }} onClick={() => navigate(ROUTE_HOME)}>
-                {t('inventory.back_to_list')}
-              </Button>
-            </>
-          ) : inventory && headerVm ? (
-            <>
-              <InventoryDetailHeader
-                inventory={inventory}
-                inventoryId={inventoryId ?? ''}
-                headerVm={headerVm}
-                onOpenReferenceImages={openReferenceImages}
-                onOpenCreateAisle={() => setCreateAisleOpen(true)}
-              />
-              <Box sx={{ display: 'grid', gap: 2 }}>
-                {processError ? (
-                  <Box data-testid="inventory-process-error">
-                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                      {t('aisle.process_error_label')}
-                    </Typography>
-                    <ErrorAlert message={processError} onClose={() => setProcessError(null)} />
-                  </Box>
-                ) : null}
-
-                {uploadError ? (
-                  <Box data-testid="inventory-upload-error">
-                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                      {t('aisle.upload_error_label')}
-                    </Typography>
-                    <ErrorAlert message={uploadError} onClose={() => setUploadError(null)} />
-                  </Box>
-                ) : null}
-
-                {aislesError ? <ErrorAlert error={aislesQuery.error} context="aisle" onRetry={() => aislesQuery.refetch()} /> : null}
-
-                <InventoryAislesSection
-                  inventoryId={inventoryId ?? ''}
-                  tableRows={tableRows}
-                  filteredTableRows={filteredTableRows}
-                  aislesLoading={aislesLoading}
-                  aisleTableSearch={aisleTableSearch}
-                  onAisleTableSearch={setAisleTableSearch}
-                  onRefreshAisles={() => void aislesQuery.refetch()}
-                  fileInputRef={uploadFlow.fileInputRef}
-                  onFileInputChange={uploadFlow.handleNativeFileInputChange}
-                  onOpenObservability={(p) =>
-                    setObservabilityDialog({
-                      aisleId: p.aisleId,
-                      aisleCode: p.aisleCode,
-                      initialSelectedRunId: p.initialSelectedRunId,
-                    })
-                  }
-                  onRequestUpload={uploadFlow.beginUploadForAisle}
-                  onRequestProcess={(id, code) => void processFlow.requestProcess(id, code)}
-                  aislesDataLoaded={Boolean(aislesQuery.data)}
-                  processingAisleId={processFlow.processingAisleId}
-                  uploadingAisleId={uploadFlow.uploadingAisleId}
-                  onOpenCreateAisle={() => setCreateAisleOpen(true)}
-                />
-              </Box>
-            </>
-          ) : null}
-
-          <AisleProcessingDialog
-            open={Boolean(processFlow.dialogTarget)}
-            aisleCode={processFlow.dialogTarget?.aisleCode ?? null}
-            providerKey={processFlow.providerKey}
-            onProviderKeyChange={processFlow.setProviderKey}
-            modelKey={processFlow.modelKey}
-            onModelKeyChange={processFlow.setModelKey}
-            promptKey={processFlow.promptKey}
-            onPromptKeyChange={processFlow.setPromptKey}
-            providerOptsQuery={processFlow.providerOptsQuery}
-            providerConfig={processFlow.providerConfig}
-            onClose={processFlow.closeDialog}
-            onConfirm={() => void processFlow.confirmDialog()}
-            confirmDisabled={
-              processFlow.processingAisleId === processFlow.dialogTarget?.aisleId ||
-              (processFlow.providerOptsQuery.isLoading && processFlow.providerKey.trim() !== '')
-            }
-            confirmBusyLabel={processFlow.processingAisleId === processFlow.dialogTarget?.aisleId}
-          />
-
-          <CreateAisleDialog
-            open={createAisleOpen}
-            inventoryId={inventoryId ?? ''}
-            onClose={() => setCreateAisleOpen(false)}
-            onSuccess={handleCreateAisleSuccess}
-            existingAisleCodes={aisles.map((a) => a.code)}
-            createAisleFn={createAisleMutation.mutateAsync}
-          />
-
-          {observabilityDialog && inventoryId ? (
-            <AisleObservabilityDialog
-              key={`${observabilityDialog.aisleId}-${observabilityDialog.initialSelectedRunId ?? 'none'}`}
-              open
-              inventoryId={inventoryId}
-              aisleId={observabilityDialog.aisleId}
-              aisleCode={observabilityDialog.aisleCode}
-              // Run id in inventory UI === job id in v3 observability API (unchanged contract).
-              initialSelectedJobId={observabilityDialog.initialSelectedRunId}
-              onClose={() => setObservabilityDialog(null)}
-              onAislesInvalidate={() => aislesQuery.refetch()}
-            />
-          ) : null}
+          <ErrorAlert error={inventoryQuery.error} context="inventory" onRetry={() => inventoryQuery.refetch()} />
+          <Button sx={{ mt: 2 }} onClick={() => navigate(ROUTE_HOME)}>
+            {t('inventory.back_to_list')}
+          </Button>
         </>
-      )}
-    </InventoryReferenceImagesModule>
+      ) : inventory && headerVm ? (
+        <>
+          <InventoryDetailHeader
+            inventory={inventory}
+            inventoryId={inventoryId ?? ''}
+            headerVm={headerVm}
+            onOpenCreateAisle={() => setCreateAisleOpen(true)}
+          />
+          <Box sx={{ display: 'grid', gap: 2 }}>
+            {!inventory.client_id ? (
+              <Alert severity="warning" data-testid="inventory-legacy-no-client">
+                {t('inventory.legacy_no_client_warning')}
+              </Alert>
+            ) : null}
+            {processError ? (
+              <Box data-testid="inventory-process-error">
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                  {t('aisle.process_error_label')}
+                </Typography>
+                <ErrorAlert message={processError} onClose={() => setProcessError(null)} />
+              </Box>
+            ) : null}
+
+            {uploadError ? (
+              <Box data-testid="inventory-upload-error">
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                  {t('aisle.upload_error_label')}
+                </Typography>
+                <ErrorAlert message={uploadError} onClose={() => setUploadError(null)} />
+              </Box>
+            ) : null}
+
+            {aislesError ? (
+              <ErrorAlert error={aislesQuery.error} context="aisle" onRetry={() => aislesQuery.refetch()} />
+            ) : null}
+
+            <InventoryAislesSection
+              inventoryId={inventoryId ?? ''}
+              inventoryClientId={inventory.client_id ?? null}
+              tableRows={tableRows}
+              filteredTableRows={filteredTableRows}
+              aislesLoading={aislesLoading}
+              aisleTableSearch={aisleTableSearch}
+              onAisleTableSearch={setAisleTableSearch}
+              onRefreshAisles={() => void aislesQuery.refetch()}
+              fileInputRef={uploadFlow.fileInputRef}
+              onFileInputChange={uploadFlow.handleNativeFileInputChange}
+              onRequestUpload={uploadFlow.beginUploadForAisle}
+              onRequestProcess={(id, code, clientSupplierId) =>
+                void processFlow.requestProcess(id, code, clientSupplierId)
+              }
+              aislesDataLoaded={Boolean(aislesQuery.data)}
+              processingAisleId={processFlow.processingAisleId}
+              uploadingAisleId={uploadFlow.uploadingAisleId}
+              onOpenCreateAisle={() => setCreateAisleOpen(true)}
+            />
+          </Box>
+        </>
+      ) : null}
+
+      <AisleProcessingDialog
+        open={Boolean(processFlow.dialogTarget)}
+        aisleCode={processFlow.dialogTarget?.aisleCode ?? null}
+        clientSupplierId={processFlow.dialogTarget?.clientSupplierId ?? null}
+        providerKey={processFlow.providerKey}
+        onProviderKeyChange={processFlow.setProviderKey}
+        modelKey={processFlow.modelKey}
+        onModelKeyChange={processFlow.setModelKey}
+        providerOptsQuery={processFlow.providerOptsQuery}
+        providerConfig={processFlow.providerConfig}
+        onClose={processFlow.closeDialog}
+        onConfirm={() => void processFlow.confirmDialog()}
+        confirmDisabled={
+          processFlow.processingAisleId === processFlow.dialogTarget?.aisleId ||
+          (processFlow.providerOptsQuery.isLoading && processFlow.providerKey.trim() !== '')
+        }
+        confirmBusyLabel={processFlow.processingAisleId === processFlow.dialogTarget?.aisleId}
+      />
+
+      <CreateAisleDialog
+        open={createAisleOpen}
+        inventoryId={inventoryId ?? ''}
+        inventoryClientId={inventory?.client_id ?? null}
+        onClose={() => setCreateAisleOpen(false)}
+        onSuccess={handleCreateAisleSuccess}
+        existingAisleCodes={aisles.map((a) => a.code)}
+        createAisleFn={createAisleMutation.mutateAsync}
+      />
+
+    </>
   );
 }

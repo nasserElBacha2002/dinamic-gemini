@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
@@ -6,16 +6,19 @@ import {
   Button,
   TextField,
   CircularProgress,
+  MenuItem,
 } from '@mui/material';
 import type { CreateAisleRequest } from '../api/types';
 import { ApiError } from '../api/types';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { useCreateAisleAction } from '../features/inventories/hooks/useCreateAisleAction';
+import { useClientSuppliers } from '../hooks/useClients';
 import BaseDialog from './ui/BaseDialog';
 
 export interface CreateAisleDialogProps {
   open: boolean;
   inventoryId: string;
+  inventoryClientId?: string | null;
   onClose: () => void;
   onSuccess: () => void;
   /** Optional. Called with a message when the parent should show an error (e.g. global snackbar). */
@@ -33,6 +36,7 @@ function normalizeApiError(error: unknown): ApiError {
 export default function CreateAisleDialog({
   open,
   inventoryId,
+  inventoryClientId,
   onClose,
   onSuccess,
   onError,
@@ -42,7 +46,9 @@ export default function CreateAisleDialog({
   const { t } = useTranslation();
   const [code, setCode] = useState('');
   const [validationError, setValidationError] = useState('');
+  const [supplierValidationError, setSupplierValidationError] = useState('');
   const [createdCode, setCreatedCode] = useState<string | null>(null);
+  const [selectedSupplierId, setSelectedSupplierId] = useState('');
   const codeInputRef = useRef<HTMLInputElement>(null);
   const { submitCreateAisle, isSubmitting, clearError } = useCreateAisleAction({
     inventoryId,
@@ -53,12 +59,37 @@ export default function CreateAisleDialog({
     const list = existingAisleCodes ?? [];
     return new Set(list.map((c) => String(c || '').trim().toLowerCase()).filter(Boolean));
   }, [existingAisleCodes]);
+  const hasInventoryClient = Boolean(inventoryClientId && inventoryClientId.trim() !== '');
+  const clientIdForSuppliers = hasInventoryClient ? inventoryClientId!.trim() : undefined;
+  const {
+    data: suppliersData,
+    isLoading: isSuppliersLoading,
+    isError: isSuppliersError,
+  } = useClientSuppliers(clientIdForSuppliers, { page: 1, page_size: 200 }, { enabled: hasInventoryClient });
+  const suppliers = useMemo(() => suppliersData?.items ?? [], [suppliersData?.items]);
+  const selectedSupplierIdTrimmed = selectedSupplierId.trim();
 
   const reset = () => {
     setCode('');
     setValidationError('');
+    setSupplierValidationError('');
     setCreatedCode(null);
+    setSelectedSupplierId('');
   };
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedSupplierId('');
+    setSupplierValidationError('');
+  }, [inventoryClientId, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!selectedSupplierIdTrimmed) return;
+    if (!suppliers.some((s) => s.id === selectedSupplierIdTrimmed)) {
+      setSelectedSupplierId('');
+    }
+  }, [open, selectedSupplierIdTrimmed, suppliers]);
 
   const handleClose = () => {
     if (!isSubmitting) {
@@ -80,7 +111,6 @@ export default function CreateAisleDialog({
 
   const validateForTyping = (next: string): string => {
     const trimmed = (next || '').trim();
-    // Keep typing experience calm: don't show "required" while user is editing.
     if (!trimmed) return '';
     if (trimmed.length > 64) return t('dialogs.aisle.validation_code_max');
     if (normalizedExistingCodes.has(trimmed.toLowerCase())) {
@@ -96,10 +126,34 @@ export default function CreateAisleDialog({
       setValidationError(errMsg);
       return;
     }
+    if (!hasInventoryClient) {
+      setSupplierValidationError(t('dialogs.aisle.inventory_requires_client'));
+      return;
+    }
+    if (isSuppliersLoading) {
+      setSupplierValidationError(t('dialogs.aisle.supplier_loading'));
+      return;
+    }
+    if (isSuppliersError) {
+      setSupplierValidationError(t('dialogs.aisle.supplier_load_error'));
+      return;
+    }
+    if (suppliers.length === 0) {
+      setSupplierValidationError(t('dialogs.aisle.supplier_empty'));
+      return;
+    }
+    if (!selectedSupplierIdTrimmed) {
+      setSupplierValidationError(t('dialogs.aisle.validation_supplier_required'));
+      return;
+    }
     setValidationError('');
+    setSupplierValidationError('');
     clearError();
     try {
-      await submitCreateAisle({ code: trimmed });
+      await submitCreateAisle({
+        code: trimmed,
+        client_supplier_id: selectedSupplierIdTrimmed,
+      } satisfies CreateAisleRequest);
       onSuccess();
       setCreatedCode(trimmed);
     } catch (e) {
@@ -114,6 +168,25 @@ export default function CreateAisleDialog({
       }
     }
   };
+
+  const supplierHelperText = !hasInventoryClient
+    ? t('dialogs.aisle.inventory_requires_client')
+    : supplierValidationError
+      ? supplierValidationError
+      : isSuppliersLoading
+        ? t('dialogs.aisle.supplier_loading')
+        : isSuppliersError
+          ? t('dialogs.aisle.supplier_load_error')
+          : suppliers.length === 0
+            ? t('dialogs.aisle.supplier_empty')
+            : t('dialogs.aisle.supplier_helper');
+
+  const submitDisabled =
+    isSubmitting ||
+    !hasInventoryClient ||
+    isSuppliersLoading ||
+    isSuppliersError ||
+    suppliers.length === 0;
 
   return (
     <BaseDialog
@@ -150,7 +223,7 @@ export default function CreateAisleDialog({
             <Button
               onClick={handleSubmit}
               variant="contained"
-              disabled={isSubmitting}
+              disabled={submitDisabled}
               startIcon={isSubmitting ? <CircularProgress size={16} /> : undefined}
             >
               {t('aisle.create')}
@@ -162,6 +235,12 @@ export default function CreateAisleDialog({
       {createdCode ? (
         <Alert severity="success" sx={{ mb: 2 }}>
           {t('dialogs.aisle.success_created', { code: createdCode ?? '' })}
+        </Alert>
+      ) : null}
+
+      {!hasInventoryClient ? (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {t('dialogs.aisle.inventory_requires_client')}
         </Alert>
       ) : null}
 
@@ -192,6 +271,32 @@ export default function CreateAisleDialog({
             setValidationError(msg);
           }}
         />
+        <TextField
+          sx={{ mt: 1 }}
+          select
+          label={t('dialogs.aisle.supplier_label')}
+          fullWidth
+          value={selectedSupplierId}
+          onChange={(e) => {
+            setSelectedSupplierId(e.target.value);
+            if (supplierValidationError) setSupplierValidationError('');
+            onError?.(null);
+          }}
+          disabled={
+            isSubmitting || Boolean(createdCode) || !hasInventoryClient || isSuppliersLoading
+          }
+          error={Boolean(supplierValidationError) || (hasInventoryClient && isSuppliersError)}
+          helperText={supplierHelperText}
+        >
+          <MenuItem value="" disabled>
+            {t('dialogs.aisle.supplier_placeholder')}
+          </MenuItem>
+          {suppliers.map((supplier) => (
+            <MenuItem key={supplier.id} value={supplier.id}>
+              {supplier.name}
+            </MenuItem>
+          ))}
+        </TextField>
       </Box>
     </BaseDialog>
   );
