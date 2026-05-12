@@ -7,6 +7,7 @@ import type {
   MergeResultsResponse,
   RunMergeResponse,
 } from './types';
+import { buildQueryString } from './queryString';
 import { apiDownloadBlob, apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -20,17 +21,16 @@ export interface AislesListQuery {
   page_size?: number;
 }
 
-function buildAislesListQueryString(q: AislesListQuery | undefined): string {
-  if (!q) return '';
-  const params = new URLSearchParams();
-  if (q.search != null && String(q.search).trim() !== '') params.set('search', String(q.search).trim());
-  if (q.status != null && String(q.status).trim() !== '') params.set('status', String(q.status).trim());
-  if (q.sort_by != null && String(q.sort_by).trim() !== '') params.set('sort_by', String(q.sort_by).trim());
-  if (q.sort_dir != null && String(q.sort_dir).trim() !== '') params.set('sort_dir', String(q.sort_dir).trim());
-  if (q.page != null && q.page >= 1) params.set('page', String(q.page));
-  if (q.page_size != null && q.page_size >= 1) params.set('page_size', String(q.page_size));
-  const s = params.toString();
-  return s ? `?${s}` : '';
+/** Wire aisles list query — must stay aligned with list omission rules (see ``queryParamCanonicalization`` for related keys). */
+function buildAislesListQueryString(q?: AislesListQuery): string {
+  return buildQueryString([
+    ['search', q?.search],
+    ['status', q?.status],
+    ['sort_by', q?.sort_by],
+    ['sort_dir', q?.sort_dir],
+    ['page', q?.page, { min: 1 }],
+    ['page_size', q?.page_size, { min: 1 }],
+  ]);
 }
 
 export async function getAisles(
