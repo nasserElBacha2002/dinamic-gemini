@@ -54,4 +54,9 @@ describe('buildQueryString', () => {
     const qs = result.startsWith('?') ? result.slice(1) : result;
     expect(new URLSearchParams(qs).get('raw')).toBe('  value  ');
   });
+
+  it('emits literal string scope when provided (e.g. supplier prompt list `scope=all` only)', () => {
+    expect(buildQueryString([['scope', undefined]])).toBe('');
+    expect(buildQueryString([['scope', 'all']])).toBe('?scope=all');
+  });
 });

@@ -1,10 +1,10 @@
 /**
- * Optional query-string serialization for API clients using ``URLSearchParams``.
+ * Optional query-string serialization for API clients using `URLSearchParams`.
  *
- * Wire output for list endpoints must stay aligned with ``queryParamCanonicalization.ts``
+ * Wire output for list endpoints must stay aligned with `queryParamCanonicalization.ts`
  * where those modules use canonical params as React Query keys (P1/P2 migrated builders only).
  *
- * Path segments stay ``encodeURIComponent`` in each API module; this helper is query-only.
+ * Path segments stay `encodeURIComponent` in each API module; this helper is query-only.
  */
 
 export type QueryParamValue = string | number | boolean | null | undefined;

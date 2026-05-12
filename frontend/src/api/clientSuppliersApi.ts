@@ -23,6 +23,7 @@ import type {
   UploadSupplierReferenceImagesResponse,
 } from './types';
 import { protectedFetch, throwApiErrorIfNotOk } from './http';
+import { buildQueryString } from './queryString';
 import { apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -32,13 +33,11 @@ export interface ClientSuppliersListQuery {
   page_size?: number;
 }
 
-function buildClientSuppliersListQueryString(q: ClientSuppliersListQuery | undefined): string {
-  if (!q) return '';
-  const params = new URLSearchParams();
-  if (q.page != null && q.page >= 1) params.set('page', String(q.page));
-  if (q.page_size != null && q.page_size >= 1) params.set('page_size', String(q.page_size));
-  const s = params.toString();
-  return s ? `?${s}` : '';
+function buildClientSuppliersListQueryString(q?: ClientSuppliersListQuery): string {
+  return buildQueryString([
+    ['page', q?.page, { min: 1 }],
+    ['page_size', q?.page_size, { min: 1 }],
+  ]);
 }
 
 export async function listClientSuppliers(
@@ -151,16 +150,12 @@ export interface SupplierPromptConfigsListQuery {
   model_name?: string | null;
 }
 
-function buildSupplierPromptConfigsQueryString(q: SupplierPromptConfigsListQuery | undefined): string {
-  if (!q) return '';
-  const params = new URLSearchParams();
-  if (q.scope === 'all') params.set('scope', 'all');
-  const provider = (q.provider_name ?? '').trim();
-  const model = (q.model_name ?? '').trim();
-  if (provider) params.set('provider_name', provider);
-  if (model) params.set('model_name', model);
-  const s = params.toString();
-  return s ? `?${s}` : '';
+function buildSupplierPromptConfigsQueryString(q?: SupplierPromptConfigsListQuery): string {
+  return buildQueryString([
+    ['scope', q?.scope === 'all' ? 'all' : undefined],
+    ['provider_name', q?.provider_name],
+    ['model_name', q?.model_name],
+  ]);
 }
 
 export async function listSupplierPromptConfigs(
@@ -194,13 +189,13 @@ export async function getActiveSupplierPromptConfig(
   providerName?: string | null,
   modelName?: string | null
 ): Promise<SupplierPromptConfig> {
-  const params = new URLSearchParams();
-  const normalizedProviderName = (providerName ?? '').trim();
-  if (normalizedProviderName) params.set('provider_name', normalizedProviderName);
-  const normalizedModelName = (modelName ?? '').trim();
-  if (normalizedModelName) params.set('model_name', normalizedModelName);
+  const qs = buildQueryString([
+    ['provider_name', providerName ?? undefined],
+    ['model_name', modelName ?? undefined],
+  ]);
+  const suffix = qs === '' ? '?' : qs;
   return apiRequestJson<SupplierPromptConfig>(
-    `${API_BASE}${supplierPromptConfigsActivePath(clientId, supplierId)}?${params.toString()}`
+    `${API_BASE}${supplierPromptConfigsActivePath(clientId, supplierId)}${suffix}`
   );
 }
 
