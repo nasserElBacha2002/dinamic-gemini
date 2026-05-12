@@ -40,10 +40,8 @@ function buildProtectedFetchInitFromApiRequestOptions(options: ApiRequestJsonOpt
     outgoingBody = undefined;
   } else if (isFormData(body)) {
     outgoingBody = body;
-    const ct = headers.get('Content-Type');
-    if (ct && ct.includes('application/json')) {
-      headers.delete('Content-Type');
-    }
+    // Let the browser set multipart boundary; never forward a caller Content-Type.
+    headers.delete('Content-Type');
   } else if (isBinaryLikeBody(body)) {
     outgoingBody = body as BodyInit;
   } else if (typeof body === 'string') {
@@ -66,7 +64,7 @@ function buildProtectedFetchInitFromApiRequestOptions(options: ApiRequestJsonOpt
  * Authenticated fetch with JSON-friendly defaults: merges headers, stringifies plain objects,
  * and parses responses via ``handleResponse`` (same ``ApiError`` pipeline as direct callers).
  *
- * - Does **not** set ``Content-Type: application/json`` for ``FormData`` (browser sets multipart boundary).
+ * - For ``FormData``: does **not** set ``Content-Type`` and **removes** any caller ``Content-Type`` so the boundary is browser-managed.
  * - Does **not** stringify ``FormData`` / ``Blob`` / typed arrays.
  * - **String** ``body`` is sent **as-is** (e.g. pre-serialized JSON). No default ``Content-Type`` is set;
  *   set ``Content-Type`` in ``headers`` when the server requires it.

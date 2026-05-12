@@ -22,7 +22,7 @@ import type {
   UploadSupplierReferenceImagesRequest,
   UploadSupplierReferenceImagesResponse,
 } from './types';
-import { handleResponse, protectedFetch, throwApiErrorIfNotOk } from './http';
+import { protectedFetch, throwApiErrorIfNotOk } from './http';
 import { apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -93,11 +93,10 @@ export async function uploadSupplierReferenceImages(
   const description = (payload.description ?? '').trim();
   if (label) form.append('label', label);
   if (description) form.append('description', description);
-  const response = await protectedFetch(
+  return apiRequestJson<UploadSupplierReferenceImagesResponse>(
     `${API_BASE}${supplierReferenceImagesPath(clientId, supplierId)}`,
     { method: 'POST', body: form }
   );
-  return handleResponse<UploadSupplierReferenceImagesResponse>(response);
 }
 
 export async function deleteSupplierReferenceImage(

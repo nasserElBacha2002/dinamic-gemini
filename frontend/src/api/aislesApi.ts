@@ -7,8 +7,7 @@ import type {
   MergeResultsResponse,
   RunMergeResponse,
 } from './types';
-import { handleResponse, protectedFetch } from './http';
-import { apiDownloadBlob } from './request';
+import { apiDownloadBlob, apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -38,22 +37,19 @@ export async function getAisles(
   inventoryId: string,
   listQuery?: AislesListQuery
 ): Promise<PaginatedAisleListResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<PaginatedAisleListResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles${buildAislesListQueryString(listQuery)}`
   );
-  return handleResponse<PaginatedAisleListResponse>(response);
 }
 
 export async function createAisle(
   inventoryId: string,
   body: CreateAisleRequest
 ): Promise<Aisle> {
-  const response = await protectedFetch(`${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles`, {
+  return apiRequestJson<Aisle>(`${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body,
   });
-  return handleResponse<Aisle>(response);
 }
 
 export async function startAisleProcessing(
@@ -74,15 +70,13 @@ export async function startAisleProcessing(
   if (pk != null && String(pk).trim() !== '') {
     body.prompt_key = String(pk).trim();
   }
-  const response = await protectedFetch(
+  return apiRequestJson<ProcessAisleResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/process`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body,
     }
   );
-  return handleResponse<ProcessAisleResponse>(response);
 }
 
 export async function runAisleMerge(
@@ -96,8 +90,7 @@ export async function runAisleMerge(
   params.set('job_id', jobId);
   const qs = params.toString();
   const url = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/merge?${qs}`;
-  const response = await protectedFetch(url, { method: 'POST' });
-  return handleResponse<RunMergeResponse>(response);
+  return apiRequestJson<RunMergeResponse>(url, { method: 'POST' });
 }
 
 export async function getAisleMergeResults(
@@ -111,8 +104,7 @@ export async function getAisleMergeResults(
   }
   const qs = params.toString();
   const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/merge-results${qs ? `?${qs}` : ''}`;
-  const response = await protectedFetch(path);
-  return handleResponse<MergeResultsResponse>(response);
+  return apiRequestJson<MergeResultsResponse>(path);
 }
 
 export async function exportAisleResultsCsv(

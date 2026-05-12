@@ -59,6 +59,19 @@ describe('api/request apiRequestJson', () => {
     expect(headers.get('Content-Type')).toBeNull();
   });
 
+  it('FormData strips any caller Content-Type so the browser sets the multipart boundary', async () => {
+    const fetchSpy = vi.spyOn(http, 'protectedFetch').mockResolvedValue(new Response('{}', { status: 200 }));
+    const form = new FormData();
+    await apiRequestJson('https://api.example/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: form,
+    });
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect(new Headers(init.headers).get('Content-Type')).toBeNull();
+    expect(init.body).toBe(form);
+  });
+
   it('strips conflicting application/json Content-Type when body is FormData', async () => {
     const fetchSpy = vi.spyOn(http, 'protectedFetch').mockResolvedValue(new Response('{}', { status: 200 }));
     const form = new FormData();

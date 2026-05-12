@@ -10,8 +10,7 @@ import type {
   ManualInterventionBreakdownResponse,
   QualityPatternListResponse,
 } from './types';
-import { handleResponse, protectedFetch } from './http';
-import { apiDownloadBlob } from './request';
+import { apiDownloadBlob, apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -42,39 +41,43 @@ function buildAnalyticsQueryString(q: AnalyticsQueryParams | undefined): string 
 }
 
 export async function getAnalyticsSummary(q?: AnalyticsQueryParams): Promise<AnalyticsSummaryResponse> {
-  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/summary${buildAnalyticsQueryString(q)}`);
-  return handleResponse<AnalyticsSummaryResponse>(response);
+  return apiRequestJson<AnalyticsSummaryResponse>(
+    `${API_BASE}${V3_ANALYTICS_BASE}/summary${buildAnalyticsQueryString(q)}`
+  );
 }
 
 export async function getAnalyticsTrends(q?: AnalyticsQueryParams): Promise<AnalyticsTrendsResponse> {
-  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/trends${buildAnalyticsQueryString(q)}`);
-  return handleResponse<AnalyticsTrendsResponse>(response);
+  return apiRequestJson<AnalyticsTrendsResponse>(
+    `${API_BASE}${V3_ANALYTICS_BASE}/trends${buildAnalyticsQueryString(q)}`
+  );
 }
 
 export async function getAnalyticsInventoryPerformance(
   q?: AnalyticsQueryParams
 ): Promise<InventoryPerformanceListResponse> {
-  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/inventories${buildAnalyticsQueryString(q)}`);
-  return handleResponse<InventoryPerformanceListResponse>(response);
+  return apiRequestJson<InventoryPerformanceListResponse>(
+    `${API_BASE}${V3_ANALYTICS_BASE}/inventories${buildAnalyticsQueryString(q)}`
+  );
 }
 
 export async function getAnalyticsAisleIssues(q?: AnalyticsQueryParams): Promise<AisleIssueListResponse> {
-  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/aisles${buildAnalyticsQueryString(q)}`);
-  return handleResponse<AisleIssueListResponse>(response);
+  return apiRequestJson<AisleIssueListResponse>(
+    `${API_BASE}${V3_ANALYTICS_BASE}/aisles${buildAnalyticsQueryString(q)}`
+  );
 }
 
 export async function getAnalyticsQualityPatterns(q?: AnalyticsQueryParams): Promise<QualityPatternListResponse> {
-  const response = await protectedFetch(`${API_BASE}${V3_ANALYTICS_BASE}/quality${buildAnalyticsQueryString(q)}`);
-  return handleResponse<QualityPatternListResponse>(response);
+  return apiRequestJson<QualityPatternListResponse>(
+    `${API_BASE}${V3_ANALYTICS_BASE}/quality${buildAnalyticsQueryString(q)}`
+  );
 }
 
 export async function getAnalyticsManualInterventions(
   q?: AnalyticsQueryParams
 ): Promise<ManualInterventionBreakdownResponse> {
-  const response = await protectedFetch(
+  return apiRequestJson<ManualInterventionBreakdownResponse>(
     `${API_BASE}${V3_ANALYTICS_BASE}/manual-interventions${buildAnalyticsQueryString(q)}`
   );
-  return handleResponse<ManualInterventionBreakdownResponse>(response);
 }
 
 export async function getAisleBenchmarkCompare(
@@ -88,8 +91,7 @@ export async function getAisleBenchmarkCompare(
     job_b_id: jobBId.trim(),
   });
   const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/benchmark/compare?${params}`;
-  const response = await protectedFetch(path);
-  return handleResponse<AisleBenchmarkCompareResponse>(response);
+  return apiRequestJson<AisleBenchmarkCompareResponse>(path);
 }
 
 export async function getAisleBenchmarkCompareMany(
@@ -105,15 +107,13 @@ export async function getAisleBenchmarkCompareMany(
   if (body.max_diff_rows != null) {
     payload.max_diff_rows = body.max_diff_rows;
   }
-  const response = await protectedFetch(
+  return apiRequestJson<AisleBenchmarkCompareManyResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/benchmark/compare-many`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: payload,
     }
   );
-  return handleResponse<AisleBenchmarkCompareManyResponse>(response);
 }
 
 export async function downloadAisleBenchmarkExportCsv(
