@@ -348,16 +348,22 @@
       "no_pricing_configured": "No pricing configured",
       "no_snapshot": "No snapshot",
       "not_computed": "Not computed",
+      "partial_total": "{{amount}} {{currency}} (partial)",
       "usage_not_reported": "Usage not reported"
     },
     "llm_cost_note": {
       "billable_dimension_not_priced": "Billable dimension not priced",
+      "canonical_model_without_catalog_entry": "Canonical model has no pricing row (check catalog aliases and entries)",
       "pricing_entry_missing": "Pricing entry missing",
       "pricing_present_but_no_billable_dimensions": "Pricing present but no billable dimensions",
       "provider_usage_missing": "Provider usage missing",
+      "usage_assumption": "Billing assumption: {{detail}}",
       "usage_dimension_ambiguous": "Usage dimension ambiguous"
     },
     "llm_cost_status": {
+      "exact": "Exact",
+      "estimated": "Estimated",
+      "partial": "Partial",
       "unavailable": "Unavailable"
     },
     "loading": "Loading",

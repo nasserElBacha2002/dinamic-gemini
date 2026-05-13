@@ -57,6 +57,7 @@ function captureStatusLabel(
   const s = (status ?? '').trim().toLowerCase();
   if (s === 'exact') return t('observability.auditability.cost.status_exact');
   if (s === 'estimated') return t('observability.auditability.cost.status_estimated');
+  if (s === 'partial') return t('observability.auditability.cost.status_partial');
   if (s === 'unavailable') return t('observability.auditability.cost.status_unavailable');
   return formatScalar(status, t('observability.auditability.unknown'));
 }
@@ -108,6 +109,11 @@ function JobAuditabilityCostCard({
       <DetailRow label={t('observability.auditability.cost.totalCost')}>
         {formatAuditCostFromApiString(computed.total_cost, currency, notReported)}
       </DetailRow>
+      {snap.capture_status === 'partial' && computed.partial_total_cost?.trim() ? (
+        <DetailRow label={t('observability.auditability.cost.partialTotalCost')}>
+          {formatAuditCostFromApiString(computed.partial_total_cost, currency, notReported)}
+        </DetailRow>
+      ) : null}
       <DetailRow label={t('observability.auditability.cost.currency')}>{formatScalar(currency, notReported)}</DetailRow>
       <DetailRow label={t('observability.auditability.cost.captureStatus')}>
         {captureStatusLabel(snap.capture_status, t)}

@@ -357,16 +357,22 @@
       "no_pricing_configured": "Sin pricing configurado",
       "no_snapshot": "Sin snapshot de costo",
       "not_computed": "No calculado",
+      "partial_total": "{{amount}} {{currency}} (parcial)",
       "usage_not_reported": "Uso no reportado"
     },
     "llm_cost_note": {
       "billable_dimension_not_priced": "Dimensión facturable sin precio: {{dimension}}",
+      "canonical_model_without_catalog_entry": "El modelo canónico no tiene fila de precios (revise alias y entradas del catálogo)",
       "pricing_entry_missing": "Falta entrada de pricing",
       "pricing_present_but_no_billable_dimensions": "Hay pricing pero sin dimensiones facturables",
       "provider_usage_missing": "Faltan datos de uso del proveedor",
+      "usage_assumption": "Supuesto de facturación: {{detail}}",
       "usage_dimension_ambiguous": "Dimensión de uso ambigua: {{dimension}}"
     },
     "llm_cost_status": {
+      "exact": "Exacto",
+      "estimated": "Estimado",
+      "partial": "Parcial",
       "unavailable": "No disponible"
     },
     "loading": "Cargando comparación...",
@@ -967,11 +973,13 @@
         "inputCost": "Costo entrada",
         "outputCost": "Costo salida",
         "totalCost": "Costo total estimado",
+        "partialTotalCost": "Costo total parcial",
         "currency": "Moneda",
         "calculationSource": "Fuente del cálculo",
         "captureStatus": "Tipo de cálculo",
         "status_exact": "Exacto",
         "status_estimated": "Estimado",
+        "status_partial": "Parcial",
         "status_unavailable": "No disponible",
         "noData": "No hay información de costo registrada para esta ejecución.",
         "unavailableReason": "Motivo de coste no disponible",
