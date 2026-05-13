@@ -9,6 +9,12 @@ export function userFacingCaptureNote(note: string, t: TFunction): string {
   if (note === 'pricing_entry_missing' || note.startsWith('pricing_entry_missing:')) {
     return t('compare.llm_cost_note.pricing_entry_missing');
   }
+  if (
+    note === 'canonical_model_without_catalog_entry' ||
+    note.startsWith('canonical_model_without_catalog_entry:')
+  ) {
+    return t('compare.llm_cost_note.canonical_model_without_catalog_entry');
+  }
   if (note === 'pricing_present_but_no_billable_dimensions') {
     return t('compare.llm_cost_note.pricing_present_but_no_billable_dimensions');
   }
@@ -64,8 +70,15 @@ export function formatCostDisplay(
         currency: (currency || '').trim(),
       }).trim();
     } else if (
-      notes.some((n) => n === 'pricing_entry_missing' || n.startsWith('pricing_entry_missing:')) ||
-      machineReason === 'pricing_entry_missing'
+      notes.some(
+        (n) =>
+          n === 'pricing_entry_missing' ||
+          n.startsWith('pricing_entry_missing:') ||
+          n === 'canonical_model_without_catalog_entry' ||
+          n.startsWith('canonical_model_without_catalog_entry:')
+      ) ||
+      machineReason === 'pricing_entry_missing' ||
+      machineReason === 'canonical_model_without_catalog_entry'
     ) {
       value = t('compare.llm_cost_display.no_pricing_configured');
     } else if (notes.includes('provider_usage_missing') || machineReason === 'provider_usage_missing') {

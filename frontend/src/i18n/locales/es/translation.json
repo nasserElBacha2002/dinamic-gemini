@@ -362,6 +362,7 @@
     },
     "llm_cost_note": {
       "billable_dimension_not_priced": "Dimensión facturable sin precio: {{dimension}}",
+      "canonical_model_without_catalog_entry": "El modelo canónico no tiene fila de precios (revise alias y entradas del catálogo)",
       "pricing_entry_missing": "Falta entrada de pricing",
       "pricing_present_but_no_billable_dimensions": "Hay pricing pero sin dimensiones facturables",
       "provider_usage_missing": "Faltan datos de uso del proveedor",

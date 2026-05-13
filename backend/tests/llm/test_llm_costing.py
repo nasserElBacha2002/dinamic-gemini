@@ -111,6 +111,7 @@ def test_build_llm_cost_snapshot_exact_when_fully_priced_no_ambiguity() -> None:
         settings=settings,
     )
     assert snap["capture_status"] == "exact"
+    assert snap["pricing_snapshot"]["pricing_confidence"] == "operator_approved"
     assert snap["computed_cost"]["total_cost"] == "0.01250000"
     assert snap["computed_cost"]["currency"] == "USD"
     assert snap["pricing_snapshot"]["captured_at"]
@@ -165,6 +166,9 @@ def test_embedded_defaults_match_openai_gpt_5_4_case_insensitive() -> None:
     assert "pricing_entry_missing" not in snap["capture_notes"]
     assert snap["computed_cost"]["total_cost"] == "5.00000000"
     assert snap["computed_cost"]["total_cost_unavailable_reason"] is None
+    assert snap["pricing_snapshot"]["pricing_confidence"] == "embedded_placeholder"
+    assert snap["capture_status"] == "estimated"
+    assert "usage_assumption:embedded_pricing_placeholder_not_finance_approved" in snap["capture_notes"]
 
 
 def test_embedded_defaults_match_claude_sonnet_4_20250514() -> None:
@@ -177,6 +181,9 @@ def test_embedded_defaults_match_claude_sonnet_4_20250514() -> None:
     )
     assert snap["pricing_available"] is True
     assert snap["computed_cost"]["total_cost"] == "3.00000000"
+    assert snap["pricing_snapshot"]["pricing_confidence"] == "embedded_placeholder"
+    assert snap["capture_status"] == "estimated"
+    assert "usage_assumption:embedded_pricing_placeholder_not_finance_approved" in snap["capture_notes"]
 
 
 def test_build_llm_cost_snapshot_unavailable_missing_pricing_entry() -> None:
@@ -261,6 +268,7 @@ def test_build_llm_cost_snapshot_exact_when_usage_metadata_present_all_zero() ->
         settings=settings,
     )
     assert snap["capture_status"] == "exact"
+    assert snap["pricing_snapshot"]["pricing_confidence"] == "operator_approved"
     assert "provider_usage_missing" not in snap["capture_notes"]
 
 
@@ -351,6 +359,7 @@ def test_build_llm_cost_snapshot_exact_when_zero_usage_no_notes() -> None:
         settings=settings,
     )
     assert snap["capture_status"] == "exact"
+    assert snap["pricing_snapshot"]["pricing_confidence"] == "operator_approved"
     assert snap["computed_cost"]["total_cost"] == "0.00000000"
     assert "provider_usage_missing" not in snap["capture_notes"]
     assert "pricing_present_but_no_billable_dimensions" not in snap["capture_notes"]
@@ -430,6 +439,7 @@ def test_build_llm_cost_snapshot_exact_when_cache_write_priced() -> None:
         settings=settings,
     )
     assert snap["capture_status"] == "exact"
+    assert snap["pricing_snapshot"]["pricing_confidence"] == "operator_approved"
     assert snap["computed_cost"]["subtotal_cache_write"] is not None
     assert snap["computed_cost"]["total_cost"] is not None
 
@@ -461,6 +471,7 @@ def test_build_llm_cost_snapshot_gemini_thinking_billed_as_output() -> None:
         settings=settings,
     )
     assert snap["capture_status"] == "exact"
+    assert snap["pricing_snapshot"]["pricing_confidence"] == "operator_approved"
     assert "usage_dimension_ambiguous:output_tokens" not in snap["capture_notes"]
 
 
@@ -480,8 +491,71 @@ def test_validate_llm_pricing_coverage_flags_unknown_model() -> None:
         i.provider == "openai"
         and i.raw_model == "openai-model-not-in-any-catalog"
         and not i.has_entry
+        and i.missing_reason == "pricing_entry_missing"
         for i in issues
     )
+
+
+def test_validate_llm_pricing_coverage_alias_without_catalog_entry() -> None:
+    settings = SimpleNamespace(
+        llm_pricing_catalog_json=json.dumps(
+            {
+                "version": "x",
+                "currency": "USD",
+                "entries": [],
+                "aliases": [
+                    {
+                        "provider": "openai",
+                        "alias": "configured-alias",
+                        "canonical_model": "missing-canonical",
+                    }
+                ],
+            }
+        ),
+        llm_pricing_catalog_version="",
+        processing_openai_models="configured-alias",
+        processing_gemini_models="",
+        processing_claude_models="",
+        anthropic_model="",
+        gemini_model_name="",
+        openai_model="",
+    )
+    issues = validate_llm_pricing_coverage(settings)
+    miss = [i for i in issues if i.raw_model == "configured-alias" and not i.has_entry]
+    assert len(miss) == 1
+    assert miss[0].missing_reason == "canonical_model_without_catalog_entry"
+
+
+def test_build_llm_cost_snapshot_alias_without_catalog_entry_unavailable() -> None:
+    settings = _settings_with_catalog(
+        {
+            "version": "v1",
+            "currency": "USD",
+            "entries": [],
+            "aliases": [
+                {
+                    "provider": "openai",
+                    "alias": "my-short",
+                    "canonical_model": "gpt-not-in-catalog",
+                }
+            ],
+        }
+    )
+    snap = build_llm_cost_snapshot(
+        provider="openai",
+        model="my-short",
+        raw_usage={
+            "prompt_tokens": 100,
+            "completion_tokens": 0,
+            "total_tokens": 100,
+            "prompt_tokens_details": {"cached_tokens": 0},
+        },
+        settings=settings,
+    )
+    assert snap["capture_status"] == "unavailable"
+    assert snap["pricing_snapshot"]["pricing_confidence"] == "unknown"
+    assert any(n.startswith("canonical_model_without_catalog_entry:") for n in snap["capture_notes"])
+    assert snap["computed_cost"]["total_cost_unavailable_reason"] == "canonical_model_without_catalog_entry"
 
 
 def test_sanitize_llm_cost_snapshot_for_compare_strips_raw_usage() -> None:

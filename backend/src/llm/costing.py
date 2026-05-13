@@ -4,6 +4,7 @@ Provider-agnostic LLM usage/cost snapshot builder.
 The snapshot is persisted with each run for auditability. To avoid overclaiming precision:
 - ``total_tokens`` is kept only when reported by the provider payload.
 - ambiguous accounting paths are explicitly marked with ``usage_dimension_ambiguous:*`` notes.
+- ``pricing_snapshot.pricing_confidence`` distinguishes operator-approved catalog rows from embedded placeholders.
 """
 
 from __future__ import annotations
@@ -15,6 +16,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
+
+_PricingConfidence = Literal["operator_approved", "embedded_placeholder", "unknown"]
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +31,7 @@ _MONEY_QUANT = Decimal("0.00000001")
 _EMBEDDED_DEFAULT_LLM_PRICING_CATALOG: dict[str, Any] = {
     "version": "dinamic-embedded-pricing-v2",
     "currency": "USD",
-    "source": "dinamic_embedded_defaults",
+    "source": "dinamic_embedded_placeholders",
     "entries": [
         # OpenAI — aligned with typical PROCESSING_OPENAI_MODELS / OPENAI_MODEL
         {
@@ -361,6 +364,10 @@ class _PricingResolution:
     entry: dict[str, Any] | None
     canonical_model: str | None
     matched_entry_model: str | None
+    #: Catalog row key ``(provider, model)`` used for rates; ``None`` when no row matched.
+    matched_catalog_key: tuple[str, str] | None = None
+    #: True when an alias mapped the raw model to a canonical id with no catalog row for it.
+    alias_resolved_without_entry: bool = False
 
 
 def _alias_tuple(row: Any) -> tuple[str, str, str] | None:
@@ -372,6 +379,16 @@ def _alias_tuple(row: Any) -> tuple[str, str, str] | None:
     if not p or not a or not c:
         return None
     return (p, a, c)
+
+
+def _operator_catalog_entry_keys(parsed: dict[str, Any]) -> frozenset[tuple[str, str]]:
+    keys: set[tuple[str, str]] = set()
+    for ent in parsed.get("entries") or []:
+        if isinstance(ent, dict):
+            k = _catalog_entry_key(ent)
+            if k:
+                keys.add(k)
+    return frozenset(keys)
 
 
 def _merge_catalog_aliases(base: dict[str, Any], parsed: dict[str, Any]) -> list[dict[str, Any]]:
@@ -428,7 +445,14 @@ def resolve_pricing_with_canonical(
         hit = _find_exact_catalog_entry(catalog, p, m_raw)
         if hit is not None:
             mm = str(hit.get("model", "")).strip().lower() or m_raw
-            return _PricingResolution(hit, mm, str(hit.get("model", "")).strip() or m_raw)
+            mk = _catalog_entry_key(hit)
+            return _PricingResolution(
+                hit,
+                mm,
+                str(hit.get("model", "")).strip() or m_raw,
+                mk,
+                False,
+            )
 
     if m_raw:
         for row in catalog.get("aliases") or []:
@@ -439,18 +463,45 @@ def resolve_pricing_with_canonical(
             hit = _find_exact_catalog_entry(catalog, p, canon)
             if hit is not None:
                 mm = str(hit.get("model", "")).strip().lower() or canon
-                return _PricingResolution(hit, mm, str(hit.get("model", "")).strip() or canon)
-            return _PricingResolution(None, canon, None)
+                mk = _catalog_entry_key(hit)
+                return _PricingResolution(
+                    hit,
+                    mm,
+                    str(hit.get("model", "")).strip() or canon,
+                    mk,
+                    False,
+                )
+            return _PricingResolution(None, canon, None, None, True)
 
     wc = _find_wildcard_catalog_entry(catalog, p)
     if wc is not None:
         label = m_raw or "*"
+        mk = _catalog_entry_key(wc)
         return _PricingResolution(
             wc,
             label,
             str(wc.get("model", "")).strip() or "*",
+            mk,
+            False,
         )
-    return _PricingResolution(None, m_raw or None, None)
+    return _PricingResolution(None, m_raw or None, None, None, False)
+
+
+def _pricing_confidence_for_resolution(
+    catalog: dict[str, Any], resolution: _PricingResolution
+) -> _PricingConfidence:
+    """Whether the matched catalog row came from operator JSON vs embedded-only vs no row."""
+    if resolution.entry is None:
+        return "unknown"
+    mk = resolution.matched_catalog_key
+    if mk is None:
+        return "embedded_placeholder"
+    op = catalog.get("__operator_catalog_entry_keys__")
+    if not isinstance(op, (frozenset, set)):
+        return "embedded_placeholder"
+    if mk in op:
+        return "operator_approved"
+    return "embedded_placeholder"
 
 
 def _load_pricing_catalog(settings: Any) -> dict[str, Any]:
@@ -459,14 +510,19 @@ def _load_pricing_catalog(settings: Any) -> dict[str, Any]:
     raw_attr = getattr(settings, "llm_pricing_catalog_json", "")
     raw = raw_attr.strip() if isinstance(raw_attr, str) else ""
     if not raw:
+        base["__operator_catalog_entry_keys__"] = frozenset()
         return base
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
         logger.warning("llm.pricing_catalog_invalid_json: using embedded defaults only")
+        base["__operator_catalog_entry_keys__"] = frozenset()
         return base
     if not isinstance(parsed, dict):
+        base["__operator_catalog_entry_keys__"] = frozenset()
         return base
+
+    operator_keys = _operator_catalog_entry_keys(parsed)
 
     merged: dict[tuple[str, str], dict[str, Any]] = {}
     for ent in base.get("entries") or []:
@@ -489,10 +545,11 @@ def _load_pricing_catalog(settings: Any) -> dict[str, Any]:
         "source": (
             str(parsed["source"]).strip()
             if isinstance(parsed.get("source"), str) and str(parsed["source"]).strip()
-            else "settings.llm_pricing_catalog_json+dinamic_embedded_defaults"
+            else "settings.llm_pricing_catalog_json+dinamic_embedded_placeholders"
         ),
         "entries": list(merged.values()),
         "aliases": _merge_catalog_aliases(base, parsed),
+        "__operator_catalog_entry_keys__": operator_keys,
     }
     return out
 
@@ -675,6 +732,7 @@ class _PricingSnapshotBuildContext:
     n_catalog_entries: int
     raw_job_model: str | None
     canonical_model_snap: str | None
+    pricing_confidence: _PricingConfidence
 
 
 def _build_pricing_snapshot_mutable(ctx: _PricingSnapshotBuildContext) -> dict[str, Any]:
@@ -730,6 +788,7 @@ def _build_pricing_snapshot_mutable(ctx: _PricingSnapshotBuildContext) -> dict[s
         "video_input_cost_per_million": None,
         "thinking_cost_rule": None,
         "thinking_billed_as": None,
+        "pricing_confidence": ctx.pricing_confidence,
     }
 
     if isinstance(ctx.entry, dict):
@@ -814,6 +873,12 @@ def _total_cost_unavailable_reason(
     reason: str | None = None
     if "provider_usage_missing" in notes:
         reason = "provider_usage_missing"
+    elif any(
+        n == "canonical_model_without_catalog_entry"
+        or n.startswith("canonical_model_without_catalog_entry:")
+        for n in notes
+    ):
+        reason = "canonical_model_without_catalog_entry"
     elif any(n == "pricing_entry_missing" or n.startswith("pricing_entry_missing:") for n in notes):
         reason = "pricing_entry_missing"
     elif partial_total_cost is not None:
@@ -845,8 +910,8 @@ def build_llm_cost_snapshot(
       lacks a catalog rate (``partial_total_cost`` sums priced lines only; ``total_cost`` is null).
     - ``estimated``: every positive billable dimension has a rate and ``total_cost`` is set, but
       ``usage_dimension_ambiguous:*`` or ``usage_assumption:*`` notes remain.
-    - ``exact``: full pricing coverage for positive billable usage, no ambiguity or assumption notes,
-      and ``total_cost`` is set.
+    - ``exact``: operator-approved catalog row matched, full pricing coverage for positive billable
+      usage, no ambiguity or assumption notes, and ``total_cost`` is set.
     """
     provider_norm = (provider or "").strip().lower() or "unknown"
     model_norm = (model or "").strip() or None
@@ -856,6 +921,7 @@ def build_llm_cost_snapshot(
     resolution = resolve_pricing_with_canonical(catalog, provider_norm, model_norm or "")
     entry = resolution.entry
     canonical_snap = resolution.canonical_model
+    pricing_confidence = _pricing_confidence_for_resolution(catalog, resolution)
 
     entries_list = catalog.get("entries")
     n_catalog_entries = len(entries_list) if isinstance(entries_list, list) else 0
@@ -869,6 +935,7 @@ def build_llm_cost_snapshot(
             n_catalog_entries=n_catalog_entries,
             raw_job_model=model_norm,
             canonical_model_snap=canonical_snap,
+            pricing_confidence=pricing_confidence,
         )
     )
 
@@ -916,9 +983,14 @@ def build_llm_cost_snapshot(
     if not isinstance(entry, dict):
         raw_disp = model_norm or ""
         canon_disp = canonical_snap or "none"
-        notes.append(
-            f"pricing_entry_missing:provider={provider_norm},model={raw_disp},canonical_model={canon_disp}"
-        )
+        if resolution.alias_resolved_without_entry:
+            notes.append(
+                f"canonical_model_without_catalog_entry:provider={provider_norm},model={raw_disp},canonical_model={canon_disp}"
+            )
+        else:
+            notes.append(
+                f"pricing_entry_missing:provider={provider_norm},model={raw_disp},canonical_model={canon_disp}"
+            )
     has_billable_not_priced_note = any(
         n.startswith("billable_dimension_not_priced:") for n in notes
     )
@@ -932,6 +1004,9 @@ def build_llm_cost_snapshot(
         notes.append("pricing_present_but_no_billable_dimensions")
 
     notes = _dedupe_keep_order(notes)
+    if pricing_confidence == "embedded_placeholder" and total_cost is not None:
+        notes.append("usage_assumption:embedded_pricing_placeholder_not_finance_approved")
+    notes = _dedupe_keep_order(notes)
     pricing_available = has_pricing_row
     has_dim_ambiguous = any(note.startswith("usage_dimension_ambiguous:") for note in notes)
     has_assumption = any(note.startswith("usage_assumption:") for note in notes)
@@ -943,7 +1018,7 @@ def build_llm_cost_snapshot(
     if not has_usage_metadata:
         capture_status = "unavailable"
     elif total_cost is not None:
-        if has_dim_ambiguous or has_assumption:
+        if has_dim_ambiguous or has_assumption or pricing_confidence != "operator_approved":
             capture_status = "estimated"
         else:
             capture_status = "exact"
@@ -1034,7 +1109,7 @@ def validate_llm_pricing_coverage(settings: Any) -> list[PricingCoverageIssue]:
                 )
             )
             continue
-        if res.canonical_model and res.entry is None:
+        if res.alias_resolved_without_entry:
             reason = "canonical_model_without_catalog_entry"
         else:
             reason = "pricing_entry_missing"

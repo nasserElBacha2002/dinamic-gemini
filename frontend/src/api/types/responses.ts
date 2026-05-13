@@ -419,6 +419,8 @@ export interface LlmPricingSnapshot {
   video_input_cost_per_million?: string | null;
   thinking_cost_rule?: string | null;
   thinking_billed_as?: string | null;
+  /** operator_approved | embedded_placeholder | unknown — from backend pricing_snapshot */
+  pricing_confidence?: string | null;
 }
 
 export interface LlmComputedCost {

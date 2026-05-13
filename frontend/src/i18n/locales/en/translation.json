@@ -353,6 +353,7 @@
     },
     "llm_cost_note": {
       "billable_dimension_not_priced": "Billable dimension not priced",
+      "canonical_model_without_catalog_entry": "Canonical model has no pricing row (check catalog aliases and entries)",
       "pricing_entry_missing": "Pricing entry missing",
       "pricing_present_but_no_billable_dimensions": "Pricing present but no billable dimensions",
       "provider_usage_missing": "Provider usage missing",

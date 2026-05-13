@@ -57,6 +57,7 @@ class LlmPricingSnapshotResponse(BaseModel):
     video_input_cost_per_million: str | None = None
     thinking_cost_rule: str | None = None
     thinking_billed_as: str | None = None
+    pricing_confidence: str | None = None
 
 
 class LlmComputedCostResponse(BaseModel):
