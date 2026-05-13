@@ -157,12 +157,6 @@ export const queryKeys = {
       [...queryKeys.observability.all, 'metrics', params] as const,
   },
 
-  reviewQueue: {
-    // Keep root compatible with existing invalidation prefixes.
-    all: ['reviewQueue'] as const,
-    list: (params: Record<string, string | number>) => [...queryKeys.reviewQueue.all, 'list', params] as const,
-  },
-
   admin: {
     all: ['v3', 'admin'] as const,
     aiConfig: () => [...queryKeys.admin.all, 'ai-config'] as const,

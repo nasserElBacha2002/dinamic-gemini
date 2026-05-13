@@ -5,11 +5,13 @@ import type {
   AisleJobsListResponse,
   ExecutionLogResponse,
   JobSummary,
+  PositionDetailResponse,
   PositionListResponse,
   PromoteOperationalJobResponse,
+  ReviewActionRequest,
   RunAuditabilityView,
 } from './types';
-import { apiDownloadBlob, apiRequestJson } from './request';
+import { apiDownloadBlob, apiRequestJson, apiRequestVoid } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -179,4 +181,33 @@ export async function getAislePositions(
 ): Promise<PositionListResponse> {
   const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions`;
   return apiRequestJson<PositionListResponse>(`${path}${buildAislePositionsQueryString(listQuery)}`);
+}
+
+export async function getPositionDetail(
+  inventoryId: string,
+  aisleId: string,
+  positionId: string,
+  options?: { jobId?: string | null; exactPosition?: boolean }
+): Promise<PositionDetailResponse> {
+  const qs = buildQueryString([
+    ['job_id', options?.jobId],
+    ['exact_position', options?.exactPosition === true ? true : undefined, { emit: 'true-only' }],
+  ]);
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions/${positionId}${qs}`;
+  return apiRequestJson<PositionDetailResponse>(path);
+}
+
+export async function submitReviewAction(
+  inventoryId: string,
+  aisleId: string,
+  positionId: string,
+  body: ReviewActionRequest
+): Promise<void> {
+  return apiRequestVoid(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions/${positionId}/reviews`,
+    {
+      method: 'POST',
+      body,
+    }
+  );
 }

@@ -2,12 +2,12 @@
  * Deep link `/positions/:id` redirects to list views with openReviewDrawer state (single review UX).
  */
 
+import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import PositionDetailPage from '../src/pages/PositionDetailPage';
-import type { ResultDetailNavigationState } from '../src/features/results';
 
 vi.mock('../src/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/hooks')>();
@@ -45,9 +45,9 @@ describe('PositionDetailPage (redirect)', () => {
       ],
       { initialEntries: ['/inventories/inv-1/aisles/aisle-1/positions/pos-1'] }
     );
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
-      <QueryClientProvider client={client}>
+      <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
       </QueryClientProvider>
     );
@@ -60,38 +60,42 @@ describe('PositionDetailPage (redirect)', () => {
     });
   });
 
-  it('redirects to review queue when returnTo is review_queue', async () => {
-    const navState: ResultDetailNavigationState = {
-      resultIds: ['a', 'b'],
-      returnTo: 'review_queue',
-    };
+  it('redirects to aisle results with openReviewDrawer when returnTo is legacy review_queue', async () => {
     const router = createMemoryRouter(
       [
         {
           path: '/inventories/:inventoryId/aisles/:aisleId/positions/:positionId',
           element: <PositionDetailPage />,
         },
-        { path: '/review-queue', element: <div data-testid="review-queue" /> },
+        {
+          path: '/inventories/:inventoryId/aisles/:aisleId/positions',
+          element: <div data-testid="aisle-list" />,
+        },
       ],
       {
-        initialEntries: [{ pathname: '/inventories/inv-1/aisles/aisle-1/positions/pos-x', state: navState }],
+        initialEntries: [
+          {
+            pathname: '/inventories/inv-1/aisles/aisle-1/positions/pos-x',
+            state: { resultIds: ['a', 'b'], returnTo: 'review_queue' },
+          },
+        ],
       }
     );
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
-      <QueryClientProvider client={client}>
+      <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
       </QueryClientProvider>
     );
 
     await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/review-queue');
+      expect(router.state.location.pathname).toBe('/inventories/inv-1/aisles/aisle-1/positions');
       const st = router.state.location.state as {
-        openReviewDrawer?: { kind: string; positionId: string; inventoryName: string };
+        openReviewDrawer?: { kind: string; positionId: string; resultIds: string[] };
       };
-      expect(st?.openReviewDrawer?.kind).toBe('queue');
+      expect(st?.openReviewDrawer?.kind).toBe('aisle');
       expect(st?.openReviewDrawer?.positionId).toBe('pos-x');
-      expect(st?.openReviewDrawer?.inventoryName).toBe('Test Inventory');
+      expect(st?.openReviewDrawer?.resultIds).toEqual(['a', 'b']);
     });
   });
 });

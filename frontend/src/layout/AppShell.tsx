@@ -7,7 +7,7 @@
  * - `PageHeader` (see `components/shell/PageHeader.tsx`) is for **breadcrumbs** (§4.1, §14.1), **entity-specific
  *   titles** when the topbar stays generic (e.g. inventory name while topbar says “Inventory”), **secondary
  *   lines**, and **actions** in the main column (§4.1 “acciones contextuales en header” at page level).
- * - Top-level list/analytics routes (`/`, `/inventories`, `/review-queue`, `/metrics`): topbar shows the
+ * - Top-level list/analytics routes (`/`, `/inventories`, `/metrics`): topbar shows the
  *   visible title/subtitle; `PageHeader` uses **`a11yTitle` + page actions only** so the body does not repeat the
  *   same heading. Entity/detail routes keep a visible `PageHeader` title (and breadcrumbs when applicable).
  * - Narrow/detail columns (e.g. result review) may constrain width inside `AppMain` via

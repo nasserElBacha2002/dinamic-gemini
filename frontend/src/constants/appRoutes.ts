@@ -5,7 +5,6 @@
 
 export const ROUTE_LOGIN = '/login';
 export const ROUTE_HOME = '/';
-export const ROUTE_REVIEW_QUEUE = '/review-queue';
 export const ROUTE_METRICS = '/metrics';
 export const ROUTE_OBSERVABILIDAD = '/observabilidad';
 export const ROUTE_CLIENTS = '/clientes';

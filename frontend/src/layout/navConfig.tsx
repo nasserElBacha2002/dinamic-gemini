@@ -6,10 +6,8 @@ import {
   ROUTE_INGESTION_SESSIONS,
   ROUTE_METRICS,
   ROUTE_OBSERVABILIDAD,
-  ROUTE_REVIEW_QUEUE,
 } from '../constants/appRoutes';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
-import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import AnalyticsOutlinedIcon from '@mui/icons-material/AnalyticsOutlined';
 import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined';
 import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
@@ -25,7 +23,7 @@ export interface PrimaryNavItem {
   icon: ReactNode;
 }
 
-/** Primary sidebar — Inventories (home), Review queue, Metrics. */
+/** Primary sidebar — Inventories (home), import sessions, metrics, observability, clients. */
 export const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
   { labelKey: 'nav.inventories', to: ROUTE_HOME, icon: <Inventory2OutlinedIcon fontSize="small" /> },
   {
@@ -33,7 +31,6 @@ export const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     to: ROUTE_INGESTION_SESSIONS,
     icon: <CloudUploadOutlinedIcon fontSize="small" />,
   },
-  { labelKey: 'nav.review_queue', to: ROUTE_REVIEW_QUEUE, icon: <FactCheckOutlinedIcon fontSize="small" /> },
   { labelKey: 'nav.metrics', to: ROUTE_METRICS, icon: <AnalyticsOutlinedIcon fontSize="small" /> },
   { labelKey: 'nav.observability', to: ROUTE_OBSERVABILIDAD, icon: <InsightsOutlinedIcon fontSize="small" /> },
   { labelKey: 'nav.clients', to: ROUTE_CLIENTS, icon: <BusinessRoundedIcon fontSize="small" /> },

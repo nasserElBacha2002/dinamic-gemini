@@ -58,9 +58,6 @@ export function computeGuardrailNotices(recent: ReadonlyArray<CacheObsRow>): str
     }
     const fallbacks = last.fallbackInvalidations as string[] | undefined;
     const patchHits = last.patchHits as string[] | undefined;
-    if (last.strategy === 'reviewQueue' && Array.isArray(fallbacks) && fallbacks.length >= 2) {
-      notices.push('review_queue_multiple_fallbacks');
-    }
     if (
       last.strategy === 'aisleResults' &&
       Array.isArray(patchHits) &&
@@ -107,9 +104,6 @@ export function reportGuardrailsForNewEvent(row: CacheObsRow, buffer: ReadonlyAr
         'Review action ran with default (broad) invalidation — pass strategy from QuickReviewDrawer when context is known.',
         row
       );
-    }
-    if (n === 'review_queue_multiple_fallbacks') {
-      warnOnce('rq-fallback2', 'Review queue strategy hit multiple fallbacks — cold cache or missing row?', row);
     }
     if (n === 'aisle_results_cold_cache_heavy_fallback') {
       warnOnce(
