@@ -8,7 +8,11 @@ import { Alert, Box, Chip, CircularProgress, Paper, Stack, Typography } from '@m
 import type { RunAuditabilityView, RunAuditMetadataSources, LlmCostSnapshot } from '../api/types';
 import { useJobAuditability } from '../hooks';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
-import { formatAuditCostFromApiString, formatAuditTokenCount } from '../utils/formatLlmAuditCost';
+import {
+  formatAuditCostFromApiString,
+  formatAuditTokenCount,
+  normalizeCurrency,
+} from '../utils/formatLlmAuditCost';
 import { ErrorAlert } from './ui';
 
 export interface JobAuditabilityPanelProps {
@@ -69,9 +73,9 @@ function JobAuditabilityCostCard({
   const usage = snap.usage ?? {};
   const computed = snap.computed_cost ?? {};
   const pricingSnap = snap.pricing_snapshot ?? {};
-  const currency =
-    (computed.currency ?? pricingSnap.billing_currency ?? snap.billing_currency ?? 'USD').trim() ||
-    'USD';
+  const currency = normalizeCurrency(
+    computed.currency ?? pricingSnap.billing_currency ?? snap.billing_currency ?? 'USD'
+  );
 
   const inputTok = usage.input_tokens ?? null;
   const outputTok = usage.output_tokens ?? null;

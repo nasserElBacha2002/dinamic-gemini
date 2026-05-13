@@ -4,6 +4,13 @@
 
 const ES_AR = 'es-AR';
 
+/** ISO 4217-style code for Intl; defaults to USD unless `value` is a 3-letter A–Z code. */
+export function normalizeCurrency(value: unknown): string {
+  if (typeof value !== 'string') return 'USD';
+  const t = value.trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(t) ? t : 'USD';
+}
+
 function parseDecimalString(value: string | null | undefined): number | null {
   if (value == null) return null;
   const t = String(value).trim();
@@ -20,18 +27,19 @@ export function formatAuditTokenCount(value: number | null | undefined, notRepor
 /** Format a monetary amount for LLM micro-costs (avoids rounding tiny totals to 0.00). */
 export function formatAuditLlmMoney(amount: number, currency: string, notReported: string): string {
   if (!Number.isFinite(amount)) return notReported;
+  const code = normalizeCurrency(currency);
   const abs = Math.abs(amount);
   const minFrac = abs > 0 && abs < 0.01 ? 6 : 2;
   const maxFrac = abs > 0 && abs < 0.01 ? 6 : 4;
   try {
     return new Intl.NumberFormat(ES_AR, {
       style: 'currency',
-      currency: currency.length === 3 ? currency : 'USD',
+      currency: code,
       minimumFractionDigits: minFrac,
       maximumFractionDigits: maxFrac,
     }).format(amount);
   } catch {
-    return `${amount} ${currency}`;
+    return `${amount.toFixed(maxFrac)} ${code}`;
   }
 }
 
@@ -42,5 +50,5 @@ export function formatAuditCostFromApiString(
 ): string {
   const n = parseDecimalString(value);
   if (n == null) return notReported;
-  return formatAuditLlmMoney(n, (currency ?? 'USD').trim() || 'USD', notReported);
+  return formatAuditLlmMoney(n, normalizeCurrency(currency), notReported);
 }
