@@ -33,6 +33,8 @@ const jobFixture = (id: string, status = 'succeeded'): JobSummary => ({
   status,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
+  provider_name: id === 'job-1' ? 'prov-a' : id === 'job-2' ? 'prov-b' : 'prov-c',
+  model_name: id === 'job-1' ? 'model-a' : id === 'job-2' ? 'model-b' : 'model-c',
 });
 
 function compareManyFixture(includeDiffRows: boolean): AisleBenchmarkCompareManyResponse {
@@ -232,7 +234,7 @@ describe('CompareManyRunsPage', () => {
     await waitFor(() => expect(client.getAisleBenchmarkCompareMany).toHaveBeenCalledTimes(1));
 
     fireEvent.mouseDown(screen.getByLabelText(/baseline/i));
-    fireEvent.click(await screen.findByRole('option', { name: /job-2/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /prov-b · model-b/i }));
     expect(client.getAisleBenchmarkCompareMany).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: /apply comparison|aplicar comparación/i }));
@@ -246,7 +248,7 @@ describe('CompareManyRunsPage', () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
     await waitFor(() => expect(client.getAisleBenchmarkCompareMany).toHaveBeenCalledTimes(1));
     fireEvent.mouseDown(screen.getByLabelText(/baseline/i));
-    fireEvent.click(await screen.findByRole('option', { name: /job-2/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /prov-b · model-b/i }));
     expect(screen.getByText(/changes not applied|hay cambios sin aplicar/i)).toBeInTheDocument();
   });
 
@@ -275,15 +277,15 @@ describe('CompareManyRunsPage', () => {
     expect(screen.getByTestId('compare-many-baseline-card')).toBeInTheDocument();
     const blocks = screen.getAllByTestId('compare-many-comparison-block');
     expect(blocks).toHaveLength(2);
-    expect(blocks[0]).toHaveTextContent(/job-2/i);
-    expect(blocks[1]).toHaveTextContent(/job-3/i);
+    expect(blocks[0]).toHaveTextContent(/model-b|prov-b/i);
+    expect(blocks[1]).toHaveTextContent(/model-c|prov-c/i);
   });
 
   it('renders status as dedicated chip and keeps provider-model metadata separate', async () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
     await screen.findByTestId('compare-many-results');
     expect(screen.getByText(/status: running|estado: running/i)).toBeInTheDocument();
-    expect(screen.getByText(/prov-c · model-c/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/prov-c · model-c/i).length).toBeGreaterThanOrEqual(1);
   });
 
   it('adjusts draft baseline when selection removes current baseline and applies corrected baseline', async () => {
@@ -291,8 +293,8 @@ describe('CompareManyRunsPage', () => {
     await screen.findByTestId('compare-many-results');
 
     fireEvent.mouseDown(screen.getByLabelText(/runs to compare|corridas a comparar/i));
-    fireEvent.click(await screen.findByRole('option', { name: /job-3/i }));
-    fireEvent.click(await screen.findByRole('option', { name: /job-1/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /prov-c · model-c/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /prov-a · model-a/i }));
     fireEvent.keyDown(screen.getByRole('listbox', { name: /runs to compare|corridas a comparar/i }), {
       key: 'Escape',
     });
@@ -334,7 +336,7 @@ describe('CompareManyRunsPage', () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     fireEvent.mouseDown(screen.getByLabelText(/baseline/i));
-    fireEvent.click(await screen.findByRole('option', { name: /job-2/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /prov-b · model-b/i }));
     expect(screen.getByText(/changes not applied|hay cambios sin aplicar/i)).toBeInTheDocument();
   });
 

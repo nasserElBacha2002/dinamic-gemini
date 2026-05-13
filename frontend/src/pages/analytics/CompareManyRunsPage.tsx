@@ -14,6 +14,7 @@ import { formatExecutionDurationHuman, formatSignedDurationHuman } from '../../u
 import { MAX_COMPARE_JOBS, MIN_COMPARE_JOBS } from '../../features/analytics/constants/compareManyRuns';
 import { buildDraftError } from './compareManyRunsDraft';
 import { compareRunExecutionLabel } from '../../features/analytics/adapters/compareFormatters';
+import { formatBaselineVsTargetFromRuns } from '../../features/analytics/adapters/compareRunLabels';
 import {
   buildJobsById,
   buildOrderedComparisons,
@@ -286,7 +287,6 @@ export default function CompareManyRunsPage() {
             metricsLabel={({ qty, review, unknown, consolidated }) =>
               t('compare_many.job_metrics', { qty, review, unknown, consolidated })
             }
-            emDash={t('common.em_dash')}
           />
 
           <CompareDeltaLegend
@@ -304,6 +304,7 @@ export default function CompareManyRunsPage() {
             insightText={(comp) => compareManyExecutionInsight(t, comp as never)}
             deltaExecutionLabel={(value) => formatSignedDurationHuman(value)}
             baselineVsTargetLabel={(baseline, target) => t('compare_many.baseline_vs_target', { baseline, target })}
+            comparisonTitleForJobIds={(bId, tId) => formatBaselineVsTargetFromRuns(bId, tId, jobsById, t)}
             diffSummaryLabel={({ onlyBaseline, onlyTarget, both, qty, sku, pos }) =>
               t('compare_many.diff_summary_stats', { onlyBaseline, onlyTarget, both, qty, sku, pos })
             }

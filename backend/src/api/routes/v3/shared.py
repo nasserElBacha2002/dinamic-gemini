@@ -21,6 +21,7 @@ from src.api.constants.error_wire import (
 from src.api.errors import review_exception_to_http
 from src.api.schemas.aisle_schemas import AisleJobSummary, AisleResponse
 from src.api.schemas.asset_schemas import SourceAssetResponse
+from src.api.schemas.benchmark_schemas import LlmCostSnapshotResponse
 from src.api.schemas.inventory_schemas import (
     InventoryListItemResponse,
     InventoryResponse,
@@ -57,6 +58,9 @@ from src.application.services.reference_usage_from_job_result import (
     parse_reference_usage_from_result_json,
 )
 from src.application.services.result_context_resolver import ResultContextResolver
+from src.application.use_cases.benchmark_compare_support import (
+    sanitize_llm_cost_snapshot_for_compare,
+)
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.delete_position import DeletePositionUseCase
 from src.application.use_cases.get_aisle_processing_status import AisleProcessingStatusResult
@@ -530,6 +534,21 @@ def status_response_from_result(result: AisleProcessingStatusResult) -> AisleSta
     )
 
 
+def _llm_cost_snapshot_from_job_result(
+    result_json: dict[str, Any] | None,
+) -> LlmCostSnapshotResponse | None:
+    if not isinstance(result_json, dict):
+        return None
+    raw = result_json.get("llm_cost_snapshot")
+    if not isinstance(raw, dict):
+        return None
+    sanitized = sanitize_llm_cost_snapshot_for_compare(raw)
+    try:
+        return LlmCostSnapshotResponse.model_validate(sanitized)
+    except Exception:
+        return None
+
+
 def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
     return JobSummary(
         id=j.id,
@@ -555,6 +574,7 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
         prompt_key=j.prompt_key,
         prompt_version=j.prompt_version,
         is_operational=is_operational,
+        llm_cost_snapshot=_llm_cost_snapshot_from_job_result(j.result_json),
     )
 
 

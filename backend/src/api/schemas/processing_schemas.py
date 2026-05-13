@@ -6,6 +6,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 from src.api.schemas.aisle_schemas import AisleResponse
+from src.api.schemas.benchmark_schemas import LlmCostSnapshotResponse
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 
 
@@ -96,6 +97,8 @@ class JobSummary(BaseModel):
     prompt_version: Optional[str] = None
     #: True when this job is the aisle ``operational_job_id`` pointer (Phase 6 run browser).
     is_operational: bool = False
+    #: Optional LLM cost snapshot from ``result_json`` (sanitized; additive for run pickers).
+    llm_cost_snapshot: Optional[LlmCostSnapshotResponse] = None
 
 
 class AisleStatusResponse(BaseModel):

@@ -365,6 +365,8 @@ export interface JobSummary {
   prompt_version?: string | null;
   /** True when this job is the aisle operational pointer (Phase 6 jobs list). */
   is_operational?: boolean;
+  /** Present when ``result_json`` includes a validated LLM cost snapshot (list jobs; additive). */
+  llm_cost_snapshot?: LlmCostSnapshot | null;
 }
 
 /** GET .../aisles/{aisle_id}/jobs — newest first (multi-run browsing). */
