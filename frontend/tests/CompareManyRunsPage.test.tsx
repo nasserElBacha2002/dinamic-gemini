@@ -10,7 +10,21 @@ import CompareManyRunsPage from '../src/pages/analytics/CompareManyRunsPage';
 import { buildDraftError } from '../src/pages/analytics/compareManyRunsDraft';
 import { AppSnackbarProvider } from '../src/components/ui';
 import theme from '../src/theme';
-import type { AisleBenchmarkCompareManyResponse, Inventory, Aisle, JobSummary } from '../src/api/types';
+import type { AisleBenchmarkCompareManyResponse, Inventory, Aisle, JobSummary, LlmCostSnapshot } from '../src/api/types';
+
+function llmCostSnapshotWithTotal(totalCost = '0.123400', currency = 'USD'): LlmCostSnapshot {
+  return {
+    provider: 'prov-a',
+    model: 'model-a',
+    billing_currency: currency,
+    pricing_available: true,
+    usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+    pricing_snapshot: { billing_currency: currency, pricing_source: 'test' },
+    computed_cost: { total_cost: totalCost, currency },
+    capture_status: 'exact',
+    capture_notes: [],
+  };
+}
 
 const inventoryFixture = (): Inventory => ({
   id: 'inv-1',
@@ -33,6 +47,9 @@ const jobFixture = (id: string, status = 'succeeded'): JobSummary => ({
   status,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
+  provider_name: id === 'job-1' ? 'prov-a' : id === 'job-2' ? 'prov-b' : 'prov-c',
+  model_name: id === 'job-1' ? 'model-a' : id === 'job-2' ? 'model-b' : 'model-c',
+  ...(id === 'job-1' ? { llm_cost_snapshot: llmCostSnapshotWithTotal() } : {}),
 });
 
 function compareManyFixture(includeDiffRows: boolean): AisleBenchmarkCompareManyResponse {
@@ -60,6 +77,7 @@ function compareManyFixture(includeDiffRows: boolean): AisleBenchmarkCompareMany
           unknown_internal_code_count: 1,
           needs_review_count: 2,
         },
+        llm_cost_snapshot: llmCostSnapshotWithTotal(),
       },
       {
         job_id: 'job-2',
@@ -232,7 +250,7 @@ describe('CompareManyRunsPage', () => {
     await waitFor(() => expect(client.getAisleBenchmarkCompareMany).toHaveBeenCalledTimes(1));
 
     fireEvent.mouseDown(screen.getByLabelText(/baseline/i));
-    fireEvent.click(await screen.findByRole('option', { name: /job-2/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /prov-b · model-b/i }));
     expect(client.getAisleBenchmarkCompareMany).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: /apply comparison|aplicar comparación/i }));
@@ -246,7 +264,7 @@ describe('CompareManyRunsPage', () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
     await waitFor(() => expect(client.getAisleBenchmarkCompareMany).toHaveBeenCalledTimes(1));
     fireEvent.mouseDown(screen.getByLabelText(/baseline/i));
-    fireEvent.click(await screen.findByRole('option', { name: /job-2/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /prov-b · model-b/i }));
     expect(screen.getByText(/changes not applied|hay cambios sin aplicar/i)).toBeInTheDocument();
   });
 
@@ -275,15 +293,39 @@ describe('CompareManyRunsPage', () => {
     expect(screen.getByTestId('compare-many-baseline-card')).toBeInTheDocument();
     const blocks = screen.getAllByTestId('compare-many-comparison-block');
     expect(blocks).toHaveLength(2);
-    expect(blocks[0]).toHaveTextContent(/job-2/i);
-    expect(blocks[1]).toHaveTextContent(/job-3/i);
+    expect(blocks[0]).toHaveTextContent(/model-b|prov-b/i);
+    expect(blocks[1]).toHaveTextContent(/model-c|prov-c/i);
   });
 
   it('renders status as dedicated chip and keeps provider-model metadata separate', async () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
     await screen.findByTestId('compare-many-results');
-    expect(screen.getByText(/status: running|estado: running/i)).toBeInTheDocument();
-    expect(screen.getByText(/prov-c · model-c/i)).toBeInTheDocument();
+    expect(screen.getByText(/Estado:.*(En ejecución|Running)|status:.*running/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/prov-c · model-c/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('run cards show cost line when compare-many payload includes llm_cost_snapshot with total_cost', async () => {
+    renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
+    await screen.findByTestId('compare-many-results');
+    const baselineCard = screen.getByTestId('compare-many-baseline-card');
+    expect(baselineCard).toHaveTextContent(/Costo:|Cost:/i);
+    expect(baselineCard).toHaveTextContent(/0\.123400|0\.1234/i);
+  });
+
+  it('run cards show cost unavailable when llm_cost_snapshot is missing', async () => {
+    renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
+    await screen.findByTestId('compare-many-results');
+    const unavailable = screen.getAllByText(/Costo no disponible|Cost unavailable/i);
+    expect(unavailable.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('run picker option includes cost in secondary line when JobSummary has llm_cost_snapshot', async () => {
+    renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
+    await waitFor(() => expect(client.getAisleBenchmarkCompareMany).toHaveBeenCalled());
+    fireEvent.mouseDown(screen.getByLabelText(/runs to compare|corridas a comparar/i));
+    const opt = await screen.findByRole('option', { name: /prov-a · model-a/i });
+    expect(opt.textContent).toMatch(/0\.123400|0\.1234/);
+    expect(opt.textContent).toMatch(/USD/);
   });
 
   it('adjusts draft baseline when selection removes current baseline and applies corrected baseline', async () => {
@@ -291,8 +333,8 @@ describe('CompareManyRunsPage', () => {
     await screen.findByTestId('compare-many-results');
 
     fireEvent.mouseDown(screen.getByLabelText(/runs to compare|corridas a comparar/i));
-    fireEvent.click(await screen.findByRole('option', { name: /job-3/i }));
-    fireEvent.click(await screen.findByRole('option', { name: /job-1/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /prov-c · model-c/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /prov-a · model-a/i }));
     fireEvent.keyDown(screen.getByRole('listbox', { name: /runs to compare|corridas a comparar/i }), {
       key: 'Escape',
     });
@@ -334,7 +376,7 @@ describe('CompareManyRunsPage', () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     fireEvent.mouseDown(screen.getByLabelText(/baseline/i));
-    fireEvent.click(await screen.findByRole('option', { name: /job-2/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /prov-b · model-b/i }));
     expect(screen.getByText(/changes not applied|hay cambios sin aplicar/i)).toBeInTheDocument();
   });
 

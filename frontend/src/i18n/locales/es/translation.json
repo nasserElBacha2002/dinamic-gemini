@@ -424,7 +424,17 @@
     "summary_title": "Resumen",
     "status_chip": "Estado: {{status}}",
     "summary_values": "Corridas: {{jobs}} · Cantidad total min/max: {{qtyMin}} / {{qtyMax}} · Revisión min/max: {{reviewMin}} / {{reviewMax}} · Posiciones consolidadas min/max: {{consolidatedMin}} / {{consolidatedMax}} · Código interno desconocido min/max: {{unknownMin}} / {{unknownMax}}",
-    "target_non_ideal_status": "La corrida target no está en estado succeeded; revisá el resultado con cuidado."
+    "target_non_ideal_status": "La corrida target no está en estado succeeded; revisá el resultado con cuidado.",
+    "cost_line": "Costo: {{value}}",
+    "cost_unavailable": "Costo no disponible",
+    "exec_inline": "{{value}}",
+    "job_id_short": "Trabajo: {{id}}…",
+    "job_line": "Trabajo: {{id}}",
+    "status_inline": "Estado: {{status}}",
+    "status_line": "Estado: {{status}}",
+    "unknown_model": "Modelo desconocido",
+    "unknown_provider": "Proveedor desconocido",
+    "unknown_status": "estado desconocido"
   },
   "dialogs": {
     "aisle": {

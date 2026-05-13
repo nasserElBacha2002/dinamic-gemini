@@ -1,19 +1,32 @@
-import { Box, Button, Chip, FormControl, InputLabel, MenuItem, Paper, Select, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  Chip,
+  FormControl,
+  InputLabel,
+  ListItemText,
+  MenuItem,
+  Paper,
+  Select,
+  Tooltip,
+  Typography,
+} from '@mui/material';
+import { useTranslation } from 'react-i18next';
+import type { JobSummary } from '../../../../api/types';
+import {
+  getRunModelLabel,
+  getRunPickerMenuSecondaryLine,
+} from '../../adapters/compareRunLabels';
 
 type AisleOption = {
   id: string;
   code: string;
 };
 
-type JobOption = {
-  id: string;
-  status: string;
-};
-
 type CompareManyRunDraftPanelProps = {
   aisles: AisleOption[];
-  jobs: JobOption[];
-  jobsForDisplayFallback: JobOption[];
+  jobs: JobSummary[];
+  jobsForDisplayFallback: JobSummary[];
   draftAisleId: string;
   draftJobIds: string[];
   baselineSelectValue: string;
@@ -51,7 +64,10 @@ export default function CompareManyRunDraftPanel({
   applyLabel,
   dirtyLabel,
 }: CompareManyRunDraftPanelProps) {
-  const jobLabel = (job: JobOption): string => `${job.id.slice(0, 8)}…`;
+  const { t } = useTranslation();
+
+  const resolveJob = (id: string): JobSummary | undefined =>
+    jobs.find((job) => job.id === id) ?? jobsForDisplayFallback.find((job) => job.id === id);
 
   return (
     <Paper variant="outlined" sx={{ p: 2, mb: 2 }} data-testid="compare-many-controls">
@@ -80,17 +96,39 @@ export default function CompareManyRunDraftPanel({
             value={draftJobIds}
             label={jobsLabel}
             onChange={(e) => onDraftJobIdsChange((e.target.value as string[]).slice(0, maxCompareJobs))}
-            renderValue={(selected) =>
-              (selected as string[])
-                .map((id) => jobs.find((job) => job.id === id) ?? jobsForDisplayFallback.find((job) => job.id === id))
-                .filter((job): job is JobOption => Boolean(job))
-                .map(jobLabel)
-                .join(', ')
-            }
+            renderValue={(selected) => (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '100%' }}>
+                {(selected as string[]).map((id) => {
+                  const job = resolveJob(id);
+                  if (!job) {
+                    return (
+                      <Chip key={id} size="small" label={id.slice(0, 8)} />
+                    );
+                  }
+                  return (
+                    <Tooltip key={id} title={id}>
+                      <Chip size="small" label={getRunModelLabel(job, t)} sx={{ maxWidth: '100%' }} />
+                    </Tooltip>
+                  );
+                })}
+              </Box>
+            )}
           >
             {jobs.map((job) => (
-              <MenuItem key={job.id} value={job.id} disabled={!draftJobIds.includes(job.id) && draftJobIds.length >= maxCompareJobs}>
-                {jobLabel(job)} · {job.status}
+              <MenuItem
+                key={job.id}
+                value={job.id}
+                disabled={!draftJobIds.includes(job.id) && draftJobIds.length >= maxCompareJobs}
+              >
+                <ListItemText
+                  primary={getRunModelLabel(job, t)}
+                  secondary={getRunPickerMenuSecondaryLine(job, t)}
+                  primaryTypographyProps={{ variant: 'body2' }}
+                  secondaryTypographyProps={{
+                    variant: 'caption',
+                    sx: { whiteSpace: 'normal', wordBreak: 'break-word' },
+                  }}
+                />
               </MenuItem>
             ))}
           </Select>
@@ -103,12 +141,34 @@ export default function CompareManyRunDraftPanel({
             value={baselineSelectValue}
             label={baselineLabel}
             onChange={(e) => onBaselineChange(String(e.target.value))}
+            renderValue={(id) => {
+              const job = resolveJob(String(id));
+              return job ? getRunModelLabel(job, t) : String(id).slice(0, 8);
+            }}
           >
-            {draftJobIds.map((id) => (
-              <MenuItem key={id} value={id}>
-                {id.slice(0, 8)}…
-              </MenuItem>
-            ))}
+            {draftJobIds.map((id) => {
+              const job = resolveJob(id);
+              if (!job) {
+                return (
+                  <MenuItem key={id} value={id}>
+                    {id.slice(0, 8)}…
+                  </MenuItem>
+                );
+              }
+              return (
+                <MenuItem key={id} value={id}>
+                  <ListItemText
+                    primary={getRunModelLabel(job, t)}
+                    secondary={getRunPickerMenuSecondaryLine(job, t)}
+                    primaryTypographyProps={{ variant: 'body2' }}
+                    secondaryTypographyProps={{
+                      variant: 'caption',
+                      sx: { whiteSpace: 'normal', wordBreak: 'break-word' },
+                    }}
+                  />
+                </MenuItem>
+              );
+            })}
           </Select>
         </FormControl>
 

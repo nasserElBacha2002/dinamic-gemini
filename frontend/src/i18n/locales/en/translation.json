@@ -415,7 +415,17 @@
     "summary_title": "Summary",
     "status_chip": "Status: {{status}}",
     "summary_values": "Jobs: {{jobs}} · Total quantity min/max: {{qtyMin}} / {{qtyMax}} · Needs review min/max: {{reviewMin}} / {{reviewMax}} · Consolidated positions min/max: {{consolidatedMin}} / {{consolidatedMax}} · Unknown internal code min/max: {{unknownMin}} / {{unknownMax}}",
-    "target_non_ideal_status": "Target run status is not succeeded; review results carefully."
+    "target_non_ideal_status": "Target run status is not succeeded; review results carefully.",
+    "cost_line": "Cost: {{value}}",
+    "cost_unavailable": "Cost unavailable",
+    "exec_inline": "{{value}}",
+    "job_id_short": "Job: {{id}}…",
+    "job_line": "Job: {{id}}",
+    "status_inline": "Status: {{status}}",
+    "status_line": "Status: {{status}}",
+    "unknown_model": "Unknown model",
+    "unknown_provider": "Unknown provider",
+    "unknown_status": "unknown status"
   },
   "dialogs": {
     "aisle": {
