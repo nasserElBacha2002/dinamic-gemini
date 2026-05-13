@@ -54,13 +54,11 @@ from src.application.ports.contracts import InventoryListItem
 from src.application.services.inventory_primary_execution_config import (
     primary_execution_config_for_inventory,
 )
+from src.application.services.llm_cost_snapshot_public import llm_cost_snapshot_public_dict
 from src.application.services.reference_usage_from_job_result import (
     parse_reference_usage_from_result_json,
 )
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.benchmark_compare_support import (
-    sanitize_llm_cost_snapshot_for_compare,
-)
 from src.application.use_cases.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.delete_position import DeletePositionUseCase
 from src.application.use_cases.get_aisle_processing_status import AisleProcessingStatusResult
@@ -537,14 +535,11 @@ def status_response_from_result(result: AisleProcessingStatusResult) -> AisleSta
 def _llm_cost_snapshot_from_job_result(
     result_json: dict[str, Any] | None,
 ) -> LlmCostSnapshotResponse | None:
-    if not isinstance(result_json, dict):
+    d = llm_cost_snapshot_public_dict(result_json)
+    if d is None:
         return None
-    raw = result_json.get("llm_cost_snapshot")
-    if not isinstance(raw, dict):
-        return None
-    sanitized = sanitize_llm_cost_snapshot_for_compare(raw)
     try:
-        return LlmCostSnapshotResponse.model_validate(sanitized)
+        return LlmCostSnapshotResponse.model_validate(d)
     except Exception:
         return None
 

@@ -5,7 +5,25 @@ import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as client from '../src/api/client';
 import JobAuditabilityPanel from '../src/components/JobAuditabilityPanel';
-import type { RunAuditabilityView } from '../src/api/types';
+import type { RunAuditabilityView, LlmCostSnapshot } from '../src/api/types';
+
+function sampleCostSnapshot(): LlmCostSnapshot {
+  return {
+    provider: 'gemini-audit-cost',
+    model: 'gemini-2.5-pro-test',
+    billing_currency: 'USD',
+    usage: { input_tokens: 12430, output_tokens: 840, total_tokens: 13270 },
+    pricing_snapshot: { pricing_source: 'catalog_test', billing_currency: 'USD' },
+    computed_cost: {
+      subtotal_input: '0.00123000',
+      subtotal_output: '0.00840000',
+      total_cost: '0.00963000',
+      currency: 'USD',
+    },
+    capture_status: 'estimated',
+    capture_notes: ['nota-de-prueba'],
+  };
+}
 
 function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -151,5 +169,33 @@ describe('JobAuditabilityPanel', () => {
       />
     );
     expect(screen.queryByText(/prompt_text/i)).not.toBeInTheDocument();
+  });
+
+  it('shows cost empty state when cost_snapshot is absent', () => {
+    wrap(
+      <JobAuditabilityPanel
+        inventoryId="inv1"
+        aisleId="a1"
+        jobId="j1"
+        auditability={fullView({ cost_snapshot: null })}
+      />
+    );
+    expect(screen.getByTestId('job-auditability-cost')).toBeInTheDocument();
+    expect(screen.getByText(/No hay información de costo registrada para esta ejecución/i)).toBeInTheDocument();
+  });
+
+  it('renders cost snapshot provider, pricing source, and notes when present', () => {
+    wrap(
+      <JobAuditabilityPanel
+        inventoryId="inv1"
+        aisleId="a1"
+        jobId="j1"
+        auditability={fullView({ cost_snapshot: sampleCostSnapshot() })}
+      />
+    );
+    expect(screen.getByText('Costo del procesamiento')).toBeInTheDocument();
+    expect(screen.getByText('gemini-audit-cost')).toBeInTheDocument();
+    expect(screen.getByText('catalog_test')).toBeInTheDocument();
+    expect(screen.getByText('nota-de-prueba')).toBeInTheDocument();
   });
 });

@@ -764,6 +764,7 @@ describe('InventoryDetail', () => {
         },
         missing_metadata: ['hybrid_report', 'execution_log'],
         legacy_mode: false,
+        cost_snapshot: null,
       },
       isLoading: false,
       isFetching: false,

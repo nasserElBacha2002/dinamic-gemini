@@ -12,6 +12,7 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.run_audit_execution_log_loader import RunAuditExecutionLogLoader
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
+from src.application.services.llm_cost_snapshot_public import llm_cost_snapshot_public_dict
 from src.application.services.reference_usage_from_job_result import (
     VISUAL_REFERENCE_CONTEXT_RESULT_JSON_KEY,
     parse_reference_usage_from_result_json,
@@ -343,6 +344,8 @@ class RunAuditabilityService:
 
         legacy_mode = not bool(client_id) and not bool(client_supplier_id)
 
+        cost_snapshot = llm_cost_snapshot_public_dict(result_json)
+
         view = RunAuditabilityView(
             job_id=job.id,
             status=job.status.value,
@@ -377,6 +380,7 @@ class RunAuditabilityService:
             metadata_sources=sources,
             missing_metadata=[],
             legacy_mode=legacy_mode,
+            cost_snapshot=cost_snapshot,
         )
         view.missing_metadata = self._compute_missing_metadata(view, sources)
         return view
