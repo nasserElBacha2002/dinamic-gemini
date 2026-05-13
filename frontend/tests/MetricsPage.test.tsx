@@ -127,7 +127,7 @@ function renderMetrics() {
         <Routes>
           <Route path="/metrics" element={<MetricsPage />} />
           <Route
-            path="/inventories/:inventoryId/analytics/compare"
+            path="/inventories/:inventoryId/analytics/compare-many"
             element={<div data-testid="metrics-compare-route">compare</div>}
           />
         </Routes>

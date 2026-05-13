@@ -3,11 +3,9 @@ import {
   canonicalizeAislePositionsListQuery,
   canonicalizeInventoriesListQuery,
   canonicalizeOptionalId,
-  canonicalizeReviewQueueListQuery,
   inventoriesListKeyPart,
   normalizePositiveInt,
   positionsListKeyPart,
-  reviewQueueListKeyPart,
 } from '../src/api/queryParamCanonicalization';
 
 describe('queryParamCanonicalization', () => {
@@ -29,30 +27,6 @@ describe('queryParamCanonicalization', () => {
       sort_dir: 'desc',
     });
     expect(inventoriesListKeyPart(a)).toEqual(inventoriesListKeyPart(b));
-  });
-
-  it('canonicalizes review queue key for empty/null equivalents', () => {
-    const a = reviewQueueListKeyPart({
-      inventory_id: ' inv-1 ',
-      aisle_id: '',
-      traceability: '  UNKNOWN ',
-      position_status: '  REVIEWED ',
-      has_evidence: false,
-      qty_zero: true,
-      page: 1,
-      page_size: 50,
-    });
-    const b = reviewQueueListKeyPart({
-      inventory_id: 'inv-1',
-      aisle_id: null,
-      traceability: 'unknown',
-      position_status: 'reviewed',
-      has_evidence: false,
-      qty_zero: true,
-      page: 1,
-      page_size: 50,
-    });
-    expect(a).toEqual(b);
   });
 
   it('keeps positions job slice distinct from explicit job ids', () => {
@@ -80,31 +54,6 @@ describe('normalizePositiveInt (integer policy)', () => {
     expect(normalizePositiveInt(Infinity)).toBeUndefined();
     expect(normalizePositiveInt(-1)).toBeUndefined();
     expect(normalizePositiveInt(0)).toBeUndefined();
-  });
-});
-
-describe('review queue key/request parity', () => {
-  it('uses same canonical object for key as for implied wire identity', () => {
-    const raw: Parameters<typeof canonicalizeReviewQueueListQuery>[0] = {
-      inventory_id: '  inv-1 ',
-      page: 1.9,
-      page_size: 10.7,
-      min_confidence: Number.POSITIVE_INFINITY,
-    };
-    const canonical = canonicalizeReviewQueueListQuery(raw);
-    expect(canonical.page).toBe(1);
-    expect(canonical.page_size).toBe(10);
-    expect(canonical.min_confidence).toBeUndefined();
-    expect(reviewQueueListKeyPart(raw)).toEqual(reviewQueueListKeyPart(canonical));
-  });
-
-  it('idempotent: canonicalizing twice matches once', () => {
-    const once = canonicalizeReviewQueueListQuery({
-      inventory_id: 'x',
-      page: 2,
-      has_evidence: true,
-    });
-    expect(canonicalizeReviewQueueListQuery(once)).toEqual(once);
   });
 });
 

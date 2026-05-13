@@ -64,7 +64,6 @@ export type VisibleErrorContext =
   | 'inventory'
   | 'aisle'
   | 'analytics'
-  | 'reviewQueue'
   | 'results'
   | 'ingestionSession';
 
@@ -74,7 +73,6 @@ const CONTEXT_FALLBACK_KEY: Record<VisibleErrorContext, string> = {
   inventory: 'errors.load_inventory',
   aisle: 'errors.load_aisles',
   analytics: 'errors.load_metrics',
-  reviewQueue: 'errors.load_review_queue',
   results: 'errors.load_results',
   ingestionSession: 'errors.request_failed',
 };

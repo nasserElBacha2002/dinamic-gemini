@@ -357,16 +357,22 @@
       "no_pricing_configured": "Sin pricing configurado",
       "no_snapshot": "Sin snapshot de costo",
       "not_computed": "No calculado",
+      "partial_total": "{{amount}} {{currency}} (parcial)",
       "usage_not_reported": "Uso no reportado"
     },
     "llm_cost_note": {
       "billable_dimension_not_priced": "Dimensión facturable sin precio: {{dimension}}",
+      "canonical_model_without_catalog_entry": "El modelo canónico no tiene fila de precios (revise alias y entradas del catálogo)",
       "pricing_entry_missing": "Falta entrada de pricing",
       "pricing_present_but_no_billable_dimensions": "Hay pricing pero sin dimensiones facturables",
       "provider_usage_missing": "Faltan datos de uso del proveedor",
+      "usage_assumption": "Supuesto de facturación: {{detail}}",
       "usage_dimension_ambiguous": "Dimensión de uso ambigua: {{dimension}}"
     },
     "llm_cost_status": {
+      "exact": "Exacto",
+      "estimated": "Estimado",
+      "partial": "Parcial",
       "unavailable": "No disponible"
     },
     "loading": "Cargando comparación...",
@@ -416,7 +422,6 @@
     "loading_diff_rows": "Cargando filas con diferencias...",
     "missing_inventory": "Se requiere inventario.",
     "no_differences": "No se detectaron diferencias contra la baseline.",
-    "open_ab_compare": "Abrir comparación A/B",
     "open_compare_many": "Abrir compare-many",
     "show_diff_rows": "Ver filas con diferencias",
     "subtitle": "Compará corridas seleccionadas contra una baseline.",
@@ -424,7 +429,17 @@
     "summary_title": "Resumen",
     "status_chip": "Estado: {{status}}",
     "summary_values": "Corridas: {{jobs}} · Cantidad total min/max: {{qtyMin}} / {{qtyMax}} · Revisión min/max: {{reviewMin}} / {{reviewMax}} · Posiciones consolidadas min/max: {{consolidatedMin}} / {{consolidatedMax}} · Código interno desconocido min/max: {{unknownMin}} / {{unknownMax}}",
-    "target_non_ideal_status": "La corrida target no está en estado succeeded; revisá el resultado con cuidado."
+    "target_non_ideal_status": "La corrida target no está en estado succeeded; revisá el resultado con cuidado.",
+    "cost_line": "Costo: {{value}}",
+    "cost_unavailable": "Costo no disponible",
+    "exec_inline": "{{value}}",
+    "job_id_short": "Trabajo: {{id}}…",
+    "job_line": "Trabajo: {{id}}",
+    "status_inline": "Estado: {{status}}",
+    "status_line": "Estado: {{status}}",
+    "unknown_model": "Modelo desconocido",
+    "unknown_provider": "Proveedor desconocido",
+    "unknown_status": "estado desconocido"
   },
   "dialogs": {
     "aisle": {
@@ -497,7 +512,6 @@
     "load_reference_images": "No se pudieron cargar las imágenes de referencia",
     "load_result_detail": "No se pudo cargar el detalle del resultado",
     "load_results": "No se pudieron cargar los resultados",
-    "load_review_queue": "No se pudo cargar la cola de revisión",
     "merge_failed": "La fusión falló",
     "not_found": "No encontrado",
     "preview_aisle_asset_failed": "No se pudo previsualizar el activo del pasillo",
@@ -948,7 +962,29 @@
       "yes": "Sí",
       "no": "No",
       "unknown": "No informado",
-      "notAvailable": "No disponible"
+      "notAvailable": "No disponible",
+      "cost": {
+        "title": "Costo del procesamiento",
+        "provider": "Proveedor",
+        "model": "Modelo",
+        "inputTokens": "Tokens de entrada",
+        "outputTokens": "Tokens de salida",
+        "totalTokens": "Tokens totales",
+        "inputCost": "Costo entrada",
+        "outputCost": "Costo salida",
+        "totalCost": "Costo total estimado",
+        "partialTotalCost": "Costo total parcial",
+        "currency": "Moneda",
+        "calculationSource": "Fuente del cálculo",
+        "captureStatus": "Tipo de cálculo",
+        "status_exact": "Exacto",
+        "status_estimated": "Estimado",
+        "status_partial": "Parcial",
+        "status_unavailable": "No disponible",
+        "noData": "No hay información de costo registrada para esta ejecución.",
+        "unavailableReason": "Motivo de coste no disponible",
+        "captureNotes": "Notas"
+      }
     },
     "metrics": {
       "title": "Métricas de observabilidad",
@@ -1122,7 +1158,7 @@
     "kpi_qty_zero": "Cant. en cero",
     "kpi_total": "Kpi total",
     "kpi_with_evidence": "Kpi with evidence",
-    "loading_workload": "Cargando cola de revisión...",
+    "loading_workload": "Cargando volumen de trabajo...",
     "max_confidence": "Confianza máxima",
     "min_confidence": "Confianza mínima",
     "min_confidence_help": "Ingresá un valor entre 0 y 1.",
@@ -1238,22 +1274,9 @@
     "summary_sku_set": "SKU establecido",
     "summary_status": "Estado"
   },
-  "review_queue": {
-    "column_priority": "Prioridad",
-    "column_quantity": "Cantidad",
-    "filter_quality_sku": "Calidad / SKU",
-    "filter_scope": "Alcance",
-    "placeholder_confidence": "0.00 - 1.00"
-  },
-  "review_queue_table": {
-    "empty_message": "No hay posiciones pendientes con los filtros actuales.",
-    "empty_title": "Sin resultados",
-    "review_aria": "Abrir revisión rápida"
-  },
   "nav": {
     "inventories": "Inventarios",
     "ingestion_sessions": "Sesiones de importación",
-    "review_queue": "Cola de revisión",
     "metrics": "Métricas",
     "observability": "Observabilidad",
     "clients": "Clientes",
@@ -1282,10 +1305,6 @@
     "result_review": {
       "title": "Revisión de resultado",
       "subtitle": "Revisá evidencia y aplicá acciones operativas"
-    },
-    "review_queue": {
-      "title": "Cola de revisión",
-      "subtitle": "Priorizá posiciones que requieren revisión manual"
     },
     "metrics": {
       "title": "Métricas",

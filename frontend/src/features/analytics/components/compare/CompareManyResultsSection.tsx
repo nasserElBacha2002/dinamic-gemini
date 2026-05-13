@@ -45,6 +45,8 @@ type CompareManyResultsSectionProps = {
   insightText: (comp: CompareManyComparison) => string | null;
   deltaExecutionLabel: (value: number) => string;
   baselineVsTargetLabel: (baseline: string, target: string) => string;
+  /** When set, titles each comparison block using full job ids (e.g. model labels from loaded runs). */
+  comparisonTitleForJobIds?: (baselineJobId: string, targetJobId: string) => string;
   diffSummaryLabel: (values: {
     onlyBaseline: number;
     onlyTarget: number;
@@ -87,6 +89,7 @@ export default function CompareManyResultsSection({
   insightText,
   deltaExecutionLabel,
   baselineVsTargetLabel,
+  comparisonTitleForJobIds,
   diffSummaryLabel,
   labels,
 }: CompareManyResultsSectionProps) {
@@ -106,7 +109,9 @@ export default function CompareManyResultsSection({
           <Paper variant="outlined" sx={{ p: 2 }} key={comp.target_job_id} data-testid="compare-many-comparison-block">
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
               <Typography variant="subtitle1">
-                {baselineVsTargetLabel(comp.baseline_job_id.slice(0, 8), comp.target_job_id.slice(0, 8))}
+                {comparisonTitleForJobIds
+                  ? comparisonTitleForJobIds(comp.baseline_job_id, comp.target_job_id)
+                  : baselineVsTargetLabel(comp.baseline_job_id.slice(0, 8), comp.target_job_id.slice(0, 8))}
               </Typography>
               <Button
                 size="small"

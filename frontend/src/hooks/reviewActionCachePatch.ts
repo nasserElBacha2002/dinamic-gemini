@@ -11,7 +11,6 @@ import type {
   PositionDetailResponse,
   PositionListResponse,
   PositionSummary,
-  ReviewQueueListResponse,
 } from '../api/types/responses';
 import { queryKeys } from '../api/queryKeys';
 import { recordReviewActionCacheObs } from '../dev/cacheMutationObservability';
@@ -19,13 +18,13 @@ import { recordReviewActionCacheObs } from '../dev/cacheMutationObservability';
 /**
  * Post-success cache behavior for `useSubmitReviewAction`.
  *
- * - **`reviewQueue`** / **`aisleResults`**: wired from `QuickReviewDrawer` based on operator route.
+ * - **`aisleResults`**: wired from `QuickReviewDrawer` when reviewing from aisle results.
  * - **`detail`**: **Reserved — not used in production.** Implemented + unit-tested for a future
  *   position-detail-only entry (narrower invalidation than `aisleResults`, e.g. no merge-results churn).
- *   `QuickReviewDrawer` only passes `reviewQueue` | `aisleResults` | `undefined`. Wire `detail` only when
+ *   `QuickReviewDrawer` passes `aisleResults` | `undefined`. Wire `detail` only when
  *   product adds a route that needs this contract; otherwise leave `undefined` / `aisleResults`.
  */
-export type ReviewMutationStrategy = 'reviewQueue' | 'aisleResults' | 'detail';
+export type ReviewMutationStrategy = 'aisleResults' | 'detail';
 
 /**
  * Compare fields this module may change. Used to detect true no-ops so we do not treat
@@ -125,53 +124,6 @@ export function applyReviewActionToPositionSummary(
   return positionsSemanticallyEqualForPatch(position, next) ? position : next;
 }
 
-/**
- * After removing a row from a cached page, `total_items` / `total_pages` are best-effort local
- * approximations for UX (pagination may not match server totals under filters); exact counts come from refetch.
- */
-function transformReviewQueueList(
-  old: ReviewQueueListResponse,
-  positionId: string,
-  body: ReviewActionRequest
-): ReviewQueueListResponse {
-  if (!Array.isArray(old.items)) return old;
-  const idx = old.items.findIndex((it) => it.position.id === positionId);
-  if (idx === -1) return old;
-
-  const removeRow =
-    body.action_type === REVIEW_ACTION_WIRE.DELETE_POSITION ||
-    body.action_type === REVIEW_ACTION_WIRE.CONFIRM ||
-    body.action_type === REVIEW_ACTION_WIRE.MARK_UNKNOWN ||
-    body.action_type === REVIEW_ACTION_WIRE.MARK_IMAGE_MISMATCH;
-
-  if (removeRow) {
-    const items = old.items.filter((it) => it.position.id !== positionId);
-    const removed = old.items.length - items.length;
-    if (removed === 0) return old;
-    const totalItems = Math.max(0, old.total_items - removed);
-    const totalPages =
-      old.page_size && old.page_size > 0
-        ? Math.max(1, Math.ceil(totalItems / old.page_size))
-        : old.total_pages;
-    return {
-      ...old,
-      items,
-      total_items: totalItems,
-      total_pages: totalPages,
-    };
-  }
-
-  const patched = applyReviewActionToPositionSummary(old.items[idx].position, body);
-  if (patched === old.items[idx].position) return old;
-
-  const nextItems = old.items.slice();
-  nextItems[idx] = {
-    ...old.items[idx],
-    position: patched,
-  };
-  return { ...old, items: nextItems };
-}
-
 function transformPositionList(
   old: PositionListResponse,
   positionId: string,
@@ -204,24 +156,6 @@ function transformPositionList(
   const next = old.positions.slice();
   next[idx] = patched;
   return { ...old, positions: next };
-}
-
-function patchReviewQueueLists(
-  queryClient: QueryClient,
-  positionId: string,
-  body: ReviewActionRequest
-): boolean {
-  let changed = false;
-  queryClient.setQueriesData<ReviewQueueListResponse>(
-    { queryKey: queryKeys.reviewQueue.all },
-    (old) => {
-      if (!old || !Array.isArray(old.items)) return old;
-      const next = transformReviewQueueList(old, positionId, body);
-      if (next !== old) changed = true;
-      return next;
-    }
-  );
-  return changed;
 }
 
 function patchPositionDetailQueries(
@@ -283,8 +217,6 @@ function patchAislePositionsLists(
 }
 
 export type ReviewCachePatchFlags = {
-  /** When true, caller should still invalidate review-queue queries (no cached list or row not found). */
-  invalidateReviewQueue: boolean;
   /** When true, caller should invalidate position detail (nothing to patch/remove in cache). */
   invalidatePositionDetail: boolean;
   /** When true, caller should invalidate aisle positions list queries. */
@@ -303,26 +235,6 @@ function invalidatePositionDetail(
 }
 
 /**
- * Apply cache patches for `reviewQueue` strategy; narrow invalidation when patches hit cached data.
- */
-export function patchCachesForReviewQueueStrategy(
-  queryClient: QueryClient,
-  inventoryId: string,
-  aisleId: string,
-  positionId: string,
-  body: ReviewActionRequest
-): ReviewCachePatchFlags {
-  const queuePatched = patchReviewQueueLists(queryClient, positionId, body);
-  const detailPatched = patchPositionDetailQueries(queryClient, inventoryId, aisleId, positionId, body);
-
-  return {
-    invalidateReviewQueue: !queuePatched,
-    invalidatePositionDetail: !detailPatched,
-    invalidatePositionsList: false,
-  };
-}
-
-/**
  * Apply cache patches for `aisleResults` strategy; merge-results still invalidated by caller.
  */
 export function patchCachesForAisleResultsStrategy(
@@ -336,14 +248,13 @@ export function patchCachesForAisleResultsStrategy(
   const detailPatched = patchPositionDetailQueries(queryClient, inventoryId, aisleId, positionId, body);
 
   return {
-    invalidateReviewQueue: false,
     invalidatePositionDetail: !detailPatched,
     invalidatePositionsList: !listPatched,
   };
 }
 
 /**
- * Apply cache patches for `detail` strategy (no merge/review-queue domains).
+ * Apply cache patches for `detail` strategy (no merge-results domain).
  */
 export function patchCachesForDetailStrategy(
   queryClient: QueryClient,
@@ -356,7 +267,6 @@ export function patchCachesForDetailStrategy(
   const detailPatched = patchPositionDetailQueries(queryClient, inventoryId, aisleId, positionId, body);
 
   return {
-    invalidateReviewQueue: false,
     invalidatePositionDetail: !detailPatched,
     invalidatePositionsList: !listPatched,
   };
@@ -386,39 +296,6 @@ export function applySubmitReviewActionCacheEffects({
   body,
   strategy,
 }: ApplySubmitReviewActionCacheEffectsParams): void {
-  // Review Queue screen (`ReviewQueuePage`) loads rows via `useReviewQueue` only; the drawer uses
-  // `positionDetail`. Nothing on that route subscribes to aisle `positions`, merge-results, or `aisles`,
-  // so invalidating those would only add redundant traffic after a review action.
-  if (strategy === 'reviewQueue') {
-    const flags = patchCachesForReviewQueueStrategy(
-      queryClient,
-      inventoryId,
-      aisleId,
-      positionId,
-      body
-    );
-    const patchHits: Array<'review_queue_list' | 'position_detail' | 'positions_list'> = [];
-    if (!flags.invalidateReviewQueue) patchHits.push('review_queue_list');
-    if (!flags.invalidatePositionDetail) patchHits.push('position_detail');
-    const fallbackInvalidations: string[] = [];
-    if (flags.invalidatePositionDetail) fallbackInvalidations.push('positionDetail');
-    if (flags.invalidateReviewQueue) fallbackInvalidations.push('reviewQueue.all');
-    if (flags.invalidatePositionDetail) {
-      invalidatePositionDetail(queryClient, inventoryId, aisleId, positionId);
-    }
-    if (flags.invalidateReviewQueue) {
-      queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue.all });
-    }
-    recordReviewActionCacheObs({
-      strategy: 'reviewQueue',
-      scope: { inventoryId, aisleId, positionId },
-      patchHits,
-      fallbackInvalidations,
-      directInvalidations: [],
-    });
-    return;
-  }
-
   if (strategy === 'aisleResults') {
     const flags = patchCachesForAisleResultsStrategy(
       queryClient,
@@ -427,7 +304,7 @@ export function applySubmitReviewActionCacheEffects({
       positionId,
       body
     );
-    const patchHits: Array<'review_queue_list' | 'position_detail' | 'positions_list'> = [];
+    const patchHits: Array<'position_detail' | 'positions_list'> = [];
     if (!flags.invalidatePositionsList) patchHits.push('positions_list');
     if (!flags.invalidatePositionDetail) patchHits.push('position_detail');
     const fallbackInvalidations: string[] = [];
@@ -455,10 +332,10 @@ export function applySubmitReviewActionCacheEffects({
   }
 
   // Detail flows often sit beside a parent positions list (same aisle); refreshing that list keeps row
-  // summaries and counts aligned with the reviewed position without touching merge/review-queue domains.
+  // summaries and counts aligned with the reviewed position without touching merge-results.
   if (strategy === 'detail') {
     const flags = patchCachesForDetailStrategy(queryClient, inventoryId, aisleId, positionId, body);
-    const patchHits: Array<'review_queue_list' | 'position_detail' | 'positions_list'> = [];
+    const patchHits: Array<'position_detail' | 'positions_list'> = [];
     if (!flags.invalidatePositionsList) patchHits.push('positions_list');
     if (!flags.invalidatePositionDetail) patchHits.push('position_detail');
     const fallbackInvalidations: string[] = [];
@@ -493,7 +370,6 @@ export function applySubmitReviewActionCacheEffects({
       'positions',
       'mergeResults',
       'aisles',
-      'reviewQueue.all',
     ],
   });
   invalidatePositionDetail(queryClient, inventoryId, aisleId, positionId);
@@ -504,5 +380,4 @@ export function applySubmitReviewActionCacheEffects({
     queryKey: queryKeys.inventories.mergeResults(inventoryId, aisleId),
   });
   queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
-  queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue.all });
 }

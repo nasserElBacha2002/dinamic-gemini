@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, CircularProgress } from '@mui/material';
-import { ROUTE_HOME, ROUTE_REVIEW_QUEUE, pathToAislePositions } from '../constants/appRoutes';
+import { ROUTE_HOME, pathToAislePositions } from '../constants/appRoutes';
 import { parseResultDetailNavigationState } from '../features/results';
 import { useInventoryDetail, useAislesList } from '../hooks';
 
@@ -32,31 +32,11 @@ export default function PositionDetailPage() {
     if (redirected.current || !inventoryId || !aisleId || !positionId) return;
     if (!invQ.data?.name || !aislesQ.isFetched) return;
 
-    const aisleCode = aislesQ.data?.items?.find((a) => a.id === aisleId)?.code ?? t('common.em_dash');
     const rawIds = navState?.resultIds;
     const resultIds =
       Array.isArray(rawIds) && rawIds.length > 0 ? rawIds : [positionId];
 
     redirected.current = true;
-
-    if (navState?.returnTo === 'review_queue') {
-      navigate(ROUTE_REVIEW_QUEUE, {
-        replace: true,
-        state: {
-          openReviewDrawer: {
-            kind: 'queue',
-            inventoryId,
-            aisleId,
-            positionId,
-            resultIds,
-            inventoryName: invQ.data.name,
-            aisleCode,
-            jobId: jobIdFromQuery,
-          },
-        },
-      });
-      return;
-    }
 
     const q = jobIdFromQuery ? `?jobId=${encodeURIComponent(jobIdFromQuery)}` : '';
     navigate(`${pathToAislePositions(inventoryId, aisleId)}${q}`, {
@@ -78,12 +58,10 @@ export default function PositionDetailPage() {
     aisleId,
     positionId,
     invQ.data?.name,
-    aislesQ.data?.items,
     aislesQ.isFetched,
     navState,
     navigate,
     jobIdFromQuery,
-    t,
   ]);
 
   if (!inventoryId || !aisleId || !positionId) {

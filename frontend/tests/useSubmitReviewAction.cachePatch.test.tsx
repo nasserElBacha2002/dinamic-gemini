@@ -7,11 +7,9 @@ import * as client from '../src/api/client';
 import { queryKeys } from '../src/api/queryKeys';
 import {
   canonicalizeAislePositionsListQuery,
-  canonicalizeReviewQueueListQuery,
   positionsListKeyPart,
-  reviewQueueListKeyPart,
 } from '../src/api/queryParamCanonicalization';
-import type { PositionDetailResponse, PositionSummary, ReviewQueueListResponse } from '../src/api/types/responses';
+import type { PositionSummary } from '../src/api/types/responses';
 
 function wrapper(qc: QueryClient) {
   return function W({ children }: { children: React.ReactNode }) {
@@ -43,55 +41,6 @@ describe('useSubmitReviewAction cache patching (Phase 5)', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-  });
-
-  it('reviewQueue strategy: patches cached queue + detail and skips invalidation when row was present', async () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const rqCanonical = canonicalizeReviewQueueListQuery({ page: 1, page_size: 25 });
-    const rqKey = queryKeys.reviewQueue.list(reviewQueueListKeyPart(rqCanonical));
-    qc.setQueryData(rqKey, {
-      summary: { pending_review: 1, low_confidence: 0, invalid_traceability: 0, qty_zero: 0, missing_evidence: 0 },
-      items: [
-        {
-          inventory_id: 'inv-1',
-          inventory_name: 'Inv',
-          aisle_code: 'A',
-          position: basePosition(),
-        },
-      ],
-      page: 1,
-      page_size: 25,
-      total_items: 1,
-      total_pages: 1,
-    });
-
-    const detailKey = queryKeys.inventories.positionDetailScoped('inv-1', 'aisle-1', 'pos-1', null, false);
-    const detail: PositionDetailResponse = {
-      position: basePosition(),
-      evidences: [],
-      review_actions: [],
-      run_context: { result_context_source: 'legacy' },
-    };
-    qc.setQueryData(detailKey, detail);
-
-    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
-    const { result } = renderHook(
-      () =>
-        useSubmitReviewAction('inv-1', 'aisle-1', 'pos-1', {
-          strategy: 'reviewQueue',
-        }),
-      { wrapper: wrapper(qc) }
-    );
-
-    await result.current.mutateAsync({ action_type: 'confirm' });
-    await waitFor(() => expect(client.submitReviewAction).toHaveBeenCalled());
-
-    expect(invalidateSpy).not.toHaveBeenCalled();
-    const rq = qc.getQueryData<ReviewQueueListResponse>(rqKey);
-    expect(rq?.items).toHaveLength(0);
-    const patchedDetail = qc.getQueryData<PositionDetailResponse>(detailKey);
-    expect(patchedDetail?.position.needs_review).toBe(false);
-    expect(patchedDetail?.position.review_resolution).toBe('confirmed');
   });
 
   it('aisleResults strategy: patches list + detail; only merge-results is invalidated', async () => {
@@ -185,13 +134,12 @@ describe('useSubmitReviewAction cache patching (Phase 5)', () => {
     await waitFor(() => expect(client.submitReviewAction).toHaveBeenCalled());
 
     expect(setDataSpy).not.toHaveBeenCalled();
-    expect(invalidateSpy).toHaveBeenCalledTimes(5);
+    expect(invalidateSpy).toHaveBeenCalledTimes(4);
     expect(invalidateSpy.mock.calls.map((c) => c[0])).toEqual([
       { queryKey: queryKeys.inventories.positionDetail('inv-1', 'aisle-1', 'pos-1') },
       { queryKey: queryKeys.inventories.positions('inv-1', 'aisle-1') },
       { queryKey: queryKeys.inventories.mergeResults('inv-1', 'aisle-1') },
       { queryKey: queryKeys.inventories.aisles('inv-1') },
-      { queryKey: queryKeys.reviewQueue.all },
     ]);
   });
 

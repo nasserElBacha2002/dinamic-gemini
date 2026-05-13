@@ -18,7 +18,6 @@ export {
   useAisleJobDetail,
   useJobAuditability,
   useAisleJobsList,
-  useAisleBenchmarkCompare,
   useAisleBenchmarkCompareMany,
   useAisleSourceAssets,
 } from './useAisles';
@@ -28,7 +27,6 @@ export {
   useAisleMergeResults,
   positionsListQueryKeyPart,
 } from './usePositions';
-export { useReviewQueue } from './useReviewQueue';
 export { useObservabilityMetrics } from './useObservabilityMetrics';
 export {
   useCreateClient,

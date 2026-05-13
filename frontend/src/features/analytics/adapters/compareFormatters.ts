@@ -1,13 +1,19 @@
 import type { TFunction } from 'i18next';
-import type { BenchmarkRunCompareSide, JobSummary } from '../../../api/types';
+import type { LlmCostSnapshot } from '../../../api/types';
 import { formatExecutionDurationHuman } from '../../../utils/benchmarkExecutionTime';
 
 export function userFacingCaptureNote(note: string, t: TFunction): string {
   if (note === 'provider_usage_missing') {
     return t('compare.llm_cost_note.provider_usage_missing');
   }
-  if (note === 'pricing_entry_missing') {
+  if (note === 'pricing_entry_missing' || note.startsWith('pricing_entry_missing:')) {
     return t('compare.llm_cost_note.pricing_entry_missing');
+  }
+  if (
+    note === 'canonical_model_without_catalog_entry' ||
+    note.startsWith('canonical_model_without_catalog_entry:')
+  ) {
+    return t('compare.llm_cost_note.canonical_model_without_catalog_entry');
   }
   if (note === 'pricing_present_but_no_billable_dimensions') {
     return t('compare.llm_cost_note.pricing_present_but_no_billable_dimensions');
@@ -20,24 +26,17 @@ export function userFacingCaptureNote(note: string, t: TFunction): string {
     const dimension = note.slice('usage_dimension_ambiguous:'.length);
     return t('compare.llm_cost_note.usage_dimension_ambiguous', { dimension });
   }
+  if (note.startsWith('usage_assumption:')) {
+    const rest = note.slice('usage_assumption:'.length);
+    return t('compare.llm_cost_note.usage_assumption', { detail: rest });
+  }
   return note;
 }
 
 export function formatCostDisplay(
   run: {
     model_name?: string | null;
-    llm_cost_snapshot?: {
-      billing_currency?: string | null;
-      pricing_available?: boolean | null;
-      model?: string | null;
-      computed_cost?: {
-        total_cost?: string | null;
-        currency?: string | null;
-        total_cost_unavailable_reason?: string | null;
-      };
-      capture_status?: string;
-      capture_notes?: string[];
-    } | null;
+    llm_cost_snapshot?: Partial<LlmCostSnapshot> | null;
   },
   t: TFunction
 ): {
@@ -52,8 +51,10 @@ export function formatCostDisplay(
     };
   }
   const total = snap.computed_cost?.total_cost?.trim();
+  const partial = snap.computed_cost?.partial_total_cost?.trim();
   const currency = snap.computed_cost?.currency?.trim() || snap.billing_currency?.trim();
   const statusKey = snap.capture_status ?? 'unavailable';
+  const isPartialStatus = snap.capture_status === 'partial';
   const statusLabel = t(`compare.llm_cost_status.${statusKey}`, {
     defaultValue: t('compare.llm_cost_status.unavailable'),
   });
@@ -63,7 +64,22 @@ export function formatCostDisplay(
   const details = [statusLabel, ...noteText].join(' · ');
   if (!total) {
     let value: string;
-    if (notes.includes('pricing_entry_missing') || machineReason === 'pricing_entry_missing') {
+    if (isPartialStatus && partial) {
+      value = t('compare.llm_cost_display.partial_total', {
+        amount: partial,
+        currency: (currency || '').trim(),
+      }).trim();
+    } else if (
+      notes.some(
+        (n) =>
+          n === 'pricing_entry_missing' ||
+          n.startsWith('pricing_entry_missing:') ||
+          n === 'canonical_model_without_catalog_entry' ||
+          n.startsWith('canonical_model_without_catalog_entry:')
+      ) ||
+      machineReason === 'pricing_entry_missing' ||
+      machineReason === 'canonical_model_without_catalog_entry'
+    ) {
       value = t('compare.llm_cost_display.no_pricing_configured');
     } else if (notes.includes('provider_usage_missing') || machineReason === 'provider_usage_missing') {
       value = t('compare.llm_cost_display.usage_not_reported');
@@ -75,7 +91,8 @@ export function formatCostDisplay(
       noteText.length > 0 ||
       statusKey !== 'unavailable' ||
       Boolean(machineReason) ||
-      Boolean(modelLabel);
+      Boolean(modelLabel) ||
+      (isPartialStatus && Boolean(partial));
     const detailsWithModel =
       modelLabel && !total
         ? `${details}${details ? ' · ' : ''}${t('compare.llm_cost_display.model_in_tooltip', { model: modelLabel })}`
@@ -83,19 +100,6 @@ export function formatCostDisplay(
     return { value, details: showDetails ? detailsWithModel : null };
   }
   return { value: `${total} ${currency || ''}`.trim(), details };
-}
-
-export function runExecutionDisplay(
-  run: Pick<BenchmarkRunCompareSide, 'execution_time_human' | 'execution_time_seconds'>,
-  t: TFunction
-): string {
-  if (run.execution_time_human) {
-    return run.execution_time_human;
-  }
-  if (run.execution_time_seconds != null) {
-    return formatExecutionDurationHuman(run.execution_time_seconds);
-  }
-  return t('compare.execution_unavailable');
 }
 
 export function signedValue(value: number): string {
@@ -107,10 +111,6 @@ export function semanticColor(value: number, higherIsWorse: boolean): 'success.m
   if (value === 0) return 'text.primary';
   if (higherIsWorse) return value > 0 ? 'error.main' : 'success.main';
   return value > 0 ? 'success.main' : 'error.main';
-}
-
-export function displayJobName(job: JobSummary): string {
-  return `${job.id.slice(0, 8)}…`;
 }
 
 export function compareRunExecutionLabel(

@@ -42,26 +42,35 @@ class LlmPricingSnapshotResponse(BaseModel):
     captured_at: str | None = None
     pricing_catalog_entry_captured_at: str | None = None
     billing_currency: str | None = None
+    price_units: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    canonical_model: str | None = None
     input_cost_per_million: str | None = None
     output_cost_per_million: str | None = None
     cached_input_cost_per_million: str | None = None
     thinking_cost_per_million: str | None = None
+    cache_write_cost_per_million: str | None = None
     tool_request_unit_cost: str | None = None
     image_input_unit_cost: str | None = None
     audio_input_cost_per_million: str | None = None
     video_input_cost_per_million: str | None = None
     thinking_cost_rule: str | None = None
+    thinking_billed_as: str | None = None
+    pricing_confidence: str | None = None
 
 
 class LlmComputedCostResponse(BaseModel):
     subtotal_input: str | None = None
     subtotal_output: str | None = None
     subtotal_cached: str | None = None
+    subtotal_cache_write: str | None = None
     subtotal_thinking: str | None = None
     subtotal_tools: str | None = None
     subtotal_image: str | None = None
     subtotal_audio: str | None = None
     subtotal_video: str | None = None
+    partial_total_cost: str | None = None
     total_cost: str | None = None
     currency: str | None = None
     total_cost_unavailable_reason: str | None = None
@@ -70,6 +79,7 @@ class LlmComputedCostResponse(BaseModel):
 class LlmCostSnapshotResponse(BaseModel):
     provider: str
     model: str | None = None
+    canonical_model: str | None = None
     pricing_available: bool | None = None
     billing_currency: str | None = None
     usage: LlmUsageSnapshotResponse

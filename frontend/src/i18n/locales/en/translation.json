@@ -348,16 +348,22 @@
       "no_pricing_configured": "No pricing configured",
       "no_snapshot": "No snapshot",
       "not_computed": "Not computed",
+      "partial_total": "{{amount}} {{currency}} (partial)",
       "usage_not_reported": "Usage not reported"
     },
     "llm_cost_note": {
       "billable_dimension_not_priced": "Billable dimension not priced",
+      "canonical_model_without_catalog_entry": "Canonical model has no pricing row (check catalog aliases and entries)",
       "pricing_entry_missing": "Pricing entry missing",
       "pricing_present_but_no_billable_dimensions": "Pricing present but no billable dimensions",
       "provider_usage_missing": "Provider usage missing",
+      "usage_assumption": "Billing assumption: {{detail}}",
       "usage_dimension_ambiguous": "Usage dimension ambiguous"
     },
     "llm_cost_status": {
+      "exact": "Exact",
+      "estimated": "Estimated",
+      "partial": "Partial",
       "unavailable": "Unavailable"
     },
     "loading": "Loading",
@@ -407,7 +413,6 @@
     "loading_diff_rows": "Loading diff rows...",
     "missing_inventory": "Inventory is required.",
     "no_differences": "No differences detected vs baseline.",
-    "open_ab_compare": "Open A/B compare",
     "open_compare_many": "Open compare-many",
     "show_diff_rows": "Show diff rows",
     "subtitle": "Compare selected runs against one baseline.",
@@ -415,7 +420,17 @@
     "summary_title": "Summary",
     "status_chip": "Status: {{status}}",
     "summary_values": "Jobs: {{jobs}} · Total quantity min/max: {{qtyMin}} / {{qtyMax}} · Needs review min/max: {{reviewMin}} / {{reviewMax}} · Consolidated positions min/max: {{consolidatedMin}} / {{consolidatedMax}} · Unknown internal code min/max: {{unknownMin}} / {{unknownMax}}",
-    "target_non_ideal_status": "Target run status is not succeeded; review results carefully."
+    "target_non_ideal_status": "Target run status is not succeeded; review results carefully.",
+    "cost_line": "Cost: {{value}}",
+    "cost_unavailable": "Cost unavailable",
+    "exec_inline": "{{value}}",
+    "job_id_short": "Job: {{id}}…",
+    "job_line": "Job: {{id}}",
+    "status_inline": "Status: {{status}}",
+    "status_line": "Status: {{status}}",
+    "unknown_model": "Unknown model",
+    "unknown_provider": "Unknown provider",
+    "unknown_status": "unknown status"
   },
   "dialogs": {
     "aisle": {
@@ -487,7 +502,6 @@
     "load_reference_images": "Load reference images",
     "load_result_detail": "Load result detail",
     "load_results": "Load results",
-    "load_review_queue": "Load review queue",
     "merge_failed": "Merge failed",
     "not_found": "Not found",
     "preview_aisle_asset_failed": "Preview aisle asset failed",
@@ -861,23 +875,12 @@
     "summary_sku_set": "Summary sku set",
     "summary_status": "Summary status"
   },
-  "review_queue": {
-    "column_priority": "Column priority",
-    "column_quantity": "Column quantity",
-    "filter_quality_sku": "Filter quality sku",
-    "filter_scope": "Filter scope",
-    "placeholder_confidence": "Placeholder confidence"
-  },
-  "review_queue_table": {
-    "empty_message": "Empty message",
-    "empty_title": "Empty title",
-    "review_aria": "Review aria"
-  },
   "nav": {
     "inventories": "Inventories",
     "ingestion_sessions": "Import sessions",
-    "review_queue": "Review queue",
     "metrics": "Metrics",
+    "observability": "Observability",
+    "clients": "Clients",
     "ai_config": "AI configuration"
   },
   "root": {
@@ -903,10 +906,6 @@
     "result_review": {
       "title": "Result review",
       "subtitle": "Review evidence and apply operator actions"
-    },
-    "review_queue": {
-      "title": "Review queue",
-      "subtitle": "Prioritize positions that need manual review"
     },
     "metrics": {
       "title": "Metrics",

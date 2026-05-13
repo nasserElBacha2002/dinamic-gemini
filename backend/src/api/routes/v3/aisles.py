@@ -777,6 +777,10 @@ def compare_aisle_benchmark_runs(
 
     For **benchmark / inspection** only; does not alter operational analytics defaults.
     ``job_a_id`` and ``job_b_id`` must name two different runs.
+
+    **Product note:** the web app no longer exposes a standalone A/B comparison screen; operators use
+    ``benchmark/compare-many``. This pairwise GET remains for exports, API consumers, and shared
+    compare logic used by compare-many.
     """
     try:
         payload = use_case.execute(

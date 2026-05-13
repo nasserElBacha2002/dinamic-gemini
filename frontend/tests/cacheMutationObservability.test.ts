@@ -12,10 +12,10 @@ import {
 import { applySubmitReviewActionCacheEffects } from '../src/hooks/reviewActionCachePatch';
 import { queryKeys } from '../src/api/queryKeys';
 import {
-  canonicalizeReviewQueueListQuery,
-  reviewQueueListKeyPart,
+  canonicalizeAislePositionsListQuery,
+  positionsListKeyPart,
 } from '../src/api/queryParamCanonicalization';
-import type { PositionDetailResponse, PositionSummary, ReviewQueueListResponse } from '../src/api/types/responses';
+import type { PositionDetailResponse, PositionSummary, PositionListResponse } from '../src/api/types/responses';
 
 function basePosition(overrides: Partial<PositionSummary> = {}): PositionSummary {
   return {
@@ -71,31 +71,18 @@ describe('cacheMutationObservability', () => {
     expect(summarizeQueryKey(k)).toContain('[obj]');
   });
 
-  it('applySubmitReviewActionCacheEffects emits review_action_cache for reviewQueue when patches hit', () => {
+  it('applySubmitReviewActionCacheEffects emits review_action_cache for aisleResults when patches hit', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const rqCanonical = canonicalizeReviewQueueListQuery({ page: 1, page_size: 25 });
-    const rqKey = queryKeys.reviewQueue.list(reviewQueueListKeyPart(rqCanonical));
-    qc.setQueryData(rqKey, {
-      summary: {
-        pending_review: 1,
-        low_confidence: 0,
-        invalid_traceability: 0,
-        qty_zero: 0,
-        missing_evidence: 0,
-      },
-      items: [
-        {
-          inventory_id: 'inv-1',
-          inventory_name: 'Inv',
-          aisle_code: 'A',
-          position: basePosition(),
-        },
-      ],
+    const plCanon = canonicalizeAislePositionsListQuery({});
+    const plKey = queryKeys.inventories.positionsList('inv-1', 'aisle-1', positionsListKeyPart(plCanon));
+    qc.setQueryData(plKey, {
+      positions: [basePosition()],
       page: 1,
-      page_size: 25,
+      page_size: 20,
       total_items: 1,
       total_pages: 1,
-    } satisfies ReviewQueueListResponse);
+      raw_fetch_truncated: false,
+    } satisfies PositionListResponse);
 
     const detailKey = queryKeys.inventories.positionDetailScoped('inv-1', 'aisle-1', 'pos-1', null, false);
     const detail: PositionDetailResponse = {
@@ -112,14 +99,14 @@ describe('cacheMutationObservability', () => {
       aisleId: 'aisle-1',
       positionId: 'pos-1',
       body: { action_type: 'confirm' },
-      strategy: 'reviewQueue',
+      strategy: 'aisleResults',
     });
 
     const reviewEv = getCacheMutationObservabilityEvents().filter((e) => e.kind === 'review_action_cache');
     expect(reviewEv).toHaveLength(1);
     const row = reviewEv[0] as Extract<(typeof reviewEv)[number], { kind: 'review_action_cache' }>;
-    expect(row.strategy).toBe('reviewQueue');
-    expect(row.patchHits).toContain('review_queue_list');
+    expect(row.strategy).toBe('aisleResults');
+    expect(row.patchHits).toContain('positions_list');
     expect(row.patchHits).toContain('position_detail');
     expect(row.fallbackInvalidations).toHaveLength(0);
   });

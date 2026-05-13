@@ -21,6 +21,7 @@ from src.api.constants.error_wire import (
 from src.api.errors import review_exception_to_http
 from src.api.schemas.aisle_schemas import AisleJobSummary, AisleResponse
 from src.api.schemas.asset_schemas import SourceAssetResponse
+from src.api.schemas.benchmark_schemas import LlmCostSnapshotResponse
 from src.api.schemas.inventory_schemas import (
     InventoryListItemResponse,
     InventoryResponse,
@@ -53,6 +54,7 @@ from src.application.ports.contracts import InventoryListItem
 from src.application.services.inventory_primary_execution_config import (
     primary_execution_config_for_inventory,
 )
+from src.application.services.llm_cost_snapshot_public import llm_cost_snapshot_public_dict
 from src.application.services.reference_usage_from_job_result import (
     parse_reference_usage_from_result_json,
 )
@@ -530,6 +532,18 @@ def status_response_from_result(result: AisleProcessingStatusResult) -> AisleSta
     )
 
 
+def _llm_cost_snapshot_from_job_result(
+    result_json: dict[str, Any] | None,
+) -> LlmCostSnapshotResponse | None:
+    d = llm_cost_snapshot_public_dict(result_json)
+    if d is None:
+        return None
+    try:
+        return LlmCostSnapshotResponse.model_validate(d)
+    except Exception:
+        return None
+
+
 def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
     return JobSummary(
         id=j.id,
@@ -555,6 +569,7 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
         prompt_key=j.prompt_key,
         prompt_version=j.prompt_version,
         is_operational=is_operational,
+        llm_cost_snapshot=_llm_cost_snapshot_from_job_result(j.result_json),
     )
 
 
