@@ -38,10 +38,15 @@ export function getRunCostSummaryLine(
     return t('compare_many.cost_unavailable');
   }
   const total = run.llm_cost_snapshot.computed_cost?.total_cost?.trim();
-  if (!total) {
-    return t('compare_many.cost_unavailable');
+  const partial = run.llm_cost_snapshot.computed_cost?.partial_total_cost?.trim();
+  const status = run.llm_cost_snapshot.capture_status;
+  if (total) {
+    return formatCostDisplay(snapshotForCostDisplay(run), t).value;
   }
-  return formatCostDisplay(snapshotForCostDisplay(run), t).value;
+  if (status === 'partial' && partial) {
+    return formatCostDisplay(snapshotForCostDisplay(run), t).value;
+  }
+  return t('compare_many.cost_unavailable');
 }
 
 /** Card / list line: "Costo: …" with Spanish label from compare_many.* */
@@ -49,7 +54,13 @@ export function getRunCostCardLine(
   run: { model_name?: string | null; llm_cost_snapshot?: LlmCostSnapshot | null },
   t: TFunction
 ): string {
-  if (!run.llm_cost_snapshot || !run.llm_cost_snapshot.computed_cost?.total_cost?.trim()) {
+  if (!run.llm_cost_snapshot) {
+    return t('compare_many.cost_line', { value: t('compare_many.cost_unavailable') });
+  }
+  const total = run.llm_cost_snapshot.computed_cost?.total_cost?.trim();
+  const partial = run.llm_cost_snapshot.computed_cost?.partial_total_cost?.trim();
+  const status = run.llm_cost_snapshot.capture_status;
+  if (!total && !(status === 'partial' && partial)) {
     return t('compare_many.cost_line', { value: t('compare_many.cost_unavailable') });
   }
   const { value } = formatCostDisplay(snapshotForCostDisplay(run), t);

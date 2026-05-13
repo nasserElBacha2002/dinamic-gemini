@@ -404,26 +404,35 @@ export interface LlmPricingSnapshot {
   captured_at?: string | null;
   pricing_catalog_entry_captured_at?: string | null;
   billing_currency?: string | null;
+  price_units?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  canonical_model?: string | null;
   input_cost_per_million?: string | null;
   output_cost_per_million?: string | null;
   cached_input_cost_per_million?: string | null;
   thinking_cost_per_million?: string | null;
+  cache_write_cost_per_million?: string | null;
   tool_request_unit_cost?: string | null;
   image_input_unit_cost?: string | null;
   audio_input_cost_per_million?: string | null;
   video_input_cost_per_million?: string | null;
   thinking_cost_rule?: string | null;
+  thinking_billed_as?: string | null;
 }
 
 export interface LlmComputedCost {
   subtotal_input?: string | null;
   subtotal_output?: string | null;
   subtotal_cached?: string | null;
+  subtotal_cache_write?: string | null;
   subtotal_thinking?: string | null;
   subtotal_tools?: string | null;
   subtotal_image?: string | null;
   subtotal_audio?: string | null;
   subtotal_video?: string | null;
+  /** Sum of priced dimensions when ``capture_status`` is ``partial``. */
+  partial_total_cost?: string | null;
   total_cost?: string | null;
   currency?: string | null;
   /** Machine-readable when total_cost is null (e.g. pricing_entry_missing). */
@@ -433,13 +442,14 @@ export interface LlmComputedCost {
 export interface LlmCostSnapshot {
   provider: string;
   model?: string | null;
+  canonical_model?: string | null;
   /** True when a catalog row matched provider+model (pricing_snapshot may still have null rates). */
   pricing_available?: boolean | null;
   billing_currency?: string | null;
   usage: LlmUsageSnapshot;
   pricing_snapshot: LlmPricingSnapshot;
   computed_cost: LlmComputedCost;
-  capture_status: 'exact' | 'estimated' | 'unavailable' | string;
+  capture_status: 'exact' | 'estimated' | 'partial' | 'unavailable' | string;
   capture_notes?: string[];
 }
 

@@ -22,12 +22,22 @@ _MICRO_UNIT = Decimal("1000000")
 _MONEY_QUANT = Decimal("0.00000001")
 
 # Merged under operator JSON (``LLM_PRICING_CATALOG_JSON``); user entries override on same
-# (provider, model) keys. USD placeholders — tune in deployment catalog or env JSON.
+# (provider, model) keys. USD values are deployment placeholders — override via env JSON for
+# finance-approved list prices. Shape must match ``_load_pricing_catalog``: ``entries`` +
+# optional ``aliases`` (see H7).
 _EMBEDDED_DEFAULT_LLM_PRICING_CATALOG: dict[str, Any] = {
-    "version": "dinamic-embedded-pricing-v1",
+    "version": "dinamic-embedded-pricing-v2",
     "currency": "USD",
     "source": "dinamic_embedded_defaults",
     "entries": [
+        # OpenAI — aligned with typical PROCESSING_OPENAI_MODELS / OPENAI_MODEL
+        {
+            "provider": "openai",
+            "model": "gpt-5.5",
+            "input_cost_per_million": 5,
+            "output_cost_per_million": 15,
+            "cached_input_cost_per_million": 1.25,
+        },
         {
             "provider": "openai",
             "model": "gpt-5.4",
@@ -36,13 +46,124 @@ _EMBEDDED_DEFAULT_LLM_PRICING_CATALOG: dict[str, Any] = {
             "cached_input_cost_per_million": 1.25,
         },
         {
+            "provider": "openai",
+            "model": "gpt-5.4-mini",
+            "input_cost_per_million": 0.8,
+            "output_cost_per_million": 2.4,
+            "cached_input_cost_per_million": 0.16,
+        },
+        {
+            "provider": "openai",
+            "model": "gpt-5.4-nano",
+            "input_cost_per_million": 0.2,
+            "output_cost_per_million": 0.6,
+            "cached_input_cost_per_million": 0.04,
+        },
+        {
+            "provider": "openai",
+            "model": "gpt-4o",
+            "input_cost_per_million": 5,
+            "output_cost_per_million": 15,
+            "cached_input_cost_per_million": 1.25,
+        },
+        {
+            "provider": "openai",
+            "model": "gpt-4o-mini",
+            "input_cost_per_million": 0.15,
+            "output_cost_per_million": 0.6,
+            "cached_input_cost_per_million": 0.075,
+        },
+        {
+            "provider": "openai",
+            "model": "gpt-4-turbo",
+            "input_cost_per_million": 10,
+            "output_cost_per_million": 30,
+            "cached_input_cost_per_million": 2.5,
+        },
+        # Anthropic — PROCESSING_CLAUDE_MODELS + ANTHROPIC_MODEL default
+        {
             "provider": "claude",
             "model": "claude-sonnet-4-20250514",
             "input_cost_per_million": 3,
             "output_cost_per_million": 15,
             "cached_input_cost_per_million": 1,
         },
+        {
+            "provider": "claude",
+            "model": "claude-3-5-sonnet-20241022",
+            "input_cost_per_million": 3,
+            "output_cost_per_million": 15,
+            "cached_input_cost_per_million": 1,
+        },
+        {
+            "provider": "claude",
+            "model": "claude-opus-4-7",
+            "input_cost_per_million": 15,
+            "output_cost_per_million": 75,
+            "cached_input_cost_per_million": 7.5,
+        },
+        {
+            "provider": "claude",
+            "model": "claude-sonnet-4-6",
+            "input_cost_per_million": 3,
+            "output_cost_per_million": 15,
+            "cached_input_cost_per_million": 1,
+        },
+        {
+            "provider": "claude",
+            "model": "claude-haiku-4-5-20251001",
+            "input_cost_per_million": 1,
+            "output_cost_per_million": 5,
+            "cached_input_cost_per_million": 0.5,
+        },
+        # Gemini — PROCESSING_GEMINI_MODELS / GEMINI_MODEL_NAME (thinking billed as output)
+        {
+            "provider": "gemini",
+            "model": "gemini-2.5-pro",
+            "input_cost_per_million": 1.25,
+            "output_cost_per_million": 10,
+            "cached_input_cost_per_million": 0.31,
+            "thinking_billed_as": "output_tokens",
+        },
+        {
+            "provider": "gemini",
+            "model": "gemini-2.5-flash",
+            "input_cost_per_million": 0.3,
+            "output_cost_per_million": 2.5,
+            "cached_input_cost_per_million": 0.08,
+            "thinking_billed_as": "output_tokens",
+        },
+        {
+            "provider": "gemini",
+            "model": "gemini-3.1-flash-lite",
+            "input_cost_per_million": 0.2,
+            "output_cost_per_million": 0.6,
+            "cached_input_cost_per_million": 0.05,
+            "thinking_billed_as": "output_tokens",
+        },
+        {
+            "provider": "gemini",
+            "model": "gemini-3.1-pro-preview",
+            "input_cost_per_million": 1.5,
+            "output_cost_per_million": 12,
+            "cached_input_cost_per_million": 0.35,
+            "thinking_billed_as": "output_tokens",
+        },
+        # DeepSeek — PROCESSING_DEEPSEEK_MODELS
+        {
+            "provider": "deepseek",
+            "model": "deepseek-chat",
+            "input_cost_per_million": 0.27,
+            "output_cost_per_million": 1.1,
+        },
+        {
+            "provider": "deepseek",
+            "model": "deepseek-vl2",
+            "input_cost_per_million": 0.27,
+            "output_cost_per_million": 1.1,
+        },
     ],
+    "aliases": [],
 }
 
 
@@ -131,6 +252,12 @@ def _apply_gemini_input_and_ambiguity_notes(
 def _apply_claude_cache_conventions(
     usage: dict[str, Any], raw: dict[str, Any], notes: list[str]
 ) -> None:
+    """Map Anthropic usage into billable dimensions.
+
+    Anthropic reports ``input_tokens`` (non-cache prompt) alongside ``cache_read_input_tokens``
+    (cache hits). We treat them as non-overlapping billable buckets when both are present and
+    record an explicit assumption note (does not block cost totals).
+    """
     inp = _get_first(raw, "input_tokens")
     cache_read = _get_first(raw, "cache_read_input_tokens")
     cache_write = _get_first(raw, "cache_creation_input_tokens")
@@ -140,8 +267,8 @@ def _apply_claude_cache_conventions(
         usage["input_tokens"] = inp
     if cache_read is not None:
         usage["cached_input_tokens"] = cache_read
-        if inp is not None:
-            notes.append("usage_dimension_ambiguous:claude_cache_read_vs_gross_input")
+    if inp is not None and cache_read is not None and inp > 0 and cache_read > 0:
+        notes.append("usage_assumption:claude_input_tokens_non_cache_or_provider_reported")
 
 
 def normalize_usage(
@@ -229,6 +356,103 @@ def _catalog_entry_key(entry: Any) -> tuple[str, str] | None:
     return (p, m)
 
 
+@dataclass(frozen=True)
+class _PricingResolution:
+    entry: dict[str, Any] | None
+    canonical_model: str | None
+    matched_entry_model: str | None
+
+
+def _alias_tuple(row: Any) -> tuple[str, str, str] | None:
+    if not isinstance(row, dict):
+        return None
+    p = str(row.get("provider", "")).strip().lower()
+    a = str(row.get("alias", "")).strip().lower()
+    c = str(row.get("canonical_model", "")).strip().lower()
+    if not p or not a or not c:
+        return None
+    return (p, a, c)
+
+
+def _merge_catalog_aliases(base: dict[str, Any], parsed: dict[str, Any]) -> list[dict[str, Any]]:
+    by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in base.get("aliases") or []:
+        t = _alias_tuple(row)
+        if t:
+            by_key[(t[0], t[1])] = {"provider": t[0], "alias": t[1], "canonical_model": t[2]}
+    for row in parsed.get("aliases") or []:
+        t = _alias_tuple(row)
+        if t:
+            by_key[(t[0], t[1])] = {"provider": t[0], "alias": t[1], "canonical_model": t[2]}
+    return list(by_key.values())
+
+
+def _find_exact_catalog_entry(
+    catalog: dict[str, Any], provider: str, model_lower: str
+) -> dict[str, Any] | None:
+    entries = catalog.get("entries")
+    if not isinstance(entries, list) or not model_lower:
+        return None
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        ip = str(item.get("provider", "")).strip().lower()
+        im = str(item.get("model", "")).strip().lower()
+        if ip == provider and im == model_lower:
+            return item
+    return None
+
+
+def _find_wildcard_catalog_entry(catalog: dict[str, Any], provider: str) -> dict[str, Any] | None:
+    entries = catalog.get("entries")
+    if not isinstance(entries, list):
+        return None
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        ip = str(item.get("provider", "")).strip().lower()
+        im = str(item.get("model", "")).strip().lower()
+        if ip == provider and im in ("*", ""):
+            return item
+    return None
+
+
+def resolve_pricing_with_canonical(
+    catalog: dict[str, Any], provider: str, raw_model: str
+) -> _PricingResolution:
+    """Resolve pricing row: exact model, alias → canonical, then provider wildcard."""
+    p = (provider or "").strip().lower()
+    m_raw = (raw_model or "").strip().lower()
+
+    if m_raw:
+        hit = _find_exact_catalog_entry(catalog, p, m_raw)
+        if hit is not None:
+            mm = str(hit.get("model", "")).strip().lower() or m_raw
+            return _PricingResolution(hit, mm, str(hit.get("model", "")).strip() or m_raw)
+
+    if m_raw:
+        for row in catalog.get("aliases") or []:
+            t = _alias_tuple(row)
+            if not t or t[0] != p or t[1] != m_raw:
+                continue
+            canon = t[2]
+            hit = _find_exact_catalog_entry(catalog, p, canon)
+            if hit is not None:
+                mm = str(hit.get("model", "")).strip().lower() or canon
+                return _PricingResolution(hit, mm, str(hit.get("model", "")).strip() or canon)
+            return _PricingResolution(None, canon, None)
+
+    wc = _find_wildcard_catalog_entry(catalog, p)
+    if wc is not None:
+        label = m_raw or "*"
+        return _PricingResolution(
+            wc,
+            label,
+            str(wc.get("model", "")).strip() or "*",
+        )
+    return _PricingResolution(None, m_raw or None, None)
+
+
 def _load_pricing_catalog(settings: Any) -> dict[str, Any]:
     """Load pricing catalog: embedded defaults merged with ``settings.llm_pricing_catalog_json`` (user wins on key clash)."""
     base = copy.deepcopy(_EMBEDDED_DEFAULT_LLM_PRICING_CATALOG)
@@ -268,33 +492,9 @@ def _load_pricing_catalog(settings: Any) -> dict[str, Any]:
             else "settings.llm_pricing_catalog_json+dinamic_embedded_defaults"
         ),
         "entries": list(merged.values()),
+        "aliases": _merge_catalog_aliases(base, parsed),
     }
     return out
-
-
-def _resolve_pricing_entry(
-    catalog: dict[str, Any], provider: str, model: str
-) -> dict[str, Any] | None:
-    entries = catalog.get("entries")
-    if not isinstance(entries, list):
-        return None
-    p = (provider or "").strip().lower()
-    m = (model or "").strip().lower()
-    wildcard: dict[str, Any] | None = None
-    for item in entries:
-        if not isinstance(item, dict):
-            continue
-        ip = (
-            str(item.get("provider", "")).strip().lower(),
-            str(item.get("model", "")).strip().lower(),
-        )
-        if ip[0] != p:
-            continue
-        if ip[1] == m:
-            return item
-        if ip[1] in ("*", ""):
-            wildcard = item
-    return wildcard
 
 
 def _compute_per_million(tokens: int, per_million: Decimal) -> Decimal:
@@ -332,7 +532,12 @@ _BILLABLE_DIMENSIONS: tuple[BillableDimension, ...] = (
     BillableDimension(
         "video_input_tokens", "video_input_cost_per_million", "subtotal_video", "per_million"
     ),
-    BillableDimension("cache_write_tokens", None, None, "unpriced"),
+    BillableDimension(
+        "cache_write_tokens",
+        "cache_write_cost_per_million",
+        "subtotal_cache_write",
+        "per_million",
+    ),
     BillableDimension("image_input_tokens", None, None, "unpriced"),
 )
 
@@ -380,6 +585,46 @@ def _dedupe_keep_order(items: list[str]) -> list[str]:
     return out
 
 
+def _strip_notes_with_prefix(notes: list[str], prefix: str) -> None:
+    """Remove notes starting with ``prefix`` (mutating, stable order)."""
+    del_idxs = [i for i, n in enumerate(notes) if n.startswith(prefix)]
+    for i in reversed(del_idxs):
+        notes.pop(i)
+
+
+def _derive_billing_usage_and_refine_notes(
+    provider_norm: str,
+    usage: dict[str, Any],
+    entry: Any,
+    notes: list[str],
+) -> dict[str, Any]:
+    """Shallow billing copy + provider/catalog policies (does not mutate ``usage``)."""
+    billing = {k: usage[k] for k in usage if k != "raw_provider_usage_json"}
+    if not isinstance(entry, dict):
+        return billing
+
+    if provider_norm == "gemini":
+        tb = str(entry.get("thinking_billed_as") or "").strip().lower()
+        has_thinking_price = _as_decimal(entry.get("thinking_cost_per_million")) is not None
+        if tb == "output_tokens":
+            o = _to_int(billing.get("output_tokens")) or 0
+            th = _to_int(billing.get("thinking_tokens")) or 0
+            billing["output_tokens"] = o + th
+            billing["thinking_tokens"] = 0
+            _strip_notes_with_prefix(notes, "usage_dimension_ambiguous:output_tokens")
+        elif has_thinking_price:
+            _strip_notes_with_prefix(notes, "usage_dimension_ambiguous:output_tokens")
+
+    if provider_norm == "openai":
+        out_t = _to_int(billing.get("output_tokens"))
+        think_t = _to_int(billing.get("thinking_tokens"))
+        if think_t is not None and think_t > 0 and out_t is not None and think_t <= out_t:
+            billing["thinking_tokens"] = 0
+            notes.append("usage_assumption:openai_reasoning_tokens_subsumed_by_completion")
+
+    return billing
+
+
 def _apply_billable_dimensions_to_subtotals(
     usage: dict[str, Any],
     pricing_snapshot: dict[str, Any],
@@ -397,15 +642,17 @@ def _apply_billable_dimensions_to_subtotals(
             has_billable_usage_signal = True
 
         if dim.mode == "unpriced":
-            unpriced_dimension_present = True
-            notes.append(f"billable_dimension_not_priced:{dim.usage_key}")
+            if amount is not None and amount > 0:
+                unpriced_dimension_present = True
+                notes.append(f"billable_dimension_not_priced:{dim.usage_key}")
             continue
 
         if dim.pricing_key is None or dim.subtotal_key is None:
             continue
         price = pricing_snapshot.get(dim.pricing_key)
         if price is None:
-            notes.append(f"billable_dimension_not_priced:{dim.usage_key}")
+            if amount > 0:
+                notes.append(f"billable_dimension_not_priced:{dim.usage_key}")
             continue
 
         assert isinstance(price, Decimal)
@@ -426,6 +673,8 @@ class _PricingSnapshotBuildContext:
     provider_norm: str
     model_norm: str | None
     n_catalog_entries: int
+    raw_job_model: str | None
+    canonical_model_snap: str | None
 
 
 def _build_pricing_snapshot_mutable(ctx: _PricingSnapshotBuildContext) -> dict[str, Any]:
@@ -457,21 +706,30 @@ def _build_pricing_snapshot_mutable(ctx: _PricingSnapshotBuildContext) -> dict[s
         else None
     )
 
+    raw_model_disp = (ctx.raw_job_model or "").strip() or None
+    canon_disp = (ctx.canonical_model_snap or "").strip() or None
+
     pricing_snapshot: dict[str, Any] = {
         "pricing_source": pricing_source,
         "pricing_version": pricing_version,
         "captured_at": _utc_iso_now(),
         "pricing_catalog_entry_captured_at": catalog_entry_captured_at,
         "billing_currency": catalog_currency,
+        "price_units": "per_1m_tokens",
+        "provider": ctx.provider_norm,
+        "model": raw_model_disp,
+        "canonical_model": canon_disp,
         "input_cost_per_million": None,
         "output_cost_per_million": None,
         "cached_input_cost_per_million": None,
         "thinking_cost_per_million": None,
+        "cache_write_cost_per_million": None,
         "tool_request_unit_cost": None,
         "image_input_unit_cost": None,
         "audio_input_cost_per_million": None,
         "video_input_cost_per_million": None,
         "thinking_cost_rule": None,
+        "thinking_billed_as": None,
     }
 
     if isinstance(ctx.entry, dict):
@@ -483,6 +741,7 @@ def _build_pricing_snapshot_mutable(ctx: _PricingSnapshotBuildContext) -> dict[s
             "output_cost_per_million",
             "cached_input_cost_per_million",
             "thinking_cost_per_million",
+            "cache_write_cost_per_million",
             "tool_request_unit_cost",
             "image_input_unit_cost",
             "audio_input_cost_per_million",
@@ -493,6 +752,10 @@ def _build_pricing_snapshot_mutable(ctx: _PricingSnapshotBuildContext) -> dict[s
             pricing_snapshot["thinking_cost_rule"] = (
                 str(ctx.entry.get("thinking_cost_rule")).strip() or None
             )
+        if ctx.entry.get("thinking_billed_as") is not None:
+            pricing_snapshot["thinking_billed_as"] = (
+                str(ctx.entry.get("thinking_billed_as")).strip() or None
+            )
     return pricing_snapshot
 
 
@@ -502,6 +765,7 @@ def _format_pricing_snapshot_for_json(pricing_snapshot: dict[str, Any]) -> dict[
         "output_cost_per_million",
         "cached_input_cost_per_million",
         "thinking_cost_per_million",
+        "cache_write_cost_per_million",
         "tool_request_unit_cost",
         "image_input_unit_cost",
         "audio_input_cost_per_million",
@@ -515,6 +779,7 @@ def _format_computed_cost_block(
     subtotals: dict[str, Decimal | None],
     *,
     total_cost: Decimal | None,
+    partial_total_cost: Decimal | None,
     billing_currency: str,
     total_cost_unavailable_reason: str | None,
 ) -> dict[str, Any]:
@@ -522,11 +787,13 @@ def _format_computed_cost_block(
         "subtotal_input": _format_money_optional(subtotals["subtotal_input"]),
         "subtotal_output": _format_money_optional(subtotals["subtotal_output"]),
         "subtotal_cached": _format_money_optional(subtotals["subtotal_cached"]),
+        "subtotal_cache_write": _format_money_optional(subtotals.get("subtotal_cache_write")),
         "subtotal_thinking": _format_money_optional(subtotals["subtotal_thinking"]),
         "subtotal_tools": _format_money_optional(subtotals["subtotal_tools"]),
         "subtotal_image": _format_money_optional(subtotals["subtotal_image"]),
         "subtotal_audio": _format_money_optional(subtotals["subtotal_audio"]),
         "subtotal_video": _format_money_optional(subtotals["subtotal_video"]),
+        "partial_total_cost": _format_money_optional(partial_total_cost),
         "total_cost": _format_money_optional(total_cost),
         "currency": billing_currency,
         "total_cost_unavailable_reason": total_cost_unavailable_reason,
@@ -536,6 +803,7 @@ def _format_computed_cost_block(
 def _total_cost_unavailable_reason(
     *,
     total_cost: Decimal | None,
+    partial_total_cost: Decimal | None,
     notes: list[str],
     ambiguous: bool,
     has_usage_metadata: bool,
@@ -546,8 +814,10 @@ def _total_cost_unavailable_reason(
     reason: str | None = None
     if "provider_usage_missing" in notes:
         reason = "provider_usage_missing"
-    elif "pricing_entry_missing" in notes:
+    elif any(n == "pricing_entry_missing" or n.startswith("pricing_entry_missing:") for n in notes):
         reason = "pricing_entry_missing"
+    elif partial_total_cost is not None:
+        reason = "billable_dimension_not_priced"
     elif any(n.startswith("billable_dimension_not_priced:") for n in notes):
         reason = "billable_dimension_not_priced"
     elif "pricing_present_but_no_billable_dimensions" in notes:
@@ -570,19 +840,23 @@ def build_llm_cost_snapshot(
     Build the auditable usage + pricing + computed-cost snapshot for one LLM call.
 
     ``capture_status``:
-    - ``unavailable``: no usage metadata from the provider (empty/omitted usage).
-    - ``estimated``: usage metadata is present but cost is not fully authoritative: ambiguity notes,
-      partial/missing pricing for positive billable usage, or an all-zero usage report that we do not
-      treat as evidence of a priced billable call (still not ``exact``).
-    - ``exact``: unambiguous accounting and full pricing coverage for all positive billable usage
-      dimensions; a stable total can be computed without ambiguity notes.
+    - ``unavailable``: no usage metadata, or no monetary subtotals can be derived.
+    - ``partial``: at least one billable dimension was priced but another positive usage dimension
+      lacks a catalog rate (``partial_total_cost`` sums priced lines only; ``total_cost`` is null).
+    - ``estimated``: every positive billable dimension has a rate and ``total_cost`` is set, but
+      ``usage_dimension_ambiguous:*`` or ``usage_assumption:*`` notes remain.
+    - ``exact``: full pricing coverage for positive billable usage, no ambiguity or assumption notes,
+      and ``total_cost`` is set.
     """
     provider_norm = (provider or "").strip().lower() or "unknown"
     model_norm = (model or "").strip() or None
     usage, convention_notes = normalize_usage(provider_norm, raw_usage)
 
     catalog = _load_pricing_catalog(settings)
-    entry = _resolve_pricing_entry(catalog, provider_norm, model_norm or "")
+    resolution = resolve_pricing_with_canonical(catalog, provider_norm, model_norm or "")
+    entry = resolution.entry
+    canonical_snap = resolution.canonical_model
+
     entries_list = catalog.get("entries")
     n_catalog_entries = len(entries_list) if isinstance(entries_list, list) else 0
     pricing_snapshot = _build_pricing_snapshot_mutable(
@@ -593,6 +867,8 @@ def build_llm_cost_snapshot(
             provider_norm=provider_norm,
             model_norm=model_norm,
             n_catalog_entries=n_catalog_entries,
+            raw_job_model=model_norm,
+            canonical_model_snap=canonical_snap,
         )
     )
 
@@ -600,6 +876,7 @@ def build_llm_cost_snapshot(
         "subtotal_input": None,
         "subtotal_output": None,
         "subtotal_cached": None,
+        "subtotal_cache_write": None,
         "subtotal_thinking": None,
         "subtotal_tools": None,
         "subtotal_image": None,
@@ -610,24 +887,38 @@ def build_llm_cost_snapshot(
     has_usage_metadata = _has_usage_metadata(usage)
     notes: list[str] = list(convention_notes)
 
+    billing_usage = _derive_billing_usage_and_refine_notes(provider_norm, usage, entry, notes)
+
     has_billable_usage_signal, unpriced_dimension_present = _apply_billable_dimensions_to_subtotals(
-        usage,
+        billing_usage,
         pricing_snapshot,
         subtotals,
         notes,
     )
 
     subtotal_values = [v for v in subtotals.values() if v is not None]
-    total_cost: Decimal | None = None
+    partial_total: Decimal | None = None
     if subtotal_values:
-        total_cost = sum(subtotal_values, Decimal("0")).quantize(
+        partial_total = sum(subtotal_values, Decimal("0")).quantize(
             _MONEY_QUANT, rounding=ROUND_HALF_UP
         )
+
+    has_missing_pricing = any(n.startswith("billable_dimension_not_priced:") for n in notes)
+    has_pricing_row = isinstance(entry, dict)
+    total_cost: Decimal | None = None
+    if has_pricing_row and not has_missing_pricing and subtotal_values:
+        total_cost = partial_total
+    elif has_pricing_row and not has_missing_pricing and not subtotal_values:
+        total_cost = None
 
     if not has_usage_metadata:
         notes.append("provider_usage_missing")
     if not isinstance(entry, dict):
-        notes.append("pricing_entry_missing")
+        raw_disp = model_norm or ""
+        canon_disp = canonical_snap or "none"
+        notes.append(
+            f"pricing_entry_missing:provider={provider_norm},model={raw_disp},canonical_model={canon_disp}"
+        )
     has_billable_not_priced_note = any(
         n.startswith("billable_dimension_not_priced:") for n in notes
     )
@@ -641,32 +932,38 @@ def build_llm_cost_snapshot(
         notes.append("pricing_present_but_no_billable_dimensions")
 
     notes = _dedupe_keep_order(notes)
-    has_pricing = isinstance(entry, dict)
-    pricing_available = has_pricing
-    ambiguous = any(note.startswith("usage_dimension_ambiguous:") for note in notes)
-    missing_pricing_dimensions = any(
-        note.startswith("billable_dimension_not_priced:") for note in notes
-    )
+    pricing_available = has_pricing_row
+    has_dim_ambiguous = any(note.startswith("usage_dimension_ambiguous:") for note in notes)
+    has_assumption = any(note.startswith("usage_assumption:") for note in notes)
+
+    partial_total_for_json: Decimal | None = None
+    if has_missing_pricing and partial_total is not None and total_cost is None:
+        partial_total_for_json = partial_total
 
     if not has_usage_metadata:
         capture_status = "unavailable"
-    elif (
-        has_pricing and not ambiguous and not missing_pricing_dimensions and total_cost is not None
-    ):
-        capture_status = "exact"
+    elif total_cost is not None:
+        if has_dim_ambiguous or has_assumption:
+            capture_status = "estimated"
+        else:
+            capture_status = "exact"
+    elif partial_total_for_json is not None:
+        capture_status = "partial"
     else:
-        capture_status = "estimated"
+        capture_status = "unavailable"
 
     total_cost_unavailable_reason = _total_cost_unavailable_reason(
         total_cost=total_cost,
+        partial_total_cost=partial_total_for_json,
         notes=notes,
-        ambiguous=ambiguous,
+        ambiguous=has_dim_ambiguous,
         has_usage_metadata=has_usage_metadata,
     )
 
     return {
         "provider": provider_norm,
         "model": model_norm,
+        "canonical_model": canonical_snap,
         "pricing_available": pricing_available,
         "billing_currency": pricing_snapshot["billing_currency"],
         "usage": usage,
@@ -674,9 +971,80 @@ def build_llm_cost_snapshot(
         "computed_cost": _format_computed_cost_block(
             subtotals,
             total_cost=total_cost,
+            partial_total_cost=partial_total_for_json,
             billing_currency=pricing_snapshot["billing_currency"],
             total_cost_unavailable_reason=total_cost_unavailable_reason,
         ),
         "capture_status": capture_status,
         "capture_notes": notes,
     }
+
+
+def _split_csv_models(raw: str) -> list[str]:
+    return [p.strip() for p in (raw or "").split(",") if p.strip()]
+
+
+@dataclass(frozen=True)
+class PricingCoverageIssue:
+    """One configured model string checked against the merged pricing catalog."""
+
+    provider: str
+    raw_model: str
+    canonical_model: str | None
+    has_entry: bool
+    missing_reason: str
+
+
+def validate_llm_pricing_coverage(settings: Any) -> list[PricingCoverageIssue]:
+    """Read-only: compare operator processing model lists with merged catalog coverage."""
+    catalog = _load_pricing_catalog(settings)
+    pairs: list[tuple[str, str]] = []
+    for m in _split_csv_models(getattr(settings, "processing_claude_models", "") or ""):
+        pairs.append(("claude", m))
+    for m in _split_csv_models(getattr(settings, "processing_gemini_models", "") or ""):
+        pairs.append(("gemini", m))
+    for m in _split_csv_models(getattr(settings, "processing_openai_models", "") or ""):
+        pairs.append(("openai", m))
+    for attr, prov in (
+        ("anthropic_model", "claude"),
+        ("gemini_model_name", "gemini"),
+        ("openai_model", "openai"),
+    ):
+        v = getattr(settings, attr, None)
+        if isinstance(v, str) and v.strip():
+            pairs.append((prov, v.strip()))
+
+    seen: set[tuple[str, str]] = set()
+    out: list[PricingCoverageIssue] = []
+    for provider, raw in pairs:
+        key = (provider.lower(), raw.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        res = resolve_pricing_with_canonical(catalog, provider, raw)
+        has_entry = isinstance(res.entry, dict)
+        if has_entry:
+            out.append(
+                PricingCoverageIssue(
+                    provider=provider,
+                    raw_model=raw,
+                    canonical_model=res.canonical_model,
+                    has_entry=True,
+                    missing_reason="",
+                )
+            )
+            continue
+        if res.canonical_model and res.entry is None:
+            reason = "canonical_model_without_catalog_entry"
+        else:
+            reason = "pricing_entry_missing"
+        out.append(
+            PricingCoverageIssue(
+                provider=provider,
+                raw_model=raw,
+                canonical_model=res.canonical_model,
+                has_entry=False,
+                missing_reason=reason,
+            )
+        )
+    return out
