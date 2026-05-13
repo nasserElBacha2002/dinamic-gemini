@@ -5,9 +5,14 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Box, Chip, CircularProgress, Paper, Stack, Typography } from '@mui/material';
-import type { RunAuditabilityView, RunAuditMetadataSources } from '../api/types';
+import type { RunAuditabilityView, RunAuditMetadataSources, LlmCostSnapshot } from '../api/types';
 import { useJobAuditability } from '../hooks';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
+import {
+  formatAuditCostFromApiString,
+  formatAuditTokenCount,
+  normalizeCurrency,
+} from '../utils/formatLlmAuditCost';
 import { ErrorAlert } from './ui';
 
 export interface JobAuditabilityPanelProps {
@@ -43,6 +48,94 @@ function formatScalar(value: string | number | null | undefined, emptyLabel: str
   if (value === null || value === undefined) return emptyLabel;
   const s = String(value).trim();
   return s === '' ? emptyLabel : s;
+}
+
+function captureStatusLabel(
+  status: string | null | undefined,
+  t: (key: string, options?: { defaultValue?: string }) => string
+): string {
+  const s = (status ?? '').trim().toLowerCase();
+  if (s === 'exact') return t('observability.auditability.cost.status_exact');
+  if (s === 'estimated') return t('observability.auditability.cost.status_estimated');
+  if (s === 'unavailable') return t('observability.auditability.cost.status_unavailable');
+  return formatScalar(status, t('observability.auditability.unknown'));
+}
+
+function JobAuditabilityCostCard({
+  snap,
+  notReported,
+  t,
+}: {
+  snap: LlmCostSnapshot;
+  notReported: string;
+  t: (key: string, options?: { defaultValue?: string }) => string;
+}) {
+  const usage = snap.usage ?? {};
+  const computed = snap.computed_cost ?? {};
+  const pricingSnap = snap.pricing_snapshot ?? {};
+  const currency = normalizeCurrency(
+    computed.currency ?? pricingSnap.billing_currency ?? snap.billing_currency ?? 'USD'
+  );
+
+  const inputTok = usage.input_tokens ?? null;
+  const outputTok = usage.output_tokens ?? null;
+  const totalTok = usage.total_tokens ?? null;
+
+  const pricingSource =
+    typeof pricingSnap.pricing_source === 'string' ? pricingSnap.pricing_source.trim() : '';
+
+  return (
+    <Stack spacing={1}>
+      <DetailRow label={t('observability.auditability.cost.provider')}>
+        {formatScalar(snap.provider, notReported)}
+      </DetailRow>
+      <DetailRow label={t('observability.auditability.cost.model')}>{formatScalar(snap.model, notReported)}</DetailRow>
+      <DetailRow label={t('observability.auditability.cost.inputTokens')}>
+        {formatAuditTokenCount(inputTok, notReported)}
+      </DetailRow>
+      <DetailRow label={t('observability.auditability.cost.outputTokens')}>
+        {formatAuditTokenCount(outputTok, notReported)}
+      </DetailRow>
+      <DetailRow label={t('observability.auditability.cost.totalTokens')}>
+        {formatAuditTokenCount(totalTok, notReported)}
+      </DetailRow>
+      <DetailRow label={t('observability.auditability.cost.inputCost')}>
+        {formatAuditCostFromApiString(computed.subtotal_input, currency, notReported)}
+      </DetailRow>
+      <DetailRow label={t('observability.auditability.cost.outputCost')}>
+        {formatAuditCostFromApiString(computed.subtotal_output, currency, notReported)}
+      </DetailRow>
+      <DetailRow label={t('observability.auditability.cost.totalCost')}>
+        {formatAuditCostFromApiString(computed.total_cost, currency, notReported)}
+      </DetailRow>
+      <DetailRow label={t('observability.auditability.cost.currency')}>{formatScalar(currency, notReported)}</DetailRow>
+      <DetailRow label={t('observability.auditability.cost.captureStatus')}>
+        {captureStatusLabel(snap.capture_status, t)}
+      </DetailRow>
+      {pricingSource ? (
+        <DetailRow label={t('observability.auditability.cost.calculationSource')}>{pricingSource}</DetailRow>
+      ) : null}
+      {computed.total_cost_unavailable_reason ? (
+        <DetailRow label={t('observability.auditability.cost.unavailableReason')}>
+          {formatScalar(computed.total_cost_unavailable_reason, notReported)}
+        </DetailRow>
+      ) : null}
+      {snap.capture_notes && snap.capture_notes.length > 0 ? (
+        <Box>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+            {t('observability.auditability.cost.captureNotes')}
+          </Typography>
+          <Stack component="ul" spacing={0.5} sx={{ m: 0, pl: 2 }}>
+            {snap.capture_notes.map((note, idx) => (
+              <Typography key={`${idx}-${note}`} component="li" variant="body2">
+                {note}
+              </Typography>
+            ))}
+          </Stack>
+        </Box>
+      ) : null}
+    </Stack>
+  );
 }
 
 const SOURCE_KEYS: (keyof RunAuditMetadataSources)[] = [
@@ -143,6 +236,23 @@ export default function JobAuditabilityPanel({
             {formatScalar(data.finished_at, empty)}
           </DetailRow>
         </Stack>
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2 }} data-testid="job-auditability-cost">
+        <Typography variant="subtitle2" gutterBottom>
+          {t('observability.auditability.cost.title')}
+        </Typography>
+        {!data.cost_snapshot ? (
+          <Typography variant="body2" color="text.secondary">
+            {t('observability.auditability.cost.noData')}
+          </Typography>
+        ) : (
+          <JobAuditabilityCostCard
+            snap={data.cost_snapshot}
+            notReported={t('observability.auditability.unknown')}
+            t={t}
+          />
+        )}
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 2 }}>

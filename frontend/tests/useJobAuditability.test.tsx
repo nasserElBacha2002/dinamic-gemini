@@ -60,6 +60,7 @@ describe('useJobAuditability', () => {
       },
       missing_metadata: [],
       legacy_mode: false,
+      cost_snapshot: null,
     });
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { result } = renderHook(

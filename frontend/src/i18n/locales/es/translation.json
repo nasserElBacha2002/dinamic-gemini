@@ -956,7 +956,27 @@
       "yes": "Sí",
       "no": "No",
       "unknown": "No informado",
-      "notAvailable": "No disponible"
+      "notAvailable": "No disponible",
+      "cost": {
+        "title": "Costo del procesamiento",
+        "provider": "Proveedor",
+        "model": "Modelo",
+        "inputTokens": "Tokens de entrada",
+        "outputTokens": "Tokens de salida",
+        "totalTokens": "Tokens totales",
+        "inputCost": "Costo entrada",
+        "outputCost": "Costo salida",
+        "totalCost": "Costo total estimado",
+        "currency": "Moneda",
+        "calculationSource": "Fuente del cálculo",
+        "captureStatus": "Tipo de cálculo",
+        "status_exact": "Exacto",
+        "status_estimated": "Estimado",
+        "status_unavailable": "No disponible",
+        "noData": "No hay información de costo registrada para esta ejecución.",
+        "unavailableReason": "Motivo de coste no disponible",
+        "captureNotes": "Notas"
+      }
     },
     "metrics": {
       "title": "Métricas de observabilidad",

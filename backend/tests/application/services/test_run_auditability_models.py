@@ -52,6 +52,7 @@ def test_to_jsonable_serializes_datetimes_and_nested_structures() -> None:
     assert d["metadata_sources"]["execution_log"] is True
     assert d["metadata_sources"]["run_audit_snapshot"] is False
     assert d["missing_metadata"] == ["hybrid_report"]
+    assert d.get("cost_snapshot") is None
     # Lists are copies (mutating d must not mutate view)
     d["missing_metadata"].append("x")
     assert view.missing_metadata == ["hybrid_report"]

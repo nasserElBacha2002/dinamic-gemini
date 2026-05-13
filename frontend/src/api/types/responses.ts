@@ -611,6 +611,8 @@ export interface RunAuditabilityView {
   metadata_sources: RunAuditMetadataSources;
   missing_metadata: string[];
   legacy_mode: boolean;
+  /** Validated LLM cost snapshot from ``result_json.llm_cost_snapshot`` (Phase H5). */
+  cost_snapshot?: LlmCostSnapshot | null;
 }
 
 /** GET /api/v3/observability/metrics — Phase H5 (snake_case matches backend). */

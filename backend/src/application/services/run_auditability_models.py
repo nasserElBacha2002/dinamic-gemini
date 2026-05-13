@@ -77,6 +77,9 @@ class RunAuditabilityView:
     missing_metadata: list[str] = field(default_factory=list)
     legacy_mode: bool = False
 
+    #: Validated LLM cost snapshot from ``job.result_json["llm_cost_snapshot"]`` (JSON dict), or ``None``.
+    cost_snapshot: dict[str, Any] | None = None
+
     def to_jsonable(self) -> dict[str, Any]:
         """JSON-friendly dict for future API surfaces (H2)."""
 
@@ -135,4 +138,5 @@ class RunAuditabilityView:
             "metadata_sources": _src(self.metadata_sources),
             "missing_metadata": list(self.missing_metadata),
             "legacy_mode": self.legacy_mode,
+            "cost_snapshot": self.cost_snapshot,
         }

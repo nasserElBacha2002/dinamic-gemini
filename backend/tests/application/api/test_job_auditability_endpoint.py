@@ -201,6 +201,45 @@ def test_get_job_auditability_happy_path_200(audit_ctx: dict[str, Any]) -> None:
     assert data["metadata_sources"]["execution_log"] is True
     assert data["metadata_sources"]["hybrid_report"] is False
     assert data["metadata_sources"]["run_audit_snapshot"] is False
+    assert "cost_snapshot" in data
+    assert data["cost_snapshot"] is None
+
+
+def test_get_job_auditability_includes_cost_snapshot_when_present(audit_ctx: dict[str, Any]) -> None:
+    jobs: MemoryJobRepository = audit_ctx["jobs"]
+    job = jobs.get_by_id(audit_ctx["job_id"])
+    assert job is not None
+    merged = dict(job.result_json or {})
+    merged["llm_cost_snapshot"] = {
+        "provider": "openai",
+        "model": "gpt-test",
+        "billing_currency": "USD",
+        "usage": {"input_tokens": 1000, "output_tokens": 50, "total_tokens": 1050},
+        "pricing_snapshot": {"pricing_source": "unit_test", "billing_currency": "USD"},
+        "computed_cost": {
+            "subtotal_input": "0.00001000",
+            "subtotal_output": "0.00005000",
+            "total_cost": "0.00006000",
+            "currency": "USD",
+        },
+        "capture_status": "exact",
+        "capture_notes": [],
+    }
+    job.result_json = merged
+    jobs.save(job)
+
+    r = client.get(
+        f"/api/v3/inventories/{audit_ctx['inv_id']}/aisles/{audit_ctx['aisle_id']}/jobs/{audit_ctx['job_id']}/auditability"
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    snap = data.get("cost_snapshot")
+    assert isinstance(snap, dict)
+    assert snap["provider"] == "openai"
+    assert snap["model"] == "gpt-test"
+    assert snap["usage"]["input_tokens"] == 1000
+    assert snap["computed_cost"]["total_cost"] == "0.00006000"
+    assert snap["pricing_snapshot"]["pricing_source"] == "unit_test"
 
 
 def test_get_job_auditability_missing_hybrid_and_execution_log_200(audit_ctx: dict[str, Any]) -> None:
