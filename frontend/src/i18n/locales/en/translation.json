@@ -407,7 +407,6 @@
     "loading_diff_rows": "Loading diff rows...",
     "missing_inventory": "Inventory is required.",
     "no_differences": "No differences detected vs baseline.",
-    "open_ab_compare": "Open A/B compare",
     "open_compare_many": "Open compare-many",
     "show_diff_rows": "Show diff rows",
     "subtitle": "Compare selected runs against one baseline.",

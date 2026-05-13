@@ -70,9 +70,6 @@ export const queryKeys = {
     /** Run selector list (`listAisleJobs`); `limit` is part of cache identity. */
     aisleJobsList: (inventoryId: string, aisleId: string, limit: number) =>
       [...queryKeys.inventories.aisleJobs(inventoryId, aisleId), limit] as const,
-    /** Phase 6 — explicit two-run compare (benchmark analytics payload). */
-    benchmarkCompare: (inventoryId: string, aisleId: string, jobAId: string, jobBId: string) =>
-      [...queryKeys.inventories.all, 'benchmark-compare', inventoryId, aisleId, jobAId, jobBId] as const,
     benchmarkCompareMany: (
       inventoryId: string,
       aisleId: string,

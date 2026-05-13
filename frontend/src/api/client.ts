@@ -53,7 +53,6 @@ export {
 export type { AnalyticsQueryParams } from './analyticsApi';
 export {
   downloadAisleBenchmarkExportCsv,
-  getAisleBenchmarkCompare,
   getAisleBenchmarkCompareMany,
   getAnalyticsAisleIssues,
   getAnalyticsInventoryPerformance,

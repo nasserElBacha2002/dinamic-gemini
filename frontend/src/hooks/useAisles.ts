@@ -17,7 +17,6 @@ import {
   getProcessingProviderOptions,
   listAisleJobs,
   listAisleAssets,
-  getAisleBenchmarkCompare,
   getAisleBenchmarkCompareMany,
   type AislesListQuery,
 } from '../api/client';
@@ -131,7 +130,6 @@ export function useAisleJobsList(
   });
 }
 
-/** Phase 6 — benchmark compare for explicit job pair (read-only analytics payload). */
 /** Uploaded source assets (photos/videos) for one aisle — lazy until drawer opens. */
 export function useAisleSourceAssets(
   inventoryId: string | undefined,
@@ -142,26 +140,6 @@ export function useAisleSourceAssets(
     queryKey: queryKeys.inventories.aisleSourceAssets(inventoryId ?? '', aisleId ?? ''),
     queryFn: () => listAisleAssets(inventoryId!, aisleId!),
     enabled: Boolean(inventoryId && aisleId) && (options?.enabled !== false),
-    refetchOnWindowFocus: false,
-  });
-}
-
-export function useAisleBenchmarkCompare(
-  inventoryId: string | undefined,
-  aisleId: string | undefined,
-  jobAId: string | undefined,
-  jobBId: string | undefined,
-  options?: { enabled?: boolean }
-) {
-  const inv = (inventoryId ?? '').trim();
-  const aisle = (aisleId ?? '').trim();
-  const a = jobAId?.trim() ?? '';
-  const b = jobBId?.trim() ?? '';
-  const paramsReady = Boolean(inv && aisle && a && b && a !== b);
-  return useQuery({
-    queryKey: queryKeys.inventories.benchmarkCompare(inv, aisle, a, b),
-    queryFn: () => getAisleBenchmarkCompare(inv, aisle, a, b),
-    enabled: paramsReady && (options?.enabled !== false),
     refetchOnWindowFocus: false,
   });
 }

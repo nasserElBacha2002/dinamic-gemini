@@ -125,7 +125,7 @@ function renderPageWithCompareRoute() {
           <Routes>
             <Route path="/inventories/:inventoryId" element={<InventoryDetail />} />
             <Route
-              path="/inventories/:inventoryId/analytics/compare"
+              path="/inventories/:inventoryId/analytics/compare-many"
               element={<div data-testid="inventory-compare-route">compare</div>}
             />
           </Routes>

@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type { BenchmarkRunCompareSide, JobSummary, LlmCostSnapshot } from '../../../api/types';
+import type { LlmCostSnapshot } from '../../../api/types';
 import { formatExecutionDurationHuman } from '../../../utils/benchmarkExecutionTime';
 
 export function userFacingCaptureNote(note: string, t: TFunction): string {
@@ -74,19 +74,6 @@ export function formatCostDisplay(
   return { value: `${total} ${currency || ''}`.trim(), details };
 }
 
-export function runExecutionDisplay(
-  run: Pick<BenchmarkRunCompareSide, 'execution_time_human' | 'execution_time_seconds'>,
-  t: TFunction
-): string {
-  if (run.execution_time_human) {
-    return run.execution_time_human;
-  }
-  if (run.execution_time_seconds != null) {
-    return formatExecutionDurationHuman(run.execution_time_seconds);
-  }
-  return t('compare.execution_unavailable');
-}
-
 export function signedValue(value: number): string {
   if (value > 0) return `+${value}`;
   return String(value);
@@ -96,10 +83,6 @@ export function semanticColor(value: number, higherIsWorse: boolean): 'success.m
   if (value === 0) return 'text.primary';
   if (higherIsWorse) return value > 0 ? 'error.main' : 'success.main';
   return value > 0 ? 'success.main' : 'error.main';
-}
-
-export function displayJobName(job: JobSummary): string {
-  return `${job.id.slice(0, 8)}…`;
 }
 
 export function compareRunExecutionLabel(
