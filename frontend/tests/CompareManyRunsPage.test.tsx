@@ -407,4 +407,17 @@ describe('CompareManyRunsPage', () => {
   it('helper validation flags too-few selections for draft apply', () => {
     expect(buildDraftError('aisle-1', ['job-1'], 'job-1', (k) => k)).toBe('compare_many.errors.pick_two_jobs');
   });
+
+  it('redirects production inventories away from compare-many to inventory detail', async () => {
+    vi.mocked(client.getInventory).mockResolvedValue({
+      ...inventoryFixture(),
+      processing_mode: 'production',
+    });
+    const { router } = renderPage(
+      '/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1'
+    );
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/inventories/inv-1');
+    });
+  });
 });

@@ -1,16 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import {
-  Alert,
-  Box,
-  Button,
-} from '@mui/material';
+import { Alert, Box } from '@mui/material';
 import { PageHeader } from '../../components/shell';
 import { useAisleBenchmarkCompareMany, useAisleJobsList, useAislesList, useInventoryDetail } from '../../hooks';
 import { getVisibleErrorMessage } from '../../utils/apiErrors';
 import { getJobStatusLabel } from '../../utils/jobStatus';
-import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompare } from '../../constants/appRoutes';
+import { ROUTE_HOME, pathToInventory } from '../../constants/appRoutes';
 import { formatExecutionDurationHuman, formatSignedDurationHuman } from '../../utils/benchmarkExecutionTime';
 import { MAX_COMPARE_JOBS, MIN_COMPARE_JOBS } from '../../features/analytics/constants/compareManyRuns';
 import { buildDraftError } from './compareManyRunsDraft';
@@ -177,13 +173,6 @@ export default function CompareManyRunsPage() {
         ]}
         title={t('analytics.compare_many_runs_page_title')}
         subtitle={t('compare_many.subtitle')}
-        actions={
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button size="small" variant="outlined" onClick={() => navigate(pathToInventoryAnalyticsCompare(inventoryId))}>
-              {t('compare_many.open_ab_compare')}
-            </Button>
-          </Box>
-        }
       />
 
       {showBaselineAdjustedNotice ? (

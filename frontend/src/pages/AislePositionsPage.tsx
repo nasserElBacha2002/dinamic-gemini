@@ -17,7 +17,11 @@ import type { RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
 import { FilterToolbar, TableSearchField, useAppSnackbar, useErrorSnackbar } from '../components/ui';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
-import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompare } from '../constants/appRoutes';
+import {
+  ROUTE_HOME,
+  pathToInventory,
+  pathToInventoryAnalyticsCompareMany,
+} from '../constants/appRoutes';
 import {
   useInventoryDetail,
   useAislesList,
@@ -203,9 +207,9 @@ export default function AislePositionsPage() {
     if (!a || !b || a === b) return;
     const params = new URLSearchParams();
     params.set('aisleId', aisleId);
-    params.set('jobAId', a);
-    params.set('jobBId', b);
-    navigate(`${pathToInventoryAnalyticsCompare(inventoryId)}?${params.toString()}`);
+    params.set('jobIds', `${a},${b}`);
+    params.set('baseline', a);
+    navigate(`${pathToInventoryAnalyticsCompareMany(inventoryId)}?${params.toString()}`);
   }, [aisleId, inventoryId, jobs, navigate, visibleJobId]);
 
   useEffect(() => {
@@ -511,9 +515,9 @@ export default function AislePositionsPage() {
         onCompareOperational={() => {
           const params = new URLSearchParams();
           params.set('aisleId', aisleId!);
-          params.set('jobAId', visibleJobId!);
-          params.set('jobBId', operationalJobId!);
-          navigate(`${pathToInventoryAnalyticsCompare(inventoryId)}?${params.toString()}`);
+          params.set('jobIds', `${visibleJobId!},${operationalJobId!}`);
+          params.set('baseline', visibleJobId!);
+          navigate(`${pathToInventoryAnalyticsCompareMany(inventoryId!)}?${params.toString()}`);
         }}
         showPromoteRun={Boolean(isTestInventory && canPromoteCurrentRun)}
         onPromoteRun={() => {

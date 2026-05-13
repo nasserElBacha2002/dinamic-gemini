@@ -416,7 +416,6 @@
     "loading_diff_rows": "Cargando filas con diferencias...",
     "missing_inventory": "Se requiere inventario.",
     "no_differences": "No se detectaron diferencias contra la baseline.",
-    "open_ab_compare": "Abrir comparación A/B",
     "open_compare_many": "Abrir compare-many",
     "show_diff_rows": "Ver filas con diferencias",
     "subtitle": "Compará corridas seleccionadas contra una baseline.",

@@ -18,7 +18,6 @@ export {
   useAisleJobDetail,
   useJobAuditability,
   useAisleJobsList,
-  useAisleBenchmarkCompare,
   useAisleBenchmarkCompareMany,
   useAisleSourceAssets,
 } from './useAisles';

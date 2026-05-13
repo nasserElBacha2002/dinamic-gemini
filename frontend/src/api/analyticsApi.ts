@@ -2,7 +2,6 @@ import { V3_ANALYTICS_BASE, V3_INVENTORIES_BASE } from '../constants/v3ApiPaths'
 import type {
   AisleBenchmarkCompareManyRequest,
   AisleBenchmarkCompareManyResponse,
-  AisleBenchmarkCompareResponse,
   AisleIssueListResponse,
   AnalyticsSummaryResponse,
   AnalyticsTrendsResponse,
@@ -69,20 +68,6 @@ export async function getAnalyticsManualInterventions(
   return apiRequestJson<ManualInterventionBreakdownResponse>(
     `${API_BASE}${V3_ANALYTICS_BASE}/manual-interventions${buildAnalyticsQueryString(q)}`
   );
-}
-
-export async function getAisleBenchmarkCompare(
-  inventoryId: string,
-  aisleId: string,
-  jobAId: string,
-  jobBId: string
-): Promise<AisleBenchmarkCompareResponse> {
-  const params = new URLSearchParams({
-    job_a_id: jobAId.trim(),
-    job_b_id: jobBId.trim(),
-  });
-  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/benchmark/compare?${params}`;
-  return apiRequestJson<AisleBenchmarkCompareResponse>(path);
 }
 
 export async function getAisleBenchmarkCompareMany(

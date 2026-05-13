@@ -60,8 +60,12 @@ export function pathToInventory(inventoryId: string): string {
   return `${ROUTE_INVENTORIES_ROOT}/${inventoryId}`;
 }
 
+/**
+ * Canonical analytics comparison URL (compare-many). Kept for backward-compatible call sites.
+ * The legacy path `/analytics/compare` still exists in the router and redirects here.
+ */
 export function pathToInventoryAnalyticsCompare(inventoryId: string): string {
-  return `${ROUTE_INVENTORIES_ROOT}/${inventoryId}/analytics/compare`;
+  return pathToInventoryAnalyticsCompareMany(inventoryId);
 }
 
 export function pathToInventoryAnalyticsCompareMany(inventoryId: string): string {

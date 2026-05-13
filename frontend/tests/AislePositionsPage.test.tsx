@@ -84,6 +84,7 @@ const mockPositions: PositionSummary[] = [
   {
     id: 'pos-1',
     aisle_id: 'aisle-1',
+    position_code: 'P-01',
     status: 'detected',
     confidence: 0.9,
     needs_review: false,
@@ -102,6 +103,7 @@ const mockResults: ResultSummary[] = [
   {
     id: 'pos-1',
     sku: 'SKU-001',
+    positionCode: 'P-01',
     detectedQty: 5,
     correctedQty: null,
     resolvedQty: null,
@@ -119,6 +121,7 @@ const repeatedSkuPositions: PositionSummary[] = [
   {
     id: 'pos-2',
     aisle_id: 'aisle-1',
+    position_code: 'P-02',
     status: 'detected',
     confidence: 0.88,
     needs_review: false,
@@ -138,6 +141,7 @@ const repeatedSkuResults: ResultSummary[] = [
   {
     id: 'pos-2',
     sku: 'SKU-001',
+    positionCode: 'P-02',
     detectedQty: 1,
     correctedQty: null,
     resolvedQty: null,
@@ -644,7 +648,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
             element: <AislePositionsPage />,
           },
           {
-            path: '/inventories/:inventoryId/analytics/compare',
+            path: '/inventories/:inventoryId/analytics/compare-many',
             element: <div data-testid="compare-route-marker">compare</div>,
           },
         ],
@@ -662,12 +666,11 @@ describe('AislePositionsPage (Aisle Results)', () => {
       fireEvent.click(screen.getByRole('button', { name: /comparar corridas|compare runs/i }));
 
       await waitFor(() => {
-        expect(router.state.location.pathname).toBe('/inventories/inv-1/analytics/compare');
+        expect(router.state.location.pathname).toBe('/inventories/inv-1/analytics/compare-many');
         const q = new URLSearchParams(router.state.location.search);
         expect(q.get('aisleId')).toBe('aisle-1');
-        expect(q.get('jobAId')).toBe('job-op');
-        expect(q.get('jobBId')).toBe('job-bench');
-        expect(q.get('jobAId')).not.toBe(q.get('jobBId'));
+        expect(q.get('jobIds')).toBe('job-op,job-bench');
+        expect(q.get('baseline')).toBe('job-op');
       });
     });
 
