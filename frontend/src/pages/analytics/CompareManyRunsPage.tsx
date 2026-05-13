@@ -9,6 +9,7 @@ import {
 import { PageHeader } from '../../components/shell';
 import { useAisleBenchmarkCompareMany, useAisleJobsList, useAislesList, useInventoryDetail } from '../../hooks';
 import { getVisibleErrorMessage } from '../../utils/apiErrors';
+import { getJobStatusLabel } from '../../utils/jobStatus';
 import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompare } from '../../constants/appRoutes';
 import { formatExecutionDurationHuman, formatSignedDurationHuman } from '../../utils/benchmarkExecutionTime';
 import { MAX_COMPARE_JOBS, MIN_COMPARE_JOBS } from '../../features/analytics/constants/compareManyRuns';
@@ -281,7 +282,7 @@ export default function CompareManyRunsPage() {
             jobsById={jobsById}
             baselineJobId={effectiveData.baseline_job_id}
             baselineChipLabel={t('compare_many.baseline_chip')}
-            statusChipLabel={(status) => t('compare_many.status_chip', { status })}
+            statusChipLabel={(status) => t('compare_many.status_chip', { status: getJobStatusLabel(status) })}
             executionTimeLabel={(value) => t('compare_many.job_execution_time', { value })}
             executionTimeValue={(job) => compareRunExecutionLabel(job, t)}
             metricsLabel={({ qty, review, unknown, consolidated }) =>

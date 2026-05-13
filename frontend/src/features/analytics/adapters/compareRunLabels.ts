@@ -1,5 +1,6 @@
 import type { TFunction } from 'i18next';
 import type { BenchmarkRunCompareSide, JobSummary, LlmCostSnapshot } from '../../../api/types';
+import { getJobStatusLabel } from '../../../utils/jobStatus';
 import { formatCostDisplay } from './compareFormatters';
 import {
   formatExecutionDurationHuman,
@@ -24,23 +25,7 @@ function snapshotForCostDisplay(run: {
 }): Parameters<typeof formatCostDisplay>[0] {
   return {
     model_name: run.model_name,
-    llm_cost_snapshot: run.llm_cost_snapshot
-      ? {
-          billing_currency: run.llm_cost_snapshot.billing_currency,
-          pricing_available: run.llm_cost_snapshot.pricing_available,
-          model: run.llm_cost_snapshot.model,
-          computed_cost: run.llm_cost_snapshot.computed_cost
-            ? {
-                total_cost: run.llm_cost_snapshot.computed_cost.total_cost,
-                currency: run.llm_cost_snapshot.computed_cost.currency,
-                total_cost_unavailable_reason:
-                  run.llm_cost_snapshot.computed_cost.total_cost_unavailable_reason,
-              }
-            : undefined,
-          capture_status: run.llm_cost_snapshot.capture_status,
-          capture_notes: run.llm_cost_snapshot.capture_notes,
-        }
-      : null,
+    llm_cost_snapshot: run.llm_cost_snapshot ?? null,
   };
 }
 
@@ -81,7 +66,7 @@ export function jobSummaryExecutionPreview(job: JobSummary): string | null {
 export function getRunPickerMenuSecondaryLine(job: JobSummary, t: TFunction): string {
   const parts: string[] = [];
   parts.push(t('compare_many.job_id_short', { id: job.id.slice(0, 8) }));
-  parts.push(t('compare_many.status_inline', { status: job.status }));
+  parts.push(t('compare_many.status_inline', { status: getJobStatusLabel(job.status) }));
   parts.push(getRunCostSummaryLine(job, t));
   const dur = jobSummaryExecutionPreview(job);
   if (dur) {

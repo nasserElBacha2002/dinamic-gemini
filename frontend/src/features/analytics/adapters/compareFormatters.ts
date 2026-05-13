@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import type { BenchmarkRunCompareSide, JobSummary } from '../../../api/types';
+import type { BenchmarkRunCompareSide, JobSummary, LlmCostSnapshot } from '../../../api/types';
 import { formatExecutionDurationHuman } from '../../../utils/benchmarkExecutionTime';
 
 export function userFacingCaptureNote(note: string, t: TFunction): string {
@@ -26,18 +26,7 @@ export function userFacingCaptureNote(note: string, t: TFunction): string {
 export function formatCostDisplay(
   run: {
     model_name?: string | null;
-    llm_cost_snapshot?: {
-      billing_currency?: string | null;
-      pricing_available?: boolean | null;
-      model?: string | null;
-      computed_cost?: {
-        total_cost?: string | null;
-        currency?: string | null;
-        total_cost_unavailable_reason?: string | null;
-      };
-      capture_status?: string;
-      capture_notes?: string[];
-    } | null;
+    llm_cost_snapshot?: Partial<LlmCostSnapshot> | null;
   },
   t: TFunction
 ): {
