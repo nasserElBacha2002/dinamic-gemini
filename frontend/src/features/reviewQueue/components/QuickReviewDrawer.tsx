@@ -95,13 +95,7 @@ export default function QuickReviewDrawer({
   const canonicalPositionId =
     !context?.exactPositionDetail && result?.id ? result.id : initialPositionId;
 
-  // Production strategies: queue vs aisle results. (`detail` is reserved — see `ReviewMutationStrategy`.)
-  const reviewStrategy =
-    context?.returnTo === 'review_queue'
-      ? 'reviewQueue'
-      : context?.returnTo === 'aisle_results'
-        ? 'aisleResults'
-        : undefined;
+  const reviewStrategy = context?.returnTo === 'aisle_results' ? 'aisleResults' : undefined;
   const reviewMutation = useSubmitReviewAction(inventoryId, aisleId, canonicalPositionId, {
     strategy: reviewStrategy,
   });
@@ -148,7 +142,7 @@ export default function QuickReviewDrawer({
           showSnackbar(options.successMessage, 'success');
         }
       } catch (e) {
-        setActionError(getVisibleErrorMessage(e, 'reviewQueue'));
+        setActionError(getVisibleErrorMessage(e, 'results'));
       } finally {
         reviewMutationInFlightRef.current = false;
       }
@@ -218,7 +212,7 @@ export default function QuickReviewDrawer({
       setInvalidConfirmOpen(false);
       onClose(); // Automatically close after invalidation
     } catch (e) {
-      setInvalidConfirmError(getVisibleErrorMessage(e, 'reviewQueue'));
+      setInvalidConfirmError(getVisibleErrorMessage(e, 'results'));
     } finally {
       reviewMutationInFlightRef.current = false;
       setInvalidConfirmLoading(false);
@@ -231,7 +225,7 @@ export default function QuickReviewDrawer({
 
   const errorMessage =
     isError && error
-      ? getVisibleErrorMessage(error, 'reviewQueue')
+      ? getVisibleErrorMessage(error, 'results')
       : null;
 
   const detailTitle = result?.sku?.trim() ? result.sku.trim() : t('review.detail_title_fallback');

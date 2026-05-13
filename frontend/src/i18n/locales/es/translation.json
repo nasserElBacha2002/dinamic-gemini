@@ -506,7 +506,6 @@
     "load_reference_images": "No se pudieron cargar las imágenes de referencia",
     "load_result_detail": "No se pudo cargar el detalle del resultado",
     "load_results": "No se pudieron cargar los resultados",
-    "load_review_queue": "No se pudo cargar la cola de revisión",
     "merge_failed": "La fusión falló",
     "not_found": "No encontrado",
     "preview_aisle_asset_failed": "No se pudo previsualizar el activo del pasillo",
@@ -1131,7 +1130,7 @@
     "kpi_qty_zero": "Cant. en cero",
     "kpi_total": "Kpi total",
     "kpi_with_evidence": "Kpi with evidence",
-    "loading_workload": "Cargando cola de revisión...",
+    "loading_workload": "Cargando volumen de trabajo...",
     "max_confidence": "Confianza máxima",
     "min_confidence": "Confianza mínima",
     "min_confidence_help": "Ingresá un valor entre 0 y 1.",
@@ -1247,22 +1246,9 @@
     "summary_sku_set": "SKU establecido",
     "summary_status": "Estado"
   },
-  "review_queue": {
-    "column_priority": "Prioridad",
-    "column_quantity": "Cantidad",
-    "filter_quality_sku": "Calidad / SKU",
-    "filter_scope": "Alcance",
-    "placeholder_confidence": "0.00 - 1.00"
-  },
-  "review_queue_table": {
-    "empty_message": "No hay posiciones pendientes con los filtros actuales.",
-    "empty_title": "Sin resultados",
-    "review_aria": "Abrir revisión rápida"
-  },
   "nav": {
     "inventories": "Inventarios",
     "ingestion_sessions": "Sesiones de importación",
-    "review_queue": "Cola de revisión",
     "metrics": "Métricas",
     "observability": "Observabilidad",
     "clients": "Clientes",
@@ -1291,10 +1277,6 @@
     "result_review": {
       "title": "Revisión de resultado",
       "subtitle": "Revisá evidencia y aplicá acciones operativas"
-    },
-    "review_queue": {
-      "title": "Cola de revisión",
-      "subtitle": "Priorizá posiciones que requieren revisión manual"
     },
     "metrics": {
       "title": "Métricas",

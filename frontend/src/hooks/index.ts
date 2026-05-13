@@ -27,7 +27,6 @@ export {
   useAisleMergeResults,
   positionsListQueryKeyPart,
 } from './usePositions';
-export { useReviewQueue } from './useReviewQueue';
 export { useObservabilityMetrics } from './useObservabilityMetrics';
 export {
   useCreateClient,

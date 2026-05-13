@@ -1,6 +1,5 @@
 import type { InventoriesListQuery } from './inventoriesApi';
 import type { AislePositionsListQuery } from './jobsApi';
-import type { ReviewQueueListQuery } from './reviewQueueApi';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 
 type QueryKeyPrimitive = string | number;
@@ -75,70 +74,6 @@ export function inventoriesListKeyPart(
   if (q.search) out.search = q.search;
   if (q.status) out.status = q.status;
   return out;
-}
-
-/**
- * Canonical GET review-queue params aligned with `buildReviewQueueQueryString` in `reviewQueueApi.ts`.
- * Omitted fields are not sent on the wire.
- */
-export function canonicalizeReviewQueueListQuery(
-  listQuery?: ReviewQueueListQuery
-): ReviewQueueListQuery {
-  const out: ReviewQueueListQuery = {};
-  const inventoryId = normalizeText(listQuery?.inventory_id);
-  const aisleId = normalizeText(listQuery?.aisle_id);
-  if (inventoryId) out.inventory_id = inventoryId;
-  if (aisleId) out.aisle_id = aisleId;
-  const minC = normalizeFiniteConfidence(listQuery?.min_confidence);
-  const maxC = normalizeFiniteConfidence(listQuery?.max_confidence);
-  if (minC != null) out.min_confidence = minC;
-  if (maxC != null) out.max_confidence = maxC;
-  const traceability = normalizeText(listQuery?.traceability, { lowercase: true });
-  if (traceability) out.traceability = traceability;
-  if (listQuery?.has_evidence === true) out.has_evidence = true;
-  if (listQuery?.has_evidence === false) out.has_evidence = false;
-  if (listQuery?.qty_zero === true) out.qty_zero = true;
-  if (listQuery?.qty_zero === false) out.qty_zero = false;
-  const skuContains = normalizeText(listQuery?.sku_contains);
-  if (skuContains) out.sku_contains = skuContains;
-  const positionStatus = normalizeText(listQuery?.position_status, { lowercase: true });
-  if (positionStatus) out.position_status = positionStatus;
-  const sortBy = normalizeText(listQuery?.sort_by);
-  const sortDir = normalizeText(listQuery?.sort_dir);
-  if (sortBy) out.sort_by = sortBy;
-  if (sortDir) out.sort_dir = sortDir;
-  const page = normalizePositiveInt(listQuery?.page);
-  const pageSize = normalizePositiveInt(listQuery?.page_size);
-  if (page != null) out.page = page;
-  if (pageSize != null) out.page_size = pageSize;
-  return out;
-}
-
-function reviewQueueKeyPartFromCanonical(q: ReviewQueueListQuery): QueryKeyParams {
-  const out: QueryKeyParams = {};
-  if (q.inventory_id) out.inventory_id = q.inventory_id;
-  if (q.aisle_id) out.aisle_id = q.aisle_id;
-  if (q.min_confidence != null) out.min_confidence = q.min_confidence;
-  if (q.max_confidence != null) out.max_confidence = q.max_confidence;
-  if (q.traceability) out.traceability = q.traceability;
-  if (q.has_evidence === true) out.has_evidence = 1;
-  if (q.has_evidence === false) out.has_evidence = 0;
-  if (q.qty_zero === true) out.qty_zero = 1;
-  if (q.qty_zero === false) out.qty_zero = 0;
-  if (q.sku_contains) out.sku_contains = q.sku_contains;
-  if (q.position_status) out.position_status = q.position_status;
-  if (q.sort_by) out.sort_by = q.sort_by;
-  if (q.sort_dir) out.sort_dir = q.sort_dir;
-  if (q.page != null) out.page = q.page;
-  if (q.page_size != null) out.page_size = q.page_size;
-  return out;
-}
-
-/**
- * Stable key fragment for review queue; derived only from canonical query semantics.
- */
-export function reviewQueueListKeyPart(listQuery?: ReviewQueueListQuery): QueryKeyParams {
-  return reviewQueueKeyPartFromCanonical(canonicalizeReviewQueueListQuery(listQuery));
 }
 
 /**

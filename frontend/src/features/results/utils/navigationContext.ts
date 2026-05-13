@@ -19,7 +19,7 @@ function isResultsFilterKind(value: unknown): value is ResultsFilterKind {
 }
 
 /** Where the user should return when leaving detail (drives breadcrumbs + back). */
-export type ResultDetailReturnTo = 'aisle_results' | 'review_queue';
+export type ResultDetailReturnTo = 'aisle_results';
 
 /** State passed via React Router location.state when opening Result Detail from the list. */
 export interface ResultDetailNavigationState {
@@ -60,10 +60,8 @@ export function parseResultDetailNavigationState(
     isResultsFilterKind(filter);
   if (!filterOk) return null;
   const rawReturn = o.returnTo;
-  const returnTo =
-    rawReturn === 'review_queue' || rawReturn === 'aisle_results'
-      ? (rawReturn as ResultDetailReturnTo)
-      : undefined;
+  const returnTo: ResultDetailReturnTo | undefined =
+    rawReturn === 'aisle_results' || rawReturn === 'review_queue' ? 'aisle_results' : undefined;
   return {
     resultIds: ids,
     filter: filter === undefined || filter === null ? undefined : (filter as ResultsFilterKind),

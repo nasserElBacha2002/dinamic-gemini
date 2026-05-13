@@ -9,7 +9,7 @@ import { reportGuardrailsForNewEvent } from './cacheMutationGuardrails';
 const MAX_EVENTS = 80;
 
 /** Mirrors `ReviewMutationStrategy` + orchestration default (avoid import cycle with review patch module). */
-export type ReviewStrategyObs = 'reviewQueue' | 'aisleResults' | 'detail' | 'default';
+export type ReviewStrategyObs = 'aisleResults' | 'detail' | 'default';
 
 /** Test-only override: `true` / `false` forces on/off; `null` uses normal rules. */
 let testOverride: boolean | null = null;
@@ -56,7 +56,7 @@ export type ReviewActionCacheObsEvent = {
   strategy: ReviewStrategyObs;
   scope: { inventoryId: string; aisleId: string; positionId: string };
   /** Where `setQueryData` / `removeQueries` satisfied the domain without invalidation. */
-  patchHits: Array<'review_queue_list' | 'position_detail' | 'positions_list'>;
+  patchHits: Array<'position_detail' | 'positions_list'>;
   /** `invalidateQueries` used because patch missed, no-op, or delete path. */
   fallbackInvalidations: string[];
   /** Invalidations that are intentional follow-ups (not “patch failed”), e.g. merge after aisle review. */

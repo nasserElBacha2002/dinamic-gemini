@@ -496,7 +496,6 @@
     "load_reference_images": "Load reference images",
     "load_result_detail": "Load result detail",
     "load_results": "Load results",
-    "load_review_queue": "Load review queue",
     "merge_failed": "Merge failed",
     "not_found": "Not found",
     "preview_aisle_asset_failed": "Preview aisle asset failed",
@@ -870,23 +869,12 @@
     "summary_sku_set": "Summary sku set",
     "summary_status": "Summary status"
   },
-  "review_queue": {
-    "column_priority": "Column priority",
-    "column_quantity": "Column quantity",
-    "filter_quality_sku": "Filter quality sku",
-    "filter_scope": "Filter scope",
-    "placeholder_confidence": "Placeholder confidence"
-  },
-  "review_queue_table": {
-    "empty_message": "Empty message",
-    "empty_title": "Empty title",
-    "review_aria": "Review aria"
-  },
   "nav": {
     "inventories": "Inventories",
     "ingestion_sessions": "Import sessions",
-    "review_queue": "Review queue",
     "metrics": "Metrics",
+    "observability": "Observability",
+    "clients": "Clients",
     "ai_config": "AI configuration"
   },
   "root": {
@@ -912,10 +900,6 @@
     "result_review": {
       "title": "Result review",
       "subtitle": "Review evidence and apply operator actions"
-    },
-    "review_queue": {
-      "title": "Review queue",
-      "subtitle": "Prioritize positions that need manual review"
     },
     "metrics": {
       "title": "Metrics",

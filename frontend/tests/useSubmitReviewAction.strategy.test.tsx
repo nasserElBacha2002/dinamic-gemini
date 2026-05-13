@@ -12,6 +12,10 @@ function wrapper(qc: QueryClient) {
   };
 }
 
+function createTestQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
 describe('useSubmitReviewAction strategy invalidation', () => {
   beforeEach(() => {
     vi.spyOn(client, 'submitReviewAction').mockResolvedValue(undefined as never);
@@ -21,30 +25,8 @@ describe('useSubmitReviewAction strategy invalidation', () => {
     vi.restoreAllMocks();
   });
 
-  it('reviewQueue strategy invalidates detail + reviewQueue only', async () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
-    const { result } = renderHook(
-      () =>
-        useSubmitReviewAction('inv-1', 'aisle-1', 'pos-1', {
-          strategy: 'reviewQueue',
-        }),
-      { wrapper: wrapper(qc) }
-    );
-
-    await result.current.mutateAsync({ action_type: 'confirm' });
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalled());
-    const calls = invalidateSpy.mock.calls.map((c) => c[0]);
-
-    expect(calls).toHaveLength(2);
-    expect(calls).toEqual([
-      { queryKey: queryKeys.inventories.positionDetail('inv-1', 'aisle-1', 'pos-1') },
-      { queryKey: queryKeys.reviewQueue.all },
-    ]);
-  });
-
   it('aisleResults strategy invalidates detail + positions + merge-results', async () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const qc = createTestQueryClient();
     const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
     const { result } = renderHook(
       () =>
@@ -67,7 +49,7 @@ describe('useSubmitReviewAction strategy invalidation', () => {
   });
 
   it('detail strategy invalidates detail + positions only', async () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const qc = createTestQueryClient();
     const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
     const { result } = renderHook(
       () =>
@@ -89,7 +71,7 @@ describe('useSubmitReviewAction strategy invalidation', () => {
   });
 
   it('default strategy preserves phase3 compatibility', async () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const qc = createTestQueryClient();
     const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
     const { result } = renderHook(() => useSubmitReviewAction('inv-1', 'aisle-1', 'pos-1'), {
       wrapper: wrapper(qc),
@@ -99,13 +81,12 @@ describe('useSubmitReviewAction strategy invalidation', () => {
     await waitFor(() => expect(invalidateSpy).toHaveBeenCalled());
     const calls = invalidateSpy.mock.calls.map((c) => c[0]);
 
-    expect(calls).toHaveLength(5);
+    expect(calls).toHaveLength(4);
     expect(calls).toEqual([
       { queryKey: queryKeys.inventories.positionDetail('inv-1', 'aisle-1', 'pos-1') },
       { queryKey: queryKeys.inventories.positions('inv-1', 'aisle-1') },
       { queryKey: queryKeys.inventories.mergeResults('inv-1', 'aisle-1') },
       { queryKey: queryKeys.inventories.aisles('inv-1') },
-      { queryKey: queryKeys.reviewQueue.all },
     ]);
   });
 });

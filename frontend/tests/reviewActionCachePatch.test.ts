@@ -3,14 +3,9 @@ import { QueryClient } from '@tanstack/react-query';
 import {
   applyReviewActionToPositionSummary,
   patchCachesForAisleResultsStrategy,
-  patchCachesForReviewQueueStrategy,
 } from '../src/hooks/reviewActionCachePatch';
 import type { PositionSummary } from '../src/api/types/responses';
 import { queryKeys } from '../src/api/queryKeys';
-import {
-  canonicalizeReviewQueueListQuery,
-  reviewQueueListKeyPart,
-} from '../src/api/queryParamCanonicalization';
 
 function base(overrides: Partial<PositionSummary> = {}): PositionSummary {
   return {
@@ -73,36 +68,6 @@ describe('applyReviewActionToPositionSummary', () => {
     });
     const next = applyReviewActionToPositionSummary(already, { action_type: 'confirm' });
     expect(next).toBe(already);
-  });
-});
-
-describe('patchCachesForReviewQueueStrategy row not found', () => {
-  it('sets invalidateReviewQueue when target row is absent from cached list', () => {
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const rqCanonical = canonicalizeReviewQueueListQuery({ page: 1, page_size: 25 });
-    const rqKey = queryKeys.reviewQueue.list(reviewQueueListKeyPart(rqCanonical));
-    qc.setQueryData(rqKey, {
-      summary: { pending_review: 1, low_confidence: 0, invalid_traceability: 0, qty_zero: 0, missing_evidence: 0 },
-      items: [
-        {
-          inventory_id: 'inv-1',
-          inventory_name: 'Inv',
-          aisle_code: 'A',
-          position: base(),
-        },
-      ],
-      page: 1,
-      page_size: 25,
-      total_items: 1,
-      total_pages: 1,
-    });
-
-    const flags = patchCachesForReviewQueueStrategy(qc, 'inv-1', 'aisle-1', 'missing-pos', {
-      action_type: 'confirm',
-    });
-
-    expect(flags.invalidateReviewQueue).toBe(true);
-    expect(flags.invalidatePositionDetail).toBe(true);
   });
 });
 
