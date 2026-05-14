@@ -76,6 +76,7 @@ export default function InventoriesList() {
         id: 'name',
         label: t('inventory.column_inventory'),
         sortable: true,
+        serverSortKey: 'name',
         cell: (inv) => (
           <Link
             component="button"
@@ -93,6 +94,7 @@ export default function InventoriesList() {
         id: 'status',
         label: t('inventory.column_status'),
         sortable: true,
+        serverSortKey: 'status',
         cell: (inv) => (
           <StatusBadge
             label={formatInventoryStatusLabel(String(inv.status))}
@@ -118,12 +120,14 @@ export default function InventoriesList() {
         id: 'created_at',
         label: t('common.created'),
         sortable: true,
+        serverSortKey: 'created_at',
         cell: (inv) => formatDate(inv.created_at ?? undefined),
       },
       {
         id: 'aisles_count',
         label: t('inventory.column_aisles'),
         sortable: true,
+        serverSortKey: 'aisles_count',
         align: 'right',
         cell: (inv) => (typeof inv.aisles_count === 'number' ? inv.aisles_count : t('common.em_dash')),
       },
@@ -131,6 +135,7 @@ export default function InventoriesList() {
         id: 'pending_review_count',
         label: t('inventory.column_pending_review'),
         sortable: true,
+        serverSortKey: 'pending_review_count',
         align: 'right',
         cell: (inv) => (typeof inv.pending_review_count === 'number' ? inv.pending_review_count : t('common.em_dash')),
       },
@@ -138,6 +143,7 @@ export default function InventoriesList() {
         id: 'last_activity_at',
         label: t('common.last_activity'),
         sortable: true,
+        serverSortKey: 'last_activity_at',
         cell: (inv) => formatDate(inv.last_activity_at ?? undefined),
       },
     ],

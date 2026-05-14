@@ -1,5 +1,5 @@
 import type { ChangeEvent, RefObject } from 'react';
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { Box, Button, Typography } from '@mui/material';
@@ -11,6 +11,8 @@ import {
   StatusBadge,
   TableSearchField,
   type DataTableColumn,
+  type DataTableSortDirection,
+  sortDataTableRows,
 } from '../../../components/ui';
 import { pathToAisleObservability, pathToClientSupplier } from '../../../constants/appRoutes';
 import { pathToAislePositions } from '../../../utils/resultRoutes';
@@ -62,6 +64,13 @@ export default function InventoryAislesSection({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const emptyLabel = t('common.em_dash');
+  const [aisleSortBy, setAisleSortBy] = useState('');
+  const [aisleSortDir, setAisleSortDir] = useState<DataTableSortDirection>('asc');
+
+  const handleAisleSortChange = useCallback((sortBy: string, sortDir: DataTableSortDirection) => {
+    setAisleSortBy(sortBy);
+    setAisleSortDir(sortDir);
+  }, []);
 
   const menuCtx: ProcessAisleMenuContext = useMemo(
     () => ({
@@ -77,6 +86,9 @@ export default function InventoryAislesSection({
       {
         id: 'code',
         label: t('aisle.code_label'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (row) => row.presentation.code.toLowerCase(),
         cell: (row) => (
           <Button
             variant="text"
@@ -101,6 +113,9 @@ export default function InventoryAislesSection({
       {
         id: 'client_supplier',
         label: t('inventory.column_aisle_supplier'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (row) => (row.presentation.clientSupplierId ?? '').toLowerCase(),
         cell: (row) => {
           const sid = row.presentation.clientSupplierId;
           if (!sid) {
@@ -135,6 +150,9 @@ export default function InventoryAislesSection({
       {
         id: 'aisle_status',
         label: t('aisle.column_aisle_status'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (row) => String(row.action.processMenuAisle.status),
         cell: (row) => (
           <StatusBadge
             label={row.presentation.aisleStatusLabel}
@@ -146,11 +164,17 @@ export default function InventoryAislesSection({
         id: 'assets',
         label: t('aisle.column_assets'),
         align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (row) => row.presentation.assetsCount,
         cell: (row) => row.presentation.assetsCountDisplay,
       },
       {
         id: 'processing',
         label: t('aisle.column_processing'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (row) => row.presentation.latestRun?.jobStatusRaw ?? '',
         cell: (row) =>
           row.presentation.latestRun ? (
             <StatusBadge
@@ -164,16 +188,25 @@ export default function InventoryAislesSection({
       {
         id: 'run_provider',
         label: t('aisle.column_run_provider'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (row) => row.presentation.latestRun?.providerRaw ?? '',
         cell: (row) => row.presentation.latestRun?.providerDisplay ?? emptyLabel,
       },
       {
         id: 'run_model',
         label: t('aisle.column_run_model'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (row) => row.presentation.latestRun?.modelRaw ?? '',
         cell: (row) => row.presentation.latestRun?.modelDisplay ?? emptyLabel,
       },
       {
         id: 'reference_usage',
         label: t('aisle.column_reference_usage'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (row) => row.presentation.referenceUsage?.label ?? '',
         cell: (row) => {
           const summary = row.presentation.referenceUsage;
           if (!summary) return emptyLabel;
@@ -193,23 +226,33 @@ export default function InventoryAislesSection({
         id: 'results_found',
         label: t('aisle.column_results_found'),
         align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (row) => row.presentation.positionsCount,
         cell: (row) => row.presentation.positionsCountDisplay,
       },
       {
         id: 'pending_review',
         label: t('aisle.column_pending_review'),
         align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (row) => row.presentation.pendingReviewCount,
         cell: (row) => row.presentation.pendingReviewDisplay,
       },
       {
         id: 'last_updated',
         label: t('common.last_updated'),
+        sortable: true,
+        sortType: 'date',
+        sortAccessor: (row) => row.presentation.lastUpdatedSortKey,
         cell: (row) => row.presentation.lastUpdatedDisplay,
       },
       {
         id: 'actions',
         label: t('common.actions'),
         align: 'right',
+        sortable: false,
         width: 56,
         cell: (row) => {
           const processState = computeProcessAisleMenuState(row.action.processMenuAisle, menuCtx);
@@ -262,6 +305,14 @@ export default function InventoryAislesSection({
     ]
   );
 
+  const aisleRowsForDisplay = useMemo(
+    () =>
+      !aisleSortBy.trim()
+        ? filteredTableRows
+        : sortDataTableRows(filteredTableRows, columns, aisleSortBy, aisleSortDir),
+    [filteredTableRows, columns, aisleSortBy, aisleSortDir]
+  );
+
   return (
     <SectionCard
       title={t('aisle.list_title')}
@@ -282,7 +333,13 @@ export default function InventoryAislesSection({
         style={{ display: 'none' }}
         onChange={onFileInputChange}
       />
-      <FilterToolbar onReset={() => onAisleTableSearch('')} resetDisabled={!aisleTableSearch.trim()}>
+      <FilterToolbar
+        onReset={() => {
+          setAisleSortBy('');
+          onAisleTableSearch('');
+        }}
+        resetDisabled={!aisleTableSearch.trim() && !aisleSortBy.trim()}
+      >
         <TableSearchField
           label={t('table.search_label')}
           placeholder={t('aisle.search_aisles_placeholder')}
@@ -292,10 +349,15 @@ export default function InventoryAislesSection({
         />
       </FilterToolbar>
       <DataTable<AisleInventoryTableRow>
-        rows={filteredTableRows}
+        rows={aisleRowsForDisplay}
         rowKey={(row) => row.presentation.id}
         columns={columns}
         loading={aislesLoading}
+        sort={{
+          sortBy: aisleSortBy,
+          sortDir: aisleSortDir,
+          onSortChange: handleAisleSortChange,
+        }}
         onRowClick={(row) => navigate(pathToAislePositions(inventoryId, row.presentation.id))}
         emptyState={
           aisleTableSearch.trim() &&

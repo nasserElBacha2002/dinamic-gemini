@@ -25,6 +25,7 @@ import {
 import {
   ErrorAlert,
   FilterToolbar,
+  sortDataTableRows,
   type DataTableColumn,
 } from '../../components/ui';
 import { PageHeader } from '../../components/shell';
@@ -53,7 +54,6 @@ import {
   buildResolutionFlowStages,
   buildScopeSummary,
   orderQualityRows,
-  sortAisleRowsByAttention,
   sortInventoryRows,
 } from './adapters/metricsViewModel';
 import { localizeAnalyticsSummaryNote } from './adapters/analyticsSummaryNotes';
@@ -107,6 +107,8 @@ export default function MetricsPage() {
   const [inventorySortDir, setInventorySortDir] = useState<'asc' | 'desc'>('desc');
   const [aislePage, setAislePage] = useState(1);
   const [aislePageSize, setAislePageSize] = useState(10);
+  const [aisleSortBy, setAisleSortBy] = useState('pending');
+  const [aisleSortDir, setAisleSortDir] = useState<'asc' | 'desc'>('desc');
   const [perfTableSearch, setPerfTableSearch] = useState('');
   const [aisleMetricsTableSearch, setAisleMetricsTableSearch] = useState('');
 
@@ -157,17 +159,6 @@ export default function MetricsPage() {
       ])
     );
   }, [aisleIssues?.items, aisleMetricsTableSearch]);
-
-  const aisleRowsSorted = useMemo(
-    () => sortAisleRowsByAttention(aisleRowsFiltered),
-    [aisleRowsFiltered]
-  );
-  const maxAislePage = Math.max(1, Math.ceil(Math.max(aisleRowsSorted.length, 1) / aislePageSize));
-  const effectiveAislePage = Math.min(aislePage, maxAislePage);
-  const aisleRowsPaged = useMemo(
-    () => paginateRows(aisleRowsSorted, effectiveAislePage, aislePageSize),
-    [aisleRowsSorted, effectiveAislePage, aislePageSize]
-  );
 
   const qualityRowsOrdered = useMemo(() => orderQualityRows(quality?.items ?? []), [quality?.items]);
   const manualInterventionViewModel = useMemo(
@@ -321,6 +312,9 @@ export default function MetricsPage() {
       {
         id: 'aisle',
         label: t('common.aisle'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => r.aisle_code,
         cell: (r) => (
           <Typography
             component={RouterLink}
@@ -337,34 +331,73 @@ export default function MetricsPage() {
       {
         id: 'inventory',
         label: t('analytics.column_inventory'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => r.inventory_name,
         cell: (r) => (
           <Typography variant="body2" color="text.secondary">
             {r.inventory_name}
           </Typography>
         ),
       },
-      { id: 'total', label: t('analytics.column_total'), align: 'right', cell: (r) => r.total_results },
-      { id: 'pending', label: t('analytics.column_pending'), align: 'right', cell: (r) => r.needs_review_count },
+      {
+        id: 'total',
+        label: t('analytics.column_total'),
+        align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (r) => r.total_results,
+        cell: (r) => r.total_results,
+      },
+      {
+        id: 'pending',
+        label: t('analytics.column_pending'),
+        align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (r) => r.needs_review_count,
+        cell: (r) => r.needs_review_count,
+      },
       {
         id: 'unidentified_product',
         label: t('analytics.column_unidentified_count'),
         align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (r) => r.unidentified_product_count ?? r.unknown_count ?? 0,
         cell: (r) => r.unidentified_product_count ?? 0,
       },
       {
         id: 'inv_tr',
         label: t('analytics.column_inv_tr'),
         align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (r) => r.invalid_traceability_count,
         cell: (r) => r.invalid_traceability_count,
       },
       {
         id: 'manual_c',
         label: t('analytics.column_manual_corrections'),
         align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (r) => r.manual_corrections_count ?? r.corrected_count,
         cell: (r) => r.manual_corrections_count ?? r.corrected_count,
       },
     ],
     [t]
+  );
+
+  const aisleRowsSorted = useMemo(
+    () => sortDataTableRows(aisleRowsFiltered, aisleColumns, aisleSortBy, aisleSortDir),
+    [aisleRowsFiltered, aisleColumns, aisleSortBy, aisleSortDir]
+  );
+  const maxAislePage = Math.max(1, Math.ceil(Math.max(aisleRowsSorted.length, 1) / aislePageSize));
+  const effectiveAislePage = Math.min(aislePage, maxAislePage);
+  const aisleRowsPaged = useMemo(
+    () => paginateRows(aisleRowsSorted, effectiveAislePage, aislePageSize),
+    [aisleRowsSorted, effectiveAislePage, aislePageSize]
   );
 
   const kpiCards = useMemo(
@@ -408,6 +441,8 @@ export default function MetricsPage() {
           setAisleId('');
           setInventoryPage(1);
           setAislePage(1);
+          setAisleSortBy('pending');
+          setAisleSortDir('desc');
         }}
         endActions={
           <>
@@ -594,10 +629,19 @@ export default function MetricsPage() {
             onResetSearch={() => {
               setAisleMetricsTableSearch('');
               setAislePage(1);
+              setAisleSortBy('pending');
+              setAisleSortDir('desc');
             }}
             rows={aisleRowsPaged}
             columns={aisleColumns}
             isLoading={isLoading}
+            sortBy={aisleSortBy}
+            sortDir={aisleSortDir}
+            onSortChange={(sortBy, sortDir) => {
+              setAisleSortBy(sortBy);
+              setAisleSortDir(sortDir);
+              setAislePage(1);
+            }}
             page={effectiveAislePage}
             pageSize={aislePageSize}
             totalItems={aisleRowsSorted.length}

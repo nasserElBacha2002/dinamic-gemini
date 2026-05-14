@@ -1,6 +1,13 @@
+import { useMemo, useState } from 'react';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { Alert, Box, Button, Paper, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
+import { Alert, Box, Button, Paper, Typography } from '@mui/material';
+import {
+  DataTable,
+  sortDataTableRows,
+  type DataTableColumn,
+  type DataTableSortDirection,
+} from '../../../../components/ui';
 import { semanticColor, signedValue } from '../../adapters/compareFormatters';
 
 type CompareManyDiffRow = {
@@ -78,6 +85,117 @@ type CompareManyResultsSectionProps = {
     emDash: string;
   };
 };
+
+function CompareManyDiffTable({
+  rows,
+  labels,
+}: {
+  rows: CompareManyDiffRow[];
+  labels: CompareManyResultsSectionProps['labels'];
+}) {
+  const [sortBy, setSortBy] = useState('');
+  const [sortDir, setSortDir] = useState<DataTableSortDirection>('asc');
+  const em = labels.emDash;
+
+  const columns = useMemo<DataTableColumn<CompareManyDiffRow>[]>(
+    () => [
+      {
+        id: 'match_key',
+        label: labels.colKey,
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => r.match_key.toLowerCase(),
+        cell: (r) => (
+          <Typography component="span" variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+            {r.match_key}
+          </Typography>
+        ),
+      },
+      {
+        id: 'side',
+        label: labels.colSide,
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => r.side.toLowerCase(),
+        cell: (r) => r.side,
+      },
+      {
+        id: 'quantity_a',
+        label: labels.colQtyA,
+        align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (r) => r.quantity_a,
+        cell: (r) => r.quantity_a ?? em,
+      },
+      {
+        id: 'quantity_b',
+        label: labels.colQtyB,
+        align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (r) => r.quantity_b,
+        cell: (r) => r.quantity_b ?? em,
+      },
+      {
+        id: 'sku_a',
+        label: labels.colSkuA,
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => (r.sku_a ?? '').toLowerCase(),
+        cell: (r) => r.sku_a ?? em,
+      },
+      {
+        id: 'sku_b',
+        label: labels.colSkuB,
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => (r.sku_b ?? '').toLowerCase(),
+        cell: (r) => r.sku_b ?? em,
+      },
+      {
+        id: 'position_code_a',
+        label: labels.colPosA,
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => (r.position_code_a ?? '').toLowerCase(),
+        cell: (r) => r.position_code_a ?? em,
+      },
+      {
+        id: 'position_code_b',
+        label: labels.colPosB,
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => (r.position_code_b ?? '').toLowerCase(),
+        cell: (r) => r.position_code_b ?? em,
+      },
+    ],
+    [em, labels]
+  );
+
+  const displayRows = useMemo(
+    () => (!sortBy.trim() ? [...rows] : sortDataTableRows(rows, columns, sortBy, sortDir)),
+    [rows, columns, sortBy, sortDir]
+  );
+
+  return (
+    <DataTable<CompareManyDiffRow>
+      rows={displayRows}
+      rowKey={(r) => `${r.match_key}-${r.side}`}
+      columns={columns}
+      size="small"
+      rowHover={false}
+      sort={{
+        sortBy,
+        sortDir,
+        onSortChange: (sb: string, sd: DataTableSortDirection) => {
+          setSortBy(sb);
+          setSortDir(sd);
+        },
+      }}
+    />
+  );
+}
 
 export default function CompareManyResultsSection({
   orderedComparisons,
@@ -170,34 +288,7 @@ export default function CompareManyResultsSection({
                 {diffRowsLoading ? <Typography>{labels.loadingDiffRows}</Typography> : null}
                 {!diffRowsLoading ? (
                   <Box sx={{ overflowX: 'auto' }}>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>{labels.colKey}</TableCell>
-                          <TableCell>{labels.colSide}</TableCell>
-                          <TableCell align="right">{labels.colQtyA}</TableCell>
-                          <TableCell align="right">{labels.colQtyB}</TableCell>
-                          <TableCell>{labels.colSkuA}</TableCell>
-                          <TableCell>{labels.colSkuB}</TableCell>
-                          <TableCell>{labels.colPosA}</TableCell>
-                          <TableCell>{labels.colPosB}</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {comp.diff_rows.map((row) => (
-                          <TableRow key={`${row.match_key}-${row.side}`}>
-                            <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{row.match_key}</TableCell>
-                            <TableCell>{row.side}</TableCell>
-                            <TableCell align="right">{row.quantity_a ?? labels.emDash}</TableCell>
-                            <TableCell align="right">{row.quantity_b ?? labels.emDash}</TableCell>
-                            <TableCell>{row.sku_a ?? labels.emDash}</TableCell>
-                            <TableCell>{row.sku_b ?? labels.emDash}</TableCell>
-                            <TableCell>{row.position_code_a ?? labels.emDash}</TableCell>
-                            <TableCell>{row.position_code_b ?? labels.emDash}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                    <CompareManyDiffTable rows={comp.diff_rows} labels={labels} />
                   </Box>
                 ) : null}
                 {!diffRowsLoading && comp.diff_rows.length === 0 ? (

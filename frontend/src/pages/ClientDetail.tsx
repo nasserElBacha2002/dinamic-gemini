@@ -14,7 +14,9 @@ import {
   SectionCard,
   StatusBadge,
   useAppSnackbar,
+  sortDataTableRows,
   type DataTableColumn,
+  type DataTableSortDirection,
 } from '../components/ui';
 import { ROUTE_CLIENTS, pathToClientSupplier, pathToInventory } from '../constants/appRoutes';
 import {
@@ -43,6 +45,10 @@ export default function ClientDetail() {
   const safeClientId = (clientId ?? '').trim();
   const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
   const [createInventoryOpen, setCreateInventoryOpen] = useState(false);
+  const [clientInvSortBy, setClientInvSortBy] = useState('');
+  const [clientInvSortDir, setClientInvSortDir] = useState<DataTableSortDirection>('asc');
+  const [supplierSortBy, setSupplierSortBy] = useState('');
+  const [supplierSortDir, setSupplierSortDir] = useState<DataTableSortDirection>('asc');
 
   const invalidClientId = safeClientId === '';
 
@@ -71,6 +77,9 @@ export default function ClientDetail() {
       {
         id: 'name',
         label: t('inventory.column_inventory'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (inv) => inv.name,
         cell: (inv) => (
           <Button
             component={RouterLink}
@@ -86,6 +95,9 @@ export default function ClientDetail() {
       {
         id: 'status',
         label: t('inventory.column_status'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (inv) => String(inv.status ?? ''),
         cell: (inv) => (
           <StatusBadge
             label={formatInventoryStatusLabel(String(inv.status))}
@@ -97,10 +109,21 @@ export default function ClientDetail() {
         id: 'aisles',
         label: t('inventory.column_aisles'),
         align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (inv) => inv.aisles_count ?? 0,
         cell: (inv) => inv.aisles_count,
       },
     ],
     [t]
+  );
+
+  const sortedClientInventories = useMemo(
+    () =>
+      !clientInvSortBy.trim()
+        ? clientInventories
+        : sortDataTableRows(clientInventories, inventoryColumns, clientInvSortBy, clientInvSortDir),
+    [clientInventories, inventoryColumns, clientInvSortBy, clientInvSortDir]
   );
 
   const supplierColumns = useMemo<DataTableColumn<ClientSupplier>[]>(
@@ -108,6 +131,9 @@ export default function ClientDetail() {
       {
         id: 'name',
         label: t('clients.suppliers.fields.name'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (supplier) => supplier.name.trim().toLowerCase(),
         cell: (supplier) => (
           <Button
             component={RouterLink}
@@ -123,6 +149,9 @@ export default function ClientDetail() {
       {
         id: 'status',
         label: t('clients.suppliers.fields.status'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (supplier) => String(supplier.status ?? ''),
         cell: (supplier) => (
           <StatusBadge
             label={statusLabel(String(supplier.status), t)}
@@ -133,15 +162,31 @@ export default function ClientDetail() {
       {
         id: 'created_at',
         label: t('clients.suppliers.fields.created_at'),
+        sortable: true,
+        sortType: 'date',
+        sortAccessor: (supplier) => supplier.created_at,
         cell: (supplier) => formatDate(supplier.created_at),
       },
       {
         id: 'updated_at',
         label: t('clients.suppliers.fields.updated_at'),
+        sortable: true,
+        sortType: 'date',
+        sortAccessor: (supplier) => supplier.updated_at,
         cell: (supplier) => formatDate(supplier.updated_at),
       },
     ],
     [safeClientId, t]
+  );
+
+  const supplierItems = useMemo(() => suppliersQuery.data?.items ?? [], [suppliersQuery.data?.items]);
+
+  const sortedSuppliers = useMemo(
+    () =>
+      !supplierSortBy.trim()
+        ? supplierItems
+        : sortDataTableRows(supplierItems, supplierColumns, supplierSortBy, supplierSortDir),
+    [supplierItems, supplierColumns, supplierSortBy, supplierSortDir]
   );
 
   return (
@@ -239,10 +284,18 @@ export default function ClientDetail() {
             />
           ) : (
             <DataTable<ClientSupplier>
-              rows={suppliersQuery.data?.items ?? []}
+              rows={sortedSuppliers}
               rowKey={(supplier) => supplier.id}
               columns={supplierColumns}
               loading={false}
+              sort={{
+                sortBy: supplierSortBy,
+                sortDir: supplierSortDir,
+                onSortChange: (sb, sd) => {
+                  setSupplierSortBy(sb);
+                  setSupplierSortDir(sd);
+                },
+              }}
             />
           )}
         </SectionCard>
@@ -279,10 +332,18 @@ export default function ClientDetail() {
             />
           ) : (
             <DataTable<InventoryListItem>
-              rows={clientInventories}
+              rows={sortedClientInventories}
               rowKey={(inv) => inv.id}
               columns={inventoryColumns}
               loading={false}
+              sort={{
+                sortBy: clientInvSortBy,
+                sortDir: clientInvSortDir,
+                onSortChange: (sb, sd) => {
+                  setClientInvSortBy(sb);
+                  setClientInvSortDir(sd);
+                },
+              }}
             />
           )}
         </SectionCard>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink } from 'react-router-dom';
@@ -12,8 +12,10 @@ import {
   SectionCard,
   StatusBadge,
   TableSearchField,
+  sortDataTableRows,
   useAppSnackbar,
   type DataTableColumn,
+  type DataTableSortDirection,
 } from '../components/ui';
 import { pathToClient } from '../constants/appRoutes';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
@@ -37,6 +39,8 @@ export default function ClientsList() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
   const [clientSearch, setClientSearch] = useState('');
+  const [clientListSortBy, setClientListSortBy] = useState('');
+  const [clientListSortDir, setClientListSortDir] = useState<DataTableSortDirection>('asc');
 
   const listQuery = useMemo(
     () => ({ page, page_size: pageSize }),
@@ -60,6 +64,9 @@ export default function ClientsList() {
       {
         id: 'name',
         label: t('clients.fields.name'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (client) => client.name.trim().toLowerCase(),
         cell: (client) => (
           <Button
             component={RouterLink}
@@ -75,6 +82,9 @@ export default function ClientsList() {
       {
         id: 'status',
         label: t('clients.fields.status'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (client) => String(client.status ?? ''),
         cell: (client) => (
           <StatusBadge
             label={clientStatusLabel(String(client.status), t)}
@@ -85,11 +95,15 @@ export default function ClientsList() {
       {
         id: 'created_at',
         label: t('clients.fields.created_at'),
+        sortable: true,
+        sortType: 'date',
+        sortAccessor: (client) => client.created_at,
         cell: (client) => formatDate(client.created_at),
       },
       {
         id: 'actions',
         label: t('common.actions'),
+        sortable: false,
         cell: (client) => (
           <Button component={RouterLink} to={pathToClient(client.id)} size="small" variant="text">
             {t('clients.actions.view_detail')}
@@ -99,11 +113,27 @@ export default function ClientsList() {
       {
         id: 'updated_at',
         label: t('clients.fields.updated_at'),
+        sortable: true,
+        sortType: 'date',
+        sortAccessor: (client) => client.updated_at,
         cell: (client) => formatDate(client.updated_at),
       },
     ],
     [t]
   );
+
+  const clientsRowsSorted = useMemo(
+    () =>
+      !clientListSortBy.trim()
+        ? displayedClients
+        : sortDataTableRows(displayedClients, columns, clientListSortBy, clientListSortDir),
+    [displayedClients, columns, clientListSortBy, clientListSortDir]
+  );
+
+  const handleClientListSortChange = useCallback((sortBy: string, sortDir: DataTableSortDirection) => {
+    setClientListSortBy(sortBy);
+    setClientListSortDir(sortDir);
+  }, []);
 
   return (
     <>
@@ -127,7 +157,13 @@ export default function ClientsList() {
 
       {!clientsQuery.isError ? (
         <SectionCard title={t('clients.page.title')} subtitle={t('clients.page.subtitle')}>
-          <FilterToolbar onReset={() => setClientSearch('')} resetDisabled={!clientSearch.trim()}>
+          <FilterToolbar
+            onReset={() => {
+              setClientSearch('');
+              setClientListSortBy('');
+            }}
+            resetDisabled={!clientSearch.trim() && !clientListSortBy.trim()}
+          >
             <TableSearchField
               label={t('clients.list.search_placeholder')}
               placeholder={t('clients.list.search_placeholder')}
@@ -142,10 +178,15 @@ export default function ClientsList() {
             </Typography>
           ) : null}
           <DataTable<Client>
-            rows={displayedClients}
+            rows={clientsRowsSorted}
             rowKey={(client) => client.id}
             columns={columns}
             loading={clientsQuery.isLoading}
+            sort={{
+              sortBy: clientListSortBy,
+              sortDir: clientListSortDir,
+              onSortChange: handleClientListSortChange,
+            }}
             emptyState={
               clientSearch.trim() && clientItems.length > 0 && displayedClients.length === 0
                 ? {

@@ -2,6 +2,7 @@ import { Box, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/
 import { useTranslation } from 'react-i18next';
 import type { ResultSummary } from '../types';
 import type { ResultsFilterKind } from '../selectors';
+import type { DataTableSortModel } from '../../../components/ui';
 import { FilterToolbar, SectionCard, TableSearchField } from '../../../components/ui';
 import ResultsQuickFilters from './ResultsQuickFilters';
 import ResultsFilteredEmptyState from './ResultsFilteredEmptyState';
@@ -36,6 +37,8 @@ export interface AisleResultsTableSectionProps {
   totalItems: number;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
+  /** Column sort UI; parent applies ordering before pagination. */
+  columnSort?: DataTableSortModel;
 }
 
 export default function AisleResultsTableSection({
@@ -59,6 +62,7 @@ export default function AisleResultsTableSection({
   totalItems,
   onPageChange,
   onPageSizeChange,
+  columnSort,
 }: AisleResultsTableSectionProps) {
   const { t } = useTranslation();
 
@@ -110,6 +114,7 @@ export default function AisleResultsTableSection({
             <ResultsTable
               results={tableRows}
               onOpenReview={onOpenReview}
+              sort={columnSort}
               pagination={{
                 page,
                 pageSize,
