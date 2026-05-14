@@ -675,7 +675,7 @@ Runtime behavior was changed conservatively: initial SQL probe failures resolve 
 
 **Remaining risks / future phases**
 
-- Extract repository builders from `AppContainer` to reduce file size; optional `AppContainer.close()` if connection pooling is introduced later.
+- Modularize non-repository wiring (storage, use cases, services); optional `AppContainer.close()` if connection pooling is introduced later.
 - Tightening default `V3_ALLOW_IN_MEMORY_FALLBACK` for production remains a separate rollout with ops notice.
 
 **Explicit semantics (C2)**
@@ -683,3 +683,51 @@ Runtime behavior was changed conservatively: initial SQL probe failures resolve 
 C2 changes fallback semantics from per-repository fallback to container-level fallback. If SQL mode is resolved, SQL repository constructor failures now fail fast.
 
 **Status:** `APP_CONTAINER_C2_BACKEND_MODE_ENFORCED`
+
+---
+
+## Phase C3 implementation note
+
+**What changed**
+
+- **New modules** under `backend/src/runtime/container/`:
+  - `repository_builders.py` — core + client/supplier + position/product/evidence/review wiring; exports `BuildSqlOrMemory` protocol.
+  - `label_builders.py` — raw / normalized / final-count repositories.
+  - `analytics_builders.py` — analytics (memory path receives peer-repo getters as callables).
+  - `capture_session_builders.py` — capture session, item, group (item getter injected), confirm idempotency.
+- **`AppContainer`**: each `get_*_repo` now delegates to the corresponding `build_*` function, passing `self._build_sql_repository_or_memory` only; **instance caches** (`self._inventory_repo`, etc.) remain on the container.
+
+**What stayed in `AppContainer`**
+
+- `_get_repository_backend_resolution`, `_build_sql_repository_or_memory`, `_probe_sql_for_repository_backend`, `_get_v3_sql_client` (C2 semantics unchanged).
+- Artifact storage, stored artifact reader, worker launch, metrics calculator, clock, supplier prompt use cases, recompute use case.
+
+**Public API**
+
+- No renames of public `get_*` methods; signatures unchanged.
+
+**C2 semantics preserved**
+
+- Builders only receive the bound `build_repo` callable; they do not read env, resolve backend mode, or cache globally. **MEMORY_ONLY** / **MEMORY_FALLBACK** → memory; **SQL** → `build_sql` or propagate errors (no per-repo memory fallback).
+
+**C3 is an internal modularization phase.** Repository construction moved out of `AppContainer`, but **caching** and **backend mode enforcement** remain owned by `AppContainer`.
+
+**Tests**
+
+- `tests/runtime/test_repository_builders.py`: `build_inventory_repository` forwards `backend_info_name` / `sql_error_subject` to `build_repo`.
+- `tests/runtime/test_app_container.py`: `test_get_aisle_repo_returns_cached_singleton`, `test_get_job_repo_returns_cached_singleton`.
+- Existing C1/C2 runtime tests retained and passing.
+
+**Validation commands run**
+
+```bash
+.venv/bin/python -m pytest tests/runtime/test_repository_backend.py tests/runtime/test_repository_builders.py tests/runtime/test_app_container.py -q
+.venv/bin/ruff check src/runtime/container/ src/runtime/app_container.py tests/runtime/test_repository_backend.py tests/runtime/test_repository_builders.py tests/runtime/test_app_container.py
+.venv/bin/mypy src/runtime/container/ src/runtime/app_container.py
+```
+
+**Remaining next phases**
+
+- Extract storage / use-case / service builders; optional `AppContainer.close()`; production fallback default review.
+
+**Status:** `APP_CONTAINER_C3_REPOSITORY_BUILDERS_EXTRACTED`

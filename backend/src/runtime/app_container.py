@@ -46,10 +46,36 @@ from src.application.use_cases.recompute_consolidated_counts import (
 )
 from src.config import AppSettings
 from src.database.sqlserver import SqlServerClient
+from src.runtime.container.analytics_builders import build_analytics_repository
+from src.runtime.container.capture_session_builders import (
+    build_capture_session_confirm_repository,
+    build_capture_session_group_repository,
+    build_capture_session_item_repository,
+    build_capture_session_repository,
+)
+from src.runtime.container.label_builders import (
+    build_final_count_repository,
+    build_normalized_label_repository,
+    build_raw_label_repository,
+)
 from src.runtime.container.repository_backend import (
     RepositoryBackendMode,
     RepositoryBackendResolution,
     resolve_repository_backend_mode,
+)
+from src.runtime.container.repository_builders import (
+    build_aisle_repository,
+    build_client_repository,
+    build_client_supplier_repository,
+    build_evidence_repository,
+    build_inventory_repository,
+    build_job_repository,
+    build_position_repository,
+    build_product_record_repository,
+    build_review_action_repository,
+    build_source_asset_repository,
+    build_supplier_prompt_config_repository,
+    build_supplier_reference_image_repository,
 )
 
 logger = logging.getLogger(__name__)
@@ -198,305 +224,77 @@ class AppContainer:
     def get_inventory_repo(self) -> InventoryRepository:
         if self._inventory_repo is not None:
             return self._inventory_repo
-
-        def _sql(client: SqlServerClient) -> InventoryRepository:
-            from src.infrastructure.repositories.sql_inventory_repository import (
-                SqlInventoryRepository,
-            )
-
-            return SqlInventoryRepository(client)
-
-        def _memory() -> InventoryRepository:
-            from src.infrastructure.repositories.memory_inventory_repository import (
-                MemoryInventoryRepository,
-            )
-
-            return MemoryInventoryRepository()
-
-        self._inventory_repo = self._build_sql_repository_or_memory(
-            backend_info_name="InventoryRepository",
-            sql_error_subject="repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._inventory_repo = build_inventory_repository(self._build_sql_repository_or_memory)
         return self._inventory_repo
 
     def get_client_repo(self) -> ClientRepository:
         if self._client_repo is not None:
             return self._client_repo
-
-        def _sql(client: SqlServerClient) -> ClientRepository:
-            from src.infrastructure.repositories.sql_client_repository import SqlClientRepository
-
-            return SqlClientRepository(client)
-
-        def _memory() -> ClientRepository:
-            from src.infrastructure.repositories.memory_client_repository import (
-                MemoryClientRepository,
-            )
-
-            return MemoryClientRepository()
-
-        self._client_repo = self._build_sql_repository_or_memory(
-            backend_info_name="ClientRepository",
-            sql_error_subject="client repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._client_repo = build_client_repository(self._build_sql_repository_or_memory)
         return self._client_repo
 
     def get_client_supplier_repo(self) -> ClientSupplierRepository:
         if self._client_supplier_repo is not None:
             return self._client_supplier_repo
-
-        def _sql(client: SqlServerClient) -> ClientSupplierRepository:
-            from src.infrastructure.repositories.sql_client_supplier_repository import (
-                SqlClientSupplierRepository,
-            )
-
-            return SqlClientSupplierRepository(client)
-
-        def _memory() -> ClientSupplierRepository:
-            from src.infrastructure.repositories.memory_client_supplier_repository import (
-                MemoryClientSupplierRepository,
-            )
-
-            return MemoryClientSupplierRepository()
-
-        self._client_supplier_repo = self._build_sql_repository_or_memory(
-            backend_info_name="ClientSupplierRepository",
-            sql_error_subject="client_supplier repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._client_supplier_repo = build_client_supplier_repository(self._build_sql_repository_or_memory)
         return self._client_supplier_repo
 
     def get_aisle_repo(self) -> AisleRepository:
         if self._aisle_repo is not None:
             return self._aisle_repo
-
-        def _sql(client: SqlServerClient) -> AisleRepository:
-            from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
-
-            return SqlAisleRepository(client)
-
-        def _memory() -> AisleRepository:
-            from src.infrastructure.repositories.memory_aisle_repository import (
-                MemoryAisleRepository,
-            )
-
-            return MemoryAisleRepository()
-
-        self._aisle_repo = self._build_sql_repository_or_memory(
-            backend_info_name="AisleRepository",
-            sql_error_subject="aisle repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._aisle_repo = build_aisle_repository(self._build_sql_repository_or_memory)
         return self._aisle_repo
 
     def get_job_repo(self) -> JobRepository:
         if self._job_repo is not None:
             return self._job_repo
-
-        def _sql(client: SqlServerClient) -> JobRepository:
-            from src.infrastructure.repositories.sql_job_repository import SqlJobRepository
-
-            return SqlJobRepository(client)
-
-        def _memory() -> JobRepository:
-            from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
-
-            return MemoryJobRepository()
-
-        self._job_repo = self._build_sql_repository_or_memory(
-            backend_info_name="JobRepository",
-            sql_error_subject="job repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._job_repo = build_job_repository(self._build_sql_repository_or_memory)
         return self._job_repo
 
     def get_source_asset_repo(self) -> SourceAssetRepository:
         if self._asset_repo is not None:
             return self._asset_repo
-
-        def _sql(client: SqlServerClient) -> SourceAssetRepository:
-            from src.infrastructure.repositories.sql_source_asset_repository import (
-                SqlSourceAssetRepository,
-            )
-
-            return SqlSourceAssetRepository(client)
-
-        def _memory() -> SourceAssetRepository:
-            from src.infrastructure.repositories.memory_source_asset_repository import (
-                MemorySourceAssetRepository,
-            )
-
-            return MemorySourceAssetRepository()
-
-        self._asset_repo = self._build_sql_repository_or_memory(
-            backend_info_name="SourceAssetRepository",
-            sql_error_subject="source_asset repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._asset_repo = build_source_asset_repository(self._build_sql_repository_or_memory)
         return self._asset_repo
 
     def get_supplier_reference_image_repo(self) -> SupplierReferenceImageRepository:
         if self._supplier_reference_image_repo is not None:
             return self._supplier_reference_image_repo
-
-        def _sql(client: SqlServerClient) -> SupplierReferenceImageRepository:
-            from src.infrastructure.repositories.sql_supplier_reference_image_repository import (
-                SqlSupplierReferenceImageRepository,
-            )
-
-            return SqlSupplierReferenceImageRepository(client)
-
-        def _memory() -> SupplierReferenceImageRepository:
-            from src.infrastructure.repositories.memory_supplier_reference_image_repository import (
-                MemorySupplierReferenceImageRepository,
-            )
-
-            return MemorySupplierReferenceImageRepository()
-
-        self._supplier_reference_image_repo = self._build_sql_repository_or_memory(
-            backend_info_name="SupplierReferenceImageRepository",
-            sql_error_subject="supplier_reference_image repo",
-            build_sql=_sql,
-            build_memory=_memory,
+        self._supplier_reference_image_repo = build_supplier_reference_image_repository(
+            self._build_sql_repository_or_memory
         )
         return self._supplier_reference_image_repo
 
     def get_supplier_prompt_config_repo(self) -> SupplierPromptConfigRepository:
         if self._supplier_prompt_config_repo is not None:
             return self._supplier_prompt_config_repo
-
-        def _sql(client: SqlServerClient) -> SupplierPromptConfigRepository:
-            from src.infrastructure.repositories.sql_supplier_prompt_config_repository import (
-                SqlSupplierPromptConfigRepository,
-            )
-
-            return SqlSupplierPromptConfigRepository(client)
-
-        def _memory() -> SupplierPromptConfigRepository:
-            from src.infrastructure.repositories.memory_supplier_prompt_config_repository import (
-                MemorySupplierPromptConfigRepository,
-            )
-
-            return MemorySupplierPromptConfigRepository()
-
-        self._supplier_prompt_config_repo = self._build_sql_repository_or_memory(
-            backend_info_name="SupplierPromptConfigRepository",
-            sql_error_subject="supplier_prompt_config repo",
-            build_sql=_sql,
-            build_memory=_memory,
+        self._supplier_prompt_config_repo = build_supplier_prompt_config_repository(
+            self._build_sql_repository_or_memory
         )
         return self._supplier_prompt_config_repo
 
     def get_position_repo(self) -> PositionRepository:
         if self._position_repo is not None:
             return self._position_repo
-
-        def _sql(client: SqlServerClient) -> PositionRepository:
-            from src.infrastructure.repositories.sql_position_repository import (
-                SqlPositionRepository,
-            )
-
-            return SqlPositionRepository(client)
-
-        def _memory() -> PositionRepository:
-            from src.infrastructure.repositories.memory_position_repository import (
-                MemoryPositionRepository,
-            )
-
-            return MemoryPositionRepository()
-
-        self._position_repo = self._build_sql_repository_or_memory(
-            backend_info_name="PositionRepository",
-            sql_error_subject="position repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._position_repo = build_position_repository(self._build_sql_repository_or_memory)
         return self._position_repo
 
     def get_product_record_repo(self) -> ProductRecordRepository:
         if self._product_record_repo is not None:
             return self._product_record_repo
-
-        def _sql(client: SqlServerClient) -> ProductRecordRepository:
-            from src.infrastructure.repositories.sql_product_record_repository import (
-                SqlProductRecordRepository,
-            )
-
-            return SqlProductRecordRepository(client)
-
-        def _memory() -> ProductRecordRepository:
-            from src.infrastructure.repositories.memory_product_record_repository import (
-                MemoryProductRecordRepository,
-            )
-
-            return MemoryProductRecordRepository()
-
-        self._product_record_repo = self._build_sql_repository_or_memory(
-            backend_info_name="ProductRecordRepository",
-            sql_error_subject="product_record repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._product_record_repo = build_product_record_repository(self._build_sql_repository_or_memory)
         return self._product_record_repo
 
     def get_evidence_repo(self) -> EvidenceRepository:
         if self._evidence_repo is not None:
             return self._evidence_repo
-
-        def _sql(client: SqlServerClient) -> EvidenceRepository:
-            from src.infrastructure.repositories.sql_evidence_repository import (
-                SqlEvidenceRepository,
-            )
-
-            return SqlEvidenceRepository(client)
-
-        def _memory() -> EvidenceRepository:
-            from src.infrastructure.repositories.memory_evidence_repository import (
-                MemoryEvidenceRepository,
-            )
-
-            return MemoryEvidenceRepository()
-
-        self._evidence_repo = self._build_sql_repository_or_memory(
-            backend_info_name="EvidenceRepository",
-            sql_error_subject="evidence repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._evidence_repo = build_evidence_repository(self._build_sql_repository_or_memory)
         return self._evidence_repo
 
     def get_review_action_repo(self) -> ReviewActionRepository:
         if self._review_action_repo is not None:
             return self._review_action_repo
-
-        def _sql(client: SqlServerClient) -> ReviewActionRepository:
-            from src.infrastructure.repositories.sql_review_action_repository import (
-                SqlReviewActionRepository,
-            )
-
-            return SqlReviewActionRepository(client)
-
-        def _memory() -> ReviewActionRepository:
-            from src.infrastructure.repositories.memory_review_action_repository import (
-                MemoryReviewActionRepository,
-            )
-
-            return MemoryReviewActionRepository()
-
-        self._review_action_repo = self._build_sql_repository_or_memory(
-            backend_info_name="ReviewActionRepository",
-            sql_error_subject="review_action repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._review_action_repo = build_review_action_repository(self._build_sql_repository_or_memory)
         return self._review_action_repo
 
     def get_metrics_calculator(self) -> MetricsCalculator:
@@ -583,208 +381,63 @@ class AppContainer:
     def get_raw_label_repo(self) -> RawLabelRepository:
         if self._raw_label_repo is not None:
             return self._raw_label_repo
-
-        def _sql(client: SqlServerClient) -> RawLabelRepository:
-            from src.infrastructure.repositories.sql_raw_label_repository import (
-                SqlRawLabelRepository,
-            )
-
-            return SqlRawLabelRepository(client)
-
-        def _memory() -> RawLabelRepository:
-            from src.infrastructure.repositories.memory_raw_label_repository import (
-                MemoryRawLabelRepository,
-            )
-
-            return MemoryRawLabelRepository()
-
-        self._raw_label_repo = self._build_sql_repository_or_memory(
-            backend_info_name="RawLabelRepository",
-            sql_error_subject="raw_label repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._raw_label_repo = build_raw_label_repository(self._build_sql_repository_or_memory)
         return self._raw_label_repo
 
     def get_normalized_label_repo(self) -> NormalizedLabelRepository:
         if self._normalized_label_repo is not None:
             return self._normalized_label_repo
-
-        def _sql(client: SqlServerClient) -> NormalizedLabelRepository:
-            from src.infrastructure.repositories.sql_normalized_label_repository import (
-                SqlNormalizedLabelRepository,
-            )
-
-            return SqlNormalizedLabelRepository(client)
-
-        def _memory() -> NormalizedLabelRepository:
-            from src.infrastructure.repositories.memory_normalized_label_repository import (
-                MemoryNormalizedLabelRepository,
-            )
-
-            return MemoryNormalizedLabelRepository()
-
-        self._normalized_label_repo = self._build_sql_repository_or_memory(
-            backend_info_name="NormalizedLabelRepository",
-            sql_error_subject="normalized_label repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._normalized_label_repo = build_normalized_label_repository(self._build_sql_repository_or_memory)
         return self._normalized_label_repo
 
     def get_final_count_repo(self) -> FinalCountRepository:
         if self._final_count_repo is not None:
             return self._final_count_repo
-
-        def _sql(client: SqlServerClient) -> FinalCountRepository:
-            from src.infrastructure.repositories.sql_final_count_repository import (
-                SqlFinalCountRepository,
-            )
-
-            return SqlFinalCountRepository(client)
-
-        def _memory() -> FinalCountRepository:
-            from src.infrastructure.repositories.memory_final_count_repository import (
-                MemoryFinalCountRepository,
-            )
-
-            return MemoryFinalCountRepository()
-
-        self._final_count_repo = self._build_sql_repository_or_memory(
-            backend_info_name="FinalCountRepository",
-            sql_error_subject="final_count repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._final_count_repo = build_final_count_repository(self._build_sql_repository_or_memory)
         return self._final_count_repo
 
     def get_analytics_repo(self) -> AnalyticsRepository:
         if self._analytics_repo is not None:
             return self._analytics_repo
-
-        from src.infrastructure.repositories.memory_analytics_repository import (
-            MemoryAnalyticsRepository,
-        )
-        from src.infrastructure.repositories.sql_analytics_repository import SqlAnalyticsRepository
-
-        def _sql(client: SqlServerClient) -> AnalyticsRepository:
-            return SqlAnalyticsRepository(client)
-
-        def _memory() -> AnalyticsRepository:
-            return MemoryAnalyticsRepository(
-                self.get_inventory_repo(),
-                self.get_aisle_repo(),
-                self.get_position_repo(),
-                self.get_product_record_repo(),
-                self.get_review_action_repo(),
-                self.get_job_repo(),
-            )
-
-        self._analytics_repo = self._build_sql_repository_or_memory(
-            backend_info_name="AnalyticsRepository",
-            sql_error_subject="analytics repo",
-            build_sql=_sql,
-            build_memory=_memory,
+        self._analytics_repo = build_analytics_repository(
+            self._build_sql_repository_or_memory,
+            get_inventory_repo=self.get_inventory_repo,
+            get_aisle_repo=self.get_aisle_repo,
+            get_position_repo=self.get_position_repo,
+            get_product_record_repo=self.get_product_record_repo,
+            get_review_action_repo=self.get_review_action_repo,
+            get_job_repo=self.get_job_repo,
         )
         return self._analytics_repo
 
     def get_capture_session_repo(self) -> CaptureSessionRepository:
         if self._capture_session_repo is not None:
             return self._capture_session_repo
-
-        from src.infrastructure.repositories.memory_capture_session_repository import (
-            MemoryCaptureSessionRepository,
-        )
-        from src.infrastructure.repositories.sql_capture_session_repository import (
-            SqlCaptureSessionRepository,
-        )
-
-        def _sql(client: SqlServerClient) -> CaptureSessionRepository:
-            return SqlCaptureSessionRepository(client)
-
-        def _memory() -> CaptureSessionRepository:
-            return MemoryCaptureSessionRepository()
-
-        self._capture_session_repo = self._build_sql_repository_or_memory(
-            backend_info_name="CaptureSessionRepository",
-            sql_error_subject="capture_session repo",
-            build_sql=_sql,
-            build_memory=_memory,
-        )
+        self._capture_session_repo = build_capture_session_repository(self._build_sql_repository_or_memory)
         return self._capture_session_repo
 
     def get_capture_session_item_repo(self) -> CaptureSessionItemRepository:
         if self._capture_session_item_repo is not None:
             return self._capture_session_item_repo
-
-        from src.infrastructure.repositories.memory_capture_session_item_repository import (
-            MemoryCaptureSessionItemRepository,
-        )
-        from src.infrastructure.repositories.sql_capture_session_item_repository import (
-            SqlCaptureSessionItemRepository,
-        )
-
-        def _sql(client: SqlServerClient) -> CaptureSessionItemRepository:
-            return SqlCaptureSessionItemRepository(client)
-
-        def _memory() -> CaptureSessionItemRepository:
-            return MemoryCaptureSessionItemRepository()
-
-        self._capture_session_item_repo = self._build_sql_repository_or_memory(
-            backend_info_name="CaptureSessionItemRepository",
-            sql_error_subject="capture_session_item repo",
-            build_sql=_sql,
-            build_memory=_memory,
+        self._capture_session_item_repo = build_capture_session_item_repository(
+            self._build_sql_repository_or_memory
         )
         return self._capture_session_item_repo
 
     def get_capture_session_group_repo(self) -> CaptureSessionGroupRepository:
         if self._capture_session_group_repo is not None:
             return self._capture_session_group_repo
-
-        from src.infrastructure.repositories.memory_capture_session_group_repository import (
-            MemoryCaptureSessionGroupRepository,
-        )
-        from src.infrastructure.repositories.sql_capture_session_group_repository import (
-            SqlCaptureSessionGroupRepository,
-        )
-
-        def _sql(client: SqlServerClient) -> CaptureSessionGroupRepository:
-            return SqlCaptureSessionGroupRepository(client)
-
-        def _memory() -> CaptureSessionGroupRepository:
-            return MemoryCaptureSessionGroupRepository(self.get_capture_session_item_repo())
-
-        self._capture_session_group_repo = self._build_sql_repository_or_memory(
-            backend_info_name="CaptureSessionGroupRepository",
-            sql_error_subject="capture_session_group repo",
-            build_sql=_sql,
-            build_memory=_memory,
+        self._capture_session_group_repo = build_capture_session_group_repository(
+            self._build_sql_repository_or_memory,
+            get_capture_session_item_repo=self.get_capture_session_item_repo,
         )
         return self._capture_session_group_repo
 
     def get_capture_session_confirm_repo(self) -> CaptureSessionConfirmIdempotencyRepository:
         if self._capture_session_confirm_repo is not None:
             return self._capture_session_confirm_repo
-
-        from src.infrastructure.repositories.memory_capture_session_confirm_idempotency_repository import (
-            MemoryCaptureSessionConfirmIdempotencyRepository,
-        )
-        from src.infrastructure.repositories.sql_capture_session_confirm_idempotency_repository import (
-            SqlCaptureSessionConfirmIdempotencyRepository,
-        )
-
-        def _sql(client: SqlServerClient) -> CaptureSessionConfirmIdempotencyRepository:
-            return SqlCaptureSessionConfirmIdempotencyRepository(client)
-
-        def _memory() -> CaptureSessionConfirmIdempotencyRepository:
-            return MemoryCaptureSessionConfirmIdempotencyRepository()
-
-        self._capture_session_confirm_repo = self._build_sql_repository_or_memory(
-            backend_info_name="CaptureSessionConfirmIdempotencyRepository",
-            sql_error_subject="capture_session_confirm repo",
-            build_sql=_sql,
-            build_memory=_memory,
+        self._capture_session_confirm_repo = build_capture_session_confirm_repository(
+            self._build_sql_repository_or_memory
         )
         return self._capture_session_confirm_repo
 

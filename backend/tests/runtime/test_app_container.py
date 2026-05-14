@@ -294,6 +294,26 @@ def test_build_sql_repository_sql_mode_calls_build_sql(monkeypatch: pytest.Monke
     assert mem_ran == []
 
 
+def test_get_aisle_repo_returns_cached_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SQLSERVER_ENABLED", "false")
+    config_module._settings = None
+    reset_app_container_for_tests()
+    c = AppContainer(load_settings())
+    a1 = c.get_aisle_repo()
+    a2 = c.get_aisle_repo()
+    assert a1 is a2
+
+
+def test_get_job_repo_returns_cached_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SQLSERVER_ENABLED", "false")
+    config_module._settings = None
+    reset_app_container_for_tests()
+    c = AppContainer(load_settings())
+    j1 = c.get_job_repo()
+    j2 = c.get_job_repo()
+    assert j1 is j2
+
+
 def test_repository_backend_resolution_raises_when_probe_fails_and_fallback_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -106,6 +106,13 @@ target-version = "py39"
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+# Phase C3: deferred imports inside builder closures trigger isort's I001; order is intentional.
+"src/runtime/container/repository_builders.py" = ["I001"]
+"src/runtime/container/label_builders.py" = ["I001"]
+"src/runtime/container/analytics_builders.py" = ["I001"]
+"src/runtime/container/capture_session_builders.py" = ["I001"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
