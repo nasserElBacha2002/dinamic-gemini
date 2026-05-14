@@ -4,10 +4,13 @@ Central dependency provisioning for v3 API — Épica 2 + Épica 3.
 Provides InventoryRepository, AisleRepository (SQL when sqlserver_enabled, else in-memory),
 Clock, and use cases. Route modules depend on these; no infrastructure types in route code.
 
-Fallback: when SQL is enabled but connection fails, behavior is controlled by
-V3_ALLOW_IN_MEMORY_FALLBACK (env). If "false" / "0" / "no", fail fast (re-raise).
-If "true" (default), fall back to in-memory for local/dev/test. Set to false in
-production-like environments to avoid silent use of non-persistent storage.
+Fallback: when SQL is enabled but the initial connectivity probe fails, behavior is
+controlled by ``V3_ALLOW_IN_MEMORY_FALLBACK`` and production-like runtime detection
+(``APP_ENV`` / ``ENVIRONMENT`` / ``NODE_ENV`` — see ``runtime_environment.is_production_like_runtime``).
+If the env var is set, only ``true`` / ``1`` / ``yes`` allow in-memory fallback. If **unset**,
+production-like runtimes default to **fail-fast** (no ``MEMORY_FALLBACK``); non-production
+defaults remain developer-friendly (fallback allowed). Set the env var explicitly in any
+environment where the default is wrong for your deployment.
 """
 
 from __future__ import annotations

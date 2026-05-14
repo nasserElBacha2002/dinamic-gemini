@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from collections.abc import Callable
 from typing import TypeVar
 
@@ -90,6 +91,7 @@ from src.runtime.container.repository_builders import (
     build_supplier_prompt_config_repository,
     build_supplier_reference_image_repository,
 )
+from src.runtime.container.runtime_environment import is_production_like_runtime
 from src.runtime.container.service_builders import (
     build_clock,
     build_metrics_calculator,
@@ -108,22 +110,29 @@ logger = logging.getLogger(__name__)
 _RepoT = TypeVar("_RepoT")
 
 _container: AppContainer | None = None
+_container_lock = threading.Lock()
 
 
 def get_app_container() -> AppContainer:
     """Return the process-wide application container (lazy-initialized)."""
     global _container
-    if _container is None:
-        from src.config import load_settings
+    if _container is not None:
+        return _container
+    with _container_lock:
+        if _container is None:
+            from src.config import load_settings
 
-        _container = AppContainer(load_settings())
-    return _container
+            _container = AppContainer(load_settings())
+        return _container
 
 
 def reset_app_container_for_tests() -> None:
     """Drop the cached container (unit tests / isolated wiring checks)."""
     global _container
-    _container = None
+    with _container_lock:
+        if _container is not None:
+            _container.close()
+        _container = None
 
 
 class AppContainer:
@@ -162,10 +171,84 @@ class AppContainer:
     def settings(self) -> AppSettings:
         return self._settings
 
-    @staticmethod
-    def _v3_allow_in_memory_fallback() -> bool:
-        raw = (os.getenv("V3_ALLOW_IN_MEMORY_FALLBACK") or "true").strip().lower()
-        return raw in ("true", "1", "yes")
+    def _is_production_environment(self) -> bool:
+        """True when common env vars (``APP_ENV``, ``ENVIRONMENT``, ``NODE_ENV``) indicate hosted prod."""
+        return is_production_like_runtime()
+
+    def _v3_allow_in_memory_fallback(self) -> bool:
+        """Whether SQL probe failure may resolve to ``MEMORY_FALLBACK`` (C2 container-level policy).
+
+        If ``V3_ALLOW_IN_MEMORY_FALLBACK`` is set, only ``true`` / ``1`` / ``yes`` enable fallback.
+        If unset: non-production-like runtimes default to allowing fallback (local/dev); production-like
+        runtimes default to disallowing it (fail-fast unless SQL is reachable).
+        """
+        raw = os.getenv("V3_ALLOW_IN_MEMORY_FALLBACK")
+        if raw is not None:
+            return raw.strip().lower() in ("true", "1", "yes")
+        return not self._is_production_environment()
+
+    def close(self) -> None:
+        """Best-effort release of cached resources; safe and idempotent to call multiple times.
+
+        ``SqlServerClient`` does not hold a long-lived ODBC connection (connections are per
+        ``cursor()`` context); clearing the reference is sufficient. Optional ``close`` / ``dispose``
+        / ``shutdown`` methods on other cached objects are invoked when present.
+        """
+        client = self._v3_sql_client
+        if client is not None:
+            closer = getattr(client, "close", None)
+            if callable(closer):
+                try:
+                    closer()
+                except Exception as exc:
+                    logger.warning("AppContainer.close: SqlServerClient.close raised: %s", exc)
+
+        for resource, label in (
+            (self._artifact_storage, "artifact_storage"),
+            (self._worker_launch_service, "worker_launch_service"),
+        ):
+            if resource is None:
+                continue
+            for method_name in ("close", "dispose", "shutdown"):
+                fn = getattr(resource, method_name, None)
+                if callable(fn):
+                    try:
+                        fn()
+                    except Exception as exc:
+                        logger.warning(
+                            "AppContainer.close: %s.%s raised: %s",
+                            label,
+                            method_name,
+                            exc,
+                        )
+                    break
+
+        self._v3_sql_client = None
+        self._inventory_repo = None
+        self._client_repo = None
+        self._client_supplier_repo = None
+        self._aisle_repo = None
+        self._job_repo = None
+        self._asset_repo = None
+        self._supplier_reference_image_repo = None
+        self._supplier_prompt_config_repo = None
+        self._position_repo = None
+        self._product_record_repo = None
+        self._evidence_repo = None
+        self._review_action_repo = None
+        self._metrics_calculator = None
+        self._raw_label_repo = None
+        self._normalized_label_repo = None
+        self._final_count_repo = None
+        self._artifact_storage = None
+        self._worker_launch_service = None
+        self._analytics_repo = None
+        self._capture_session_repo = None
+        self._capture_session_item_repo = None
+        self._capture_session_confirm_repo = None
+        self._capture_session_group_repo = None
+        self._stored_artifact_reader = None
+        self._repository_backend_resolution = None
 
     def _probe_sql_for_repository_backend(self) -> None:
         """Validate SQL connectivity and cache SqlServerClient.
@@ -193,6 +276,15 @@ class AppContainer:
         """Resolve and cache SQL vs memory backend once per container (Phase C1 foundation)."""
         if self._repository_backend_resolution is not None:
             return self._repository_backend_resolution
+        policy_allow = self._v3_allow_in_memory_fallback()
+        v3_fallback_env_set = os.getenv("V3_ALLOW_IN_MEMORY_FALLBACK") is not None
+        logger.info(
+            "v3 repository_backend policy: allow_in_memory_fallback=%s production_like_runtime=%s "
+            "v3_allow_in_memory_fallback_env_explicit=%s",
+            policy_allow,
+            self._is_production_environment(),
+            v3_fallback_env_set,
+        )
         res = resolve_repository_backend_mode(
             settings=self._settings,
             probe_sql=self._probe_sql_for_repository_backend,
