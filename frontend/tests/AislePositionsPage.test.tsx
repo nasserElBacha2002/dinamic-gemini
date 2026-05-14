@@ -637,6 +637,54 @@ describe('AislePositionsPage (Aisle Results)', () => {
     expect(screen.queryByRole('button', { name: /upload|subir/i })).toBeNull();
   });
 
+  it('renders source assets and visual references actions in the header', () => {
+    renderPage();
+    expect(screen.getByTestId('aisle-source-assets-manage-open')).toBeInTheDocument();
+    expect(screen.getByTestId('aisle-visual-references-open')).toBeInTheDocument();
+  });
+
+  it('disables Referencias visuales when inventory has no client_id', () => {
+    const prev = inventoryDetailState.data.client_id;
+    inventoryDetailState.data = { ...inventoryDetailState.data, client_id: undefined as unknown as string };
+    try {
+      renderPage();
+      expect(screen.getByTestId('aisle-visual-references-open')).toBeDisabled();
+    } finally {
+      inventoryDetailState.data = { ...inventoryDetailState.data, client_id: prev };
+    }
+  });
+
+  it('disables Referencias visuales when aisle has no client_supplier_id', () => {
+    const prevItems = aislesListState.data.items;
+    aislesListState.data = {
+      ...aislesListState.data,
+      items: [{ ...prevItems[0], client_supplier_id: '' }],
+    };
+    try {
+      renderPage();
+      expect(screen.getByTestId('aisle-visual-references-open')).toBeDisabled();
+    } finally {
+      aislesListState.data = { ...aislesListState.data, items: prevItems };
+    }
+  });
+
+  it('shows empty state in visual references drawer when supplier catalog is empty', async () => {
+    useSupplierReferenceImagesMock.mockReturnValue({
+      data: { items: [] },
+      isLoading: false,
+      isPending: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as never);
+    renderPage();
+    fireEvent.click(screen.getByTestId('aisle-visual-references-open'));
+    expect(
+      await screen.findByText(/available for this aisle|disponibles para este pasillo/i)
+    ).toBeTruthy();
+  });
+
   describe('Phase 6 benchmark flows', () => {
     beforeEach(() => {
       inventoryDetailState.data.processing_mode = 'test';

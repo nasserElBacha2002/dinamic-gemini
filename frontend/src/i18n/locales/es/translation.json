@@ -86,7 +86,7 @@
     "empty_table_message": "Todavía no hay pasillos para este inventario.",
     "empty_table_title": "Sin pasillos",
     "export_csv": "Exportar CSV",
-    "list_subtitle": "Estado, activos, referencias visuales y acciones por pasillo.",
+    "list_subtitle": "Estado, activos y acciones por pasillo.",
     "list_title": "Pasillos",
     "column_reference_images": "Imágenes de referencia",
     "reference_images_empty": "Sin referencias",

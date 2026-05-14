@@ -1,7 +1,12 @@
 /**
- * Pick supplier reference images to show for an inventory aisle row.
- * When the latest job lists `reference_ids`, prefer those that exist in the supplier catalog;
- * otherwise show the full supplier catalog (caller typically slices for display).
+ * Selects supplier reference images for the aisle visual references drawer (and similar UIs).
+ *
+ * If the latest run declares `reference_ids` and those IDs exist in the supplier catalog,
+ * return that intersection first because it best represents the references used by the run.
+ *
+ * If no run references can be matched, fall back to the full supplier catalog because the
+ * drawer is also used as a read-only view of the visual references configured for the aisle's
+ * supplier (not necessarily only the exact files consumed in a single run).
  */
 
 import type { Aisle, SupplierReferenceImage } from '../../../api/types';

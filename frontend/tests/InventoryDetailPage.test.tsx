@@ -1166,6 +1166,8 @@ describe('InventoryDetail', () => {
     expect(screen.queryByTestId('aisle-reference-images-aisle-1')).not.toBeInTheDocument();
     expect(screen.queryByText(/column_reference_images|imágenes de referencia/i)).not.toBeInTheDocument();
     expect(screen.getByTestId('aisle-action-upload-aisle-1')).toBeInTheDocument();
+    expect(screen.getByTestId('aisle-action-observability-aisle-1')).toBeInTheDocument();
+    expect(screen.getByTestId('aisle-action-process-aisle-1')).toBeInTheDocument();
   });
 
   it('disables Process aisle when the aisle has no uploaded assets', async () => {
