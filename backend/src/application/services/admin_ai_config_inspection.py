@@ -204,6 +204,35 @@ def _composition_structured(provider_key: str) -> dict[str, Any]:
     }
 
 
+def _safe_hybrid_prompt_key(settings: Any) -> str:
+    """Readable hybrid profile key for admin UI; non-string settings values fall back to default."""
+    raw = getattr(settings, "hybrid_prompt", None)
+    if raw is None:
+        return DEFAULT_HYBRID_PROMPT_PROFILE
+    if not isinstance(raw, str):
+        return DEFAULT_HYBRID_PROMPT_PROFILE
+    stripped = raw.strip()
+    return stripped or DEFAULT_HYBRID_PROMPT_PROFILE
+
+
+def _prompt_catalog_rows_for_admin() -> list[dict[str, Any]]:
+    """Catalog entries for UI: curated labels plus any registered hybrid keys missing from the catalog."""
+    rows: list[dict[str, Any]] = [
+        {"key": k, "label": lab, "description": desc} for k, lab, desc in prompt_profile_catalog()
+    ]
+    known = {r["key"] for r in rows}
+    for k in sorted(registered_hybrid_prompt_keys()):
+        if k not in known:
+            rows.append(
+                {
+                    "key": k,
+                    "label": k,
+                    "description": "Hybrid profile registered in PROMPTS (no curated catalog blurb yet).",
+                }
+            )
+    return rows
+
+
 def iter_prompt_variant_summaries() -> list[dict[str, Any]]:
     """Metadata only — no composed prompt text (keeps overview payload small)."""
     reg_profiles = sorted(registered_hybrid_prompt_keys())
@@ -246,7 +275,12 @@ def compose_prompt_variant_for_inspection(
         return None
 
     try:
-        text = compose_hybrid_base(pk, prov, prompt_parity_mode=prompt_parity_mode)
+        text = compose_hybrid_base(
+            pk,
+            prov,
+            prompt_parity_mode=prompt_parity_mode,
+            restrict_to_default_aisle_profile=False,
+        )
     except Exception as exc:
         text = f"<composition error: {exc}>"
     label = f"{pk} · {prov} · parity={prompt_parity_mode}"
@@ -263,7 +297,7 @@ def build_admin_ai_config_payload(settings: Settings) -> dict[str, Any]:
     """Structured, secret-free payload for GET admin AI config (no composed prompt bodies)."""
     now = datetime.now(timezone.utc)
     default_pipeline = normalize_pipeline_provider_key(None, settings)
-    hybrid_prompt = str(getattr(settings, "hybrid_prompt", "") or DEFAULT_HYBRID_PROMPT_PROFILE).strip()
+    hybrid_prompt = _safe_hybrid_prompt_key(settings)
     prompt_version = getattr(settings, "prompt_version", None)
     pv_opt = (
         prompt_version.strip()
@@ -307,9 +341,7 @@ def build_admin_ai_config_payload(settings: Settings) -> dict[str, Any]:
             }
         )
 
-    prompt_catalog = [
-        {"key": k, "label": lab, "description": desc} for k, lab, desc in prompt_profile_catalog()
-    ]
+    prompt_catalog = _prompt_catalog_rows_for_admin()
 
     return {
         "generated_at": now.isoformat(),

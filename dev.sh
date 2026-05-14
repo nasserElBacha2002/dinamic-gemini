@@ -50,8 +50,18 @@ echo "[dev] On-demand worker command: ${WORKER_ON_DEMAND_COMMAND}"
 
 # Prevent stale mixed runtimes: kill previously running local backend/legacy worker
 # processes before starting fresh ones.
-echo "[dev] Limpiando procesos previos de backend/legacy worker..."
+echo "[dev] Limpiando procesos previos de backend/worker..."
 if command -v pgrep >/dev/null 2>&1; then
+  # On-demand aisle workers (spawned by API); stale processes keep old Python modules in memory.
+  ONDEMAND_WORKER_PIDS="$(pgrep -f "src\\.jobs\\.run_worker" || true)"
+  if [[ -n "${ONDEMAND_WORKER_PIDS}" ]]; then
+    echo "${ONDEMAND_WORKER_PIDS}" | xargs kill 2>/dev/null || true
+    sleep 0.3
+    STILL_OD="$(pgrep -f "src\\.jobs\\.run_worker" || true)"
+    if [[ -n "${STILL_OD}" ]]; then
+      echo "${STILL_OD}" | xargs kill -9 2>/dev/null || true
+    fi
+  fi
   DEV_WORKER_PIDS="$(pgrep -f "src\\.jobs\\.run_worker_dev$" || true)"
   if [[ -n "${DEV_WORKER_PIDS}" ]]; then
     echo "${DEV_WORKER_PIDS}" | xargs kill 2>/dev/null || true

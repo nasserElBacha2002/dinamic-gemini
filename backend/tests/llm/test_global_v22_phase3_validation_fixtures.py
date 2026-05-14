@@ -195,7 +195,7 @@ def test_phase3_supplier_fallback_payload_no_quantity_source_field() -> None:
 
 
 def test_phase3_prompt_v21_unchanged_v22_label_first_distinct() -> None:
-    v21 = compose_hybrid_base("global_v21", None)
+    v21 = compose_hybrid_base("global_v21", None, restrict_to_default_aisle_profile=False)
     v22 = compose_hybrid_base("global_v22", None)
     assert v21 != v22
     assert "logistic" in v21.lower() or "logistic entities" in v21.lower()
@@ -222,11 +222,10 @@ def test_phase3_resolve_profile_empty_settings_hybrid_uses_default_constant() ->
     assert resolve_hybrid_profile_name(job_prompt_key=None, settings=settings) == "global_v22"
 
 
-def test_phase3_resolve_profile_explicit_global_v21_overrides_default() -> None:
+def test_phase3_resolve_profile_explicit_global_v21_does_not_override_policy_v22() -> None:
     settings = SimpleNamespace(hybrid_prompt="global_v22")
     assert (
-        resolve_hybrid_profile_name(job_prompt_key="global_v21", settings=settings)
-        == "global_v21"
+        resolve_hybrid_profile_name(job_prompt_key="global_v21", settings=settings) == "global_v22"
     )
 
 

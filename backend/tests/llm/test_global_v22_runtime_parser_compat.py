@@ -42,11 +42,12 @@ def test_label_first_payload_passes_v21_validator() -> None:
     validate_global_analysis_structure_v21(_LABEL_FIRST_V22_STYLE_PAYLOAD)
 
 
-def test_resolve_hybrid_profile_job_prompt_key_wins_over_settings() -> None:
+def test_resolve_hybrid_profile_always_global_v22() -> None:
     settings = MagicMock()
     settings.hybrid_prompt = "global_v21"
     assert resolve_hybrid_profile_name(job_prompt_key="global_v22", settings=settings) == "global_v22"
-    assert resolve_hybrid_profile_name(job_prompt_key=None, settings=settings) == "global_v21"
+    assert resolve_hybrid_profile_name(job_prompt_key=None, settings=settings) == "global_v22"
+    assert resolve_hybrid_profile_name(job_prompt_key="global_v21", settings=settings) == "global_v22"
 
 
 def test_global_v22_openai_compose_still_provider_overlay_not_downgrade() -> None:

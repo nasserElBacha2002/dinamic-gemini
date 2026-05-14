@@ -110,9 +110,11 @@ def test_get_hybrid_prompt_default():
 
 
 def test_get_hybrid_prompt_unknown_falls_back():
-    """Test que perfil desconocido devuelve global_v21."""
+    """Unknown profile keys resolve to the global_v22 registry body (no silent v21 downgrade)."""
     text = get_hybrid_prompt("unknown_profile")
-    assert text == GLOBAL_ENTITY_ANALYSIS_PROMPT_V21
+    assert text == get_hybrid_prompt("global_v22")
+    lowered = text.lower()
+    assert "label-first" in lowered or "inventory positions" in lowered
 
 
 def test_hybrid_prompts_registry():

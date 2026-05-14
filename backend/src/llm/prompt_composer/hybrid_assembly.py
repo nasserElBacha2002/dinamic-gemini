@@ -19,8 +19,10 @@ Phase 5 — **official production entrypoint** for hybrid **base** prompt text (
 
 **Four-step flow** (enrichments are step 4, outside this module)
 
-1. Resolve profile — ``job_prompt_key`` wins; else ``settings.hybrid_prompt`` (fallback
-   ``DEFAULT_HYBRID_PROMPT_PROFILE``, currently ``global_v22``; rollback via ``HYBRID_PROMPT``).
+1. Resolve profile — product policy: **always** ``DEFAULT_HYBRID_PROMPT_PROFILE`` (``global_v22``).
+   ``compose_hybrid_base`` defaults to ``restrict_to_default_aisle_profile=True`` so the composed
+   registry key cannot drift to ``global_v21`` even if a stale caller passes a legacy profile string.
+   ``job_prompt_key`` / ``settings.hybrid_prompt`` are still recorded in traceability metadata as hints.
 2. Resolve provider key — caller supplies pipeline provider string (e.g. from
    ``normalize_pipeline_provider_key``); adapters may pass ``\"claude\"`` (default + canonical JSON
    supplement), ``\"openai\"`` (OpenAI replacement fragment), or ``None`` / other keys (default only).
@@ -41,19 +43,14 @@ from typing import Any, Final
 
 from src.llm.prompt_composer.composer import default_hybrid_composer
 
-# Single source of truth for server / job default when ``job_prompt_key`` is unset and
-# ``settings.hybrid_prompt`` is empty. Rollback: set HYBRID_PROMPT=global_v21 or per-job ``prompt_key``.
+# Single label-first hybrid profile used for all composed aisle-analysis runs (same JSON contract).
 DEFAULT_HYBRID_PROMPT_PROFILE: Final[str] = "global_v22"
 
 
 def resolve_hybrid_profile_name(*, job_prompt_key: Any | None, settings: Any) -> str:
-    """Effective hybrid profile key for a run (job override beats ``settings.hybrid_prompt``)."""
-    if job_prompt_key is not None and str(job_prompt_key).strip():
-        return str(job_prompt_key).strip()
-    return str(
-        getattr(settings, "hybrid_prompt", DEFAULT_HYBRID_PROMPT_PROFILE)
-        or DEFAULT_HYBRID_PROMPT_PROFILE
-    ).strip()
+    """Always use the label-first v2.2 profile; ``job_prompt_key`` / ``settings`` do not switch bodies."""
+    del job_prompt_key, settings
+    return DEFAULT_HYBRID_PROMPT_PROFILE
 
 
 def compose_hybrid_base(
@@ -61,14 +58,24 @@ def compose_hybrid_base(
     pipeline_provider_key: str | None,
     *,
     prompt_parity_mode: bool = False,
+    restrict_to_default_aisle_profile: bool = True,
 ) -> str:
     """
     Production helper: composed **base** text only (delegates to ``HybridPromptComposer``).
 
     Do not add enrichments here; do not bypass ``hybrid_resolution``.
+
+    When ``restrict_to_default_aisle_profile`` is True (default), the registry key is always
+    ``DEFAULT_HYBRID_PROMPT_PROFILE`` so stale workers or accidental ``global_v21`` arguments cannot
+    ship logistics-first bodies to aisle analysis. Admin prompt inspection and regression tests that
+    need v21/v21_b bodies pass ``restrict_to_default_aisle_profile=False``.
     """
+    if restrict_to_default_aisle_profile:
+        key = DEFAULT_HYBRID_PROMPT_PROFILE
+    else:
+        key = (profile or "").strip()
     return default_hybrid_composer.compose_base(
-        profile, pipeline_provider_key, prompt_parity_mode=prompt_parity_mode
+        key, pipeline_provider_key, prompt_parity_mode=prompt_parity_mode
     )
 
 
@@ -91,5 +98,8 @@ def compose_hybrid_base_from_settings(
     """
     profile = resolve_hybrid_profile_name(job_prompt_key=job_prompt_key, settings=settings)
     return compose_hybrid_base(
-        profile, pipeline_provider_key, prompt_parity_mode=prompt_parity_mode
+        profile,
+        pipeline_provider_key,
+        prompt_parity_mode=prompt_parity_mode,
+        restrict_to_default_aisle_profile=True,
     )

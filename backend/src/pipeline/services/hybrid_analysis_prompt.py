@@ -11,7 +11,7 @@ once here (step 4 of the Phase 5 flow).
 
 **Profile vs Phase 7 version (see also ``prompt_traceability`` module doc):**
 
-- **Profile:** ``resolve_hybrid_profile_name`` + ``compose_hybrid_base`` determine prompt **content**.
+- **Profile:** ``DEFAULT_HYBRID_PROMPT_PROFILE`` (``global_v22``) + ``compose_hybrid_base`` determine prompt **content** (hard-bound; cannot drift to v21 on stale partial deploys).
   Recorded in composition as ``profile_name``, ``job_prompt_key``, ``settings_hybrid_prompt_key``.
 - **``prompt_version``:** Optional label from ``RunContext.job_prompt_version`` or ``settings.prompt_version``
   only; recorded in composition; **no effect** on resolution or text.
@@ -29,8 +29,8 @@ from src.llm.prompt_composer.enrichments import (
     enrich_prompt_with_image_ids,
 )
 from src.llm.prompt_composer.hybrid_assembly import (
+    DEFAULT_HYBRID_PROMPT_PROFILE,
     compose_hybrid_base,
-    resolve_hybrid_profile_name,
 )
 from src.llm.prompt_composer.prompt_traceability import (
     COMPOSITION_STEP_COMPOSE_HYBRID_BASE,
@@ -117,10 +117,7 @@ def build_hybrid_analysis_prompt_with_traceability(
     """
     settings = context.settings
     steps: list[dict[str, Any]] = []
-    profile = resolve_hybrid_profile_name(
-        job_prompt_key=getattr(context, "job_prompt_key", None),
-        settings=settings,
-    )
+    profile = DEFAULT_HYBRID_PROMPT_PROFILE
     steps.append({"step": COMPOSITION_STEP_RESOLVE_PROFILE, "profile_name": profile})
     effective_provider = normalize_pipeline_provider_key(
         getattr(context, "pipeline_provider_name", None),

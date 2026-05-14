@@ -181,7 +181,7 @@ def test_retry_failed_job_creates_new_attempt_with_lineage() -> None:
     assert retried.execution_id == f"exec-{retried.id}"
     assert retried.provider_name == STUB_PRIMARY_PROVIDER
     assert retried.model_name == STUB_PRIMARY_MODEL
-    assert retried.prompt_key == "global_v21"
+    assert retried.prompt_key == "global_v22"
     assert launcher.launched == [retried.id]
     assert job_repo.get_by_id("job-failed").status == JobStatus.FAILED
 

@@ -52,6 +52,70 @@ def test_build_admin_ai_config_stable_shape_and_no_secret_attrs() -> None:
     assert "credential_configured" in gemini["capabilities"]
     assert "operationally_available" not in gemini["capabilities"]
     assert isinstance(gemini["composition"]["hybrid_base_mode"], str)
+    cat_keys = [row["key"] for row in payload["prompt_catalog"]]
+    assert "global_v22" in cat_keys
+
+
+def test_build_admin_ai_config_prompt_catalog_and_variants_include_global_v22() -> None:
+    s = MagicMock()
+    s.llm_provider = "gemini"
+    s.hybrid_prompt = "global_v22"
+    s.prompt_version = ""
+    s.gemini_api_key = "gk"
+    s.openai_api_key = ""
+    s.anthropic_api_key = ""
+    s.deepseek_api_key = ""
+    s.processing_gemini_models = "gemini-2.0-flash-exp"
+    s.gemini_model_name = "gemini-2.0-flash-exp"
+    s.processing_openai_models = "gpt-4o"
+    s.openai_model = "gpt-4o"
+    s.processing_claude_models = "claude-sonnet-4-20250514"
+    s.anthropic_model = "claude-sonnet-4-20250514"
+    s.processing_deepseek_models = "deepseek-chat"
+    s.deepseek_model = "deepseek-chat"
+
+    payload = build_admin_ai_config_payload(s)
+    assert payload["server_defaults"]["hybrid_prompt_key"] == "global_v22"
+    cat_keys = [row["key"] for row in payload["prompt_catalog"]]
+    assert "global_v22" in cat_keys
+    assert "global_v21" in cat_keys
+    assert "global_v21_b" in cat_keys
+    gemini = next(p for p in payload["providers"] if p["key"] == "gemini")
+    v22_rows = [r for r in gemini["prompt_variant_summaries"] if r["prompt_key"] == "global_v22"]
+    assert len(v22_rows) >= 1
+
+
+def test_compose_prompt_variant_global_v22_gemini_returns_text() -> None:
+    out = compose_prompt_variant_for_inspection(
+        prompt_key="global_v22",
+        pipeline_provider_key="gemini",
+        prompt_parity_mode=False,
+    )
+    assert out is not None
+    assert "label-first" in out["composed_prompt_text"].lower()
+    assert "total_entities_detected" in out["composed_prompt_text"].lower()
+    assert "total_positions_detected" not in out["composed_prompt_text"]
+
+
+def test_safe_hybrid_prompt_non_string_settings_falls_back_to_default() -> None:
+    s = MagicMock()
+    s.llm_provider = "gemini"
+    s.hybrid_prompt = MagicMock()
+    s.prompt_version = ""
+    s.gemini_api_key = "gk"
+    s.openai_api_key = ""
+    s.anthropic_api_key = ""
+    s.deepseek_api_key = ""
+    s.processing_gemini_models = "gemini-2.0-flash-exp"
+    s.gemini_model_name = "gemini-2.0-flash-exp"
+    s.processing_openai_models = "gpt-4o"
+    s.openai_model = "gpt-4o"
+    s.processing_claude_models = "claude-sonnet-4-20250514"
+    s.anthropic_model = "claude-sonnet-4-20250514"
+    s.processing_deepseek_models = "deepseek-chat"
+    s.deepseek_model = "deepseek-chat"
+    payload = build_admin_ai_config_payload(s)
+    assert payload["server_defaults"]["hybrid_prompt_key"] == "global_v22"
 
 
 def test_compose_prompt_variant_rejects_invalid_combinations() -> None:
@@ -91,9 +155,15 @@ def test_build_payload_empty_prompt_catalog() -> None:
     s.processing_deepseek_models = "deepseek-chat"
     s.deepseek_model = "deepseek-chat"
 
-    with patch(
-        "src.application.services.admin_ai_config_inspection.prompt_profile_catalog",
-        return_value=[],
+    with (
+        patch(
+            "src.application.services.admin_ai_config_inspection.prompt_profile_catalog",
+            return_value=[],
+        ),
+        patch(
+            "src.application.services.admin_ai_config_inspection.registered_hybrid_prompt_keys",
+            return_value=frozenset(),
+        ),
     ):
         payload = build_admin_ai_config_payload(s)
     assert payload["prompt_catalog"] == []

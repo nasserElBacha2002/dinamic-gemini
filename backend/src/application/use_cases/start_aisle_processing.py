@@ -130,10 +130,12 @@ class StartAisleProcessingUseCase:
         self._stale_reconciler = stale_reconciler
 
     def execute(self, command: StartAisleProcessingCommand) -> str:
-        pipeline_key, model_name, prompt_key = _materialize_execution_keys_for_start(
+        pipeline_key, model_name, _resolved_prompt = _materialize_execution_keys_for_start(
             self._inventory_repo,
             command,
         )
+        # Product policy: all new aisle jobs persist the label-first hybrid profile key.
+        prompt_key = DEFAULT_HYBRID_PROMPT_PROFILE
         aisle = require_aisle_scoped_to_inventory(
             self._aisle_repo,
             inventory_id=command.inventory_id,

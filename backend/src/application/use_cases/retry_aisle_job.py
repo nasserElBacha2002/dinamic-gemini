@@ -115,7 +115,7 @@ class RetryAisleJobUseCase:
             log_prefix="job.retry_requested",
             provider_name=(original_job.provider_name or "gemini").strip().lower(),
             model_name=original_job.model_name,
-            prompt_key=(original_job.prompt_key or DEFAULT_HYBRID_PROMPT_PROFILE),
+            prompt_key=DEFAULT_HYBRID_PROMPT_PROFILE,
         )
         logger.info(
             "job.retry_requested previous_job_id=%s new_job_id=%s aisle_id=%s attempt_count=%s",

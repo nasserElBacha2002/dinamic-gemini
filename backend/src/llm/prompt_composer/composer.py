@@ -38,14 +38,13 @@ class HybridPromptComposer:
         """
         Return base analysis prompt for the hybrid pipeline only (no traceability / Epic D blocks).
 
-        Unknown ``profile_name`` falls back to ``global_v21`` with the same ``provider_key``,
-        matching historical ``get_hybrid_prompt`` semantics.
+        Unknown or blank ``profile_name`` (including accidental whitespace) uses the **global_v22**
+        registry entry so the pipeline never silently downgrades to ``global_v21`` bodies.
         """
-        raw = PROMPTS.get(profile_name)
+        key = (profile_name or "").strip()
+        raw = PROMPTS.get(key) if key else None
         if raw is None:
-            return resolve_hybrid_entry_for_provider(
-                PROMPTS["global_v21"], provider_key, prompt_parity_mode=prompt_parity_mode
-            )
+            raw = PROMPTS.get("global_v22") or PROMPTS["global_v21"]
         return resolve_hybrid_entry_for_provider(
             raw, provider_key, prompt_parity_mode=prompt_parity_mode
         )

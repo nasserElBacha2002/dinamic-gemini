@@ -17,12 +17,12 @@ Attached to ``LLMRequest.metadata`` and job ``run_metadata`` without changing pr
 **Semantics: profile / key vs version vs hash (do not conflate)**
 
 - **Profile / prompt family (what text template is used):** In composition metadata this is
-  ``profile_name`` (the resolved profile after ``job_prompt_key`` / ``settings.hybrid_prompt``).
-  ``job_prompt_key`` and ``settings_hybrid_prompt_key`` record which inputs contributed. Top-level
-  job ``run_metadata["prompt_key"]`` mirrors the effective profile id for persistence. None of this
-  is the same as Phase 7 ``prompt_version``.
+  ``profile_name`` (the hybrid registry key used for the composed **default** body; aisle analysis
+  hard-binds ``global_v22``). ``job_prompt_key`` and ``settings_hybrid_prompt_key`` record
+  configuration hints only. Top-level job ``run_metadata["prompt_key"]`` prefers the composed profile
+  when present. None of this is the same as Phase 7 ``prompt_version``.
 - **``prompt_version`` (Phase 7, optional):** A logical label for traceability, comparison, and
-  future A/B work. It **does not** select prompt bodies, **does not** change ``resolve_hybrid_profile_name``,
+  future A/B work. It **does not** select prompt bodies, **does not** change ``DEFAULT_HYBRID_PROMPT_PROFILE``,
   **does not** alter prompt text, and **is not** an input to ``prompt_hash`` / ``base_prompt_hash``.
 - **``prompt_hash`` / ``base_prompt_hash``:** SHA-256 of UTF-8 ``final_prompt_text`` / ``base_prompt_text``
   only — exact fingerprints of the strings sent or built.

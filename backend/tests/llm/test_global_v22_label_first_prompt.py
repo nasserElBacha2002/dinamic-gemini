@@ -40,7 +40,7 @@ def _assert_all_markers(text: str, markers: tuple[str, ...], *, label: str) -> N
 
 def test_global_v22_registered_and_differs_from_v21_default() -> None:
     assert "global_v22" in registered_hybrid_prompt_keys()
-    v21 = compose_hybrid_base("global_v21", None)
+    v21 = compose_hybrid_base("global_v21", None, restrict_to_default_aisle_profile=False)
     v22 = compose_hybrid_base("global_v22", None)
     assert v22 != v21
     assert "Label-first" in v22 or "label-first" in v22.lower()
@@ -74,7 +74,9 @@ def test_global_v22_entity_type_taxonomy_strings_present() -> None:
 def test_global_v22_claude_path_shares_canonical_contract_tail_with_v21() -> None:
     contract = str(PROMPTS["global_v22"]["claude"]).rstrip()
     assert contract == str(PROMPTS["global_v21"]["claude"]).rstrip()
-    t21 = compose_hybrid_base("global_v21", "claude", prompt_parity_mode=False)
+    t21 = compose_hybrid_base(
+        "global_v21", "claude", prompt_parity_mode=False, restrict_to_default_aisle_profile=False
+    )
     t22 = compose_hybrid_base("global_v22", "claude", prompt_parity_mode=False)
     assert t21.endswith(contract)
     assert t22.endswith(contract)
