@@ -46,6 +46,11 @@ from src.application.use_cases.recompute_consolidated_counts import (
 )
 from src.config import AppSettings
 from src.database.sqlserver import SqlServerClient
+from src.runtime.container.repository_backend import (
+    RepositoryBackendMode,
+    RepositoryBackendResolution,
+    resolve_repository_backend_mode,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +105,7 @@ class AppContainer:
         self._capture_session_confirm_repo: CaptureSessionConfirmIdempotencyRepository | None = None
         self._capture_session_group_repo: CaptureSessionGroupRepository | None = None
         self._stored_artifact_reader: StoredArtifactReader | None = None
+        self._repository_backend_resolution: RepositoryBackendResolution | None = None
 
     @property
     def settings(self) -> AppSettings:
@@ -110,20 +116,59 @@ class AppContainer:
         raw = (os.getenv("V3_ALLOW_IN_MEMORY_FALLBACK") or "true").strip().lower()
         return raw in ("true", "1", "yes")
 
-    def _v3_db_enabled(self) -> bool:
-        return bool(
-            getattr(self._settings, "sqlserver_enabled", False)
-            and self._settings.sqlserver_effective_connection_string
-        )
-
-    def _get_v3_sql_client(self) -> SqlServerClient:
+    def _probe_sql_for_repository_backend(self) -> None:
+        """Validate SQL connectivity and cache :class:`SqlServerClient` (same semantics as legacy probe)."""
         if self._v3_sql_client is not None:
-            return self._v3_sql_client
+            return
         client = SqlServerClient(self._settings.require_sqlserver_connection_string())
         with client.cursor() as cur:
             cur.execute("SELECT 1")
         self._v3_sql_client = client
-        return self._v3_sql_client
+
+    def _get_v3_sql_client(self) -> SqlServerClient:
+        if self._v3_sql_client is not None:
+            return self._v3_sql_client
+        self._probe_sql_for_repository_backend()
+        client = self._v3_sql_client
+        if client is None:
+            raise RuntimeError("v3 SQL client not available after probe")
+        return client
+
+    def _get_repository_backend_resolution(self) -> RepositoryBackendResolution:
+        """Resolve and cache SQL vs memory backend once per container (Phase C1 foundation)."""
+        if self._repository_backend_resolution is not None:
+            return self._repository_backend_resolution
+        res = resolve_repository_backend_mode(
+            settings=self._settings,
+            probe_sql=self._probe_sql_for_repository_backend,
+            allow_in_memory_fallback=self._v3_allow_in_memory_fallback,
+        )
+        self._repository_backend_resolution = res
+        sqlserver_enabled_flag = bool(getattr(self._settings, "sqlserver_enabled", False))
+        if res.mode == RepositoryBackendMode.SQL:
+            logger.info(
+                "v3 repository_backend resolved: mode=%s sqlserver_enabled=%s fallback_allowed=%s",
+                res.mode.value,
+                sqlserver_enabled_flag,
+                res.fallback_allowed,
+            )
+        elif res.mode == RepositoryBackendMode.MEMORY_ONLY:
+            logger.info(
+                "v3 repository_backend resolved: mode=%s sqlserver_enabled=%s fallback_allowed=%s reason=%s",
+                res.mode.value,
+                sqlserver_enabled_flag,
+                res.fallback_allowed,
+                res.reason or "",
+            )
+        else:
+            logger.warning(
+                "v3 repository_backend resolved: mode=%s sqlserver_enabled=%s fallback_allowed=%s reason=%s",
+                res.mode.value,
+                sqlserver_enabled_flag,
+                res.fallback_allowed,
+                res.reason or "",
+            )
+        return res
 
     def _build_sql_repository_or_memory(
         self,
@@ -134,7 +179,10 @@ class AppContainer:
         build_memory: Callable[[], _RepoT],
     ) -> _RepoT:
         """Shared v3 pattern: SQL when enabled and connectable, else memory (with env-controlled fallback)."""
-        if not self._v3_db_enabled():
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.MEMORY_ONLY:
+            return build_memory()
+        if resolution.mode == RepositoryBackendMode.MEMORY_FALLBACK:
             return build_memory()
         try:
             client = self._get_v3_sql_client()

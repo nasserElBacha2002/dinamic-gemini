@@ -601,3 +601,36 @@ Use-case getters without return type annotations (typing gap):
 | Audit artifact | **`audit/app_container_modularization_audit.md`** (this file) |
 
 **End status:** `APP_CONTAINER_REFACTOR_RECOMMENDED`
+
+---
+
+## Phase C1 implementation note
+
+**Added**
+
+- `backend/src/runtime/container/repository_backend.py`: `RepositoryBackendMode`, `RepositoryBackendResolution`, `resolve_repository_backend_mode` (pure resolver; no repository imports).
+- `backend/src/runtime/container/__init__.py`: re-exports resolver symbols.
+- `AppContainer`: cached `_repository_backend_resolution`, `_probe_sql_for_repository_backend`, `_get_repository_backend_resolution` with one-shot INFO/WARNING logging (`mode`, `sqlserver_enabled`, `fallback_allowed`, `reason` when set).
+- `_build_sql_repository_or_memory` now consults the cached resolution first (`MEMORY_ONLY` / `MEMORY_FALLBACK` → memory without re-probing; `SQL` → existing try/except around `build_sql` preserved for per-repo constructor failures).
+
+**Intentionally unchanged**
+
+- Public `get_app_container`, `reset_app_container_for_tests`, all public `get_*` method names and signatures.
+- Default `V3_ALLOW_IN_MEMORY_FALLBACK` behavior.
+- API routes, workers, migrations, artifact storage, supplier prompt wiring.
+- No new third-party dependencies.
+
+**Tests**
+
+- `backend/tests/runtime/test_repository_backend.py`: resolver cases (memory-only, SQL success, memory fallback, re-raise, fallback callable).
+- `backend/tests/runtime/test_app_container.py`: resolution object identity when SQL disabled, `SqlServerClient` not constructed when SQL disabled, single fake SQL client construct across two repos when SQL is enabled.
+
+**Validation (local)**
+
+- `.venv/bin/python -m pytest tests/runtime/test_repository_backend.py tests/runtime/test_app_container.py -q`
+- `.venv/bin/ruff check src/runtime/container/ src/runtime/app_container.py tests/runtime/test_repository_backend.py tests/runtime/test_app_container.py`
+- `.venv/bin/mypy src/runtime/container/repository_backend.py src/runtime/app_container.py`
+
+**Next step (future phase)**
+
+- Drive all repository construction strictly from the cached `RepositoryBackendMode` (and optionally invalidate or fail-fast on mixed per-repo `build_sql` failures) so mixed SQL/memory backends cannot occur after a successful SQL probe.
