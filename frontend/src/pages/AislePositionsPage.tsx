@@ -665,7 +665,7 @@ export default function AislePositionsPage() {
               component="div"
               sx={{ color: 'text.secondary', mt: 0.75, mb: 2, lineHeight: 1.4 }}
             >
-              {t('positions.counted_items', { count: results.length })}
+              {t('positions.counted_items', { count: kpi.countableResults })}
             </Typography>
           </Box>
 
@@ -706,7 +706,7 @@ export default function AislePositionsPage() {
       {!blockPositionsForTestNoJobs && !errorMessage && !resultsLoading && results.length > 0 ? (
         <AisleResultsTableSection
           countedTotal={kpi.aisleTotalCounted}
-          countedResultRows={results.length}
+          countedResultRows={kpi.countableResults}
           mergeFeedback={mergeFeedback}
           onResetFilters={handleResetFilters}
           resetDisabled={filter === 'all' && !skuSearch.trim() && !resultsColumnSortBy.trim()}
