@@ -24,7 +24,10 @@ from src.llm.normalization.entity_normalizer import (
     EXTRACTION_CONTRACT_VERSION_VALUE,
     resolve_provider_family,
 )
-from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base
+from src.llm.prompt_composer.hybrid_assembly import (
+    DEFAULT_HYBRID_PROMPT_PROFILE,
+    compose_hybrid_base,
+)
 from src.llm.prompt_composer.hybrid_profiles import CLAUDE_JSON_ENTITY_OUTPUT_KEYS
 from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_keys
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
@@ -260,7 +263,7 @@ def build_admin_ai_config_payload(settings: Settings) -> dict[str, Any]:
     """Structured, secret-free payload for GET admin AI config (no composed prompt bodies)."""
     now = datetime.now(timezone.utc)
     default_pipeline = normalize_pipeline_provider_key(None, settings)
-    hybrid_prompt = str(getattr(settings, "hybrid_prompt", "") or "global_v21").strip()
+    hybrid_prompt = str(getattr(settings, "hybrid_prompt", "") or DEFAULT_HYBRID_PROMPT_PROFILE).strip()
     prompt_version = getattr(settings, "prompt_version", None)
     pv_opt = (
         prompt_version.strip()

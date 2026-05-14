@@ -19,7 +19,8 @@ Phase 5 — **official production entrypoint** for hybrid **base** prompt text (
 
 **Four-step flow** (enrichments are step 4, outside this module)
 
-1. Resolve profile — ``job_prompt_key`` wins; else ``settings.hybrid_prompt`` (default ``global_v21``).
+1. Resolve profile — ``job_prompt_key`` wins; else ``settings.hybrid_prompt`` (fallback
+   ``DEFAULT_HYBRID_PROMPT_PROFILE``, currently ``global_v22``; rollback via ``HYBRID_PROMPT``).
 2. Resolve provider key — caller supplies pipeline provider string (e.g. from
    ``normalize_pipeline_provider_key``); adapters may pass ``\"claude\"`` (default + canonical JSON
    supplement), ``\"openai\"`` (OpenAI replacement fragment), or ``None`` / other keys (default only).
@@ -36,16 +37,23 @@ not rely on that heuristic; it will be replaced by explicit policy (see ``hybrid
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final
 
 from src.llm.prompt_composer.composer import default_hybrid_composer
+
+# Single source of truth for server / job default when ``job_prompt_key`` is unset and
+# ``settings.hybrid_prompt`` is empty. Rollback: set HYBRID_PROMPT=global_v21 or per-job ``prompt_key``.
+DEFAULT_HYBRID_PROMPT_PROFILE: Final[str] = "global_v22"
 
 
 def resolve_hybrid_profile_name(*, job_prompt_key: Any | None, settings: Any) -> str:
     """Effective hybrid profile key for a run (job override beats ``settings.hybrid_prompt``)."""
     if job_prompt_key is not None and str(job_prompt_key).strip():
         return str(job_prompt_key).strip()
-    return str(getattr(settings, "hybrid_prompt", "global_v21") or "global_v21").strip()
+    return str(
+        getattr(settings, "hybrid_prompt", DEFAULT_HYBRID_PROMPT_PROFILE)
+        or DEFAULT_HYBRID_PROMPT_PROFILE
+    ).strip()
 
 
 def compose_hybrid_base(

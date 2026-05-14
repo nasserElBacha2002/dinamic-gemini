@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_keys
+from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 from src.pipeline.providers.definitions import pipeline_provider_spec
 
 _ModelPair = tuple[str, str]
@@ -73,12 +74,17 @@ def prompt_profile_catalog() -> list[tuple[str, str, str]]:
         (
             "global_v21",
             "Prompt A — standard scan (global_v21)",
-            "Balanced entity detection; default production profile.",
+            "Logistics-first entity detection; use for rollback or A/B comparison with label-first v22.",
         ),
         (
             "global_v21_b",
             "Prompt B — conservative / anti-hallucination (global_v21_b)",
             "Stricter abstention, nulls when uncertain, INSUFFICIENT_EVIDENCE when views are ambiguous.",
+        ),
+        (
+            "global_v22",
+            "Prompt C — label-first inventory positions (global_v22)",
+            "Same JSON contract as v21 (total_entities_detected + entities); prioritizes readable inventory labels and one row per distinct label/position.",
         ),
     ]
 
@@ -89,4 +95,5 @@ def is_valid_prompt_key(key: str, _settings: Any) -> bool:
 
 
 def default_prompt_key(settings: Any) -> str:
-    return str(getattr(settings, "hybrid_prompt", "") or "global_v21").strip() or "global_v21"
+    raw = str(getattr(settings, "hybrid_prompt", "") or "").strip()
+    return raw or DEFAULT_HYBRID_PROMPT_PROFILE

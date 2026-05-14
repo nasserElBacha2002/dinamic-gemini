@@ -389,6 +389,8 @@ def test_get_processing_provider_options_returns_registered_keys() -> None:
         assert "default_provider_key" in data
         assert "default_prompt_key" in data
         assert len(data.get("prompt_profiles", [])) >= 2
+        profile_keys = {p["key"] for p in data["prompt_profiles"]}
+        assert {"global_v21", "global_v21_b", "global_v22"}.issubset(profile_keys)
         keys = {p["key"] for p in data["providers"]}
         assert keys == {"gemini", "openai", "claude", "deepseek"}
         for p in data["providers"]:

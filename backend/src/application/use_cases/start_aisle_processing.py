@@ -36,6 +36,7 @@ from src.application.services.process_aisle_execution_resolution import (
 )
 from src.config import load_settings
 from src.domain.jobs.entities import JobStatus
+from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ class StartAisleProcessingCommand:
     #: Used only when ``resolve_execution_keys`` is false (e.g. unit tests with pre-resolved keys).
     pipeline_provider_key: str = "gemini"
     model_name: str | None = None
-    prompt_key: str = "global_v21"
+    prompt_key: str = DEFAULT_HYBRID_PROMPT_PROFILE
 
 
 def _materialize_execution_keys_for_start(

@@ -134,10 +134,10 @@ class LlmProviderSettings(BaseModel):
         ),
     )
     hybrid_prompt: str = Field(
-        default_factory=lambda: (os.getenv("HYBRID_PROMPT", "global_v21") or "global_v21").strip(),
+        default_factory=lambda: (os.getenv("HYBRID_PROMPT", "global_v22") or "global_v22").strip(),
         description=(
-            "Perfil de prompt para el pipeline híbrido (ej. global_v21) — **selects the prompt profile / "
-            "family** (which template body is composed). Env: HYBRID_PROMPT. Distinct from "
+            "Perfil de prompt para el pipeline híbrido (ej. global_v21, global_v21_b, global_v22) — **selects the prompt profile / "
+            "family** (which template body is composed). Env: HYBRID_PROMPT (default global_v22; use global_v21 for rollback). Distinct from "
             "`prompt_version`, which is an optional traceability label only."
         ),
     )

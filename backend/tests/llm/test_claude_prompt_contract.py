@@ -77,6 +77,13 @@ def test_global_v21_b_claude_also_gets_contract() -> None:
     assert "internal_code" in text and "position_barcode" in text
 
 
+def test_global_v22_claude_includes_same_canonical_contract_as_v21_profiles() -> None:
+    text = compose_hybrid_base("global_v22", "claude", prompt_parity_mode=False)
+    assert CLAUDE_CONTRACT_MARKER in text
+    for key in CLAUDE_JSON_ENTITY_OUTPUT_KEYS:
+        assert key in text, f"missing canonical mention: {key}"
+
+
 def test_compose_from_settings_with_normalized_pipeline_provider_claude() -> None:
     """Production ``llm_provider`` resolves to ``claude``; composition must attach the overlay."""
     settings = MagicMock()
