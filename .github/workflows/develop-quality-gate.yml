@@ -2,12 +2,19 @@
 # CI-1 / D1 — Develop Quality Gate (backend + frontend)
 # =============================================================================
 #
-# Runs on every push and PR targeting `develop`. Blocking jobs: backend-quality,
-# frontend-quality. Security scans run in job security-light with continue-on-error
-# at job level (CI-1.3.1) so install/audit noise cannot fail the workflow or block deploy.
+# **Single blocking DEV validation gate** — backend and frontend automatic deploys
+# (`deploy-dev-opencloud-backend.yml`, `deploy-dev-vercel-frontend.yml`) run only after
+# this workflow completes **successfully** on a **push** to **develop** (plus path filters
+# in each deploy workflow). Failed gate on that push causes deploy workflows to **fail
+# visibly** (no SSH / no Vercel deploy from Actions).
 #
-# Does NOT replace the lightweight `frontend-validate.yml` (path-filtered) or
-# `deploy-dev-opencloud-backend.yml` (deploy).
+# Runs on every push and PR targeting `develop`, plus `workflow_dispatch`.
+# Blocking jobs: **backend-quality**, **frontend-quality**.
+# **security-light** is intentionally non-blocking (`continue-on-error: true`) and must
+# not be turned into a deploy gate.
+#
+# `frontend-validate.yml` is optional faster feedback on frontend paths only; it does
+# **not** control deployments (see comments there).
 #
 # =============================================================================
 

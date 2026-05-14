@@ -2,15 +2,23 @@
 # DEV — Deploy backend to OpenCloud (SSH + Docker Compose)
 # =============================================================================
 #
-# Branching: feature → main → develop; DEV deploy runs from develop only.
+# CI/CD contract (DEV):
+# - **Develop quality gate** is the only blocking validation before automatic DEV deploy.
+# - This workflow runs after that gate completes (`workflow_run`). It does **not** deploy
+#   unless the gate **concluded success** and the triggering event was a **push** to **develop**.
+# - On **push to develop** with a **failed / cancelled** quality gate, this workflow **fails
+#   visibly** (`should-deploy` exits 1) so the run is red and no SSH deploy runs.
+# - **PRs** and **manual** quality-gate runs: `should-deploy` exits 0 with `deploy=false` (no deploy).
+# - **workflow_dispatch** here: manual backend deploy still runs (does not depend on the gate).
+# - Frontend DEV (Vercel): see `deploy-dev-vercel-frontend.yml` — same gate contract.
+#
+# Branching: feature → main → develop; automatic DEV deploy runs from develop only.
 # main is not production. Production will use a dedicated branch later.
 #
-# CI-1.3 / CI-1.3.1: Automatic deploy runs after "Develop quality gate" completes
-# successfully (backend + frontend blocking; security-light non-blocking at job level).
-# Filters: only workflow_run from a **push** to **develop** (not PR, not
-# workflow_dispatch on the gate). Restores legacy path filter: deploy only if
-# backend/** or this workflow file changed.
-# Manual deploy: workflow_dispatch on THIS workflow (unchanged behavior).
+# Automatic deploy: `workflow_run` after "Develop quality gate" completes.
+# Filters: only when gate succeeded + **push** to **develop** + path filter:
+#   `backend/**` or this workflow file changed.
+# Manual deploy: `workflow_dispatch` on THIS workflow (unchanged behavior).
 #
 # Secrets: DEV_HOST, DEV_USER, DEV_SSH_PRIVATE_KEY
 # Optional secret: DEV_BACKEND_URL — if set, runner curls public /health after deploy.
@@ -22,7 +30,8 @@
 # BACKEND_HOST_PORT on the server overrides.
 #
 # Server: repo at /opt/dinamic/dinamic-gemini, reset to origin/develop, then:
-#   cd backend && docker-compose down ... && docker-compose up -d --build
+#   cd backend → docker-compose down → build api image → `docker-compose run --rm api`
+#   for `db_migrate.py status` then `apply` → `docker-compose up -d` → local /health poll.
 # git fetch origin must work non-interactively (deploy key or credentials on the server).
 # Env file for the API is at repo root: /opt/dinamic/dinamic-gemini/.env (see backend/docker-compose.yml env_file).
 #
@@ -73,8 +82,15 @@ jobs:
           HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
           echo "workflow_run: conclusion=${CONCLUSION} event=${EVENT} head_branch=${HEAD_BRANCH}"
 
+          # Push to develop with a failed gate: fail the workflow (no SSH deploy).
+          if [ "${EVENT}" = "push" ] && [ "${HEAD_BRANCH}" = "develop" ] && [ "${CONCLUSION}" != "success" ]; then
+            echo "::error::DEV backend deploy is blocked because Develop quality gate did not succeed (conclusion=${CONCLUSION}). Fix the gate or use workflow_dispatch on this workflow for a manual deploy."
+            exit 1
+          fi
+
+          # Non-success for PR / manual gate / other branches: skip safely (green).
           if [ "${CONCLUSION}" != "success" ]; then
-            echo "Quality gate did not succeed; skipping deploy."
+            echo "Quality gate did not succeed; skipping deploy (not a blocking push-to-develop failure)."
             echo "deploy=false" >> "$GITHUB_OUTPUT"
             echo "head_sha=" >> "$GITHUB_OUTPUT"
             exit 0
@@ -198,7 +214,19 @@ jobs:
             cd "${REPO_ROOT}/backend"
 
             docker-compose down --remove-orphans || true
-            docker-compose up -d --build
+
+            echo "Building backend image..."
+            docker-compose build api
+
+            echo "Checking database migration status..."
+            docker-compose run --rm api python3 scripts/db_migrate.py status
+
+            echo "Applying pending database migrations, if any..."
+            docker-compose run --rm api python3 scripts/db_migrate.py apply
+
+            echo "Starting backend service..."
+            docker-compose up -d
+
             docker-compose ps
             ok=0
             for i in $(seq 1 45); do
