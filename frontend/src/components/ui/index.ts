@@ -61,7 +61,9 @@ export type {
   DataTableProps,
   DataTableSortDirection,
   DataTableSortModel,
+  DataTableSortType,
 } from './DataTable';
+export { sortDataTableRows } from './dataTableSort';
 
 export { AppSnackbarProvider } from './AppSnackbarProvider';
 export { useAppSnackbar } from './useAppSnackbar';

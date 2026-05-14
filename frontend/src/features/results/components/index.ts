@@ -5,7 +5,7 @@
 export { default as ResultsOverviewHeader } from './ResultsOverviewHeader';
 export { default as ResultsKpiCards } from './ResultsKpiCards';
 export { default as ResultsQuickFilters } from './ResultsQuickFilters';
-export { default as ResultsTable } from './ResultsTable';
+export { default as ResultsTable, buildResultsTableColumns } from './ResultsTable';
 export { default as ResultsEmptyState } from './ResultsEmptyState';
 export { default as ResultsFilteredEmptyState } from './ResultsFilteredEmptyState';
 export { default as ResultsLoadingState } from './ResultsLoadingState';

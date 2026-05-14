@@ -14,6 +14,9 @@ export interface MetricsAislesAttentionSectionProps {
   totalItems: number;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
+  sortBy: string;
+  sortDir: 'asc' | 'desc';
+  onSortChange: (sortBy: string, sortDir: 'asc' | 'desc') => void;
 }
 
 export function MetricsAislesAttentionSection({
@@ -28,6 +31,9 @@ export function MetricsAislesAttentionSection({
   totalItems,
   onPageChange,
   onPageSizeChange,
+  sortBy,
+  sortDir,
+  onSortChange,
 }: MetricsAislesAttentionSectionProps) {
   const { t } = useTranslation();
 
@@ -54,6 +60,11 @@ export function MetricsAislesAttentionSection({
           totalItems,
           onPageChange,
           onPageSizeChange,
+        }}
+        sort={{
+          sortBy,
+          sortDir,
+          onSortChange,
         }}
         emptyState={
           search.trim() && !isLoading && totalItems === 0
