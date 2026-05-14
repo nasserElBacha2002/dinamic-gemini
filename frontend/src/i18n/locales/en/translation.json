@@ -651,6 +651,7 @@
     "compare_runs": "Compare runs",
     "compare_to_operational": "Compare to operational",
     "counted_total": "Counted total",
+    "counted_items": "Counted items: {{count}}",
     "empty_results": "Empty results",
     "export_aisle_csv": "Export aisle csv",
     "filter_sku_placeholder": "Filter sku placeholder",

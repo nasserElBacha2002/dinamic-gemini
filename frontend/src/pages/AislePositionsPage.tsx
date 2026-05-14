@@ -660,6 +660,13 @@ export default function AislePositionsPage() {
             <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>
               {kpi.aisleTotalCounted}
             </Typography>
+            <Typography
+              variant="body2"
+              component="div"
+              sx={{ color: 'text.secondary', mt: 0.75, mb: 2, lineHeight: 1.4 }}
+            >
+              {t('positions.counted_items', { count: results.length })}
+            </Typography>
           </Box>
 
           <FilterToolbar
@@ -699,6 +706,7 @@ export default function AislePositionsPage() {
       {!blockPositionsForTestNoJobs && !errorMessage && !resultsLoading && results.length > 0 ? (
         <AisleResultsTableSection
           countedTotal={kpi.aisleTotalCounted}
+          countedResultRows={results.length}
           mergeFeedback={mergeFeedback}
           onResetFilters={handleResetFilters}
           resetDisabled={filter === 'all' && !skuSearch.trim() && !resultsColumnSortBy.trim()}

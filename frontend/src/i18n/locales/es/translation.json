@@ -1049,6 +1049,7 @@
     "compare_runs": "Comparar corridas",
     "compare_to_operational": "Comparar con operativo",
     "counted_total": "Total contabilizado",
+    "counted_items": "Ítems contados: {{count}}",
     "empty_results": "Sin resultados",
     "export_aisle_csv": "Exportar CSV del pasillo",
     "filter_sku_placeholder": "Filtrar por SKU...",
