@@ -11,8 +11,13 @@ import pytest
 import src.config as config_module
 from src.api import dependencies as deps
 from src.config import AppSettings, Settings, load_settings
+from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.runtime.app_container import AppContainer, get_app_container, reset_app_container_for_tests
-from src.runtime.container.repository_backend import RepositoryBackendMode
+from src.runtime.container.repository_backend import (
+    RepositoryBackendMode,
+    RepositoryBackendResolution,
+)
 from src.runtime.v3_deps import get_aisle_repo, get_artifact_store, get_inventory_repo, get_job_repo
 
 
@@ -124,3 +129,200 @@ def test_single_sql_client_construct_when_sql_enabled_two_repos(
     c.get_inventory_repo()
     c.get_job_repo()
     assert constructs["n"] == 1
+
+
+def test_memory_fallback_cached_single_sql_probe_two_memory_repos(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Probe fails once → MEMORY_FALLBACK; later repos stay memory without constructing SqlServerClient again."""
+    monkeypatch.setenv("SQLSERVER_ENABLED", "true")
+    monkeypatch.setenv("V3_ALLOW_IN_MEMORY_FALLBACK", "true")
+    monkeypatch.setenv(
+        "SQLSERVER_CONNECTION_STRING",
+        "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
+        "TrustServerCertificate=yes",
+    )
+    config_module._settings = None
+    reset_app_container_for_tests()
+
+    constructs = {"n": 0}
+
+    class _FailingCursor:
+        def __enter__(self) -> None:
+            raise ConnectionError("simulated probe failure")
+
+        def __exit__(self, *_a: object) -> bool:
+            return False
+
+    class _ProbeFailClient:
+        def __init__(self, *_a: object, **_k: object) -> None:
+            constructs["n"] += 1
+
+        def cursor(self) -> _FailingCursor:
+            return _FailingCursor()
+
+    monkeypatch.setattr("src.runtime.app_container.SqlServerClient", _ProbeFailClient)
+    c = AppContainer(load_settings())
+    assert c._get_repository_backend_resolution().mode == RepositoryBackendMode.MEMORY_FALLBACK
+    inv = c.get_inventory_repo()
+    job = c.get_job_repo()
+    assert isinstance(inv, MemoryInventoryRepository)
+    assert isinstance(job, MemoryJobRepository)
+    assert constructs["n"] == 1
+
+
+def test_sql_mode_build_sql_failure_does_not_fallback_to_memory() -> None:
+    c = AppContainer(load_settings())
+    c._repository_backend_resolution = RepositoryBackendResolution(
+        mode=RepositoryBackendMode.SQL,
+        sql_enabled=True,
+        fallback_allowed=True,
+    )
+    c._v3_sql_client = object()  # type: ignore[assignment]
+
+    memory_called = False
+
+    def build_sql(_client: object) -> str:
+        raise RuntimeError("sql repo constructor failed")
+
+    def build_memory() -> str:
+        nonlocal memory_called
+        memory_called = True
+        return "mem"
+
+    with pytest.raises(RuntimeError, match="sql repo constructor failed"):
+        c._build_sql_repository_or_memory(
+            backend_info_name="TestRepo",
+            sql_error_subject="test_repo",
+            build_sql=build_sql,
+            build_memory=build_memory,
+        )
+    assert memory_called is False
+
+
+def test_build_sql_repository_memory_only_uses_memory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SQLSERVER_ENABLED", "false")
+    config_module._settings = None
+    reset_app_container_for_tests()
+    c = AppContainer(load_settings())
+    sql_ran: list[int] = []
+
+    def build_sql(_client: object) -> str:
+        sql_ran.append(1)
+        raise AssertionError("build_sql must not run")
+
+    def build_memory() -> str:
+        return "mem"
+
+    assert (
+        c._build_sql_repository_or_memory(
+            backend_info_name="x",
+            sql_error_subject="x",
+            build_sql=build_sql,
+            build_memory=build_memory,
+        )
+        == "mem"
+    )
+    assert sql_ran == []
+
+
+def test_build_sql_repository_memory_fallback_uses_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SQLSERVER_ENABLED", "false")
+    config_module._settings = None
+    reset_app_container_for_tests()
+    c = AppContainer(load_settings())
+    c._repository_backend_resolution = RepositoryBackendResolution(
+        mode=RepositoryBackendMode.MEMORY_FALLBACK,
+        sql_enabled=True,
+        fallback_allowed=True,
+        reason="prior probe",
+    )
+    sql_ran: list[int] = []
+
+    def build_sql(_client: object) -> str:
+        sql_ran.append(1)
+        raise AssertionError("build_sql must not run")
+
+    def build_memory() -> str:
+        return "mf"
+
+    assert (
+        c._build_sql_repository_or_memory(
+            backend_info_name="x",
+            sql_error_subject="x",
+            build_sql=build_sql,
+            build_memory=build_memory,
+        )
+        == "mf"
+    )
+    assert sql_ran == []
+
+
+def test_build_sql_repository_sql_mode_calls_build_sql(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SQLSERVER_ENABLED", "false")
+    config_module._settings = None
+    reset_app_container_for_tests()
+    c = AppContainer(load_settings())
+    c._repository_backend_resolution = RepositoryBackendResolution(
+        mode=RepositoryBackendMode.SQL,
+        sql_enabled=True,
+        fallback_allowed=False,
+    )
+    sentinel = object()
+    c._v3_sql_client = sentinel  # type: ignore[assignment]
+    mem_ran: list[int] = []
+
+    def build_sql(client: object) -> object:
+        assert client is sentinel
+        return "sql_repo"
+
+    def build_memory() -> str:
+        mem_ran.append(1)
+        raise AssertionError("memory must not run")
+
+    assert (
+        c._build_sql_repository_or_memory(
+            backend_info_name="x",
+            sql_error_subject="x",
+            build_sql=build_sql,
+            build_memory=build_memory,
+        )
+        == "sql_repo"
+    )
+    assert mem_ran == []
+
+
+def test_repository_backend_resolution_raises_when_probe_fails_and_fallback_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SQLSERVER_ENABLED", "true")
+    monkeypatch.setenv("V3_ALLOW_IN_MEMORY_FALLBACK", "false")
+    monkeypatch.setenv(
+        "SQLSERVER_CONNECTION_STRING",
+        "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
+        "TrustServerCertificate=yes",
+    )
+    config_module._settings = None
+    reset_app_container_for_tests()
+
+    class _FailingCursor:
+        def __enter__(self) -> None:
+            raise OSError("simulated probe failure")
+
+        def __exit__(self, *_a: object) -> bool:
+            return False
+
+    class _ProbeFailClient:
+        def __init__(self, *_a: object, **_k: object) -> None:
+            pass
+
+        def cursor(self) -> _FailingCursor:
+            return _FailingCursor()
+
+    monkeypatch.setattr("src.runtime.app_container.SqlServerClient", _ProbeFailClient)
+    c = AppContainer(load_settings())
+    with pytest.raises(OSError, match="simulated probe failure"):
+        c._get_repository_backend_resolution()
+    assert c._repository_backend_resolution is None

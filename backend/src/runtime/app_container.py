@@ -117,7 +117,11 @@ class AppContainer:
         return raw in ("true", "1", "yes")
 
     def _probe_sql_for_repository_backend(self) -> None:
-        """Validate SQL connectivity and cache :class:`SqlServerClient` (same semantics as legacy probe)."""
+        """Validate SQL connectivity and cache SqlServerClient.
+
+        Returns ``None``. Caches ``self._v3_sql_client`` only after a successful ``SELECT 1``.
+        Callers obtain the client via :meth:`_get_v3_sql_client`.
+        """
         if self._v3_sql_client is not None:
             return
         client = SqlServerClient(self._settings.require_sqlserver_connection_string())
@@ -145,29 +149,22 @@ class AppContainer:
         )
         self._repository_backend_resolution = res
         sqlserver_enabled_flag = bool(getattr(self._settings, "sqlserver_enabled", False))
-        if res.mode == RepositoryBackendMode.SQL:
-            logger.info(
-                "v3 repository_backend resolved: mode=%s sqlserver_enabled=%s fallback_allowed=%s",
-                res.mode.value,
-                sqlserver_enabled_flag,
-                res.fallback_allowed,
-            )
-        elif res.mode == RepositoryBackendMode.MEMORY_ONLY:
-            logger.info(
-                "v3 repository_backend resolved: mode=%s sqlserver_enabled=%s fallback_allowed=%s reason=%s",
-                res.mode.value,
-                sqlserver_enabled_flag,
-                res.fallback_allowed,
-                res.reason or "",
-            )
+        sql_target_enabled = res.sql_enabled
+        log_msg = (
+            "v3 repository_backend resolved: mode=%s sqlserver_enabled_flag=%s "
+            "sql_target_enabled=%s fallback_allowed=%s reason=%s"
+        )
+        log_args = (
+            res.mode.value,
+            sqlserver_enabled_flag,
+            sql_target_enabled,
+            res.fallback_allowed,
+            res.reason or "",
+        )
+        if res.mode == RepositoryBackendMode.MEMORY_FALLBACK:
+            logger.warning(log_msg, *log_args)
         else:
-            logger.warning(
-                "v3 repository_backend resolved: mode=%s sqlserver_enabled=%s fallback_allowed=%s reason=%s",
-                res.mode.value,
-                sqlserver_enabled_flag,
-                res.fallback_allowed,
-                res.reason or "",
-            )
+            logger.info(log_msg, *log_args)
         return res
 
     def _build_sql_repository_or_memory(
@@ -178,31 +175,25 @@ class AppContainer:
         build_sql: Callable[[SqlServerClient], _RepoT],
         build_memory: Callable[[], _RepoT],
     ) -> _RepoT:
-        """Shared v3 pattern: SQL when enabled and connectable, else memory (with env-controlled fallback)."""
+        """Build a repository using the container's single resolved backend mode (Phase C2).
+
+        Fallback to memory occurs only when the cached resolution is ``MEMORY_ONLY`` or
+        ``MEMORY_FALLBACK`` (resolved once at container level). In ``SQL`` mode, ``build_sql`` failures
+        propagate — no per-repository memory fallback.
+        """
+        _ = sql_error_subject  # retained for call-site parity / future diagnostics
         resolution = self._get_repository_backend_resolution()
-        if resolution.mode == RepositoryBackendMode.MEMORY_ONLY:
+        if resolution.mode in (
+            RepositoryBackendMode.MEMORY_ONLY,
+            RepositoryBackendMode.MEMORY_FALLBACK,
+        ):
             return build_memory()
-        if resolution.mode == RepositoryBackendMode.MEMORY_FALLBACK:
-            return build_memory()
-        try:
+        if resolution.mode == RepositoryBackendMode.SQL:
             client = self._get_v3_sql_client()
             repo = build_sql(client)
             logger.info("v3 %s: using SQL backend", backend_info_name)
             return repo
-        except Exception as e:
-            if not self._v3_allow_in_memory_fallback():
-                logger.error(
-                    "v3 SQL %s init failed and V3_ALLOW_IN_MEMORY_FALLBACK is false: %s",
-                    sql_error_subject,
-                    e,
-                )
-                raise
-            logger.warning(
-                "v3 SQL %s init failed, falling back to in-memory: %s",
-                sql_error_subject,
-                e,
-            )
-            return build_memory()
+        raise RuntimeError(f"Unsupported repository backend mode: {resolution.mode!r}")
 
     def get_inventory_repo(self) -> InventoryRepository:
         if self._inventory_repo is not None:

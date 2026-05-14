@@ -610,10 +610,14 @@ Use-case getters without return type annotations (typing gap):
 
 - `backend/src/runtime/container/repository_backend.py`: `RepositoryBackendMode`, `RepositoryBackendResolution`, `resolve_repository_backend_mode` (pure resolver; no repository imports).
 - `backend/src/runtime/container/__init__.py`: re-exports resolver symbols.
-- `AppContainer`: cached `_repository_backend_resolution`, `_probe_sql_for_repository_backend`, `_get_repository_backend_resolution` with one-shot INFO/WARNING logging (`mode`, `sqlserver_enabled`, `fallback_allowed`, `reason` when set).
-- `_build_sql_repository_or_memory` now consults the cached resolution first (`MEMORY_ONLY` / `MEMORY_FALLBACK` → memory without re-probing; `SQL` → existing try/except around `build_sql` preserved for per-repo constructor failures).
+- `AppContainer`: cached `_repository_backend_resolution`, `_probe_sql_for_repository_backend` (returns ``None``; caches client only after successful ``SELECT 1``), `_get_repository_backend_resolution` with one-shot logging (`mode`, `sqlserver_enabled_flag`, `sql_target_enabled`, `fallback_allowed`, `reason`).
+- `_build_sql_repository_or_memory` (C1): consulted the cached resolution first (`MEMORY_ONLY` / `MEMORY_FALLBACK` → memory without re-probing; `SQL` → SQL path). **C2 removed per-repository SQL→memory fallback** (see Phase C2 note).
 
-**Intentionally unchanged**
+**Runtime behavior (C1, superseded in part by C2)**
+
+Runtime behavior was changed conservatively: initial SQL probe failures resolve the whole container to `MEMORY_FALLBACK` (when fallback is allowed), while per-repository SQL constructor fallback remained in place during C1 only. **Phase C2** removes per-repository fallback once mode is `SQL`.
+
+**Intentionally unchanged (product contract)**
 
 - Public `get_app_container`, `reset_app_container_for_tests`, all public `get_*` method names and signatures.
 - Default `V3_ALLOW_IN_MEMORY_FALLBACK` behavior.
@@ -633,4 +637,49 @@ Use-case getters without return type annotations (typing gap):
 
 **Next step (future phase)**
 
-- Drive all repository construction strictly from the cached `RepositoryBackendMode` (and optionally invalidate or fail-fast on mixed per-repo `build_sql` failures) so mixed SQL/memory backends cannot occur after a successful SQL probe.
+- Further modularization (extract builders), optional production default for `V3_ALLOW_IN_MEMORY_FALLBACK`, lifecycle/`close()` hardening.
+
+---
+
+## Phase C2 implementation note
+
+**What changed**
+
+- **`_build_sql_repository_or_memory`**: After cached resolution is `SQL`, repositories are built only via `build_sql(client)` with **no** `try`/`except` memory fallback. Constructor or wiring errors **fail fast** and propagate.
+- **`MEMORY_ONLY`** and **`MEMORY_FALLBACK`**: Still route exclusively to `build_memory()`.
+- **Defensive branch**: Unsupported `RepositoryBackendMode` raises `RuntimeError` (should be unreachable while the enum is exhaustive).
+
+**C1 cleanups applied in the same pass**
+
+- **`_probe_sql_for_repository_backend`**: Docstring clarified; method returns ``None`` and only assigns `self._v3_sql_client` after a successful probe (never returns the client instance).
+- **Resolution logging**: Single structured line for all outcomes; includes `sqlserver_enabled_flag`, **`sql_target_enabled`** (resolver’s `res.sql_enabled`), `fallback_allowed`, and `reason`; `MEMORY_FALLBACK` uses `logger.warning`, others `logger.info`.
+
+**Why mixed SQL/memory is prevented after SQL resolution**
+
+- C2 changes fallback semantics from **per-repository** fallback to **container-level** fallback only: `MEMORY_FALLBACK` is chosen only when the **initial** `probe_sql()` fails (with fallback allowed). Once mode is **`SQL`**, every repository must use SQL; a failing `build_sql` no longer silently switches that repository to memory, so analytics (or any repo) cannot diverge from peers that already use SQL.
+
+**Tests added/updated** (`backend/tests/runtime/test_app_container.py`)
+
+- `test_memory_fallback_cached_single_sql_probe_two_memory_repos`: probe fails once → `MEMORY_FALLBACK`; two getters → memory repos; **one** `SqlServerClient` construction.
+- `test_sql_mode_build_sql_failure_does_not_fallback_to_memory`: forced `SQL` resolution + `build_sql` raises → **`build_memory` not called**.
+- `test_build_sql_repository_memory_only_uses_memory` / `test_build_sql_repository_memory_fallback_uses_memory` / `test_build_sql_repository_sql_mode_calls_build_sql`: direct `_build_sql_repository_or_memory` dispatch.
+- `test_repository_backend_resolution_raises_when_probe_fails_and_fallback_disabled`: probe failure + `V3_ALLOW_IN_MEMORY_FALLBACK=false` → exception; resolution **not** cached.
+
+**Validation commands run**
+
+```bash
+.venv/bin/python -m pytest tests/runtime/test_repository_backend.py tests/runtime/test_app_container.py -q
+.venv/bin/ruff check src/runtime/container/ src/runtime/app_container.py tests/runtime/test_repository_backend.py tests/runtime/test_app_container.py
+.venv/bin/mypy src/runtime/container/repository_backend.py src/runtime/app_container.py
+```
+
+**Remaining risks / future phases**
+
+- Extract repository builders from `AppContainer` to reduce file size; optional `AppContainer.close()` if connection pooling is introduced later.
+- Tightening default `V3_ALLOW_IN_MEMORY_FALLBACK` for production remains a separate rollout with ops notice.
+
+**Explicit semantics (C2)**
+
+C2 changes fallback semantics from per-repository fallback to container-level fallback. If SQL mode is resolved, SQL repository constructor failures now fail fast.
+
+**Status:** `APP_CONTAINER_C2_BACKEND_MODE_ENFORCED`
