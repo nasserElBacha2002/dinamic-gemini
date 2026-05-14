@@ -86,8 +86,20 @@
     "empty_table_message": "Empty table message",
     "empty_table_title": "Empty table title",
     "export_csv": "Export csv",
-    "list_subtitle": "List subtitle",
+    "list_subtitle": "Status, assets, visual references, and actions per aisle.",
     "list_title": "List title",
+    "column_reference_images": "Reference images",
+    "reference_images_empty": "None",
+    "reference_images_loading": "Loading images",
+    "reference_images_more": "+{{count}}",
+    "reference_images_no_supplier": "No linked supplier",
+    "column_action_upload": "Upload assets",
+    "column_action_observability": "Observability",
+    "column_action_process": "Process",
+    "action_observability_view": "View",
+    "upload_assets_row_a11y": "Upload assets for aisle {{code}}",
+    "observability_row_a11y": "Open observability for aisle {{code}}",
+    "process_row_a11y": "Process aisle {{code}}",
     "merge_repeated_labels": "Merge repeated labels",
     "operational_updated_snackbar": "Operational updated snackbar",
     "process_aisle": "Process aisle",
@@ -118,6 +130,7 @@
     "upload_assets": "Upload assets",
     "upload_error_label": "Upload error label",
     "view_logs": "View logs",
+    "view_observability": "View observability",
     "status": {
       "created": "Created",
       "in_review": "In review"
@@ -678,7 +691,18 @@
       "NOT_COUNTABLE": "Not countable"
     },
     "search_label": "Search label",
-    "title_results": "Title results"
+    "title_results": "Title results",
+    "visual_references": {
+      "action_label": "Visual references",
+      "close": "Close",
+      "drawer_title": "Visual references",
+      "drawer_subtitle_supplier": "Reference images configured for this aisle's supplier",
+      "empty_title": "No visual references",
+      "empty_message": "No visual references are available for this aisle.",
+      "loading": "Loading visual references…",
+      "tooltip_no_client": "This inventory has no client workspace; supplier reference images are unavailable.",
+      "tooltip_no_supplier": "Link this aisle to a supplier to view reference images."
+    }
   },
   "reference_drawer": {
     "close": "Close",

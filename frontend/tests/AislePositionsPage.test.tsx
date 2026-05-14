@@ -38,7 +38,19 @@ const { resultSummariesState } = vi.hoisted(() => ({
 }));
 const { aislesListState } = vi.hoisted(() => ({
   aislesListState: {
-    data: { items: [{ id: 'aisle-1', code: 'A-01', status: 'created' }] },
+    data: {
+      items: [
+        {
+          id: 'aisle-1',
+          code: 'A-01',
+          status: 'created',
+          client_supplier_id: 'sup-1',
+          inventory_id: 'inv-1',
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+    },
     isLoading: false,
     isError: false,
     error: null as unknown,
@@ -65,6 +77,9 @@ const { aisleJobsListState } = vi.hoisted(() => ({
     refetch: vi.fn(),
   },
 }));
+const { useSupplierReferenceImagesMock } = vi.hoisted(() => ({
+  useSupplierReferenceImagesMock: vi.fn(),
+}));
 const { inventoryDetailState } = vi.hoisted(() => ({
   inventoryDetailState: {
     data: {
@@ -73,6 +88,7 @@ const { inventoryDetailState } = vi.hoisted(() => ({
       status: 'draft',
       created_at: null as string | null,
       processing_mode: 'production' as 'production' | 'test',
+      client_id: 'client-1',
     },
     isLoading: false,
     isError: false,
@@ -183,6 +199,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useAislesList: () => aislesListState,
     useAisleMergeResults: () => mergeResultsState,
     useAisleJobsList: () => aisleJobsListState,
+    useSupplierReferenceImages: useSupplierReferenceImagesMock,
     useRunAisleMerge: useRunAisleMergeMock,
     usePromoteAisleOperationalJob: () => ({
       mutateAsync: promoteMutateAsync,
@@ -190,6 +207,12 @@ vi.mock('../src/hooks', async (importOriginal) => {
     }),
   };
 });
+
+vi.mock('../src/features/clients/hooks/useSupplierReferencePreview', () => ({
+  useSupplierReferencePreview: () => ({
+    loadPreview: vi.fn().mockResolvedValue({ imageSrc: 'https://example.com/ref.png', revoke: () => {} }),
+  }),
+}));
 
 function renderPage() {
   return renderPageAt('/inventories/inv-1/aisles/aisle-1/positions');
@@ -230,6 +253,16 @@ describe('AislePositionsPage (Aisle Results)', () => {
     aisleJobsListState.isLoading = false;
     aisleJobsListState.isFetched = true;
     aisleJobsListState.isFetching = false;
+    useSupplierReferenceImagesMock.mockReset();
+    useSupplierReferenceImagesMock.mockReturnValue({
+      data: { items: [] },
+      isLoading: false,
+      isPending: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as never);
     useRunAisleMergeMock.mockReset();
     getAisleMergeResultsMock.mockReset();
     getAisleMergeResultsMock.mockResolvedValue({ results: [] });
@@ -572,6 +605,36 @@ describe('AislePositionsPage (Aisle Results)', () => {
     };
     renderPage();
     expect(screen.queryByRole('button', { name: /comparar corridas|compare runs/i })).toBeNull();
+  });
+
+  it('opens visual references drawer in read-only mode (preview only, no upload/delete)', async () => {
+    useSupplierReferenceImagesMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'ref-1',
+            client_supplier_id: 'sup-1',
+            filename: 'cat.png',
+            mime_type: 'image/png',
+            file_size: 100,
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isPending: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as never);
+
+    renderPage();
+    fireEvent.click(screen.getByTestId('aisle-visual-references-open'));
+    expect(await screen.findByRole('button', { name: /preview|vista previa/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^delete$|^eliminar$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /upload|subir/i })).toBeNull();
   });
 
   describe('Phase 6 benchmark flows', () => {

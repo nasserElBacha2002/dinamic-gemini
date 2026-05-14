@@ -68,13 +68,17 @@ export interface ManagedImageAssetsDrawerProps {
   onReplace?: (assetId: string, file: File) => Promise<unknown>;
   isReplacing?: boolean;
   replaceError?: string | null;
-  onDelete: (assetId: string) => Promise<unknown>;
+  onDelete?: (assetId: string) => Promise<unknown>;
   isDeleting?: boolean;
   deleteError?: string | null;
   previewErrorMessageKey?: string;
   /** When this returns a non-empty string, preview is skipped and the message is shown (e.g. video in image-only viewer). */
   previewBlockedMessage?: (item: ManagedImageAssetItem) => string | null;
-  formatDeleteConfirm: (fileName: string) => string;
+  formatDeleteConfirm?: (fileName: string) => string;
+  /** When true: no upload/replace/delete UI, no management panel, preview only. */
+  readOnly?: boolean;
+  /** Passed to {@link LoadingBlock} while `isLoading` is true. */
+  loadingMessage?: string;
 }
 
 export default function ManagedImageAssetsDrawer({
@@ -105,6 +109,8 @@ export default function ManagedImageAssetsDrawer({
   previewErrorMessageKey = 'errors.preview_reference_failed',
   previewBlockedMessage,
   formatDeleteConfirm,
+  readOnly = false,
+  loadingMessage,
 }: ManagedImageAssetsDrawerProps) {
   const { t } = useTranslation();
   const effectiveOpen = embedded || open;
@@ -193,7 +199,7 @@ export default function ManagedImageAssetsDrawer({
   };
 
   const handleDeleteConfirm = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !onDelete) return;
     try {
       await onDelete(deleteTarget.id);
       setDeleteTarget(null);
@@ -241,6 +247,8 @@ export default function ManagedImageAssetsDrawer({
   };
 
   const busy = isUploading || isDeleting || isReplacing;
+  const effectiveShowUpload = !readOnly && showUpload;
+  const effectiveShowReplace = !readOnly && showReplace;
 
   const headerSection = embedded ? (
     <Box
@@ -293,7 +301,7 @@ export default function ManagedImageAssetsDrawer({
 
   const scrollSection = (
     <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, px: 2.5, py: 2 }}>
-          {showUpload ? (
+          {effectiveShowUpload ? (
             <input
               ref={fileInputRef}
               type="file"
@@ -303,7 +311,7 @@ export default function ManagedImageAssetsDrawer({
               onChange={handleFileChange}
             />
           ) : null}
-          {showReplace ? (
+          {effectiveShowReplace ? (
             <input
               ref={replaceInputRef}
               type="file"
@@ -312,38 +320,40 @@ export default function ManagedImageAssetsDrawer({
               onChange={handleReplaceFileChange}
             />
           ) : null}
-          {isLoading ? <LoadingBlock /> : null}
+          {isLoading ? <LoadingBlock message={loadingMessage} /> : null}
 
           {!isLoading && errorMessage ? <ErrorAlert message={errorMessage} onRetry={onRetry} /> : null}
 
           {!isLoading && !errorMessage ? (
             <Box sx={{ display: 'grid', gap: 2 }}>
-              <Box
-                sx={{
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderRadius: 2,
-                  p: 2,
-                  display: 'grid',
-                  gap: 1,
-                }}
-              >
-                <Typography variant="subtitle2">{copy.managementTitle}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {copy.managementBody}
-                </Typography>
-                {uploadExtras ?? null}
-                {showUpload && onUpload ? (
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    <Button variant="contained" size="small" onClick={handleUploadClick} disabled={busy}>
-                      {isUploading ? t('common.uploading') : copy.uploadButton}
-                    </Button>
-                  </Box>
-                ) : null}
-                {uploadError ? <ErrorAlert message={uploadError} /> : null}
-                {replaceError ? <ErrorAlert message={replaceError} /> : null}
-                {deleteError ? <ErrorAlert message={deleteError} /> : null}
-              </Box>
+              {!readOnly ? (
+                <Box
+                  sx={{
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 2,
+                    p: 2,
+                    display: 'grid',
+                    gap: 1,
+                  }}
+                >
+                  <Typography variant="subtitle2">{copy.managementTitle}</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {copy.managementBody}
+                  </Typography>
+                  {uploadExtras ?? null}
+                  {effectiveShowUpload && onUpload ? (
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      <Button variant="contained" size="small" onClick={handleUploadClick} disabled={busy}>
+                        {isUploading ? t('common.uploading') : copy.uploadButton}
+                      </Button>
+                    </Box>
+                  ) : null}
+                  {uploadError ? <ErrorAlert message={uploadError} /> : null}
+                  {replaceError ? <ErrorAlert message={replaceError} /> : null}
+                  {deleteError ? <ErrorAlert message={deleteError} /> : null}
+                </Box>
+              ) : null}
 
               {items.length === 0 ? (
                 <EmptyState title={copy.emptyTitle} message={copy.emptyMessage} />
@@ -360,7 +370,7 @@ export default function ManagedImageAssetsDrawer({
                             <Button variant="outlined" size="small" onClick={() => void handlePreview(item)}>
                               {copy.preview}
                             </Button>
-                            {showReplace && onReplace ? (
+                            {effectiveShowReplace && onReplace ? (
                               <Button
                                 variant="outlined"
                                 size="small"
@@ -372,15 +382,17 @@ export default function ManagedImageAssetsDrawer({
                                   : (copy.replace ?? '')}
                               </Button>
                             ) : null}
-                            <Button
-                              variant="outlined"
-                              color="error"
-                              size="small"
-                              onClick={() => setDeleteTarget(item)}
-                              disabled={busy}
-                            >
-                              {copy.delete}
-                            </Button>
+                            {!readOnly && onDelete ? (
+                              <Button
+                                variant="outlined"
+                                color="error"
+                                size="small"
+                                onClick={() => setDeleteTarget(item)}
+                                disabled={busy}
+                              >
+                                {copy.delete}
+                              </Button>
+                            ) : null}
                           </>
                         }
                       />
@@ -445,7 +457,7 @@ export default function ManagedImageAssetsDrawer({
         error={previewError}
       />
 
-      {effectiveOpen ? (
+      {effectiveOpen && !readOnly && onDelete && formatDeleteConfirm ? (
         <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
           <DialogTitle>{copy.deleteTitle}</DialogTitle>
           <DialogContent>
