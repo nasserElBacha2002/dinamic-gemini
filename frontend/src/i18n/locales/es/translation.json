@@ -1063,6 +1063,7 @@
     "merge_visible_detail_space": " {{detail}}",
     "merge_visible_updated": "Resultados visibles actualizados tras la fusión",
     "missing_inventory_aisle_page": "Falta la página de pasillo del inventario",
+    "more_actions": "Más acciones",
     "missing_params": "Faltan parámetros",
     "no_data_for_run": "No hay datos para esta corrida",
     "no_runs_for_aisle": "No hay corridas para este pasillo",

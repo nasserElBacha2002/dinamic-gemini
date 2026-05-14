@@ -236,6 +236,10 @@ function renderPageAt(path: string) {
   );
 }
 
+function openAisleResultsMoreActionsMenu() {
+  fireEvent.click(screen.getByTestId('aisle-results-more-actions'));
+}
+
 describe('AislePositionsPage (Aisle Results)', () => {
   beforeEach(() => {
     resultSummariesState.results = mockResults;
@@ -291,6 +295,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
     expect(screen.getAllByText('Test Inventory')).toHaveLength(2);
     expect(screen.getByText(/total contabilizado|counted total/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /fusionar sku repetidos|merge repeated labels/i })).toBeTruthy();
+    expect(screen.getByTestId('aisle-results-more-actions')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /actualizar|refresh/i })).toBeInTheDocument();
   });
 
   it('shows operational columns including Priority and Review status', () => {
@@ -605,6 +611,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
     };
     renderPage();
     expect(screen.queryByRole('button', { name: /comparar corridas|compare runs/i })).toBeNull();
+    openAisleResultsMoreActionsMenu();
+    expect(screen.queryByRole('menuitem', { name: /comparar corridas|compare runs/i })).toBeNull();
   });
 
   it('opens visual references drawer in read-only mode (preview only, no upload/delete)', async () => {
@@ -717,6 +725,34 @@ describe('AislePositionsPage (Aisle Results)', () => {
       expect(mergeBtn.getAttribute('disabled')).not.toBeNull();
     });
 
+    it('lists compare runs, promote, and export aisle CSV in more actions menu', () => {
+      resultSummariesState.results = mockResults;
+      resultSummariesState.positions = mockPositions;
+      resultSummariesState.resultJobId = 'job-bench';
+      aisleJobsListState.data = {
+        operational_job_id: 'job-op',
+        jobs: [
+          {
+            id: 'job-op',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+          {
+            id: 'job-bench',
+            status: 'succeeded',
+            created_at: '2024-01-02T00:00:00Z',
+            updated_at: '2024-01-02T00:00:00Z',
+          },
+        ],
+      };
+      renderPage();
+      openAisleResultsMoreActionsMenu();
+      expect(screen.getByRole('menuitem', { name: /comparar corridas|compare runs/i })).toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: /promote run|promover corrida/i })).toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: /export.*csv|exportar csv del pasillo/i })).toBeInTheDocument();
+    });
+
     it('does not show compare runs when fewer than two jobs exist', () => {
       aisleJobsListState.data = {
         operational_job_id: 'job-op',
@@ -731,6 +767,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
       };
       renderPage();
       expect(screen.queryByRole('button', { name: /comparar corridas|compare runs/i })).toBeNull();
+      openAisleResultsMoreActionsMenu();
+      expect(screen.queryByRole('menuitem', { name: /comparar corridas|compare runs/i })).toBeNull();
     });
 
     it('navigates to analytics compare with preselected runs when compare runs is clicked', async () => {
@@ -774,7 +812,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
         </QueryClientProvider>
       );
 
-      fireEvent.click(screen.getByRole('button', { name: /comparar corridas|compare runs/i }));
+      openAisleResultsMoreActionsMenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: /comparar corridas|compare runs/i }));
 
       await waitFor(() => {
         expect(router.state.location.pathname).toBe('/inventories/inv-1/analytics/compare-many');
@@ -807,7 +846,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
         ],
       };
       renderPage();
-      fireEvent.click(screen.getByRole('button', { name: /promote run|promover corrida/i }));
+      openAisleResultsMoreActionsMenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: /promote run|promover corrida/i }));
       fireEvent.click(screen.getByRole('button', { name: /confirm promote|confirmar promoción/i }));
 
       await waitFor(() => {

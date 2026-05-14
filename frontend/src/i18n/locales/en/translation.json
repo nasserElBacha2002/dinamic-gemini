@@ -665,6 +665,7 @@
     "merge_visible_detail_space": " {{detail}}",
     "merge_visible_updated": "Visible results updated after merge",
     "missing_inventory_aisle_page": "Missing inventory aisle page",
+    "more_actions": "More actions",
     "missing_params": "Missing params",
     "no_data_for_run": "No data for run",
     "no_runs_for_aisle": "No runs for aisle",
