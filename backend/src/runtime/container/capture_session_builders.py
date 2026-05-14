@@ -19,7 +19,9 @@ def build_capture_session_repository(
     build_repo: BuildSqlOrMemory[CaptureSessionRepository],
 ) -> CaptureSessionRepository:
     def _sql(client: SqlServerClient) -> CaptureSessionRepository:
-        from src.infrastructure.repositories.sql_capture_session_repository import SqlCaptureSessionRepository
+        from src.infrastructure.repositories.sql_capture_session_repository import (
+            SqlCaptureSessionRepository,
+        )
 
         return SqlCaptureSessionRepository(client)
 

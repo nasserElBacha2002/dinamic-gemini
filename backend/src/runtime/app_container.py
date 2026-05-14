@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable
-from pathlib import Path
 from typing import TypeVar
 
 from src.application.ports.analytics_repository import AnalyticsRepository
@@ -41,6 +40,13 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
+from src.application.use_cases.manage_supplier_prompt_configs import (
+    ActivateSupplierPromptConfigVersionUseCase,
+    CreateSupplierPromptConfigVersionUseCase,
+    GetActiveSupplierPromptConfigUseCase,
+    GetSupplierPromptConfigUseCase,
+    ListSupplierPromptConfigsUseCase,
+)
 from src.application.use_cases.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
 )
@@ -57,6 +63,13 @@ from src.runtime.container.label_builders import (
     build_final_count_repository,
     build_normalized_label_repository,
     build_raw_label_repository,
+)
+from src.runtime.container.prompt_config_builders import (
+    build_activate_supplier_prompt_config_version_use_case,
+    build_create_supplier_prompt_config_version_use_case,
+    build_get_active_supplier_prompt_config_use_case,
+    build_get_supplier_prompt_config_use_case,
+    build_list_supplier_prompt_configs_use_case,
 )
 from src.runtime.container.repository_backend import (
     RepositoryBackendMode,
@@ -76,6 +89,18 @@ from src.runtime.container.repository_builders import (
     build_source_asset_repository,
     build_supplier_prompt_config_repository,
     build_supplier_reference_image_repository,
+)
+from src.runtime.container.service_builders import (
+    build_clock,
+    build_metrics_calculator,
+    build_worker_launch_service,
+)
+from src.runtime.container.storage_builders import (
+    build_artifact_storage,
+    build_stored_artifact_reader,
+)
+from src.runtime.container.use_case_builders import (
+    build_recompute_consolidated_counts_use_case,
 )
 
 logger = logging.getLogger(__name__)
@@ -236,7 +261,9 @@ class AppContainer:
     def get_client_supplier_repo(self) -> ClientSupplierRepository:
         if self._client_supplier_repo is not None:
             return self._client_supplier_repo
-        self._client_supplier_repo = build_client_supplier_repository(self._build_sql_repository_or_memory)
+        self._client_supplier_repo = build_client_supplier_repository(
+            self._build_sql_repository_or_memory
+        )
         return self._client_supplier_repo
 
     def get_aisle_repo(self) -> AisleRepository:
@@ -282,7 +309,9 @@ class AppContainer:
     def get_product_record_repo(self) -> ProductRecordRepository:
         if self._product_record_repo is not None:
             return self._product_record_repo
-        self._product_record_repo = build_product_record_repository(self._build_sql_repository_or_memory)
+        self._product_record_repo = build_product_record_repository(
+            self._build_sql_repository_or_memory
+        )
         return self._product_record_repo
 
     def get_evidence_repo(self) -> EvidenceRepository:
@@ -294,88 +323,44 @@ class AppContainer:
     def get_review_action_repo(self) -> ReviewActionRepository:
         if self._review_action_repo is not None:
             return self._review_action_repo
-        self._review_action_repo = build_review_action_repository(self._build_sql_repository_or_memory)
+        self._review_action_repo = build_review_action_repository(
+            self._build_sql_repository_or_memory
+        )
         return self._review_action_repo
 
     def get_metrics_calculator(self) -> MetricsCalculator:
         if self._metrics_calculator is not None:
             return self._metrics_calculator
-        from src.infrastructure.services.inventory_metrics_service import InventoryMetricsService
-
-        self._metrics_calculator = InventoryMetricsService(
+        self._metrics_calculator = build_metrics_calculator(
             aisle_repo=self.get_aisle_repo(),
             position_repo=self.get_position_repo(),
         )
         return self._metrics_calculator
 
     def get_clock(self) -> Clock:
-        from src.infrastructure.adapters.clock import UtcClock
-
-        return UtcClock()
+        return build_clock()
 
     def get_artifact_storage(self) -> ArtifactStorage:
         """Configured artifact storage (local or S3) — canonical accessor for API + worker."""
         if self._artifact_storage is not None:
             return self._artifact_storage
-        settings = self._settings
-        provider = (settings.artifact_storage_provider or "local").strip().lower()
-        if provider == "s3":
-            from src.infrastructure.storage.s3_artifact_storage_adapter import (
-                S3ArtifactStorageAdapter,
-            )
-
-            if not settings.artifact_s3_bucket:
-                raise RuntimeError(
-                    "ARTIFACT_S3_BUCKET is required when ARTIFACT_STORAGE_PROVIDER=s3"
-                )
-            self._artifact_storage = S3ArtifactStorageAdapter(
-                bucket=settings.artifact_s3_bucket,
-                region=settings.artifact_s3_region or None,
-                prefix=settings.artifact_s3_prefix,
-                signed_url_ttl_sec=settings.artifact_s3_signed_url_ttl_sec,
-            )
-            logger.info(
-                "Artifact storage configured: provider=s3 bucket=%s region=%s prefix=%s signed_url_ttl_sec=%s legacy_local_read=%s",
-                settings.artifact_s3_bucket,
-                settings.artifact_s3_region or "<default>",
-                settings.artifact_s3_prefix,
-                settings.artifact_s3_signed_url_ttl_sec,
-                settings.artifact_storage_legacy_local_read_enabled,
-            )
-            return self._artifact_storage
-
-        from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
-
-        base = Path(settings.output_dir) / "v3_uploads"
-        base.mkdir(parents=True, exist_ok=True)
-        self._artifact_storage = V3ArtifactStorageAdapter(base)
-        logger.info(
-            "Artifact storage configured: provider=local base_path=%s legacy_local_read=%s",
-            str(base),
-            settings.artifact_storage_legacy_local_read_enabled,
-        )
+        self._artifact_storage = build_artifact_storage(self._settings)
         return self._artifact_storage
 
     def get_stored_artifact_reader(self) -> StoredArtifactReader:
         """Hybrid reads for stored job JSON / reports (port adapter; shared by API + worker)."""
         if self._stored_artifact_reader is not None:
             return self._stored_artifact_reader
-        from src.infrastructure.artifacts.stored_artifact_reader import DefaultStoredArtifactReader
-
-        self._stored_artifact_reader = DefaultStoredArtifactReader(
-            self.get_job_repo(),
-            self.get_artifact_storage(),
+        self._stored_artifact_reader = build_stored_artifact_reader(
+            job_repo=self.get_job_repo(),
+            artifact_storage=self.get_artifact_storage(),
         )
         return self._stored_artifact_reader
 
     def get_worker_launch_service(self) -> WorkerLaunchService:
         if self._worker_launch_service is not None:
             return self._worker_launch_service
-        from src.infrastructure.services.on_demand_worker_launch_service import (
-            OnDemandWorkerLaunchService,
-        )
-
-        self._worker_launch_service = OnDemandWorkerLaunchService()
+        self._worker_launch_service = build_worker_launch_service()
         return self._worker_launch_service
 
     def get_raw_label_repo(self) -> RawLabelRepository:
@@ -387,7 +372,9 @@ class AppContainer:
     def get_normalized_label_repo(self) -> NormalizedLabelRepository:
         if self._normalized_label_repo is not None:
             return self._normalized_label_repo
-        self._normalized_label_repo = build_normalized_label_repository(self._build_sql_repository_or_memory)
+        self._normalized_label_repo = build_normalized_label_repository(
+            self._build_sql_repository_or_memory
+        )
         return self._normalized_label_repo
 
     def get_final_count_repo(self) -> FinalCountRepository:
@@ -413,7 +400,9 @@ class AppContainer:
     def get_capture_session_repo(self) -> CaptureSessionRepository:
         if self._capture_session_repo is not None:
             return self._capture_session_repo
-        self._capture_session_repo = build_capture_session_repository(self._build_sql_repository_or_memory)
+        self._capture_session_repo = build_capture_session_repository(
+            self._build_sql_repository_or_memory
+        )
         return self._capture_session_repo
 
     def get_capture_session_item_repo(self) -> CaptureSessionItemRepository:
@@ -442,38 +431,26 @@ class AppContainer:
         return self._capture_session_confirm_repo
 
     def get_recompute_consolidated_counts_use_case(self) -> RecomputeConsolidatedCountsUseCase:
-        from src.application.services.final_count_builder import FinalCountBuilder
-        from src.application.services.label_normalization import LabelNormalizationService
-        from src.domain.labels.merge import MergeRuleEngine
-
-        return RecomputeConsolidatedCountsUseCase(
+        return build_recompute_consolidated_counts_use_case(
             raw_label_repo=self.get_raw_label_repo(),
             normalized_label_repo=self.get_normalized_label_repo(),
             final_count_repo=self.get_final_count_repo(),
             product_record_repo=self.get_product_record_repo(),
             position_repo=self.get_position_repo(),
-            normalization_service=LabelNormalizationService(merge_rule_engine=MergeRuleEngine()),
-            final_count_builder=FinalCountBuilder(),
         )
 
-    def get_list_supplier_prompt_configs_use_case(self):
-        from src.application.use_cases.manage_supplier_prompt_configs import (
-            ListSupplierPromptConfigsUseCase,
-        )
-
-        return ListSupplierPromptConfigsUseCase(
+    def get_list_supplier_prompt_configs_use_case(self) -> ListSupplierPromptConfigsUseCase:
+        return build_list_supplier_prompt_configs_use_case(
             client_repo=self.get_client_repo(),
             client_supplier_repo=self.get_client_supplier_repo(),
             prompt_config_repo=self.get_supplier_prompt_config_repo(),
             settings=self._settings,
         )
 
-    def get_create_supplier_prompt_config_version_use_case(self):
-        from src.application.use_cases.manage_supplier_prompt_configs import (
-            CreateSupplierPromptConfigVersionUseCase,
-        )
-
-        return CreateSupplierPromptConfigVersionUseCase(
+    def get_create_supplier_prompt_config_version_use_case(
+        self,
+    ) -> CreateSupplierPromptConfigVersionUseCase:
+        return build_create_supplier_prompt_config_version_use_case(
             client_repo=self.get_client_repo(),
             client_supplier_repo=self.get_client_supplier_repo(),
             prompt_config_repo=self.get_supplier_prompt_config_repo(),
@@ -481,37 +458,28 @@ class AppContainer:
             settings=self._settings,
         )
 
-    def get_get_active_supplier_prompt_config_use_case(self):
-        from src.application.use_cases.manage_supplier_prompt_configs import (
-            GetActiveSupplierPromptConfigUseCase,
-        )
-
-        return GetActiveSupplierPromptConfigUseCase(
+    def get_get_active_supplier_prompt_config_use_case(
+        self,
+    ) -> GetActiveSupplierPromptConfigUseCase:
+        return build_get_active_supplier_prompt_config_use_case(
             client_repo=self.get_client_repo(),
             client_supplier_repo=self.get_client_supplier_repo(),
             prompt_config_repo=self.get_supplier_prompt_config_repo(),
             settings=self._settings,
         )
 
-    def get_activate_supplier_prompt_config_version_use_case(self):
-        from src.application.use_cases.manage_supplier_prompt_configs import (
-            ActivateSupplierPromptConfigVersionUseCase,
-        )
-
-        return ActivateSupplierPromptConfigVersionUseCase(
+    def get_activate_supplier_prompt_config_version_use_case(
+        self,
+    ) -> ActivateSupplierPromptConfigVersionUseCase:
+        return build_activate_supplier_prompt_config_version_use_case(
             client_repo=self.get_client_repo(),
             client_supplier_repo=self.get_client_supplier_repo(),
             prompt_config_repo=self.get_supplier_prompt_config_repo(),
         )
 
-    def get_get_supplier_prompt_config_use_case(self):
-        from src.application.use_cases.manage_supplier_prompt_configs import (
-            GetSupplierPromptConfigUseCase,
-        )
-
-        return GetSupplierPromptConfigUseCase(
+    def get_get_supplier_prompt_config_use_case(self) -> GetSupplierPromptConfigUseCase:
+        return build_get_supplier_prompt_config_use_case(
             client_repo=self.get_client_repo(),
             client_supplier_repo=self.get_client_supplier_repo(),
             prompt_config_repo=self.get_supplier_prompt_config_repo(),
         )
-

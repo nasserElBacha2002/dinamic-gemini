@@ -37,7 +37,9 @@ def build_analytics_repository(
         return SqlAnalyticsRepository(client)
 
     def _memory() -> AnalyticsRepository:
-        from src.infrastructure.repositories.memory_analytics_repository import MemoryAnalyticsRepository
+        from src.infrastructure.repositories.memory_analytics_repository import (
+            MemoryAnalyticsRepository,
+        )
 
         return MemoryAnalyticsRepository(
             get_inventory_repo(),

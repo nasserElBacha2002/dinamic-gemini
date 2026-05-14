@@ -86,7 +86,9 @@ def test_repository_backend_resolution_is_cached(monkeypatch: pytest.MonkeyPatch
     assert r1.mode == RepositoryBackendMode.MEMORY_ONLY
 
 
-def test_sqlserver_client_not_instantiated_when_sql_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sqlserver_client_not_instantiated_when_sql_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("SQLSERVER_ENABLED", "false")
     config_module._settings = None
     reset_app_container_for_tests()
@@ -312,6 +314,62 @@ def test_get_job_repo_returns_cached_singleton(monkeypatch: pytest.MonkeyPatch) 
     j1 = c.get_job_repo()
     j2 = c.get_job_repo()
     assert j1 is j2
+
+
+def test_get_worker_launch_service_returns_cached_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SQLSERVER_ENABLED", "false")
+    config_module._settings = None
+    reset_app_container_for_tests()
+    c = AppContainer(load_settings())
+    w1 = c.get_worker_launch_service()
+    w2 = c.get_worker_launch_service()
+    assert w1 is w2
+
+
+def test_get_stored_artifact_reader_returns_cached_singleton(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("SQLSERVER_ENABLED", "false")
+    monkeypatch.setenv("ARTIFACT_STORAGE_PROVIDER", "local")
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path / "out"))
+    config_module._settings = None
+    reset_app_container_for_tests()
+    c = AppContainer(load_settings())
+    r1 = c.get_stored_artifact_reader()
+    r2 = c.get_stored_artifact_reader()
+    assert r1 is r2
+
+
+def test_get_metrics_calculator_returns_cached_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SQLSERVER_ENABLED", "false")
+    config_module._settings = None
+    reset_app_container_for_tests()
+    c = AppContainer(load_settings())
+    m1 = c.get_metrics_calculator()
+    m2 = c.get_metrics_calculator()
+    assert m1 is m2
+
+
+def test_get_clock_returns_new_instance_each_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SQLSERVER_ENABLED", "false")
+    config_module._settings = None
+    reset_app_container_for_tests()
+    c = AppContainer(load_settings())
+    t1 = c.get_clock()
+    t2 = c.get_clock()
+    assert t1 is not t2
+
+
+def test_get_list_supplier_prompt_configs_use_case_returns_new_instance_each_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SQLSERVER_ENABLED", "false")
+    config_module._settings = None
+    reset_app_container_for_tests()
+    c = AppContainer(load_settings())
+    u1 = c.get_list_supplier_prompt_configs_use_case()
+    u2 = c.get_list_supplier_prompt_configs_use_case()
+    assert u1 is not u2
 
 
 def test_repository_backend_resolution_raises_when_probe_fails_and_fallback_disabled(

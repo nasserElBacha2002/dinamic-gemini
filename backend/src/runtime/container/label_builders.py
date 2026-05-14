@@ -12,14 +12,18 @@ from src.database.sqlserver import SqlServerClient
 from src.runtime.container.repository_builders import BuildSqlOrMemory
 
 
-def build_raw_label_repository(build_repo: BuildSqlOrMemory[RawLabelRepository]) -> RawLabelRepository:
+def build_raw_label_repository(
+    build_repo: BuildSqlOrMemory[RawLabelRepository],
+) -> RawLabelRepository:
     def _sql(client: SqlServerClient) -> RawLabelRepository:
         from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
 
         return SqlRawLabelRepository(client)
 
     def _memory() -> RawLabelRepository:
-        from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
+        from src.infrastructure.repositories.memory_raw_label_repository import (
+            MemoryRawLabelRepository,
+        )
 
         return MemoryRawLabelRepository()
 
@@ -56,14 +60,20 @@ def build_normalized_label_repository(
     )
 
 
-def build_final_count_repository(build_repo: BuildSqlOrMemory[FinalCountRepository]) -> FinalCountRepository:
+def build_final_count_repository(
+    build_repo: BuildSqlOrMemory[FinalCountRepository],
+) -> FinalCountRepository:
     def _sql(client: SqlServerClient) -> FinalCountRepository:
-        from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository
+        from src.infrastructure.repositories.sql_final_count_repository import (
+            SqlFinalCountRepository,
+        )
 
         return SqlFinalCountRepository(client)
 
     def _memory() -> FinalCountRepository:
-        from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
+        from src.infrastructure.repositories.memory_final_count_repository import (
+            MemoryFinalCountRepository,
+        )
 
         return MemoryFinalCountRepository()
 

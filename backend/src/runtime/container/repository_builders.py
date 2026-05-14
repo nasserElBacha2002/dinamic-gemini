@@ -41,14 +41,18 @@ class BuildSqlOrMemory(Protocol[_RepoT]):
     ) -> _RepoT: ...
 
 
-def build_inventory_repository(build_repo: BuildSqlOrMemory[InventoryRepository]) -> InventoryRepository:
+def build_inventory_repository(
+    build_repo: BuildSqlOrMemory[InventoryRepository],
+) -> InventoryRepository:
     def _sql(client: SqlServerClient) -> InventoryRepository:
         from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
 
         return SqlInventoryRepository(client)
 
     def _memory() -> InventoryRepository:
-        from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+        from src.infrastructure.repositories.memory_inventory_repository import (
+            MemoryInventoryRepository,
+        )
 
         return MemoryInventoryRepository()
 
@@ -142,9 +146,13 @@ def build_job_repository(build_repo: BuildSqlOrMemory[JobRepository]) -> JobRepo
     )
 
 
-def build_source_asset_repository(build_repo: BuildSqlOrMemory[SourceAssetRepository]) -> SourceAssetRepository:
+def build_source_asset_repository(
+    build_repo: BuildSqlOrMemory[SourceAssetRepository],
+) -> SourceAssetRepository:
     def _sql(client: SqlServerClient) -> SourceAssetRepository:
-        from src.infrastructure.repositories.sql_source_asset_repository import SqlSourceAssetRepository
+        from src.infrastructure.repositories.sql_source_asset_repository import (
+            SqlSourceAssetRepository,
+        )
 
         return SqlSourceAssetRepository(client)
 
@@ -213,14 +221,18 @@ def build_supplier_prompt_config_repository(
     )
 
 
-def build_position_repository(build_repo: BuildSqlOrMemory[PositionRepository]) -> PositionRepository:
+def build_position_repository(
+    build_repo: BuildSqlOrMemory[PositionRepository],
+) -> PositionRepository:
     def _sql(client: SqlServerClient) -> PositionRepository:
         from src.infrastructure.repositories.sql_position_repository import SqlPositionRepository
 
         return SqlPositionRepository(client)
 
     def _memory() -> PositionRepository:
-        from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+        from src.infrastructure.repositories.memory_position_repository import (
+            MemoryPositionRepository,
+        )
 
         return MemoryPositionRepository()
 
@@ -257,14 +269,18 @@ def build_product_record_repository(
     )
 
 
-def build_evidence_repository(build_repo: BuildSqlOrMemory[EvidenceRepository]) -> EvidenceRepository:
+def build_evidence_repository(
+    build_repo: BuildSqlOrMemory[EvidenceRepository],
+) -> EvidenceRepository:
     def _sql(client: SqlServerClient) -> EvidenceRepository:
         from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
 
         return SqlEvidenceRepository(client)
 
     def _memory() -> EvidenceRepository:
-        from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
+        from src.infrastructure.repositories.memory_evidence_repository import (
+            MemoryEvidenceRepository,
+        )
 
         return MemoryEvidenceRepository()
 
@@ -276,9 +292,13 @@ def build_evidence_repository(build_repo: BuildSqlOrMemory[EvidenceRepository]) 
     )
 
 
-def build_review_action_repository(build_repo: BuildSqlOrMemory[ReviewActionRepository]) -> ReviewActionRepository:
+def build_review_action_repository(
+    build_repo: BuildSqlOrMemory[ReviewActionRepository],
+) -> ReviewActionRepository:
     def _sql(client: SqlServerClient) -> ReviewActionRepository:
-        from src.infrastructure.repositories.sql_review_action_repository import SqlReviewActionRepository
+        from src.infrastructure.repositories.sql_review_action_repository import (
+            SqlReviewActionRepository,
+        )
 
         return SqlReviewActionRepository(client)
 
