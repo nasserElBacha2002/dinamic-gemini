@@ -1,3 +1,4 @@
+export { pickSupplierReferenceImagesForAisle } from './aisleReferenceImages';
 export {
   toReferenceUsageRowViewModel,
   type ReferenceUsageRowViewModel,

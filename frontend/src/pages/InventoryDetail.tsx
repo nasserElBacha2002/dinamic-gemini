@@ -48,6 +48,7 @@ export default function InventoryDetail() {
   });
 
   const aisles = useMemo(() => aislesQuery.data?.items ?? [], [aislesQuery.data?.items]);
+
   const emptyDash = t('common.em_dash');
   const tableRows = useMemo(() => toAisleInventoryTableRows(aisles, emptyDash), [aisles, emptyDash]);
   const filteredTableRows = useMemo(() => {
@@ -130,7 +131,6 @@ export default function InventoryDetail() {
 
             <InventoryAislesSection
               inventoryId={inventoryId ?? ''}
-              inventoryClientId={inventory.client_id ?? null}
               tableRows={tableRows}
               filteredTableRows={filteredTableRows}
               aislesLoading={aislesLoading}

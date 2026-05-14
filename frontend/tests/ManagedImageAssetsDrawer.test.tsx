@@ -42,6 +42,46 @@ const oneItem: ManagedImageAssetItem[] = [
 ];
 
 describe('ManagedImageAssetsDrawer', () => {
+  it('read-only mode hides delete, upload, and management panel', () => {
+    render(
+      <ManagedImageAssetsDrawer
+        open
+        readOnly
+        onClose={() => {}}
+        copy={minimalCopy}
+        items={oneItem}
+        getItemSubtitle={() => 'sub'}
+        isLoading={false}
+        onFetchPreview={vi.fn().mockResolvedValue({ imageSrc: 'https://example.com/x.png' })}
+      />
+    );
+    expect(screen.getByRole('button', { name: /vista previa|preview/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /eliminar|delete/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /upload|subir/i })).toBeNull();
+    expect(screen.queryByText('Mgmt')).toBeNull();
+  });
+
+  it('editable mode with showUpload still shows management panel and delete', () => {
+    render(
+      <ManagedImageAssetsDrawer
+        open
+        onClose={() => {}}
+        copy={minimalCopy}
+        items={oneItem}
+        getItemSubtitle={() => 'sub'}
+        isLoading={false}
+        onFetchPreview={vi.fn().mockResolvedValue({ imageSrc: 'https://example.com/x.png' })}
+        showUpload
+        onUpload={vi.fn().mockResolvedValue(undefined)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
+        formatDeleteConfirm={(n) => `confirm-${n}`}
+      />
+    );
+    expect(screen.getByText('Mgmt')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /upload|subir/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /eliminar|delete/i })).toBeTruthy();
+  });
+
   it('does not call onFetchPreview when previewBlockedMessage returns a reason', () => {
     const onFetchPreview = vi.fn().mockResolvedValue({ imageSrc: 'blob:x', revoke: () => {} });
     render(

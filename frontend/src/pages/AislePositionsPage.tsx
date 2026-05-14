@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, Tooltip, Typography } from '@mui/material';
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
+import ImageSearchOutlinedIcon from '@mui/icons-material/ImageSearchOutlined';
 import { exportAisleResultsCsv, getAisleMergeResults, type AislePositionsListQuery } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 import { canonicalizeOptionalId } from '../api/queryParamCanonicalization';
@@ -67,6 +68,7 @@ import {
 } from '../features/results/adapters/aislePositionsViewModel';
 import PromoteOperationalDialog from '../features/benchmark/PromoteOperationalDialog';
 import AisleSourceAssetsManageModule from '../features/inventories/components/AisleSourceAssetsManageModule';
+import AisleVisualReferencesModule from '../features/inventories/components/AisleVisualReferencesModule';
 
 /** List query: photo-grouped order, no SKU merge — matches operator photo-review expectations. */
 const AISLE_RESULTS_LIST_QUERY: AislePositionsListQuery = {
@@ -530,27 +532,53 @@ export default function AislePositionsPage() {
         title={aisle?.code ?? t('common.aisle')}
         subtitle={inventory?.name ?? (inventoryQuery.isLoading ? t('common.loading') : t('common.em_dash'))}
         assetsAction={
-          <AisleSourceAssetsManageModule
-            inventoryId={inventoryId}
-            aisleId={aisleId}
-            inventoryLabel={inventory?.name ?? t('common.em_dash')}
-            jobIdForPreview={pickedRunJobId}
-            inventoryReady={Boolean(inventoryQuery.data)}
-          >
-            {({ openSourceAssets }) => (
-              <Tooltip title={t('aisle_source_assets.action_tooltip')}>
-                <Button
-                  data-testid="aisle-source-assets-manage-open"
-                  size="small"
-                  variant="outlined"
-                  startIcon={<PhotoLibraryOutlinedIcon fontSize="small" />}
-                  onClick={openSourceAssets}
-                >
-                  {t('aisle_source_assets.action_label')}
-                </Button>
-              </Tooltip>
-            )}
-          </AisleSourceAssetsManageModule>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+            <AisleSourceAssetsManageModule
+              inventoryId={inventoryId}
+              aisleId={aisleId}
+              inventoryLabel={inventory?.name ?? t('common.em_dash')}
+              jobIdForPreview={pickedRunJobId}
+              inventoryReady={Boolean(inventoryQuery.data)}
+            >
+              {({ openSourceAssets }) => (
+                <Tooltip title={t('aisle_source_assets.action_tooltip')}>
+                  <Button
+                    data-testid="aisle-source-assets-manage-open"
+                    size="small"
+                    variant="outlined"
+                    startIcon={<PhotoLibraryOutlinedIcon fontSize="small" />}
+                    onClick={openSourceAssets}
+                  >
+                    {t('aisle_source_assets.action_label')}
+                  </Button>
+                </Tooltip>
+              )}
+            </AisleSourceAssetsManageModule>
+            <AisleVisualReferencesModule
+              inventoryLabel={inventory?.name ?? t('common.em_dash')}
+              clientId={inventory?.client_id}
+              clientSupplierId={aisle?.client_supplier_id}
+              aisle={aisle}
+              inventoryReady={Boolean(inventoryQuery.data)}
+            >
+              {({ openVisualReferences, disabled, disabledTooltip }) => (
+                <Tooltip title={disabledTooltip ?? ''} disableHoverListener={!disabledTooltip}>
+                  <span>
+                    <Button
+                      data-testid="aisle-visual-references-open"
+                      size="small"
+                      variant="outlined"
+                      startIcon={<ImageSearchOutlinedIcon fontSize="small" />}
+                      onClick={openVisualReferences}
+                      disabled={disabled}
+                    >
+                      {t('positions.visual_references.action_label')}
+                    </Button>
+                  </span>
+                </Tooltip>
+              )}
+            </AisleVisualReferencesModule>
+          </Box>
         }
         mergeButtonVisible={mergeButtonVisible}
         mergeDisabledReason={mergeDisabledReason}
