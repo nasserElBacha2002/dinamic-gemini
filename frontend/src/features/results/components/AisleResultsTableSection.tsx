@@ -11,6 +11,8 @@ import AisleResultsMergeFeedback from './AisleResultsMergeFeedback';
 
 export interface AisleResultsTableSectionProps {
   countedTotal: number;
+  /** Rows in the loaded results dataset for the selected run (not paginated / not filtered). */
+  countedResultRows: number;
   mergeFeedback: { severity: 'success' | 'info'; text: string } | null;
   onResetFilters: () => void;
   resetDisabled: boolean;
@@ -43,6 +45,7 @@ export interface AisleResultsTableSectionProps {
 
 export default function AisleResultsTableSection({
   countedTotal,
+  countedResultRows,
   mergeFeedback,
   onResetFilters,
   resetDisabled,
@@ -74,6 +77,13 @@ export default function AisleResultsTableSection({
         </Typography>
         <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>
           {countedTotal}
+        </Typography>
+        <Typography
+          variant="body2"
+          component="div"
+          sx={{ color: 'text.secondary', mt: 0.75, mb: 2, lineHeight: 1.4 }}
+        >
+          {t('positions.counted_items', { count: countedResultRows })}
         </Typography>
       </Box>
 

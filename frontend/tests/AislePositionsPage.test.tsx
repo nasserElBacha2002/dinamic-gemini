@@ -294,6 +294,7 @@ describe('AislePositionsPage (Aisle Results)', () => {
     expect(screen.getByRole('heading', { name: 'A-01' })).toBeTruthy();
     expect(screen.getAllByText('Test Inventory')).toHaveLength(2);
     expect(screen.getByText(/total contabilizado|counted total/i)).toBeTruthy();
+    expect(screen.getByText(/ítems contados:\s*1|counted items:\s*1/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /fusionar sku repetidos|merge repeated labels/i })).toBeTruthy();
     expect(screen.getByTestId('aisle-results-more-actions')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /actualizar|refresh/i })).toBeInTheDocument();
@@ -308,6 +309,13 @@ describe('AislePositionsPage (Aisle Results)', () => {
     expect(screen.getByRole('columnheader', { name: /traceability|trazabilidad/i })).toBeTruthy();
     expect(screen.getByText('SKU-001')).toBeTruthy();
     expect(screen.getAllByText('5').length).toBeGreaterThan(0);
+  });
+
+  it('shows counted items label from full results length (not pagination)', () => {
+    resultSummariesState.results = repeatedSkuResults;
+    resultSummariesState.positions = repeatedSkuPositions;
+    renderPage();
+    expect(screen.getByText(/ítems contados:\s*2|counted items:\s*2/i)).toBeInTheDocument();
   });
 
   it('opens review via SKU control without an Actions column', () => {
