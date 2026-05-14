@@ -1,4 +1,0 @@
-
-> dinamic-inventory-v3-frontend@0.1.0 typecheck
-> tsc --noEmit
-
