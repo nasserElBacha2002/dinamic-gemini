@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import {
-  buildLabelQrValue,
+  buildLabelQrText,
   clampLabelCopies,
   formatShortLabelDate,
   LABEL_PRINT_TITLE,
@@ -38,7 +38,7 @@ function LabelRow({
 function HorizontalLabelCard({ data, headerDate }: { data: Omit<LabelSheetData, 'copies'>; headerDate: string }) {
   const cardClass = ['label-card', 'label-card--horizontal'].join(' ');
 
-  const qrValue = useMemo(() => buildLabelQrValue(data), [data]);
+  const qrValue = useMemo(() => buildLabelQrText(data), [data]);
 
   return (
     <article className={cardClass} data-testid="label-card">
@@ -54,21 +54,19 @@ function HorizontalLabelCard({ data, headerDate }: { data: Omit<LabelSheetData, 
         <LabelRow label="CLIENTE:" value={data.clientName} />
         <LabelRow label="PROVEEDOR:" value={data.supplierName} />
         <LabelRow label="CONTADO POR:" value={data.countedBy} />
-        <LabelRow
-          label="CÓDIGO INTERNO:"
-          value={data.code}
-          rowClassName="label-row--code"
-          valueClassName="label-code-value"
-        />
       </section>
 
       <section className="label-main-content">
         <div className="label-primary-section">
-          <div className="label-divider" role="presentation" />
-          <section className="label-quantity-section" aria-label="Cantidad total">
-            <div className="label-quantity-label">CANT. TOTAL</div>
-            <div className="label-quantity-value">{data.quantity.trim()}</div>
-          </section>
+          <div className="label-primary-row label-code-section">
+            <span className="label-primary-label">CÓDIGO:</span>
+            <span className="label-primary-value label-code-main-value">{data.code.trim()}</span>
+          </div>
+
+          <div className="label-primary-row label-quantity-section">
+            <span className="label-primary-label">CANT. TOTAL:</span>
+            <span className="label-primary-value label-quantity-value">{data.quantity.trim()}</span>
+          </div>
         </div>
 
         <div className="label-qr-section" aria-label="QR con datos de etiqueta">

@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildLabelPrintFilename,
-  buildLabelQrPayload,
-  buildLabelQrValue,
+  buildLabelQrText,
   sanitizeLabelFilenameSegment,
 } from '../src/features/clients/components/labelPrintUtils';
 
@@ -55,36 +54,21 @@ describe('labelPrintUtils QR helpers', () => {
     copies: 1,
   };
 
-  it('builds QR payload with all label fields', () => {
-    expect(buildLabelQrPayload(sampleData, new Date('2026-05-15T12:00:00'))).toEqual({
-      type: 'dinamic_inventory_label',
-      version: 1,
-      client: 'rabbione',
-      supplier: 'etiqueta-a-mano',
-      countedBy: '01',
-      internalCode: '1931038',
-      quantity: '03',
-      lot: 'test',
-      expiration: '1806',
-      description: 'producto ejemplo',
-      observations: 'observación',
-      generatedAt: '2026-05-15',
-    });
-  });
+  it('builds QR text with all label fields as readable plain text', () => {
+    const value = buildLabelQrText(sampleData, new Date('2026-05-15T12:00:00'));
 
-  it('builds QR value as JSON with full label data', () => {
-    const value = buildLabelQrValue(sampleData, new Date('2026-05-15T12:00:00'));
-    const parsed = JSON.parse(value) as Record<string, string>;
+    expect(value).toContain('ETIQUETA DINAMIC INVENTORY');
+    expect(value).toContain('Cliente: rabbione');
+    expect(value).toContain('Proveedor: etiqueta-a-mano');
+    expect(value).toContain('Contado por: 01');
+    expect(value).toContain('Código interno: 1931038');
+    expect(value).toContain('Cant. total: 03');
+    expect(value).toContain('Lote: test');
+    expect(value).toContain('VTO: 1806');
+    expect(value).toContain('Descripción: producto ejemplo');
+    expect(value).toContain('Observaciones: observación');
+    expect(value).toContain('Generado: 2026-05-15');
 
-    expect(parsed.client).toBe('rabbione');
-    expect(parsed.supplier).toBe('etiqueta-a-mano');
-    expect(parsed.countedBy).toBe('01');
-    expect(parsed.internalCode).toBe('1931038');
-    expect(parsed.quantity).toBe('03');
-    expect(parsed.lot).toBe('test');
-    expect(parsed.expiration).toBe('1806');
-    expect(parsed.description).toBe('producto ejemplo');
-    expect(parsed.observations).toBe('observación');
-    expect(parsed.generatedAt).toBe('2026-05-15');
+    expect(() => JSON.parse(value)).toThrow();
   });
 });

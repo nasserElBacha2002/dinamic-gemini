@@ -51,58 +51,37 @@ export function formatLabelFilenameDate(date: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-export interface LabelQrPayload {
-  type: 'dinamic_inventory_label';
-  version: 1;
-  client: string;
-  supplier?: string;
-  countedBy?: string;
-  internalCode: string;
-  quantity: string;
-  lot?: string;
-  expiration?: string;
-  description?: string;
-  observations?: string;
-  generatedAt: string;
-}
-
-/** Structured payload encoded in the single per-label QR. */
-export function buildLabelQrPayload(
-  data: Omit<LabelSheetData, 'copies'>,
-  date: Date = new Date()
-): LabelQrPayload {
-  const payload: LabelQrPayload = {
-    type: 'dinamic_inventory_label',
-    version: 1,
-    client: data.clientName.trim() || '—',
-    internalCode: data.code.trim(),
-    quantity: data.quantity.trim(),
-    generatedAt: formatLabelFilenameDate(date),
-  };
+/** Human-readable multiline text for the single per-label QR (plain scan, not JSON). */
+export function buildLabelQrText(data: Omit<LabelSheetData, 'copies'>, date: Date = new Date()): string {
+  const lines = [
+    'ETIQUETA DINAMIC INVENTORY',
+    `Cliente: ${data.clientName.trim() || '—'}`,
+  ];
 
   const supplier = data.supplierName?.trim();
-  if (supplier) payload.supplier = supplier;
+  if (supplier) lines.push(`Proveedor: ${supplier}`);
 
   const countedBy = data.countedBy?.trim();
-  if (countedBy) payload.countedBy = countedBy;
+  if (countedBy) lines.push(`Contado por: ${countedBy}`);
+
+  lines.push(`Código interno: ${data.code.trim()}`);
+  lines.push(`Cant. total: ${data.quantity.trim()}`);
 
   const lot = data.lot?.trim();
-  if (lot) payload.lot = lot;
+  if (lot) lines.push(`Lote: ${lot}`);
 
-  const expiration = data.expiry?.trim();
-  if (expiration) payload.expiration = expiration;
+  const expiry = data.expiry?.trim();
+  if (expiry) lines.push(`VTO: ${expiry}`);
 
   const description = data.description?.trim();
-  if (description) payload.description = description;
+  if (description) lines.push(`Descripción: ${description}`);
 
   const observations = data.observations?.trim();
-  if (observations) payload.observations = observations;
+  if (observations) lines.push(`Observaciones: ${observations}`);
 
-  return payload;
-}
+  lines.push(`Generado: ${formatLabelFilenameDate(date)}`);
 
-export function buildLabelQrValue(data: Omit<LabelSheetData, 'copies'>, date: Date = new Date()): string {
-  return JSON.stringify(buildLabelQrPayload(data, date));
+  return lines.join('\n');
 }
 
 /** Suggested PDF filename base: cliente-codigo-cantidad-fecha */
