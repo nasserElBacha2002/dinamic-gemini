@@ -256,6 +256,61 @@ describe('LabelGeneratorDialog', () => {
     expect(window.print).toHaveBeenCalledTimes(1);
   });
 
+  it('sets document title before print for suggested PDF filename', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-15T12:00:00'));
+    const originalTitle = 'Dinamic Inventory Test';
+    document.title = originalTitle;
+
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {
+      expect(document.title).toBe('cliente-blainstein-1931038-03-2026-05-15');
+    });
+
+    renderDialog();
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
+
+    expect(printSpy).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1000);
+    expect(document.title).toBe(originalTitle);
+
+    printSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('restores document title after afterprint', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-15T12:00:00'));
+    const originalTitle = 'Dinamic Inventory Test';
+    document.title = originalTitle;
+
+    vi.spyOn(window, 'print').mockImplementation(() => {});
+
+    renderDialog();
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
+    expect(document.title).toBe('cliente-blainstein-1931038-03-2026-05-15');
+
+    window.dispatchEvent(new Event('afterprint'));
+    expect(document.title).toBe(originalTitle);
+
+    vi.useRealTimers();
+  });
+
+  it('does not change document title when validation fails', () => {
+    const originalTitle = 'Dinamic Inventory Test';
+    document.title = originalTitle;
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});
+
+    renderDialog();
+    fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
+
+    expect(printSpy).not.toHaveBeenCalled();
+    expect(document.title).toBe(originalTitle);
+
+    printSpy.mockRestore();
+  });
+
   it('disables print until code and quantity are provided', () => {
     renderDialog();
     expect(screen.getByRole('button', { name: /^imprimir$/i })).toBeDisabled();

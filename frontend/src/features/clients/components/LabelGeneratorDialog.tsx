@@ -13,6 +13,7 @@ import type { ClientSupplier } from '../../../api/types';
 import BaseDialog from '../../../components/ui/BaseDialog';
 import LabelPrintSheet, { LabelPrintPortal } from './LabelPrintSheet';
 import {
+  buildLabelPrintFilename,
   clampLabelCopies,
   LABEL_COPIES_MAX,
   LABEL_COPIES_MIN,
@@ -158,7 +159,21 @@ export default function LabelGeneratorDialog({
 
   const handlePrint = () => {
     if (!validate()) return;
+
+    const previousTitle = document.title;
+    document.title = buildLabelPrintFilename(sheetData);
+
+    let restored = false;
+    const restoreTitle = () => {
+      if (restored) return;
+      restored = true;
+      document.title = previousTitle;
+      window.removeEventListener('afterprint', restoreTitle);
+    };
+
+    window.addEventListener('afterprint', restoreTitle, { once: true });
     window.print();
+    window.setTimeout(restoreTitle, 1000);
   };
 
   const handleCopiesBlur = () => {
