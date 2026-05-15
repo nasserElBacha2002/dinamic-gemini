@@ -159,7 +159,48 @@
 .label-divider {
   border-top: 2px dashed #333;
   flex: 0 0 auto;
-  margin: 5mm 0 6mm;
+  margin: 4mm 0 5mm;
+}
+
+.label-main-content {
+  align-items: center;
+  display: grid;
+  flex: 1 1 auto;
+  gap: 8mm;
+  grid-template-columns: 1fr 42mm;
+  min-height: 0;
+}
+
+.label-primary-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.label-qr-section {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.label-qr-code {
+  background: #fff;
+  height: 36mm;
+  max-height: 36mm;
+  max-width: 36mm;
+  width: 36mm;
+}
+
+.label-qr-caption {
+  font-size: 9pt;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-top: 2mm;
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .label-quantity-section {

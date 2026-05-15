@@ -158,6 +158,37 @@ describe('LabelGeneratorDialog', () => {
     expect(printRoot?.querySelector('[data-copies="3"]')).toBeTruthy();
   });
 
+  it('renders exactly one QR in preview label card', () => {
+    renderDialog();
+    fillRequiredFields();
+    const card = within(getPreviewSheet()).getByTestId('label-card');
+    expect(card.querySelectorAll('.label-qr-section')).toHaveLength(1);
+    expect(card.querySelectorAll('.label-qr-section svg')).toHaveLength(1);
+  });
+
+  it('renders exactly one QR in print-only label card', () => {
+    renderDialog();
+    fillRequiredFields();
+    const printCard = getPrintRoot()?.querySelector('.label-card');
+    expect(printCard?.querySelectorAll('.label-qr-section')).toHaveLength(1);
+    expect(printCard?.querySelectorAll('.label-qr-section svg')).toHaveLength(1);
+  });
+
+  it('renders one QR per print label when copies is 3', () => {
+    renderDialog();
+    fillRequiredFields();
+    fireEvent.change(screen.getByRole('spinbutton', { name: /^copias$/i }), {
+      target: { value: '3' },
+    });
+    const printRoot = getPrintRoot();
+    expect(printRoot?.querySelectorAll('.label-card')).toHaveLength(3);
+    expect(printRoot?.querySelectorAll('.label-qr-section')).toHaveLength(3);
+    expect(printRoot?.querySelectorAll('.label-qr-section svg')).toHaveLength(3);
+    expect(printRoot?.querySelectorAll('.label-qr-section').length).toBe(
+      printRoot?.querySelectorAll('.label-card').length
+    );
+  });
+
   it('keeps preview and print-only roots separate', () => {
     renderDialog();
     fillRequiredFields();
