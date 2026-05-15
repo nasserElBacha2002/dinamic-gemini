@@ -140,6 +140,35 @@ Optional helper (same artifacts as `/implement`; correction-specific classificat
 
 Use `.review/` only as local, gitignored helpers — see §9.
 
+### 6.1 Required Git review artifacts (`review/`)
+
+After validation, generate plain `.txt` Git review artifacts under the **gitignored** local folder `review/` from the **repository root** (after `git add -N .` when files changed):
+
+```bash
+mkdir -p review
+TASK_NAME="<short-kebab-case-task-name>"   # e.g. label-print-size-fix
+
+git --no-pager status --short > review/latest-status.txt
+git --no-pager diff --stat > review/latest-diffstat.txt
+git --no-pager diff --find-renames --find-copies -U20 > review/latest-diff.txt
+
+cp review/latest-status.txt "review/${TASK_NAME}-status.txt"
+cp review/latest-diffstat.txt "review/${TASK_NAME}-diffstat.txt"
+cp review/latest-diff.txt "review/${TASK_NAME}-diff.txt"
+```
+
+Rules:
+
+- Generate on **every** correction that modifies files (including large diffs).
+- Do **not** only print Git results in chat — write the `.txt` files.
+- `latest-*` may be overwritten each run; task-specific names must not clobber unrelated prior tasks.
+- If no code changes, still write `review/latest-status.txt` and `review/latest-diffstat.txt`.
+- Never commit `review/`; do **not** use `audit/raw/` for these workflow dumps.
+
+## HARD REQUIREMENT — Git review artifacts
+
+The correction is **not** complete until the `.txt` files exist under `review/`. If missing, generate them before the final report.
+
 ## 7. Correction diff mode (CORRECTION_SMALL vs CORRECTION_LARGE)
 
 Classify the patch for the **Review package** section:
@@ -234,7 +263,8 @@ Return these sections **in order**:
 6. **Validation commands run and results**  
 7. **Any unrelated failures observed**  
 8. **Review package** (§10 templates)  
-9. **Final status:** `CORRECTIONS_VALIDATED` | `CORRECTIONS_WITH_WARNINGS` | `BLOCKED`
+9. **Git review artifacts generated** (§6.1 — list paths and confirm success)  
+10. **Final status:** `CORRECTIONS_VALIDATED` | `CORRECTIONS_WITH_WARNINGS` | `BLOCKED`
 
 ---
 

@@ -272,7 +272,7 @@ Group mentally (or read `.review/review-plan.md`) by area:
 - frontend: `frontend/src/` (components, hooks, api, i18n, tests)
 - tests: `backend/tests/`, `frontend/tests/`
 - migrations: `backend/src/database/migrations/`
-- workflow/docs: `.cursor/`, `scripts/`, `docs/`, `audit/`
+- workflow/docs: `.cursor/`, `scripts/`, `docs/`, `audit/` (formal reports only; Git review dumps go in gitignored `review/`)
 
 ### 11.4 Risk-based review order (LARGE_DIFF)
 
@@ -288,6 +288,39 @@ When in LARGE_DIFF mode, recommend this order in the final response:
 
 - **SMALL_DIFF:** paste `git status --short`, `git diff --stat`, and the **full** `git diff -U20` (or point to `.review/full.diff`).
 - **LARGE_DIFF:** paste status, stat, name-status, numstat summary, recommended review order, and **chunk commands** — explicitly say **do not paste the entire diff** unless the user asks.
+
+### 11.6 Required Git review artifacts (`review/`)
+
+After validation, generate plain `.txt` Git review artifacts under the **gitignored** local folder `review/`. Run from the **repository root** after `git add -N .` when the task added or modified files.
+
+```bash
+mkdir -p review
+TASK_NAME="<short-kebab-case-task-name>"   # e.g. label-generation-mvp
+
+git --no-pager status --short > review/latest-status.txt
+git --no-pager diff --stat > review/latest-diffstat.txt
+git --no-pager diff --find-renames --find-copies -U20 > review/latest-diff.txt
+
+cp review/latest-status.txt "review/${TASK_NAME}-status.txt"
+cp review/latest-diffstat.txt "review/${TASK_NAME}-diffstat.txt"
+cp review/latest-diff.txt "review/${TASK_NAME}-diff.txt"
+```
+
+Rules:
+
+- Generate these artifacts **every time** the task modifies files (including large diffs).
+- Do **not** only print Git output in the terminal — write the `.txt` files.
+- `latest-*` files may be overwritten on each run.
+- Task-specific files use a descriptive kebab-case name; do **not** overwrite a previous task’s files unless re-running the **same** task name.
+- If there are no code changes, still write `review/latest-status.txt` and `review/latest-diffstat.txt` (diff may be empty).
+- The `review/` folder is **gitignored** — never commit these files. Do **not** write them under `audit/raw/` (that path is for formal audit pipeline outputs).
+- Distinct from gitignored `.review/` (optional helper from `scripts/review_working_tree.sh`).
+
+## HARD REQUIREMENT — Git review artifacts
+
+The task is **not** complete until the Git review artifact `.txt` files exist under `review/`.
+
+If you forgot to create them, **stop** and generate them before writing the final report.
 
 **HARD CONSTRAINTS**
 
@@ -319,6 +352,17 @@ Return these sections in order:
 **Tests:** (command → pass/fail/skip)
 
 **Risks:** (residual risks, edge cases, follow-ups; or “none identified”)
+
+## Git review artifacts generated
+
+Confirm these files were written successfully under `review/` (gitignored; list actual paths):
+
+- `review/latest-status.txt`
+- `review/latest-diffstat.txt`
+- `review/latest-diff.txt`
+- `review/<task-name>-status.txt`
+- `review/<task-name>-diffstat.txt`
+- `review/<task-name>-diff.txt`
 
 Also include when relevant (can be subsections under Implementation report):
 

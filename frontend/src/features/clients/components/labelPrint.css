@@ -1,0 +1,216 @@
+/* Warehouse label preview and A4 print — single large label (1 copy) or 2×2 grid (2+ copies). */
+
+.label-print-root {
+  background: #fff;
+  color: #000;
+}
+
+.label-print-root--preview {
+  border: 1px dashed rgba(0, 0, 0, 0.24);
+  border-radius: 8px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.label-print-sheet {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* Screen: preview stays compact inside the dialog */
+.label-print-root--preview .label-print-grid.single-label {
+  grid-template-columns: 1fr;
+}
+
+.label-print-root--preview .label-print-grid.single-label .label-card {
+  min-height: 220px;
+  padding: 16px;
+}
+
+.label-print-root--preview .label-print-grid.multi-label {
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.label-print-root--preview .label-print-grid.multi-label .label-card {
+  min-height: 140px;
+  padding: 12px;
+}
+
+.label-print-grid {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.label-print-grid.single-label {
+  grid-template-columns: 1fr;
+}
+
+.label-print-grid.multi-label {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.label-card {
+  background: #fff;
+  border: 2px solid #000;
+  box-sizing: border-box;
+  color: #000;
+  min-height: 120px;
+  padding: 10px 12px;
+}
+
+.label-line {
+  margin-bottom: 8px;
+}
+
+.label-line:last-child {
+  margin-bottom: 0;
+}
+
+.label-field-label,
+.label-prefix {
+  color: #000;
+  display: block;
+  font-size: 10pt;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.label-field-value,
+.label-value {
+  color: #000;
+  display: block;
+  font-size: 16pt;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-top: 2px;
+  word-break: break-word;
+}
+
+.label-code-value,
+.label-quantity-value {
+  font-size: 22pt;
+  font-weight: 800;
+}
+
+.label-value--code,
+.label-code-value {
+  font-family: 'Roboto Mono', 'Consolas', 'Courier New', monospace;
+}
+
+@media print {
+  @page {
+    margin: 8mm;
+    size: A4;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    min-height: 297mm;
+    width: 210mm;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .label-print-root,
+  .label-print-root * {
+    visibility: visible !important;
+  }
+
+  .label-print-root {
+    background: #fff !important;
+    color: #000 !important;
+    inset: 0 !important;
+    margin: 0 !important;
+    min-height: 100% !important;
+    padding: 0 !important;
+    position: absolute !important;
+    width: 100% !important;
+  }
+
+  .label-print-root--preview {
+    border: none;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .label-print-sheet {
+    box-sizing: border-box !important;
+    min-height: 100% !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  .label-print-grid {
+    display: grid !important;
+    gap: 8mm !important;
+    width: 100% !important;
+  }
+
+  .label-print-grid.single-label {
+    grid-template-columns: 1fr !important;
+  }
+
+  .label-print-grid.multi-label {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .label-card {
+    background: #fff !important;
+    border: 2px solid #000 !important;
+    break-inside: avoid !important;
+    color: #000 !important;
+    page-break-inside: avoid !important;
+  }
+
+  .label-print-grid.single-label .label-card {
+    min-height: 250mm !important;
+    padding: 14mm !important;
+    width: 100% !important;
+  }
+
+  .label-print-grid.multi-label .label-card {
+    min-height: 130mm !important;
+    padding: 8mm !important;
+  }
+
+  .label-field-label,
+  .label-prefix {
+    color: #000 !important;
+    font-size: 13pt !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+  }
+
+  .label-field-value,
+  .label-value {
+    color: #000 !important;
+    font-size: 24pt !important;
+    font-weight: 700 !important;
+    line-height: 1.15 !important;
+  }
+
+  .label-print-grid.multi-label .label-field-value,
+  .label-print-grid.multi-label .label-value {
+    font-size: 18pt !important;
+  }
+
+  .label-code-value,
+  .label-quantity-value {
+    font-size: 34pt !important;
+    font-weight: 800 !important;
+  }
+
+  .label-print-grid.multi-label .label-code-value,
+  .label-print-grid.multi-label .label-quantity-value {
+    font-size: 22pt !important;
+  }
+}

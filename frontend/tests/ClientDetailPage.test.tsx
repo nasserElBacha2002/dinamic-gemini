@@ -205,6 +205,7 @@ describe('ClientDetail page', () => {
     expect(screen.getByText(/proveedores del cliente/i)).toBeInTheDocument();
     expect(screen.getByText(/proveedor norte/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /crear proveedor/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /generar etiquetas/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /gestionar imágenes/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /configurar instrucciones/i })).not.toBeInTheDocument();
     const supplierLink = screen.getByRole('link', { name: /proveedor norte/i });
@@ -331,6 +332,35 @@ describe('ClientDetail page', () => {
 
     renderPage('/clientes/client-1');
     expect(screen.getByText(/todavía no hay proveedores cargados para este cliente/i)).toBeInTheDocument();
+  });
+
+  it('opens label generator dialog from client detail', async () => {
+    useClientMock.mockReturnValue({
+      data: {
+        id: 'client-1',
+        name: 'Cliente Norte',
+        status: 'active',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useClientSuppliersMock.mockReturnValue({
+      data: { items: [], page: 1, page_size: 25, total_items: 0, total_pages: 0 },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage('/clientes/client-1');
+    fireEvent.click(screen.getByRole('button', { name: /generar etiquetas/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: /generar etiquetas/i })).toBeInTheDocument();
+    });
   });
 
   it('opens create supplier dialog from client detail', () => {
