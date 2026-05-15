@@ -5,6 +5,7 @@ import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 import type { ClientSupplier, InventoryListItem } from '../api/types';
 import CreateClientSupplierDialog from '../components/CreateClientSupplierDialog';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
+import LabelGeneratorDialog from '../features/clients/components/LabelGeneratorDialog';
 import { PageHeader } from '../components/shell';
 import {
   DataTable,
@@ -45,6 +46,7 @@ export default function ClientDetail() {
   const safeClientId = (clientId ?? '').trim();
   const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
   const [createInventoryOpen, setCreateInventoryOpen] = useState(false);
+  const [labelGeneratorOpen, setLabelGeneratorOpen] = useState(false);
   const [clientInvSortBy, setClientInvSortBy] = useState('');
   const [clientInvSortDir, setClientInvSortDir] = useState<DataTableSortDirection>('asc');
   const [supplierSortBy, setSupplierSortBy] = useState('');
@@ -199,6 +201,14 @@ export default function ClientDetail() {
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
             <Button variant="contained" size="small" onClick={() => setCreateInventoryOpen(true)} disabled={!safeClientId}>
               {t('clients.detail.create_inventory')}
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setLabelGeneratorOpen(true)}
+              disabled={!safeClientId || !clientQuery.data}
+            >
+              {t('clients.labels.action_generate')}
             </Button>
             <Button component={RouterLink} to={ROUTE_CLIENTS} variant="outlined" size="small">
               {t('clients.detail.back_to_list')}
@@ -376,6 +386,17 @@ export default function ClientDetail() {
         }}
         createInventoryFn={createInventoryMutation.mutateAsync}
       />
+
+      {clientQuery.data ? (
+        <LabelGeneratorDialog
+          open={labelGeneratorOpen}
+          onClose={() => setLabelGeneratorOpen(false)}
+          clientId={safeClientId}
+          clientName={clientQuery.data.name}
+          suppliers={supplierItems}
+          suppliersLoading={suppliersQuery.isLoading}
+        />
+      ) : null}
     </>
   );
 }
