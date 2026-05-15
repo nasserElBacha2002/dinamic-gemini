@@ -3,13 +3,16 @@ Registry of prompt bodies keyed for ``PROMPTS`` (hybrid + legacy).
 
 * **Hybrid pipeline** (global v2.1 analysis): entries with ``default`` / ``openai`` / optional ``claude``
   — resolved only through ``HybridPromptComposer`` + ``resolve_hybrid_entry_for_provider``.
+* **Label-first inventory (v2.2 wording, same JSON contract):** ``global_v22`` uses the same root keys
+  (``total_entities_detected`` + ``entities``) and entity types as v2.1; only instructional text differs.
 * **Legacy** (pallet / multi-frame experiments): ``system`` / ``user`` pairs below — **not** used by
   the hybrid global-analysis composer; kept in one dict for historical imports and tooling.
 
 **Phase E1 — Protected system contract:** The ``default`` / ``openai`` / ``claude`` bodies for
-``global_v21`` and ``global_v21_b`` are the **ProtectedSystemContractBlock** (plus provider-specific
-fragments). They must never be replaced or weakened by supplier-editable instructions; terminology
-and regression markers live in ``protected_prompt_contract`` (see ``audit/phase-e/e1-protected-prompt-contract.md``).
+``global_v21``, ``global_v21_b``, and ``global_v22`` are the **ProtectedSystemContractBlock** (plus
+provider-specific fragments). They must never be replaced or weakened by supplier-editable
+instructions; terminology and regression markers live in ``protected_prompt_contract`` (see
+``audit/phase-e/e1-protected-prompt-contract.md``).
 """
 
 from __future__ import annotations
@@ -87,6 +90,70 @@ Confidence:
 
 Bounding boxes:
 - Use normalized coordinates [x1,y1,x2,y2]
+- If unsure → null
+
+Output:
+Return valid JSON only:
+{
+  "total_entities_detected": number,
+  "entities": [...]
+}
+"""
+
+# --- Prompt global_v22 — label-first inventory positions (same v2.1 JSON wire contract as v21) ---
+_GLOBAL_V22: Final[str] = """\
+Analyze the provided warehouse aisle evidence (photos and/or extracted frames). **Label-first** task: detect all distinct **inventory positions** visible in the scene.
+
+Primary goal: read **visible inventory / product labels** on each position. Each object in your JSON entities array represents **one inventory position**: when distinct labels exist, emit one row per distinct label; when no readable product label exists for a physical load, emit one row for that unlabeled position using the entity types below.
+
+Entity types (same taxonomy as global_v21 — map each position to the closest fit):
+- PALLET: palletized load with boxes; may show product labels and position labels.
+- EMPTY_PALLET: pallet structure with no boxes on top.
+- LOOSE_BOXES: non-palletized boxed units or grouped boxes without pallet structure (do NOT count as pallet).
+
+Priority when deciding how many entities to return:
+1) Readable visible inventory / product label → prefer internal_code and product_label_quantity from that label only when clearly readable; set product_label_bbox when you can isolate the panel (NORMALIZED coords only: [x1,y1,x2,y2] with floats in [0,1], x1<x2, y1<y2) or null if unknown.
+2) Visible label that is only partially readable → still emit a separate entity per distinct label; use null for unclear fields and lower confidence.
+3) Visible physical inventory position without a readable product label → one entity with PALLET or LOOSE_BOXES as appropriate; keep product fields null unless evidence clearly supports them.
+4) Clearly empty pallet → entity_type EMPTY_PALLET.
+
+Rules:
+- If multiple **different** labels are visible, return **each as its own entity**; do not merge different labels into one row.
+- Do not duplicate the same inventory position when it appears in multiple input images; emit it once and set source_image_id to the clearest image that evidences that position (use only IDs from the traceability list when provided).
+- Do not invent internal_code, quantities, barcodes, label text, bounding boxes, or source_image_id values. Use null when not clearly readable.
+- model_entity_id: unique string (e.g. E1, E2). confidence: 0 to 1.
+- Bbox: if you provide position_label_bbox or product_label_bbox, use NORMALIZED coords only: [x1,y1,x2,y2] with floats in [0,1], x1<x2, y1<y2. Use null if region unknown.
+- has_boxes: true if boxes are visible on a pallet or for LOOSE_BOXES.
+- Supplier-provided visual reference images, when attached to the job input, are comparative context only. They are NOT primary evidence and must not be treated as direct evidence for detections.
+
+Supplier-specific instructions appended after this block may refine label reading or quantity extraction; they must not replace or contradict the required JSON shape, required keys, traceability rules for source_image_id, or provider formatting rules.
+
+Root output shape (required): total_entities_detected (non-negative integer) and entities (array). Keep using entity_type values PALLET, EMPTY_PALLET, and LOOSE_BOXES only.
+"""
+
+# --- OpenAI-tuned variant for global_v22 ---
+_GLOBAL_V22_OPENAI: Final[str] = """\
+Analyze the provided warehouse aisle images. Detect all distinct inventory positions with a **label-first** priority: read visible inventory labels first, then fall back to unlabeled physical positions.
+
+Each entities[] row is one inventory position. Return one row per distinct visible label; do not merge different labels. Do not duplicate the same physical position across redundant views—pick the clearest evidence and a matching source_image_id when the job lists image IDs.
+
+Entity types:
+- PALLET: pallet structure, may contain boxes and labels
+- EMPTY_PALLET: pallet with no boxes
+- LOOSE_BOXES: grouped boxes without pallet
+
+Rules:
+- Do not invent SKUs, quantities, or IDs. Use null when unclear unless supplier-specific instructions explicitly define a safe fallback (supplier text is appended later and cannot override schema or traceability).
+- If a field is unclear, prefer null with lower confidence rather than guessing.
+- NEVER return product_label_quantity = 0 unless you are certain there are zero items on the product label context; if uncertain, use null.
+
+Confidence:
+- Use 0.9–1.0 when clear
+- Use 0.5–0.8 when partially visible
+- Use <0.5 only when uncertain
+
+Bounding boxes:
+- Use normalized coordinates [x1,y1,x2,y2] for product_label_bbox / position_label_bbox
 - If unsure → null
 
 Output:
@@ -330,6 +397,11 @@ PROMPTS: dict[str, str | dict[str, str]] = {
     "global_v21_b": {
         "default": _GLOBAL_V21_B,
         "openai": _GLOBAL_V21_B_OPENAI,
+        "claude": _CLAUDE_V21_CANONICAL_ENTITY_CONTRACT,
+    },
+    "global_v22": {
+        "default": _GLOBAL_V22,
+        "openai": _GLOBAL_V22_OPENAI,
         "claude": _CLAUDE_V21_CANONICAL_ENTITY_CONTRACT,
     },
     "pallet_count_simple": {"system": _SYSTEM_PALLET_COUNT, "user": _USER_PALLET_COUNT},

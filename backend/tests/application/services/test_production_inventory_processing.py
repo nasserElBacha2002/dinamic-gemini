@@ -1,4 +1,4 @@
-"""Effective processing keys for production inventories (snapshot + operational fallback)."""
+"""Unit tests for ``effective_production_processing_keys``."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from src.application.services.production_inventory_processing import (
     effective_production_processing_keys,
 )
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
+from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 
 _NOW = datetime(2026, 1, 2, tzinfo=timezone.utc)
 
@@ -42,7 +43,7 @@ def _inv(
 @patch(
     "src.application.services.production_inventory_processing.OperationalExecutionConfigResolver"
 )
-def test_full_snapshot_no_fallback_warning(mock_cls, caplog: pytest.LogCaptureFixture) -> None:
+def test_full_snapshot_prompt_key_always_global_v22(mock_cls, caplog: pytest.LogCaptureFixture) -> None:
     mock_cls.return_value.resolve.return_value = OperationalPrimaryExecutionConfig(
         provider_name="resolver-p",
         model_name="resolver-m",
@@ -51,32 +52,32 @@ def test_full_snapshot_no_fallback_warning(mock_cls, caplog: pytest.LogCaptureFi
     )
     caplog.set_level(logging.WARNING)
     p, m, pk = effective_production_processing_keys(_inv(), object())
-    assert (p, m, pk) == ("db-provider", "db-model", "db-prompt")
+    assert (p, m, pk) == ("db-provider", "db-model", DEFAULT_HYBRID_PROMPT_PROFILE)
     assert "production_inventory_snapshot_incomplete" not in caplog.text
 
 
 @patch(
     "src.application.services.production_inventory_processing.OperationalExecutionConfigResolver"
 )
-def test_partial_snapshot_logs_and_fills_from_resolver(
+def test_partial_snapshot_logs_and_fills_provider_model_prompt_always_v22(
     mock_cls, caplog: pytest.LogCaptureFixture
 ) -> None:
     mock_cls.return_value.resolve.return_value = OperationalPrimaryExecutionConfig(
         provider_name="fill-p",
         model_name="fill-m",
-        prompt_key="fill-pk",
+        prompt_key="global_v21",
         prompt_version="v9",
     )
     caplog.set_level(logging.WARNING)
     inv = _inv(
         primary_provider_name=None,
         primary_model_name="db-model",
-        primary_prompt_key="db-prompt",
+        primary_prompt_key="global_v21_b",
     )
     p, m, pk = effective_production_processing_keys(inv, object())
     assert p == "fill-p"
     assert m == "db-model"
-    assert pk == "db-prompt"
+    assert pk == DEFAULT_HYBRID_PROMPT_PROFILE
     assert "production_inventory_snapshot_incomplete_using_operational_fallback" in caplog.text
     assert "inv-prod" in caplog.text
     assert "primary_provider_name" in caplog.text

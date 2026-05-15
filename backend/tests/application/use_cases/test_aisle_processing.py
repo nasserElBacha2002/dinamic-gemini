@@ -233,7 +233,7 @@ def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
     saved_job = job_repo.get_by_id(job_id)
     assert saved_job is not None
     assert saved_job.provider_name == "gemini"
-    assert saved_job.prompt_key == "global_v21"
+    assert saved_job.prompt_key == "global_v22"
     assert saved_job.target_type == "aisle"
     assert saved_job.target_id == "a1"
     assert saved_job.job_type == "process_aisle"
@@ -286,7 +286,7 @@ def test_start_aisle_processing_persists_explicit_provider_and_prompt() -> None:
     assert saved is not None
     assert saved.provider_name == STUB_PRIMARY_PROVIDER
     assert saved.model_name == STUB_PRIMARY_MODEL
-    assert saved.prompt_key == "global_v21"
+    assert saved.prompt_key == "global_v22"
 
 
 def test_start_aisle_processing_persists_job_before_enqueue() -> None:

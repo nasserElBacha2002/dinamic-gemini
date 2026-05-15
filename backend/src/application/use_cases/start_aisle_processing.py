@@ -36,6 +36,7 @@ from src.application.services.process_aisle_execution_resolution import (
 )
 from src.config import load_settings
 from src.domain.jobs.entities import JobStatus
+from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ class StartAisleProcessingCommand:
     #: Used only when ``resolve_execution_keys`` is false (e.g. unit tests with pre-resolved keys).
     pipeline_provider_key: str = "gemini"
     model_name: str | None = None
-    prompt_key: str = "global_v21"
+    prompt_key: str = DEFAULT_HYBRID_PROMPT_PROFILE
 
 
 def _materialize_execution_keys_for_start(
@@ -129,10 +130,12 @@ class StartAisleProcessingUseCase:
         self._stale_reconciler = stale_reconciler
 
     def execute(self, command: StartAisleProcessingCommand) -> str:
-        pipeline_key, model_name, prompt_key = _materialize_execution_keys_for_start(
+        pipeline_key, model_name, _resolved_prompt = _materialize_execution_keys_for_start(
             self._inventory_repo,
             command,
         )
+        # Product policy: all new aisle jobs persist the label-first hybrid profile key.
+        prompt_key = DEFAULT_HYBRID_PROMPT_PROFILE
         aisle = require_aisle_scoped_to_inventory(
             self._aisle_repo,
             inventory_id=command.inventory_id,

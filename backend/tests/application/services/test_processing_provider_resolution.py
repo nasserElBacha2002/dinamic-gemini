@@ -18,7 +18,7 @@ from src.application.services.processing_provider_resolution import resolve_star
 def _settings(**overrides: object) -> MagicMock:
     s = MagicMock()
     s.llm_provider = "gemini"
-    s.hybrid_prompt = "global_v21"
+    s.hybrid_prompt = "global_v22"
     s.gemini_api_key = "gk"
     s.openai_api_key = ""
     s.gemini_model_name = "gemini-2.0-flash-exp"
@@ -46,7 +46,7 @@ def test_resolve_all_omitted_uses_defaults() -> None:
     )
     assert p == "gemini"
     assert m == "gemini-2.0-flash-exp"
-    assert pk == "global_v21"
+    assert pk == "global_v22"
 
 
 def test_resolve_explicit_gemini_model_and_prompt_b() -> None:
@@ -116,7 +116,7 @@ def test_resolve_explicit_openai_uses_default_catalog_model() -> None:
     )
     assert p == "openai"
     assert m == "gpt-4o"
-    assert pk == "global_v21"
+    assert pk == "global_v22"
 
 
 def test_resolve_explicit_claude_uses_default_catalog_model() -> None:
@@ -129,7 +129,32 @@ def test_resolve_explicit_claude_uses_default_catalog_model() -> None:
     )
     assert p == "claude"
     assert m == "claude-sonnet-4-20250514"
-    assert pk == "global_v21"
+    assert pk == "global_v22"
+
+
+def test_resolve_explicit_global_v22_preserved_across_providers() -> None:
+    """global_v22 is registered; explicit prompt_key must not be rewritten by provider resolution."""
+    s = _settings()
+    p, m, pk = resolve_start_processing_request(
+        requested_provider_name="gemini",
+        requested_model_name=None,
+        requested_prompt_key="global_v22",
+        settings=s,
+    )
+    assert p == "gemini"
+    assert pk == "global_v22"
+    assert m == "gemini-2.0-flash-exp"
+
+    st_openai = _settings(openai_api_key="sk-test", gemini_api_key="")
+    p2, m2, pk2 = resolve_start_processing_request(
+        requested_provider_name="openai",
+        requested_model_name=None,
+        requested_prompt_key="global_v22",
+        settings=st_openai,
+    )
+    assert p2 == "openai"
+    assert pk2 == "global_v22"
+    assert m2 == "gpt-4o"
 
 
 def test_resolve_explicit_claude_without_key_raises() -> None:
@@ -153,7 +178,7 @@ def test_resolve_explicit_deepseek_uses_default_catalog_model() -> None:
     )
     assert p == "deepseek"
     assert m == "deepseek-chat"
-    assert pk == "global_v21"
+    assert pk == "global_v22"
 
 
 def test_resolve_explicit_deepseek_without_key_raises() -> None:
@@ -165,3 +190,15 @@ def test_resolve_explicit_deepseek_without_key_raises() -> None:
             requested_prompt_key=None,
             settings=s,
         )
+
+
+def test_resolve_rollback_hybrid_prompt_global_v21_via_settings() -> None:
+    s = _settings(hybrid_prompt="global_v21")
+    p, m, pk = resolve_start_processing_request(
+        requested_provider_name="gemini",
+        requested_model_name=None,
+        requested_prompt_key=None,
+        settings=s,
+    )
+    assert p == "gemini"
+    assert pk == "global_v21"

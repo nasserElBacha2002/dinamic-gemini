@@ -17,6 +17,7 @@ from src.application.ports.services import WorkerLaunchService
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import Job, JobStatus
+from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ class AisleJobLaunchService:
                 if model_name is not None and str(model_name).strip()
                 else None
             ),
-            prompt_key=prompt_key or "global_v21",
+            prompt_key=prompt_key or DEFAULT_HYBRID_PROMPT_PROFILE,
             engine_params_json=None,
         )
         self.job_repo.save(job)

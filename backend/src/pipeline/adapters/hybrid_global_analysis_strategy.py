@@ -27,6 +27,7 @@ from typing import Any, NamedTuple
 
 import numpy as np
 
+import src.pipeline.services.hybrid_analysis_prompt as hybrid_prompt_service
 from src.llm.prompt_composer.prompt_traceability import (
     LLM_IDENTITY_METADATA_KEY,
     LLM_METADATA_KEY_PROMPT_COMPOSITION,
@@ -221,6 +222,12 @@ class HybridGlobalAnalysisStrategy:
         resolved_key = resolved_exec.normalized_provider_key
 
         prompt_text, composition_base = build_hybrid_analysis_prompt_with_traceability(run_ctx)
+        logger.info(
+            "Hybrid analysis prompt built: profile_name=%s hybrid_analysis_prompt=%s job_id=%s",
+            composition_base.get("profile_name"),
+            hybrid_prompt_service.__file__,
+            job_id,
+        )
 
         analysis_context: AnalysisContext | None = resolve_analysis_context_for_run(run_ctx)
         visual_references_available = bool(analysis_context and analysis_context.visual_references)

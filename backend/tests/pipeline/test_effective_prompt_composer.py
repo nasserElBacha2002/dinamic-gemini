@@ -246,7 +246,9 @@ def test_compute_effective_prompt_hash_matches_sha256_utf8() -> None:
 
 
 def test_compose_hybrid_base_plus_supplier_keeps_shared_markers(composer: EffectivePromptComposer) -> None:
-    base = compose_hybrid_base("global_v21", "gemini", prompt_parity_mode=False)
+    base = compose_hybrid_base(
+        "global_v21", "gemini", prompt_parity_mode=False, restrict_to_default_aisle_profile=False
+    )
     res = _resolution(
         resolution_status="resolved",
         editable_instructions="Supplier operational note.",

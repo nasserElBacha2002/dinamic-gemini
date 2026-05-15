@@ -1,4 +1,4 @@
-"""Derive effective processing keys for production inventories (snapshot with operational fallback)."""
+"""Derive effective processing keys for production inventories (provider/model snapshot + operational fallback)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from src.application.services.operational_execution_config_resolver import (
     OperationalExecutionConfigResolver,
 )
 from src.domain.inventory.entities import Inventory
+from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,9 @@ def effective_production_processing_keys(
 
     Logs a **warning** when the inventory snapshot is incomplete and resolver fallback is used
     (includes inventory id and which snapshot fields were missing).
+
+    Prompt profile on new jobs is always ``global_v22`` (label-first). Snapshot ``primary_prompt_key``
+    is not used to select the hybrid body; provider/model still use the snapshot with operational fill-in.
     """
     missing_snapshot: list[str] = []
     p_raw = (inventory.primary_provider_name or "").strip()
@@ -47,7 +51,7 @@ def effective_production_processing_keys(
     model = (m_raw or baseline.model_name or "").strip()
     if not model:
         model = (baseline.model_name or "").strip()
-    prompt_key = (pk_raw or baseline.prompt_key).strip()
+    prompt_key = DEFAULT_HYBRID_PROMPT_PROFILE
     if not provider or not prompt_key:
         raise ValueError(
             "Production inventory missing effective provider or prompt after resolution"

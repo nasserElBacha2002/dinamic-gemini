@@ -26,7 +26,11 @@ class ProcessAisleRequest(BaseModel):
     )
     prompt_key: Optional[str] = Field(
         None,
-        description="Hybrid prompt profile key (e.g. global_v21, global_v21_b); omit for HYBRID_PROMPT default.",
+        description=(
+            "Ignored for hybrid body selection: new aisle jobs always use profile global_v22 (label-first). "
+            "Listed keys (global_v21, global_v21_b, global_v22) remain valid for admin/options; "
+            "HYBRID_PROMPT affects documentation and non-pipeline defaults only."
+        ),
     )
 
 

@@ -7,7 +7,10 @@ from unittest.mock import patch
 
 from src.application.services.processing_experiment_catalog import (
     default_model_for_provider,
+    default_prompt_key,
+    is_valid_prompt_key,
     models_for_provider,
+    prompt_profile_catalog,
 )
 from src.config import Settings
 
@@ -74,3 +77,20 @@ def test_default_model_when_deepseek_model_not_in_processing_list_uses_first_off
     s.processing_deepseek_models = "custom-d1,custom-d2"
     s.deepseek_model = "deepseek-chat"
     assert default_model_for_provider("deepseek", s) == "custom-d1"
+
+
+def test_prompt_profile_catalog_includes_global_v22() -> None:
+    keys = [k for k, _lab, _desc in prompt_profile_catalog()]
+    assert keys == ["global_v21", "global_v21_b", "global_v22"]
+
+
+def test_is_valid_prompt_key_accepts_global_v22() -> None:
+    s = Settings()
+    assert is_valid_prompt_key("global_v22", s) is True
+    assert is_valid_prompt_key("global_v21", s) is True
+
+
+def test_default_prompt_key_empty_hybrid_prompt_uses_global_v22() -> None:
+    s = Settings()
+    s.hybrid_prompt = ""
+    assert default_prompt_key(s) == "global_v22"

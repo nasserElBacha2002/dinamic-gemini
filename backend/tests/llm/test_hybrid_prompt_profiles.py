@@ -11,6 +11,10 @@ def test_global_v21_b_is_registered() -> None:
     assert "global_v21_b" in registered_hybrid_prompt_keys()
 
 
+def test_global_v22_is_registered() -> None:
+    assert "global_v22" in registered_hybrid_prompt_keys()
+
+
 def test_prompt_b_differs_substantially_from_prompt_a() -> None:
     a = get_hybrid_prompt("global_v21")
     b = get_hybrid_prompt("global_v21_b")
