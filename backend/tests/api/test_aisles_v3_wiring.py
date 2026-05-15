@@ -1106,7 +1106,7 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
         assert data["execution_id"] == "exec-job-retry-created"
         assert data.get("provider_name") == STUB_PRIMARY_PROVIDER
         assert data.get("model_name") == STUB_PRIMARY_MODEL
-        assert data.get("prompt_key") == "global_v21"
+        assert data.get("prompt_key") == "global_v22"
         assert launch_service.launched == [data["id"]]
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
