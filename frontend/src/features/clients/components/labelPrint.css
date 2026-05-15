@@ -1,8 +1,8 @@
-/* Warehouse label preview and A4 print — single large label (1 copy) or 2×2 grid (2+ copies). */
+/* Horizontal warehouse inventory label — A4 landscape print, stacked copies. */
 
 .label-print-root {
   background: #fff;
-  color: #000;
+  color: #222;
 }
 
 .label-print-root--preview {
@@ -18,101 +18,187 @@
   width: 100%;
 }
 
-/* Screen: preview stays compact inside the dialog */
-.label-print-root--preview .label-print-grid.single-label {
-  grid-template-columns: 1fr;
-}
-
-.label-print-root--preview .label-print-grid.single-label .label-card {
-  min-height: 220px;
-  padding: 16px;
-}
-
-.label-print-root--preview .label-print-grid.multi-label {
-  gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.label-print-root--preview .label-print-grid.multi-label .label-card {
-  min-height: 140px;
-  padding: 12px;
-}
-
 .label-print-grid {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
 }
 
-.label-print-grid.single-label {
+.label-print-grid--horizontal {
   grid-template-columns: 1fr;
 }
 
-.label-print-grid.multi-label {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+/* Screen preview: horizontal aspect, scaled down */
+.label-print-root--preview .label-card--horizontal {
+  aspect-ratio: 1.9 / 1;
+  min-height: 0;
+  padding: 12px 14px;
+}
+
+.label-print-root--preview .label-title {
+  font-size: 9pt;
+  line-height: 1.15;
+}
+
+.label-print-root--preview .label-date-code {
+  font-size: 14pt;
+}
+
+.label-print-root--preview .label-row-label {
+  font-size: 8pt;
+}
+
+.label-print-root--preview .label-row-value {
+  font-size: 10pt;
+}
+
+.label-print-root--preview .label-code-value {
+  font-size: 12pt;
+}
+
+.label-print-root--preview .label-quantity-label {
+  font-size: 11pt;
+}
+
+.label-print-root--preview .label-quantity-value {
+  font-size: 28pt;
+}
+
+.label-print-root--preview .label-footer {
+  font-size: 8pt;
 }
 
 .label-card {
   background: #fff;
-  border: 2px solid #000;
+  border: 2px solid #222;
   box-sizing: border-box;
-  color: #000;
-  min-height: 120px;
-  padding: 10px 12px;
+  color: #222;
 }
 
-.label-line {
-  margin-bottom: 8px;
+.label-card--horizontal {
+  display: flex;
+  flex-direction: column;
 }
 
-.label-line:last-child {
-  margin-bottom: 0;
+.label-header {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 36px 1fr 48px;
+  margin-bottom: 10px;
 }
 
-.label-field-label,
-.label-prefix {
-  color: #000;
-  display: block;
+.label-brand-mark {
+  align-items: center;
+  border: 2px solid #555;
+  border-radius: 50%;
+  display: flex;
   font-size: 10pt;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: 1.2;
+  font-weight: 800;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.label-title {
+  font-size: 11pt;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
   text-transform: uppercase;
 }
 
-.label-field-value,
-.label-value {
-  color: #000;
-  display: block;
+.label-date-code {
   font-size: 16pt;
-  font-weight: 700;
-  line-height: 1.2;
-  margin-top: 2px;
+  font-weight: 900;
+  line-height: 1;
+  text-align: right;
+}
+
+.label-meta {
+  display: grid;
+  gap: 6px;
+}
+
+.label-row {
+  align-items: baseline;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(88px, 34%) 1fr;
+}
+
+.label-row-label {
+  color: #222;
+  font-size: 9pt;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.label-row-value {
+  color: #222;
+  font-size: 11pt;
+  font-weight: 800;
   word-break: break-word;
 }
 
-.label-code-value,
-.label-quantity-value {
-  font-size: 22pt;
-  font-weight: 800;
-}
-
-.label-value--code,
 .label-code-value {
   font-family: 'Roboto Mono', 'Consolas', 'Courier New', monospace;
+  font-size: 13pt;
+  letter-spacing: 0.04em;
+}
+
+.label-divider {
+  border-top: 2px dashed #333;
+  margin: 8px 0 10px;
+}
+
+.label-quantity-section {
+  align-items: center;
+  display: grid;
+  flex: 1;
+  gap: 12px;
+  grid-template-columns: minmax(72px, 28%) 1fr;
+  min-height: 48px;
+}
+
+.label-quantity-label {
+  font-size: 12pt;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.label-quantity-value {
+  color: #222;
+  font-size: 32pt;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+}
+
+.label-footer {
+  border-top: 1.5px solid #333;
+  color: #222;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 9pt;
+  font-weight: 700;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 6px;
 }
 
 @media print {
   @page {
     margin: 8mm;
-    size: A4;
+    size: A4 landscape;
   }
 
   html,
   body {
     background: #fff !important;
-    min-height: 297mm;
-    width: 210mm;
+    min-height: 100%;
+    width: 100%;
   }
 
   body * {
@@ -126,7 +212,7 @@
 
   .label-print-root {
     background: #fff !important;
-    color: #000 !important;
+    color: #222 !important;
     inset: 0 !important;
     margin: 0 !important;
     min-height: 100% !important;
@@ -152,65 +238,130 @@
   .label-print-grid {
     display: grid !important;
     gap: 8mm !important;
-    width: 100% !important;
-  }
-
-  .label-print-grid.single-label {
     grid-template-columns: 1fr !important;
-  }
-
-  .label-print-grid.multi-label {
-    grid-template-columns: repeat(2, 1fr) !important;
+    width: 100% !important;
   }
 
   .label-card {
     background: #fff !important;
-    border: 2px solid #000 !important;
+    border: 2px solid #222 !important;
+    box-sizing: border-box !important;
     break-inside: avoid !important;
-    color: #000 !important;
+    color: #222 !important;
     page-break-inside: avoid !important;
-  }
-
-  .label-print-grid.single-label .label-card {
-    min-height: 250mm !important;
-    padding: 14mm !important;
+    padding: 10mm 12mm !important;
     width: 100% !important;
   }
 
-  .label-print-grid.multi-label .label-card {
-    min-height: 130mm !important;
-    padding: 8mm !important;
+  .label-card.single-label {
+    min-height: 180mm !important;
   }
 
-  .label-field-label,
-  .label-prefix {
-    color: #000 !important;
-    font-size: 13pt !important;
-    font-weight: 700 !important;
+  .label-card.multi-label {
+    min-height: 95mm !important;
+  }
+
+  .label-header {
+    align-items: center !important;
+    display: grid !important;
+    gap: 8mm !important;
+    grid-template-columns: 28mm 1fr 38mm !important;
+    margin-bottom: 10mm !important;
+  }
+
+  .label-brand-mark {
+    align-items: center !important;
+    border: 2px solid #555 !important;
+    border-radius: 50% !important;
+    display: flex !important;
+    font-size: 18pt !important;
+    font-weight: 800 !important;
+    height: 24mm !important;
+    justify-content: center !important;
+    width: 24mm !important;
+  }
+
+  .label-title {
+    font-size: 22pt !important;
+    font-weight: 800 !important;
+    line-height: 1.1 !important;
+    text-align: center !important;
     text-transform: uppercase !important;
   }
 
-  .label-field-value,
-  .label-value {
-    color: #000 !important;
-    font-size: 24pt !important;
-    font-weight: 700 !important;
-    line-height: 1.15 !important;
-  }
-
-  .label-print-grid.multi-label .label-field-value,
-  .label-print-grid.multi-label .label-value {
-    font-size: 18pt !important;
-  }
-
-  .label-code-value,
-  .label-quantity-value {
+  .label-date-code {
     font-size: 34pt !important;
+    font-weight: 900 !important;
+    text-align: right !important;
+  }
+
+  .label-row {
+    align-items: baseline !important;
+    display: grid !important;
+    gap: 8mm !important;
+    grid-template-columns: 60mm 1fr !important;
+    margin-bottom: 7mm !important;
+  }
+
+  .label-row-label {
+    color: #222 !important;
+    font-size: 24pt !important;
+    font-weight: 500 !important;
+  }
+
+  .label-row-value {
+    color: #222 !important;
+    font-size: 30pt !important;
     font-weight: 800 !important;
   }
 
-  .label-print-grid.multi-label .label-code-value,
-  .label-print-grid.multi-label .label-quantity-value {
-    font-size: 22pt !important;
+  .label-code-value {
+    font-size: 38pt !important;
+    letter-spacing: 0.04em !important;
+  }
+
+  .label-divider {
+    border-top: 2px dashed #333 !important;
+    margin: 8mm 0 10mm !important;
+  }
+
+  .label-quantity-section {
+    align-items: center !important;
+    display: grid !important;
+    grid-template-columns: 70mm 1fr !important;
+    gap: 12mm !important;
+  }
+
+  .label-quantity-label {
+    font-size: 34pt !important;
+    font-weight: 700 !important;
+  }
+
+  .label-quantity-value {
+    color: #222 !important;
+    font-size: 86pt !important;
+    font-weight: 900 !important;
+    line-height: 1 !important;
+    text-align: center !important;
+  }
+
+  .label-card.multi-label .label-quantity-value {
+    font-size: 64pt !important;
+  }
+
+  .label-card.multi-label .label-code-value {
+    font-size: 30pt !important;
+  }
+
+  .label-footer {
+    border-top: 1.5px solid #333 !important;
+    color: #222 !important;
+    display: flex !important;
+    font-size: 18pt !important;
+    font-weight: 700 !important;
+    gap: 8mm !important;
+    justify-content: space-between !important;
+    margin-top: 8mm !important;
+    padding-top: 4mm !important;
   }
 }

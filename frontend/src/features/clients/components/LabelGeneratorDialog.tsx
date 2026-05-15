@@ -33,6 +33,7 @@ const EMPTY_SUPPLIER_VALUE = '';
 function buildSheetData(
   clientName: string,
   supplierName: string | null,
+  countedBy: string,
   code: string,
   quantity: string,
   lot: string,
@@ -44,6 +45,7 @@ function buildSheetData(
   return {
     clientName: clientName.trim() || '—',
     supplierName: supplierName?.trim() ? supplierName.trim() : null,
+    countedBy: countedBy.trim() || null,
     code: code.trim(),
     quantity: quantity.trim(),
     lot: lot.trim() || null,
@@ -63,6 +65,7 @@ export default function LabelGeneratorDialog({
 }: LabelGeneratorDialogProps) {
   const { t } = useTranslation();
   const [supplierId, setSupplierId] = useState(EMPTY_SUPPLIER_VALUE);
+  const [countedBy, setCountedBy] = useState('');
   const [code, setCode] = useState('');
   const [quantity, setQuantity] = useState('');
   const [lot, setLot] = useState('');
@@ -87,6 +90,7 @@ export default function LabelGeneratorDialog({
       buildSheetData(
         trimmedClientName,
         selectedSupplierName,
+        countedBy,
         code,
         quantity,
         lot,
@@ -98,6 +102,7 @@ export default function LabelGeneratorDialog({
     [
       trimmedClientName,
       selectedSupplierName,
+      countedBy,
       code,
       quantity,
       lot,
@@ -132,6 +137,7 @@ export default function LabelGeneratorDialog({
   const canPrint = code.trim().length > 0 && quantity.trim().length > 0 && copies >= LABEL_COPIES_MIN;
 
   const handleClear = () => {
+    setCountedBy('');
     setCode('');
     setQuantity('');
     setLot('');
@@ -209,6 +215,13 @@ export default function LabelGeneratorDialog({
               </MenuItem>
             ))}
           </TextField>
+          <TextField
+            label={t('clients.labels.field_counted_by')}
+            value={countedBy}
+            onChange={(e) => setCountedBy(e.target.value)}
+            fullWidth
+            size="small"
+          />
           <TextField
             label={t('clients.labels.field_code')}
             value={code}

@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import LabelGeneratorDialog from '../src/features/clients/components/LabelGeneratorDialog';
+import { LABEL_PRINT_TITLE } from '../src/features/clients/components/labelPrintUtils';
 
 const suppliers = [
   {
@@ -48,60 +49,108 @@ describe('LabelGeneratorDialog', () => {
     expect(screen.getByRole('option', { name: /sin proveedor/i })).toBeInTheDocument();
   });
 
-  it('updates preview when code and quantity are entered', () => {
+  it('renders horizontal label card and warehouse title', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /^código$/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
       target: { value: '205357' },
     });
-    fireEvent.change(screen.getByRole('textbox', { name: /^cantidad$/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
       target: { value: '7200' },
     });
     const sheet = screen.getByTestId('label-print-sheet');
-    expect(within(sheet).getByText('205357')).toBeInTheDocument();
-    expect(within(sheet).getByText('7200')).toBeInTheDocument();
+    const card = within(sheet).getByTestId('label-card');
+    expect(card).toHaveClass('label-card--horizontal');
+    expect(within(sheet).getByText(LABEL_PRINT_TITLE)).toBeInTheDocument();
+  });
+
+  it('renders CÓDIGO INTERNO and CANT. TOTAL labels instead of COD/CANTIDAD', () => {
+    renderDialog();
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
+      target: { value: 'ABC' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
+      target: { value: '10' },
+    });
+    const sheet = screen.getByTestId('label-print-sheet');
+    expect(within(sheet).getByText('CÓDIGO INTERNO:')).toBeInTheDocument();
+    expect(within(sheet).getByText('CANT. TOTAL')).toBeInTheDocument();
+    expect(within(sheet).queryByText(/^COD:/)).not.toBeInTheDocument();
+    expect(within(sheet).queryByText(/^CANTIDAD:/)).not.toBeInTheDocument();
+  });
+
+  it('shows code and quantity values prominently in preview', () => {
+    renderDialog();
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
+      target: { value: '10334321' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
+      target: { value: '34' },
+    });
+    const sheet = screen.getByTestId('label-print-sheet');
+    expect(within(sheet).getByText('10334321')).toHaveClass('label-code-value');
+    expect(within(sheet).getByText('34')).toHaveClass('label-quantity-value');
+  });
+
+  it('updates preview when Contado por is filled', () => {
+    renderDialog();
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
+      target: { value: 'X' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
+      target: { value: '1' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /contado por/i }), {
+      target: { value: 'Ana López' },
+    });
+    const sheet = screen.getByTestId('label-print-sheet');
+    expect(within(sheet).getByText('CONTADO POR:')).toBeInTheDocument();
+    expect(within(sheet).getByText('Ana López')).toBeInTheDocument();
   });
 
   it('omits empty optional fields from the label', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /^código$/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
       target: { value: 'ABC' },
     });
-    fireEvent.change(screen.getByRole('textbox', { name: /^cantidad$/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
       target: { value: '10' },
     });
     const sheet = screen.getByTestId('label-print-sheet');
     expect(within(sheet).queryByText('LOTE:')).not.toBeInTheDocument();
-    expect(within(sheet).queryByText('VTO:')).not.toBeInTheDocument();
-    expect(within(sheet).queryByText('DESCRIPCION:')).not.toBeInTheDocument();
+    expect(within(sheet).queryByText('CONTADO POR:')).not.toBeInTheDocument();
+    expect(within(sheet).queryByText('PROVEEDOR:')).not.toBeInTheDocument();
   });
 
-  it('uses single-label grid layout for one copy', () => {
+  it('uses single-label horizontal grid for one copy', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /^código$/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
       target: { value: 'X1' },
     });
-    fireEvent.change(screen.getByRole('textbox', { name: /^cantidad$/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
       target: { value: '1' },
     });
     const grid = screen.getByTestId('label-print-grid');
+    expect(grid).toHaveClass('label-print-grid--horizontal');
     expect(grid).toHaveClass('single-label');
     expect(grid).toHaveAttribute('data-layout', 'single');
     expect(screen.getAllByTestId('label-card')).toHaveLength(1);
   });
 
-  it('uses multi-label grid layout for multiple copies', () => {
+  it('uses stacked multi-label horizontal grid for multiple copies', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /^código$/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
       target: { value: 'X1' },
     });
-    fireEvent.change(screen.getByRole('textbox', { name: /^cantidad$/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
       target: { value: '1' },
     });
     fireEvent.change(screen.getByRole('spinbutton', { name: /^copias$/i }), {
       target: { value: '3' },
     });
     const grid = screen.getByTestId('label-print-grid');
+    expect(grid).toHaveClass('label-print-grid--horizontal');
     expect(grid).toHaveClass('multi-label');
+    expect(grid).not.toHaveClass('single-label');
     expect(grid).toHaveAttribute('data-layout', 'multi');
     expect(screen.getAllByTestId('label-card')).toHaveLength(3);
   });
@@ -113,10 +162,10 @@ describe('LabelGeneratorDialog', () => {
 
   it('calls window.print when Imprimir is clicked', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /^código$/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
       target: { value: '205357' },
     });
-    fireEvent.change(screen.getByRole('textbox', { name: /^cantidad$/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
       target: { value: '7200' },
     });
     fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
@@ -132,16 +181,20 @@ describe('LabelGeneratorDialog', () => {
     renderDialog();
     fireEvent.mouseDown(screen.getByRole('combobox', { name: /proveedor/i }));
     fireEvent.click(screen.getByRole('option', { name: /proveedor rabbione/i }));
-    fireEvent.change(screen.getByRole('textbox', { name: /^código$/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /contado por/i }), {
+      target: { value: 'Ana' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
       target: { value: 'TMP' },
     });
-    fireEvent.change(screen.getByRole('textbox', { name: /^cantidad$/i }), {
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
       target: { value: '99' },
     });
     fireEvent.click(screen.getByRole('button', { name: /limpiar campos/i }));
     expect(screen.getByDisplayValue('Cliente Blainstein')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /proveedor/i })).toHaveTextContent(/proveedor rabbione/i);
-    expect(screen.getByRole('textbox', { name: /^código$/i })).toHaveValue('');
-    expect(screen.getByRole('textbox', { name: /^cantidad$/i })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: /contado por/i })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: /código interno/i })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: /cant\. total/i })).toHaveValue('');
   });
 });

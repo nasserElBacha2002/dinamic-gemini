@@ -1,40 +1,89 @@
 import { useMemo } from 'react';
-import { clampLabelCopies, type LabelSheetData } from './labelPrintUtils';
+import {
+  clampLabelCopies,
+  formatShortLabelDate,
+  LABEL_PRINT_TITLE,
+  type LabelSheetData,
+} from './labelPrintUtils';
 import './labelPrint.css';
 
-function LabelLine({
-  prefix,
+function LabelRow({
+  label,
   value,
+  rowClassName = '',
   valueClassName = '',
 }: {
-  prefix: string;
-  value: string;
+  label: string;
+  value: string | null | undefined;
+  rowClassName?: string;
   valueClassName?: string;
 }) {
-  const trimmed = value.trim();
+  const trimmed = (value ?? '').trim();
   if (!trimmed) return null;
 
-  const valueClasses = ['label-field-value', 'label-value', valueClassName].filter(Boolean).join(' ');
+  const rowClass = ['label-row', rowClassName].filter(Boolean).join(' ');
+  const valueClass = ['label-row-value', valueClassName].filter(Boolean).join(' ');
 
   return (
-    <div className="label-line">
-      <span className="label-field-label label-prefix">{prefix}</span>
-      <span className={valueClasses}>{trimmed}</span>
+    <div className={rowClass}>
+      <span className="label-row-label">{label}</span>
+      <span className={valueClass}>{trimmed}</span>
     </div>
   );
 }
 
-function LabelCard({ data }: { data: Omit<LabelSheetData, 'copies'> }) {
+function HorizontalLabelCard({
+  data,
+  headerDate,
+  singleOnPage,
+}: {
+  data: Omit<LabelSheetData, 'copies'>;
+  headerDate: string;
+  singleOnPage: boolean;
+}) {
+  const cardClass = [
+    'label-card',
+    'label-card--horizontal',
+    singleOnPage ? 'single-label' : 'multi-label',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <article className="label-card" data-testid="label-card">
-      <LabelLine prefix="CLIENTE:" value={data.clientName} />
-      {data.supplierName ? <LabelLine prefix="PROVEEDOR:" value={data.supplierName} /> : null}
-      <LabelLine prefix="COD:" value={data.code} valueClassName="label-code-value label-value--code" />
-      <LabelLine prefix="CANTIDAD:" value={data.quantity} valueClassName="label-quantity-value" />
-      <LabelLine prefix="LOTE:" value={data.lot ?? ''} />
-      <LabelLine prefix="VTO:" value={data.expiry ?? ''} />
-      <LabelLine prefix="DESCRIPCION:" value={data.description ?? ''} />
-      <LabelLine prefix="OBS:" value={data.observations ?? ''} />
+    <article className={cardClass} data-testid="label-card">
+      <header className="label-header">
+        <div className="label-brand-mark" aria-hidden="true">
+          DI
+        </div>
+        <div className="label-title">{LABEL_PRINT_TITLE}</div>
+        <div className="label-date-code">{headerDate}</div>
+      </header>
+
+      <section className="label-meta">
+        <LabelRow label="CLIENTE:" value={data.clientName} />
+        <LabelRow label="PROVEEDOR:" value={data.supplierName} />
+        <LabelRow label="CONTADO POR:" value={data.countedBy} />
+        <LabelRow
+          label="CÓDIGO INTERNO:"
+          value={data.code}
+          rowClassName="label-row--code"
+          valueClassName="label-code-value"
+        />
+      </section>
+
+      <div className="label-divider" role="presentation" />
+
+      <section className="label-quantity-section" aria-label="Cantidad total">
+        <div className="label-quantity-label">CANT. TOTAL</div>
+        <div className="label-quantity-value">{data.quantity.trim()}</div>
+      </section>
+
+      <footer className="label-footer">
+        {data.lot?.trim() ? <div>{`LOTE: ${data.lot.trim()}`}</div> : null}
+        {data.expiry?.trim() ? <div>{`VTO: ${data.expiry.trim()}`}</div> : null}
+        {data.description?.trim() ? <div>{data.description.trim()}</div> : null}
+        {data.observations?.trim() ? <div>{`OBS: ${data.observations.trim()}`}</div> : null}
+      </footer>
     </article>
   );
 }
@@ -49,10 +98,13 @@ export interface LabelPrintSheetProps {
 export default function LabelPrintSheet({ data, preview = false, className }: LabelPrintSheetProps) {
   const copies = clampLabelCopies(data.copies);
   const isSingleLabel = copies === 1;
+  const headerDate = formatShortLabelDate();
+
   const cardData = useMemo(
     () => ({
       clientName: data.clientName,
       supplierName: data.supplierName,
+      countedBy: data.countedBy,
       code: data.code,
       quantity: data.quantity,
       lot: data.lot,
@@ -63,6 +115,7 @@ export default function LabelPrintSheet({ data, preview = false, className }: La
     [
       data.clientName,
       data.supplierName,
+      data.countedBy,
       data.code,
       data.quantity,
       data.lot,
@@ -85,7 +138,11 @@ export default function LabelPrintSheet({ data, preview = false, className }: La
     .filter(Boolean)
     .join(' ');
 
-  const gridClass = `label-print-grid ${isSingleLabel ? 'single-label' : 'multi-label'}`;
+  const gridClass = [
+    'label-print-grid',
+    'label-print-grid--horizontal',
+    isSingleLabel ? 'single-label' : 'multi-label',
+  ].join(' ');
 
   return (
     <div className={rootClass} data-testid="label-print-sheet">
@@ -97,7 +154,12 @@ export default function LabelPrintSheet({ data, preview = false, className }: La
           aria-label="label-print-grid"
         >
           {cards.map((key) => (
-            <LabelCard key={key} data={cardData} />
+            <HorizontalLabelCard
+              key={key}
+              data={cardData}
+              headerDate={headerDate}
+              singleOnPage={isSingleLabel}
+            />
           ))}
         </div>
       </div>
