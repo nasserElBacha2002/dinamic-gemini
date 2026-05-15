@@ -19,7 +19,7 @@ const suppliers: ClientSupplier[] = [
 
 function renderDialog(overrides: Partial<ComponentProps<typeof LabelGeneratorDialog>> = {}) {
   const onClose = vi.fn();
-  render(
+  const view = render(
     <LabelGeneratorDialog
       open
       onClose={onClose}
@@ -29,7 +29,24 @@ function renderDialog(overrides: Partial<ComponentProps<typeof LabelGeneratorDia
       {...overrides}
     />
   );
-  return { onClose };
+  return { onClose, ...view };
+}
+
+function getPrintRoot(): Element | null {
+  return document.querySelector('.label-print-only-root');
+}
+
+function getPreviewSheet(): HTMLElement {
+  return screen.getByTestId('label-preview-sheet');
+}
+
+function fillRequiredFields() {
+  fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
+    target: { value: '1931038' },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
+    target: { value: '03' },
+  });
 }
 
 describe('LabelGeneratorDialog', () => {
@@ -51,33 +68,23 @@ describe('LabelGeneratorDialog', () => {
     expect(screen.getByRole('option', { name: /sin proveedor/i })).toBeInTheDocument();
   });
 
-  it('renders horizontal label card and warehouse title', () => {
+  it('renders horizontal label card and warehouse title in preview', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
-      target: { value: '205357' },
-    });
-    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
-      target: { value: '7200' },
-    });
-    const sheet = screen.getByTestId('label-print-sheet');
-    const card = within(sheet).getByTestId('label-card');
+    fillRequiredFields();
+    const preview = getPreviewSheet();
+    const card = within(preview).getByTestId('label-card');
     expect(card).toHaveClass('label-card--horizontal');
-    expect(within(sheet).getByText(LABEL_PRINT_TITLE)).toBeInTheDocument();
+    expect(within(preview).getByText(LABEL_PRINT_TITLE)).toBeInTheDocument();
   });
 
   it('renders CÓDIGO INTERNO and CANT. TOTAL labels instead of COD/CANTIDAD', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
-      target: { value: 'ABC' },
-    });
-    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
-      target: { value: '10' },
-    });
-    const sheet = screen.getByTestId('label-print-sheet');
-    expect(within(sheet).getByText('CÓDIGO INTERNO:')).toBeInTheDocument();
-    expect(within(sheet).getByText('CANT. TOTAL')).toBeInTheDocument();
-    expect(within(sheet).queryByText(/^COD:/)).not.toBeInTheDocument();
-    expect(within(sheet).queryByText(/^CANTIDAD:/)).not.toBeInTheDocument();
+    fillRequiredFields();
+    const preview = getPreviewSheet();
+    expect(within(preview).getByText('CÓDIGO INTERNO:')).toBeInTheDocument();
+    expect(within(preview).getByText('CANT. TOTAL')).toBeInTheDocument();
+    expect(within(preview).queryByText(/^COD:/)).not.toBeInTheDocument();
+    expect(within(preview).queryByText(/^CANTIDAD:/)).not.toBeInTheDocument();
   });
 
   it('shows code and quantity values prominently in preview', () => {
@@ -88,71 +95,54 @@ describe('LabelGeneratorDialog', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
       target: { value: '34' },
     });
-    const sheet = screen.getByTestId('label-print-sheet');
-    expect(within(sheet).getByText('10334321')).toHaveClass('label-code-value');
-    expect(within(sheet).getByText('34')).toHaveClass('label-quantity-value');
+    const preview = getPreviewSheet();
+    expect(within(preview).getByText('10334321')).toHaveClass('label-code-value');
+    expect(within(preview).getByText('34')).toHaveClass('label-quantity-value');
   });
 
   it('updates preview when Contado por is filled', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
-      target: { value: 'X' },
-    });
-    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
-      target: { value: '1' },
-    });
+    fillRequiredFields();
     fireEvent.change(screen.getByRole('textbox', { name: /contado por/i }), {
       target: { value: 'Ana López' },
     });
-    const sheet = screen.getByTestId('label-print-sheet');
-    expect(within(sheet).getByText('CONTADO POR:')).toBeInTheDocument();
-    expect(within(sheet).getByText('Ana López')).toBeInTheDocument();
+    const preview = getPreviewSheet();
+    expect(within(preview).getByText('CONTADO POR:')).toBeInTheDocument();
+    expect(within(preview).getByText('Ana López')).toBeInTheDocument();
   });
 
   it('omits empty optional fields from the label', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
-      target: { value: 'ABC' },
-    });
-    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
-      target: { value: '10' },
-    });
-    const sheet = screen.getByTestId('label-print-sheet');
-    expect(within(sheet).queryByText('LOTE:')).not.toBeInTheDocument();
-    expect(within(sheet).queryByText('CONTADO POR:')).not.toBeInTheDocument();
-    expect(within(sheet).queryByText('PROVEEDOR:')).not.toBeInTheDocument();
+    fillRequiredFields();
+    const preview = getPreviewSheet();
+    expect(within(preview).queryByText('LOTE:')).not.toBeInTheDocument();
+    expect(within(preview).queryByText('CONTADO POR:')).not.toBeInTheDocument();
+    expect(within(preview).queryByText('PROVEEDOR:')).not.toBeInTheDocument();
   });
 
-  it('uses single-label horizontal grid for one copy', () => {
+  it('uses single-label horizontal grid for one copy in preview', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
-      target: { value: 'X1' },
-    });
-    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
-      target: { value: '1' },
-    });
-    const grid = screen.getByTestId('label-print-grid');
+    fillRequiredFields();
+    const preview = getPreviewSheet();
+    const grid = within(preview).getByTestId('label-print-grid');
     expect(grid).toHaveClass('label-print-grid--horizontal');
     expect(grid).toHaveClass('single-label');
     expect(grid).toHaveAttribute('data-layout', 'single');
-    expect(screen.getAllByTestId('label-card')).toHaveLength(1);
+    expect(within(preview).getAllByTestId('label-card')).toHaveLength(1);
   });
 
-  it('renders exactly one printable root and one label card for a single copy', () => {
+  it('renders exactly one print-only label card for a single copy', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
-      target: { value: '1931038' },
-    });
-    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
-      target: { value: '03' },
-    });
-    expect(document.querySelectorAll('.label-print-root')).toHaveLength(1);
-    expect(document.querySelectorAll('.label-print-root .label-card')).toHaveLength(1);
-    expect(screen.getByTestId('label-print-grid')).toHaveAttribute('data-copies', '1');
-    expect(screen.getByTestId('label-print-grid')).toHaveClass('single-label');
+    fillRequiredFields();
+    const printRoot = getPrintRoot();
+    expect(printRoot).toBeTruthy();
+    expect(printRoot?.parentElement).toBe(document.body);
+    expect(printRoot?.querySelectorAll('.label-card')).toHaveLength(1);
+    expect(printRoot?.querySelector('[data-copies="1"]')).toBeTruthy();
+    expect(document.querySelector('.label-preview-root .label-print-root')).toBeFalsy();
   });
 
-  it('renders three printable label cards when copies is 3', () => {
+  it('renders three print-only label cards when copies is 3', () => {
     renderDialog();
     fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
       target: { value: 'X1' },
@@ -163,12 +153,21 @@ describe('LabelGeneratorDialog', () => {
     fireEvent.change(screen.getByRole('spinbutton', { name: /^copias$/i }), {
       target: { value: '3' },
     });
-    expect(document.querySelectorAll('.label-print-root')).toHaveLength(1);
-    expect(document.querySelectorAll('.label-print-root .label-card')).toHaveLength(3);
-    expect(screen.getByTestId('label-print-grid')).toHaveAttribute('data-copies', '3');
+    const printRoot = getPrintRoot();
+    expect(printRoot?.querySelectorAll('.label-card')).toHaveLength(3);
+    expect(printRoot?.querySelector('[data-copies="3"]')).toBeTruthy();
   });
 
-  it('uses stacked multi-label horizontal grid for multiple copies', () => {
+  it('keeps preview and print-only roots separate', () => {
+    renderDialog();
+    fillRequiredFields();
+    expect(document.querySelector('.label-preview-root')).toBeTruthy();
+    expect(getPrintRoot()).toBeTruthy();
+    expect(document.querySelector('.label-preview-root .label-print-root')).toBeFalsy();
+    expect(document.querySelectorAll('.label-print-root')).toHaveLength(1);
+  });
+
+  it('uses stacked multi-label horizontal grid for multiple copies in preview', () => {
     renderDialog();
     fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
       target: { value: 'X1' },
@@ -179,38 +178,29 @@ describe('LabelGeneratorDialog', () => {
     fireEvent.change(screen.getByRole('spinbutton', { name: /^copias$/i }), {
       target: { value: '3' },
     });
-    const grid = screen.getByTestId('label-print-grid');
+    const preview = getPreviewSheet();
+    const grid = within(preview).getByTestId('label-print-grid');
     expect(grid).toHaveClass('label-print-grid--horizontal');
     expect(grid).toHaveClass('multi-label');
     expect(grid).not.toHaveClass('single-label');
     expect(grid).toHaveAttribute('data-layout', 'multi');
-    expect(screen.getAllByTestId('label-card')).toHaveLength(3);
+    expect(within(preview).getAllByTestId('label-card')).toHaveLength(3);
   });
 
-  it('wraps preview in viewport and uses same LabelPrintSheet DOM as print', () => {
+  it('wraps preview in viewport without a print root inside preview', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
-      target: { value: '05' },
-    });
-    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
-      target: { value: '544' },
-    });
-    const sheet = screen.getByTestId('label-print-sheet');
-    expect(sheet).toHaveClass('label-preview-root');
-    expect(sheet.querySelector('.label-print-root')).toBeTruthy();
-    expect(sheet.querySelector('.label-preview-viewport')).toBeTruthy();
-    expect(sheet.querySelector('.label-print-sheet')).toBeTruthy();
-    expect(sheet.querySelector('.label-card.label-card--horizontal')).toBeTruthy();
+    fillRequiredFields();
+    const preview = getPreviewSheet();
+    expect(preview).toHaveClass('label-preview-root');
+    expect(preview.querySelector('.label-preview-viewport')).toBeTruthy();
+    expect(preview.querySelector('.label-print-sheet')).toBeTruthy();
+    expect(preview.querySelector('.label-card.label-card--horizontal')).toBeTruthy();
+    expect(preview.querySelector('.label-print-root')).toBeFalsy();
   });
 
   it('renders optional footer fields inside label-footer', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
-      target: { value: '05' },
-    });
-    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
-      target: { value: '544' },
-    });
+    fillRequiredFields();
     fireEvent.change(screen.getByRole('textbox', { name: /^lote$/i }), {
       target: { value: 'h89' },
     });
@@ -223,11 +213,35 @@ describe('LabelGeneratorDialog', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /observaciones/i }), {
       target: { value: 'h89' },
     });
-    const lotLine = screen.getByText(/LOTE:/i);
+    const lotLine = within(getPreviewSheet()).getByText(/LOTE:/i);
     expect(lotLine.closest('.label-footer')).toBeTruthy();
-    expect(screen.getByText(/OBS:/i).closest('.label-footer')).toBeTruthy();
-    const footer = screen.getByTestId('label-print-sheet').querySelector('.label-footer');
+    expect(within(getPreviewSheet()).getByText(/OBS:/i).closest('.label-footer')).toBeTruthy();
+    const footer = getPreviewSheet().querySelector('.label-footer');
     expect(footer?.childElementCount).toBe(4);
+  });
+
+  it('unmounts print portal when dialog closes', () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <LabelGeneratorDialog
+        open
+        onClose={onClose}
+        clientId="client-1"
+        clientName="Cliente Blainstein"
+        suppliers={suppliers}
+      />
+    );
+    expect(getPrintRoot()).toBeTruthy();
+    rerender(
+      <LabelGeneratorDialog
+        open={false}
+        onClose={onClose}
+        clientId="client-1"
+        clientName="Cliente Blainstein"
+        suppliers={suppliers}
+      />
+    );
+    expect(getPrintRoot()).toBeFalsy();
   });
 
   it('renders print browser hint', () => {
@@ -237,12 +251,7 @@ describe('LabelGeneratorDialog', () => {
 
   it('calls window.print when Imprimir is clicked', () => {
     renderDialog();
-    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
-      target: { value: '205357' },
-    });
-    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
-      target: { value: '7200' },
-    });
+    fillRequiredFields();
     fireEvent.click(screen.getByRole('button', { name: /^imprimir$/i }));
     expect(window.print).toHaveBeenCalledTimes(1);
   });

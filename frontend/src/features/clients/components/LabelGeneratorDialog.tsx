@@ -11,7 +11,7 @@ import {
 } from '@mui/material';
 import type { ClientSupplier } from '../../../api/types';
 import BaseDialog from '../../../components/ui/BaseDialog';
-import LabelPrintSheet from './LabelPrintSheet';
+import LabelPrintSheet, { LabelPrintPortal } from './LabelPrintSheet';
 import {
   clampLabelCopies,
   LABEL_COPIES_MAX,
@@ -167,6 +167,7 @@ export default function LabelGeneratorDialog({
   };
 
   return (
+    <>
     <BaseDialog
       open={open}
       onClose={handleClose}
@@ -301,7 +302,7 @@ export default function LabelGeneratorDialog({
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
             {t('clients.labels.print_a4_hint')}
           </Typography>
-          <LabelPrintSheet data={sheetData} preview />
+          <LabelPrintSheet data={sheetData} mode="preview" />
           <FormHelperText sx={{ mt: 1 }}>{t('clients.labels.print_browser_hint')}</FormHelperText>
           {!canPrint ? (
             <FormHelperText sx={{ mt: 0.5 }}>{t('clients.labels.preview_requires_fields')}</FormHelperText>
@@ -309,5 +310,7 @@ export default function LabelGeneratorDialog({
         </Box>
       </Box>
     </BaseDialog>
+    {open ? <LabelPrintPortal data={sheetData} /> : null}
+    </>
   );
 }

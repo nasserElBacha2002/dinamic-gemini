@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   clampLabelCopies,
   formatShortLabelDate,
@@ -74,14 +75,15 @@ function HorizontalLabelCard({ data, headerDate }: { data: Omit<LabelSheetData, 
   );
 }
 
+export type LabelPrintSheetMode = 'preview' | 'print';
+
 export interface LabelPrintSheetProps {
   data: LabelSheetData;
-  /** When true, shows dashed border and scroll (screen preview inside dialog). */
-  preview?: boolean;
+  mode?: LabelPrintSheetMode;
   className?: string;
 }
 
-export default function LabelPrintSheet({ data, preview = false, className }: LabelPrintSheetProps) {
+export default function LabelPrintSheet({ data, mode = 'print', className }: LabelPrintSheetProps) {
   const copies = clampLabelCopies(data.copies);
   const isSingleLabel = copies === 1;
   const headerDate = formatShortLabelDate();
@@ -122,35 +124,47 @@ export default function LabelPrintSheet({ data, preview = false, className }: La
     isSingleLabel ? 'single-label' : 'multi-label',
   ].join(' ');
 
-  const printableSheet = (
-    <div className={['label-print-root', className ?? ''].filter(Boolean).join(' ')}>
-      <div className="label-print-sheet">
-        <div
-          className={gridClass}
-          data-testid="label-print-grid"
-          data-layout={isSingleLabel ? 'single' : 'multi'}
-          data-copies={copies}
-          aria-label="label-print-grid"
-        >
-          {cards.map((key) => (
-            <HorizontalLabelCard key={key} data={cardData} headerDate={headerDate} />
-          ))}
-        </div>
+  const sheetContent = (
+    <div className="label-print-sheet">
+      <div
+        className={gridClass}
+        data-testid="label-print-grid"
+        data-layout={isSingleLabel ? 'single' : 'multi'}
+        data-copies={copies}
+        aria-label="label-print-grid"
+      >
+        {cards.map((key) => (
+          <HorizontalLabelCard key={key} data={cardData} headerDate={headerDate} />
+        ))}
       </div>
     </div>
   );
 
-  if (!preview) {
+  if (mode === 'preview') {
     return (
-      <div className="label-print-host" data-testid="label-print-sheet">
-        {printableSheet}
+      <div className="label-preview-root" data-testid="label-preview-sheet">
+        <div className="label-preview-viewport">{sheetContent}</div>
       </div>
     );
   }
 
   return (
-    <div className="label-preview-root" data-testid="label-print-sheet">
-      <div className="label-preview-viewport">{printableSheet}</div>
+    <div
+      className={['label-print-root', className ?? ''].filter(Boolean).join(' ')}
+      data-testid="label-print-sheet-print"
+    >
+      {sheetContent}
     </div>
+  );
+}
+
+export function LabelPrintPortal({ data }: { data: LabelSheetData }) {
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div className="label-print-only-root" aria-hidden="true">
+      <LabelPrintSheet data={data} mode="print" />
+    </div>,
+    document.body
   );
 }
