@@ -416,6 +416,9 @@ describe('QuickReviewDrawer', () => {
       resultIds: ['pos-0', 'pos-1', 'pos-2'],
     });
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    expect(
+      screen.getByRole('navigation', { name: /navegación de resultados|result navigation/i })
+    ).toBeInTheDocument();
     const positionLabel = screen.getByText(/resultado 2 de 3|result 2 of 3/i);
     const confirmBtn = screen.getByRole('button', { name: /confirmar resultado|confirm result/i });
     expect(

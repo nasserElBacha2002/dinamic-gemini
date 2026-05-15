@@ -24,7 +24,7 @@ export default function ResultDetailNavigation({
   return (
     <Box
       component="nav"
-      aria-label={t('results.result_position_in_list', { current: oneBased, total })}
+      aria-label={t('results.result_navigation')}
       sx={{
         display: 'flex',
         flexWrap: 'wrap',
@@ -37,7 +37,11 @@ export default function ResultDetailNavigation({
         borderColor: 'divider',
       }}
     >
-      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, flex: '1 1 auto', minWidth: 0 }}>
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        sx={{ fontWeight: 600, flex: '1 1 auto', minWidth: 0 }}
+      >
         {t('results.result_position_in_list', { current: oneBased, total })}
       </Typography>
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, flexShrink: 0 }}>
