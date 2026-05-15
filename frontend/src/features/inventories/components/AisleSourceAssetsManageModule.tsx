@@ -82,20 +82,20 @@ export default function AisleSourceAssetsManageModule({
       closeAria: t('aisle_source_assets.close'),
       contextOverline: inventoryLabel,
       title: t('aisle_source_assets.drawer_title'),
-      subtitle: t('aisle_source_assets.drawer_subtitle', { count: items.length }),
+      subtitle: t('aisle_source_assets.drawer_subtitle'),
       managementTitle: t('aisle_source_assets.management_title'),
       managementBody: t('aisle_source_assets.management_body'),
       uploadButton: t('aisle_source_assets.upload_button'),
       emptyTitle: t('aisle_source_assets.empty_title'),
       emptyMessage: t('aisle_source_assets.empty_message'),
-      preview: t('aisle_source_assets.preview'),
-      delete: t('aisle_source_assets.delete'),
+      preview: t('common.preview'),
+      delete: t('common.delete'),
       deleteTitle: t('aisle_source_assets.delete_title'),
       deleteFallbackName: t('aisle_source_assets.delete_fallback_name'),
       imagePreviewTitle: t('aisle_source_assets.image_preview_title'),
       imagePreviewAlt: t('aisle_source_assets.image_preview_alt'),
     }),
-    [inventoryLabel, items.length, t]
+    [inventoryLabel, t]
   );
 
   const onFetchPreview = useCallback(
@@ -126,13 +126,20 @@ export default function AisleSourceAssetsManageModule({
         onClose={handleClose}
         copy={copy}
         items={items}
-        getItemSubtitle={(item) =>
-          t('reference_drawer.subtitle_uploaded', {
+        getItemSubtitle={(item) => {
+          const sizeLabel = formatFileSize(item.file_size);
+          if (item.created_at) {
+            return t('aisle_source_assets.card_subtitle_with_date', {
+              mime: item.mime_type,
+              size: sizeLabel,
+              date: formatDate(item.created_at),
+            });
+          }
+          return t('aisle_source_assets.card_subtitle_no_date', {
             mime: item.mime_type,
-            size: formatFileSize(item.file_size),
-            date: formatDate(item.created_at),
-          })
-        }
+            size: sizeLabel,
+          });
+        }}
         isLoading={assetsQuery.isLoading}
         errorMessage={loadError}
         onRetry={() => void assetsQuery.refetch()}
@@ -159,9 +166,9 @@ export default function AisleSourceAssetsManageModule({
             : null
         }
         formatDeleteConfirm={(name) =>
-          t('aisle_source_assets.delete_confirm', {
-            name,
-          })
+          name === copy.deleteFallbackName
+            ? t('aisle_source_assets.delete_confirm_anonymous')
+            : t('aisle_source_assets.delete_confirm_named', { fileName: name })
         }
         previewErrorMessageKey="errors.preview_aisle_asset_failed"
       />

@@ -1,18 +1,6 @@
-import {
-  Alert,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
-  Stack,
-  Typography,
-} from '@mui/material';
+import { Alert, Button, FormControl, InputLabel, MenuItem, Select, Stack, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
+import BaseDialog from '../../../components/ui/BaseDialog';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import type { ProcessingProviderOptionsResponse } from '../../../api/types';
 
@@ -61,98 +49,104 @@ export default function AisleProcessingDialog({
   const { t } = useTranslation();
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>
-        {aisleCode
+    <BaseDialog
+      open={open}
+      onClose={onClose}
+      maxWidth="sm"
+      fullWidth
+      contentDividers
+      title={
+        aisleCode
           ? t('aisle.process_dialog_title_with_aisle', { code: aisleCode })
-          : t('aisle.process_dialog_title')}
-      </DialogTitle>
-      <DialogContent dividers>
-        <Stack spacing={2}>
-          <Typography variant="body2" color="text.secondary">
-            {t('aisle.process_dialog_help')}
-          </Typography>
-          <FormControl fullWidth size="small" disabled={providerOptsQuery.isLoading}>
-            <InputLabel id="process-provider-label">{t('aisle.process_ai_provider')}</InputLabel>
-            <Select
-              labelId="process-provider-label"
-              label={t('aisle.process_ai_provider')}
-              value={providerKey}
-              onChange={(e) => onProviderKeyChange(String(e.target.value))}
-            >
-              <MenuItem value="">
-                <em>{t('aisle.process_default_server')}</em>
-              </MenuItem>
-              {(providerOptsQuery.data?.providers ?? []).map((p) => (
-                <MenuItem key={p.key} value={p.key}>
-                  {p.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl
-            fullWidth
-            size="small"
-            disabled={providerOptsQuery.isLoading || !providerConfig?.models?.length}
+          : t('aisle.process_dialog_title')
+      }
+      actions={
+        <>
+          <Button onClick={onClose}>{t('common.cancel')}</Button>
+          <Button variant="contained" onClick={onConfirm} disabled={confirmDisabled}>
+            {confirmBusyLabel ? t('common.starting') : t('aisle.process_start')}
+          </Button>
+        </>
+      }
+    >
+      <Stack spacing={2}>
+        <Typography variant="body2" color="text.secondary">
+          {t('aisle.process_dialog_help')}
+        </Typography>
+        <FormControl fullWidth size="small" disabled={providerOptsQuery.isLoading}>
+          <InputLabel id="process-provider-label">{t('aisle.process_ai_provider')}</InputLabel>
+          <Select
+            labelId="process-provider-label"
+            label={t('aisle.process_ai_provider')}
+            value={providerKey}
+            onChange={(e) => onProviderKeyChange(String(e.target.value))}
           >
-            <InputLabel id="process-model-label">{t('common.model')}</InputLabel>
-            <Select
-              labelId="process-model-label"
-              label={t('common.model')}
-              value={modelKey}
-              onChange={(e) => onModelKeyChange(String(e.target.value))}
-            >
-              <MenuItem value="">
-                <em>
-                  {t('aisle.process_default_model_em', {
-                    model:
-                      providerConfig?.default_model ??
-                      providerOptsQuery.data?.providers?.find(
-                        (p) => p.key === (providerOptsQuery.data?.default_provider_key ?? '')
-                      )?.default_model ??
-                      '…',
-                  })}
-                </em>
+            <MenuItem value="">
+              <em>{t('aisle.process_default_server')}</em>
+            </MenuItem>
+            {(providerOptsQuery.data?.providers ?? []).map((p) => (
+              <MenuItem key={p.key} value={p.key}>
+                {p.label}
               </MenuItem>
-              {(providerConfig?.models ?? []).map((m) => (
-                <MenuItem key={m.id} value={m.id}>
-                  {m.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+            ))}
+          </Select>
+        </FormControl>
+        <FormControl
+          fullWidth
+          size="small"
+          disabled={providerOptsQuery.isLoading || !providerConfig?.models?.length}
+        >
+          <InputLabel id="process-model-label">{t('common.model')}</InputLabel>
+          <Select
+            labelId="process-model-label"
+            label={t('common.model')}
+            value={modelKey}
+            onChange={(e) => onModelKeyChange(String(e.target.value))}
+          >
+            <MenuItem value="">
+              <em>
+                {t('aisle.process_default_model_em', {
+                  model:
+                    providerConfig?.default_model ??
+                    providerOptsQuery.data?.providers?.find(
+                      (p) => p.key === (providerOptsQuery.data?.default_provider_key ?? '')
+                    )?.default_model ??
+                    '…',
+                })}
+              </em>
+            </MenuItem>
+            {(providerConfig?.models ?? []).map((m) => (
+              <MenuItem key={m.id} value={m.id}>
+                {m.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
 
-          <Alert severity="info" variant="outlined">
-            <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-              {t('aisle.process_prompt_used_heading')}
+        <Alert severity="info" variant="outlined">
+          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+            {t('aisle.process_prompt_used_heading')}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {t('aisle.process_prompt_auto_body')}
+          </Typography>
+          {clientSupplierId ? (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {t('aisle.process_prompt_supplier_linked')}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {t('aisle.process_prompt_auto_body')}
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {t('aisle.process_prompt_no_supplier')}
             </Typography>
-            {clientSupplierId ? (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                {t('aisle.process_prompt_supplier_linked')}
-              </Typography>
-            ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                {t('aisle.process_prompt_no_supplier')}
-              </Typography>
-            )}
-          </Alert>
+          )}
+        </Alert>
 
-          {providerOptsQuery.isError ? (
-            <Typography variant="caption" color="error">
-              {resolveApiErrorMessage(providerOptsQuery.error, 'common.provider_list_error')}
-            </Typography>
-          ) : null}
-        </Stack>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>{t('common.cancel')}</Button>
-        <Button variant="contained" onClick={onConfirm} disabled={confirmDisabled}>
-          {confirmBusyLabel ? t('common.starting') : t('aisle.process_start')}
-        </Button>
-      </DialogActions>
-    </Dialog>
+        {providerOptsQuery.isError ? (
+          <Typography variant="caption" color="error">
+            {resolveApiErrorMessage(providerOptsQuery.error, 'common.provider_list_error')}
+          </Typography>
+        ) : null}
+      </Stack>
+    </BaseDialog>
   );
 }
