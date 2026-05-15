@@ -1,6 +1,12 @@
 export const LABEL_COPIES_MIN = 1;
 export const LABEL_COPIES_MAX = 50;
 
+/** Internal code length at or above which the label uses compact typography. */
+export const LABEL_CODE_ADAPTIVE_LONG_MIN_LENGTH = 20;
+
+/** Internal code length at or above which the label uses extra-compact typography. */
+export const LABEL_CODE_ADAPTIVE_XLONG_MIN_LENGTH = 32;
+
 /** Printed on every warehouse label (Spanish, fixed for warehouse/CV readability). */
 export const LABEL_PRINT_TITLE = 'ETIQUETA PARA INVENTARIO DE MERCADERÍA EN PALLETS';
 
@@ -49,6 +55,20 @@ export function formatLabelFilenameDate(date: Date = new Date()): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/** CSS classes for the printed internal code value (adaptive size for long codes). */
+export function getLabelCodeMainValueClassName(code: string): string {
+  const length = code.trim().length;
+  const classes = ['label-primary-value', 'label-code-main-value'];
+
+  if (length >= LABEL_CODE_ADAPTIVE_XLONG_MIN_LENGTH) {
+    classes.push('label-code-main-value--xlong');
+  } else if (length >= LABEL_CODE_ADAPTIVE_LONG_MIN_LENGTH) {
+    classes.push('label-code-main-value--long');
+  }
+
+  return classes.join(' ');
 }
 
 /** Human-readable multiline text for the single per-label QR (plain scan, not JSON). */

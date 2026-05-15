@@ -88,7 +88,7 @@ describe('LabelGeneratorDialog', () => {
     expect(within(preview).queryByText(/^CANTIDAD:/)).not.toBeInTheDocument();
   });
 
-  it('shows long internal code complete without ellipsis in stacked primary rows', () => {
+  it('shows long internal code complete without ellipsis in preview and print DOM', () => {
     renderDialog();
     const longCode = 'etetetetetetetetetetetetetet';
     fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
@@ -104,11 +104,19 @@ describe('LabelGeneratorDialog', () => {
 
     const codeValue = within(preview).getByText(longCode);
     expect(codeValue).toHaveClass('label-code-main-value');
+    expect(codeValue).toHaveClass('label-code-main-value--long');
     expect(codeValue).not.toHaveClass('label-row-value');
 
     const quantityValue = within(preview).getByText('1212');
     expect(quantityValue).toHaveClass('label-quantity-value');
     expect(codeValue.closest('.label-primary-row')).not.toBe(quantityValue.closest('.label-primary-row'));
+
+    const printCard = getPrintRoot()?.querySelector('.label-card');
+    expect(printCard?.textContent).toContain(longCode);
+    expect(printCard?.textContent).not.toMatch(/\.\.\./);
+    const printCodeValue = printCard?.querySelector('.label-code-main-value');
+    expect(printCodeValue?.textContent).toBe(longCode);
+    expect(printCodeValue).toHaveClass('label-code-main-value--long');
   });
 
   it('updates preview when Contado por is filled', () => {

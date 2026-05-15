@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildLabelPrintFilename,
   buildLabelQrText,
+  getLabelCodeMainValueClassName,
+  LABEL_CODE_ADAPTIVE_LONG_MIN_LENGTH,
+  LABEL_CODE_ADAPTIVE_XLONG_MIN_LENGTH,
   sanitizeLabelFilenameSegment,
 } from '../src/features/clients/components/labelPrintUtils';
 
@@ -37,6 +40,27 @@ describe('labelPrintUtils filename helpers', () => {
         new Date('2026-05-15T12:00:00')
       )
     ).toBe('rabbione-1931038-03-2026-05-15');
+  });
+});
+
+describe('labelPrintUtils code visibility helpers', () => {
+  it('uses default code classes for short values', () => {
+    const shortCode = 'a'.repeat(LABEL_CODE_ADAPTIVE_LONG_MIN_LENGTH - 1);
+    expect(getLabelCodeMainValueClassName(shortCode)).toBe(
+      'label-primary-value label-code-main-value'
+    );
+    expect(getLabelCodeMainValueClassName(shortCode)).not.toContain('label-code-main-value--long');
+  });
+
+  it('adds long adaptive class at configured threshold', () => {
+    const longCode = 'a'.repeat(LABEL_CODE_ADAPTIVE_LONG_MIN_LENGTH);
+    expect(getLabelCodeMainValueClassName(longCode)).toContain('label-code-main-value--long');
+    expect(getLabelCodeMainValueClassName(longCode)).not.toContain('label-code-main-value--xlong');
+  });
+
+  it('adds xlong adaptive class at configured threshold', () => {
+    const xlongCode = 'a'.repeat(LABEL_CODE_ADAPTIVE_XLONG_MIN_LENGTH);
+    expect(getLabelCodeMainValueClassName(xlongCode)).toContain('label-code-main-value--xlong');
   });
 });
 

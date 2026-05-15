@@ -5,6 +5,7 @@ import {
   buildLabelQrText,
   clampLabelCopies,
   formatShortLabelDate,
+  getLabelCodeMainValueClassName,
   LABEL_PRINT_TITLE,
   type LabelSheetData,
 } from './labelPrintUtils';
@@ -39,6 +40,7 @@ function HorizontalLabelCard({ data, headerDate }: { data: Omit<LabelSheetData, 
   const cardClass = ['label-card', 'label-card--horizontal'].join(' ');
 
   const qrValue = useMemo(() => buildLabelQrText(data), [data]);
+  const codeValueClassName = useMemo(() => getLabelCodeMainValueClassName(data.code), [data.code]);
 
   return (
     <article className={cardClass} data-testid="label-card">
@@ -60,7 +62,7 @@ function HorizontalLabelCard({ data, headerDate }: { data: Omit<LabelSheetData, 
         <div className="label-primary-section">
           <div className="label-primary-row label-code-section">
             <span className="label-primary-label">CÓDIGO:</span>
-            <span className="label-primary-value label-code-main-value">{data.code.trim()}</span>
+            <span className={codeValueClassName}>{data.code.trim()}</span>
           </div>
 
           <div className="label-primary-row label-quantity-section">

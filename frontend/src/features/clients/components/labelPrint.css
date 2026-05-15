@@ -198,11 +198,30 @@
   font-weight: 900;
   letter-spacing: 0.03em;
   line-height: 1.05;
+  max-width: 100%;
   overflow: visible;
   overflow-wrap: break-word;
   text-overflow: clip;
   white-space: normal;
   word-break: normal;
+}
+
+.label-code-main-value--long {
+  font-size: 32pt;
+  letter-spacing: 0.02em;
+  line-height: 1.08;
+}
+
+.label-code-main-value--xlong {
+  font-size: 24pt;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+}
+
+.label-code-section .label-primary-value {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .label-qr-section {
@@ -371,6 +390,20 @@
 
   .label-code-main-value {
     font-size: 38pt !important;
+  }
+
+  .label-code-main-value--long {
+    font-size: 28pt !important;
+  }
+
+  .label-code-main-value--xlong {
+    font-size: 20pt !important;
+  }
+
+  .label-code-section .label-primary-value {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
   }
 
   .label-quantity-value {
