@@ -303,11 +303,17 @@ export default function QuickReviewDrawer({
 
               {result ? (
                 <Stack spacing={3}>
-                  <ResultEvidenceViewer result={result} inventoryId={inventoryId} aisleId={aisleId} />
-
                   <ResultSummaryCard result={result} />
 
-                  <Box sx={{ pt: 2 }}>
+                  {navContext && navContext.total > 1 ? (
+                    <ResultDetailNavigation
+                      context={navContext}
+                      onNavigate={handleNavigateToResult}
+                      disabled={actionLoading}
+                    />
+                  ) : null}
+
+                  <Box sx={{ pt: 0 }}>
                     <ResultReviewActions
                       result={result}
                       actionLoading={actionLoading}
@@ -321,15 +327,7 @@ export default function QuickReviewDrawer({
                     />
                   </Box>
 
-                  {navContext && navContext.total > 1 && (
-                    <Box sx={{ pt: 1 }}>
-                      <ResultDetailNavigation 
-                        context={navContext} 
-                        onNavigate={handleNavigateToResult} 
-                        disabled={actionLoading}
-                      />
-                    </Box>
-                  )}
+                  <ResultEvidenceViewer result={result} inventoryId={inventoryId} aisleId={aisleId} />
 
                   <Box sx={{ pt: 4 }}>
                     <DrawerCollapsibleSection titleKey="review.section_history">

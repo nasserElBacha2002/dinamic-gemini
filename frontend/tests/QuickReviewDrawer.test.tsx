@@ -400,6 +400,32 @@ describe('QuickReviewDrawer', () => {
     expect(screen.getByRole('button', { name: /imagen incorrecta|wrong image/i })).toBeInTheDocument();
   });
 
+  it('renders result navigation before confirm when multiple results', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue({
+      result: mockResultDetail(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as ReturnType<typeof useResultDetail>);
+
+    renderDrawer({
+      ...baseContext,
+      positionId: 'pos-1',
+      resultIds: ['pos-0', 'pos-1', 'pos-2'],
+    });
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    expect(
+      screen.getByRole('navigation', { name: /navegación de resultados|result navigation/i })
+    ).toBeInTheDocument();
+    const positionLabel = screen.getByText(/resultado 2 de 3|result 2 of 3/i);
+    const confirmBtn = screen.getByRole('button', { name: /confirmar resultado|confirm result/i });
+    expect(
+      positionLabel.compareDocumentPosition(confirmBtn) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
   it('shows prev/next when resultIds has multiple and position is in list', async () => {
     const { useResultDetail } = await import('../src/features/results');
     vi.mocked(useResultDetail).mockReturnValue({

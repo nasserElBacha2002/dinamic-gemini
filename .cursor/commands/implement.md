@@ -201,6 +201,94 @@ If a command fails:
 - do not hide failures
 - report unrelated pre-existing failures clearly
 
+## 11. Post-implementation review package (required)
+
+After code changes and validation, **always** prepare an uncommitted-change review package so the user can review before commit.
+
+This is a **developer workflow** step only — do not change application runtime behavior for it.
+
+### 11.1 Run review preparation
+
+From the **repository root**, run the helper script (preferred):
+
+```bash
+./scripts/review_working_tree.sh
+```
+
+The script:
+
+- runs `git add -N .` so **new untracked files** appear in `git diff` (intent-to-add only; safe before commit)
+- writes gitignored artifacts under `.review/` (never commit `.review/`)
+- chooses **SMALL_DIFF** vs **LARGE_DIFF** using the thresholds below
+- prints which file to open or paste first
+
+If the script cannot be run, run the same Git commands manually (see §11.3) and build the review package yourself.
+
+### 11.2 Mode detection (SMALL vs LARGE)
+
+Use **SMALL_DIFF** when **all** are true:
+
+- at most **8** changed files in `git diff --name-status`, and
+- at most **600** total changed lines (insertions + deletions from `git diff --numstat`), and
+- not **cross-cutting** (changes in fewer than two of: backend `backend/`, frontend `frontend/`, tests `*/tests/`, migrations `backend/src/database/migrations/`)
+
+Use **LARGE_DIFF** when **any** is true:
+
+- more than **8** changed files, or
+- more than **600** total changed lines, or
+- **cross-cutting** scope (two or more major areas above), or
+- the full unified diff is too large to paste sensibly in chat
+
+Keep thresholds aligned with `scripts/review_working_tree.sh` (`MAX_SMALL_FILES`, `MAX_SMALL_LINES`).
+
+### 11.3 Git commands (manual fallback)
+
+Always start with intent-to-add for new files:
+
+```bash
+git add -N .
+git --no-pager status --short
+git --no-pager diff --stat
+git --no-pager diff --name-status
+git --no-pager diff --numstat
+```
+
+**SMALL_DIFF** — also capture full diff:
+
+```bash
+git --no-pager diff --find-renames --find-copies -U20
+```
+
+**LARGE_DIFF** — do **not** paste the entire diff at once. Use chunked review:
+
+```bash
+git --no-pager diff --find-renames --find-copies -U20 -- path/to/file.ts
+git --no-pager diff --find-renames --find-copies -U20 -- path/to/folder/
+```
+
+Group mentally (or read `.review/review-plan.md`) by area:
+
+- backend: `backend/src/api/`, `application/`, `domain/`, `infrastructure/`, `pipeline/`, `llm/`
+- frontend: `frontend/src/` (components, hooks, api, i18n, tests)
+- tests: `backend/tests/`, `frontend/tests/`
+- migrations: `backend/src/database/migrations/`
+- workflow/docs: `.cursor/`, `scripts/`, `docs/`, `audit/`
+
+### 11.4 Risk-based review order (LARGE_DIFF)
+
+When in LARGE_DIFF mode, recommend this order in the final response:
+
+1. Migrations and schema/data contracts (if any)
+2. Backend API contracts, use cases, persistence, pipeline (highest behavioral risk)
+3. Frontend types, API client, user-visible flows
+4. Tests (confirm coverage matches behavior changes)
+5. Low-risk: docs, `.cursor/` command-only changes, config comments
+
+### 11.5 What to include in chat vs on disk
+
+- **SMALL_DIFF:** paste `git status --short`, `git diff --stat`, and the **full** `git diff -U20` (or point to `.review/full.diff`).
+- **LARGE_DIFF:** paste status, stat, name-status, numstat summary, recommended review order, and **chunk commands** — explicitly say **do not paste the entire diff** unless the user asks.
+
 **HARD CONSTRAINTS**
 
 - Do not implement outside the target stage.
@@ -216,20 +304,112 @@ If a command fails:
 
 **OUTPUT FORMAT**
 
-Return:
+Return these sections in order:
 
-1. Stage implemented  
-2. Summary of changes  
-3. Modified/created files  
-4. API/contract changes  
-5. Database/migration changes  
-6. Frontend changes  
-7. Pipeline/prompt/adapter changes  
-8. Tests added/updated, mapped to acceptance criteria  
-9. Validation commands run and results  
-10. Known limitations or open questions  
-11. Final status: `IMPLEMENTED_AND_VALIDATED`, `IMPLEMENTED_WITH_WARNINGS`, or `BLOCKED`
+## Implementation report
+
+**Status:** `IMPLEMENTED_AND_VALIDATED` | `IMPLEMENTED_WITH_WARNINGS` | `BLOCKED`
+
+**Summary:** (2–5 bullets — what was implemented and why)
+
+**Files changed:** (path → one-line reason)
+
+**Behavior changes:** (user-visible or API; or “none”)
+
+**Tests:** (command → pass/fail/skip)
+
+**Risks:** (residual risks, edge cases, follow-ups; or “none identified”)
+
+Also include when relevant (can be subsections under Implementation report):
+
+- API/contract changes  
+- Database/migration changes  
+- Frontend changes  
+- Pipeline/prompt/adapter changes  
+- Known limitations or open questions  
+
+---
+
+## Review package
+
+**Required.** Fill after §11 (run `./scripts/review_working_tree.sh` or manual Git commands).
+
+### SMALL_DIFF template
+
+```md
+## Review package
+
+Mode: SMALL_DIFF
+
+Why:
+- X changed files
+- Y insertions / Z deletions
+- Scope limited to: <area>
+
+Commands used:
+```bash
+git add -N .
+git --no-pager status --short
+git --no-pager diff --stat
+git --no-pager diff --find-renames --find-copies -U20
+```
+
+Paste to reviewer:
+- Prompt originally implemented
+- Git status (short)
+- Diff stat
+- Full diff (-U20)
+- Tests run + results
+- Implementation report summary
+
+Helper artifacts (optional): `.review/working-tree-summary.md`, `.review/full.diff`
+```
+
+### LARGE_DIFF template
+
+```md
+## Review package
+
+Mode: LARGE_DIFF
+
+Why:
+- X changed files
+- Y insertions / Z deletions
+- Scope spans: backend, frontend, tests, …
+
+Commands used:
+```bash
+git add -N .
+git --no-pager status --short
+git --no-pager diff --stat
+git --no-pager diff --name-status
+git --no-pager diff --numstat
+```
+
+Recommended review order:
+1. <highest-risk group>
+2. …
+3. Tests
+4. Low-risk files
+
+Next diff commands:
+```bash
+git --no-pager diff --find-renames --find-copies -U20 -- <path-1>
+git --no-pager diff --find-renames --find-copies -U20 -- <path-2>
+```
+
+Paste to reviewer first:
+- Prompt originally implemented
+- Git status, diff stat, name-status, numstat summary
+- Recommended review order + chunk commands
+- Tests run + results
+- Implementation report summary
+
+Do **not** paste the entire full diff at once unless the user requests it.
+
+Helper artifacts (optional): `.review/review-plan.md`, `.review/diff-*.diff`
+```
 
 **NOW EXECUTE**
 
-Implement only the target stage provided by the user.
+Implement only the target stage provided by the user. Always end with **Implementation report** and **Review package**.

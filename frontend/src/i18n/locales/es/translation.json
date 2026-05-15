@@ -1209,6 +1209,7 @@
     },
     "qty_placeholder": "Qty placeholder",
     "qty_zero": "Cant. en cero",
+    "result_navigation": "Navegación de resultados",
     "result_position_in_list": "Resultado {{current}} de {{total}}",
     "run_a_label": "Run a label",
     "run_b_label": "Run b label",
