@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_keys
 from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
+from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_keys
 from src.pipeline.providers.definitions import pipeline_provider_spec
 
 _ModelPair = tuple[str, str]

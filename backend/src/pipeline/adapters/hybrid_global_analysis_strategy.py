@@ -27,6 +27,7 @@ from typing import Any, NamedTuple
 
 import numpy as np
 
+import src.pipeline.services.hybrid_analysis_prompt as hybrid_prompt_service
 from src.llm.prompt_composer.prompt_traceability import (
     LLM_IDENTITY_METADATA_KEY,
     LLM_METADATA_KEY_PROMPT_COMPOSITION,
@@ -50,7 +51,6 @@ from src.pipeline.services.analysis_visual_reference_prep import (
     build_primary_evidence_attachments,
     prepare_visual_reference_inputs,
 )
-import src.pipeline.services.hybrid_analysis_prompt as hybrid_prompt_service
 from src.pipeline.services.hybrid_analysis_prompt import (
     build_hybrid_analysis_prompt_with_traceability,
     resolve_analysis_context_for_run,

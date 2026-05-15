@@ -19,11 +19,11 @@ from src.llm.prompt_composer.hybrid_assembly import (
     resolve_hybrid_profile_name,
 )
 from src.llm.prompts import get_hybrid_prompt
+from src.parsing.global_analysis_parser import parse_entities
 from src.pipeline.services.effective_prompt_composer import (
     EffectivePromptComposer,
     EffectivePromptComposerInput,
 )
-from src.parsing.global_analysis_parser import parse_entities
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
 # --- A: single labeled pallet ---
