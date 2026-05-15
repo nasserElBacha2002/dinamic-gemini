@@ -86,30 +86,6 @@ export default function BaseDialog({
 
   const closeLabel = t('common.close');
 
-  const titleText = (
-    <Box component="span" id={titleId} sx={showCloseButton ? { flex: 1, minWidth: 0 } : undefined}>
-      {title}
-    </Box>
-  );
-
-  const titleBar = showCloseButton ? (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-      {titleText}
-      <IconButton
-        type="button"
-        aria-label={closeLabel}
-        onClick={onClose}
-        disabled={disableClose}
-        edge="end"
-        size="small"
-      >
-        <CloseRoundedIcon fontSize="small" />
-      </IconButton>
-    </Box>
-  ) : (
-    titleText
-  );
-
   const errorBlock =
     error !== null && error !== undefined && error !== false && error !== '' ? (
       <Box sx={{ mb: 2 }}>
@@ -126,7 +102,25 @@ export default function BaseDialog({
       aria-labelledby={titleId}
       aria-describedby={hasDescription ? descriptionId : undefined}
     >
-      <DialogTitle>{titleBar}</DialogTitle>
+      <DialogTitle id={titleId}>
+        {showCloseButton ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+            <Box sx={{ flex: 1, minWidth: 0 }}>{title}</Box>
+            <IconButton
+              type="button"
+              aria-label={closeLabel}
+              onClick={onClose}
+              disabled={disableClose}
+              edge="end"
+              size="small"
+            >
+              <CloseRoundedIcon fontSize="small" />
+            </IconButton>
+          </Box>
+        ) : (
+          title
+        )}
+      </DialogTitle>
       <DialogContent dividers={contentDividers}>
         {hasDescription ? (
           <Box id={descriptionId} sx={{ mb: 2 }}>
