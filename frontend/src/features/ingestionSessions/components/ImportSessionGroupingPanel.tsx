@@ -3,10 +3,6 @@ import {
   Box,
   Button,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   FormControl,
   FormHelperText,
   InputLabel,
@@ -39,7 +35,7 @@ import {
   useMaterializeCaptureSessionGroup,
   usePreviewMaterializedCaptureSessionGroup,
 } from '../hooks/useCaptureSessions';
-import { ConfirmDialog } from '../../../components/ui';
+import { BaseDialog, ConfirmDialog } from '../../../components/ui';
 import { heuristicGroupPreviewCtaBlockedReasonKey } from '../utils/groupingPreviewGate';
 
 export interface ImportSessionGroupingPanelProps {
@@ -391,211 +387,154 @@ export default function ImportSessionGroupingPanel({
         onConfirm={confirmRecompute}
       />
 
-      <Dialog open={assignGroupId != null} onClose={() => setAssignGroupId(null)} fullWidth maxWidth="sm">
-        <DialogTitle>{t('ingestion_sessions.detail.grouping_assign_dialog_title')}</DialogTitle>
-        <DialogContent>
-          <FormControl fullWidth margin="normal" size="small" error={assignBlockedNoAisles}>
-            <InputLabel id="assign-aisle-label">{t('ingestion_sessions.detail.grouping_assign_select_aisle')}</InputLabel>
-            <Select
-              labelId="assign-aisle-label"
-              label={t('ingestion_sessions.detail.grouping_assign_select_aisle')}
-              value={selectedAisleId}
-              onChange={(e) => setSelectedAisleId(e.target.value)}
-              disabled={assignBlockedNoAisles}
+      <BaseDialog
+        open={assignGroupId != null}
+        onClose={() => setAssignGroupId(null)}
+        title={t('ingestion_sessions.detail.grouping_assign_dialog_title')}
+        maxWidth="sm"
+        fullWidth
+        actions={
+          <>
+            <Button onClick={() => setAssignGroupId(null)}>{t('ingestion_sessions.detail.grouping_assign_dialog_cancel')}</Button>
+            <Button
+              variant="contained"
+              disabled={
+                !selectedAisleId.trim() || assignGroup.isPending || !assignGroupId || assignBlockedNoAisles
+              }
+              onClick={() => {
+                const aisleId = selectedAisleId.trim();
+                if (!assignGroupId || !aisleId || assignBlockedNoAisles) return;
+                void assignGroup
+                  .mutateAsync({
+                    inventoryId,
+                    sessionId,
+                    groupId: assignGroupId,
+                    aisleId,
+                  })
+                  .then(() => {
+                    setAssignGroupId(null);
+                    onRefresh();
+                  });
+              }}
             >
-              {aisleItems.map((a) => (
-                <MenuItem key={a.id} value={a.id}>
-                  {a.code}
-                </MenuItem>
-              ))}
-            </Select>
-            {assignBlockedNoAisles ? (
-              <FormHelperText>{t('ingestion_sessions.detail.grouping_assign_no_aisles_helper')}</FormHelperText>
-            ) : null}
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAssignGroupId(null)}>{t('ingestion_sessions.detail.grouping_assign_dialog_cancel')}</Button>
-          <Button
-            variant="contained"
-            disabled={
-              !selectedAisleId.trim() || assignGroup.isPending || !assignGroupId || assignBlockedNoAisles
-            }
-            onClick={() => {
-              const aisleId = selectedAisleId.trim();
-              if (!assignGroupId || !aisleId || assignBlockedNoAisles) return;
-              void assignGroup
-                .mutateAsync({
-                  inventoryId,
-                  sessionId,
-                  groupId: assignGroupId,
-                  aisleId,
-                })
-                .then(() => {
-                  setAssignGroupId(null);
-                  onRefresh();
-                });
-            }}
+              {t('ingestion_sessions.detail.grouping_assign_dialog_confirm')}
+            </Button>
+          </>
+        }
+      >
+        <FormControl fullWidth margin="normal" size="small" error={assignBlockedNoAisles}>
+          <InputLabel id="assign-aisle-label">{t('ingestion_sessions.detail.grouping_assign_select_aisle')}</InputLabel>
+          <Select
+            labelId="assign-aisle-label"
+            label={t('ingestion_sessions.detail.grouping_assign_select_aisle')}
+            value={selectedAisleId}
+            onChange={(e) => setSelectedAisleId(e.target.value)}
+            disabled={assignBlockedNoAisles}
           >
-            {t('ingestion_sessions.detail.grouping_assign_dialog_confirm')}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog open={createGroupId != null} onClose={() => setCreateGroupId(null)} fullWidth maxWidth="sm">
-        <DialogTitle>{t('ingestion_sessions.detail.grouping_create_dialog_title')}</DialogTitle>
-        <DialogContent>
-          {!hasInventoryClient && !inventoryQuery.isLoading ? (
-            <Alert severity="warning" sx={{ mb: 1 }}>
-              {t('dialogs.aisle.inventory_requires_client')}
-            </Alert>
-          ) : null}
-          <TextField
-            fullWidth
-            margin="normal"
-            size="small"
-            label={t('ingestion_sessions.detail.grouping_create_dialog_code_label')}
-            value={newAisleCode}
-            onChange={(e) => setNewAisleCode(e.target.value)}
-            helperText={t('ingestion_sessions.detail.grouping_create_code_helper')}
-            inputProps={{ maxLength: 64 }}
-          />
-          <TextField
-            sx={{ mt: 1 }}
-            select
-            fullWidth
-            margin="normal"
-            size="small"
-            label={t('dialogs.aisle.supplier_label')}
-            value={newAisleSupplierId}
-            onChange={(e) => setNewAisleSupplierId(e.target.value)}
-            disabled={
-              createAisleForGroup.isPending ||
-              inventoryQuery.isLoading ||
-              !hasInventoryClient ||
-              isSuppliersLoading
-            }
-            error={hasInventoryClient && (Boolean(isSuppliersError) || suppliers.length === 0)}
-            helperText={createSupplierHelperText}
-          >
-            <MenuItem value="" disabled>
-              {t('dialogs.aisle.supplier_placeholder')}
-            </MenuItem>
-            {suppliers.map((supplier) => (
-              <MenuItem key={supplier.id} value={supplier.id}>
-                {supplier.name}
+            {aisleItems.map((a) => (
+              <MenuItem key={a.id} value={a.id}>
+                {a.code}
               </MenuItem>
             ))}
-          </TextField>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCreateGroupId(null)}>{t('ingestion_sessions.detail.grouping_assign_dialog_cancel')}</Button>
-          <Button
-            variant="contained"
-            disabled={createAisleSubmitDisabled}
-            onClick={() => {
-              if (!createGroupId) return;
-              const code = newAisleCode.trim();
-              const supplierId = newAisleSupplierId.trim();
-              if (code.length < 1 || code.length > 64 || !supplierId) return;
-              void createAisleForGroup
-                .mutateAsync({
-                  inventoryId,
-                  sessionId,
-                  groupId: createGroupId,
-                  code,
-                  client_supplier_id: supplierId,
-                })
-                .then(() => {
-                  setCreateGroupId(null);
-                  onRefresh();
-                });
-            }}
-            startIcon={createAisleForGroup.isPending ? <CircularProgress size={16} /> : undefined}
-          >
-            {t('ingestion_sessions.detail.grouping_create_dialog_confirm')}
-          </Button>
-        </DialogActions>
-      </Dialog>
+          </Select>
+          {assignBlockedNoAisles ? (
+            <FormHelperText>{t('ingestion_sessions.detail.grouping_assign_no_aisles_helper')}</FormHelperText>
+          ) : null}
+        </FormControl>
+      </BaseDialog>
 
-      <Dialog
+      <BaseDialog
+        open={createGroupId != null}
+        onClose={() => setCreateGroupId(null)}
+        title={t('ingestion_sessions.detail.grouping_create_dialog_title')}
+        maxWidth="sm"
+        fullWidth
+        actions={
+          <>
+            <Button onClick={() => setCreateGroupId(null)}>{t('ingestion_sessions.detail.grouping_assign_dialog_cancel')}</Button>
+            <Button
+              variant="contained"
+              disabled={createAisleSubmitDisabled}
+              onClick={() => {
+                if (!createGroupId) return;
+                const code = newAisleCode.trim();
+                const supplierId = newAisleSupplierId.trim();
+                if (code.length < 1 || code.length > 64 || !supplierId) return;
+                void createAisleForGroup
+                  .mutateAsync({
+                    inventoryId,
+                    sessionId,
+                    groupId: createGroupId,
+                    code,
+                    client_supplier_id: supplierId,
+                  })
+                  .then(() => {
+                    setCreateGroupId(null);
+                    onRefresh();
+                  });
+              }}
+              startIcon={createAisleForGroup.isPending ? <CircularProgress size={16} /> : undefined}
+            >
+              {t('ingestion_sessions.detail.grouping_create_dialog_confirm')}
+            </Button>
+          </>
+        }
+      >
+        {!hasInventoryClient && !inventoryQuery.isLoading ? (
+          <Alert severity="warning" sx={{ mb: 1 }}>
+            {t('dialogs.aisle.inventory_requires_client')}
+          </Alert>
+        ) : null}
+        <TextField
+          fullWidth
+          margin="normal"
+          size="small"
+          label={t('ingestion_sessions.detail.grouping_create_dialog_code_label')}
+          value={newAisleCode}
+          onChange={(e) => setNewAisleCode(e.target.value)}
+          helperText={t('ingestion_sessions.detail.grouping_create_code_helper')}
+          inputProps={{ maxLength: 64 }}
+        />
+        <TextField
+          sx={{ mt: 1 }}
+          select
+          fullWidth
+          margin="normal"
+          size="small"
+          label={t('dialogs.aisle.supplier_label')}
+          value={newAisleSupplierId}
+          onChange={(e) => setNewAisleSupplierId(e.target.value)}
+          disabled={
+            createAisleForGroup.isPending ||
+            inventoryQuery.isLoading ||
+            !hasInventoryClient ||
+            isSuppliersLoading
+          }
+          error={hasInventoryClient && (Boolean(isSuppliersError) || suppliers.length === 0)}
+          helperText={createSupplierHelperText}
+        >
+          <MenuItem value="" disabled>
+            {t('dialogs.aisle.supplier_placeholder')}
+          </MenuItem>
+          {suppliers.map((supplier) => (
+            <MenuItem key={supplier.id} value={supplier.id}>
+              {supplier.name}
+            </MenuItem>
+          ))}
+        </TextField>
+      </BaseDialog>
+
+      <BaseDialog
         open={previewGroupId != null}
         onClose={() => {
           setPreviewGroupId(null);
           setPreviewData(null);
           setPreviewActionError(null);
         }}
-        fullWidth
+        title={t('ingestion_sessions.detail.grouping_preview_dialog_title')}
         maxWidth="md"
-      >
-        <DialogTitle>{t('ingestion_sessions.detail.grouping_preview_dialog_title')}</DialogTitle>
-        <DialogContent>
-          {previewData ? (
-            <Stack spacing={1.5} sx={{ mt: 0.5 }}>
-              <Typography variant="body2" color="text.secondary">
-                {t('ingestion_sessions.detail.grouping_preview_trace_session', {
-                  id: previewData.capture_session_id,
-                })}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {t('ingestion_sessions.detail.grouping_preview_meta', {
-                  aisle: previewData.aisle_id,
-                  assets: previewData.source_asset_count,
-                  status: previewData.preview_status,
-                })}
-              </Typography>
-              {previewData.preview_status === 'empty' ? (
-                <Alert severity="info">{t('ingestion_sessions.detail.grouping_preview_empty_hint')}</Alert>
-              ) : null}
-              <Typography variant="subtitle2">
-                {t('ingestion_sessions.detail.grouping_preview_summary', {
-                  proposed: previewData.summary.proposed_count,
-                  conflicts: previewData.summary.conflict_count,
-                  unassigned: previewData.summary.unassigned_count,
-                  items: previewData.summary.previewed_item_count,
-                })}
-              </Typography>
-              {previewData.items.map((row) => (
-                <Box
-                  key={`${row.source_asset_id}-${row.capture_session_item_id}`}
-                  sx={{
-                    borderLeft: 2,
-                    borderColor: 'divider',
-                    pl: 1,
-                  }}
-                >
-                  <Typography variant="body2" component="div">
-                    {t('ingestion_sessions.detail.grouping_preview_row_status', { status: row.assignment_status })}
-                  </Typography>
-                  <Typography variant="body2" component="div" sx={{ wordBreak: 'break-all' }}>
-                    {t('ingestion_sessions.detail.grouping_preview_row_reason', { reason: row.assignment_reason })}
-                  </Typography>
-                  <Typography variant="body2" component="div" sx={{ wordBreak: 'break-all' }}>
-                    {t('ingestion_sessions.detail.grouping_preview_row_item', { id: row.capture_session_item_id })}
-                  </Typography>
-                  <Typography variant="body2" component="div" sx={{ wordBreak: 'break-all' }}>
-                    {t('ingestion_sessions.detail.grouping_preview_row_asset', { id: row.source_asset_id })}
-                  </Typography>
-                  {row.preview_target_position_id ? (
-                    <Typography variant="body2" component="div" sx={{ wordBreak: 'break-all' }}>
-                      {t('ingestion_sessions.detail.grouping_preview_row_position', {
-                        id: row.preview_target_position_id,
-                      })}
-                    </Typography>
-                  ) : null}
-                  {row.adjusted_capture_time ? (
-                    <Typography variant="body2" component="div">
-                      {t('ingestion_sessions.detail.grouping_preview_row_time', {
-                        time: formatDate(row.adjusted_capture_time),
-                      })}
-                    </Typography>
-                  ) : null}
-                </Box>
-              ))}
-            </Stack>
-          ) : null}
-        </DialogContent>
-        <DialogActions>
+        fullWidth
+        actions={
           <Button
             onClick={() => {
               setPreviewGroupId(null);
@@ -605,8 +544,73 @@ export default function ImportSessionGroupingPanel({
           >
             {t('ingestion_sessions.detail.grouping_assign_dialog_cancel')}
           </Button>
-        </DialogActions>
-      </Dialog>
+        }
+      >
+        {previewData ? (
+          <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              {t('ingestion_sessions.detail.grouping_preview_trace_session', {
+                id: previewData.capture_session_id,
+              })}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {t('ingestion_sessions.detail.grouping_preview_meta', {
+                aisle: previewData.aisle_id,
+                assets: previewData.source_asset_count,
+                status: previewData.preview_status,
+              })}
+            </Typography>
+            {previewData.preview_status === 'empty' ? (
+              <Alert severity="info">{t('ingestion_sessions.detail.grouping_preview_empty_hint')}</Alert>
+            ) : null}
+            <Typography variant="subtitle2">
+              {t('ingestion_sessions.detail.grouping_preview_summary', {
+                proposed: previewData.summary.proposed_count,
+                conflicts: previewData.summary.conflict_count,
+                unassigned: previewData.summary.unassigned_count,
+                items: previewData.summary.previewed_item_count,
+              })}
+            </Typography>
+            {previewData.items.map((row) => (
+              <Box
+                key={`${row.source_asset_id}-${row.capture_session_item_id}`}
+                sx={{
+                  borderLeft: 2,
+                  borderColor: 'divider',
+                  pl: 1,
+                }}
+              >
+                <Typography variant="body2" component="div">
+                  {t('ingestion_sessions.detail.grouping_preview_row_status', { status: row.assignment_status })}
+                </Typography>
+                <Typography variant="body2" component="div" sx={{ wordBreak: 'break-all' }}>
+                  {t('ingestion_sessions.detail.grouping_preview_row_reason', { reason: row.assignment_reason })}
+                </Typography>
+                <Typography variant="body2" component="div" sx={{ wordBreak: 'break-all' }}>
+                  {t('ingestion_sessions.detail.grouping_preview_row_item', { id: row.capture_session_item_id })}
+                </Typography>
+                <Typography variant="body2" component="div" sx={{ wordBreak: 'break-all' }}>
+                  {t('ingestion_sessions.detail.grouping_preview_row_asset', { id: row.source_asset_id })}
+                </Typography>
+                {row.preview_target_position_id ? (
+                  <Typography variant="body2" component="div" sx={{ wordBreak: 'break-all' }}>
+                    {t('ingestion_sessions.detail.grouping_preview_row_position', {
+                      id: row.preview_target_position_id,
+                    })}
+                  </Typography>
+                ) : null}
+                {row.adjusted_capture_time ? (
+                  <Typography variant="body2" component="div">
+                    {t('ingestion_sessions.detail.grouping_preview_row_time', {
+                      time: formatDate(row.adjusted_capture_time),
+                    })}
+                  </Typography>
+                ) : null}
+              </Box>
+            ))}
+          </Stack>
+        ) : null}
+      </BaseDialog>
     </Box>
   );
 }

@@ -1,18 +1,9 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Box,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Divider,
-  Drawer,
-  Typography,
-} from '@mui/material';
+import { Box, Button, Divider, Drawer, Typography } from '@mui/material';
 import { getVisibleErrorMessage } from '../../utils/apiErrors';
 import {
+  ConfirmDialog,
   DrawerHeader,
   EmptyState,
   ErrorAlert,
@@ -458,22 +449,23 @@ export default function ManagedImageAssetsDrawer({
       />
 
       {effectiveOpen && !readOnly && onDelete && formatDeleteConfirm ? (
-        <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
-          <DialogTitle>{copy.deleteTitle}</DialogTitle>
-          <DialogContent>
+        <ConfirmDialog
+          open={Boolean(deleteTarget)}
+          onClose={() => setDeleteTarget(null)}
+          title={copy.deleteTitle}
+          description={
             <Typography variant="body2">
               {formatDeleteConfirm(deleteTarget?.filename ?? copy.deleteFallbackName)}
             </Typography>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setDeleteTarget(null)} disabled={isDeleting}>
-              {t('common.cancel')}
-            </Button>
-            <Button color="error" variant="contained" onClick={() => void handleDeleteConfirm()} disabled={isDeleting}>
-              {isDeleting ? t('common.deleting') : copy.delete}
-            </Button>
-          </DialogActions>
-        </Dialog>
+          }
+          cancelLabel={t('common.cancel')}
+          confirmLabel={copy.delete}
+          confirmPendingLabel={t('common.deleting')}
+          onConfirm={() => void handleDeleteConfirm()}
+          loading={isDeleting}
+          confirmColor="error"
+          maxWidth="xs"
+        />
       ) : null}
     </>
   );
