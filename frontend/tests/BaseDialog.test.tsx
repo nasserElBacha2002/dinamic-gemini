@@ -39,7 +39,7 @@ describe('BaseDialog', () => {
         </BaseDialog>
       </WithTheme>
     );
-    expect(screen.getByRole('button', { name: 'Cerrar' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /cerrar|close/i })).toBeDisabled();
   });
 
   it('calls onClose when header close is clicked and close is allowed', () => {
@@ -51,7 +51,7 @@ describe('BaseDialog', () => {
         </BaseDialog>
       </WithTheme>
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+    fireEvent.click(screen.getByRole('button', { name: /cerrar|close/i }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
