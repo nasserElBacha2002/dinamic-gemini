@@ -4,8 +4,9 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
-import { Paper, Typography, Box, Button, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material';
+import { Paper, Typography, Box, Button, CircularProgress } from '@mui/material';
 import { useTranslation } from 'react-i18next';
+import BaseDialog from '../../../../components/ui/BaseDialog';
 import type { ResultDetail } from '../../types';
 import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
 
@@ -167,28 +168,29 @@ export default function ResultEvidencePanel({
         </Box>
       )}
 
-      <Dialog open={dialogOpen} onClose={handleCloseImage} maxWidth="md" fullWidth>
-        <DialogTitle>{t('results.evidence_panel.dialog_title')}</DialogTitle>
-        <DialogContent>
-          {loadState.status === 'loaded' && (
-            <img
-              src={loadState.imageSrc}
-              alt={t('results.evidence_panel.dialog_alt')}
-              style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
-            />
-          )}
-          {loadState.status === 'error' && <Typography color="error">{loadState.message}</Typography>}
-          {loadState.status === 'loading' && (
-            <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
-              <CircularProgress />
-            </Box>
-          )}
-          {loadState.status === 'idle' && null}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseImage}>{t('common.close')}</Button>
-        </DialogActions>
-      </Dialog>
+      <BaseDialog
+        open={dialogOpen}
+        onClose={handleCloseImage}
+        maxWidth="md"
+        fullWidth
+        title={t('results.evidence_panel.dialog_title')}
+        actions={<Button onClick={handleCloseImage}>{t('common.close')}</Button>}
+      >
+        {loadState.status === 'loaded' && (
+          <img
+            src={loadState.imageSrc}
+            alt={t('results.evidence_panel.dialog_alt')}
+            style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
+          />
+        )}
+        {loadState.status === 'error' && <Typography color="error">{loadState.message}</Typography>}
+        {loadState.status === 'loading' && (
+          <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
+            <CircularProgress />
+          </Box>
+        )}
+        {loadState.status === 'idle' && null}
+      </BaseDialog>
     </Paper>
   );
 }

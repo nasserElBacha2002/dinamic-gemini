@@ -112,7 +112,7 @@ export default function AisleVisualReferencesModule({
       uploadButton: '',
       emptyTitle: t('positions.visual_references.empty_title'),
       emptyMessage: t('positions.visual_references.empty_message'),
-      preview: t('aisle_source_assets.preview'),
+      preview: t('common.preview'),
       delete: '',
       deleteTitle: '',
       deleteFallbackName: '',
