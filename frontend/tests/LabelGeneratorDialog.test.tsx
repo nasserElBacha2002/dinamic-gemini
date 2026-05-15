@@ -77,27 +77,46 @@ describe('LabelGeneratorDialog', () => {
     expect(within(preview).getByText(LABEL_PRINT_TITLE)).toBeInTheDocument();
   });
 
-  it('renders CÓDIGO INTERNO and CANT. TOTAL labels instead of COD/CANTIDAD', () => {
+  it('renders CÓDIGO: and CANT. TOTAL: as primary labels instead of COD/CANTIDAD', () => {
     renderDialog();
     fillRequiredFields();
     const preview = getPreviewSheet();
-    expect(within(preview).getByText('CÓDIGO INTERNO:')).toBeInTheDocument();
-    expect(within(preview).getByText('CANT. TOTAL')).toBeInTheDocument();
+    expect(within(preview).getByText('CÓDIGO:')).toBeInTheDocument();
+    expect(within(preview).getByText('CANT. TOTAL:')).toBeInTheDocument();
+    expect(within(preview).queryByText('CÓDIGO INTERNO')).not.toBeInTheDocument();
     expect(within(preview).queryByText(/^COD:/)).not.toBeInTheDocument();
     expect(within(preview).queryByText(/^CANTIDAD:/)).not.toBeInTheDocument();
   });
 
-  it('shows code and quantity values prominently in preview', () => {
+  it('shows long internal code complete without ellipsis in preview and print DOM', () => {
     renderDialog();
+    const longCode = 'etetetetetetetetetetetetetet';
     fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
-      target: { value: '10334321' },
+      target: { value: longCode },
     });
     fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
-      target: { value: '34' },
+      target: { value: '1212' },
     });
+
     const preview = getPreviewSheet();
-    expect(within(preview).getByText('10334321')).toHaveClass('label-code-value');
-    expect(within(preview).getByText('34')).toHaveClass('label-quantity-value');
+    expect(within(preview).getByText(longCode)).toBeInTheDocument();
+    expect(within(preview).queryByText(/\.\.\./)).not.toBeInTheDocument();
+
+    const codeValue = within(preview).getByText(longCode);
+    expect(codeValue).toHaveClass('label-code-main-value');
+    expect(codeValue).toHaveClass('label-code-main-value--long');
+    expect(codeValue).not.toHaveClass('label-row-value');
+
+    const quantityValue = within(preview).getByText('1212');
+    expect(quantityValue).toHaveClass('label-quantity-value');
+    expect(codeValue.closest('.label-primary-row')).not.toBe(quantityValue.closest('.label-primary-row'));
+
+    const printCard = getPrintRoot()?.querySelector('.label-card');
+    expect(printCard?.textContent).toContain(longCode);
+    expect(printCard?.textContent).not.toMatch(/\.\.\./);
+    const printCodeValue = printCard?.querySelector('.label-code-main-value');
+    expect(printCodeValue?.textContent).toBe(longCode);
+    expect(printCodeValue).toHaveClass('label-code-main-value--long');
   });
 
   it('updates preview when Contado por is filled', () => {
@@ -156,6 +175,37 @@ describe('LabelGeneratorDialog', () => {
     const printRoot = getPrintRoot();
     expect(printRoot?.querySelectorAll('.label-card')).toHaveLength(3);
     expect(printRoot?.querySelector('[data-copies="3"]')).toBeTruthy();
+  });
+
+  it('renders exactly one QR in preview label card', () => {
+    renderDialog();
+    fillRequiredFields();
+    const card = within(getPreviewSheet()).getByTestId('label-card');
+    expect(card.querySelectorAll('.label-qr-section')).toHaveLength(1);
+    expect(card.querySelectorAll('.label-qr-section svg')).toHaveLength(1);
+  });
+
+  it('renders exactly one QR in print-only label card', () => {
+    renderDialog();
+    fillRequiredFields();
+    const printCard = getPrintRoot()?.querySelector('.label-card');
+    expect(printCard?.querySelectorAll('.label-qr-section')).toHaveLength(1);
+    expect(printCard?.querySelectorAll('.label-qr-section svg')).toHaveLength(1);
+  });
+
+  it('renders one QR per print label when copies is 3', () => {
+    renderDialog();
+    fillRequiredFields();
+    fireEvent.change(screen.getByRole('spinbutton', { name: /^copias$/i }), {
+      target: { value: '3' },
+    });
+    const printRoot = getPrintRoot();
+    expect(printRoot?.querySelectorAll('.label-card')).toHaveLength(3);
+    expect(printRoot?.querySelectorAll('.label-qr-section')).toHaveLength(3);
+    expect(printRoot?.querySelectorAll('.label-qr-section svg')).toHaveLength(3);
+    expect(printRoot?.querySelectorAll('.label-qr-section').length).toBe(
+      printRoot?.querySelectorAll('.label-card').length
+    );
   });
 
   it('keeps preview and print-only roots separate', () => {
