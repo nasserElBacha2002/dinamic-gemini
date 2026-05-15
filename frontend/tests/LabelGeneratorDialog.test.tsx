@@ -1,10 +1,12 @@
 import '@testing-library/jest-dom/vitest';
+import type { ComponentProps } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import type { ClientSupplier } from '../src/api/types';
 import LabelGeneratorDialog from '../src/features/clients/components/LabelGeneratorDialog';
 import { LABEL_PRINT_TITLE } from '../src/features/clients/components/labelPrintUtils';
 
-const suppliers = [
+const suppliers: ClientSupplier[] = [
   {
     id: 'supplier-1',
     client_id: 'client-1',
@@ -15,7 +17,7 @@ const suppliers = [
   },
 ];
 
-function renderDialog(overrides: Partial<Parameters<typeof LabelGeneratorDialog>[0]> = {}) {
+function renderDialog(overrides: Partial<ComponentProps<typeof LabelGeneratorDialog>> = {}) {
   const onClose = vi.fn();
   render(
     <LabelGeneratorDialog
@@ -136,6 +138,36 @@ describe('LabelGeneratorDialog', () => {
     expect(screen.getAllByTestId('label-card')).toHaveLength(1);
   });
 
+  it('renders exactly one printable root and one label card for a single copy', () => {
+    renderDialog();
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
+      target: { value: '1931038' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
+      target: { value: '03' },
+    });
+    expect(document.querySelectorAll('.label-print-root')).toHaveLength(1);
+    expect(document.querySelectorAll('.label-print-root .label-card')).toHaveLength(1);
+    expect(screen.getByTestId('label-print-grid')).toHaveAttribute('data-copies', '1');
+    expect(screen.getByTestId('label-print-grid')).toHaveClass('single-label');
+  });
+
+  it('renders three printable label cards when copies is 3', () => {
+    renderDialog();
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
+      target: { value: 'X1' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
+      target: { value: '1' },
+    });
+    fireEvent.change(screen.getByRole('spinbutton', { name: /^copias$/i }), {
+      target: { value: '3' },
+    });
+    expect(document.querySelectorAll('.label-print-root')).toHaveLength(1);
+    expect(document.querySelectorAll('.label-print-root .label-card')).toHaveLength(3);
+    expect(screen.getByTestId('label-print-grid')).toHaveAttribute('data-copies', '3');
+  });
+
   it('uses stacked multi-label horizontal grid for multiple copies', () => {
     renderDialog();
     fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
@@ -153,6 +185,49 @@ describe('LabelGeneratorDialog', () => {
     expect(grid).not.toHaveClass('single-label');
     expect(grid).toHaveAttribute('data-layout', 'multi');
     expect(screen.getAllByTestId('label-card')).toHaveLength(3);
+  });
+
+  it('wraps preview in viewport and uses same LabelPrintSheet DOM as print', () => {
+    renderDialog();
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
+      target: { value: '05' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
+      target: { value: '544' },
+    });
+    const sheet = screen.getByTestId('label-print-sheet');
+    expect(sheet).toHaveClass('label-preview-root');
+    expect(sheet.querySelector('.label-print-root')).toBeTruthy();
+    expect(sheet.querySelector('.label-preview-viewport')).toBeTruthy();
+    expect(sheet.querySelector('.label-print-sheet')).toBeTruthy();
+    expect(sheet.querySelector('.label-card.label-card--horizontal')).toBeTruthy();
+  });
+
+  it('renders optional footer fields inside label-footer', () => {
+    renderDialog();
+    fireEvent.change(screen.getByRole('textbox', { name: /código interno/i }), {
+      target: { value: '05' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /cant\. total/i }), {
+      target: { value: '544' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /^lote$/i }), {
+      target: { value: 'h89' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /vencimiento/i }), {
+      target: { value: 'h89' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /descripción/i }), {
+      target: { value: 'h89h' },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: /observaciones/i }), {
+      target: { value: 'h89' },
+    });
+    const lotLine = screen.getByText(/LOTE:/i);
+    expect(lotLine.closest('.label-footer')).toBeTruthy();
+    expect(screen.getByText(/OBS:/i).closest('.label-footer')).toBeTruthy();
+    const footer = screen.getByTestId('label-print-sheet').querySelector('.label-footer');
+    expect(footer?.childElementCount).toBe(4);
   });
 
   it('renders print browser hint', () => {

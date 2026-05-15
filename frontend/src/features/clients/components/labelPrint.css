@@ -1,26 +1,45 @@
-/* Horizontal warehouse inventory label — A4 landscape print, stacked copies. */
+/* Horizontal warehouse label — one shared layout (mm/pt); preview scales the print canvas. */
 
 .label-print-root {
   background: #fff;
   color: #222;
 }
 
-.label-print-root--preview {
+/* Preview chrome only (screen); printable content lives in nested .label-print-root */
+.label-preview-root {
+  background: #fff;
   border: 1px dashed rgba(0, 0, 0, 0.24);
   border-radius: 8px;
-  max-height: 420px;
+  height: 380px;
   overflow: auto;
   padding: 12px;
 }
 
+.label-preview-viewport {
+  height: 100%;
+  overflow: auto;
+  width: 100%;
+}
+
+@media screen {
+  .label-preview-root .label-print-sheet {
+    transform: scale(0.42);
+    transform-origin: top left;
+    width: 297mm;
+  }
+}
+
 .label-print-sheet {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
   width: 100%;
 }
 
 .label-print-grid {
   display: grid;
-  gap: 12px;
+  gap: 6mm;
+  grid-template-columns: 1fr;
   width: 100%;
 }
 
@@ -28,64 +47,42 @@
   grid-template-columns: 1fr;
 }
 
-/* Screen preview: horizontal aspect, scaled down */
-.label-print-root--preview .label-card--horizontal {
-  aspect-ratio: 1.9 / 1;
-  min-height: 0;
-  padding: 12px 14px;
-}
-
-.label-print-root--preview .label-title {
-  font-size: 9pt;
-  line-height: 1.15;
-}
-
-.label-print-root--preview .label-date-code {
-  font-size: 14pt;
-}
-
-.label-print-root--preview .label-row-label {
-  font-size: 8pt;
-}
-
-.label-print-root--preview .label-row-value {
-  font-size: 10pt;
-}
-
-.label-print-root--preview .label-code-value {
-  font-size: 12pt;
-}
-
-.label-print-root--preview .label-quantity-label {
-  font-size: 11pt;
-}
-
-.label-print-root--preview .label-quantity-value {
-  font-size: 28pt;
-}
-
-.label-print-root--preview .label-footer {
-  font-size: 8pt;
-}
-
+/* Canonical label canvas (same for preview + print) */
 .label-card {
+  --label-title-size: 18pt;
+  --label-date-size: 26pt;
+  --label-brand-size: 14pt;
+  --label-row-label-size: 17pt;
+  --label-row-value-size: 22pt;
+  --label-code-size: 30pt;
+  --label-quantity-label-size: 26pt;
+  --label-quantity-value-size: 70pt;
+  --label-footer-size: 14pt;
+
   background: #fff;
   border: 2px solid #222;
   box-sizing: border-box;
   color: #222;
+  display: flex;
+  flex-direction: column;
+  height: 165mm;
+  max-height: 165mm;
+  overflow: hidden;
+  padding: 7mm 10mm;
+  width: 100%;
 }
 
 .label-card--horizontal {
-  display: flex;
-  flex-direction: column;
+  /* marker class for tests */
 }
 
 .label-header {
   align-items: center;
   display: grid;
-  gap: 8px;
-  grid-template-columns: 36px 1fr 48px;
-  margin-bottom: 10px;
+  flex: 0 0 auto;
+  gap: 6mm;
+  grid-template-columns: 24mm 1fr 32mm;
+  margin-bottom: 6mm;
 }
 
 .label-brand-mark {
@@ -93,15 +90,15 @@
   border: 2px solid #555;
   border-radius: 50%;
   display: flex;
-  font-size: 10pt;
+  font-size: var(--label-brand-size);
   font-weight: 800;
-  height: 36px;
+  height: 20mm;
   justify-content: center;
-  width: 36px;
+  width: 20mm;
 }
 
 .label-title {
-  font-size: 11pt;
+  font-size: var(--label-title-size);
   font-weight: 800;
   line-height: 1.1;
   text-align: center;
@@ -109,7 +106,7 @@
 }
 
 .label-date-code {
-  font-size: 16pt;
+  font-size: var(--label-date-size);
   font-weight: 900;
   line-height: 1;
   text-align: right;
@@ -117,75 +114,95 @@
 
 .label-meta {
   display: grid;
-  gap: 6px;
+  flex: 0 0 auto;
+  gap: 3mm;
 }
 
 .label-row {
   align-items: baseline;
   display: grid;
-  gap: 8px;
-  grid-template-columns: minmax(88px, 34%) 1fr;
+  gap: 6mm;
+  grid-template-columns: 48mm 1fr;
+  margin-bottom: 3mm;
 }
 
 .label-row-label {
   color: #222;
-  font-size: 9pt;
-  font-weight: 500;
+  font-size: var(--label-row-label-size);
+  font-weight: 700;
   text-transform: uppercase;
 }
 
 .label-row-value {
   color: #222;
-  font-size: 11pt;
+  font-size: var(--label-row-value-size);
   font-weight: 800;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   word-break: break-word;
 }
 
 .label-code-value {
   font-family: 'Roboto Mono', 'Consolas', 'Courier New', monospace;
-  font-size: 13pt;
+  font-size: var(--label-code-size);
   letter-spacing: 0.04em;
 }
 
 .label-divider {
   border-top: 2px dashed #333;
-  margin: 8px 0 10px;
+  flex: 0 0 auto;
+  margin: 5mm 0 6mm;
 }
 
 .label-quantity-section {
   align-items: center;
   display: grid;
-  flex: 1;
-  gap: 12px;
-  grid-template-columns: minmax(72px, 28%) 1fr;
-  min-height: 48px;
+  flex: 1 1 auto;
+  gap: 8mm;
+  grid-template-columns: 55mm 1fr;
+  min-height: 0;
 }
 
 .label-quantity-label {
-  font-size: 12pt;
+  font-size: var(--label-quantity-label-size);
   font-weight: 700;
+  line-height: 1.05;
   text-transform: uppercase;
 }
 
 .label-quantity-value {
   color: #222;
-  font-size: 32pt;
+  font-size: var(--label-quantity-value-size);
   font-weight: 900;
-  line-height: 1;
+  line-height: 0.95;
+  min-width: 0;
+  overflow: hidden;
   text-align: center;
+  text-overflow: ellipsis;
 }
 
 .label-footer {
   border-top: 1.5px solid #333;
   color: #222;
   display: flex;
-  flex-wrap: wrap;
-  font-size: 9pt;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  font-size: var(--label-footer-size);
   font-weight: 700;
-  gap: 12px;
+  gap: 8mm;
   justify-content: space-between;
-  margin-top: 8px;
-  padding-top: 6px;
+  line-height: 1.1;
+  margin-top: auto;
+  min-height: 0;
+  padding-top: 3mm;
+}
+
+.label-footer > div {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media print {
@@ -195,10 +212,14 @@
   }
 
   html,
-  body {
+  body,
+  #root {
     background: #fff !important;
-    min-height: 100%;
-    width: 100%;
+    height: auto !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
   }
 
   body * {
@@ -213,32 +234,49 @@
   .label-print-root {
     background: #fff !important;
     color: #222 !important;
-    inset: 0 !important;
+    height: auto !important;
+    left: 0 !important;
     margin: 0 !important;
-    min-height: 100% !important;
+    min-height: 0 !important;
+    overflow: visible !important;
     padding: 0 !important;
-    position: absolute !important;
+    position: fixed !important;
+    top: 0 !important;
     width: 100% !important;
   }
 
-  .label-print-root--preview {
-    border: none;
-    max-height: none;
-    overflow: visible;
-    padding: 0;
+  .label-preview-root,
+  .label-preview-viewport,
+  .label-print-host {
+    border: none !important;
+    display: contents !important;
+    height: auto !important;
+    margin: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .label-preview-root .label-print-sheet {
+    transform: none !important;
+    width: 100% !important;
   }
 
   .label-print-sheet {
-    box-sizing: border-box !important;
-    min-height: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+    overflow: visible !important;
     padding: 0 !important;
     width: 100% !important;
   }
 
   .label-print-grid {
-    display: grid !important;
-    gap: 8mm !important;
-    grid-template-columns: 1fr !important;
+    display: block !important;
+    height: auto !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
     width: 100% !important;
   }
 
@@ -248,120 +286,48 @@
     box-sizing: border-box !important;
     break-inside: avoid !important;
     color: #222 !important;
+    height: 165mm !important;
+    margin: 0 !important;
+    max-height: 165mm !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
     page-break-inside: avoid !important;
-    padding: 10mm 12mm !important;
+    padding: 7mm 10mm !important;
     width: 100% !important;
   }
 
-  .label-card.single-label {
-    min-height: 180mm !important;
+  .label-card:not(:last-child) {
+    break-after: page !important;
+    page-break-after: always !important;
   }
 
-  .label-card.multi-label {
-    min-height: 95mm !important;
+  .label-card:last-child {
+    break-after: auto !important;
+    page-break-after: auto !important;
   }
 
   .label-header {
-    align-items: center !important;
-    display: grid !important;
-    gap: 8mm !important;
-    grid-template-columns: 28mm 1fr 38mm !important;
-    margin-bottom: 10mm !important;
+    margin-bottom: 5mm !important;
   }
 
-  .label-brand-mark {
-    align-items: center !important;
-    border: 2px solid #555 !important;
-    border-radius: 50% !important;
-    display: flex !important;
-    font-size: 18pt !important;
-    font-weight: 800 !important;
-    height: 24mm !important;
-    justify-content: center !important;
-    width: 24mm !important;
-  }
-
-  .label-title {
-    font-size: 22pt !important;
-    font-weight: 800 !important;
-    line-height: 1.1 !important;
-    text-align: center !important;
-    text-transform: uppercase !important;
-  }
-
-  .label-date-code {
-    font-size: 34pt !important;
-    font-weight: 900 !important;
-    text-align: right !important;
+  .label-meta {
+    gap: 2.5mm !important;
   }
 
   .label-row {
-    align-items: baseline !important;
-    display: grid !important;
-    gap: 8mm !important;
-    grid-template-columns: 60mm 1fr !important;
-    margin-bottom: 7mm !important;
-  }
-
-  .label-row-label {
-    color: #222 !important;
-    font-size: 24pt !important;
-    font-weight: 500 !important;
-  }
-
-  .label-row-value {
-    color: #222 !important;
-    font-size: 30pt !important;
-    font-weight: 800 !important;
-  }
-
-  .label-code-value {
-    font-size: 38pt !important;
-    letter-spacing: 0.04em !important;
+    margin-bottom: 2.5mm !important;
   }
 
   .label-divider {
-    border-top: 2px dashed #333 !important;
-    margin: 8mm 0 10mm !important;
-  }
-
-  .label-quantity-section {
-    align-items: center !important;
-    display: grid !important;
-    grid-template-columns: 70mm 1fr !important;
-    gap: 12mm !important;
-  }
-
-  .label-quantity-label {
-    font-size: 34pt !important;
-    font-weight: 700 !important;
-  }
-
-  .label-quantity-value {
-    color: #222 !important;
-    font-size: 86pt !important;
-    font-weight: 900 !important;
-    line-height: 1 !important;
-    text-align: center !important;
-  }
-
-  .label-card.multi-label .label-quantity-value {
-    font-size: 64pt !important;
-  }
-
-  .label-card.multi-label .label-code-value {
-    font-size: 30pt !important;
+    margin: 4mm 0 5mm !important;
   }
 
   .label-footer {
-    border-top: 1.5px solid #333 !important;
-    color: #222 !important;
-    display: flex !important;
-    font-size: 18pt !important;
-    font-weight: 700 !important;
-    gap: 8mm !important;
-    justify-content: space-between !important;
-    margin-top: 8mm !important;
-    padding-top: 4mm !important;
+    margin-top: 4mm !important;
+    padding-top: 3mm !important;
+  }
+
+  .label-quantity-value {
+    font-size: 66pt !important;
   }
 }

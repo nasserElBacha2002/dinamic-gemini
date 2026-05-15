@@ -699,7 +699,7 @@
       "preview": "Vista previa",
       "clear": "Limpiar campos",
       "copies": "Copias",
-      "copies_hint": "Entre 1 y 50 etiquetas. Una copia ocupa una hoja A4 horizontal; varias copias se apilan en páginas sucesivas.",
+      "copies_hint": "Cada copia se imprime como una etiqueta horizontal en una hoja A4. Entre 1 y 50 copias.",
       "field_client": "Cliente",
       "field_supplier": "Proveedor",
       "field_counted_by": "Contado por",
@@ -716,7 +716,7 @@
       "validation_code_required": "El código interno es obligatorio.",
       "validation_quantity_required": "La cantidad total es obligatoria.",
       "preview_requires_fields": "Completá código interno y cant. total para imprimir.",
-      "print_a4_hint": "La impresión usa A4 horizontal; una copia ocupa casi toda la hoja.",
+      "print_a4_hint": "La vista previa respeta el formato de impresión A4 horizontal.",
       "print_browser_hint": "Para una impresión limpia, desactivá \"Encabezados y pies de página\" en el diálogo de impresión del navegador."
     },
     "detail": {

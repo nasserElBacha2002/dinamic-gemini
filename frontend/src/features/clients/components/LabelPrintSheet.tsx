@@ -32,22 +32,8 @@ function LabelRow({
   );
 }
 
-function HorizontalLabelCard({
-  data,
-  headerDate,
-  singleOnPage,
-}: {
-  data: Omit<LabelSheetData, 'copies'>;
-  headerDate: string;
-  singleOnPage: boolean;
-}) {
-  const cardClass = [
-    'label-card',
-    'label-card--horizontal',
-    singleOnPage ? 'single-label' : 'multi-label',
-  ]
-    .filter(Boolean)
-    .join(' ');
+function HorizontalLabelCard({ data, headerDate }: { data: Omit<LabelSheetData, 'copies'>; headerDate: string }) {
+  const cardClass = ['label-card', 'label-card--horizontal'].join(' ');
 
   return (
     <article className={cardClass} data-testid="label-card">
@@ -130,39 +116,41 @@ export default function LabelPrintSheet({ data, preview = false, className }: La
     [copies]
   );
 
-  const rootClass = [
-    'label-print-root',
-    preview ? 'label-print-root--preview' : '',
-    className ?? '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
   const gridClass = [
     'label-print-grid',
     'label-print-grid--horizontal',
     isSingleLabel ? 'single-label' : 'multi-label',
   ].join(' ');
 
-  return (
-    <div className={rootClass} data-testid="label-print-sheet">
+  const printableSheet = (
+    <div className={['label-print-root', className ?? ''].filter(Boolean).join(' ')}>
       <div className="label-print-sheet">
         <div
           className={gridClass}
           data-testid="label-print-grid"
           data-layout={isSingleLabel ? 'single' : 'multi'}
+          data-copies={copies}
           aria-label="label-print-grid"
         >
           {cards.map((key) => (
-            <HorizontalLabelCard
-              key={key}
-              data={cardData}
-              headerDate={headerDate}
-              singleOnPage={isSingleLabel}
-            />
+            <HorizontalLabelCard key={key} data={cardData} headerDate={headerDate} />
           ))}
         </div>
       </div>
+    </div>
+  );
+
+  if (!preview) {
+    return (
+      <div className="label-print-host" data-testid="label-print-sheet">
+        {printableSheet}
+      </div>
+    );
+  }
+
+  return (
+    <div className="label-preview-root" data-testid="label-print-sheet">
+      <div className="label-preview-viewport">{printableSheet}</div>
     </div>
   );
 }
