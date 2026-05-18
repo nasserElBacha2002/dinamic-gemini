@@ -129,6 +129,9 @@ export default function ResultReviewActions({
           <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
             {t('review.actions.image_mismatch_state')}
           </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75, lineHeight: 1.4 }}>
+            {t('review.actions.image_mismatch_result_ok')}
+          </Typography>
         </Box>
       )}
 

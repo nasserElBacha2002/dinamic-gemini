@@ -2,7 +2,7 @@
  * Canonical review surface (Sprint v3.3) — drawer with detail fetch, evidence viewer, actions, prev/next, audit.
  */
 
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Box, Button, Collapse, Drawer, Typography, Stack } from '@mui/material';
 import { REVIEW_ACTION_WIRE, type ReviewActionRequest } from '../../../api/types';
@@ -75,6 +75,17 @@ export default function QuickReviewDrawer({
   const { showSnackbar } = useAppSnackbar();
   const [activePositionId, setActivePositionId] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
+
+  /** Clear in-drawer navigation when the drawer closes or the table opens a different row. */
+  useEffect(() => {
+    if (!open) {
+      setActivePositionId('');
+      return;
+    }
+    if (context?.positionId) {
+      setActivePositionId('');
+    }
+  }, [open, context?.positionId]);
   const [invalidConfirmOpen, setInvalidConfirmOpen] = useState(false);
   const [invalidConfirmLoading, setInvalidConfirmLoading] = useState(false);
   const [invalidConfirmError, setInvalidConfirmError] = useState<string | null>(null);

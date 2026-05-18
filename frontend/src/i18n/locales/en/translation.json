@@ -745,6 +745,11 @@
       "source_unavailable": "Source image unavailable"
     },
     "evidence_missing": "Evidence missing",
+    "evidence": {
+      "image_mismatch": "Image mismatch",
+      "image_mismatch_short": "Evidence issue",
+      "image_mismatch_help": "The associated image does not match this result."
+    },
     "evidence_panel": {
       "alt_source_generic": "Alt source generic",
       "alt_source_named": "Alt source named",
@@ -870,12 +875,13 @@
       "danger_zone": "Danger zone",
       "danger_zone_help": "Danger zone help",
       "evidence_section": "Evidence section",
-      "image_mismatch_state": "Image mismatch state",
+      "image_mismatch_state": "The visual evidence is marked as the wrong image.",
+      "image_mismatch_result_ok": "The result data may still be correct; only the image association was flagged.",
       "mark_result_invalid": "Mark result invalid",
       "new_quantity": "New quantity",
       "readonly_run": "Readonly run",
       "wrong_image": "Wrong image",
-      "wrong_image_help": "Wrong image help"
+      "wrong_image_help": "Use when the image or evidence does not match this result. It does not mean the count or SKU is wrong."
     },
     "detail_title_fallback": "Detail title fallback",
     "drawer_mode_title": "Drawer mode title",

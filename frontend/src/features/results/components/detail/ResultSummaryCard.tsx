@@ -8,7 +8,12 @@ import { useTranslation } from 'react-i18next';
 import type { ResultDetail } from '../../types';
 import { StatusChip, TraceabilityChip } from '../../../../components/ui';
 import { getCountOriginLabel } from '../../utils/countOriginLabel';
-import { getReviewStatusLabel, getReviewStatusColor } from '../../utils/reviewStatusDisplay';
+import {
+  getImageMismatchEvidenceLabel,
+  hasImageMismatchEvidenceIssue,
+  getReviewStatusColorForDisplay,
+  getReviewStatusLabelForDisplay,
+} from '../../utils/evidenceReviewDisplay';
 import { visibleTraceabilityToApiStatus } from '../../utils/traceabilityDisplay';
 import { formatDate } from '../../../../utils/formatDate';
 
@@ -104,8 +109,8 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
 
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
         <StatusChip
-          label={getReviewStatusLabel(result.reviewStatus)}
-          color={getReviewStatusColor(result.reviewStatus)}
+          label={getReviewStatusLabelForDisplay(result.reviewStatus)}
+          color={getReviewStatusColorForDisplay(result.reviewStatus)}
           size="small"
           variant="filled"
         />
@@ -113,6 +118,14 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
           status={visibleTraceabilityToApiStatus(result.traceabilityStatus)}
           size="small"
         />
+        {hasImageMismatchEvidenceIssue(result.reviewStatus) ? (
+          <StatusChip
+            label={getImageMismatchEvidenceLabel(true)}
+            color="warning"
+            size="small"
+            variant="outlined"
+          />
+        ) : null}
         <StatusChip
           label={t('results.summary_confidence_value', { value: confidenceStr })}
           variant="outlined"

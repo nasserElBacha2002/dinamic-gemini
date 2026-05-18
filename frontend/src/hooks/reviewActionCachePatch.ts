@@ -57,6 +57,7 @@ export function applyReviewActionToPositionSummary(
     case REVIEW_ACTION_WIRE.CONFIRM:
       next = {
         ...position,
+        status: 'reviewed',
         needs_review: false,
         review_resolution: 'confirmed',
       };
@@ -66,6 +67,7 @@ export function applyReviewActionToPositionSummary(
       if (typeof q !== 'number' || !Number.isFinite(q)) return position;
       next = {
         ...position,
+        status: 'corrected',
         needs_review: false,
         review_resolution: 'qty_corrected',
         qty: q,
@@ -78,6 +80,7 @@ export function applyReviewActionToPositionSummary(
       if (!sku) return position;
       next = {
         ...position,
+        status: 'corrected',
         needs_review: false,
         review_resolution: 'sku_corrected',
         sku,
@@ -90,6 +93,7 @@ export function applyReviewActionToPositionSummary(
       if (!code) return position;
       next = {
         ...position,
+        status: 'corrected',
         needs_review: false,
         review_resolution: 'position_code_corrected',
         position_code: code,
@@ -99,6 +103,7 @@ export function applyReviewActionToPositionSummary(
     case REVIEW_ACTION_WIRE.MARK_UNKNOWN:
       next = {
         ...position,
+        status: 'reviewed',
         needs_review: false,
         review_resolution: 'unknown',
       };
@@ -106,6 +111,7 @@ export function applyReviewActionToPositionSummary(
     case REVIEW_ACTION_WIRE.MARK_IMAGE_MISMATCH:
       next = {
         ...position,
+        status: 'reviewed',
         needs_review: false,
         review_resolution: 'image_mismatch',
       };

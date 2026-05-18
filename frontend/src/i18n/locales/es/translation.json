@@ -1170,6 +1170,11 @@
       "source_unavailable": "Source image unavailable"
     },
     "evidence_missing": "Sin evidencia",
+    "evidence": {
+      "image_mismatch": "Imagen no coincide",
+      "image_mismatch_short": "Evidencia incorrecta",
+      "image_mismatch_help": "La imagen asociada no corresponde a este resultado."
+    },
     "evidence_panel": {
       "alt_source_generic": "Evidencia genérica",
       "alt_source_named": "Evidencia de {{fileName}}",
@@ -1295,12 +1300,13 @@
       "danger_zone": "Zona de riesgo",
       "danger_zone_help": "Usá esta acción solo cuando el resultado sea inválido y deba excluirse del flujo.",
       "evidence_section": "Sección de evidencia",
-      "image_mismatch_state": "El resultado está marcado como imagen incorrecta.",
+      "image_mismatch_state": "La evidencia visual está marcada como imagen incorrecta.",
+      "image_mismatch_result_ok": "El dato del resultado puede seguir siendo correcto; solo la asociación con la imagen quedó marcada.",
       "mark_result_invalid": "Marcar resultado como inválido",
       "new_quantity": "Nueva cantidad",
       "readonly_run": "Esta corrida está en modo lectura; no se permiten acciones de revisión.",
       "wrong_image": "Imagen incorrecta",
-      "wrong_image_help": "Marcá esta opción cuando la evidencia visual no corresponda a la posición evaluada."
+      "wrong_image_help": "Marcá esta opción cuando la imagen o evidencia no corresponda a este resultado. No implica que el conteo o SKU sean incorrectos."
     },
     "detail_title_fallback": "Detalle de resultado",
     "drawer_mode_title": "Modo cajón",
