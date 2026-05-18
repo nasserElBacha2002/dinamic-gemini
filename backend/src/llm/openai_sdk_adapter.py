@@ -33,6 +33,7 @@ from openai.types.chat import ChatCompletionUserMessageParam
 
 from src.exceptions.global_analysis_exceptions import GlobalAnalysisValidationError
 from src.llm.errors import LLMProviderError
+from src.llm.normalization.model_entity_id import normalize_model_entity_ids
 from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_PARITY_MODE
 from src.llm.types import LLMRequest, LLMResponse
@@ -363,7 +364,8 @@ def _openai_parse_validate_global_analysis_json(
     *,
     prov: str,
     v: OpenAiCompatibleVendorConfig,
-) -> dict[str, Any]:
+    job_id: str | None = None,
+) -> tuple[dict[str, Any], list[str]]:
     cleaned = _extract_json_text(raw_text)
     try:
         parsed = json.loads(cleaned)
@@ -415,6 +417,23 @@ def _openai_parse_validate_global_analysis_json(
         )
         data["total_entities_detected"] = len(entities)
 
+    data, repair_warnings = normalize_model_entity_ids(data)
+    if repair_warnings:
+        indexes = [
+            int(w.split("index ")[1].split(";")[0])
+            for w in repair_warnings
+            if "index " in w
+        ]
+        logger.warning(
+            "%s response normalization repaired missing/duplicate model_entity_id for %d "
+            "entities (provider=%s job_id=%s indexes=%s)",
+            v.log_label,
+            len(repair_warnings),
+            prov,
+            job_id or "",
+            indexes,
+        )
+
     try:
         validate_global_analysis_structure_v21(data)
     except GlobalAnalysisValidationError as e:
@@ -423,7 +442,7 @@ def _openai_parse_validate_global_analysis_json(
             message=str(e),
             details={"provider": prov},
         ) from e
-    return data
+    return data, repair_warnings
 
 
 class OpenAiSdkAdapter:
@@ -491,9 +510,13 @@ class OpenAiSdkAdapter:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(raw_text, encoding="utf-8")
 
-        data = _openai_parse_validate_global_analysis_json(raw_text, prov=prov, v=v)
+        data, repair_warnings = _openai_parse_validate_global_analysis_json(
+            raw_text, prov=prov, v=v, job_id=request.job_id
+        )
 
         usage = _openai_completion_usage_dict(completion)
+        if repair_warnings:
+            usage = {**usage, "model_entity_id_repair_warnings": repair_warnings}
 
         return LLMResponse(
             provider=prov,
