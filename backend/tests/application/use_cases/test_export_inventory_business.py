@@ -10,8 +10,11 @@ from datetime import datetime, timezone
 import pytest
 
 from src.application.errors import InventoryNotFoundError
+from src.application.services.aisle_results_export_source import (
+    operational_csv_counted_totals,
+    ui_counted_totals_from_aisle_result_rows,
+)
 from src.application.services.csv_inventory_exporter import UTF8_BOM
-from src.application.services.export_csv_column_mapper import BUSINESS_OPERATIONAL_CSV_FIELDS
 from src.application.services.export_inventory_collector import ExportInventoryCollector
 from src.application.services.export_summary_builder import ExportSummaryBuilder
 from src.application.services.result_context_resolver import ResultContextResolver
@@ -22,6 +25,10 @@ from src.application.use_cases.export_inventory_business import (
     build_business_aisle_operational_csv_from_bundle,
 )
 from src.application.use_cases.export_inventory_results import ExportAisleResultsCsvUseCase
+from src.application.use_cases.list_aisle_positions import (
+    ListAislePositionsCommand,
+    ListAislePositionsUseCase,
+)
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
@@ -518,7 +525,7 @@ def test_export_totals_match_ui_without_sku_consolidation() -> None:
     )
     _, aisle_rows = _parse_csv(summary_uc.execute_aisles_summary_csv("inv-1")[0])
     assert aisle_rows[0]["Total contabilizado"] == "15"
-    assert aisle_rows[0]["Posiciones válidas"] == "2"
+    assert aisle_rows[0]["Ítems contados"] == "2"
 
     merged_collector = ExportInventoryCollector(
         inv_repo,
@@ -531,6 +538,182 @@ def test_export_totals_match_ui_without_sku_consolidation() -> None:
     merged_rollups = ExportSummaryBuilder().build_rollups(merged)
     assert merged_rollups.aisle_totals[0].total_counted_quantity == 15
     assert merged_rollups.aisle_totals[0].valid_positions == 1
+
+
+def test_business_export_totals_match_aisle_results_ui_projection() -> None:
+    """Export summaries match ListAislePositions + UI KPI rules (no duplicate counting logic)."""
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    aisle = Aisle("a1", "inv-1", "A1", AisleStatus.COMPLETED, NOW, NOW)
+    valid = Position(
+        id="p-ok",
+        aisle_id="a1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={
+            "internal_code": "OK",
+            "final_quantity": 4,
+            "traceability_status": TraceabilityStatus.VALID.value,
+        },
+    )
+    trace_inv = Position(
+        id="p-tr",
+        aisle_id="a1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={
+            "internal_code": "TR",
+            "final_quantity": 50,
+            "traceability_status": TraceabilityStatus.INVALID.value,
+        },
+    )
+    deleted = Position(
+        id="p-del",
+        aisle_id="a1",
+        status=PositionStatus.DELETED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={"internal_code": "DEL", "final_quantity": 99},
+    )
+    shared = {"internal_code": "SKU-A", "traceability_status": "valid"}
+    sku_a = Position(
+        id="p-a",
+        aisle_id="a1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={**shared, "final_quantity": 10},
+    )
+    sku_b = Position(
+        id="p-b",
+        aisle_id="a1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={**shared, "final_quantity": 5},
+    )
+    inv_repo, aisle_repo, pos_repo, prod_repo, job_repo = _repos_with_positions(
+        inv=inv,
+        aisles=[aisle],
+        positions=[valid, trace_inv, deleted, sku_a, sku_b],
+    )
+    resolver = ResultContextResolver(job_repo)
+    list_uc = ListAislePositionsUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        resolver,
+        product_record_repo=prod_repo,
+        positions_aisle_raw_cap=500,
+    )
+    list_result = list_uc.execute(
+        ListAislePositionsCommand(
+            inventory_id="inv-1",
+            aisle_id="a1",
+            consolidate_by_sku=False,
+            page_size=500,
+        )
+    )
+    ui_qty, ui_items = ui_counted_totals_from_aisle_result_rows(
+        list_result.positions, list_result.primary_products
+    )
+    assert ui_qty == 69
+    assert ui_items == 4
+
+    aisle_uc = ExportAisleBusinessCsvUseCase(
+        inv_repo, aisle_repo, pos_repo, prod_repo, resolver
+    )
+    aisle_csv, _ = aisle_uc.execute_csv("inv-1", "a1")
+    _, op_rows = _parse_csv(aisle_csv)
+    op_qty, op_items = operational_csv_counted_totals(op_rows)
+    assert op_qty == ui_qty
+    assert op_items == ui_items
+
+    summary_uc = ExportInventorySummaryCsvUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        resolver,
+        job_repo=job_repo,
+    )
+    inv_csv, _ = summary_uc.execute_inventory_summary_csv("inv-1")
+    _, inv_rows = _parse_csv(inv_csv)
+    assert inv_rows[0]["Total contabilizado"] == str(ui_qty)
+    assert inv_rows[0]["Ítems contados"] == str(ui_items)
+    assert inv_rows[0]["Total de filas exportadas"] == "5"
+    assert inv_rows[0]["Filas excluidas del total"] == "1"
+
+    _, aisle_sum_rows = _parse_csv(summary_uc.execute_aisles_summary_csv("inv-1")[0])
+    assert aisle_sum_rows[0]["Total contabilizado"] == str(ui_qty)
+    assert aisle_sum_rows[0]["Ítems contados"] == str(ui_items)
+
+
+def test_zip_summary_matches_operational_csv_items_and_quantity() -> None:
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    aisle = Aisle("a1", "inv-1", "A1", AisleStatus.COMPLETED, NOW, NOW)
+    positions = [
+        Position(
+            id="p1",
+            aisle_id="a1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "A", "final_quantity": 3},
+        ),
+        Position(
+            id="p2",
+            aisle_id="a1",
+            status=PositionStatus.DELETED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "B", "final_quantity": 100},
+        ),
+    ]
+    inv_repo, aisle_repo, pos_repo, prod_repo, job_repo = _repos_with_positions(
+        inv=inv, aisles=[aisle], positions=positions
+    )
+    resolver = ResultContextResolver(job_repo)
+    uc = ExportInventoryPackageZipUseCase(
+        inv_repo, aisle_repo, pos_repo, prod_repo, resolver, job_repo=job_repo
+    )
+    zip_bytes, _ = uc.execute_zip("inv-1")
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        _, inv_sum = _parse_csv(zf.read("inventory_summary.csv").decode("utf-8-sig"))
+        _, aisle_sum = _parse_csv(zf.read("aisles_summary.csv").decode("utf-8-sig"))
+        op_path = next(
+            n for n in zf.namelist() if n.startswith("aisles/aisle_") and n.endswith("_operational.csv")
+        )
+        _, op_rows = _parse_csv(zf.read(op_path).decode("utf-8-sig"))
+    op_qty, op_items = operational_csv_counted_totals(op_rows)
+    assert aisle_sum[0]["Total contabilizado"] == str(op_qty)
+    assert aisle_sum[0]["Ítems contados"] == str(op_items)
+    assert inv_sum[0]["Total contabilizado"] == str(op_qty)
+    assert inv_sum[0]["Ítems contados"] == str(op_items)
+    assert op_qty == 3
+    assert op_items == 1
 
 
 def test_summary_not_found() -> None:

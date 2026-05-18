@@ -25,12 +25,26 @@ Business exports and summaries use the same projection rules as the **Aisle Resu
 - Quantity per row: canonical `final_display_quantity` (operator correction when set, else detected/resolved), same as API `quantity.final` / UI `resolvedQty ?? detectedQty`.
 - **Counted totals** match UI `computeResultsKpi` / `isExcludedFromCountedTotals`:
   - Included: all rows except `deleted` position status (UI `reviewStatus === 'INVALID'`).
-  - Traceability-invalid rows **are included** in `Total contabilizado` (same as UI).
+  - Traceability-invalid rows **are included** in `Total contabilizado` and `Ítems contados` (same as UI).
 - Deleted rows may appear in business operational CSV for audit (`Incluido en totales = no`, `Motivo de exclusión = Eliminada`) but do not affect totals.
 
 Inventory summary `Total contabilizado` equals the sum of per-aisle UI-style totals. Each `aisles_summary.csv` row matches the corresponding operational aisle CSV when summing rows with `Incluido en totales = sí`.
 
 Legacy flat export still omits deleted rows and may consolidate by SKU (unchanged).
+
+## Summary column meanings
+
+| Column | Meaning |
+|--------|---------|
+| **Total contabilizado** | Sum of `Cantidad final` for rows included in totals — matches UI **TOTAL CONTABILIZADO**. |
+| **Ítems contados** | Count of rows included in totals — matches UI **Ítems contados** (`ExportQuantityRollupService.valid_positions`). |
+| **Total de filas exportadas** | All rows emitted in the business operational export for that scope (including audit rows excluded from totals). |
+| **Filas excluidas del total** | Rows shown for audit but not included in `Total contabilizado` / `Ítems contados` (e.g. deleted). |
+
+Operational CSV consistency:
+
+- `count(rows where Incluido en totales = sí)` = `Ítems contados` in the matching summary row.
+- `sum(Cantidad final where Incluido en totales = sí)` = `Total contabilizado` in the matching summary row.
 
 ## Cost fields
 
