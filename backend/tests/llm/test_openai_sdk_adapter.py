@@ -29,7 +29,7 @@ def test_openai_sdk_adapter_not_configured_without_api_key() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -125,7 +125,7 @@ def test_openai_sdk_adapter_prompt_contract_requires_canonical_label_fields() ->
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="Analyze aisle entities.",
         schema_version="v2.1",
         metadata={},
@@ -158,7 +158,7 @@ def test_openai_sdk_adapter_maps_schema_invalid() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -182,7 +182,7 @@ def test_openai_sdk_adapter_maps_rate_limit() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -210,7 +210,7 @@ def test_openai_sdk_adapter_maps_invalid_json() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -237,7 +237,7 @@ def test_openai_sdk_adapter_rejects_json_array_root() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -267,7 +267,7 @@ def test_openai_provider_delegates_to_adapter() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},

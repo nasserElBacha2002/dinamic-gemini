@@ -16,6 +16,29 @@ LLM_METADATA_KEY_FRAMES_SENT_IDS = "frames_sent_ids"
 LLM_METADATA_KEY_PROMPT_LISTED_IMAGE_IDS = "prompt_listed_image_ids"
 LLM_METADATA_KEY_REFERENCE_IMAGE_IDS = "reference_image_ids"
 LLM_METADATA_KEY_MULTIMODAL_ORDER = "multimodal_order"
+MULTIMODAL_ORDER_STATUS_PENDING = "pending_adapter_materialization"
+
+PRIMARY_FRAME_REFS_MISMATCH = "PRIMARY_FRAME_REFS_MISMATCH"
+
+
+def validate_primary_frame_refs(
+    primary_frames_nd: list[Any],
+    frame_refs: list[str],
+) -> None:
+    """
+    Ensure every primary frame has a non-empty ``source_image_id`` before building provider payloads.
+
+    Raises:
+        ValueError: When counts differ or any frame ref is empty/whitespace.
+    """
+    n_frames = len(primary_frames_nd)
+    n_refs = len(frame_refs)
+    empty_indices = [i for i, ref in enumerate(frame_refs) if not (ref or "").strip()]
+    if n_frames != n_refs or empty_indices:
+        raise ValueError(
+            f"{PRIMARY_FRAME_REFS_MISMATCH}: primary_frame_count={n_frames}, "
+            f"frame_ref_count={n_refs}, empty_ref_indices={empty_indices}"
+        )
 
 
 def reference_image_label(reference_id: str) -> str:
@@ -64,6 +87,7 @@ def build_openai_vision_content_parts(
     """
     OpenAI Chat Completions user ``content`` parts: main text, then labeled reference and primary pairs.
     """
+    validate_primary_frame_refs(primary_frames_nd, frame_refs)
     content: list[dict[str, Any]] = [{"type": "text", "text": main_prompt_text}]
     order: list[dict[str, Any]] = []
     idx = 0
@@ -95,7 +119,7 @@ def build_openai_vision_content_parts(
         idx += 1
 
     for i, nd in enumerate(primary_frames_nd):
-        ref = frame_refs[i] if i < len(frame_refs) else ""
+        ref = str(frame_refs[i]).strip()
         label = primary_image_label(ref, i)
         content.append({"type": "text", "text": label})
         _append_order_entry(
@@ -150,6 +174,7 @@ def build_anthropic_message_content_parts(
     frame_refs: list[str],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Claude message content: same labeled interleaving as OpenAI (text + image blocks)."""
+    validate_primary_frame_refs(primary_frames_nd, frame_refs)
     content: list[dict[str, Any]] = [{"type": "text", "text": main_prompt_text}]
     order: list[dict[str, Any]] = []
     idx = 0
@@ -180,7 +205,7 @@ def build_anthropic_message_content_parts(
         idx += 1
 
     for i, nd in enumerate(primary_frames_nd):
-        ref = frame_refs[i] if i < len(frame_refs) else ""
+        ref = str(frame_refs[i]).strip()
         content.append({"type": "text", "text": primary_image_label(ref, i)})
         _append_order_entry(
             order,
@@ -236,6 +261,7 @@ def build_gemini_interleaved_contents(
     """
     Gemini ``contents``: main prompt text first, then labeled reference and primary pairs (PIL images).
     """
+    validate_primary_frame_refs(primary_pil_images, frame_refs)
     contents: list[Any] = [main_prompt_text]
     order: list[dict[str, Any]] = []
     idx = 0
@@ -266,7 +292,7 @@ def build_gemini_interleaved_contents(
         idx += 1
 
     for i, pil in enumerate(primary_pil_images):
-        ref = frame_refs[i] if i < len(frame_refs) else ""
+        ref = str(frame_refs[i]).strip()
         contents.append(primary_image_label(ref, i))
         _append_order_entry(
             order,

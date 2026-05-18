@@ -72,7 +72,9 @@ from src.llm.vision_multimodal_payload import (
     LLM_METADATA_KEY_MULTIMODAL_ORDER,
     LLM_METADATA_KEY_PROMPT_LISTED_IMAGE_IDS,
     LLM_METADATA_KEY_REFERENCE_IMAGE_IDS,
+    MULTIMODAL_ORDER_STATUS_PENDING,
     traceability_metadata_payload,
+    validate_primary_frame_refs,
 )
 from src.pipeline.services.provider_llm_request_metadata import (
     apply_job_model_name_to_llm_request_metadata,
@@ -252,7 +254,9 @@ class HybridGlobalAnalysisStrategy:
         resolved_reference_ids = vb.resolved_reference_ids
         consumed_count = vb.consumed_count
 
-        sent_ids = [r for r in frame_refs if r]
+        if frames_nd:
+            validate_primary_frame_refs(frames_nd, frame_refs)
+        sent_ids = list(frame_refs)
         prompt_listed = list(composition_base.get("prompt_listed_image_ids") or sent_ids)
         req_meta: dict[str, Any] = {
             **metadata,
@@ -348,7 +352,7 @@ class HybridGlobalAnalysisStrategy:
                     LLM_METADATA_KEY_PROMPT_LISTED_IMAGE_IDS, []
                 ),
                 "reference_image_ids": req_meta.get(LLM_METADATA_KEY_REFERENCE_IMAGE_IDS, []),
-                "multimodal_order": req_meta.get(LLM_METADATA_KEY_MULTIMODAL_ORDER, []),
+                "multimodal_order_status": MULTIMODAL_ORDER_STATUS_PENDING,
                 "prompt_composition": prompt_composition_summary_for_execution_log(
                     prompt_composition,
                     final_prompt_char_len=len(prompt_text),

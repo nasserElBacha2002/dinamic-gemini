@@ -16,6 +16,7 @@ from src.domain.traceability import (
 )
 from src.jobs.image_identity import JobImage
 from src.llm.prompt_composer.enrichments import enrich_prompt_with_sent_image_ids
+from src.llm.prompt_composer.enrichments import enrich_prompt_with_sent_image_ids
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.services.hybrid_analysis_prompt import build_hybrid_analysis_prompt_with_traceability
 from src.pipeline.stages.analysis_stage import AnalysisStageResult
@@ -87,6 +88,33 @@ def test_unknown_id_not_in_manifest_uses_generic_warning() -> None:
     )
     assert entities[0].traceability_status == TRACEABILITY_INVALID
     assert "not in job" in (entities[0].traceability_warning or "")
+
+
+def test_enrich_sent_image_ids_all_found_in_job_images() -> None:
+    images = [
+        JobImage("img_001", "a.jpg", 1, "p1.jpg"),
+        JobImage("img_002", "b.jpg", 2, "p2.jpg"),
+    ]
+    text = enrich_prompt_with_sent_image_ids("BASE", images, ["img_001", "img_002"])
+    assert "upload_order=1" in text
+    assert "upload_order=2" in text
+    assert text.index("img_001") < text.index("img_002")
+
+
+def test_enrich_sent_image_ids_none_found_uses_id_only_lines() -> None:
+    images = [JobImage("img_001", "a.jpg", 1, "p1.jpg")]
+    text = enrich_prompt_with_sent_image_ids("BASE", images, ["photo_0002", "photo_0003"])
+    assert "photo_0002" in text
+    assert "photo_0003" in text
+    assert "upload_order" not in text
+
+
+def test_enrich_sent_image_ids_partial_metadata_preserves_all_ids_in_order() -> None:
+    images = [JobImage("img_001", "a.jpg", 1, "p1.jpg")]
+    text = enrich_prompt_with_sent_image_ids("BASE", images, ["img_001", "photo_0002"])
+    assert text.index("img_001") < text.index("photo_0002")
+    assert "upload_order=1" in text
+    assert "- photo_0002" in text
 
 
 def test_prompt_enrichment_lists_only_sent_frames() -> None:

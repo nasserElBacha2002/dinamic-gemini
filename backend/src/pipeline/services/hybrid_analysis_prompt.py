@@ -151,8 +151,8 @@ def build_hybrid_analysis_prompt_with_traceability(
             images = load_job_images_from_manifest(manifest_path, photos_dir_rel)
             if images:
                 if sent_frame_refs is not None:
-                    frames_sent_ids = [r for r in sent_frame_refs if r]
-                    prompt_listed_image_ids = list(frames_sent_ids)
+                    frames_sent_ids = list(sent_frame_refs)
+                    prompt_listed_image_ids = list(sent_frame_refs)
                     if frames_sent_ids:
                         prompt_text = enrich_prompt_with_sent_image_ids(
                             base_prompt, images, frames_sent_ids

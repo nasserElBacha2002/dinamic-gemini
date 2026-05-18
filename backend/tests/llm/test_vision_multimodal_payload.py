@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from src.llm.vision_multimodal_payload import (
+    PRIMARY_FRAME_REFS_MISMATCH,
     ROLE_PRIMARY_EVIDENCE,
     ROLE_REFERENCE_ONLY,
     build_anthropic_message_content_parts,
@@ -13,6 +15,7 @@ from src.llm.vision_multimodal_payload import (
     materialize_openai_content_parts,
     primary_image_label,
     reference_image_label,
+    validate_primary_frame_refs,
 )
 
 
@@ -105,3 +108,38 @@ def test_anthropic_content_matches_openai_label_pattern() -> None:
     assert "source_image_id: a" in text_parts[1]["text"]
     assert "source_image_id: b" in text_parts[2]["text"]
     assert sum(1 for e in order if e["kind"] == "primary_evidence") == 2
+
+
+@pytest.mark.parametrize(
+    "frames,refs",
+    [
+        ([np.zeros((2, 2, 3))], []),
+        ([np.zeros((2, 2, 3))], ["a", "b"]),
+        ([], ["a"]),
+        ([np.zeros((2, 2, 3))], [""]),
+        ([np.zeros((2, 2, 3))], ["   "]),
+    ],
+)
+def test_validate_primary_frame_refs_rejects_mismatch_or_empty(
+    frames: list[np.ndarray], refs: list[str]
+) -> None:
+    with pytest.raises(ValueError, match=PRIMARY_FRAME_REFS_MISMATCH):
+        validate_primary_frame_refs(frames, refs)
+
+
+def test_validate_primary_frame_refs_accepts_equal_non_empty() -> None:
+    validate_primary_frame_refs([np.zeros((2, 2, 3))], ["img_001"])
+
+
+def test_reference_image_missing_id_still_builds_openai_payload() -> None:
+    nd = np.zeros((4, 4, 3), dtype=np.uint8)
+    parts, order = build_openai_vision_content_parts(
+        main_prompt_text="P",
+        context_images=[nd],
+        reference_image_ids=[""],
+        primary_frames_nd=[nd],
+        frame_refs=["img_001"],
+    )
+    ref_labels = [p for p in parts if p.get("type") == "text" and ROLE_REFERENCE_ONLY in p["text"]]
+    assert ref_labels
+    assert "unknown" in ref_labels[0]["text"]

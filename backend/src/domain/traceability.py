@@ -1,7 +1,7 @@
 """
 Traceability of counted results to source images (Epic 3.1.B).
 
-Validates source_image_id against the current job's registered images and
+Validates source_image_id against primary frames sent to the model and
 assigns a structured traceability status to each entity.
 
 Diagnostic policy (Epic 3.1.C):
@@ -21,9 +21,9 @@ from src.domain.entity import Entity
 class TraceabilityStatus(str, Enum):
     """Allowed traceability status values. Use .value for persistence/API."""
 
-    VALID = "valid"  # source_image_id present and in job's registered images
+    VALID = "valid"  # source_image_id present and in sent primary model input frames
     MISSING = "missing"  # source_image_id absent or empty
-    INVALID = "invalid"  # source_image_id present but not in job's registered images (context was available)
+    INVALID = "invalid"  # source_image_id present but not in sent primary frames (context was available)
     UNVALIDATED = "unvalidated"  # source_image_id present but validation context was not available
 
 
