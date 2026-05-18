@@ -37,11 +37,37 @@ function positionsSemanticallyEqualForPatch(a: PositionSummary, b: PositionSumma
     (a.review_resolution ?? null) === (b.review_resolution ?? null) &&
     a.qty === b.qty &&
     (a.corrected_quantity ?? null) === (b.corrected_quantity ?? null) &&
+    (a.quantity?.final ?? null) === (b.quantity?.final ?? null) &&
+    (a.quantity?.corrected ?? null) === (b.quantity?.corrected ?? null) &&
     (a.sku ?? null) === (b.sku ?? null) &&
     (a.product?.sku ?? null) === (b.product?.sku ?? null) &&
     a.position_code === b.position_code &&
     String(a.status) === String(b.status)
   );
+}
+
+/** Patches flat qty fields and nested `quantity` block when present (mapper prefers nested). */
+function applyQuantityCorrectionToPosition(
+  position: PositionSummary,
+  q: number
+): PositionSummary {
+  return {
+    ...position,
+    status: 'corrected',
+    needs_review: false,
+    review_resolution: 'qty_corrected',
+    qty: q,
+    corrected_quantity: q,
+    ...(position.quantity
+      ? {
+          quantity: {
+            ...position.quantity,
+            corrected: q,
+            final: q,
+          },
+        }
+      : {}),
+  };
 }
 
 /**
@@ -65,14 +91,7 @@ export function applyReviewActionToPositionSummary(
     case REVIEW_ACTION_WIRE.UPDATE_QUANTITY: {
       const q = body.corrected_quantity;
       if (typeof q !== 'number' || !Number.isFinite(q)) return position;
-      next = {
-        ...position,
-        status: 'corrected',
-        needs_review: false,
-        review_resolution: 'qty_corrected',
-        qty: q,
-        corrected_quantity: q,
-      };
+      next = applyQuantityCorrectionToPosition(position, q);
       break;
     }
     case REVIEW_ACTION_WIRE.UPDATE_SKU: {
@@ -138,23 +157,6 @@ function transformPositionList(
   if (!Array.isArray(old.positions)) return old;
   const idx = old.positions.findIndex((p) => p.id === positionId);
   if (idx === -1) return old;
-
-  if (body.action_type === REVIEW_ACTION_WIRE.DELETE_POSITION) {
-    const positions = old.positions.filter((p) => p.id !== positionId);
-    const removed = old.positions.length - positions.length;
-    if (removed === 0) return old;
-    const totalItems = Math.max(0, old.total_items - removed);
-    const totalPages =
-      old.page_size && old.page_size > 0
-        ? Math.max(1, Math.ceil(totalItems / old.page_size))
-        : old.total_pages;
-    return {
-      ...old,
-      positions,
-      total_items: totalItems,
-      total_pages: totalPages,
-    };
-  }
 
   const patched = applyReviewActionToPositionSummary(old.positions[idx], body);
   if (patched === old.positions[idx]) return old;

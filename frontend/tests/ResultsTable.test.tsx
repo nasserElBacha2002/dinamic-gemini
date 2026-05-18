@@ -4,7 +4,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material';
 import theme from '../src/theme';
-import ResultsTable, { buildResultsTableColumns } from '../src/features/results/components/ResultsTable';
+import ResultsTable, {
+  buildResultsTableColumns,
+} from '../src/features/results/components/ResultsTable';
+import { getReviewStatusLabel } from '../src/features/results/utils/reviewStatusDisplay';
 import type { ResultSummary } from '../src/features/results/types';
 import i18n from '../src/i18n';
 
@@ -41,6 +44,49 @@ function confirmedRow(): ResultSummary {
     hasEvidence: true,
   };
 }
+
+function qtyColumnCell(row: ResultSummary) {
+  const t = i18n.t.bind(i18n);
+  const col = buildResultsTableColumns({ t, dash: '—', onOpenReview: vi.fn() }).find(
+    (c) => c.id === 'qty'
+  );
+  return col!.cell(row);
+}
+
+describe('ResultsTable quantity and invalid display', () => {
+  it('shows corrected resolved quantity in qty column', () => {
+    const row: ResultSummary = {
+      ...confirmedRow(),
+      detectedQty: 10,
+      correctedQty: 20,
+      resolvedQty: 20,
+    };
+    const { container } = render(
+      <ThemeProvider theme={theme}>{qtyColumnCell(row)}</ThemeProvider>
+    );
+    expect(container.textContent).toBe('20');
+  });
+
+  it('invalid row shows Inválido in review column', () => {
+    const t = i18n.t.bind(i18n);
+    const reviewCol = buildResultsTableColumns({
+      t,
+      dash: '—',
+      onOpenReview: vi.fn(),
+    }).find((c) => c.id === 'review_status');
+    const row: ResultSummary = {
+      ...confirmedRow(),
+      id: 'pos-invalid',
+      reviewStatus: 'INVALID',
+    };
+    const { container } = render(
+      <ThemeProvider theme={theme}>{reviewCol!.cell(row)}</ThemeProvider>
+    );
+    expect(container.textContent).toMatch(
+      new RegExp(getReviewStatusLabel('INVALID'), 'i')
+    );
+  });
+});
 
 describe('ResultsTable image mismatch display', () => {
   it('review column shows Confirmado; traceability column shows image mismatch warning', () => {
