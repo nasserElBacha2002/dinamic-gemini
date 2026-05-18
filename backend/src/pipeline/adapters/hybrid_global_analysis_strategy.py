@@ -37,6 +37,15 @@ from src.llm.prompt_composer.prompt_traceability import (
     sha256_utf8,
 )
 from src.llm.types import ContextImageSequence, LLMRequest
+from src.llm.vision_multimodal_payload import (
+    LLM_METADATA_KEY_FRAMES_SENT_IDS,
+    LLM_METADATA_KEY_MULTIMODAL_ORDER,
+    LLM_METADATA_KEY_PROMPT_LISTED_IMAGE_IDS,
+    LLM_METADATA_KEY_REFERENCE_IMAGE_IDS,
+    MULTIMODAL_ORDER_STATUS_PENDING,
+    traceability_metadata_payload,
+    validate_primary_frame_refs,
+)
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.contracts.analysis_context import AnalysisContext
 from src.pipeline.ports.analysis_provider import (
@@ -66,15 +75,6 @@ from src.pipeline.services.provider_analysis_execution_config import (
 )
 from src.pipeline.services.provider_analysis_result_normalization import (
     build_analysis_result_from_llm_response,
-)
-from src.llm.vision_multimodal_payload import (
-    LLM_METADATA_KEY_FRAMES_SENT_IDS,
-    LLM_METADATA_KEY_MULTIMODAL_ORDER,
-    LLM_METADATA_KEY_PROMPT_LISTED_IMAGE_IDS,
-    LLM_METADATA_KEY_REFERENCE_IMAGE_IDS,
-    MULTIMODAL_ORDER_STATUS_PENDING,
-    traceability_metadata_payload,
-    validate_primary_frame_refs,
 )
 from src.pipeline.services.provider_llm_request_metadata import (
     apply_job_model_name_to_llm_request_metadata,
