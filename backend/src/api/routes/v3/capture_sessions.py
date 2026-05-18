@@ -579,7 +579,11 @@ async def upload_capture_session_staging_items_inventory_scope(
         get_upload_capture_session_staging_items_use_case
     ),
 ) -> UploadCaptureSessionItemsResponse:
-    uploaded = await _upload_files_to_staging_dtos(files)
+    try:
+        uploaded = await _upload_files_to_staging_dtos(files)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
     try:
         batch = use_case.execute(
             inventory_id=inventory_id,
@@ -613,7 +617,11 @@ async def upload_capture_session_staging_items(
     memory before invoking the use case (``BytesIO`` per file). Low-risk for typical capture
     batch sizes; very large files still hit ``max_upload_size_mb`` in the use case.
     """
-    uploaded = await _upload_files_to_staging_dtos(files)
+    try:
+        uploaded = await _upload_files_to_staging_dtos(files)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
     try:
         batch = use_case.execute(
             inventory_id=inventory_id,

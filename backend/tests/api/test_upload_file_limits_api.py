@@ -162,7 +162,8 @@ def test_capture_session_items_aisle_scope_accepts_five_files(
     session_id = session_resp.json()["id"]
 
     files = [
-        ("files", (f"f{i}.jpg", b"payload-unique", "image/jpeg")) for i in range(5)
+        ("files", (f"f{i}.jpg", f"payload-unique-{i}".encode(), "image/jpeg"))
+        for i in range(5)
     ]
     response = client_v3.post(
         f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/capture-sessions/{session_id}/items",

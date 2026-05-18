@@ -115,7 +115,11 @@ async def upload_aisle_assets(
     use_case: UploadAisleAssetsUseCase = Depends(get_upload_aisle_assets_use_case),
 ) -> UploadAisleAssetsResponse:
     """Upload one or more assets (photos/videos) to an aisle. Aisle transitions to assets_uploaded."""
-    uploaded = await read_uploaded_files_for_aisle_asset_upload(files)
+    try:
+        uploaded = await read_uploaded_files_for_aisle_asset_upload(files)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
     try:
         created = use_case.execute(inventory_id, aisle_id, uploaded)
         return UploadAisleAssetsResponse(assets=[asset_to_response(a) for a in created])
