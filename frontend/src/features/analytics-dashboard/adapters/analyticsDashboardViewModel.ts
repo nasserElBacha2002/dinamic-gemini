@@ -1,0 +1,97 @@
+import type { TFunction } from 'i18next';
+import type { ObservabilityMetricsResponse } from '../../../api/types';
+import type { AnalyticsSummaryResponse } from '../../analytics/types';
+import { buildMetricsKpiCards, type MetricsKpiCardViewModel } from '../../analytics/adapters/metricsViewModel';
+import { formatAvgProcessingMinutes, numberOrZero } from '../../analytics/adapters/metricsFormatters';
+import type { MetricsKpiCardView } from '../../analytics/components/MetricsKpiSection';
+
+export interface DashboardKpiCardModel extends MetricsKpiCardView {
+  grainLabel?: string;
+  unavailable?: boolean;
+}
+
+function pctObs(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return '—';
+  return `${(value * 100).toFixed(1)} %`;
+}
+
+export function buildPositionSummaryKpis(
+  summary: AnalyticsSummaryResponse | null | undefined,
+  hasUnidentifiedProductRate: boolean,
+  t: TFunction
+): DashboardKpiCardModel[] {
+  const grain = t('analyticsDashboard.grain_positions');
+  const metricsCards = buildMetricsKpiCards(summary, hasUnidentifiedProductRate, t);
+  const processed: DashboardKpiCardModel = {
+    grainLabel: grain,
+    label: t('analyticsDashboard.kpi_positions_processed'),
+    value: String(numberOrZero(summary?.processed_positions_count)),
+    description: t('analyticsDashboard.kpi_positions_processed_desc'),
+  };
+  return [
+    processed,
+    ...metricsCards.map((card: MetricsKpiCardViewModel) => ({
+      grainLabel: grain,
+      label: card.label,
+      value: card.value,
+      description: card.description,
+    })),
+  ];
+}
+
+export function buildRunSummaryKpis(
+  data: ObservabilityMetricsResponse | null | undefined,
+  t: TFunction
+): DashboardKpiCardModel[] {
+  const totals = data?.totals;
+  const dq = data?.data_quality;
+  if (!totals) return [];
+  const grain = t('analyticsDashboard.grain_runs');
+  return [
+    { grainLabel: grain, label: t('observability.metrics.kpiRuns'), value: totals.runs_total },
+    { grainLabel: grain, label: t('observability.metrics.kpiSucceeded'), value: totals.runs_succeeded },
+    { grainLabel: grain, label: t('observability.metrics.kpiFailed'), value: totals.runs_failed },
+    { grainLabel: grain, label: t('observability.metrics.kpiFailureRate'), value: pctObs(totals.failure_rate) },
+    { grainLabel: grain, label: t('observability.metrics.kpiLegacy'), value: totals.legacy_runs },
+    { grainLabel: grain, label: t('observability.metrics.kpiMissingRef'), value: totals.missing_reference_runs },
+    {
+      grainLabel: grain,
+      label: t('analyticsDashboard.kpi_jobs_without_snapshot'),
+      value: dq?.jobs_without_audit_snapshot ?? 0,
+    },
+    { grainLabel: grain, label: t('observability.metrics.kpiMissingPrompt'), value: totals.missing_prompt_config_runs },
+  ];
+}
+
+export function buildUnavailableGlobalCostKpis(t: TFunction): DashboardKpiCardModel[] {
+  const labels = [
+    t('analyticsDashboard.costs.totalCost'),
+    t('analyticsDashboard.costs.totalQuantity'),
+    t('analyticsDashboard.costs.costPerUnit'),
+    t('analyticsDashboard.costs.costPerProvider'),
+    t('analyticsDashboard.costs.costPerAisle'),
+  ];
+  return labels.map((label) => ({
+    label,
+    value: t('analyticsDashboard.costs.unavailableCard'),
+    description: t('analyticsDashboard.costs.unavailableExplain'),
+    unavailable: true,
+  }));
+}
+
+export function buildSummaryAvgProcessingKpi(
+  summary: AnalyticsSummaryResponse | null | undefined,
+  t: TFunction
+): DashboardKpiCardModel | null {
+  if (!summary) return null;
+  return {
+    grainLabel: t('analyticsDashboard.grain_positions'),
+    label: t('analytics.kpi_avg_processing_title'),
+    value: formatAvgProcessingMinutes(summary.average_processing_time_minutes, summary.average_processing_time_seconds),
+    description: t('analytics.kpi_avg_processing_desc'),
+  };
+}
+
+export function hasUnidentifiedProductRate(summary: AnalyticsSummaryResponse | null | undefined): boolean {
+  return summary?.unidentified_product_rate != null;
+}

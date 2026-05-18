@@ -6,6 +6,7 @@
 export const ROUTE_LOGIN = '/login';
 export const ROUTE_HOME = '/';
 export const ROUTE_METRICS = '/metrics';
+export const ROUTE_ANALITICA = '/analitica';
 export const ROUTE_OBSERVABILIDAD = '/observabilidad';
 export const ROUTE_CLIENTS = '/clientes';
 export const ROUTE_ADMIN_AI_CONFIG = '/admin/ai-config';
@@ -19,6 +20,7 @@ export const ROUTE_PATH = {
   inventories: 'inventories',
   reviewQueue: 'review-queue',
   metrics: 'metrics',
+  analitica: 'analitica',
   observabilidad: 'observabilidad',
   clients: 'clientes',
   clientDetail: 'clientes/:clientId',
@@ -67,8 +69,14 @@ export function pathToInventoryAnalyticsCompare(inventoryId: string): string {
   return pathToInventoryAnalyticsCompareMany(inventoryId);
 }
 
-export function pathToInventoryAnalyticsCompareMany(inventoryId: string): string {
-  return `${ROUTE_INVENTORIES_ROOT}/${inventoryId}/analytics/compare-many`;
+export function pathToInventoryAnalyticsCompareMany(
+  inventoryId: string,
+  options?: { aisleId?: string }
+): string {
+  const base = `${ROUTE_INVENTORIES_ROOT}/${inventoryId}/analytics/compare-many`;
+  const aisleId = options?.aisleId?.trim();
+  if (!aisleId) return base;
+  return `${base}?${new URLSearchParams({ aisleId }).toString()}`;
 }
 
 export function pathToAislePositions(inventoryId: string, aisleId: string): string {

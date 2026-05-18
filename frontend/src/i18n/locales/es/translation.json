@@ -286,6 +286,88 @@
     "select_aisle_placeholder": "Seleccioná un pasillo",
     "select_aisle_title": "Seleccionar pasillo"
   },
+  "analyticsDashboard": {
+    "title": "Analítica",
+    "subtitle": "Resumen operativo, calidad, tiempos, proveedores y comparación de corridas",
+    "helper": "Los indicadores combinan métricas de posiciones, corridas de procesamiento y comparaciones por job. Algunas métricas de costos globales requieren extensión backend.",
+    "page_a11y": "Panel unificado de analítica",
+    "grain_positions": "Métricas de posiciones",
+    "grain_runs": "Métricas de corridas",
+    "grain_compare": "Comparación por corrida",
+    "tabs": {
+      "summary": "Resumen",
+      "quality": "Calidad",
+      "time": "Tiempos",
+      "providers": "Proveedores",
+      "inventories": "Inventarios",
+      "aisles": "Pasillos",
+      "compare": "Comparación",
+      "costs": "Costos"
+    },
+    "filters": {
+      "title": "Filtros",
+      "more": "Más filtros",
+      "partialScopeNote": "Algunos filtros aplican solo a métricas de posiciones o solo a métricas de corridas según la disponibilidad actual del backend.",
+      "client": "Cliente",
+      "supplier": "Proveedor del cliente"
+    },
+    "kpi_positions_processed": "Posiciones procesadas",
+    "kpi_positions_processed_desc": "Posiciones que completaron procesamiento en el alcance seleccionado.",
+    "kpi_jobs_without_snapshot": "Jobs sin snapshot",
+    "costs": {
+      "globalUnavailableTitle": "Costos globales pendientes de backend",
+      "globalUnavailableDescription": "Los snapshots de costo existen por job, pero todavía no hay una agregación backend segura para calcular costo total por inventario, pasillo, proveedor o modelo.",
+      "compareAvailableDescription": "Los costos por corrida ya están disponibles en Comparación cuando el job incluye llm_cost_snapshot.",
+      "goToCompare": "Ir a Comparación",
+      "unavailableCard": "Pendiente de backend",
+      "unavailableExplain": "El sistema conserva snapshots de costo por job, pero todavía no existe una agregación backend segura para el dashboard global.",
+      "totalCost": "Costo total",
+      "totalQuantity": "Cantidad total contada",
+      "costPerUnit": "Costo por unidad",
+      "costPerProvider": "Costo por proveedor",
+      "costPerModel": "Costo por modelo",
+      "costPerAisle": "Costo por pasillo",
+      "perCompareSectionTitle": "Costos por comparación"
+    },
+    "compare": {
+      "title": "Comparación de corridas",
+      "description": "Compará 2 a 3 corridas del mismo pasillo en inventarios de prueba. Los deltas de cantidad son neutrales; el costo es por corrida seleccionada, no un costo global.",
+      "openExistingFlow": "Abrir comparación de corridas",
+      "testOnlyTooltip": "Disponible solo para inventarios de prueba.",
+      "selectInventoryHint": "Seleccioná un inventario en los filtros para habilitar la comparación.",
+      "quantityDeltaNeutral": "El delta de cantidad es contextual y no implica automáticamente mejor o peor resultado.",
+      "notRecommendation": "Esta comparación no recomienda un proveedor automáticamente."
+    },
+    "providers": {
+      "sectionTitle": "Comparativo operativo por proveedor y modelo",
+      "costUnavailable": "Costo por proveedor",
+      "fallbacks": "Fallbacks",
+      "legacyJobs": "Jobs legacy"
+    },
+    "inventories": {
+      "viewDetail": "Ver detalle",
+      "compareRuns": "Comparar corridas"
+    },
+    "aisles": {
+      "compareRuns": "Comparar corridas",
+      "attentionStatus": "Estado de atención"
+    },
+    "time": {
+      "avgProcessing": "Tiempo promedio de procesamiento",
+      "byInventory": "Tiempo por inventario",
+      "trendTitle": "Tendencia de procesamiento",
+      "byProviderModel": "Tiempo promedio por proveedor/modelo"
+    },
+    "partial": {
+      "analyticsFailed": "No se pudieron cargar las métricas de posiciones. Se muestran métricas de corridas cuando estén disponibles.",
+      "observabilityFailed": "No se pudieron cargar las métricas de corridas. Se muestran métricas de posiciones cuando estén disponibles.",
+      "observabilityNoSnapshot": "Hay corridas sin snapshot de auditoría; algunos indicadores pueden estar incompletos.",
+      "compareNotAvailable": "La comparación de corridas no está disponible para el inventario seleccionado."
+    },
+    "actions": {
+      "refresh": "Actualizar"
+    }
+  },
   "auth": {
     "login_title": "Iniciar sesión",
     "product_label": "Dinamic Inventory"
@@ -1368,6 +1450,7 @@
   "nav": {
     "inventories": "Inventarios",
     "ingestion_sessions": "Sesiones de importación",
+    "analytics": "Analítica",
     "metrics": "Métricas",
     "observability": "Observabilidad",
     "clients": "Clientes",

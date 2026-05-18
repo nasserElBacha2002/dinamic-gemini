@@ -278,6 +278,88 @@
     "select_aisle_placeholder": "Select aisle placeholder",
     "select_aisle_title": "Select aisle title"
   },
+  "analyticsDashboard": {
+    "title": "Analytics",
+    "subtitle": "Operational summary, quality, timing, providers, and run comparison",
+    "helper": "Indicators combine position metrics, processing runs, and per-job comparisons. Some global cost metrics require backend extension.",
+    "page_a11y": "Unified analytics dashboard",
+    "grain_positions": "Position metrics",
+    "grain_runs": "Run metrics",
+    "grain_compare": "Per-run comparison",
+    "tabs": {
+      "summary": "Summary",
+      "quality": "Quality",
+      "time": "Time",
+      "providers": "Providers",
+      "inventories": "Inventories",
+      "aisles": "Aisles",
+      "compare": "Comparison",
+      "costs": "Costs"
+    },
+    "filters": {
+      "title": "Filters",
+      "more": "More filters",
+      "partialScopeNote": "Some filters apply only to position metrics or only to run metrics depending on current backend support.",
+      "client": "Client",
+      "supplier": "Client supplier"
+    },
+    "kpi_positions_processed": "Processed positions",
+    "kpi_positions_processed_desc": "Positions that completed processing in the selected scope.",
+    "kpi_jobs_without_snapshot": "Jobs without snapshot",
+    "costs": {
+      "globalUnavailableTitle": "Global costs pending backend",
+      "globalUnavailableDescription": "Per-job cost snapshots exist, but there is no safe backend aggregation for total cost by inventory, aisle, provider, or model yet.",
+      "compareAvailableDescription": "Per-run costs are available in Comparison when the job includes llm_cost_snapshot.",
+      "goToCompare": "Go to Comparison",
+      "unavailableCard": "Pending backend",
+      "unavailableExplain": "The system keeps per-job cost snapshots, but no safe backend aggregation exists for the global dashboard yet.",
+      "totalCost": "Total cost",
+      "totalQuantity": "Total counted quantity",
+      "costPerUnit": "Cost per unit",
+      "costPerProvider": "Cost per provider",
+      "costPerModel": "Cost per model",
+      "costPerAisle": "Cost per aisle",
+      "perCompareSectionTitle": "Comparison costs"
+    },
+    "compare": {
+      "title": "Run comparison",
+      "description": "Compare 2 to 3 runs from the same aisle on test inventories. Quantity deltas are neutral; cost is per selected run, not global.",
+      "openExistingFlow": "Open run comparison",
+      "testOnlyTooltip": "Available only for test inventories.",
+      "selectInventoryHint": "Select an inventory in the filters to enable comparison.",
+      "quantityDeltaNeutral": "Quantity delta is contextual and does not automatically mean better or worse.",
+      "notRecommendation": "This comparison does not automatically recommend a provider."
+    },
+    "providers": {
+      "sectionTitle": "Operational comparison by provider and model",
+      "costUnavailable": "Cost per provider",
+      "fallbacks": "Fallbacks",
+      "legacyJobs": "Legacy jobs"
+    },
+    "inventories": {
+      "viewDetail": "View detail",
+      "compareRuns": "Compare runs"
+    },
+    "aisles": {
+      "compareRuns": "Compare runs",
+      "attentionStatus": "Attention status"
+    },
+    "time": {
+      "avgProcessing": "Average processing time",
+      "byInventory": "Time by inventory",
+      "trendTitle": "Processing trend",
+      "byProviderModel": "Average time by provider/model"
+    },
+    "partial": {
+      "analyticsFailed": "Position metrics could not be loaded. Run metrics are shown when available.",
+      "observabilityFailed": "Run metrics could not be loaded. Position metrics are shown when available.",
+      "observabilityNoSnapshot": "Some runs lack an audit snapshot; some indicators may be incomplete.",
+      "compareNotAvailable": "Run comparison is not available for the selected inventory."
+    },
+    "actions": {
+      "refresh": "Refresh"
+    }
+  },
   "auth": {
     "login_title": "Login title",
     "product_label": "Product label"
@@ -943,6 +1025,7 @@
   "nav": {
     "inventories": "Inventories",
     "ingestion_sessions": "Import sessions",
+    "analytics": "Analytics",
     "metrics": "Metrics",
     "observability": "Observability",
     "clients": "Clients",

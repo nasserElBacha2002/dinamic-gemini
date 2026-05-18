@@ -15,6 +15,7 @@ import LegacyAisleCompareRedirect from './pages/analytics/LegacyAisleCompareRedi
 import PositionDetailPage from './pages/PositionDetailPage';
 import ReviewQueueRedirect from './pages/ReviewQueueRedirect';
 import MetricsPage from './pages/MetricsPage';
+import AnalyticsDashboardPage from './pages/AnalyticsDashboardPage';
 import ClientsList from './pages/ClientsList';
 import ClientDetail from './pages/ClientDetail';
 import ClientSupplierDetail from './pages/ClientSupplierDetail';
@@ -54,6 +55,7 @@ function App() {
   const positionDetailEl = useMemo(() => <PositionDetailPage />, []);
   const reviewQueueRedirectEl = useMemo(() => <ReviewQueueRedirect />, []);
   const metricsEl = useMemo(() => <MetricsPage />, []);
+  const analyticsDashboardEl = useMemo(() => <AnalyticsDashboardPage />, []);
   const clientsEl = useMemo(() => <ClientsList />, []);
   const clientDetailEl = useMemo(() => <ClientDetail />, []);
   const clientSupplierDetailEl = useMemo(() => <ClientSupplierDetail />, []);
@@ -88,6 +90,7 @@ function App() {
         <Route path={ROUTE_PATH.inventories} element={listEl} />
         <Route path={ROUTE_PATH.reviewQueue} element={reviewQueueRedirectEl} />
         <Route path={ROUTE_PATH.metrics} element={metricsEl} />
+        <Route path={ROUTE_PATH.analitica} element={analyticsDashboardEl} />
         <Route path={ROUTE_PATH.clients} element={clientsEl} />
         <Route path={ROUTE_PATH.clientSupplierDetail} element={clientSupplierDetailEl} />
         <Route path={ROUTE_PATH.clientDetail} element={clientDetailEl} />

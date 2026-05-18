@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import {
   ROUTE_ADMIN_AI_CONFIG,
   ROUTE_CLIENTS,
+  ROUTE_ANALITICA,
   ROUTE_HOME,
   ROUTE_INGESTION_SESSIONS,
   ROUTE_METRICS,
@@ -31,6 +32,7 @@ export const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
     to: ROUTE_INGESTION_SESSIONS,
     icon: <CloudUploadOutlinedIcon fontSize="small" />,
   },
+  { labelKey: 'nav.analytics', to: ROUTE_ANALITICA, icon: <AnalyticsOutlinedIcon fontSize="small" /> },
   { labelKey: 'nav.metrics', to: ROUTE_METRICS, icon: <AnalyticsOutlinedIcon fontSize="small" /> },
   { labelKey: 'nav.observability', to: ROUTE_OBSERVABILIDAD, icon: <InsightsOutlinedIcon fontSize="small" /> },
   { labelKey: 'nav.clients', to: ROUTE_CLIENTS, icon: <BusinessRoundedIcon fontSize="small" /> },
