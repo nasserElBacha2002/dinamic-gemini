@@ -49,8 +49,16 @@ export default function AnalyticsDashboardPage() {
 
   const filterParams = useMemo(() => buildFilterParams(appliedFilters), [appliedFilters]);
 
-  const { analytics, observability, isAnalyticsLoading, isObservabilityLoading, analyticsError, observabilityError, hasPartialData, refetchAll } =
-    useAnalyticsDashboardData(filterParams);
+  const {
+    analytics,
+    observability,
+    isAnalyticsLoading,
+    isObservabilityLoading,
+    analyticsError,
+    observabilityError,
+    hasMixedLoadedData,
+    refetchAll,
+  } = useAnalyticsDashboardData(filterParams);
 
   const inventoriesQuery = useInventoriesList({ page: 1, page_size: 200, sort_by: 'name', sort_dir: 'asc' });
   const inventories = useMemo(() => inventoriesQuery.data?.items ?? [], [inventoriesQuery.data?.items]);
@@ -90,7 +98,6 @@ export default function AnalyticsDashboardPage() {
         onChange={setDraftFilters}
         onApply={() => {
           setAppliedFilters(draftFilters);
-          refetchAll();
         }}
         onReset={() => {
           const next = initialFilters();
@@ -113,8 +120,8 @@ export default function AnalyticsDashboardPage() {
           {t('analyticsDashboard.partial.observabilityFailed')}
         </Alert>
       ) : null}
-      {hasPartialData && !analyticsError && !observabilityError ? (
-        <Alert severity="info" sx={{ mb: 2 }}>
+      {hasMixedLoadedData ? (
+        <Alert severity="info" sx={{ mb: 2 }} data-testid="analytics-mixed-loaded-data">
           {t('analyticsDashboard.filters.partialScopeNote')}
         </Alert>
       ) : null}

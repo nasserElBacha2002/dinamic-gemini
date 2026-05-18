@@ -308,8 +308,8 @@
       "title": "Filtros",
       "more": "Más filtros",
       "partialScopeNote": "Algunos filtros aplican solo a métricas de posiciones o solo a métricas de corridas según la disponibilidad actual del backend.",
-      "client": "Cliente",
-      "supplier": "Proveedor del cliente"
+      "client": "Cliente (id)",
+      "supplier": "Proveedor del cliente (id)"
     },
     "kpi_positions_processed": "Posiciones procesadas",
     "kpi_positions_processed_desc": "Posiciones que completaron procesamiento en el alcance seleccionado.",
@@ -334,6 +334,7 @@
       "description": "Compará 2 a 3 corridas del mismo pasillo en inventarios de prueba. Los deltas de cantidad son neutrales; el costo es por corrida seleccionada, no un costo global.",
       "openExistingFlow": "Abrir comparación de corridas",
       "testOnlyTooltip": "Disponible solo para inventarios de prueba.",
+      "unknownModeTooltip": "No se pudo determinar si este inventario permite comparación.",
       "selectInventoryHint": "Seleccioná un inventario en los filtros para habilitar la comparación.",
       "quantityDeltaNeutral": "El delta de cantidad es contextual y no implica automáticamente mejor o peor resultado.",
       "notRecommendation": "Esta comparación no recomienda un proveedor automáticamente."

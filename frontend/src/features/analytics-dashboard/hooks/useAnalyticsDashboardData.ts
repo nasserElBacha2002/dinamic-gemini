@@ -14,11 +14,30 @@ export function useAnalyticsDashboardData(params: AnalyticsDashboardFilterParams
   const analyticsError = analytics.isError ? analytics.errors[0] ?? null : null;
   const observabilityError = observability.isError ? observability.error : null;
 
-  const hasPartialData = useMemo(() => {
-    const analyticsOk = !analytics.isError && Boolean(analytics.summary);
-    const observabilityOk = !observability.isError && Boolean(observability.data?.totals);
-    return (analyticsOk && !observabilityOk) || (!analyticsOk && observabilityOk);
-  }, [analytics.isError, analytics.summary, observability.isError, observability.data?.totals]);
+  const analyticsOk = !analytics.isError && Boolean(analytics.summary);
+  const observabilityOk = !observability.isError && Boolean(observability.data?.totals);
+
+  const hasPartialFailure = useMemo(
+    () => (analytics.isError && observabilityOk) || (observability.isError && analyticsOk),
+    [analytics.isError, observability.isError, analyticsOk, observabilityOk]
+  );
+
+  const hasMixedLoadedData = useMemo(
+    () =>
+      !isAnalyticsLoading &&
+      !isObservabilityLoading &&
+      !analytics.isError &&
+      !observability.isError &&
+      ((analyticsOk && !observabilityOk) || (!analyticsOk && observabilityOk)),
+    [
+      isAnalyticsLoading,
+      isObservabilityLoading,
+      analytics.isError,
+      observability.isError,
+      analyticsOk,
+      observabilityOk,
+    ]
+  );
 
   const refetchAll = () => {
     analytics.refetchAll();
@@ -33,7 +52,8 @@ export function useAnalyticsDashboardData(params: AnalyticsDashboardFilterParams
     isObservabilityLoading,
     analyticsError,
     observabilityError,
-    hasPartialData,
+    hasPartialFailure,
+    hasMixedLoadedData,
     refetchAll,
   };
 }

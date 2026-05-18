@@ -28,8 +28,8 @@ export interface AnalyticsDashboardFilterParams {
 }
 
 export function buildFilterParams(filters: AnalyticsDashboardFilters): AnalyticsDashboardFilterParams {
-  const fromIso = `${filters.dateFrom}T00:00:00.000Z`;
-  const toIso = `${filters.dateTo}T23:59:59.999Z`;
+  const fromIso = filters.dateFrom ? `${filters.dateFrom}T00:00:00.000Z` : undefined;
+  const toIso = filters.dateTo ? `${filters.dateTo}T23:59:59.999Z` : undefined;
   return {
     analytics: {
       date_from: filters.dateFrom || undefined,
@@ -48,6 +48,18 @@ export function buildFilterParams(filters: AnalyticsDashboardFilters): Analytics
   };
 }
 
-export function inventoryAllowsCompare(processingMode: string | undefined): boolean {
-  return processingMode === 'test';
+export type CompareEligibility =
+  | { allowed: true }
+  | { allowed: false; reason: 'unknown_mode' | 'test_only' };
+
+export function getCompareEligibility(processingMode: string | undefined): CompareEligibility {
+  if (processingMode === 'test') return { allowed: true };
+  if (processingMode === undefined) return { allowed: false, reason: 'unknown_mode' };
+  return { allowed: false, reason: 'test_only' };
+}
+
+export function compareEligibilityTooltipKey(reason: 'unknown_mode' | 'test_only'): string {
+  return reason === 'unknown_mode'
+    ? 'analyticsDashboard.compare.unknownModeTooltip'
+    : 'analyticsDashboard.compare.testOnlyTooltip';
 }

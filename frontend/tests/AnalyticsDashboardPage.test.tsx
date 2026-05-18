@@ -171,8 +171,25 @@ function setupMocks() {
     isObservabilityLoading: false,
     analyticsError: null,
     observabilityError: null,
-    hasPartialData: false,
+    hasPartialFailure: false,
+    hasMixedLoadedData: false,
     refetchAll: vi.fn(),
+  });
+}
+
+function setupMocksWithDashboardData(overrides: Record<string, unknown> = {}) {
+  mockUseAnalyticsDashboardData.mockReturnValue({
+    analytics: analyticsLoaded,
+    observability: { data: observabilityData, isLoading: false, isError: false, error: null, refetch: vi.fn() },
+    isLoading: false,
+    isAnalyticsLoading: false,
+    isObservabilityLoading: false,
+    analyticsError: null,
+    observabilityError: null,
+    hasPartialFailure: false,
+    hasMixedLoadedData: false,
+    refetchAll: vi.fn(),
+    ...overrides,
   });
 }
 
@@ -226,11 +243,49 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.queryByText(/999/)).toBeNull();
   });
 
-  it('shows helper note explaining partial filter scope', () => {
+  it('shows static filter scope note in the filter bar', () => {
     renderPage();
     expect(screen.getByTestId('analytics-filter-scope-note')).toHaveTextContent(
       /solo a métricas de posiciones o solo a métricas de corridas/i
     );
+  });
+
+  it('does not show mixed-loaded banner while either source is still loading', () => {
+    setupMocksWithDashboardData({
+      isAnalyticsLoading: true,
+      isObservabilityLoading: false,
+      analytics: { ...analyticsLoaded, summary: undefined },
+    });
+    renderPage();
+    expect(screen.queryByTestId('analytics-mixed-loaded-data')).not.toBeInTheDocument();
+  });
+
+  it('shows analytics failure warning when observability loaded', () => {
+    setupMocksWithDashboardData({
+      analyticsError: new Error('analytics failed'),
+      analytics: { ...analyticsLoaded, isError: true, summary: undefined },
+    });
+    renderPage();
+    expect(screen.getByTestId('analytics-partial-analytics-failed')).toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-partial-observability-failed')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-mixed-loaded-data')).not.toBeInTheDocument();
+  });
+
+  it('shows observability failure warning when analytics loaded', () => {
+    setupMocksWithDashboardData({
+      observabilityError: new Error('observability failed'),
+      observability: { data: undefined, isLoading: false, isError: true, error: new Error('observability failed'), refetch: vi.fn() },
+    });
+    renderPage();
+    expect(screen.getByTestId('analytics-partial-observability-failed')).toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-partial-analytics-failed')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-mixed-loaded-data')).not.toBeInTheDocument();
+  });
+
+  it('shows mixed-loaded banner only after both sources finish with one empty', () => {
+    setupMocksWithDashboardData({ hasMixedLoadedData: true });
+    renderPage();
+    expect(screen.getByTestId('analytics-mixed-loaded-data')).toBeInTheDocument();
   });
 
   it('shows provider/model section using observability data', () => {
@@ -283,5 +338,27 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getByTestId('analytics-costs-tab')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('analytics-costs-go-compare'));
     expect(screen.getByTestId('analytics-compare-tab')).toBeInTheDocument();
+  });
+
+  it('navigates to compare-many without aisleId from inventarios tab', () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-tab-inventories'));
+    fireEvent.click(screen.getByTestId('inventory-compare-inv-test'));
+    expect(mockNavigate).toHaveBeenCalledWith('/inventories/inv-test/analytics/compare-many');
+  });
+
+  it('navigates to compare-many with aisleId from pasillos tab', () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-tab-aisles'));
+    fireEvent.click(screen.getByTestId('aisle-compare-a-1'));
+    expect(mockNavigate).toHaveBeenCalledWith('/inventories/inv-test/analytics/compare-many?aisleId=a-1');
+  });
+
+  it('does not call refetchAll when applying filters', () => {
+    const refetchAll = vi.fn();
+    setupMocksWithDashboardData({ refetchAll });
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-apply-filters'));
+    expect(refetchAll).not.toHaveBeenCalled();
   });
 });

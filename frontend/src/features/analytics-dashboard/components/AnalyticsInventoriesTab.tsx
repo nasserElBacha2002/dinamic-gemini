@@ -9,7 +9,7 @@ import { formatAvgProcessingMinutes, formatPct, paginateRows } from '../../analy
 import { sortInventoryRows } from '../../analytics/adapters/metricsViewModel';
 import type { InventoryPerformanceRow } from '../../analytics/types';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
-import { inventoryAllowsCompare } from '../types';
+import { compareEligibilityTooltipKey, getCompareEligibility } from '../types';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
 
@@ -100,20 +100,20 @@ export function AnalyticsInventoriesTab({
         id: 'actions',
         label: t('common.actions'),
         cell: (r) => {
-          const mode = inventoryProcessingModeById.get(r.inventory_id);
-          const canCompare = inventoryAllowsCompare(mode);
-          const href = canCompare ? pathToInventoryAnalyticsCompareMany(r.inventory_id) : '';
+          const eligibility = getCompareEligibility(inventoryProcessingModeById.get(r.inventory_id));
+          const href = eligibility.allowed ? pathToInventoryAnalyticsCompareMany(r.inventory_id) : '';
+          const tooltip = eligibility.allowed ? '' : t(compareEligibilityTooltipKey(eligibility.reason));
           return (
             <span style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap' }}>
               <Button size="small" component={RouterLink} to={pathToInventory(r.inventory_id)}>
                 {t('analyticsDashboard.inventories.viewDetail')}
               </Button>
-              <Tooltip title={canCompare ? '' : t('analyticsDashboard.compare.testOnlyTooltip')}>
+              <Tooltip title={tooltip}>
                 <span>
                   <Button
                     size="small"
                     variant="outlined"
-                    disabled={!canCompare}
+                    disabled={!eligibility.allowed}
                     data-testid={`inventory-compare-${r.inventory_id}`}
                     onClick={() => href && navigate(href)}
                   >
@@ -131,30 +131,30 @@ export function AnalyticsInventoriesTab({
 
   return (
     <Box data-testid="analytics-inventories-table">
-    <DataTable<InventoryPerformanceRow>
-      rows={rowsPaged}
-      rowKey={(r) => r.inventory_id}
-      columns={columns}
-      loading={isLoading}
-      size="small"
-      pagination={{
-        page,
-        pageSize,
-        totalItems: rowsSorted.length,
-        onPageChange: setPage,
-        onPageSizeChange: setPageSize,
-      }}
-      sort={{
-        sortBy,
-        sortDir,
-        onSortChange: (nextSortBy, nextSortDir) => {
-          setSortBy(nextSortBy);
-          setSortDir(nextSortDir);
-          setPage(1);
-        },
-      }}
-      emptyState={{ message: t('analytics.empty_inventory_performance') }}
-    />
+      <DataTable<InventoryPerformanceRow>
+        rows={rowsPaged}
+        rowKey={(r) => r.inventory_id}
+        columns={columns}
+        loading={isLoading}
+        size="small"
+        pagination={{
+          page,
+          pageSize,
+          totalItems: rowsSorted.length,
+          onPageChange: setPage,
+          onPageSizeChange: setPageSize,
+        }}
+        sort={{
+          sortBy,
+          sortDir,
+          onSortChange: (nextSortBy, nextSortDir) => {
+            setSortBy(nextSortBy);
+            setSortDir(nextSortDir);
+            setPage(1);
+          },
+        }}
+        emptyState={{ message: t('analytics.empty_inventory_performance') }}
+      />
     </Box>
   );
 }

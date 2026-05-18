@@ -300,8 +300,8 @@
       "title": "Filters",
       "more": "More filters",
       "partialScopeNote": "Some filters apply only to position metrics or only to run metrics depending on current backend support.",
-      "client": "Client",
-      "supplier": "Client supplier"
+      "client": "Client (id)",
+      "supplier": "Client supplier (id)"
     },
     "kpi_positions_processed": "Processed positions",
     "kpi_positions_processed_desc": "Positions that completed processing in the selected scope.",
@@ -326,6 +326,7 @@
       "description": "Compare 2 to 3 runs from the same aisle on test inventories. Quantity deltas are neutral; cost is per selected run, not global.",
       "openExistingFlow": "Open run comparison",
       "testOnlyTooltip": "Available only for test inventories.",
+      "unknownModeTooltip": "Could not determine whether this inventory allows comparison.",
       "selectInventoryHint": "Select an inventory in the filters to enable comparison.",
       "quantityDeltaNeutral": "Quantity delta is contextual and does not automatically mean better or worse.",
       "notRecommendation": "This comparison does not automatically recommend a provider."

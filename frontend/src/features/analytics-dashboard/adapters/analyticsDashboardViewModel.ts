@@ -2,7 +2,7 @@ import type { TFunction } from 'i18next';
 import type { ObservabilityMetricsResponse } from '../../../api/types';
 import type { AnalyticsSummaryResponse } from '../../analytics/types';
 import { buildMetricsKpiCards, type MetricsKpiCardViewModel } from '../../analytics/adapters/metricsViewModel';
-import { formatAvgProcessingMinutes, numberOrZero } from '../../analytics/adapters/metricsFormatters';
+import { numberOrZero } from '../../analytics/adapters/metricsFormatters';
 import type { MetricsKpiCardView } from '../../analytics/components/MetricsKpiSection';
 
 export interface DashboardKpiCardModel extends MetricsKpiCardView {
@@ -77,19 +77,6 @@ export function buildUnavailableGlobalCostKpis(t: TFunction): DashboardKpiCardMo
     description: t('analyticsDashboard.costs.unavailableExplain'),
     unavailable: true,
   }));
-}
-
-export function buildSummaryAvgProcessingKpi(
-  summary: AnalyticsSummaryResponse | null | undefined,
-  t: TFunction
-): DashboardKpiCardModel | null {
-  if (!summary) return null;
-  return {
-    grainLabel: t('analyticsDashboard.grain_positions'),
-    label: t('analytics.kpi_avg_processing_title'),
-    value: formatAvgProcessingMinutes(summary.average_processing_time_minutes, summary.average_processing_time_seconds),
-    description: t('analytics.kpi_avg_processing_desc'),
-  };
 }
 
 export function hasUnidentifiedProductRate(summary: AnalyticsSummaryResponse | null | undefined): boolean {

@@ -7,7 +7,7 @@ import { DataTable, sortDataTableRows, type DataTableColumn } from '../../../com
 import { paginateRows } from '../../analytics/adapters/metricsFormatters';
 import type { AisleIssueRow } from '../../analytics/types';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
-import { inventoryAllowsCompare } from '../types';
+import { compareEligibilityTooltipKey, getCompareEligibility } from '../types';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
 
@@ -85,18 +85,18 @@ export function AnalyticsAislesTab({
         id: 'actions',
         label: t('common.actions'),
         cell: (r) => {
-          const mode = inventoryProcessingModeById.get(r.inventory_id);
-          const canCompare = inventoryAllowsCompare(mode);
-          const href = canCompare
+          const eligibility = getCompareEligibility(inventoryProcessingModeById.get(r.inventory_id));
+          const href = eligibility.allowed
             ? pathToInventoryAnalyticsCompareMany(r.inventory_id, { aisleId: r.aisle_id })
             : '';
+          const tooltip = eligibility.allowed ? '' : t(compareEligibilityTooltipKey(eligibility.reason));
           return (
-            <Tooltip title={canCompare ? '' : t('analyticsDashboard.compare.testOnlyTooltip')}>
+            <Tooltip title={tooltip}>
               <span>
                 <Button
                   size="small"
                   variant="outlined"
-                  disabled={!canCompare}
+                  disabled={!eligibility.allowed}
                   data-testid={`aisle-compare-${r.aisle_id}`}
                   onClick={() => href && navigate(href)}
                 >
@@ -119,30 +119,30 @@ export function AnalyticsAislesTab({
 
   return (
     <Box data-testid="analytics-aisles-table">
-    <DataTable<AisleIssueRow>
-      rows={rowsPaged}
-      rowKey={(r) => `${r.inventory_id}-${r.aisle_id}`}
-      columns={columns}
-      loading={isLoading}
-      size="small"
-      pagination={{
-        page,
-        pageSize,
-        totalItems: rowsSorted.length,
-        onPageChange: setPage,
-        onPageSizeChange: setPageSize,
-      }}
-      sort={{
-        sortBy,
-        sortDir,
-        onSortChange: (nextSortBy, nextSortDir) => {
-          setSortBy(nextSortBy);
-          setSortDir(nextSortDir);
-          setPage(1);
-        },
-      }}
-      emptyState={{ message: t('analytics.empty_aisle_metrics') }}
-    />
+      <DataTable<AisleIssueRow>
+        rows={rowsPaged}
+        rowKey={(r) => `${r.inventory_id}-${r.aisle_id}`}
+        columns={columns}
+        loading={isLoading}
+        size="small"
+        pagination={{
+          page,
+          pageSize,
+          totalItems: rowsSorted.length,
+          onPageChange: setPage,
+          onPageSizeChange: setPageSize,
+        }}
+        sort={{
+          sortBy,
+          sortDir,
+          onSortChange: (nextSortBy, nextSortDir) => {
+            setSortBy(nextSortBy);
+            setSortDir(nextSortDir);
+            setPage(1);
+          },
+        }}
+        emptyState={{ message: t('analytics.empty_aisle_metrics') }}
+      />
     </Box>
   );
 }
