@@ -1,10 +1,14 @@
 import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import {
   buildAutoVsManualSegments,
   buildCaptureStatusChartData,
   buildCostByProviderChartData,
+  buildProviderRunVolumeChartData,
   buildQualityIssueChartData,
 } from '../src/features/analytics-dashboard/adapters/analyticsChartDatasets';
+import { SegmentBarChart } from '../src/features/analytics-dashboard/components/charts/SegmentBarChart';
+import { HorizontalBarChart } from '../src/features/analytics-dashboard/components/charts/HorizontalBarChart';
 import i18n from '../src/i18n';
 
 describe('analyticsChartDatasets', () => {
@@ -74,5 +78,55 @@ describe('analyticsChartDatasets', () => {
     expect(segments.length).toBeGreaterThanOrEqual(2);
     const total = segments.reduce((s, x) => s + x.value, 0);
     expect(total).toBeLessThanOrEqual(1.01);
+  });
+
+  it('builds provider run volume from runs_total', () => {
+    const data = buildProviderRunVolumeChartData({
+      range: { from: '2026-01-01', to: '2026-01-31' },
+      filters: {},
+      totals: {} as never,
+      by_provider_model: [
+        {
+          provider_name: 'gemini',
+          model_name: 'flash',
+          runs_total: 12,
+          runs_succeeded: 10,
+          runs_failed: 2,
+          failure_rate: 0.17,
+        },
+      ],
+      by_client: [],
+      by_supplier: [],
+      data_quality: {} as never,
+    });
+    expect(data[0]?.value).toBe(12);
+  });
+});
+
+describe('chart components', () => {
+  it('normalizes segment bar visual width when values sum above 1', () => {
+    render(
+      <SegmentBarChart
+        segments={[
+          { id: 'auto', label: 'Auto', value: 0.7, pct: 70 },
+          { id: 'manual', label: 'Manual', value: 0.5, pct: 50 },
+        ]}
+        emptyText="Sin datos"
+        data-testid="segment-over-100"
+      />
+    );
+    expect(screen.getByRole('img')).toHaveAttribute('aria-label', expect.stringContaining('Auto'));
+  });
+
+  it('exposes accessible role and label on horizontal bar chart', () => {
+    render(
+      <HorizontalBarChart
+        data={[{ id: 'a', label: 'Test', value: 5, displayValue: '5' }]}
+        emptyText="Sin datos"
+        ariaLabel="Gráfico de barras de prueba"
+        data-testid="hbar-a11y"
+      />
+    );
+    expect(screen.getByRole('img', { name: 'Gráfico de barras de prueba' })).toBeInTheDocument();
   });
 });

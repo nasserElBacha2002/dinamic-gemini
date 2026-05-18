@@ -25,6 +25,7 @@ export function AnalyticsCostVisualSection({
 }: AnalyticsCostVisualSectionProps) {
   const { t } = useTranslation();
   const emptyText = t('analyticsDashboard.visual.emptyChart');
+  const loadingText = t('analyticsDashboard.visual.loadingChart');
 
   const byProvider = useMemo(() => buildCostByProviderChartData(costSummary), [costSummary]);
   const byInventory = useMemo(() => buildCostByInventoryChartData(costSummary), [costSummary]);
@@ -77,10 +78,6 @@ export function AnalyticsCostVisualSection({
     </Box>
   );
 
-  if (isLoading && !costSummary?.totals) {
-    return null;
-  }
-
   return (
     <Box data-testid="analytics-cost-visual-section">
       {!compact ? unitEconomics : null}
@@ -89,17 +86,26 @@ export function AnalyticsCostVisualSection({
           <AnalyticsChartCard
             title={t('analyticsDashboard.visual.costByProviderModel')}
             subtitle={t('analyticsDashboard.visual.notARecommendation')}
-            empty={!byProvider.length}
+            loading={isLoading}
+            loadingText={loadingText}
+            empty={!isLoading && !byProvider.length}
             emptyText={emptyText}
             data-testid="analytics-chart-cost-provider"
           >
-            <HorizontalBarChart data={byProvider} emptyText={emptyText} data-testid="analytics-chart-cost-provider-bars" />
+            <HorizontalBarChart
+              data={byProvider}
+              emptyText={emptyText}
+              ariaLabel={t('analyticsDashboard.visual.costByProviderModel')}
+              data-testid="analytics-chart-cost-provider-bars"
+            />
           </AnalyticsChartCard>
         </Grid>
         <Grid item xs={12} md={6}>
           <AnalyticsChartCard
             title={t('analyticsDashboard.visual.captureStatusDistribution')}
-            empty={!captureStatus.length}
+            loading={isLoading}
+            loadingText={loadingText}
+            empty={!isLoading && !captureStatus.length}
             emptyText={emptyText}
             data-testid="analytics-chart-capture-status"
           >
@@ -107,6 +113,7 @@ export function AnalyticsCostVisualSection({
               data={captureStatus}
               emptyText={emptyText}
               barColor="info.main"
+              ariaLabel={t('analyticsDashboard.visual.captureStatusDistribution')}
               data-testid="analytics-chart-capture-status-bars"
             />
           </AnalyticsChartCard>
@@ -114,21 +121,35 @@ export function AnalyticsCostVisualSection({
         <Grid item xs={12} md={6}>
           <AnalyticsChartCard
             title={t('analyticsDashboard.visual.topInventoriesByCost')}
-            empty={!byInventory.length}
+            loading={isLoading}
+            loadingText={loadingText}
+            empty={!isLoading && !byInventory.length}
             emptyText={emptyText}
             data-testid="analytics-chart-cost-inventory"
           >
-            <HorizontalBarChart data={byInventory} emptyText={emptyText} data-testid="analytics-chart-cost-inventory-bars" />
+            <HorizontalBarChart
+              data={byInventory}
+              emptyText={emptyText}
+              ariaLabel={t('analyticsDashboard.visual.topInventoriesByCost')}
+              data-testid="analytics-chart-cost-inventory-bars"
+            />
           </AnalyticsChartCard>
         </Grid>
         <Grid item xs={12} md={6}>
           <AnalyticsChartCard
             title={t('analyticsDashboard.visual.topAislesByCost')}
-            empty={!byAisle.length}
+            loading={isLoading}
+            loadingText={loadingText}
+            empty={!isLoading && !byAisle.length}
             emptyText={emptyText}
             data-testid="analytics-chart-cost-aisle"
           >
-            <HorizontalBarChart data={byAisle} emptyText={emptyText} data-testid="analytics-chart-cost-aisle-bars" />
+            <HorizontalBarChart
+              data={byAisle}
+              emptyText={emptyText}
+              ariaLabel={t('analyticsDashboard.visual.topAislesByCost')}
+              data-testid="analytics-chart-cost-aisle-bars"
+            />
           </AnalyticsChartCard>
         </Grid>
       </Grid>

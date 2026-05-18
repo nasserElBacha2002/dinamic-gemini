@@ -22,10 +22,13 @@ import { AnalyticsCompareTab } from './components/AnalyticsCompareTab';
 import { AnalyticsCostsTab } from './components/AnalyticsCostsTab';
 import { AnalyticsDataQualitySummary } from './components/AnalyticsDataQualitySummary';
 import { useAnalyticsDashboardData } from './hooks/useAnalyticsDashboardData';
+import { AnalyticsDrilldownDrawer } from './components/drilldown/AnalyticsDrilldownDrawer';
 import {
   buildFilterParams,
   type AnalyticsDashboardFilters,
   type AnalyticsDashboardTab,
+  type AnalyticsDrilldownHandlers,
+  type AnalyticsDrilldownState,
 } from './types';
 
 function initialFilters(): AnalyticsDashboardFilters {
@@ -47,6 +50,7 @@ export default function AnalyticsDashboardPage() {
   const [draftFilters, setDraftFilters] = useState(initialFilters);
   const [appliedFilters, setAppliedFilters] = useState(initialFilters);
   const [activeTab, setActiveTab] = useState<AnalyticsDashboardTab>('summary');
+  const [drilldown, setDrilldown] = useState<AnalyticsDrilldownState>(null);
 
   const filterParams = useMemo(() => buildFilterParams(appliedFilters), [appliedFilters]);
 
@@ -80,6 +84,22 @@ export default function AnalyticsDashboardPage() {
   }, [inventories]);
 
   const selectedInventory = inventories.find((inv) => inv.id === appliedFilters.inventoryId) ?? null;
+
+  const inventoriesById = useMemo(() => {
+    const map = new Map<string, (typeof inventories)[number]>();
+    for (const inv of inventories) {
+      map.set(inv.id, inv);
+    }
+    return map;
+  }, [inventories]);
+
+  const drilldownHandlers: AnalyticsDrilldownHandlers = useMemo(
+    () => ({
+      onOpenInventoryDrilldown: (inventoryId) => setDrilldown({ type: 'inventory', inventoryId }),
+      onOpenAisleDrilldown: (inventoryId, aisleId) => setDrilldown({ type: 'aisle', inventoryId, aisleId }),
+    }),
+    []
+  );
 
   return (
     <Box sx={{ pb: 4, width: '100%', minWidth: 0, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
@@ -144,6 +164,8 @@ export default function AnalyticsDashboardPage() {
           isObservabilityLoading={isObservabilityLoading}
           isCostSummaryLoading={isCostSummaryLoading}
           isCostSummaryError={Boolean(costSummaryError)}
+          inventoryProcessingModeById={inventoryProcessingModeById}
+          drilldown={drilldownHandlers}
         />
       ) : null}
 
@@ -164,6 +186,7 @@ export default function AnalyticsDashboardPage() {
           isLoading={isAnalyticsLoading}
           isCostLoading={isCostSummaryLoading}
           inventoryProcessingModeById={inventoryProcessingModeById}
+          drilldown={drilldownHandlers}
         />
       ) : null}
 
@@ -174,6 +197,7 @@ export default function AnalyticsDashboardPage() {
           isLoading={isAnalyticsLoading}
           isCostLoading={isCostSummaryLoading}
           inventoryProcessingModeById={inventoryProcessingModeById}
+          drilldown={drilldownHandlers}
         />
       ) : null}
 
@@ -192,8 +216,20 @@ export default function AnalyticsDashboardPage() {
           isLoading={isCostSummaryLoading}
           isError={Boolean(costSummaryError)}
           onGoToCompare={() => setActiveTab('compare')}
+          drilldown={drilldownHandlers}
         />
       ) : null}
+
+      <AnalyticsDrilldownDrawer
+        state={drilldown}
+        onClose={() => setDrilldown(null)}
+        analytics={analytics}
+        costSummary={costSummary.data}
+        isCostLoading={isCostSummaryLoading}
+        inventoryProcessingModeById={inventoryProcessingModeById}
+        inventoriesById={inventoriesById}
+        onOpenAisleDrilldown={drilldownHandlers.onOpenAisleDrilldown}
+      />
     </Box>
   );
 }

@@ -9,7 +9,9 @@ export interface ExecutiveKpiStripProps {
   positionKpis: readonly DashboardKpiCardModel[];
   runKpis: readonly DashboardKpiCardModel[];
   costKpis: readonly DashboardKpiCardModel[];
-  isLoading: boolean;
+  isPositionLoading: boolean;
+  isRunLoading: boolean;
+  isCostLoading: boolean;
   hasPositionData: boolean;
   hasRunData: boolean;
   hasCostData: boolean;
@@ -55,7 +57,9 @@ export function ExecutiveKpiStrip({
   positionKpis,
   runKpis,
   costKpis,
-  isLoading,
+  isPositionLoading,
+  isRunLoading,
+  isCostLoading,
   hasPositionData,
   hasRunData,
   hasCostData,
@@ -70,9 +74,15 @@ export function ExecutiveKpiStrip({
         mb: 2,
       }}
     >
-      <KpiGroup title={positionTitle} cards={positionKpis} isLoading={isLoading} hasData={hasPositionData} skeletonCount={6} />
-      <KpiGroup title={runTitle} cards={runKpis} isLoading={isLoading} hasData={hasRunData} skeletonCount={4} />
-      <KpiGroup title={costTitle} cards={costKpis} isLoading={isLoading} hasData={hasCostData} skeletonCount={5} />
+      <KpiGroup
+        title={positionTitle}
+        cards={positionKpis}
+        isLoading={isPositionLoading}
+        hasData={hasPositionData}
+        skeletonCount={6}
+      />
+      <KpiGroup title={runTitle} cards={runKpis} isLoading={isRunLoading} hasData={hasRunData} skeletonCount={4} />
+      <KpiGroup title={costTitle} cards={costKpis} isLoading={isCostLoading} hasData={hasCostData} skeletonCount={5} />
     </Box>
   );
 }

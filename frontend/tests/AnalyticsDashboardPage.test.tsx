@@ -23,6 +23,29 @@ vi.mock('../src/hooks/useAisles', () => ({
     data: { items: [{ id: 'a-1', code: 'A-01' }] },
     isLoading: false,
   }),
+  useAisleJobsList: () => ({
+    data: {
+      jobs: [
+        {
+          id: 'job-1',
+          status: 'succeeded',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T01:00:00Z',
+          started_at: '2026-01-01T00:00:00Z',
+          finished_at: '2026-01-01T01:00:00Z',
+          provider_name: 'gemini',
+          model_name: 'flash',
+        },
+      ],
+    },
+    isLoading: false,
+    isError: false,
+  }),
+  useInventoryMetrics: () => ({
+    data: { total_positions: 10, total_reviewed_positions: 8 },
+    isLoading: false,
+    isError: false,
+  }),
 }));
 
 vi.mock('react-router-dom', async () => {
@@ -315,9 +338,10 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getByTestId('analytics-chart-cost-provider')).toBeInTheDocument();
   });
 
-  it('renders data quality summary when cost warnings exist', () => {
+  it('renders compact data quality summary when cost warnings exist', () => {
     renderPage();
     expect(screen.getByTestId('analytics-data-quality-summary')).toBeInTheDocument();
+    expect(screen.getByText('Calidad de datos')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-dq-PROVIDER_MODEL_UNIT_COST_NOT_AVAILABLE')).toBeInTheDocument();
   });
 
@@ -520,11 +544,75 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getAllByText('Cargando…').length).toBeGreaterThan(0);
   });
 
+  it('shows cost KPI skeleton and chart loading on overview while cost summary loads', () => {
+    setupMocksWithDashboardData({
+      isCostSummaryLoading: true,
+      costSummary: { data: undefined, isLoading: true, isError: false, error: null, refetch: vi.fn() },
+    });
+    renderPage();
+    const strip = screen.getByTestId('analytics-executive-kpi-strip');
+    expect(within(strip).getByText('16')).toBeInTheDocument();
+    expect(within(strip).queryByText('Pendiente de backend')).not.toBeInTheDocument();
+    expect(screen.getByTestId('analytics-cost-visual-section')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-chart-cost-provider-loading')).toHaveTextContent('Cargando visualización…');
+  });
+
+  it('shows cost chart loading on inventarios tab while cost summary loads', () => {
+    setupMocksWithDashboardData({
+      isCostSummaryLoading: true,
+      costSummary: { data: undefined, isLoading: true, isError: false, error: null, refetch: vi.fn() },
+    });
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-tab-inventories'));
+    expect(screen.getByTestId('analytics-inventories-cost-summary-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-inventories-cost-summary-empty')).not.toBeInTheDocument();
+  });
+
+  it('labels provider chart as run volume not reliability', () => {
+    renderPage();
+    expect(screen.getByText('Corridas por proveedor/modelo')).toBeInTheDocument();
+    expect(screen.queryByText(/confiabilidad/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('analytics-chart-provider-run-volume')).toBeInTheDocument();
+  });
+
+  it('shows compare CTA on overview critical aisle for test inventory', () => {
+    renderPage();
+    const btn = screen.getByTestId('overview-aisle-compare-a-1');
+    expect(btn).not.toBeDisabled();
+    expect(btn).toHaveAttribute('href', '/inventories/inv-test/analytics/compare-many?aisleId=a-1');
+  });
+
+  it('opens inventory drilldown drawer from inventarios tab', () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-tab-inventories'));
+    fireEvent.click(screen.getByTestId('inventory-drilldown-inv-test'));
+    expect(screen.getByTestId('analytics-drilldown-drawer')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-drilldown-inventory-panel')).toBeInTheDocument();
+    expect(screen.getByText(/Inventario: Test DC/)).toBeInTheDocument();
+  });
+
+  it('opens aisle drilldown drawer from pasillos tab', () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-tab-aisles'));
+    fireEvent.click(screen.getByTestId('aisle-drilldown-a-1'));
+    expect(screen.getByTestId('analytics-drilldown-aisle-panel')).toBeInTheDocument();
+    expect(screen.getByText(/Pasillo: A-01/)).toBeInTheDocument();
+  });
+
+  it('closing drilldown drawer keeps active tab', () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-tab-inventories'));
+    fireEvent.click(screen.getByTestId('inventory-drilldown-inv-test'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+    expect(screen.queryByTestId('analytics-drilldown-inventory-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('analytics-inventories-table')).toBeInTheDocument();
+  });
+
   it('providers tab shows charts and does not recommend a best provider', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-providers'));
     expect(screen.getByTestId('analytics-providers-tab')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-providers-chart-reliability')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-providers-chart-run-volume')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-providers-cost-table')).toBeInTheDocument();
     expect(screen.queryByText(/mejor proveedor/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/proveedor recomendado/i)).not.toBeInTheDocument();

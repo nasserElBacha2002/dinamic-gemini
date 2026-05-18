@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Paper, Typography } from '@mui/material';
+import { Paper, Skeleton, Typography } from '@mui/material';
 
 export interface AnalyticsChartCardProps {
   title: string;
@@ -7,6 +7,8 @@ export interface AnalyticsChartCardProps {
   children: ReactNode;
   empty?: boolean;
   emptyText?: string;
+  loading?: boolean;
+  loadingText?: string;
   'data-testid'?: string;
 }
 
@@ -16,6 +18,8 @@ export function AnalyticsChartCard({
   children,
   empty,
   emptyText,
+  loading,
+  loadingText,
   'data-testid': testId,
 }: AnalyticsChartCardProps) {
   return (
@@ -38,7 +42,20 @@ export function AnalyticsChartCard({
           {subtitle}
         </Typography>
       ) : null}
-      {empty && emptyText ? (
+      {loading ? (
+        <>
+          {loadingText ? (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              data-testid={testId ? `${testId}-loading` : undefined}
+            >
+              {loadingText}
+            </Typography>
+          ) : null}
+          <Skeleton variant="rounded" height={120} sx={{ mt: loadingText ? 1 : 0 }} />
+        </>
+      ) : empty && emptyText ? (
         <Typography variant="body2" color="text.secondary" data-testid={testId ? `${testId}-empty` : undefined}>
           {emptyText}
         </Typography>

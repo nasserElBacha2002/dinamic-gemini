@@ -75,3 +75,13 @@ export function compareEligibilityTooltipKey(reason: 'unknown_mode' | 'test_only
     ? 'analyticsDashboard.compare.unknownModeTooltip'
     : 'analyticsDashboard.compare.testOnlyTooltip';
 }
+
+export type AnalyticsDrilldownState =
+  | { type: 'inventory'; inventoryId: string }
+  | { type: 'aisle'; inventoryId: string; aisleId: string }
+  | null;
+
+export interface AnalyticsDrilldownHandlers {
+  onOpenInventoryDrilldown: (inventoryId: string) => void;
+  onOpenAisleDrilldown: (inventoryId: string, aisleId: string) => void;
+}

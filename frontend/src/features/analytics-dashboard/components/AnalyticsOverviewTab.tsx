@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Box, Grid, Link as MuiLink, Paper, Typography } from '@mui/material';
+import { Box, Button, Grid, Link as MuiLink, Paper, Tooltip, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import type { ObservabilityMetricsResponse } from '../../../api/types';
 import type { AnalyticsCostSummaryResponse } from '../../../api/types';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
+import { pathToAislePositions, pathToInventoryAnalyticsCompareMany } from '../../../constants/appRoutes';
 import { orderQualityRows } from '../../analytics/adapters/metricsViewModel';
-import { pathToAislePositions } from '../../../constants/appRoutes';
 import {
   buildPositionSummaryKpis,
   buildRunSummaryKpis,
@@ -16,11 +16,12 @@ import {
 import {
   buildAutoVsManualSegments,
   buildProcessingTimeByInventoryData,
-  buildProviderReliabilityChartData,
+  buildProviderRunVolumeChartData,
   buildQualityIssueChartData,
   buildTopAislesAttention,
 } from '../adapters/analyticsChartDatasets';
 import { buildCostWarnings, buildOverviewCostKpis, hasCostData } from '../adapters/analyticsCostViewModel';
+import { compareEligibilityTooltipKey, getCompareEligibility, type AnalyticsDrilldownHandlers } from '../types';
 import { AnalyticsCostVisualSection } from './AnalyticsCostVisualSection';
 import { AnalyticsChartCard } from './AnalyticsChartCard';
 import { AnalyticsSectionCard } from './AnalyticsSectionCard';
@@ -40,6 +41,8 @@ export interface AnalyticsOverviewTabProps {
   isObservabilityLoading: boolean;
   isCostSummaryLoading: boolean;
   isCostSummaryError: boolean;
+  inventoryProcessingModeById: ReadonlyMap<string, string | undefined>;
+  drilldown: AnalyticsDrilldownHandlers;
 }
 
 export function AnalyticsOverviewTab({
@@ -51,18 +54,27 @@ export function AnalyticsOverviewTab({
   isObservabilityLoading,
   isCostSummaryLoading,
   isCostSummaryError,
+  inventoryProcessingModeById,
+  drilldown,
 }: AnalyticsOverviewTabProps) {
   const { t } = useTranslation();
   const unidentified = hasUnidentifiedProductRate(summary);
   const emptyText = t('analyticsDashboard.visual.emptyChart');
+  const loadingText = t('analyticsDashboard.visual.loadingChart');
 
   const positionKpis = useMemo(
     () => buildPositionSummaryKpis(summary, unidentified, t),
     [summary, unidentified, t]
   );
   const runKpis = useMemo(() => buildRunSummaryKpis(observability, t), [observability, t]);
+
+  const costHasData = hasCostData(costSummary) && !isCostSummaryError;
+
   const costKpis = useMemo(() => {
-    if (isCostSummaryError || (!isCostSummaryLoading && !hasCostData(costSummary))) {
+    if (isCostSummaryLoading) {
+      return [];
+    }
+    if (isCostSummaryError || !hasCostData(costSummary)) {
       return buildUnavailableGlobalCostKpis(t).slice(0, 5).map((c) => ({
         ...c,
         grainLabel: t('analyticsDashboard.costs.sectionTitle'),
@@ -74,7 +86,6 @@ export function AnalyticsOverviewTab({
     }));
   }, [costSummary, isCostSummaryError, isCostSummaryLoading, t]);
 
-  const costHasData = hasCostData(costSummary) && !isCostSummaryError;
   const costWarnings = useMemo(() => buildCostWarnings(costSummary, t), [costSummary, t]);
 
   const qualityChart = useMemo(
@@ -86,16 +97,13 @@ export function AnalyticsOverviewTab({
     () => buildProcessingTimeByInventoryData(analytics.inventoryPerformance?.items ?? []),
     [analytics.inventoryPerformance?.items]
   );
-  const providerReliability = useMemo(
-    () => buildProviderReliabilityChartData(observability),
-    [observability]
-  );
+  const providerRunVolume = useMemo(() => buildProviderRunVolumeChartData(observability), [observability]);
   const topAisles = useMemo(
     () => buildTopAislesAttention(analytics.aisleIssues?.items ?? []),
     [analytics.aisleIssues?.items]
   );
 
-  const isLoading = isAnalyticsLoading || isObservabilityLoading || isCostSummaryLoading;
+  const showCostSection = (costHasData || isCostSummaryLoading) && !isCostSummaryError;
 
   return (
     <Box data-testid="analytics-overview-tab">
@@ -106,13 +114,15 @@ export function AnalyticsOverviewTab({
         positionKpis={positionKpis}
         runKpis={runKpis}
         costKpis={costKpis}
-        isLoading={isLoading}
+        isPositionLoading={isAnalyticsLoading}
+        isRunLoading={isObservabilityLoading}
+        isCostLoading={isCostSummaryLoading}
         hasPositionData={Boolean(summary)}
         hasRunData={Boolean(observability?.totals)}
-        hasCostData={costHasData || isCostSummaryLoading}
+        hasCostData={costHasData}
       />
 
-      {costHasData ? (
+      {showCostSection ? (
         <AnalyticsSectionCard
           title={t('analyticsDashboard.visual.costSnapshot')}
           subtitle={t('analyticsDashboard.costs.llmCostHint')}
@@ -130,17 +140,29 @@ export function AnalyticsOverviewTab({
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12} md={6}>
           <AnalyticsSectionCard title={t('analyticsDashboard.visual.qualitySnapshot')}>
-            <AnalyticsChartCard title={t('analyticsDashboard.visual.autoVsManual')} data-testid="analytics-chart-auto-manual">
+            <AnalyticsChartCard
+              title={t('analyticsDashboard.visual.autoVsManual')}
+              loading={isAnalyticsLoading}
+              loadingText={loadingText}
+              data-testid="analytics-chart-auto-manual"
+            >
               <SegmentBarChart segments={autoManual} emptyText={emptyText} data-testid="analytics-chart-auto-manual-bars" />
             </AnalyticsChartCard>
             <Box sx={{ mt: 2 }}>
               <AnalyticsChartCard
                 title={t('analyticsDashboard.visual.qualityIssues')}
-                empty={!qualityChart.length}
+                loading={isAnalyticsLoading}
+                loadingText={loadingText}
+                empty={!isAnalyticsLoading && !qualityChart.length}
                 emptyText={emptyText}
                 data-testid="analytics-chart-quality-issues"
               >
-                <HorizontalBarChart data={qualityChart} emptyText={emptyText} data-testid="analytics-chart-quality-issues-bars" />
+                <HorizontalBarChart
+                  data={qualityChart}
+                  emptyText={emptyText}
+                  ariaLabel={t('analyticsDashboard.visual.qualityIssues')}
+                  data-testid="analytics-chart-quality-issues-bars"
+                />
               </AnalyticsChartCard>
             </Box>
           </AnalyticsSectionCard>
@@ -149,7 +171,9 @@ export function AnalyticsOverviewTab({
           <AnalyticsSectionCard title={t('analyticsDashboard.visual.timeSnapshot')}>
             <AnalyticsChartCard
               title={t('analyticsDashboard.visual.processingTimeByInventory')}
-              empty={!processingByInv.length}
+              loading={isAnalyticsLoading}
+              loadingText={loadingText}
+              empty={!isAnalyticsLoading && !processingByInv.length}
               emptyText={emptyText}
               data-testid="analytics-chart-processing-inventory"
             >
@@ -157,7 +181,9 @@ export function AnalyticsOverviewTab({
                 data={processingByInv}
                 emptyText={emptyText}
                 barColor="secondary.main"
+                ariaLabel={t('analyticsDashboard.visual.processingTimeByInventory')}
                 data-testid="analytics-chart-processing-inventory-bars"
+                onBarClick={(item) => drilldown.onOpenInventoryDrilldown(item.id)}
               />
             </AnalyticsChartCard>
             <Box sx={{ mt: 2 }}>
@@ -178,15 +204,18 @@ export function AnalyticsOverviewTab({
             subtitle={t('analyticsDashboard.visual.notARecommendation')}
           >
             <AnalyticsChartCard
-              title={t('analyticsDashboard.visual.providerReliability')}
-              empty={!providerReliability.length}
+              title={t('analyticsDashboard.visual.providerRunVolume')}
+              loading={isObservabilityLoading}
+              loadingText={loadingText}
+              empty={!isObservabilityLoading && !providerRunVolume.length}
               emptyText={emptyText}
-              data-testid="analytics-chart-provider-reliability"
+              data-testid="analytics-chart-provider-run-volume"
             >
               <HorizontalBarChart
-                data={providerReliability}
+                data={providerRunVolume}
                 emptyText={emptyText}
-                data-testid="analytics-chart-provider-reliability-bars"
+                ariaLabel={t('analyticsDashboard.visual.providerRunVolume')}
+                data-testid="analytics-chart-provider-run-volume-bars"
               />
             </AnalyticsChartCard>
           </AnalyticsSectionCard>
@@ -199,25 +228,64 @@ export function AnalyticsOverviewTab({
               </Typography>
             ) : (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {topAisles.map((row) => (
-                  <Paper key={`${row.inventory_id}-${row.aisle_id}`} variant="outlined" sx={{ p: 1.5 }}>
-                    <Typography variant="body2" fontWeight={600}>
-                      <MuiLink
-                        component={RouterLink}
-                        to={pathToAislePositions(row.inventory_id, row.aisle_id)}
-                        underline="hover"
-                      >
-                        {row.aisle_code}
-                      </MuiLink>
-                      {' · '}
-                      {row.inventory_name}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      {t('analytics.column_pending')}: {row.needs_review_count}
-                      {row.most_common_issue ? ` · ${row.most_common_issue}` : ''}
-                    </Typography>
-                  </Paper>
-                ))}
+                {topAisles.map((row) => {
+                  const eligibility = getCompareEligibility(inventoryProcessingModeById.get(row.inventory_id));
+                  const compareHref = eligibility.allowed
+                    ? pathToInventoryAnalyticsCompareMany(row.inventory_id, { aisleId: row.aisle_id })
+                    : '';
+                  const compareTooltip = eligibility.allowed
+                    ? ''
+                    : t(compareEligibilityTooltipKey(eligibility.reason));
+
+                  return (
+                    <Paper
+                      key={`${row.inventory_id}-${row.aisle_id}`}
+                      variant="outlined"
+                      sx={{ p: 1.5 }}
+                      data-testid={`analytics-overview-aisle-${row.aisle_id}`}
+                    >
+                      <Typography variant="body2" fontWeight={600}>
+                        <MuiLink
+                          component={RouterLink}
+                          to={pathToAislePositions(row.inventory_id, row.aisle_id)}
+                          underline="hover"
+                        >
+                          {row.aisle_code}
+                        </MuiLink>
+                        {' · '}
+                        {row.inventory_name}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {t('analytics.column_pending')}: {row.needs_review_count}
+                        {row.most_common_issue ? ` · ${row.most_common_issue}` : ''}
+                      </Typography>
+                      <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() => drilldown.onOpenAisleDrilldown(row.inventory_id, row.aisle_id)}
+                          data-testid={`overview-aisle-drilldown-${row.aisle_id}`}
+                        >
+                          {t('analyticsDashboard.drilldown.openAnalytics')}
+                        </Button>
+                        <Tooltip title={compareTooltip}>
+                          <span>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              component={eligibility.allowed ? RouterLink : 'button'}
+                              to={eligibility.allowed ? compareHref : undefined}
+                              disabled={!eligibility.allowed}
+                              data-testid={`overview-aisle-compare-${row.aisle_id}`}
+                            >
+                              {t('analyticsDashboard.inventories.compareRuns')}
+                            </Button>
+                          </span>
+                        </Tooltip>
+                      </Box>
+                    </Paper>
+                  );
+                })}
               </Box>
             )}
           </AnalyticsSectionCard>

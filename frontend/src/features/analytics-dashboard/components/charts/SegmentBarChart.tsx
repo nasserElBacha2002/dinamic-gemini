@@ -18,6 +18,9 @@ export function SegmentBarChart({ segments, emptyText, 'data-testid': testId }: 
     );
   }
 
+  const total = segments.reduce((sum, segment) => sum + Math.max(0, segment.value), 0);
+  const denominator = total > 1 ? total : 1;
+
   return (
     <Box data-testid={testId}>
       <Box
@@ -32,16 +35,19 @@ export function SegmentBarChart({ segments, emptyText, 'data-testid': testId }: 
         role="img"
         aria-label={segments.map((s) => `${s.label} ${s.pct.toFixed(1)}%`).join(', ')}
       >
-        {segments.map((seg, idx) => (
-          <Box
-            key={seg.id}
-            sx={{
-              width: `${Math.max(0, seg.pct)}%`,
-              bgcolor: SEGMENT_COLORS[idx % SEGMENT_COLORS.length],
-              minWidth: seg.pct > 0 ? 4 : 0,
-            }}
-          />
-        ))}
+        {segments.map((seg, idx) => {
+          const widthPct = (Math.max(0, seg.value) / denominator) * 100;
+          return (
+            <Box
+              key={seg.id}
+              sx={{
+                width: `${widthPct}%`,
+                bgcolor: SEGMENT_COLORS[idx % SEGMENT_COLORS.length],
+                minWidth: widthPct > 0 ? 4 : 0,
+              }}
+            />
+          );
+        })}
       </Box>
       <Stack spacing={0.75}>
         {segments.map((seg, idx) => (

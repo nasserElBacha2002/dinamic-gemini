@@ -14,7 +14,7 @@ import {
 import type { AnalyticsCostSummaryResponse, ObservabilityMetricsResponse } from '../../../api/types';
 import { AnalyticsSectionCard } from './AnalyticsSectionCard';
 import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
-import { buildCostByProviderChartData, buildProviderReliabilityChartData } from '../adapters/analyticsChartDatasets';
+import { buildCostByProviderChartData, buildProviderRunVolumeChartData } from '../adapters/analyticsChartDatasets';
 import {
   buildCostWarnings,
   formatCostCell,
@@ -39,7 +39,7 @@ export function AnalyticsProvidersTab({ observability, costSummary }: AnalyticsP
   const costRows = costSummary?.by_provider_model ?? [];
   const costWarnings = useMemo(() => buildCostWarnings(costSummary, t), [costSummary, t]);
   const emptyText = t('analyticsDashboard.visual.emptyChart');
-  const reliabilityChart = useMemo(() => buildProviderReliabilityChartData(observability), [observability]);
+  const runVolumeChart = useMemo(() => buildProviderRunVolumeChartData(observability), [observability]);
   const costChart = useMemo(() => buildCostByProviderChartData(costSummary), [costSummary]);
 
   return (
@@ -47,16 +47,17 @@ export function AnalyticsProvidersTab({ observability, costSummary }: AnalyticsP
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid item xs={12} md={6}>
           <AnalyticsChartCard
-            title={t('analyticsDashboard.visual.providerReliability')}
+            title={t('analyticsDashboard.visual.providerRunVolume')}
             subtitle={t('analyticsDashboard.visual.notARecommendation')}
-            empty={!reliabilityChart.length}
+            empty={!runVolumeChart.length}
             emptyText={emptyText}
-            data-testid="analytics-providers-chart-reliability"
+            data-testid="analytics-providers-chart-run-volume"
           >
             <HorizontalBarChart
-              data={reliabilityChart}
+              data={runVolumeChart}
               emptyText={emptyText}
-              data-testid="analytics-providers-chart-reliability-bars"
+              ariaLabel={t('analyticsDashboard.visual.providerRunVolume')}
+              data-testid="analytics-providers-chart-run-volume-bars"
             />
           </AnalyticsChartCard>
         </Grid>

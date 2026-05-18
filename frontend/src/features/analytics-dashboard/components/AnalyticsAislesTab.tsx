@@ -17,7 +17,7 @@ import {
 } from '../adapters/analyticsCostViewModel';
 import { AnalyticsChartCard } from './AnalyticsChartCard';
 import { HorizontalBarChart } from './charts/HorizontalBarChart';
-import { compareEligibilityTooltipKey, getCompareEligibility } from '../types';
+import { compareEligibilityTooltipKey, getCompareEligibility, type AnalyticsDrilldownHandlers } from '../types';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
 
@@ -27,6 +27,7 @@ export interface AnalyticsAislesTabProps {
   isLoading: boolean;
   isCostLoading: boolean;
   inventoryProcessingModeById: ReadonlyMap<string, string | undefined>;
+  drilldown: AnalyticsDrilldownHandlers;
 }
 
 export function AnalyticsAislesTab({
@@ -35,6 +36,7 @@ export function AnalyticsAislesTab({
   isLoading,
   isCostLoading,
   inventoryProcessingModeById,
+  drilldown,
 }: AnalyticsAislesTabProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -144,24 +146,41 @@ export function AnalyticsAislesTab({
             : '';
           const tooltip = eligibility.allowed ? '' : t(compareEligibilityTooltipKey(eligibility.reason));
           return (
-            <Tooltip title={tooltip}>
-              <span>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  disabled={!eligibility.allowed}
-                  data-testid={`aisle-compare-${r.aisle_id}`}
-                  onClick={() => href && navigate(href)}
-                >
-                  {t('analyticsDashboard.aisles.compareRuns')}
-                </Button>
-              </span>
-            </Tooltip>
+            <span style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap' }}>
+              <Button
+                size="small"
+                component={RouterLink}
+                to={pathToAislePositions(r.inventory_id, r.aisle_id)}
+              >
+                {t('analyticsDashboard.aisles.viewPositions')}
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => drilldown.onOpenAisleDrilldown(r.inventory_id, r.aisle_id)}
+                data-testid={`aisle-drilldown-${r.aisle_id}`}
+              >
+                {t('analyticsDashboard.aisles.openAnalytics')}
+              </Button>
+              <Tooltip title={tooltip}>
+                <span>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    disabled={!eligibility.allowed}
+                    data-testid={`aisle-compare-${r.aisle_id}`}
+                    onClick={() => href && navigate(href)}
+                  >
+                    {t('analyticsDashboard.aisles.compareRuns')}
+                  </Button>
+                </span>
+              </Tooltip>
+            </span>
           );
         },
       },
     ],
-    [costByAisle, inventoryProcessingModeById, isCostLoading, navigate, t]
+    [costByAisle, drilldown, inventoryProcessingModeById, isCostLoading, navigate, t]
   );
 
   const rowsSorted = useMemo(
@@ -175,11 +194,22 @@ export function AnalyticsAislesTab({
       <Box sx={{ mb: 2, maxWidth: 480 }}>
         <AnalyticsChartCard
           title={t('analyticsDashboard.visual.topAislesByCost')}
-          empty={!costChart.length}
+          loading={isCostLoading}
+          loadingText={t('analyticsDashboard.visual.loadingChart')}
+          empty={!isCostLoading && !costChart.length}
           emptyText={emptyText}
           data-testid="analytics-aisles-cost-summary"
         >
-          <HorizontalBarChart data={costChart} emptyText={emptyText} data-testid="analytics-aisles-cost-summary-bars" />
+          <HorizontalBarChart
+            data={costChart}
+            emptyText={emptyText}
+            ariaLabel={t('analyticsDashboard.visual.topAislesByCost')}
+            data-testid="analytics-aisles-cost-summary-bars"
+            onBarClick={(item) => {
+              const row = analytics.aisleIssues?.items?.find((a) => a.aisle_id === item.id);
+              if (row) drilldown.onOpenAisleDrilldown(row.inventory_id, row.aisle_id);
+            }}
+          />
         </AnalyticsChartCard>
       </Box>
       {costWarnings.length > 0 ? <AnalyticsCostWarningsBlock warnings={costWarnings} compact /> : null}

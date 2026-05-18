@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Alert, Stack } from '@mui/material';
+import { Alert, Box, Typography } from '@mui/material';
 import type { AnalyticsCostSummaryResponse, ObservabilityMetricsResponse } from '../../../api/types';
 import { buildCostWarnings } from '../adapters/analyticsCostViewModel';
 
@@ -10,6 +10,7 @@ export interface AnalyticsDataQualitySummaryProps {
   analyticsError?: boolean;
   observabilityError?: boolean;
   costSummaryError?: boolean;
+  maxVisibleItems?: number;
 }
 
 export function AnalyticsDataQualitySummary({
@@ -18,6 +19,7 @@ export function AnalyticsDataQualitySummary({
   analyticsError,
   observabilityError,
   costSummaryError,
+  maxVisibleItems = 3,
 }: AnalyticsDataQualitySummaryProps) {
   const { t } = useTranslation();
   const costWarnings = useMemo(() => buildCostWarnings(costSummary, t), [costSummary, t]);
@@ -58,16 +60,29 @@ export function AnalyticsDataQualitySummary({
 
   if (!items.length) return null;
 
+  const visibleItems = items.slice(0, maxVisibleItems);
+  const hiddenCount = items.length - visibleItems.length;
+
   return (
-    <Stack spacing={1} sx={{ mb: 2 }} data-testid="analytics-data-quality-summary">
-      <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
-        {t('analyticsDashboard.visual.dataQualitySummary')}
-      </Alert>
-      {items.map((item) => (
-        <Alert key={item.id} severity={item.severity} data-testid={`analytics-dq-${item.id}`}>
-          {item.message}
-        </Alert>
-      ))}
-    </Stack>
+    <Alert severity="warning" variant="outlined" sx={{ mb: 2 }} data-testid="analytics-data-quality-summary">
+      <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+        {t('analyticsDashboard.visual.dataQualityTitle')}
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        {t('analyticsDashboard.visual.dataQualityWarningsActive', { count: items.length })}
+      </Typography>
+      <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+        {visibleItems.map((item) => (
+          <Typography key={item.id} component="li" variant="body2" data-testid={`analytics-dq-${item.id}`}>
+            {item.message}
+          </Typography>
+        ))}
+      </Box>
+      {hiddenCount > 0 ? (
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+          {t('analyticsDashboard.visual.dataQualityMore', { count: hiddenCount })}
+        </Typography>
+      ) : null}
+    </Alert>
   );
 }

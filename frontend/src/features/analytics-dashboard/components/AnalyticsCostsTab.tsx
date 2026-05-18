@@ -28,12 +28,14 @@ import {
   getCostSummaryEmptyKind,
   hasCostData,
 } from '../adapters/analyticsCostViewModel';
+import type { AnalyticsDrilldownHandlers } from '../types';
 
 export interface AnalyticsCostsTabProps {
   costSummary: AnalyticsCostSummaryResponse | null | undefined;
   isLoading: boolean;
   isError: boolean;
   onGoToCompare: () => void;
+  drilldown: AnalyticsDrilldownHandlers;
 }
 
 function CompareCostsSection({ onGoToCompare }: { onGoToCompare: () => void }) {
@@ -55,6 +57,7 @@ export function AnalyticsCostsTab({
   isLoading,
   isError,
   onGoToCompare,
+  drilldown,
 }: AnalyticsCostsTabProps) {
   const { t } = useTranslation();
   const executiveKpis = useMemo(() => buildCostExecutiveKpis(costSummary, t), [costSummary, t]);
@@ -158,6 +161,7 @@ export function AnalyticsCostsTab({
                     <TableCell align="right">{t('analyticsDashboard.costs.totalQuantity')}</TableCell>
                     <TableCell align="right">{t('analyticsDashboard.costs.costPerUnit')}</TableCell>
                     <TableCell align="right">{t('analyticsDashboard.costs.totalExecutionTime')}</TableCell>
+                    <TableCell>{t('common.actions')}</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -170,6 +174,15 @@ export function AnalyticsCostsTab({
                       <TableCell align="right">{formatCostCell(row.total_counted_quantity, 'quantity', t)}</TableCell>
                       <TableCell align="right">{formatCostCell(row.cost_per_counted_unit, 'costPerUnit', t)}</TableCell>
                       <TableCell align="right">{formatCostCell(row.total_execution_time_seconds, 'duration', t)}</TableCell>
+                      <TableCell>
+                        <Button
+                          size="small"
+                          onClick={() => drilldown.onOpenInventoryDrilldown(row.inventory_id)}
+                          data-testid={`cost-drilldown-inventory-${row.inventory_id}`}
+                        >
+                          {t('analyticsDashboard.drilldown.openAnalytics')}
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -190,6 +203,7 @@ export function AnalyticsCostsTab({
                     <TableCell align="right">{t('analyticsDashboard.costs.totalQuantity')}</TableCell>
                     <TableCell align="right">{t('analyticsDashboard.costs.costPerUnit')}</TableCell>
                     <TableCell align="right">{t('analyticsDashboard.costs.totalExecutionTime')}</TableCell>
+                    <TableCell>{t('common.actions')}</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -203,6 +217,15 @@ export function AnalyticsCostsTab({
                       <TableCell align="right">{formatCostCell(row.total_counted_quantity, 'quantity', t)}</TableCell>
                       <TableCell align="right">{formatCostCell(row.cost_per_counted_unit, 'costPerUnit', t)}</TableCell>
                       <TableCell align="right">{formatCostCell(row.total_execution_time_seconds, 'duration', t)}</TableCell>
+                      <TableCell>
+                        <Button
+                          size="small"
+                          onClick={() => drilldown.onOpenAisleDrilldown(row.inventory_id, row.aisle_id)}
+                          data-testid={`cost-drilldown-aisle-${row.aisle_id}`}
+                        >
+                          {t('analyticsDashboard.drilldown.openAnalytics')}
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

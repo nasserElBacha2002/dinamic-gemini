@@ -19,7 +19,7 @@ import {
 } from '../adapters/analyticsCostViewModel';
 import { AnalyticsChartCard } from './AnalyticsChartCard';
 import { HorizontalBarChart } from './charts/HorizontalBarChart';
-import { compareEligibilityTooltipKey, getCompareEligibility } from '../types';
+import { compareEligibilityTooltipKey, getCompareEligibility, type AnalyticsDrilldownHandlers } from '../types';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
 
@@ -29,6 +29,7 @@ export interface AnalyticsInventoriesTabProps {
   isLoading: boolean;
   isCostLoading: boolean;
   inventoryProcessingModeById: ReadonlyMap<string, string | undefined>;
+  drilldown: AnalyticsDrilldownHandlers;
 }
 
 export function AnalyticsInventoriesTab({
@@ -37,6 +38,7 @@ export function AnalyticsInventoriesTab({
   isLoading,
   isCostLoading,
   inventoryProcessingModeById,
+  drilldown,
 }: AnalyticsInventoriesTabProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -165,6 +167,14 @@ export function AnalyticsInventoriesTab({
               <Button size="small" component={RouterLink} to={pathToInventory(r.inventory_id)}>
                 {t('analyticsDashboard.inventories.viewDetail')}
               </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => drilldown.onOpenInventoryDrilldown(r.inventory_id)}
+                data-testid={`inventory-drilldown-${r.inventory_id}`}
+              >
+                {t('analyticsDashboard.inventories.openAnalytics')}
+              </Button>
               <Tooltip title={tooltip}>
                 <span>
                   <Button
@@ -183,7 +193,7 @@ export function AnalyticsInventoriesTab({
         },
       },
     ],
-    [costByInventory, hasUnidentified, inventoryProcessingModeById, isCostLoading, navigate, t]
+    [costByInventory, drilldown, hasUnidentified, inventoryProcessingModeById, isCostLoading, navigate, t]
   );
 
   return (
@@ -191,11 +201,19 @@ export function AnalyticsInventoriesTab({
       <Box sx={{ mb: 2, maxWidth: 480 }}>
         <AnalyticsChartCard
           title={t('analyticsDashboard.visual.topInventoriesByCost')}
-          empty={!costChart.length}
+          loading={isCostLoading}
+          loadingText={t('analyticsDashboard.visual.loadingChart')}
+          empty={!isCostLoading && !costChart.length}
           emptyText={emptyText}
           data-testid="analytics-inventories-cost-summary"
         >
-          <HorizontalBarChart data={costChart} emptyText={emptyText} data-testid="analytics-inventories-cost-summary-bars" />
+          <HorizontalBarChart
+            data={costChart}
+            emptyText={emptyText}
+            ariaLabel={t('analyticsDashboard.visual.topInventoriesByCost')}
+            data-testid="analytics-inventories-cost-summary-bars"
+            onBarClick={(item) => drilldown.onOpenInventoryDrilldown(item.id)}
+          />
         </AnalyticsChartCard>
       </Box>
       {costWarnings.length > 0 ? <AnalyticsCostWarningsBlock warnings={costWarnings} compact /> : null}

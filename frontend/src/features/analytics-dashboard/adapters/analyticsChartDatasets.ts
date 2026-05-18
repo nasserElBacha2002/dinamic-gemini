@@ -166,14 +166,14 @@ export function buildTopAislesAttention(
     .slice(0, limit);
 }
 
-export function buildProviderReliabilityChartData(
+export function buildProviderRunVolumeChartData(
   data: ObservabilityMetricsResponse | null | undefined
 ): BarChartDatum[] {
   return topByValue(
     data?.by_provider_model ?? [],
     (r) => r.runs_total,
     (r) => `${r.provider_name ?? '—'} / ${r.model_name ?? '—'}`,
-    (r, i) => `rel-${r.provider_name ?? ''}-${r.model_name ?? ''}-${i}`,
+    (r, i) => `vol-${r.provider_name ?? ''}-${r.model_name ?? ''}-${i}`,
     (v) => formatMetricValue(v, 'integer')
   );
 }

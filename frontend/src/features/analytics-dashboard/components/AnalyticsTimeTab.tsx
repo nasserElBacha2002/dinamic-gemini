@@ -27,12 +27,13 @@ export interface AnalyticsTimeTabProps {
   isLoading: boolean;
 }
 
-export function AnalyticsTimeTab({ analytics, observability }: AnalyticsTimeTabProps) {
+export function AnalyticsTimeTab({ analytics, observability, isLoading }: AnalyticsTimeTabProps) {
   const { t } = useTranslation();
   const { summary, trends, inventoryPerformance } = analytics;
 
   const trendPoints = trends?.reviewed_results_over_time ?? [];
   const emptyText = t('analyticsDashboard.visual.emptyChart');
+  const loadingText = t('analyticsDashboard.visual.loadingChart');
   const processingByInv = useMemo(
     () => buildProcessingTimeByInventoryData(inventoryPerformance?.items ?? []),
     [inventoryPerformance?.items]
@@ -44,7 +45,9 @@ export function AnalyticsTimeTab({ analytics, observability }: AnalyticsTimeTabP
         <Grid item xs={12} md={6}>
           <AnalyticsChartCard
             title={t('analyticsDashboard.visual.processingTimeByInventory')}
-            empty={!processingByInv.length}
+            loading={isLoading}
+            loadingText={loadingText}
+            empty={!isLoading && !processingByInv.length}
             emptyText={emptyText}
             data-testid="analytics-time-chart-inventory"
           >
@@ -52,6 +55,7 @@ export function AnalyticsTimeTab({ analytics, observability }: AnalyticsTimeTabP
               data={processingByInv}
               emptyText={emptyText}
               barColor="secondary.main"
+              ariaLabel={t('analyticsDashboard.visual.processingTimeByInventory')}
               data-testid="analytics-time-chart-inventory-bars"
             />
           </AnalyticsChartCard>
