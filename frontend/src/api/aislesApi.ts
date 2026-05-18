@@ -125,3 +125,20 @@ export async function exportAisleResultsCsv(
     fallbackFilename: `inventory_${inventoryId}_aisle_${aisleId}_results.csv`,
   });
 }
+
+/** Business-profile aisle operational CSV (Spanish headers, readable columns). */
+export async function exportAisleOperationalCsv(
+  inventoryId: string,
+  aisleId: string,
+  options?: { jobId?: string | null }
+): Promise<void> {
+  const params = new URLSearchParams({ format: 'csv', profile: 'business' });
+  const jid = options?.jobId?.trim();
+  if (jid) {
+    params.set('job_id', jid);
+  }
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/export?${params}`;
+  return apiDownloadBlob(path, {
+    fallbackFilename: `inventory_${inventoryId}_aisle_${aisleId}_operational.csv`,
+  });
+}

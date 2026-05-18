@@ -10,7 +10,9 @@
 export type { InventoriesListQuery } from './inventoriesApi';
 export {
   createInventory,
+  exportInventoryPackageZip,
   exportInventoryResultsCsv,
+  exportInventorySummaryCsv,
   getInventories,
   getInventory,
   getInventoryMetrics,
@@ -18,6 +20,7 @@ export {
 export type { AislesListQuery } from './aislesApi';
 export {
   createAisle,
+  exportAisleOperationalCsv,
   exportAisleResultsCsv,
   getAisles,
   getAisleMergeResults,

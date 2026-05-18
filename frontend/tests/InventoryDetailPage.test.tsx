@@ -79,6 +79,8 @@ vi.mock('../src/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/api/client')>();
   return {
     ...actual,
+    exportInventorySummaryCsv: vi.fn(),
+    exportInventoryPackageZip: vi.fn(),
     exportInventoryResultsCsv: vi.fn(),
     downloadExecutionLogTxt: vi.fn().mockResolvedValue(undefined),
     downloadAisleExecutionLogTxt: vi.fn().mockResolvedValue(undefined),

@@ -23,6 +23,7 @@ from src.api.dependencies import (
     get_create_aisle_use_case,
     get_export_aisle_benchmark_compare_csv_use_case,
     get_export_aisle_benchmark_run_csv_use_case,
+    get_export_aisle_business_csv_use_case,
     get_export_aisle_results_csv_use_case,
     get_get_aisle_merge_results_use_case,
     get_get_aisle_processing_status_use_case,
@@ -106,6 +107,7 @@ from src.application.use_cases.export_aisle_benchmark import (
     ExportAisleBenchmarkRunCommand,
     ExportAisleBenchmarkRunCsvUseCase,
 )
+from src.application.use_cases.export_inventory_business import ExportAisleBusinessCsvUseCase
 from src.application.use_cases.export_inventory_results import ExportAisleResultsCsvUseCase
 from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsCommand,
@@ -723,6 +725,10 @@ def export_aisle_results_csv(
     inventory_id: str,
     aisle_id: str,
     export_format: str = Query("csv", alias="format", description="Only csv supported."),
+    profile: str = Query(
+        "legacy",
+        description="Export column profile: legacy (default, unchanged) or business (Spanish headers).",
+    ),
     technical: bool = Query(
         False,
         description="When true, export the technical snapshot CSV (same contract as inventory export).",
@@ -735,6 +741,7 @@ def export_aisle_results_csv(
         ),
     ),
     use_case: ExportAisleResultsCsvUseCase = Depends(get_export_aisle_results_csv_use_case),
+    business_use_case: ExportAisleBusinessCsvUseCase = Depends(get_export_aisle_business_csv_use_case),
 ) -> Response:
     """Download this aisle's consolidated results CSV — **same columns and slice rules** as GET …/positions.
 
@@ -743,18 +750,31 @@ def export_aisle_results_csv(
     """
     if (export_format or "").strip().lower() != "csv":
         raise HTTPException(status_code=422, detail=HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED)
+    prof = (profile or "legacy").strip().lower()
+    jid = job_id.strip() if job_id and str(job_id).strip() else None
     try:
-        body = use_case.execute_csv(
-            inventory_id,
-            aisle_id,
-            job_id=job_id.strip() if job_id and str(job_id).strip() else None,
-            technical=technical,
-        )
+        if prof == "business" and not technical:
+            body, fname = business_use_case.execute_csv(
+                inventory_id,
+                aisle_id,
+                job_id=jid,
+            )
+        elif prof in ("legacy", ""):
+            body = use_case.execute_csv(
+                inventory_id,
+                aisle_id,
+                job_id=jid,
+                technical=technical,
+            )
+            suffix = "technical" if technical else "results"
+            fname = f"inventory_{inventory_id}_aisle_{aisle_id}_{suffix}.csv"
+        else:
+            raise HTTPException(status_code=422, detail="profile must be legacy or business")
+    except HTTPException:
+        raise
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    suffix = "technical" if technical else "results"
-    fname = f"inventory_{inventory_id}_aisle_{aisle_id}_{suffix}.csv"
     return Response(
         content=body.encode("utf-8"),
         media_type="text/csv; charset=utf-8",

@@ -9,7 +9,7 @@ import { useParams, useNavigate, useLocation, useSearchParams } from 'react-rout
 import { Alert, Box, Button, Tooltip, Typography } from '@mui/material';
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
 import ImageSearchOutlinedIcon from '@mui/icons-material/ImageSearchOutlined';
-import { exportAisleResultsCsv, getAisleMergeResults, type AislePositionsListQuery } from '../api/client';
+import { exportAisleOperationalCsv, getAisleMergeResults, type AislePositionsListQuery } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 import { canonicalizeOptionalId } from '../api/queryParamCanonicalization';
 import { recordExplicitRefreshObs, summarizeQueryKey } from '../dev/cacheMutationObservability';
@@ -607,7 +607,7 @@ export default function AislePositionsPage() {
             if (!inventoryId || !aisleId) return;
             setExportingCsv(true);
             try {
-              await exportAisleResultsCsv(inventoryId, aisleId, {
+              await exportAisleOperationalCsv(inventoryId, aisleId, {
                 jobId: pickedRunJobId ?? jobIdParam,
               });
             } catch (e) {

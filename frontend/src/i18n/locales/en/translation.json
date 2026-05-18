@@ -600,7 +600,10 @@
     "primary_config_summary": "Primary config summary",
     "primary_config_title": "Primary config title",
     "processing_mode_production": "Processing mode production",
-    "processing_mode_test": "Processing mode test"
+    "processing_mode_test": "Processing mode test",
+    "export_menu": "Export",
+    "export_summary": "Inventory summary",
+    "export_package_zip": "Full inventory (.zip)"
   },
   "jobs": {
     "attempt_number": "Attempt number",
@@ -660,6 +663,7 @@
     "counted_items": "Counted items: {{count}}",
     "empty_results": "Empty results",
     "export_aisle_csv": "Export aisle csv",
+    "export_aisle_operational": "Export aisle operational",
     "filter_sku_placeholder": "Filter sku placeholder",
     "loading_results": "Loading results",
     "merge_examples_paren": " ({{list}})",

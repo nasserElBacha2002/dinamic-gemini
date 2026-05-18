@@ -46,10 +46,25 @@ export async function getInventoryMetrics(inventoryId: string): Promise<Inventor
   return apiRequestJson<InventoryMetrics>(`${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/metrics`);
 }
 
+/** Legacy flat CSV (all aisles, English snake_case columns). */
 export async function exportInventoryResultsCsv(inventoryId: string): Promise<void> {
   const path = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/export?format=csv`;
   return apiDownloadBlob(path, {
     fallbackFilename: `inventory_${inventoryId}_results.csv`,
+  });
+}
+
+export async function exportInventorySummaryCsv(inventoryId: string): Promise<void> {
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/export/summary?level=inventory`;
+  return apiDownloadBlob(path, {
+    fallbackFilename: `inventory_${inventoryId}_summary.csv`,
+  });
+}
+
+export async function exportInventoryPackageZip(inventoryId: string): Promise<void> {
+  const path = `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/export/package`;
+  return apiDownloadBlob(path, {
+    fallbackFilename: `inventory_${inventoryId}_export.zip`,
   });
 }
 

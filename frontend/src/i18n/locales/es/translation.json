@@ -619,7 +619,10 @@
     "column_aisle_supplier": "Proveedor del pasillo",
     "aisle_no_supplier": "Sin proveedor asignado",
     "aisle_supplier_assigned_no_nav": "Proveedor asignado (asociá un cliente al inventario para abrir la ficha)",
-    "aisle_supplier_view_link": "Ver proveedor"
+    "aisle_supplier_view_link": "Ver proveedor",
+    "export_menu": "Exportar",
+    "export_summary": "Resumen del inventario",
+    "export_package_zip": "Inventario completo (.zip)"
   },
   "clients": {
     "breadcrumb_list": "Clientes",
@@ -1085,6 +1088,7 @@
     "counted_items": "Ítems contados: {{count}}",
     "empty_results": "Sin resultados",
     "export_aisle_csv": "Exportar CSV del pasillo",
+    "export_aisle_operational": "Exportar pasillo operativo",
     "filter_sku_placeholder": "Filtrar por SKU...",
     "loading_results": "Cargando resultados",
     "merge_examples_paren": " ({{list}})",
