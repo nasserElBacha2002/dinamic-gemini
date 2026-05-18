@@ -114,10 +114,6 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
           size="small"
           variant="filled"
         />
-        <TraceabilityChip
-          status={visibleTraceabilityToApiStatus(result.traceabilityStatus)}
-          size="small"
-        />
         {hasImageMismatchEvidenceIssue(result.reviewStatus) ? (
           <StatusChip
             label={getImageMismatchEvidenceLabel(true)}
@@ -125,7 +121,12 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
             size="small"
             variant="outlined"
           />
-        ) : null}
+        ) : (
+          <TraceabilityChip
+            status={visibleTraceabilityToApiStatus(result.traceabilityStatus)}
+            size="small"
+          />
+        )}
         <StatusChip
           label={t('results.summary_confidence_value', { value: confidenceStr })}
           variant="outlined"

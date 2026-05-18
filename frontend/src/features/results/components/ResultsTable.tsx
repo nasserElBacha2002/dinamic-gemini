@@ -5,7 +5,7 @@
 import { useMemo } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { Box, Button, Typography } from '@mui/material';
+import { Button, Typography } from '@mui/material';
 import i18n from '../../../i18n';
 import type { ResultSummary } from '../types';
 import {
@@ -172,21 +172,21 @@ export function buildResultsTableColumns(params: {
           : r.traceabilityStatus,
       cell: (r) => {
         const imageMismatch = hasImageMismatchEvidenceIssue(r.reviewStatus);
-        return (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: 'flex-start' }}>
-            <TraceabilityChip
-              status={visibleTraceabilityToApiStatus(r.traceabilityStatus)}
-              size="small"
+        if (imageMismatch) {
+          return (
+            <StatusBadge
+              label={getImageMismatchEvidenceLabel()}
+              semantic="warning"
               variant="outlined"
             />
-            {imageMismatch ? (
-              <StatusBadge
-                label={getImageMismatchEvidenceLabel()}
-                semantic="warning"
-                variant="outlined"
-              />
-            ) : null}
-          </Box>
+          );
+        }
+        return (
+          <TraceabilityChip
+            status={visibleTraceabilityToApiStatus(r.traceabilityStatus)}
+            size="small"
+            variant="outlined"
+          />
         );
       },
     },
