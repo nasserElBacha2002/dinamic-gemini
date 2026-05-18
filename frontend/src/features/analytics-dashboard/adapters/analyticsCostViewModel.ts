@@ -22,6 +22,10 @@ function unavailableCard(label: string, t: TFunction, description?: string): Met
   };
 }
 
+function isValidNumber(value: number | null | undefined): value is number {
+  return value != null && Number.isFinite(value);
+}
+
 function numericCard(
   label: string,
   value: number | null | undefined,
@@ -29,7 +33,7 @@ function numericCard(
   t: TFunction,
   description?: string
 ): MetricCardModel {
-  if (value == null || Number.isNaN(value)) {
+  if (!isValidNumber(value)) {
     return unavailableCard(label, t, description);
   }
   return {
@@ -104,17 +108,29 @@ export function formatCostCell(
   kind: 'cost' | 'quantity' | 'costPerUnit' | 'duration',
   t: TFunction
 ): string {
-  if (value == null || Number.isNaN(value)) {
+  if (!isValidNumber(value)) {
     return t('analyticsDashboard.costs.notAvailable');
   }
   return formatMetricValue(value, kind);
+}
+
+export function formatCostCellWithLoading(
+  isLoading: boolean,
+  value: number | null | undefined,
+  kind: 'cost' | 'quantity' | 'costPerUnit' | 'duration',
+  t: TFunction
+): string {
+  if (isLoading) {
+    return t('analyticsDashboard.costs.loading');
+  }
+  return formatCostCell(value, kind, t);
 }
 
 export function formatProviderUnitCost(
   value: number | null | undefined,
   t: TFunction
 ): { display: string; helper?: string } {
-  if (value == null || Number.isNaN(value)) {
+  if (!isValidNumber(value)) {
     return {
       display: t('analyticsDashboard.costs.notAvailable'),
       helper: t('analyticsDashboard.costs.providerUnitCostUnavailable'),
@@ -123,8 +139,25 @@ export function formatProviderUnitCost(
   return { display: formatMetricValue(value, 'costPerUnit') };
 }
 
-export function isCostSummaryEmpty(data: AnalyticsCostSummaryResponse | null | undefined): boolean {
-  return (data?.totals.jobs_total ?? 0) === 0;
+export type CostSummaryEmptyKind = 'no_jobs' | 'no_cost_snapshots';
+
+export function getCostSummaryEmptyKind(
+  data: AnalyticsCostSummaryResponse | null | undefined
+): CostSummaryEmptyKind | null {
+  const totals = data?.totals;
+  if (!totals) return null;
+  if (totals.jobs_total === 0) return 'no_jobs';
+  if (totals.jobs_with_cost === 0) return 'no_cost_snapshots';
+  return null;
+}
+
+export function costSummaryEmptyMessage(
+  kind: CostSummaryEmptyKind,
+  t: TFunction
+): string {
+  return kind === 'no_jobs'
+    ? t('analyticsDashboard.costs.emptyNoJobs')
+    : t('analyticsDashboard.costs.emptyNoCostSnapshots');
 }
 
 export function hasCostData(data: AnalyticsCostSummaryResponse | null | undefined): boolean {

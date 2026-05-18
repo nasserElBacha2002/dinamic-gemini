@@ -139,7 +139,7 @@ export default function AnalyticsDashboardPage() {
         </Alert>
       ) : null}
 
-      {analyticsError && observabilityError && costSummaryError ? (
+      {analyticsError && observabilityError ? (
         <ErrorAlert error={analyticsError} context="analytics" onRetry={() => refetchAll()} />
       ) : null}
 
@@ -172,6 +172,7 @@ export default function AnalyticsDashboardPage() {
           analytics={analytics}
           costSummary={costSummary.data}
           isLoading={isAnalyticsLoading}
+          isCostLoading={isCostSummaryLoading}
           inventoryProcessingModeById={inventoryProcessingModeById}
         />
       ) : null}
@@ -181,6 +182,7 @@ export default function AnalyticsDashboardPage() {
           analytics={analytics}
           costSummary={costSummary.data}
           isLoading={isAnalyticsLoading}
+          isCostLoading={isCostSummaryLoading}
           inventoryProcessingModeById={inventoryProcessingModeById}
         />
       ) : null}

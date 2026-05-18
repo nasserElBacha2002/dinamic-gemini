@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Paper,
@@ -6,11 +7,17 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import type { AnalyticsCostSummaryResponse, ObservabilityMetricsResponse } from '../../../api/types';
 import { AnalyticsSectionCard } from './AnalyticsSectionCard';
-import { formatCostCell, formatProviderUnitCost } from '../adapters/analyticsCostViewModel';
+import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
+import {
+  buildCostWarnings,
+  formatCostCell,
+  formatProviderUnitCost,
+} from '../adapters/analyticsCostViewModel';
 
 export interface AnalyticsProvidersTabProps {
   observability: ObservabilityMetricsResponse | null | undefined;
@@ -18,7 +25,7 @@ export interface AnalyticsProvidersTabProps {
 }
 
 function pctLabel(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) return '—';
+  if (value == null || !Number.isFinite(value)) return '—';
   return `${(value * 100).toFixed(1)} %`;
 }
 
@@ -26,6 +33,7 @@ export function AnalyticsProvidersTab({ observability, costSummary }: AnalyticsP
   const { t } = useTranslation();
   const rows = observability?.by_provider_model ?? [];
   const costRows = costSummary?.by_provider_model ?? [];
+  const costWarnings = useMemo(() => buildCostWarnings(costSummary, t), [costSummary, t]);
 
   return (
     <>
@@ -71,6 +79,10 @@ export function AnalyticsProvidersTab({ observability, costSummary }: AnalyticsP
         title={t('analyticsDashboard.costs.byProviderModelTitle')}
         subtitle={t('analyticsDashboard.compare.notRecommendation')}
       >
+        {costWarnings.length > 0 ? <AnalyticsCostWarningsBlock warnings={costWarnings} compact /> : null}
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+          {t('analyticsDashboard.costs.columnsContext')}
+        </Typography>
         <Paper variant="outlined">
           <Table size="small" data-testid="analytics-providers-cost-table">
             <TableHead>
@@ -93,7 +105,15 @@ export function AnalyticsProvidersTab({ observability, costSummary }: AnalyticsP
                     <TableCell align="right">{row.jobs_total}</TableCell>
                     <TableCell align="right">{row.jobs_with_cost}</TableCell>
                     <TableCell align="right">{formatCostCell(row.total_cost, 'cost', t)}</TableCell>
-                    <TableCell align="right">{unit.display}</TableCell>
+                    <TableCell align="right">
+                      {unit.helper ? (
+                        <Tooltip title={unit.helper}>
+                          <span>{unit.display}</span>
+                        </Tooltip>
+                      ) : (
+                        unit.display
+                      )}
+                    </TableCell>
                   </TableRow>
                 );
               })}
@@ -102,7 +122,7 @@ export function AnalyticsProvidersTab({ observability, costSummary }: AnalyticsP
         </Paper>
         {!costRows.length ? (
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            {t('analyticsDashboard.costs.empty')}
+            {t('analyticsDashboard.costs.emptyNoJobs')}
           </Typography>
         ) : null}
       </AnalyticsSectionCard>

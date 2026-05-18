@@ -8,7 +8,12 @@ import { paginateRows } from '../../analytics/adapters/metricsFormatters';
 import type { AnalyticsCostSummaryResponse } from '../../../api/types';
 import type { AisleIssueRow } from '../../analytics/types';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
-import { buildCostByAisleLookup, formatCostCell } from '../adapters/analyticsCostViewModel';
+import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
+import {
+  buildCostByAisleLookup,
+  buildCostWarnings,
+  formatCostCellWithLoading,
+} from '../adapters/analyticsCostViewModel';
 import { compareEligibilityTooltipKey, getCompareEligibility } from '../types';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
@@ -17,6 +22,7 @@ export interface AnalyticsAislesTabProps {
   analytics: AnalyticsBundle;
   costSummary: AnalyticsCostSummaryResponse | null | undefined;
   isLoading: boolean;
+  isCostLoading: boolean;
   inventoryProcessingModeById: ReadonlyMap<string, string | undefined>;
 }
 
@@ -24,6 +30,7 @@ export function AnalyticsAislesTab({
   analytics,
   costSummary,
   isLoading,
+  isCostLoading,
   inventoryProcessingModeById,
 }: AnalyticsAislesTabProps) {
   const { t } = useTranslation();
@@ -34,6 +41,7 @@ export function AnalyticsAislesTab({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const costByAisle = useMemo(() => buildCostByAisleLookup(costSummary), [costSummary]);
+  const costWarnings = useMemo(() => buildCostWarnings(costSummary, t), [costSummary, t]);
 
   const columns = useMemo<DataTableColumn<AisleIssueRow>[]>(
     () => [
@@ -91,25 +99,35 @@ export function AnalyticsAislesTab({
         id: 'total_cost',
         label: t('analyticsDashboard.costs.totalCost'),
         align: 'right',
-        sortable: true,
-        sortType: 'number',
-        sortAccessor: (r) => costByAisle.get(r.aisle_id)?.total_cost ?? -1,
-        cell: (r) => formatCostCell(costByAisle.get(r.aisle_id)?.total_cost, 'cost', t),
+        sortable: false,
+        cell: (r) =>
+          formatCostCellWithLoading(isCostLoading, costByAisle.get(r.aisle_id)?.total_cost, 'cost', t),
       },
       {
         id: 'counted_qty',
         label: t('analyticsDashboard.costs.totalQuantity'),
         align: 'right',
-        sortable: true,
-        sortType: 'number',
-        sortAccessor: (r) => costByAisle.get(r.aisle_id)?.total_counted_quantity ?? -1,
-        cell: (r) => formatCostCell(costByAisle.get(r.aisle_id)?.total_counted_quantity, 'quantity', t),
+        sortable: false,
+        cell: (r) =>
+          formatCostCellWithLoading(
+            isCostLoading,
+            costByAisle.get(r.aisle_id)?.total_counted_quantity,
+            'quantity',
+            t
+          ),
       },
       {
         id: 'cost_per_unit',
         label: t('analyticsDashboard.costs.costPerUnit'),
         align: 'right',
-        cell: (r) => formatCostCell(costByAisle.get(r.aisle_id)?.cost_per_counted_unit, 'costPerUnit', t),
+        sortable: false,
+        cell: (r) =>
+          formatCostCellWithLoading(
+            isCostLoading,
+            costByAisle.get(r.aisle_id)?.cost_per_counted_unit,
+            'costPerUnit',
+            t
+          ),
       },
       {
         id: 'actions',
@@ -138,7 +156,7 @@ export function AnalyticsAislesTab({
         },
       },
     ],
-    [costByAisle, inventoryProcessingModeById, navigate, t]
+    [costByAisle, inventoryProcessingModeById, isCostLoading, navigate, t]
   );
 
   const rowsSorted = useMemo(
@@ -149,6 +167,10 @@ export function AnalyticsAislesTab({
 
   return (
     <Box data-testid="analytics-aisles-table">
+      {costWarnings.length > 0 ? <AnalyticsCostWarningsBlock warnings={costWarnings} compact /> : null}
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+        {t('analyticsDashboard.costs.columnsContext')}
+      </Typography>
       <DataTable<AisleIssueRow>
         rows={rowsPaged}
         rowKey={(r) => `${r.inventory_id}-${r.aisle_id}`}

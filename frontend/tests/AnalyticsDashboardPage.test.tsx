@@ -309,10 +309,13 @@ describe('AnalyticsDashboardPage', () => {
   it('renders overview cost KPIs when cost summary is available', () => {
     renderPage();
     expect(screen.getByText('Costo total')).toBeInTheDocument();
-    expect(screen.getByText('US$ 24.82')).toBeInTheDocument();
+    expect(screen.getByText(/24[,.]82/)).toBeInTheDocument();
     expect(screen.getByText(/1[,.]250/)).toBeInTheDocument();
     expect(screen.getByText('Jobs con costo')).toBeInTheDocument();
     expect(screen.getByText('Jobs sin costo')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('analytics-cost-warning-PROVIDER_MODEL_UNIT_COST_NOT_AVAILABLE')
+    ).toBeInTheDocument();
   });
 
   it('shows unavailable state for global cost metrics when cost summary missing', () => {
@@ -453,7 +456,7 @@ describe('AnalyticsDashboardPage', () => {
     expect(within(costsTab).getByText('No se pudieron cargar las métricas de costos.')).toBeInTheDocument();
   });
 
-  it('shows empty state when jobs_total is zero', () => {
+  it('shows empty state when jobs_total is zero and keeps compare CTA', () => {
     setupMocksWithDashboardData({
       costSummary: {
         data: {
@@ -468,17 +471,57 @@ describe('AnalyticsDashboardPage', () => {
     });
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-costs'));
-    expect(screen.getByTestId('analytics-costs-empty')).toHaveTextContent(
-      /No hay jobs con costos/i
-    );
+    expect(screen.getByTestId('analytics-costs-empty')).toHaveTextContent(/No hay jobs en el alcance/i);
+    expect(screen.getByTestId('analytics-costs-go-compare')).toBeInTheDocument();
   });
 
-  it('providers tab shows separate cost by provider/model section', () => {
+  it('shows distinct empty state when jobs exist but none have cost snapshots', () => {
+    setupMocksWithDashboardData({
+      costSummary: {
+        data: {
+          ...costSummaryData,
+          totals: { ...costSummaryData.totals, jobs_total: 5, jobs_with_cost: 0, jobs_without_cost: 5 },
+        },
+        isLoading: false,
+        isError: false,
+        error: null,
+        refetch: vi.fn(),
+      },
+    });
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-tab-costs'));
+    expect(screen.getByTestId('analytics-costs-empty')).toHaveTextContent(/ninguno tiene snapshot/i);
+    expect(screen.getByTestId('analytics-costs-go-compare')).toBeInTheDocument();
+  });
+
+  it('shows global ErrorAlert when analytics and observability fail even if cost succeeds', () => {
+    setupMocksWithDashboardData({
+      analyticsError: new Error('analytics failed'),
+      observabilityError: new Error('observability failed'),
+      analytics: { ...analyticsLoaded, isError: true, summary: undefined },
+      observability: { data: undefined, isLoading: false, isError: true, error: new Error('observability failed'), refetch: vi.fn() },
+      costSummaryError: null,
+    });
+    renderPage();
+    expect(screen.getByText('No se pudieron cargar las métricas')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-partial-cost-failed')).not.toBeInTheDocument();
+  });
+
+  it('shows Cargando in inventory cost cells while cost summary loads', () => {
+    setupMocksWithDashboardData({ isCostSummaryLoading: true, costSummary: { data: undefined, isLoading: true, isError: false, error: null, refetch: vi.fn() } });
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-tab-inventories'));
+    expect(screen.getAllByText('Cargando…').length).toBeGreaterThan(0);
+  });
+
+  it('providers tab shows separate cost by provider/model section with tooltip on null unit cost', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-providers'));
     expect(screen.getByTestId('analytics-providers-cost-table')).toBeInTheDocument();
     const costTable = screen.getByTestId('analytics-providers-cost-table');
-    expect(within(costTable).getByText('US$ 24.82')).toBeInTheDocument();
+    expect(within(costTable).getByText(/24[,.]82/)).toBeInTheDocument();
+    expect(within(costTable).getAllByText('No disponible').length).toBeGreaterThan(0);
   });
 
   it('costs tab links to compare section', () => {

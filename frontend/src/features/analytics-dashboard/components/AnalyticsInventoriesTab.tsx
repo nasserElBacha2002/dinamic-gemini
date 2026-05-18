@@ -10,7 +10,12 @@ import { sortInventoryRows } from '../../analytics/adapters/metricsViewModel';
 import type { AnalyticsCostSummaryResponse } from '../../../api/types';
 import type { InventoryPerformanceRow } from '../../analytics/types';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
-import { buildCostByInventoryLookup, formatCostCell } from '../adapters/analyticsCostViewModel';
+import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
+import {
+  buildCostByInventoryLookup,
+  buildCostWarnings,
+  formatCostCellWithLoading,
+} from '../adapters/analyticsCostViewModel';
 import { compareEligibilityTooltipKey, getCompareEligibility } from '../types';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
@@ -19,6 +24,7 @@ export interface AnalyticsInventoriesTabProps {
   analytics: AnalyticsBundle;
   costSummary: AnalyticsCostSummaryResponse | null | undefined;
   isLoading: boolean;
+  isCostLoading: boolean;
   inventoryProcessingModeById: ReadonlyMap<string, string | undefined>;
 }
 
@@ -26,6 +32,7 @@ export function AnalyticsInventoriesTab({
   analytics,
   costSummary,
   isLoading,
+  isCostLoading,
   inventoryProcessingModeById,
 }: AnalyticsInventoriesTabProps) {
   const { t } = useTranslation();
@@ -37,6 +44,7 @@ export function AnalyticsInventoriesTab({
 
   const hasUnidentified = analytics.summary?.unidentified_product_rate != null;
   const costByInventory = useMemo(() => buildCostByInventoryLookup(costSummary), [costSummary]);
+  const costWarnings = useMemo(() => buildCostWarnings(costSummary, t), [costSummary, t]);
 
   const rowsSorted = useMemo(
     () => sortInventoryRows(analytics.inventoryPerformance?.items ?? [], sortBy, sortDir),
@@ -105,19 +113,40 @@ export function AnalyticsInventoriesTab({
         id: 'total_cost',
         label: t('analyticsDashboard.costs.totalCost'),
         align: 'right',
-        cell: (r) => formatCostCell(costByInventory.get(r.inventory_id)?.total_cost, 'cost', t),
+        sortable: false,
+        cell: (r) =>
+          formatCostCellWithLoading(
+            isCostLoading,
+            costByInventory.get(r.inventory_id)?.total_cost,
+            'cost',
+            t
+          ),
       },
       {
         id: 'counted_qty',
         label: t('analyticsDashboard.costs.totalQuantity'),
         align: 'right',
-        cell: (r) => formatCostCell(costByInventory.get(r.inventory_id)?.total_counted_quantity, 'quantity', t),
+        sortable: false,
+        cell: (r) =>
+          formatCostCellWithLoading(
+            isCostLoading,
+            costByInventory.get(r.inventory_id)?.total_counted_quantity,
+            'quantity',
+            t
+          ),
       },
       {
         id: 'cost_per_unit',
         label: t('analyticsDashboard.costs.costPerUnit'),
         align: 'right',
-        cell: (r) => formatCostCell(costByInventory.get(r.inventory_id)?.cost_per_counted_unit, 'costPerUnit', t),
+        sortable: false,
+        cell: (r) =>
+          formatCostCellWithLoading(
+            isCostLoading,
+            costByInventory.get(r.inventory_id)?.cost_per_counted_unit,
+            'costPerUnit',
+            t
+          ),
       },
       {
         id: 'actions',
@@ -149,11 +178,15 @@ export function AnalyticsInventoriesTab({
         },
       },
     ],
-    [costByInventory, hasUnidentified, inventoryProcessingModeById, navigate, t]
+    [costByInventory, hasUnidentified, inventoryProcessingModeById, isCostLoading, navigate, t]
   );
 
   return (
     <Box data-testid="analytics-inventories-table">
+      {costWarnings.length > 0 ? <AnalyticsCostWarningsBlock warnings={costWarnings} compact /> : null}
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+        {t('analyticsDashboard.costs.columnsContext')}
+      </Typography>
       <DataTable<InventoryPerformanceRow>
         rows={rowsPaged}
         rowKey={(r) => r.inventory_id}

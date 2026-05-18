@@ -12,7 +12,8 @@ import {
   buildUnavailableGlobalCostKpis,
   hasUnidentifiedProductRate,
 } from '../adapters/analyticsDashboardViewModel';
-import { buildOverviewCostKpis, hasCostData } from '../adapters/analyticsCostViewModel';
+import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
+import { buildCostWarnings, buildOverviewCostKpis, hasCostData } from '../adapters/analyticsCostViewModel';
 
 export interface AnalyticsOverviewTabProps {
   summary: AnalyticsSummaryResponse | null | undefined;
@@ -49,6 +50,7 @@ export function AnalyticsOverviewTab({
   }, [costSummary, isCostSummaryError, isCostSummaryLoading, t]);
 
   const costHasData = hasCostData(costSummary) && !isCostSummaryError;
+  const costWarnings = useMemo(() => buildCostWarnings(costSummary, t), [costSummary, t]);
 
   return (
     <Box>
@@ -81,6 +83,9 @@ export function AnalyticsOverviewTab({
             : t('analyticsDashboard.costs.unavailableExplain')
         }
       >
+        {costHasData && costWarnings.length > 0 ? (
+          <AnalyticsCostWarningsBlock warnings={costWarnings} compact />
+        ) : null}
         <AnalyticsKpiGrid
           cards={costKpis}
           isLoading={isCostSummaryLoading}

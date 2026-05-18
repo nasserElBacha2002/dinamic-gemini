@@ -1,34 +1,39 @@
 import type { TFunction } from 'i18next';
 
+/** LLM snapshot amounts; backend does not expose a currency code — show neutral numeric values. */
+function isValidNumber(value: number | null | undefined): value is number {
+  return value != null && Number.isFinite(value);
+}
+
 export function formatLlmCostAmount(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) {
+  if (!isValidNumber(value)) {
     return '—';
   }
-  return `US$ ${value.toLocaleString(undefined, {
+  return value.toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 4,
-  })}`;
+  });
 }
 
 export function formatCountedQuantity(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) {
+  if (!isValidNumber(value)) {
     return '—';
   }
   return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
 export function formatCostPerUnit(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) {
+  if (!isValidNumber(value)) {
     return '—';
   }
-  return `US$ ${value.toLocaleString(undefined, {
+  return value.toLocaleString(undefined, {
     minimumFractionDigits: 4,
     maximumFractionDigits: 6,
-  })}`;
+  });
 }
 
 export function formatExecutionSeconds(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) {
+  if (!isValidNumber(value)) {
     return '—';
   }
   if (value < 60) {
@@ -54,8 +59,8 @@ export function formatMetricValue(
       return formatExecutionSeconds(value);
     case 'integer':
     default:
-      if (value == null || Number.isNaN(value)) return '—';
-      return String(value);
+      if (!isValidNumber(value)) return '—';
+      return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
   }
 }
 
