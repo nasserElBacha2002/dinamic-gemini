@@ -54,7 +54,7 @@ def test_anthropic_sdk_adapter_not_configured_without_api_key() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -84,7 +84,7 @@ def test_anthropic_sdk_adapter_accepts_prose_prefix_before_json_object() -> None
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -114,7 +114,7 @@ def test_anthropic_sdk_adapter_uses_job_model_from_metadata() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="Analyze these aisle images.",
         schema_version="v2.1",
         metadata={"claude_model_name": "claude-3-5-sonnet-20241022"},
@@ -150,7 +150,7 @@ def test_anthropic_sdk_adapter_maps_schema_invalid() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -178,7 +178,7 @@ def test_anthropic_sdk_adapter_empty_text_blocks_yield_invalid_json() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -207,7 +207,7 @@ def test_anthropic_sdk_adapter_maps_invalid_json() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -351,7 +351,7 @@ def test_anthropic_retries_529_then_succeeds() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -389,7 +389,7 @@ def test_anthropic_retries_429_then_succeeds() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -418,7 +418,7 @@ def test_anthropic_exhausts_retries_on_529_raises_provider_overloaded() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -449,7 +449,7 @@ def test_anthropic_exhausts_retries_on_429_raises_rate_limit() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -479,7 +479,7 @@ def test_anthropic_max_retries_one_single_call_no_sleep_on_overload() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -505,7 +505,7 @@ def test_anthropic_auth_error_not_retried() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -538,7 +538,7 @@ def test_anthropic_adapter_default_prompt_includes_claude_contract_and_json_suff
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="",
         schema_version="v2.1",
         metadata={},

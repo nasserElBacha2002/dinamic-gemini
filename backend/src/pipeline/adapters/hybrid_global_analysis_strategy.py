@@ -37,6 +37,15 @@ from src.llm.prompt_composer.prompt_traceability import (
     sha256_utf8,
 )
 from src.llm.types import ContextImageSequence, LLMRequest
+from src.llm.vision_multimodal_payload import (
+    LLM_METADATA_KEY_FRAMES_SENT_IDS,
+    LLM_METADATA_KEY_MULTIMODAL_ORDER,
+    LLM_METADATA_KEY_PROMPT_LISTED_IMAGE_IDS,
+    LLM_METADATA_KEY_REFERENCE_IMAGE_IDS,
+    MULTIMODAL_ORDER_STATUS_PENDING,
+    traceability_metadata_payload,
+    validate_primary_frame_refs,
+)
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.contracts.analysis_context import AnalysisContext
 from src.pipeline.ports.analysis_provider import (
@@ -221,7 +230,10 @@ class HybridGlobalAnalysisStrategy:
         executor = resolved_exec.executor
         resolved_key = resolved_exec.normalized_provider_key
 
-        prompt_text, composition_base = build_hybrid_analysis_prompt_with_traceability(run_ctx)
+        prompt_text, composition_base = build_hybrid_analysis_prompt_with_traceability(
+            run_ctx,
+            sent_frame_refs=frame_refs,
+        )
         logger.info(
             "Hybrid analysis prompt built: profile_name=%s hybrid_analysis_prompt=%s job_id=%s",
             composition_base.get("profile_name"),
@@ -242,7 +254,20 @@ class HybridGlobalAnalysisStrategy:
         resolved_reference_ids = vb.resolved_reference_ids
         consumed_count = vb.consumed_count
 
-        req_meta: dict[str, Any] = {**metadata, "run_dir": str(run_ctx.run_dir)}
+        if frames_nd:
+            validate_primary_frame_refs(frames_nd, frame_refs)
+        sent_ids = list(frame_refs)
+        prompt_listed = list(composition_base.get("prompt_listed_image_ids") or sent_ids)
+        req_meta: dict[str, Any] = {
+            **metadata,
+            "run_dir": str(run_ctx.run_dir),
+            **traceability_metadata_payload(
+                frames_sent_ids=sent_ids,
+                prompt_listed_image_ids=prompt_listed,
+                reference_image_ids=resolved_reference_ids,
+                multimodal_order=[],
+            ),
+        }
         jm = getattr(run_ctx, "job_model_name", None)
         rk = (resolved_key or "").strip().lower()
         model_for_meta = apply_job_model_name_to_llm_request_metadata(
@@ -322,6 +347,12 @@ class HybridGlobalAnalysisStrategy:
                 },
                 "primary_evidence_attachments": primary_attachments,
                 "visual_reference_attachments": visual_reference_attachments,
+                "frames_sent_ids": req_meta.get(LLM_METADATA_KEY_FRAMES_SENT_IDS, []),
+                "prompt_listed_image_ids": req_meta.get(
+                    LLM_METADATA_KEY_PROMPT_LISTED_IMAGE_IDS, []
+                ),
+                "reference_image_ids": req_meta.get(LLM_METADATA_KEY_REFERENCE_IMAGE_IDS, []),
+                "multimodal_order_status": MULTIMODAL_ORDER_STATUS_PENDING,
                 "prompt_composition": prompt_composition_summary_for_execution_log(
                     prompt_composition,
                     final_prompt_char_len=len(prompt_text),
@@ -344,10 +375,17 @@ class HybridGlobalAnalysisStrategy:
         try:
             response = executor.execute(request, settings)
             if exec_log:
+                finished_payload: dict[str, Any] = {"provider": response.provider}
+                mm_order = (request.metadata or {}).get(LLM_METADATA_KEY_MULTIMODAL_ORDER)
+                if mm_order:
+                    finished_payload["multimodal_order"] = mm_order
+                    finished_payload["frames_sent_ids"] = (request.metadata or {}).get(
+                        LLM_METADATA_KEY_FRAMES_SENT_IDS, []
+                    )
                 exec_log.info(
                     "AnalysisStage",
                     "Analysis request finished",
-                    payload={"provider": response.provider},
+                    payload=finished_payload,
                 )
             consumed = (
                 self.get_capabilities().supports_visual_reference_context and consumed_count > 0

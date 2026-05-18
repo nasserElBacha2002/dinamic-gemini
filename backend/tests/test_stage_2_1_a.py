@@ -104,7 +104,7 @@ def test_analyzer_v21_count_mismatch_normalized():
     analyzer = GeminiGlobalAnalyzer(mock_client)
     one_frame = [np.zeros((64, 64, 3), dtype=np.uint8)]
 
-    result = analyzer.analyze_video_frames(one_frame)
+    result = analyzer.analyze_video_frames(one_frame, frame_refs=["frame_0"])
 
     assert result["total_entities_detected"] == 4
     assert len(result["entities"]) == 4

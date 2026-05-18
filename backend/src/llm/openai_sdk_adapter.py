@@ -33,9 +33,16 @@ from openai.types.chat import ChatCompletionUserMessageParam
 
 from src.exceptions.global_analysis_exceptions import GlobalAnalysisValidationError
 from src.llm.errors import LLMProviderError
+from src.llm.normalization.model_entity_id import normalize_model_entity_ids
 from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_PARITY_MODE
 from src.llm.types import LLMRequest, LLMResponse
+from src.llm.vision_multimodal_payload import (
+    LLM_METADATA_KEY_MULTIMODAL_ORDER,
+    LLM_METADATA_KEY_REFERENCE_IMAGE_IDS,
+    build_openai_vision_content_parts,
+    materialize_openai_content_parts,
+)
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
 logger = logging.getLogger(__name__)
@@ -260,14 +267,26 @@ def _openai_build_user_content(
         _OPENAI_CANONICAL_ENTITY_KEYS,
     )
 
-    content: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
     ctx_imgs = list(request.context_images) if request.context_images else []
-    for im in ctx_imgs:
-        url = _image_to_data_url(im, max_side)
-        content.append({"type": "image_url", "image_url": {"url": url, "detail": "auto"}})
-    for nd in frames_nd:
-        url = _bgr_to_jpeg_data_url(nd, max_side)
-        content.append({"type": "image_url", "image_url": {"url": url, "detail": "auto"}})
+    ref_ids_raw = meta.get(LLM_METADATA_KEY_REFERENCE_IMAGE_IDS) or []
+    reference_image_ids = (
+        [str(x) for x in ref_ids_raw] if isinstance(ref_ids_raw, list) else []
+    )
+    frame_refs = list(request.frame_refs) if request.frame_refs else []
+    parts, multimodal_order = build_openai_vision_content_parts(
+        main_prompt_text=prompt_text,
+        context_images=ctx_imgs,
+        reference_image_ids=reference_image_ids,
+        primary_frames_nd=frames_nd,
+        frame_refs=frame_refs,
+    )
+    meta[LLM_METADATA_KEY_MULTIMODAL_ORDER] = multimodal_order
+    content = materialize_openai_content_parts(
+        parts,
+        image_to_data_url=_image_to_data_url,
+        bgr_to_data_url=_bgr_to_jpeg_data_url,
+        max_side=max_side,
+    )
     return content
 
 
@@ -345,7 +364,8 @@ def _openai_parse_validate_global_analysis_json(
     *,
     prov: str,
     v: OpenAiCompatibleVendorConfig,
-) -> dict[str, Any]:
+    job_id: str | None = None,
+) -> tuple[dict[str, Any], list[str]]:
     cleaned = _extract_json_text(raw_text)
     try:
         parsed = json.loads(cleaned)
@@ -397,6 +417,20 @@ def _openai_parse_validate_global_analysis_json(
         )
         data["total_entities_detected"] = len(entities)
 
+    data, repair_diagnostics = normalize_model_entity_ids(data)
+    repair_warnings = [d.message for d in repair_diagnostics]
+    if repair_diagnostics:
+        indexes = [d.index for d in repair_diagnostics]
+        logger.warning(
+            "%s response normalization repaired missing/duplicate model_entity_id for %d "
+            "entities (provider=%s job_id=%s indexes=%s)",
+            v.log_label,
+            len(repair_diagnostics),
+            prov,
+            job_id or "",
+            indexes,
+        )
+
     try:
         validate_global_analysis_structure_v21(data)
     except GlobalAnalysisValidationError as e:
@@ -405,7 +439,7 @@ def _openai_parse_validate_global_analysis_json(
             message=str(e),
             details={"provider": prov},
         ) from e
-    return data
+    return data, repair_warnings
 
 
 class OpenAiSdkAdapter:
@@ -473,9 +507,13 @@ class OpenAiSdkAdapter:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(raw_text, encoding="utf-8")
 
-        data = _openai_parse_validate_global_analysis_json(raw_text, prov=prov, v=v)
+        data, repair_warnings = _openai_parse_validate_global_analysis_json(
+            raw_text, prov=prov, v=v, job_id=request.job_id
+        )
 
         usage = _openai_completion_usage_dict(completion)
+        if repair_warnings:
+            usage = {**usage, "model_entity_id_repair_warnings": repair_warnings}
 
         return LLMResponse(
             provider=prov,

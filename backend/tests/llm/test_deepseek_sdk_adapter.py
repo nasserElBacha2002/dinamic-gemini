@@ -159,7 +159,7 @@ def test_openai_adapter_unaffected_by_deepseek_multimodal_guard() -> None:
     req = LLMRequest(
         job_id="j-openai",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="Analyze.",
         schema_version="v2.1",
         metadata={"openai_model_name": "gpt-4o-mini"},

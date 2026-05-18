@@ -80,6 +80,8 @@ class GeminiSdkAdapter:
                 frames_nd,
                 context_instruction=getattr(request, "context_instruction", None),
                 context_images=getattr(request, "context_images", None),
+                frame_refs=list(request.frame_refs) if request.frame_refs else None,
+                request_metadata=meta,
                 logger=logger,
                 save_raw_to_path=save_raw_to_path,
             )

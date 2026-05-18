@@ -29,7 +29,7 @@ def test_openai_sdk_adapter_not_configured_without_api_key() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -51,7 +51,7 @@ def test_openai_sdk_adapter_uses_job_model_from_metadata() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["img_001"],
         prompt="Analyze these aisle images.",
         schema_version="v2.1",
         metadata={"openai_model_name": "gpt-4o-mini"},
@@ -71,6 +71,9 @@ def test_openai_sdk_adapter_uses_job_model_from_metadata() -> None:
         assert content[0]["type"] == "text"
         assert "Analyze these aisle images" in content[0]["text"]
         assert sum(1 for p in content if p.get("type") == "image_url") == 1
+        label_text = " ".join(p["text"] for p in content if p.get("type") == "text")
+        assert "PRIMARY_EVIDENCE" in label_text
+        assert "img_001" in label_text
 
 
 def test_openai_sdk_adapter_includes_context_images_and_instruction() -> None:
@@ -88,10 +91,10 @@ def test_openai_sdk_adapter_includes_context_images_and_instruction() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["prim-1"],
         prompt="Primary task.",
         schema_version="v2.1",
-        metadata={},
+        metadata={"reference_image_ids": ["ref-1"]},
         frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
         context_instruction="Reference context here.",
         context_images=[pil],
@@ -106,6 +109,9 @@ def test_openai_sdk_adapter_includes_context_images_and_instruction() -> None:
         assert "Reference context here" in content[0]["text"]
         imgs = [p for p in content if p.get("type") == "image_url"]
         assert len(imgs) == 2
+        label_text = " ".join(p["text"] for p in content if p.get("type") == "text")
+        assert "REFERENCE_ONLY" in label_text
+        assert "PRIMARY_EVIDENCE" in label_text
 
 
 def test_openai_sdk_adapter_prompt_contract_requires_canonical_label_fields() -> None:
@@ -119,7 +125,7 @@ def test_openai_sdk_adapter_prompt_contract_requires_canonical_label_fields() ->
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="Analyze aisle entities.",
         schema_version="v2.1",
         metadata={},
@@ -152,7 +158,7 @@ def test_openai_sdk_adapter_maps_schema_invalid() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -176,7 +182,7 @@ def test_openai_sdk_adapter_maps_rate_limit() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -204,7 +210,7 @@ def test_openai_sdk_adapter_maps_invalid_json() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -231,7 +237,7 @@ def test_openai_sdk_adapter_rejects_json_array_root() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
@@ -261,7 +267,7 @@ def test_openai_provider_delegates_to_adapter() -> None:
     req = LLMRequest(
         job_id="j1",
         frames=[],
-        frame_refs=[],
+        frame_refs=["f0"],
         prompt="p",
         schema_version="v2.1",
         metadata={},
