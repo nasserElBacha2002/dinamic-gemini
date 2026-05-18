@@ -301,21 +301,24 @@ describe('AnalyticsDashboardPage', () => {
 
   it('renders KPI cards from observability mocked data', () => {
     renderPage();
-    expect(screen.getByText('Procesamientos')).toBeInTheDocument();
-    expect(screen.getByText('10')).toBeInTheDocument();
-    expect(screen.getByText('Tasa de error')).toBeInTheDocument();
+    const strip = screen.getByTestId('analytics-executive-kpi-strip');
+    expect(within(strip).getByText('Procesamientos')).toBeInTheDocument();
+    expect(within(strip).getByText('Tasa de error')).toBeInTheDocument();
   });
 
-  it('renders overview cost KPIs when cost summary is available', () => {
+  it('renders executive KPI strip and cost visual section on overview', () => {
     renderPage();
-    expect(screen.getByText('Costo total')).toBeInTheDocument();
-    expect(screen.getByText(/24[,.]82/)).toBeInTheDocument();
-    expect(screen.getByText(/1[,.]250/)).toBeInTheDocument();
-    expect(screen.getByText('Jobs con costo')).toBeInTheDocument();
-    expect(screen.getByText('Jobs sin costo')).toBeInTheDocument();
-    expect(
-      screen.getByTestId('analytics-cost-warning-PROVIDER_MODEL_UNIT_COST_NOT_AVAILABLE')
-    ).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-overview-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-executive-kpi-strip')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-cost-visual-section')).toBeInTheDocument();
+    expect(within(screen.getByTestId('analytics-executive-kpi-strip')).getByText(/24[,.]82/)).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-chart-cost-provider')).toBeInTheDocument();
+  });
+
+  it('renders data quality summary when cost warnings exist', () => {
+    renderPage();
+    expect(screen.getByTestId('analytics-data-quality-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-dq-PROVIDER_MODEL_UNIT_COST_NOT_AVAILABLE')).toBeInTheDocument();
   });
 
   it('shows unavailable state for global cost metrics when cost summary missing', () => {
@@ -333,7 +336,7 @@ describe('AnalyticsDashboardPage', () => {
       costSummary: { data: undefined, isLoading: false, isError: true, error: new Error('cost failed'), refetch: vi.fn() },
     });
     renderPage();
-    expect(screen.getByTestId('analytics-partial-cost-failed')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-dq-cost-failed')).toBeInTheDocument();
     expect(screen.getByText('Posiciones procesadas')).toBeInTheDocument();
     expect(screen.getByText('16')).toBeInTheDocument();
   });
@@ -361,8 +364,8 @@ describe('AnalyticsDashboardPage', () => {
       analytics: { ...analyticsLoaded, isError: true, summary: undefined },
     });
     renderPage();
-    expect(screen.getByTestId('analytics-partial-analytics-failed')).toBeInTheDocument();
-    expect(screen.queryByTestId('analytics-partial-observability-failed')).not.toBeInTheDocument();
+    expect(screen.getByTestId('analytics-dq-analytics-failed')).toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-dq-observability-failed')).not.toBeInTheDocument();
     expect(screen.queryByTestId('analytics-mixed-loaded-data')).not.toBeInTheDocument();
   });
 
@@ -372,8 +375,8 @@ describe('AnalyticsDashboardPage', () => {
       observability: { data: undefined, isLoading: false, isError: true, error: new Error('observability failed'), refetch: vi.fn() },
     });
     renderPage();
-    expect(screen.getByTestId('analytics-partial-observability-failed')).toBeInTheDocument();
-    expect(screen.queryByTestId('analytics-partial-analytics-failed')).not.toBeInTheDocument();
+    expect(screen.getByTestId('analytics-dq-observability-failed')).toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-dq-analytics-failed')).not.toBeInTheDocument();
     expect(screen.queryByTestId('analytics-mixed-loaded-data')).not.toBeInTheDocument();
   });
 
@@ -394,8 +397,9 @@ describe('AnalyticsDashboardPage', () => {
   it('shows inventory performance table', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-inventories'));
-    expect(screen.getByTestId('analytics-inventories-table')).toBeInTheDocument();
-    expect(screen.getByText('Test DC')).toBeInTheDocument();
+    const invTable = screen.getByTestId('analytics-inventories-table');
+    expect(invTable).toBeInTheDocument();
+    expect(within(invTable).getByRole('link', { name: 'Test DC' })).toBeInTheDocument();
   });
 
   it('shows aisle table', () => {
@@ -427,10 +431,11 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.queryByTestId('compare-many-workspace-embedded')).not.toBeInTheDocument();
   });
 
-  it('costs tab renders cost summary sections', () => {
+  it('costs tab renders charts before detailed tables', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-costs'));
     expect(screen.getByTestId('analytics-costs-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-cost-visual-section')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-cost-by-provider-table')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-cost-by-inventory-table')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-cost-by-aisle-table')).toBeInTheDocument();
@@ -515,12 +520,15 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getAllByText('Cargando…').length).toBeGreaterThan(0);
   });
 
-  it('providers tab shows separate cost by provider/model section with tooltip on null unit cost', () => {
+  it('providers tab shows charts and does not recommend a best provider', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-providers'));
+    expect(screen.getByTestId('analytics-providers-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-providers-chart-reliability')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-providers-cost-table')).toBeInTheDocument();
+    expect(screen.queryByText(/mejor proveedor/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/proveedor recomendado/i)).not.toBeInTheDocument();
     const costTable = screen.getByTestId('analytics-providers-cost-table');
-    expect(within(costTable).getByText(/24[,.]82/)).toBeInTheDocument();
     expect(within(costTable).getAllByText('No disponible').length).toBeGreaterThan(0);
   });
 

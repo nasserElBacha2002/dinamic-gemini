@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Box, Grid } from '@mui/material';
 import {
   Paper,
   Table,
@@ -13,11 +14,14 @@ import {
 import type { AnalyticsCostSummaryResponse, ObservabilityMetricsResponse } from '../../../api/types';
 import { AnalyticsSectionCard } from './AnalyticsSectionCard';
 import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
+import { buildCostByProviderChartData, buildProviderReliabilityChartData } from '../adapters/analyticsChartDatasets';
 import {
   buildCostWarnings,
   formatCostCell,
   formatProviderUnitCost,
 } from '../adapters/analyticsCostViewModel';
+import { AnalyticsChartCard } from './AnalyticsChartCard';
+import { HorizontalBarChart } from './charts/HorizontalBarChart';
 
 export interface AnalyticsProvidersTabProps {
   observability: ObservabilityMetricsResponse | null | undefined;
@@ -34,9 +38,45 @@ export function AnalyticsProvidersTab({ observability, costSummary }: AnalyticsP
   const rows = observability?.by_provider_model ?? [];
   const costRows = costSummary?.by_provider_model ?? [];
   const costWarnings = useMemo(() => buildCostWarnings(costSummary, t), [costSummary, t]);
+  const emptyText = t('analyticsDashboard.visual.emptyChart');
+  const reliabilityChart = useMemo(() => buildProviderReliabilityChartData(observability), [observability]);
+  const costChart = useMemo(() => buildCostByProviderChartData(costSummary), [costSummary]);
 
   return (
-    <>
+    <Box data-testid="analytics-providers-tab">
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid item xs={12} md={6}>
+          <AnalyticsChartCard
+            title={t('analyticsDashboard.visual.providerReliability')}
+            subtitle={t('analyticsDashboard.visual.notARecommendation')}
+            empty={!reliabilityChart.length}
+            emptyText={emptyText}
+            data-testid="analytics-providers-chart-reliability"
+          >
+            <HorizontalBarChart
+              data={reliabilityChart}
+              emptyText={emptyText}
+              data-testid="analytics-providers-chart-reliability-bars"
+            />
+          </AnalyticsChartCard>
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <AnalyticsChartCard
+            title={t('analyticsDashboard.visual.costByProviderModel')}
+            subtitle={t('analyticsDashboard.visual.notARecommendation')}
+            empty={!costRows.length}
+            emptyText={emptyText}
+            data-testid="analytics-providers-chart-cost"
+          >
+            <HorizontalBarChart
+              data={costChart}
+              emptyText={emptyText}
+              data-testid="analytics-providers-chart-cost-bars"
+            />
+          </AnalyticsChartCard>
+        </Grid>
+      </Grid>
+
       <AnalyticsSectionCard
         title={t('analyticsDashboard.providers.sectionTitle')}
         grainLabel={t('analyticsDashboard.grain_runs')}
@@ -126,6 +166,6 @@ export function AnalyticsProvidersTab({ observability, costSummary }: AnalyticsP
           </Typography>
         ) : null}
       </AnalyticsSectionCard>
-    </>
+    </Box>
   );
 }

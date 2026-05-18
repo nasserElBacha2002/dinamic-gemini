@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink } from 'react-router-dom';
-import { Box, Typography } from '@mui/material';
+import { Box, Grid, Typography } from '@mui/material';
 import { pathToAislePositions } from '../../../constants/appRoutes';
 import { sortDataTableRows, type DataTableColumn } from '../../../components/ui';
 import { MetricsAislesAttentionSection } from '../../analytics/components/MetricsAislesAttentionSection';
@@ -18,6 +18,10 @@ import {
 import { numberOrZero } from '../../analytics/adapters/metricsFormatters';
 import type { AisleIssueRow } from '../../analytics/types';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
+import { buildAutoVsManualSegments, buildQualityIssueChartData } from '../adapters/analyticsChartDatasets';
+import { AnalyticsChartCard } from './AnalyticsChartCard';
+import { HorizontalBarChart } from './charts/HorizontalBarChart';
+import { SegmentBarChart } from './charts/SegmentBarChart';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
 
@@ -40,6 +44,9 @@ export function AnalyticsQualityTab({ analytics, isLoading }: AnalyticsQualityTa
     [manualInterventions?.items]
   );
   const qualityRowsOrdered = useMemo(() => orderQualityRows(quality?.items ?? []), [quality?.items]);
+  const emptyText = t('analyticsDashboard.visual.emptyChart');
+  const qualityChart = useMemo(() => buildQualityIssueChartData(qualityRowsOrdered), [qualityRowsOrdered]);
+  const autoManual = useMemo(() => buildAutoVsManualSegments(summary, t), [summary, t]);
   const localizedSummaryNotes = useMemo(
     () => (summary?.notes ?? []).map((n) => localizeAnalyticsSummaryNote(n, t)),
     [summary?.notes, t]
@@ -147,6 +154,24 @@ export function AnalyticsQualityTab({ analytics, isLoading }: AnalyticsQualityTa
   );
 
   return (
+    <Box data-testid="analytics-quality-tab">
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid item xs={12} md={6}>
+          <AnalyticsChartCard title={t('analyticsDashboard.visual.autoVsManual')} data-testid="analytics-quality-chart-auto-manual">
+            <SegmentBarChart segments={autoManual} emptyText={emptyText} data-testid="analytics-quality-chart-auto-manual-bars" />
+          </AnalyticsChartCard>
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <AnalyticsChartCard
+            title={t('analyticsDashboard.visual.qualityIssues')}
+            empty={!qualityChart.length}
+            emptyText={emptyText}
+            data-testid="analytics-quality-chart-issues"
+          >
+            <HorizontalBarChart data={qualityChart} emptyText={emptyText} data-testid="analytics-quality-chart-issues-bars" />
+          </AnalyticsChartCard>
+        </Grid>
+      </Grid>
     <Box
       sx={{
         display: 'grid',
@@ -207,6 +232,7 @@ export function AnalyticsQualityTab({ analytics, isLoading }: AnalyticsQualityTa
           onPageSizeChange={setAislePageSize}
         />
       </Box>
+    </Box>
     </Box>
   );
 }

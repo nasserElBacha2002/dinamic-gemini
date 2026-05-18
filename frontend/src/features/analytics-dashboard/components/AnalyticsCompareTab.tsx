@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Alert, Box } from '@mui/material';
+import { Alert, Box, Paper } from '@mui/material';
 import { CompareManyRunsWorkspace } from '../../analytics/compare/CompareManyRunsWorkspace';
 import { getCompareEligibility } from '../types';
 
@@ -43,6 +43,7 @@ export function AnalyticsCompareTab({
 
   return (
     <Box data-testid="analytics-compare-tab">
+      <Paper variant="outlined" sx={{ p: 2 }}>
       <CompareManyRunsWorkspace
         key={`${inventoryId}:${aisleId}`}
         mode="embedded"
@@ -51,6 +52,7 @@ export function AnalyticsCompareTab({
         inventoryName={inventoryName}
         onNavigateToStandalone={(href) => navigate(href)}
       />
+      </Paper>
     </Box>
   );
 }

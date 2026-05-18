@@ -105,7 +105,7 @@ export function buildCostByAisleLookup(
 
 export function formatCostCell(
   value: number | null | undefined,
-  kind: 'cost' | 'quantity' | 'costPerUnit' | 'duration',
+  kind: 'cost' | 'quantity' | 'costPerUnit' | 'duration' | 'integer',
   t: TFunction
 ): string {
   if (!isValidNumber(value)) {
@@ -117,7 +117,7 @@ export function formatCostCell(
 export function formatCostCellWithLoading(
   isLoading: boolean,
   value: number | null | undefined,
-  kind: 'cost' | 'quantity' | 'costPerUnit' | 'duration',
+  kind: 'cost' | 'quantity' | 'costPerUnit' | 'duration' | 'integer',
   t: TFunction
 ): string {
   if (isLoading) {

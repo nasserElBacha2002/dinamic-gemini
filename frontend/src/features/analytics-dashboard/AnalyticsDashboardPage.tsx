@@ -20,6 +20,7 @@ import { AnalyticsInventoriesTab } from './components/AnalyticsInventoriesTab';
 import { AnalyticsAislesTab } from './components/AnalyticsAislesTab';
 import { AnalyticsCompareTab } from './components/AnalyticsCompareTab';
 import { AnalyticsCostsTab } from './components/AnalyticsCostsTab';
+import { AnalyticsDataQualitySummary } from './components/AnalyticsDataQualitySummary';
 import { useAnalyticsDashboardData } from './hooks/useAnalyticsDashboardData';
 import {
   buildFilterParams,
@@ -80,8 +81,6 @@ export default function AnalyticsDashboardPage() {
 
   const selectedInventory = inventories.find((inv) => inv.id === appliedFilters.inventoryId) ?? null;
 
-  const observabilityDq = observability.data?.data_quality;
-
   return (
     <Box sx={{ pb: 4, width: '100%', minWidth: 0, maxWidth: '100%', overflowX: 'hidden', boxSizing: 'border-box' }}>
       <PageHeader a11yTitle={t('analyticsDashboard.page_a11y')} />
@@ -92,9 +91,20 @@ export default function AnalyticsDashboardPage() {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
         {t('analyticsDashboard.subtitle')}
       </Typography>
-      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
         {t('analyticsDashboard.helper')}
       </Typography>
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+        {t('analyticsDashboard.visual.scopeNote')}
+      </Typography>
+
+      <AnalyticsDataQualitySummary
+        costSummary={costSummary.data}
+        observability={observability.data}
+        analyticsError={Boolean(analyticsError)}
+        observabilityError={Boolean(observabilityError)}
+        costSummaryError={Boolean(costSummaryError)}
+      />
 
       <AnalyticsFilterBar
         filters={draftFilters}
@@ -113,32 +123,11 @@ export default function AnalyticsDashboardPage() {
         isRefreshing={isAnalyticsLoading || isObservabilityLoading || isCostSummaryLoading}
       />
 
-      {analyticsError ? (
-        <Alert severity="warning" sx={{ mb: 2 }} data-testid="analytics-partial-analytics-failed">
-          {t('analyticsDashboard.partial.analyticsFailed')}
-        </Alert>
-      ) : null}
-      {observabilityError ? (
-        <Alert severity="warning" sx={{ mb: 2 }} data-testid="analytics-partial-observability-failed">
-          {t('analyticsDashboard.partial.observabilityFailed')}
-        </Alert>
-      ) : null}
-      {costSummaryError ? (
-        <Alert severity="warning" sx={{ mb: 2 }} data-testid="analytics-partial-cost-failed">
-          {t('analyticsDashboard.partial.costFailed')}
-        </Alert>
-      ) : null}
       {hasMixedLoadedData ? (
         <Alert severity="info" sx={{ mb: 2 }} data-testid="analytics-mixed-loaded-data">
           {t('analyticsDashboard.filters.partialScopeNote')}
         </Alert>
       ) : null}
-      {observabilityDq && observabilityDq.jobs_without_audit_snapshot > 0 ? (
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          {t('analyticsDashboard.partial.observabilityNoSnapshot')}
-        </Alert>
-      ) : null}
-
       {analyticsError && observabilityError ? (
         <ErrorAlert error={analyticsError} context="analytics" onRetry={() => refetchAll()} />
       ) : null}
@@ -147,6 +136,7 @@ export default function AnalyticsDashboardPage() {
 
       {activeTab === 'summary' ? (
         <AnalyticsOverviewTab
+          analytics={analytics}
           summary={analytics.summary}
           observability={observability.data}
           costSummary={costSummary.data}

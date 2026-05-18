@@ -11,11 +11,14 @@ import type { AnalyticsCostSummaryResponse } from '../../../api/types';
 import type { InventoryPerformanceRow } from '../../analytics/types';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
 import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
+import { buildCostByInventoryChartData } from '../adapters/analyticsChartDatasets';
 import {
   buildCostByInventoryLookup,
   buildCostWarnings,
   formatCostCellWithLoading,
 } from '../adapters/analyticsCostViewModel';
+import { AnalyticsChartCard } from './AnalyticsChartCard';
+import { HorizontalBarChart } from './charts/HorizontalBarChart';
 import { compareEligibilityTooltipKey, getCompareEligibility } from '../types';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
@@ -45,6 +48,8 @@ export function AnalyticsInventoriesTab({
   const hasUnidentified = analytics.summary?.unidentified_product_rate != null;
   const costByInventory = useMemo(() => buildCostByInventoryLookup(costSummary), [costSummary]);
   const costWarnings = useMemo(() => buildCostWarnings(costSummary, t), [costSummary, t]);
+  const costChart = useMemo(() => buildCostByInventoryChartData(costSummary), [costSummary]);
+  const emptyText = t('analyticsDashboard.visual.emptyChart');
 
   const rowsSorted = useMemo(
     () => sortInventoryRows(analytics.inventoryPerformance?.items ?? [], sortBy, sortDir),
@@ -183,6 +188,16 @@ export function AnalyticsInventoriesTab({
 
   return (
     <Box data-testid="analytics-inventories-table">
+      <Box sx={{ mb: 2, maxWidth: 480 }}>
+        <AnalyticsChartCard
+          title={t('analyticsDashboard.visual.topInventoriesByCost')}
+          empty={!costChart.length}
+          emptyText={emptyText}
+          data-testid="analytics-inventories-cost-summary"
+        >
+          <HorizontalBarChart data={costChart} emptyText={emptyText} data-testid="analytics-inventories-cost-summary-bars" />
+        </AnalyticsChartCard>
+      </Box>
       {costWarnings.length > 0 ? <AnalyticsCostWarningsBlock warnings={costWarnings} compact /> : null}
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
         {t('analyticsDashboard.costs.columnsContext')}

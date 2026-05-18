@@ -1,4 +1,6 @@
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Box, Grid } from '@mui/material';
 import {
   Paper,
   Table,
@@ -10,7 +12,10 @@ import {
 } from '@mui/material';
 import TrendBars from '../../analytics/components/TrendBars';
 import { formatAvgProcessingMinutes, formatPct } from '../../analytics/adapters/metricsFormatters';
+import { buildProcessingTimeByInventoryData } from '../adapters/analyticsChartDatasets';
+import { AnalyticsChartCard } from './AnalyticsChartCard';
 import { AnalyticsSectionCard } from './AnalyticsSectionCard';
+import { HorizontalBarChart } from './charts/HorizontalBarChart';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
 import type { ObservabilityMetricsResponse } from '../../../api/types';
 
@@ -22,14 +27,42 @@ export interface AnalyticsTimeTabProps {
   isLoading: boolean;
 }
 
-export function AnalyticsTimeTab({ analytics, observability, isLoading }: AnalyticsTimeTabProps) {
+export function AnalyticsTimeTab({ analytics, observability }: AnalyticsTimeTabProps) {
   const { t } = useTranslation();
   const { summary, trends, inventoryPerformance } = analytics;
 
   const trendPoints = trends?.reviewed_results_over_time ?? [];
+  const emptyText = t('analyticsDashboard.visual.emptyChart');
+  const processingByInv = useMemo(
+    () => buildProcessingTimeByInventoryData(inventoryPerformance?.items ?? []),
+    [inventoryPerformance?.items]
+  );
 
   return (
-    <>
+    <Box data-testid="analytics-time-tab">
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid item xs={12} md={6}>
+          <AnalyticsChartCard
+            title={t('analyticsDashboard.visual.processingTimeByInventory')}
+            empty={!processingByInv.length}
+            emptyText={emptyText}
+            data-testid="analytics-time-chart-inventory"
+          >
+            <HorizontalBarChart
+              data={processingByInv}
+              emptyText={emptyText}
+              barColor="secondary.main"
+              data-testid="analytics-time-chart-inventory-bars"
+            />
+          </AnalyticsChartCard>
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <AnalyticsSectionCard title={t('analyticsDashboard.time.trendTitle')} grainLabel={t('analyticsDashboard.grain_positions')}>
+            <TrendBars title={t('analyticsDashboard.time.trendTitle')} points={trendPoints} emptyMessage={emptyText} />
+          </AnalyticsSectionCard>
+        </Grid>
+      </Grid>
+
       <AnalyticsSectionCard
         title={t('analyticsDashboard.time.avgProcessing')}
         grainLabel={t('analyticsDashboard.grain_positions')}
@@ -37,14 +70,6 @@ export function AnalyticsTimeTab({ analytics, observability, isLoading }: Analyt
         <Typography variant="h5" data-testid="analytics-avg-processing">
           {formatAvgProcessingMinutes(summary?.average_processing_time_minutes, summary?.average_processing_time_seconds)}
         </Typography>
-      </AnalyticsSectionCard>
-
-      <AnalyticsSectionCard title={t('analyticsDashboard.time.trendTitle')} grainLabel={t('analyticsDashboard.grain_positions')}>
-        <TrendBars
-          title={t('analyticsDashboard.time.trendTitle')}
-          points={trendPoints}
-          emptyMessage={isLoading ? t('common.loading') : t('analytics.empty_quality_filter')}
-        />
       </AnalyticsSectionCard>
 
       <AnalyticsSectionCard title={t('analyticsDashboard.time.byInventory')} grainLabel={t('analyticsDashboard.grain_positions')}>
@@ -101,6 +126,6 @@ export function AnalyticsTimeTab({ analytics, observability, isLoading }: Analyt
           </Table>
         </Paper>
       </AnalyticsSectionCard>
-    </>
+    </Box>
   );
 }

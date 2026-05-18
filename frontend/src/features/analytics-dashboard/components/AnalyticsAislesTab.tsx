@@ -9,11 +9,14 @@ import type { AnalyticsCostSummaryResponse } from '../../../api/types';
 import type { AisleIssueRow } from '../../analytics/types';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
 import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
+import { buildCostByAisleChartData } from '../adapters/analyticsChartDatasets';
 import {
   buildCostByAisleLookup,
   buildCostWarnings,
   formatCostCellWithLoading,
 } from '../adapters/analyticsCostViewModel';
+import { AnalyticsChartCard } from './AnalyticsChartCard';
+import { HorizontalBarChart } from './charts/HorizontalBarChart';
 import { compareEligibilityTooltipKey, getCompareEligibility } from '../types';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
@@ -42,6 +45,8 @@ export function AnalyticsAislesTab({
 
   const costByAisle = useMemo(() => buildCostByAisleLookup(costSummary), [costSummary]);
   const costWarnings = useMemo(() => buildCostWarnings(costSummary, t), [costSummary, t]);
+  const costChart = useMemo(() => buildCostByAisleChartData(costSummary), [costSummary]);
+  const emptyText = t('analyticsDashboard.visual.emptyChart');
 
   const columns = useMemo<DataTableColumn<AisleIssueRow>[]>(
     () => [
@@ -167,6 +172,16 @@ export function AnalyticsAislesTab({
 
   return (
     <Box data-testid="analytics-aisles-table">
+      <Box sx={{ mb: 2, maxWidth: 480 }}>
+        <AnalyticsChartCard
+          title={t('analyticsDashboard.visual.topAislesByCost')}
+          empty={!costChart.length}
+          emptyText={emptyText}
+          data-testid="analytics-aisles-cost-summary"
+        >
+          <HorizontalBarChart data={costChart} emptyText={emptyText} data-testid="analytics-aisles-cost-summary-bars" />
+        </AnalyticsChartCard>
+      </Box>
       {costWarnings.length > 0 ? <AnalyticsCostWarningsBlock warnings={costWarnings} compact /> : null}
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
         {t('analyticsDashboard.costs.columnsContext')}

@@ -17,6 +17,7 @@ import { AnalyticsKpiGrid } from './AnalyticsKpiGrid';
 import { AnalyticsSectionCard } from './AnalyticsSectionCard';
 import { MetricUnavailableState } from './MetricUnavailableState';
 import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
+import { AnalyticsCostVisualSection } from './AnalyticsCostVisualSection';
 import {
   buildCostExecutiveKpis,
   buildCostWarnings,
@@ -92,6 +93,14 @@ export function AnalyticsCostsTab({
               skeletonCount={10}
             />
           </AnalyticsSectionCard>
+
+          <AnalyticsSectionCard title={t('analyticsDashboard.visual.costSnapshot')}>
+            <AnalyticsCostVisualSection costSummary={costSummary} isLoading={isLoading} />
+          </AnalyticsSectionCard>
+
+          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+            {t('analyticsDashboard.visual.drilldownTables')}
+          </Typography>
 
           <AnalyticsSectionCard title={t('analyticsDashboard.costs.byProviderModelTitle')}>
             <Paper variant="outlined">
