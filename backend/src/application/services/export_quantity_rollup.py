@@ -18,11 +18,12 @@ ExportExclusionReason = Literal[
 class ExportQuantityRollupConfig:
     """Controls whether traceability-invalid rows count toward totals.
 
-    Legacy CSV exports do not use this service. Business/summary exports default to excluding
-    traceability-invalid rows from counted totals while still listing them in operational CSVs.
+    Legacy CSV exports do not use this service. Business/summary exports default to UI-aligned
+    totals (traceability-invalid rows count toward totals; only deleted positions are excluded).
+    Set ``exclude_traceability_invalid_from_totals=True`` only for non-UI export profiles.
     """
 
-    exclude_traceability_invalid_from_totals: bool = True
+    exclude_traceability_invalid_from_totals: bool = False
 
 
 @dataclass(frozen=True)

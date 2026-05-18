@@ -13,6 +13,7 @@ from src.application.errors import InventoryNotFoundError
 from src.application.services.csv_inventory_exporter import UTF8_BOM
 from src.application.services.export_csv_column_mapper import BUSINESS_OPERATIONAL_CSV_FIELDS
 from src.application.services.export_inventory_collector import ExportInventoryCollector
+from src.application.services.export_summary_builder import ExportSummaryBuilder
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.export_inventory_business import (
     ExportAisleBusinessCsvUseCase,
@@ -280,7 +281,7 @@ def test_legacy_aisle_export_still_excludes_deleted() -> None:
     assert rows[0]["position_id"] == "p-ok"
 
 
-def test_traceability_invalid_excluded_from_summaries() -> None:
+def test_traceability_invalid_included_in_totals_matching_ui() -> None:
     inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
     aisle = Aisle("a1", "inv-1", "A1", AisleStatus.COMPLETED, NOW, NOW)
     invalid = Position(
@@ -326,8 +327,8 @@ def test_traceability_invalid_excluded_from_summaries() -> None:
     body, _ = aisle_uc.execute_csv("inv-1", "a1")
     _, rows = _parse_csv(body)
     bad_row = next(r for r in rows if r["position_id"] == "p-inv")
-    assert bad_row["Incluido en totales"] == "no"
-    assert bad_row["Motivo de exclusión"] == "Trazabilidad inválida"
+    assert bad_row["Incluido en totales"] == "sí"
+    assert bad_row["Motivo de exclusión"] == ""
     summary_uc = ExportInventorySummaryCsvUseCase(
         inv_repo,
         aisle_repo,
@@ -338,10 +339,10 @@ def test_traceability_invalid_excluded_from_summaries() -> None:
     )
     inv_csv, _ = summary_uc.execute_inventory_summary_csv("inv-1")
     _, inv_rows = _parse_csv(inv_csv)
-    assert inv_rows[0]["Total contabilizado"] == "4"
+    assert inv_rows[0]["Total contabilizado"] == "54"
     aisles_csv, _ = summary_uc.execute_aisles_summary_csv("inv-1")
     _, aisle_rows = _parse_csv(aisles_csv)
-    assert aisle_rows[0]["Total contabilizado"] == "4"
+    assert aisle_rows[0]["Total contabilizado"] == "54"
 
 
 class _CountingCollector(ExportInventoryCollector):
@@ -475,6 +476,61 @@ def test_package_zip_structure() -> None:
         assert any(n.startswith("aisles/aisle_") and n.endswith("_operational.csv") for n in names)
         _, inv_sum = _parse_csv(zf.read("inventory_summary.csv").decode("utf-8-sig"))
         assert inv_sum[0]["Total contabilizado"] == "1"
+
+
+def test_export_totals_match_ui_without_sku_consolidation() -> None:
+    """Same SKU on two rows: UI (consolidate_by_sku=false) counts both rows."""
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    aisle = Aisle("a1", "inv-1", "A1", AisleStatus.COMPLETED, NOW, NOW)
+    shared = {"internal_code": "SKU-A", "traceability_status": "valid"}
+    pos_a = Position(
+        id="p-a",
+        aisle_id="a1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={**shared, "final_quantity": 10},
+    )
+    pos_b = Position(
+        id="p-b",
+        aisle_id="a1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={**shared, "final_quantity": 5},
+    )
+    inv_repo, aisle_repo, pos_repo, prod_repo, job_repo = _repos_with_positions(
+        inv=inv, aisles=[aisle], positions=[pos_a, pos_b]
+    )
+    summary_uc = ExportInventorySummaryCsvUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        ResultContextResolver(job_repo),
+        job_repo=job_repo,
+    )
+    _, aisle_rows = _parse_csv(summary_uc.execute_aisles_summary_csv("inv-1")[0])
+    assert aisle_rows[0]["Total contabilizado"] == "15"
+    assert aisle_rows[0]["Posiciones válidas"] == "2"
+
+    merged_collector = ExportInventoryCollector(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        ResultContextResolver(job_repo),
+    )
+    merged = merged_collector.collect_inventory("inv-1", consolidate_by_sku=True)
+    merged_rollups = ExportSummaryBuilder().build_rollups(merged)
+    assert merged_rollups.aisle_totals[0].total_counted_quantity == 15
+    assert merged_rollups.aisle_totals[0].valid_positions == 1
 
 
 def test_summary_not_found() -> None:

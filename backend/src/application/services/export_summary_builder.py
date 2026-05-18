@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from src.application.services.aisle_results_export_source import ui_aligned_rollup_service
 from src.application.services.export_cost_helpers import job_total_cost_string
 from src.application.services.export_inventory_collector import ExportInventoryOperationalData
 from src.application.services.export_quantity_rollup import (
@@ -16,7 +17,7 @@ from src.domain.jobs.entities import Job
 
 class ExportSummaryBuilder:
     def __init__(self, rollup_service: ExportQuantityRollupService | None = None) -> None:
-        self._rollup = rollup_service or ExportQuantityRollupService()
+        self._rollup = rollup_service or ui_aligned_rollup_service()
 
     def build_rollups(self, data: ExportInventoryOperationalData) -> InventoryExportRollupTotals:
         inputs = [rb.rollup_input for bundle in data.aisle_bundles for rb in bundle.rows]

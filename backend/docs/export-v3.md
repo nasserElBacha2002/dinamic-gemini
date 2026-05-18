@@ -16,11 +16,21 @@ The web UI does **not** expose legacy CSV download. Legacy remains available via
 
 ZIP and summary exports build all files from **one** `collect_inventory` snapshot so totals and aisle rows stay consistent.
 
-## Totals
+## Source of truth (Aisle Results UI)
 
-`ExportQuantityRollupService` centralizes counted quantity and inclusion rules (`final_quantity`, deleted excluded from totals, traceability-invalid excluded from totals by default).
+Business exports and summaries use the same projection rules as the **Aisle Results** screen (`AislePositionsPage`):
 
-Business operational CSV may **include** deleted rows for auditability (`Incluido en totales = no`, `Motivo de exclusión = Eliminada`). Legacy flat export continues to **omit** deleted rows.
+- Positions loaded per aisle with `ResultContextResolver` (operational job slice, or explicit `job_id` on aisle export).
+- **No SKU merge** (`consolidate_by_sku=false`), matching the UI list query.
+- Quantity per row: canonical `final_display_quantity` (operator correction when set, else detected/resolved), same as API `quantity.final` / UI `resolvedQty ?? detectedQty`.
+- **Counted totals** match UI `computeResultsKpi` / `isExcludedFromCountedTotals`:
+  - Included: all rows except `deleted` position status (UI `reviewStatus === 'INVALID'`).
+  - Traceability-invalid rows **are included** in `Total contabilizado` (same as UI).
+- Deleted rows may appear in business operational CSV for audit (`Incluido en totales = no`, `Motivo de exclusión = Eliminada`) but do not affect totals.
+
+Inventory summary `Total contabilizado` equals the sum of per-aisle UI-style totals. Each `aisles_summary.csv` row matches the corresponding operational aisle CSV when summing rows with `Incluido en totales = sí`.
+
+Legacy flat export still omits deleted rows and may consolidate by SKU (unchanged).
 
 ## Cost fields
 

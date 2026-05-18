@@ -68,7 +68,7 @@ def test_aisle_and_inventory_totals() -> None:
     ]
     inv = svc.rollup_inventory(["a1", "a2"], rows)
     assert inv.total_positions == 3
-    assert inv.total_counted_quantity == 6
-    assert inv.aisle_totals[0].total_counted_quantity == 2
-    assert inv.aisle_totals[0].invalid_positions == 1
+    assert inv.total_counted_quantity == 11
+    assert inv.aisle_totals[0].total_counted_quantity == 7
+    assert inv.aisle_totals[0].invalid_positions == 0
     assert inv.aisle_totals[1].total_counted_quantity == 4

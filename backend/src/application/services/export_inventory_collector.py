@@ -18,6 +18,10 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
 )
+from src.application.services.aisle_results_export_source import (
+    AISLE_RESULTS_UI_CONSOLIDATE_BY_SKU,
+    ui_aligned_rollup_service,
+)
 from src.application.services.display_primary_product import select_display_primary_product
 from src.application.services.export_quantity_rollup import (
     ExportQuantityRollupService,
@@ -78,7 +82,7 @@ class ExportInventoryCollector:
         self._resolver = result_context_resolver
         self._client_repo = client_repo
         self._client_supplier_repo = client_supplier_repo
-        self._rollup = rollup_service or ExportQuantityRollupService()
+        self._rollup = rollup_service or ui_aligned_rollup_service()
 
     def collect_inventory(
         self,
@@ -86,6 +90,7 @@ class ExportInventoryCollector:
         *,
         explicit_job_id_by_aisle: dict[str, str | None] | None = None,
         include_deleted_rows: bool = False,
+        consolidate_by_sku: bool = AISLE_RESULTS_UI_CONSOLIDATE_BY_SKU,
     ) -> ExportInventoryOperationalData:
         inv = self._inventory_repo.get_by_id(inventory_id)
         if inv is None:
@@ -128,6 +133,7 @@ class ExportInventoryCollector:
                 aisle_positions=list(by_aisle.get(aisle.id, [])),
                 explicit_job_id=explicit,
                 include_deleted_rows=include_deleted_rows,
+                consolidate_by_sku=consolidate_by_sku,
             )
             bundles.append(bundle)
 
@@ -146,6 +152,7 @@ class ExportInventoryCollector:
         *,
         explicit_job_id: str | None = None,
         include_deleted_rows: bool = False,
+        consolidate_by_sku: bool = AISLE_RESULTS_UI_CONSOLIDATE_BY_SKU,
     ) -> ExportInventoryOperationalData:
         inv = self._inventory_repo.get_by_id(inventory_id)
         if inv is None:
@@ -163,6 +170,7 @@ class ExportInventoryCollector:
             aisle_positions=positions,
             explicit_job_id=explicit_job_id,
             include_deleted_rows=include_deleted_rows,
+            consolidate_by_sku=consolidate_by_sku,
         )
         client_name = ""
         if self._client_repo and inv.client_id:
@@ -191,6 +199,7 @@ class ExportInventoryCollector:
         aisle_positions: list[Position],
         explicit_job_id: str | None,
         include_deleted_rows: bool = False,
+        consolidate_by_sku: bool = AISLE_RESULTS_UI_CONSOLIDATE_BY_SKU,
     ) -> ExportAisleOperationalBundle:
         ctx = self._resolver.resolve(aisle=aisle, explicit_job_id=explicit_job_id)
         slice_job = ctx.job_id_for_slice
@@ -202,7 +211,7 @@ class ExportInventoryCollector:
             raw = [p for p in candidates if p.job_id is None]
         else:
             raw = [p for p in candidates if p.job_id == slice_job]
-        consolidated = consolidate_positions_by_sku(raw)
+        consolidated = consolidate_positions_by_sku(raw, enabled=consolidate_by_sku)
         consolidated_sorted = sorted(consolidated, key=export_position_sort_key)
 
         row_bundles: list[ExportOperationalRowBundle] = []
