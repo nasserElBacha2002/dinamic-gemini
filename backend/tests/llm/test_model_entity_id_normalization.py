@@ -6,7 +6,6 @@ import json
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from src.llm.normalization.model_entity_id import normalize_model_entity_ids
 from src.llm.openai_sdk_adapter import OpenAiSdkAdapter, _openai_parse_validate_global_analysis_json
@@ -29,9 +28,10 @@ def test_null_model_entity_id_repaired_to_e1() -> None:
         "total_entities_detected": 1,
         "entities": [_entity(model_entity_id=None, source_image_id="img_001")],
     }
-    out, warnings = normalize_model_entity_ids(data)
+    out, diagnostics = normalize_model_entity_ids(data)
     assert out["entities"][0]["model_entity_id"] == "E1"
-    assert warnings
+    assert diagnostics
+    assert diagnostics[0].index == 0
     validate_global_analysis_structure_v21(out)
 
 
@@ -40,9 +40,10 @@ def test_missing_model_entity_id_repaired() -> None:
         "total_entities_detected": 1,
         "entities": [_entity(source_image_id="img_001")],
     }
-    out, warnings = normalize_model_entity_ids(data)
+    out, diagnostics = normalize_model_entity_ids(data)
     assert out["entities"][0]["model_entity_id"] == "E1"
-    assert warnings
+    assert diagnostics
+    assert diagnostics[0].index == 0
     validate_global_analysis_structure_v21(out)
 
 
@@ -61,9 +62,9 @@ def test_existing_model_entity_id_preserved() -> None:
         "total_entities_detected": 1,
         "entities": [_entity(model_entity_id="CUSTOM_7")],
     }
-    out, warnings = normalize_model_entity_ids(data)
+    out, diagnostics = normalize_model_entity_ids(data)
     assert out["entities"][0]["model_entity_id"] == "CUSTOM_7"
-    assert warnings == []
+    assert diagnostics == []
 
 
 def test_duplicate_model_entity_id_repaired() -> None:
@@ -74,10 +75,10 @@ def test_duplicate_model_entity_id_repaired() -> None:
             _entity(model_entity_id="E1"),
         ],
     }
-    out, warnings = normalize_model_entity_ids(data)
+    out, diagnostics = normalize_model_entity_ids(data)
     ids = [e["model_entity_id"] for e in out["entities"]]
     assert ids == ["E1", "E2"]
-    assert any("duplicated" in w for w in warnings)
+    assert any(d.kind == "duplicated" for d in diagnostics)
     validate_global_analysis_structure_v21(out)
 
 
@@ -146,4 +147,4 @@ def test_openai_parse_validate_regression_null_mid() -> None:
         raw, prov="openai", v=OpenAiSdkAdapter()._v, job_id="j-reg"
     )
     assert data["entities"][0]["model_entity_id"] == "E1"
-    assert warnings
+    assert warnings and "index 0" in warnings[0]

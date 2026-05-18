@@ -11,6 +11,7 @@ import pytest
 
 from src.domain.traceability import TRACEABILITY_INVALID
 from src.jobs.image_identity import JobImage
+from src.llm.normalization.entity_normalizer import normalize_llm_response
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
 from src.llm.types import LLMRequest, LLMResponse
 from src.llm.vision_multimodal_payload import (
@@ -19,7 +20,6 @@ from src.llm.vision_multimodal_payload import (
 )
 from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 from src.pipeline.context.run_context import RunContext
-from src.llm.normalization.entity_normalizer import normalize_llm_response
 from src.pipeline.stages.analysis_stage import AnalysisStageResult
 from src.pipeline.stages.entity_resolution_stage import EntityResolutionStage
 from tests.support.llm_executor_harness import (

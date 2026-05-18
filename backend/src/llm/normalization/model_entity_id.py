@@ -8,7 +8,20 @@ responses may omit it or return null; Gemini structured output is stricter.
 from __future__ import annotations
 
 import copy
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
+
+RepairKind = Literal["missing", "duplicated"]
+
+
+@dataclass(frozen=True)
+class ModelEntityIdRepairDiagnostic:
+    """Structured repair record for logging and usage metadata."""
+
+    kind: RepairKind
+    index: int
+    generated_id: str
+    message: str
 
 
 def _is_non_empty_model_entity_id(value: object) -> bool:
@@ -26,17 +39,20 @@ def _allocate_unique_model_entity_id(used: set[str], preferred: str | None = Non
             return candidate
 
 
-def normalize_model_entity_ids(data: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+def normalize_model_entity_ids(
+    data: dict[str, Any],
+) -> tuple[dict[str, Any], list[ModelEntityIdRepairDiagnostic]]:
     """
     Ensure each entity has a unique non-empty ``model_entity_id`` (``E1``, ``E2``, …).
 
-    Mutates a deep copy of ``data`` (and nested entity dicts). Returns repair diagnostic messages.
+    Mutates a deep copy of ``data`` (and nested entity dicts). Returns structured diagnostics;
+    use ``.message`` for backward-compatible string warnings.
     """
     out = copy.deepcopy(data)
-    warnings: list[str] = []
+    diagnostics: list[ModelEntityIdRepairDiagnostic] = []
     entities = out.get("entities")
     if not isinstance(entities, list):
-        return out, warnings
+        return out, diagnostics
 
     used: set[str] = set()
     for i, ent in enumerate(entities):
@@ -47,7 +63,14 @@ def normalize_model_entity_ids(data: dict[str, Any]) -> tuple[dict[str, Any], li
             preferred = f"E{i + 1}"
             new_id = _allocate_unique_model_entity_id(used, preferred)
             ent["model_entity_id"] = new_id
-            warnings.append(f"model_entity_id missing for entity index {i}; generated {new_id}")
+            diagnostics.append(
+                ModelEntityIdRepairDiagnostic(
+                    kind="missing",
+                    index=i,
+                    generated_id=new_id,
+                    message=f"model_entity_id missing for entity index {i}; generated {new_id}",
+                )
+            )
             used.add(new_id)
             continue
 
@@ -55,10 +78,17 @@ def normalize_model_entity_ids(data: dict[str, Any]) -> tuple[dict[str, Any], li
         if mid in used:
             new_id = _allocate_unique_model_entity_id(used)
             ent["model_entity_id"] = new_id
-            warnings.append(f"model_entity_id duplicated at entity index {i}; generated {new_id}")
+            diagnostics.append(
+                ModelEntityIdRepairDiagnostic(
+                    kind="duplicated",
+                    index=i,
+                    generated_id=new_id,
+                    message=f"model_entity_id duplicated at entity index {i}; generated {new_id}",
+                )
+            )
             used.add(new_id)
         else:
             ent["model_entity_id"] = mid
             used.add(mid)
 
-    return out, warnings
+    return out, diagnostics

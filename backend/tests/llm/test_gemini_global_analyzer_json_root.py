@@ -19,7 +19,7 @@ def test_gemini_analyzer_rejects_json_array_root() -> None:
     frame = [np.zeros((16, 16, 3), dtype=np.uint8)]
 
     with pytest.raises(GlobalAnalysisParsingError, match="JSON object"):
-        analyzer.analyze_video_frames(frame)
+        analyzer.analyze_video_frames(frame, frame_refs=["frame_0"])
 
 
 def test_gemini_analyzer_rejects_json_string_root() -> None:
@@ -29,4 +29,4 @@ def test_gemini_analyzer_rejects_json_string_root() -> None:
     frame = [np.zeros((16, 16, 3), dtype=np.uint8)]
 
     with pytest.raises(GlobalAnalysisParsingError, match="JSON object"):
-        analyzer.analyze_video_frames(frame)
+        analyzer.analyze_video_frames(frame, frame_refs=["frame_0"])

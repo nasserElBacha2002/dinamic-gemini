@@ -14,11 +14,12 @@ from src.domain.traceability import (
     TRACEABILITY_VALID,
     apply_traceability_validation,
 )
+from src.frames.sources.video_source import VideoFrameSource
 from src.jobs.image_identity import JobImage
+from src.jobs.models import JobInput
 from src.llm.prompt_composer.enrichments import enrich_prompt_with_sent_image_ids
-from src.llm.prompt_composer.enrichments import enrich_prompt_with_sent_image_ids
+from src.llm.vision_multimodal_payload import validate_primary_frame_refs
 from src.pipeline.context.run_context import RunContext
-from src.pipeline.services.hybrid_analysis_prompt import build_hybrid_analysis_prompt_with_traceability
 from src.pipeline.stages.analysis_stage import AnalysisStageResult
 from src.pipeline.stages.entity_resolution_stage import EntityResolutionStage
 
@@ -88,6 +89,37 @@ def test_unknown_id_not_in_manifest_uses_generic_warning() -> None:
     )
     assert entities[0].traceability_status == TRACEABILITY_INVALID
     assert "not in job" in (entities[0].traceability_warning or "")
+
+
+def test_video_frame_source_produces_non_empty_aligned_refs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Video jobs remain active; VideoFrameSource emits frame_{idx:06d} refs aligned with frames."""
+    import cv2
+    import numpy as np
+
+    video_path = tmp_path / "sample.mp4"
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    w, h = 64, 48
+    writer = cv2.VideoWriter(str(video_path), fourcc, 5.0, (w, h))
+    for _ in range(5):
+        writer.write(np.zeros((h, w, 3), dtype=np.uint8))
+    writer.release()
+
+    job_input = JobInput(video_path=str(video_path), mode="hybrid", input_type="video")
+    run_dir = tmp_path / "run"
+    monkeypatch.setattr(
+        "src.frames.sources.video_source.load_settings",
+        lambda: type("S", (), {"hybrid_max_frames": 5})(),
+    )
+    bundle = VideoFrameSource().get_frames("job-v", run_dir, job_input)
+
+    assert len(bundle.frames) == len(bundle.frame_refs) > 0
+    assert all(ref.startswith("frame_") and ref.strip() for ref in bundle.frame_refs)
+    validate_primary_frame_refs(
+        [object()] * len(bundle.frame_refs),
+        bundle.frame_refs,
+    )
 
 
 def test_enrich_sent_image_ids_all_found_in_job_images() -> None:

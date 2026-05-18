@@ -417,18 +417,15 @@ def _openai_parse_validate_global_analysis_json(
         )
         data["total_entities_detected"] = len(entities)
 
-    data, repair_warnings = normalize_model_entity_ids(data)
-    if repair_warnings:
-        indexes = [
-            int(w.split("index ")[1].split(";")[0])
-            for w in repair_warnings
-            if "index " in w
-        ]
+    data, repair_diagnostics = normalize_model_entity_ids(data)
+    repair_warnings = [d.message for d in repair_diagnostics]
+    if repair_diagnostics:
+        indexes = [d.index for d in repair_diagnostics]
         logger.warning(
             "%s response normalization repaired missing/duplicate model_entity_id for %d "
             "entities (provider=%s job_id=%s indexes=%s)",
             v.log_label,
-            len(repair_warnings),
+            len(repair_diagnostics),
             prov,
             job_id or "",
             indexes,
