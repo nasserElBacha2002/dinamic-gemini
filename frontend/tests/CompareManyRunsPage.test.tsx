@@ -7,7 +7,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material';
 import * as client from '../src/api/client';
 import CompareManyRunsPage from '../src/pages/analytics/CompareManyRunsPage';
-import { buildDraftError } from '../src/pages/analytics/compareManyRunsDraft';
+import { buildDraftError } from '../src/features/analytics/compare/compareManyRunsDraft';
 import { AppSnackbarProvider } from '../src/components/ui';
 import theme from '../src/theme';
 import type { AisleBenchmarkCompareManyResponse, Inventory, Aisle, JobSummary, LlmCostSnapshot } from '../src/api/types';

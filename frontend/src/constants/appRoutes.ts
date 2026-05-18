@@ -71,12 +71,18 @@ export function pathToInventoryAnalyticsCompare(inventoryId: string): string {
 
 export function pathToInventoryAnalyticsCompareMany(
   inventoryId: string,
-  options?: { aisleId?: string }
+  options?: { aisleId?: string; jobIds?: string[]; baseline?: string }
 ): string {
   const base = `${ROUTE_INVENTORIES_ROOT}/${inventoryId}/analytics/compare-many`;
+  const params = new URLSearchParams();
   const aisleId = options?.aisleId?.trim();
-  if (!aisleId) return base;
-  return `${base}?${new URLSearchParams({ aisleId }).toString()}`;
+  if (aisleId) params.set('aisleId', aisleId);
+  const jobIds = (options?.jobIds ?? []).map((id) => id.trim()).filter(Boolean);
+  if (jobIds.length > 0) params.set('jobIds', jobIds.join(','));
+  const baseline = options?.baseline?.trim();
+  if (baseline) params.set('baseline', baseline);
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
 }
 
 export function pathToAislePositions(inventoryId: string, aisleId: string): string {

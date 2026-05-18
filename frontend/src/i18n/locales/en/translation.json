@@ -325,6 +325,8 @@
       "title": "Run comparison",
       "description": "Compare 2 to 3 runs from the same aisle on test inventories. Quantity deltas are neutral; cost is per selected run, not global.",
       "openExistingFlow": "Open run comparison",
+      "openFullscreen": "Open comparison in full screen",
+      "embeddedSubtitle": "Compare 2 to 3 runs from the same aisle on this test inventory.",
       "testOnlyTooltip": "Available only for test inventories.",
       "unknownModeTooltip": "Could not determine whether this inventory allows comparison.",
       "selectInventoryHint": "Select an inventory in the filters to enable comparison.",

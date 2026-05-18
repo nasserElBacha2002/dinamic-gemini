@@ -333,6 +333,8 @@
       "title": "Comparación de corridas",
       "description": "Compará 2 a 3 corridas del mismo pasillo en inventarios de prueba. Los deltas de cantidad son neutrales; el costo es por corrida seleccionada, no un costo global.",
       "openExistingFlow": "Abrir comparación de corridas",
+      "openFullscreen": "Abrir comparación en pantalla completa",
+      "embeddedSubtitle": "Compará 2 a 3 corridas del mismo pasillo en este inventario de prueba.",
       "testOnlyTooltip": "Disponible solo para inventarios de prueba.",
       "unknownModeTooltip": "No se pudo determinar si este inventario permite comparación.",
       "selectInventoryHint": "Seleccioná un inventario en los filtros para habilitar la comparación.",

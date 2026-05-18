@@ -325,12 +325,12 @@ describe('AnalyticsDashboardPage', () => {
     expect(btn).toBeDisabled();
   });
 
-  it('compare tab exists with entry point to existing compare route', () => {
+  it('compare tab shows select inventory hint without selected inventory', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-compare'));
     expect(screen.getByTestId('analytics-compare-tab')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-open-compare-flow')).toBeInTheDocument();
-    expect(within(screen.getByTestId('analytics-compare-tab')).getByText('Comparación de corridas')).toBeInTheDocument();
+    expect(screen.getByText(/Seleccioná un inventario/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('compare-many-workspace-embedded')).not.toBeInTheDocument();
   });
 
   it('costs tab links to compare section', () => {

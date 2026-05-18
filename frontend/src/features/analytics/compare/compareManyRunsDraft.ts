@@ -1,6 +1,6 @@
-/** Draft validation for compare-many URL/UI state (shared with page + tests). */
+/** Draft validation for compare-many URL/UI state (shared with workspace + tests). */
 
-import { MAX_COMPARE_JOBS, MIN_COMPARE_JOBS } from '../../features/analytics/constants/compareManyRuns';
+import { MAX_COMPARE_JOBS, MIN_COMPARE_JOBS } from '../constants/compareManyRuns';
 
 export function buildDraftError(
   aisleId: string,
