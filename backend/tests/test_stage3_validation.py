@@ -155,4 +155,5 @@ def test_analyzer_uses_provided_logger_for_all_logs():
     mock_logger.info.assert_called_once()
     call_args = mock_logger.info.call_args[0]
     assert "Enviando" in call_args[0]
-    assert call_args[1] == 1
+    assert "interleaved" in call_args[0].lower()
+    assert call_args[-1] == 1  # primary frame count

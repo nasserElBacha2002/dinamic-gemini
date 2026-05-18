@@ -45,6 +45,12 @@ from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_set
 from src.llm.prompt_composer.hybrid_profiles import CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_PARITY_MODE
 from src.llm.types import LLMRequest, LLMResponse
+from src.llm.vision_multimodal_payload import (
+    LLM_METADATA_KEY_MULTIMODAL_ORDER,
+    LLM_METADATA_KEY_REFERENCE_IMAGE_IDS,
+    build_anthropic_message_content_parts,
+    materialize_anthropic_content_parts,
+)
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
 logger = logging.getLogger(__name__)
@@ -323,12 +329,27 @@ def _anthropic_build_message_content(
         prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text
     prompt_text = prompt_text + _JSON_OBJECT_SUFFIX
 
-    content: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
     ctx_imgs = list(request.context_images) if request.context_images else []
-    for im in ctx_imgs:
-        content.append(_anthropic_jpeg_content_block(_image_to_jpeg_bytes(im, max_side)))
-    for nd in frames_nd:
-        content.append(_anthropic_jpeg_content_block(_bgr_to_jpeg_bytes(nd, max_side)))
+    ref_ids_raw = meta.get(LLM_METADATA_KEY_REFERENCE_IMAGE_IDS) or []
+    reference_image_ids = (
+        [str(x) for x in ref_ids_raw] if isinstance(ref_ids_raw, list) else []
+    )
+    frame_refs = list(request.frame_refs) if request.frame_refs else []
+    parts, multimodal_order = build_anthropic_message_content_parts(
+        main_prompt_text=prompt_text,
+        context_images=ctx_imgs,
+        reference_image_ids=reference_image_ids,
+        primary_frames_nd=frames_nd,
+        frame_refs=frame_refs,
+    )
+    meta[LLM_METADATA_KEY_MULTIMODAL_ORDER] = multimodal_order
+    content = materialize_anthropic_content_parts(
+        parts,
+        image_to_jpeg_bytes=_image_to_jpeg_bytes,
+        bgr_to_jpeg_bytes=_bgr_to_jpeg_bytes,
+        max_side=max_side,
+        jpeg_block_factory=_anthropic_jpeg_content_block,
+    )
 
     image_blocks = sum(1 for b in content if b.get("type") == "image")
     logger.info(

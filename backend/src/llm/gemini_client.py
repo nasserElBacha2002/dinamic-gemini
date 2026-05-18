@@ -6,6 +6,8 @@ Responsabilidades:
 - Manejar errores y reintentos
 """
 
+from __future__ import annotations
+
 import logging
 import time
 from typing import Any, cast
@@ -204,6 +206,8 @@ class GeminiClient:
         images: list,
         prompt: str,
         response_schema_model: type,
+        *,
+        contents: list | None = None,
     ) -> str:
         """Una llamada a Gemini con structured output (response_schema). Más barata y JSON garantizado.
 
@@ -218,8 +222,6 @@ class GeminiClient:
         Returns:
             response.text (string JSON que cumple el schema).
         """
-        if not images:
-            raise ValueError("images no puede estar vacía")
         safe_schema = self._get_safe_schema(response_schema_model)
         generation_config = types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -227,13 +229,20 @@ class GeminiClient:
             temperature=0.0,
             safety_settings=self.safety_settings,
         )
-        contents = list(images) + [prompt]
+        if contents is not None:
+            if not contents:
+                raise ValueError("contents no puede estar vacía")
+            payload = list(contents)
+        else:
+            if not images:
+                raise ValueError("images no puede estar vacía")
+            payload = list(images) + [prompt]
         last_error = None
         for attempt in range(self.max_retries):
             try:
                 response = self.client.models.generate_content(
                     model=self.model_name,
-                    contents=contents,
+                    contents=payload,
                     config=generation_config,
                 )
                 self.last_response_usage = self._extract_usage(response)

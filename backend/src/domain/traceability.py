@@ -10,6 +10,8 @@ Diagnostic policy (Epic 3.1.C):
 - Persisted fields: source_image_id, traceability_status only.
 """
 
+from __future__ import annotations
+
 from enum import Enum
 from typing import Any
 
@@ -35,6 +37,8 @@ TRACEABILITY_UNVALIDATED = TraceabilityStatus.UNVALIDATED.value
 def apply_traceability_validation(
     entities: list[Entity],
     valid_image_ids: frozenset[str],
+    *,
+    manifest_image_ids: frozenset[str] | None = None,
 ) -> None:
     """Set traceability_status and traceability_warning on each entity in place.
 
@@ -43,12 +47,17 @@ def apply_traceability_validation(
     - source_image_id absent or empty -> missing
     - source_image_id present but not in valid_image_ids -> invalid (warning set)
 
+    ``valid_image_ids`` should be the primary frames actually sent to the model (Phase 1).
+    When ``manifest_image_ids`` is provided, IDs in the manifest but not in ``valid_image_ids``
+    receive a distinct warning (not part of model input frames).
+
     When validation context is missing (valid_image_ids is empty), we avoid
     marking references as invalid merely because context could not be established:
     - source_image_id absent or empty -> missing
     - source_image_id present -> unvalidated (no warning; we did not validate)
     """
     has_context = len(valid_image_ids) > 0
+    manifest = manifest_image_ids or frozenset()
 
     for ent in entities:
         sid = getattr(ent, "source_image_id", None)
@@ -65,7 +74,12 @@ def apply_traceability_validation(
                 ent.traceability_warning = None
             else:
                 ent.traceability_status = TraceabilityStatus.INVALID.value
-                ent.traceability_warning = f"source_image_id not in job: {sid!r}"
+                if manifest and sid in manifest:
+                    ent.traceability_warning = (
+                        f"source_image_id was not part of the model input frames: {sid!r}"
+                    )
+                else:
+                    ent.traceability_warning = f"source_image_id not in job: {sid!r}"
         else:
             ent.traceability_status = TraceabilityStatus.UNVALIDATED.value
             ent.traceability_warning = None

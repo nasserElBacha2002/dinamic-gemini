@@ -53,17 +53,31 @@ class EntityResolutionStage:
         entities = parse_entities(data.parsed_json, job_id=job_id)
         logger.info("Entidades detectadas (hybrid v2.1): %d", len(entities))
 
-        # Epic 3.1.B: validate source_image_id against job images when input is photos.
-        # Use public path helpers so we do not depend on private frame-source helpers.
+        # Epic 3.1.B / Phase 1: validate source_image_id against frames sent to the model.
         valid_image_ids: frozenset[str] = frozenset()
+        manifest_image_ids: frozenset[str] = frozenset()
         job_input = getattr(context, "job_input", None)
         if job_input and getattr(job_input, "input_type", "") == "photos":
             run_dir = context.run_dir
             manifest_path = resolve_manifest_path(run_dir, job_input)
             photos_dir_rel = photos_dir_relative_for_manifest(job_input)
             job_images = load_job_images_from_manifest(manifest_path, photos_dir_rel)
-            valid_image_ids = frozenset(img.image_id for img in job_images)
-        apply_traceability_validation(entities, valid_image_ids)
+            manifest_image_ids = frozenset(img.image_id for img in job_images)
+            composition = data.prompt_composition or {}
+            sent_raw = composition.get("frames_sent_ids") or composition.get(
+                "prompt_listed_image_ids"
+            )
+            if isinstance(sent_raw, list) and sent_raw:
+                valid_image_ids = frozenset(
+                    str(x).strip() for x in sent_raw if x is not None and str(x).strip()
+                )
+            else:
+                valid_image_ids = manifest_image_ids
+        apply_traceability_validation(
+            entities,
+            valid_image_ids,
+            manifest_image_ids=manifest_image_ids if manifest_image_ids else None,
+        )
 
         sort_entities_deterministically(entities)
         resolve_pallet_id(entities)
