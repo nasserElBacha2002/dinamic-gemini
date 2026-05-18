@@ -52,10 +52,13 @@ export default function AnalyticsDashboardPage() {
   const {
     analytics,
     observability,
+    costSummary,
     isAnalyticsLoading,
     isObservabilityLoading,
+    isCostSummaryLoading,
     analyticsError,
     observabilityError,
+    costSummaryError,
     hasMixedLoadedData,
     refetchAll,
   } = useAnalyticsDashboardData(filterParams);
@@ -107,7 +110,7 @@ export default function AnalyticsDashboardPage() {
         inventories={inventories}
         aisles={aisles}
         inventoriesLoadFailed={inventoriesQuery.isError}
-        isRefreshing={isAnalyticsLoading || isObservabilityLoading}
+        isRefreshing={isAnalyticsLoading || isObservabilityLoading || isCostSummaryLoading}
       />
 
       {analyticsError ? (
@@ -118,6 +121,11 @@ export default function AnalyticsDashboardPage() {
       {observabilityError ? (
         <Alert severity="warning" sx={{ mb: 2 }} data-testid="analytics-partial-observability-failed">
           {t('analyticsDashboard.partial.observabilityFailed')}
+        </Alert>
+      ) : null}
+      {costSummaryError ? (
+        <Alert severity="warning" sx={{ mb: 2 }} data-testid="analytics-partial-cost-failed">
+          {t('analyticsDashboard.partial.costFailed')}
         </Alert>
       ) : null}
       {hasMixedLoadedData ? (
@@ -131,7 +139,7 @@ export default function AnalyticsDashboardPage() {
         </Alert>
       ) : null}
 
-      {analyticsError && observabilityError ? (
+      {analyticsError && observabilityError && costSummaryError ? (
         <ErrorAlert error={analyticsError} context="analytics" onRetry={() => refetchAll()} />
       ) : null}
 
@@ -141,8 +149,11 @@ export default function AnalyticsDashboardPage() {
         <AnalyticsOverviewTab
           summary={analytics.summary}
           observability={observability.data}
+          costSummary={costSummary.data}
           isAnalyticsLoading={isAnalyticsLoading}
           isObservabilityLoading={isObservabilityLoading}
+          isCostSummaryLoading={isCostSummaryLoading}
+          isCostSummaryError={Boolean(costSummaryError)}
         />
       ) : null}
 
@@ -152,11 +163,14 @@ export default function AnalyticsDashboardPage() {
         <AnalyticsTimeTab analytics={analytics} observability={observability.data} isLoading={isAnalyticsLoading} />
       ) : null}
 
-      {activeTab === 'providers' ? <AnalyticsProvidersTab observability={observability.data} /> : null}
+      {activeTab === 'providers' ? (
+        <AnalyticsProvidersTab observability={observability.data} costSummary={costSummary.data} />
+      ) : null}
 
       {activeTab === 'inventories' ? (
         <AnalyticsInventoriesTab
           analytics={analytics}
+          costSummary={costSummary.data}
           isLoading={isAnalyticsLoading}
           inventoryProcessingModeById={inventoryProcessingModeById}
         />
@@ -165,6 +179,7 @@ export default function AnalyticsDashboardPage() {
       {activeTab === 'aisles' ? (
         <AnalyticsAislesTab
           analytics={analytics}
+          costSummary={costSummary.data}
           isLoading={isAnalyticsLoading}
           inventoryProcessingModeById={inventoryProcessingModeById}
         />
@@ -179,7 +194,14 @@ export default function AnalyticsDashboardPage() {
         />
       ) : null}
 
-      {activeTab === 'costs' ? <AnalyticsCostsTab onGoToCompare={() => setActiveTab('compare')} /> : null}
+      {activeTab === 'costs' ? (
+        <AnalyticsCostsTab
+          costSummary={costSummary.data}
+          isLoading={isCostSummaryLoading}
+          isError={Boolean(costSummaryError)}
+          onGoToCompare={() => setActiveTab('compare')}
+        />
+      ) : null}
     </Box>
   );
 }

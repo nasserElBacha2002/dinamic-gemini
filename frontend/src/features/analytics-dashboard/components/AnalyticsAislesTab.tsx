@@ -5,20 +5,24 @@ import { Box, Button, Tooltip, Typography } from '@mui/material';
 import { pathToAislePositions, pathToInventoryAnalyticsCompareMany } from '../../../constants/appRoutes';
 import { DataTable, sortDataTableRows, type DataTableColumn } from '../../../components/ui';
 import { paginateRows } from '../../analytics/adapters/metricsFormatters';
+import type { AnalyticsCostSummaryResponse } from '../../../api/types';
 import type { AisleIssueRow } from '../../analytics/types';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
+import { buildCostByAisleLookup, formatCostCell } from '../adapters/analyticsCostViewModel';
 import { compareEligibilityTooltipKey, getCompareEligibility } from '../types';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
 
 export interface AnalyticsAislesTabProps {
   analytics: AnalyticsBundle;
+  costSummary: AnalyticsCostSummaryResponse | null | undefined;
   isLoading: boolean;
   inventoryProcessingModeById: ReadonlyMap<string, string | undefined>;
 }
 
 export function AnalyticsAislesTab({
   analytics,
+  costSummary,
   isLoading,
   inventoryProcessingModeById,
 }: AnalyticsAislesTabProps) {
@@ -28,6 +32,8 @@ export function AnalyticsAislesTab({
   const [pageSize, setPageSize] = useState(10);
   const [sortBy, setSortBy] = useState('pending');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const costByAisle = useMemo(() => buildCostByAisleLookup(costSummary), [costSummary]);
 
   const columns = useMemo<DataTableColumn<AisleIssueRow>[]>(
     () => [
@@ -82,6 +88,30 @@ export function AnalyticsAislesTab({
         cell: (r) => r.most_common_issue ?? '—',
       },
       {
+        id: 'total_cost',
+        label: t('analyticsDashboard.costs.totalCost'),
+        align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (r) => costByAisle.get(r.aisle_id)?.total_cost ?? -1,
+        cell: (r) => formatCostCell(costByAisle.get(r.aisle_id)?.total_cost, 'cost', t),
+      },
+      {
+        id: 'counted_qty',
+        label: t('analyticsDashboard.costs.totalQuantity'),
+        align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (r) => costByAisle.get(r.aisle_id)?.total_counted_quantity ?? -1,
+        cell: (r) => formatCostCell(costByAisle.get(r.aisle_id)?.total_counted_quantity, 'quantity', t),
+      },
+      {
+        id: 'cost_per_unit',
+        label: t('analyticsDashboard.costs.costPerUnit'),
+        align: 'right',
+        cell: (r) => formatCostCell(costByAisle.get(r.aisle_id)?.cost_per_counted_unit, 'costPerUnit', t),
+      },
+      {
         id: 'actions',
         label: t('common.actions'),
         cell: (r) => {
@@ -108,7 +138,7 @@ export function AnalyticsAislesTab({
         },
       },
     ],
-    [inventoryProcessingModeById, navigate, t]
+    [costByAisle, inventoryProcessingModeById, navigate, t]
   );
 
   const rowsSorted = useMemo(

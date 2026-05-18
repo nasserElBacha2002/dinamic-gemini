@@ -7,20 +7,24 @@ import { DataTable, type DataTableColumn } from '../../../components/ui';
 import { formatDate } from '../../../utils/formatDate';
 import { formatAvgProcessingMinutes, formatPct, paginateRows } from '../../analytics/adapters/metricsFormatters';
 import { sortInventoryRows } from '../../analytics/adapters/metricsViewModel';
+import type { AnalyticsCostSummaryResponse } from '../../../api/types';
 import type { InventoryPerformanceRow } from '../../analytics/types';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
+import { buildCostByInventoryLookup, formatCostCell } from '../adapters/analyticsCostViewModel';
 import { compareEligibilityTooltipKey, getCompareEligibility } from '../types';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
 
 export interface AnalyticsInventoriesTabProps {
   analytics: AnalyticsBundle;
+  costSummary: AnalyticsCostSummaryResponse | null | undefined;
   isLoading: boolean;
   inventoryProcessingModeById: ReadonlyMap<string, string | undefined>;
 }
 
 export function AnalyticsInventoriesTab({
   analytics,
+  costSummary,
   isLoading,
   inventoryProcessingModeById,
 }: AnalyticsInventoriesTabProps) {
@@ -32,6 +36,7 @@ export function AnalyticsInventoriesTab({
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const hasUnidentified = analytics.summary?.unidentified_product_rate != null;
+  const costByInventory = useMemo(() => buildCostByInventoryLookup(costSummary), [costSummary]);
 
   const rowsSorted = useMemo(
     () => sortInventoryRows(analytics.inventoryPerformance?.items ?? [], sortBy, sortDir),
@@ -97,6 +102,24 @@ export function AnalyticsInventoriesTab({
         cell: (r) => formatAvgProcessingMinutes(r.average_processing_time_minutes, null),
       },
       {
+        id: 'total_cost',
+        label: t('analyticsDashboard.costs.totalCost'),
+        align: 'right',
+        cell: (r) => formatCostCell(costByInventory.get(r.inventory_id)?.total_cost, 'cost', t),
+      },
+      {
+        id: 'counted_qty',
+        label: t('analyticsDashboard.costs.totalQuantity'),
+        align: 'right',
+        cell: (r) => formatCostCell(costByInventory.get(r.inventory_id)?.total_counted_quantity, 'quantity', t),
+      },
+      {
+        id: 'cost_per_unit',
+        label: t('analyticsDashboard.costs.costPerUnit'),
+        align: 'right',
+        cell: (r) => formatCostCell(costByInventory.get(r.inventory_id)?.cost_per_counted_unit, 'costPerUnit', t),
+      },
+      {
         id: 'actions',
         label: t('common.actions'),
         cell: (r) => {
@@ -126,7 +149,7 @@ export function AnalyticsInventoriesTab({
         },
       },
     ],
-    [hasUnidentified, inventoryProcessingModeById, navigate, t]
+    [costByInventory, hasUnidentified, inventoryProcessingModeById, navigate, t]
   );
 
   return (

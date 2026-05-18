@@ -8,12 +8,13 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
-import type { ObservabilityMetricsResponse } from '../../../api/types';
+import type { AnalyticsCostSummaryResponse, ObservabilityMetricsResponse } from '../../../api/types';
 import { AnalyticsSectionCard } from './AnalyticsSectionCard';
-import { MetricUnavailableCards } from './MetricUnavailableState';
+import { formatCostCell, formatProviderUnitCost } from '../adapters/analyticsCostViewModel';
 
 export interface AnalyticsProvidersTabProps {
   observability: ObservabilityMetricsResponse | null | undefined;
+  costSummary: AnalyticsCostSummaryResponse | null | undefined;
 }
 
 function pctLabel(value: number | null | undefined): string {
@@ -21,9 +22,10 @@ function pctLabel(value: number | null | undefined): string {
   return `${(value * 100).toFixed(1)} %`;
 }
 
-export function AnalyticsProvidersTab({ observability }: AnalyticsProvidersTabProps) {
+export function AnalyticsProvidersTab({ observability, costSummary }: AnalyticsProvidersTabProps) {
   const { t } = useTranslation();
   const rows = observability?.by_provider_model ?? [];
+  const costRows = costSummary?.by_provider_model ?? [];
 
   return (
     <>
@@ -65,16 +67,44 @@ export function AnalyticsProvidersTab({ observability }: AnalyticsProvidersTabPr
         ) : null}
       </AnalyticsSectionCard>
 
-      <AnalyticsSectionCard title={t('analyticsDashboard.providers.costUnavailable')}>
-        <MetricUnavailableCards
-          cards={[
-            {
-              label: t('analyticsDashboard.providers.costUnavailable'),
-              value: t('analyticsDashboard.costs.unavailableCard'),
-              description: t('analyticsDashboard.costs.unavailableExplain'),
-            },
-          ]}
-        />
+      <AnalyticsSectionCard
+        title={t('analyticsDashboard.costs.byProviderModelTitle')}
+        subtitle={t('analyticsDashboard.compare.notRecommendation')}
+      >
+        <Paper variant="outlined">
+          <Table size="small" data-testid="analytics-providers-cost-table">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('observability.metrics.colProvider')}</TableCell>
+                <TableCell>{t('observability.metrics.colModel')}</TableCell>
+                <TableCell align="right">{t('observability.metrics.colRuns')}</TableCell>
+                <TableCell align="right">{t('analyticsDashboard.costs.jobsWithCost')}</TableCell>
+                <TableCell align="right">{t('analyticsDashboard.costs.totalCost')}</TableCell>
+                <TableCell align="right">{t('analyticsDashboard.costs.costPerUnit')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {costRows.map((row, idx) => {
+                const unit = formatProviderUnitCost(row.cost_per_counted_unit, t);
+                return (
+                  <TableRow key={`cost-${row.provider_name ?? ''}-${row.model_name ?? ''}-${idx}`}>
+                    <TableCell>{row.provider_name ?? t('observability.metrics.unknownId')}</TableCell>
+                    <TableCell>{row.model_name ?? t('observability.metrics.unknownId')}</TableCell>
+                    <TableCell align="right">{row.jobs_total}</TableCell>
+                    <TableCell align="right">{row.jobs_with_cost}</TableCell>
+                    <TableCell align="right">{formatCostCell(row.total_cost, 'cost', t)}</TableCell>
+                    <TableCell align="right">{unit.display}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Paper>
+        {!costRows.length ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            {t('analyticsDashboard.costs.empty')}
+          </Typography>
+        ) : null}
       </AnalyticsSectionCard>
     </>
   );

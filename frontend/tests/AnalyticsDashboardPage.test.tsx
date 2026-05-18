@@ -110,6 +110,77 @@ const analyticsLoaded = {
   refetchAll: vi.fn(),
 };
 
+const costSummaryData = {
+  scope: {
+    date_from: '2026-01-01',
+    date_to: '2026-01-31',
+    inventory_id: null,
+    aisle_id: null,
+    client_id: null,
+    client_supplier_id: null,
+    provider_name: null,
+    model_name: null,
+  },
+  totals: {
+    jobs_total: 20,
+    jobs_with_cost: 18,
+    jobs_without_cost: 2,
+    jobs_with_exact_cost: 10,
+    jobs_with_estimated_cost: 5,
+    jobs_with_partial_cost: 2,
+    jobs_with_unavailable_cost: 1,
+    jobs_with_missing_cost: 2,
+    total_cost: 24.82,
+    total_counted_quantity: 1250,
+    cost_per_counted_unit: 0.019856,
+    total_execution_time_seconds: 3600,
+    average_execution_time_seconds: 180,
+  },
+  by_provider_model: [
+    {
+      provider_name: 'gemini',
+      model_name: 'flash',
+      jobs_total: 20,
+      jobs_with_cost: 18,
+      total_cost: 24.82,
+      total_counted_quantity: null,
+      cost_per_counted_unit: null,
+      average_execution_time_seconds: 180,
+    },
+  ],
+  by_inventory: [
+    {
+      inventory_id: 'inv-test',
+      inventory_name: 'Test DC',
+      jobs_total: 15,
+      jobs_with_cost: 14,
+      total_cost: 20.5,
+      total_counted_quantity: 1000,
+      cost_per_counted_unit: 0.0205,
+      total_execution_time_seconds: 3000,
+    },
+  ],
+  by_aisle: [
+    {
+      inventory_id: 'inv-test',
+      inventory_name: 'Test DC',
+      aisle_id: 'a-1',
+      aisle_code: 'A-01',
+      jobs_total: 5,
+      jobs_with_cost: 5,
+      total_cost: 5.5,
+      total_counted_quantity: 250,
+      cost_per_counted_unit: 0.022,
+      total_execution_time_seconds: 600,
+    },
+  ],
+  by_capture_status: [
+    { capture_status: 'exact', jobs_total: 10, total_cost: 15 },
+    { capture_status: 'estimated', jobs_total: 5, total_cost: 8 },
+  ],
+  warnings: ['PROVIDER_MODEL_UNIT_COST_NOT_AVAILABLE'],
+};
+
 const observabilityData = {
   range: { from: '2026-01-01T00:00:00Z', to: '2026-01-31T00:00:00Z' },
   filters: {},
@@ -167,11 +238,14 @@ function setupMocks() {
   mockUseAnalyticsDashboardData.mockReturnValue({
     analytics: analyticsLoaded,
     observability: { data: observabilityData, isLoading: false, isError: false, error: null, refetch: vi.fn() },
+    costSummary: { data: costSummaryData, isLoading: false, isError: false, error: null, refetch: vi.fn() },
     isLoading: false,
     isAnalyticsLoading: false,
     isObservabilityLoading: false,
+    isCostSummaryLoading: false,
     analyticsError: null,
     observabilityError: null,
+    costSummaryError: null,
     hasPartialFailure: false,
     hasMixedLoadedData: false,
     refetchAll: vi.fn(),
@@ -182,11 +256,14 @@ function setupMocksWithDashboardData(overrides: Record<string, unknown> = {}) {
   mockUseAnalyticsDashboardData.mockReturnValue({
     analytics: analyticsLoaded,
     observability: { data: observabilityData, isLoading: false, isError: false, error: null, refetch: vi.fn() },
+    costSummary: { data: costSummaryData, isLoading: false, isError: false, error: null, refetch: vi.fn() },
     isLoading: false,
     isAnalyticsLoading: false,
     isObservabilityLoading: false,
+    isCostSummaryLoading: false,
     analyticsError: null,
     observabilityError: null,
+    costSummaryError: null,
     hasPartialFailure: false,
     hasMixedLoadedData: false,
     refetchAll: vi.fn(),
@@ -229,19 +306,33 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getByText('Tasa de error')).toBeInTheDocument();
   });
 
-  it('shows unavailable state for global cost metrics', () => {
+  it('renders overview cost KPIs when cost summary is available', () => {
     renderPage();
-    expect(screen.getByTestId('global-cost-unavailable-note')).toBeInTheDocument();
+    expect(screen.getByText('Costo total')).toBeInTheDocument();
+    expect(screen.getByText('US$ 24.82')).toBeInTheDocument();
+    expect(screen.getByText(/1[,.]250/)).toBeInTheDocument();
+    expect(screen.getByText('Jobs con costo')).toBeInTheDocument();
+    expect(screen.getByText('Jobs sin costo')).toBeInTheDocument();
+  });
+
+  it('shows unavailable state for global cost metrics when cost summary missing', () => {
+    setupMocksWithDashboardData({
+      costSummary: { data: undefined, isLoading: false, isError: false, error: null, refetch: vi.fn() },
+    });
+    renderPage();
     expect(screen.getAllByText('Pendiente de backend').length).toBeGreaterThan(0);
     expect(screen.getByText('Costo total')).toBeInTheDocument();
   });
 
-  it('does not show fake global cost values', () => {
+  it('shows cost partial failure without hiding position metrics', () => {
+    setupMocksWithDashboardData({
+      costSummaryError: new Error('cost failed'),
+      costSummary: { data: undefined, isLoading: false, isError: true, error: new Error('cost failed'), refetch: vi.fn() },
+    });
     renderPage();
-    const body = document.body.textContent ?? '';
-    expect(body).not.toMatch(/\$[\d,]+/);
-    expect(body).not.toMatch(/USD\s*[\d,]+/);
-    expect(screen.queryByText(/999/)).toBeNull();
+    expect(screen.getByTestId('analytics-partial-cost-failed')).toBeInTheDocument();
+    expect(screen.getByText('Posiciones procesadas')).toBeInTheDocument();
+    expect(screen.getByText('16')).toBeInTheDocument();
   });
 
   it('shows static filter scope note in the filter bar', () => {
@@ -331,6 +422,63 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getByTestId('analytics-compare-tab')).toBeInTheDocument();
     expect(screen.getByText(/Seleccioná un inventario/i)).toBeInTheDocument();
     expect(screen.queryByTestId('compare-many-workspace-embedded')).not.toBeInTheDocument();
+  });
+
+  it('costs tab renders cost summary sections', () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-tab-costs'));
+    expect(screen.getByTestId('analytics-costs-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-cost-by-provider-table')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-cost-by-inventory-table')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-cost-by-aisle-table')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-cost-by-capture-table')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-cost-warning-PROVIDER_MODEL_UNIT_COST_NOT_AVAILABLE')).toBeInTheDocument();
+  });
+
+  it('shows No disponible for null provider cost per unit without computing it', () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-tab-costs'));
+    const providerTable = screen.getByTestId('analytics-cost-by-provider-table');
+    expect(within(providerTable).getAllByText('No disponible').length).toBeGreaterThan(0);
+  });
+
+  it('shows cost load error on costs tab when endpoint fails', () => {
+    setupMocksWithDashboardData({
+      costSummaryError: new Error('cost failed'),
+      costSummary: { data: undefined, isLoading: false, isError: true, error: new Error('cost failed'), refetch: vi.fn() },
+    });
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-tab-costs'));
+    const costsTab = screen.getByTestId('analytics-costs-tab');
+    expect(within(costsTab).getByText('No se pudieron cargar las métricas de costos.')).toBeInTheDocument();
+  });
+
+  it('shows empty state when jobs_total is zero', () => {
+    setupMocksWithDashboardData({
+      costSummary: {
+        data: {
+          ...costSummaryData,
+          totals: { ...costSummaryData.totals, jobs_total: 0, jobs_with_cost: 0, jobs_without_cost: 0 },
+        },
+        isLoading: false,
+        isError: false,
+        error: null,
+        refetch: vi.fn(),
+      },
+    });
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-tab-costs'));
+    expect(screen.getByTestId('analytics-costs-empty')).toHaveTextContent(
+      /No hay jobs con costos/i
+    );
+  });
+
+  it('providers tab shows separate cost by provider/model section', () => {
+    renderPage();
+    fireEvent.click(screen.getByTestId('analytics-tab-providers'));
+    expect(screen.getByTestId('analytics-providers-cost-table')).toBeInTheDocument();
+    const costTable = screen.getByTestId('analytics-providers-cost-table');
+    expect(within(costTable).getByText('US$ 24.82')).toBeInTheDocument();
   });
 
   it('costs tab links to compare section', () => {

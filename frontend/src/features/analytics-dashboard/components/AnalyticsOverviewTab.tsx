@@ -1,30 +1,37 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Box, Typography } from '@mui/material';
+import { Box } from '@mui/material';
 import type { ObservabilityMetricsResponse } from '../../../api/types';
+import type { AnalyticsCostSummaryResponse } from '../../../api/types';
 import type { AnalyticsSummaryResponse } from '../../analytics/types';
 import { AnalyticsKpiGrid } from './AnalyticsKpiGrid';
 import { AnalyticsSectionCard } from './AnalyticsSectionCard';
-import { MetricUnavailableCards } from './MetricUnavailableState';
 import {
   buildPositionSummaryKpis,
   buildRunSummaryKpis,
   buildUnavailableGlobalCostKpis,
   hasUnidentifiedProductRate,
 } from '../adapters/analyticsDashboardViewModel';
+import { buildOverviewCostKpis, hasCostData } from '../adapters/analyticsCostViewModel';
 
 export interface AnalyticsOverviewTabProps {
   summary: AnalyticsSummaryResponse | null | undefined;
   observability: ObservabilityMetricsResponse | null | undefined;
+  costSummary: AnalyticsCostSummaryResponse | null | undefined;
   isAnalyticsLoading: boolean;
   isObservabilityLoading: boolean;
+  isCostSummaryLoading: boolean;
+  isCostSummaryError: boolean;
 }
 
 export function AnalyticsOverviewTab({
   summary,
   observability,
+  costSummary,
   isAnalyticsLoading,
   isObservabilityLoading,
+  isCostSummaryLoading,
+  isCostSummaryError,
 }: AnalyticsOverviewTabProps) {
   const { t } = useTranslation();
   const unidentified = hasUnidentifiedProductRate(summary);
@@ -34,7 +41,14 @@ export function AnalyticsOverviewTab({
     [summary, unidentified, t]
   );
   const runKpis = useMemo(() => buildRunSummaryKpis(observability, t), [observability, t]);
-  const unavailableCosts = useMemo(() => buildUnavailableGlobalCostKpis(t), [t]);
+  const costKpis = useMemo(() => {
+    if (isCostSummaryError || (!isCostSummaryLoading && !hasCostData(costSummary))) {
+      return buildUnavailableGlobalCostKpis(t).slice(0, 5);
+    }
+    return buildOverviewCostKpis(costSummary, t);
+  }, [costSummary, isCostSummaryError, isCostSummaryLoading, t]);
+
+  const costHasData = hasCostData(costSummary) && !isCostSummaryError;
 
   return (
     <Box>
@@ -60,19 +74,19 @@ export function AnalyticsOverviewTab({
       </AnalyticsSectionCard>
 
       <AnalyticsSectionCard
-        title={t('analyticsDashboard.costs.globalUnavailableTitle')}
-        subtitle={t('analyticsDashboard.costs.unavailableExplain')}
+        title={t('analyticsDashboard.costs.sectionTitle')}
+        subtitle={
+          costHasData
+            ? t('analyticsDashboard.costs.llmCostHint')
+            : t('analyticsDashboard.costs.unavailableExplain')
+        }
       >
-        <MetricUnavailableCards
-          cards={unavailableCosts.map((c) => ({
-            label: c.label,
-            value: String(c.value),
-            description: c.description,
-          }))}
+        <AnalyticsKpiGrid
+          cards={costKpis}
+          isLoading={isCostSummaryLoading}
+          hasData={costHasData || isCostSummaryLoading}
+          skeletonCount={5}
         />
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }} data-testid="global-cost-unavailable-note">
-          {t('analyticsDashboard.costs.globalUnavailableDescription')}
-        </Typography>
       </AnalyticsSectionCard>
     </Box>
   );

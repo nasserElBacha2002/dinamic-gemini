@@ -176,6 +176,8 @@ export const queryKeys = {
       [...queryKeys.analytics.all, 'aisles', params] as const,
     quality: (params: Record<string, string | undefined>) =>
       [...queryKeys.analytics.all, 'quality', params] as const,
+    costSummary: (params: Record<string, string | undefined>) =>
+      [...queryKeys.analytics.all, 'cost-summary', params] as const,
     manualInterventions: (params: Record<string, string | undefined>) =>
       [...queryKeys.analytics.all, 'manual-interventions', params] as const,
   },

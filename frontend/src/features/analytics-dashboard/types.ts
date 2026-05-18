@@ -1,4 +1,5 @@
 import type { AnalyticsQueryParams } from '../analytics/types';
+import type { AnalyticsCostSummaryParams } from '../../api/types';
 import type { ObservabilityMetricsQueryParams } from '../../api/observabilityApi';
 
 export type AnalyticsDashboardTab =
@@ -25,6 +26,7 @@ export interface AnalyticsDashboardFilters {
 export interface AnalyticsDashboardFilterParams {
   analytics: AnalyticsQueryParams;
   observability: ObservabilityMetricsQueryParams;
+  costSummary: AnalyticsCostSummaryParams;
 }
 
 export function buildFilterParams(filters: AnalyticsDashboardFilters): AnalyticsDashboardFilterParams {
@@ -44,6 +46,16 @@ export function buildFilterParams(filters: AnalyticsDashboardFilters): Analytics
       clientSupplierId: filters.clientSupplierId.trim() || undefined,
       providerName: filters.providerName.trim() || undefined,
       modelName: filters.modelName.trim() || undefined,
+    },
+    costSummary: {
+      date_from: filters.dateFrom || undefined,
+      date_to: filters.dateTo || undefined,
+      inventory_id: filters.inventoryId || undefined,
+      aisle_id: filters.aisleId || undefined,
+      client_id: filters.clientId.trim() || undefined,
+      client_supplier_id: filters.clientSupplierId.trim() || undefined,
+      provider_name: filters.providerName.trim() || undefined,
+      model_name: filters.modelName.trim() || undefined,
     },
   };
 }
