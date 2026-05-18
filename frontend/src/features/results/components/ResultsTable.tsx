@@ -17,9 +17,11 @@ import {
   type DataTableSortModel,
 } from '../../../components/ui';
 import {
-  getReviewStatusLabel,
-  reviewStatusToBadgeSemantic,
-} from '../utils/reviewStatusDisplay';
+  getImageMismatchEvidenceLabel,
+  getReviewStatusLabelForDisplay,
+  reviewStatusToBadgeSemanticForDisplay,
+  shouldReplaceTraceabilityWithImageMismatch,
+} from '../utils/evidenceReviewDisplay';
 import { visibleTraceabilityToApiStatus } from '../utils/traceabilityDisplay';
 import { formatDate } from '../../../utils/formatDate';
 import { deriveResultPriority } from '../utils/resultPriority';
@@ -150,11 +152,11 @@ export function buildResultsTableColumns(params: {
       label: t('results.table_column.review_status'),
       sortable: true,
       sortType: 'string',
-      sortAccessor: (r) => r.reviewStatus,
+      sortAccessor: (r) => getReviewStatusLabelForDisplay(r.reviewStatus),
       cell: (r) => (
         <StatusBadge
-          label={getReviewStatusLabel(r.reviewStatus)}
-          semantic={reviewStatusToBadgeSemantic(r.reviewStatus)}
+          label={getReviewStatusLabelForDisplay(r.reviewStatus)}
+          semantic={reviewStatusToBadgeSemanticForDisplay(r.reviewStatus)}
           variant="outlined"
         />
       ),
@@ -164,14 +166,29 @@ export function buildResultsTableColumns(params: {
       label: t('common.traceability'),
       sortable: true,
       sortType: 'string',
-      sortAccessor: (r) => r.traceabilityStatus,
-      cell: (r) => (
-        <TraceabilityChip
-          status={visibleTraceabilityToApiStatus(r.traceabilityStatus)}
-          size="small"
-          variant="outlined"
-        />
-      ),
+      sortAccessor: (r) =>
+        shouldReplaceTraceabilityWithImageMismatch(r.reviewStatus)
+          ? `mismatch:${r.traceabilityStatus}`
+          : r.traceabilityStatus,
+      cell: (r) => {
+        const imageMismatch = shouldReplaceTraceabilityWithImageMismatch(r.reviewStatus);
+        if (imageMismatch) {
+          return (
+            <StatusBadge
+              label={getImageMismatchEvidenceLabel()}
+              semantic="warning"
+              variant="outlined"
+            />
+          );
+        }
+        return (
+          <TraceabilityChip
+            status={visibleTraceabilityToApiStatus(r.traceabilityStatus)}
+            size="small"
+            variant="outlined"
+          />
+        );
+      },
     },
     {
       id: 'confidence',
