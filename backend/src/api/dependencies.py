@@ -64,6 +64,11 @@ from src.application.use_cases.export_aisle_benchmark import (
     ExportAisleBenchmarkCompareCsvUseCase,
     ExportAisleBenchmarkRunCsvUseCase,
 )
+from src.application.use_cases.export_inventory_business import (
+    ExportAisleBusinessCsvUseCase,
+    ExportInventoryPackageZipUseCase,
+    ExportInventorySummaryCsvUseCase,
+)
 from src.application.use_cases.export_inventory_results import (
     ExportAisleResultsCsvUseCase,
     ExportInventoryResultsUseCase,
@@ -303,6 +308,70 @@ def get_export_aisle_results_csv_use_case(
         position_repo=position_repo,
         product_record_repo=product_record_repo,
         result_context_resolver=result_context_resolver,
+    )
+
+
+def get_export_inventory_summary_csv_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+) -> ExportInventorySummaryCsvUseCase:
+    return ExportInventorySummaryCsvUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
+        result_context_resolver=result_context_resolver,
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        job_repo=job_repo,
+    )
+
+
+def get_export_inventory_package_zip_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+) -> ExportInventoryPackageZipUseCase:
+    return ExportInventoryPackageZipUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
+        result_context_resolver=result_context_resolver,
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
+        job_repo=job_repo,
+    )
+
+
+def get_export_aisle_business_csv_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
+    client_repo: ClientRepository = Depends(get_client_repo),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+) -> ExportAisleBusinessCsvUseCase:
+    return ExportAisleBusinessCsvUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
+        result_context_resolver=result_context_resolver,
+        client_repo=client_repo,
+        client_supplier_repo=client_supplier_repo,
     )
 
 

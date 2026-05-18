@@ -12,7 +12,9 @@ from fastapi.responses import Response
 from src.api.constants.error_wire import HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED
 from src.api.dependencies import (
     get_create_inventory_use_case,
+    get_export_inventory_package_zip_use_case,
     get_export_inventory_results_use_case,
+    get_export_inventory_summary_csv_use_case,
     get_get_inventory_metrics_use_case,
     get_get_inventory_use_case,
     get_list_inventory_list_items_use_case,
@@ -43,6 +45,10 @@ from src.application.services.processing_experiment_catalog import (
 from src.application.use_cases.create_inventory import (
     CreateInventoryCommand,
     CreateInventoryUseCase,
+)
+from src.application.use_cases.export_inventory_business import (
+    ExportInventoryPackageZipUseCase,
+    ExportInventorySummaryCsvUseCase,
 )
 from src.application.use_cases.export_inventory_results import ExportInventoryResultsUseCase
 from src.application.use_cases.get_inventory import GetInventoryUseCase
@@ -152,6 +158,54 @@ def list_processing_provider_options() -> ProcessingProviderOptionsResponse:
         default_prompt_key=default_pk,
         prompt_profiles=prompt_items,
         providers=items,
+    )
+
+
+@router.get("/{inventory_id}/export/summary")
+def export_inventory_summary_csv(
+    inventory_id: str,
+    level: str = Query(
+        "inventory",
+        description="Summary level: inventory (one row) or aisles (one row per aisle).",
+    ),
+    use_case: ExportInventorySummaryCsvUseCase = Depends(get_export_inventory_summary_csv_use_case),
+) -> Response:
+    """Download inventory or aisle rollup summary CSV (business columns, additive)."""
+    lvl = (level or "inventory").strip().lower()
+    try:
+        if lvl == "aisles":
+            body, filename = use_case.execute_aisles_summary_csv(inventory_id)
+        elif lvl == "inventory":
+            body, filename = use_case.execute_inventory_summary_csv(inventory_id)
+        else:
+            raise HTTPException(status_code=422, detail="level must be inventory or aisles")
+    except HTTPException:
+        raise
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return Response(
+        content=body.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/{inventory_id}/export/package")
+def export_inventory_package_zip(
+    inventory_id: str,
+    use_case: ExportInventoryPackageZipUseCase = Depends(get_export_inventory_package_zip_use_case),
+) -> Response:
+    """Download ZIP with inventory summary, aisles summary, and per-aisle business operational CSVs."""
+    try:
+        zip_bytes, filename = use_case.execute_zip(inventory_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

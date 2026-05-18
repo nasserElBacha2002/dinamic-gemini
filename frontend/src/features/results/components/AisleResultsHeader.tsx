@@ -148,13 +148,14 @@ export default function AisleResultsHeader({
                   </MenuItem>
                 ) : null}
                 <MenuItem
+                  data-testid="aisle-export-operational"
                   onClick={() => {
                     handleCloseMoreActions();
                     void onExport();
                   }}
                   disabled={exportDisabled}
                 >
-                  {exportingCsv ? t('common.exporting') : t('positions.export_aisle_csv')}
+                  {exportingCsv ? t('common.exporting') : t('positions.export_aisle_operational')}
                 </MenuItem>
               </Menu>
             </>

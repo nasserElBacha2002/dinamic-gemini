@@ -18,6 +18,9 @@ const { useRunAisleMergeMock } = vi.hoisted(() => ({
 const { getAisleMergeResultsMock } = vi.hoisted(() => ({
   getAisleMergeResultsMock: vi.fn(),
 }));
+const { exportAisleOperationalCsvMock } = vi.hoisted(() => ({
+  exportAisleOperationalCsvMock: vi.fn().mockResolvedValue(undefined),
+}));
 const { promoteMutateAsync } = vi.hoisted(() => ({
   promoteMutateAsync: vi.fn().mockResolvedValue({
     aisle_id: 'aisle-1',
@@ -176,6 +179,7 @@ vi.mock('../src/api/client', async (importOriginal) => {
     ...actual,
     getAisleMergeResults: (...args: Parameters<typeof actual.getAisleMergeResults>) =>
       getAisleMergeResultsMock(...args) as ReturnType<typeof actual.getAisleMergeResults>,
+    exportAisleOperationalCsv: exportAisleOperationalCsvMock,
   };
 });
 
@@ -758,7 +762,37 @@ describe('AislePositionsPage (Aisle Results)', () => {
       openAisleResultsMoreActionsMenu();
       expect(screen.getByRole('menuitem', { name: /comparar corridas|compare runs/i })).toBeInTheDocument();
       expect(screen.getByRole('menuitem', { name: /promote run|promover corrida/i })).toBeInTheDocument();
-      expect(screen.getByRole('menuitem', { name: /export.*csv|exportar csv del pasillo/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('menuitem', { name: /exportar pasillo operativo|export aisle operational/i })
+      ).toBeInTheDocument();
+    });
+
+    it('calls exportAisleOperationalCsv with inventory, aisle, and visible job id', async () => {
+      resultSummariesState.results = mockResults;
+      resultSummariesState.positions = mockPositions;
+      resultSummariesState.resultJobId = 'job-bench';
+      aisleJobsListState.data = {
+        operational_job_id: 'job-op',
+        jobs: [
+          {
+            id: 'job-bench',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+      exportAisleOperationalCsvMock.mockClear();
+      renderPage();
+      openAisleResultsMoreActionsMenu();
+      fireEvent.click(
+        screen.getByRole('menuitem', { name: /exportar pasillo operativo|export aisle operational/i })
+      );
+      await waitFor(() => {
+        expect(exportAisleOperationalCsvMock).toHaveBeenCalledWith('inv-1', 'aisle-1', {
+          jobId: 'job-bench',
+        });
+      });
     });
 
     it('does not show compare runs when fewer than two jobs exist', () => {
