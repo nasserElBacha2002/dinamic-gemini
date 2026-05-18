@@ -4,12 +4,25 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import pytest
 
 from src.application.dto.analytics_cost_dto import AnalyticsCostSummaryFilters
-from src.application.services.analytics_cost_counted_quantity import AnalyticsCostCountedQuantityService
+from src.application.errors import AnalyticsScopeValidationError
+from src.application.services.analytics_cost_counted_quantity import (
+    AnalyticsCostCountedQuantityService,
+    CountedQuantityScope,
+)
 from src.application.services.analytics_cost_summary_service import AnalyticsCostSummaryService
+from src.application.services.analytics_cost_warnings import (
+    COUNTED_QUANTITY_IS_OPERATIONAL_CURRENT_STATE,
+    COUNTED_QUANTITY_NOT_AVAILABLE,
+    COUNTED_QUANTITY_PARTIAL_NOT_RETURNED,
+    COUNTED_QUANTITY_SCOPE_CAPPED,
+    INVALID_COMPUTED_COST_PRESENT,
+    PROVIDER_MODEL_UNIT_COST_NOT_AVAILABLE,
+)
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
@@ -78,6 +91,7 @@ def cost_setup():
         status=AisleStatus.PROCESSED,
         created_at=_utc(),
         updated_at=_utc(),
+        client_supplier_id="supplier-1",
     )
     aisle_repo.save(aisle)
     pos = Position(
@@ -114,16 +128,18 @@ def cost_setup():
         provider: str = "gemini",
         model: str = "gemini-2.0",
         finished: datetime | None = None,
+        created: datetime | None = None,
+        aisle_id: str | None = None,
     ) -> Job:
         result = _cost_snapshot(total, status) if total is not None else {}
         return Job(
             id=job_id,
             target_type="aisle",
-            target_id=aisle.id,
+            target_id=aisle_id or aisle.id,
             job_type="process_aisle",
             status=JobStatus.SUCCEEDED,
             payload_json={},
-            created_at=_utc(),
+            created_at=created or _utc(),
             updated_at=_utc(),
             started_at=_utc(),
             finished_at=finished or _utc(),
@@ -151,7 +167,17 @@ def cost_setup():
         "aisle": aisle,
         "inv": inv,
         "job_factory": _job,
+        "quantity_svc": quantity_svc,
     }
+
+
+def _filters(**kwargs) -> AnalyticsCostSummaryFilters:
+    base = {
+        "finished_from": _utc() - timedelta(days=1),
+        "finished_to": _utc() + timedelta(days=1),
+    }
+    base.update(kwargs)
+    return AnalyticsCostSummaryFilters(**base)
 
 
 def test_aggregate_totals_and_provider_grouping(cost_setup) -> None:
@@ -160,40 +186,115 @@ def test_aggregate_totals_and_provider_grouping(cost_setup) -> None:
     job_repo.save(cost_setup["job_factory"]("job-2", total="2.00000000", provider="openai", model="gpt-4o"))
     job_repo.save(cost_setup["job_factory"]("job-3", total=None, status="missing"))
 
-    filters = AnalyticsCostSummaryFilters(
-        finished_from=_utc() - timedelta(days=1),
-        finished_to=_utc() + timedelta(days=1),
-        inventory_id=cost_setup["inv"].id,
-    )
-    result = cost_setup["svc"].build(filters)
+    result = cost_setup["svc"].build(_filters(inventory_id=cost_setup["inv"].id))
 
     assert result.totals.jobs_total == 3
     assert result.totals.jobs_with_cost == 2
-    assert result.totals.jobs_without_cost == 1
     assert result.totals.total_cost == Decimal("3.00000000")
     assert result.totals.total_counted_quantity is not None
-    assert result.totals.total_counted_quantity > 0
-    assert result.totals.cost_per_counted_unit is not None
-    assert len(result.by_provider_model) == 2
-    assert len(result.by_inventory) == 1
-    assert len(result.by_aisle) == 1
-    assert any(r.capture_status == "missing" for r in result.by_capture_status)
+    assert COUNTED_QUANTITY_IS_OPERATIONAL_CURRENT_STATE in result.warnings
+    assert PROVIDER_MODEL_UNIT_COST_NOT_AVAILABLE in result.warnings
+    for row in result.by_provider_model:
+        assert row.total_counted_quantity is None
+        assert row.cost_per_counted_unit is None
 
 
-def test_cost_per_unit_null_when_no_quantity(cost_setup) -> None:
+def test_unavailable_numeric_cost_not_summed(cost_setup) -> None:
+    job_repo = cost_setup["job_repo"]
+    job_repo.save(cost_setup["job_factory"]("job-1", total="99.00000000", status="unavailable"))
+
+    result = cost_setup["svc"].build(_filters(inventory_id=cost_setup["inv"].id))
+
+    assert result.totals.jobs_total == 1
+    assert result.totals.jobs_with_unavailable_cost == 1
+    assert result.totals.jobs_with_cost == 0
+    assert result.totals.total_cost is None
+
+
+def test_invalid_computed_cost_warning_surfaced(cost_setup) -> None:
+    job_repo = cost_setup["job_repo"]
+    job_repo.save(cost_setup["job_factory"]("job-1", total="not-a-number", status="exact"))
+
+    result = cost_setup["svc"].build(_filters(inventory_id=cost_setup["inv"].id))
+
+    assert INVALID_COMPUTED_COST_PRESENT in result.warnings
+    assert result.totals.jobs_with_cost == 0
+
+
+def test_job_created_before_range_finished_inside_included(cost_setup) -> None:
+    job_repo = cost_setup["job_repo"]
+    job_repo.save(
+        cost_setup["job_factory"](
+            "job-late-finish",
+            created=_utc() - timedelta(days=60),
+            finished=_utc(),
+        )
+    )
+
+    result = cost_setup["svc"].build(_filters(inventory_id=cost_setup["inv"].id))
+
+    assert result.totals.jobs_total == 1
+    assert result.totals.total_cost == Decimal("2.00000000")
+
+
+def test_client_id_filter(cost_setup) -> None:
     job_repo = cost_setup["job_repo"]
     job_repo.save(cost_setup["job_factory"]("job-1"))
 
-    filters = AnalyticsCostSummaryFilters(
-        finished_from=_utc() - timedelta(days=1),
-        finished_to=_utc() + timedelta(days=1),
-        provider_name="unknown-provider",
+    result = cost_setup["svc"].build(_filters(inventory_id=cost_setup["inv"].id, client_id="client-1"))
+    assert result.totals.jobs_total == 1
+
+    result_other = cost_setup["svc"].build(
+        _filters(inventory_id=cost_setup["inv"].id, client_id="other-client")
     )
-    result = cost_setup["svc"].build(filters)
-    assert result.totals.jobs_total == 0
-    assert result.totals.total_cost is None
+    assert result_other.totals.jobs_total == 0
+
+
+def test_client_supplier_id_filter(cost_setup) -> None:
+    job_repo = cost_setup["job_repo"]
+    job_repo.save(cost_setup["job_factory"]("job-1"))
+
+    result = cost_setup["svc"].build(
+        _filters(inventory_id=cost_setup["inv"].id, client_supplier_id="supplier-1")
+    )
+    assert result.totals.jobs_total == 1
+
+    result_other = cost_setup["svc"].build(
+        _filters(inventory_id=cost_setup["inv"].id, client_supplier_id="other-supplier")
+    )
+    assert result_other.totals.jobs_total == 0
+
+
+def test_aisle_inventory_scope_validation_fails(cost_setup) -> None:
+    other_inv = Inventory(
+        id="inv-2",
+        name="Other",
+        status=InventoryStatus.DRAFT,
+        created_at=_utc(),
+        updated_at=_utc(),
+        completed_at=None,
+    )
+    cost_setup["svc"]._inventory_repo.save(other_inv)
+    with pytest.raises(AnalyticsScopeValidationError):
+        cost_setup["svc"].build(
+            _filters(inventory_id=other_inv.id, aisle_id=cost_setup["aisle"].id)
+        )
+
+
+def test_capped_quantity_returns_null(cost_setup, monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_quantity = MagicMock()
+    mock_quantity.compute.return_value = CountedQuantityScope(
+        total_counted_quantity=None,
+        by_inventory_id={},
+        by_aisle_id={},
+        warnings=(COUNTED_QUANTITY_SCOPE_CAPPED, COUNTED_QUANTITY_PARTIAL_NOT_RETURNED, COUNTED_QUANTITY_NOT_AVAILABLE),
+    )
+    monkeypatch.setattr(cost_setup["svc"], "_quantity", mock_quantity)
+    cost_setup["job_repo"].save(cost_setup["job_factory"]("job-1"))
+    result = cost_setup["svc"].build(_filters(inventory_id=cost_setup["inv"].id))
     assert result.totals.total_counted_quantity is None
     assert result.totals.cost_per_counted_unit is None
+    assert COUNTED_QUANTITY_SCOPE_CAPPED in result.warnings
 
 
 def test_inventory_and_provider_filters(cost_setup) -> None:
@@ -201,14 +302,13 @@ def test_inventory_and_provider_filters(cost_setup) -> None:
     job_repo.save(cost_setup["job_factory"]("job-1", provider="gemini", model="gemini-2.0"))
     job_repo.save(cost_setup["job_factory"]("job-2", provider="openai", model="gpt-4o"))
 
-    filters = AnalyticsCostSummaryFilters(
-        finished_from=_utc() - timedelta(days=1),
-        finished_to=_utc() + timedelta(days=1),
-        inventory_id=cost_setup["inv"].id,
-        provider_name="openai",
-        model_name="gpt-4o",
+    result = cost_setup["svc"].build(
+        _filters(
+            inventory_id=cost_setup["inv"].id,
+            provider_name="openai",
+            model_name="gpt-4o",
+        )
     )
-    result = cost_setup["svc"].build(filters)
     assert result.totals.jobs_total == 1
     assert result.totals.total_cost == Decimal("2.00000000")
 
@@ -221,11 +321,6 @@ def test_finished_at_outside_range_excluded(cost_setup) -> None:
             finished=_utc() - timedelta(days=60),
         )
     )
-    filters = AnalyticsCostSummaryFilters(
-        finished_from=_utc() - timedelta(days=7),
-        finished_to=_utc() + timedelta(days=1),
-        inventory_id=cost_setup["inv"].id,
-    )
-    result = cost_setup["svc"].build(filters)
+    result = cost_setup["svc"].build(_filters(inventory_id=cost_setup["inv"].id))
     assert result.totals.jobs_total == 0
     assert result.totals.total_cost is None

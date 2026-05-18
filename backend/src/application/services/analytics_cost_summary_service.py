@@ -18,11 +18,22 @@ from src.application.dto.analytics_cost_dto import (
     AnalyticsCostSummaryScopeDTO,
     AnalyticsCostTotalsDTO,
 )
+from src.application.dto.analytics_dto import AnalyticsFilters
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
+from src.application.services.analytics_aggregation_core import _ts_in_range
 from src.application.services.analytics_cost_counted_quantity import AnalyticsCostCountedQuantityService
 from src.application.services.analytics_cost_snapshot_parser import ParsedCostSnapshot, parse_llm_cost_snapshot
+from src.application.services.analytics_cost_warnings import (
+    COST_PER_UNIT_NOT_AVAILABLE,
+    COST_SNAPSHOT_MISSING_FOR_SOME_JOBS,
+    COUNTED_QUANTITY_IS_OPERATIONAL_CURRENT_STATE,
+    DATE_RANGE_CAPPED,
+    LEGACY_JOBS_WITHOUT_COST,
+    PARSER_WARNING_TO_ENDPOINT,
+    PARTIAL_COST_CAPTURE_PRESENT,
+    PROVIDER_MODEL_UNIT_COST_NOT_AVAILABLE,
+)
 from src.application.services.analytics_query_service import validate_analytics_filters_scope
-from src.application.dto.analytics_dto import AnalyticsFilters
 from src.application.services.observability_metrics_service import (
     METRICS_JOB_LIMIT,
     PROCESS_AISLE_JOB_TYPE,
@@ -32,16 +43,15 @@ from src.application.services.observability_metrics_service import (
     _h4_snapshot,
     _passes_filters,
     _provider_model_for_job,
-    _strip,
     resolve_metrics_time_range,
 )
 from src.application.use_cases.benchmark_compare_support import job_execution_duration_seconds
 from src.domain.jobs.entities import Job, JobStatus
-from src.application.services.analytics_aggregation_core import _ts_in_range
 
 logger = logging.getLogger(__name__)
 
 _TERMINAL = frozenset({JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELED})
+_AGGREGATABLE_CAPTURE_STATUSES = frozenset({"exact", "estimated", "partial"})
 
 
 @dataclass
@@ -59,6 +69,12 @@ class _Bucket:
     execution_seconds: list[float] = field(default_factory=list)
 
 
+def _aggregatable_cost(parsed: ParsedCostSnapshot) -> Decimal | None:
+    if parsed.capture_status not in _AGGREGATABLE_CAPTURE_STATUSES:
+        return None
+    return parsed.cost_amount
+
+
 def _cost_per_unit(total_cost: Decimal | None, quantity: int | None) -> Decimal | None:
     if total_cost is None or quantity is None or quantity <= 0:
         return None
@@ -73,6 +89,13 @@ def _avg_seconds(values: list[float]) -> float | None:
     if not values:
         return None
     return sum(values) / len(values)
+
+
+def _collect_parser_warnings(parsed: ParsedCostSnapshot, warnings: set[str]) -> None:
+    for code in parsed.warnings:
+        mapped = PARSER_WARNING_TO_ENDPOINT.get(code)
+        if mapped:
+            warnings.add(mapped)
 
 
 class AnalyticsCostSummaryService:
@@ -105,17 +128,19 @@ class AnalyticsCostSummaryService:
 
     def build(self, filters: AnalyticsCostSummaryFilters) -> AnalyticsCostSummaryDTO:
         self.validate_scope(filters)
-        warnings: list[str] = []
+        warnings: set[str] = set()
 
-        jobs = self._job_repo.list_jobs_for_metrics(
-            created_from=filters.finished_from,
-            created_to=filters.finished_to,
-            job_type=PROCESS_AISLE_JOB_TYPE,
-            target_type=AISLE_TARGET,
-            limit=METRICS_JOB_LIMIT,
+        jobs = list(
+            self._job_repo.list_jobs_for_metrics_by_finished_at(
+                finished_from=filters.finished_from,
+                finished_to=filters.finished_to,
+                job_type=PROCESS_AISLE_JOB_TYPE,
+                target_type=AISLE_TARGET,
+                limit=METRICS_JOB_LIMIT,
+            )
         )
         if len(jobs) >= METRICS_JOB_LIMIT:
-            warnings.append("DATE_RANGE_CAPPED")
+            warnings.add(DATE_RANGE_CAPPED)
 
         scoped_jobs = self._filter_jobs(jobs, filters)
         job_aisle_ids = {
@@ -129,7 +154,7 @@ class AnalyticsCostSummaryService:
             aisle_id=filters.aisle_id,
             job_aisle_ids=job_aisle_ids,
         )
-        warnings.extend(quantity_scope.warnings)
+        warnings.update(quantity_scope.warnings)
 
         totals_bucket = _Bucket()
         by_pm: dict[tuple[str | None, str | None], _Bucket] = defaultdict(_Bucket)
@@ -150,29 +175,35 @@ class AnalyticsCostSummaryService:
                 aisle_meta[aisle_id] = (inventory_id, inv.name if inv else None, aisle.code)
 
             parsed = parse_llm_cost_snapshot(job.result_json if isinstance(job.result_json, dict) else None)
+            _collect_parser_warnings(parsed, warnings)
             duration = job_execution_duration_seconds(job)
 
-            self._accumulate(totals_bucket, job, parsed, duration)
+            self._accumulate(totals_bucket, parsed, duration)
             prov, model = _provider_model_for_job(
                 job, _h4_snapshot(job.result_json if isinstance(job.result_json, dict) else None)
             )
-            self._accumulate(by_pm[(prov, model)], job, parsed, duration)
+            self._accumulate(by_pm[(prov, model)], parsed, duration)
             if inventory_id:
-                self._accumulate(by_inv[inventory_id], job, parsed, duration)
+                self._accumulate(by_inv[inventory_id], parsed, duration)
             if aisle_id:
-                self._accumulate(by_aisle[aisle_id], job, parsed, duration)
-            self._accumulate(by_capture[parsed.capture_status], job, parsed, duration)
+                self._accumulate(by_aisle[aisle_id], parsed, duration)
+            self._accumulate(by_capture[parsed.capture_status], parsed, duration)
 
         if totals_bucket.jobs_with_cost < totals_bucket.jobs_total:
-            warnings.append("COST_SNAPSHOT_MISSING_FOR_SOME_JOBS")
+            warnings.add(COST_SNAPSHOT_MISSING_FOR_SOME_JOBS)
         if totals_bucket.jobs_with_partial_cost:
-            warnings.append("PARTIAL_COST_CAPTURE_PRESENT")
+            warnings.add(PARTIAL_COST_CAPTURE_PRESENT)
         if totals_bucket.jobs_with_missing_cost:
-            warnings.append("LEGACY_JOBS_WITHOUT_COST")
+            warnings.add(LEGACY_JOBS_WITHOUT_COST)
 
         totals_dto = self._totals_to_dto(totals_bucket, quantity_scope.total_counted_quantity)
+        if totals_dto.total_counted_quantity is not None:
+            warnings.add(COUNTED_QUANTITY_IS_OPERATIONAL_CURRENT_STATE)
         if totals_dto.cost_per_counted_unit is None and totals_dto.total_cost is not None:
-            warnings.append("COST_PER_UNIT_NOT_AVAILABLE")
+            warnings.add(COST_PER_UNIT_NOT_AVAILABLE)
+
+        if by_pm:
+            warnings.add(PROVIDER_MODEL_UNIT_COST_NOT_AVAILABLE)
 
         scope = AnalyticsCostSummaryScopeDTO(
             date_from=filters.finished_from.date().isoformat(),
@@ -195,11 +226,8 @@ class AnalyticsCostSummaryService:
                     jobs_total=b.jobs_total,
                     jobs_with_cost=b.jobs_with_cost,
                     total_cost=_decimal_or_none(b.cost_sum, has=b.has_cost),
-                    total_counted_quantity=quantity_scope.total_counted_quantity,
-                    cost_per_counted_unit=_cost_per_unit(
-                        _decimal_or_none(b.cost_sum, has=b.has_cost),
-                        quantity_scope.total_counted_quantity,
-                    ),
+                    total_counted_quantity=None,
+                    cost_per_counted_unit=None,
                     average_execution_time_seconds=_avg_seconds(b.execution_seconds),
                 )
                 for k, b in sorted(by_pm.items(), key=lambda x: (-x[1].jobs_total, x[0][0] or "", x[0][1] or ""))
@@ -253,7 +281,7 @@ class AnalyticsCostSummaryService:
                     ),
                 )
             ],
-            warnings=sorted(set(warnings)),
+            warnings=sorted(warnings),
         )
 
     def _filter_jobs(self, jobs: list[Job], filters: AnalyticsCostSummaryFilters) -> list[Job]:
@@ -304,7 +332,6 @@ class AnalyticsCostSummaryService:
     def _accumulate(
         self,
         bucket: _Bucket,
-        _job: Job,
         parsed: ParsedCostSnapshot,
         duration: float | None,
     ) -> None:
@@ -323,9 +350,10 @@ class AnalyticsCostSummaryService:
         if duration is not None:
             bucket.execution_seconds.append(duration)
 
-        if parsed.cost_amount is not None:
+        amount = _aggregatable_cost(parsed)
+        if amount is not None:
             bucket.jobs_with_cost += 1
-            bucket.cost_sum += parsed.cost_amount
+            bucket.cost_sum += amount
             bucket.has_cost = True
         else:
             bucket.jobs_without_cost += 1

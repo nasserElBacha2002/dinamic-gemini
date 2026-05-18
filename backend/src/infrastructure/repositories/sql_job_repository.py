@@ -342,6 +342,35 @@ class SqlJobRepository(JobRepository):
             rows = cur.fetchall()
         return [_row_to_job(row) for row in rows]
 
+    def list_jobs_for_metrics_by_finished_at(
+        self,
+        *,
+        finished_from: datetime,
+        finished_to: datetime,
+        job_type: str = "process_aisle",
+        target_type: str = "aisle",
+        limit: int = 5000,
+    ) -> Sequence[Job]:
+        ff = _ensure_utc(finished_from)
+        ft = _ensure_utc(finished_to)
+        if ff is None or ft is None:
+            return []
+        n = max(1, min(int(limit), 10_000))
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT TOP ({n}) {_JOB_SELECT_FIELDS}
+                FROM inventory_jobs
+                WHERE job_type = ? AND target_type = ?
+                  AND finished_at IS NOT NULL
+                  AND finished_at >= ? AND finished_at <= ?
+                ORDER BY finished_at DESC
+                """,  # nosec B608
+                (job_type, target_type, ff, ft),
+            )
+            rows = cur.fetchall()
+        return [_row_to_job(row) for row in rows]
+
     def claim_next_queued_job(self) -> Job | None:
         """Atomically claim next queued v3 job from `inventory_jobs`.
 

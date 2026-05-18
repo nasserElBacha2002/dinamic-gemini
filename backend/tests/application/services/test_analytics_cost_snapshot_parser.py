@@ -57,6 +57,17 @@ def test_parse_valid_capture_statuses(capture_status: str) -> None:
         assert parsed_partial.cost_amount is None
 
 
+def test_parse_unknown_capture_status_maps_to_unavailable() -> None:
+    parsed = parse_llm_cost_snapshot(_snapshot(capture_status="bogus_status"))
+    assert parsed.capture_status == "unavailable"
+
+
+def test_parse_unavailable_with_numeric_cost_keeps_parsed_amount() -> None:
+    parsed = parse_llm_cost_snapshot(_snapshot(capture_status="unavailable", total_cost="123.00000000"))
+    assert parsed.capture_status == "unavailable"
+    assert parsed.cost_amount is not None
+
+
 def test_parse_missing_snapshot() -> None:
     parsed = parse_llm_cost_snapshot({})
     assert parsed.capture_status == "missing"
@@ -72,12 +83,13 @@ def test_parse_malformed_result_json() -> None:
 def test_parse_non_numeric_computed_cost() -> None:
     parsed = parse_llm_cost_snapshot(_snapshot(total_cost="not-a-number"))
     assert parsed.cost_amount is None
-    assert parsed.capture_status == "exact"
+    assert "invalid_computed_cost" in parsed.warnings
 
 
 def test_parse_negative_computed_cost() -> None:
     parsed = parse_llm_cost_snapshot(_snapshot(total_cost="-1"))
     assert parsed.cost_amount is None
+    assert "invalid_computed_cost" in parsed.warnings
 
 
 def test_parse_null_computed_cost() -> None:

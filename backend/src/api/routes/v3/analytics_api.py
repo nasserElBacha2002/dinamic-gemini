@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -106,7 +107,7 @@ def _analytics_filters_validated(
     return f
 
 
-def _decimal_to_float(value) -> float | None:
+def _decimal_to_float(value: Decimal | None) -> float | None:
     if value is None:
         return None
     return float(value)
@@ -166,10 +167,11 @@ def analytics_cost_summary(
     only when finite and non-negative. Jobs without a valid snapshot are counted separately.
 
     **Time window:** terminal aisle jobs whose ``finished_at`` falls in the resolved range
-    (default last 30 days, max 90). The underlying job query caps rows by ``created_at`` in the
-    same window (see ``DATE_RANGE_CAPPED`` warning when the cap is hit).
+    (default last 30 days, max 90). Rows are loaded via ``finished_at`` (see ``DATE_RANGE_CAPPED``
+    when the row cap is hit).
 
     **Counted quantity:** operational UI/export rollup per aisle in scope; null when unavailable.
+    Counted quantity reflects current operational state, not job-date attribution.
     """
     filters = _cost_filters(
         date_from,
@@ -182,13 +184,12 @@ def analytics_cost_summary(
         model_name,
     )
     try:
-        svc.validate_scope(filters)
+        data = svc.build(filters)
     except Exception as e:
         mapped = mapped_http_exception(e)
         if mapped is not None:
             raise mapped
         raise
-    data = svc.build(filters)
     return AnalyticsCostSummaryResponse(
         scope=AnalyticsCostSummaryScopeResponse.model_validate(data.scope.__dict__),
         totals=AnalyticsCostTotalsResponse(
