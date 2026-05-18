@@ -20,6 +20,11 @@ export function hasImageMismatchEvidenceIssue(reviewStatus: ReviewStatus): boole
   return reviewStatus === 'IMAGE_MISMATCH';
 }
 
+/** When true, traceability UI shows image-mismatch evidence instead of the API traceability chip. */
+export function shouldReplaceTraceabilityWithImageMismatch(reviewStatus: ReviewStatus): boolean {
+  return hasImageMismatchEvidenceIssue(reviewStatus);
+}
+
 /** Result-data review label: image mismatch rows are treated as reviewed/confirmed. */
 export function getResultReviewStatusForDisplay(reviewStatus: ReviewStatus): ReviewStatus {
   return reviewStatus === 'IMAGE_MISMATCH' ? 'CONFIRMED' : reviewStatus;

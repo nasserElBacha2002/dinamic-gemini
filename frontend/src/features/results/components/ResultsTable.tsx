@@ -18,9 +18,9 @@ import {
 } from '../../../components/ui';
 import {
   getImageMismatchEvidenceLabel,
-  hasImageMismatchEvidenceIssue,
   getReviewStatusLabelForDisplay,
   reviewStatusToBadgeSemanticForDisplay,
+  shouldReplaceTraceabilityWithImageMismatch,
 } from '../utils/evidenceReviewDisplay';
 import { visibleTraceabilityToApiStatus } from '../utils/traceabilityDisplay';
 import { formatDate } from '../../../utils/formatDate';
@@ -167,11 +167,11 @@ export function buildResultsTableColumns(params: {
       sortable: true,
       sortType: 'string',
       sortAccessor: (r) =>
-        hasImageMismatchEvidenceIssue(r.reviewStatus)
+        shouldReplaceTraceabilityWithImageMismatch(r.reviewStatus)
           ? `mismatch:${r.traceabilityStatus}`
           : r.traceabilityStatus,
       cell: (r) => {
-        const imageMismatch = hasImageMismatchEvidenceIssue(r.reviewStatus);
+        const imageMismatch = shouldReplaceTraceabilityWithImageMismatch(r.reviewStatus);
         if (imageMismatch) {
           return (
             <StatusBadge

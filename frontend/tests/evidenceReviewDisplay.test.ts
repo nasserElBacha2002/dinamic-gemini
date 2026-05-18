@@ -4,6 +4,7 @@ import {
   getReviewStatusLabelForDisplay,
   hasImageMismatchEvidenceIssue,
   reviewStatusToBadgeSemanticForDisplay,
+  shouldReplaceTraceabilityWithImageMismatch,
 } from '../src/features/results/utils/evidenceReviewDisplay';
 import { mapPositionSummaryToResultSummary } from '../src/features/results/mappers/positionToResult';
 import type { PositionSummary } from '../src/api/types/responses';
@@ -12,6 +13,11 @@ describe('evidenceReviewDisplay', () => {
   it('hasImageMismatchEvidenceIssue is true only for IMAGE_MISMATCH', () => {
     expect(hasImageMismatchEvidenceIssue('IMAGE_MISMATCH')).toBe(true);
     expect(hasImageMismatchEvidenceIssue('CONFIRMED')).toBe(false);
+  });
+
+  it('shouldReplaceTraceabilityWithImageMismatch mirrors image mismatch evidence flag', () => {
+    expect(shouldReplaceTraceabilityWithImageMismatch('IMAGE_MISMATCH')).toBe(true);
+    expect(shouldReplaceTraceabilityWithImageMismatch('CONFIRMED')).toBe(false);
   });
 
   it('maps IMAGE_MISMATCH review display to CONFIRMED semantics', () => {
@@ -36,6 +42,7 @@ describe('evidenceReviewDisplay', () => {
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-02T00:00:00Z',
       qty: 4,
+      qtySource: 'detected',
       has_evidence: true,
       review_resolution: 'image_mismatch',
     };

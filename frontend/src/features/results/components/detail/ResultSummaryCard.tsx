@@ -10,9 +10,9 @@ import { StatusChip, TraceabilityChip } from '../../../../components/ui';
 import { getCountOriginLabel } from '../../utils/countOriginLabel';
 import {
   getImageMismatchEvidenceLabel,
-  hasImageMismatchEvidenceIssue,
   getReviewStatusColorForDisplay,
   getReviewStatusLabelForDisplay,
+  shouldReplaceTraceabilityWithImageMismatch,
 } from '../../utils/evidenceReviewDisplay';
 import { visibleTraceabilityToApiStatus } from '../../utils/traceabilityDisplay';
 import { formatDate } from '../../../../utils/formatDate';
@@ -114,7 +114,7 @@ export default function ResultSummaryCard({ result }: ResultSummaryCardProps) {
           size="small"
           variant="filled"
         />
-        {hasImageMismatchEvidenceIssue(result.reviewStatus) ? (
+        {shouldReplaceTraceabilityWithImageMismatch(result.reviewStatus) ? (
           <StatusChip
             label={getImageMismatchEvidenceLabel(true)}
             color="warning"
