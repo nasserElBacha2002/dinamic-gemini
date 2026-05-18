@@ -3,6 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { Box, Button, Divider, Drawer, Typography } from '@mui/material';
 import { getVisibleErrorMessage } from '../../utils/apiErrors';
 import {
+  isTooManyFilesForUpload,
+  maxFilesPerUploadHelperText,
+  tooManyFilesMessage,
+} from '../../utils/uploadFileLimits';
+import {
   ConfirmDialog,
   DrawerHeader,
   EmptyState,
@@ -118,6 +123,7 @@ export default function ManagedImageAssetsDrawer({
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [localUploadError, setLocalUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -166,6 +172,11 @@ export default function ManagedImageAssetsDrawer({
     const files = event.target.files ? Array.from(event.target.files) : [];
     event.target.value = '';
     if (files.length === 0 || !onUpload) return;
+    if (isTooManyFilesForUpload(files.length)) {
+      setLocalUploadError(tooManyFilesMessage('aisle'));
+      return;
+    }
+    setLocalUploadError(null);
     try {
       await onUpload(files);
     } catch {
@@ -238,6 +249,7 @@ export default function ManagedImageAssetsDrawer({
   };
 
   const busy = isUploading || isDeleting || isReplacing;
+  const effectiveUploadError = localUploadError ?? uploadError ?? null;
   const effectiveShowUpload = !readOnly && showUpload;
   const effectiveShowReplace = !readOnly && showReplace;
 
@@ -332,6 +344,9 @@ export default function ManagedImageAssetsDrawer({
                   <Typography variant="body2" color="text.secondary">
                     {copy.managementBody}
                   </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    {maxFilesPerUploadHelperText()}
+                  </Typography>
                   {uploadExtras ?? null}
                   {effectiveShowUpload && onUpload ? (
                     <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -340,7 +355,7 @@ export default function ManagedImageAssetsDrawer({
                       </Button>
                     </Box>
                   ) : null}
-                  {uploadError ? <ErrorAlert message={uploadError} /> : null}
+                  {effectiveUploadError ? <ErrorAlert message={effectiveUploadError} /> : null}
                   {replaceError ? <ErrorAlert message={replaceError} /> : null}
                   {deleteError ? <ErrorAlert message={deleteError} /> : null}
                 </Box>

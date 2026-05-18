@@ -1,6 +1,8 @@
 import { V3_INVENTORIES_BASE } from '../constants/v3ApiPaths';
 import { getStoredToken } from '../features/auth/storage';
 import i18n from '../i18n';
+import { isTooManyFilesForUpload, tooManyFilesMessage } from '../utils/uploadFileLimits';
+import { ApiError } from './types';
 import type { ApiErrorDetail, SourceAssetSummary, UploadAisleAssetsResponse } from './types';
 import { protectedFetch, throwApiErrorIfNotOk } from './http';
 import { apiRequestJson } from './request';
@@ -12,6 +14,9 @@ export async function uploadAisleAssets(
   aisleId: string,
   files: File[]
 ): Promise<UploadAisleAssetsResponse> {
+  if (isTooManyFilesForUpload(files.length)) {
+    throw new ApiError(tooManyFilesMessage('aisle'));
+  }
   const form = new FormData();
   files.forEach((file) => form.append('files', file));
   return apiRequestJson<UploadAisleAssetsResponse>(

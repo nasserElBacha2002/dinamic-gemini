@@ -14,9 +14,9 @@ from src.application.errors import (
     CaptureSessionInvalidStateError,
     CaptureSessionNotAcceptingUploadsError,
     CaptureSessionNotFoundError,
-    CaptureSessionUploadBatchTooLargeError,
     InventoryNotFoundError,
     OpenCaptureSessionExistsError,
+    TooManyFilesPerUploadError,
 )
 from src.application.ports.clock import Clock
 from src.application.use_cases.cancel_capture_session import CancelCaptureSessionUseCase
@@ -160,7 +160,6 @@ def test_inventory_level_session_upload_close_cancel_flow(tmp_path: Path) -> Non
         artifact_storage=V3ArtifactStorageAdapter(tmp_path),
         clock=clock,
         staging_prefix="capture/staging",
-        max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
     )
@@ -276,7 +275,6 @@ def test_close_then_reopen_allowed(tmp_path: Path) -> None:
         artifact_storage=store,
         clock=clock,
         staging_prefix="capture/staging",
-        max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
     ).execute(
@@ -357,7 +355,6 @@ def test_staging_file_too_large(tmp_path: Path) -> None:
         artifact_storage=V3ArtifactStorageAdapter(tmp_path),
         clock=clock,
         staging_prefix="capture/staging",
-        max_files_per_upload=10,
         max_upload_bytes=3,
         time_metadata_extractor=_pillow_time_extractor(),
     )
@@ -372,7 +369,7 @@ def test_staging_file_too_large(tmp_path: Path) -> None:
     assert batch.errors[0].code == "CAPTURE_SESSION_STAGING_FILE_TOO_LARGE"
 
 
-def test_staging_batch_too_large(tmp_path: Path) -> None:
+def test_staging_upload_rejects_more_than_global_file_limit(tmp_path: Path) -> None:
     inv_repo, aisle_repo, inv_id, aisle_id = _seed_inv_aisle()
     session_repo = MemoryCaptureSessionRepository()
     item_repo = MemoryCaptureSessionItemRepository()
@@ -390,18 +387,27 @@ def test_staging_batch_too_large(tmp_path: Path) -> None:
         artifact_storage=V3ArtifactStorageAdapter(tmp_path),
         clock=clock,
         staging_prefix="capture/staging",
-        max_files_per_upload=1,
-        max_upload_bytes=1024,
+        max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
     )
-    with pytest.raises(CaptureSessionUploadBatchTooLargeError):
+    five_files = [
+        UploadedFile(f"{i}.jpg", BytesIO(bytes([i + 1])), "image/jpeg") for i in range(5)
+    ]
+    batch = upload_uc.execute(
+        inventory_id=inv_id,
+        aisle_id=aisle_id,
+        session_id=s.id,
+        files=five_files,
+    )
+    assert len(batch.items) == 5
+    with pytest.raises(TooManyFilesPerUploadError):
         upload_uc.execute(
             inventory_id=inv_id,
             aisle_id=aisle_id,
             session_id=s.id,
             files=[
-                UploadedFile("a.jpg", BytesIO(b"a"), "image/jpeg"),
-                UploadedFile("b.jpg", BytesIO(b"b"), "image/jpeg"),
+                UploadedFile(f"{i}.jpg", BytesIO(bytes([i])), "image/jpeg")
+                for i in range(6)
             ],
         )
 
@@ -425,7 +431,6 @@ def test_upload_creates_item_no_source_asset(tmp_path: Path) -> None:
         artifact_storage=store,
         clock=clock,
         staging_prefix="capture/staging",
-        max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
     )
@@ -474,7 +479,6 @@ def test_upload_rejected_after_cancel(tmp_path: Path) -> None:
         artifact_storage=store,
         clock=clock,
         staging_prefix="capture/staging",
-        max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
     )
@@ -512,7 +516,6 @@ def test_upload_duplicate_content_rejected(tmp_path: Path) -> None:
         artifact_storage=store,
         clock=clock,
         staging_prefix="capture/staging",
-        max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
     )
@@ -557,7 +560,6 @@ def test_upload_mixed_batch_partial_success(tmp_path: Path) -> None:
         artifact_storage=V3ArtifactStorageAdapter(tmp_path),
         clock=clock,
         staging_prefix="capture/staging",
-        max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
     )

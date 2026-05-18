@@ -17,6 +17,11 @@ import {
 import { useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
+import {
+  isTooManyFilesForUpload,
+  maxFilesPerUploadHelperText,
+  tooManyFilesMessage,
+} from '../../../utils/uploadFileLimits';
 import type { UploadQueueItem } from '../hooks/useUploadCaptureItems';
 import { useUploadCaptureItems } from '../hooks/useUploadCaptureItems';
 
@@ -54,12 +59,18 @@ export default function ImportSessionUpload({
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [lastSummary, setLastSummary] = useState<{ ok: number; fail: number } | null>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
   const uploadMutation = useUploadCaptureItems();
 
   const canSelect = !disabled && !uploadMutation.isPending;
 
   const startUpload = async (files: File[]) => {
     if (!files.length || !canSelect) return;
+    if (isTooManyFilesForUpload(files.length)) {
+      setSelectionError(tooManyFilesMessage('import'));
+      return;
+    }
+    setSelectionError(null);
     setLastSummary(null);
     const result = await uploadMutation.mutateAsync({
       inventoryId,
@@ -115,6 +126,9 @@ export default function ImportSessionUpload({
         <Typography variant="body2" color="text.secondary" gutterBottom>
           {t('ingestion_sessions.upload.subtitle')}
         </Typography>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+          {maxFilesPerUploadHelperText()}
+        </Typography>
         <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
           <Button
             variant="contained"
@@ -137,6 +151,12 @@ export default function ImportSessionUpload({
           }}
         />
       </Paper>
+
+      {selectionError ? (
+        <Alert severity="error" sx={{ mt: 2 }}>
+          {selectionError}
+        </Alert>
+      ) : null}
 
       {uploadMutation.isError ? (
         <Alert severity="warning" sx={{ mt: 2 }}>

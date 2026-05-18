@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError } from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
+import { isTooManyFilesForUpload, tooManyFilesMessage } from '../../../utils/uploadFileLimits';
 import { useAppSnackbar } from '../../../components/ui';
 import { useUploadAisleAssetsFlex } from '../../../hooks';
 
@@ -52,6 +53,10 @@ export function useAisleAssetUploadFlow({
   const uploadFilesForAisle = useCallback(
     async (aisleId: string, files: File[]) => {
       if (!inventoryId || !files.length) return;
+      if (isTooManyFilesForUpload(files.length)) {
+        setUploadError(tooManyFilesMessage('aisle'));
+        return;
+      }
       onBeforeUploadAttempt?.();
       setUploadError(null);
       setUploadingAisleId(aisleId);

@@ -136,6 +136,28 @@
       "in_review": "In review"
     }
   },
+  "uploads": {
+    "errors": {
+      "tooManyFiles": "You can upload up to 5 files at a time. Split the upload into groups of up to 5 files."
+    },
+    "helper": {
+      "maxFilesPerUpload": "Maximum 5 files per upload."
+    }
+  },
+  "aisles": {
+    "uploads": {
+      "errors": {
+        "tooManyImages": "You can upload up to 5 images at a time for this aisle. Split the upload into groups of up to 5 files."
+      }
+    }
+  },
+  "imports": {
+    "uploads": {
+      "errors": {
+        "tooManyFiles": "You can import up to 5 files at a time. Split the import into groups of up to 5 files."
+      }
+    }
+  },
   "aisle_source_assets": {
     "action_label": "Source assets",
     "action_tooltip": "View and manage source images used as evidence for this aisle",
@@ -1048,7 +1070,7 @@
     },
     "upload": {
       "title": "Upload imported media",
-      "subtitle": "Drag and drop files here or select multiple files from your device.",
+      "subtitle": "Drag and drop files here or select multiple files from your device. Maximum 5 files per upload.",
       "select_files": "Select files",
       "error_summary": "Upload completed with errors. Review file-level statuses below.",
       "summary_ok": "{{ok}} file(s) uploaded successfully.",

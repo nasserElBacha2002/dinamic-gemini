@@ -50,6 +50,9 @@ from src.application.dto.uploaded_file import UploadedFile
 from src.application.services.capture_session_status_filter import (
     parse_capture_session_status_filter,
 )
+from src.application.services.upload_file_count_validation import (
+    assert_upload_file_count_within_limit,
+)
 from src.application.use_cases.assign_capture_session_group_to_existing_aisle import (
     AssignCaptureSessionGroupToExistingAisleUseCase,
 )
@@ -130,6 +133,7 @@ def _staging_upload_batch_response(
 
 
 async def _upload_files_to_staging_dtos(files: list[UploadFile]) -> list[UploadedFile]:
+    assert_upload_file_count_within_limit(len(files))
     uploaded: list[UploadedFile] = []
     for u in files:
         content = await u.read()
@@ -575,7 +579,11 @@ async def upload_capture_session_staging_items_inventory_scope(
         get_upload_capture_session_staging_items_use_case
     ),
 ) -> UploadCaptureSessionItemsResponse:
-    uploaded = await _upload_files_to_staging_dtos(files)
+    try:
+        uploaded = await _upload_files_to_staging_dtos(files)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
     try:
         batch = use_case.execute(
             inventory_id=inventory_id,
@@ -609,7 +617,11 @@ async def upload_capture_session_staging_items(
     memory before invoking the use case (``BytesIO`` per file). Low-risk for typical capture
     batch sizes; very large files still hit ``max_upload_size_mb`` in the use case.
     """
-    uploaded = await _upload_files_to_staging_dtos(files)
+    try:
+        uploaded = await _upload_files_to_staging_dtos(files)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
     try:
         batch = use_case.execute(
             inventory_id=inventory_id,

@@ -132,7 +132,6 @@ def _prepare_assignment_proposed_session(tmp_path):
         artifact_storage=store,
         clock=clock,
         staging_prefix="capture/staging",
-        max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
     ).execute(
@@ -332,7 +331,6 @@ def test_materialize_failure_rolls_back_links_and_assets(tmp_path) -> None:
         artifact_storage=store,
         clock=clock,
         staging_prefix="capture/staging",
-        max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
     ).execute(

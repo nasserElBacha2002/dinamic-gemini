@@ -118,7 +118,6 @@ def test_preview_rejected_before_close(tmp_path) -> None:
         artifact_storage=V3ArtifactStorageAdapter(tmp_path),
         clock=clock,
         staging_prefix="capture/staging",
-        max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
     ).execute(
@@ -171,7 +170,6 @@ def test_preview_moves_session_and_offset_invalidates(tmp_path) -> None:
         artifact_storage=V3ArtifactStorageAdapter(tmp_path),
         clock=clock,
         staging_prefix="capture/staging",
-        max_files_per_upload=10,
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
     ).execute(

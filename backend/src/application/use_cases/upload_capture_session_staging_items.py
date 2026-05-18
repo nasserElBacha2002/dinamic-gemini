@@ -16,7 +16,6 @@ from src.application.errors import (
     CaptureSessionDuplicateItemContentError,
     CaptureSessionNotAcceptingUploadsError,
     CaptureSessionNotFoundError,
-    CaptureSessionUploadBatchTooLargeError,
     EmptyUploadError,
     UnsupportedAssetTypeError,
 )
@@ -32,6 +31,9 @@ from src.application.ports.clock import Clock
 from src.application.ports.services import ArtifactStorage
 from src.application.services.aisle_source_asset_materializer import (
     validate_staging_media_upload_file,
+)
+from src.application.services.upload_file_count_validation import (
+    assert_upload_file_count_within_limit,
 )
 from src.domain.capture.entities import (
     CaptureSession,
@@ -152,7 +154,6 @@ class UploadCaptureSessionStagingItemsUseCase:
         artifact_storage: ArtifactStorage,
         clock: Clock,
         staging_prefix: str,
-        max_files_per_upload: int,
         max_upload_bytes: int,
         time_metadata_extractor: CaptureStagingTimeMetadataExtractor,
     ) -> None:
@@ -161,7 +162,6 @@ class UploadCaptureSessionStagingItemsUseCase:
         self._artifact_storage = artifact_storage
         self._clock = clock
         self._staging_prefix = _normalize_prefix(staging_prefix)
-        self._max_files = max(1, int(max_files_per_upload))
         self._max_upload_bytes = max(1, int(max_upload_bytes))
         self._time_extractor = time_metadata_extractor
 
@@ -425,10 +425,7 @@ class UploadCaptureSessionStagingItemsUseCase:
     ) -> StagingUploadBatchResult:
         if not files:
             raise EmptyUploadError("At least one file is required")
-        if len(files) > self._max_files:
-            raise CaptureSessionUploadBatchTooLargeError(
-                f"At most {self._max_files} file(s) allowed per staging upload request"
-            )
+        assert_upload_file_count_within_limit(len(files))
         session = self._require_session_for_staging_upload(session_id, inventory_id, aisle_id)
         now = self._clock.now()
         acc = _StagingBatchAccum([], [], set(), False)

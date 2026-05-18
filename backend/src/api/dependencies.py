@@ -1163,7 +1163,6 @@ def get_upload_capture_session_staging_items_use_case(
         artifact_storage=artifact_storage,
         clock=clock,
         staging_prefix=s.v3_capture_staging_storage_prefix,
-        max_files_per_upload=s.v3_capture_max_files_per_upload,
         max_upload_bytes=max_bytes,
         time_metadata_extractor=time_metadata_extractor,
     )
