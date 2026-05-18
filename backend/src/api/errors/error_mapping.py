@@ -187,6 +187,7 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_CAPTURE_SESSION_NOT_FOUND,
     HTTP_DETAIL_CAPTURE_SESSION_STATUS_FILTER_INVALID,
     HTTP_DETAIL_CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
+    HTTP_DETAIL_TOO_MANY_FILES_PER_UPLOAD,
     HTTP_DETAIL_CLIENT_NOT_FOUND,
     HTTP_DETAIL_CLIENT_SUPPLIER_CLIENT_MISMATCH,
     HTTP_DETAIL_CLIENT_SUPPLIER_NOT_FOUND,
@@ -240,6 +241,7 @@ from src.api.errors.structured_api_http import (
     CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
     CAPTURE_SESSION_STATUS_FILTER_INVALID,
     CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
+    UPLOAD_TOO_MANY_FILES_PER_REQUEST,
     CLIENT_NOT_FOUND,
     CLIENT_SUPPLIER_CLIENT_MISMATCH,
     CLIENT_SUPPLIER_NOT_FOUND,
@@ -298,6 +300,7 @@ from src.application.errors import (
     CaptureSessionStagingFileTooLargeError,
     CaptureSessionStatusFilterInvalidError,
     CaptureSessionUploadBatchTooLargeError,
+    TooManyFilesPerUploadError,
     ClientNotFoundError,
     ClientSupplierClientMismatchError,
     ClientSupplierNotFoundError,
@@ -670,10 +673,10 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         error_code=CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
         detail=HTTP_DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT,
     ),
-    CaptureSessionUploadBatchTooLargeError: _structured_fixed(
-        422,
-        error_code=CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
-        detail=HTTP_DETAIL_CAPTURE_SESSION_UPLOAD_BATCH_TOO_LARGE,
+    TooManyFilesPerUploadError: _structured_fixed(
+        400,
+        error_code=UPLOAD_TOO_MANY_FILES_PER_REQUEST,
+        detail=HTTP_DETAIL_TOO_MANY_FILES_PER_UPLOAD,
     ),
     CaptureSessionStagingFileTooLargeError: _structured_fixed(
         422,

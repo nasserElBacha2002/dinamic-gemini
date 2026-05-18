@@ -771,12 +771,6 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: V3_CAPTURE_STAGING_STORAGE_PREFIX."
         ),
     )
-    v3_capture_max_files_per_upload: int = Field(
-        default_factory=lambda: int(os.getenv("V3_CAPTURE_MAX_FILES_PER_UPLOAD", "50")),
-        ge=1,
-        le=200,
-        description="Max files per POST .../capture-sessions/{id}/items staging upload. Env: V3_CAPTURE_MAX_FILES_PER_UPLOAD.",
-    )
     v3_capture_grouping_max_gap_seconds: int = Field(
         default_factory=lambda: int(os.getenv("V3_CAPTURE_GROUPING_MAX_GAP_SECONDS", "60")),
         ge=1,

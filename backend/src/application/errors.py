@@ -209,7 +209,11 @@ class CaptureSessionDuplicateItemContentError(Exception):
     """Raised when the same content hash is already registered for this session (unique index)."""
 
 
-class CaptureSessionUploadBatchTooLargeError(Exception):
+class TooManyFilesPerUploadError(Exception):
+    """Raised when a multipart upload request includes more files than allowed per batch."""
+
+
+class CaptureSessionUploadBatchTooLargeError(TooManyFilesPerUploadError):
     """Raised when the number of files in one staging upload exceeds the configured cap."""
 
 

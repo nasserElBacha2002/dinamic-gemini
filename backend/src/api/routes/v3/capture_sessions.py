@@ -47,6 +47,7 @@ from src.api.schemas.capture_schemas import (
 )
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.application.dto.uploaded_file import UploadedFile
+from src.application.services.upload_file_count_validation import assert_upload_file_count_within_limit
 from src.application.services.capture_session_status_filter import (
     parse_capture_session_status_filter,
 )
@@ -130,6 +131,7 @@ def _staging_upload_batch_response(
 
 
 async def _upload_files_to_staging_dtos(files: list[UploadFile]) -> list[UploadedFile]:
+    assert_upload_file_count_within_limit(len(files))
     uploaded: list[UploadedFile] = []
     for u in files:
         content = await u.read()

@@ -8,12 +8,16 @@ from fastapi import HTTPException, UploadFile
 
 from src.api.constants.error_wire import HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED
 from src.application.dto.uploaded_file import UploadedFile
+from src.application.services.upload_file_count_validation import (
+    assert_upload_file_count_within_limit,
+)
 
 
 async def read_uploaded_files_for_aisle_asset_upload(
     files: list[UploadFile],
 ) -> list[UploadedFile]:
     """Skip empty parts; 422 if the request has no usable file parts (same rules as the route)."""
+    assert_upload_file_count_within_limit(len(files))
     if not files:
         raise HTTPException(status_code=422, detail=HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED)
     uploaded: list[UploadedFile] = []
