@@ -1054,6 +1054,33 @@ def get_analytics_query_service(
     return AnalyticsQueryService(repo, aisle_repo)
 
 
+def get_analytics_cost_summary_service(
+    job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    result_context_resolver: ResultContextResolver = Depends(get_result_context_resolver),
+):
+    from src.application.services.analytics_cost_counted_quantity import (
+        AnalyticsCostCountedQuantityService,
+    )
+    from src.application.services.analytics_cost_summary_service import AnalyticsCostSummaryService
+
+    return AnalyticsCostSummaryService(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
+        counted_quantity_service=AnalyticsCostCountedQuantityService(
+            inventory_repo=inventory_repo,
+            aisle_repo=aisle_repo,
+            position_repo=position_repo,
+            product_record_repo=product_record_repo,
+            result_context_resolver=result_context_resolver,
+        ),
+    )
+
+
 def get_create_capture_session_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
