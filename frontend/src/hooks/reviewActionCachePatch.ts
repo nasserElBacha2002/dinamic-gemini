@@ -72,7 +72,8 @@ function applyQuantityCorrectionToPosition(
 
 /**
  * Exported for unit tests — mirrors backend `PositionReviewResolution` string values.
- * Only sets flat / explicitly requested fields; does not fabricate nested quantity provenance.
+ * Only patches flat fields and existing nested `quantity` fields; does not fabricate a
+ * `quantity` block when absent.
  */
 export function applyReviewActionToPositionSummary(
   position: PositionSummary,
