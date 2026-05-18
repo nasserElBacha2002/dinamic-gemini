@@ -85,6 +85,17 @@ export function AnalyticsDrilldownDrawer({
         aria-labelledby="analytics-drilldown-title"
         sx={{ p: 2.5, overflowY: 'auto', flex: 1 }}
       >
+        {state ? (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            display="block"
+            sx={{ mb: 2 }}
+            data-testid="analytics-drilldown-scope-caption"
+          >
+            {t('analyticsDashboard.drilldown.scopeCaption')}
+          </Typography>
+        ) : null}
         {state?.type === 'inventory' ? (
           <InventoryDrilldownPanel
             inventoryId={state.inventoryId}

@@ -52,6 +52,24 @@ export function filterAislesForInventory(
   return (aisleIssues ?? []).filter((r) => r.inventory_id === inventoryId);
 }
 
+export function compareNullableCostDesc(
+  a: number | null | undefined,
+  b: number | null | undefined
+): number {
+  const aHasCost = a != null && Number.isFinite(a);
+  const bHasCost = b != null && Number.isFinite(b);
+
+  if (aHasCost !== bHasCost) {
+    return aHasCost ? -1 : 1;
+  }
+
+  if (!aHasCost || !bHasCost) {
+    return 0;
+  }
+
+  return b - a;
+}
+
 export function buildAisleContributionRows(
   aisleIssues: readonly AisleIssueRow[],
   costSummary: AnalyticsCostSummaryResponse | null | undefined,
@@ -77,7 +95,11 @@ export function buildAisleContributionRows(
         invalidTraceabilityCount: row.invalid_traceability_count,
       };
     })
-    .sort((a, b) => (b.totalCost ?? 0) - (a.totalCost ?? 0) || b.needsReviewCount - a.needsReviewCount)
+    .sort((a, b) => {
+      const byCost = compareNullableCostDesc(a.totalCost, b.totalCost);
+      if (byCost !== 0) return byCost;
+      return b.needsReviewCount - a.needsReviewCount;
+    })
     .slice(0, DRILLDOWN_AISLE_TOP_N);
 }
 
@@ -270,25 +292,33 @@ export type DrilldownJobRow = {
   duration: string;
 };
 
+export function isValidDateLike(value: string | null | undefined): value is string {
+  return Boolean(value && !Number.isNaN(Date.parse(value)));
+}
+
 export function mapJobsForDrilldownTable(jobs: readonly JobSummary[], t: TFunction): DrilldownJobRow[] {
   return jobs.map((job) => {
-    const started = job.started_at ?? job.created_at;
-    const finished = job.finished_at ?? '—';
+    const startedRaw = job.started_at ?? job.created_at ?? null;
+    const finishedRaw = job.finished_at ?? null;
+    const startedAt = isValidDateLike(startedRaw) ? startedRaw : '—';
+    const finishedAt = isValidDateLike(finishedRaw) ? finishedRaw : '—';
+
     let duration = '—';
-    if (job.started_at && job.finished_at) {
-      const ms = Date.parse(job.finished_at) - Date.parse(job.started_at);
+    if (isValidDateLike(startedRaw) && isValidDateLike(finishedRaw)) {
+      const ms = Date.parse(finishedRaw) - Date.parse(startedRaw);
       if (Number.isFinite(ms) && ms >= 0) {
         const mins = Math.round(ms / 60000);
         duration = `${mins} min`;
       }
     }
+
     return {
       id: job.id,
       provider: job.provider_name ?? t('observability.metrics.unknownId'),
       model: job.model_name ?? t('observability.metrics.unknownId'),
       status: job.status,
-      startedAt: started,
-      finishedAt: finished,
+      startedAt,
+      finishedAt,
       duration,
     };
   });

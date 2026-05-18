@@ -17,7 +17,7 @@ import { useAisleJobsList } from '../../../../hooks';
 import { formatDate } from '../../../../utils/formatDate';
 import { getJobStatusLabel } from '../../../../utils/jobStatus';
 import type { useAnalyticsDashboard } from '../../../analytics/hooks';
-import { AnalyticsCostWarningsBlock } from '../AnalyticsCostWarningsBlock';
+import { DrilldownScopeWarnings } from './DrilldownScopeWarnings';
 import {
   buildAisleDrilldownKpis,
   buildDrilldownWarnings,
@@ -55,11 +55,15 @@ export function AisleDrilldownPanel({
   const { t } = useTranslation();
   const aisle = findAisleIssueRow(analytics.aisleIssues?.items, inventoryId, aisleId);
   const costRow = lookupAisleCost(costSummary, aisleId);
+  const hasAisleContext = Boolean(aisle || costRow);
   const warnings = useMemo(() => buildDrilldownWarnings(costSummary, t), [costSummary, t]);
   const compareEligibility = getCompareEligibilityForInventory(inventoryProcessingModeById, inventoryId);
   const compareHref = pathToInventoryAnalyticsCompareMany(inventoryId, { aisleId });
 
-  const jobsQuery = useAisleJobsList(inventoryId, aisleId, { enabled: true, limit: 20 });
+  const jobsQuery = useAisleJobsList(inventoryId, aisleId, {
+    enabled: hasAisleContext,
+    limit: 20,
+  });
 
   const kpis = useMemo(
     () => buildAisleDrilldownKpis(aisle, costRow, t, isCostLoading),
@@ -92,14 +96,7 @@ export function AisleDrilldownPanel({
         {t('analyticsDashboard.drilldown.notCorrectionsHelper')}
       </Alert>
 
-      {warnings.length > 0 ? (
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-            {t('analyticsDashboard.drilldown.costWarningsTitle')}
-          </Typography>
-          <AnalyticsCostWarningsBlock warnings={warnings} compact />
-        </Box>
-      ) : null}
+      <DrilldownScopeWarnings warnings={warnings} />
 
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
         {t('analyticsDashboard.drilldown.costSummary')}
@@ -145,8 +142,11 @@ export function AisleDrilldownPanel({
         </Typography>
       </Paper>
 
-      <Typography variant="subtitle2" sx={{ mb: 1 }}>
+      <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
         {t('analyticsDashboard.drilldown.jobsSummary')}
+      </Typography>
+      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+        {t('analyticsDashboard.drilldown.jobsLimitHelper')}
       </Typography>
       {jobsQuery.isLoading ? (
         <Box data-testid="analytics-drilldown-jobs-loading">
@@ -177,7 +177,7 @@ export function AisleDrilldownPanel({
                   <TableCell>{job.provider}</TableCell>
                   <TableCell>{job.model}</TableCell>
                   <TableCell>{getJobStatusLabel(job.status)}</TableCell>
-                  <TableCell>{formatDate(job.startedAt)}</TableCell>
+                  <TableCell>{job.startedAt === '—' ? '—' : formatDate(job.startedAt)}</TableCell>
                   <TableCell>{job.finishedAt === '—' ? '—' : formatDate(job.finishedAt)}</TableCell>
                   <TableCell align="right">{job.duration}</TableCell>
                 </TableRow>

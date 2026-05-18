@@ -17,7 +17,7 @@ import { pathToAislePositions, pathToInventory, pathToInventoryAnalyticsCompareM
 import { useInventoryMetrics } from '../../../../hooks';
 import { formatDate } from '../../../../utils/formatDate';
 import type { useAnalyticsDashboard } from '../../../analytics/hooks';
-import { AnalyticsCostWarningsBlock } from '../AnalyticsCostWarningsBlock';
+import { DrilldownScopeWarnings } from './DrilldownScopeWarnings';
 import { HorizontalBarChart } from '../charts/HorizontalBarChart';
 import { buildCostByAisleChartData } from '../../adapters/analyticsChartDatasets';
 import {
@@ -108,14 +108,7 @@ export function InventoryDrilldownPanel({
         })}
       </Typography>
 
-      {warnings.length > 0 ? (
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-            {t('analyticsDashboard.drilldown.costWarningsTitle')}
-          </Typography>
-          <AnalyticsCostWarningsBlock warnings={warnings} compact />
-        </Box>
-      ) : null}
+      <DrilldownScopeWarnings warnings={warnings} />
 
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
         {t('analyticsDashboard.drilldown.costSummary')}
