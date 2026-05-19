@@ -1,40 +1,11 @@
-import { Box, Paper, Skeleton, Typography } from '@mui/material';
+import { Box, Skeleton } from '@mui/material';
 import type { HeroKpiModel } from '../adapters/analyticsDashboardViewModel';
+import { AnalyticsMetricCard } from './base/AnalyticsMetricCard';
 
 export interface AnalyticsExecutiveHeroProps {
   kpis: readonly HeroKpiModel[];
   isLoading: boolean;
   hasData: boolean;
-}
-
-function HeroKpiCard({ kpi }: { kpi: HeroKpiModel }) {
-  const isPrimary = kpi.tier === 'primary';
-  return (
-    <Paper
-      variant="outlined"
-      sx={{
-        p: isPrimary ? 2 : 1.5,
-        minHeight: isPrimary ? 96 : 72,
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        opacity: kpi.unavailable ? 0.85 : 1,
-      }}
-      data-testid={`analytics-hero-kpi-${kpi.id}`}
-    >
-      <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, lineHeight: 1.3 }}>
-        {kpi.label}
-      </Typography>
-      <Typography
-        variant={isPrimary ? 'h5' : 'subtitle1'}
-        component="p"
-        fontWeight={700}
-        sx={{ lineHeight: 1.2, wordBreak: 'break-word' }}
-      >
-        {kpi.value}
-      </Typography>
-    </Paper>
-  );
 }
 
 export function AnalyticsExecutiveHero({ kpis, isLoading, hasData }: AnalyticsExecutiveHeroProps) {
@@ -67,7 +38,14 @@ export function AnalyticsExecutiveHero({ kpis, isLoading, hasData }: AnalyticsEx
             data-testid="analytics-hero-primary-row"
           >
             {primary.map((kpi) => (
-              <HeroKpiCard key={kpi.id} kpi={kpi} />
+              <AnalyticsMetricCard
+                key={kpi.id}
+                label={kpi.label}
+                value={kpi.value}
+                size="hero"
+                tone={kpi.unavailable ? 'disabled' : 'default'}
+                testId={`analytics-hero-kpi-${kpi.id}`}
+              />
             ))}
           </Box>
           <Box
@@ -79,7 +57,14 @@ export function AnalyticsExecutiveHero({ kpis, isLoading, hasData }: AnalyticsEx
             data-testid="analytics-hero-secondary-row"
           >
             {secondary.map((kpi) => (
-              <HeroKpiCard key={kpi.id} kpi={kpi} />
+              <AnalyticsMetricCard
+                key={kpi.id}
+                label={kpi.label}
+                value={kpi.value}
+                size="compact"
+                tone={kpi.unavailable ? 'disabled' : 'default'}
+                testId={`analytics-hero-kpi-${kpi.id}`}
+              />
             ))}
           </Box>
         </>

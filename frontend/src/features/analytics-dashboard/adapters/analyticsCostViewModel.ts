@@ -5,6 +5,7 @@ import {
   formatMetricValue,
 } from './analyticsCostFormatters';
 import { mapCostWarnings, type AnalyticsCostWarningModel } from './analyticsCostWarnings';
+import { buildAisleEntityKey } from './aisleEntityKeys';
 
 export interface MetricCardModel {
   label: string;
@@ -98,7 +99,7 @@ export function buildCostByAisleLookup(
 ): Map<string, AnalyticsCostSummaryResponse['by_aisle'][number]> {
   const map = new Map<string, AnalyticsCostSummaryResponse['by_aisle'][number]>();
   for (const row of data?.by_aisle ?? []) {
-    map.set(row.aisle_id, row);
+    map.set(buildAisleEntityKey(row.inventory_id, row.aisle_id), row);
   }
   return map;
 }

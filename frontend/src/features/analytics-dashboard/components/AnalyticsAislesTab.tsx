@@ -10,7 +10,9 @@ import {
   CHART_TOP_N,
 } from '../adapters/analyticsChartDatasets';
 import { buildCostByAisleLookup, buildCostWarnings } from '../adapters/analyticsCostViewModel';
-import { AnalyticsAisleRankingCards } from './AnalyticsAisleRankingCards';
+import { buildAisleEntityKey } from '../adapters/aisleEntityKeys';
+import { buildAisleRankingCardItems } from '../adapters/entityRankingViewModels';
+import { AnalyticsEntityRankingCards } from './rankings/AnalyticsEntityRankingCards';
 import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
 import { AnalyticsSummaryPanel } from './AnalyticsSummaryPanel';
 import { HorizontalBarChart } from './charts/HorizontalBarChart';
@@ -48,6 +50,18 @@ export function AnalyticsAislesTab({
     [aisleRows, t]
   );
   const topAisles = useMemo(() => buildTopAislesAttention(aisleRows, CHART_TOP_N), [aisleRows]);
+  const rankingItems = useMemo(
+    () =>
+      buildAisleRankingCardItems({
+        rows: topAisles,
+        costByAisle,
+        isCostLoading,
+        inventoryProcessingModeById,
+        onOpenAisleDrilldown: drilldown.onOpenAisleDrilldown,
+        t,
+      }),
+    [topAisles, costByAisle, isCostLoading, inventoryProcessingModeById, drilldown.onOpenAisleDrilldown, t]
+  );
 
   return (
     <Box data-testid="analytics-aisles-tab">
@@ -68,7 +82,9 @@ export function AnalyticsAislesTab({
                 ariaLabel={t('analyticsDashboard.visual.topAislesByCost')}
                 data-testid="analytics-aisles-cost-summary-bars"
                 onBarClick={(item) => {
-                  const row = aisleRows.find((a) => a.aisle_id === item.id);
+                  const row = aisleRows.find(
+                    (a) => buildAisleEntityKey(a.inventory_id, a.aisle_id) === item.id
+                  );
                   if (row) drilldown.onOpenAisleDrilldown(row.inventory_id, row.aisle_id);
                 }}
               />
@@ -97,13 +113,10 @@ export function AnalyticsAislesTab({
             isLoading={isLoading}
             data-testid="analytics-aisles-panel-attention"
           >
-            <AnalyticsAisleRankingCards
-              rows={topAisles}
-              costByAisle={costByAisle}
-              isCostLoading={isCostLoading}
-              inventoryProcessingModeById={inventoryProcessingModeById}
-              onOpenAisleDrilldown={drilldown.onOpenAisleDrilldown}
+            <AnalyticsEntityRankingCards
+              items={rankingItems}
               emptyText={emptyText}
+              testId="analytics-aisles-ranking"
             />
           </AnalyticsSummaryPanel>
         </Grid>

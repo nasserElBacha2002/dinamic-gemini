@@ -1,4 +1,5 @@
-import { Box, Paper, Typography } from '@mui/material';
+import { Box } from '@mui/material';
+import { AnalyticsMetricCard } from './base/AnalyticsMetricCard';
 
 export interface CompactKpiItem {
   id: string;
@@ -24,19 +25,13 @@ export function AnalyticsCompactKpiGrid({ items, 'data-testid': testId }: Analyt
       }}
     >
       {items.map((item) => (
-        <Paper
+        <AnalyticsMetricCard
           key={item.id}
-          variant="outlined"
-          data-testid={testId ? `${testId}-${item.id}` : undefined}
-          sx={{ p: 1.5, minWidth: 0 }}
-        >
-          <Typography variant="caption" color="text.secondary" display="block" noWrap title={item.label}>
-            {item.label}
-          </Typography>
-          <Typography variant="h6" fontWeight={700} sx={{ mt: 0.25 }}>
-            {item.value}
-          </Typography>
-        </Paper>
+          label={item.label}
+          value={item.value}
+          size="compact"
+          testId={testId ? `${testId}-${item.id}` : undefined}
+        />
       ))}
     </Box>
   );

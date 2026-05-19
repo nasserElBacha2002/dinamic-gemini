@@ -4,8 +4,11 @@ import { Box, Button, Collapse, Grid, Paper, Typography } from '@mui/material';
 import type { AnalyticsCostSummaryResponse } from '../../../api/types';
 import { MetricUnavailableState } from './MetricUnavailableState';
 import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
-import { AnalyticsCostAisleRankingCards } from './AnalyticsCostAisleRankingCards';
-import { AnalyticsCostInventoryRankingCards } from './AnalyticsCostInventoryRankingCards';
+import {
+  buildCostAisleRankingCardItems,
+  buildCostInventoryRankingCardItems,
+} from '../adapters/entityRankingViewModels';
+import { AnalyticsEntityRankingCards } from './rankings/AnalyticsEntityRankingCards';
 import { AnalyticsCostTabularDetail } from './AnalyticsCostTabularDetail';
 import { AnalyticsCompactKpiGrid } from './AnalyticsCompactKpiGrid';
 import { AnalyticsSummaryPanel } from './AnalyticsSummaryPanel';
@@ -83,6 +86,24 @@ export function AnalyticsCostsTab({
   const jobsDonut = useMemo(() => buildJobsCoverageDonutSegments(costSummary, t), [costSummary, t]);
   const topInventories = useMemo(() => buildTopCostInventoryRows(costSummary), [costSummary]);
   const topAisles = useMemo(() => buildTopCostAisleRows(costSummary), [costSummary]);
+  const inventoryRankingItems = useMemo(
+    () =>
+      buildCostInventoryRankingCardItems({
+        rows: topInventories,
+        onOpenInventoryDrilldown: drilldown.onOpenInventoryDrilldown,
+        t,
+      }),
+    [topInventories, drilldown.onOpenInventoryDrilldown, t]
+  );
+  const aisleRankingItems = useMemo(
+    () =>
+      buildCostAisleRankingCardItems({
+        rows: topAisles,
+        onOpenAisleDrilldown: drilldown.onOpenAisleDrilldown,
+        t,
+      }),
+    [topAisles, drilldown.onOpenAisleDrilldown, t]
+  );
 
   if (isError) {
     return (
@@ -170,10 +191,10 @@ export function AnalyticsCostsTab({
                 isLoading={isLoading}
                 data-testid="analytics-costs-panel-inventory"
               >
-                <AnalyticsCostInventoryRankingCards
-                  rows={topInventories}
-                  onOpenInventoryDrilldown={drilldown.onOpenInventoryDrilldown}
+                <AnalyticsEntityRankingCards
+                  items={inventoryRankingItems}
                   emptyText={emptyText}
+                  testId="analytics-cost-inventory-ranking"
                 />
               </AnalyticsSummaryPanel>
             </Grid>
@@ -184,10 +205,10 @@ export function AnalyticsCostsTab({
                 isLoading={isLoading}
                 data-testid="analytics-costs-panel-aisle"
               >
-                <AnalyticsCostAisleRankingCards
-                  rows={topAisles}
-                  onOpenAisleDrilldown={drilldown.onOpenAisleDrilldown}
+                <AnalyticsEntityRankingCards
+                  items={aisleRankingItems}
                   emptyText={emptyText}
+                  testId="analytics-cost-aisle-ranking"
                 />
               </AnalyticsSummaryPanel>
             </Grid>

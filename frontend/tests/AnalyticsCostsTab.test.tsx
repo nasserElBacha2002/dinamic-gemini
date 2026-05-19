@@ -165,6 +165,22 @@ describe('AnalyticsCostsTab', () => {
     expect(screen.getByTestId('analytics-costs-empty')).toHaveTextContent(/No hay jobs en el alcance/i);
   });
 
+  it('does not show disabled compare in cost ranking cards', () => {
+    render(
+      <AnalyticsCostsTab
+        costSummary={costSummaryData}
+        isLoading={false}
+        isError={false}
+        onGoToCompare={vi.fn()}
+        drilldown={drilldown}
+      />
+    );
+    const inventoryRanking = screen.getByTestId('analytics-cost-inventory-ranking');
+    const aisleRanking = screen.getByTestId('analytics-cost-aisle-ranking');
+    expect(within(inventoryRanking).queryByText(/comparar corridas/i)).not.toBeInTheDocument();
+    expect(within(aisleRanking).queryByText(/comparar corridas/i)).not.toBeInTheDocument();
+  });
+
   it('calls onGoToCompare from CTA', () => {
     const onGoToCompare = vi.fn();
     render(

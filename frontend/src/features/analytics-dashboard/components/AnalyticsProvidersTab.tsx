@@ -14,7 +14,8 @@ import {
 import { buildCostWarnings } from '../adapters/analyticsCostViewModel';
 import { formatLlmCostAmount } from '../adapters/analyticsCostFormatters';
 import { AnalyticsCompactKpiGrid } from './AnalyticsCompactKpiGrid';
-import { AnalyticsProviderComparisonCards } from './AnalyticsProviderComparisonCards';
+import { buildProviderComparisonCardItems } from '../adapters/entityRankingViewModels';
+import { AnalyticsEntityRankingCards } from './rankings/AnalyticsEntityRankingCards';
 import { AnalyticsSummaryPanel } from './AnalyticsSummaryPanel';
 import { DonutChart } from './charts/DonutChart';
 import { HorizontalBarChart } from './charts/HorizontalBarChart';
@@ -59,6 +60,10 @@ export function AnalyticsProvidersTab({ observability, costSummary }: AnalyticsP
         .sort((a, b) => b.runs_total - a.runs_total)
         .slice(0, CHART_TOP_N),
     [obsRows]
+  );
+  const comparisonItems = useMemo(
+    () => buildProviderComparisonCardItems(comparisonRows, t),
+    [comparisonRows, t]
   );
 
   const totals = costSummary?.totals;
@@ -165,7 +170,11 @@ export function AnalyticsProvidersTab({ observability, costSummary }: AnalyticsP
                 data-testid="analytics-providers-chart-failure-bars"
               />
             </Box>
-            <AnalyticsProviderComparisonCards rows={comparisonRows} emptyText={emptyText} />
+            <AnalyticsEntityRankingCards
+              items={comparisonItems}
+              emptyText={emptyText}
+              testId="analytics-providers-comparison-cards"
+            />
           </AnalyticsSummaryPanel>
         </Grid>
       </Grid>

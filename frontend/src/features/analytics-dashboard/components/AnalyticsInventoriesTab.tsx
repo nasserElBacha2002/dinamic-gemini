@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Box, Grid } from '@mui/material';
 import type { AnalyticsCostSummaryResponse } from '../../../api/types';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
-import { AnalyticsInventoryRankingCards } from './AnalyticsInventoryRankingCards';
+import { buildInventoryRankingCardItems } from '../adapters/entityRankingViewModels';
+import { AnalyticsEntityRankingCards } from './rankings/AnalyticsEntityRankingCards';
 import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
 import {
   buildCostByInventoryChartData,
@@ -56,6 +57,18 @@ export function AnalyticsInventoriesTab({
     () => buildTopInventoryPerformanceRows(analytics.inventoryPerformance?.items ?? []),
     [analytics.inventoryPerformance?.items]
   );
+  const rankingItems = useMemo(
+    () =>
+      buildInventoryRankingCardItems({
+        rows: topInventories,
+        costByInventory,
+        isCostLoading,
+        inventoryProcessingModeById,
+        onOpenInventoryDrilldown: drilldown.onOpenInventoryDrilldown,
+        t,
+      }),
+    [topInventories, costByInventory, isCostLoading, inventoryProcessingModeById, drilldown.onOpenInventoryDrilldown, t]
+  );
 
   return (
     <Box data-testid="analytics-inventories-tab">
@@ -87,14 +100,10 @@ export function AnalyticsInventoriesTab({
             isLoading={isLoading}
             data-testid="analytics-inventories-panel-ranking"
           >
-            <AnalyticsInventoryRankingCards
-              rows={topInventories}
-              costSummary={costSummary}
-              costByInventory={costByInventory}
-              isCostLoading={isCostLoading}
-              inventoryProcessingModeById={inventoryProcessingModeById}
-              onOpenInventoryDrilldown={drilldown.onOpenInventoryDrilldown}
+            <AnalyticsEntityRankingCards
+              items={rankingItems}
               emptyText={emptyText}
+              testId="analytics-inventories-ranking"
             />
           </AnalyticsSummaryPanel>
         </Grid>

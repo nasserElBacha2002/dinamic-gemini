@@ -147,7 +147,9 @@ describe('AnalyticsQualityTab visual dashboard', () => {
   it('shows aisle attention as ranking with max 5 rows', () => {
     renderQualityTab();
     const ranking = screen.getByTestId('analytics-quality-aisle-ranking');
-    expect(within(ranking).getAllByRole('listitem').length).toBeLessThanOrEqual(5);
+    const aisleCards = within(ranking).queryAllByTestId(/^analytics-quality-aisle-/);
+    expect(aisleCards.length).toBeLessThanOrEqual(5);
+    expect(aisleCards.length).toBeGreaterThan(0);
     expect(within(ranking).getByText(/A-01/i)).toBeInTheDocument();
   });
 

@@ -10,7 +10,6 @@ import {
 import { interventionLabel, numberOrZero } from '../../analytics/adapters/metricsFormatters';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
 import {
-  buildAislePendingReviewChartData,
   buildAutoVsManualDonutSegments,
   buildLocalizedQualityIssueChartData,
   buildManualInterventionSegments,
@@ -21,7 +20,8 @@ import type { AnalyticsDrilldownHandlers } from '../types';
 import { useAnalyticsTabHref } from '../hooks/useAnalyticsTabHref';
 import { AnalyticsQualityOverview } from './AnalyticsQualityOverview';
 import { AnalyticsSummaryPanel } from './AnalyticsSummaryPanel';
-import { QualityAislesAttentionRanking } from './QualityAislesAttentionRanking';
+import { buildQualityAisleAttentionRankingItems } from '../adapters/entityRankingViewModels';
+import { AnalyticsEntityRankingCards } from './rankings/AnalyticsEntityRankingCards';
 import { QualityResolutionFunnel } from './QualityResolutionFunnel';
 import { HorizontalBarChart } from './charts/HorizontalBarChart';
 import { SegmentBarChart } from './charts/SegmentBarChart';
@@ -100,9 +100,15 @@ export function AnalyticsQualityTab({
     () => buildTopAislesAttention(aisleIssues?.items ?? [], QUALITY_AISLE_ATTENTION_TOP_N),
     [aisleIssues?.items]
   );
-  const aisleBarData = useMemo(
-    () => buildAislePendingReviewChartData(aisleIssues?.items ?? [], t, QUALITY_AISLE_ATTENTION_TOP_N),
-    [aisleIssues?.items, t]
+  const qualityAisleRankingItems = useMemo(
+    () =>
+      buildQualityAisleAttentionRankingItems({
+        rows: topAisles,
+        inventoryProcessingModeById,
+        onOpenAisleDrilldown: drilldown.onOpenAisleDrilldown,
+        t,
+      }),
+    [topAisles, inventoryProcessingModeById, drilldown.onOpenAisleDrilldown, t]
   );
 
   const unsupportedCaption = manualInterventionViewModel.unsupportedInterventions
@@ -189,12 +195,10 @@ export function AnalyticsQualityTab({
             ctaHref={tabHref('aisles')}
             data-testid="analytics-quality-panel-aisles"
           >
-            <QualityAislesAttentionRanking
-              rows={topAisles}
-              barData={aisleBarData}
-              inventoryProcessingModeById={inventoryProcessingModeById}
-              onOpenAisleDrilldown={drilldown.onOpenAisleDrilldown}
+            <AnalyticsEntityRankingCards
+              items={qualityAisleRankingItems}
               emptyText={emptyText}
+              testId="analytics-quality-aisle-ranking"
             />
           </AnalyticsSummaryPanel>
         </Grid>

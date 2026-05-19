@@ -1,6 +1,7 @@
-import { Box, Grid, Paper, Typography } from '@mui/material';
+import { Box, Grid, Typography } from '@mui/material';
 import { DonutChart } from './charts/DonutChart';
 import type { DonutSegment } from './charts/DonutChart';
+import { AnalyticsMetricCard } from './base/AnalyticsMetricCard';
 
 export interface AnalyticsQualityOverviewProps {
   chartTitle: string;
@@ -11,19 +12,6 @@ export interface AnalyticsQualityOverviewProps {
   processedLabel: string;
   emptyText: string;
   'data-testid'?: string;
-}
-
-function QualityKpiCard({ label, value, testId }: { label: string; value: number; testId?: string }) {
-  return (
-    <Paper variant="outlined" data-testid={testId} sx={{ p: 1.5, flex: 1, minWidth: 0 }}>
-      <Typography variant="caption" color="text.secondary" display="block">
-        {label}
-      </Typography>
-      <Typography variant="h6" fontWeight={700}>
-        {value}
-      </Typography>
-    </Paper>
-  );
 }
 
 export function AnalyticsQualityOverview({
@@ -47,14 +35,16 @@ export function AnalyticsQualityOverview({
         </Grid>
         <Grid item xs={12} md={5}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, height: '100%' }}>
-            <QualityKpiCard
+            <AnalyticsMetricCard
               label={pendingLabel}
               value={pendingReviewCount}
+              size="regular"
               testId={testId ? `${testId}-kpi-pending` : undefined}
             />
-            <QualityKpiCard
+            <AnalyticsMetricCard
               label={processedLabel}
               value={processedPositionsCount}
+              size="regular"
               testId={testId ? `${testId}-kpi-processed` : undefined}
             />
           </Box>
