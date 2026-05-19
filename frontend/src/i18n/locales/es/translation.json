@@ -111,6 +111,8 @@
     "process_default_prompt_em": "Usar prompt predeterminado ({{prompt}})",
     "process_default_server": "Usar proveedor predeterminado del servidor",
     "process_dialog_help": "Configurá el proveedor de IA y el modelo para esta ejecución de prueba.",
+    "process_dialog_help_production": "Elegí el proveedor de IA de producción. Cada proveedor usa su modelo predeterminado configurado en el servidor.",
+    "process_no_production_providers": "No hay proveedores de IA listos para producción (credenciales o modelo predeterminado faltante). Revisá la configuración del servidor.",
     "process_dialog_title": "Procesar pasillo",
     "process_dialog_title_with_aisle": "Procesar pasillo {{code}}",
     "process_error_label": "Error de procesamiento",

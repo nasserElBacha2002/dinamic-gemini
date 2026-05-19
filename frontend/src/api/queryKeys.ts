@@ -28,7 +28,8 @@ export const queryKeys = {
       [...queryKeys.inventories.list(), params] as const,
     detail: (inventoryId: string) => [...queryKeys.inventories.all, 'detail', inventoryId] as const,
     /** Selectable pipeline providers for POST aisle process (Phase 5). */
-    processingProviderOptions: () => [...queryKeys.inventories.all, 'processing-provider-options'] as const,
+    processingProviderOptions: (mode: 'test' | 'production' = 'test') =>
+      [...queryKeys.inventories.all, 'processing-provider-options', mode] as const,
     metrics: (inventoryId: string) => [...queryKeys.inventories.all, 'metrics', inventoryId] as const,
     aisles: (inventoryId: string) => [...queryKeys.inventories.all, 'aisles', inventoryId] as const,
     /** Inventory-detail default aisles table (single fixed page; see `useAislesList`). */

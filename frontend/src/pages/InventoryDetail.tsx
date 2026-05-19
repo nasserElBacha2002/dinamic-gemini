@@ -162,11 +162,14 @@ export default function InventoryDetail() {
         onModelKeyChange={processFlow.setModelKey}
         providerOptsQuery={processFlow.providerOptsQuery}
         providerConfig={processFlow.providerConfig}
+        productionMode={processFlow.isProductionInventory}
+        productionProvidersReady={processFlow.productionProvidersReady}
         onClose={processFlow.closeDialog}
         onConfirm={() => void processFlow.confirmDialog()}
         confirmDisabled={
           processFlow.processingAisleId === processFlow.dialogTarget?.aisleId ||
-          (processFlow.providerOptsQuery.isLoading && processFlow.providerKey.trim() !== '')
+          (processFlow.providerOptsQuery.isLoading && processFlow.providerKey.trim() !== '') ||
+          (processFlow.isProductionInventory && !processFlow.productionProvidersReady)
         }
         confirmBusyLabel={processFlow.processingAisleId === processFlow.dialogTarget?.aisleId}
       />

@@ -240,10 +240,15 @@ export interface ProcessingProviderOptionItem {
   description?: string | null;
   models: ProcessingModelOption[];
   default_model?: string | null;
+  production_available?: boolean | null;
+  unavailable_reason?: string | null;
+  is_default_provider?: boolean;
 }
 
 export interface ProcessingProviderOptionsResponse {
+  mode?: 'test' | 'production';
   default_provider_key: string;
+  default_model_key?: string | null;
   default_prompt_key: string;
   prompt_profiles: ProcessingPromptOptionItem[];
   providers: ProcessingProviderOptionItem[];

@@ -25,6 +25,9 @@ export interface AisleProcessingDialogProps {
   providerConfig:
     | ProcessingProviderOptionsResponse['providers'][number]
     | undefined;
+  /** Production inventories: one default model per provider; hide server-default empty options. */
+  productionMode?: boolean;
+  productionProvidersReady?: boolean;
   onClose: () => void;
   onConfirm: () => void;
   confirmDisabled: boolean;
@@ -41,12 +44,18 @@ export default function AisleProcessingDialog({
   onModelKeyChange,
   providerOptsQuery,
   providerConfig,
+  productionMode = false,
+  productionProvidersReady = true,
   onClose,
   onConfirm,
   confirmDisabled,
   confirmBusyLabel,
 }: AisleProcessingDialogProps) {
   const { t } = useTranslation();
+  const showServerDefaultProvider = !productionMode;
+  const showServerDefaultModel = !productionMode;
+  const singleProductionModel =
+    productionMode && (providerConfig?.models?.length ?? 0) === 1;
 
   return (
     <BaseDialog
@@ -71,9 +80,21 @@ export default function AisleProcessingDialog({
     >
       <Stack spacing={2}>
         <Typography variant="body2" color="text.secondary">
-          {t('aisle.process_dialog_help')}
+          {productionMode ? t('aisle.process_dialog_help_production') : t('aisle.process_dialog_help')}
         </Typography>
-        <FormControl fullWidth size="small" disabled={providerOptsQuery.isLoading}>
+        {productionMode && !productionProvidersReady && !providerOptsQuery.isLoading ? (
+          <Alert severity="warning" data-testid="process-no-production-providers">
+            {t('aisle.process_no_production_providers')}
+          </Alert>
+        ) : null}
+        <FormControl
+          fullWidth
+          size="small"
+          disabled={
+            providerOptsQuery.isLoading ||
+            (productionMode && !productionProvidersReady)
+          }
+        >
           <InputLabel id="process-provider-label">{t('aisle.process_ai_provider')}</InputLabel>
           <Select
             labelId="process-provider-label"
@@ -81,9 +102,11 @@ export default function AisleProcessingDialog({
             value={providerKey}
             onChange={(e) => onProviderKeyChange(String(e.target.value))}
           >
-            <MenuItem value="">
-              <em>{t('aisle.process_default_server')}</em>
-            </MenuItem>
+            {showServerDefaultProvider ? (
+              <MenuItem value="">
+                <em>{t('aisle.process_default_server')}</em>
+              </MenuItem>
+            ) : null}
             {(providerOptsQuery.data?.providers ?? []).map((p) => (
               <MenuItem key={p.key} value={p.key}>
                 {p.label}
@@ -94,7 +117,11 @@ export default function AisleProcessingDialog({
         <FormControl
           fullWidth
           size="small"
-          disabled={providerOptsQuery.isLoading || !providerConfig?.models?.length}
+          disabled={
+            providerOptsQuery.isLoading ||
+            !providerConfig?.models?.length ||
+            singleProductionModel
+          }
         >
           <InputLabel id="process-model-label">{t('common.model')}</InputLabel>
           <Select
@@ -103,18 +130,20 @@ export default function AisleProcessingDialog({
             value={modelKey}
             onChange={(e) => onModelKeyChange(String(e.target.value))}
           >
-            <MenuItem value="">
-              <em>
-                {t('aisle.process_default_model_em', {
-                  model:
-                    providerConfig?.default_model ??
-                    providerOptsQuery.data?.providers?.find(
-                      (p) => p.key === (providerOptsQuery.data?.default_provider_key ?? '')
-                    )?.default_model ??
-                    '…',
-                })}
-              </em>
-            </MenuItem>
+            {showServerDefaultModel ? (
+              <MenuItem value="">
+                <em>
+                  {t('aisle.process_default_model_em', {
+                    model:
+                      providerConfig?.default_model ??
+                      providerOptsQuery.data?.providers?.find(
+                        (p) => p.key === (providerOptsQuery.data?.default_provider_key ?? '')
+                      )?.default_model ??
+                      '…',
+                  })}
+                </em>
+              </MenuItem>
+            ) : null}
             {(providerConfig?.models ?? []).map((m) => (
               <MenuItem key={m.id} value={m.id}>
                 {m.label}

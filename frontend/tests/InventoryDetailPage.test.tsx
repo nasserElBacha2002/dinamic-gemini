@@ -1254,19 +1254,53 @@ describe('InventoryDetail', () => {
     });
   });
 
-  it('production inventory starts aisle processing without opening the provider dialog', async () => {
+  it('production inventory opens provider dialog and sends selected production provider', async () => {
     inventoryDetailHookState.data.processing_mode = 'production';
+    useProcessingProviderOptionsMock.mockReturnValue({
+      data: {
+        mode: 'production',
+        default_provider_key: 'gemini',
+        default_model_key: 'gemini-2.0-flash-exp',
+        default_prompt_key: 'global_v22',
+        prompt_profiles: [],
+        providers: [
+          {
+            key: 'gemini',
+            label: 'Gemini',
+            execution_mode: 'native',
+            models: [{ id: 'gemini-2.0-flash-exp', label: 'gemini-2.0-flash-exp' }],
+            default_model: 'gemini-2.0-flash-exp',
+          },
+          {
+            key: 'openai',
+            label: 'OpenAI',
+            execution_mode: 'native',
+            models: [{ id: 'gpt-4o', label: 'gpt-4o' }],
+            default_model: 'gpt-4o',
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
     renderPage();
     fireEvent.click(screen.getByTestId('aisle-action-process-aisle-1'));
+
+    await screen.findByLabelText(/^provider$|^proveedor de ia$/i);
+
+    fireEvent.mouseDown(screen.getByLabelText(/^provider$|^proveedor de ia$/i));
+    fireEvent.click(await screen.findByRole('option', { name: /^openai$/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /^procesar$/i }));
 
     await waitFor(() => {
       expect(processAisleMutateAsyncMock).toHaveBeenCalledWith({
         aisleId: 'aisle-1',
-        providerName: null,
-        modelName: null,
+        providerName: 'openai',
+        modelName: 'gpt-4o',
         promptKey: null,
       });
     });
-    expect(screen.queryByLabelText(/^provider$|^proveedor$/i)).toBeNull();
   });
 });
