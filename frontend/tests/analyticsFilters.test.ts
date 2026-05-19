@@ -56,6 +56,18 @@ describe('analyticsFilters', () => {
     expect(written.get('tab')).toBe('pasillos');
   });
 
+  it('writeAnalyticsFiltersToSearchParams preserves unknown query params', () => {
+    const defaults = createDefaultAnalyticsFilters();
+    const written = writeAnalyticsFiltersToSearchParams(
+      new URLSearchParams('tab=pasillos&foo=bar'),
+      { ...defaults, inventoryId: 'inv-1' },
+      defaults
+    );
+    expect(written.get('foo')).toBe('bar');
+    expect(written.get('inventory_id')).toBe('inv-1');
+    expect(written.get('tab')).toBe('pasillos');
+  });
+
   it('areAnalyticsFiltersEqual compares all fields', () => {
     const a = createDefaultAnalyticsFilters();
     const b = { ...a, providerName: 'openai' };

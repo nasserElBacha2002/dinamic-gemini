@@ -332,10 +332,22 @@ describe('AnalyticsDashboardPage', () => {
   it('renders executive KPI strip and cost visual section on overview', () => {
     renderPage();
     expect(screen.getByTestId('analytics-overview-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-summary-hero-title')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-executive-kpi-strip')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-cost-visual-section')).toBeInTheDocument();
     expect(within(screen.getByTestId('analytics-executive-kpi-strip')).getByText(/24[,.]82/)).toBeInTheDocument();
     expect(screen.getByTestId('analytics-chart-cost-provider')).toBeInTheDocument();
+    const positionGroup = screen.getByTestId('analytics-executive-kpi-group-positions');
+    expect(within(positionGroup).getAllByText('Posiciones procesadas').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Éxito de procesamiento')).not.toBeInTheDocument();
+  });
+
+  it('shows compact attention list with chart sections on overview', () => {
+    renderPage();
+    expect(screen.getByTestId('analytics-summary-attention-list')).toBeInTheDocument();
+    expect(screen.getAllByTestId(/analytics-overview-aisle-/).length).toBeLessThanOrEqual(3);
+    expect(screen.getByTestId('analytics-chart-processing-trend')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-chart-auto-manual')).toBeInTheDocument();
   });
 
   it('renders compact data quality summary when cost warnings exist', () => {
@@ -358,9 +370,11 @@ describe('AnalyticsDashboardPage', () => {
     setupMocksWithDashboardData({
       costSummaryError: new Error('cost failed'),
       costSummary: { data: undefined, isLoading: false, isError: true, error: new Error('cost failed'), refetch: vi.fn() },
+      hasPartialFailure: true,
     });
     renderPage();
     expect(screen.getByTestId('analytics-dq-cost-failed')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-partial-cost-failed')).toBeInTheDocument();
     expect(screen.getByText('Posiciones procesadas')).toBeInTheDocument();
     expect(screen.getByText('16')).toBeInTheDocument();
   });

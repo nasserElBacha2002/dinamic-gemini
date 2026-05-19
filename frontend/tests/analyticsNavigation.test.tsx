@@ -255,6 +255,19 @@ describe('AnalyticsDashboardPage URL filters', () => {
     });
   });
 
+  it('preserves unknown query params when applying filters', async () => {
+    renderAnalyticsAt('/analitica?tab=pasillos&foo=bar');
+    await waitFor(() => expect(screen.getByTestId('analytics-apply-filters')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2026-01-01' } });
+    fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2026-01-31' } });
+    fireEvent.click(screen.getByTestId('analytics-apply-filters'));
+    await waitFor(() => {
+      const url = screen.getByTestId('location-probe').textContent ?? '';
+      expect(url).toContain('foo=bar');
+      expect(url).toContain('date_from=2026-01-01');
+    });
+  });
+
   it('falls back to default dates for invalid date params', async () => {
     renderAnalyticsAt('/analitica?tab=resumen&date_from=not-a-date&date_to=2026-13-40');
     await waitFor(() => expect(mockUseAnalyticsDashboardData).toHaveBeenCalled());

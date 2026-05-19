@@ -313,6 +313,8 @@
       "providerReliability": "Corridas por proveedor/modelo",
       "providerRunVolume": "Corridas por proveedor/modelo",
       "aislesAttention": "Pasillos que requieren atención",
+      "attentionReviewRequired": "Requieren revisión: {{count}}",
+      "executiveOverview": "Vista ejecutiva",
       "emptyChart": "No hay datos suficientes para este gráfico en el alcance seleccionado.",
       "notEnoughData": "Datos insuficientes",
       "notARecommendation": "Comparativo informativo; no recomienda un proveedor automáticamente.",
@@ -325,6 +327,7 @@
     "grain_runs": "Métricas de corridas",
     "grain_compare": "Comparación por corrida",
     "tabs": {
+      "a11y": "Pestañas de Analítica",
       "summary": "Resumen",
       "quality": "Calidad",
       "time": "Tiempos",

@@ -7,6 +7,9 @@ import { formatLlmCostAmount, formatMetricValue } from './analyticsCostFormatter
 
 export const CHART_TOP_N = 5;
 
+/** Top aisles shown on the Summary tab attention panel (progressive disclosure). */
+export const SUMMARY_ATTENTION_TOP_N = 3;
+
 export interface BarChartDatum {
   id: string;
   label: string;

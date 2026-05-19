@@ -37,6 +37,7 @@ export function AnalyticsTabs({ value, onChange }: AnalyticsTabsProps) {
       onChange={(_, next: AnalyticsDashboardTab) => onChange(next)}
       variant="scrollable"
       scrollButtons="auto"
+      aria-label={t('analyticsDashboard.tabs.a11y')}
       sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
     >
       {TAB_ORDER.map((tab) => (

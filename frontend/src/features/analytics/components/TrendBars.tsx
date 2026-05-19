@@ -8,18 +8,22 @@ export interface TrendBarsProps {
   /** Uses `reviewed_results` as bar height (normalized). */
   points: AnalyticsTrendPoint[];
   emptyMessage?: string;
+  /** When true, omit the internal heading (parent supplies chart card title). */
+  hideTitle?: boolean;
 }
 
-export default function TrendBars({ title, subtitle, points, emptyMessage }: TrendBarsProps) {
+export default function TrendBars({ title, subtitle, points, emptyMessage, hideTitle = false }: TrendBarsProps) {
   const { t } = useTranslation();
   const max = Math.max(1, ...points.map((p) => p.reviewed_results));
 
   if (!points.length) {
     return (
-      <Box sx={{ py: 2 }}>
-        <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-          {title}
-        </Typography>
+      <Box sx={{ py: hideTitle ? 0 : 2 }}>
+        {!hideTitle ? (
+          <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+            {title}
+          </Typography>
+        ) : null}
         {subtitle ? (
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
             {subtitle}
@@ -34,9 +38,11 @@ export default function TrendBars({ title, subtitle, points, emptyMessage }: Tre
 
   return (
     <Box>
-      <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-        {title}
-      </Typography>
+      {!hideTitle ? (
+        <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+          {title}
+        </Typography>
+      ) : null}
       {subtitle ? (
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
           {subtitle}

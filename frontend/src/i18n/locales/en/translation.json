@@ -305,6 +305,8 @@
       "providerReliability": "Runs by provider/model",
       "providerRunVolume": "Runs by provider/model",
       "aislesAttention": "Aisles requiring attention",
+      "attentionReviewRequired": "Review required: {{count}}",
+      "executiveOverview": "Executive overview",
       "emptyChart": "Not enough data for this chart in the selected scope.",
       "notEnoughData": "Insufficient data",
       "notARecommendation": "Informational comparison; does not automatically recommend a provider.",
@@ -317,6 +319,7 @@
     "grain_runs": "Run metrics",
     "grain_compare": "Per-run comparison",
     "tabs": {
+      "a11y": "Analytics tabs",
       "summary": "Summary",
       "quality": "Quality",
       "time": "Time",

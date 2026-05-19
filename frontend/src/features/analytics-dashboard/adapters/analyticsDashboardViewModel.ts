@@ -10,6 +10,9 @@ export interface DashboardKpiCardModel extends MetricsKpiCardView {
   unavailable?: boolean;
 }
 
+/** Max KPI tiles per executive group on the Summary (Resumen) tab. */
+export const EXECUTIVE_SUMMARY_KPI_LIMIT = 4;
+
 function pctObs(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return '—';
   return `${(value * 100).toFixed(1)} %`;
@@ -37,6 +40,54 @@ export function buildPositionSummaryKpis(
       description: card.description,
     })),
   ];
+}
+
+export function buildExecutivePositionKpis(
+  summary: AnalyticsSummaryResponse | null | undefined,
+  hasUnidentifiedProductRate: boolean,
+  t: TFunction
+): DashboardKpiCardModel[] {
+  const grain = t('analyticsDashboard.grain_positions');
+  const metricsCards = buildMetricsKpiCards(summary, hasUnidentifiedProductRate, t);
+  const findMetric = (label: string) => metricsCards.find((card) => card.label === label);
+
+  const processed: DashboardKpiCardModel = {
+    grainLabel: grain,
+    label: t('analyticsDashboard.kpi_positions_processed'),
+    value: String(numberOrZero(summary?.processed_positions_count)),
+    description: t('analyticsDashboard.kpi_positions_processed_desc'),
+  };
+
+  const auto = findMetric(t('analytics.kpi_auto_accept_title'));
+  const manual = findMetric(t('analytics.kpi_manual_correction_title'));
+  const avgProcessing = findMetric(t('analytics.kpi_avg_processing_title'));
+
+  return [
+    processed,
+    ...(auto
+      ? [{ grainLabel: grain, label: auto.label, value: auto.value, description: auto.description }]
+      : []),
+    ...(manual
+      ? [{ grainLabel: grain, label: manual.label, value: manual.value, description: manual.description }]
+      : []),
+    ...(avgProcessing
+      ? [
+          {
+            grainLabel: grain,
+            label: avgProcessing.label,
+            value: avgProcessing.value,
+            description: avgProcessing.description,
+          },
+        ]
+      : []),
+  ].slice(0, EXECUTIVE_SUMMARY_KPI_LIMIT);
+}
+
+export function buildExecutiveRunKpis(
+  data: ObservabilityMetricsResponse | null | undefined,
+  t: TFunction
+): DashboardKpiCardModel[] {
+  return buildRunSummaryKpis(data, t).slice(0, EXECUTIVE_SUMMARY_KPI_LIMIT);
 }
 
 export function buildRunSummaryKpis(

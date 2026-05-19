@@ -1,15 +1,13 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Box, Button, Grid, Link as MuiLink, Paper, Tooltip, Typography } from '@mui/material';
-import { Link as RouterLink } from 'react-router-dom';
+import { Box, Grid, Typography } from '@mui/material';
 import type { ObservabilityMetricsResponse } from '../../../api/types';
 import type { AnalyticsCostSummaryResponse } from '../../../api/types';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
-import { pathToAislePositions, pathToInventoryAnalyticsCompareMany } from '../../../constants/appRoutes';
 import { orderQualityRows } from '../../analytics/adapters/metricsViewModel';
 import {
-  buildPositionSummaryKpis,
-  buildRunSummaryKpis,
+  buildExecutivePositionKpis,
+  buildExecutiveRunKpis,
   buildUnavailableGlobalCostKpis,
   hasUnidentifiedProductRate,
 } from '../adapters/analyticsDashboardViewModel';
@@ -19,12 +17,14 @@ import {
   buildProviderRunVolumeChartData,
   buildQualityIssueChartData,
   buildTopAislesAttention,
+  SUMMARY_ATTENTION_TOP_N,
 } from '../adapters/analyticsChartDatasets';
 import { buildCostWarnings, buildOverviewCostKpis, hasCostData } from '../adapters/analyticsCostViewModel';
-import { compareEligibilityTooltipKey, getCompareEligibility, type AnalyticsDrilldownHandlers } from '../types';
+import type { AnalyticsDrilldownHandlers } from '../types';
 import { AnalyticsCostVisualSection } from './AnalyticsCostVisualSection';
 import { AnalyticsChartCard } from './AnalyticsChartCard';
 import { AnalyticsSectionCard } from './AnalyticsSectionCard';
+import { AnalyticsSummaryAttentionList } from './AnalyticsSummaryAttentionList';
 import { ExecutiveKpiStrip } from './ExecutiveKpiStrip';
 import { HorizontalBarChart } from './charts/HorizontalBarChart';
 import { SegmentBarChart } from './charts/SegmentBarChart';
@@ -63,10 +63,10 @@ export function AnalyticsOverviewTab({
   const loadingText = t('analyticsDashboard.visual.loadingChart');
 
   const positionKpis = useMemo(
-    () => buildPositionSummaryKpis(summary, unidentified, t),
+    () => buildExecutivePositionKpis(summary, unidentified, t),
     [summary, unidentified, t]
   );
-  const runKpis = useMemo(() => buildRunSummaryKpis(observability, t), [observability, t]);
+  const runKpis = useMemo(() => buildExecutiveRunKpis(observability, t), [observability, t]);
 
   const costHasData = hasCostData(costSummary) && !isCostSummaryError;
 
@@ -75,7 +75,7 @@ export function AnalyticsOverviewTab({
       return [];
     }
     if (isCostSummaryError || !hasCostData(costSummary)) {
-      return buildUnavailableGlobalCostKpis(t).slice(0, 5).map((c) => ({
+      return buildUnavailableGlobalCostKpis(t).slice(0, 4).map((c) => ({
         ...c,
         grainLabel: t('analyticsDashboard.costs.sectionTitle'),
       }));
@@ -99,7 +99,7 @@ export function AnalyticsOverviewTab({
   );
   const providerRunVolume = useMemo(() => buildProviderRunVolumeChartData(observability), [observability]);
   const topAisles = useMemo(
-    () => buildTopAislesAttention(analytics.aisleIssues?.items ?? []),
+    () => buildTopAislesAttention(analytics.aisleIssues?.items ?? [], SUMMARY_ATTENTION_TOP_N),
     [analytics.aisleIssues?.items]
   );
 
@@ -107,6 +107,10 @@ export function AnalyticsOverviewTab({
 
   return (
     <Box data-testid="analytics-overview-tab">
+      <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }} data-testid="analytics-summary-hero-title">
+        {t('analyticsDashboard.visual.executiveOverview')}
+      </Typography>
+
       <ExecutiveKpiStrip
         positionTitle={t('analyticsDashboard.grain_positions')}
         runTitle={t('analyticsDashboard.grain_runs')}
@@ -128,7 +132,7 @@ export function AnalyticsOverviewTab({
           subtitle={t('analyticsDashboard.costs.llmCostHint')}
         >
           {costWarnings.length > 0 ? (
-            <Typography variant="caption" color="warning.main" display="block" sx={{ mb: 1 }}>
+            <Typography variant="caption" color="warning.main" display="block" sx={{ mb: 1.5 }}>
               {costWarnings[0]?.label}
               {costWarnings.length > 1 ? ` (+${costWarnings.length - 1})` : ''}
             </Typography>
@@ -138,67 +142,90 @@ export function AnalyticsOverviewTab({
       ) : null}
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} lg={6}>
           <AnalyticsSectionCard title={t('analyticsDashboard.visual.qualitySnapshot')}>
-            <AnalyticsChartCard
-              title={t('analyticsDashboard.visual.autoVsManual')}
-              loading={isAnalyticsLoading}
-              loadingText={loadingText}
-              data-testid="analytics-chart-auto-manual"
-            >
-              <SegmentBarChart segments={autoManual} emptyText={emptyText} data-testid="analytics-chart-auto-manual-bars" />
-            </AnalyticsChartCard>
-            <Box sx={{ mt: 2 }}>
-              <AnalyticsChartCard
-                title={t('analyticsDashboard.visual.qualityIssues')}
-                loading={isAnalyticsLoading}
-                loadingText={loadingText}
-                empty={!isAnalyticsLoading && !qualityChart.length}
-                emptyText={emptyText}
-                data-testid="analytics-chart-quality-issues"
-              >
-                <HorizontalBarChart
-                  data={qualityChart}
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <AnalyticsChartCard
+                  title={t('analyticsDashboard.visual.autoVsManual')}
+                  loading={isAnalyticsLoading}
+                  loadingText={loadingText}
+                  data-testid="analytics-chart-auto-manual"
+                >
+                  <SegmentBarChart
+                    segments={autoManual}
+                    emptyText={emptyText}
+                    data-testid="analytics-chart-auto-manual-bars"
+                  />
+                </AnalyticsChartCard>
+              </Grid>
+              <Grid item xs={12}>
+                <AnalyticsChartCard
+                  title={t('analyticsDashboard.visual.qualityIssues')}
+                  loading={isAnalyticsLoading}
+                  loadingText={loadingText}
+                  empty={!isAnalyticsLoading && !qualityChart.length}
                   emptyText={emptyText}
-                  ariaLabel={t('analyticsDashboard.visual.qualityIssues')}
-                  data-testid="analytics-chart-quality-issues-bars"
-                />
-              </AnalyticsChartCard>
-            </Box>
+                  data-testid="analytics-chart-quality-issues"
+                >
+                  <HorizontalBarChart
+                    data={qualityChart}
+                    emptyText={emptyText}
+                    ariaLabel={t('analyticsDashboard.visual.qualityIssues')}
+                    data-testid="analytics-chart-quality-issues-bars"
+                  />
+                </AnalyticsChartCard>
+              </Grid>
+            </Grid>
           </AnalyticsSectionCard>
         </Grid>
-        <Grid item xs={12} md={6}>
+
+        <Grid item xs={12} lg={6}>
           <AnalyticsSectionCard title={t('analyticsDashboard.visual.timeSnapshot')}>
-            <AnalyticsChartCard
-              title={t('analyticsDashboard.visual.processingTimeByInventory')}
-              loading={isAnalyticsLoading}
-              loadingText={loadingText}
-              empty={!isAnalyticsLoading && !processingByInv.length}
-              emptyText={emptyText}
-              data-testid="analytics-chart-processing-inventory"
-            >
-              <HorizontalBarChart
-                data={processingByInv}
-                emptyText={emptyText}
-                barColor="secondary.main"
-                ariaLabel={t('analyticsDashboard.visual.processingTimeByInventory')}
-                data-testid="analytics-chart-processing-inventory-bars"
-                onBarClick={(item) => drilldown.onOpenInventoryDrilldown(item.id)}
-              />
-            </AnalyticsChartCard>
-            <Box sx={{ mt: 2 }}>
-              <TrendBars
-                title={t('analyticsDashboard.time.trendTitle')}
-                points={analytics.trends?.reviewed_results_over_time ?? []}
-                emptyMessage={emptyText}
-              />
-            </Box>
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <AnalyticsChartCard
+                  title={t('analyticsDashboard.visual.processingTimeByInventory')}
+                  loading={isAnalyticsLoading}
+                  loadingText={loadingText}
+                  empty={!isAnalyticsLoading && !processingByInv.length}
+                  emptyText={emptyText}
+                  data-testid="analytics-chart-processing-inventory"
+                >
+                  <HorizontalBarChart
+                    data={processingByInv}
+                    emptyText={emptyText}
+                    barColor="secondary.main"
+                    ariaLabel={t('analyticsDashboard.visual.processingTimeByInventory')}
+                    data-testid="analytics-chart-processing-inventory-bars"
+                    onBarClick={(item) => drilldown.onOpenInventoryDrilldown(item.id)}
+                  />
+                </AnalyticsChartCard>
+              </Grid>
+              <Grid item xs={12}>
+                <AnalyticsChartCard
+                  title={t('analyticsDashboard.time.trendTitle')}
+                  loading={isAnalyticsLoading}
+                  loadingText={loadingText}
+                  empty={!isAnalyticsLoading && !(analytics.trends?.reviewed_results_over_time?.length ?? 0)}
+                  emptyText={emptyText}
+                  data-testid="analytics-chart-processing-trend"
+                >
+                  <TrendBars
+                    title={t('analyticsDashboard.time.trendTitle')}
+                    points={analytics.trends?.reviewed_results_over_time ?? []}
+                    emptyMessage={emptyText}
+                    hideTitle
+                  />
+                </AnalyticsChartCard>
+              </Grid>
+            </Grid>
           </AnalyticsSectionCard>
         </Grid>
       </Grid>
 
-      <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={12} md={6}>
+      <Grid container spacing={2}>
+        <Grid item xs={12} lg={6}>
           <AnalyticsSectionCard
             title={t('analyticsDashboard.visual.providerSnapshot')}
             subtitle={t('analyticsDashboard.visual.notARecommendation')}
@@ -220,74 +247,15 @@ export function AnalyticsOverviewTab({
             </AnalyticsChartCard>
           </AnalyticsSectionCard>
         </Grid>
-        <Grid item xs={12} md={6}>
-          <AnalyticsSectionCard title={t('analyticsDashboard.visual.aislesAttention')}>
-            {!topAisles.length ? (
-              <Typography variant="body2" color="text.secondary">
-                {emptyText}
-              </Typography>
-            ) : (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {topAisles.map((row) => {
-                  const eligibility = getCompareEligibility(inventoryProcessingModeById.get(row.inventory_id));
-                  const compareHref = eligibility.allowed
-                    ? pathToInventoryAnalyticsCompareMany(row.inventory_id, { aisleId: row.aisle_id })
-                    : '';
-                  const compareTooltip = eligibility.allowed
-                    ? ''
-                    : t(compareEligibilityTooltipKey(eligibility.reason));
 
-                  return (
-                    <Paper
-                      key={`${row.inventory_id}-${row.aisle_id}`}
-                      variant="outlined"
-                      sx={{ p: 1.5 }}
-                      data-testid={`analytics-overview-aisle-${row.aisle_id}`}
-                    >
-                      <Typography variant="body2" fontWeight={600}>
-                        <MuiLink
-                          component={RouterLink}
-                          to={pathToAislePositions(row.inventory_id, row.aisle_id)}
-                          underline="hover"
-                        >
-                          {row.aisle_code}
-                        </MuiLink>
-                        {' · '}
-                        {row.inventory_name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        {t('analytics.column_pending')}: {row.needs_review_count}
-                        {row.most_common_issue ? ` · ${row.most_common_issue}` : ''}
-                      </Typography>
-                      <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                        <Button
-                          size="small"
-                          variant="text"
-                          onClick={() => drilldown.onOpenAisleDrilldown(row.inventory_id, row.aisle_id)}
-                          data-testid={`overview-aisle-drilldown-${row.aisle_id}`}
-                        >
-                          {t('analyticsDashboard.drilldown.openAnalytics')}
-                        </Button>
-                        <Tooltip title={compareTooltip}>
-                          <span>
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              component={eligibility.allowed ? RouterLink : 'button'}
-                              to={eligibility.allowed ? compareHref : undefined}
-                              disabled={!eligibility.allowed}
-                              data-testid={`overview-aisle-compare-${row.aisle_id}`}
-                            >
-                              {t('analyticsDashboard.inventories.compareRuns')}
-                            </Button>
-                          </span>
-                        </Tooltip>
-                      </Box>
-                    </Paper>
-                  );
-                })}
-              </Box>
-            )}
+        <Grid item xs={12} lg={6}>
+          <AnalyticsSectionCard title={t('analyticsDashboard.visual.aislesAttention')}>
+            <AnalyticsSummaryAttentionList
+              rows={topAisles}
+              inventoryProcessingModeById={inventoryProcessingModeById}
+              onOpenAisleDrilldown={drilldown.onOpenAisleDrilldown}
+              emptyText={emptyText}
+            />
           </AnalyticsSectionCard>
         </Grid>
       </Grid>

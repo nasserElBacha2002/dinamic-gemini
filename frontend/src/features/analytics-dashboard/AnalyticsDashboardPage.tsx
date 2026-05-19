@@ -68,22 +68,18 @@ export default function AnalyticsDashboardPage() {
     setDraftFilters((current) => (areAnalyticsFiltersEqual(current, urlFilters) ? current : urlFilters));
   }, [urlFilters]);
 
-  const buildCanonicalSearchParams = useCallback(
-    (filters: AnalyticsDashboardFilters, tab: AnalyticsDashboardTab): URLSearchParams => {
-      const next = writeAnalyticsFiltersToSearchParams(
-        new URLSearchParams(searchParams),
-        filters,
-        defaultFilters
-      );
+  const writeFiltersToParams = useCallback(
+    (base: URLSearchParams, filters: AnalyticsDashboardFilters, tab: AnalyticsDashboardTab): URLSearchParams => {
+      const next = writeAnalyticsFiltersToSearchParams(base, filters, defaultFilters);
       next.set(ANALYTICS_TAB_QUERY_KEY, analyticsTabToUrl(tab));
       return next;
     },
-    [defaultFilters, searchParams]
+    [defaultFilters]
   );
 
   useEffect(() => {
     const canonicalTab = analyticsTabToUrl(activeTab);
-    const canonical = buildCanonicalSearchParams(urlFilters, activeTab);
+    const canonical = writeFiltersToParams(new URLSearchParams(searchParams), urlFilters, activeTab);
     const rawTab = searchParams.get(ANALYTICS_TAB_QUERY_KEY);
     const needsTabFix = rawTab !== canonicalTab;
     const needsFilterFix = !analyticsSearchParamsEqual(searchParams, canonical);
@@ -91,19 +87,13 @@ export default function AnalyticsDashboardPage() {
       return;
     }
     setSearchParams(canonical, { replace: true });
-  }, [
-    activeTab,
-    buildCanonicalSearchParams,
-    searchParams,
-    setSearchParams,
-    urlFilters,
-  ]);
+  }, [activeTab, searchParams, setSearchParams, urlFilters, writeFiltersToParams]);
 
   const pushFiltersToUrl = useCallback(
     (filters: AnalyticsDashboardFilters, tab: AnalyticsDashboardTab, replace: boolean) => {
-      setSearchParams(buildCanonicalSearchParams(filters, tab), { replace });
+      setSearchParams((prev) => writeFiltersToParams(new URLSearchParams(prev), filters, tab), { replace });
     },
-    [buildCanonicalSearchParams, setSearchParams]
+    [setSearchParams, writeFiltersToParams]
   );
 
   const handleTabChange = useCallback(
@@ -127,6 +117,7 @@ export default function AnalyticsDashboardPage() {
     observabilityError,
     costSummaryError,
     hasMixedLoadedData,
+    hasPartialFailure,
     refetchAll,
   } = useAnalyticsDashboardData(filterParams);
 
@@ -217,6 +208,11 @@ export default function AnalyticsDashboardPage() {
       {hasMixedLoadedData ? (
         <Alert severity="info" sx={{ mb: 2 }} data-testid="analytics-mixed-loaded-data">
           {t('analyticsDashboard.filters.partialScopeNote')}
+        </Alert>
+      ) : null}
+      {hasPartialFailure && costSummaryError && !analyticsError && !observabilityError ? (
+        <Alert severity="info" variant="outlined" sx={{ mb: 2 }} data-testid="analytics-partial-cost-failed">
+          {t('analyticsDashboard.partial.costFailed')}
         </Alert>
       ) : null}
       {analyticsError && observabilityError ? (
