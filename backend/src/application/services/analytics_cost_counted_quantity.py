@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from src.application.ports.repositories import (
     AisleRepository,
     InventoryRepository,
+    JobRepository,
     PositionRepository,
     ProductRecordRepository,
 )
@@ -67,6 +68,7 @@ class AnalyticsCostCountedQuantityService:
         aisle_repo: AisleRepository,
         position_repo: PositionRepository,
         product_record_repo: ProductRecordRepository,
+        job_repo: JobRepository,
         result_context_resolver: ResultContextResolver | None = None,
         rollup_service: ExportQuantityRollupService | None = None,
     ) -> None:
@@ -74,12 +76,16 @@ class AnalyticsCostCountedQuantityService:
         self._aisle_repo = aisle_repo
         rollup = rollup_service or ui_aligned_rollup_service()
         self._rollup_builder = ExportSummaryBuilder(rollup_service=rollup)
+        resolver = result_context_resolver or ResultContextResolver(
+            job_repo=job_repo,
+            position_repo=position_repo,
+        )
         self._collector = ExportInventoryCollector(
             inventory_repo=inventory_repo,
             aisle_repo=aisle_repo,
             position_repo=position_repo,
             product_record_repo=product_record_repo,
-            result_context_resolver=result_context_resolver or ResultContextResolver(),
+            result_context_resolver=resolver,
             rollup_service=rollup,
         )
 
@@ -122,9 +128,8 @@ class AnalyticsCostCountedQuantityService:
 
         job_derived_scope = not inventory_id and not aisle_id and bool(job_aisle_ids)
         explicit_single_aisle = bool(aisle_id)
-        explicit_full_inventory = bool(inventory_id) and not aisle_id
 
-        if explicit_full_inventory:
+        if inventory_id is not None and not aisle_id:
             try:
                 data = self._collector.collect_inventory(inventory_id)
                 rollups = self._rollup_builder.build_rollups(data)

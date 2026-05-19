@@ -1076,6 +1076,7 @@ def get_analytics_cost_summary_service(
             aisle_repo=aisle_repo,
             position_repo=position_repo,
             product_record_repo=product_record_repo,
+            job_repo=job_repo,
             result_context_resolver=result_context_resolver,
         ),
     )

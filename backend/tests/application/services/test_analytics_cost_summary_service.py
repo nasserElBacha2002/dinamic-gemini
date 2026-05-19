@@ -153,6 +153,7 @@ def cost_setup():
         aisle_repo=aisle_repo,
         position_repo=pos_repo,
         product_record_repo=product_repo,
+        job_repo=job_repo,
         result_context_resolver=ResultContextResolver(job_repo=job_repo, position_repo=pos_repo),
     )
     svc = AnalyticsCostSummaryService(
