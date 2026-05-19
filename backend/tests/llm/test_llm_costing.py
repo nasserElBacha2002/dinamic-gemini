@@ -565,3 +565,25 @@ def test_sanitize_llm_cost_snapshot_for_compare_strips_raw_usage() -> None:
     }
     out = sanitize_llm_cost_snapshot_for_compare(snap)
     assert "raw_provider_usage_json" not in out["usage"]
+
+
+def test_costing_public_imports_remain_available() -> None:
+    from src.llm.costing import (
+        PricingCoverageIssue,
+        build_llm_cost_snapshot,
+        normalize_usage,
+        resolve_pricing_with_canonical,
+        validate_llm_pricing_coverage,
+    )
+
+    assert PricingCoverageIssue is not None
+    assert build_llm_cost_snapshot is not None
+    assert normalize_usage is not None
+    assert resolve_pricing_with_canonical is not None
+    assert validate_llm_pricing_coverage is not None
+
+
+def test_costing_private_total_cost_unavailable_reason_import() -> None:
+    from src.llm.costing import _total_cost_unavailable_reason
+
+    assert _total_cost_unavailable_reason is not None
