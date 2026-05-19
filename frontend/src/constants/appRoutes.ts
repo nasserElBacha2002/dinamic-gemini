@@ -3,6 +3,9 @@
  * Must stay aligned with ``App.tsx`` ``<Route path=...>`` definitions.
  */
 
+import { ANALYTICS_TAB_QUERY_KEY, analyticsTabToUrl } from './analyticsTabs';
+import type { AnalyticsDashboardTab } from '../features/analytics-dashboard/types';
+
 export const ROUTE_LOGIN = '/login';
 export const ROUTE_HOME = '/';
 export const ROUTE_METRICS = '/metrics';
@@ -118,4 +121,7 @@ export function pathToClientSupplier(clientId: string, supplierId: string): stri
   return `${ROUTE_CLIENTS}/${encodeURIComponent(clientId)}/proveedores/${encodeURIComponent(supplierId)}`;
 }
 
-export { pathToAnalytics } from './analyticsTabs';
+export function pathToAnalytics(tab?: AnalyticsDashboardTab): string {
+  const urlTab = analyticsTabToUrl(tab ?? 'summary');
+  return `${ROUTE_ANALITICA}?${ANALYTICS_TAB_QUERY_KEY}=${urlTab}`;
+}

@@ -10,7 +10,19 @@ import { PageHeader } from '../../components/shell';
 import { ErrorAlert } from '../../components/ui';
 import { useInventoriesList } from '../../hooks/useInventories';
 import { useAislesList } from '../../hooks/useAisles';
-import { defaultDateRange } from '../analytics/adapters/metricsFormatters';
+import {
+  ANALYTICS_TAB_QUERY_KEY,
+  analyticsTabToUrl,
+  parseAnalyticsTab,
+} from '../../constants/analyticsTabs';
+import {
+  analyticsSearchParamsEqual,
+  areAnalyticsFiltersEqual,
+  clearAnalyticsFilterSearchParams,
+  createDefaultAnalyticsFilters,
+  parseAnalyticsFiltersFromSearchParams,
+  writeAnalyticsFiltersToSearchParams,
+} from '../../constants/analyticsFilters';
 import { AnalyticsFilterBar } from './components/AnalyticsFilterBar';
 import { AnalyticsTabs } from './components/AnalyticsTabs';
 import { AnalyticsOverviewTab } from './components/AnalyticsOverviewTab';
@@ -25,11 +37,6 @@ import { AnalyticsDataQualitySummary } from './components/AnalyticsDataQualitySu
 import { useAnalyticsDashboardData } from './hooks/useAnalyticsDashboardData';
 import { AnalyticsDrilldownDrawer } from './components/drilldown/AnalyticsDrilldownDrawer';
 import {
-  ANALYTICS_TAB_QUERY_KEY,
-  analyticsTabToUrl,
-  parseAnalyticsTab,
-} from '../../constants/analyticsTabs';
-import {
   buildFilterParams,
   type AnalyticsDashboardFilters,
   type AnalyticsDashboardTab,
@@ -37,60 +44,74 @@ import {
   type AnalyticsDrilldownState,
 } from './types';
 
-function initialFilters(): AnalyticsDashboardFilters {
-  const range = defaultDateRange();
-  return {
-    dateFrom: range.from,
-    dateTo: range.to,
-    inventoryId: '',
-    aisleId: '',
-    clientId: '',
-    clientSupplierId: '',
-    providerName: '',
-    modelName: '',
-  };
-}
-
 export default function AnalyticsDashboardPage() {
   const { t } = useTranslation();
-  const [draftFilters, setDraftFilters] = useState(initialFilters);
-  const [appliedFilters, setAppliedFilters] = useState(initialFilters);
   const [searchParams, setSearchParams] = useSearchParams();
+  const defaultFilters = useMemo(() => createDefaultAnalyticsFilters(), []);
+
+  const urlFilters = useMemo(
+    () => parseAnalyticsFiltersFromSearchParams(searchParams, defaultFilters),
+    [searchParams, defaultFilters]
+  );
+
   const activeTab = useMemo(
     () => parseAnalyticsTab(searchParams.get(ANALYTICS_TAB_QUERY_KEY)),
     [searchParams]
   );
+
+  const [draftFilters, setDraftFilters] = useState(urlFilters);
+  const [appliedFilters, setAppliedFilters] = useState(urlFilters);
   const [drilldown, setDrilldown] = useState<AnalyticsDrilldownState>(null);
 
   useEffect(() => {
-    const raw = searchParams.get(ANALYTICS_TAB_QUERY_KEY);
-    const parsed = parseAnalyticsTab(raw);
-    const canonical = analyticsTabToUrl(parsed);
-    if (raw !== canonical) {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.set(ANALYTICS_TAB_QUERY_KEY, canonical);
-          return next;
-        },
-        { replace: true }
+    setAppliedFilters((current) => (areAnalyticsFiltersEqual(current, urlFilters) ? current : urlFilters));
+    setDraftFilters((current) => (areAnalyticsFiltersEqual(current, urlFilters) ? current : urlFilters));
+  }, [urlFilters]);
+
+  const buildCanonicalSearchParams = useCallback(
+    (filters: AnalyticsDashboardFilters, tab: AnalyticsDashboardTab): URLSearchParams => {
+      const next = writeAnalyticsFiltersToSearchParams(
+        new URLSearchParams(searchParams),
+        filters,
+        defaultFilters
       );
+      next.set(ANALYTICS_TAB_QUERY_KEY, analyticsTabToUrl(tab));
+      return next;
+    },
+    [defaultFilters, searchParams]
+  );
+
+  useEffect(() => {
+    const canonicalTab = analyticsTabToUrl(activeTab);
+    const canonical = buildCanonicalSearchParams(urlFilters, activeTab);
+    const rawTab = searchParams.get(ANALYTICS_TAB_QUERY_KEY);
+    const needsTabFix = rawTab !== canonicalTab;
+    const needsFilterFix = !analyticsSearchParamsEqual(searchParams, canonical);
+    if (!needsTabFix && !needsFilterFix) {
+      return;
     }
-  }, [searchParams, setSearchParams]);
+    setSearchParams(canonical, { replace: true });
+  }, [
+    activeTab,
+    buildCanonicalSearchParams,
+    searchParams,
+    setSearchParams,
+    urlFilters,
+  ]);
+
+  const pushFiltersToUrl = useCallback(
+    (filters: AnalyticsDashboardFilters, tab: AnalyticsDashboardTab, replace: boolean) => {
+      setSearchParams(buildCanonicalSearchParams(filters, tab), { replace });
+    },
+    [buildCanonicalSearchParams, setSearchParams]
+  );
 
   const handleTabChange = useCallback(
     (tab: AnalyticsDashboardTab) => {
       setDrilldown(null);
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.set(ANALYTICS_TAB_QUERY_KEY, analyticsTabToUrl(tab));
-          return next;
-        },
-        { replace: false }
-      );
+      pushFiltersToUrl(appliedFilters, tab, false);
     },
-    [setSearchParams]
+    [appliedFilters, pushFiltersToUrl]
   );
 
   const filterParams = useMemo(() => buildFilterParams(appliedFilters), [appliedFilters]);
@@ -172,11 +193,20 @@ export default function AnalyticsDashboardPage() {
         onChange={setDraftFilters}
         onApply={() => {
           setAppliedFilters(draftFilters);
+          pushFiltersToUrl(draftFilters, activeTab, false);
         }}
         onReset={() => {
-          const next = initialFilters();
+          const next = createDefaultAnalyticsFilters();
           setDraftFilters(next);
           setAppliedFilters(next);
+          setSearchParams(
+            (prev) => {
+              const cleared = clearAnalyticsFilterSearchParams(prev);
+              cleared.set(ANALYTICS_TAB_QUERY_KEY, analyticsTabToUrl(activeTab));
+              return cleared;
+            },
+            { replace: false }
+          );
         }}
         inventories={inventories}
         aisles={aisles}

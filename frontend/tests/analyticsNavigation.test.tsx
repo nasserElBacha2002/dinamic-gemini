@@ -3,8 +3,17 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import {
+  createMemoryRouter,
+  MemoryRouter,
+  Route,
+  RouterProvider,
+  Routes,
+  useLocation,
+} from 'react-router-dom';
 import AnalyticsDashboardPage from '../src/features/analytics-dashboard/AnalyticsDashboardPage';
+import MetricsLegacyRedirect from '../src/pages/analytics/MetricsLegacyRedirect';
+import ObservabilityLegacyRedirect from '../src/pages/analytics/ObservabilityLegacyRedirect';
 import { pathToAnalytics } from '../src/constants/appRoutes';
 import { analyticsTabToUrl, parseAnalyticsTab } from '../src/constants/analyticsTabs';
 
@@ -42,12 +51,29 @@ function renderAnalyticsAt(entry: string) {
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path="/analitica" element={<AnalyticsDashboardPage />} />
-          <Route path="/metrics" element={<AnalyticsDashboardPage />} />
         </Routes>
         <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>
   );
+}
+
+function renderAnalyticsRouter(initialEntries: string[], initialIndex?: number) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/analitica',
+        element: (
+          <QueryClientProvider client={client}>
+            <AnalyticsDashboardPage />
+          </QueryClientProvider>
+        ),
+      },
+    ],
+    { initialEntries, initialIndex }
+  );
+  return { router, ...render(<RouterProvider router={router} />) };
 }
 
 const analyticsLoaded = {
@@ -75,6 +101,7 @@ const analyticsLoaded = {
 };
 
 beforeEach(() => {
+  vi.clearAllMocks();
   mockUseAuth.mockReturnValue({ initialized: true, user: { username: 'tester' } });
   mockUseInventoriesList.mockReturnValue({
     data: { items: [{ id: 'inv-1', name: 'Test', processing_mode: 'test' }] },
@@ -130,32 +157,155 @@ describe('AnalyticsDashboardPage URL tabs', () => {
     });
   });
 
-  it('updates URL when clicking a tab', async () => {
-    renderAnalyticsAt('/analitica?tab=resumen');
-    await waitFor(() => expect(screen.getByTestId('location-probe')).toHaveTextContent('tab=resumen'));
-    fireEvent.click(screen.getByTestId('analytics-tab-quality'));
+  it('normalizes invalid tab to Resumen', async () => {
+    renderAnalyticsAt('/analitica?tab=invalid-tab');
     await waitFor(() => {
-      expect(screen.getByTestId('location-probe')).toHaveTextContent('tab=calidad');
+      expect(screen.getByTestId('location-probe')).toHaveTextContent('tab=resumen');
+    });
+    expect(screen.getByRole('tab', { name: 'Resumen' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('updates URL when clicking a tab and preserves filters', async () => {
+    renderAnalyticsAt(
+      '/analitica?tab=resumen&date_from=2026-01-01&date_to=2026-01-31&inventory_id=inv-1'
+    );
+    await waitFor(() => expect(screen.getByTestId('location-probe')).toHaveTextContent('inventory_id=inv-1'));
+    fireEvent.click(screen.getByTestId('analytics-tab-aisles'));
+    await waitFor(() => {
+      const url = screen.getByTestId('location-probe').textContent ?? '';
+      expect(url).toContain('tab=pasillos');
+      expect(url).toContain('inventory_id=inv-1');
+      expect(url).toContain('date_from=2026-01-01');
+    });
+  });
+});
+
+describe('AnalyticsDashboardPage URL filters', () => {
+  it('initializes filter state from URL and passes filters to data hook', async () => {
+    renderAnalyticsAt(
+      '/analitica?tab=pasillos&date_from=2026-01-01&date_to=2026-01-31&inventory_id=inv-1&aisle_id=a-1'
+    );
+    await waitFor(() => expect(mockUseAnalyticsDashboardData).toHaveBeenCalled());
+    const firstCall = mockUseAnalyticsDashboardData.mock.calls[0]?.[0] as {
+      analytics: { inventory_id?: string; aisle_id?: string; date_from?: string };
+    };
+    expect(firstCall.analytics.inventory_id).toBe('inv-1');
+    expect(firstCall.analytics.aisle_id).toBe('a-1');
+    expect(firstCall.analytics.date_from).toBe('2026-01-01');
+  });
+
+  it('ignores aisle_id when inventory_id is missing', async () => {
+    renderAnalyticsAt('/analitica?tab=pasillos&aisle_id=a-1');
+    await waitFor(() => expect(mockUseAnalyticsDashboardData).toHaveBeenCalled());
+    const firstCall = mockUseAnalyticsDashboardData.mock.calls[0]?.[0] as {
+      analytics: { aisle_id?: string };
+    };
+    expect(firstCall.analytics.aisle_id).toBeUndefined();
+  });
+
+  it('writes filter params to URL when applying filters', async () => {
+    renderAnalyticsAt('/analitica?tab=pasillos');
+    await waitFor(() => expect(screen.getByTestId('analytics-apply-filters')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2026-01-01' } });
+    fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2026-01-31' } });
+    fireEvent.click(screen.getByTestId('analytics-apply-filters'));
+    await waitFor(() => {
+      const url = screen.getByTestId('location-probe').textContent ?? '';
+      expect(url).toContain('tab=pasillos');
+      expect(url).toContain('date_from=2026-01-01');
+      expect(url).toContain('date_to=2026-01-31');
+    });
+  });
+
+  it('removes filter params on reset but keeps tab', async () => {
+    renderAnalyticsAt(
+      '/analitica?tab=costos&date_from=2026-01-01&date_to=2026-01-31&inventory_id=inv-1&provider_name=openai'
+    );
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Costos' })).toHaveAttribute('aria-selected', 'true'));
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar filtros' }));
+    await waitFor(() => {
+      const url = screen.getByTestId('location-probe').textContent ?? '';
+      expect(url).toContain('tab=costos');
+      expect(url).not.toContain('inventory_id=');
+      expect(url).not.toContain('provider_name=');
+      expect(url).not.toContain('date_from=2026-01-01');
+    });
+  });
+
+  it('restores filters on browser back', async () => {
+    const { router } = renderAnalyticsRouter(
+      [
+        '/analitica?tab=costos&inventory_id=inv-1',
+        '/analitica?tab=costos&inventory_id=inv-2',
+      ],
+      1
+    );
+    await waitFor(() => {
+      const lastCall = mockUseAnalyticsDashboardData.mock.calls.at(-1)?.[0] as {
+        analytics: { inventory_id?: string };
+      };
+      expect(lastCall.analytics.inventory_id).toBe('inv-2');
+    });
+    await router.navigate(-1);
+    await waitFor(() => {
+      const lastCall = mockUseAnalyticsDashboardData.mock.calls.at(-1)?.[0] as {
+        analytics: { inventory_id?: string };
+      };
+      expect(lastCall.analytics.inventory_id).toBe('inv-1');
+    });
+  });
+
+  it('falls back to default dates for invalid date params', async () => {
+    renderAnalyticsAt('/analitica?tab=resumen&date_from=not-a-date&date_to=2026-13-40');
+    await waitFor(() => expect(mockUseAnalyticsDashboardData).toHaveBeenCalled());
+    const firstCall = mockUseAnalyticsDashboardData.mock.calls[0]?.[0] as {
+      analytics: { date_from?: string; date_to?: string };
+    };
+    expect(firstCall.analytics.date_from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(firstCall.analytics.date_to).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(firstCall.analytics.date_from).not.toBe('not-a-date');
+    await waitFor(() => {
+      const url = screen.getByTestId('location-probe').textContent ?? '';
+      expect(url).not.toContain('not-a-date');
     });
   });
 });
 
 describe('legacy analytics redirects', () => {
-  it('redirects /metrics to /analitica?tab=calidad', async () => {
+  function renderLegacyRedirect(path: string) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={['/metrics']}>
+        <MemoryRouter initialEntries={[path]}>
           <Routes>
-            <Route path="/metrics" element={<Navigate to={pathToAnalytics('quality')} replace />} />
-            <Route path="/analitica" element={<AnalyticsDashboardPage />} />
+            <Route path="/metrics" element={<MetricsLegacyRedirect />} />
+            <Route path="/observabilidad" element={<ObservabilityLegacyRedirect />} />
+            <Route
+              path="/analitica"
+              element={
+                <>
+                  <AnalyticsDashboardPage />
+                  <LocationProbe />
+                </>
+              }
+            />
           </Routes>
-          <LocationProbe />
         </MemoryRouter>
       </QueryClientProvider>
     );
+  }
+
+  it('redirects /metrics to /analitica?tab=calidad via MetricsLegacyRedirect', async () => {
+    renderLegacyRedirect('/metrics');
     await waitFor(() => {
       expect(screen.getByTestId('location-probe')).toHaveTextContent('/analitica?tab=calidad');
+    });
+  });
+
+  it('redirects /observabilidad to /analitica?tab=proveedores via ObservabilityLegacyRedirect', async () => {
+    renderLegacyRedirect('/observabilidad');
+    await waitFor(() => {
+      expect(screen.getByTestId('location-probe')).toHaveTextContent('/analitica?tab=proveedores');
     });
   });
 });

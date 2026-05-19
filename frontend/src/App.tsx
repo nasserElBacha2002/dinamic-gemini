@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
-import { pathToAnalytics, ROUTE_HOME, ROUTE_LOGIN, ROUTE_PATH } from './constants/appRoutes';
+import { ROUTE_HOME, ROUTE_LOGIN, ROUTE_PATH } from './constants/appRoutes';
+import MetricsLegacyRedirect from './pages/analytics/MetricsLegacyRedirect';
+import ObservabilityLegacyRedirect from './pages/analytics/ObservabilityLegacyRedirect';
 import AisleObservabilityPage from './pages/AisleObservabilityPage';
 import { useAuth } from './features/auth';
 import LoginPage from './features/auth/LoginPage';
@@ -53,14 +55,8 @@ function App() {
   const positionDetailEl = useMemo(() => <PositionDetailPage />, []);
   const reviewQueueRedirectEl = useMemo(() => <ReviewQueueRedirect />, []);
   const analyticsDashboardEl = useMemo(() => <AnalyticsDashboardPage />, []);
-  const metricsLegacyRedirectEl = useMemo(
-    () => <Navigate to={pathToAnalytics('quality')} replace />,
-    []
-  );
-  const observabilityLegacyRedirectEl = useMemo(
-    () => <Navigate to={pathToAnalytics('providers')} replace />,
-    []
-  );
+  const metricsLegacyRedirectEl = useMemo(() => <MetricsLegacyRedirect />, []);
+  const observabilityLegacyRedirectEl = useMemo(() => <ObservabilityLegacyRedirect />, []);
   const clientsEl = useMemo(() => <ClientsList />, []);
   const clientDetailEl = useMemo(() => <ClientDetail />, []);
   const clientSupplierDetailEl = useMemo(() => <ClientSupplierDetail />, []);

@@ -1,4 +1,3 @@
-import { ROUTE_ANALITICA } from './appRoutes';
 import type { AnalyticsDashboardTab } from '../features/analytics-dashboard/types';
 
 export const ANALYTICS_TAB_QUERY_KEY = 'tab';
@@ -46,9 +45,4 @@ export function parseAnalyticsTab(value: string | null): AnalyticsDashboardTab {
 
 export function analyticsTabToUrl(tab: AnalyticsDashboardTab): AnalyticsTabUrlId {
   return INTERNAL_TO_URL[tab];
-}
-
-export function pathToAnalytics(tab?: AnalyticsDashboardTab): string {
-  const urlTab = analyticsTabToUrl(tab ?? 'summary');
-  return `${ROUTE_ANALITICA}?${ANALYTICS_TAB_QUERY_KEY}=${urlTab}`;
 }
