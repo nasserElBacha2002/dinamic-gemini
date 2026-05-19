@@ -7,7 +7,7 @@ from typing import Any
 from src.llm.costing_helpers.coercion import as_decimal, to_int
 
 
-def _dedupe_keep_order(items: list[str]) -> list[str]:
+def dedupe_keep_order(items: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for item in items:
