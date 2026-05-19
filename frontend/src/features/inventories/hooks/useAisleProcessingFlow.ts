@@ -5,7 +5,6 @@ import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import { useAppSnackbar } from '../../../components/ui';
 import { useProcessingProviderOptions, useStartAisleProcessing } from '../../../hooks';
 import {
-  hasProductionProviders,
   initialProcessingSelection,
   modelKeyForProviderChange,
   type ProcessingProviderOptionsMode,
@@ -58,8 +57,31 @@ export function useAisleProcessingFlow({
     mode: optionsMode,
   });
 
+  const productionOptionsLoading =
+    isProductionInventory &&
+    Boolean(dialogTarget) &&
+    providerOptsQuery.isLoading;
+
+  const productionProvidersReady =
+    isProductionInventory &&
+    Boolean(dialogTarget) &&
+    !providerOptsQuery.isLoading &&
+    !providerOptsQuery.isError &&
+    (providerOptsQuery.data?.providers?.length ?? 0) > 0;
+
+  const productionProvidersUnavailable =
+    isProductionInventory &&
+    Boolean(dialogTarget) &&
+    !providerOptsQuery.isLoading &&
+    (providerOptsQuery.isError ||
+      (providerOptsQuery.data != null &&
+        (providerOptsQuery.data.providers?.length ?? 0) === 0));
+
   useEffect(() => {
     if (!dialogTarget || selectionInitialized || !providerOptsQuery.data) {
+      return;
+    }
+    if (isProductionInventory && (providerOptsQuery.data.providers?.length ?? 0) === 0) {
       return;
     }
     const { providerKey: p, modelKey: m } = initialProcessingSelection(
@@ -69,7 +91,13 @@ export function useAisleProcessingFlow({
     setProviderKey(p);
     setModelKey(m);
     setSelectionInitialized(true);
-  }, [dialogTarget, optionsMode, providerOptsQuery.data, selectionInitialized]);
+  }, [
+    dialogTarget,
+    isProductionInventory,
+    optionsMode,
+    providerOptsQuery.data,
+    selectionInitialized,
+  ]);
 
   const effectiveProvider =
     providerKey.trim() || providerOptsQuery.data?.default_provider_key || '';
@@ -77,8 +105,6 @@ export function useAisleProcessingFlow({
     () => (providerOptsQuery.data?.providers ?? []).find((p) => p.key === effectiveProvider),
     [providerOptsQuery.data?.providers, effectiveProvider]
   );
-
-  const productionProvidersReady = !isProductionInventory || hasProductionProviders(providerOptsQuery.data);
 
   const openDialogForAisle = useCallback(
     (aisleId: string, aisleCode: string, clientSupplierId: string | null) => {
@@ -113,8 +139,11 @@ export function useAisleProcessingFlow({
 
   const confirmDialog = useCallback(async () => {
     if (!dialogTarget) return;
-    if (isProductionInventory && !productionProvidersReady) {
+    if (productionProvidersUnavailable) {
       setProcessError(t('aisle.process_no_production_providers'));
+      return;
+    }
+    if (productionOptionsLoading) {
       return;
     }
     onBeforeProcessMutation?.();
@@ -139,12 +168,12 @@ export function useAisleProcessingFlow({
     }
   }, [
     dialogTarget,
-    isProductionInventory,
     modelKey,
     onAfterSuccess,
     onBeforeProcessMutation,
     processMutation,
-    productionProvidersReady,
+    productionOptionsLoading,
+    productionProvidersUnavailable,
     providerKey,
     setProcessError,
     showSnackbar,
@@ -167,6 +196,8 @@ export function useAisleProcessingFlow({
     providerConfig,
     processMutation,
     isProductionInventory,
+    productionOptionsLoading,
     productionProvidersReady,
+    productionProvidersUnavailable,
   };
 }

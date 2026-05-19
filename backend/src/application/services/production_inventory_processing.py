@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 def effective_production_processing_keys(
     inventory: Inventory, settings: Any
 ) -> tuple[str, str, str]:
-    """Production keys without explicit request overrides (inventory snapshot + env defaults)."""
+    """Production keys without explicit request body (see ``resolve_production_processing_keys``)."""
     return resolve_production_processing_keys(
         inventory,
         requested_provider_name=None,

@@ -62,3 +62,10 @@ def test_partial_snapshot_uses_env_default_provider() -> None:
     inv = _inv(primary_provider_name=None, primary_model_name=None)
     p, m, pk = effective_production_processing_keys(inv, s)
     assert (p, m, pk) == ("openai", "gpt-prod", DEFAULT_HYBRID_PROMPT_PROFILE)
+
+
+def test_snapshot_provider_uses_current_explicit_model_not_primary_model_name() -> None:
+    s = _settings(openai_api_key="ok", openai_model="gpt-current")
+    inv = _inv(primary_provider_name="openai", primary_model_name="gpt-stale-snapshot")
+    p, m, pk = effective_production_processing_keys(inv, s)
+    assert (p, m, pk) == ("openai", "gpt-current", DEFAULT_HYBRID_PROMPT_PROFILE)

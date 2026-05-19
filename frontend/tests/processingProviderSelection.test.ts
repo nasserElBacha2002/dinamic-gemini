@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProcessingProviderOptionsResponse } from '../src/api/types';
 import {
-  hasProductionProviders,
   initialProcessingSelection,
   modelKeyForProviderChange,
 } from '../src/features/inventories/utils/processingProviderSelection';
@@ -50,8 +49,4 @@ describe('processingProviderSelection', () => {
     expect(modelKeyForProviderChange('openai', sampleOpts, 'test')).toBe('');
   });
 
-  it('detects empty production catalog', () => {
-    expect(hasProductionProviders({ ...sampleOpts, providers: [] })).toBe(false);
-    expect(hasProductionProviders(sampleOpts)).toBe(true);
-  });
 });

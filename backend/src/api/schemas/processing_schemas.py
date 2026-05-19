@@ -76,7 +76,10 @@ class ProcessingProviderOptionsResponse(BaseModel):
 
     mode: Literal["test", "production"] = Field(
         "test",
-        description="Catalog scope: test lists all configured models; production lists default model per provider.",
+        description=(
+            "Catalog scope: test lists all configured models; production lists one model per "
+            "provider from explicit env (GEMINI_MODEL_NAME, OPENAI_MODEL, ANTHROPIC_MODEL) only."
+        ),
     )
     default_provider_key: str
     default_model_key: Optional[str] = Field(

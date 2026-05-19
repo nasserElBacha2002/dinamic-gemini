@@ -11,9 +11,11 @@ import pytest
 from src.application.errors import (
     InvalidProcessingModelError,
     ProcessingProviderNotConfiguredError,
+    UnknownProcessingProviderError,
 )
 from src.application.services.processing_provider_availability import (
     build_processing_provider_options_payload,
+    effective_production_default_provider_key,
     production_provider_catalog,
     resolve_production_processing_keys,
 )
@@ -89,6 +91,29 @@ def test_production_catalog_excludes_deepseek() -> None:
     assert "deepseek" not in production_provider_catalog(s)
 
 
+def test_production_catalog_excludes_provider_without_explicit_model_env() -> None:
+    s = _settings(gemini_model_name=None)
+    assert "gemini" not in production_provider_catalog(s)
+
+
+def test_effective_default_provider_falls_back_when_llm_provider_not_production_ready() -> None:
+    s = _settings(llm_provider="openai", openai_api_key="")
+    catalog = production_provider_catalog(s)
+    effective, model = effective_production_default_provider_key(s, catalog)
+    assert effective == "gemini"
+    assert model == "gemini-prod-3.1"
+
+
+def test_production_options_default_provider_when_openai_not_configured() -> None:
+    s = _settings(llm_provider="openai", openai_api_key="")
+    payload = build_processing_provider_options_payload(s, mode="production")
+    assert payload["default_provider_key"] == "gemini"
+    assert payload["default_model_key"] == "gemini-prod-3.1"
+    assert all(p["key"] != "openai" for p in payload["providers"])
+    gemini = next(p for p in payload["providers"] if p["key"] == "gemini")
+    assert gemini["is_default_provider"] is True
+
+
 def test_production_options_single_model_per_provider() -> None:
     s = _settings(openai_api_key="ok", anthropic_api_key="ak")
     payload = build_processing_provider_options_payload(s, mode="production")
@@ -145,6 +170,48 @@ def test_resolve_production_default_provider_from_env_when_no_request() -> None:
         settings=s,
     )
     assert (p, m) == ("openai", "gpt-prod")
+
+
+def test_resolve_production_prefers_inventory_provider_over_llm_provider() -> None:
+    s = _settings(llm_provider="openai", openai_api_key="ok")
+    p, m, _ = resolve_production_processing_keys(
+        _inv(primary_provider_name="gemini", primary_model_name="ignored-snapshot-model"),
+        requested_provider_name=None,
+        requested_model_name=None,
+        settings=s,
+    )
+    assert (p, m) == ("gemini", "gemini-prod-3.1")
+
+
+def test_resolve_production_ignores_snapshot_model_uses_current_catalog_default() -> None:
+    s = _settings(openai_api_key="ok", openai_model="gpt-current")
+    p, m, _ = resolve_production_processing_keys(
+        _inv(primary_provider_name="openai", primary_model_name="gpt-stale-snapshot"),
+        requested_provider_name=None,
+        requested_model_name=None,
+        settings=s,
+    )
+    assert (p, m) == ("openai", "gpt-current")
+
+
+def test_resolve_production_unknown_provider_raises() -> None:
+    with pytest.raises(UnknownProcessingProviderError):
+        resolve_production_processing_keys(
+            _inv(),
+            requested_provider_name="not-a-provider",
+            requested_model_name=None,
+            settings=_settings(),
+        )
+
+
+def test_resolve_production_unconfigured_provider_raises() -> None:
+    with pytest.raises(ProcessingProviderNotConfiguredError):
+        resolve_production_processing_keys(
+            _inv(),
+            requested_provider_name="openai",
+            requested_model_name=None,
+            settings=_settings(openai_api_key=""),
+        )
 
 
 def test_resolve_production_no_providers_raises() -> None:

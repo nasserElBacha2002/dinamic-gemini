@@ -520,6 +520,89 @@ def test_post_process_production_inventory_honors_valid_production_provider(
         config_mod.reload_settings()
 
 
+def test_post_process_production_unknown_provider_returns_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-ci-not-a-real-secret")
+    config_mod.reload_settings()
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        create_resp = _pinv("Prod Unknown Prov", processing_mode="production")
+        inv_id = create_resp.json()["id"]
+        aisle_id = _post_aisle(inv_id, "PU-01").json()["id"]
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
+        response = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+            json={"provider_name": "not-a-real-provider"},
+        )
+        assert response.status_code == 422
+        assert "unknown" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        config_mod.reload_settings()
+
+
+def test_post_process_production_unconfigured_provider_returns_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-ci-not-a-real-secret")
+    config_mod.reload_settings()
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        prod_opts = client.get(
+            "/api/v3/inventories/processing-provider-options",
+            params={"mode": "production"},
+        )
+        assert prod_opts.status_code == 200
+        available = {p["key"] for p in prod_opts.json()["providers"]}
+        unconfigured = next(
+            (k for k in ("openai", "claude", "deepseek") if k not in available),
+            None,
+        )
+        if unconfigured is None:
+            pytest.skip("All alternate providers are production-ready in this environment")
+
+        create_resp = _pinv("Prod Unconfigured Prov", processing_mode="production")
+        inv_id = create_resp.json()["id"]
+        aisle_id = _post_aisle(inv_id, "PC-01").json()["id"]
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
+        response = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+            json={"provider_name": unconfigured},
+        )
+        assert response.status_code == 422
+        detail = response.json()["detail"].lower()
+        assert unconfigured in detail or "configured" in detail
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        config_mod.reload_settings()
+
+
+def test_post_process_production_invalid_model_returns_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-ci-not-a-real-secret")
+    config_mod.reload_settings()
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        create_resp = _pinv("Prod Bad Model", processing_mode="production")
+        inv_id = create_resp.json()["id"]
+        aisle_id = _post_aisle(inv_id, "PM-01").json()["id"]
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
+        response = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+            json={"provider_name": "gemini", "model_name": "not-the-production-default"},
+        )
+        assert response.status_code == 422
+        assert "model" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        config_mod.reload_settings()
+
+
 def test_get_processing_provider_options_production_mode_single_default_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
