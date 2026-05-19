@@ -336,7 +336,7 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getByTestId('analytics-summary-hero-title')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-executive-hero')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-summary-cost-insight')).toBeInTheDocument();
-    expect(screen.queryByTestId('analytics-cost-visual-section')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-cost-by-provider-table')).not.toBeInTheDocument();
     expect(screen.getByTestId('analytics-summary-cost-donut')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-summary-cost-provider-bars')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-hero-kpi-total-cost')).toHaveTextContent(/24[,.]82/);
@@ -428,26 +428,29 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getByTestId('analytics-mixed-loaded-data')).toBeInTheDocument();
   });
 
-  it('shows provider/model section using observability data', () => {
+  it('shows provider/model charts using observability data', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-providers'));
-    const table = screen.getByTestId('analytics-providers-table');
-    expect(within(table).getByText('gemini')).toBeInTheDocument();
-    expect(within(table).getByText('flash')).toBeInTheDocument();
+    const cards = screen.getByTestId('analytics-providers-comparison-cards');
+    expect(cards).toBeInTheDocument();
+    expect(within(cards).getByText(/gemini/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-providers-table')).not.toBeInTheDocument();
   });
 
-  it('shows inventory performance table', () => {
+  it('shows inventory ranking on inventarios tab', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-inventories'));
-    const invTable = screen.getByTestId('analytics-inventories-table');
-    expect(invTable).toBeInTheDocument();
-    expect(within(invTable).getByRole('link', { name: 'Test DC' })).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-inventories-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-inventories-ranking')).toBeInTheDocument();
+    expect(within(screen.getByTestId('analytics-inventories-ranking')).getByText('Test DC')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 
-  it('shows aisle table', () => {
+  it('shows aisle ranking on pasillos tab', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-aisles'));
-    expect(screen.getByTestId('analytics-aisles-table')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-aisles-tab')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-aisles-ranking')).toBeInTheDocument();
     expect(screen.getByText('A-01')).toBeInTheDocument();
   });
 
@@ -461,8 +464,8 @@ describe('AnalyticsDashboardPage', () => {
   it('shows disabled compare CTA for production inventory row', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-inventories'));
-    const btn = screen.getByTestId('inventory-compare-inv-prod');
-    expect(btn).toBeDisabled();
+    const compare = screen.getByTestId('inventory-compare-inv-prod');
+    expect(compare).not.toHaveAttribute('href');
   });
 
   it('compare tab shows select inventory hint without selected inventory', () => {
@@ -473,21 +476,20 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.queryByTestId('compare-many-workspace-embedded')).not.toBeInTheDocument();
   });
 
-  it('costs tab renders charts before detailed tables', () => {
+  it('costs tab renders charts and hides tables by default', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-costs'));
     expect(screen.getByTestId('analytics-costs-tab')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-cost-visual-section')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-cost-by-provider-table')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-cost-by-inventory-table')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-cost-by-aisle-table')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-cost-by-capture-table')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-costs-capture-donut')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-costs-chart-provider-bars')).toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-cost-by-provider-table')).not.toBeInTheDocument();
     expect(screen.getByTestId('analytics-cost-warning-PROVIDER_MODEL_UNIT_COST_NOT_AVAILABLE')).toBeInTheDocument();
   });
 
-  it('shows No disponible for null provider cost per unit without computing it', () => {
+  it('shows No disponible for null provider cost per unit in tabular detail', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-costs'));
+    fireEvent.click(screen.getByTestId('analytics-costs-toggle-tabular'));
     const providerTable = screen.getByTestId('analytics-cost-by-provider-table');
     expect(within(providerTable).getAllByText('No disponible').length).toBeGreaterThan(0);
   });
@@ -555,11 +557,11 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.queryByTestId('analytics-partial-cost-failed')).not.toBeInTheDocument();
   });
 
-  it('shows Cargando in inventory cost cells while cost summary loads', () => {
+  it('shows loading state on inventarios cost chart while cost summary loads', () => {
     setupMocksWithDashboardData({ isCostSummaryLoading: true, costSummary: { data: undefined, isLoading: true, isError: false, error: null, refetch: vi.fn() } });
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-inventories'));
-    expect(screen.getAllByText('Cargando…').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('analytics-inventories-cost-summary-loading')).toBeInTheDocument();
   });
 
   it('shows hero skeleton and cost panel loading on overview while cost summary loads', () => {
@@ -570,7 +572,7 @@ describe('AnalyticsDashboardPage', () => {
     renderPage();
     expect(screen.getByTestId('analytics-executive-hero')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-summary-panel-cost')).toBeInTheDocument();
-    expect(screen.queryByTestId('analytics-cost-visual-section')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-cost-by-provider-table')).not.toBeInTheDocument();
   });
 
   it('shows cost chart loading on inventarios tab while cost summary loads', () => {
@@ -622,19 +624,18 @@ describe('AnalyticsDashboardPage', () => {
     fireEvent.click(screen.getByTestId('inventory-drilldown-inv-test'));
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
     expect(screen.queryByTestId('analytics-drilldown-inventory-panel')).not.toBeInTheDocument();
-    expect(screen.getByTestId('analytics-inventories-table')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-inventories-tab')).toBeInTheDocument();
   });
 
   it('providers tab shows charts and does not recommend a best provider', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-providers'));
     expect(screen.getByTestId('analytics-providers-tab')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-providers-chart-run-volume')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-providers-cost-table')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-providers-chart-run-volume-bars')).toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-providers-cost-table')).not.toBeInTheDocument();
     expect(screen.queryByText(/mejor proveedor/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/proveedor recomendado/i)).not.toBeInTheDocument();
-    const costTable = screen.getByTestId('analytics-providers-cost-table');
-    expect(within(costTable).getAllByText('No disponible').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('analytics-cost-warnings')).toBeInTheDocument();
   });
 
   it('costs tab links to compare section', () => {
@@ -645,18 +646,22 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getByTestId('analytics-compare-tab')).toBeInTheDocument();
   });
 
-  it('navigates to compare-many without aisleId from inventarios tab', () => {
+  it('links to compare-many without aisleId from inventarios tab', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-inventories'));
-    fireEvent.click(screen.getByTestId('inventory-compare-inv-test'));
-    expect(mockNavigate).toHaveBeenCalledWith('/inventories/inv-test/analytics/compare-many');
+    expect(screen.getByTestId('inventory-compare-inv-test')).toHaveAttribute(
+      'href',
+      '/inventories/inv-test/analytics/compare-many'
+    );
   });
 
-  it('navigates to compare-many with aisleId from pasillos tab', () => {
+  it('links to compare-many with aisleId from pasillos tab', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-tab-aisles'));
-    fireEvent.click(screen.getByTestId('aisle-compare-a-1'));
-    expect(mockNavigate).toHaveBeenCalledWith('/inventories/inv-test/analytics/compare-many?aisleId=a-1');
+    expect(screen.getByTestId('aisle-compare-a-1')).toHaveAttribute(
+      'href',
+      '/inventories/inv-test/analytics/compare-many?aisleId=a-1'
+    );
   });
 
   it('does not call refetchAll when applying filters', () => {

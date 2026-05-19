@@ -324,6 +324,22 @@
       "drilldownTables": "Detalle tabular (drilldown)",
       "otherOutcomes": "Otros resultados"
     },
+    "quality": {
+      "overviewTitle": "Estado general de calidad",
+      "kpiPending": "Pendientes de revisión",
+      "kpiProcessed": "Procesadas",
+      "resolutionTitle": "Embudo de resolución",
+      "resolutionSubtitle": "Embudo operativo basado en el alcance y filtros aplicados.",
+      "manualTitle": "Intervención manual",
+      "manualCorrected": "Cantidad corregida",
+      "issuesTitle": "Incidencias principales",
+      "aislesTitle": "Pasillos con mayor revisión pendiente",
+      "aislePending": "{{count}} pendientes",
+      "viewInAnalytics": "Ver en analítica",
+      "compareRuns": "Comparar corridas",
+      "viewAislesDetail": "Ver pasillos",
+      "unsupportedCategories": "Categorías no disponibles en este alcance: {{categories}}."
+    },
     "summary": {
       "viewCosts": "Ver costos",
       "viewQuality": "Ver calidad",
@@ -371,6 +387,11 @@
       "unavailableCard": "Pendiente de backend",
       "unavailableExplain": "El sistema conserva snapshots de costo por job, pero todavía no existe una agregación backend segura para el dashboard global.",
       "llmCostHint": "Costos de procesamiento LLM según snapshots por job.",
+      "warningsSummaryTitle": "Calidad de datos de costos",
+      "warningsActiveCount": "{{count}} advertencias activas",
+      "jobsCoverageTitle": "Jobs con costo vs sin costo",
+      "showTabularDetail": "Ver detalle tabular",
+      "hideTabularDetail": "Ocultar detalle tabular",
       "notAvailable": "No disponible",
       "notAvailableHelper": "El backend no devolvió un valor seguro para este alcance.",
       "loadError": "No se pudieron cargar las métricas de costos.",
@@ -439,6 +460,16 @@
     },
     "providers": {
       "sectionTitle": "Comparativo operativo por proveedor y modelo",
+      "overviewTitle": "Resumen por proveedor/modelo",
+      "topByRuns": "Más usado (corridas)",
+      "topByCost": "Mayor costo total",
+      "lowestFailureRate": "Menor tasa de error observada",
+      "jobsCostSplit": "Jobs con / sin costo",
+      "activityTitle": "Uso por proveedor/modelo",
+      "costTitle": "Costo por proveedor/modelo",
+      "costDistributionTitle": "Distribución de costos",
+      "reliabilityTitle": "Desempeño observado",
+      "observedFailureRate": "Tasa de error observada",
       "costUnavailable": "Costo por proveedor",
       "fallbacks": "Fallbacks",
       "legacyJobs": "Jobs legacy"
@@ -483,16 +514,26 @@
       "viewDetail": "Ver detalle operativo",
       "viewOperationalDetail": "Ver detalle operativo",
       "openAnalytics": "Ver en analítica",
-      "compareRuns": "Comparar corridas"
+      "compareRuns": "Comparar corridas",
+      "rankingTitle": "Rendimiento por inventario",
+      "autoAcceptChart": "Autoaceptación por inventario",
+      "costPerUnitChart": "Costo por unidad por inventario"
     },
     "aisles": {
       "viewPositions": "Ver posiciones",
       "openAnalytics": "Ver en analítica",
       "compareRuns": "Comparar corridas",
-      "attentionStatus": "Estado de atención"
+      "attentionStatus": "Estado de atención",
+      "attentionTitle": "Pasillos que requieren atención",
+      "pendingChart": "Pendientes de revisión por pasillo"
     },
     "time": {
       "avgProcessing": "Tiempo promedio de procesamiento",
+      "overviewTitle": "Resumen de tiempos",
+      "slowestInventory": "Inventario más lento",
+      "fastestInventory": "Inventario más rápido",
+      "avgSuccessRate": "Tasa de éxito promedio",
+      "providerFailureTitle": "Tasa de error por proveedor/modelo",
       "byInventory": "Tiempo por inventario",
       "trendTitle": "Tendencia de procesamiento",
       "byProviderModel": "Tiempo promedio por proveedor/modelo"

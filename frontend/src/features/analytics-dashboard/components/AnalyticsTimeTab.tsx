@@ -1,20 +1,16 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Box, Grid } from '@mui/material';
-import {
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  Typography,
-} from '@mui/material';
 import TrendBars from '../../analytics/components/TrendBars';
 import { formatAvgProcessingMinutes, formatPct } from '../../analytics/adapters/metricsFormatters';
-import { buildProcessingTimeByInventoryData } from '../adapters/analyticsChartDatasets';
-import { AnalyticsChartCard } from './AnalyticsChartCard';
-import { AnalyticsSectionCard } from './AnalyticsSectionCard';
+import {
+  buildFastestInventoryInsight,
+  buildProcessingTimeByInventoryData,
+  buildProviderFailureRateChartData,
+  buildSlowestInventoryInsight,
+} from '../adapters/analyticsChartDatasets';
+import { AnalyticsCompactKpiGrid } from './AnalyticsCompactKpiGrid';
+import { AnalyticsSummaryPanel } from './AnalyticsSummaryPanel';
 import { HorizontalBarChart } from './charts/HorizontalBarChart';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
 import type { ObservabilityMetricsResponse } from '../../../api/types';
@@ -30,26 +26,74 @@ export interface AnalyticsTimeTabProps {
 export function AnalyticsTimeTab({ analytics, observability, isLoading }: AnalyticsTimeTabProps) {
   const { t } = useTranslation();
   const { summary, trends, inventoryPerformance } = analytics;
+  const invRows = inventoryPerformance?.items ?? [];
 
   const trendPoints = trends?.reviewed_results_over_time ?? [];
   const emptyText = t('analyticsDashboard.visual.emptyChart');
-  const loadingText = t('analyticsDashboard.visual.loadingChart');
-  const processingByInv = useMemo(
-    () => buildProcessingTimeByInventoryData(inventoryPerformance?.items ?? []),
-    [inventoryPerformance?.items]
+  const processingByInv = useMemo(() => buildProcessingTimeByInventoryData(invRows), [invRows]);
+  const providerFailureChart = useMemo(
+    () => buildProviderFailureRateChartData(observability),
+    [observability]
+  );
+  const slowest = useMemo(() => buildSlowestInventoryInsight(invRows), [invRows]);
+  const fastest = useMemo(() => buildFastestInventoryInsight(invRows), [invRows]);
+
+  const avgSuccessRate = useMemo(() => {
+    const rates = invRows
+      .map((r) => r.processing_success_rate)
+      .filter((v): v is number => v != null && Number.isFinite(v));
+    if (!rates.length) return null;
+    return rates.reduce((sum, v) => sum + v, 0) / rates.length;
+  }, [invRows]);
+
+  const overviewKpis = useMemo(
+    () => [
+      {
+        id: 'avg-processing',
+        label: t('analyticsDashboard.time.avgProcessing'),
+        value: formatAvgProcessingMinutes(
+          summary?.average_processing_time_minutes,
+          summary?.average_processing_time_seconds
+        ),
+      },
+      {
+        id: 'slowest',
+        label: t('analyticsDashboard.time.slowestInventory'),
+        value: slowest ? `${slowest.name} (${slowest.minutes.toFixed(1)} min)` : '—',
+      },
+      {
+        id: 'fastest',
+        label: t('analyticsDashboard.time.fastestInventory'),
+        value: fastest ? `${fastest.name} (${fastest.minutes.toFixed(1)} min)` : '—',
+      },
+      {
+        id: 'success-rate',
+        label: t('analyticsDashboard.time.avgSuccessRate'),
+        value: avgSuccessRate != null ? formatPct(avgSuccessRate) : '—',
+      },
+    ],
+    [t, summary, slowest, fastest, avgSuccessRate]
   );
 
   return (
     <Box data-testid="analytics-time-tab">
-      <Grid container spacing={2} sx={{ mb: 2 }}>
+      <Box sx={{ mb: 2 }}>
+        <AnalyticsSummaryPanel
+          title={t('analyticsDashboard.time.overviewTitle')}
+          isLoading={isLoading}
+          loadingSkeletonHeight={88}
+          data-testid="analytics-time-panel-overview"
+        >
+          <AnalyticsCompactKpiGrid items={overviewKpis} data-testid="analytics-time-overview-kpis" />
+        </AnalyticsSummaryPanel>
+      </Box>
+
+      <Grid container spacing={2}>
         <Grid item xs={12} md={6}>
-          <AnalyticsChartCard
+          <AnalyticsSummaryPanel
             title={t('analyticsDashboard.visual.processingTimeByInventory')}
-            loading={isLoading}
-            loadingText={loadingText}
-            empty={!isLoading && !processingByInv.length}
-            emptyText={emptyText}
-            data-testid="analytics-time-chart-inventory"
+            isLoading={isLoading}
+            data-testid="analytics-time-panel-inventory"
           >
             <HorizontalBarChart
               data={processingByInv}
@@ -58,78 +102,45 @@ export function AnalyticsTimeTab({ analytics, observability, isLoading }: Analyt
               ariaLabel={t('analyticsDashboard.visual.processingTimeByInventory')}
               data-testid="analytics-time-chart-inventory-bars"
             />
-          </AnalyticsChartCard>
+          </AnalyticsSummaryPanel>
         </Grid>
+
         <Grid item xs={12} md={6}>
-          <AnalyticsSectionCard title={t('analyticsDashboard.time.trendTitle')} grainLabel={t('analyticsDashboard.grain_positions')}>
-            <TrendBars title={t('analyticsDashboard.time.trendTitle')} points={trendPoints} emptyMessage={emptyText} />
-          </AnalyticsSectionCard>
+          <AnalyticsSummaryPanel
+            title={t('analyticsDashboard.time.trendTitle')}
+            subtitle={t('analyticsDashboard.grain_positions')}
+            isLoading={isLoading}
+            loadingSkeletonHeight={180}
+            data-testid="analytics-time-panel-trend"
+          >
+            <Box data-testid="analytics-time-chart-trend" sx={{ minHeight: 180 }}>
+              <TrendBars
+                title={t('analyticsDashboard.time.trendTitle')}
+                points={trendPoints}
+                emptyMessage={emptyText}
+                hideTitle
+              />
+            </Box>
+          </AnalyticsSummaryPanel>
+        </Grid>
+
+        <Grid item xs={12}>
+          <AnalyticsSummaryPanel
+            title={t('analyticsDashboard.time.providerFailureTitle')}
+            subtitle={t('analyticsDashboard.grain_runs')}
+            isLoading={isLoading}
+            data-testid="analytics-time-panel-provider"
+          >
+            <HorizontalBarChart
+              data={providerFailureChart}
+              emptyText={emptyText}
+              barColor="warning.main"
+              ariaLabel={t('analyticsDashboard.time.providerFailureTitle')}
+              data-testid="analytics-time-chart-provider-bars"
+            />
+          </AnalyticsSummaryPanel>
         </Grid>
       </Grid>
-
-      <AnalyticsSectionCard
-        title={t('analyticsDashboard.time.avgProcessing')}
-        grainLabel={t('analyticsDashboard.grain_positions')}
-      >
-        <Typography variant="h5" data-testid="analytics-avg-processing">
-          {formatAvgProcessingMinutes(summary?.average_processing_time_minutes, summary?.average_processing_time_seconds)}
-        </Typography>
-      </AnalyticsSectionCard>
-
-      <AnalyticsSectionCard title={t('analyticsDashboard.time.byInventory')} grainLabel={t('analyticsDashboard.grain_positions')}>
-        <Paper variant="outlined">
-          <Table size="small" data-testid="analytics-time-inventories-table">
-            <TableHead>
-              <TableRow>
-                <TableCell>{t('analytics.column_inventory')}</TableCell>
-                <TableCell align="right">{t('analytics.column_avg_processing')}</TableCell>
-                <TableCell align="right">{t('analytics.column_job_success')}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {(inventoryPerformance?.items ?? []).map((row) => (
-                <TableRow key={row.inventory_id}>
-                  <TableCell>{row.inventory_name}</TableCell>
-                  <TableCell align="right">
-                    {formatAvgProcessingMinutes(row.average_processing_time_minutes, null)}
-                  </TableCell>
-                  <TableCell align="right">{formatPct(row.processing_success_rate)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Paper>
-      </AnalyticsSectionCard>
-
-      <AnalyticsSectionCard
-        title={t('analyticsDashboard.time.byProviderModel')}
-        grainLabel={t('analyticsDashboard.grain_runs')}
-      >
-        <Paper variant="outlined">
-          <Table size="small" data-testid="analytics-time-provider-table">
-            <TableHead>
-              <TableRow>
-                <TableCell>{t('observability.metrics.colProvider')}</TableCell>
-                <TableCell>{t('observability.metrics.colModel')}</TableCell>
-                <TableCell align="right">{t('observability.metrics.colRuns')}</TableCell>
-                <TableCell align="right">{t('observability.metrics.colFailureRate')}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {(observability?.by_provider_model ?? []).map((row, idx) => (
-                <TableRow key={`${row.provider_name ?? ''}-${row.model_name ?? ''}-${idx}`}>
-                  <TableCell>{row.provider_name ?? t('observability.metrics.unknownId')}</TableCell>
-                  <TableCell>{row.model_name ?? t('observability.metrics.unknownId')}</TableCell>
-                  <TableCell align="right">{row.runs_total}</TableCell>
-                  <TableCell align="right">
-                    {row.failure_rate != null ? `${(row.failure_rate * 100).toFixed(1)} %` : '—'}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Paper>
-      </AnalyticsSectionCard>
     </Box>
   );
 }

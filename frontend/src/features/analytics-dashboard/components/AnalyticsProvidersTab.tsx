@@ -1,26 +1,22 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Box, Grid } from '@mui/material';
-import {
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+import { Box, Grid, Typography } from '@mui/material';
 import type { AnalyticsCostSummaryResponse, ObservabilityMetricsResponse } from '../../../api/types';
-import { AnalyticsSectionCard } from './AnalyticsSectionCard';
 import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
-import { buildCostByProviderChartData, buildProviderRunVolumeChartData } from '../adapters/analyticsChartDatasets';
 import {
-  buildCostWarnings,
-  formatCostCell,
-  formatProviderUnitCost,
-} from '../adapters/analyticsCostViewModel';
-import { AnalyticsChartCard } from './AnalyticsChartCard';
+  buildCostByProviderChartData,
+  buildProviderCostDonutSegments,
+  buildProviderFailureRateChartData,
+  buildProviderRunVolumeChartData,
+  buildTopProviderInsight,
+  CHART_TOP_N,
+} from '../adapters/analyticsChartDatasets';
+import { buildCostWarnings } from '../adapters/analyticsCostViewModel';
+import { formatLlmCostAmount } from '../adapters/analyticsCostFormatters';
+import { AnalyticsCompactKpiGrid } from './AnalyticsCompactKpiGrid';
+import { AnalyticsProviderComparisonCards } from './AnalyticsProviderComparisonCards';
+import { AnalyticsSummaryPanel } from './AnalyticsSummaryPanel';
+import { DonutChart } from './charts/DonutChart';
 import { HorizontalBarChart } from './charts/HorizontalBarChart';
 
 export interface AnalyticsProvidersTabProps {
@@ -35,23 +31,88 @@ function pctLabel(value: number | null | undefined): string {
 
 export function AnalyticsProvidersTab({ observability, costSummary }: AnalyticsProvidersTabProps) {
   const { t } = useTranslation();
-  const rows = observability?.by_provider_model ?? [];
+  const obsRows = observability?.by_provider_model ?? [];
   const costRows = costSummary?.by_provider_model ?? [];
   const costWarnings = useMemo(() => buildCostWarnings(costSummary, t), [costSummary, t]);
   const emptyText = t('analyticsDashboard.visual.emptyChart');
   const runVolumeChart = useMemo(() => buildProviderRunVolumeChartData(observability), [observability]);
   const costChart = useMemo(() => buildCostByProviderChartData(costSummary), [costSummary]);
+  const costDonut = useMemo(() => buildProviderCostDonutSegments(costSummary), [costSummary]);
+  const failureChart = useMemo(() => buildProviderFailureRateChartData(observability), [observability]);
+  const topProvider = useMemo(() => buildTopProviderInsight(observability), [observability]);
+
+  const topCostRow = useMemo(() => {
+    return [...costRows]
+      .filter((r) => r.total_cost != null && Number.isFinite(r.total_cost) && r.total_cost > 0)
+      .sort((a, b) => (b.total_cost ?? 0) - (a.total_cost ?? 0))[0];
+  }, [costRows]);
+
+  const lowestFailureRow = useMemo(() => {
+    return [...obsRows]
+      .filter((r) => r.runs_total > 0 && r.failure_rate != null && Number.isFinite(r.failure_rate))
+      .sort((a, b) => (a.failure_rate ?? 0) - (b.failure_rate ?? 0))[0];
+  }, [obsRows]);
+
+  const comparisonRows = useMemo(
+    () =>
+      [...obsRows]
+        .sort((a, b) => b.runs_total - a.runs_total)
+        .slice(0, CHART_TOP_N),
+    [obsRows]
+  );
+
+  const totals = costSummary?.totals;
+  const overviewKpis = useMemo(
+    () => [
+      {
+        id: 'top-runs',
+        label: t('analyticsDashboard.providers.topByRuns'),
+        value: topProvider ? `${topProvider.label} (${topProvider.runs})` : '—',
+      },
+      {
+        id: 'top-cost',
+        label: t('analyticsDashboard.providers.topByCost'),
+        value: topCostRow
+          ? `${topCostRow.provider_name ?? '—'} / ${topCostRow.model_name ?? '—'} (${formatLlmCostAmount(topCostRow.total_cost!)})`
+          : '—',
+      },
+      {
+        id: 'low-failure',
+        label: t('analyticsDashboard.providers.lowestFailureRate'),
+        value: lowestFailureRow
+          ? `${lowestFailureRow.provider_name ?? '—'} / ${lowestFailureRow.model_name ?? '—'} (${pctLabel(lowestFailureRow.failure_rate)})`
+          : '—',
+      },
+      {
+        id: 'jobs-cost',
+        label: t('analyticsDashboard.providers.jobsCostSplit'),
+        value:
+          totals != null
+            ? `${totals.jobs_with_cost ?? 0} / ${totals.jobs_without_cost ?? 0}`
+            : '—',
+      },
+    ],
+    [t, topProvider, topCostRow, lowestFailureRow, totals]
+  );
 
   return (
     <Box data-testid="analytics-providers-tab">
-      <Grid container spacing={2} sx={{ mb: 2 }}>
+      <Box sx={{ mb: 2 }}>
+        <AnalyticsSummaryPanel
+          title={t('analyticsDashboard.providers.overviewTitle')}
+          subtitle={t('analyticsDashboard.visual.notARecommendation')}
+          data-testid="analytics-providers-panel-overview"
+        >
+          <AnalyticsCompactKpiGrid items={overviewKpis} data-testid="analytics-providers-overview-kpis" />
+        </AnalyticsSummaryPanel>
+      </Box>
+
+      <Grid container spacing={2}>
         <Grid item xs={12} md={6}>
-          <AnalyticsChartCard
-            title={t('analyticsDashboard.visual.providerRunVolume')}
+          <AnalyticsSummaryPanel
+            title={t('analyticsDashboard.providers.activityTitle')}
             subtitle={t('analyticsDashboard.visual.notARecommendation')}
-            empty={!runVolumeChart.length}
-            emptyText={emptyText}
-            data-testid="analytics-providers-chart-run-volume"
+            data-testid="analytics-providers-panel-activity"
           >
             <HorizontalBarChart
               data={runVolumeChart}
@@ -59,114 +120,55 @@ export function AnalyticsProvidersTab({ observability, costSummary }: AnalyticsP
               ariaLabel={t('analyticsDashboard.visual.providerRunVolume')}
               data-testid="analytics-providers-chart-run-volume-bars"
             />
-          </AnalyticsChartCard>
+          </AnalyticsSummaryPanel>
         </Grid>
+
         <Grid item xs={12} md={6}>
-          <AnalyticsChartCard
-            title={t('analyticsDashboard.visual.costByProviderModel')}
-            subtitle={t('analyticsDashboard.visual.notARecommendation')}
-            empty={!costRows.length}
-            emptyText={emptyText}
-            data-testid="analytics-providers-chart-cost"
+          <AnalyticsSummaryPanel
+            title={t('analyticsDashboard.providers.costTitle')}
+            subtitle={t('analyticsDashboard.compare.notRecommendation')}
+            data-testid="analytics-providers-panel-cost"
           >
+            {costWarnings.length > 0 ? <AnalyticsCostWarningsBlock warnings={costWarnings} compact /> : null}
             <HorizontalBarChart
               data={costChart}
               emptyText={emptyText}
               data-testid="analytics-providers-chart-cost-bars"
             />
-          </AnalyticsChartCard>
+            {costDonut.length > 0 ? (
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                  {t('analyticsDashboard.providers.costDistributionTitle')}
+                </Typography>
+                <DonutChart
+                  segments={costDonut}
+                  emptyText={emptyText}
+                  data-testid="analytics-providers-cost-donut"
+                />
+              </Box>
+            ) : null}
+          </AnalyticsSummaryPanel>
+        </Grid>
+
+        <Grid item xs={12}>
+          <AnalyticsSummaryPanel
+            title={t('analyticsDashboard.providers.reliabilityTitle')}
+            subtitle={t('analyticsDashboard.compare.notRecommendation')}
+            data-testid="analytics-providers-panel-reliability"
+          >
+            <Box sx={{ mb: 2 }}>
+              <HorizontalBarChart
+                data={failureChart}
+                emptyText={emptyText}
+                barColor="warning.main"
+                ariaLabel={t('analyticsDashboard.providers.observedFailureRate')}
+                data-testid="analytics-providers-chart-failure-bars"
+              />
+            </Box>
+            <AnalyticsProviderComparisonCards rows={comparisonRows} emptyText={emptyText} />
+          </AnalyticsSummaryPanel>
         </Grid>
       </Grid>
-
-      <AnalyticsSectionCard
-        title={t('analyticsDashboard.providers.sectionTitle')}
-        grainLabel={t('analyticsDashboard.grain_runs')}
-        subtitle={t('analyticsDashboard.compare.notRecommendation')}
-      >
-        <Paper variant="outlined">
-          <Table size="small" data-testid="analytics-providers-table">
-            <TableHead>
-              <TableRow>
-                <TableCell>{t('observability.metrics.colProvider')}</TableCell>
-                <TableCell>{t('observability.metrics.colModel')}</TableCell>
-                <TableCell align="right">{t('observability.metrics.colRuns')}</TableCell>
-                <TableCell align="right">{t('observability.metrics.colSucceeded')}</TableCell>
-                <TableCell align="right">{t('observability.metrics.colFailed')}</TableCell>
-                <TableCell align="right">{t('observability.metrics.colFailureRate')}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rows.map((row, idx) => (
-                <TableRow key={`${row.provider_name ?? ''}-${row.model_name ?? ''}-${idx}`}>
-                  <TableCell>{row.provider_name ?? t('observability.metrics.unknownId')}</TableCell>
-                  <TableCell>{row.model_name ?? t('observability.metrics.unknownId')}</TableCell>
-                  <TableCell align="right">{row.runs_total}</TableCell>
-                  <TableCell align="right">{row.runs_succeeded}</TableCell>
-                  <TableCell align="right">{row.runs_failed}</TableCell>
-                  <TableCell align="right">{pctLabel(row.failure_rate)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Paper>
-        {!rows.length ? (
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            {t('observability.metrics.empty')}
-          </Typography>
-        ) : null}
-      </AnalyticsSectionCard>
-
-      <AnalyticsSectionCard
-        title={t('analyticsDashboard.costs.byProviderModelTitle')}
-        subtitle={t('analyticsDashboard.compare.notRecommendation')}
-      >
-        {costWarnings.length > 0 ? <AnalyticsCostWarningsBlock warnings={costWarnings} compact /> : null}
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-          {t('analyticsDashboard.costs.columnsContext')}
-        </Typography>
-        <Paper variant="outlined">
-          <Table size="small" data-testid="analytics-providers-cost-table">
-            <TableHead>
-              <TableRow>
-                <TableCell>{t('observability.metrics.colProvider')}</TableCell>
-                <TableCell>{t('observability.metrics.colModel')}</TableCell>
-                <TableCell align="right">{t('observability.metrics.colRuns')}</TableCell>
-                <TableCell align="right">{t('analyticsDashboard.costs.jobsWithCost')}</TableCell>
-                <TableCell align="right">{t('analyticsDashboard.costs.totalCost')}</TableCell>
-                <TableCell align="right">{t('analyticsDashboard.costs.costPerUnit')}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {costRows.map((row, idx) => {
-                const unit = formatProviderUnitCost(row.cost_per_counted_unit, t);
-                return (
-                  <TableRow key={`cost-${row.provider_name ?? ''}-${row.model_name ?? ''}-${idx}`}>
-                    <TableCell>{row.provider_name ?? t('observability.metrics.unknownId')}</TableCell>
-                    <TableCell>{row.model_name ?? t('observability.metrics.unknownId')}</TableCell>
-                    <TableCell align="right">{row.jobs_total}</TableCell>
-                    <TableCell align="right">{row.jobs_with_cost}</TableCell>
-                    <TableCell align="right">{formatCostCell(row.total_cost, 'cost', t)}</TableCell>
-                    <TableCell align="right">
-                      {unit.helper ? (
-                        <Tooltip title={unit.helper}>
-                          <span>{unit.display}</span>
-                        </Tooltip>
-                      ) : (
-                        unit.display
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Paper>
-        {!costRows.length ? (
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            {t('analyticsDashboard.costs.emptyNoJobs')}
-          </Typography>
-        ) : null}
-      </AnalyticsSectionCard>
     </Box>
   );
 }

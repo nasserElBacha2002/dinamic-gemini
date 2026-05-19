@@ -1,23 +1,20 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import { Box, Button, Tooltip, Typography } from '@mui/material';
-import { pathToAislePositions, pathToInventoryAnalyticsCompareMany } from '../../../constants/appRoutes';
-import { DataTable, sortDataTableRows, type DataTableColumn } from '../../../components/ui';
-import { paginateRows } from '../../analytics/adapters/metricsFormatters';
+import { Box, Grid } from '@mui/material';
 import type { AnalyticsCostSummaryResponse } from '../../../api/types';
-import type { AisleIssueRow } from '../../analytics/types';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
-import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
-import { buildCostByAisleChartData } from '../adapters/analyticsChartDatasets';
 import {
-  buildCostByAisleLookup,
-  buildCostWarnings,
-  formatCostCellWithLoading,
-} from '../adapters/analyticsCostViewModel';
-import { AnalyticsChartCard } from './AnalyticsChartCard';
+  buildAislePendingReviewChartData,
+  buildCostByAisleChartData,
+  buildTopAislesAttention,
+  CHART_TOP_N,
+} from '../adapters/analyticsChartDatasets';
+import { buildCostByAisleLookup, buildCostWarnings } from '../adapters/analyticsCostViewModel';
+import { AnalyticsAisleRankingCards } from './AnalyticsAisleRankingCards';
+import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
+import { AnalyticsSummaryPanel } from './AnalyticsSummaryPanel';
 import { HorizontalBarChart } from './charts/HorizontalBarChart';
-import { compareEligibilityTooltipKey, getCompareEligibility, type AnalyticsDrilldownHandlers } from '../types';
+import type { AnalyticsDrilldownHandlers } from '../types';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
 
@@ -39,207 +36,78 @@ export function AnalyticsAislesTab({
   drilldown,
 }: AnalyticsAislesTabProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [sortBy, setSortBy] = useState('pending');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const emptyText = t('analyticsDashboard.visual.emptyChart');
+  const loadingText = t('analyticsDashboard.visual.loadingChart');
+  const aisleRows = analytics.aisleIssues?.items ?? [];
 
   const costByAisle = useMemo(() => buildCostByAisleLookup(costSummary), [costSummary]);
   const costWarnings = useMemo(() => buildCostWarnings(costSummary, t), [costSummary, t]);
   const costChart = useMemo(() => buildCostByAisleChartData(costSummary), [costSummary]);
-  const emptyText = t('analyticsDashboard.visual.emptyChart');
-
-  const columns = useMemo<DataTableColumn<AisleIssueRow>[]>(
-    () => [
-      {
-        id: 'aisle',
-        label: t('common.aisle'),
-        sortable: true,
-        sortType: 'string',
-        sortAccessor: (r) => r.aisle_code,
-        cell: (r) => (
-          <Typography
-            component={RouterLink}
-            to={pathToAislePositions(r.inventory_id, r.aisle_id)}
-            variant="body2"
-            fontWeight={600}
-            color="primary"
-            sx={{ textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
-          >
-            {r.aisle_code}
-          </Typography>
-        ),
-      },
-      {
-        id: 'inventory',
-        label: t('analytics.column_inventory'),
-        sortable: true,
-        sortType: 'string',
-        sortAccessor: (r) => r.inventory_name,
-        cell: (r) => r.inventory_name,
-      },
-      {
-        id: 'total',
-        label: t('analytics.column_total'),
-        align: 'right',
-        sortable: true,
-        sortType: 'number',
-        sortAccessor: (r) => r.total_results,
-        cell: (r) => r.total_results,
-      },
-      {
-        id: 'pending',
-        label: t('analytics.column_pending'),
-        align: 'right',
-        sortable: true,
-        sortType: 'number',
-        sortAccessor: (r) => r.needs_review_count,
-        cell: (r) => r.needs_review_count,
-      },
-      {
-        id: 'issue',
-        label: t('analyticsDashboard.aisles.attentionStatus'),
-        cell: (r) => r.most_common_issue ?? '—',
-      },
-      {
-        id: 'total_cost',
-        label: t('analyticsDashboard.costs.totalCost'),
-        align: 'right',
-        sortable: false,
-        cell: (r) =>
-          formatCostCellWithLoading(isCostLoading, costByAisle.get(r.aisle_id)?.total_cost, 'cost', t),
-      },
-      {
-        id: 'counted_qty',
-        label: t('analyticsDashboard.costs.totalQuantity'),
-        align: 'right',
-        sortable: false,
-        cell: (r) =>
-          formatCostCellWithLoading(
-            isCostLoading,
-            costByAisle.get(r.aisle_id)?.total_counted_quantity,
-            'quantity',
-            t
-          ),
-      },
-      {
-        id: 'cost_per_unit',
-        label: t('analyticsDashboard.costs.costPerUnit'),
-        align: 'right',
-        sortable: false,
-        cell: (r) =>
-          formatCostCellWithLoading(
-            isCostLoading,
-            costByAisle.get(r.aisle_id)?.cost_per_counted_unit,
-            'costPerUnit',
-            t
-          ),
-      },
-      {
-        id: 'actions',
-        label: t('common.actions'),
-        cell: (r) => {
-          const eligibility = getCompareEligibility(inventoryProcessingModeById.get(r.inventory_id));
-          const href = eligibility.allowed
-            ? pathToInventoryAnalyticsCompareMany(r.inventory_id, { aisleId: r.aisle_id })
-            : '';
-          const tooltip = eligibility.allowed ? '' : t(compareEligibilityTooltipKey(eligibility.reason));
-          return (
-            <span style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap' }}>
-              <Button
-                size="small"
-                component={RouterLink}
-                to={pathToAislePositions(r.inventory_id, r.aisle_id)}
-              >
-                {t('analyticsDashboard.aisles.viewPositions')}
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => drilldown.onOpenAisleDrilldown(r.inventory_id, r.aisle_id)}
-                data-testid={`aisle-drilldown-${r.aisle_id}`}
-              >
-                {t('analyticsDashboard.aisles.openAnalytics')}
-              </Button>
-              <Tooltip title={tooltip}>
-                <span>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    disabled={!eligibility.allowed}
-                    data-testid={`aisle-compare-${r.aisle_id}`}
-                    onClick={() => href && navigate(href)}
-                  >
-                    {t('analyticsDashboard.aisles.compareRuns')}
-                  </Button>
-                </span>
-              </Tooltip>
-            </span>
-          );
-        },
-      },
-    ],
-    [costByAisle, drilldown, inventoryProcessingModeById, isCostLoading, navigate, t]
+  const pendingChart = useMemo(
+    () => buildAislePendingReviewChartData(aisleRows, t, CHART_TOP_N),
+    [aisleRows, t]
   );
-
-  const rowsSorted = useMemo(
-    () => sortDataTableRows(analytics.aisleIssues?.items ?? [], columns, sortBy, sortDir),
-    [analytics.aisleIssues?.items, columns, sortBy, sortDir]
-  );
-  const rowsPaged = useMemo(() => paginateRows(rowsSorted, page, pageSize), [rowsSorted, page, pageSize]);
+  const topAisles = useMemo(() => buildTopAislesAttention(aisleRows, CHART_TOP_N), [aisleRows]);
 
   return (
-    <Box data-testid="analytics-aisles-table">
-      <Box sx={{ mb: 2, maxWidth: 480 }}>
-        <AnalyticsChartCard
-          title={t('analyticsDashboard.visual.topAislesByCost')}
-          loading={isCostLoading}
-          loadingText={t('analyticsDashboard.visual.loadingChart')}
-          empty={!isCostLoading && !costChart.length}
-          emptyText={emptyText}
-          data-testid="analytics-aisles-cost-summary"
-        >
-          <HorizontalBarChart
-            data={costChart}
-            emptyText={emptyText}
-            ariaLabel={t('analyticsDashboard.visual.topAislesByCost')}
-            data-testid="analytics-aisles-cost-summary-bars"
-            onBarClick={(item) => {
-              const row = analytics.aisleIssues?.items?.find((a) => a.aisle_id === item.id);
-              if (row) drilldown.onOpenAisleDrilldown(row.inventory_id, row.aisle_id);
-            }}
-          />
-        </AnalyticsChartCard>
-      </Box>
+    <Box data-testid="analytics-aisles-tab">
       {costWarnings.length > 0 ? <AnalyticsCostWarningsBlock warnings={costWarnings} compact /> : null}
-      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-        {t('analyticsDashboard.costs.columnsContext')}
-      </Typography>
-      <DataTable<AisleIssueRow>
-        rows={rowsPaged}
-        rowKey={(r) => `${r.inventory_id}-${r.aisle_id}`}
-        columns={columns}
-        loading={isLoading}
-        size="small"
-        pagination={{
-          page,
-          pageSize,
-          totalItems: rowsSorted.length,
-          onPageChange: setPage,
-          onPageSizeChange: setPageSize,
-        }}
-        sort={{
-          sortBy,
-          sortDir,
-          onSortChange: (nextSortBy, nextSortDir) => {
-            setSortBy(nextSortBy);
-            setSortDir(nextSortDir);
-            setPage(1);
-          },
-        }}
-        emptyState={{ message: t('analytics.empty_aisle_metrics') }}
-      />
+
+      <Grid container spacing={2}>
+        <Grid item xs={12} md={6}>
+          <AnalyticsSummaryPanel
+            title={t('analyticsDashboard.visual.topAislesByCost')}
+            data-testid="analytics-aisles-panel-cost"
+          >
+            {isCostLoading ? (
+              <Box data-testid="analytics-aisles-cost-summary-loading">{loadingText}</Box>
+            ) : (
+              <HorizontalBarChart
+                data={costChart}
+                emptyText={emptyText}
+                ariaLabel={t('analyticsDashboard.visual.topAislesByCost')}
+                data-testid="analytics-aisles-cost-summary-bars"
+                onBarClick={(item) => {
+                  const row = aisleRows.find((a) => a.aisle_id === item.id);
+                  if (row) drilldown.onOpenAisleDrilldown(row.inventory_id, row.aisle_id);
+                }}
+              />
+            )}
+          </AnalyticsSummaryPanel>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <AnalyticsSummaryPanel
+            title={t('analyticsDashboard.aisles.pendingChart')}
+            isLoading={isLoading}
+            data-testid="analytics-aisles-panel-pending"
+          >
+            <HorizontalBarChart
+              data={pendingChart}
+              emptyText={emptyText}
+              barColor="warning.main"
+              data-testid="analytics-aisles-chart-pending"
+            />
+          </AnalyticsSummaryPanel>
+        </Grid>
+
+        <Grid item xs={12}>
+          <AnalyticsSummaryPanel
+            title={t('analyticsDashboard.aisles.attentionTitle')}
+            isLoading={isLoading}
+            data-testid="analytics-aisles-panel-attention"
+          >
+            <AnalyticsAisleRankingCards
+              rows={topAisles}
+              costByAisle={costByAisle}
+              isCostLoading={isCostLoading}
+              inventoryProcessingModeById={inventoryProcessingModeById}
+              onOpenAisleDrilldown={drilldown.onOpenAisleDrilldown}
+              emptyText={emptyText}
+            />
+          </AnalyticsSummaryPanel>
+        </Grid>
+      </Grid>
     </Box>
   );
 }

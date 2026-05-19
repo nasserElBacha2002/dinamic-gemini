@@ -1,33 +1,30 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Box,
-  Button,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+import { Box, Button, Collapse, Grid, Paper, Typography } from '@mui/material';
 import type { AnalyticsCostSummaryResponse } from '../../../api/types';
-import { AnalyticsKpiGrid } from './AnalyticsKpiGrid';
-import { AnalyticsSectionCard } from './AnalyticsSectionCard';
 import { MetricUnavailableState } from './MetricUnavailableState';
 import { AnalyticsCostWarningsBlock } from './AnalyticsCostWarningsBlock';
-import { AnalyticsCostVisualSection } from './AnalyticsCostVisualSection';
+import { AnalyticsCostAisleRankingCards } from './AnalyticsCostAisleRankingCards';
+import { AnalyticsCostInventoryRankingCards } from './AnalyticsCostInventoryRankingCards';
+import { AnalyticsCostTabularDetail } from './AnalyticsCostTabularDetail';
+import { AnalyticsCompactKpiGrid } from './AnalyticsCompactKpiGrid';
+import { AnalyticsSummaryPanel } from './AnalyticsSummaryPanel';
 import {
-  buildCostExecutiveKpis,
+  buildCaptureStatusDonutSegments,
+  buildCostByProviderChartData,
+  buildJobsCoverageDonutSegments,
+  buildTopCostAisleRows,
+  buildTopCostInventoryRows,
+} from '../adapters/analyticsChartDatasets';
+import {
+  buildOverviewCostKpis,
   buildCostWarnings,
-  captureStatusLabel,
   costSummaryEmptyMessage,
-  formatCostCell,
-  formatProviderUnitCost,
   getCostSummaryEmptyKind,
   hasCostData,
 } from '../adapters/analyticsCostViewModel';
+import { DonutChart } from './charts/DonutChart';
+import { HorizontalBarChart } from './charts/HorizontalBarChart';
 import type { AnalyticsDrilldownHandlers } from '../types';
 
 export interface AnalyticsCostsTabProps {
@@ -38,17 +35,24 @@ export interface AnalyticsCostsTabProps {
   drilldown: AnalyticsDrilldownHandlers;
 }
 
-function CompareCostsSection({ onGoToCompare }: { onGoToCompare: () => void }) {
+function CompareCostsCallout({ onGoToCompare }: { onGoToCompare: () => void }) {
   const { t } = useTranslation();
   return (
-    <AnalyticsSectionCard title={t('analyticsDashboard.costs.perCompareSectionTitle')}>
+    <Paper
+      variant="outlined"
+      data-testid="analytics-costs-compare-callout"
+      sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}
+    >
+      <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+        {t('analyticsDashboard.costs.perCompareSectionTitle')}
+      </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         {t('analyticsDashboard.costs.compareAvailableDescription')}
       </Typography>
-      <Button variant="outlined" onClick={onGoToCompare} data-testid="analytics-costs-go-compare">
+      <Button variant="outlined" onClick={onGoToCompare} data-testid="analytics-costs-go-compare" sx={{ alignSelf: 'flex-start' }}>
         {t('analyticsDashboard.costs.goToCompare')}
       </Button>
-    </AnalyticsSectionCard>
+    </Paper>
   );
 }
 
@@ -60,9 +64,25 @@ export function AnalyticsCostsTab({
   drilldown,
 }: AnalyticsCostsTabProps) {
   const { t } = useTranslation();
-  const executiveKpis = useMemo(() => buildCostExecutiveKpis(costSummary, t), [costSummary, t]);
+  const [tabularOpen, setTabularOpen] = useState(false);
+  const emptyText = t('analyticsDashboard.visual.emptyChart');
+
   const warnings = useMemo(() => buildCostWarnings(costSummary, t), [costSummary, t]);
   const emptyKind = useMemo(() => getCostSummaryEmptyKind(costSummary), [costSummary]);
+  const overviewKpis = useMemo(
+    () =>
+      buildOverviewCostKpis(costSummary, t).map((card, index) => ({
+        id: `cost-kpi-${index}`,
+        label: card.label,
+        value: card.value,
+      })),
+    [costSummary, t]
+  );
+  const providerChart = useMemo(() => buildCostByProviderChartData(costSummary), [costSummary]);
+  const captureDonut = useMemo(() => buildCaptureStatusDonutSegments(costSummary, t), [costSummary, t]);
+  const jobsDonut = useMemo(() => buildJobsCoverageDonutSegments(costSummary, t), [costSummary, t]);
+  const topInventories = useMemo(() => buildTopCostInventoryRows(costSummary), [costSummary]);
+  const topAisles = useMemo(() => buildTopCostAisleRows(costSummary), [costSummary]);
 
   if (isError) {
     return (
@@ -71,7 +91,7 @@ export function AnalyticsCostsTab({
           title={t('analyticsDashboard.costs.loadError')}
           description={t('analyticsDashboard.costs.loadErrorDetail')}
         />
-        <CompareCostsSection onGoToCompare={onGoToCompare} />
+        <CompareCostsCallout onGoToCompare={onGoToCompare} />
       </Box>
     );
   }
@@ -81,184 +101,120 @@ export function AnalyticsCostsTab({
   return (
     <Box data-testid="analytics-costs-tab">
       {showEmpty ? (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }} data-testid="analytics-costs-empty">
-          {costSummaryEmptyMessage(emptyKind, t)}
-        </Typography>
+        <>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }} data-testid="analytics-costs-empty">
+            {costSummaryEmptyMessage(emptyKind, t)}
+          </Typography>
+          <CompareCostsCallout onGoToCompare={onGoToCompare} />
+        </>
       ) : (
         <>
-          <AnalyticsCostWarningsBlock warnings={warnings} />
+          <AnalyticsCostWarningsBlock warnings={warnings} summary />
 
-          <AnalyticsSectionCard title={t('analyticsDashboard.costs.executiveSummaryTitle')}>
-            <AnalyticsKpiGrid
-              cards={executiveKpis}
-              isLoading={isLoading}
-              hasData={hasCostData(costSummary)}
-              skeletonCount={10}
-            />
-          </AnalyticsSectionCard>
+          <AnalyticsSummaryPanel
+            title={t('analyticsDashboard.costs.executiveSummaryTitle')}
+            subtitle={t('analyticsDashboard.costs.llmCostHint')}
+            isLoading={isLoading && !hasCostData(costSummary)}
+            loadingSkeletonHeight={88}
+            data-testid="analytics-costs-panel-executive"
+          >
+            <AnalyticsCompactKpiGrid items={overviewKpis} data-testid="analytics-costs-executive-kpis" />
+          </AnalyticsSummaryPanel>
 
-          <AnalyticsSectionCard title={t('analyticsDashboard.visual.costSnapshot')}>
-            <AnalyticsCostVisualSection costSummary={costSummary} isLoading={isLoading} />
-          </AnalyticsSectionCard>
+          <Grid container spacing={2} sx={{ mb: 2 }}>
+            <Grid item xs={12} md={6}>
+              <AnalyticsSummaryPanel
+                title={t('analyticsDashboard.visual.captureStatusDistribution')}
+                isLoading={isLoading}
+                data-testid="analytics-costs-panel-capture"
+              >
+                <DonutChart
+                  segments={captureDonut}
+                  emptyText={emptyText}
+                  data-testid="analytics-costs-capture-donut"
+                />
+              </AnalyticsSummaryPanel>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <AnalyticsSummaryPanel
+                title={t('analyticsDashboard.costs.jobsCoverageTitle')}
+                isLoading={isLoading}
+                data-testid="analytics-costs-panel-jobs-coverage"
+              >
+                <DonutChart
+                  segments={jobsDonut}
+                  emptyText={emptyText}
+                  data-testid="analytics-costs-jobs-coverage-donut"
+                />
+              </AnalyticsSummaryPanel>
+            </Grid>
 
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-            {t('analyticsDashboard.visual.drilldownTables')}
-          </Typography>
+            <Grid item xs={12} md={6}>
+              <AnalyticsSummaryPanel
+                title={t('analyticsDashboard.visual.costByProviderModel')}
+                subtitle={t('analyticsDashboard.visual.notARecommendation')}
+                isLoading={isLoading}
+                data-testid="analytics-costs-panel-provider"
+              >
+                <HorizontalBarChart
+                  data={providerChart}
+                  emptyText={emptyText}
+                  data-testid="analytics-costs-chart-provider-bars"
+                />
+              </AnalyticsSummaryPanel>
+            </Grid>
 
-          <AnalyticsSectionCard title={t('analyticsDashboard.costs.byProviderModelTitle')}>
-            <Paper variant="outlined">
-              <Table size="small" data-testid="analytics-cost-by-provider-table">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>{t('observability.metrics.colProvider')}</TableCell>
-                    <TableCell>{t('observability.metrics.colModel')}</TableCell>
-                    <TableCell align="right">{t('observability.metrics.colRuns')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.jobsWithCost')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.totalCost')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.avgExecutionTime')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.costPerUnit')}</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {(costSummary?.by_provider_model ?? []).map((row, idx) => {
-                    const unit = formatProviderUnitCost(row.cost_per_counted_unit, t);
-                    return (
-                      <TableRow key={`${row.provider_name ?? ''}-${row.model_name ?? ''}-${idx}`}>
-                        <TableCell>{row.provider_name ?? t('observability.metrics.unknownId')}</TableCell>
-                        <TableCell>{row.model_name ?? t('observability.metrics.unknownId')}</TableCell>
-                        <TableCell align="right">{row.jobs_total}</TableCell>
-                        <TableCell align="right">{row.jobs_with_cost}</TableCell>
-                        <TableCell align="right">{formatCostCell(row.total_cost, 'cost', t)}</TableCell>
-                        <TableCell align="right">
-                          {formatCostCell(row.average_execution_time_seconds, 'duration', t)}
-                        </TableCell>
-                        <TableCell align="right">
-                          {unit.helper ? (
-                            <Tooltip title={unit.helper}>
-                              <span>{unit.display}</span>
-                            </Tooltip>
-                          ) : (
-                            unit.display
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </Paper>
-          </AnalyticsSectionCard>
+            <Grid item xs={12} md={6}>
+              <AnalyticsSummaryPanel
+                title={t('analyticsDashboard.costs.byInventoryTitle')}
+                isLoading={isLoading}
+                data-testid="analytics-costs-panel-inventory"
+              >
+                <AnalyticsCostInventoryRankingCards
+                  rows={topInventories}
+                  onOpenInventoryDrilldown={drilldown.onOpenInventoryDrilldown}
+                  emptyText={emptyText}
+                />
+              </AnalyticsSummaryPanel>
+            </Grid>
 
-          <AnalyticsSectionCard title={t('analyticsDashboard.costs.byInventoryTitle')}>
-            <Paper variant="outlined">
-              <Table size="small" data-testid="analytics-cost-by-inventory-table">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>{t('analytics.column_inventory')}</TableCell>
-                    <TableCell align="right">{t('observability.metrics.colRuns')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.jobsWithCost')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.totalCost')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.totalQuantity')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.costPerUnit')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.totalExecutionTime')}</TableCell>
-                    <TableCell>{t('common.actions')}</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {(costSummary?.by_inventory ?? []).map((row) => (
-                    <TableRow key={row.inventory_id}>
-                      <TableCell>{row.inventory_name ?? row.inventory_id}</TableCell>
-                      <TableCell align="right">{row.jobs_total}</TableCell>
-                      <TableCell align="right">{row.jobs_with_cost}</TableCell>
-                      <TableCell align="right">{formatCostCell(row.total_cost, 'cost', t)}</TableCell>
-                      <TableCell align="right">{formatCostCell(row.total_counted_quantity, 'quantity', t)}</TableCell>
-                      <TableCell align="right">{formatCostCell(row.cost_per_counted_unit, 'costPerUnit', t)}</TableCell>
-                      <TableCell align="right">{formatCostCell(row.total_execution_time_seconds, 'duration', t)}</TableCell>
-                      <TableCell>
-                        <Button
-                          size="small"
-                          onClick={() => drilldown.onOpenInventoryDrilldown(row.inventory_id)}
-                          data-testid={`cost-drilldown-inventory-${row.inventory_id}`}
-                        >
-                          {t('analyticsDashboard.drilldown.openAnalytics')}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Paper>
-          </AnalyticsSectionCard>
+            <Grid item xs={12} md={6}>
+              <AnalyticsSummaryPanel
+                title={t('analyticsDashboard.costs.byAisleTitle')}
+                isLoading={isLoading}
+                data-testid="analytics-costs-panel-aisle"
+              >
+                <AnalyticsCostAisleRankingCards
+                  rows={topAisles}
+                  onOpenAisleDrilldown={drilldown.onOpenAisleDrilldown}
+                  emptyText={emptyText}
+                />
+              </AnalyticsSummaryPanel>
+            </Grid>
 
-          <AnalyticsSectionCard title={t('analyticsDashboard.costs.byAisleTitle')}>
-            <Paper variant="outlined">
-              <Table size="small" data-testid="analytics-cost-by-aisle-table">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>{t('analytics.column_inventory')}</TableCell>
-                    <TableCell>{t('common.aisle')}</TableCell>
-                    <TableCell align="right">{t('observability.metrics.colRuns')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.jobsWithCost')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.totalCost')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.totalQuantity')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.costPerUnit')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.totalExecutionTime')}</TableCell>
-                    <TableCell>{t('common.actions')}</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {(costSummary?.by_aisle ?? []).map((row) => (
-                    <TableRow key={row.aisle_id}>
-                      <TableCell>{row.inventory_name ?? row.inventory_id}</TableCell>
-                      <TableCell>{row.aisle_code ?? row.aisle_id}</TableCell>
-                      <TableCell align="right">{row.jobs_total}</TableCell>
-                      <TableCell align="right">{row.jobs_with_cost}</TableCell>
-                      <TableCell align="right">{formatCostCell(row.total_cost, 'cost', t)}</TableCell>
-                      <TableCell align="right">{formatCostCell(row.total_counted_quantity, 'quantity', t)}</TableCell>
-                      <TableCell align="right">{formatCostCell(row.cost_per_counted_unit, 'costPerUnit', t)}</TableCell>
-                      <TableCell align="right">{formatCostCell(row.total_execution_time_seconds, 'duration', t)}</TableCell>
-                      <TableCell>
-                        <Button
-                          size="small"
-                          onClick={() => drilldown.onOpenAisleDrilldown(row.inventory_id, row.aisle_id)}
-                          data-testid={`cost-drilldown-aisle-${row.aisle_id}`}
-                        >
-                          {t('analyticsDashboard.drilldown.openAnalytics')}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Paper>
-          </AnalyticsSectionCard>
+            <Grid item xs={12} md={6}>
+              <CompareCostsCallout onGoToCompare={onGoToCompare} />
+            </Grid>
+          </Grid>
 
-          <AnalyticsSectionCard title={t('analyticsDashboard.costs.byCaptureStatusTitle')}>
-            <Paper variant="outlined">
-              <Table size="small" data-testid="analytics-cost-by-capture-table">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>{t('analyticsDashboard.costs.captureStatusColumn')}</TableCell>
-                    <TableCell align="right">{t('observability.metrics.colRuns')}</TableCell>
-                    <TableCell align="right">{t('analyticsDashboard.costs.totalCost')}</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {(costSummary?.by_capture_status ?? []).map((row) => (
-                    <TableRow key={row.capture_status}>
-                      <TableCell>{captureStatusLabel(row.capture_status, t)}</TableCell>
-                      <TableCell align="right">{row.jobs_total}</TableCell>
-                      <TableCell align="right">{formatCostCell(row.total_cost, 'cost', t)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Paper>
-          </AnalyticsSectionCard>
+          <Box sx={{ mb: 2 }}>
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => setTabularOpen((open) => !open)}
+              data-testid="analytics-costs-toggle-tabular"
+              sx={{ px: 0 }}
+            >
+              {tabularOpen
+                ? t('analyticsDashboard.costs.hideTabularDetail')
+                : t('analyticsDashboard.costs.showTabularDetail')}
+            </Button>
+            <Collapse in={tabularOpen} unmountOnExit>
+              <AnalyticsCostTabularDetail costSummary={costSummary} />
+            </Collapse>
+          </Box>
         </>
       )}
-
-      <CompareCostsSection onGoToCompare={onGoToCompare} />
     </Box>
   );
 }

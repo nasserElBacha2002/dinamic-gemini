@@ -236,7 +236,14 @@ export default function AnalyticsDashboardPage() {
         />
       ) : null}
 
-      {activeTab === 'quality' ? <AnalyticsQualityTab analytics={analytics} isLoading={isAnalyticsLoading} /> : null}
+      {activeTab === 'quality' ? (
+        <AnalyticsQualityTab
+          analytics={analytics}
+          isLoading={isAnalyticsLoading}
+          inventoryProcessingModeById={inventoryProcessingModeById}
+          drilldown={drilldownHandlers}
+        />
+      ) : null}
 
       {activeTab === 'time' ? (
         <AnalyticsTimeTab analytics={analytics} observability={observability.data} isLoading={isAnalyticsLoading} />

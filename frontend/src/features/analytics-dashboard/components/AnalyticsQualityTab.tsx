@@ -1,25 +1,28 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link as RouterLink } from 'react-router-dom';
-import { Box, Grid, Typography } from '@mui/material';
-import { pathToAislePositions } from '../../../constants/appRoutes';
-import { sortDataTableRows, type DataTableColumn } from '../../../components/ui';
-import { MetricsAislesAttentionSection } from '../../analytics/components/MetricsAislesAttentionSection';
-import { MetricsManualInterventionSection } from '../../analytics/components/MetricsManualInterventionSection';
-import { MetricsQualitySection } from '../../analytics/components/MetricsQualitySection';
-import { MetricsResolutionFlowSection } from '../../analytics/components/MetricsResolutionFlowSection';
+import { Alert, Box, Grid, Typography } from '@mui/material';
 import { localizeAnalyticsSummaryNote } from '../../analytics/adapters/analyticsSummaryNotes';
-import { paginateRows } from '../../analytics/adapters/metricsFormatters';
 import {
   buildManualInterventionViewModel,
   buildResolutionFlowStages,
   orderQualityRows,
 } from '../../analytics/adapters/metricsViewModel';
-import { numberOrZero } from '../../analytics/adapters/metricsFormatters';
-import type { AisleIssueRow } from '../../analytics/types';
+import { interventionLabel, numberOrZero } from '../../analytics/adapters/metricsFormatters';
 import type { useAnalyticsDashboard } from '../../analytics/hooks';
-import { buildAutoVsManualSegments, buildQualityIssueChartData } from '../adapters/analyticsChartDatasets';
-import { AnalyticsChartCard } from './AnalyticsChartCard';
+import {
+  buildAislePendingReviewChartData,
+  buildAutoVsManualDonutSegments,
+  buildLocalizedQualityIssueChartData,
+  buildManualInterventionSegments,
+  buildTopAislesAttention,
+  QUALITY_AISLE_ATTENTION_TOP_N,
+} from '../adapters/analyticsChartDatasets';
+import type { AnalyticsDrilldownHandlers } from '../types';
+import { useAnalyticsTabHref } from '../hooks/useAnalyticsTabHref';
+import { AnalyticsQualityOverview } from './AnalyticsQualityOverview';
+import { AnalyticsSummaryPanel } from './AnalyticsSummaryPanel';
+import { QualityAislesAttentionRanking } from './QualityAislesAttentionRanking';
+import { QualityResolutionFunnel } from './QualityResolutionFunnel';
 import { HorizontalBarChart } from './charts/HorizontalBarChart';
 import { SegmentBarChart } from './charts/SegmentBarChart';
 
@@ -28,25 +31,36 @@ type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
 export interface AnalyticsQualityTabProps {
   analytics: AnalyticsBundle;
   isLoading: boolean;
+  inventoryProcessingModeById: ReadonlyMap<string, string | undefined>;
+  drilldown: AnalyticsDrilldownHandlers;
 }
 
-export function AnalyticsQualityTab({ analytics, isLoading }: AnalyticsQualityTabProps) {
+export function AnalyticsQualityTab({
+  analytics,
+  isLoading,
+  inventoryProcessingModeById,
+  drilldown,
+}: AnalyticsQualityTabProps) {
   const { t } = useTranslation();
+  const tabHref = useAnalyticsTabHref();
   const { summary, quality, manualInterventions, aisleIssues } = analytics;
-  const [aisleSearch, setAisleSearch] = useState('');
-  const [aislePage, setAislePage] = useState(1);
-  const [aislePageSize, setAislePageSize] = useState(10);
-  const [aisleSortBy, setAisleSortBy] = useState('pending');
-  const [aisleSortDir, setAisleSortDir] = useState<'asc' | 'desc'>('desc');
+  const emptyText = t('analyticsDashboard.visual.emptyChart');
 
   const manualInterventionViewModel = useMemo(
     () => buildManualInterventionViewModel(manualInterventions?.items),
     [manualInterventions?.items]
   );
   const qualityRowsOrdered = useMemo(() => orderQualityRows(quality?.items ?? []), [quality?.items]);
-  const emptyText = t('analyticsDashboard.visual.emptyChart');
-  const qualityChart = useMemo(() => buildQualityIssueChartData(qualityRowsOrdered), [qualityRowsOrdered]);
-  const autoManual = useMemo(() => buildAutoVsManualSegments(summary, t), [summary, t]);
+  const qualityChart = useMemo(
+    () => buildLocalizedQualityIssueChartData(qualityRowsOrdered, t),
+    [qualityRowsOrdered, t]
+  );
+  const autoManualDonut = useMemo(() => buildAutoVsManualDonutSegments(summary, t), [summary, t]);
+  const manualSegments = useMemo(
+    () => buildManualInterventionSegments(manualInterventions?.items, t),
+    [manualInterventions?.items, t]
+  );
+
   const localizedSummaryNotes = useMemo(
     () => (summary?.notes ?? []).map((n) => localizeAnalyticsSummaryNote(n, t)),
     [summary?.notes, t]
@@ -57,182 +71,134 @@ export function AnalyticsQualityTab({ analytics, isLoading }: AnalyticsQualityTa
     [aisleIssues?.items]
   );
 
-  const totalPositionsCount = summary?.total_positions_in_scope ?? summary?.positions_in_scope ?? 0;
   const processedPositionsCount = summary?.processed_positions_count ?? 0;
-  const reviewedPositionsCount = summary?.reviewed_positions_count ?? 0;
-  const interventionPositionsCount = manualInterventions?.intervention_positions_count ?? 0;
-  const operatorMarkedUnknownCount = summary?.operator_marked_unknown_count ?? summary?.unknown_count ?? 0;
 
   const resolutionFlowStages = useMemo(
     () =>
       buildResolutionFlowStages(
         {
-          totalPositionsCount,
+          totalPositionsCount: summary?.total_positions_in_scope ?? summary?.positions_in_scope ?? 0,
           pendingReviewCount,
           processedPositionsCount,
-          reviewedPositionsCount,
-          interventionPositionsCount,
-          operatorMarkedUnknownCount,
+          reviewedPositionsCount: summary?.reviewed_positions_count ?? 0,
+          interventionPositionsCount: manualInterventions?.intervention_positions_count ?? 0,
+          operatorMarkedUnknownCount: summary?.operator_marked_unknown_count ?? summary?.unknown_count ?? 0,
           hasOperatorUnknownRate: (summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null,
         },
         t
       ),
     [
       t,
-      totalPositionsCount,
+      summary,
       pendingReviewCount,
       processedPositionsCount,
-      reviewedPositionsCount,
-      interventionPositionsCount,
-      operatorMarkedUnknownCount,
-      summary?.operator_marked_unknown_rate,
-      summary?.unknown_rate,
+      manualInterventions?.intervention_positions_count,
     ]
   );
 
-  const aisleColumns = useMemo<DataTableColumn<AisleIssueRow>[]>(
-    () => [
-      {
-        id: 'aisle',
-        label: t('common.aisle'),
-        sortable: true,
-        sortType: 'string',
-        sortAccessor: (r) => r.aisle_code,
-        cell: (r) => (
-          <Typography
-            component={RouterLink}
-            to={pathToAislePositions(r.inventory_id, r.aisle_id)}
-            variant="body2"
-            fontWeight={600}
-            color="primary"
-            sx={{ textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
-          >
-            {r.aisle_code}
-          </Typography>
-        ),
-      },
-      {
-        id: 'inventory',
-        label: t('analytics.column_inventory'),
-        sortable: true,
-        sortType: 'string',
-        sortAccessor: (r) => r.inventory_name,
-        cell: (r) => r.inventory_name,
-      },
-      {
-        id: 'pending',
-        label: t('analytics.column_pending'),
-        align: 'right',
-        sortable: true,
-        sortType: 'number',
-        sortAccessor: (r) => r.needs_review_count,
-        cell: (r) => r.needs_review_count,
-      },
-    ],
-    [t]
+  const topAisles = useMemo(
+    () => buildTopAislesAttention(aisleIssues?.items ?? [], QUALITY_AISLE_ATTENTION_TOP_N),
+    [aisleIssues?.items]
+  );
+  const aisleBarData = useMemo(
+    () => buildAislePendingReviewChartData(aisleIssues?.items ?? [], t, QUALITY_AISLE_ATTENTION_TOP_N),
+    [aisleIssues?.items, t]
   );
 
-  const aisleRowsFiltered = useMemo(() => {
-    const q = aisleSearch.trim().toLowerCase();
-    const items = aisleIssues?.items ?? [];
-    if (!q) return items;
-    return items.filter(
-      (r) =>
-        r.aisle_code.toLowerCase().includes(q) ||
-        r.inventory_name.toLowerCase().includes(q) ||
-        r.most_common_issue?.toLowerCase().includes(q)
-    );
-  }, [aisleIssues?.items, aisleSearch]);
-
-  const aisleRowsSorted = useMemo(
-    () => sortDataTableRows(aisleRowsFiltered, aisleColumns, aisleSortBy, aisleSortDir),
-    [aisleRowsFiltered, aisleColumns, aisleSortBy, aisleSortDir]
-  );
-  const aisleRowsPaged = useMemo(
-    () => paginateRows(aisleRowsSorted, aislePage, aislePageSize),
-    [aisleRowsSorted, aislePage, aislePageSize]
-  );
+  const unsupportedCaption = manualInterventionViewModel.unsupportedInterventions
+    .map((item) => interventionLabel(item.category, t))
+    .join(', ');
 
   return (
     <Box data-testid="analytics-quality-tab">
-      <Grid container spacing={2} sx={{ mb: 2 }}>
+      {localizedSummaryNotes.length > 0 ? (
+        <Alert severity="info" sx={{ mb: 2 }} data-testid="analytics-quality-warnings">
+          {localizedSummaryNotes.join(' ')}
+        </Alert>
+      ) : null}
+
+      <Grid container spacing={2}>
         <Grid item xs={12} md={6}>
-          <AnalyticsChartCard title={t('analyticsDashboard.visual.autoVsManual')} data-testid="analytics-quality-chart-auto-manual">
-            <SegmentBarChart segments={autoManual} emptyText={emptyText} data-testid="analytics-quality-chart-auto-manual-bars" />
-          </AnalyticsChartCard>
-        </Grid>
-        <Grid item xs={12} md={6}>
-          <AnalyticsChartCard
-            title={t('analyticsDashboard.visual.qualityIssues')}
-            empty={!qualityChart.length}
-            emptyText={emptyText}
-            data-testid="analytics-quality-chart-issues"
+          <AnalyticsSummaryPanel
+            title={t('analyticsDashboard.quality.overviewTitle')}
+            isLoading={isLoading}
+            loadingSkeletonHeight={200}
+            data-testid="analytics-quality-panel-overview"
           >
-            <HorizontalBarChart data={qualityChart} emptyText={emptyText} data-testid="analytics-quality-chart-issues-bars" />
-          </AnalyticsChartCard>
+            <AnalyticsQualityOverview
+              chartTitle={t('analyticsDashboard.visual.autoVsManual')}
+              donutSegments={autoManualDonut}
+              pendingReviewCount={pendingReviewCount}
+              processedPositionsCount={processedPositionsCount}
+              pendingLabel={t('analyticsDashboard.quality.kpiPending')}
+              processedLabel={t('analyticsDashboard.quality.kpiProcessed')}
+              emptyText={emptyText}
+              data-testid="analytics-quality-overview"
+            />
+          </AnalyticsSummaryPanel>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <AnalyticsSummaryPanel
+            title={t('analyticsDashboard.quality.resolutionTitle')}
+            subtitle={t('analyticsDashboard.quality.resolutionSubtitle')}
+            isLoading={isLoading}
+            loadingSkeletonHeight={200}
+            data-testid="analytics-quality-panel-resolution"
+          >
+            <QualityResolutionFunnel
+              stages={resolutionFlowStages}
+              emptyText={emptyText}
+              data-testid="analytics-quality-resolution-funnel"
+            />
+            <Typography variant="subtitle2" fontWeight={600} sx={{ mt: 2.5, mb: 1 }}>
+              {t('analyticsDashboard.quality.manualTitle')}
+            </Typography>
+            <SegmentBarChart
+              segments={manualSegments}
+              emptyText={t('analytics.no_manual_interventions_scope')}
+              data-testid="analytics-quality-manual-chart"
+            />
+            {unsupportedCaption ? (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                {t('analyticsDashboard.quality.unsupportedCategories', { categories: unsupportedCaption })}
+              </Typography>
+            ) : null}
+          </AnalyticsSummaryPanel>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <AnalyticsSummaryPanel
+            title={t('analyticsDashboard.quality.issuesTitle')}
+            isLoading={isLoading}
+            data-testid="analytics-quality-panel-issues"
+          >
+            <HorizontalBarChart
+              data={qualityChart}
+              emptyText={emptyText}
+              ariaLabel={t('analyticsDashboard.quality.issuesTitle')}
+              data-testid="analytics-quality-issues-bars"
+            />
+          </AnalyticsSummaryPanel>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <AnalyticsSummaryPanel
+            title={t('analyticsDashboard.quality.aislesTitle')}
+            ctaLabel={t('analyticsDashboard.quality.viewAislesDetail')}
+            ctaHref={tabHref('aisles')}
+            data-testid="analytics-quality-panel-aisles"
+          >
+            <QualityAislesAttentionRanking
+              rows={topAisles}
+              barData={aisleBarData}
+              inventoryProcessingModeById={inventoryProcessingModeById}
+              onOpenAisleDrilldown={drilldown.onOpenAisleDrilldown}
+              emptyText={emptyText}
+            />
+          </AnalyticsSummaryPanel>
         </Grid>
       </Grid>
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'repeat(2, minmax(0, 1fr))' },
-        gap: 2,
-        minWidth: 0,
-      }}
-    >
-      <Box sx={{ minWidth: 0 }}>
-        <MetricsManualInterventionSection
-          notes={localizedSummaryNotes}
-          isLoading={isLoading}
-          hasManualInterventions={Boolean(manualInterventions)}
-          reviewedPositionsCount={manualInterventions?.reviewed_positions_count ?? 0}
-          supportedInterventions={manualInterventionViewModel.orderedSupportedInterventions}
-          unsupportedInterventions={manualInterventionViewModel.unsupportedInterventions}
-        />
-      </Box>
-      <Box sx={{ minWidth: 0 }}>
-        <MetricsResolutionFlowSection
-          isLoading={isLoading}
-          hasSummary={Boolean(summary)}
-          hasOperatorUnknownRate={(summary?.operator_marked_unknown_rate ?? summary?.unknown_rate) != null}
-          resolutionFlowStages={resolutionFlowStages}
-          totalPositionsCount={totalPositionsCount}
-          manualCorrectionCount={manualInterventionViewModel.manualCorrectionCount}
-          operatorMarkedUnknownCount={operatorMarkedUnknownCount}
-        />
-      </Box>
-      <Box sx={{ minWidth: 0 }}>
-        <MetricsQualitySection isLoading={isLoading} hasQualityData={Boolean(quality)} rows={qualityRowsOrdered} />
-      </Box>
-      <Box sx={{ minWidth: 0, gridColumn: { xs: '1', md: '1 / -1' } }}>
-        <MetricsAislesAttentionSection
-          search={aisleSearch}
-          onSearchChange={(value) => {
-            setAisleSearch(value);
-            setAislePage(1);
-          }}
-          onResetSearch={() => {
-            setAisleSearch('');
-            setAislePage(1);
-          }}
-          rows={aisleRowsPaged}
-          columns={aisleColumns}
-          isLoading={isLoading}
-          sortBy={aisleSortBy}
-          sortDir={aisleSortDir}
-          onSortChange={(sortBy, sortDir) => {
-            setAisleSortBy(sortBy);
-            setAisleSortDir(sortDir);
-            setAislePage(1);
-          }}
-          page={aislePage}
-          pageSize={aislePageSize}
-          totalItems={aisleRowsSorted.length}
-          onPageChange={setAislePage}
-          onPageSizeChange={setAislePageSize}
-        />
-      </Box>
-    </Box>
     </Box>
   );
 }

@@ -316,6 +316,22 @@
       "drilldownTables": "Tabular detail (drilldown)",
       "otherOutcomes": "Other outcomes"
     },
+    "quality": {
+      "overviewTitle": "Overall quality status",
+      "kpiPending": "Pending review",
+      "kpiProcessed": "Processed",
+      "resolutionTitle": "Resolution funnel",
+      "resolutionSubtitle": "Operational funnel based on the applied scope and filters.",
+      "manualTitle": "Manual intervention",
+      "manualCorrected": "Quantity corrected",
+      "issuesTitle": "Top quality issues",
+      "aislesTitle": "Aisles with most pending review",
+      "aislePending": "{{count}} pending",
+      "viewInAnalytics": "View in analytics",
+      "compareRuns": "Compare runs",
+      "viewAislesDetail": "View aisles",
+      "unsupportedCategories": "Categories unavailable in this scope: {{categories}}."
+    },
     "summary": {
       "viewCosts": "View costs",
       "viewQuality": "View quality",
@@ -363,6 +379,11 @@
       "unavailableCard": "Pending backend",
       "unavailableExplain": "The system keeps per-job cost snapshots, but no safe backend aggregation exists for the global dashboard yet.",
       "llmCostHint": "LLM processing costs from per-job snapshots.",
+      "warningsSummaryTitle": "Cost data quality",
+      "warningsActiveCount": "{{count}} active warnings",
+      "jobsCoverageTitle": "Jobs with vs without cost",
+      "showTabularDetail": "View tabular detail",
+      "hideTabularDetail": "Hide tabular detail",
       "notAvailable": "Not available",
       "notAvailableHelper": "The backend did not return a safe value for this scope.",
       "loadError": "Cost metrics could not be loaded.",
@@ -431,6 +452,16 @@
     },
     "providers": {
       "sectionTitle": "Operational comparison by provider and model",
+      "overviewTitle": "Provider/model summary",
+      "topByRuns": "Most used (runs)",
+      "topByCost": "Highest total cost",
+      "lowestFailureRate": "Lowest observed failure rate",
+      "jobsCostSplit": "Jobs with / without cost",
+      "activityTitle": "Usage by provider/model",
+      "costTitle": "Cost by provider/model",
+      "costDistributionTitle": "Cost distribution",
+      "reliabilityTitle": "Observed performance",
+      "observedFailureRate": "Observed failure rate",
       "costUnavailable": "Cost per provider",
       "fallbacks": "Fallbacks",
       "legacyJobs": "Legacy jobs"
@@ -475,16 +506,26 @@
       "viewDetail": "View operational detail",
       "viewOperationalDetail": "View operational detail",
       "openAnalytics": "View in analytics",
-      "compareRuns": "Compare runs"
+      "compareRuns": "Compare runs",
+      "rankingTitle": "Performance by inventory",
+      "autoAcceptChart": "Auto-acceptance by inventory",
+      "costPerUnitChart": "Cost per unit by inventory"
     },
     "aisles": {
       "viewPositions": "View positions",
       "openAnalytics": "View in analytics",
       "compareRuns": "Compare runs",
-      "attentionStatus": "Attention status"
+      "attentionStatus": "Attention status",
+      "attentionTitle": "Aisles requiring attention",
+      "pendingChart": "Pending review by aisle"
     },
     "time": {
       "avgProcessing": "Average processing time",
+      "overviewTitle": "Time overview",
+      "slowestInventory": "Slowest inventory",
+      "fastestInventory": "Fastest inventory",
+      "avgSuccessRate": "Average success rate",
+      "providerFailureTitle": "Failure rate by provider/model",
       "byInventory": "Time by inventory",
       "trendTitle": "Processing trend",
       "byProviderModel": "Average time by provider/model"
