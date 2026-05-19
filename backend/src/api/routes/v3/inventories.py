@@ -36,11 +36,9 @@ from src.application.errors import ClientNotFoundError, InventoryNotFoundError
 from src.application.services.inventory_table_query_params import (
     build_inventory_table_query_from_route_params,
 )
-from src.application.services.processing_experiment_catalog import (
-    default_model_for_provider,
-    default_prompt_key,
-    models_for_provider,
-    prompt_profile_catalog,
+from src.application.services.processing_provider_availability import (
+    ProcessingOptionsMode,
+    build_processing_provider_options_payload,
 )
 from src.application.use_cases.create_inventory import (
     CreateInventoryCommand,
@@ -56,8 +54,6 @@ from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsU
 from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
 from src.config import load_settings
 from src.domain.inventory.entities import InventoryProcessingMode
-from src.pipeline.provider_keys import normalize_pipeline_provider_key
-from src.pipeline.providers.definitions import PIPELINE_PROVIDER_SPECS
 
 from .shared import inventory_list_item_to_response, inventory_to_response
 
@@ -127,35 +123,40 @@ def list_inventories(
 
 
 @router.get("/processing-provider-options", response_model=ProcessingProviderOptionsResponse)
-def list_processing_provider_options() -> ProcessingProviderOptionsResponse:
+def list_processing_provider_options(
+    mode: ProcessingOptionsMode = Query(
+        "test",
+        description=(
+            "test — all configured models per provider; "
+            "production — only production-ready providers with their default model each."
+        ),
+    ),
+) -> ProcessingProviderOptionsResponse:
     """Selectable pipeline providers, models, and prompt profiles for POST aisle process (Phase 5)."""
     settings = load_settings()
-    default_key = normalize_pipeline_provider_key(None, settings)
-    default_pk = default_prompt_key(settings)
+    payload = build_processing_provider_options_payload(settings, mode=mode)
     prompt_items = [
-        ProcessingPromptOptionItem(key=k, label=lab, description=desc)
-        for k, lab, desc in prompt_profile_catalog()
+        ProcessingPromptOptionItem(**row) for row in payload["prompt_profiles"]
     ]
-    items: list[ProcessingProviderOptionItem] = []
-    for spec in sorted(PIPELINE_PROVIDER_SPECS, key=lambda s: s.key):
-        key = spec.key
-        mode = "native"
-        pairs = models_for_provider(key, settings)
-        mopts = [ProcessingModelOption(id=m, label=lab) for m, lab in pairs]
-        dm = default_model_for_provider(key, settings)
-        items.append(
-            ProcessingProviderOptionItem(
-                key=key,
-                label=spec.label,
-                execution_mode=mode,
-                description=spec.description,
-                models=mopts,
-                default_model=dm,
-            )
+    items = [
+        ProcessingProviderOptionItem(
+            key=row["key"],
+            label=row["label"],
+            execution_mode=row["execution_mode"],
+            description=row.get("description"),
+            models=[ProcessingModelOption(**m) for m in row["models"]],
+            default_model=row.get("default_model"),
+            production_available=row.get("production_available"),
+            unavailable_reason=row.get("unavailable_reason"),
+            is_default_provider=bool(row.get("is_default_provider")),
         )
+        for row in payload["providers"]
+    ]
     return ProcessingProviderOptionsResponse(
-        default_provider_key=default_key,
-        default_prompt_key=default_pk,
+        mode=payload["mode"],
+        default_provider_key=payload["default_provider_key"],
+        default_model_key=payload.get("default_model_key"),
+        default_prompt_key=payload["default_prompt_key"],
         prompt_profiles=prompt_items,
         providers=items,
     )

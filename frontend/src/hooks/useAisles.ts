@@ -42,10 +42,14 @@ export function useAislesList(inventoryId: string | undefined, options?: { enabl
 }
 
 /** Pipeline provider keys for POST aisle process (Phase 5). */
-export function useProcessingProviderOptions(options?: { enabled?: boolean }) {
+export function useProcessingProviderOptions(options?: {
+  enabled?: boolean;
+  mode?: 'test' | 'production';
+}) {
+  const mode = options?.mode ?? 'test';
   return useQuery({
-    queryKey: queryKeys.inventories.processingProviderOptions(),
-    queryFn: () => getProcessingProviderOptions(),
+    queryKey: queryKeys.inventories.processingProviderOptions(mode),
+    queryFn: () => getProcessingProviderOptions(mode),
     enabled: options?.enabled !== false,
     staleTime: 60_000,
   });

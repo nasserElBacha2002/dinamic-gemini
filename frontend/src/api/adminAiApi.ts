@@ -4,9 +4,12 @@ import { apiRequestJson } from './request';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
-export async function getProcessingProviderOptions(): Promise<ProcessingProviderOptionsResponse> {
+export async function getProcessingProviderOptions(
+  mode: 'test' | 'production' = 'test'
+): Promise<ProcessingProviderOptionsResponse> {
+  const q = new URLSearchParams({ mode });
   return apiRequestJson<ProcessingProviderOptionsResponse>(
-    `${API_BASE}${V3_INVENTORIES_BASE}/processing-provider-options`
+    `${API_BASE}${V3_INVENTORIES_BASE}/processing-provider-options?${q.toString()}`
   );
 }
 

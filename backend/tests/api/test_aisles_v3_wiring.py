@@ -32,7 +32,7 @@ from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
-from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
@@ -78,6 +78,8 @@ class _InventoryReadProxyClearClient(InventoryRepository):
 
 
 def _pinv(name: str, **kwargs: Any):
+    """Create inventory via API; default test mode unless a case exercises production."""
+    kwargs.setdefault("processing_mode", "test")
     return create_test_inventory(client, name=name, **kwargs)
 
 
@@ -398,7 +400,8 @@ def test_get_processing_provider_options_returns_registered_keys() -> None:
             assert "models" in p and isinstance(p["models"], list) and len(p["models"]) >= 1
             assert p.get("default_model")
         gemini = next(x for x in data["providers"] if x["key"] == "gemini")
-        assert any(m["id"] == "gemini-2.0-flash-exp" for m in gemini["models"])
+        assert gemini.get("default_model") in {m["id"] for m in gemini["models"]}
+        assert data.get("mode", "test") == "test"
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
 
@@ -475,30 +478,163 @@ def test_post_process_with_explicit_gemini_provider_persisted_on_status(monkeypa
         config_mod.reload_settings()
 
 
-def test_post_process_production_inventory_ignores_request_provider_and_uses_snapshot() -> None:
-    """Production must not honor experimental provider/model selection from the request body."""
-    create_resp = _pinv("Prod Snap Body Ignored", processing_mode="production")
-    assert create_resp.status_code == 201
-    inv_body = create_resp.json()
-    inv_id = inv_body["id"]
-    primary = inv_body.get("primary_execution_config")
-    assert primary is not None
-    expected_provider = primary["provider_name"]
-    aisle_resp = _post_aisle(inv_id, "PS-01")
-    assert aisle_resp.status_code == 201
-    aisle_id = aisle_resp.json()["id"]
-    _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
-    proc = client.post(
-        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
-        json={"provider_name": "openai", "model_name": "gpt-4o"},
-    )
-    assert proc.status_code == 202
-    status = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
-    assert status.status_code == 200
-    lj = status.json()["latest_job"]
-    assert lj is not None
-    assert lj.get("provider_name") == expected_provider
-    assert lj.get("provider_name") != "openai"
+def test_post_process_production_inventory_honors_valid_production_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production may switch to another configured provider with its default production model."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-ci-not-a-real-secret")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-ci-not-a-real-secret")
+    config_mod.reload_settings()
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        prod_opts = client.get(
+            "/api/v3/inventories/processing-provider-options",
+            params={"mode": "production"},
+        )
+        assert prod_opts.status_code == 200
+        openai_row = next(
+            p for p in prod_opts.json()["providers"] if p["key"] == "openai"
+        )
+        openai_model = openai_row["default_model"]
+
+        create_resp = _pinv("Prod Provider Switch", processing_mode="production")
+        assert create_resp.status_code == 201
+        inv_id = create_resp.json()["id"]
+        aisle_resp = _post_aisle(inv_id, "PS-01")
+        assert aisle_resp.status_code == 201
+        aisle_id = aisle_resp.json()["id"]
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
+        proc = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+            json={"provider_name": "openai", "model_name": openai_model},
+        )
+        assert proc.status_code == 202
+        status = client.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/status")
+        assert status.status_code == 200
+        lj = status.json()["latest_job"]
+        assert lj is not None
+        assert lj.get("provider_name") == "openai"
+        assert lj.get("model_name") == openai_model
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        config_mod.reload_settings()
+
+
+def test_post_process_production_unknown_provider_returns_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-ci-not-a-real-secret")
+    config_mod.reload_settings()
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        create_resp = _pinv("Prod Unknown Prov", processing_mode="production")
+        inv_id = create_resp.json()["id"]
+        aisle_id = _post_aisle(inv_id, "PU-01").json()["id"]
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
+        response = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+            json={"provider_name": "not-a-real-provider"},
+        )
+        assert response.status_code == 422
+        assert "unknown" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        config_mod.reload_settings()
+
+
+def test_post_process_production_unconfigured_provider_returns_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-ci-not-a-real-secret")
+    config_mod.reload_settings()
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        prod_opts = client.get(
+            "/api/v3/inventories/processing-provider-options",
+            params={"mode": "production"},
+        )
+        assert prod_opts.status_code == 200
+        available = {p["key"] for p in prod_opts.json()["providers"]}
+        unconfigured = next(
+            (k for k in ("openai", "claude", "deepseek") if k not in available),
+            None,
+        )
+        if unconfigured is None:
+            pytest.skip("All alternate providers are production-ready in this environment")
+
+        create_resp = _pinv("Prod Unconfigured Prov", processing_mode="production")
+        inv_id = create_resp.json()["id"]
+        aisle_id = _post_aisle(inv_id, "PC-01").json()["id"]
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
+        response = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+            json={"provider_name": unconfigured},
+        )
+        assert response.status_code == 422
+        detail = response.json()["detail"].lower()
+        assert unconfigured in detail or "configured" in detail
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        config_mod.reload_settings()
+
+
+def test_post_process_production_invalid_model_returns_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-ci-not-a-real-secret")
+    config_mod.reload_settings()
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        create_resp = _pinv("Prod Bad Model", processing_mode="production")
+        inv_id = create_resp.json()["id"]
+        aisle_id = _post_aisle(inv_id, "PM-01").json()["id"]
+        _upload_minimal_aisle_asset_for_process(inv_id, aisle_id)
+        response = client.post(
+            f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/process",
+            json={"provider_name": "gemini", "model_name": "not-the-production-default"},
+        )
+        assert response.status_code == 422
+        assert "model" in response.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        config_mod.reload_settings()
+
+
+def test_get_processing_provider_options_production_mode_single_default_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-ci-not-a-real-secret")
+    monkeypatch.setenv("PROCESSING_GEMINI_MODELS", "gemini-alpha,gemini-beta")
+    monkeypatch.setenv("GEMINI_MODEL_NAME", "gemini-prod-default")
+    config_mod._settings = None
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    try:
+        test_resp = client.get(
+            "/api/v3/inventories/processing-provider-options",
+            params={"mode": "test"},
+        )
+        prod_resp = client.get(
+            "/api/v3/inventories/processing-provider-options",
+            params={"mode": "production"},
+        )
+        assert test_resp.status_code == 200
+        assert prod_resp.status_code == 200
+        test_gemini = next(p for p in test_resp.json()["providers"] if p["key"] == "gemini")
+        prod_gemini = next(p for p in prod_resp.json()["providers"] if p["key"] == "gemini")
+        assert len(test_gemini["models"]) >= 2
+        assert [m["id"] for m in prod_gemini["models"]] == ["gemini-prod-default"]
+        assert prod_resp.json()["mode"] == "production"
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("PROCESSING_GEMINI_MODELS", raising=False)
+        monkeypatch.delenv("GEMINI_MODEL_NAME", raising=False)
+        config_mod._settings = None
 
 
 def test_post_process_invalid_model_for_provider_returns_422(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1270,7 +1406,14 @@ def test_post_process_when_latest_job_running_returns_409() -> None:
     aisle_repo = MemoryAisleRepository()
     job_repo = MemoryJobRepository()
 
-    inv = Inventory("inv-block", "For Block", InventoryStatus.DRAFT, now, now)
+    inv = Inventory(
+        "inv-block",
+        "For Block",
+        InventoryStatus.DRAFT,
+        now,
+        now,
+        processing_mode=InventoryProcessingMode.TEST,
+    )
     inv_repo.save(inv)
     aisle = Aisle("aisle-block", "inv-block", "B-01", AisleStatus.CREATED, now, now)
     aisle_repo.save(aisle)

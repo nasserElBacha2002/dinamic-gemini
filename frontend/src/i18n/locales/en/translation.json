@@ -107,6 +107,8 @@
     "process_default_prompt_em": "Process default prompt em",
     "process_default_server": "Process default server",
     "process_dialog_help": "Process dialog help",
+    "process_dialog_help_production": "Choose a production AI provider. Each provider uses its configured default production model.",
+    "process_no_production_providers": "No AI providers are ready for production (missing credentials or default model). Check server configuration.",
     "process_dialog_title": "Process dialog title",
     "process_dialog_title_with_aisle": "Process dialog title with aisle",
     "process_error_label": "Process error label",
