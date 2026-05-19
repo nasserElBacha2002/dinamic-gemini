@@ -1,5 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { pathToInventoryAnalyticsCompareMany } from '../src/constants/appRoutes';
+import { pathToAnalytics, pathToInventoryAnalyticsCompareMany } from '../src/constants/appRoutes';
+import { parseAnalyticsTab } from '../src/constants/analyticsTabs';
+
+describe('pathToAnalytics', () => {
+  it('defaults to resumen tab', () => {
+    expect(pathToAnalytics()).toBe('/analitica?tab=resumen');
+  });
+
+  it('maps internal tabs to URL query values', () => {
+    expect(pathToAnalytics('costs')).toBe('/analitica?tab=costos');
+    expect(pathToAnalytics('compare')).toBe('/analitica?tab=comparacion');
+  });
+});
+
+describe('parseAnalyticsTab', () => {
+  it('normalizes invalid tab to summary', () => {
+    expect(parseAnalyticsTab('foo')).toBe('summary');
+  });
+});
 
 describe('pathToInventoryAnalyticsCompareMany', () => {
   it('returns compare-many path without query when options are omitted', () => {

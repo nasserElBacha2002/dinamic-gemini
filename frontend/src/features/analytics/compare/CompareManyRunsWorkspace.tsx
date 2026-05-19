@@ -315,9 +315,6 @@ export function CompareManyRunsWorkspace({
             deltaExecutionLabel={(value) => formatSignedDurationHuman(value)}
             baselineVsTargetLabel={(baseline, target) => t('compare_many.baseline_vs_target', { baseline, target })}
             comparisonTitleForJobIds={(bId, tId) => formatBaselineVsTargetFromRuns(bId, tId, jobsById, t)}
-            diffSummaryLabel={({ onlyBaseline, onlyTarget, both, qty, sku, pos }) =>
-              t('compare_many.diff_summary_stats', { onlyBaseline, onlyTarget, both, qty, sku, pos })
-            }
             labels={{
               hide: t('common.hide'),
               showDiffRows: t('compare_many.show_diff_rows'),

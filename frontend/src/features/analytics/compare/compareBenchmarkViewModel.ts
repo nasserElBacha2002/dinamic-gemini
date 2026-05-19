@@ -7,8 +7,15 @@ import type {
 } from '../../../api/types';
 import type { BarChartDatum } from '../../analytics-dashboard/adapters/analyticsChartDatasets';
 import { compareRunExecutionLabel, formatCostDisplay, signedValue } from '../adapters/compareFormatters';
-import { formatExecutionDurationHuman } from '../../../utils/benchmarkExecutionTime';
+import { formatExecutionDurationHuman, formatSignedDurationHuman } from '../../../utils/benchmarkExecutionTime';
+import { getJobStatusLabel } from '../../../utils/jobStatus';
 import { getRunModelLabel } from '../adapters/compareRunLabels';
+
+const SUMMABLE_CAPTURE_STATUSES = new Set<LlmCostSnapshot['capture_status']>([
+  'exact',
+  'estimated',
+  'partial',
+]);
 
 export type CompareDeltaTone = 'positive' | 'negative' | 'neutral' | 'warning';
 
@@ -38,6 +45,7 @@ export interface CompareExecutiveSummaryModel {
   jobsWithCostValue: string;
   jobsWithoutCostLabel: string;
   jobsWithoutCostValue: string;
+  mixedCurrencyHelper: string | null;
 }
 
 export interface CompareRunBenchmarkCardModel {
@@ -70,7 +78,6 @@ export interface CompareTargetDeltaRowModel {
   targetJobId: string;
   title: string;
   kpis: CompareDeltaKpi[];
-  neutralQuantityHelper: string;
 }
 
 export interface CompareDifferenceSummaryModel {
@@ -100,8 +107,7 @@ export interface CompareBenchmarkChartsModel {
 
 function parseCostAmount(snapshot: LlmCostSnapshot | null | undefined): number | null {
   if (!snapshot) return null;
-  const status = snapshot.capture_status;
-  if (status === 'unavailable' || status === 'missing') return null;
+  if (!SUMMABLE_CAPTURE_STATUSES.has(snapshot.capture_status)) return null;
   const totalRaw = snapshot.computed_cost?.total_cost?.trim();
   if (!totalRaw) {
     if (status === 'partial') {
@@ -125,13 +131,6 @@ export function getRunCostPerUnitAmount(job: BenchmarkRunCompareSide): number | 
   const qty = job.metrics.total_quantity;
   if (cost == null || !Number.isFinite(qty) || qty <= 0) return null;
   return cost / qty;
-}
-
-export function formatRunCost(job: BenchmarkRunCompareSide, t: TFunction): string {
-  return formatCostDisplay(
-    { model_name: job.model_name, llm_cost_snapshot: job.llm_cost_snapshot ?? null },
-    t
-  ).value;
 }
 
 export function formatRunCostPerUnit(job: BenchmarkRunCompareSide, t: TFunction): string {
@@ -170,6 +169,52 @@ function formatCostDelta(value: number | null): string {
   return `${sign}${value.toFixed(6).replace(/\.?0+$/, '')}`;
 }
 
+function formatCostNumber(value: number): string {
+  return value.toFixed(6).replace(/\.?0+$/, '');
+}
+
+function snapshotCurrency(snapshot: LlmCostSnapshot): string | null {
+  const currency = snapshot.computed_cost?.currency?.trim() || snapshot.billing_currency?.trim();
+  return currency || null;
+}
+
+type CostCurrencySummary =
+  | { kind: 'none' }
+  | { kind: 'mixed' }
+  | { kind: 'single'; currency: string | null; amounts: number[] };
+
+function summarizeRunCosts(jobs: BenchmarkRunCompareSide[]): CostCurrencySummary {
+  const entries: { amount: number; currency: string | null }[] = [];
+  for (const job of jobs) {
+    const snap = job.llm_cost_snapshot;
+    if (!snap) continue;
+    const amount = parseCostAmount(snap);
+    if (amount == null) continue;
+    entries.push({ amount, currency: snapshotCurrency(snap) });
+  }
+  if (entries.length === 0) return { kind: 'none' };
+
+  const definedCurrencies = new Set(
+    entries.map((e) => e.currency).filter((c): c is string => Boolean(c))
+  );
+  if (definedCurrencies.size > 1) return { kind: 'mixed' };
+
+  const hasMissingCurrency = entries.some((e) => !e.currency);
+  const hasDefinedCurrency = entries.some((e) => Boolean(e.currency));
+  if (hasMissingCurrency && hasDefinedCurrency) return { kind: 'mixed' };
+
+  return {
+    kind: 'single',
+    currency: definedCurrencies.size === 1 ? [...definedCurrencies][0]! : null,
+    amounts: entries.map((e) => e.amount),
+  };
+}
+
+function formatCostWithOptionalCurrency(value: number, currency: string | null): string {
+  const formatted = formatCostNumber(value);
+  return currency ? `${formatted} ${currency}` : formatted;
+}
+
 function costCaptureStatusLabel(job: BenchmarkRunCompareSide, t: TFunction): string {
   const snap = job.llm_cost_snapshot;
   if (!snap) return t('compare.llm_cost_status.unavailable');
@@ -183,13 +228,23 @@ export function buildCompareExecutiveSummary(
   t: TFunction
 ): CompareExecutiveSummaryModel {
   const jobs = data.jobs ?? [];
-  const costs = jobs.map((j) => parseCostAmount(j.llm_cost_snapshot)).filter((c): c is number => c != null);
+  const costSummary = summarizeRunCosts(jobs);
   const withCost = jobs.filter((j) => hasValidRunCost(j)).length;
   const withoutCost = jobs.length - withCost;
-  const totalSelectedCost = costs.length > 0 ? costs.reduce((a, b) => a + b, 0) : null;
 
-  const minCost = costs.length ? Math.min(...costs) : null;
-  const maxCost = costs.length ? Math.max(...costs) : null;
+  let selectedRunsCostValue = t('compare_many.benchmark.notAvailable');
+  let costRangeValue = t('compare_many.benchmark.notAvailable');
+  let mixedCurrencyHelper: string | null = null;
+
+  if (costSummary.kind === 'mixed') {
+    mixedCurrencyHelper = t('compare_many.benchmark.mixedCurrencyHelper');
+  } else if (costSummary.kind === 'single') {
+    const total = costSummary.amounts.reduce((a, b) => a + b, 0);
+    const minCost = Math.min(...costSummary.amounts);
+    const maxCost = Math.max(...costSummary.amounts);
+    selectedRunsCostValue = formatCostWithOptionalCurrency(total, costSummary.currency);
+    costRangeValue = `${formatCostWithOptionalCurrency(minCost, costSummary.currency)} – ${formatCostWithOptionalCurrency(maxCost, costSummary.currency)}`;
+  }
 
   const qtys = jobs.map((j) => j.metrics.total_quantity).filter((q) => Number.isFinite(q));
   const minQty = qtys.length ? Math.min(...qtys) : null;
@@ -204,15 +259,9 @@ export function buildCompareExecutiveSummary(
     comparedRunsLabel: t('compare_many.benchmark.comparedRunsCount'),
     comparedRunsValue: String(data.summary.job_count),
     selectedRunsCostLabel: t('compare_many.benchmark.selectedRunsCost'),
-    selectedRunsCostValue:
-      totalSelectedCost != null
-        ? totalSelectedCost.toFixed(6).replace(/\.?0+$/, '')
-        : t('compare_many.benchmark.notAvailable'),
+    selectedRunsCostValue,
     costRangeLabel: t('compare_many.benchmark.costRange'),
-    costRangeValue:
-      minCost != null && maxCost != null
-        ? `${minCost.toFixed(6).replace(/\.?0+$/, '')} – ${maxCost.toFixed(6).replace(/\.?0+$/, '')}`
-        : t('compare_many.benchmark.notAvailable'),
+    costRangeValue,
     timeRangeLabel: t('compare_many.benchmark.timeRange'),
     timeRangeValue:
       data.summary.min_execution_time_seconds != null && data.summary.max_execution_time_seconds != null
@@ -225,6 +274,7 @@ export function buildCompareExecutiveSummary(
     jobsWithCostValue: String(withCost),
     jobsWithoutCostLabel: t('compare_many.benchmark.jobsWithoutCost'),
     jobsWithoutCostValue: String(withoutCost),
+    mixedCurrencyHelper,
   };
 }
 
@@ -247,7 +297,7 @@ export function buildRunBenchmarkCards(
         isBaseline: jobId === data.baseline_job_id,
         providerModelLabel: getRunModelLabel(job, t),
         baselineChipLabel: t('compare_many.baseline_chip'),
-        statusLabel: t('compare_many.status_chip', { status: job.status }),
+        statusLabel: t('compare_many.status_chip', { status: getJobStatusLabel(job.status) }),
         runCostLabel: t('compare_many.benchmark.costPerRun'),
         runCostValue: costDisplay.value,
         runCostDetails: costDisplay.details,
@@ -312,7 +362,7 @@ export function buildDeltaKpiModels(
         label: t('compare_many.benchmark.deltaTime'),
         value:
           comp.delta.execution_time_delta != null
-            ? signedValue(comp.delta.execution_time_delta)
+            ? formatSignedDurationHuman(comp.delta.execution_time_delta)
             : t('compare_many.benchmark.notAvailable'),
         tone:
           comp.delta.execution_time_delta != null
@@ -355,7 +405,6 @@ export function buildDeltaKpiModels(
         target: targetLabel,
       }),
       kpis,
-      neutralQuantityHelper: t('compare_many.benchmark.neutralQuantityHelper'),
     };
   });
 }

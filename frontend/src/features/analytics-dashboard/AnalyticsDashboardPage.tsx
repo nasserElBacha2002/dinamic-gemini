@@ -2,8 +2,9 @@
  * Unified analytics shell — positions metrics, run observability, and compare entry points.
  */
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { Alert, Box, Typography } from '@mui/material';
 import { PageHeader } from '../../components/shell';
 import { ErrorAlert } from '../../components/ui';
@@ -23,6 +24,11 @@ import { AnalyticsCostsTab } from './components/AnalyticsCostsTab';
 import { AnalyticsDataQualitySummary } from './components/AnalyticsDataQualitySummary';
 import { useAnalyticsDashboardData } from './hooks/useAnalyticsDashboardData';
 import { AnalyticsDrilldownDrawer } from './components/drilldown/AnalyticsDrilldownDrawer';
+import {
+  ANALYTICS_TAB_QUERY_KEY,
+  analyticsTabToUrl,
+  parseAnalyticsTab,
+} from '../../constants/analyticsTabs';
 import {
   buildFilterParams,
   type AnalyticsDashboardFilters,
@@ -49,8 +55,43 @@ export default function AnalyticsDashboardPage() {
   const { t } = useTranslation();
   const [draftFilters, setDraftFilters] = useState(initialFilters);
   const [appliedFilters, setAppliedFilters] = useState(initialFilters);
-  const [activeTab, setActiveTab] = useState<AnalyticsDashboardTab>('summary');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = useMemo(
+    () => parseAnalyticsTab(searchParams.get(ANALYTICS_TAB_QUERY_KEY)),
+    [searchParams]
+  );
   const [drilldown, setDrilldown] = useState<AnalyticsDrilldownState>(null);
+
+  useEffect(() => {
+    const raw = searchParams.get(ANALYTICS_TAB_QUERY_KEY);
+    const parsed = parseAnalyticsTab(raw);
+    const canonical = analyticsTabToUrl(parsed);
+    if (raw !== canonical) {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set(ANALYTICS_TAB_QUERY_KEY, canonical);
+          return next;
+        },
+        { replace: true }
+      );
+    }
+  }, [searchParams, setSearchParams]);
+
+  const handleTabChange = useCallback(
+    (tab: AnalyticsDashboardTab) => {
+      setDrilldown(null);
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set(ANALYTICS_TAB_QUERY_KEY, analyticsTabToUrl(tab));
+          return next;
+        },
+        { replace: false }
+      );
+    },
+    [setSearchParams]
+  );
 
   const filterParams = useMemo(() => buildFilterParams(appliedFilters), [appliedFilters]);
 
@@ -152,7 +193,7 @@ export default function AnalyticsDashboardPage() {
         <ErrorAlert error={analyticsError} context="analytics" onRetry={() => refetchAll()} />
       ) : null}
 
-      <AnalyticsTabs value={activeTab} onChange={setActiveTab} />
+      <AnalyticsTabs value={activeTab} onChange={handleTabChange} />
 
       {activeTab === 'summary' ? (
         <AnalyticsOverviewTab
@@ -215,7 +256,7 @@ export default function AnalyticsDashboardPage() {
           costSummary={costSummary.data}
           isLoading={isCostSummaryLoading}
           isError={Boolean(costSummaryError)}
-          onGoToCompare={() => setActiveTab('compare')}
+          onGoToCompare={() => handleTabChange('compare')}
           drilldown={drilldownHandlers}
         />
       ) : null}

@@ -41,6 +41,11 @@ export default function CompareExecutiveSummary({ model, compact = false }: Comp
         <SummaryItem label={model.jobsWithCostLabel} value={model.jobsWithCostValue} />
         <SummaryItem label={model.jobsWithoutCostLabel} value={model.jobsWithoutCostValue} />
       </Box>
+      {model.mixedCurrencyHelper ? (
+        <Typography variant="caption" color="warning.main" display="block" sx={{ mt: 1.5 }}>
+          {model.mixedCurrencyHelper}
+        </Typography>
+      ) : null}
     </Paper>
   );
 }

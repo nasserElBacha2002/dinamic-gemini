@@ -726,6 +726,8 @@
       "expandForDiffRows": "Expandí el detalle para ver diferencias por SKU, cantidad y posición.",
       "truncatedDiffWarning": "Las filas de diferencias están truncadas; puede haber más cambios no mostrados.",
       "notAvailable": "No disponible",
+      "mixedCurrencyHelper": "Las corridas seleccionadas tienen monedas distintas.",
+      "moreNotes": "+{{count}} aclaraciones más",
       "promptMetadata": "Prompt {{run}}: {{promptKey}} · versión {{promptVersion}}"
     }
   },

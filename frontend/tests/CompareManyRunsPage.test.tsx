@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
@@ -392,9 +392,9 @@ describe('CompareManyRunsPage', () => {
   it('surfaces wall-clock execution time on job cards and delta when present', async () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
     await screen.findByTestId('compare-many-results');
-    expect(screen.getAllByText(/Tiempo de ejecución|Execution time/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/10s/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/25s/).length).toBeGreaterThanOrEqual(1);
+    const runCards = screen.getByTestId('compare-benchmark-run-cards');
+    expect(within(runCards).getAllByText(/10s/).length).toBeGreaterThanOrEqual(1);
+    expect(within(runCards).getAllByText(/25s/).length).toBeGreaterThanOrEqual(1);
     expect(
       screen.getByText(/Wall time \(target − baseline\): \+15s|Tiempo de pared \(target − baseline\): \+15s/i),
     ).toBeInTheDocument();

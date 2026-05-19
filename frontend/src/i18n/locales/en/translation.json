@@ -718,6 +718,8 @@
       "expandForDiffRows": "Expand details to see SKU, quantity, and position differences.",
       "truncatedDiffWarning": "Difference rows are truncated; more changes may exist.",
       "notAvailable": "Not available",
+      "mixedCurrencyHelper": "Selected runs use different currencies.",
+      "moreNotes": "+{{count}} more notes",
       "promptMetadata": "Prompt {{run}}: {{promptKey}} · version {{promptVersion}}"
     }
   },

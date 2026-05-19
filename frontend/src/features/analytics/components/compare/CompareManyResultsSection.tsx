@@ -58,14 +58,6 @@ type CompareManyResultsSectionProps = {
   baselineVsTargetLabel: (baseline: string, target: string) => string;
   /** When set, titles each comparison block using full job ids (e.g. model labels from loaded runs). */
   comparisonTitleForJobIds?: (baselineJobId: string, targetJobId: string) => string;
-  diffSummaryLabel: (values: {
-    onlyBaseline: number;
-    onlyTarget: number;
-    both: number;
-    qty: number;
-    sku: number;
-    pos: number;
-  }) => string;
   labels: {
     hide: string;
     showDiffRows: string;
@@ -212,7 +204,6 @@ export default function CompareManyResultsSection({
   deltaExecutionLabel,
   baselineVsTargetLabel,
   comparisonTitleForJobIds,
-  diffSummaryLabel,
   labels,
 }: CompareManyResultsSectionProps) {
   const { t } = useTranslation();
@@ -271,16 +262,6 @@ export default function CompareManyResultsSection({
               ) : null}
             </Box>
 
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-              {diffSummaryLabel({
-                onlyBaseline: comp.diff_summary.keys_only_in_a,
-                onlyTarget: comp.diff_summary.keys_only_in_b,
-                both: comp.diff_summary.keys_in_both,
-                qty: comp.diff_summary.quantity_changed,
-                sku: comp.diff_summary.sku_changed,
-                pos: comp.diff_summary.position_code_changed,
-              })}
-            </Typography>
             {insightLine ? (
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
                 {insightLine}

@@ -8,6 +8,10 @@ export const ROUTE_HOME = '/';
 export const ROUTE_METRICS = '/metrics';
 export const ROUTE_ANALITICA = '/analitica';
 export const ROUTE_OBSERVABILIDAD = '/observabilidad';
+
+/** Legacy analytics routes — redirect into unified Analítica tabs. */
+export const LEGACY_METRICS_ROUTE = ROUTE_METRICS;
+export const LEGACY_OBSERVABILITY_ROUTE = ROUTE_OBSERVABILIDAD;
 export const ROUTE_CLIENTS = '/clientes';
 export const ROUTE_ADMIN_AI_CONFIG = '/admin/ai-config';
 export const ROUTE_INGESTION_SESSIONS = '/ingestion-sessions';
@@ -113,3 +117,5 @@ export function pathToClient(clientId: string): string {
 export function pathToClientSupplier(clientId: string, supplierId: string): string {
   return `${ROUTE_CLIENTS}/${encodeURIComponent(clientId)}/proveedores/${encodeURIComponent(supplierId)}`;
 }
+
+export { pathToAnalytics } from './analyticsTabs';
