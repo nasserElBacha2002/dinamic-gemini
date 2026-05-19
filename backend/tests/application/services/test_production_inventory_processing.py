@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-import pytest
-
 from src.application.services.production_inventory_processing import (
     effective_production_processing_keys,
 )
