@@ -261,6 +261,34 @@ class JobRepository(ABC):
         rows.sort(key=lambda j: j.created_at, reverse=True)
         return rows[:lim]
 
+    def list_jobs_for_metrics_by_finished_at(
+        self,
+        *,
+        finished_from: datetime,
+        finished_to: datetime,
+        job_type: str = "process_aisle",
+        target_type: str = "aisle",
+        limit: int = 5000,
+    ) -> Sequence[Job]:
+        """Bounded read for analytics cost-summary (filter terminal jobs by ``finished_at``)."""
+        ff = finished_from if finished_from.tzinfo else finished_from.replace(tzinfo=timezone.utc)
+        ft = finished_to if finished_to.tzinfo else finished_to.replace(tzinfo=timezone.utc)
+        lim = max(1, min(int(limit), 10_000))
+        rows: list[Job] = []
+        for job in self.list_all_jobs():
+            if job.job_type != job_type or job.target_type != target_type:
+                continue
+            finished = job.finished_at
+            if finished is None:
+                continue
+            if finished.tzinfo is None:
+                finished = finished.replace(tzinfo=timezone.utc)
+            if finished < ff or finished > ft:
+                continue
+            rows.append(job)
+        rows.sort(key=lambda j: j.finished_at or j.created_at, reverse=True)
+        return rows[:lim]
+
 
 # --- v3.2.3 Label consolidation layers ---
 

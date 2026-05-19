@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -11,10 +12,20 @@ from src.api.constants.error_wire import (
 )
 from src.api.constants.route_paths import API_V3_ANALYTICS_ROUTER_PREFIX
 from src.api.dependencies import (
+    get_analytics_cost_summary_service,
     get_analytics_query_service,
     get_compare_aisle_runs_use_case,
 )
 from src.api.errors import mapped_http_exception
+from src.api.schemas.analytics_cost_schemas import (
+    AnalyticsCostByAisleResponse,
+    AnalyticsCostByCaptureStatusResponse,
+    AnalyticsCostByInventoryResponse,
+    AnalyticsCostByProviderModelResponse,
+    AnalyticsCostSummaryResponse,
+    AnalyticsCostSummaryScopeResponse,
+    AnalyticsCostTotalsResponse,
+)
 from src.api.schemas.analytics_schemas import (
     AisleIssueListResponse,
     AisleIssueRowResponse,
@@ -29,7 +40,12 @@ from src.api.schemas.analytics_schemas import (
     TrendPointResponse,
 )
 from src.api.schemas.benchmark_schemas import AisleBenchmarkCompareResponse
+from src.application.dto.analytics_cost_dto import AnalyticsCostSummaryFilters
 from src.application.dto.analytics_dto import AnalyticsFilters
+from src.application.services.analytics_cost_summary_service import (
+    AnalyticsCostSummaryService,
+    resolve_cost_summary_time_range,
+)
 from src.application.services.analytics_query_service import AnalyticsQueryService
 from src.application.use_cases.compare_aisle_runs import (
     CompareAisleRunsCommand,
@@ -89,6 +105,159 @@ def _analytics_filters_validated(
             raise mapped
         raise
     return f
+
+
+def _decimal_to_float(value: Decimal | None) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def _cost_filters(
+    date_from: date | None,
+    date_to: date | None,
+    inventory_id: str | None,
+    aisle_id: str | None,
+    client_id: str | None,
+    client_supplier_id: str | None,
+    provider_name: str | None,
+    model_name: str | None,
+) -> AnalyticsCostSummaryFilters:
+    df, dt = _range_to_datetimes(date_from, date_to)
+    try:
+        finished_from, finished_to = resolve_cost_summary_time_range(df, dt)
+    except ValueError as e:
+        code = str(e)
+        if code == "from_after_to":
+            raise HTTPException(
+                status_code=422, detail=HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO
+            ) from e
+        if code == "range_too_large":
+            raise HTTPException(status_code=422, detail="date_range_exceeds_maximum_window") from e
+        raise
+    return AnalyticsCostSummaryFilters(
+        finished_from=finished_from,
+        finished_to=finished_to,
+        inventory_id=inventory_id.strip() if inventory_id and inventory_id.strip() else None,
+        aisle_id=aisle_id.strip() if aisle_id and aisle_id.strip() else None,
+        client_id=client_id.strip() if client_id and client_id.strip() else None,
+        client_supplier_id=client_supplier_id.strip()
+        if client_supplier_id and client_supplier_id.strip()
+        else None,
+        provider_name=provider_name.strip() if provider_name and provider_name.strip() else None,
+        model_name=model_name.strip() if model_name and model_name.strip() else None,
+    )
+
+
+@router.get("/cost-summary", response_model=AnalyticsCostSummaryResponse)
+def analytics_cost_summary(
+    svc: AnalyticsCostSummaryService = Depends(get_analytics_cost_summary_service),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    inventory_id: str | None = Query(None),
+    aisle_id: str | None = Query(None),
+    client_id: str | None = Query(None),
+    client_supplier_id: str | None = Query(None),
+    provider_name: str | None = Query(None),
+    model_name: str | None = Query(None),
+) -> AnalyticsCostSummaryResponse:
+    """Aggregate LLM processing cost and counted quantity for the analytics dashboard.
+
+    **Cost semantics:** sums persisted ``result_json.llm_cost_snapshot.computed_cost.total_cost``
+    only when finite and non-negative. Jobs without a valid snapshot are counted separately.
+
+    **Time window:** terminal aisle jobs whose ``finished_at`` falls in the resolved range
+    (default last 30 days, max 90). Rows are loaded via ``finished_at`` (see ``DATE_RANGE_CAPPED``
+    when the row cap is hit).
+
+    **Counted quantity:** operational UI/export rollup per aisle in scope; null when unavailable.
+    Counted quantity reflects current operational state, not job-date attribution.
+    """
+    filters = _cost_filters(
+        date_from,
+        date_to,
+        inventory_id,
+        aisle_id,
+        client_id,
+        client_supplier_id,
+        provider_name,
+        model_name,
+    )
+    try:
+        data = svc.build(filters)
+    except Exception as e:
+        mapped = mapped_http_exception(e)
+        if mapped is not None:
+            raise mapped
+        raise
+    return AnalyticsCostSummaryResponse(
+        scope=AnalyticsCostSummaryScopeResponse.model_validate(data.scope.__dict__),
+        totals=AnalyticsCostTotalsResponse(
+            jobs_total=data.totals.jobs_total,
+            jobs_with_cost=data.totals.jobs_with_cost,
+            jobs_without_cost=data.totals.jobs_without_cost,
+            jobs_with_exact_cost=data.totals.jobs_with_exact_cost,
+            jobs_with_estimated_cost=data.totals.jobs_with_estimated_cost,
+            jobs_with_partial_cost=data.totals.jobs_with_partial_cost,
+            jobs_with_unavailable_cost=data.totals.jobs_with_unavailable_cost,
+            jobs_with_missing_cost=data.totals.jobs_with_missing_cost,
+            total_cost=_decimal_to_float(data.totals.total_cost),
+            total_counted_quantity=data.totals.total_counted_quantity,
+            cost_per_counted_unit=_decimal_to_float(data.totals.cost_per_counted_unit),
+            total_execution_time_seconds=data.totals.total_execution_time_seconds,
+            average_execution_time_seconds=data.totals.average_execution_time_seconds,
+        ),
+        by_provider_model=[
+            AnalyticsCostByProviderModelResponse(
+                provider_name=r.provider_name,
+                model_name=r.model_name,
+                jobs_total=r.jobs_total,
+                jobs_with_cost=r.jobs_with_cost,
+                total_cost=_decimal_to_float(r.total_cost),
+                total_counted_quantity=r.total_counted_quantity,
+                cost_per_counted_unit=_decimal_to_float(r.cost_per_counted_unit),
+                average_execution_time_seconds=r.average_execution_time_seconds,
+            )
+            for r in data.by_provider_model
+        ],
+        by_inventory=[
+            AnalyticsCostByInventoryResponse(
+                inventory_id=r.inventory_id,
+                inventory_name=r.inventory_name,
+                jobs_total=r.jobs_total,
+                jobs_with_cost=r.jobs_with_cost,
+                total_cost=_decimal_to_float(r.total_cost),
+                total_counted_quantity=r.total_counted_quantity,
+                cost_per_counted_unit=_decimal_to_float(r.cost_per_counted_unit),
+                total_execution_time_seconds=r.total_execution_time_seconds,
+            )
+            for r in data.by_inventory
+        ],
+        by_aisle=[
+            AnalyticsCostByAisleResponse(
+                inventory_id=r.inventory_id,
+                inventory_name=r.inventory_name,
+                aisle_id=r.aisle_id,
+                aisle_code=r.aisle_code,
+                jobs_total=r.jobs_total,
+                jobs_with_cost=r.jobs_with_cost,
+                total_cost=_decimal_to_float(r.total_cost),
+                total_counted_quantity=r.total_counted_quantity,
+                cost_per_counted_unit=_decimal_to_float(r.cost_per_counted_unit),
+                total_execution_time_seconds=r.total_execution_time_seconds,
+            )
+            for r in data.by_aisle
+        ],
+        by_capture_status=[
+            AnalyticsCostByCaptureStatusResponse(
+                capture_status=r.capture_status,
+                jobs_total=r.jobs_total,
+                total_cost=_decimal_to_float(r.total_cost),
+            )
+            for r in data.by_capture_status
+        ],
+        warnings=list(data.warnings),
+    )
 
 
 @router.get("/summary", response_model=AnalyticsSummaryResponse)

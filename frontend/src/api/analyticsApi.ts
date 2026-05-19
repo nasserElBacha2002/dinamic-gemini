@@ -3,6 +3,8 @@ import type {
   AisleBenchmarkCompareManyRequest,
   AisleBenchmarkCompareManyResponse,
   AisleIssueListResponse,
+  AnalyticsCostSummaryParams,
+  AnalyticsCostSummaryResponse,
   AnalyticsSummaryResponse,
   AnalyticsTrendsResponse,
   InventoryPerformanceListResponse,
@@ -67,6 +69,27 @@ export async function getAnalyticsManualInterventions(
 ): Promise<ManualInterventionBreakdownResponse> {
   return apiRequestJson<ManualInterventionBreakdownResponse>(
     `${API_BASE}${V3_ANALYTICS_BASE}/manual-interventions${buildAnalyticsQueryString(q)}`
+  );
+}
+
+function buildCostSummaryQueryString(q?: AnalyticsCostSummaryParams): string {
+  return buildQueryString([
+    ['date_from', q?.date_from],
+    ['date_to', q?.date_to],
+    ['inventory_id', q?.inventory_id],
+    ['aisle_id', q?.aisle_id],
+    ['client_id', q?.client_id],
+    ['client_supplier_id', q?.client_supplier_id],
+    ['provider_name', q?.provider_name],
+    ['model_name', q?.model_name],
+  ]);
+}
+
+export async function getAnalyticsCostSummary(
+  q?: AnalyticsCostSummaryParams
+): Promise<AnalyticsCostSummaryResponse> {
+  return apiRequestJson<AnalyticsCostSummaryResponse>(
+    `${API_BASE}${V3_ANALYTICS_BASE}/cost-summary${buildCostSummaryQueryString(q)}`
   );
 }
 

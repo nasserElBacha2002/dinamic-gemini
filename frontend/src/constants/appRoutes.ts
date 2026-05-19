@@ -3,10 +3,18 @@
  * Must stay aligned with ``App.tsx`` ``<Route path=...>`` definitions.
  */
 
+import { ANALYTICS_TAB_QUERY_KEY, analyticsTabToUrl } from './analyticsTabs';
+import type { AnalyticsDashboardTab } from '../features/analytics-dashboard/types';
+
 export const ROUTE_LOGIN = '/login';
 export const ROUTE_HOME = '/';
 export const ROUTE_METRICS = '/metrics';
+export const ROUTE_ANALITICA = '/analitica';
 export const ROUTE_OBSERVABILIDAD = '/observabilidad';
+
+/** Legacy analytics routes — redirect into unified Analítica tabs. */
+export const LEGACY_METRICS_ROUTE = ROUTE_METRICS;
+export const LEGACY_OBSERVABILITY_ROUTE = ROUTE_OBSERVABILIDAD;
 export const ROUTE_CLIENTS = '/clientes';
 export const ROUTE_ADMIN_AI_CONFIG = '/admin/ai-config';
 export const ROUTE_INGESTION_SESSIONS = '/ingestion-sessions';
@@ -19,6 +27,7 @@ export const ROUTE_PATH = {
   inventories: 'inventories',
   reviewQueue: 'review-queue',
   metrics: 'metrics',
+  analitica: 'analitica',
   observabilidad: 'observabilidad',
   clients: 'clientes',
   clientDetail: 'clientes/:clientId',
@@ -67,8 +76,20 @@ export function pathToInventoryAnalyticsCompare(inventoryId: string): string {
   return pathToInventoryAnalyticsCompareMany(inventoryId);
 }
 
-export function pathToInventoryAnalyticsCompareMany(inventoryId: string): string {
-  return `${ROUTE_INVENTORIES_ROOT}/${inventoryId}/analytics/compare-many`;
+export function pathToInventoryAnalyticsCompareMany(
+  inventoryId: string,
+  options?: { aisleId?: string; jobIds?: string[]; baseline?: string }
+): string {
+  const base = `${ROUTE_INVENTORIES_ROOT}/${inventoryId}/analytics/compare-many`;
+  const params = new URLSearchParams();
+  const aisleId = options?.aisleId?.trim();
+  if (aisleId) params.set('aisleId', aisleId);
+  const jobIds = (options?.jobIds ?? []).map((id) => id.trim()).filter(Boolean);
+  if (jobIds.length > 0) params.set('jobIds', jobIds.join(','));
+  const baseline = options?.baseline?.trim();
+  if (baseline) params.set('baseline', baseline);
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
 }
 
 export function pathToAislePositions(inventoryId: string, aisleId: string): string {
@@ -98,4 +119,9 @@ export function pathToClient(clientId: string): string {
 
 export function pathToClientSupplier(clientId: string, supplierId: string): string {
   return `${ROUTE_CLIENTS}/${encodeURIComponent(clientId)}/proveedores/${encodeURIComponent(supplierId)}`;
+}
+
+export function pathToAnalytics(tab?: AnalyticsDashboardTab): string {
+  const urlTab = analyticsTabToUrl(tab ?? 'summary');
+  return `${ROUTE_ANALITICA}?${ANALYTICS_TAB_QUERY_KEY}=${urlTab}`;
 }

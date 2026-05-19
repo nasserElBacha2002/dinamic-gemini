@@ -6,6 +6,7 @@ import {
   ROUTE_INGESTION_SESSIONS,
   ROUTE_INVENTORIES_ROOT,
   ROUTE_MATCH,
+  ROUTE_ANALITICA,
   ROUTE_METRICS,
   ROUTE_OBSERVABILIDAD,
 } from '../constants/appRoutes';
@@ -35,13 +36,16 @@ export function topBarCopy(pathname: string): { titleKey: string; subtitleKey?: 
       return { titleKey: 'routes.inventory_detail.title', subtitleKey: 'routes.inventory_detail.subtitle' };
     }
   }
-  if (pathname === ROUTE_METRICS) {
-    return { titleKey: 'routes.metrics.title', subtitleKey: 'routes.metrics.subtitle' };
-  }
-  if (pathname === ROUTE_OBSERVABILIDAD) {
+  if (pathname === ROUTE_ANALITICA) {
     return {
-      titleKey: 'routes.observability_metrics.title',
-      subtitleKey: 'routes.observability_metrics.subtitle',
+      titleKey: 'analyticsDashboard.title',
+      subtitleKey: 'analyticsDashboard.subtitle',
+    };
+  }
+  if (pathname === ROUTE_METRICS || pathname === ROUTE_OBSERVABILIDAD) {
+    return {
+      titleKey: 'analyticsDashboard.title',
+      subtitleKey: 'analyticsDashboard.subtitle',
     };
   }
   if (pathname === ROUTE_CLIENTS) {

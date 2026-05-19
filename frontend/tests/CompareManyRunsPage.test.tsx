@@ -1,13 +1,13 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material';
 import * as client from '../src/api/client';
 import CompareManyRunsPage from '../src/pages/analytics/CompareManyRunsPage';
-import { buildDraftError } from '../src/pages/analytics/compareManyRunsDraft';
+import { buildDraftError } from '../src/features/analytics/compare/compareManyRunsDraft';
 import { AppSnackbarProvider } from '../src/components/ui';
 import theme from '../src/theme';
 import type { AisleBenchmarkCompareManyResponse, Inventory, Aisle, JobSummary, LlmCostSnapshot } from '../src/api/types';
@@ -308,14 +308,14 @@ describe('CompareManyRunsPage', () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
     await screen.findByTestId('compare-many-results');
     const baselineCard = screen.getByTestId('compare-many-baseline-card');
-    expect(baselineCard).toHaveTextContent(/Costo:|Cost:/i);
+    expect(baselineCard).toHaveTextContent(/Costo por corrida|Cost per run/i);
     expect(baselineCard).toHaveTextContent(/0\.123400|0\.1234/i);
   });
 
   it('run cards show cost unavailable when llm_cost_snapshot is missing', async () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
     await screen.findByTestId('compare-many-results');
-    const unavailable = screen.getAllByText(/Costo no disponible|Cost unavailable/i);
+    const unavailable = screen.getAllByText(/No disponible|Not available|Sin snapshot|no snapshot/i);
     expect(unavailable.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -380,18 +380,21 @@ describe('CompareManyRunsPage', () => {
     expect(screen.getByText(/changes not applied|hay cambios sin aplicar/i)).toBeInTheDocument();
   });
 
-  it('renders expanded summary fields for consolidated and unknown min/max', async () => {
+  it('renders executive summary quantity range and per-run consolidated metrics', async () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
     await screen.findByTestId('compare-many-results');
-    expect(screen.getByText(/Consolidated positions min\/max:|Posiciones consolidadas min\/max:/i)).toBeInTheDocument();
-    expect(screen.getByText(/Unknown internal code min\/max:|Código interno desconocido min\/max:/i)).toBeInTheDocument();
+    expect(screen.getByText(/Cantidad mínima|Min \/ max quantity/i)).toBeInTheDocument();
+    expect(screen.getByText(/19 – 23|19 - 23/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Posiciones consolidadas|Consolidated positions/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Códigos internos desconocidos|Unknown internal codes/i).length).toBeGreaterThanOrEqual(1);
   });
 
   it('surfaces wall-clock execution time on job cards and delta when present', async () => {
     renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
     await screen.findByTestId('compare-many-results');
-    expect(screen.getByText(/Execution time: 10s|Tiempo de ejecución: 10s/i)).toBeInTheDocument();
-    expect(screen.getByText(/Execution time: 25s|Tiempo de ejecución: 25s/i)).toBeInTheDocument();
+    const runCards = screen.getByTestId('compare-benchmark-run-cards');
+    expect(within(runCards).getAllByText(/10s/).length).toBeGreaterThanOrEqual(1);
+    expect(within(runCards).getAllByText(/25s/).length).toBeGreaterThanOrEqual(1);
     expect(
       screen.getByText(/Wall time \(target − baseline\): \+15s|Tiempo de pared \(target − baseline\): \+15s/i),
     ).toBeInTheDocument();
@@ -406,6 +409,43 @@ describe('CompareManyRunsPage', () => {
 
   it('helper validation flags too-few selections for draft apply', () => {
     expect(buildDraftError('aisle-1', ['job-1'], 'job-1', (k) => k)).toBe('compare_many.errors.pick_two_jobs');
+  });
+
+  it('renders benchmark executive summary and context warnings after compare', async () => {
+    renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
+    await screen.findByTestId('compare-many-results');
+    expect(screen.getByTestId('compare-benchmark-executive-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('compare-benchmark-context-warnings')).toBeInTheDocument();
+    expect(screen.getByText(/Resumen de comparación|Comparison summary/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/no recomienda automáticamente|does not automatically recommend/i)
+    ).toBeInTheDocument();
+  });
+
+  it('renders benchmark run cards with cost per unit and charts', async () => {
+    renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
+    await screen.findByTestId('compare-many-results');
+    expect(screen.getByTestId('compare-benchmark-run-cards')).toBeInTheDocument();
+    expect(screen.getByTestId('compare-benchmark-delta-kpis')).toBeInTheDocument();
+    expect(screen.getByTestId('compare-benchmark-charts')).toBeInTheDocument();
+    expect(screen.getByTestId('compare-chart-cost-per-run-card')).toBeInTheDocument();
+    expect(screen.getAllByText(/Costo por unidad|Cost per unit/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('shows cost per unit unavailable on cards without cost snapshot', async () => {
+    renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2,job-3&baseline=job-1');
+    await screen.findByTestId('compare-many-results');
+    const unavailable = screen.getAllByText(/No disponible|Not available/i);
+    expect(unavailable.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('renders difference summary in comparison blocks', async () => {
+    renderPage('/inventories/inv-1/analytics/compare-many?aisleId=aisle-1&jobIds=job-1,job-2&baseline=job-1');
+    await screen.findByTestId('compare-many-results');
+    expect(screen.getAllByTestId('compare-difference-summary').length).toBeGreaterThanOrEqual(1);
+    expect(
+      screen.getAllByText(/Expandí el detalle|Expand details/i).length
+    ).toBeGreaterThanOrEqual(1);
   });
 
   it('redirects production inventories away from compare-many to inventory detail', async () => {

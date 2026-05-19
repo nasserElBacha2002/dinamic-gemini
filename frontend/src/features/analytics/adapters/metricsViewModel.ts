@@ -1,4 +1,11 @@
+import type { ReactNode } from 'react';
 import type { TFunction } from 'i18next';
+
+export interface MetricsKpiCardView {
+  label: string;
+  value: ReactNode;
+  description?: string;
+}
 import type {
   AnalyticsSummaryResponse,
   InventoryPerformanceRow,
