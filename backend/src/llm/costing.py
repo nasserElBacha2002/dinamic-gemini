@@ -9,21 +9,29 @@ The snapshot is persisted with each run for auditability. To avoid overclaiming 
 
 from __future__ import annotations
 
-import copy
-import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, Literal
+from typing import Any
 
 from src.llm.costing_helpers.calculators import (
     apply_billable_dimensions_to_subtotals as _apply_billable_dimensions_to_subtotals,
 )
+from src.llm.costing_helpers.catalog import (
+    PricingConfidence as _PricingConfidence,
+)
+from src.llm.costing_helpers.catalog import (
+    load_pricing_catalog as _load_pricing_catalog,
+)
+from src.llm.costing_helpers.catalog import (
+    pricing_confidence_for_resolution as _pricing_confidence_for_resolution,
+)
+from src.llm.costing_helpers.catalog import resolve_pricing_with_canonical
 from src.llm.costing_helpers.coercion import as_decimal as _as_decimal
 from src.llm.costing_helpers.coercion import get_first as _get_first
 from src.llm.costing_helpers.coercion import to_int as _to_int
-from src.llm.costing_helpers.constants import MONEY_QUANT as _MONEY_QUANT
+from src.llm.costing_helpers.constants import MONEY_QUANT
 from src.llm.costing_helpers.formatting import (
     format_computed_cost_block as _format_computed_cost_block,
 )
@@ -31,154 +39,7 @@ from src.llm.costing_helpers.formatting import (
     format_pricing_snapshot_for_json as _format_pricing_snapshot_for_json,
 )
 
-_PricingConfidence = Literal["operator_approved", "embedded_placeholder", "unknown"]
-
 logger = logging.getLogger(__name__)
-
-# Merged under operator JSON (``LLM_PRICING_CATALOG_JSON``); user entries override on same
-# (provider, model) keys. USD values are deployment placeholders — override via env JSON for
-# finance-approved list prices. Shape must match ``_load_pricing_catalog``: ``entries`` +
-# optional ``aliases`` (see H7).
-_EMBEDDED_DEFAULT_LLM_PRICING_CATALOG: dict[str, Any] = {
-    "version": "dinamic-embedded-pricing-v2",
-    "currency": "USD",
-    "source": "dinamic_embedded_placeholders",
-    "entries": [
-        # OpenAI — aligned with typical PROCESSING_OPENAI_MODELS / OPENAI_MODEL
-        {
-            "provider": "openai",
-            "model": "gpt-5.5",
-            "input_cost_per_million": 5,
-            "output_cost_per_million": 15,
-            "cached_input_cost_per_million": 1.25,
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-5.4",
-            "input_cost_per_million": 5,
-            "output_cost_per_million": 15,
-            "cached_input_cost_per_million": 1.25,
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-5.4-mini",
-            "input_cost_per_million": 0.8,
-            "output_cost_per_million": 2.4,
-            "cached_input_cost_per_million": 0.16,
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-5.4-nano",
-            "input_cost_per_million": 0.2,
-            "output_cost_per_million": 0.6,
-            "cached_input_cost_per_million": 0.04,
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4o",
-            "input_cost_per_million": 5,
-            "output_cost_per_million": 15,
-            "cached_input_cost_per_million": 1.25,
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4o-mini",
-            "input_cost_per_million": 0.15,
-            "output_cost_per_million": 0.6,
-            "cached_input_cost_per_million": 0.075,
-        },
-        {
-            "provider": "openai",
-            "model": "gpt-4-turbo",
-            "input_cost_per_million": 10,
-            "output_cost_per_million": 30,
-            "cached_input_cost_per_million": 2.5,
-        },
-        # Anthropic — PROCESSING_CLAUDE_MODELS + ANTHROPIC_MODEL default
-        {
-            "provider": "claude",
-            "model": "claude-sonnet-4-20250514",
-            "input_cost_per_million": 3,
-            "output_cost_per_million": 15,
-            "cached_input_cost_per_million": 1,
-        },
-        {
-            "provider": "claude",
-            "model": "claude-3-5-sonnet-20241022",
-            "input_cost_per_million": 3,
-            "output_cost_per_million": 15,
-            "cached_input_cost_per_million": 1,
-        },
-        {
-            "provider": "claude",
-            "model": "claude-opus-4-7",
-            "input_cost_per_million": 15,
-            "output_cost_per_million": 75,
-            "cached_input_cost_per_million": 7.5,
-        },
-        {
-            "provider": "claude",
-            "model": "claude-sonnet-4-6",
-            "input_cost_per_million": 3,
-            "output_cost_per_million": 15,
-            "cached_input_cost_per_million": 1,
-        },
-        {
-            "provider": "claude",
-            "model": "claude-haiku-4-5-20251001",
-            "input_cost_per_million": 1,
-            "output_cost_per_million": 5,
-            "cached_input_cost_per_million": 0.5,
-        },
-        # Gemini — PROCESSING_GEMINI_MODELS / GEMINI_MODEL_NAME (thinking billed as output)
-        {
-            "provider": "gemini",
-            "model": "gemini-2.5-pro",
-            "input_cost_per_million": 1.25,
-            "output_cost_per_million": 10,
-            "cached_input_cost_per_million": 0.31,
-            "thinking_billed_as": "output_tokens",
-        },
-        {
-            "provider": "gemini",
-            "model": "gemini-2.5-flash",
-            "input_cost_per_million": 0.3,
-            "output_cost_per_million": 2.5,
-            "cached_input_cost_per_million": 0.08,
-            "thinking_billed_as": "output_tokens",
-        },
-        {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite",
-            "input_cost_per_million": 0.2,
-            "output_cost_per_million": 0.6,
-            "cached_input_cost_per_million": 0.05,
-            "thinking_billed_as": "output_tokens",
-        },
-        {
-            "provider": "gemini",
-            "model": "gemini-3.1-pro-preview",
-            "input_cost_per_million": 1.5,
-            "output_cost_per_million": 12,
-            "cached_input_cost_per_million": 0.35,
-            "thinking_billed_as": "output_tokens",
-        },
-        # DeepSeek — PROCESSING_DEEPSEEK_MODELS
-        {
-            "provider": "deepseek",
-            "model": "deepseek-chat",
-            "input_cost_per_million": 0.27,
-            "output_cost_per_million": 1.1,
-        },
-        {
-            "provider": "deepseek",
-            "model": "deepseek-vl2",
-            "input_cost_per_million": 0.27,
-            "output_cost_per_million": 1.1,
-        },
-    ],
-    "aliases": [],
-}
 
 
 def _utc_iso_now() -> str:
@@ -313,211 +174,6 @@ def normalize_usage(
         notes.append("usage_dimension_ambiguous:input_tokens")
 
     return usage, notes
-
-
-def _catalog_entry_key(entry: Any) -> tuple[str, str] | None:
-    if not isinstance(entry, dict):
-        return None
-    p = str(entry.get("provider", "")).strip().lower()
-    m = str(entry.get("model", "")).strip().lower()
-    if not p or not m:
-        return None
-    return (p, m)
-
-
-@dataclass(frozen=True)
-class _PricingResolution:
-    entry: dict[str, Any] | None
-    canonical_model: str | None
-    matched_entry_model: str | None
-    #: Catalog row key ``(provider, model)`` used for rates; ``None`` when no row matched.
-    matched_catalog_key: tuple[str, str] | None = None
-    #: True when an alias mapped the raw model to a canonical id with no catalog row for it.
-    alias_resolved_without_entry: bool = False
-
-
-def _alias_tuple(row: Any) -> tuple[str, str, str] | None:
-    if not isinstance(row, dict):
-        return None
-    p = str(row.get("provider", "")).strip().lower()
-    a = str(row.get("alias", "")).strip().lower()
-    c = str(row.get("canonical_model", "")).strip().lower()
-    if not p or not a or not c:
-        return None
-    return (p, a, c)
-
-
-def _operator_catalog_entry_keys(parsed: dict[str, Any]) -> frozenset[tuple[str, str]]:
-    keys: set[tuple[str, str]] = set()
-    for ent in parsed.get("entries") or []:
-        if isinstance(ent, dict):
-            k = _catalog_entry_key(ent)
-            if k:
-                keys.add(k)
-    return frozenset(keys)
-
-
-def _merge_catalog_aliases(base: dict[str, Any], parsed: dict[str, Any]) -> list[dict[str, Any]]:
-    by_key: dict[tuple[str, str], dict[str, Any]] = {}
-    for row in base.get("aliases") or []:
-        t = _alias_tuple(row)
-        if t:
-            by_key[(t[0], t[1])] = {"provider": t[0], "alias": t[1], "canonical_model": t[2]}
-    for row in parsed.get("aliases") or []:
-        t = _alias_tuple(row)
-        if t:
-            by_key[(t[0], t[1])] = {"provider": t[0], "alias": t[1], "canonical_model": t[2]}
-    return list(by_key.values())
-
-
-def _find_exact_catalog_entry(
-    catalog: dict[str, Any], provider: str, model_lower: str
-) -> dict[str, Any] | None:
-    entries = catalog.get("entries")
-    if not isinstance(entries, list) or not model_lower:
-        return None
-    for item in entries:
-        if not isinstance(item, dict):
-            continue
-        ip = str(item.get("provider", "")).strip().lower()
-        im = str(item.get("model", "")).strip().lower()
-        if ip == provider and im == model_lower:
-            return item
-    return None
-
-
-def _find_wildcard_catalog_entry(catalog: dict[str, Any], provider: str) -> dict[str, Any] | None:
-    entries = catalog.get("entries")
-    if not isinstance(entries, list):
-        return None
-    for item in entries:
-        if not isinstance(item, dict):
-            continue
-        ip = str(item.get("provider", "")).strip().lower()
-        im = str(item.get("model", "")).strip().lower()
-        if ip == provider and im in ("*", ""):
-            return item
-    return None
-
-
-def resolve_pricing_with_canonical(
-    catalog: dict[str, Any], provider: str, raw_model: str
-) -> _PricingResolution:
-    """Resolve pricing row: exact model, alias → canonical, then provider wildcard."""
-    p = (provider or "").strip().lower()
-    m_raw = (raw_model or "").strip().lower()
-
-    if m_raw:
-        hit = _find_exact_catalog_entry(catalog, p, m_raw)
-        if hit is not None:
-            mm = str(hit.get("model", "")).strip().lower() or m_raw
-            mk = _catalog_entry_key(hit)
-            return _PricingResolution(
-                hit,
-                mm,
-                str(hit.get("model", "")).strip() or m_raw,
-                mk,
-                False,
-            )
-
-    if m_raw:
-        for row in catalog.get("aliases") or []:
-            t = _alias_tuple(row)
-            if not t or t[0] != p or t[1] != m_raw:
-                continue
-            canon = t[2]
-            hit = _find_exact_catalog_entry(catalog, p, canon)
-            if hit is not None:
-                mm = str(hit.get("model", "")).strip().lower() or canon
-                mk = _catalog_entry_key(hit)
-                return _PricingResolution(
-                    hit,
-                    mm,
-                    str(hit.get("model", "")).strip() or canon,
-                    mk,
-                    False,
-                )
-            return _PricingResolution(None, canon, None, None, True)
-
-    wc = _find_wildcard_catalog_entry(catalog, p)
-    if wc is not None:
-        label = m_raw or "*"
-        mk = _catalog_entry_key(wc)
-        return _PricingResolution(
-            wc,
-            label,
-            str(wc.get("model", "")).strip() or "*",
-            mk,
-            False,
-        )
-    return _PricingResolution(None, m_raw or None, None, None, False)
-
-
-def _pricing_confidence_for_resolution(
-    catalog: dict[str, Any], resolution: _PricingResolution
-) -> _PricingConfidence:
-    """Whether the matched catalog row came from operator JSON vs embedded-only vs no row."""
-    if resolution.entry is None:
-        return "unknown"
-    mk = resolution.matched_catalog_key
-    if mk is None:
-        return "embedded_placeholder"
-    op = catalog.get("__operator_catalog_entry_keys__")
-    if not isinstance(op, (frozenset, set)):
-        return "embedded_placeholder"
-    if mk in op:
-        return "operator_approved"
-    return "embedded_placeholder"
-
-
-def _load_pricing_catalog(settings: Any) -> dict[str, Any]:
-    """Load pricing catalog: embedded defaults merged with ``settings.llm_pricing_catalog_json`` (user wins on key clash)."""
-    base = copy.deepcopy(_EMBEDDED_DEFAULT_LLM_PRICING_CATALOG)
-    raw_attr = getattr(settings, "llm_pricing_catalog_json", "")
-    raw = raw_attr.strip() if isinstance(raw_attr, str) else ""
-    if not raw:
-        base["__operator_catalog_entry_keys__"] = frozenset()
-        return base
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("llm.pricing_catalog_invalid_json: using embedded defaults only")
-        base["__operator_catalog_entry_keys__"] = frozenset()
-        return base
-    if not isinstance(parsed, dict):
-        base["__operator_catalog_entry_keys__"] = frozenset()
-        return base
-
-    operator_keys = _operator_catalog_entry_keys(parsed)
-
-    merged: dict[tuple[str, str], dict[str, Any]] = {}
-    for ent in base.get("entries") or []:
-        k = _catalog_entry_key(ent)
-        if k:
-            merged[k] = copy.deepcopy(ent)
-    for ent in parsed.get("entries") or []:
-        k = _catalog_entry_key(ent)
-        if k and isinstance(ent, dict):
-            merged[k] = copy.deepcopy(ent)
-
-    ver = parsed.get("version")
-    ver_s = str(ver).strip() if ver is not None and str(ver).strip() else ""
-    cur = parsed.get("currency")
-    cur_s = str(cur).strip() if isinstance(cur, str) and cur.strip() else ""
-
-    out: dict[str, Any] = {
-        "version": ver_s or str(base.get("version") or ""),
-        "currency": cur_s or str(base.get("currency") or "USD"),
-        "source": (
-            str(parsed["source"]).strip()
-            if isinstance(parsed.get("source"), str) and str(parsed["source"]).strip()
-            else "settings.llm_pricing_catalog_json+dinamic_embedded_placeholders"
-        ),
-        "entries": list(merged.values()),
-        "aliases": _merge_catalog_aliases(base, parsed),
-        "__operator_catalog_entry_keys__": operator_keys,
-    }
-    return out
 
 
 _USAGE_METADATA_KEYS: tuple[str, ...] = (
@@ -796,7 +452,7 @@ def build_llm_cost_snapshot(
     partial_total: Decimal | None = None
     if subtotal_values:
         partial_total = sum(subtotal_values, Decimal("0")).quantize(
-            _MONEY_QUANT, rounding=ROUND_HALF_UP
+            MONEY_QUANT, rounding=ROUND_HALF_UP
         )
 
     has_missing_pricing = any(n.startswith("billable_dimension_not_priced:") for n in notes)
