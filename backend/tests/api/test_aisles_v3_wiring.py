@@ -32,7 +32,7 @@ from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
-from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
@@ -78,6 +78,8 @@ class _InventoryReadProxyClearClient(InventoryRepository):
 
 
 def _pinv(name: str, **kwargs: Any):
+    """Create inventory via API; default test mode unless a case exercises production."""
+    kwargs.setdefault("processing_mode", "test")
     return create_test_inventory(client, name=name, **kwargs)
 
 
@@ -1404,7 +1406,14 @@ def test_post_process_when_latest_job_running_returns_409() -> None:
     aisle_repo = MemoryAisleRepository()
     job_repo = MemoryJobRepository()
 
-    inv = Inventory("inv-block", "For Block", InventoryStatus.DRAFT, now, now)
+    inv = Inventory(
+        "inv-block",
+        "For Block",
+        InventoryStatus.DRAFT,
+        now,
+        now,
+        processing_mode=InventoryProcessingMode.TEST,
+    )
     inv_repo.save(inv)
     aisle = Aisle("aisle-block", "inv-block", "B-01", AisleStatus.CREATED, now, now)
     aisle_repo.save(aisle)
