@@ -14,6 +14,15 @@ import { InventoryDrilldownPanel } from './InventoryDrilldownPanel';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
 
+/** Responsive width for inventory/aisle drilldown content (desktop readability). */
+export const ANALYTICS_DRILLDOWN_DRAWER_WIDTH = {
+  xs: '100vw',
+  sm: '92vw',
+  md: 860,
+  lg: 960,
+  xl: 1040,
+} as const;
+
 export interface AnalyticsDrilldownDrawerProps {
   state: AnalyticsDrilldownState;
   onClose: () => void;
@@ -68,7 +77,13 @@ export function AnalyticsDrilldownDrawer({
       onClose={onClose}
       data-testid="analytics-drilldown-drawer"
       PaperProps={{
-        sx: { width: { xs: '100%', sm: 560, md: 680 }, maxWidth: '100%' },
+        'data-testid': 'analytics-drilldown-drawer-paper',
+        sx: {
+          width: ANALYTICS_DRILLDOWN_DRAWER_WIDTH,
+          maxWidth: '100vw',
+          display: 'flex',
+          flexDirection: 'column',
+        },
       }}
     >
       <DrawerHeader
@@ -83,7 +98,7 @@ export function AnalyticsDrilldownDrawer({
       <Box
         role="region"
         aria-labelledby="analytics-drilldown-title"
-        sx={{ p: 2.5, overflowY: 'auto', flex: 1 }}
+        sx={{ p: 2.5, overflowY: 'auto', overflowX: 'hidden', flex: 1, minWidth: 0 }}
       >
         {state ? (
           <Typography

@@ -7,6 +7,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableRow,
   Typography,
@@ -138,7 +139,8 @@ export function InventoryDrilldownPanel({
           {emptyChart}
         </Typography>
       ) : (
-        <Paper variant="outlined" sx={{ mb: 2 }}>
+        <Paper variant="outlined" sx={{ mb: 2, overflow: 'hidden' }}>
+          <TableContainer sx={{ overflowX: 'auto' }}>
           <Table size="small" data-testid="analytics-drilldown-inventory-aisles">
             <TableHead>
               <TableRow>
@@ -197,6 +199,7 @@ export function InventoryDrilldownPanel({
               })}
             </TableBody>
           </Table>
+          </TableContainer>
         </Paper>
       )}
 

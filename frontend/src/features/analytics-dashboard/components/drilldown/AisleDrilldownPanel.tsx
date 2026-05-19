@@ -7,6 +7,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableRow,
   Typography,
@@ -157,7 +158,8 @@ export function AisleDrilldownPanel({
           {t('analyticsDashboard.drilldown.noJobs')}
         </Typography>
       ) : (
-        <Paper variant="outlined">
+        <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+          <TableContainer sx={{ overflowX: 'auto' }}>
           <Table size="small" data-testid="analytics-drilldown-jobs-table">
             <TableHead>
               <TableRow>
@@ -184,6 +186,7 @@ export function AisleDrilldownPanel({
               ))}
             </TableBody>
           </Table>
+          </TableContainer>
         </Paper>
       )}
     </Box>

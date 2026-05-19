@@ -4,7 +4,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import { AnalyticsDrilldownDrawer } from '../src/features/analytics-dashboard/components/drilldown/AnalyticsDrilldownDrawer';
+import {
+  ANALYTICS_DRILLDOWN_DRAWER_WIDTH,
+  AnalyticsDrilldownDrawer,
+} from '../src/features/analytics-dashboard/components/drilldown/AnalyticsDrilldownDrawer';
 import {
   buildAisleContributionRows,
   compareNullableCostDesc,
@@ -232,6 +235,18 @@ describe('analyticsDrilldownViewModel', () => {
 });
 
 describe('AnalyticsDrilldownDrawer', () => {
+  it('renders drawer paper with responsive width configuration', () => {
+    renderDrawer({ type: 'inventory', inventoryId: 'inv-test' });
+    expect(screen.getByTestId('analytics-drilldown-drawer-paper')).toBeInTheDocument();
+    expect(ANALYTICS_DRILLDOWN_DRAWER_WIDTH).toMatchObject({
+      xs: '100vw',
+      sm: '92vw',
+      md: 860,
+      lg: 960,
+      xl: 1040,
+    });
+  });
+
   it('renders inventory drilldown with name, cost KPIs, and scope caption', () => {
     renderDrawer({ type: 'inventory', inventoryId: 'inv-test' });
     expect(screen.getByTestId('analytics-drilldown-drawer')).toBeInTheDocument();
@@ -240,6 +255,7 @@ describe('AnalyticsDrilldownDrawer', () => {
     );
     expect(screen.getByText(/Inventario: Test DC/)).toBeInTheDocument();
     const panel = screen.getByTestId('analytics-drilldown-inventory-panel');
+    expect(screen.getByTestId('analytics-drilldown-inventory-kpis')).toBeInTheDocument();
     expect(within(panel).getByText(/20[,.]50/)).toBeInTheDocument();
   });
 
