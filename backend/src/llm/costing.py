@@ -17,12 +17,23 @@ from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
 
+from src.llm.costing_helpers.calculators import (
+    apply_billable_dimensions_to_subtotals as _apply_billable_dimensions_to_subtotals,
+)
+from src.llm.costing_helpers.coercion import as_decimal as _as_decimal
+from src.llm.costing_helpers.coercion import get_first as _get_first
+from src.llm.costing_helpers.coercion import to_int as _to_int
+from src.llm.costing_helpers.constants import MONEY_QUANT as _MONEY_QUANT
+from src.llm.costing_helpers.formatting import (
+    format_computed_cost_block as _format_computed_cost_block,
+)
+from src.llm.costing_helpers.formatting import (
+    format_pricing_snapshot_for_json as _format_pricing_snapshot_for_json,
+)
+
 _PricingConfidence = Literal["operator_approved", "embedded_placeholder", "unknown"]
 
 logger = logging.getLogger(__name__)
-
-_MICRO_UNIT = Decimal("1000000")
-_MONEY_QUANT = Decimal("0.00000001")
 
 # Merged under operator JSON (``LLM_PRICING_CATALOG_JSON``); user entries override on same
 # (provider, model) keys. USD values are deployment placeholders — override via env JSON for
@@ -172,51 +183,6 @@ _EMBEDDED_DEFAULT_LLM_PRICING_CATALOG: dict[str, Any] = {
 
 def _utc_iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _to_int(value: Any) -> int | None:
-    """Parse non-negative int from common JSON/provider shapes (B8.5 — single exit)."""
-    out: int | None = None
-    if value is None or isinstance(value, bool):
-        out = None
-    elif isinstance(value, int):
-        out = max(0, value)
-    elif isinstance(value, float):
-        if value != value:  # NaN
-            out = None
-        else:
-            out = max(0, int(value))
-    elif isinstance(value, str):
-        raw = value.strip()
-        if raw:
-            try:
-                out = max(0, int(raw))
-            except ValueError:
-                out = None
-        else:
-            out = None
-    else:
-        out = None
-    return out
-
-
-def _get_first(raw: dict[str, Any], *keys: str) -> int | None:
-    for key in keys:
-        if key in raw:
-            parsed = _to_int(raw.get(key))
-            if parsed is not None:
-                return parsed
-    return None
-
-
-def _as_decimal(value: Any) -> Decimal | None:
-    if value is None:
-        return None
-    try:
-        dec = Decimal(str(value))
-    except Exception:
-        return None
-    return Decimal("0") if dec < 0 else dec
 
 
 def _apply_openai_input_and_cache_conventions(
@@ -554,51 +520,6 @@ def _load_pricing_catalog(settings: Any) -> dict[str, Any]:
     return out
 
 
-def _compute_per_million(tokens: int, per_million: Decimal) -> Decimal:
-    return (Decimal(tokens) * per_million / _MICRO_UNIT).quantize(
-        _MONEY_QUANT, rounding=ROUND_HALF_UP
-    )
-
-
-def _compute_unit(units: int, unit_cost: Decimal) -> Decimal:
-    return (Decimal(units) * unit_cost).quantize(_MONEY_QUANT, rounding=ROUND_HALF_UP)
-
-
-@dataclass(frozen=True)
-class BillableDimension:
-    usage_key: str
-    pricing_key: str | None
-    subtotal_key: str | None
-    mode: Literal["per_million", "unit", "unpriced"]
-
-
-_BILLABLE_DIMENSIONS: tuple[BillableDimension, ...] = (
-    BillableDimension("input_tokens", "input_cost_per_million", "subtotal_input", "per_million"),
-    BillableDimension("output_tokens", "output_cost_per_million", "subtotal_output", "per_million"),
-    BillableDimension(
-        "cached_input_tokens", "cached_input_cost_per_million", "subtotal_cached", "per_million"
-    ),
-    BillableDimension(
-        "thinking_tokens", "thinking_cost_per_million", "subtotal_thinking", "per_million"
-    ),
-    BillableDimension("tool_requests", "tool_request_unit_cost", "subtotal_tools", "unit"),
-    BillableDimension("image_input_count", "image_input_unit_cost", "subtotal_image", "unit"),
-    BillableDimension(
-        "audio_input_tokens", "audio_input_cost_per_million", "subtotal_audio", "per_million"
-    ),
-    BillableDimension(
-        "video_input_tokens", "video_input_cost_per_million", "subtotal_video", "per_million"
-    ),
-    BillableDimension(
-        "cache_write_tokens",
-        "cache_write_cost_per_million",
-        "subtotal_cache_write",
-        "per_million",
-    ),
-    BillableDimension("image_input_tokens", None, None, "unpriced"),
-)
-
-
 _USAGE_METADATA_KEYS: tuple[str, ...] = (
     "input_tokens",
     "output_tokens",
@@ -614,21 +535,8 @@ _USAGE_METADATA_KEYS: tuple[str, ...] = (
 )
 
 
-def _usage_int(usage: dict[str, Any], key: str) -> int | None:
-    value = usage.get(key)
-    return _to_int(value) if value is not None else None
-
-
 def _has_usage_metadata(usage: dict[str, Any]) -> bool:
     return any(usage.get(key) is not None for key in _USAGE_METADATA_KEYS)
-
-
-def _format_money_optional(value: Decimal | None) -> str | None:
-    """Serialize money-like Decimals as fixed-point strings (avoids ``0E-8`` style output)."""
-    if value is None:
-        return None
-    q = value.quantize(_MONEY_QUANT, rounding=ROUND_HALF_UP)
-    return format(q, "f")
 
 
 def _dedupe_keep_order(items: list[str]) -> list[str]:
@@ -680,44 +588,6 @@ def _derive_billing_usage_and_refine_notes(
             notes.append("usage_assumption:openai_reasoning_tokens_subsumed_by_completion")
 
     return billing
-
-
-def _apply_billable_dimensions_to_subtotals(
-    usage: dict[str, Any],
-    pricing_snapshot: dict[str, Any],
-    subtotals: dict[str, Decimal | None],
-    notes: list[str],
-) -> tuple[bool, bool]:
-    """Accumulate billable dimensions into ``subtotals`` and ``notes`` (mutating). No formula changes."""
-    has_billable_usage_signal = False
-    unpriced_dimension_present = False
-    for dim in _BILLABLE_DIMENSIONS:
-        amount = _usage_int(usage, dim.usage_key)
-        if amount is None:
-            continue
-        if amount > 0:
-            has_billable_usage_signal = True
-
-        if dim.mode == "unpriced":
-            if amount is not None and amount > 0:
-                unpriced_dimension_present = True
-                notes.append(f"billable_dimension_not_priced:{dim.usage_key}")
-            continue
-
-        if dim.pricing_key is None or dim.subtotal_key is None:
-            continue
-        price = pricing_snapshot.get(dim.pricing_key)
-        if price is None:
-            if amount > 0:
-                notes.append(f"billable_dimension_not_priced:{dim.usage_key}")
-            continue
-
-        assert isinstance(price, Decimal)
-        if dim.mode == "per_million":
-            subtotals[dim.subtotal_key] = _compute_per_million(amount, price)
-        elif dim.mode == "unit":
-            subtotals[dim.subtotal_key] = _compute_unit(amount, price)
-    return has_billable_usage_signal, unpriced_dimension_present
 
 
 @dataclass(frozen=True)
@@ -816,47 +686,6 @@ def _build_pricing_snapshot_mutable(ctx: _PricingSnapshotBuildContext) -> dict[s
                 str(ctx.entry.get("thinking_billed_as")).strip() or None
             )
     return pricing_snapshot
-
-
-def _format_pricing_snapshot_for_json(pricing_snapshot: dict[str, Any]) -> dict[str, Any]:
-    keys = (
-        "input_cost_per_million",
-        "output_cost_per_million",
-        "cached_input_cost_per_million",
-        "thinking_cost_per_million",
-        "cache_write_cost_per_million",
-        "tool_request_unit_cost",
-        "image_input_unit_cost",
-        "audio_input_cost_per_million",
-        "video_input_cost_per_million",
-    )
-    formatted = {k: _format_money_optional(pricing_snapshot[k]) for k in keys}
-    return {**pricing_snapshot, **formatted}
-
-
-def _format_computed_cost_block(
-    subtotals: dict[str, Decimal | None],
-    *,
-    total_cost: Decimal | None,
-    partial_total_cost: Decimal | None,
-    billing_currency: str,
-    total_cost_unavailable_reason: str | None,
-) -> dict[str, Any]:
-    return {
-        "subtotal_input": _format_money_optional(subtotals["subtotal_input"]),
-        "subtotal_output": _format_money_optional(subtotals["subtotal_output"]),
-        "subtotal_cached": _format_money_optional(subtotals["subtotal_cached"]),
-        "subtotal_cache_write": _format_money_optional(subtotals.get("subtotal_cache_write")),
-        "subtotal_thinking": _format_money_optional(subtotals["subtotal_thinking"]),
-        "subtotal_tools": _format_money_optional(subtotals["subtotal_tools"]),
-        "subtotal_image": _format_money_optional(subtotals["subtotal_image"]),
-        "subtotal_audio": _format_money_optional(subtotals["subtotal_audio"]),
-        "subtotal_video": _format_money_optional(subtotals["subtotal_video"]),
-        "partial_total_cost": _format_money_optional(partial_total_cost),
-        "total_cost": _format_money_optional(total_cost),
-        "currency": billing_currency,
-        "total_cost_unavailable_reason": total_cost_unavailable_reason,
-    }
 
 
 def _total_cost_unavailable_reason(
