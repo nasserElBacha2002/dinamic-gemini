@@ -21,8 +21,13 @@ from src.application.dto.analytics_cost_dto import (
 from src.application.dto.analytics_dto import AnalyticsFilters
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
 from src.application.services.analytics_aggregation_core import _ts_in_range
-from src.application.services.analytics_cost_counted_quantity import AnalyticsCostCountedQuantityService
-from src.application.services.analytics_cost_snapshot_parser import ParsedCostSnapshot, parse_llm_cost_snapshot
+from src.application.services.analytics_cost_counted_quantity import (
+    AnalyticsCostCountedQuantityService,
+)
+from src.application.services.analytics_cost_snapshot_parser import (
+    ParsedCostSnapshot,
+    parse_llm_cost_snapshot,
+)
 from src.application.services.analytics_cost_warnings import (
     COST_PER_UNIT_NOT_AVAILABLE,
     COST_SNAPSHOT_MISSING_FOR_SOME_JOBS,
@@ -35,9 +40,9 @@ from src.application.services.analytics_cost_warnings import (
 )
 from src.application.services.analytics_query_service import validate_analytics_filters_scope
 from src.application.services.observability_metrics_service import (
+    AISLE_TARGET,
     METRICS_JOB_LIMIT,
     PROCESS_AISLE_JOB_TYPE,
-    AISLE_TARGET,
     ObservabilityMetricsFilters,
     _client_supplier_for_job,
     _h4_snapshot,

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from src.api.constants.error_wire import (
     HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO,
 )
-from src.api.dependencies import get_analytics_cost_summary_service, get_aisle_repo
+from src.api.dependencies import get_aisle_repo, get_analytics_cost_summary_service
 from src.api.server import app
 from src.application.dto.analytics_cost_dto import (
     AnalyticsCostByCaptureStatusDTO,

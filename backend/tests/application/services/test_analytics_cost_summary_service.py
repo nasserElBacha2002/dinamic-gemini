@@ -23,6 +23,7 @@ from src.application.services.analytics_cost_warnings import (
     INVALID_COMPUTED_COST_PRESENT,
     PROVIDER_MODEL_UNIT_COST_NOT_AVAILABLE,
 )
+from src.application.services.result_context_resolver import ResultContextResolver
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
@@ -35,7 +36,6 @@ from src.infrastructure.repositories.memory_position_repository import MemoryPos
 from src.infrastructure.repositories.memory_product_record_repository import (
     MemoryProductRecordRepository,
 )
-from src.application.services.result_context_resolver import ResultContextResolver
 
 
 def _utc(**kwargs) -> datetime:
