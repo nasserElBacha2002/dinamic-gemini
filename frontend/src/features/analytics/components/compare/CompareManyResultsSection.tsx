@@ -1,4 +1,7 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { buildDifferenceSummary } from '../../compare/compareBenchmarkViewModel';
+import CompareDifferenceSummary from '../../compare/components/CompareDifferenceSummary';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Alert, Box, Button, Paper, Typography } from '@mui/material';
@@ -40,6 +43,7 @@ type CompareManyComparison = {
     execution_time_delta?: number | null;
   };
   diff_rows: CompareManyDiffRow[];
+  diff_rows_truncated: boolean;
 };
 
 type CompareManyResultsSectionProps = {
@@ -211,11 +215,15 @@ export default function CompareManyResultsSection({
   diffSummaryLabel,
   labels,
 }: CompareManyResultsSectionProps) {
+  const { t } = useTranslation();
+
   return (
     <>
       {orderedComparisons.map((comp) => {
         const expanded = expandedTargetJobId === comp.target_job_id;
         const diffRowsLoading = expanded && isEnrichedFetching && !hasEnrichedData;
+        const hasDiffRowsLoaded = expanded && hasEnrichedData && !diffRowsLoading;
+        const differenceSummary = buildDifferenceSummary(comp, hasDiffRowsLoaded, t);
         const noDifferences =
           comp.diff_summary.keys_only_in_a === 0 &&
           comp.diff_summary.keys_only_in_b === 0 &&
@@ -244,6 +252,8 @@ export default function CompareManyResultsSection({
                 {labels.targetNonIdealStatus}
               </Alert>
             ) : null}
+
+            <CompareDifferenceSummary model={differenceSummary} />
 
             <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' } }}>
               <Typography sx={{ color: semanticColor(comp.delta.needs_review_diff, true) }}>

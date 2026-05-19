@@ -1,16 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  buildCompareBenchmarkCharts,
+  buildCompareExecutiveSummary,
+  buildDeltaKpiModels,
+  buildRunBenchmarkCards,
+} from './compareBenchmarkViewModel';
+import CompareBenchmarkCharts from './components/CompareBenchmarkCharts';
+import CompareBenchmarkRunCards from './components/CompareBenchmarkRunCards';
+import CompareContextWarnings from './components/CompareContextWarnings';
+import CompareDeltaKpiRow from './components/CompareDeltaKpiRow';
+import CompareExecutiveSummary from './components/CompareExecutiveSummary';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Box, Button, Typography } from '@mui/material';
 import { PageHeader } from '../../../components/shell';
 import { useAisleBenchmarkCompareMany, useAisleJobsList, useAislesList, useInventoryDetail } from '../../../hooks';
 import { getVisibleErrorMessage } from '../../../utils/apiErrors';
-import { getJobStatusLabel } from '../../../utils/jobStatus';
 import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompareMany } from '../../../constants/appRoutes';
-import { formatExecutionDurationHuman, formatSignedDurationHuman } from '../../../utils/benchmarkExecutionTime';
+import { formatSignedDurationHuman } from '../../../utils/benchmarkExecutionTime';
 import { MAX_COMPARE_JOBS } from '../constants/compareManyRuns';
 import { buildDraftError } from './compareManyRunsDraft';
-import { compareRunExecutionLabel } from '../adapters/compareFormatters';
 import { formatBaselineVsTargetFromRuns } from '../adapters/compareRunLabels';
 import {
   buildJobsById,
@@ -26,8 +35,6 @@ import CompareErrorState from '../components/compare/CompareErrorState';
 import CompareLoadingState from '../components/compare/CompareLoadingState';
 import CompareNotice from '../components/compare/CompareNotice';
 import CompareManyRunDraftPanel from '../components/compare/CompareManyRunDraftPanel';
-import CompareManySummaryCards from '../components/compare/CompareManySummaryCards';
-import CompareManyJobCardsGrid from '../components/compare/CompareManyJobCardsGrid';
 import CompareManyResultsSection from '../components/compare/CompareManyResultsSection';
 import {
   type CompareManyRunsWorkspaceMode,
@@ -128,6 +135,24 @@ export function CompareManyRunsWorkspace({
   const orderedJobIds = orderJobsForDisplay(applied.jobIds, applied.baseline);
   const jobsById = buildJobsById(effectiveData);
   const orderedComparisons = buildOrderedComparisons(effectiveData, orderedJobIds);
+
+  const benchmarkExecutiveSummary = useMemo(
+    () => (effectiveData ? buildCompareExecutiveSummary(effectiveData, t) : null),
+    [effectiveData, t]
+  );
+  const benchmarkRunCards = useMemo(
+    () => (effectiveData ? buildRunBenchmarkCards(effectiveData, orderedJobIds, t) : []),
+    [effectiveData, orderedJobIds, t]
+  );
+  const benchmarkDeltaRows = useMemo(
+    () =>
+      effectiveData ? buildDeltaKpiModels(effectiveData, jobsById, orderedComparisons, t) : [],
+    [effectiveData, jobsById, orderedComparisons, t]
+  );
+  const benchmarkCharts = useMemo(
+    () => (effectiveData ? buildCompareBenchmarkCharts(effectiveData, orderedJobIds, t) : null),
+    [effectiveData, orderedJobIds, t]
+  );
 
   const compareError = compareQuery.error || enrichedCompareManyQuery.error;
   const compareErrorMessage =
@@ -261,44 +286,18 @@ export function CompareManyRunsWorkspace({
       ) : null}
 
       {effectiveData ? (
-        <Box data-testid="compare-many-results" sx={{ display: 'grid', gap: 2 }}>
-          <CompareManySummaryCards
-            summaryTitle={t('compare_many.summary_title')}
-            summaryNotRanking={t('compare_many.summary_not_ranking')}
-            summaryValuesText={t('compare_many.summary_values', {
-              jobs: effectiveData.summary.job_count,
-              qtyMin: effectiveData.summary.min_total_quantity,
-              qtyMax: effectiveData.summary.max_total_quantity,
-              reviewMin: effectiveData.summary.min_needs_review,
-              reviewMax: effectiveData.summary.max_needs_review,
-              consolidatedMin: effectiveData.summary.min_consolidated_positions,
-              consolidatedMax: effectiveData.summary.max_consolidated_positions,
-              unknownMin: effectiveData.summary.min_unknown_internal_code_count,
-              unknownMax: effectiveData.summary.max_unknown_internal_code_count,
-            })}
-            executionCaption={
-              effectiveData.summary.min_execution_time_seconds != null &&
-              effectiveData.summary.max_execution_time_seconds != null
-                ? t('compare_many.summary_exec_range', {
-                    min: formatExecutionDurationHuman(effectiveData.summary.min_execution_time_seconds),
-                    max: formatExecutionDurationHuman(effectiveData.summary.max_execution_time_seconds),
-                  })
-                : t('compare_many.summary_exec_unavailable')
-            }
-          />
+        <Box data-testid="compare-many-results" sx={{ display: 'grid', gap: isEmbedded ? 1.5 : 2 }}>
+          <CompareContextWarnings data={effectiveData} compact={isEmbedded} />
 
-          <CompareManyJobCardsGrid
-            orderedJobIds={orderedJobIds}
-            jobsById={jobsById}
-            baselineJobId={effectiveData.baseline_job_id}
-            baselineChipLabel={t('compare_many.baseline_chip')}
-            statusChipLabel={(status) => t('compare_many.status_chip', { status: getJobStatusLabel(status) })}
-            executionTimeLabel={(value) => t('compare_many.job_execution_time', { value })}
-            executionTimeValue={(job) => compareRunExecutionLabel(job, t)}
-            metricsLabel={({ qty, review, unknown, consolidated }) =>
-              t('compare_many.job_metrics', { qty, review, unknown, consolidated })
-            }
-          />
+          {benchmarkExecutiveSummary ? (
+            <CompareExecutiveSummary model={benchmarkExecutiveSummary} compact={isEmbedded} />
+          ) : null}
+
+          <CompareBenchmarkRunCards cards={benchmarkRunCards} compact={isEmbedded} />
+
+          <CompareDeltaKpiRow rows={benchmarkDeltaRows} compact={isEmbedded} />
+
+          {benchmarkCharts ? <CompareBenchmarkCharts charts={benchmarkCharts} compact={isEmbedded} /> : null}
 
           <CompareDeltaLegend
             title={t('compare_many.delta_legend_title')}
