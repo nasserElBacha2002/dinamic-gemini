@@ -54,7 +54,7 @@ export function AisleDrilldownPanel({
 }: AisleDrilldownPanelProps) {
   const { t } = useTranslation();
   const aisle = findAisleIssueRow(analytics.aisleIssues?.items, inventoryId, aisleId);
-  const costRow = lookupAisleCost(costSummary, aisleId);
+  const costRow = lookupAisleCost(costSummary, inventoryId, aisleId);
   const hasAisleContext = Boolean(aisle || costRow);
   const warnings = useMemo(() => buildDrilldownWarnings(costSummary, t), [costSummary, t]);
   const compareEligibility = getCompareEligibilityForInventory(inventoryProcessingModeById, inventoryId);

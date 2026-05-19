@@ -9,6 +9,7 @@ import {
   formatCostCell,
   type MetricCardModel,
 } from './analyticsCostViewModel';
+import { buildAisleEntityKey } from './aisleEntityKeys';
 import { CHART_TOP_N } from './analyticsChartDatasets';
 import { getCompareEligibility, type CompareEligibility } from '../types';
 
@@ -78,7 +79,7 @@ export function buildAisleContributionRows(
   const costByAisle = buildCostByAisleLookup(costSummary);
   return filterAislesForInventory(aisleIssues, inventoryId)
     .map((row) => {
-      const cost = costByAisle.get(row.aisle_id);
+      const cost = costByAisle.get(buildAisleEntityKey(row.inventory_id, row.aisle_id));
       return {
         aisleId: row.aisle_id,
         aisleCode: row.aisle_code,
@@ -277,9 +278,10 @@ export function lookupInventoryCost(
 
 export function lookupAisleCost(
   costSummary: AnalyticsCostSummaryResponse | null | undefined,
+  inventoryId: string,
   aisleId: string
 ) {
-  return buildCostByAisleLookup(costSummary).get(aisleId);
+  return buildCostByAisleLookup(costSummary).get(buildAisleEntityKey(inventoryId, aisleId));
 }
 
 export type DrilldownJobRow = {

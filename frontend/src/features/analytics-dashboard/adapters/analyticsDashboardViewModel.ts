@@ -5,7 +5,7 @@ import { buildMetricsKpiCards, type MetricsKpiCardViewModel } from '../../analyt
 import { formatPct, numberOrZero } from '../../analytics/adapters/metricsFormatters';
 import type { AnalyticsCostSummaryResponse } from '../../../api/types';
 import { formatMetricValue } from './analyticsCostFormatters';
-import type { MetricsKpiCardView } from '../../analytics/components/MetricsKpiSection';
+import type { MetricsKpiCardView } from '../../analytics/adapters/metricsViewModel';
 
 export interface DashboardKpiCardModel extends MetricsKpiCardView {
   grainLabel?: string;

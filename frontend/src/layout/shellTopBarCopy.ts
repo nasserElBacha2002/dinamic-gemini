@@ -42,13 +42,10 @@ export function topBarCopy(pathname: string): { titleKey: string; subtitleKey?: 
       subtitleKey: 'analyticsDashboard.subtitle',
     };
   }
-  if (pathname === ROUTE_METRICS) {
-    return { titleKey: 'routes.metrics.title', subtitleKey: 'routes.metrics.subtitle' };
-  }
-  if (pathname === ROUTE_OBSERVABILIDAD) {
+  if (pathname === ROUTE_METRICS || pathname === ROUTE_OBSERVABILIDAD) {
     return {
-      titleKey: 'routes.observability_metrics.title',
-      subtitleKey: 'routes.observability_metrics.subtitle',
+      titleKey: 'analyticsDashboard.title',
+      subtitleKey: 'analyticsDashboard.subtitle',
     };
   }
   if (pathname === ROUTE_CLIENTS) {

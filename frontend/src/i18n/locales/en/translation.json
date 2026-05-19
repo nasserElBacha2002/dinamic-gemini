@@ -218,9 +218,6 @@
     "context_aisle_not_selected": "Context aisle not selected",
     "context_inventory_label": "Context inventory label",
     "context_runs_label": "Context runs label",
-    "empty_aisle_metrics": "Empty aisle metrics",
-    "empty_inventory_performance": "Empty inventory performance",
-    "empty_quality_filter": "Empty quality filter",
     "filter_options_load_failed": "Filter options load failed",
     "intervention_unavailable_chip": "Intervention unavailable chip",
     "inventory_performance_subtitle": "Inventory performance subtitle",
@@ -1255,8 +1252,6 @@
     "inventories": "Inventories",
     "ingestion_sessions": "Import sessions",
     "analytics": "Analytics",
-    "metrics": "Metrics",
-    "observability": "Observability",
     "clients": "Clients",
     "ai_config": "AI configuration"
   },
@@ -1283,10 +1278,6 @@
     "result_review": {
       "title": "Result review",
       "subtitle": "Review evidence and apply operator actions"
-    },
-    "metrics": {
-      "title": "Metrics",
-      "subtitle": "Operational performance and quality trends"
     },
     "ingestion_sessions": {
       "title": "Import sessions",
