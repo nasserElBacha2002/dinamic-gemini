@@ -2,6 +2,7 @@ import type { TFunction } from 'i18next';
 import type { AnalyticsCostSummaryResponse } from '../../../api/types';
 import type { ObservabilityMetricsResponse } from '../../../api/types';
 import type { AnalyticsSummaryResponse, AisleIssueRow, InventoryPerformanceRow, QualityPatternRow } from '../../analytics/types';
+import type { DonutSegment } from '../components/charts/DonutChart';
 import { captureStatusLabel } from './analyticsCostFormatters';
 import { formatLlmCostAmount, formatMetricValue } from './analyticsCostFormatters';
 
@@ -177,6 +178,57 @@ export function buildProviderRunVolumeChartData(
     (r) => r.runs_total,
     (r) => `${r.provider_name ?? '—'} / ${r.model_name ?? '—'}`,
     (r, i) => `vol-${r.provider_name ?? ''}-${r.model_name ?? ''}-${i}`,
-    (v) => formatMetricValue(v, 'integer')
+    (v) => formatMetricValue(v, 'integer'),
+    3
   );
+}
+
+export function buildCaptureStatusDonutSegments(
+  data: AnalyticsCostSummaryResponse | null | undefined,
+  t: TFunction
+): DonutSegment[] {
+  return buildCaptureStatusChartData(data, t).map((row) => ({
+    id: row.id,
+    label: row.label,
+    value: row.value,
+    displayValue: row.displayValue,
+  }));
+}
+
+export function buildAutoVsManualDonutSegments(
+  summary: AnalyticsSummaryResponse | null | undefined,
+  t: TFunction
+): DonutSegment[] {
+  return buildAutoVsManualSegments(summary, t).map((seg) => ({
+    id: seg.id,
+    label: seg.label,
+    value: seg.value,
+    displayValue: `${seg.pct.toFixed(1)} %`,
+  }));
+}
+
+export function buildTopProviderInsight(
+  data: ObservabilityMetricsResponse | null | undefined
+): { label: string; runs: number } | null {
+  const ranked = buildProviderRunVolumeChartData(data);
+  const top = ranked[0];
+  if (!top) return null;
+  return { label: top.label, runs: top.value };
+}
+
+export function buildSlowestInventoryInsight(
+  rows: readonly InventoryPerformanceRow[]
+): { name: string; minutes: number } | null {
+  const ranked = buildProcessingTimeByInventoryData(rows);
+  const top = ranked[0];
+  if (!top) return null;
+  const minutes = parseFloat(top.displayValue.replace(/[^\d.]/g, ''));
+  return { name: top.label, minutes: Number.isFinite(minutes) ? minutes : 0 };
+}
+
+export function buildPrimaryQualityIssue(
+  rows: readonly QualityPatternRow[]
+): string | null {
+  const ranked = buildQualityIssueChartData(rows);
+  return ranked[0]?.label ?? null;
 }

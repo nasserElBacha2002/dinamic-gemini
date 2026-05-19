@@ -3,12 +3,14 @@ import { render, screen } from '@testing-library/react';
 import {
   buildAutoVsManualSegments,
   buildCaptureStatusChartData,
+  buildCaptureStatusDonutSegments,
   buildCostByProviderChartData,
   buildProviderRunVolumeChartData,
   buildQualityIssueChartData,
 } from '../src/features/analytics-dashboard/adapters/analyticsChartDatasets';
 import { SegmentBarChart } from '../src/features/analytics-dashboard/components/charts/SegmentBarChart';
 import { HorizontalBarChart } from '../src/features/analytics-dashboard/components/charts/HorizontalBarChart';
+import { DonutChart } from '../src/features/analytics-dashboard/components/charts/DonutChart';
 import i18n from '../src/i18n';
 
 describe('analyticsChartDatasets', () => {
@@ -61,6 +63,22 @@ describe('analyticsChartDatasets', () => {
       i18n.t
     );
     expect(data[0]?.label).toBe('Exacto');
+  });
+
+  it('builds capture status donut segments', () => {
+    const segments = buildCaptureStatusDonutSegments(
+      {
+        scope: {},
+        totals: {} as never,
+        by_provider_model: [],
+        by_inventory: [],
+        by_aisle: [],
+        by_capture_status: [{ capture_status: 'exact', jobs_total: 3, total_cost: 1 }],
+        warnings: [],
+      },
+      i18n.t
+    );
+    expect(segments[0]?.displayValue).toBeTruthy();
   });
 
   it('builds quality issue chart from counts', () => {
@@ -128,5 +146,24 @@ describe('chart components', () => {
       />
     );
     expect(screen.getByRole('img', { name: 'Gráfico de barras de prueba' })).toBeInTheDocument();
+  });
+
+  it('renders donut chart with accessible label', () => {
+    render(
+      <DonutChart
+        segments={[
+          { id: 'a', label: 'Exacto', value: 3, displayValue: '3' },
+          { id: 'b', label: 'Estimado', value: 2, displayValue: '2' },
+        ]}
+        emptyText="Sin datos"
+        data-testid="donut-a11y"
+      />
+    );
+    expect(screen.getByRole('img', { name: /Exacto 3/ })).toBeInTheDocument();
+  });
+
+  it('shows donut empty state when no segments', () => {
+    render(<DonutChart segments={[]} emptyText="Sin datos para donut" data-testid="donut-empty" />);
+    expect(screen.getByTestId('donut-empty-empty')).toHaveTextContent('Sin datos para donut');
   });
 });

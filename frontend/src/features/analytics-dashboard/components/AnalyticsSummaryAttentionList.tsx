@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
-import { Box, Button, Link as MuiLink, Tooltip, Typography } from '@mui/material';
+import { Box, Link as MuiLink, Tooltip, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import type { AisleIssueRow } from '../../analytics/types';
-import { pathToAislePositions, pathToInventoryAnalyticsCompareMany } from '../../../constants/appRoutes';
+import { pathToInventoryAnalyticsCompareMany } from '../../../constants/appRoutes';
 import { compareEligibilityTooltipKey, getCompareEligibility } from '../types';
 
 export interface AnalyticsSummaryAttentionListProps {
@@ -31,7 +31,7 @@ export function AnalyticsSummaryAttentionList({
   return (
     <Box
       component="ul"
-      sx={{ listStyle: 'none', m: 0, p: 0, display: 'flex', flexDirection: 'column', gap: 1 }}
+      sx={{ listStyle: 'none', m: 0, p: 0, display: 'flex', flexDirection: 'column', gap: 0.75 }}
       data-testid="analytics-summary-attention-list"
     >
       {rows.map((row) => {
@@ -48,61 +48,63 @@ export function AnalyticsSummaryAttentionList({
             component="li"
             key={`${row.inventory_id}-${row.aisle_id}`}
             sx={{
-              display: 'flex',
-              flexWrap: 'wrap',
+              display: 'grid',
+              gridTemplateColumns: '1fr auto',
               alignItems: 'center',
-              justifyContent: 'space-between',
               gap: 1,
-              py: 1,
-              px: 1.25,
-              border: 1,
+              py: 0.75,
+              borderBottom: 1,
               borderColor: 'divider',
-              borderRadius: 1,
+              '&:last-child': { borderBottom: 0 },
             }}
             data-testid={`analytics-overview-aisle-${row.aisle_id}`}
           >
-            <Box sx={{ minWidth: 0, flex: '1 1 12rem' }}>
+            <Box sx={{ minWidth: 0 }}>
               <Typography variant="body2" fontWeight={600} noWrap>
-                <MuiLink
-                  component={RouterLink}
-                  to={pathToAislePositions(row.inventory_id, row.aisle_id)}
-                  underline="hover"
-                >
-                  {row.aisle_code}
-                </MuiLink>
+                {row.aisle_code}
                 <Typography component="span" variant="body2" color="text.secondary" fontWeight={400}>
                   {' · '}
                   {row.inventory_name}
                 </Typography>
               </Typography>
               <Typography variant="caption" color="text.secondary" display="block" noWrap>
+                {row.most_common_issue
+                  ? t('analyticsDashboard.visual.attentionPrimaryIssue', { issue: row.most_common_issue })
+                  : t('analyticsDashboard.visual.attentionNoPrimaryIssue')}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block">
                 {t('analyticsDashboard.visual.attentionReviewRequired', { count: row.needs_review_count })}
-                {row.most_common_issue ? ` · ${row.most_common_issue}` : ''}
               </Typography>
             </Box>
-            <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0 }}>
-              <Button
-                size="small"
-                variant="text"
+            <Box sx={{ display: 'flex', gap: 1, flexShrink: 0, alignItems: 'center' }}>
+              <MuiLink
+                component="button"
+                type="button"
+                variant="body2"
+                underline="hover"
                 onClick={() => onOpenAisleDrilldown(row.inventory_id, row.aisle_id)}
                 data-testid={`overview-aisle-drilldown-${row.aisle_id}`}
+                sx={{ cursor: 'pointer', border: 0, bgcolor: 'transparent', p: 0 }}
               >
-                {t('analyticsDashboard.drilldown.openAnalytics')}
-              </Button>
-              <Tooltip title={compareTooltip}>
-                <span>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    component={eligibility.allowed ? RouterLink : 'button'}
-                    to={eligibility.allowed ? compareHref : undefined}
-                    disabled={!eligibility.allowed}
-                    data-testid={`overview-aisle-compare-${row.aisle_id}`}
-                  >
-                    {t('analyticsDashboard.inventories.compareRuns')}
-                  </Button>
-                </span>
-              </Tooltip>
+                {t('analyticsDashboard.summary.viewAction')}
+              </MuiLink>
+              {eligibility.allowed ? (
+                <MuiLink
+                  component={RouterLink}
+                  to={compareHref}
+                  variant="body2"
+                  underline="hover"
+                  data-testid={`overview-aisle-compare-${row.aisle_id}`}
+                >
+                  {t('analyticsDashboard.summary.compareAction')}
+                </MuiLink>
+              ) : compareTooltip ? (
+                <Tooltip title={compareTooltip}>
+                  <Typography variant="caption" color="text.disabled" component="span">
+                    {t('analyticsDashboard.summary.compareAction')}
+                  </Typography>
+                </Tooltip>
+              ) : null}
             </Box>
           </Box>
         );

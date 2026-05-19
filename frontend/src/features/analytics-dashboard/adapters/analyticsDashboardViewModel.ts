@@ -2,7 +2,9 @@ import type { TFunction } from 'i18next';
 import type { ObservabilityMetricsResponse } from '../../../api/types';
 import type { AnalyticsSummaryResponse } from '../../analytics/types';
 import { buildMetricsKpiCards, type MetricsKpiCardViewModel } from '../../analytics/adapters/metricsViewModel';
-import { numberOrZero } from '../../analytics/adapters/metricsFormatters';
+import { formatPct, numberOrZero } from '../../analytics/adapters/metricsFormatters';
+import type { AnalyticsCostSummaryResponse } from '../../../api/types';
+import { formatMetricValue } from './analyticsCostFormatters';
 import type { MetricsKpiCardView } from '../../analytics/components/MetricsKpiSection';
 
 export interface DashboardKpiCardModel extends MetricsKpiCardView {
@@ -12,6 +14,17 @@ export interface DashboardKpiCardModel extends MetricsKpiCardView {
 
 /** Max KPI tiles per executive group on the Summary (Resumen) tab. */
 export const EXECUTIVE_SUMMARY_KPI_LIMIT = 4;
+
+/** Max KPI tiles in the Resumen executive hero (3 primary + 3 secondary). */
+export const HERO_EXECUTIVE_KPI_LIMIT = 6;
+
+export interface HeroKpiModel {
+  id: string;
+  label: string;
+  value: string;
+  tier: 'primary' | 'secondary';
+  unavailable?: boolean;
+}
 
 function pctObs(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return '—';
@@ -88,6 +101,76 @@ export function buildExecutiveRunKpis(
   t: TFunction
 ): DashboardKpiCardModel[] {
   return buildRunSummaryKpis(data, t).slice(0, EXECUTIVE_SUMMARY_KPI_LIMIT);
+}
+
+export function buildHeroExecutiveKpis(
+  summary: AnalyticsSummaryResponse | null | undefined,
+  observability: ObservabilityMetricsResponse | null | undefined,
+  costSummary: AnalyticsCostSummaryResponse | null | undefined,
+  t: TFunction,
+  options: { costAvailable: boolean }
+): HeroKpiModel[] {
+  const totals = observability?.totals;
+  const costTotals = costSummary?.totals;
+  const unavailable = t('analyticsDashboard.costs.notAvailable');
+
+  const primary: HeroKpiModel[] = [
+    {
+      id: 'processed',
+      label: t('analyticsDashboard.kpi_positions_processed'),
+      value: String(numberOrZero(summary?.processed_positions_count)),
+      tier: 'primary',
+    },
+    {
+      id: 'total-cost',
+      label: t('analyticsDashboard.costs.totalCost'),
+      value:
+        options.costAvailable && costTotals?.total_cost != null
+          ? formatMetricValue(costTotals.total_cost, 'cost')
+          : unavailable,
+      tier: 'primary',
+      unavailable: !options.costAvailable || costTotals?.total_cost == null,
+    },
+    {
+      id: 'auto-accept',
+      label: t('analytics.kpi_auto_accept_title'),
+      value: formatPct(summary?.auto_acceptance_rate),
+      tier: 'primary',
+    },
+  ];
+
+  const costPerUnit =
+    options.costAvailable && costTotals?.cost_per_counted_unit != null
+      ? formatMetricValue(costTotals.cost_per_counted_unit, 'costPerUnit')
+      : costTotals?.total_counted_quantity != null
+        ? formatMetricValue(costTotals.total_counted_quantity, 'quantity')
+        : unavailable;
+
+  const secondary: HeroKpiModel[] = [
+    {
+      id: 'cost-per-unit',
+      label: t('analyticsDashboard.costs.costPerUnit'),
+      value: costPerUnit,
+      tier: 'secondary',
+      unavailable:
+        !options.costAvailable ||
+        (costTotals?.cost_per_counted_unit == null && costTotals?.total_counted_quantity == null),
+    },
+    {
+      id: 'runs-succeeded',
+      label: t('observability.metrics.kpiSucceeded'),
+      value: totals?.runs_succeeded != null ? String(totals.runs_succeeded) : '—',
+      tier: 'secondary',
+    },
+    {
+      id: 'failure-rate',
+      label: t('observability.metrics.kpiFailureRate'),
+      value: pctObs(totals?.failure_rate),
+      tier: 'secondary',
+    },
+  ];
+
+  return [...primary, ...secondary].slice(0, HERO_EXECUTIVE_KPI_LIMIT);
 }
 
 export function buildRunSummaryKpis(

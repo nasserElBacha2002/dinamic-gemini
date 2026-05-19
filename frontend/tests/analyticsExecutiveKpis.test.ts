@@ -1,10 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildExecutivePositionKpis,
-  buildExecutiveRunKpis,
-  buildRunSummaryKpis,
-  buildPositionSummaryKpis,
-  EXECUTIVE_SUMMARY_KPI_LIMIT,
+  buildHeroExecutiveKpis,
+  HERO_EXECUTIVE_KPI_LIMIT,
 } from '../src/features/analytics-dashboard/adapters/analyticsDashboardViewModel';
 import { buildTopAislesAttention, SUMMARY_ATTENTION_TOP_N } from '../src/features/analytics-dashboard/adapters/analyticsChartDatasets';
 import i18n from '../src/i18n';
@@ -37,20 +34,41 @@ const observability = {
   by_provider_model: [],
 };
 
-describe('executive summary KPI limits', () => {
-  it('limits position executive KPIs to four tiles', () => {
-    const executive = buildExecutivePositionKpis(summary, true, i18n.t);
-    const full = buildPositionSummaryKpis(summary, true, i18n.t);
-    expect(executive.length).toBeLessThanOrEqual(EXECUTIVE_SUMMARY_KPI_LIMIT);
-    expect(full.length).toBeGreaterThan(executive.length);
-    expect(executive.map((k) => k.label)).toContain(i18n.t('analyticsDashboard.kpi_positions_processed'));
+const costSummary = {
+  scope: {},
+  totals: {
+    total_cost: 24.82,
+    total_counted_quantity: 100,
+    cost_per_counted_unit: 0.25,
+    jobs_with_cost: 5,
+    jobs_without_cost: 1,
+  },
+  by_provider_model: [],
+  by_inventory: [],
+  by_aisle: [],
+  by_capture_status: [],
+  warnings: [],
+};
+
+describe('hero executive KPIs', () => {
+  it('returns exactly six hero KPIs', () => {
+    const hero = buildHeroExecutiveKpis(summary, observability as never, costSummary as never, i18n.t, {
+      costAvailable: true,
+    });
+    expect(hero).toHaveLength(HERO_EXECUTIVE_KPI_LIMIT);
+    expect(hero.filter((k) => k.tier === 'primary')).toHaveLength(3);
+    expect(hero.filter((k) => k.tier === 'secondary')).toHaveLength(3);
   });
 
-  it('limits run executive KPIs to four tiles', () => {
-    const executive = buildExecutiveRunKpis(observability as never, i18n.t);
-    const full = buildRunSummaryKpis(observability as never, i18n.t);
-    expect(executive).toHaveLength(EXECUTIVE_SUMMARY_KPI_LIMIT);
-    expect(full.length).toBeGreaterThan(executive.length);
+  it('excludes low-priority diagnostic KPIs from hero', () => {
+    const hero = buildHeroExecutiveKpis(summary, observability as never, costSummary as never, i18n.t, {
+      costAvailable: true,
+    });
+    const labels = hero.map((k) => k.label);
+    expect(labels).not.toContain(i18n.t('analytics.kpi_unidentified_title'));
+    expect(labels).not.toContain(i18n.t('analytics.kpi_invalid_tr_title'));
+    expect(labels).not.toContain(i18n.t('observability.metrics.kpiLegacy'));
+    expect(labels).not.toContain(i18n.t('analyticsDashboard.kpi_jobs_without_snapshot'));
   });
 
   it('limits summary attention aisles to top three', () => {

@@ -322,32 +322,36 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getByText('Tasa de autoaceptación')).toBeInTheDocument();
   });
 
-  it('renders KPI cards from observability mocked data', () => {
+  it('renders hero KPI cards from observability mocked data', () => {
     renderPage();
-    const strip = screen.getByTestId('analytics-executive-kpi-strip');
-    expect(within(strip).getByText('Procesamientos')).toBeInTheDocument();
-    expect(within(strip).getByText('Tasa de error')).toBeInTheDocument();
+    const hero = screen.getByTestId('analytics-executive-hero');
+    expect(within(hero).getByText('Exitosos')).toBeInTheDocument();
+    expect(within(hero).getByText('Tasa de error')).toBeInTheDocument();
+    expect(screen.getAllByTestId(/analytics-hero-kpi-/).length).toBeLessThanOrEqual(6);
   });
 
-  it('renders executive KPI strip and cost visual section on overview', () => {
+  it('renders executive hero and compact summary panels on overview', () => {
     renderPage();
     expect(screen.getByTestId('analytics-overview-tab')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-summary-hero-title')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-executive-kpi-strip')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-cost-visual-section')).toBeInTheDocument();
-    expect(within(screen.getByTestId('analytics-executive-kpi-strip')).getByText(/24[,.]82/)).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-chart-cost-provider')).toBeInTheDocument();
-    const positionGroup = screen.getByTestId('analytics-executive-kpi-group-positions');
-    expect(within(positionGroup).getAllByText('Posiciones procesadas').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('analytics-executive-hero')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-summary-cost-insight')).toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-cost-visual-section')).not.toBeInTheDocument();
+    expect(screen.getByTestId('analytics-summary-cost-donut')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-summary-cost-provider-bars')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-hero-kpi-total-cost')).toHaveTextContent(/24[,.]82/);
+    expect(screen.queryByText('Producto sin identificar')).not.toBeInTheDocument();
     expect(screen.queryByText('Éxito de procesamiento')).not.toBeInTheDocument();
   });
 
-  it('shows compact attention list with chart sections on overview', () => {
+  it('shows compact attention list with donut charts and section CTAs on overview', () => {
     renderPage();
     expect(screen.getByTestId('analytics-summary-attention-list')).toBeInTheDocument();
     expect(screen.getAllByTestId(/analytics-overview-aisle-/).length).toBeLessThanOrEqual(3);
     expect(screen.getByTestId('analytics-chart-processing-trend')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-chart-auto-manual')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-summary-quality-donut')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-summary-panel-cost-cta')).toHaveAttribute('href', '/analitica?tab=costos');
+    expect(screen.getByTestId('overview-aisle-drilldown-a-1')).toBeInTheDocument();
   });
 
   it('renders compact data quality summary when cost warnings exist', () => {
@@ -362,8 +366,8 @@ describe('AnalyticsDashboardPage', () => {
       costSummary: { data: undefined, isLoading: false, isError: false, error: null, refetch: vi.fn() },
     });
     renderPage();
-    expect(screen.getAllByText('Pendiente de backend').length).toBeGreaterThan(0);
-    expect(screen.getByText('Costo total')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-hero-kpi-total-cost')).toHaveTextContent('No disponible');
+    expect(screen.queryByTestId('analytics-summary-panel-cost')).not.toBeInTheDocument();
   });
 
   it('shows cost partial failure without hiding position metrics', () => {
@@ -558,17 +562,15 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getAllByText('Cargando…').length).toBeGreaterThan(0);
   });
 
-  it('shows cost KPI skeleton and chart loading on overview while cost summary loads', () => {
+  it('shows hero skeleton and cost panel loading on overview while cost summary loads', () => {
     setupMocksWithDashboardData({
       isCostSummaryLoading: true,
       costSummary: { data: undefined, isLoading: true, isError: false, error: null, refetch: vi.fn() },
     });
     renderPage();
-    const strip = screen.getByTestId('analytics-executive-kpi-strip');
-    expect(within(strip).getByText('16')).toBeInTheDocument();
-    expect(within(strip).queryByText('Pendiente de backend')).not.toBeInTheDocument();
-    expect(screen.getByTestId('analytics-cost-visual-section')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-chart-cost-provider-loading')).toHaveTextContent('Cargando visualización…');
+    expect(screen.getByTestId('analytics-executive-hero')).toBeInTheDocument();
+    expect(screen.getByTestId('analytics-summary-panel-cost')).toBeInTheDocument();
+    expect(screen.queryByTestId('analytics-cost-visual-section')).not.toBeInTheDocument();
   });
 
   it('shows cost chart loading on inventarios tab while cost summary loads', () => {
@@ -582,11 +584,12 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.queryByTestId('analytics-inventories-cost-summary-empty')).not.toBeInTheDocument();
   });
 
-  it('labels provider chart as run volume not reliability', () => {
+  it('labels provider insight as run volume not reliability', () => {
     renderPage();
-    expect(screen.getByText('Corridas por proveedor/modelo')).toBeInTheDocument();
-    expect(screen.queryByText(/confiabilidad/i)).not.toBeInTheDocument();
-    expect(screen.getByTestId('analytics-chart-provider-run-volume')).toBeInTheDocument();
+    const providerPanel = screen.getByTestId('analytics-summary-panel-provider');
+    expect(within(providerPanel).getByText(/corridas \(volumen\)/i)).toBeInTheDocument();
+    expect(within(providerPanel).queryByText(/confiabilidad/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('analytics-summary-provider-mini-bars')).toBeInTheDocument();
   });
 
   it('shows compare CTA on overview critical aisle for test inventory', () => {
