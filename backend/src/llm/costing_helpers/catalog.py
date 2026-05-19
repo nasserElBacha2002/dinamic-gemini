@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 PricingConfidence = Literal["operator_approved", "embedded_placeholder", "unknown"]
 
 
-def catalog_entry_key(entry: Any) -> tuple[str, str] | None:
+def _catalog_entry_key(entry: Any) -> tuple[str, str] | None:
     if not isinstance(entry, dict):
         return None
     p = str(entry.get("provider", "")).strip().lower()
@@ -36,7 +36,7 @@ class PricingResolution:
     alias_resolved_without_entry: bool = False
 
 
-def alias_tuple(row: Any) -> tuple[str, str, str] | None:
+def _alias_tuple(row: Any) -> tuple[str, str, str] | None:
     if not isinstance(row, dict):
         return None
     p = str(row.get("provider", "")).strip().lower()
@@ -47,30 +47,30 @@ def alias_tuple(row: Any) -> tuple[str, str, str] | None:
     return (p, a, c)
 
 
-def operator_catalog_entry_keys(parsed: dict[str, Any]) -> frozenset[tuple[str, str]]:
+def _operator_catalog_entry_keys(parsed: dict[str, Any]) -> frozenset[tuple[str, str]]:
     keys: set[tuple[str, str]] = set()
     for ent in parsed.get("entries") or []:
         if isinstance(ent, dict):
-            k = catalog_entry_key(ent)
+            k = _catalog_entry_key(ent)
             if k:
                 keys.add(k)
     return frozenset(keys)
 
 
-def merge_catalog_aliases(base: dict[str, Any], parsed: dict[str, Any]) -> list[dict[str, Any]]:
+def _merge_catalog_aliases(base: dict[str, Any], parsed: dict[str, Any]) -> list[dict[str, Any]]:
     by_key: dict[tuple[str, str], dict[str, Any]] = {}
     for row in base.get("aliases") or []:
-        t = alias_tuple(row)
+        t = _alias_tuple(row)
         if t:
             by_key[(t[0], t[1])] = {"provider": t[0], "alias": t[1], "canonical_model": t[2]}
     for row in parsed.get("aliases") or []:
-        t = alias_tuple(row)
+        t = _alias_tuple(row)
         if t:
             by_key[(t[0], t[1])] = {"provider": t[0], "alias": t[1], "canonical_model": t[2]}
     return list(by_key.values())
 
 
-def find_exact_catalog_entry(
+def _find_exact_catalog_entry(
     catalog: dict[str, Any], provider: str, model_lower: str
 ) -> dict[str, Any] | None:
     entries = catalog.get("entries")
@@ -86,7 +86,7 @@ def find_exact_catalog_entry(
     return None
 
 
-def find_wildcard_catalog_entry(catalog: dict[str, Any], provider: str) -> dict[str, Any] | None:
+def _find_wildcard_catalog_entry(catalog: dict[str, Any], provider: str) -> dict[str, Any] | None:
     entries = catalog.get("entries")
     if not isinstance(entries, list):
         return None
@@ -108,10 +108,10 @@ def resolve_pricing_with_canonical(
     m_raw = (raw_model or "").strip().lower()
 
     if m_raw:
-        hit = find_exact_catalog_entry(catalog, p, m_raw)
+        hit = _find_exact_catalog_entry(catalog, p, m_raw)
         if hit is not None:
             mm = str(hit.get("model", "")).strip().lower() or m_raw
-            mk = catalog_entry_key(hit)
+            mk = _catalog_entry_key(hit)
             return PricingResolution(
                 hit,
                 mm,
@@ -122,14 +122,14 @@ def resolve_pricing_with_canonical(
 
     if m_raw:
         for row in catalog.get("aliases") or []:
-            t = alias_tuple(row)
+            t = _alias_tuple(row)
             if not t or t[0] != p or t[1] != m_raw:
                 continue
             canon = t[2]
-            hit = find_exact_catalog_entry(catalog, p, canon)
+            hit = _find_exact_catalog_entry(catalog, p, canon)
             if hit is not None:
                 mm = str(hit.get("model", "")).strip().lower() or canon
-                mk = catalog_entry_key(hit)
+                mk = _catalog_entry_key(hit)
                 return PricingResolution(
                     hit,
                     mm,
@@ -139,10 +139,10 @@ def resolve_pricing_with_canonical(
                 )
             return PricingResolution(None, canon, None, None, True)
 
-    wc = find_wildcard_catalog_entry(catalog, p)
+    wc = _find_wildcard_catalog_entry(catalog, p)
     if wc is not None:
         label = m_raw or "*"
-        mk = catalog_entry_key(wc)
+        mk = _catalog_entry_key(wc)
         return PricingResolution(
             wc,
             label,
@@ -153,7 +153,7 @@ def resolve_pricing_with_canonical(
     return PricingResolution(None, m_raw or None, None, None, False)
 
 
-def pricing_confidence_for_resolution(
+def _pricing_confidence_for_resolution(
     catalog: dict[str, Any], resolution: PricingResolution
 ) -> PricingConfidence:
     """Whether the matched catalog row came from operator JSON vs embedded-only vs no row."""
@@ -188,15 +188,15 @@ def load_pricing_catalog(settings: Any) -> dict[str, Any]:
         base["__operator_catalog_entry_keys__"] = frozenset()
         return base
 
-    operator_keys = operator_catalog_entry_keys(parsed)
+    operator_keys = _operator_catalog_entry_keys(parsed)
 
     merged: dict[tuple[str, str], dict[str, Any]] = {}
     for ent in base.get("entries") or []:
-        k = catalog_entry_key(ent)
+        k = _catalog_entry_key(ent)
         if k:
             merged[k] = copy.deepcopy(ent)
     for ent in parsed.get("entries") or []:
-        k = catalog_entry_key(ent)
+        k = _catalog_entry_key(ent)
         if k and isinstance(ent, dict):
             merged[k] = copy.deepcopy(ent)
 
@@ -214,7 +214,7 @@ def load_pricing_catalog(settings: Any) -> dict[str, Any]:
             else "settings.llm_pricing_catalog_json+dinamic_embedded_placeholders"
         ),
         "entries": list(merged.values()),
-        "aliases": merge_catalog_aliases(base, parsed),
+        "aliases": _merge_catalog_aliases(base, parsed),
         "__operator_catalog_entry_keys__": operator_keys,
     }
     return out

@@ -6,8 +6,8 @@ from typing import Any
 
 # Merged under operator JSON (``LLM_PRICING_CATALOG_JSON``); user entries override on same
 # (provider, model) keys. USD values are deployment placeholders — override via env JSON for
-# finance-approved list prices. Shape must match :func:`load_pricing_catalog`: ``entries`` +
-# optional ``aliases`` (see H7).
+# finance-approved list prices. Shape must match the catalog loader contract: entries +
+# optional aliases (see H7).
 EMBEDDED_DEFAULT_LLM_PRICING_CATALOG: dict[str, Any] = {
     "version": "dinamic-embedded-pricing-v2",
     "currency": "USD",

@@ -15,165 +15,40 @@ from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from src.llm.costing_helpers.calculators import (
+from src.llm.costing_helpers.billing_dimensions import (
     apply_billable_dimensions_to_subtotals as _apply_billable_dimensions_to_subtotals,
+)
+from src.llm.costing_helpers.billing_rules import (
+    _dedupe_keep_order,
+)
+from src.llm.costing_helpers.billing_rules import (
+    derive_billing_usage_and_refine_notes as _derive_billing_usage_and_refine_notes,
 )
 from src.llm.costing_helpers.catalog import (
     PricingConfidence as _PricingConfidence,
 )
 from src.llm.costing_helpers.catalog import (
-    load_pricing_catalog as _load_pricing_catalog,
+    _pricing_confidence_for_resolution,
+    resolve_pricing_with_canonical,
 )
 from src.llm.costing_helpers.catalog import (
-    pricing_confidence_for_resolution as _pricing_confidence_for_resolution,
+    load_pricing_catalog as _load_pricing_catalog,
 )
-from src.llm.costing_helpers.catalog import resolve_pricing_with_canonical
 from src.llm.costing_helpers.coercion import as_decimal as _as_decimal
-from src.llm.costing_helpers.coercion import get_first as _get_first
-from src.llm.costing_helpers.coercion import to_int as _to_int
-from src.llm.costing_helpers.constants import MONEY_QUANT
+from src.llm.costing_helpers.constants import MONEY_QUANT as _MONEY_QUANT
 from src.llm.costing_helpers.formatting import (
     format_computed_cost_block as _format_computed_cost_block,
 )
 from src.llm.costing_helpers.formatting import (
     format_pricing_snapshot_for_json as _format_pricing_snapshot_for_json,
 )
+from src.llm.costing_helpers.usage_normalize import normalize_usage
 
 logger = logging.getLogger(__name__)
 
 
 def _utc_iso_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _apply_openai_input_and_cache_conventions(
-    usage: dict[str, Any], raw: dict[str, Any], notes: list[str]
-) -> None:
-    """Mutates ``usage`` / ``notes`` for OpenAI provider keys (no formula change)."""
-    prompt_tokens = _get_first(raw, "prompt_tokens")
-    cached = usage["cached_input_tokens"]
-    if prompt_tokens is not None and cached is not None:
-        usage["input_tokens"] = max(0, prompt_tokens - cached)
-        usage["cached_input_tokens"] = cached
-    elif prompt_tokens is not None:
-        usage["input_tokens"] = prompt_tokens
-        notes.append("usage_dimension_ambiguous:cached_input")
-
-
-def _apply_gemini_input_and_ambiguity_notes(
-    usage: dict[str, Any], raw: dict[str, Any], notes: list[str]
-) -> None:
-    prompt_tokens = _get_first(raw, "prompt_token_count")
-    cached = _get_first(raw, "cached_content_token_count")
-    if prompt_tokens is not None and cached is not None:
-        usage["input_tokens"] = max(0, prompt_tokens - cached)
-        usage["cached_input_tokens"] = cached
-    elif prompt_tokens is not None:
-        usage["input_tokens"] = prompt_tokens
-        if prompt_tokens > 0:
-            notes.append("usage_dimension_ambiguous:cached_input")
-
-    cand = _get_first(raw, "candidates_token_count")
-    thoughts = _get_first(raw, "thoughts_token_count")
-    if cand is not None and thoughts is not None and thoughts > 0:
-        notes.append("usage_dimension_ambiguous:output_tokens")
-
-
-def _apply_claude_cache_conventions(
-    usage: dict[str, Any], raw: dict[str, Any], notes: list[str]
-) -> None:
-    """Map Anthropic usage into billable dimensions.
-
-    Anthropic reports ``input_tokens`` (non-cache prompt) alongside ``cache_read_input_tokens``
-    (cache hits). We treat them as non-overlapping billable buckets when both are present and
-    record an explicit assumption note (does not block cost totals).
-    """
-    inp = _get_first(raw, "input_tokens")
-    cache_read = _get_first(raw, "cache_read_input_tokens")
-    cache_write = _get_first(raw, "cache_creation_input_tokens")
-    if cache_write is not None:
-        usage["cache_write_tokens"] = cache_write
-    if inp is not None:
-        usage["input_tokens"] = inp
-    if cache_read is not None:
-        usage["cached_input_tokens"] = cache_read
-    if inp is not None and cache_read is not None and inp > 0 and cache_read > 0:
-        notes.append("usage_assumption:claude_input_tokens_non_cache_or_provider_reported")
-
-
-def normalize_usage(
-    provider: str, raw_usage: dict[str, Any] | None
-) -> tuple[dict[str, Any], list[str]]:
-    """
-    Normalize known token/usage fields into a provider-agnostic structure.
-
-    Returns ``(usage, convention_notes)`` where notes capture ambiguities that should downgrade
-    confidence (``capture_status``).
-
-    IMPORTANT: ``total_tokens`` is conservative and provider-native only; we do not derive it.
-    """
-    notes: list[str] = []
-    raw = dict(raw_usage or {})
-    p = (provider or "").strip().lower() or "unknown"
-
-    usage: dict[str, Any] = {
-        "input_tokens": _get_first(
-            raw, "input_tokens", "prompt_tokens", "input_token_count", "prompt_token_count"
-        ),
-        "output_tokens": _get_first(
-            raw,
-            "output_tokens",
-            "completion_tokens",
-            "candidates_token_count",
-            "output_token_count",
-        ),
-        "total_tokens": _get_first(raw, "total_tokens", "total_token_count"),
-        "cached_input_tokens": _get_first(
-            raw,
-            "cached_input_tokens",
-            "cached_tokens",
-            "cached_content_token_count",
-            "cache_read_input_tokens",
-        ),
-        "cache_write_tokens": _get_first(raw, "cache_write_tokens", "cache_creation_input_tokens"),
-        "thinking_tokens": _get_first(
-            raw, "thinking_tokens", "thoughts_token_count", "reasoning_tokens"
-        ),
-        "tool_requests": _get_first(raw, "tool_requests"),
-        "image_input_count": _get_first(raw, "image_input_count", "image_count"),
-        "image_input_tokens": _get_first(raw, "image_input_tokens"),
-        "audio_input_tokens": _get_first(raw, "audio_input_tokens"),
-        "video_input_tokens": _get_first(raw, "video_input_tokens"),
-        "raw_provider_usage_json": raw,
-    }
-
-    # OpenAI nested details
-    input_details = raw.get("input_tokens_details") or raw.get("prompt_tokens_details")
-    if isinstance(input_details, dict) and usage["cached_input_tokens"] is None:
-        usage["cached_input_tokens"] = _to_int(input_details.get("cached_tokens"))
-    output_details = raw.get("output_tokens_details") or raw.get("completion_tokens_details")
-    if isinstance(output_details, dict) and usage["thinking_tokens"] is None:
-        usage["thinking_tokens"] = _to_int(output_details.get("reasoning_tokens"))
-    if usage["tool_requests"] is None and isinstance(raw.get("tool_calls"), list):
-        usage["tool_requests"] = len(raw["tool_calls"])
-
-    # Provider-specific conventions
-    if p == "openai":
-        _apply_openai_input_and_cache_conventions(usage, raw, notes)
-    elif p == "gemini":
-        _apply_gemini_input_and_ambiguity_notes(usage, raw, notes)
-    elif p == "claude":
-        _apply_claude_cache_conventions(usage, raw, notes)
-
-    if (
-        usage["total_tokens"] is not None
-        and usage["input_tokens"] is None
-        and usage["output_tokens"] is None
-        and usage["thinking_tokens"] is None
-    ):
-        notes.append("usage_dimension_ambiguous:input_tokens")
-
-    return usage, notes
 
 
 _USAGE_METADATA_KEYS: tuple[str, ...] = (
@@ -193,57 +68,6 @@ _USAGE_METADATA_KEYS: tuple[str, ...] = (
 
 def _has_usage_metadata(usage: dict[str, Any]) -> bool:
     return any(usage.get(key) is not None for key in _USAGE_METADATA_KEYS)
-
-
-def _dedupe_keep_order(items: list[str]) -> list[str]:
-    seen: set[str] = set()
-    out: list[str] = []
-    for item in items:
-        if item in seen:
-            continue
-        seen.add(item)
-        out.append(item)
-    return out
-
-
-def _strip_notes_with_prefix(notes: list[str], prefix: str) -> None:
-    """Remove notes starting with ``prefix`` (mutating, stable order)."""
-    del_idxs = [i for i, n in enumerate(notes) if n.startswith(prefix)]
-    for i in reversed(del_idxs):
-        notes.pop(i)
-
-
-def _derive_billing_usage_and_refine_notes(
-    provider_norm: str,
-    usage: dict[str, Any],
-    entry: Any,
-    notes: list[str],
-) -> dict[str, Any]:
-    """Shallow billing copy + provider/catalog policies (does not mutate ``usage``)."""
-    billing = {k: usage[k] for k in usage if k != "raw_provider_usage_json"}
-    if not isinstance(entry, dict):
-        return billing
-
-    if provider_norm == "gemini":
-        tb = str(entry.get("thinking_billed_as") or "").strip().lower()
-        has_thinking_price = _as_decimal(entry.get("thinking_cost_per_million")) is not None
-        if tb == "output_tokens":
-            o = _to_int(billing.get("output_tokens")) or 0
-            th = _to_int(billing.get("thinking_tokens")) or 0
-            billing["output_tokens"] = o + th
-            billing["thinking_tokens"] = 0
-            _strip_notes_with_prefix(notes, "usage_dimension_ambiguous:output_tokens")
-        elif has_thinking_price:
-            _strip_notes_with_prefix(notes, "usage_dimension_ambiguous:output_tokens")
-
-    if provider_norm == "openai":
-        out_t = _to_int(billing.get("output_tokens"))
-        think_t = _to_int(billing.get("thinking_tokens"))
-        if think_t is not None and think_t > 0 and out_t is not None and think_t <= out_t:
-            billing["thinking_tokens"] = 0
-            notes.append("usage_assumption:openai_reasoning_tokens_subsumed_by_completion")
-
-    return billing
 
 
 @dataclass(frozen=True)
@@ -452,7 +276,7 @@ def build_llm_cost_snapshot(
     partial_total: Decimal | None = None
     if subtotal_values:
         partial_total = sum(subtotal_values, Decimal("0")).quantize(
-            MONEY_QUANT, rounding=ROUND_HALF_UP
+            _MONEY_QUANT, rounding=ROUND_HALF_UP
         )
 
     has_missing_pricing = any(n.startswith("billable_dimension_not_priced:") for n in notes)
