@@ -22,6 +22,7 @@ from src.application.ports.capture_repositories import (
     CaptureSessionRepository,
 )
 from src.application.ports.clock import Clock
+from src.application.ports.code_scan_repository import CodeScanRepository
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -81,6 +82,7 @@ from src.runtime.container.repository_builders import (
     build_aisle_repository,
     build_client_repository,
     build_client_supplier_repository,
+    build_code_scan_repository,
     build_evidence_repository,
     build_inventory_repository,
     build_job_repository,
@@ -164,6 +166,7 @@ class AppContainer:
         self._capture_session_item_repo: CaptureSessionItemRepository | None = None
         self._capture_session_confirm_repo: CaptureSessionConfirmIdempotencyRepository | None = None
         self._capture_session_group_repo: CaptureSessionGroupRepository | None = None
+        self._code_scan_repo: CodeScanRepository | None = None
         self._stored_artifact_reader: StoredArtifactReader | None = None
         self._repository_backend_resolution: RepositoryBackendResolution | None = None
 
@@ -247,6 +250,7 @@ class AppContainer:
         self._capture_session_item_repo = None
         self._capture_session_confirm_repo = None
         self._capture_session_group_repo = None
+        self._code_scan_repo = None
         self._stored_artifact_reader = None
         self._repository_backend_resolution = None
 
@@ -375,6 +379,12 @@ class AppContainer:
             return self._asset_repo
         self._asset_repo = build_source_asset_repository(self._build_sql_repository_or_memory)
         return self._asset_repo
+
+    def get_code_scan_repo(self) -> CodeScanRepository:
+        if self._code_scan_repo is not None:
+            return self._code_scan_repo
+        self._code_scan_repo = build_code_scan_repository(self._build_sql_repository_or_memory)
+        return self._code_scan_repo
 
     def get_supplier_reference_image_repo(self) -> SupplierReferenceImageRepository:
         if self._supplier_reference_image_repo is not None:

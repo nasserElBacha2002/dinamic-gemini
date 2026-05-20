@@ -38,6 +38,25 @@ Or use the root dev script to run backend + frontend together:
 ./dev.sh
 ```
 
+### Aisle code scan (pyzbar / zbar)
+
+The sync QR/barcode scanner runs in the **API** process only (not the worker). The Docker API image installs `libzbar0` via `backend/Dockerfile`; `backend/Dockerfile.worker` does not include it unless scanner execution moves to a worker in a future phase.
+
+For **local development** (macOS), install the native zbar shared library in addition to Python `pyzbar`:
+
+```bash
+brew install zbar
+```
+
+Validate the runtime:
+
+```bash
+cd backend
+python -c "from pyzbar.pyzbar import decode; print('pyzbar-ok')"
+```
+
+If this fails with `Unable to find zbar shared library`, install zbar as above and restart the API.
+
 ### Manual maintenance backfills
 
 Backfills are explicit one-shot commands and do not run automatically on API startup.

@@ -20,6 +20,7 @@ import {
   ResultDetailErrorState,
   ResultDetailEmptyState,
 } from '../../results/components/detail';
+import PositionCodeScanEvidenceSection from '../../aisle-code-scans/components/PositionCodeScanEvidenceSection';
 import type { QuickReviewContext } from '../quickReviewContext';
 import { ConfirmDialog, DrawerHeader, useAppSnackbar } from '../../../components/ui';
 
@@ -64,12 +65,15 @@ export interface QuickReviewDrawerProps {
   open: boolean;
   context: QuickReviewContext | null;
   onClose: () => void;
+  /** Opens aisle code scan drawer from evidence empty state (aisle results only). */
+  onOpenCodeScan?: () => void;
 }
 
 export default function QuickReviewDrawer({
   open,
   context,
   onClose,
+  onOpenCodeScan,
 }: QuickReviewDrawerProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
@@ -339,6 +343,17 @@ export default function QuickReviewDrawer({
                   </Box>
 
                   <ResultEvidenceViewer result={result} inventoryId={inventoryId} aisleId={aisleId} />
+
+                  <PositionCodeScanEvidenceSection
+                    inventoryId={inventoryId}
+                    aisleId={aisleId}
+                    positionId={canonicalPositionId}
+                    enabled={enabled}
+                    jobIdForPreview={context?.jobId}
+                    onOpenCodeScan={
+                      context?.returnTo === 'aisle_results' ? onOpenCodeScan : undefined
+                    }
+                  />
 
                   <Box sx={{ pt: 4 }}>
                     <DrawerCollapsibleSection titleKey="review.section_history">

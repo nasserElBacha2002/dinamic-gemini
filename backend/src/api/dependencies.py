@@ -64,6 +64,7 @@ from src.application.use_cases.export_aisle_benchmark import (
     ExportAisleBenchmarkCompareCsvUseCase,
     ExportAisleBenchmarkRunCsvUseCase,
 )
+from src.application.use_cases.export_aisle_code_scans import ExportAisleCodeScansUseCase
 from src.application.use_cases.export_inventory_business import (
     ExportAisleBusinessCsvUseCase,
     ExportInventoryPackageZipUseCase,
@@ -73,6 +74,9 @@ from src.application.use_cases.export_inventory_results import (
     ExportAisleResultsCsvUseCase,
     ExportInventoryResultsUseCase,
 )
+from src.application.use_cases.get_aisle_code_scan_review_signals import (
+    GetAisleCodeScanReviewSignalsUseCase,
+)
 from src.application.use_cases.get_aisle_merge_results import (
     GetAisleMergeResultsUseCase,
 )
@@ -81,8 +85,12 @@ from src.application.use_cases.get_client import GetClientUseCase
 from src.application.use_cases.get_client_supplier import GetClientSupplierUseCase
 from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
+from src.application.use_cases.get_position_code_scan_evidence import (
+    GetPositionCodeScanEvidenceUseCase,
+)
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
+from src.application.use_cases.list_aisle_code_scans import ListAisleCodeScansUseCase
 from src.application.use_cases.list_aisle_jobs import ListAisleJobsUseCase
 from src.application.use_cases.list_aisle_positions import ListAislePositionsUseCase
 from src.application.use_cases.list_aisles_by_inventory import ListAislesByInventoryUseCase
@@ -105,6 +113,9 @@ from src.application.use_cases.manage_supplier_reference_images import (
 )
 from src.application.use_cases.mark_position_image_mismatch import MarkPositionImageMismatchUseCase
 from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
+from src.application.use_cases.match_aisle_code_scan_detections import (
+    MatchAisleCodeScanDetectionsUseCase,
+)
 from src.application.use_cases.promote_aisle_operational_job import (
     PromoteAisleOperationalJobUseCase,
 )
@@ -112,8 +123,10 @@ from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
     ResolveAisleJobForInventoryReadUseCase,
 )
 from src.application.use_cases.retry_aisle_job import RetryAisleJobUseCase
+from src.application.use_cases.run_aisle_code_scan import RunAisleCodeScanUseCase
 from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingUseCase
+from src.application.use_cases.summarize_aisle_code_scans import SummarizeAisleCodeScansUseCase
 from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
 from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
@@ -133,6 +146,7 @@ from src.runtime.v3_deps import (
     get_client_repo,
     get_client_supplier_repo,
     get_clock,
+    get_code_scan_repo,
     get_evidence_repo,
     get_final_count_repo,
     get_inventory_repo,
@@ -568,6 +582,131 @@ def get_delete_aisle_source_asset_use_case(
         artifact_storage=artifact_storage,
         clock=clock,
         status_reconciler=status_reconciler,
+    )
+
+
+def get_code_scanner():
+    """Production aisle code scanner (pyzbar). Maps missing libzbar to structured 503."""
+    from src.api.errors import mapped_http_exception
+    from src.application.errors import CodeScanScannerUnavailableError
+    from src.infrastructure.code_scanning.pyzbar_code_scanner import (
+        PyzbarCodeScanner,
+        PyzbarUnavailableError,
+    )
+
+    try:
+        return PyzbarCodeScanner()
+    except PyzbarUnavailableError as exc:
+        unavailable = CodeScanScannerUnavailableError(
+            "Code scan engine is unavailable. Install pyzbar and system libzbar0."
+        )
+        mapped = mapped_http_exception(unavailable)
+        if mapped is not None:
+            raise mapped from exc
+        raise unavailable from exc
+
+
+def get_source_asset_content_reader(
+    artifact_storage=Depends(get_artifact_storage),
+):
+    from src.infrastructure.code_scanning.artifact_store_source_asset_content_reader import (
+        ArtifactStoreSourceAssetContentReader,
+    )
+
+    return ArtifactStoreSourceAssetContentReader(artifact_storage)
+
+
+def get_match_aisle_code_scan_detections_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+    clock: Clock = Depends(get_clock),
+) -> MatchAisleCodeScanDetectionsUseCase:
+    return MatchAisleCodeScanDetectionsUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
+        code_scan_repo=code_scan_repo,
+        clock=clock,
+    )
+
+
+def get_run_aisle_code_scan_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+    scanner=Depends(get_code_scanner),
+    content_reader=Depends(get_source_asset_content_reader),
+    clock: Clock = Depends(get_clock),
+    match_detections_use_case: MatchAisleCodeScanDetectionsUseCase = Depends(
+        get_match_aisle_code_scan_detections_use_case
+    ),
+) -> RunAisleCodeScanUseCase:
+    return RunAisleCodeScanUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        code_scan_repo=code_scan_repo,
+        scanner=scanner,
+        content_reader=content_reader,
+        clock=clock,
+        match_detections_use_case=match_detections_use_case,
+    )
+
+
+def get_list_aisle_code_scans_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+) -> ListAisleCodeScansUseCase:
+    return ListAisleCodeScansUseCase(
+        aisle_repo=aisle_repo,
+        code_scan_repo=code_scan_repo,
+    )
+
+
+def get_summarize_aisle_code_scans_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+) -> SummarizeAisleCodeScansUseCase:
+    return SummarizeAisleCodeScansUseCase(
+        aisle_repo=aisle_repo,
+        code_scan_repo=code_scan_repo,
+    )
+
+
+def get_get_position_code_scan_evidence_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+) -> GetPositionCodeScanEvidenceUseCase:
+    return GetPositionCodeScanEvidenceUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        code_scan_repo=code_scan_repo,
+    )
+
+
+def get_get_aisle_code_scan_review_signals_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+) -> GetAisleCodeScanReviewSignalsUseCase:
+    return GetAisleCodeScanReviewSignalsUseCase(
+        aisle_repo=aisle_repo,
+        code_scan_repo=code_scan_repo,
+    )
+
+
+def get_export_aisle_code_scans_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+) -> ExportAisleCodeScansUseCase:
+    return ExportAisleCodeScansUseCase(
+        aisle_repo=aisle_repo,
+        code_scan_repo=code_scan_repo,
     )
 
 

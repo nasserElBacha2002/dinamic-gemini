@@ -741,6 +741,27 @@ class LimitsAndSchemaSettings(BaseModel):
         default_factory=lambda: (os.getenv("DEPLOYMENT_ID") or "").strip() or None,
         description="Deployment identifier used to annotate migration history. Env: DEPLOYMENT_ID.",
     )
+    code_scan_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CODE_SCAN_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+        ),
+        description="Enable aisle QR/barcode code scan API. Env: CODE_SCAN_ENABLED.",
+    )
+    code_scan_max_assets_per_run: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_ASSETS_PER_RUN", "50")),
+        ge=1,
+        le=500,
+        description="Max source assets processed per code scan run. Env: CODE_SCAN_MAX_ASSETS_PER_RUN.",
+    )
+    code_scan_max_decoded_payload_length: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_DECODED_PAYLOAD_LENGTH", "8192")),
+        ge=32,
+        le=65536,
+        description=(
+            "Max normalized code value length accepted per detection. "
+            "Env: CODE_SCAN_MAX_DECODED_PAYLOAD_LENGTH."
+        ),
+    )
     v3_capture_max_open_sessions_per_aisle: int = Field(
         default_factory=lambda: int(os.getenv("V3_CAPTURE_MAX_OPEN_SESSIONS_PER_AISLE", "1")),
         ge=1,

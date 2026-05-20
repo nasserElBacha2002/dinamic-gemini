@@ -95,6 +95,10 @@ vi.mock('../src/hooks', async (importOriginal) => {
   };
 });
 
+vi.mock('../src/features/aisle-code-scans/components/PositionCodeScanEvidenceSection', () => ({
+  default: () => <div data-testid="position-code-scan-evidence">Evidencia de código</div>,
+}));
+
 vi.mock('../src/components/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/components/ui')>();
   return {
@@ -600,5 +604,16 @@ describe('QuickReviewDrawer', () => {
     expect(screen.getByText(/resultado 3 de 3|result 3 of 3/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /resultado anterior|previous result/i })).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /siguiente resultado|next result/i })).toBeDisabled();
+  });
+
+  it('renders code scan evidence section when result is loaded', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue(
+      stubUseResultDetail({ result: mockResultDetail() })
+    );
+    renderDrawer(baseContext);
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    expect(screen.getByTestId('position-code-scan-evidence')).toBeInTheDocument();
+    expect(screen.getByText('Evidencia de código')).toBeInTheDocument();
   });
 });

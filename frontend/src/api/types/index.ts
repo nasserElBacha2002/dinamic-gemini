@@ -9,3 +9,4 @@ export * from './responses';
 export * from './errors';
 export * from './analytics';
 export * from './analyticsCost';
+export * from './codeScans';

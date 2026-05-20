@@ -68,6 +68,34 @@ class EmptyUploadError(Exception):
     """Raised when no files are provided for an aisle asset upload."""
 
 
+class NoSourceAssetsForCodeScanError(Exception):
+    """Raised when a code scan is requested but the aisle has no persisted SourceAsset rows."""
+
+
+class CodeScanDisabledError(Exception):
+    """Raised when aisle code scan is disabled via configuration."""
+
+
+class CodeScanMaxAssetsExceededError(Exception):
+    """Raised when an aisle exceeds the configured max assets per code scan run."""
+
+
+class CodeScanScannerUnavailableError(Exception):
+    """Raised when pyzbar/libzbar is not installed or cannot load in this runtime."""
+
+
+class CodeScanExportNoRunError(Exception):
+    """Raised when a code scan export is requested but no latest run exists for the aisle."""
+
+
+class CodeScanExportUnsupportedTypeError(Exception):
+    """Raised when export type is not detections, unmatched, or summary."""
+
+
+class CodeScanExportUnsupportedFormatError(Exception):
+    """Raised when export format is not csv."""
+
+
 class NoSourceAssetsForAisleProcessingError(Exception):
     """Raised when aisle processing is requested but the aisle has no persisted SourceAsset rows."""
 

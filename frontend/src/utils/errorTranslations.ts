@@ -42,6 +42,13 @@ const V3_STRUCTURED_CODE_TO_KEY: Record<string, string> = {
   SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED: 'clients.suppliers.prompt_configs.activation_failed_error',
   INTERNAL_SERVER_ERROR: 'errors.unexpected',
   UPLOAD_TOO_MANY_FILES_PER_REQUEST: 'uploads.errors.tooManyFiles',
+  AISLE_HAS_NO_SOURCE_ASSETS_FOR_CODE_SCAN: 'aisleCodeScans.errors.no_source_assets',
+  CODE_SCAN_DISABLED: 'aisleCodeScans.errors.disabled',
+  CODE_SCAN_MAX_ASSETS_EXCEEDED: 'aisleCodeScans.errors.max_assets',
+  CODE_SCAN_SCANNER_UNAVAILABLE: 'aisleCodeScans.errors.scanner_unavailable',
+  CODE_SCAN_EXPORT_NO_RUN: 'aisleCodeScans.errors.export_no_run',
+  CODE_SCAN_EXPORT_UNSUPPORTED_TYPE: 'aisleCodeScans.errors.export_unsupported_type',
+  CODE_SCAN_EXPORT_UNSUPPORTED_FORMAT: 'aisleCodeScans.errors.export_unsupported_format',
 };
 
 export function v3StructuredErrorCodeToTranslationKey(code: string): string | null {

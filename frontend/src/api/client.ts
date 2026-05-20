@@ -71,6 +71,22 @@ export {
   getAdminAiConfig,
   getProcessingProviderOptions,
 } from './adminAiApi';
+export type {
+  CodeScanCodeType,
+  CodeScanDetection,
+  CodeScanDetectionStatus,
+  CodeScanRunStatus,
+  CodeScanRunSummary,
+  CodeScanSummaryItem,
+  ListAisleCodeScansResponse,
+  RunAisleCodeScanResponse,
+  SummarizeAisleCodeScansResponse,
+} from './types/codeScans';
+export {
+  getAisleCodeScanSummary,
+  listAisleCodeScans,
+  runAisleCodeScan,
+} from './codeScansApi';
 export type { ClientsListQuery } from './clientsApi';
 export { createClient, getClient, listClients } from './clientsApi';
 export type { ClientSuppliersListQuery, SupplierPromptConfigsListQuery } from './clientSuppliersApi';
