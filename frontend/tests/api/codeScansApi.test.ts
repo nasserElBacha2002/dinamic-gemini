@@ -25,6 +25,15 @@ describe('codeScansApi', () => {
     );
   });
 
+  it('runAisleCodeScan passes job_id query when provided', async () => {
+    apiRequestJson.mockResolvedValue({ run: { id: 'run-1' } });
+    await runAisleCodeScan('inv-1', 'aisle-1', { jobId: 'job-abc' });
+    expect(apiRequestJson).toHaveBeenCalledWith(
+      expect.stringContaining('job_id=job-abc'),
+      { method: 'POST' }
+    );
+  });
+
   it('listAisleCodeScans calls list endpoint', async () => {
     apiRequestJson.mockResolvedValue({ latest_run: null, detections: [] });
     await listAisleCodeScans('inv-1', 'aisle-1');

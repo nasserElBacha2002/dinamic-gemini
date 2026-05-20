@@ -611,6 +611,7 @@ def get_source_asset_content_reader(
 
 def get_match_aisle_code_scan_detections_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
     position_repo: PositionRepository = Depends(get_position_repo),
     product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
     code_scan_repo=Depends(get_code_scan_repo),
@@ -618,6 +619,7 @@ def get_match_aisle_code_scan_detections_use_case(
 ) -> MatchAisleCodeScanDetectionsUseCase:
     return MatchAisleCodeScanDetectionsUseCase(
         aisle_repo=aisle_repo,
+        job_repo=job_repo,
         position_repo=position_repo,
         product_record_repo=product_record_repo,
         code_scan_repo=code_scan_repo,

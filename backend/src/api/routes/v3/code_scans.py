@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from src.api.dependencies import (
     get_list_aisle_code_scans_use_case,
@@ -48,6 +48,7 @@ def _run_to_summary(run: CodeScanRun, *, warnings: list[str] | None = None) -> C
         scanner_engine=run.scanner_engine,
         error_message=run.error_message,
         warnings=merged,
+        metadata_json=run.metadata_json,
     )
 
 
@@ -89,6 +90,10 @@ def _detection_to_response(d) -> CodeScanDetectionResponse:
 def run_aisle_code_scan(
     inventory_id: str,
     aisle_id: str,
+    job_id: str | None = Query(
+        None,
+        description="Result context job id for read-only matching (same as aisle positions list).",
+    ),
     current_admin: AuthUser = Depends(get_current_admin),
     use_case=Depends(get_run_aisle_code_scan_use_case),
 ) -> RunAisleCodeScanResponse:
@@ -99,6 +104,7 @@ def run_aisle_code_scan(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
                 created_by=current_admin.id,
+                job_id=job_id,
             )
         )
         return RunAisleCodeScanResponse(
@@ -116,6 +122,7 @@ def run_aisle_code_scan(
                 scanner_engine=result.scanner_engine,
                 error_message=result.error_message,
                 warnings=list(result.warnings),
+                metadata_json=result.metadata_json,
             )
         )
     except Exception as e:

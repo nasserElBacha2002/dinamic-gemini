@@ -3,6 +3,7 @@ import { Box, Typography } from '@mui/material';
 import type { CodeScanRunSummary as CodeScanRunSummaryType } from '../../../api/types/codeScans';
 import { formatDate } from '../../../utils/formatDate';
 import { formatCodeScanRunStatus } from '../formatters';
+import { codeScanMatchingScopeHelperText } from '../matchingScopeText';
 
 export interface CodeScanRunSummaryProps {
   run: CodeScanRunSummaryType;
@@ -44,6 +45,11 @@ export default function CodeScanRunSummary({ run }: CodeScanRunSummaryProps) {
       <SummaryRow label={t('aisleCodeScans.summary.barcodes')} value={String(run.total_barcodes_found)} />
       <SummaryRow label={t('aisleCodeScans.summary.engine')} value={run.scanner_engine} />
       <SummaryRow label={t('aisleCodeScans.summary.lastRun')} value={finished} />
+      {codeScanMatchingScopeHelperText(t, run.metadata_json) ? (
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+          {codeScanMatchingScopeHelperText(t, run.metadata_json)}
+        </Typography>
+      ) : null}
     </Box>
   );
 }

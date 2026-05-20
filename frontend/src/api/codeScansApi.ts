@@ -14,9 +14,17 @@ function codeScansBase(inventoryId: string, aisleId: string): string {
 
 export async function runAisleCodeScan(
   inventoryId: string,
-  aisleId: string
+  aisleId: string,
+  options?: { jobId?: string | null }
 ): Promise<RunAisleCodeScanResponse> {
-  return apiRequestJson<RunAisleCodeScanResponse>(`${codeScansBase(inventoryId, aisleId)}/run`, {
+  const params = new URLSearchParams();
+  const jobId = options?.jobId?.trim();
+  if (jobId) {
+    params.set('job_id', jobId);
+  }
+  const query = params.toString();
+  const url = `${codeScansBase(inventoryId, aisleId)}/run${query ? `?${query}` : ''}`;
+  return apiRequestJson<RunAisleCodeScanResponse>(url, {
     method: 'POST',
   });
 }

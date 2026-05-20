@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 
 from src.domain.code_scans.entities import CodeScanDetection
+from src.domain.code_scans.matching import CodeScanSummaryMatchStatus
 
 
 def aggregate_group_match(
@@ -23,7 +24,8 @@ def aggregate_group_match(
     if len(counts) == 1:
         status = next(iter(counts))
     else:
-        status = "mixed"
+        # Summary-only status; individual detections never use "mixed".
+        status = CodeScanSummaryMatchStatus.MIXED
 
     position_ids: list[str] = []
     match_types: list[str] = []
@@ -33,5 +35,7 @@ def aggregate_group_match(
         if d.match_type and d.match_type not in match_types:
             match_types.append(d.match_type)
 
-    counts_out: dict[str, int] | None = dict(counts) if status == "mixed" else None
+    counts_out: dict[str, int] | None = (
+        dict(counts) if status == CodeScanSummaryMatchStatus.MIXED else None
+    )
     return status, tuple(position_ids), tuple(match_types), counts_out

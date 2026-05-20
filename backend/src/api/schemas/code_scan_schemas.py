@@ -42,6 +42,10 @@ class CodeScanRunSummaryResponse(BaseModel):
     scanner_engine: str
     error_message: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    metadata_json: dict[str, Any] | None = Field(
+        None,
+        description="Run metadata including matching scope and counts when present.",
+    )
 
 
 class RunAisleCodeScanResponse(BaseModel):

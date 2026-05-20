@@ -11,6 +11,7 @@ const t = (key: string) => {
     'aisleCodeScans.matching.multiple_candidates': 'Coincidencia múltiple',
     'aisleCodeScans.matching.not_evaluated': 'No evaluado',
     'aisleCodeScans.matching.sku_exact': 'SKU exacto',
+    'aisleCodeScans.matching.mixed': 'Coincidencia mixta',
   };
   return map[key] ?? key;
 };
@@ -24,5 +25,9 @@ describe('code scan matching formatters', () => {
 
   it('formats match types', () => {
     expect(formatCodeScanMatchType(t, 'sku_exact')).toBe('SKU exacto');
+  });
+
+  it('formats mixed summary status', () => {
+    expect(formatCodeScanMatchStatus(t, 'mixed')).toBe('Coincidencia mixta');
   });
 });

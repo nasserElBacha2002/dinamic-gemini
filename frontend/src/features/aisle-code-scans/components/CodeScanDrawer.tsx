@@ -23,6 +23,7 @@ export interface CodeScanDrawerProps {
   inventoryId: string;
   aisleId: string;
   jobIdForPreview?: string | null;
+  jobIdForMatching?: string | null;
 }
 
 export default function CodeScanDrawer({
@@ -31,6 +32,7 @@ export default function CodeScanDrawer({
   inventoryId,
   aisleId,
   jobIdForPreview,
+  jobIdForMatching,
 }: CodeScanDrawerProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
@@ -38,7 +40,7 @@ export default function CodeScanDrawer({
 
   const scansQuery = useAisleCodeScans(inventoryId, aisleId, { enabled: open });
   const summaryQuery = useAisleCodeScanSummary(inventoryId, aisleId, { enabled: open });
-  const runMutation = useRunAisleCodeScan(inventoryId, aisleId);
+  const runMutation = useRunAisleCodeScan(inventoryId, aisleId, jobIdForMatching);
 
   const latestRun = scansQuery.data?.latest_run ?? summaryQuery.data?.latest_run ?? null;
   const detections = scansQuery.data?.detections ?? [];

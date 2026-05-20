@@ -23,6 +23,9 @@ export function formatCodeScanMatchStatus(
   status: string | null | undefined,
 ): string {
   if (!status) return t('aisleCodeScans.matching.not_evaluated');
+  if (status === 'mixed') {
+    return t('aisleCodeScans.matching.mixed');
+  }
   const key = `aisleCodeScans.matching.${status}`;
   const translated = t(key);
   return translated === key ? status : translated;

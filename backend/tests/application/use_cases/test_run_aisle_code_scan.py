@@ -482,12 +482,23 @@ def test_matching_failure_does_not_fail_scan(monkeypatch: pytest.MonkeyPatch) ->
         def execute(self, cmd: MatchAisleCodeScanDetectionsCommand):
             raise RuntimeError("matcher down")
 
+    repo = MemoryCodeScanRepository()
     result = _use_case(
         assets=[_photo("a1")],
         scanner=FakeCodeScanner(
             by_asset={"a1": [CodeScanDetectionCandidate(code_type=CodeType.BARCODE, code_value="X")]},
         ),
         match_detections_use_case=FailingMatcher(),
-    ).execute(RunAisleCodeScanCommand(inventory_id="inv-1", aisle_id="aisle-1"))
+        code_scan_repo=repo,
+    ).execute(
+        RunAisleCodeScanCommand(
+            inventory_id="inv-1", aisle_id="aisle-1", job_id="job-ctx-1"
+        )
+    )
     assert result.status == CodeScanRunStatus.COMPLETED_WITH_WARNINGS
     assert MATCHING_WARNING_MESSAGE in result.warnings
+    assert result.metadata_json is not None
+    assert result.metadata_json.get("matching", {}).get("status") == "failed"
+    latest = repo.get_latest_run_by_aisle(inventory_id="inv-1", aisle_id="aisle-1")
+    assert latest is not None
+    assert latest.metadata_json.get("matching", {}).get("status") == "failed"

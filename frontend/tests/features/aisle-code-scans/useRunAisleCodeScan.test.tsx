@@ -41,4 +41,14 @@ describe('useRunAisleCodeScan', () => {
       queryKey: queryKeys.inventories.aisleCodeScanSummary('inv-1', 'aisle-1'),
     });
   });
+
+  it('passes jobId to runAisleCodeScan', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useRunAisleCodeScan('inv-1', 'aisle-1', 'job-9'), {
+      wrapper: wrapper(client),
+    });
+    result.current.mutate();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(runAisleCodeScan).toHaveBeenCalledWith('inv-1', 'aisle-1', { jobId: 'job-9' });
+  });
 });

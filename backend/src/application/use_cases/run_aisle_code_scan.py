@@ -18,6 +18,10 @@ from src.application.ports.code_scanner import CodeScannerPort
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
 from src.application.ports.source_asset_content_reader import SourceAssetContentReader
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
+from src.application.services.code_scan_matching_metadata import (
+    matching_metadata_failed,
+    merge_matching_into_run_metadata,
+)
 from src.application.services.code_scan_normalization import (
     code_value_within_limit,
     normalize_code_value,
@@ -57,6 +61,7 @@ class RunAisleCodeScanCommand:
     inventory_id: str
     aisle_id: str
     created_by: str | None = None
+    job_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -74,6 +79,7 @@ class RunAisleCodeScanResult:
     finished_at: Any
     scanner_engine: str
     error_message: str | None = None
+    metadata_json: dict[str, Any] | None = None
 
 
 class RunAisleCodeScanUseCase:
@@ -287,17 +293,22 @@ class RunAisleCodeScanUseCase:
                         )
                     )
 
+            matching_meta: dict[str, Any] | None = None
             if detections:
                 self._code_scan_repo.save_detections(detections)
                 if self._match_detections_use_case is not None:
                     try:
-                        self._match_detections_use_case.execute(
+                        match_result = self._match_detections_use_case.execute(
                             MatchAisleCodeScanDetectionsCommand(
                                 inventory_id=command.inventory_id,
                                 aisle_id=command.aisle_id,
                                 run_id=run_id,
+                                job_id=command.job_id,
                             )
                         )
+                        matching_meta = match_result.matching_metadata
+                        if match_result.warning_message:
+                            warnings.append(match_result.warning_message)
                     except Exception:
                         logger.exception(
                             "Code scan matching failed after run %s aisle %s",
@@ -305,6 +316,11 @@ class RunAisleCodeScanUseCase:
                             command.aisle_id,
                         )
                         warnings.append(MATCHING_WARNING_MESSAGE)
+                        matching_meta = matching_metadata_failed(
+                            scope="job" if command.job_id else "unknown",
+                            source="explicit" if command.job_id else "unknown",
+                            job_id=command.job_id,
+                        )
 
             finished = self._clock.now()
             if failed > 0 or warnings:
@@ -326,6 +342,10 @@ class RunAisleCodeScanUseCase:
                 unreadable_assets=unreadable_assets,
                 unsupported_assets=unsupported_assets,
             )
+            if matching_meta is not None:
+                run.metadata_json = merge_matching_into_run_metadata(
+                    run.metadata_json, matching_meta
+                )
             self._code_scan_repo.save_run(run)
 
             return RunAisleCodeScanResult(
@@ -342,6 +362,7 @@ class RunAisleCodeScanUseCase:
                 finished_at=finished,
                 scanner_engine=self._scanner.engine_name,
                 error_message=None,
+                metadata_json=run.metadata_json,
             )
         except Exception as exc:
             finished = self._clock.now()

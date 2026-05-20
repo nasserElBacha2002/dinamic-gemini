@@ -194,12 +194,41 @@ describe('CodeScanDrawer', () => {
   });
 
   it('shows match status labels without validated wording', () => {
-    scansState.data = { latest_run: mockRun, detections: mockDetections };
-    summaryState.data = { latest_run: mockRun, items: mockSummaryItems };
-    renderDrawer();
+    scansState.data = {
+      latest_run: {
+        ...mockRun,
+        metadata_json: {
+          matching: { status: 'completed', scope: 'job', job_id: 'job-1' },
+        },
+      },
+      detections: mockDetections,
+    };
+    summaryState.data = {
+      latest_run: scansState.data.latest_run,
+      items: [
+        {
+          ...mockSummaryItems[0],
+          match_status: 'mixed',
+          match_status_counts: { matched: 1, no_match: 1 },
+        },
+      ],
+    };
+    render(
+      <AppSnackbarProvider>
+        <CodeScanDrawer
+          open
+          onClose={vi.fn()}
+          inventoryId="inv-1"
+          aisleId="aisle-1"
+          jobIdForMatching="job-1"
+        />
+      </AppSnackbarProvider>,
+    );
     expect(screen.getAllByText(/Coincidencia sugerida/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Sin coincidencia/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Validado/i)).not.toBeInTheDocument();
     expect(screen.getAllByText('pos-abc').length).toBeGreaterThan(0);
+    expect(screen.getByText(/Coincidencias evaluadas sobre la corrida seleccionada/i)).toBeInTheDocument();
+    expect(screen.getByText(/Coincidencia mixta/i)).toBeInTheDocument();
   });
 });

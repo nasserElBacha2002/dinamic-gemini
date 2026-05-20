@@ -54,6 +54,7 @@ export interface CodeScanRunSummary {
   scanner_engine: string;
   error_message: string | null;
   warnings: string[];
+  metadata_json?: Record<string, unknown> | null;
 }
 
 export interface CodeScanDetection {

@@ -7,7 +7,6 @@ from typing import Any
 
 from src.application.services.code_scan_normalization import normalize_code_value
 from src.application.services.code_scan_qr_payload import extract_qr_payload_lookup_values
-from src.application.services.display_primary_product import select_display_primary_product
 from src.domain.code_scans.matching import CodeScanMatchStatus, CodeScanMatchType
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
@@ -55,7 +54,14 @@ def _position_field_entries(
     position: Position,
     products: list[ProductRecord],
 ) -> list[tuple[str, str, str]]:
+    """Build exact-match index entries for one position.
+
+    Pipeline identity fields (position_barcode, internal_code, pallet_id) are read from
+    ``detected_summary_json`` — the same immutable snapshot persisted by the v3 worker
+    and exposed on list/detail as ``technical_snapshot`` / legacy summary aliases.
+    """
     entries: list[tuple[str, str, str]] = []
+    seen: set[tuple[str, str]] = set()
     summary = position.detected_summary_json if isinstance(position.detected_summary_json, dict) else {}
 
     def add(value: str | None, match_type: str, field_name: str) -> None:
@@ -64,18 +70,30 @@ def _position_field_entries(
         norm = normalize_code_value(value)
         if not norm:
             return
+        key = (norm, match_type)
+        if key in seen:
+            return
+        seen.add(key)
         entries.append((norm, match_type, field_name))
 
-    add(summary.get("position_barcode") if isinstance(summary.get("position_barcode"), str) else None,
-        CodeScanMatchType.BARCODE_EXACT, "position_barcode")
-    primary = select_display_primary_product(products) if products else None
-    if primary is not None:
-        add(primary.sku, CodeScanMatchType.SKU_EXACT, "sku")
-    add(summary.get("internal_code") if isinstance(summary.get("internal_code"), str) else None,
-        CodeScanMatchType.INTERNAL_CODE_EXACT, "internal_code")
+    add(
+        summary.get("position_barcode") if isinstance(summary.get("position_barcode"), str) else None,
+        CodeScanMatchType.BARCODE_EXACT,
+        "position_barcode",
+    )
+    for product in products:
+        add(product.sku, CodeScanMatchType.SKU_EXACT, "sku")
+    add(
+        summary.get("internal_code") if isinstance(summary.get("internal_code"), str) else None,
+        CodeScanMatchType.INTERNAL_CODE_EXACT,
+        "internal_code",
+    )
     add(position.corrected_position_code, CodeScanMatchType.POSITION_CODE_EXACT, "corrected_position_code")
-    add(summary.get("pallet_id") if isinstance(summary.get("pallet_id"), str) else None,
-        CodeScanMatchType.PALLET_ID_EXACT, "pallet_id")
+    add(
+        summary.get("pallet_id") if isinstance(summary.get("pallet_id"), str) else None,
+        CodeScanMatchType.PALLET_ID_EXACT,
+        "pallet_id",
+    )
     return entries
 
 

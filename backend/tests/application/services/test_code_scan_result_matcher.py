@@ -114,6 +114,68 @@ def test_no_match() -> None:
     assert outcome.match_confidence == 0.0
 
 
+def test_secondary_product_sku_matches() -> None:
+    now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
+    position = _position("p1")
+    products = [
+        _product("p1", "SKU-A"),
+        ProductRecord(
+            id="prod-b",
+            position_id="p1",
+            sku="SKU-B",
+            detected_quantity=1,
+            confidence=0.8,
+            created_at=now,
+            updated_at=now,
+        ),
+    ]
+    lookup = build_position_lookup([position], {"p1": products})
+    outcome = match_detection_value(
+        normalized_code_value="SKU-B",
+        code_value="SKU-B",
+        lookup=lookup,
+    )
+    assert outcome.match_status == CodeScanMatchStatus.MATCHED
+    assert outcome.matched_position_id == "p1"
+    assert outcome.match_type == CodeScanMatchType.SKU_EXACT
+
+
+def test_internal_code_exact_from_summary() -> None:
+    positions = [_position("p1", summary={"internal_code": "IC-99"})]
+    lookup = build_position_lookup(positions, {})
+    outcome = match_detection_value(
+        normalized_code_value="IC-99",
+        code_value="IC-99",
+        lookup=lookup,
+    )
+    assert outcome.match_status == CodeScanMatchStatus.MATCHED
+    assert outcome.match_type == CodeScanMatchType.INTERNAL_CODE_EXACT
+
+
+def test_pallet_id_exact_from_summary() -> None:
+    positions = [_position("p1", summary={"pallet_id": "PAL-42"})]
+    lookup = build_position_lookup(positions, {})
+    outcome = match_detection_value(
+        normalized_code_value="PAL-42",
+        code_value="PAL-42",
+        lookup=lookup,
+    )
+    assert outcome.match_status == CodeScanMatchStatus.MATCHED
+    assert outcome.match_type == CodeScanMatchType.PALLET_ID_EXACT
+
+
+def test_position_code_exact_from_corrected_field() -> None:
+    positions = [_position("p1", corrected_position_code="POS-7")]
+    lookup = build_position_lookup(positions, {})
+    outcome = match_detection_value(
+        normalized_code_value="POS-7",
+        code_value="POS-7",
+        lookup=lookup,
+    )
+    assert outcome.match_status == CodeScanMatchStatus.MATCHED
+    assert outcome.match_type == CodeScanMatchType.POSITION_CODE_EXACT
+
+
 def test_qr_payload_sku_extraction() -> None:
     assert extract_qr_payload_lookup_values("SKU=3075807") == ("3075807",)
     positions = [_position("p1")]

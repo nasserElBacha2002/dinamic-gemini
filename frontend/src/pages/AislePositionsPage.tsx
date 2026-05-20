@@ -535,6 +535,7 @@ export default function AislePositionsPage() {
         inventoryId={inventoryId}
         aisleId={aisleId}
         jobIdForPreview={pickedRunJobId}
+        jobIdForMatching={pickedRunJobId}
       />
       <AisleResultsHeader
         breadcrumbs={breadcrumbs}
