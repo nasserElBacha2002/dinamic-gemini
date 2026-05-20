@@ -47,8 +47,7 @@ class PyzbarCodeScanner:
     def scan_asset(
         self,
         asset: SourceAsset,
-        *,
-        content: bytes | None,
+        content: bytes | None = None,
     ) -> list[CodeScanDetectionCandidate]:
         if content is None:
             raise ValueError("PyzbarCodeScanner requires image bytes; content=None")
@@ -56,11 +55,7 @@ class PyzbarCodeScanner:
             raise UnsupportedImageFormatError(
                 f"Unsupported image format for asset {asset.id}"
             )
-        try:
-            image = decode_bytes_to_rgb_image(content, asset=asset)
-        except ValueError as exc:
-            raise UnsupportedImageFormatError(str(exc)) from exc
-
+        image = decode_bytes_to_rgb_image(content, asset=asset)
         try:
             symbols = self._decode(image)
         except Exception as exc:

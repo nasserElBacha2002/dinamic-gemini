@@ -45,33 +45,50 @@ def skipped_asset_entry(
     return entry
 
 
+def _as_str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(x) for x in value]
+
+
+def _as_asset_entry_list(
+    value: Any,
+    *,
+    legacy_reason: str | None = None,
+) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in value:
+        if isinstance(item, dict):
+            asset_id = item.get("asset_id")
+            reason = item.get("reason")
+            if asset_id is not None and reason is not None:
+                entry: dict[str, Any] = {
+                    "asset_id": str(asset_id),
+                    "reason": str(reason),
+                }
+                if item.get("asset_type") is not None:
+                    entry["asset_type"] = str(item["asset_type"])
+                out.append(entry)
+        elif legacy_reason and isinstance(item, str) and item.strip():
+            out.append({"asset_id": item.strip(), "reason": legacy_reason})
+    return out
+
+
 def parse_run_metadata(raw: dict[str, Any] | None) -> dict[str, Any]:
     """Normalize persisted metadata to the stable shape."""
     if not raw:
         return empty_run_metadata()
-    base = empty_run_metadata()
-    for key in base:
-        val = raw.get(key)
-        if key == "skipped_assets":
-            if isinstance(val, list):
-                base[key] = val
-            continue
-        if isinstance(val, list):
-            base[key] = [str(x) if key != "unreadable_assets" and key != "unsupported_assets" else x for x in val]
-        elif key in ("unreadable_assets", "unsupported_assets") and isinstance(val, list):
-            base[key] = val
-    if isinstance(raw.get("warnings"), list):
-        base["warnings"] = [str(w) for w in raw["warnings"]]
-    if isinstance(raw.get("scanner_errors"), list):
-        base["scanner_errors"] = [str(e) for e in raw["scanner_errors"]]
-    skipped = raw.get("skipped_assets")
-    if isinstance(skipped, list):
-        base["skipped_assets"] = skipped
-    for structured in ("unreadable_assets", "unsupported_assets"):
-        val = raw.get(structured)
-        if isinstance(val, list):
-            base[structured] = [x for x in val if isinstance(x, dict)]
-    return base
+    return {
+        "warnings": _as_str_list(raw.get("warnings")),
+        "scanner_errors": _as_str_list(raw.get("scanner_errors")),
+        "skipped_assets": _as_asset_entry_list(
+            raw.get("skipped_assets"), legacy_reason="legacy_skipped"
+        ),
+        "unreadable_assets": _as_asset_entry_list(raw.get("unreadable_assets")),
+        "unsupported_assets": _as_asset_entry_list(raw.get("unsupported_assets")),
+    }
 
 
 def warnings_from_run_metadata(raw: dict[str, Any] | None) -> list[str]:

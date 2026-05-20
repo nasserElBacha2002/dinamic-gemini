@@ -1,4 +1,9 @@
-"""Tests for PyzbarCodeScanner — mapping fakes and optional fixture integration."""
+"""Tests for PyzbarCodeScanner — mapping fakes and optional fixture integration.
+
+Barcode fixture coverage is intentionally deferred: pyzbar barcode recognition is more
+sensitive to rendering and resolution across environments. The QR fixture remains the hard
+integration test for Phase 2; barcode type mapping is covered in test_pyzbar_type_mapping.py.
+"""
 
 from __future__ import annotations
 
@@ -80,6 +85,40 @@ def test_scan_asset_requires_content(mock_import: MagicMock) -> None:
     scanner = PyzbarCodeScanner()
     with pytest.raises(ValueError, match="requires image bytes"):
         scanner.scan_asset(_asset(), content=None)
+
+
+@patch("src.infrastructure.code_scanning.pyzbar_code_scanner._import_pyzbar")
+def test_scan_asset_accepts_positional_content(mock_import: MagicMock) -> None:
+    """Port substitutability: content is not keyword-only."""
+    mock_import.return_value = MagicMock(return_value=[])
+    with patch(
+        "src.infrastructure.code_scanning.pyzbar_code_scanner.decode_bytes_to_rgb_image"
+    ) as mock_decode:
+        mock_img = MagicMock()
+        mock_decode.return_value = mock_img
+        scanner = PyzbarCodeScanner()
+        scanner.scan_asset(_asset(), b"bytes")
+        mock_img.close.assert_called_once()
+
+
+def test_pyzbar_unavailable_raises_on_init() -> None:
+    with patch(
+        "src.infrastructure.code_scanning.pyzbar_code_scanner._import_pyzbar",
+        side_effect=PyzbarUnavailableError("missing"),
+    ):
+        with pytest.raises(PyzbarUnavailableError, match="missing"):
+            PyzbarCodeScanner()
+
+
+def test_get_code_scanner_fails_fast_when_pyzbar_missing() -> None:
+    from src.api.dependencies import get_code_scanner
+
+    with patch(
+        "src.infrastructure.code_scanning.pyzbar_code_scanner._import_pyzbar",
+        side_effect=PyzbarUnavailableError("missing libzbar"),
+    ):
+        with pytest.raises(RuntimeError, match="libzbar0"):
+            get_code_scanner()
 
 
 @pytest.mark.skipif(

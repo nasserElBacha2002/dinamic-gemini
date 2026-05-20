@@ -22,9 +22,9 @@ class ArtifactStoreSourceAssetContentReader:
             downloaded = self._store.get_object(key)
         except Exception as exc:
             logger.warning(
-                "code_scan storage_read_failed asset_id=%s storage_key=%s error=%s",
+                "code_scan storage_read_failed asset_id=%s aisle_id=%s error=%s",
                 asset.id,
-                key,
+                asset.aisle_id,
                 type(exc).__name__,
             )
             raise FileNotFoundError(f"Storage object not found for asset {asset.id}") from exc

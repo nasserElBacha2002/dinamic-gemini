@@ -417,6 +417,34 @@ def test_oversized_payload_skipped_with_warning(monkeypatch: pytest.MonkeyPatch)
     assert any("max length" in w.lower() for w in result.warnings)
 
 
+def test_unreadable_image_completed_with_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CODE_SCAN_ENABLED", "true")
+    from src.config import reload_settings
+    from src.infrastructure.code_scanning.image_decode import UnreadableImageError
+
+    reload_settings()
+
+    class UnreadableScanner:
+        @property
+        def engine_name(self) -> str:
+            return "pyzbar"
+
+        def scan_asset(self, asset, content=None):
+            raise UnreadableImageError("corrupt")
+
+    repo = MemoryCodeScanRepository()
+    result = _use_case(
+        assets=[_photo("a1")],
+        scanner=UnreadableScanner(),
+        code_scan_repo=repo,
+    ).execute(RunAisleCodeScanCommand(inventory_id="inv-1", aisle_id="aisle-1"))
+    assert result.status == CodeScanRunStatus.COMPLETED_WITH_WARNINGS
+    latest = repo.get_latest_run_by_aisle(inventory_id="inv-1", aisle_id="aisle-1")
+    assert latest is not None
+    unreadable = latest.metadata_json.get("unreadable_assets") or []
+    assert any(e.get("reason") == "unreadable_image" for e in unreadable)
+
+
 def test_persists_scanner_engine_pyzbar(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CODE_SCAN_ENABLED", "true")
     from src.config import reload_settings

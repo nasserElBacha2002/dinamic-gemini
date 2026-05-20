@@ -37,6 +37,7 @@ from src.domain.code_scans.entities import (
     CodeType,
 )
 from src.infrastructure.code_scanning.image_decode import (
+    UnreadableImageError,
     UnsupportedImageFormatError,
     is_supported_image_asset,
 )
@@ -195,7 +196,7 @@ class RunAisleCodeScanUseCase:
 
                 try:
                     candidates = self._scanner.scan_asset(asset, content=content)
-                except UnsupportedImageFormatError as exc:
+                except UnsupportedImageFormatError:
                     failed += 1
                     entry = skipped_asset_entry(
                         asset_id=asset.id,
@@ -203,7 +204,17 @@ class RunAisleCodeScanUseCase:
                     )
                     skipped_assets.append(entry)
                     unsupported_assets.append(entry)
-                    warnings.append(f"Unsupported image for asset {asset.id}: {exc}")
+                    warnings.append(f"Unsupported image format for asset {asset.id}")
+                    continue
+                except UnreadableImageError:
+                    failed += 1
+                    entry = skipped_asset_entry(
+                        asset_id=asset.id,
+                        reason="unreadable_image",
+                    )
+                    skipped_assets.append(entry)
+                    unreadable_assets.append(entry)
+                    warnings.append(f"Unreadable image for asset {asset.id}")
                     continue
                 except Exception as exc:
                     failed += 1
