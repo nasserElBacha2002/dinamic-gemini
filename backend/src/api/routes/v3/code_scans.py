@@ -86,7 +86,7 @@ def run_aisle_code_scan(
     current_admin: AuthUser = Depends(get_current_admin),
     use_case=Depends(get_run_aisle_code_scan_use_case),
 ) -> RunAisleCodeScanResponse:
-    """Run a synchronous code scan over uploaded aisle source assets (Phase 1: noop scanner)."""
+    """Run a synchronous code scan over uploaded aisle source assets (pyzbar)."""
     try:
         result = use_case.execute(
             RunAisleCodeScanCommand(

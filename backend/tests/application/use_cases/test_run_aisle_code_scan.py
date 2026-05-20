@@ -1,4 +1,4 @@
-"""Tests for RunAisleCodeScanUseCase (Phase 1 fake scanner)."""
+"""Tests for RunAisleCodeScanUseCase (Phase 2: content reader + scanner fakes)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from src.application.errors import (
 )
 from src.application.ports.code_scan_repository import CodeScanRepository
 from src.application.ports.code_scanner import CodeScanDetectionCandidate, CodeScannerPort
+from src.application.ports.source_asset_content_reader import SourceAssetContentReader
 from src.application.ports.contracts import AisleAssetRollup
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
 from src.application.use_cases.run_aisle_code_scan import (
@@ -89,6 +90,7 @@ class FakeCodeScanner:
         self._by_asset = by_asset or {}
         self._fail_asset_ids = fail_asset_ids or set()
         self._engine = engine
+        self.last_content_by_asset: dict[str, bytes] = {}
 
     @property
     def engine_name(self) -> str:
@@ -99,7 +101,27 @@ class FakeCodeScanner:
     ) -> list[CodeScanDetectionCandidate]:
         if asset.id in self._fail_asset_ids:
             raise RuntimeError("scan failed")
+        if content is not None:
+            self.last_content_by_asset[asset.id] = content
         return list(self._by_asset.get(asset.id, []))
+
+
+class FakeContentReader(SourceAssetContentReader):
+    def __init__(
+        self,
+        *,
+        by_asset: dict[str, bytes] | None = None,
+        fail_asset_ids: set[str] | None = None,
+        default_bytes: bytes = b"\xff\xd8\xff\xd9",
+    ) -> None:
+        self._by_asset = by_asset or {}
+        self._fail_asset_ids = fail_asset_ids or set()
+        self._default = default_bytes
+
+    def read_image_bytes(self, asset: SourceAsset) -> bytes:
+        if asset.id in self._fail_asset_ids:
+            raise FileNotFoundError(f"missing {asset.id}")
+        return self._by_asset.get(asset.id, self._default)
 
 
 def _aisle() -> Aisle:
@@ -114,15 +136,24 @@ def _aisle() -> Aisle:
     )
 
 
-def _photo(asset_id: str, *, asset_type: SourceAssetType = SourceAssetType.PHOTO) -> SourceAsset:
+def _photo(
+    asset_id: str,
+    *,
+    asset_type: SourceAssetType = SourceAssetType.PHOTO,
+    mime_type: str = "image/jpeg",
+    filename: str | None = None,
+    storage_key: str | None = None,
+) -> SourceAsset:
     now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
+    fname = filename or f"{asset_id}.jpg"
     return SourceAsset(
         id=asset_id,
         aisle_id="aisle-1",
         type=asset_type,
-        original_filename=f"{asset_id}.jpg",
-        storage_path=f"uploads/aisles/aisle-1/raw/{asset_id}.jpg",
-        mime_type="image/jpeg",
+        original_filename=fname,
+        storage_path=f"uploads/aisles/aisle-1/raw/{fname}",
+        storage_key=storage_key or f"uploads/aisles/aisle-1/raw/{fname}",
+        mime_type=mime_type,
         uploaded_at=now,
     )
 
@@ -131,6 +162,7 @@ def _use_case(
     *,
     assets: Sequence[SourceAsset],
     scanner: CodeScannerPort,
+    content_reader: SourceAssetContentReader | None = None,
     code_scan_repo: CodeScanRepository | None = None,
 ) -> RunAisleCodeScanUseCase:
     now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
@@ -139,6 +171,7 @@ def _use_case(
         asset_repo=StubAssetRepo(assets),
         code_scan_repo=code_scan_repo or MemoryCodeScanRepository(),
         scanner=scanner,
+        content_reader=content_reader or FakeContentReader(),
         clock=FixedClock(now),
     )
 
@@ -325,6 +358,80 @@ def test_use_case_does_not_touch_position_layer() -> None:
         asset_repo=StubAssetRepo([]),
         code_scan_repo=MemoryCodeScanRepository(),
         scanner=FakeCodeScanner(),
+        content_reader=FakeContentReader(),
         clock=FixedClock(datetime.now(timezone.utc)),
     )
     assert "position" not in repr(uc.__dict__).lower()
+
+
+def test_content_is_read_and_passed_to_scanner(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CODE_SCAN_ENABLED", "true")
+    from src.config import reload_settings
+
+    reload_settings()
+    payload = b"image-bytes-123"
+    scanner = FakeCodeScanner(engine="pyzbar")
+    _use_case(
+        assets=[_photo("a1")],
+        scanner=scanner,
+        content_reader=FakeContentReader(by_asset={"a1": payload}),
+    ).execute(RunAisleCodeScanCommand(inventory_id="inv-1", aisle_id="aisle-1"))
+    assert scanner.last_content_by_asset["a1"] == payload
+
+
+def test_storage_read_failure_completed_with_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CODE_SCAN_ENABLED", "true")
+    from src.config import reload_settings
+
+    reload_settings()
+    repo = MemoryCodeScanRepository()
+    result = _use_case(
+        assets=[_photo("a1"), _photo("a2")],
+        scanner=FakeCodeScanner(),
+        content_reader=FakeContentReader(fail_asset_ids={"a2"}),
+        code_scan_repo=repo,
+    ).execute(RunAisleCodeScanCommand(inventory_id="inv-1", aisle_id="aisle-1"))
+    assert result.status == CodeScanRunStatus.COMPLETED_WITH_WARNINGS
+    assert result.failed_assets == 1
+    latest = repo.get_latest_run_by_aisle(inventory_id="inv-1", aisle_id="aisle-1")
+    assert latest is not None
+    assert latest.metadata_json is not None
+    assert latest.metadata_json.get("unreadable_assets")
+
+
+def test_oversized_payload_skipped_with_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CODE_SCAN_ENABLED", "true")
+    monkeypatch.setenv("CODE_SCAN_MAX_DECODED_PAYLOAD_LENGTH", "4")
+    from src.config import reload_settings
+
+    reload_settings()
+    long_val = "X" * 20
+    result = _use_case(
+        assets=[_photo("a1")],
+        scanner=FakeCodeScanner(
+            by_asset={"a1": [CodeScanDetectionCandidate(code_type=CodeType.QR, code_value=long_val)]},
+            engine="pyzbar",
+        ),
+    ).execute(RunAisleCodeScanCommand(inventory_id="inv-1", aisle_id="aisle-1"))
+    assert result.total_codes_found == 0
+    assert any("max length" in w.lower() for w in result.warnings)
+
+
+def test_persists_scanner_engine_pyzbar(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CODE_SCAN_ENABLED", "true")
+    from src.config import reload_settings
+
+    reload_settings()
+    repo = MemoryCodeScanRepository()
+    _use_case(
+        assets=[_photo("a1")],
+        scanner=FakeCodeScanner(
+            by_asset={"a1": [CodeScanDetectionCandidate(code_type=CodeType.QR, code_value="Q1")]},
+            engine="pyzbar",
+        ),
+        code_scan_repo=repo,
+    ).execute(RunAisleCodeScanCommand(inventory_id="inv-1", aisle_id="aisle-1"))
+    dets = repo.list_detections_for_run(
+        repo.get_latest_run_by_aisle(inventory_id="inv-1", aisle_id="aisle-1").id
+    )
+    assert dets[0].scanner_engine == "pyzbar"

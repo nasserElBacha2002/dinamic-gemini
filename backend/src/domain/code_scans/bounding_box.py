@@ -1,29 +1,31 @@
-"""Stable bounding-box JSON contract for code scan detections (Phase 1).
+"""Stable bounding-box JSON contract for code scan detections.
 
-Stored shape (rect in pixel coordinates):
+Supported shapes:
+
+``rect`` (Phase 1):
+
+```json
+{"format": "rect", "unit": "pixel", "x": 120, "y": 340, "width": 180, "height": 80}
+```
+
+``rect_polygon`` (Phase 2 pyzbar):
 
 ```json
 {
-  "format": "rect",
+  "format": "rect_polygon",
   "unit": "pixel",
-  "x": 120.0,
-  "y": 340.0,
-  "width": 180.0,
-  "height": 80.0
+  "rect": {"x": 120, "y": 340, "width": 180, "height": 80},
+  "polygon": [[120, 340], [300, 340], [300, 420], [120, 420]]
 }
 ```
-
-Phase 2 scanners must emit this object (or ``null`` when unknown).
 """
 
 from __future__ import annotations
 
 from typing import Any, Literal
 
-BoundingBoxFormat = Literal["rect"]
+BoundingBoxFormat = Literal["rect", "rect_polygon"]
 BoundingBoxUnit = Literal["pixel", "normalized"]
-
-_REQUIRED_RECT_KEYS = ("format", "unit", "x", "y", "width", "height")
 
 
 def bounding_box_rect(
@@ -34,7 +36,6 @@ def bounding_box_rect(
     height: float,
     unit: BoundingBoxUnit = "pixel",
 ) -> dict[str, Any]:
-    """Build a persisted/API bounding box object."""
     return {
         "format": "rect",
         "unit": unit,
@@ -42,6 +43,28 @@ def bounding_box_rect(
         "y": float(y),
         "width": float(width),
         "height": float(height),
+    }
+
+
+def bounding_box_rect_polygon(
+    *,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+    polygon: list[list[float]],
+    unit: BoundingBoxUnit = "pixel",
+) -> dict[str, Any]:
+    return {
+        "format": "rect_polygon",
+        "unit": unit,
+        "rect": {
+            "x": float(left),
+            "y": float(top),
+            "width": float(width),
+            "height": float(height),
+        },
+        "polygon": [[float(p[0]), float(p[1])] for p in polygon],
     }
 
 
@@ -63,13 +86,34 @@ def parse_bounding_box(raw: Any) -> dict[str, Any] | None:
         return None
     fmt = raw.get("format")
     unit = raw.get("unit")
-    if fmt != "rect" or unit not in ("pixel", "normalized"):
+    if unit not in ("pixel", "normalized"):
         return None
-    try:
-        x = float(raw["x"])
-        y = float(raw["y"])
-        width = float(raw["width"])
-        height = float(raw["height"])
-    except (KeyError, TypeError, ValueError):
-        return None
-    return bounding_box_rect(x=x, y=y, width=width, height=height, unit=unit)
+    if fmt == "rect":
+        try:
+            return bounding_box_rect(
+                x=float(raw["x"]),
+                y=float(raw["y"]),
+                width=float(raw["width"]),
+                height=float(raw["height"]),
+                unit=unit,
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+    if fmt == "rect_polygon":
+        rect = raw.get("rect")
+        polygon = raw.get("polygon")
+        if not isinstance(rect, dict) or not isinstance(polygon, list):
+            return None
+        try:
+            points = [[float(p[0]), float(p[1])] for p in polygon]
+            return bounding_box_rect_polygon(
+                left=float(rect["x"]),
+                top=float(rect["y"]),
+                width=float(rect["width"]),
+                height=float(rect["height"]),
+                polygon=points,
+                unit=unit,
+            )
+        except (KeyError, TypeError, ValueError, IndexError):
+            return None
+    return None

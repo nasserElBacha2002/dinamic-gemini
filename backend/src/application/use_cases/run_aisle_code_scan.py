@@ -1,4 +1,4 @@
-"""Run a synchronous aisle code scan (Phase 1: noop/fake scanner port)."""
+"""Run a synchronous aisle code scan (Phase 2: pyzbar scanner + storage reads)."""
 
 from __future__ import annotations
 
@@ -16,12 +16,16 @@ from src.application.ports.clock import Clock
 from src.application.ports.code_scan_repository import CodeScanRepository
 from src.application.ports.code_scanner import CodeScannerPort
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
+from src.application.ports.source_asset_content_reader import SourceAssetContentReader
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.code_scan_normalization import (
     code_value_within_limit,
     normalize_code_value,
 )
-from src.application.services.code_scan_run_metadata import build_run_metadata
+from src.application.services.code_scan_run_metadata import (
+    build_run_metadata,
+    skipped_asset_entry,
+)
 from src.config import load_settings
 from src.domain.assets.entities import SourceAssetType
 from src.domain.code_scans.bounding_box import parse_bounding_box
@@ -31,6 +35,10 @@ from src.domain.code_scans.entities import (
     CodeScanRun,
     CodeScanRunStatus,
     CodeType,
+)
+from src.infrastructure.code_scanning.image_decode import (
+    UnsupportedImageFormatError,
+    is_supported_image_asset,
 )
 
 logger = logging.getLogger(__name__)
@@ -69,12 +77,14 @@ class RunAisleCodeScanUseCase:
         asset_repo: SourceAssetRepository,
         code_scan_repo: CodeScanRepository,
         scanner: CodeScannerPort,
+        content_reader: SourceAssetContentReader,
         clock: Clock,
     ) -> None:
         self._aisle_repo = aisle_repo
         self._asset_repo = asset_repo
         self._code_scan_repo = code_scan_repo
         self._scanner = scanner
+        self._content_reader = content_reader
         self._clock = clock
 
     def execute(self, command: RunAisleCodeScanCommand) -> RunAisleCodeScanResult:
@@ -105,8 +115,10 @@ class RunAisleCodeScanUseCase:
         now = self._clock.now()
         run_id = str(uuid4())
         warnings: list[str] = []
-        skipped_assets: list[str] = []
+        skipped_assets: list[dict[str, Any]] = []
         scanner_errors: list[str] = []
+        unreadable_assets: list[dict[str, Any]] = []
+        unsupported_assets: list[dict[str, Any]] = []
 
         run = CodeScanRun(
             id=run_id,
@@ -139,22 +151,72 @@ class RunAisleCodeScanUseCase:
             for asset in assets:
                 if asset.type not in _SCANNABLE_TYPES:
                     failed += 1
-                    skipped_assets.append(asset.id)
+                    entry = skipped_asset_entry(
+                        asset_id=asset.id,
+                        reason="unsupported_asset_type",
+                        asset_type=asset.type.value,
+                    )
+                    skipped_assets.append(entry)
+                    unsupported_assets.append(entry)
                     warnings.append(
                         f"Skipped unsupported asset type {asset.type.value} for asset {asset.id}"
                     )
                     continue
+
+                if not is_supported_image_asset(asset):
+                    failed += 1
+                    entry = skipped_asset_entry(
+                        asset_id=asset.id,
+                        reason="unsupported_image_format",
+                    )
+                    skipped_assets.append(entry)
+                    unsupported_assets.append(entry)
+                    warnings.append(
+                        f"Skipped unsupported image format for asset {asset.id}"
+                    )
+                    continue
+
                 try:
-                    candidates = self._scanner.scan_asset(asset, content=None)
+                    content = self._content_reader.read_image_bytes(asset)
+                except (FileNotFoundError, ValueError) as exc:
+                    failed += 1
+                    scanner_errors.append(f"{asset.id}: storage_read")
+                    unreadable_assets.append(
+                        skipped_asset_entry(asset_id=asset.id, reason="storage_read_failed")
+                    )
+                    warnings.append(f"Could not read asset {asset.id} from storage")
+                    logger.warning(
+                        "code_scan storage_read_failed aisle_id=%s asset_id=%s error=%s",
+                        command.aisle_id,
+                        asset.id,
+                        type(exc).__name__,
+                    )
+                    continue
+
+                try:
+                    candidates = self._scanner.scan_asset(asset, content=content)
+                except UnsupportedImageFormatError as exc:
+                    failed += 1
+                    entry = skipped_asset_entry(
+                        asset_id=asset.id,
+                        reason="unsupported_image_format",
+                    )
+                    skipped_assets.append(entry)
+                    unsupported_assets.append(entry)
+                    warnings.append(f"Unsupported image for asset {asset.id}: {exc}")
+                    continue
                 except Exception as exc:
                     failed += 1
-                    scanner_errors.append(f"{asset.id}: {exc}")
-                    warnings.append(f"Scanner failed for asset {asset.id}: {exc}")
+                    scanner_errors.append(f"{asset.id}: {type(exc).__name__}")
+                    unreadable_assets.append(
+                        skipped_asset_entry(asset_id=asset.id, reason="scanner_failed")
+                    )
+                    warnings.append(f"Scanner failed for asset {asset.id}")
                     logger.warning(
                         "code_scan asset_failed aisle_id=%s asset_id=%s error=%s",
                         command.aisle_id,
                         asset.id,
-                        exc,
+                        type(exc).__name__,
                     )
                     continue
 
@@ -227,6 +289,8 @@ class RunAisleCodeScanUseCase:
                 warnings=warnings,
                 skipped_assets=skipped_assets,
                 scanner_errors=scanner_errors,
+                unreadable_assets=unreadable_assets,
+                unsupported_assets=unsupported_assets,
             )
             self._code_scan_repo.save_run(run)
 
@@ -254,6 +318,8 @@ class RunAisleCodeScanUseCase:
                 warnings=warnings,
                 skipped_assets=skipped_assets,
                 scanner_errors=scanner_errors + [str(exc)],
+                unreadable_assets=unreadable_assets,
+                unsupported_assets=unsupported_assets,
             )
             try:
                 self._code_scan_repo.save_run(run)

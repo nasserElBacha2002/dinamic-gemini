@@ -19,13 +19,15 @@ def test_legacy_warnings_only_metadata() -> None:
 
 
 def test_build_run_metadata_stable_shape() -> None:
+    skipped = [{"asset_id": "asset-v", "reason": "unsupported_asset_type", "asset_type": "video"}]
     meta = build_run_metadata(
         warnings=["w1"],
-        skipped_assets=["asset-v"],
+        skipped_assets=skipped,
         scanner_errors=["asset-v: boom"],
+        unreadable_assets=[{"asset_id": "a2", "reason": "storage_read_failed"}],
     )
-    assert meta == {
-        "warnings": ["w1"],
-        "skipped_assets": ["asset-v"],
-        "scanner_errors": ["asset-v: boom"],
-    }
+    assert meta["warnings"] == ["w1"]
+    assert meta["skipped_assets"] == skipped
+    assert meta["scanner_errors"] == ["asset-v: boom"]
+    assert meta["unreadable_assets"] == [{"asset_id": "a2", "reason": "storage_read_failed"}]
+    assert meta["unsupported_assets"] == []

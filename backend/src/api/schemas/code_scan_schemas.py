@@ -8,15 +8,24 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-class CodeScanBoundingBoxResponse(BaseModel):
-    """Stable rect bounding box persisted in ``bounding_box_json``."""
-
-    format: Literal["rect"] = "rect"
-    unit: Literal["pixel", "normalized"]
+class CodeScanBoundingBoxRectResponse(BaseModel):
     x: float
     y: float
     width: float
     height: float
+
+
+class CodeScanBoundingBoxResponse(BaseModel):
+    """Stable bounding box persisted in ``bounding_box_json`` (rect or rect_polygon)."""
+
+    format: Literal["rect", "rect_polygon"]
+    unit: Literal["pixel", "normalized"]
+    x: float | None = None
+    y: float | None = None
+    width: float | None = None
+    height: float | None = None
+    rect: CodeScanBoundingBoxRectResponse | None = None
+    polygon: list[list[float]] | None = None
 
 
 class CodeScanRunSummaryResponse(BaseModel):

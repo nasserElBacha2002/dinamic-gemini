@@ -576,10 +576,28 @@ def get_delete_aisle_source_asset_use_case(
 
 
 def get_code_scanner():
-    """Phase 1 production scanner: noop (real pyzbar wiring in Phase 2)."""
-    from src.infrastructure.code_scanning.noop_code_scanner import NoopCodeScanner
+    """Production aisle code scanner (pyzbar). Fails fast if libzbar/pyzbar is missing."""
+    from src.infrastructure.code_scanning.pyzbar_code_scanner import (
+        PyzbarCodeScanner,
+        PyzbarUnavailableError,
+    )
 
-    return NoopCodeScanner()
+    try:
+        return PyzbarCodeScanner()
+    except PyzbarUnavailableError as exc:
+        raise RuntimeError(
+            "Aisle code scan requires pyzbar and system libzbar0; see backend/Dockerfile"
+        ) from exc
+
+
+def get_source_asset_content_reader(
+    artifact_storage=Depends(get_artifact_storage),
+):
+    from src.infrastructure.code_scanning.artifact_store_source_asset_content_reader import (
+        ArtifactStoreSourceAssetContentReader,
+    )
+
+    return ArtifactStoreSourceAssetContentReader(artifact_storage)
 
 
 def get_run_aisle_code_scan_use_case(
@@ -587,6 +605,7 @@ def get_run_aisle_code_scan_use_case(
     asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
     code_scan_repo=Depends(get_code_scan_repo),
     scanner=Depends(get_code_scanner),
+    content_reader=Depends(get_source_asset_content_reader),
     clock: Clock = Depends(get_clock),
 ) -> RunAisleCodeScanUseCase:
     return RunAisleCodeScanUseCase(
@@ -594,6 +613,7 @@ def get_run_aisle_code_scan_use_case(
         asset_repo=asset_repo,
         code_scan_repo=code_scan_repo,
         scanner=scanner,
+        content_reader=content_reader,
         clock=clock,
     )
 
