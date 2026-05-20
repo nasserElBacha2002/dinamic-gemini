@@ -55,3 +55,14 @@ class CodeScanRepository(ABC):
     def update_detection_matches(self, detections: Sequence[CodeScanDetection]) -> None:
         """Persist read-only match fields on existing detection rows."""
         ...
+
+    @abstractmethod
+    def list_latest_detections_by_matched_position(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        position_id: str,
+    ) -> Sequence[CodeScanDetection]:
+        """Latest-run detections for the aisle where ``matched_position_id`` equals ``position_id``."""
+        ...

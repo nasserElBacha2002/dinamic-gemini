@@ -27,6 +27,7 @@ from src.application.services.code_scan_normalization import (
     normalize_code_value,
 )
 from src.application.services.code_scan_run_metadata import (
+    build_performance_metadata,
     build_run_metadata,
     skipped_asset_entry,
 )
@@ -341,6 +342,11 @@ class RunAisleCodeScanUseCase:
                 scanner_errors=scanner_errors,
                 unreadable_assets=unreadable_assets,
                 unsupported_assets=unsupported_assets,
+                performance=build_performance_metadata(
+                    started_at=now,
+                    finished_at=finished,
+                    processed_assets=processed,
+                ),
             )
             if matching_meta is not None:
                 run.metadata_json = merge_matching_into_run_metadata(
@@ -375,6 +381,11 @@ class RunAisleCodeScanUseCase:
                 scanner_errors=scanner_errors + [str(exc)],
                 unreadable_assets=unreadable_assets,
                 unsupported_assets=unsupported_assets,
+                performance=build_performance_metadata(
+                    started_at=now,
+                    finished_at=finished,
+                    processed_assets=processed,
+                ),
             )
             try:
                 self._code_scan_repo.save_run(run)

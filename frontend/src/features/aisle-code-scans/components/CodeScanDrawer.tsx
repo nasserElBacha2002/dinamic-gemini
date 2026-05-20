@@ -15,6 +15,8 @@ import CodeScanDetectionsTable from './CodeScanDetectionsTable';
 import CodeScanEmptyState from './CodeScanEmptyState';
 import CodeScanRunSummary from './CodeScanRunSummary';
 import CodeScanSummaryTable from './CodeScanSummaryTable';
+import CodeScanExportMenu from './CodeScanExportMenu';
+import CodeScanReviewSignals from './CodeScanReviewSignals';
 import CodeScanWarnings from './CodeScanWarnings';
 
 export interface CodeScanDrawerProps {
@@ -75,23 +77,37 @@ export default function CodeScanDrawer({
       return null;
     }
     return (
-      <Button
-        size="small"
-        variant="contained"
-        startIcon={
-          runMutation.isPending ? (
-            <CircularProgress size={16} color="inherit" aria-hidden />
-          ) : (
-            <QrCodeScannerIcon fontSize="small" />
-          )
-        }
-        onClick={handleRunClick}
-        disabled={runMutation.isPending}
-      >
-        {t('aisleCodeScans.actions.rerun')}
-      </Button>
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        <CodeScanExportMenu
+          inventoryId={inventoryId}
+          aisleId={aisleId}
+          disabled={runMutation.isPending}
+        />
+        <Button
+          size="small"
+          variant="contained"
+          startIcon={
+            runMutation.isPending ? (
+              <CircularProgress size={16} color="inherit" aria-hidden />
+            ) : (
+              <QrCodeScannerIcon fontSize="small" />
+            )
+          }
+          onClick={handleRunClick}
+          disabled={runMutation.isPending}
+        >
+          {t('aisleCodeScans.actions.rerun')}
+        </Button>
+      </Box>
     );
-  }, [handleRunClick, hasRun, runMutation.isPending, t]);
+  }, [
+    aisleId,
+    handleRunClick,
+    hasRun,
+    inventoryId,
+    runMutation.isPending,
+    t,
+  ]);
 
   return (
     <>
@@ -138,6 +154,11 @@ export default function CodeScanDrawer({
           {!isLoading && !isError && hasRun && latestRun ? (
             <>
               <CodeScanRunSummary run={latestRun} />
+              <CodeScanReviewSignals
+                inventoryId={inventoryId}
+                aisleId={aisleId}
+                enabled={open}
+              />
               <CodeScanWarnings warnings={latestRun.warnings ?? []} />
               {!hasDetections ? <CodeScanEmptyState variant="no_detections" /> : null}
               {summaryItems.length > 0 ? <CodeScanSummaryTable items={summaryItems} /> : null}

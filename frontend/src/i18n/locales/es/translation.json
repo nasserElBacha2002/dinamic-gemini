@@ -270,7 +270,10 @@
       "disabled": "El escaneo de códigos está deshabilitado.",
       "max_assets": "Hay demasiados activos para escanear en una sola ejecución.",
       "run_failed": "No se pudo ejecutar el escaneo de códigos.",
-      "scanner_unavailable": "El motor de escaneo de códigos no está disponible en este entorno."
+      "scanner_unavailable": "El motor de escaneo de códigos no está disponible en este entorno.",
+      "export_no_run": "No hay escaneo de códigos para exportar en este pasillo.",
+      "export_unsupported_type": "Tipo de exportación no soportado.",
+      "export_unsupported_format": "Formato de exportación no soportado."
     },
     "matching": {
       "status": "Coincidencia",
@@ -297,6 +300,51 @@
       "qr_payload_barcode_exact": "Código de barras en QR",
       "multiple_candidates_type": "Coincidencia múltiple",
       "no_match_type": "Sin coincidencia"
+    },
+    "signals": {
+      "title": "Señales de revisión",
+      "description": "Estas señales ayudan a priorizar la revisión manual. No modifican cantidades ni estados.",
+      "empty": "No hay señales de revisión para este escaneo.",
+      "loadError": "No se pudieron cargar las señales de revisión.",
+      "info": "Informativas",
+      "warning": "Advertencias",
+      "attention": "Atención",
+      "filterAll": "Todas",
+      "matchedCount": "Coincidencias",
+      "unmatchedCount": "Sin coincidencia",
+      "multipleCount": "Coincidencia múltiple",
+      "code_match_found": "Coincidencia sugerida con resultado existente.",
+      "code_no_match": "Código detectado sin resultado vinculado.",
+      "code_multiple_candidates": "El código coincide con más de un resultado posible.",
+      "code_conflict": "Posible conflicto de código.",
+      "matching_not_evaluated": "No se evaluaron coincidencias para este código.",
+      "many_unmatched_codes_in_aisle": "Hay varios códigos sin coincidencia en este pasillo.",
+      "many_multiple_candidate_codes_in_aisle": "Hay varios códigos con coincidencia múltiple en este pasillo.",
+      "result_has_code_evidence": "Este resultado tiene evidencia de código asociada."
+    },
+    "exports": {
+      "button": "Exportar",
+      "detections": "Exportar detecciones",
+      "unmatched": "Exportar códigos sin coincidencia",
+      "summary": "Exportar resumen",
+      "success": "Exportación generada correctamente.",
+      "error": "No se pudo exportar la información de códigos."
+    },
+    "evidence": {
+      "title": "Evidencia de código",
+      "description": "Códigos QR o códigos de barra detectados en los activos de origen y vinculados a este resultado como coincidencias sugeridas.",
+      "noMutationNotice": "Esta evidencia no modifica cantidades ni estados de revisión.",
+      "loading": "Cargando evidencia de código...",
+      "noRun": "Todavía no hay escaneos de códigos para este pasillo.",
+      "empty": "No hay códigos detectados vinculados a este resultado.",
+      "loadError": "No se pudo cargar la evidencia de código.",
+      "type": "Tipo",
+      "value": "Valor detectado",
+      "match": "Coincidencia sugerida",
+      "sourceAsset": "Activo de origen",
+      "detectedAt": "Detectado",
+      "viewImage": "Ver imagen",
+      "copyValue": "Copiar valor"
     }
   },
   "analytics": {

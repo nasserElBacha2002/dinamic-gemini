@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
+from starlette.responses import Response
 
 from src.api.dependencies import (
+    get_export_aisle_code_scans_use_case,
+    get_get_aisle_code_scan_review_signals_use_case,
     get_list_aisle_code_scans_use_case,
     get_run_aisle_code_scan_use_case,
     get_summarize_aisle_code_scans_use_case,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.code_scan_schemas import (
+    AisleCodeScanReviewSignalsResponse,
     CodeScanBoundingBoxResponse,
     CodeScanDetectionResponse,
+    CodeScanReviewSignalResponse,
+    CodeScanReviewSignalsSummaryResponse,
     CodeScanRunSummaryResponse,
     CodeScanSummaryItemResponse,
     ListAisleCodeScansResponse,
@@ -21,6 +27,10 @@ from src.api.schemas.code_scan_schemas import (
 )
 from src.application.errors import AisleNotFoundError
 from src.application.services.code_scan_run_metadata import warnings_from_run_metadata
+from src.application.use_cases.export_aisle_code_scans import ExportAisleCodeScansCommand
+from src.application.use_cases.get_aisle_code_scan_review_signals import (
+    GetAisleCodeScanReviewSignalsCommand,
+)
 from src.application.use_cases.list_aisle_code_scans import ListAisleCodeScansCommand
 from src.application.use_cases.run_aisle_code_scan import RunAisleCodeScanCommand
 from src.application.use_cases.summarize_aisle_code_scans import SummarizeAisleCodeScansCommand
@@ -188,3 +198,81 @@ def summarize_aisle_code_scans(
     except AisleNotFoundError as e:
         reraise_if_mapped(e)
         raise
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/code-scans/review-signals",
+    response_model=AisleCodeScanReviewSignalsResponse,
+)
+def get_aisle_code_scan_review_signals(
+    inventory_id: str,
+    aisle_id: str,
+    use_case=Depends(get_get_aisle_code_scan_review_signals_use_case),
+) -> AisleCodeScanReviewSignalsResponse:
+    """Read-only review signals from the latest code scan (no mutation)."""
+    try:
+        result = use_case.execute(
+            GetAisleCodeScanReviewSignalsCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+            )
+        )
+        latest = _run_to_summary(result.latest_run) if result.latest_run else None
+        summary = result.summary
+        return AisleCodeScanReviewSignalsResponse(
+            latest_run=latest,
+            summary=CodeScanReviewSignalsSummaryResponse(
+                total_signals=summary.total_signals,
+                info=summary.info,
+                warning=summary.warning,
+                attention=summary.attention,
+                unmatched_codes=summary.unmatched_codes,
+                multiple_candidates=summary.multiple_candidates,
+                matched_codes=summary.matched_codes,
+            ),
+            signals=[
+                CodeScanReviewSignalResponse(
+                    id=s.id,
+                    type=s.type,
+                    severity=s.severity,
+                    message=s.message,
+                    detection_id=s.detection_id,
+                    position_id=s.position_id,
+                    asset_id=s.asset_id,
+                    code_value=s.code_value,
+                    code_type=s.code_type,
+                )
+                for s in result.signals
+            ],
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.get("/{inventory_id}/aisles/{aisle_id}/code-scans/export")
+def export_aisle_code_scans(
+    inventory_id: str,
+    aisle_id: str,
+    format: str = Query("csv", alias="format"),
+    type: str = Query(..., alias="type", description="detections | unmatched | summary"),
+    use_case=Depends(get_export_aisle_code_scans_use_case),
+) -> Response:
+    """Export latest aisle code scan data as a separate CSV report."""
+    try:
+        result = use_case.execute(
+            ExportAisleCodeScansCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                export_format=format,
+                export_type=type,
+            )
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return Response(
+        content=result.body.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{result.filename}"'},
+    )

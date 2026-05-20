@@ -104,3 +104,59 @@ export interface SummarizeAisleCodeScansResponse {
   latest_run: CodeScanRunSummary | null;
   items: CodeScanSummaryItem[];
 }
+
+export interface PositionCodeScanEvidenceSummary {
+  total_detections: number;
+  source_assets_count: number;
+  code_types: Record<string, number>;
+}
+
+export interface PositionCodeScanEvidenceResponse {
+  latest_run: CodeScanRunSummary | null;
+  summary: PositionCodeScanEvidenceSummary;
+  detections: CodeScanDetection[];
+}
+
+export type CodeScanSignalSeverity = 'info' | 'warning' | 'attention';
+
+export type CodeScanSignalType =
+  | 'code_match_found'
+  | 'code_no_match'
+  | 'code_multiple_candidates'
+  | 'code_conflict'
+  | 'code_detected_without_result'
+  | 'result_has_code_evidence'
+  | 'result_without_code_evidence'
+  | 'many_unmatched_codes_in_aisle'
+  | 'many_multiple_candidate_codes_in_aisle'
+  | 'matching_not_evaluated';
+
+export interface CodeScanReviewSignalsSummary {
+  total_signals: number;
+  info: number;
+  warning: number;
+  attention: number;
+  unmatched_codes: number;
+  multiple_candidates: number;
+  matched_codes: number;
+}
+
+export interface CodeScanReviewSignal {
+  id: string;
+  type: CodeScanSignalType | string;
+  severity: CodeScanSignalSeverity | string;
+  message: string;
+  detection_id: string | null;
+  position_id: string | null;
+  asset_id: string | null;
+  code_value: string | null;
+  code_type: string | null;
+}
+
+export interface AisleCodeScanReviewSignalsResponse {
+  latest_run: CodeScanRunSummary | null;
+  summary: CodeScanReviewSignalsSummary;
+  signals: CodeScanReviewSignal[];
+}
+
+export type CodeScanExportType = 'detections' | 'unmatched' | 'summary';

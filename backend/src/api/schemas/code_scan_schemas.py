@@ -94,3 +94,43 @@ class CodeScanSummaryItemResponse(BaseModel):
 class SummarizeAisleCodeScansResponse(BaseModel):
     latest_run: CodeScanRunSummaryResponse | None = None
     items: list[CodeScanSummaryItemResponse] = Field(default_factory=list)
+
+
+class PositionCodeScanEvidenceSummaryResponse(BaseModel):
+    total_detections: int
+    source_assets_count: int
+    code_types: dict[str, int] = Field(default_factory=dict)
+
+
+class PositionCodeScanEvidenceResponse(BaseModel):
+    latest_run: CodeScanRunSummaryResponse | None = None
+    summary: PositionCodeScanEvidenceSummaryResponse
+    detections: list[CodeScanDetectionResponse] = Field(default_factory=list)
+
+
+class CodeScanReviewSignalsSummaryResponse(BaseModel):
+    total_signals: int
+    info: int
+    warning: int
+    attention: int
+    unmatched_codes: int
+    multiple_candidates: int
+    matched_codes: int
+
+
+class CodeScanReviewSignalResponse(BaseModel):
+    id: str
+    type: str
+    severity: str
+    message: str
+    detection_id: str | None = None
+    position_id: str | None = None
+    asset_id: str | None = None
+    code_value: str | None = None
+    code_type: str | None = None
+
+
+class AisleCodeScanReviewSignalsResponse(BaseModel):
+    latest_run: CodeScanRunSummaryResponse | None = None
+    summary: CodeScanReviewSignalsSummaryResponse
+    signals: list[CodeScanReviewSignalResponse] = Field(default_factory=list)

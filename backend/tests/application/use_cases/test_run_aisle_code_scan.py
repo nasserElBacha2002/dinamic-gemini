@@ -226,6 +226,9 @@ def test_run_persists_fake_detections(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.total_codes_found == 2
     assert result.total_qr_found == 1
     assert result.total_barcodes_found == 1
+    perf = (result.metadata_json or {}).get("performance") or {}
+    assert perf.get("duration_ms", -1) >= 0
+    assert perf.get("assets_per_second", -1) >= 0
     detections = repo.list_detections_for_run(result.run_id)
     assert len(detections) == 3
     dup = [d for d in detections if d.detection_status == CodeScanDetectionStatus.DUPLICATE]

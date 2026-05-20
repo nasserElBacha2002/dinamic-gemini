@@ -72,6 +72,18 @@ export const queryKeys = {
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'code-scans', aisleId] as const,
     aisleCodeScanSummary: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'code-scans', aisleId, 'summary'] as const,
+    aisleCodeScanReviewSignals: (inventoryId: string, aisleId: string) =>
+      [...queryKeys.inventories.all, 'aisles', inventoryId, 'code-scans', aisleId, 'review-signals'] as const,
+    positionCodeScanEvidence: (inventoryId: string, aisleId: string, positionId: string) =>
+      [
+        ...queryKeys.inventories.all,
+        'aisles',
+        inventoryId,
+        'positions',
+        positionId,
+        'code-scan-evidence',
+        aisleId,
+      ] as const,
     /** Run selector list (`listAisleJobs`); `limit` is part of cache identity. */
     aisleJobsList: (inventoryId: string, aisleId: string, limit: number) =>
       [...queryKeys.inventories.aisleJobs(inventoryId, aisleId), limit] as const,

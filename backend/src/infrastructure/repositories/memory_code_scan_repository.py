@@ -72,6 +72,21 @@ class MemoryCodeScanRepository(CodeScanRepository):
             return []
         return self.list_detections_for_run(run.id)
 
+    def list_latest_detections_by_matched_position(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        position_id: str,
+    ) -> Sequence[CodeScanDetection]:
+        return [
+            d
+            for d in self.list_latest_detections_by_aisle(
+                inventory_id=inventory_id, aisle_id=aisle_id
+            )
+            if d.matched_position_id == position_id
+        ]
+
     def summarize_latest_detections_by_aisle(
         self, *, inventory_id: str, aisle_id: str
     ) -> Sequence[CodeScanSummaryItem]:

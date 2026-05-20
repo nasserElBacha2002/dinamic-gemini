@@ -84,6 +84,18 @@ class CodeScanScannerUnavailableError(Exception):
     """Raised when pyzbar/libzbar is not installed or cannot load in this runtime."""
 
 
+class CodeScanExportNoRunError(Exception):
+    """Raised when a code scan export is requested but no latest run exists for the aisle."""
+
+
+class CodeScanExportUnsupportedTypeError(Exception):
+    """Raised when export type is not detections, unmatched, or summary."""
+
+
+class CodeScanExportUnsupportedFormatError(Exception):
+    """Raised when export format is not csv."""
+
+
 class NoSourceAssetsForAisleProcessingError(Exception):
     """Raised when aisle processing is requested but the aisle has no persisted SourceAsset rows."""
 

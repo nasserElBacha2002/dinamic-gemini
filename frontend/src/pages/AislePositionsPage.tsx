@@ -785,6 +785,7 @@ export default function AislePositionsPage() {
         open={Boolean(quickContext)}
         context={quickContext}
         onClose={() => setQuickContext(null)}
+        onOpenCodeScan={() => setCodeScanDrawerOpen(true)}
       />
     </>
   );

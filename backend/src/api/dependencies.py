@@ -119,6 +119,13 @@ from src.application.use_cases.retry_aisle_job import RetryAisleJobUseCase
 from src.application.use_cases.run_aisle_code_scan import RunAisleCodeScanUseCase
 from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingUseCase
+from src.application.use_cases.export_aisle_code_scans import ExportAisleCodeScansUseCase
+from src.application.use_cases.get_aisle_code_scan_review_signals import (
+    GetAisleCodeScanReviewSignalsUseCase,
+)
+from src.application.use_cases.get_position_code_scan_evidence import (
+    GetPositionCodeScanEvidenceUseCase,
+)
 from src.application.use_cases.summarize_aisle_code_scans import SummarizeAisleCodeScansUseCase
 from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
@@ -664,6 +671,40 @@ def get_summarize_aisle_code_scans_use_case(
     code_scan_repo=Depends(get_code_scan_repo),
 ) -> SummarizeAisleCodeScansUseCase:
     return SummarizeAisleCodeScansUseCase(
+        aisle_repo=aisle_repo,
+        code_scan_repo=code_scan_repo,
+    )
+
+
+def get_get_position_code_scan_evidence_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+) -> GetPositionCodeScanEvidenceUseCase:
+    return GetPositionCodeScanEvidenceUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        code_scan_repo=code_scan_repo,
+    )
+
+
+def get_get_aisle_code_scan_review_signals_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+) -> GetAisleCodeScanReviewSignalsUseCase:
+    return GetAisleCodeScanReviewSignalsUseCase(
+        aisle_repo=aisle_repo,
+        code_scan_repo=code_scan_repo,
+    )
+
+
+def get_export_aisle_code_scans_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+) -> ExportAisleCodeScansUseCase:
+    return ExportAisleCodeScansUseCase(
         aisle_repo=aisle_repo,
         code_scan_repo=code_scan_repo,
     )

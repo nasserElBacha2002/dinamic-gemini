@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 
 from src.api.dependencies import (
     get_code_scanner,
+    get_export_aisle_code_scans_use_case,
+    get_get_aisle_code_scan_review_signals_use_case,
     get_list_aisle_code_scans_use_case,
     get_run_aisle_code_scan_use_case,
     get_summarize_aisle_code_scans_use_case,
@@ -17,10 +19,23 @@ from src.api.errors.structured_api_http import CODE_SCAN_SCANNER_UNAVAILABLE
 from src.api.server import app
 from src.application.errors import (
     AisleNotFoundError,
+    CodeScanExportNoRunError,
     CodeScanScannerUnavailableError,
     NoSourceAssetsForCodeScanError,
 )
 from src.application.ports.code_scan_repository import CodeScanSummaryItem
+from src.application.services.code_scan_review_signals import (
+    CodeScanReviewSignal,
+    summarize_signals,
+)
+from src.application.use_cases.export_aisle_code_scans import (
+    ExportAisleCodeScansCommand,
+    ExportAisleCodeScansResult,
+)
+from src.application.use_cases.get_aisle_code_scan_review_signals import (
+    GetAisleCodeScanReviewSignalsCommand,
+    GetAisleCodeScanReviewSignalsResult,
+)
 from src.application.use_cases.list_aisle_code_scans import (
     ListAisleCodeScansCommand,
     ListAisleCodeScansResult,
@@ -291,5 +306,97 @@ def test_get_list_maps_aisle_not_found() -> None:
         client = TestClient(app)
         resp = client.get("/api/v3/inventories/inv1/aisles/a1/code-scans")
         assert resp.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_review_signals_ok() -> None:
+    now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
+    run = CodeScanRun(
+        id="run-1",
+        inventory_id="inv1",
+        aisle_id="a1",
+        status=CodeScanRunStatus.COMPLETED,
+        is_latest=True,
+        total_assets=1,
+        processed_assets=1,
+        failed_assets=0,
+        total_codes_found=1,
+        total_qr_found=0,
+        total_barcodes_found=1,
+        started_at=now,
+        finished_at=now,
+        scanner_engine="pyzbar",
+        created_by="admin",
+    )
+
+    class StubSignals:
+        def execute(self, _cmd: GetAisleCodeScanReviewSignalsCommand):
+            empty = summarize_signals(())
+            return GetAisleCodeScanReviewSignalsResult(
+                latest_run=run,
+                summary=empty,
+                signals=(
+                    CodeScanReviewSignal(
+                        id="sig-1",
+                        type="code_no_match",
+                        severity="attention",
+                        message="Código detectado sin resultado vinculado.",
+                        detection_id="det-1",
+                    ),
+                ),
+            )
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_get_aisle_code_scan_review_signals_use_case] = (
+        lambda: StubSignals()
+    )
+    try:
+        client = TestClient(app)
+        resp = client.get("/api/v3/inventories/inv1/aisles/a1/code-scans/review-signals")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["latest_run"]["id"] == "run-1"
+        assert len(data["signals"]) == 1
+        assert data["signals"][0]["type"] == "code_no_match"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_export_csv_no_run_404() -> None:
+    class StubExport:
+        def execute(self, _cmd: ExportAisleCodeScansCommand) -> ExportAisleCodeScansResult:
+            raise CodeScanExportNoRunError("no run")
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_export_aisle_code_scans_use_case] = lambda: StubExport()
+    try:
+        client = TestClient(app)
+        resp = client.get(
+            "/api/v3/inventories/inv1/aisles/a1/code-scans/export?format=csv&type=detections"
+        )
+        assert resp.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_export_csv_ok() -> None:
+    class StubExport:
+        def execute(self, _cmd: ExportAisleCodeScansCommand) -> ExportAisleCodeScansResult:
+            return ExportAisleCodeScansResult(
+                filename="code-scans-inv1-a1-detections.csv",
+                body="\ufeffinventory_id,aisle_id\ninv1,a1\n",
+            )
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_export_aisle_code_scans_use_case] = lambda: StubExport()
+    try:
+        client = TestClient(app)
+        resp = client.get(
+            "/api/v3/inventories/inv1/aisles/a1/code-scans/export?format=csv&type=detections"
+        )
+        assert resp.status_code == 200
+        assert "text/csv" in resp.headers.get("content-type", "")
+        assert "code-scans" in resp.headers.get("content-disposition", "")
     finally:
         app.dependency_overrides.clear()

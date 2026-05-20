@@ -46,6 +46,9 @@ const V3_STRUCTURED_CODE_TO_KEY: Record<string, string> = {
   CODE_SCAN_DISABLED: 'aisleCodeScans.errors.disabled',
   CODE_SCAN_MAX_ASSETS_EXCEEDED: 'aisleCodeScans.errors.max_assets',
   CODE_SCAN_SCANNER_UNAVAILABLE: 'aisleCodeScans.errors.scanner_unavailable',
+  CODE_SCAN_EXPORT_NO_RUN: 'aisleCodeScans.errors.export_no_run',
+  CODE_SCAN_EXPORT_UNSUPPORTED_TYPE: 'aisleCodeScans.errors.export_unsupported_type',
+  CODE_SCAN_EXPORT_UNSUPPORTED_FORMAT: 'aisleCodeScans.errors.export_unsupported_format',
 };
 
 export function v3StructuredErrorCodeToTranslationKey(code: string): string | null {

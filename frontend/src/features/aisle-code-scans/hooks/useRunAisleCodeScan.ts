@@ -17,6 +17,20 @@ export function useRunAisleCodeScan(
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.aisleCodeScanSummary(inventoryId, aisleId),
       });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.inventories.aisleCodeScanReviewSignals(inventoryId, aisleId),
+      });
+      queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey;
+          return (
+            Array.isArray(key) &&
+            key[0] === queryKeys.inventories.all[0] &&
+            key.includes('code-scan-evidence') &&
+            key.includes(aisleId)
+          );
+        },
+      });
     },
   });
 }

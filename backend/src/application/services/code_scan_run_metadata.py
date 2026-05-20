@@ -15,6 +15,29 @@ def empty_run_metadata() -> dict[str, Any]:
     }
 
 
+def build_performance_metadata(
+    *,
+    started_at: Any,
+    finished_at: Any,
+    processed_assets: int,
+) -> dict[str, Any]:
+    """Elapsed time and throughput for sync scan runs (Phase 6C)."""
+    duration_ms = 0
+    if started_at is not None and finished_at is not None:
+        try:
+            delta = finished_at - started_at
+            duration_ms = max(0, int(delta.total_seconds() * 1000))
+        except (TypeError, AttributeError):
+            duration_ms = 0
+    assets_per_second = 0.0
+    if duration_ms > 0 and processed_assets > 0:
+        assets_per_second = round(processed_assets / (duration_ms / 1000.0), 2)
+    return {
+        "duration_ms": duration_ms,
+        "assets_per_second": assets_per_second,
+    }
+
+
 def build_run_metadata(
     *,
     warnings: list[str] | None = None,
@@ -22,15 +45,19 @@ def build_run_metadata(
     scanner_errors: list[str] | None = None,
     unreadable_assets: list[dict[str, Any]] | None = None,
     unsupported_assets: list[dict[str, Any]] | None = None,
+    performance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build run metadata with stable keys."""
-    return {
+    meta: dict[str, Any] = {
         "warnings": list(warnings or []),
         "skipped_assets": list(skipped_assets or []),
         "scanner_errors": list(scanner_errors or []),
         "unreadable_assets": list(unreadable_assets or []),
         "unsupported_assets": list(unsupported_assets or []),
     }
+    if performance:
+        meta["performance"] = performance
+    return meta
 
 
 def skipped_asset_entry(

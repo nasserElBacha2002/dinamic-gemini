@@ -116,6 +116,14 @@ vi.mock('../../../src/features/aisle-code-scans/components/CodeScanAssetPreviewB
   default: () => <button type="button">Ver imagen</button>,
 }));
 
+vi.mock('../../../src/features/aisle-code-scans/components/CodeScanReviewSignals', () => ({
+  default: () => <div data-testid="code-scan-review-signals-mock" />,
+}));
+
+vi.mock('../../../src/features/aisle-code-scans/components/CodeScanExportMenu', () => ({
+  default: () => <button type="button">Exportar</button>,
+}));
+
 function renderDrawer(open = true) {
   return render(
     <AppSnackbarProvider>

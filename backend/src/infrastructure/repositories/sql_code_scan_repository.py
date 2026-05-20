@@ -347,6 +347,28 @@ class SqlCodeScanRepository(CodeScanRepository):
             return []
         return self.list_detections_for_run(run.id)
 
+    def list_latest_detections_by_matched_position(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        position_id: str,
+    ) -> Sequence[CodeScanDetection]:
+        run = self.get_latest_run_by_aisle(inventory_id=inventory_id, aisle_id=aisle_id)
+        if run is None:
+            return []
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT * FROM aisle_code_scan_detections
+                WHERE run_id = ? AND matched_position_id = ?
+                ORDER BY created_at ASC
+                """,
+                (run.id, position_id),
+            )
+            rows = cur.fetchall()
+        return [_row_to_detection(r) for r in rows]
+
     def summarize_latest_detections_by_aisle(
         self, *, inventory_id: str, aisle_id: str
     ) -> Sequence[CodeScanSummaryItem]:

@@ -8,10 +8,16 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 
 from src.api.dependencies import (
+    get_get_position_code_scan_evidence_use_case,
     get_get_position_detail_use_case,
     get_list_aisle_positions_use_case,
 )
 from src.api.errors import mapped_http_exception
+from src.api.routes.v3.code_scans import _detection_to_response, _run_to_summary
+from src.api.schemas.code_scan_schemas import (
+    PositionCodeScanEvidenceResponse,
+    PositionCodeScanEvidenceSummaryResponse,
+)
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.api.schemas.position_schemas import (
     PositionDetailResponse,
@@ -20,6 +26,10 @@ from src.api.schemas.position_schemas import (
 )
 from src.application.mappers.position_canonical_view import build_position_canonical_view
 from src.application.services.display_primary_product import select_display_primary_product
+from src.application.use_cases.get_position_code_scan_evidence import (
+    GetPositionCodeScanEvidenceCommand,
+    GetPositionCodeScanEvidenceUseCase,
+)
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 from src.application.use_cases.list_aisle_positions import (
     ListAislePositionsCommand,
@@ -282,3 +292,43 @@ def get_position_detail(
         if mapped is not None:
             raise mapped
         raise
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/positions/{position_id}/code-scan-evidence",
+    response_model=PositionCodeScanEvidenceResponse,
+)
+def get_position_code_scan_evidence(
+    inventory_id: str,
+    aisle_id: str,
+    position_id: str,
+    use_case: GetPositionCodeScanEvidenceUseCase = Depends(
+        get_get_position_code_scan_evidence_use_case
+    ),
+) -> PositionCodeScanEvidenceResponse:
+    """Read-only code scan detections linked to this position via ``matched_position_id``."""
+    try:
+        result = use_case.execute(
+            GetPositionCodeScanEvidenceCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                position_id=position_id,
+            )
+        )
+    except Exception as e:
+        mapped = mapped_http_exception(e)
+        if mapped is not None:
+            raise mapped
+        raise
+    latest_run = (
+        _run_to_summary(result.latest_run) if result.latest_run is not None else None
+    )
+    return PositionCodeScanEvidenceResponse(
+        latest_run=latest_run,
+        summary=PositionCodeScanEvidenceSummaryResponse(
+            total_detections=result.summary.total_detections,
+            source_assets_count=result.summary.source_assets_count,
+            code_types=result.summary.code_types,
+        ),
+        detections=[_detection_to_response(d) for d in result.detections],
+    )
