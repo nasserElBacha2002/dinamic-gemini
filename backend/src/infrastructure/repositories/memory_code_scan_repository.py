@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from src.application.ports.code_scan_repository import CodeScanRepository, CodeScanSummaryItem
 from src.application.services.code_scan_summary import detection_counts_toward_summary
+from src.application.services.code_scan_summary_match import aggregate_group_match
 from src.domain.code_scans.entities import CodeScanDetection, CodeScanRun
 
 
@@ -42,6 +43,11 @@ class MemoryCodeScanRepository(CodeScanRepository):
     def save_detections(self, detections: Sequence[CodeScanDetection]) -> None:
         for d in detections:
             self._detections[d.id] = d
+
+    def update_detection_matches(self, detections: Sequence[CodeScanDetection]) -> None:
+        for d in detections:
+            if d.id in self._detections:
+                self._detections[d.id] = d
 
     def get_latest_run_by_aisle(self, *, inventory_id: str, aisle_id: str) -> CodeScanRun | None:
         latest: CodeScanRun | None = None
@@ -83,6 +89,9 @@ class MemoryCodeScanRepository(CodeScanRepository):
         for (norm, code_type), rows in groups.items():
             asset_ids = tuple(dict.fromkeys(r.asset_id for r in rows))
             first_seen = min(r.created_at for r in rows)
+            match_status, matched_position_ids, match_types, match_status_counts = (
+                aggregate_group_match(rows)
+            )
             items.append(
                 CodeScanSummaryItem(
                     code_value=rows[0].code_value,
@@ -91,6 +100,10 @@ class MemoryCodeScanRepository(CodeScanRepository):
                     occurrences=len(rows),
                     asset_ids=asset_ids,
                     first_seen_at=first_seen,
+                    match_status=match_status,
+                    matched_position_ids=matched_position_ids,
+                    match_types=match_types,
+                    match_status_counts=match_status_counts,
                 )
             )
         items.sort(key=lambda x: (x.normalized_code_value, x.code_type))

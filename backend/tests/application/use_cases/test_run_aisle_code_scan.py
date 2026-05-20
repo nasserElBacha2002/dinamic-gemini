@@ -164,6 +164,7 @@ def _use_case(
     scanner: CodeScannerPort,
     content_reader: SourceAssetContentReader | None = None,
     code_scan_repo: CodeScanRepository | None = None,
+    match_detections_use_case=None,
 ) -> RunAisleCodeScanUseCase:
     now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
     return RunAisleCodeScanUseCase(
@@ -173,6 +174,7 @@ def _use_case(
         scanner=scanner,
         content_reader=content_reader or FakeContentReader(),
         clock=FixedClock(now),
+        match_detections_use_case=match_detections_use_case,
     )
 
 
@@ -463,3 +465,29 @@ def test_persists_scanner_engine_pyzbar(monkeypatch: pytest.MonkeyPatch) -> None
         repo.get_latest_run_by_aisle(inventory_id="inv-1", aisle_id="aisle-1").id
     )
     assert dets[0].scanner_engine == "pyzbar"
+
+
+def test_matching_failure_does_not_fail_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.application.use_cases.match_aisle_code_scan_detections import (
+        MATCHING_WARNING_MESSAGE,
+        MatchAisleCodeScanDetectionsCommand,
+    )
+
+    monkeypatch.setenv("CODE_SCAN_ENABLED", "true")
+    from src.config import reload_settings
+
+    reload_settings()
+
+    class FailingMatcher:
+        def execute(self, cmd: MatchAisleCodeScanDetectionsCommand):
+            raise RuntimeError("matcher down")
+
+    result = _use_case(
+        assets=[_photo("a1")],
+        scanner=FakeCodeScanner(
+            by_asset={"a1": [CodeScanDetectionCandidate(code_type=CodeType.BARCODE, code_value="X")]},
+        ),
+        match_detections_use_case=FailingMatcher(),
+    ).execute(RunAisleCodeScanCommand(inventory_id="inv-1", aisle_id="aisle-1"))
+    assert result.status == CodeScanRunStatus.COMPLETED_WITH_WARNINGS
+    assert MATCHING_WARNING_MESSAGE in result.warnings

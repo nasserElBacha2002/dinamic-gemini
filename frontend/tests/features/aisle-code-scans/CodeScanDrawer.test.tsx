@@ -35,6 +35,32 @@ const mockDetections = [
     scanner_engine: 'pyzbar',
     created_at: '2026-05-20T12:00:05Z',
     metadata_json: { pyzbar_type: 'EAN13' },
+    matched_position_id: 'pos-abc',
+    match_status: 'matched',
+    match_type: 'barcode_exact',
+    match_confidence: 1,
+    match_metadata_json: { matched_field: 'position_barcode' },
+    matched_at: '2026-05-20T12:00:05Z',
+  },
+  {
+    id: 'det-2',
+    run_id: 'run-1',
+    asset_id: 'asset-2',
+    code_type: 'qr',
+    code_value: 'UNKNOWN',
+    normalized_code_value: 'UNKNOWN',
+    detection_status: 'detected',
+    confidence: null,
+    bounding_box_json: null,
+    scanner_engine: 'pyzbar',
+    created_at: '2026-05-20T12:00:06Z',
+    metadata_json: null,
+    matched_position_id: null,
+    match_status: 'no_match',
+    match_type: 'no_match',
+    match_confidence: 0,
+    match_metadata_json: null,
+    matched_at: '2026-05-20T12:00:06Z',
   },
 ];
 
@@ -46,6 +72,9 @@ const mockSummaryItems = [
     occurrences: 1,
     asset_ids: ['asset-1'],
     first_seen_at: '2026-05-20T12:00:05Z',
+    match_status: 'matched',
+    matched_position_ids: ['pos-abc'],
+    match_types: ['barcode_exact'],
   },
 ];
 
@@ -162,5 +191,15 @@ describe('CodeScanDrawer', () => {
     scansState.error = new Error('load failed');
     renderDrawer();
     expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('shows match status labels without validated wording', () => {
+    scansState.data = { latest_run: mockRun, detections: mockDetections };
+    summaryState.data = { latest_run: mockRun, items: mockSummaryItems };
+    renderDrawer();
+    expect(screen.getAllByText(/Coincidencia sugerida/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Sin coincidencia/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Validado/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText('pos-abc').length).toBeGreaterThan(0);
   });
 });

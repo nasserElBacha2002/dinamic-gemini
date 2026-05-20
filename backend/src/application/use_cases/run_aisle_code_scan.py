@@ -26,6 +26,11 @@ from src.application.services.code_scan_run_metadata import (
     build_run_metadata,
     skipped_asset_entry,
 )
+from src.application.use_cases.match_aisle_code_scan_detections import (
+    MATCHING_WARNING_MESSAGE,
+    MatchAisleCodeScanDetectionsCommand,
+    MatchAisleCodeScanDetectionsUseCase,
+)
 from src.config import load_settings
 from src.domain.assets.entities import SourceAssetType
 from src.domain.code_scans.bounding_box import parse_bounding_box
@@ -80,6 +85,7 @@ class RunAisleCodeScanUseCase:
         scanner: CodeScannerPort,
         content_reader: SourceAssetContentReader,
         clock: Clock,
+        match_detections_use_case: MatchAisleCodeScanDetectionsUseCase | None = None,
     ) -> None:
         self._aisle_repo = aisle_repo
         self._asset_repo = asset_repo
@@ -87,6 +93,7 @@ class RunAisleCodeScanUseCase:
         self._scanner = scanner
         self._content_reader = content_reader
         self._clock = clock
+        self._match_detections_use_case = match_detections_use_case
 
     def execute(self, command: RunAisleCodeScanCommand) -> RunAisleCodeScanResult:
         settings = load_settings()
@@ -282,6 +289,22 @@ class RunAisleCodeScanUseCase:
 
             if detections:
                 self._code_scan_repo.save_detections(detections)
+                if self._match_detections_use_case is not None:
+                    try:
+                        self._match_detections_use_case.execute(
+                            MatchAisleCodeScanDetectionsCommand(
+                                inventory_id=command.inventory_id,
+                                aisle_id=command.aisle_id,
+                                run_id=run_id,
+                            )
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Code scan matching failed after run %s aisle %s",
+                            run_id,
+                            command.aisle_id,
+                        )
+                        warnings.append(MATCHING_WARNING_MESSAGE)
 
             finished = self._clock.now()
             if failed > 0 or warnings:

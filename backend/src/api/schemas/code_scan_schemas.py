@@ -61,6 +61,12 @@ class CodeScanDetectionResponse(BaseModel):
     scanner_engine: str
     created_at: datetime
     metadata_json: dict[str, Any] | None = None
+    matched_position_id: str | None = None
+    match_status: str | None = None
+    match_type: str | None = None
+    match_confidence: float | None = None
+    match_metadata_json: dict[str, Any] | None = None
+    matched_at: datetime | None = None
 
 
 class ListAisleCodeScansResponse(BaseModel):
@@ -75,6 +81,10 @@ class CodeScanSummaryItemResponse(BaseModel):
     occurrences: int
     asset_ids: list[str]
     first_seen_at: datetime
+    match_status: str | None = None
+    matched_position_ids: list[str] = Field(default_factory=list)
+    match_types: list[str] = Field(default_factory=list)
+    match_status_counts: dict[str, int] | None = None
 
 
 class SummarizeAisleCodeScansResponse(BaseModel):

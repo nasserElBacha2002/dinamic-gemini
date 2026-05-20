@@ -14,6 +14,14 @@ export type CodeScanDetectionStatus =
   | 'low_confidence'
   | 'error';
 
+export type CodeScanMatchStatus =
+  | 'not_evaluated'
+  | 'matched'
+  | 'no_match'
+  | 'multiple_candidates'
+  | 'conflict'
+  | 'mixed';
+
 export interface CodeScanBoundingBoxRect {
   x: number;
   y: number;
@@ -61,6 +69,12 @@ export interface CodeScanDetection {
   scanner_engine: string;
   created_at: string;
   metadata_json: Record<string, unknown> | null;
+  matched_position_id: string | null;
+  match_status: CodeScanMatchStatus | string | null;
+  match_type: string | null;
+  match_confidence: number | null;
+  match_metadata_json: Record<string, unknown> | null;
+  matched_at: string | null;
 }
 
 export interface CodeScanSummaryItem {
@@ -70,6 +84,10 @@ export interface CodeScanSummaryItem {
   occurrences: number;
   asset_ids: string[];
   first_seen_at: string;
+  match_status?: CodeScanMatchStatus | string | null;
+  matched_position_ids?: string[];
+  match_types?: string[];
+  match_status_counts?: Record<string, number> | null;
 }
 
 export interface RunAisleCodeScanResponse {

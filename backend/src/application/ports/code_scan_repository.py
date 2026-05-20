@@ -18,6 +18,10 @@ class CodeScanSummaryItem:
     occurrences: int
     asset_ids: tuple[str, ...]
     first_seen_at: datetime
+    match_status: str | None = None
+    matched_position_ids: tuple[str, ...] = ()
+    match_types: tuple[str, ...] = ()
+    match_status_counts: dict[str, int] | None = None
 
 
 class CodeScanRepository(ABC):
@@ -46,3 +50,8 @@ class CodeScanRepository(ABC):
     def summarize_latest_detections_by_aisle(
         self, *, inventory_id: str, aisle_id: str
     ) -> Sequence[CodeScanSummaryItem]: ...
+
+    @abstractmethod
+    def update_detection_matches(self, detections: Sequence[CodeScanDetection]) -> None:
+        """Persist read-only match fields on existing detection rows."""
+        ...

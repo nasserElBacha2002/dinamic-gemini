@@ -17,3 +17,20 @@ export function formatCodeScanDetectionStatus(t: TFunction, status: string): str
   const translated = t(key);
   return translated === key ? status : translated;
 }
+
+export function formatCodeScanMatchStatus(
+  t: TFunction,
+  status: string | null | undefined,
+): string {
+  if (!status) return t('aisleCodeScans.matching.not_evaluated');
+  const key = `aisleCodeScans.matching.${status}`;
+  const translated = t(key);
+  return translated === key ? status : translated;
+}
+
+export function formatCodeScanMatchType(t: TFunction, matchType: string | null | undefined): string {
+  if (!matchType) return '—';
+  const key = `aisleCodeScans.matching.${matchType}`;
+  const translated = t(key);
+  return translated === key ? matchType : translated;
+}

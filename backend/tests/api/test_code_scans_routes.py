@@ -35,7 +35,14 @@ from src.application.use_cases.summarize_aisle_code_scans import (
 )
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
-from src.domain.code_scans.entities import CodeScanRunStatus
+from src.domain.code_scans.entities import (
+    CodeScanDetection,
+    CodeScanDetectionStatus,
+    CodeScanRun,
+    CodeScanRunStatus,
+    CodeType,
+)
+from src.domain.code_scans.matching import CodeScanMatchStatus
 
 
 def _fake_admin() -> AuthUser:
@@ -148,6 +155,61 @@ def test_post_run_returns_summary() -> None:
         assert data["run"]["id"] == "run-1"
         assert data["run"]["status"] == "completed"
         assert data["run"]["total_codes_found"] == 1
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_list_includes_match_fields() -> None:
+    now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
+    run = CodeScanRun(
+        id="run-1",
+        inventory_id="inv1",
+        aisle_id="a1",
+        status=CodeScanRunStatus.COMPLETED,
+        total_assets=1,
+        processed_assets=1,
+        failed_assets=0,
+        total_codes_found=1,
+        total_qr_found=0,
+        total_barcodes_found=1,
+        started_at=now,
+        finished_at=now,
+        scanner_engine="noop",
+        is_latest=True,
+    )
+    detection = CodeScanDetection(
+        id="det-1",
+        run_id="run-1",
+        inventory_id="inv1",
+        aisle_id="a1",
+        asset_id="asset-1",
+        code_type=CodeType.BARCODE,
+        code_value="3075807",
+        normalized_code_value="3075807",
+        detection_status=CodeScanDetectionStatus.DETECTED,
+        scanner_engine="noop",
+        created_at=now,
+        matched_position_id="pos-1",
+        match_status=CodeScanMatchStatus.MATCHED.value,
+        match_type="sku_exact",
+        match_confidence=1.0,
+        matched_at=now,
+    )
+
+    class StubList:
+        def execute(self, _cmd: ListAisleCodeScansCommand) -> ListAisleCodeScansResult:
+            return ListAisleCodeScansResult(latest_run=run, detections=(detection,))
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_list_aisle_code_scans_use_case] = lambda: StubList()
+    try:
+        client = TestClient(app)
+        resp = client.get("/api/v3/inventories/inv1/aisles/a1/code-scans")
+        assert resp.status_code == 200
+        row = resp.json()["detections"][0]
+        assert row["match_status"] == "matched"
+        assert row["matched_position_id"] == "pos-1"
+        assert row["match_type"] == "sku_exact"
     finally:
         app.dependency_overrides.clear()
 

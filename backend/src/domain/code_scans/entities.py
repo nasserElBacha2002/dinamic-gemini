@@ -67,3 +67,10 @@ class CodeScanDetection:
     bounding_box_json: dict[str, Any] | None = None
     confidence: float | None = None
     metadata_json: dict[str, Any] | None = None
+    #: Phase 4 read-only match snapshot (nullable until matching runs).
+    matched_position_id: str | None = None
+    match_status: str | None = None
+    match_type: str | None = None
+    match_confidence: float | None = None
+    match_metadata_json: dict[str, Any] | None = None
+    matched_at: datetime | None = None

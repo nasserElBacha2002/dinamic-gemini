@@ -106,6 +106,9 @@ from src.application.use_cases.manage_supplier_reference_images import (
 )
 from src.application.use_cases.mark_position_image_mismatch import MarkPositionImageMismatchUseCase
 from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
+from src.application.use_cases.match_aisle_code_scan_detections import (
+    MatchAisleCodeScanDetectionsUseCase,
+)
 from src.application.use_cases.promote_aisle_operational_job import (
     PromoteAisleOperationalJobUseCase,
 )
@@ -606,6 +609,22 @@ def get_source_asset_content_reader(
     return ArtifactStoreSourceAssetContentReader(artifact_storage)
 
 
+def get_match_aisle_code_scan_detections_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+    clock: Clock = Depends(get_clock),
+) -> MatchAisleCodeScanDetectionsUseCase:
+    return MatchAisleCodeScanDetectionsUseCase(
+        aisle_repo=aisle_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
+        code_scan_repo=code_scan_repo,
+        clock=clock,
+    )
+
+
 def get_run_aisle_code_scan_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
@@ -613,6 +632,9 @@ def get_run_aisle_code_scan_use_case(
     scanner=Depends(get_code_scanner),
     content_reader=Depends(get_source_asset_content_reader),
     clock: Clock = Depends(get_clock),
+    match_detections_use_case: MatchAisleCodeScanDetectionsUseCase = Depends(
+        get_match_aisle_code_scan_detections_use_case
+    ),
 ) -> RunAisleCodeScanUseCase:
     return RunAisleCodeScanUseCase(
         aisle_repo=aisle_repo,
@@ -621,6 +643,7 @@ def get_run_aisle_code_scan_use_case(
         scanner=scanner,
         content_reader=content_reader,
         clock=clock,
+        match_detections_use_case=match_detections_use_case,
     )
 
 

@@ -13,6 +13,7 @@ import {
 import type { CodeScanSummaryItem } from '../../../api/types/codeScans';
 import { formatDate } from '../../../utils/formatDate';
 import { formatCodeScanCodeType } from '../formatters';
+import CodeScanMatchStatusChip from './CodeScanMatchStatusChip';
 import CopyCodeValueButton from './CopyCodeValueButton';
 
 export interface CodeScanSummaryTableProps {
@@ -38,6 +39,8 @@ export default function CodeScanSummaryTable({ items }: CodeScanSummaryTableProp
               <TableCell align="right">{t('aisleCodeScans.tables.occurrences')}</TableCell>
               <TableCell>{t('aisleCodeScans.tables.assets')}</TableCell>
               <TableCell>{t('aisleCodeScans.tables.firstSeenAt')}</TableCell>
+              <TableCell>{t('aisleCodeScans.matching.status')}</TableCell>
+              <TableCell>{t('aisleCodeScans.matching.linkedResult')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -59,6 +62,14 @@ export default function CodeScanSummaryTable({ items }: CodeScanSummaryTableProp
                 <TableCell align="right">{row.occurrences}</TableCell>
                 <TableCell sx={{ wordBreak: 'break-all' }}>{row.asset_ids.join(', ')}</TableCell>
                 <TableCell>{formatDate(row.first_seen_at)}</TableCell>
+                <TableCell>
+                  <CodeScanMatchStatusChip status={row.match_status} />
+                </TableCell>
+                <TableCell sx={{ wordBreak: 'break-all' }}>
+                  {row.matched_position_ids?.length
+                    ? row.matched_position_ids.join(', ')
+                    : '—'}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

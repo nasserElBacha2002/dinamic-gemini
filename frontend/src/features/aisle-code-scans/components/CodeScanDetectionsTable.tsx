@@ -12,8 +12,13 @@ import {
 } from '@mui/material';
 import type { CodeScanDetection } from '../../../api/types/codeScans';
 import { formatDate } from '../../../utils/formatDate';
-import { formatCodeScanCodeType, formatCodeScanDetectionStatus } from '../formatters';
+import {
+  formatCodeScanCodeType,
+  formatCodeScanDetectionStatus,
+  formatCodeScanMatchType,
+} from '../formatters';
 import CodeScanAssetPreviewButton from './CodeScanAssetPreviewButton';
+import CodeScanMatchStatusChip from './CodeScanMatchStatusChip';
 import CopyCodeValueButton from './CopyCodeValueButton';
 
 export interface CodeScanDetectionsTableProps {
@@ -45,6 +50,9 @@ export default function CodeScanDetectionsTable({
               <TableCell>{t('aisleCodeScans.tables.type')}</TableCell>
               <TableCell>{t('aisleCodeScans.tables.value')}</TableCell>
               <TableCell>{t('aisleCodeScans.tables.status')}</TableCell>
+              <TableCell>{t('aisleCodeScans.matching.status')}</TableCell>
+              <TableCell>{t('aisleCodeScans.matching.matchType')}</TableCell>
+              <TableCell>{t('aisleCodeScans.matching.linkedResult')}</TableCell>
               <TableCell>{t('aisleCodeScans.tables.sourceAsset')}</TableCell>
               <TableCell>{t('aisleCodeScans.summary.engine')}</TableCell>
               <TableCell>{t('aisleCodeScans.tables.date')}</TableCell>
@@ -68,6 +76,13 @@ export default function CodeScanDetectionsTable({
                   </Box>
                 </TableCell>
                 <TableCell>{formatCodeScanDetectionStatus(t, row.detection_status)}</TableCell>
+                <TableCell>
+                  <CodeScanMatchStatusChip status={row.match_status} />
+                </TableCell>
+                <TableCell>{formatCodeScanMatchType(t, row.match_type)}</TableCell>
+                <TableCell sx={{ wordBreak: 'break-all' }}>
+                  {row.matched_position_id ?? '—'}
+                </TableCell>
                 <TableCell sx={{ wordBreak: 'break-all' }}>{row.asset_id}</TableCell>
                 <TableCell>{row.scanner_engine}</TableCell>
                 <TableCell>{formatDate(row.created_at)}</TableCell>

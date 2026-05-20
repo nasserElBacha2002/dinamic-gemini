@@ -11,6 +11,7 @@ from typing import Any
 
 from src.application.ports.code_scan_repository import CodeScanRepository, CodeScanSummaryItem
 from src.application.services.code_scan_summary import detection_counts_toward_summary
+from src.application.services.code_scan_summary_match import aggregate_group_match
 from src.database.sqlserver import SqlServerClient
 from src.domain.code_scans.bounding_box import parse_bounding_box
 from src.domain.code_scans.entities import (
@@ -115,6 +116,12 @@ def _row_to_detection(row) -> CodeScanDetection:
         bounding_box_json=parse_bounding_box(getattr(row, "bounding_box_json", None)),
         confidence=getattr(row, "confidence", None),
         metadata_json=_parse_metadata(getattr(row, "metadata_json", None)),
+        matched_position_id=optional_nonempty_db_str(getattr(row, "matched_position_id", None)),
+        match_status=optional_nonempty_db_str(getattr(row, "match_status", None)),
+        match_type=optional_nonempty_db_str(getattr(row, "match_type", None)),
+        match_confidence=getattr(row, "match_confidence", None),
+        match_metadata_json=_parse_metadata(getattr(row, "match_metadata_json", None)),
+        matched_at=_ensure_utc(getattr(row, "matched_at", None)),
     )
 
 
@@ -235,14 +242,22 @@ class SqlCodeScanRepository(CodeScanRepository):
             for d in detections:
                 bbox = json.dumps(d.bounding_box_json) if d.bounding_box_json else None
                 meta = json.dumps(d.metadata_json, ensure_ascii=False) if d.metadata_json else None
+                match_meta = (
+                    json.dumps(d.match_metadata_json, ensure_ascii=False)
+                    if d.match_metadata_json
+                    else None
+                )
                 created = _ensure_utc(d.created_at)
+                matched_at = _ensure_utc(d.matched_at)
                 cur.execute(
                     """
                     INSERT INTO aisle_code_scan_detections (
                         id, run_id, inventory_id, aisle_id, asset_id, code_type, code_value,
                         normalized_code_value, bounding_box_json, confidence, detection_status,
-                        scanner_engine, metadata_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        scanner_engine, metadata_json, created_at,
+                        matched_position_id, match_status, match_type, match_confidence,
+                        match_metadata_json, matched_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         d.id,
@@ -259,6 +274,41 @@ class SqlCodeScanRepository(CodeScanRepository):
                         d.scanner_engine,
                         meta,
                         created,
+                        d.matched_position_id,
+                        d.match_status,
+                        d.match_type,
+                        d.match_confidence,
+                        match_meta,
+                        matched_at,
+                    ),
+                )
+
+    def update_detection_matches(self, detections: Sequence[CodeScanDetection]) -> None:
+        if not detections:
+            return
+        with self._client.cursor() as cur:
+            for d in detections:
+                match_meta = (
+                    json.dumps(d.match_metadata_json, ensure_ascii=False)
+                    if d.match_metadata_json
+                    else None
+                )
+                matched_at = _ensure_utc(d.matched_at)
+                cur.execute(
+                    """
+                    UPDATE aisle_code_scan_detections
+                    SET matched_position_id = ?, match_status = ?, match_type = ?,
+                        match_confidence = ?, match_metadata_json = ?, matched_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        d.matched_position_id,
+                        d.match_status,
+                        d.match_type,
+                        d.match_confidence,
+                        match_meta,
+                        matched_at,
+                        d.id,
                     ),
                 )
 
@@ -313,6 +363,9 @@ class SqlCodeScanRepository(CodeScanRepository):
         for (norm, code_type), rows in groups.items():
             asset_ids = tuple(dict.fromkeys(r.asset_id for r in rows))
             first_seen = min(r.created_at for r in rows)
+            match_status, matched_position_ids, match_types, match_status_counts = (
+                aggregate_group_match(rows)
+            )
             items.append(
                 CodeScanSummaryItem(
                     code_value=rows[0].code_value,
@@ -321,6 +374,10 @@ class SqlCodeScanRepository(CodeScanRepository):
                     occurrences=len(rows),
                     asset_ids=asset_ids,
                     first_seen_at=first_seen,
+                    match_status=match_status,
+                    matched_position_ids=matched_position_ids,
+                    match_types=match_types,
+                    match_status_counts=match_status_counts,
                 )
             )
         items.sort(key=lambda x: (x.normalized_code_value, x.code_type))

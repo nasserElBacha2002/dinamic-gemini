@@ -72,6 +72,12 @@ def _detection_to_response(d) -> CodeScanDetectionResponse:
         scanner_engine=d.scanner_engine,
         created_at=d.created_at,
         metadata_json=d.metadata_json,
+        matched_position_id=d.matched_position_id,
+        match_status=d.match_status,
+        match_type=d.match_type,
+        match_confidence=d.match_confidence,
+        match_metadata_json=d.match_metadata_json,
+        matched_at=d.matched_at,
     )
 
 
@@ -164,6 +170,10 @@ def summarize_aisle_code_scans(
                     occurrences=item.occurrences,
                     asset_ids=list(item.asset_ids),
                     first_seen_at=item.first_seen_at,
+                    match_status=item.match_status,
+                    matched_position_ids=list(item.matched_position_ids),
+                    match_types=list(item.match_types),
+                    match_status_counts=item.match_status_counts,
                 )
                 for item in result.items
             ],

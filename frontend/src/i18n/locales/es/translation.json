@@ -271,6 +271,27 @@
       "max_assets": "Hay demasiados activos para escanear en una sola ejecución.",
       "run_failed": "No se pudo ejecutar el escaneo de códigos.",
       "scanner_unavailable": "El motor de escaneo de códigos no está disponible en este entorno."
+    },
+    "matching": {
+      "status": "Coincidencia",
+      "matchType": "Tipo de coincidencia",
+      "linkedResult": "Resultado vinculado",
+      "viewResult": "Ver resultado",
+      "matched": "Coincidencia sugerida",
+      "no_match": "Sin coincidencia",
+      "multiple_candidates": "Coincidencia múltiple",
+      "conflict": "Conflicto",
+      "not_evaluated": "No evaluado",
+      "mixed": "Coincidencia mixta",
+      "sku_exact": "SKU exacto",
+      "barcode_exact": "Código de barras exacto",
+      "internal_code_exact": "Código interno exacto",
+      "position_code_exact": "Código de posición exacto",
+      "pallet_id_exact": "Pallet exacto",
+      "qr_payload_sku_exact": "SKU en QR",
+      "qr_payload_barcode_exact": "Código de barras en QR",
+      "multiple_candidates_type": "Coincidencia múltiple",
+      "no_match_type": "Sin coincidencia"
     }
   },
   "analytics": {
