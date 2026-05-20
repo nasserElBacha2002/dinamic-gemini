@@ -111,9 +111,12 @@ describe('CodeScanDrawer', () => {
     mutateAsync.mockClear();
   });
 
-  it('shows no-run empty state', () => {
+  it('shows no-run empty state with a single scan CTA', () => {
     renderDrawer();
     expect(screen.getByText(/Todavía no se escanearon códigos/i)).toBeInTheDocument();
+    const scanButtons = screen.getAllByRole('button', { name: /Escanear códigos/i });
+    expect(scanButtons).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /Re-escanear/i })).not.toBeInTheDocument();
   });
 
   it('shows latest run summary and warnings', () => {
@@ -134,6 +137,14 @@ describe('CodeScanDrawer', () => {
     summaryState.data = { latest_run: scansState.data.latest_run, items: [] };
     renderDrawer();
     expect(screen.getByText(/No se detectaron códigos/i)).toBeInTheDocument();
+  });
+
+  it('shows re-scan in header when latest run exists', () => {
+    scansState.data = { latest_run: mockRun, detections: mockDetections };
+    summaryState.data = { latest_run: mockRun, items: mockSummaryItems };
+    renderDrawer();
+    expect(screen.getByRole('button', { name: /Re-escanear/i })).toBeInTheDocument();
+    expect(screen.queryByText(/Todavía no se escanearon códigos/i)).not.toBeInTheDocument();
   });
 
   it('asks confirmation before re-run', async () => {

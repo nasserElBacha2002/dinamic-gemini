@@ -68,8 +68,11 @@ export default function CodeScanDrawer({
     void runScan();
   }, [hasRun, runScan]);
 
-  const headerActions = useMemo(
-    () => (
+  const headerActions = useMemo(() => {
+    if (!hasRun) {
+      return null;
+    }
+    return (
       <Button
         size="small"
         variant="contained"
@@ -83,11 +86,10 @@ export default function CodeScanDrawer({
         onClick={handleRunClick}
         disabled={runMutation.isPending}
       >
-        {hasRun ? t('aisleCodeScans.actions.rerun') : t('aisleCodeScans.actions.run')}
+        {t('aisleCodeScans.actions.rerun')}
       </Button>
-    ),
-    [handleRunClick, hasRun, runMutation.isPending, t]
-  );
+    );
+  }, [handleRunClick, hasRun, runMutation.isPending, t]);
 
   return (
     <>

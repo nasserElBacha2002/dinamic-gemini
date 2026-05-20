@@ -69,7 +69,7 @@ import {
 import PromoteOperationalDialog from '../features/benchmark/PromoteOperationalDialog';
 import AisleSourceAssetsManageModule from '../features/inventories/components/AisleSourceAssetsManageModule';
 import AisleVisualReferencesModule from '../features/inventories/components/AisleVisualReferencesModule';
-import { CodeScanActionButton } from '../features/aisle-code-scans/components';
+import CodeScanDrawer from '../features/aisle-code-scans/components/CodeScanDrawer';
 
 /** List query: photo-grouped order, no SKU merge — matches operator photo-review expectations. */
 const AISLE_RESULTS_LIST_QUERY: AislePositionsListQuery = {
@@ -100,6 +100,7 @@ export default function AislePositionsPage() {
   const [lastMergeSummary, setLastMergeSummary] = useState<MergeResultsSummary | null>(null);
   const [lastMergeContextKey, setLastMergeContextKey] = useState<string | null>(null);
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
+  const [codeScanDrawerOpen, setCodeScanDrawerOpen] = useState(false);
   const [promoteJobId, setPromoteJobId] = useState('');
   /** `photo` keeps API order; `priority` applies client-side review ranking on top of loaded rows. */
   const [tableSort, setTableSort] = useState<'photo' | 'priority'>('photo');
@@ -528,10 +529,18 @@ export default function AislePositionsPage() {
 
   return (
     <>
+      <CodeScanDrawer
+        open={codeScanDrawerOpen}
+        onClose={() => setCodeScanDrawerOpen(false)}
+        inventoryId={inventoryId}
+        aisleId={aisleId}
+        jobIdForPreview={pickedRunJobId}
+      />
       <AisleResultsHeader
         breadcrumbs={breadcrumbs}
         title={aisle?.code ?? t('common.aisle')}
         subtitle={inventory?.name ?? (inventoryQuery.isLoading ? t('common.loading') : t('common.em_dash'))}
+        onOpenCodeScan={() => setCodeScanDrawerOpen(true)}
         assetsAction={
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
             <AisleSourceAssetsManageModule
@@ -555,11 +564,6 @@ export default function AislePositionsPage() {
                 </Tooltip>
               )}
             </AisleSourceAssetsManageModule>
-            <CodeScanActionButton
-              inventoryId={inventoryId}
-              aisleId={aisleId}
-              jobIdForPreview={pickedRunJobId}
-            />
             <AisleVisualReferencesModule
               inventoryLabel={inventory?.name ?? t('common.em_dash')}
               clientId={inventory?.client_id}

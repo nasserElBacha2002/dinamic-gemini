@@ -269,7 +269,8 @@
       "no_source_assets": "No hay activos de origen para escanear. Subí imágenes al pasillo antes de ejecutar el escaneo.",
       "disabled": "El escaneo de códigos está deshabilitado.",
       "max_assets": "Hay demasiados activos para escanear en una sola ejecución.",
-      "run_failed": "No se pudo ejecutar el escaneo de códigos."
+      "run_failed": "No se pudo ejecutar el escaneo de códigos.",
+      "scanner_unavailable": "El motor de escaneo de códigos no está disponible en este entorno."
     }
   },
   "analytics": {

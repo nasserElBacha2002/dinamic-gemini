@@ -13,9 +13,9 @@ from src.application.errors import (
 )
 from src.application.ports.code_scan_repository import CodeScanRepository
 from src.application.ports.code_scanner import CodeScanDetectionCandidate, CodeScannerPort
-from src.application.ports.source_asset_content_reader import SourceAssetContentReader
 from src.application.ports.contracts import AisleAssetRollup
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
+from src.application.ports.source_asset_content_reader import SourceAssetContentReader
 from src.application.use_cases.run_aisle_code_scan import (
     RunAisleCodeScanCommand,
     RunAisleCodeScanUseCase,

@@ -576,7 +576,9 @@ def get_delete_aisle_source_asset_use_case(
 
 
 def get_code_scanner():
-    """Production aisle code scanner (pyzbar). Fails fast if libzbar/pyzbar is missing."""
+    """Production aisle code scanner (pyzbar). Maps missing libzbar to structured 503."""
+    from src.api.errors import mapped_http_exception
+    from src.application.errors import CodeScanScannerUnavailableError
     from src.infrastructure.code_scanning.pyzbar_code_scanner import (
         PyzbarCodeScanner,
         PyzbarUnavailableError,
@@ -585,9 +587,13 @@ def get_code_scanner():
     try:
         return PyzbarCodeScanner()
     except PyzbarUnavailableError as exc:
-        raise RuntimeError(
-            "Aisle code scan requires pyzbar and system libzbar0; see backend/Dockerfile"
-        ) from exc
+        unavailable = CodeScanScannerUnavailableError(
+            "Code scan engine is unavailable. Install pyzbar and system libzbar0."
+        )
+        mapped = mapped_http_exception(unavailable)
+        if mapped is not None:
+            raise mapped from exc
+        raise unavailable from exc
 
 
 def get_source_asset_content_reader(

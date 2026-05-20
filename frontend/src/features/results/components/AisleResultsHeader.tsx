@@ -25,6 +25,7 @@ export interface AisleResultsHeaderProps {
   onExport: () => void;
   refreshDisabled: boolean;
   onRefresh: () => void;
+  onOpenCodeScan?: () => void;
 }
 
 export default function AisleResultsHeader({
@@ -48,6 +49,7 @@ export default function AisleResultsHeader({
   onExport,
   refreshDisabled,
   onRefresh,
+  onOpenCodeScan,
 }: AisleResultsHeaderProps) {
   const { t } = useTranslation();
   const [moreActionsAnchorEl, setMoreActionsAnchorEl] = useState<null | HTMLElement>(null);
@@ -145,6 +147,17 @@ export default function AisleResultsHeader({
                     }}
                   >
                     {t('positions.promote_run')}
+                  </MenuItem>
+                ) : null}
+                {onOpenCodeScan ? (
+                  <MenuItem
+                    data-testid="aisle-code-scan-menu-open"
+                    onClick={() => {
+                      handleCloseMoreActions();
+                      onOpenCodeScan();
+                    }}
+                  >
+                    {t('aisleCodeScans.actions.open')}
                   </MenuItem>
                 ) : null}
                 <MenuItem

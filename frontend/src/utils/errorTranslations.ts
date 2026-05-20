@@ -45,6 +45,7 @@ const V3_STRUCTURED_CODE_TO_KEY: Record<string, string> = {
   AISLE_HAS_NO_SOURCE_ASSETS_FOR_CODE_SCAN: 'aisleCodeScans.errors.no_source_assets',
   CODE_SCAN_DISABLED: 'aisleCodeScans.errors.disabled',
   CODE_SCAN_MAX_ASSETS_EXCEEDED: 'aisleCodeScans.errors.max_assets',
+  CODE_SCAN_SCANNER_UNAVAILABLE: 'aisleCodeScans.errors.scanner_unavailable',
 };
 
 export function v3StructuredErrorCodeToTranslationKey(code: string): string | null {

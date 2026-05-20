@@ -110,15 +110,21 @@ def test_pyzbar_unavailable_raises_on_init() -> None:
             PyzbarCodeScanner()
 
 
-def test_get_code_scanner_fails_fast_when_pyzbar_missing() -> None:
+def test_get_code_scanner_raises_structured_503_when_pyzbar_missing() -> None:
     from src.api.dependencies import get_code_scanner
+    from src.api.errors.structured_api_http import (
+        CODE_SCAN_SCANNER_UNAVAILABLE,
+        StructuredApiHttpError,
+    )
 
     with patch(
         "src.infrastructure.code_scanning.pyzbar_code_scanner._import_pyzbar",
         side_effect=PyzbarUnavailableError("missing libzbar"),
     ):
-        with pytest.raises(RuntimeError, match="libzbar0"):
+        with pytest.raises(StructuredApiHttpError) as exc_info:
             get_code_scanner()
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.error_code == CODE_SCAN_SCANNER_UNAVAILABLE
 
 
 @pytest.mark.skipif(

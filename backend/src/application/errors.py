@@ -80,6 +80,10 @@ class CodeScanMaxAssetsExceededError(Exception):
     """Raised when an aisle exceeds the configured max assets per code scan run."""
 
 
+class CodeScanScannerUnavailableError(Exception):
+    """Raised when pyzbar/libzbar is not installed or cannot load in this runtime."""
+
+
 class NoSourceAssetsForAisleProcessingError(Exception):
     """Raised when aisle processing is requested but the aisle has no persisted SourceAsset rows."""
 

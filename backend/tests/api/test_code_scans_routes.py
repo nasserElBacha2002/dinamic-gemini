@@ -7,12 +7,19 @@ from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 
 from src.api.dependencies import (
+    get_code_scanner,
     get_list_aisle_code_scans_use_case,
     get_run_aisle_code_scan_use_case,
     get_summarize_aisle_code_scans_use_case,
 )
+from src.api.errors import mapped_http_exception
+from src.api.errors.structured_api_http import CODE_SCAN_SCANNER_UNAVAILABLE
 from src.api.server import app
-from src.application.errors import AisleNotFoundError, NoSourceAssetsForCodeScanError
+from src.application.errors import (
+    AisleNotFoundError,
+    CodeScanScannerUnavailableError,
+    NoSourceAssetsForCodeScanError,
+)
 from src.application.ports.code_scan_repository import CodeScanSummaryItem
 from src.application.use_cases.list_aisle_code_scans import (
     ListAisleCodeScansCommand,
@@ -65,6 +72,33 @@ def test_post_run_passes_created_by_from_admin() -> None:
         assert resp.status_code == 200
         assert len(captured) == 1
         assert captured[0].created_by == "admin"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_code_scan_scanner_unavailable_maps_to_503() -> None:
+    exc = CodeScanScannerUnavailableError("Code scan engine is unavailable")
+    mapped = mapped_http_exception(exc)
+    assert mapped is not None
+    assert mapped.status_code == 503
+    assert mapped.error_code == CODE_SCAN_SCANNER_UNAVAILABLE
+
+
+def test_post_run_scanner_unavailable_dependency_returns_503() -> None:
+    def failing_scanner():
+        exc = CodeScanScannerUnavailableError("Code scan engine is unavailable")
+        mapped = mapped_http_exception(exc)
+        assert mapped is not None
+        raise mapped
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_code_scanner] = failing_scanner
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/v3/inventories/inv1/aisles/a1/code-scans/run")
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body.get("code") == CODE_SCAN_SCANNER_UNAVAILABLE
     finally:
         app.dependency_overrides.clear()
 
