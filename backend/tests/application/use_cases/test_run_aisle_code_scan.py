@@ -242,7 +242,7 @@ def test_per_asset_scan_failure_completed_with_warnings(monkeypatch: pytest.Monk
     assert result.processed_assets == 1
 
 
-def test_fatal_save_failure_marks_run_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unexpected_repository_failure_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CODE_SCAN_ENABLED", "true")
     from src.config import reload_settings
 
@@ -252,7 +252,7 @@ def test_fatal_save_failure_marks_run_failed(monkeypatch: pytest.MonkeyPatch) ->
         def save_detections(self, detections: Sequence[CodeScanDetection]) -> None:
             raise RuntimeError("db down")
 
-    result = _use_case(
+    uc = _use_case(
         assets=[_photo("a1")],
         scanner=FakeCodeScanner(
             by_asset={
@@ -260,9 +260,48 @@ def test_fatal_save_failure_marks_run_failed(monkeypatch: pytest.MonkeyPatch) ->
             },
         ),
         code_scan_repo=BrokenRepo(),
+    )
+    with pytest.raises(RuntimeError, match="db down"):
+        uc.execute(RunAisleCodeScanCommand(inventory_id="inv-1", aisle_id="aisle-1"))
+
+
+def test_run_persists_created_by(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CODE_SCAN_ENABLED", "true")
+    from src.config import reload_settings
+
+    reload_settings()
+    repo = MemoryCodeScanRepository()
+    _use_case(
+        assets=[_photo("a1")],
+        scanner=FakeCodeScanner(),
+        code_scan_repo=repo,
+    ).execute(
+        RunAisleCodeScanCommand(
+            inventory_id="inv-1", aisle_id="aisle-1", created_by="admin-42"
+        )
+    )
+    latest = repo.get_latest_run_by_aisle(inventory_id="inv-1", aisle_id="aisle-1")
+    assert latest is not None
+    assert latest.created_by == "admin-42"
+
+
+def test_run_metadata_warnings_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CODE_SCAN_ENABLED", "true")
+    from src.config import reload_settings
+
+    reload_settings()
+    repo = MemoryCodeScanRepository()
+    _use_case(
+        assets=[_photo("v1", asset_type=SourceAssetType.VIDEO)],
+        scanner=FakeCodeScanner(),
+        code_scan_repo=repo,
     ).execute(RunAisleCodeScanCommand(inventory_id="inv-1", aisle_id="aisle-1"))
-    assert result.status == CodeScanRunStatus.FAILED
-    assert result.error_message
+    latest = repo.get_latest_run_by_aisle(inventory_id="inv-1", aisle_id="aisle-1")
+    assert latest is not None
+    assert latest.metadata_json is not None
+    assert isinstance(latest.metadata_json.get("warnings"), list)
+    assert isinstance(latest.metadata_json.get("skipped_assets"), list)
+    assert isinstance(latest.metadata_json.get("scanner_errors"), list)
 
 
 def test_max_assets_exceeded(monkeypatch: pytest.MonkeyPatch) -> None:

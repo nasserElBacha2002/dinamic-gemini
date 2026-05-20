@@ -22,10 +22,8 @@ class CodeScanSummaryItem:
 
 class CodeScanRepository(ABC):
     @abstractmethod
-    def create_run(self, run: CodeScanRun) -> None: ...
-
-    @abstractmethod
-    def mark_previous_runs_not_latest(self, *, inventory_id: str, aisle_id: str) -> None: ...
+    def replace_latest_run(self, run: CodeScanRun) -> None:
+        """Atomically clear previous latest for the aisle scope and insert ``run`` as latest."""
 
     @abstractmethod
     def save_run(self, run: CodeScanRun) -> None: ...

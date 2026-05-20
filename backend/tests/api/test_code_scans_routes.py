@@ -35,6 +35,55 @@ def _fake_admin() -> AuthUser:
     return AuthUser(id="admin", username="admin", role="administrator")
 
 
+def test_post_run_passes_created_by_from_admin() -> None:
+    captured: list[RunAisleCodeScanCommand] = []
+
+    class StubRun:
+        def execute(self, cmd: RunAisleCodeScanCommand) -> RunAisleCodeScanResult:
+            captured.append(cmd)
+            now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
+            return RunAisleCodeScanResult(
+                run_id="run-1",
+                status=CodeScanRunStatus.COMPLETED,
+                total_assets=0,
+                processed_assets=0,
+                failed_assets=0,
+                total_codes_found=0,
+                total_qr_found=0,
+                total_barcodes_found=0,
+                warnings=(),
+                started_at=now,
+                finished_at=now,
+                scanner_engine="noop",
+            )
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_run_aisle_code_scan_use_case] = lambda: StubRun()
+    try:
+        client = TestClient(app)
+        resp = client.post("/api/v3/inventories/inv1/aisles/a1/code-scans/run")
+        assert resp.status_code == 200
+        assert len(captured) == 1
+        assert captured[0].created_by == "admin"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_run_unexpected_failure_returns_500() -> None:
+    class StubRun:
+        def execute(self, _cmd: RunAisleCodeScanCommand) -> RunAisleCodeScanResult:
+            raise RuntimeError("unexpected infra failure")
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_run_aisle_code_scan_use_case] = lambda: StubRun()
+    try:
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/v3/inventories/inv1/aisles/a1/code-scans/run")
+        assert resp.status_code == 500
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_post_run_returns_summary() -> None:
     now = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
 

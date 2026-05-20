@@ -6,11 +6,8 @@ from collections import defaultdict
 from collections.abc import Sequence
 
 from src.application.ports.code_scan_repository import CodeScanRepository, CodeScanSummaryItem
-from src.domain.code_scans.entities import (
-    CodeScanDetection,
-    CodeScanDetectionStatus,
-    CodeScanRun,
-)
+from src.application.services.code_scan_summary import detection_counts_toward_summary
+from src.domain.code_scans.entities import CodeScanDetection, CodeScanRun
 
 
 class MemoryCodeScanRepository(CodeScanRepository):
@@ -18,17 +15,26 @@ class MemoryCodeScanRepository(CodeScanRepository):
         self._runs: dict[str, CodeScanRun] = {}
         self._detections: dict[str, CodeScanDetection] = {}
 
-    def create_run(self, run: CodeScanRun) -> None:
-        self._runs[run.id] = run
-
-    def mark_previous_runs_not_latest(self, *, inventory_id: str, aisle_id: str) -> None:
-        for run in self._runs.values():
+    def replace_latest_run(self, run: CodeScanRun) -> None:
+        if not run.is_latest:
+            raise ValueError("replace_latest_run requires run.is_latest=True")
+        previous_latest_id: str | None = None
+        for existing in self._runs.values():
             if (
-                run.inventory_id == inventory_id
-                and run.aisle_id == aisle_id
-                and run.is_latest
+                existing.inventory_id == run.inventory_id
+                and existing.aisle_id == run.aisle_id
+                and existing.is_latest
             ):
-                run.is_latest = False
+                previous_latest_id = existing.id
+                existing.is_latest = False
+        try:
+            self._runs[run.id] = run
+        except Exception:
+            if run.id in self._runs:
+                del self._runs[run.id]
+            if previous_latest_id is not None and previous_latest_id in self._runs:
+                self._runs[previous_latest_id].is_latest = True
+            raise
 
     def save_run(self, run: CodeScanRun) -> None:
         self._runs[run.id] = run
@@ -68,7 +74,7 @@ class MemoryCodeScanRepository(CodeScanRepository):
         )
         groups: dict[tuple[str, str], list[CodeScanDetection]] = defaultdict(list)
         for d in detections:
-            if d.detection_status == CodeScanDetectionStatus.ERROR:
+            if not detection_counts_toward_summary(d.detection_status):
                 continue
             key = (d.normalized_code_value, d.code_type.value)
             groups[key].append(d)

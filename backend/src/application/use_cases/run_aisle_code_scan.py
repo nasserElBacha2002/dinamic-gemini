@@ -21,8 +21,10 @@ from src.application.services.code_scan_normalization import (
     code_value_within_limit,
     normalize_code_value,
 )
+from src.application.services.code_scan_run_metadata import build_run_metadata
 from src.config import load_settings
 from src.domain.assets.entities import SourceAssetType
+from src.domain.code_scans.bounding_box import parse_bounding_box
 from src.domain.code_scans.entities import (
     CodeScanDetection,
     CodeScanDetectionStatus,
@@ -103,11 +105,8 @@ class RunAisleCodeScanUseCase:
         now = self._clock.now()
         run_id = str(uuid4())
         warnings: list[str] = []
-
-        self._code_scan_repo.mark_previous_runs_not_latest(
-            inventory_id=command.inventory_id,
-            aisle_id=command.aisle_id,
-        )
+        skipped_assets: list[str] = []
+        scanner_errors: list[str] = []
 
         run = CodeScanRun(
             id=run_id,
@@ -125,9 +124,9 @@ class RunAisleCodeScanUseCase:
             scanner_engine=self._scanner.engine_name,
             is_latest=True,
             created_by=command.created_by,
-            metadata_json={"warnings": []},
+            metadata_json=build_run_metadata(),
         )
-        self._code_scan_repo.create_run(run)
+        self._code_scan_repo.replace_latest_run(run)
 
         detections: list[CodeScanDetection] = []
         processed = 0
@@ -140,6 +139,7 @@ class RunAisleCodeScanUseCase:
             for asset in assets:
                 if asset.type not in _SCANNABLE_TYPES:
                     failed += 1
+                    skipped_assets.append(asset.id)
                     warnings.append(
                         f"Skipped unsupported asset type {asset.type.value} for asset {asset.id}"
                     )
@@ -148,6 +148,7 @@ class RunAisleCodeScanUseCase:
                     candidates = self._scanner.scan_asset(asset, content=None)
                 except Exception as exc:
                     failed += 1
+                    scanner_errors.append(f"{asset.id}: {exc}")
                     warnings.append(f"Scanner failed for asset {asset.id}: {exc}")
                     logger.warning(
                         "code_scan asset_failed aisle_id=%s asset_id=%s error=%s",
@@ -185,6 +186,8 @@ class RunAisleCodeScanUseCase:
                         elif cand.code_type == CodeType.BARCODE:
                             total_barcodes += 1
 
+                    bbox = parse_bounding_box(cand.bounding_box_json)
+
                     detections.append(
                         CodeScanDetection(
                             id=str(uuid4()),
@@ -198,7 +201,7 @@ class RunAisleCodeScanUseCase:
                             detection_status=status,
                             scanner_engine=self._scanner.engine_name,
                             created_at=now,
-                            bounding_box_json=cand.bounding_box_json,
+                            bounding_box_json=bbox,
                             confidence=cand.confidence,
                             metadata_json=cand.metadata_json,
                         )
@@ -220,7 +223,11 @@ class RunAisleCodeScanUseCase:
             run.total_qr_found = total_qr
             run.total_barcodes_found = total_barcodes
             run.finished_at = finished
-            run.metadata_json = {"warnings": warnings}
+            run.metadata_json = build_run_metadata(
+                warnings=warnings,
+                skipped_assets=skipped_assets,
+                scanner_errors=scanner_errors,
+            )
             self._code_scan_repo.save_run(run)
 
             return RunAisleCodeScanResult(
@@ -240,30 +247,25 @@ class RunAisleCodeScanUseCase:
             )
         except Exception as exc:
             finished = self._clock.now()
-            msg = str(exc)
             run.status = CodeScanRunStatus.FAILED
             run.finished_at = finished
-            run.error_message = msg
-            run.metadata_json = {"warnings": warnings}
-            self._code_scan_repo.save_run(run)
+            run.error_message = str(exc)
+            run.metadata_json = build_run_metadata(
+                warnings=warnings,
+                skipped_assets=skipped_assets,
+                scanner_errors=scanner_errors + [str(exc)],
+            )
+            try:
+                self._code_scan_repo.save_run(run)
+            except Exception:
+                logger.exception(
+                    "code_scan failed to persist failed run state run_id=%s",
+                    run_id,
+                )
             logger.exception(
                 "code_scan run_failed inventory_id=%s aisle_id=%s run_id=%s",
                 command.inventory_id,
                 command.aisle_id,
                 run_id,
             )
-            return RunAisleCodeScanResult(
-                run_id=run_id,
-                status=CodeScanRunStatus.FAILED,
-                total_assets=run.total_assets,
-                processed_assets=processed,
-                failed_assets=failed,
-                total_codes_found=total_codes,
-                total_qr_found=total_qr,
-                total_barcodes_found=total_barcodes,
-                warnings=tuple(warnings),
-                started_at=now,
-                finished_at=finished,
-                scanner_engine=self._scanner.engine_name,
-                error_message=msg,
-            )
+            raise

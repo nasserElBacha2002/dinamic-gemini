@@ -11,6 +11,7 @@ from src.api.dependencies import (
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.code_scan_schemas import (
+    CodeScanBoundingBoxResponse,
     CodeScanDetectionResponse,
     CodeScanRunSummaryResponse,
     CodeScanSummaryItemResponse,
@@ -19,19 +20,20 @@ from src.api.schemas.code_scan_schemas import (
     SummarizeAisleCodeScansResponse,
 )
 from src.application.errors import AisleNotFoundError
+from src.application.services.code_scan_run_metadata import warnings_from_run_metadata
 from src.application.use_cases.list_aisle_code_scans import ListAisleCodeScansCommand
 from src.application.use_cases.run_aisle_code_scan import RunAisleCodeScanCommand
 from src.application.use_cases.summarize_aisle_code_scans import SummarizeAisleCodeScansCommand
+from src.auth.dependencies import get_current_admin
+from src.auth.schemas import AuthUser
+from src.domain.code_scans.bounding_box import parse_bounding_box
 from src.domain.code_scans.entities import CodeScanRun
 
 router = APIRouter()
 
 
 def _run_to_summary(run: CodeScanRun, *, warnings: list[str] | None = None) -> CodeScanRunSummaryResponse:
-    meta_warnings: list[str] = []
-    if run.metadata_json and isinstance(run.metadata_json.get("warnings"), list):
-        meta_warnings = [str(w) for w in run.metadata_json["warnings"]]
-    merged = list(warnings or meta_warnings)
+    merged = list(warnings if warnings is not None else warnings_from_run_metadata(run.metadata_json))
     return CodeScanRunSummaryResponse(
         id=run.id,
         status=run.status.value,
@@ -49,6 +51,13 @@ def _run_to_summary(run: CodeScanRun, *, warnings: list[str] | None = None) -> C
     )
 
 
+def _bbox_to_response(raw: dict | None) -> CodeScanBoundingBoxResponse | None:
+    parsed = parse_bounding_box(raw)
+    if parsed is None:
+        return None
+    return CodeScanBoundingBoxResponse.model_validate(parsed)
+
+
 def _detection_to_response(d) -> CodeScanDetectionResponse:
     return CodeScanDetectionResponse(
         id=d.id,
@@ -59,7 +68,7 @@ def _detection_to_response(d) -> CodeScanDetectionResponse:
         normalized_code_value=d.normalized_code_value,
         detection_status=d.detection_status.value,
         confidence=d.confidence,
-        bounding_box_json=d.bounding_box_json,
+        bounding_box_json=_bbox_to_response(d.bounding_box_json),
         scanner_engine=d.scanner_engine,
         created_at=d.created_at,
         metadata_json=d.metadata_json,
@@ -74,12 +83,17 @@ def _detection_to_response(d) -> CodeScanDetectionResponse:
 def run_aisle_code_scan(
     inventory_id: str,
     aisle_id: str,
+    current_admin: AuthUser = Depends(get_current_admin),
     use_case=Depends(get_run_aisle_code_scan_use_case),
 ) -> RunAisleCodeScanResponse:
     """Run a synchronous code scan over uploaded aisle source assets (Phase 1: noop scanner)."""
     try:
         result = use_case.execute(
-            RunAisleCodeScanCommand(inventory_id=inventory_id, aisle_id=aisle_id)
+            RunAisleCodeScanCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                created_by=current_admin.id,
+            )
         )
         return RunAisleCodeScanResponse(
             run=CodeScanRunSummaryResponse(

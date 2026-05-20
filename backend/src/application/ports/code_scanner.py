@@ -15,7 +15,7 @@ class CodeScanDetectionCandidate:
     code_value: str
     detection_status: CodeScanDetectionStatus = CodeScanDetectionStatus.DETECTED
     confidence: float | None = None
-    bounding_box_json: list[float] | None = None
+    bounding_box_json: dict[str, Any] | None = None
     metadata_json: dict[str, Any] | None = None
 
 

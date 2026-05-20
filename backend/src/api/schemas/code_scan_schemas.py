@@ -3,9 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+
+class CodeScanBoundingBoxResponse(BaseModel):
+    """Stable rect bounding box persisted in ``bounding_box_json``."""
+
+    format: Literal["rect"] = "rect"
+    unit: Literal["pixel", "normalized"]
+    x: float
+    y: float
+    width: float
+    height: float
 
 
 class CodeScanRunSummaryResponse(BaseModel):
@@ -37,7 +48,7 @@ class CodeScanDetectionResponse(BaseModel):
     normalized_code_value: str
     detection_status: str
     confidence: float | None = None
-    bounding_box_json: list[float] | None = None
+    bounding_box_json: CodeScanBoundingBoxResponse | None = None
     scanner_engine: str
     created_at: datetime
     metadata_json: dict[str, Any] | None = None

@@ -10,7 +10,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.application.ports.code_scan_repository import CodeScanRepository, CodeScanSummaryItem
+from src.application.services.code_scan_summary import detection_counts_toward_summary
 from src.database.sqlserver import SqlServerClient
+from src.domain.code_scans.bounding_box import parse_bounding_box
 from src.domain.code_scans.entities import (
     CodeScanDetection,
     CodeScanDetectionStatus,
@@ -43,24 +45,6 @@ def _parse_metadata(raw: object) -> dict[str, Any] | None:
         logger.warning("Invalid metadata_json in code scan row")
         return None
     return parsed if isinstance(parsed, dict) else None
-
-
-def _parse_bbox(raw: object) -> list[float] | None:
-    if raw is None:
-        return None
-    text = raw.strip() if isinstance(raw, str) else str(raw).strip()
-    if not text:
-        return None
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(parsed, list):
-        return None
-    try:
-        return [float(x) for x in parsed]
-    except (TypeError, ValueError):
-        return None
 
 
 def _enum_run_status(raw: object) -> CodeScanRunStatus:
@@ -128,7 +112,7 @@ def _row_to_detection(row) -> CodeScanDetection:
         detection_status=_enum_detection_status(getattr(row, "detection_status", None)),
         scanner_engine=normalize_db_str(getattr(row, "scanner_engine", None)) or "noop",
         created_at=created,
-        bounding_box_json=_parse_bbox(getattr(row, "bounding_box_json", None)),
+        bounding_box_json=parse_bounding_box(getattr(row, "bounding_box_json", None)),
         confidence=getattr(row, "confidence", None),
         metadata_json=_parse_metadata(getattr(row, "metadata_json", None)),
     )
@@ -138,10 +122,12 @@ class SqlCodeScanRepository(CodeScanRepository):
     def __init__(self, client: SqlServerClient) -> None:
         self._client = client
 
-    def create_run(self, run: CodeScanRun) -> None:
-        self.save_run(run)
-
-    def mark_previous_runs_not_latest(self, *, inventory_id: str, aisle_id: str) -> None:
+    def replace_latest_run(self, run: CodeScanRun) -> None:
+        if not run.is_latest:
+            raise ValueError("replace_latest_run requires run.is_latest=True")
+        started = _ensure_utc(run.started_at)
+        finished = _ensure_utc(run.finished_at)
+        meta = json.dumps(run.metadata_json, ensure_ascii=False) if run.metadata_json else None
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -149,7 +135,36 @@ class SqlCodeScanRepository(CodeScanRepository):
                 SET is_latest = 0
                 WHERE inventory_id = ? AND aisle_id = ? AND is_latest = 1
                 """,
-                (inventory_id, aisle_id),
+                (run.inventory_id, run.aisle_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO aisle_code_scan_runs (
+                    id, inventory_id, aisle_id, status, total_assets, processed_assets,
+                    failed_assets, total_codes_found, total_qr_found, total_barcodes_found,
+                    started_at, finished_at, error_message, scanner_engine, is_latest,
+                    created_by, metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run.id,
+                    run.inventory_id,
+                    run.aisle_id,
+                    run.status.value,
+                    run.total_assets,
+                    run.processed_assets,
+                    run.failed_assets,
+                    run.total_codes_found,
+                    run.total_qr_found,
+                    run.total_barcodes_found,
+                    started,
+                    finished,
+                    run.error_message,
+                    run.scanner_engine,
+                    1,
+                    run.created_by,
+                    meta,
+                ),
             )
 
     def save_run(self, run: CodeScanRun) -> None:
@@ -290,7 +305,7 @@ class SqlCodeScanRepository(CodeScanRepository):
         )
         groups: dict[tuple[str, str], list[CodeScanDetection]] = defaultdict(list)
         for d in detections:
-            if d.detection_status == CodeScanDetectionStatus.ERROR:
+            if not detection_counts_toward_summary(d.detection_status):
                 continue
             groups[(d.normalized_code_value, d.code_type.value)].append(d)
 

@@ -63,6 +63,7 @@ class CodeScanDetection:
     detection_status: CodeScanDetectionStatus
     scanner_engine: str
     created_at: datetime
-    bounding_box_json: list[float] | None = None
+    #: Stable object contract — see ``domain.code_scans.bounding_box`` (rect + unit + x/y/width/height).
+    bounding_box_json: dict[str, Any] | None = None
     confidence: float | None = None
     metadata_json: dict[str, Any] | None = None
