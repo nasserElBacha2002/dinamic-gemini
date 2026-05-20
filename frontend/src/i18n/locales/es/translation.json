@@ -188,6 +188,90 @@
     "management_title": "Gestión de archivos de origen",
     "upload_button": "Subir imagen"
   },
+  "aisleCodeScans": {
+    "actions": {
+      "open": "Escanear códigos",
+      "run": "Escanear códigos",
+      "rerun": "Re-escanear",
+      "close": "Cerrar",
+      "viewImage": "Ver imagen",
+      "copyValue": "Copiar valor",
+      "copied": "Copiado"
+    },
+    "drawer": {
+      "title": "Códigos detectados",
+      "subtitle": "Escaneo automático de QR y códigos de barra sobre los activos subidos del pasillo.",
+      "noMutationNotice": "Esta función no modifica cantidades ni estados de revisión. Solo agrega evidencia de códigos visibles en las imágenes."
+    },
+    "states": {
+      "loading": "Cargando códigos detectados...",
+      "scanning": "Escaneando...",
+      "scanSuccess": "Escaneo de códigos completado.",
+      "noRun": "Todavía no se escanearon códigos en este pasillo.",
+      "noRunHelper": "El sistema revisará los activos de origen ya subidos y buscará QR o códigos de barra visibles.",
+      "noDetections": "No se detectaron códigos en los activos del pasillo.",
+      "noDetectionsHelper": "Esto no significa que el pasillo esté incompleto; solo indica que no se pudieron leer QR o códigos de barra en las imágenes analizadas.",
+      "error": "No se pudo cargar la información del escaneo."
+    },
+    "summary": {
+      "sectionTitle": "Último escaneo",
+      "status": "Estado",
+      "processedAssets": "Activos procesados",
+      "failedAssets": "Activos con advertencias",
+      "totalCodes": "Códigos encontrados",
+      "qr": "QR",
+      "barcodes": "Códigos de barra",
+      "engine": "Motor",
+      "lastRun": "Último escaneo"
+    },
+    "tables": {
+      "summarySection": "Resumen agrupado",
+      "detectionsSection": "Detecciones",
+      "type": "Tipo",
+      "value": "Valor detectado",
+      "occurrences": "Apariciones",
+      "assets": "Activos de origen",
+      "firstSeenAt": "Detectado por primera vez",
+      "status": "Estado",
+      "sourceAsset": "Activo de origen",
+      "date": "Fecha"
+    },
+    "warnings": {
+      "title": "El escaneo finalizó con advertencias",
+      "show": "Ver advertencias",
+      "hide": "Ocultar advertencias"
+    },
+    "confirmRerun": {
+      "title": "Reemplazar escaneo anterior",
+      "body": "Se ejecutará un nuevo escaneo sobre los activos actuales del pasillo. El escaneo anterior quedará guardado para auditoría, pero la vista operativa mostrará el último resultado.",
+      "cancel": "Cancelar",
+      "confirm": "Re-escanear"
+    },
+    "codeTypes": {
+      "qr": "QR",
+      "barcode": "Código de barras",
+      "datamatrix": "Data Matrix",
+      "unknown": "Desconocido"
+    },
+    "runStatuses": {
+      "running": "En curso",
+      "completed": "Completado",
+      "completed_with_warnings": "Completado con advertencias",
+      "failed": "Fallido"
+    },
+    "detectionStatuses": {
+      "detected": "Detectado",
+      "duplicate": "Duplicado",
+      "low_confidence": "Baja confianza",
+      "error": "Error"
+    },
+    "errors": {
+      "no_source_assets": "No hay activos de origen para escanear. Subí imágenes al pasillo antes de ejecutar el escaneo.",
+      "disabled": "El escaneo de códigos está deshabilitado.",
+      "max_assets": "Hay demasiados activos para escanear en una sola ejecución.",
+      "run_failed": "No se pudo ejecutar el escaneo de códigos."
+    }
+  },
   "analytics": {
     "aisles_attention_subtitle": "Pasillos con mayor carga de revisión.",
     "aisles_attention_title": "Pasillos que requieren atención",

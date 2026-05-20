@@ -69,6 +69,7 @@ import {
 import PromoteOperationalDialog from '../features/benchmark/PromoteOperationalDialog';
 import AisleSourceAssetsManageModule from '../features/inventories/components/AisleSourceAssetsManageModule';
 import AisleVisualReferencesModule from '../features/inventories/components/AisleVisualReferencesModule';
+import { CodeScanActionButton } from '../features/aisle-code-scans/components';
 
 /** List query: photo-grouped order, no SKU merge — matches operator photo-review expectations. */
 const AISLE_RESULTS_LIST_QUERY: AislePositionsListQuery = {
@@ -554,6 +555,11 @@ export default function AislePositionsPage() {
                 </Tooltip>
               )}
             </AisleSourceAssetsManageModule>
+            <CodeScanActionButton
+              inventoryId={inventoryId}
+              aisleId={aisleId}
+              jobIdForPreview={pickedRunJobId}
+            />
             <AisleVisualReferencesModule
               inventoryLabel={inventory?.name ?? t('common.em_dash')}
               clientId={inventory?.client_id}
