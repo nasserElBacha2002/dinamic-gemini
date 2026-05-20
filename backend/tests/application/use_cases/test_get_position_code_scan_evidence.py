@@ -15,6 +15,7 @@ from src.application.use_cases.get_position_code_scan_evidence import (
     GetPositionCodeScanEvidenceCommand,
     GetPositionCodeScanEvidenceUseCase,
 )
+from src.domain.aisle.entities import Aisle
 from src.domain.code_scans.entities import (
     CodeScanDetection,
     CodeScanDetectionStatus,
@@ -22,7 +23,6 @@ from src.domain.code_scans.entities import (
     CodeScanRunStatus,
     CodeType,
 )
-from src.domain.aisle.entities import Aisle
 from src.domain.code_scans.matching import CodeScanMatchStatus, CodeScanMatchType
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position

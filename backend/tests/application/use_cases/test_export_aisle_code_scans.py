@@ -11,14 +11,14 @@ from src.application.errors import (
     CodeScanExportUnsupportedFormatError,
     CodeScanExportUnsupportedTypeError,
 )
-from src.application.use_cases.export_aisle_code_scans import (
-    ExportAisleCodeScansCommand,
-    ExportAisleCodeScansUseCase,
-)
 from src.application.services.code_scan_csv_exporter import (
     DETECTIONS_CSV_FIELDS,
     SUMMARY_CSV_FIELDS,
     UNMATCHED_CSV_FIELDS,
+)
+from src.application.use_cases.export_aisle_code_scans import (
+    ExportAisleCodeScansCommand,
+    ExportAisleCodeScansUseCase,
 )
 from src.domain.code_scans.entities import (
     CodeScanDetection,

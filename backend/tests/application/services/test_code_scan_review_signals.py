@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from src.application.services.code_scan_review_signals import build_review_signals, summarize_signals
+from src.application.services.code_scan_review_signals import (
+    build_review_signals,
+    summarize_signals,
+)
 from src.domain.code_scans.entities import (
     CodeScanDetection,
     CodeScanDetectionStatus,

@@ -119,4 +119,5 @@ def parse_run_metadata(raw: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def warnings_from_run_metadata(raw: dict[str, Any] | None) -> list[str]:
-    return parse_run_metadata(raw)["warnings"]
+    warnings = parse_run_metadata(raw).get("warnings", [])
+    return list(warnings) if isinstance(warnings, list) else []

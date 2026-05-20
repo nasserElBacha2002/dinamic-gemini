@@ -44,7 +44,7 @@ def build_position_lookup(
     for position in positions:
         if position.status == PositionStatus.DELETED:
             continue
-        entries = _position_field_entries(position, products_by_position.get(position.id, ()))
+        entries = _position_field_entries(position, products_by_position.get(position.id) or [])
         for norm_value, match_type, field_name in entries:
             index.setdefault(norm_value, []).append((position.id, match_type, field_name))
     return index
