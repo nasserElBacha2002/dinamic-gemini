@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol, TypeVar
 
+from src.application.ports.code_scan_repository import CodeScanRepository
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -312,6 +313,29 @@ def build_review_action_repository(
     return build_repo(
         backend_info_name="ReviewActionRepository",
         sql_error_subject="review_action repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_code_scan_repository(
+    build_repo: BuildSqlOrMemory[CodeScanRepository],
+) -> CodeScanRepository:
+    def _sql(client: SqlServerClient) -> CodeScanRepository:
+        from src.infrastructure.repositories.sql_code_scan_repository import SqlCodeScanRepository
+
+        return SqlCodeScanRepository(client)
+
+    def _memory() -> CodeScanRepository:
+        from src.infrastructure.repositories.memory_code_scan_repository import (
+            MemoryCodeScanRepository,
+        )
+
+        return MemoryCodeScanRepository()
+
+    return build_repo(
+        backend_info_name="CodeScanRepository",
+        sql_error_subject="code_scan repo",
         build_sql=_sql,
         build_memory=_memory,
     )

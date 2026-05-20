@@ -68,6 +68,18 @@ class EmptyUploadError(Exception):
     """Raised when no files are provided for an aisle asset upload."""
 
 
+class NoSourceAssetsForCodeScanError(Exception):
+    """Raised when a code scan is requested but the aisle has no persisted SourceAsset rows."""
+
+
+class CodeScanDisabledError(Exception):
+    """Raised when aisle code scan is disabled via configuration."""
+
+
+class CodeScanMaxAssetsExceededError(Exception):
+    """Raised when an aisle exceeds the configured max assets per code scan run."""
+
+
 class NoSourceAssetsForAisleProcessingError(Exception):
     """Raised when aisle processing is requested but the aisle has no persisted SourceAsset rows."""
 

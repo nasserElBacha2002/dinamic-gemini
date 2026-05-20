@@ -159,6 +159,7 @@ from typing import Any, Callable, cast
 from fastapi import HTTPException
 
 from src.api.constants.error_wire import (
+    HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_CODE_SCAN,
     HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
     HTTP_DETAIL_AISLE_NOT_FOUND_FOR_ASSIGNMENT,
     HTTP_DETAIL_AISLE_NOT_FOUND_IN_INVENTORY,
@@ -190,6 +191,8 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_CLIENT_SUPPLIER_CLIENT_MISMATCH,
     HTTP_DETAIL_CLIENT_SUPPLIER_NOT_FOUND,
     HTTP_DETAIL_CLIENT_SUPPLIER_REQUIRED_FOR_AISLE,
+    HTTP_DETAIL_CODE_SCAN_DISABLED,
+    HTTP_DETAIL_CODE_SCAN_MAX_ASSETS_EXCEEDED,
     HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED,
     HTTP_DETAIL_INVENTORY_CLIENT_REQUIRED_FOR_AISLE,
     HTTP_DETAIL_INVENTORY_CLIENT_REQUIRED_FOR_SUPPLIER,
@@ -210,6 +213,7 @@ from src.api.constants.error_wire import (
 )
 from src.api.errors.structured_api_http import (
     ACTIVE_JOB_EXISTS,
+    AISLE_HAS_NO_SOURCE_ASSETS_FOR_CODE_SCAN,
     AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
     AISLE_NOT_FOUND,
     AISLE_NOT_FOUND_FOR_ASSIGNMENT,
@@ -243,6 +247,8 @@ from src.api.errors.structured_api_http import (
     CLIENT_SUPPLIER_CLIENT_MISMATCH,
     CLIENT_SUPPLIER_NOT_FOUND,
     CLIENT_SUPPLIER_REQUIRED_FOR_AISLE,
+    CODE_SCAN_DISABLED,
+    CODE_SCAN_MAX_ASSETS_EXCEEDED,
     EMPTY_UPLOAD,
     INTERNAL_SERVER_ERROR,
     INVENTORY_CLIENT_REQUIRED_FOR_AISLE,
@@ -301,6 +307,8 @@ from src.application.errors import (
     ClientSupplierClientMismatchError,
     ClientSupplierNotFoundError,
     ClientSupplierRequiredForAisleError,
+    CodeScanDisabledError,
+    CodeScanMaxAssetsExceededError,
     DuplicateAisleCodeError,
     EmptyUploadError,
     InvalidProcessingModelError,
@@ -313,6 +321,7 @@ from src.application.errors import (
     JobPromotionNotAllowedError,
     MergeJobScopeAmbiguousError,
     NoSourceAssetsForAisleProcessingError,
+    NoSourceAssetsForCodeScanError,
     OpenCaptureSessionExistsError,
     PositionDeletedError,
     PositionNotFoundError,
@@ -524,6 +533,21 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         409,
         error_code=AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
         detail=HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
+    ),
+    NoSourceAssetsForCodeScanError: _structured_fixed(
+        409,
+        error_code=AISLE_HAS_NO_SOURCE_ASSETS_FOR_CODE_SCAN,
+        detail=HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_CODE_SCAN,
+    ),
+    CodeScanDisabledError: _structured_fixed(
+        503,
+        error_code=CODE_SCAN_DISABLED,
+        detail=HTTP_DETAIL_CODE_SCAN_DISABLED,
+    ),
+    CodeScanMaxAssetsExceededError: _structured_fixed(
+        422,
+        error_code=CODE_SCAN_MAX_ASSETS_EXCEEDED,
+        detail=HTTP_DETAIL_CODE_SCAN_MAX_ASSETS_EXCEEDED,
     ),
     AisleSourceAssetMutationBlockedError: _structured_fixed(
         409,

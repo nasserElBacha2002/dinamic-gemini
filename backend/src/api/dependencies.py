@@ -83,6 +83,7 @@ from src.application.use_cases.get_inventory import GetInventoryUseCase
 from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
 from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
+from src.application.use_cases.list_aisle_code_scans import ListAisleCodeScansUseCase
 from src.application.use_cases.list_aisle_jobs import ListAisleJobsUseCase
 from src.application.use_cases.list_aisle_positions import ListAislePositionsUseCase
 from src.application.use_cases.list_aisles_by_inventory import ListAislesByInventoryUseCase
@@ -112,8 +113,10 @@ from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
     ResolveAisleJobForInventoryReadUseCase,
 )
 from src.application.use_cases.retry_aisle_job import RetryAisleJobUseCase
+from src.application.use_cases.run_aisle_code_scan import RunAisleCodeScanUseCase
 from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
 from src.application.use_cases.start_aisle_processing import StartAisleProcessingUseCase
+from src.application.use_cases.summarize_aisle_code_scans import SummarizeAisleCodeScansUseCase
 from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
 from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
 from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
@@ -133,6 +136,7 @@ from src.runtime.v3_deps import (
     get_client_repo,
     get_client_supplier_repo,
     get_clock,
+    get_code_scan_repo,
     get_evidence_repo,
     get_final_count_repo,
     get_inventory_repo,
@@ -568,6 +572,49 @@ def get_delete_aisle_source_asset_use_case(
         artifact_storage=artifact_storage,
         clock=clock,
         status_reconciler=status_reconciler,
+    )
+
+
+def get_code_scanner():
+    """Phase 1 production scanner: noop (real pyzbar wiring in Phase 2)."""
+    from src.infrastructure.code_scanning.noop_code_scanner import NoopCodeScanner
+
+    return NoopCodeScanner()
+
+
+def get_run_aisle_code_scan_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+    scanner=Depends(get_code_scanner),
+    clock: Clock = Depends(get_clock),
+) -> RunAisleCodeScanUseCase:
+    return RunAisleCodeScanUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        code_scan_repo=code_scan_repo,
+        scanner=scanner,
+        clock=clock,
+    )
+
+
+def get_list_aisle_code_scans_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+) -> ListAisleCodeScansUseCase:
+    return ListAisleCodeScansUseCase(
+        aisle_repo=aisle_repo,
+        code_scan_repo=code_scan_repo,
+    )
+
+
+def get_summarize_aisle_code_scans_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    code_scan_repo=Depends(get_code_scan_repo),
+) -> SummarizeAisleCodeScansUseCase:
+    return SummarizeAisleCodeScansUseCase(
+        aisle_repo=aisle_repo,
+        code_scan_repo=code_scan_repo,
     )
 
 

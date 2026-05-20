@@ -54,6 +54,11 @@ HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION = "Cannot modify aisl
 HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING = (
     "This aisle has no source assets; upload media before starting processing."
 )
+HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_CODE_SCAN = (
+    "This aisle has no source assets; upload media before scanning codes."
+)
+HTTP_DETAIL_CODE_SCAN_DISABLED = "Aisle code scan is disabled"
+HTTP_DETAIL_CODE_SCAN_MAX_ASSETS_EXCEEDED = "Too many source assets for one code scan run"
 HTTP_DETAIL_AISLE_NOT_FOUND_SHORT = "Aisle not found"
 HTTP_DETAIL_PREVIEW_NOT_AVAILABLE_FOR_IMAGE = "Preview is not available for this image"
 
