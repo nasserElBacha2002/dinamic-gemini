@@ -118,12 +118,17 @@ jobs:
           fi
 
           CHANGED=$(git diff --name-only "${BASE}" "${HEAD_SHA}")
-          echo "Changed files:"; echo "${CHANGED}"
-          if echo "${CHANGED}" | grep -qE '^backend/|^\.github/workflows/deploy-dev-opencloud-backend\.yml'; then
+          BACKEND_PATH_RE='^backend/|^\.github/workflows/deploy-dev-opencloud-backend\.yml'
+          echo "head_sha=${HEAD_SHA}"
+          if grep -qE "${BACKEND_PATH_RE}" <<< "${CHANGED}"; then
+            echo "Backend-relevant changes detected; deploy=true"
+            grep -E "${BACKEND_PATH_RE}" <<< "${CHANGED}" | sed -n '1,120p' || true
             echo "deploy=true" >> "$GITHUB_OUTPUT"
             echo "head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
           else
-            echo "No backend or deploy workflow changes; skipping deploy."
+            echo "No backend or deploy workflow changes; skipping OpenCloud deploy (deploy=false)."
+            echo "Changed paths (first 40, for context):"
+            sed -n '1,40p' <<< "${CHANGED}"
             echo "deploy=false" >> "$GITHUB_OUTPUT"
             echo "head_sha=" >> "$GITHUB_OUTPUT"
           fi
