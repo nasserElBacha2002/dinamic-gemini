@@ -1,6 +1,9 @@
 import '@testing-library/jest-dom/vitest';
+import React, { type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { ThemeProvider } from '@mui/material';
+import theme from '../../src/theme';
 import PhotoUploadProgressDialog from '../../src/components/ui/PhotoUploadProgressDialog';
 
 vi.mock('react-i18next', () => ({
@@ -9,9 +12,17 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+function WithTheme({ children }: { children: ReactNode }) {
+  return <ThemeProvider theme={theme}>{children}</ThemeProvider>;
+}
+
 describe('PhotoUploadProgressDialog', () => {
   it('shows progress copy while open', () => {
-    render(<PhotoUploadProgressDialog open />);
+    render(
+      <WithTheme>
+        <PhotoUploadProgressDialog open />
+      </WithTheme>
+    );
     expect(screen.getByTestId('photo-upload-progress-dialog')).toBeInTheDocument();
     expect(screen.getByText('uploads.photos.dialogTitle')).toBeInTheDocument();
     expect(screen.getByText('uploads.photos.progress')).toBeInTheDocument();
@@ -19,7 +30,11 @@ describe('PhotoUploadProgressDialog', () => {
   });
 
   it('is hidden when closed', () => {
-    render(<PhotoUploadProgressDialog open={false} />);
+    render(
+      <WithTheme>
+        <PhotoUploadProgressDialog open={false} />
+      </WithTheme>
+    );
     expect(screen.queryByTestId('photo-upload-progress-dialog')).not.toBeInTheDocument();
   });
 });
