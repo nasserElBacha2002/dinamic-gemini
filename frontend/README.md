@@ -6,6 +6,8 @@ React + Material UI frontend (TypeScript) for the v3 inventories and aisles API.
 
 ## Setup
 
+
+
 ```bash
 npm install
 ```
