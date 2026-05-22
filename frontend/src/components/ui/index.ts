@@ -65,6 +65,9 @@ export type {
 } from './DataTable';
 export { sortDataTableRows } from './dataTableSort';
 
+export { default as PhotoUploadProgressDialog } from './PhotoUploadProgressDialog';
+export type { PhotoUploadProgressDialogProps } from './PhotoUploadProgressDialog';
+
 export { AppSnackbarProvider } from './AppSnackbarProvider';
 export { useAppSnackbar } from './useAppSnackbar';
 export { useErrorSnackbar } from './useErrorSnackbar';

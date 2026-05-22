@@ -1860,6 +1860,16 @@
       "subtitle": "Administrá proveedores, prompts y paridad de prompts"
     }
   },
+  "uploads": {
+    "photos": {
+      "dialogTitle": "Subiendo fotos",
+      "progress": "Subiendo fotos... No cierres ni actualices la página.",
+      "success": "Fotos subidas correctamente.",
+      "error": "No se pudieron subir las fotos. Intentá nuevamente.",
+      "waitBeforeLeaving": "Esperá a que termine la carga antes de salir.",
+      "uploadingButton": "Subiendo..."
+    }
+  },
   "ingestion_sessions": {
     "page": {
       "title": "Sesiones de importación",

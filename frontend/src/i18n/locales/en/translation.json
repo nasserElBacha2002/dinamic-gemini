@@ -1290,6 +1290,16 @@
       "subtitle": "Manage providers, prompts, and prompt parity"
     }
   },
+  "uploads": {
+    "photos": {
+      "dialogTitle": "Uploading photos",
+      "progress": "Uploading photos... Do not close or refresh the page.",
+      "success": "Photos uploaded successfully.",
+      "error": "Photos could not be uploaded. Please try again.",
+      "waitBeforeLeaving": "Wait for the upload to finish before leaving.",
+      "uploadingButton": "Uploading..."
+    }
+  },
   "ingestion_sessions": {
     "page": {
       "title": "Import Sessions",

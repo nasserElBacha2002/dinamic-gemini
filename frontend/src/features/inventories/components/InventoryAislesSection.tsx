@@ -151,7 +151,7 @@ export default function InventoryAislesSection({
               }}
               disabled={uploadingAisleId === p.id}
             >
-              {uploadingAisleId === p.id ? t('common.uploading') : t('aisle.upload_assets')}
+              {uploadingAisleId === p.id ? t('uploads.photos.uploadingButton') : t('aisle.upload_assets')}
             </Button>
           );
         },

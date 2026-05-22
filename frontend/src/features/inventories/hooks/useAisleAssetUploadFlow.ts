@@ -4,7 +4,7 @@ import { ApiError } from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import { isTooManyFilesForUpload, tooManyFilesMessage } from '../../../utils/uploadFileLimits';
 import { useAppSnackbar } from '../../../components/ui';
-import { useUploadAisleAssetsFlex } from '../../../hooks';
+import { useBeforeUnloadWarning, useUploadAisleAssetsFlex } from '../../../hooks';
 
 export interface UseAisleAssetUploadFlowOptions {
   inventoryId: string;
@@ -49,6 +49,9 @@ export function useAisleAssetUploadFlow({
   const setUploadError = controlled ? controlledSetError! : setInternalError;
 
   const uploadMutation = useUploadAisleAssetsFlex(inventoryId);
+  const isUploadingPhotos = uploadingAisleId !== null;
+
+  useBeforeUnloadWarning(isUploadingPhotos);
 
   const uploadFilesForAisle = useCallback(
     async (aisleId: string, files: File[]) => {
@@ -61,12 +64,14 @@ export function useAisleAssetUploadFlow({
       setUploadError(null);
       setUploadingAisleId(aisleId);
       try {
-        const result = await uploadMutation.mutateAsync({ aisleId, files });
-        showSnackbar(t('aisle.assets_uploaded_snackbar', { count: result.assets.length }), 'success');
+        await uploadMutation.mutateAsync({ aisleId, files });
+        showSnackbar(t('uploads.photos.success'), 'success');
         onAfterSuccess?.();
       } catch (err) {
         const apiErr = err instanceof ApiError ? err : new ApiError(String(err));
-        setUploadError(resolveApiErrorMessage(apiErr, 'errors.upload_failed'));
+        const message = resolveApiErrorMessage(apiErr, 'errors.upload_failed');
+        setUploadError(message);
+        showSnackbar(message, 'error');
       } finally {
         setUploadingAisleId(null);
       }
@@ -111,6 +116,7 @@ export function useAisleAssetUploadFlow({
     fileInputRef,
     currentTargetAisleId,
     uploadingAisleId,
+    isUploadingPhotos,
     uploadError,
     setUploadError,
     beginUploadForAisle,

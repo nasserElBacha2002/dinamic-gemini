@@ -17,6 +17,8 @@ import {
 import { useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
+import { PhotoUploadProgressDialog, useAppSnackbar } from '../../../components/ui';
+import { useBeforeUnloadWarning } from '../../../hooks/useBeforeUnloadWarning';
 import {
   isTooManyFilesForUpload,
   maxFilesPerUploadHelperText,
@@ -55,14 +57,18 @@ export default function ImportSessionUpload({
   onCompleted,
 }: ImportSessionUploadProps) {
   const { t } = useTranslation();
+  const { showSnackbar } = useAppSnackbar();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [lastSummary, setLastSummary] = useState<{ ok: number; fail: number } | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const uploadMutation = useUploadCaptureItems();
+  const isUploadingPhotos = uploadMutation.isPending;
 
-  const canSelect = !disabled && !uploadMutation.isPending;
+  useBeforeUnloadWarning(isUploadingPhotos);
+
+  const canSelect = !disabled && !isUploadingPhotos;
 
   const startUpload = async (files: File[]) => {
     if (!files.length || !canSelect) return;
@@ -72,15 +78,24 @@ export default function ImportSessionUpload({
     }
     setSelectionError(null);
     setLastSummary(null);
-    const result = await uploadMutation.mutateAsync({
-      inventoryId,
-      sessionId,
-      aisleId,
-      files,
-      onQueueUpdate: setQueue,
-    });
-    setLastSummary({ ok: result.uploadedCount, fail: result.failedCount });
-    onCompleted?.();
+    try {
+      const result = await uploadMutation.mutateAsync({
+        inventoryId,
+        sessionId,
+        aisleId,
+        files,
+        onQueueUpdate: setQueue,
+      });
+      setLastSummary({ ok: result.uploadedCount, fail: result.failedCount });
+      if (result.failedCount === 0) {
+        showSnackbar(t('uploads.photos.success'), 'success');
+      } else if (result.uploadedCount === 0) {
+        showSnackbar(t('uploads.photos.error'), 'error');
+      }
+      onCompleted?.();
+    } catch {
+      showSnackbar(t('uploads.photos.error'), 'error');
+    }
   };
 
   const summaryNode =
@@ -99,6 +114,8 @@ export default function ImportSessionUpload({
 
   return (
     <Box>
+      <PhotoUploadProgressDialog open={isUploadingPhotos} />
+
       <Paper
         variant="outlined"
         sx={{
