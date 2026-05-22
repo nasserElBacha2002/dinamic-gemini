@@ -116,6 +116,24 @@ Vercel project **Root Directory** is `frontend`, but the workflow ran `vercel pu
 
 Removed job-level `working-directory: frontend` from the deploy job. Vercel steps run from the **repository root**; Vercel applies its configured Root Directory `frontend`.
 
+## Follow-up: `frontend/frontend` persisted after repo-root deploy
+
+### Cause (refined)
+
+`vercel pull` at repo root writes `.vercel/project.json` with `settings.rootDirectory: "frontend"` (from the dashboard). Some CLI versions then **also** resolve the app path relative to cwd, producing `frontend/frontend` when cwd or deploy semantics do not match.
+
+### Fix (CI script)
+
+`scripts/vercel-deploy-dev-production.sh`:
+
+1. `cd "${GITHUB_WORKSPACE}"` (repo root).
+2. `vercel pull` at repo root.
+3. Set `settings.rootDirectory` to `null` in **local** `.vercel/project.json` only (dashboard unchanged).
+4. `cd frontend` and `vercel deploy --prod --yes` with **no** `frontend` path argument.
+5. Defensive checks: refuse to start from `frontend/`, remove stale `.vercel` dirs, fail if `frontend/.vercel` appears after pull.
+
+Workflow step: `bash scripts/vercel-deploy-dev-production.sh` (no inline `vercel` commands, no `working-directory: frontend`).
+
 ## Manual validation (local shell)
 
 Simulate the old bug vs fix:

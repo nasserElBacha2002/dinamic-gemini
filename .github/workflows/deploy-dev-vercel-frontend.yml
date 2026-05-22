@@ -136,20 +136,7 @@ jobs:
         with:
           node-version: "20"
 
-      # Run from repository root: Vercel project Root Directory is already `frontend`.
-      # Deploying from `frontend/` would resolve to `frontend/frontend` and fail.
+      # Vercel dashboard Root Directory = `frontend`. See scripts/vercel-deploy-dev-production.sh
+      # (pull at repo root, clear local rootDirectory, deploy from frontend/ — no path arg).
       - name: Vercel deploy remote build production
-        run: |
-          set -euo pipefail
-          echo "Deploy context:"
-          pwd
-          ls -la
-          if [ -d frontend ]; then
-            echo "frontend/ directory present at repo root (Vercel Root Directory)"
-          else
-            echo "ERROR: frontend/ not found at repo root" >&2
-            exit 1
-          fi
-          echo "Deploying commit ${GITHUB_SHA} to Vercel (production, remote build)..."
-          npx vercel pull --yes --environment=production --token="${VERCEL_TOKEN}"
-          npx vercel deploy --prod --yes --token="${VERCEL_TOKEN}"
+        run: bash scripts/vercel-deploy-dev-production.sh
