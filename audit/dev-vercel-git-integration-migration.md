@@ -8,7 +8,7 @@
 
 | Item | Action |
 |------|--------|
-| `.github/workflows/deploy-dev-vercel-frontend.yml` | **Removed** |
+| `.github/workflows/deploy-dev-vercel-frontend.yml` | **Replaced** — workflow name **DEV — Vercel frontend handoff**; handoff only (no CLI) |
 | `docs/deployment/DEV-VERCEL.md` | **Added** — Vercel settings and troubleshooting |
 | `deployment/archive/vercel-cli-gha-legacy/` | Archived CLI scripts (not used in CI) |
 | `develop-quality-gate.yml` | Comments updated |
@@ -18,6 +18,7 @@
 
 - **Develop quality gate** still runs `frontend-quality` (npm ci, check:cache, typecheck, lint, test, build).
 - **No** `npx vercel pull`, `vercel build`, or `vercel deploy` in any workflow.
+- **DEV — Vercel frontend handoff**: on `workflow_run`, exits 0 if gate was not push/develop; fails if push/develop and gate ≠ success.
 - Error `frontend/frontend does not exist` **cannot** occur from Actions (CLI not invoked).
 
 ## Vercel dashboard checklist
