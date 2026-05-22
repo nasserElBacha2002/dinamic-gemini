@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import React, { createRef, type ChangeEvent, type ReactNode } from 'react';
+import { createRef, type ChangeEvent, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -36,15 +36,16 @@ function makeRow(id: string, code: string): AisleInventoryTableRow {
       positionsCountDisplay: '0',
       pendingReviewCount: 0,
       pendingReviewDisplay: '0',
-      lastUpdatedSortKey: 0,
+      lastUpdatedSortKey: null,
       lastUpdatedDisplay: '—',
       latestRun: null,
+      referenceUsage: null,
     },
     action: {
       processMenuAisle: { id, status: 'draft', assets_count: 0 },
       observabilityInitialRunId: null,
     },
-  } as AisleInventoryTableRow;
+  };
 }
 
 const baseProps = {
