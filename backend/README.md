@@ -196,7 +196,7 @@ This backend now uses a versioned schema guard to prevent rolling out code again
   - `python scripts/db_migrate.py status|apply|validate|config-check`
   - `python -m src.database.migrations status|apply|validate|config-check`
   - `dinamic-db-migrate status|apply|validate` (console script from the install)
-- **DEV (OpenCloud):** migrations are run on the Ubuntu server (or in a one-off container), not by GitHub Actions — see `docs/deployment/DEV-OPENCLOUD.md`.
+- **DEV (OpenCloud):** migrations run automatically on the Ubuntu server during SSH deploy (`backend/scripts/dev_deploy_db_migrate.sh` after `docker-compose up -d`) — see `docs/deployment/DEV-OPENCLOUD.md`.
 - **AWS ECS (archived):** former one-off migration task script lives under `deployment/archive/aws-ecs-dev-legacy/scripts/run-ecs-migration-task.sh` for reference if a future production pipeline uses ECS again.
 - Backend container images install **`pyodbc`**, **unixODBC**, and **Microsoft ODBC Driver 18** (`msodbcsql18`) using the architecture-native package from Microsoft’s Debian 12 repo (same driver name **`ODBC Driver 18 for SQL Server`** inside the container as on a typical Linux host).
 - Runtime guard:
