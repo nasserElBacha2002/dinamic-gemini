@@ -30,8 +30,8 @@
 # BACKEND_HOST_PORT on the server overrides.
 #
 # Server: repo at /opt/dinamic/dinamic-gemini, reset to origin/develop, then:
-#   cd backend → docker-compose down → build api image → `docker-compose run --rm api`
-#   for `db_migrate.py status` then `apply` → `docker-compose up -d` → local /health poll.
+#   cd backend → docker-compose down → build api → up -d → dev_deploy_db_migrate.sh
+#   (config-check, doctor, status, conditional apply, validate, final status) → /health poll.
 # git fetch origin must work non-interactively (deploy key or credentials on the server).
 # Env file for the API is at repo root: /opt/dinamic/dinamic-gemini/.env (see backend/docker-compose.yml env_file).
 #
@@ -218,16 +218,14 @@ jobs:
             echo "Building backend image..."
             docker-compose build api
 
-            echo "Checking database migration status..."
-            docker-compose run --rm api python3 scripts/db_migrate.py status
-
-            echo "Applying pending database migrations, if any..."
-            docker-compose run --rm api python3 scripts/db_migrate.py apply
-
-            echo "Starting backend service..."
+            echo "Starting backend service (required before exec migrations)..."
             docker-compose up -d
 
             docker-compose ps
+
+            export AUTO_APPLY_DEV_MIGRATIONS="${AUTO_APPLY_DEV_MIGRATIONS:-true}"
+            echo "Running DEV database migrations (AUTO_APPLY_DEV_MIGRATIONS=${AUTO_APPLY_DEV_MIGRATIONS})..."
+            bash "${REPO_ROOT}/backend/scripts/dev_deploy_db_migrate.sh"
             ok=0
             for i in $(seq 1 45); do
               if curl -sfS --connect-timeout 5 --max-time 15 "http://127.0.0.1:${BACKEND_HOST_PORT}/health" >/dev/null; then
