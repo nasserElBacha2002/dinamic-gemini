@@ -2,6 +2,14 @@ import '@testing-library/jest-dom/vitest';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ManagedImageAssetsDrawer from '../src/components/imageAssets/ManagedImageAssetsDrawer';
+
+vi.mock('../src/components/ui/useAppSnackbar', () => ({
+  useAppSnackbar: () => ({
+    showSnackbar: vi.fn(),
+    closeSnackbar: vi.fn(),
+  }),
+}));
+
 const baseCopy = {
   closeAria: 'Close drawer',
   contextOverline: 'Context',

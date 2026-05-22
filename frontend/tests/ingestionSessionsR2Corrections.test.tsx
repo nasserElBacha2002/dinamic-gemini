@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import IngestionSessionDetailPage from '../src/features/ingestionSessions/pages/IngestionSessionDetailPage';
 import { hasRequiredDetailParams } from '../src/features/ingestionSessions/utils/ingestionSessionDetailParams';
 import { buildSessionsListParams } from '../src/features/ingestionSessions/utils/ingestionSessionsListParams';
+import { AppSnackbarProvider } from '../src/components/ui';
 
 const mockUseCaptureSessionDetail = vi.fn();
 const mockUseCloseCaptureSession = vi.fn();
@@ -32,11 +33,13 @@ function renderDetail(url: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[url]}>
-        <Routes>
-          <Route path="/ingestion-sessions/:sessionId" element={<IngestionSessionDetailPage />} />
-        </Routes>
-      </MemoryRouter>
+      <AppSnackbarProvider>
+        <MemoryRouter initialEntries={[url]}>
+          <Routes>
+            <Route path="/ingestion-sessions/:sessionId" element={<IngestionSessionDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      </AppSnackbarProvider>
     </QueryClientProvider>
   );
 }

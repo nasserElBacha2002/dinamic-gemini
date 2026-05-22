@@ -13,6 +13,13 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+vi.mock('../src/components/ui/useAppSnackbar', () => ({
+  useAppSnackbar: () => ({
+    showSnackbar: vi.fn(),
+    closeSnackbar: vi.fn(),
+  }),
+}));
+
 const minimalCopy = {
   closeAria: 'close',
   contextOverline: 'ctx',

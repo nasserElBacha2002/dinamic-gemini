@@ -152,6 +152,14 @@
     },
     "helper": {
       "maxFilesPerUpload": "Máximo 5 archivos por carga."
+    },
+    "photos": {
+      "dialogTitle": "Subiendo fotos",
+      "progress": "Subiendo fotos... No cierres ni actualices la página.",
+      "success": "Fotos subidas correctamente.",
+      "error": "No se pudieron subir las fotos. Intentá nuevamente.",
+      "waitBeforeLeaving": "Esperá a que termine la carga antes de salir.",
+      "uploadingButton": "Subiendo..."
     }
   },
   "aisles": {
@@ -1858,16 +1866,6 @@
     "admin_ai_config": {
       "title": "Configuración de IA",
       "subtitle": "Administrá proveedores, prompts y paridad de prompts"
-    }
-  },
-  "uploads": {
-    "photos": {
-      "dialogTitle": "Subiendo fotos",
-      "progress": "Subiendo fotos... No cierres ni actualices la página.",
-      "success": "Fotos subidas correctamente.",
-      "error": "No se pudieron subir las fotos. Intentá nuevamente.",
-      "waitBeforeLeaving": "Esperá a que termine la carga antes de salir.",
-      "uploadingButton": "Subiendo..."
     }
   },
   "ingestion_sessions": {
