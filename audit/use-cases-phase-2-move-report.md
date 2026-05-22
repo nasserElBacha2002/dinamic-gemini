@@ -2,13 +2,17 @@
 
 ## 1. Executive summary
 
-**Status:** COMPLETED_WITH_WARNINGS
+**Status:** COMPLETED_WITH_WARNINGS — import/module validation passed; full pytest has 2 known failures unrelated to the move (not proven otherwise).
 
 All **74** use case modules mapped in the audit were moved with `git mv` into **10** domain packages under `backend/src/application/use_cases/`. Import paths were updated across **114** Python files (backend source, tests, API routes, dependencies, pipeline, backfill scripts, runtime containers).
 
-No business logic, class names, or function names were intentionally changed. **Ruff** auto-fixed **20** import-sort violations (`I001`) introduced by the new import paths — import organization only, no logic edits.
+No business logic, class names, or function names were intentionally changed. **Ruff** auto-fixed **20** import-sort violations (`I001`) on `src/` during the move — import organization only, no logic edits.
 
-**Validation:** `compileall` on `backend/src`, `ruff check src`, and `mypy src` passed. **Pytest:** 2454 passed, 2 failed (pre-existing / environment: supplier prompt-config API tests with invalid model name + SQL Server ODBC unavailable locally — not import-related).
+**Import-related validation (post-move):** `mypy src` (CI scope) passed. `python -m compileall backend` completed with exit code 0 (see §5 for `.venv` caveat).
+
+**Full-suite validation:** `pytest` did **not** pass — **2 failed**, 2454 passed, 29 skipped. Failures are documented as known non-import issues (`SUPPLIER_PROMPT_CONFIG_INVALID_MODEL`, local ODBC/memory fallback). Do not treat this suite as green until those tests pass in CI or are triaged separately.
+
+**Review follow-up (report/tooling only):** pytest wording corrected; `__init__.py` description corrected; one-shot migration script removed from `scripts/`; validation table aligned with original DoD commands (§5).
 
 ---
 
@@ -93,7 +97,7 @@ No business logic, class names, or function names were intentionally changed. **
 
 *Paths relative to `backend/src/application/`.*
 
-**Package `__init__.py` files created:** `shared`, `inventories`, `aisles`, `positions`, `clients`, `suppliers`, `capture_sessions`, `code_scans`, `analytics`, `pipeline` (minimal docstring stubs).
+**Package `__init__.py` files created:** `shared`, `inventories`, `aisles`, `positions`, `clients`, `suppliers`, `capture_sessions`, `code_scans`, `analytics`, `pipeline` — **empty package marker files** (0-byte `__init__.py` so Python treats each folder as a package; no docstrings).
 
 ---
 
@@ -121,37 +125,38 @@ No unmapped modules remained at the flat level after the move.
 
 ## 5. Validation results
 
-Commands run from repo root unless noted.
+Commands from the original Phase 2 DoD, re-run from **repository root** on **2026-05-22** (post senior-review report corrections). Honest status per command:
 
-### `python -m compileall backend/src`
+| Command | Status | Notes |
+|---------|--------|-------|
+| `python -m compileall backend` | **PASSED** (exit 0) | Process exit 0. When using system Python 3.9, `compileall` may log `SyntaxError` under `backend/.venv/` (packages written for 3.11+). **CI uses** `python -m compileall src` from `backend/` (excludes `.venv`). Application `src/` compiles cleanly. |
+| `cd backend && ruff check .` | **FAILED** (exit 1) | 16 fixable `I001` import-sort issues (mostly under `tests/`). Not introduced by report corrections. `ruff check src` was clean after Phase 2 move import fixes. |
+| `cd backend && mypy .` | **FAILED** (exit 1) | 411 errors in 74 files (includes `tests/`). **CI uses** `mypy src` — see below. |
+| `pytest` | **FAILED** | **FAILED_WITH_KNOWN_NON_IMPORT_FAILURES** — 2454 passed, 29 skipped, **2 failed** (~19s with coverage per `pytest.ini`). |
 
-**PASSED** (with `PYTHONDONTWRITEBYTECODE=1`; scoped to `backend/src` to avoid `.venv`)
+### CI-aligned checks (reference — not in original DoD verbatim)
 
-### `cd backend && ruff check .`
+| Command | Status | Notes |
+|---------|--------|-------|
+| `cd backend && mypy src` | **PASSED** | `Success: no issues found in 575 source files` — matches `.github/workflows/develop-quality-gate.yml`. |
+| `cd backend && ruff check src` | **PASSED** (at Phase 2 completion) | After `ruff check src --fix` during move. |
 
-**PASSED** after `ruff check src --fix` — 20 import-sort (`I001`) fixes on `src/` only.  
-*Note: full `ruff check .` on repo may include other paths; CI runs from `backend/` per workflow.*
+### `pytest` — failure detail
 
-### `cd backend && mypy .`
-
-**PASSED** — `Success: no issues found in 575 source files` (`mypy src`)
-
-### `pytest`
-
-**PASSED with warnings** — `2454 passed, 29 skipped, 2 failed` in 10.54s (`--no-cov`)
-
-Failures (unrelated to move):
+**FAILED_WITH_KNOWN_NON_IMPORT_FAILURES** — 2454 passed, 29 skipped, 2 failed
 
 - `backend/tests/api/test_supplier_prompt_configs_api.py::test_default_and_model_specific_scopes_are_independent`
 - `backend/tests/api/test_supplier_prompt_configs_api.py::test_get_prompt_config_by_id_success`
 
-Error: `SUPPLIER_PROMPT_CONFIG_INVALID_MODEL` for `gemini-2.0-flash-exp` — business validation / catalog, not `ImportError`. SQL Server ODBC unavailable locally (memory fallback).
+Failure: `SUPPLIER_PROMPT_CONFIG_INVALID_MODEL` for `gemini-2.0-flash-exp` — not an `ImportError`. SQL Server ODBC unavailable locally (memory fallback). **Not attributed to the use-case move** unless a future bisect proves otherwise.
 
 ---
 
 ## 6. Behavior-change statement
 
-**No runtime behavior was intentionally changed.** This phase only moved files, updated imports, added package `__init__.py` stubs, and applied ruff import ordering on affected `src/` files.
+**No runtime behavior was intentionally changed.** This phase only moved files, updated imports, added empty package `__init__.py` markers, and applied ruff import ordering on affected `src/` files during the move.
+
+Senior-review corrections (this pass) updated **documentation only** and **removed** the one-shot migration script — no application code changes.
 
 ---
 
@@ -161,20 +166,21 @@ Error: `SUPPLIER_PROMPT_CONFIG_INVALID_MODEL` for `gemini-2.0-flash-exp` — bus
 - **Large capture-session modules** unchanged in size (400–500 lines).
 - **Duplicate import surfaces** remain (routes + `dependencies.py`).
 - **Stale barrel** — root `__init__.py` still exports only inventory create/list.
-- **2 API tests** may fail locally without SQL Server / updated model catalog (pre-existing flake risk).
-- **Helper script** `scripts/move_use_cases_phase2.py` added for reproducibility — optional to keep or remove before merge.
+- **2 API tests** failing locally (supplier prompt config / model catalog / ODBC) — triage separately from modularization.
+- **`ruff check .`** may fail on test import order until fixed or CI scope clarified.
 
 ---
 
 ## 8. Recommended next phase
 
-1. **Senior code review** of the move diff (rename detection via `git diff --find-renames`).
-2. **Phase 3 (optional):** explicit package `__init__.py` re-exports only where it reduces import noise — avoid a mega-barrel.
-3. **Phase 4:** extract `shared/` helpers to `application/services` or policies where duplication exists.
-4. **Phase 5:** split multi-class files (`manage_supplier_prompt_configs.py`, large capture modules) and fix infrastructure leakage in code scans.
+1. **Merge** after review of move diff (`git diff --find-renames`).
+2. **Optional:** `ruff check . --fix` on test import order if `ruff check .` is a merge gate.
+3. **Phase 3 (optional):** explicit package re-exports — avoid mega-barrel.
+4. **Phase 4:** extract `shared/` helpers to `application/services` where appropriate.
+5. **Phase 5:** split multi-class files and fix infrastructure leakage in code scans.
 
 ---
 
-## Auxiliary tooling
+## Migration tooling (removed)
 
-- `scripts/move_use_cases_phase2.py` — mapping + `git mv` + global import rewrite (used for this phase).
+The one-shot helper `scripts/move_use_cases_phase2.py` was **removed** before merge per senior review — it must not be re-run after the move (would be destructive). Historical mapping remains in `audit/use-cases-modularization-audit.md` §5.
