@@ -17,8 +17,9 @@ import {
 import { useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { PhotoUploadProgressDialog, useAppSnackbar } from '../../../components/ui';
+import { ErrorAlert, PhotoUploadProgressDialog, useAppSnackbar } from '../../../components/ui';
 import { useBeforeUnloadWarning } from '../../../hooks/useBeforeUnloadWarning';
+import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import {
   isTooManyFilesForUpload,
   maxFilesPerUploadHelperText,
@@ -63,6 +64,7 @@ export default function ImportSessionUpload({
   const [dragOver, setDragOver] = useState(false);
   const [lastSummary, setLastSummary] = useState<{ ok: number; fail: number } | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const uploadMutation = useUploadCaptureItems();
   const isUploadingPhotos = uploadMutation.isPending;
 
@@ -77,6 +79,7 @@ export default function ImportSessionUpload({
       return;
     }
     setSelectionError(null);
+    setUploadError(null);
     setLastSummary(null);
     try {
       const result = await uploadMutation.mutateAsync({
@@ -90,11 +93,15 @@ export default function ImportSessionUpload({
       if (result.failedCount === 0) {
         showSnackbar(t('uploads.photos.success'), 'success');
       } else if (result.uploadedCount === 0) {
-        showSnackbar(t('uploads.photos.error'), 'error');
+        const message = t('uploads.photos.error');
+        setUploadError(message);
+        showSnackbar(message, 'error');
       }
       onCompleted?.();
-    } catch {
-      showSnackbar(t('uploads.photos.error'), 'error');
+    } catch (err) {
+      const message = resolveApiErrorMessage(err, 'uploads.photos.error');
+      setUploadError(message);
+      showSnackbar(message, 'error');
     }
   };
 
@@ -179,6 +186,12 @@ export default function ImportSessionUpload({
         <Alert severity="warning" sx={{ mt: 2 }}>
           {t('ingestion_sessions.upload.error_summary')}
         </Alert>
+      ) : null}
+
+      {uploadError ? (
+        <Box sx={{ mt: 2 }} data-testid="import-session-upload-error">
+          <ErrorAlert message={uploadError} onClose={() => setUploadError(null)} />
+        </Box>
       ) : null}
 
       {summaryNode}

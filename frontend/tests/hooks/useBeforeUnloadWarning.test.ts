@@ -9,13 +9,8 @@ describe('useBeforeUnloadWarning', () => {
 
   it('registers beforeunload while enabled', () => {
     const addSpy = vi.spyOn(window, 'addEventListener');
-    const { rerender } = renderHook(({ enabled }) => useBeforeUnloadWarning(enabled), {
-      initialProps: { enabled: true },
-    });
+    renderHook(() => useBeforeUnloadWarning(true));
 
-    expect(addSpy).toHaveBeenCalledWith('beforeunload', expect.any(Function));
-
-    rerender({ enabled: false });
     expect(addSpy).toHaveBeenCalledWith('beforeunload', expect.any(Function));
   });
 
@@ -25,6 +20,21 @@ describe('useBeforeUnloadWarning', () => {
 
     const beforeUnloadCalls = addSpy.mock.calls.filter(([event]) => event === 'beforeunload');
     expect(beforeUnloadCalls).toHaveLength(0);
+  });
+
+  it('removes beforeunload listener when disabled after being enabled', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+
+    const { rerender } = renderHook(({ enabled }) => useBeforeUnloadWarning(enabled), {
+      initialProps: { enabled: true },
+    });
+
+    expect(addSpy).toHaveBeenCalledWith('beforeunload', expect.any(Function));
+
+    rerender({ enabled: false });
+
+    expect(removeSpy).toHaveBeenCalledWith('beforeunload', expect.any(Function));
   });
 
   it('removes listener on unmount after being enabled', () => {

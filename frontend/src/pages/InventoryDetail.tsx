@@ -186,6 +186,7 @@ export default function InventoryDetail() {
         createAisleFn={createAisleMutation.mutateAsync}
       />
 
+      {/* Table/native-file upload only; drawer uploads use ManagedImageAssetsDrawer dialog. */}
       <PhotoUploadProgressDialog open={uploadFlow.isUploadingPhotos} />
 
     </>

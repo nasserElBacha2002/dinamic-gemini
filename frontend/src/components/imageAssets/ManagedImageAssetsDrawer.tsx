@@ -78,6 +78,11 @@ export interface ManagedImageAssetsDrawerProps {
   readOnly?: boolean;
   /** Passed to {@link LoadingBlock} while `isLoading` is true. */
   loadingMessage?: string;
+  /**
+   * When false, skip the blocking upload progress dialog (e.g. parent page owns it).
+   * Default true — one dialog per upload flow.
+   */
+  showProgressDialog?: boolean;
 }
 
 export default function ManagedImageAssetsDrawer({
@@ -110,6 +115,7 @@ export default function ManagedImageAssetsDrawer({
   formatDeleteConfirm,
   readOnly = false,
   loadingMessage,
+  showProgressDialog = true,
 }: ManagedImageAssetsDrawerProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
@@ -449,7 +455,7 @@ export default function ManagedImageAssetsDrawer({
 
   return (
     <>
-      <PhotoUploadProgressDialog open={isUploading} />
+      {showProgressDialog ? <PhotoUploadProgressDialog open={isUploading} /> : null}
 
       {embedded ? (
         shell

@@ -149,7 +149,7 @@ export default function InventoryAislesSection({
                 e.stopPropagation();
                 onRequestUpload(p.id);
               }}
-              disabled={uploadingAisleId === p.id}
+              disabled={Boolean(uploadingAisleId)}
             >
               {uploadingAisleId === p.id ? t('uploads.photos.uploadingButton') : t('aisle.upload_assets')}
             </Button>

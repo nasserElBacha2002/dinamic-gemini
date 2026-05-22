@@ -121,6 +121,26 @@ describe('ManagedImageAssetsDrawer upload progress', () => {
     });
   });
 
+  it('does not render progress dialog when showProgressDialog is false', () => {
+    render(
+      <ManagedImageAssetsDrawer
+        open
+        onClose={() => {}}
+        copy={minimalCopy}
+        items={oneItem}
+        getItemSubtitle={() => 'sub'}
+        isLoading={false}
+        onFetchPreview={vi.fn().mockResolvedValue({ imageSrc: 'https://example.com/x.png' })}
+        showUpload
+        onUpload={vi.fn().mockResolvedValue(undefined)}
+        isUploading
+        showProgressDialog={false}
+      />
+    );
+
+    expect(screen.queryByTestId('photo-upload-progress-dialog')).not.toBeInTheDocument();
+  });
+
   it('does not start a second upload while already uploading', async () => {
     const onUpload = vi.fn().mockImplementation(() => new Promise(() => {}));
     render(

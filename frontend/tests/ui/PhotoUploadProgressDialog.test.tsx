@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import React, { type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material';
 import theme from '../../src/theme';
 import PhotoUploadProgressDialog from '../../src/components/ui/PhotoUploadProgressDialog';
@@ -36,5 +36,16 @@ describe('PhotoUploadProgressDialog', () => {
       </WithTheme>
     );
     expect(screen.queryByTestId('photo-upload-progress-dialog')).not.toBeInTheDocument();
+  });
+
+  it('stays open when Escape is pressed', () => {
+    render(
+      <WithTheme>
+        <PhotoUploadProgressDialog open />
+      </WithTheme>
+    );
+    const dialog = screen.getByRole('dialog');
+    fireEvent.keyDown(dialog, { key: 'Escape', code: 'Escape' });
+    expect(screen.getByTestId('photo-upload-progress-dialog')).toBeInTheDocument();
   });
 });
