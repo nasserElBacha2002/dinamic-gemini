@@ -2,11 +2,11 @@
 # CI-1 / D1 — Develop Quality Gate (backend + frontend)
 # =============================================================================
 #
-# **Single blocking DEV validation gate** — backend and frontend automatic deploys
-# (`deploy-dev-opencloud-backend.yml`, `deploy-dev-vercel-frontend.yml`) run only after
-# this workflow completes **successfully** on a **push** to **develop** (plus path filters
-# in each deploy workflow). Failed gate on that push causes deploy workflows to **fail
-# visibly** (no SSH / no Vercel deploy from Actions).
+# **Single blocking DEV validation gate** before deploys.
+# - Backend: `deploy-dev-opencloud-backend.yml` runs after this gate on push to `develop`.
+# - Frontend: Vercel deploys via **Git integration** (Production Branch `develop`);
+#   GitHub Actions does **not** call Vercel CLI. See `docs/deployment/DEV-VERCEL.md`.
+# Failed gate on push to `develop` causes the backend deploy workflow to **fail visibly**.
 #
 # Runs on every push and PR targeting `develop`, plus `workflow_dispatch`.
 # Blocking jobs: **backend-quality**, **frontend-quality**.

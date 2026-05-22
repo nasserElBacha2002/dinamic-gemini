@@ -1,5 +1,9 @@
 # DEV Vercel deploy — path filter fix
 
+> **Superseded (2026):** Vercel CLI was removed from GitHub Actions. Frontend DEV deploy uses Vercel Git integration. See [`dev-vercel-git-integration-migration.md`](dev-vercel-git-integration-migration.md) and [`docs/deployment/DEV-VERCEL.md`](../docs/deployment/DEV-VERCEL.md).
+
+# DEV Vercel deploy — path filter fix (historical)
+
 ## Symptom
 
 After a successful **Develop quality gate** on push to `develop`, the workflow **DEV — Vercel frontend** skipped deploy with:
