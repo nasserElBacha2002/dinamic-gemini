@@ -100,6 +100,22 @@ npx vercel deploy --prod --yes --token="${VERCEL_TOKEN}"
 - **`--prod`** kept for DEV (develop → Production in Vercel dashboard).
 - Removed redundant `npm ci` on the runner (install happens on Vercel during remote build).
 
+## Follow-up: `frontend/frontend` path does not exist
+
+### Symptom
+
+```text
+The provided path ".../frontend/frontend" does not exist.
+```
+
+### Cause
+
+Vercel project **Root Directory** is `frontend`, but the workflow ran `vercel pull` / `vercel deploy` with `working-directory: frontend`, so the CLI resolved `frontend` + `frontend`.
+
+### Fix
+
+Removed job-level `working-directory: frontend` from the deploy job. Vercel steps run from the **repository root**; Vercel applies its configured Root Directory `frontend`.
+
 ## Manual validation (local shell)
 
 Simulate the old bug vs fix:
