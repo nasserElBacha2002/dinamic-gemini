@@ -16,13 +16,15 @@ from src.api.dependencies import (
     get_update_product_sku_use_case,
 )
 from src.api.schemas.position_schemas import ReviewActionRequest
-from src.application.use_cases.confirm_position import ConfirmPositionUseCase
-from src.application.use_cases.delete_position import DeletePositionUseCase
-from src.application.use_cases.mark_position_image_mismatch import MarkPositionImageMismatchUseCase
-from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
-from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
-from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
-from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
+from src.application.use_cases.positions.confirm_position import ConfirmPositionUseCase
+from src.application.use_cases.positions.delete_position import DeletePositionUseCase
+from src.application.use_cases.positions.mark_position_image_mismatch import (
+    MarkPositionImageMismatchUseCase,
+)
+from src.application.use_cases.positions.mark_position_unknown import MarkPositionUnknownUseCase
+from src.application.use_cases.positions.update_position_code import UpdatePositionCodeUseCase
+from src.application.use_cases.positions.update_product_quantity import UpdateProductQuantityUseCase
+from src.application.use_cases.positions.update_product_sku import UpdateProductSkuUseCase
 from src.domain.reviews.entities import ReviewActionType
 
 from .shared import (

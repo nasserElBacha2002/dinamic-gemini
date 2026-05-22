@@ -41,11 +41,11 @@ from src.application.services.supplier_prompt_resolver import (
 from src.application.services.supplier_reference_image_resolver import (
     SupplierReferenceImageResolver,
 )
-from src.application.use_cases.persist_aisle_result import (
+from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
 )
-from src.application.use_cases.recompute_consolidated_counts import (
+from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
 )
 from src.config import Settings, load_settings

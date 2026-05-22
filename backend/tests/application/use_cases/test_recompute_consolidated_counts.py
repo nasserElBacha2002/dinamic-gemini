@@ -11,7 +11,7 @@ from src.application.ports.repositories import (
 )
 from src.application.services.final_count_builder import FinalCountBuilder
 from src.application.services.label_normalization import LabelNormalizationService
-from src.application.use_cases.recompute_consolidated_counts import (
+from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
     RecomputeConsolidatedCountsUseCase,
 )

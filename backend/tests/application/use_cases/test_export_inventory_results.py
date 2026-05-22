@@ -15,7 +15,7 @@ from src.application.services.csv_inventory_exporter import (
     UTF8_BOM,
 )
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.export_inventory_results import (
+from src.application.use_cases.inventories.export_inventory_results import (
     ExportAisleResultsCsvUseCase,
     ExportInventoryResultsUseCase,
 )

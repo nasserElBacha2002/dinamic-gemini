@@ -42,15 +42,15 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
-from src.application.use_cases.manage_supplier_prompt_configs import (
+from src.application.use_cases.pipeline.recompute_consolidated_counts import (
+    RecomputeConsolidatedCountsUseCase,
+)
+from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
     ActivateSupplierPromptConfigVersionUseCase,
     CreateSupplierPromptConfigVersionUseCase,
     GetActiveSupplierPromptConfigUseCase,
     GetSupplierPromptConfigUseCase,
     ListSupplierPromptConfigsUseCase,
-)
-from src.application.use_cases.recompute_consolidated_counts import (
-    RecomputeConsolidatedCountsUseCase,
 )
 from src.config import AppSettings
 from src.database.sqlserver import SqlServerClient

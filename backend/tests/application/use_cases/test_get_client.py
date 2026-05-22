@@ -8,7 +8,7 @@ import pytest
 
 from src.application.errors import ClientNotFoundError
 from src.application.ports.repositories import ClientRepository
-from src.application.use_cases.get_client import GetClientUseCase
+from src.application.use_cases.clients.get_client import GetClientUseCase
 from src.domain.client.entities import Client, ClientStatus
 
 

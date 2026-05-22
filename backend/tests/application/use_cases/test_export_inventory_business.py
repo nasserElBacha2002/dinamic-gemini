@@ -18,14 +18,14 @@ from src.application.services.csv_inventory_exporter import UTF8_BOM
 from src.application.services.export_inventory_collector import ExportInventoryCollector
 from src.application.services.export_summary_builder import ExportSummaryBuilder
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.export_inventory_business import (
+from src.application.use_cases.inventories.export_inventory_business import (
     ExportAisleBusinessCsvUseCase,
     ExportInventoryPackageZipUseCase,
     ExportInventorySummaryCsvUseCase,
     build_business_aisle_operational_csv_from_bundle,
 )
-from src.application.use_cases.export_inventory_results import ExportAisleResultsCsvUseCase
-from src.application.use_cases.list_aisle_positions import (
+from src.application.use_cases.inventories.export_inventory_results import ExportAisleResultsCsvUseCase
+from src.application.use_cases.positions.list_aisle_positions import (
     ListAislePositionsCommand,
     ListAislePositionsUseCase,
 )

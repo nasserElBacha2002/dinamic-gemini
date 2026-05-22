@@ -11,7 +11,7 @@ from src.application.errors import (
     InventoryNotFoundError,
     PositionNotFoundError,
 )
-from src.application.use_cases.get_position_code_scan_evidence import (
+from src.application.use_cases.positions.get_position_code_scan_evidence import (
     GetPositionCodeScanEvidenceCommand,
     GetPositionCodeScanEvidenceUseCase,
 )

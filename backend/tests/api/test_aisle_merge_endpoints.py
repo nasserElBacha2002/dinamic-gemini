@@ -51,7 +51,7 @@ def test_get_merge_results_endpoint_returns_rows() -> None:
 
     class StubGetMergeResultsUseCase:
         def execute(self, _cmd):
-            from src.application.use_cases.get_aisle_merge_results import GetAisleMergeResultsResult
+            from src.application.use_cases.aisles.get_aisle_merge_results import GetAisleMergeResultsResult
 
             return GetAisleMergeResultsResult(
                 records=[

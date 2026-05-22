@@ -12,7 +12,7 @@ from src.application.ports.repositories import ClientRepository, InventoryReposi
 from src.application.services.operational_execution_config_resolver import (
     OperationalPrimaryExecutionConfig,
 )
-from src.application.use_cases.create_inventory import (
+from src.application.use_cases.inventories.create_inventory import (
     CreateInventoryCommand,
     CreateInventoryUseCase,
 )

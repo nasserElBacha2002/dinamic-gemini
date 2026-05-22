@@ -13,7 +13,7 @@ from src.application.errors import (
     JobNotFoundError,
     JobPromotionNotAllowedError,
 )
-from src.application.use_cases.promote_aisle_operational_job import (
+from src.application.use_cases.aisles.promote_aisle_operational_job import (
     PromoteAisleOperationalJobCommand,
     PromoteAisleOperationalJobUseCase,
 )

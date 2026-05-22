@@ -22,7 +22,7 @@ from src.application.ports.repositories import (
     SourceAssetRepository,
     SupplierReferenceImageRepository,
 )
-from src.application.use_cases.recompute_consolidated_counts import (
+from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus

@@ -33,7 +33,7 @@ from src.application.ports.repositories import (
     ProductRecordRepository,
     RawLabelRepository,
 )
-from src.application.use_cases.recompute_consolidated_counts import (
+from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
     RecomputeConsolidatedCountsUseCase,
 )

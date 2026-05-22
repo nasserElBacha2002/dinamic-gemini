@@ -11,7 +11,7 @@ from src.application.errors import (
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
 )
-from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
+from src.application.use_cases.aisles.resolve_aisle_job_for_inventory_read import (
     ResolveAisleJobForInventoryReadUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus

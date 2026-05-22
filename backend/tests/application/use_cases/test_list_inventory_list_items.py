@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 
 from src.application.ports.contracts import InventoryListItem
-from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
+from src.application.use_cases.inventories.list_inventory_list_items import ListInventoryListItemsUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus

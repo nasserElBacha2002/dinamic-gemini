@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from src.application.use_cases.summarize_aisle_code_scans import (
+from src.application.use_cases.code_scans.summarize_aisle_code_scans import (
     SummarizeAisleCodeScansCommand,
     SummarizeAisleCodeScansUseCase,
 )

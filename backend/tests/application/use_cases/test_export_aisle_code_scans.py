@@ -16,7 +16,7 @@ from src.application.services.code_scan_csv_exporter import (
     SUMMARY_CSV_FIELDS,
     UNMATCHED_CSV_FIELDS,
 )
-from src.application.use_cases.export_aisle_code_scans import (
+from src.application.use_cases.code_scans.export_aisle_code_scans import (
     ExportAisleCodeScansCommand,
     ExportAisleCodeScansUseCase,
 )

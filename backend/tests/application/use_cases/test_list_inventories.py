@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from src.application.ports.repositories import InventoryRepository
-from src.application.use_cases.list_inventories import ListInventoriesUseCase
+from src.application.use_cases.inventories.list_inventories import ListInventoriesUseCase
 from src.domain.inventory.entities import Inventory, InventoryStatus
 
 

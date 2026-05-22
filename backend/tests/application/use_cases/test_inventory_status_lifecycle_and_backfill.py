@@ -9,10 +9,10 @@ from src.application.services.inventory_status_reconciler import InventoryStatus
 from src.application.services.operational_execution_config_resolver import (
     OperationalPrimaryExecutionConfig,
 )
-from src.application.use_cases.backfill_inventory_statuses import BackfillInventoryStatusesUseCase
-from src.application.use_cases.confirm_position import ConfirmPositionUseCase
-from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
-from src.application.use_cases.create_inventory import (
+from src.application.use_cases.inventories.backfill_inventory_statuses import BackfillInventoryStatusesUseCase
+from src.application.use_cases.positions.confirm_position import ConfirmPositionUseCase
+from src.application.use_cases.aisles.create_aisle import CreateAisleCommand, CreateAisleUseCase
+from src.application.use_cases.inventories.create_inventory import (
     CreateInventoryCommand,
     CreateInventoryUseCase,
 )

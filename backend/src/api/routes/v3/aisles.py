@@ -92,45 +92,60 @@ from src.application.services.execution_log_enrichment import (
 )
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.run_auditability_service import RunAuditabilityService
-from src.application.use_cases.cancel_aisle_job import CancelAisleJobCommand, CancelAisleJobUseCase
-from src.application.use_cases.compare_aisle_runs import (
+from src.application.use_cases.aisles.cancel_aisle_job import (
+    CancelAisleJobCommand,
+    CancelAisleJobUseCase,
+)
+from src.application.use_cases.aisles.create_aisle import CreateAisleCommand, CreateAisleUseCase
+from src.application.use_cases.aisles.get_aisle_merge_results import (
+    GetAisleMergeResultsCommand,
+    GetAisleMergeResultsUseCase,
+)
+from src.application.use_cases.aisles.get_aisle_processing_status import (
+    GetAisleProcessingStatusUseCase,
+)
+from src.application.use_cases.aisles.list_aisle_jobs import (
+    ListAisleJobsCommand,
+    ListAisleJobsUseCase,
+)
+from src.application.use_cases.aisles.list_aisles_with_status import ListAislesWithStatusUseCase
+from src.application.use_cases.aisles.promote_aisle_operational_job import (
+    PromoteAisleOperationalJobCommand,
+    PromoteAisleOperationalJobUseCase,
+)
+from src.application.use_cases.aisles.resolve_aisle_job_for_inventory_read import (
+    ResolveAisleJobForInventoryReadUseCase,
+)
+from src.application.use_cases.aisles.retry_aisle_job import (
+    RetryAisleJobCommand,
+    RetryAisleJobUseCase,
+)
+from src.application.use_cases.aisles.run_aisle_merge import (
+    RunAisleMergeCommand,
+    RunAisleMergeUseCase,
+)
+from src.application.use_cases.aisles.start_aisle_processing import (
+    StartAisleProcessingCommand,
+    StartAisleProcessingUseCase,
+)
+from src.application.use_cases.analytics.compare_aisle_runs import (
     CompareAisleRunsCommand,
     CompareAisleRunsUseCase,
 )
-from src.application.use_cases.compare_many_aisle_runs import (
+from src.application.use_cases.analytics.compare_many_aisle_runs import (
     CompareManyAisleRunsCommand,
     CompareManyAisleRunsUseCase,
 )
-from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
-from src.application.use_cases.export_aisle_benchmark import (
+from src.application.use_cases.analytics.export_aisle_benchmark import (
     ExportAisleBenchmarkCompareCsvUseCase,
     ExportAisleBenchmarkRunCommand,
     ExportAisleBenchmarkRunCsvUseCase,
 )
-from src.application.use_cases.export_inventory_business import ExportAisleBusinessCsvUseCase
-from src.application.use_cases.export_inventory_results import ExportAisleResultsCsvUseCase
-from src.application.use_cases.get_aisle_merge_results import (
-    GetAisleMergeResultsCommand,
-    GetAisleMergeResultsUseCase,
+from src.application.use_cases.inventories.export_inventory_business import (
+    ExportAisleBusinessCsvUseCase,
 )
-from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
-from src.application.use_cases.list_aisle_jobs import ListAisleJobsCommand, ListAisleJobsUseCase
-from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
-from src.application.use_cases.promote_aisle_operational_job import (
-    PromoteAisleOperationalJobCommand,
-    PromoteAisleOperationalJobUseCase,
-)
-from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
-    ResolveAisleJobForInventoryReadUseCase,
-)
-from src.application.use_cases.retry_aisle_job import RetryAisleJobCommand, RetryAisleJobUseCase
-from src.application.use_cases.run_aisle_merge import (
-    RunAisleMergeCommand,
-    RunAisleMergeUseCase,
-)
-from src.application.use_cases.start_aisle_processing import (
-    StartAisleProcessingCommand,
-    StartAisleProcessingUseCase,
+from src.application.use_cases.inventories.export_inventory_results import (
+    ExportAisleResultsCsvUseCase,
 )
 from src.domain.jobs.entities import Job
 from src.infrastructure.artifacts.stored_artifact_reader import read_execution_log_events_for_job

@@ -14,10 +14,10 @@ from PIL import Image
 from src.application.errors import CaptureSessionGroupIntegrityError
 from src.application.services.capture_flow_observability import get_capture_flow_metrics
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.compute_materialized_capture_session_group_preview import (
+from src.application.use_cases.capture_sessions.compute_materialized_capture_session_group_preview import (
     ComputeMaterializedCaptureSessionGroupPreviewUseCase,
 )
-from src.application.use_cases.materialize_capture_session_group import (
+from src.application.use_cases.capture_sessions.materialize_capture_session_group import (
     MaterializeCaptureSessionGroupUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus

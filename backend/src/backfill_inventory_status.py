@@ -13,7 +13,9 @@ from __future__ import annotations
 import sys
 
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.backfill_inventory_statuses import BackfillInventoryStatusesUseCase
+from src.application.use_cases.inventories.backfill_inventory_statuses import (
+    BackfillInventoryStatusesUseCase,
+)
 from src.runtime.v3_deps import get_aisle_repo, get_clock, get_inventory_repo
 
 

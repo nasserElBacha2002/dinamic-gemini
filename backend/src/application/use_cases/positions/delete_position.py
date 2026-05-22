@@ -17,7 +17,7 @@ from src.application.ports.repositories import (
     ReviewActionRepository,
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
-from src.application.use_cases.review_validation import (
+from src.application.use_cases.shared.review_validation import (
     ensure_review_job_matches_position,
     resolve_position,
     storage_job_id_for_review_audit,

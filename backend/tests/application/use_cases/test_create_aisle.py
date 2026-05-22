@@ -21,7 +21,7 @@ from src.application.ports.repositories import (
     InventoryRepository,
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
+from src.application.use_cases.aisles.create_aisle import CreateAisleCommand, CreateAisleUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.client_supplier.entities import ClientSupplier, ClientSupplierStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus

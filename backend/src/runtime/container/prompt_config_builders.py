@@ -8,7 +8,7 @@ from src.application.ports.repositories import (
     ClientSupplierRepository,
     SupplierPromptConfigRepository,
 )
-from src.application.use_cases.manage_supplier_prompt_configs import (
+from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
     ActivateSupplierPromptConfigVersionUseCase,
     CreateSupplierPromptConfigVersionUseCase,
     GetActiveSupplierPromptConfigUseCase,

@@ -1,10 +1,8 @@
 """
-MarkPositionUnknown use case.
+MarkPositionImageMismatch use case — traceability-only review outcome.
 
-Persists an explicit terminal operator resolution that the position outcome is unknown.
-This is distinct from:
-- quantity provenance such as ``qty_source="unknown"``
-- product-identification issues such as a primary product row with ``sku="UNKNOWN"``
+Flags that the row's visual evidence / image association is wrong without changing SKU, quantity,
+or deleting the position. Distinct from mark_unknown and product corrections.
 """
 
 from __future__ import annotations
@@ -19,7 +17,7 @@ from src.application.ports.repositories import (
     ReviewActionRepository,
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
-from src.application.use_cases.review_validation import (
+from src.application.use_cases.shared.review_validation import (
     ensure_position_not_deleted,
     ensure_review_job_matches_position,
     resolve_position,
@@ -29,7 +27,7 @@ from src.domain.positions.entities import PositionReviewResolution, PositionStat
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
 
-class MarkPositionUnknownUseCase:
+class MarkPositionImageMismatchUseCase:
     def __init__(
         self,
         inventory_repo: InventoryRepository,
@@ -68,9 +66,8 @@ class MarkPositionUnknownUseCase:
         before_resolution = (
             position.review_resolution.value if position.review_resolution is not None else None
         )
-
         position.status = PositionStatus.REVIEWED
-        position.review_resolution = PositionReviewResolution.UNKNOWN
+        position.review_resolution = PositionReviewResolution.IMAGE_MISMATCH
         position.needs_review = False
         position.updated_at = now
         self._position_repo.save(position)
@@ -78,14 +75,14 @@ class MarkPositionUnknownUseCase:
         review = ReviewAction(
             id=str(uuid.uuid4()),
             position_id=position_id,
-            action_type=ReviewActionType.MARK_UNKNOWN,
+            action_type=ReviewActionType.MARK_IMAGE_MISMATCH,
             before_json={
                 "status": before_status,
                 "review_resolution": before_resolution,
             },
             after_json={
                 "status": PositionStatus.REVIEWED.value,
-                "review_resolution": PositionReviewResolution.UNKNOWN.value,
+                "review_resolution": PositionReviewResolution.IMAGE_MISMATCH.value,
             },
             created_at=now,
             job_id=storage_job_id_for_review_audit(position),

@@ -40,18 +40,22 @@ from src.application.services.processing_provider_availability import (
     ProcessingOptionsMode,
     build_processing_provider_options_payload,
 )
-from src.application.use_cases.create_inventory import (
+from src.application.use_cases.inventories.create_inventory import (
     CreateInventoryCommand,
     CreateInventoryUseCase,
 )
-from src.application.use_cases.export_inventory_business import (
+from src.application.use_cases.inventories.export_inventory_business import (
     ExportInventoryPackageZipUseCase,
     ExportInventorySummaryCsvUseCase,
 )
-from src.application.use_cases.export_inventory_results import ExportInventoryResultsUseCase
-from src.application.use_cases.get_inventory import GetInventoryUseCase
-from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
-from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
+from src.application.use_cases.inventories.export_inventory_results import (
+    ExportInventoryResultsUseCase,
+)
+from src.application.use_cases.inventories.get_inventory import GetInventoryUseCase
+from src.application.use_cases.inventories.get_inventory_metrics import GetInventoryMetricsUseCase
+from src.application.use_cases.inventories.list_inventory_list_items import (
+    ListInventoryListItemsUseCase,
+)
 from src.config import load_settings
 from src.domain.inventory.entities import InventoryProcessingMode
 

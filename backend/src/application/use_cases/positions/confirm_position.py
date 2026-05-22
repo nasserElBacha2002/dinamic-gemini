@@ -1,7 +1,7 @@
 """
-UpdatePositionCode use case — v3.4 (Sprint 4.5).
+ConfirmPosition use case — v3.0 Épica 8 (HU-8.1).
 
-Corrects the effective position_code for a position; sets position to corrected and records ReviewAction.
+Confirms a detected position without changes; sets status to reviewed and records a ReviewAction.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from src.application.ports.repositories import (
     ReviewActionRepository,
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
-from src.application.use_cases.review_validation import (
+from src.application.use_cases.shared.review_validation import (
     ensure_position_not_deleted,
     ensure_review_job_matches_position,
     resolve_position,
@@ -26,7 +26,7 @@ from src.domain.positions.entities import PositionReviewResolution, PositionStat
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
 
-class UpdatePositionCodeUseCase:
+class ConfirmPositionUseCase:
     def __init__(
         self,
         inventory_repo: InventoryRepository,
@@ -49,7 +49,6 @@ class UpdatePositionCodeUseCase:
         aisle_id: str,
         position_id: str,
         job_id: str | None,
-        position_code: str,
     ) -> None:
         position = resolve_position(
             self._inventory_repo,
@@ -61,36 +60,28 @@ class UpdatePositionCodeUseCase:
         )
         ensure_position_not_deleted(position)
         ensure_review_job_matches_position(job_id, position)
-
-        new_code = (position_code or "").strip()
-        if not new_code:
-            raise ValueError("position_code is required")
-
         now = self._clock.now()
-        before_code = position.corrected_position_code
+        before_status = position.status.value
         before_resolution = (
             position.review_resolution.value if position.review_resolution is not None else None
         )
-
-        position.corrected_position_code = new_code
-        position.status = PositionStatus.CORRECTED
-        position.review_resolution = PositionReviewResolution.POSITION_CODE_CORRECTED
+        position.status = PositionStatus.REVIEWED
+        position.review_resolution = PositionReviewResolution.CONFIRMED
         position.needs_review = False
         position.updated_at = now
-
         self._position_repo.save(position)
 
         review = ReviewAction(
             id=str(uuid.uuid4()),
             position_id=position_id,
-            action_type=ReviewActionType.UPDATE_POSITION_CODE,
+            action_type=ReviewActionType.CONFIRM,
             before_json={
-                "corrected_position_code": before_code,
+                "status": before_status,
                 "review_resolution": before_resolution,
             },
             after_json={
-                "corrected_position_code": new_code,
-                "review_resolution": PositionReviewResolution.POSITION_CODE_CORRECTED.value,
+                "status": PositionStatus.REVIEWED.value,
+                "review_resolution": PositionReviewResolution.CONFIRMED.value,
             },
             created_at=now,
             job_id=storage_job_id_for_review_audit(position),

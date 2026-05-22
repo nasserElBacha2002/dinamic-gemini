@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from src.application.ports.repositories import ClientRepository
-from src.application.use_cases.list_clients import ListClientsUseCase
+from src.application.use_cases.clients.list_clients import ListClientsUseCase
 from src.domain.client.entities import Client, ClientStatus
 
 

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from src.api.dependencies import get_get_position_code_scan_evidence_use_case
 from src.api.server import app
 from src.application.errors import PositionNotFoundError
-from src.application.use_cases.get_position_code_scan_evidence import (
+from src.application.use_cases.positions.get_position_code_scan_evidence import (
     GetPositionCodeScanEvidenceCommand,
     GetPositionCodeScanEvidenceResult,
     PositionCodeScanEvidenceSummary,

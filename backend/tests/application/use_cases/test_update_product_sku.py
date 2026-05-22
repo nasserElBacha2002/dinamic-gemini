@@ -12,7 +12,7 @@ from src.application.errors import (
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
+from src.application.use_cases.positions.update_product_sku import UpdateProductSkuUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus

@@ -18,8 +18,8 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import ArtifactStorage
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
-from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase, UploadedFile
+from src.application.use_cases.aisles.list_aisle_assets import ListAisleAssetsUseCase
+from src.application.use_cases.aisles.upload_aisle_assets import UploadAisleAssetsUseCase, UploadedFile
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus

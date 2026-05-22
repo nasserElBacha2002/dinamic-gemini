@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 
 from src.application.ports.contracts import ReviewQueueQuery
-from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
+from src.application.use_cases.positions.list_review_queue import ListReviewQueueUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus

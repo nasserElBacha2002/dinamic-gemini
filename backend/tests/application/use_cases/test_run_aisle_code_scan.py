@@ -16,7 +16,7 @@ from src.application.ports.code_scanner import CodeScanDetectionCandidate, CodeS
 from src.application.ports.contracts import AisleAssetRollup
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
 from src.application.ports.source_asset_content_reader import SourceAssetContentReader
-from src.application.use_cases.run_aisle_code_scan import (
+from src.application.use_cases.code_scans.run_aisle_code_scan import (
     RunAisleCodeScanCommand,
     RunAisleCodeScanUseCase,
 )
@@ -471,7 +471,7 @@ def test_persists_scanner_engine_pyzbar(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_matching_failure_does_not_fail_scan(monkeypatch: pytest.MonkeyPatch) -> None:
-    from src.application.use_cases.match_aisle_code_scan_detections import (
+    from src.application.use_cases.code_scans.match_aisle_code_scan_detections import (
         MATCHING_WARNING_MESSAGE,
         MatchAisleCodeScanDetectionsCommand,
     )
