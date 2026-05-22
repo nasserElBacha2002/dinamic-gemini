@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { AisleBenchmarkCompareManyResponse, BenchmarkRunCompareSide, LlmCostSnapshot } from '../src/api/types';
+import { mockT } from './helpers/fixtures';
 import {
   buildCompareBenchmarkCharts,
   buildCompareExecutiveSummary,
@@ -10,7 +11,7 @@ import {
   hasValidRunCost,
 } from '../src/features/analytics/compare/compareBenchmarkViewModel';
 
-const t = (key: string) => key;
+const t = mockT();
 
 function costSnapshot(
   total = '1.5',

@@ -1,11 +1,11 @@
 import '@testing-library/jest-dom/vitest';
-import React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { CodeScanRunSummary, CodeScanSummaryItem } from '../../../src/api/types/codeScans';
 import CodeScanDrawer from '../../../src/features/aisle-code-scans/components/CodeScanDrawer';
 import { AppSnackbarProvider } from '../../../src/components/ui';
 
-const mockRun = {
+const mockRun: CodeScanRunSummary = {
   id: 'run-1',
   status: 'completed_with_warnings',
   total_assets: 10,
@@ -64,7 +64,7 @@ const mockDetections = [
   },
 ];
 
-const mockSummaryItems = [
+const mockSummaryItems: CodeScanSummaryItem[] = [
   {
     code_value: '7791234567890',
     normalized_code_value: '7791234567890',

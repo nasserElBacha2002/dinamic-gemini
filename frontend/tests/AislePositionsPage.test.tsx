@@ -2,7 +2,6 @@
  * Sprint 4.1 — Aisle Results page tests.
  */
 
-import React from 'react';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

@@ -1,5 +1,4 @@
 import '@testing-library/jest-dom/vitest';
-import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import SupplierReferenceImagesDrawer from '../src/features/clients/components/SupplierReferenceImagesDrawer';

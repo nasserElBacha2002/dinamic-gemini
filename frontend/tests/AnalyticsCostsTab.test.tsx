@@ -1,12 +1,12 @@
 import '@testing-library/jest-dom/vitest';
-import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { AnalyticsCostsTab } from '../src/features/analytics-dashboard/components/AnalyticsCostsTab';
 import type { AnalyticsCostSummaryResponse } from '../src/api/types';
+import { EMPTY_ANALYTICS_COST_SCOPE } from './helpers/fixtures';
 
 const costSummaryData: AnalyticsCostSummaryResponse = {
-  scope: {},
+  scope: EMPTY_ANALYTICS_COST_SCOPE,
   totals: {
     jobs_total: 3,
     jobs_with_cost: 2,

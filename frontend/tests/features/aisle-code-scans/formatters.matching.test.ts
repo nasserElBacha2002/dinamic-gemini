@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import type { TFunction } from 'i18next';
 import {
   formatCodeScanMatchStatus,
   formatCodeScanMatchType,
 } from '../../../src/features/aisle-code-scans/formatters';
 
-const t = (key: string) => {
+const t = ((key: string) => {
   const map: Record<string, string> = {
     'aisleCodeScans.matching.matched': 'Coincidencia sugerida',
     'aisleCodeScans.matching.no_match': 'Sin coincidencia',
@@ -14,7 +15,7 @@ const t = (key: string) => {
     'aisleCodeScans.matching.mixed': 'Coincidencia mixta',
   };
   return map[key] ?? key;
-};
+}) as unknown as TFunction;
 
 describe('code scan matching formatters', () => {
   it('formats match statuses in Spanish', () => {

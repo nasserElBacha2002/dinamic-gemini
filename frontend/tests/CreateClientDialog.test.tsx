@@ -1,5 +1,4 @@
 import '@testing-library/jest-dom/vitest';
-import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import CreateClientDialog from '../src/components/CreateClientDialog';

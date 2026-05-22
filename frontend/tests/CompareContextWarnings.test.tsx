@@ -1,5 +1,4 @@
 import '@testing-library/jest-dom/vitest';
-import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import CompareContextWarnings from '../src/features/analytics/compare/components/CompareContextWarnings';

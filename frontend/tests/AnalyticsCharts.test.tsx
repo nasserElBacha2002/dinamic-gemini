@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { EMPTY_ANALYTICS_COST_SCOPE, EMPTY_OBSERVABILITY_FILTERS } from './helpers/fixtures';
 import {
   buildAutoVsManualSegments,
   buildCaptureStatusChartData,
@@ -16,7 +17,7 @@ import i18n from '../src/i18n';
 describe('analyticsChartDatasets', () => {
   it('builds cost by provider only for finite positive costs', () => {
     const data = buildCostByProviderChartData({
-      scope: {},
+      scope: EMPTY_ANALYTICS_COST_SCOPE,
       totals: {} as never,
       by_provider_model: [
         {
@@ -52,7 +53,7 @@ describe('analyticsChartDatasets', () => {
   it('builds capture status chart with translated labels', () => {
     const data = buildCaptureStatusChartData(
       {
-        scope: {},
+        scope: EMPTY_ANALYTICS_COST_SCOPE,
         totals: {} as never,
         by_provider_model: [],
         by_inventory: [],
@@ -68,7 +69,7 @@ describe('analyticsChartDatasets', () => {
   it('builds capture status donut segments', () => {
     const segments = buildCaptureStatusDonutSegments(
       {
-        scope: {},
+        scope: EMPTY_ANALYTICS_COST_SCOPE,
         totals: {} as never,
         by_provider_model: [],
         by_inventory: [],
@@ -83,7 +84,7 @@ describe('analyticsChartDatasets', () => {
 
   it('builds quality issue chart from counts', () => {
     const data = buildQualityIssueChartData([
-      { issue_type: 'pending_review', count: 5, share: 0.5 },
+      { issue_type: 'pending_review', count: 5, percentage: 0.5, notes: null },
     ]);
     expect(data[0]?.value).toBe(5);
   });
@@ -101,7 +102,7 @@ describe('analyticsChartDatasets', () => {
   it('builds provider run volume from runs_total', () => {
     const data = buildProviderRunVolumeChartData({
       range: { from: '2026-01-01', to: '2026-01-31' },
-      filters: {},
+      filters: EMPTY_OBSERVABILITY_FILTERS,
       totals: {} as never,
       by_provider_model: [
         {

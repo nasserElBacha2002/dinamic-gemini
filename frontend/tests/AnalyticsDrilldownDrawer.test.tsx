@@ -1,9 +1,9 @@
 import '@testing-library/jest-dom/vitest';
-import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
+import { EMPTY_ANALYTICS_COST_SCOPE } from './helpers/fixtures';
 import {
   ANALYTICS_DRILLDOWN_DRAWER_WIDTH,
   AnalyticsDrilldownDrawer,
@@ -60,6 +60,7 @@ const analyticsBundle = {
         corrected_count: 1,
         unidentified_product_count: 0,
         invalid_traceability_count: 0,
+        low_confidence_count: 0,
         most_common_issue: 'Pending review',
       },
       {
@@ -72,6 +73,7 @@ const analyticsBundle = {
         corrected_count: 0,
         unidentified_product_count: 0,
         invalid_traceability_count: 0,
+        low_confidence_count: 0,
         most_common_issue: null,
       },
     ],
@@ -85,7 +87,7 @@ const analyticsBundle = {
 };
 
 const costSummary: AnalyticsCostSummaryResponse = {
-  scope: {},
+  scope: EMPTY_ANALYTICS_COST_SCOPE,
   totals: {} as never,
   by_provider_model: [],
   by_inventory: [

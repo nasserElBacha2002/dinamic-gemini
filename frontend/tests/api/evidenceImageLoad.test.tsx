@@ -4,7 +4,6 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import React from 'react';
 import { fetchEvidenceImageDisplay } from '../../src/api/client';
 import { useEvidenceImageLoad } from '../../src/features/results/hooks/useEvidenceImageLoad';
 import * as authStorage from '../../src/features/auth/storage';
@@ -59,10 +58,12 @@ describe('fetchEvidenceImageDisplay', () => {
     vi.stubGlobal('fetch', fetchMock);
     await fetchEvidenceImageDisplay(SPEC);
     expect(fetchMock).toHaveBeenCalled();
-    const jsonCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('image-display-url'));
+    const jsonCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('image-display-url')) as
+      | [string, RequestInit]
+      | undefined;
     expect(jsonCall).toBeDefined();
-    const init = jsonCall![1] as RequestInit;
-    const headers = init?.headers as Headers;
+    const init = jsonCall![1];
+    const headers = init.headers as Headers;
     expect(headers.get('Authorization')).toBe('Bearer test-jwt-token');
   });
 
