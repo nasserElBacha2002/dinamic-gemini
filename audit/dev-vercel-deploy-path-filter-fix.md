@@ -71,6 +71,35 @@ Matching paths for logs use `grep -E ... <<< "${CHANGED}"` (no `-q`), with `|| t
 
 **Immediate unblock:** run **workflow_dispatch** on **DEV — Vercel frontend** for the commit that was skipped.
 
+## Follow-up: `spawn sh ENOENT` on local `vercel build`
+
+### Symptom
+
+Deploy job ran but failed at:
+
+```text
+npx vercel build --token="${VERCEL_TOKEN}"
+Error: spawn sh ENOENT
+```
+
+### Cause
+
+The workflow ran **`vercel build` locally** in GitHub Actions, then **`vercel deploy --prebuilt`**. Local build requires a full shell toolchain; the runner step failed when the CLI could not spawn `sh`.
+
+### Fix (2026-05-22)
+
+Removed local build and prebuilt deploy. Vercel builds on its own infrastructure:
+
+```bash
+npx vercel pull --yes --environment=production --token="${VERCEL_TOKEN}"
+npx vercel deploy --prod --yes --token="${VERCEL_TOKEN}"
+```
+
+- No `vercel build` in Actions.
+- No `--prebuilt`.
+- **`--prod`** kept for DEV (develop → Production in Vercel dashboard).
+- Removed redundant `npm ci` on the runner (install happens on Vercel during remote build).
+
 ## Manual validation (local shell)
 
 Simulate the old bug vs fix:
