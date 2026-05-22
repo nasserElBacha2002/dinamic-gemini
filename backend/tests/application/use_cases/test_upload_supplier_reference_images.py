@@ -20,7 +20,7 @@ from src.application.ports.repositories import (
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import ArtifactStorage
-from src.application.use_cases.upload_supplier_reference_images import (
+from src.application.use_cases.suppliers.upload_supplier_reference_images import (
     ListSupplierReferenceImagesUseCase,
     UploadedSupplierReferenceImageFile,
     UploadSupplierReferenceImagesUseCase,

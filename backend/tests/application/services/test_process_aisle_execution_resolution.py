@@ -37,20 +37,25 @@ def _inv(
 
 
 @patch(
-    "src.application.services.process_aisle_execution_resolution.effective_production_processing_keys"
+    "src.application.services.process_aisle_execution_resolution.resolve_production_processing_keys"
 )
-def test_production_delegates_to_effective_keys(mock_eff) -> None:
-    mock_eff.return_value = ("gemini", "m1", "pk1")
+def test_production_delegates_to_production_resolver(mock_resolve) -> None:
+    mock_resolve.return_value = ("gemini", "m1", "global_v22")
     settings = object()
     out = resolve_process_aisle_execution_keys(
         _inv(mode=InventoryProcessingMode.PRODUCTION),
-        requested_provider_name=None,
-        requested_model_name=None,
+        requested_provider_name="openai",
+        requested_model_name="gpt",
         requested_prompt_key=None,
         settings=settings,
     )
-    assert out == ("gemini", "m1", "pk1")
-    mock_eff.assert_called_once()
+    assert out == ("gemini", "m1", "global_v22")
+    mock_resolve.assert_called_once_with(
+        _inv(mode=InventoryProcessingMode.PRODUCTION),
+        requested_provider_name="openai",
+        requested_model_name="gpt",
+        settings=settings,
+    )
 
 
 @patch(
@@ -71,22 +76,19 @@ def test_test_mode_delegates_to_resolve_start(mock_resolve) -> None:
 
 
 @patch(
-    "src.application.services.process_aisle_execution_resolution.effective_production_processing_keys"
+    "src.application.services.process_aisle_execution_resolution.resolve_production_processing_keys"
 )
-def test_production_logs_when_request_has_overrides(
-    mock_eff, caplog: pytest.LogCaptureFixture
+def test_production_logs_when_prompt_override_sent(
+    mock_resolve, caplog: pytest.LogCaptureFixture
 ) -> None:
-    mock_eff.return_value = ("p", "m", "pk")
+    mock_resolve.return_value = ("p", "m", "global_v22")
     caplog.set_level(logging.WARNING)
     resolve_process_aisle_execution_keys(
         _inv(mode=InventoryProcessingMode.PRODUCTION),
-        requested_provider_name="openai",
-        requested_model_name="x",
-        requested_prompt_key="y",
+        requested_provider_name=None,
+        requested_model_name=None,
+        requested_prompt_key="global_v21",
         settings=object(),
     )
-    assert "production_process_ignoring_request_overrides" in caplog.text
+    assert "production_process_ignoring_prompt_override" in caplog.text
     assert "inv-1" in caplog.text
-    assert "provider_name" in caplog.text
-    assert "model_name" in caplog.text
-    assert "prompt_key" in caplog.text

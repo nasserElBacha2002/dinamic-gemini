@@ -78,8 +78,8 @@ def resolve_hybrid_entry_for_provider(
     * Keys ``gemini``, ``deepseek``, ``None``, etc. use the ``default`` fragment only (no append).
 
     Legacy ``PROMPTS`` rows that use ``system``/``user`` (non-hybrid) are not valid hybrid entries;
-    for backward compatibility they fall back to **global_v21 default** text only, with **no** OpenAI
-    overlay (``provider_key`` ignored for that fallback).
+    for backward compatibility they fall back to the **global_v22 default** hybrid body when present,
+    else **global_v21 default**, with **no** OpenAI overlay (``provider_key`` ignored for that fallback).
 
     All returned strings are ``.rstrip()``'d for wire consistency with historical behavior.
     """
@@ -88,8 +88,9 @@ def resolve_hybrid_entry_for_provider(
         return entry.rstrip()
     if isinstance(entry, dict):
         if "system" in entry:
+            legacy_hybrid = PROMPTS.get("global_v22") or PROMPTS["global_v21"]
             return resolve_hybrid_entry_for_provider(
-                PROMPTS["global_v21"], None, prompt_parity_mode=prompt_parity_mode
+                legacy_hybrid, None, prompt_parity_mode=prompt_parity_mode
             )
         if isinstance(entry.get("default"), str):
             default_text = str(entry["default"]).rstrip()
@@ -109,5 +110,5 @@ def resolve_hybrid_entry_for_provider(
                 return (default_text + "\n\n" + str(entry["claude"]).rstrip()).rstrip()
             return default_text
     return resolve_hybrid_entry_for_provider(
-        PROMPTS["global_v21"], None, prompt_parity_mode=prompt_parity_mode
+        PROMPTS["global_v22"], None, prompt_parity_mode=prompt_parity_mode
     )

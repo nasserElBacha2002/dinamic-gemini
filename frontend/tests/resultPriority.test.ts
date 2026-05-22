@@ -7,6 +7,7 @@ function base(overrides: Partial<ResultSummary> = {}): ResultSummary {
   return {
     id: 'x',
     sku: 'S',
+    positionCode: null,
     detectedQty: 2,
     correctedQty: null,
     resolvedQty: null,

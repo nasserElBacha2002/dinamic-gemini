@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from src.api.schemas.listing_schemas import PageMeta
 from src.application.ports.capture_repositories import CaptureSessionGroupSummary
-from src.application.use_cases.compute_materialized_capture_session_group_preview import (
+from src.application.use_cases.capture_sessions.compute_materialized_capture_session_group_preview import (
     ComputeMaterializedCaptureSessionGroupPreviewResult,
 )
 from src.domain.capture.entities import CaptureSession, CaptureSessionItem

@@ -1,29 +1,24 @@
 import type { ChangeEvent, RefObject } from 'react';
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import { Box, Button, Typography } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { Button, Tooltip } from '@mui/material';
 import {
   DataTable,
   FilterToolbar,
-  RowActionMenu,
   SectionCard,
   StatusBadge,
   TableSearchField,
   type DataTableColumn,
+  type DataTableSortDirection,
+  sortDataTableRows,
 } from '../../../components/ui';
-import { pathToAisleObservability, pathToClientSupplier } from '../../../constants/appRoutes';
+import { pathToAisleObservability } from '../../../constants/appRoutes';
 import { pathToAislePositions } from '../../../utils/resultRoutes';
-import {
-  computeProcessAisleMenuState,
-  type AisleInventoryTableRow,
-  type ProcessAisleMenuContext,
-} from '../adapters';
+import { computeProcessAisleMenuState, type AisleInventoryTableRow, type ProcessAisleMenuContext } from '../adapters';
 
 export interface InventoryAislesSectionProps {
   inventoryId: string;
-  /** When set, aisle rows can link to supplier detail for `client_supplier_id`. */
-  inventoryClientId?: string | null;
   /** All aisles (for empty vs filter-empty). */
   tableRows: AisleInventoryTableRow[];
   filteredTableRows: AisleInventoryTableRow[];
@@ -43,7 +38,6 @@ export interface InventoryAislesSectionProps {
 
 export default function InventoryAislesSection({
   inventoryId,
-  inventoryClientId = null,
   tableRows,
   filteredTableRows,
   aislesLoading,
@@ -61,7 +55,13 @@ export default function InventoryAislesSection({
 }: InventoryAislesSectionProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const emptyLabel = t('common.em_dash');
+  const [aisleSortBy, setAisleSortBy] = useState('');
+  const [aisleSortDir, setAisleSortDir] = useState<DataTableSortDirection>('asc');
+
+  const handleAisleSortChange = useCallback((sortBy: string, sortDir: DataTableSortDirection) => {
+    setAisleSortBy(sortBy);
+    setAisleSortDir(sortDir);
+  }, []);
 
   const menuCtx: ProcessAisleMenuContext = useMemo(
     () => ({
@@ -77,6 +77,9 @@ export default function InventoryAislesSection({
       {
         id: 'code',
         label: t('aisle.code_label'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (row) => row.presentation.code.toLowerCase(),
         cell: (row) => (
           <Button
             variant="text"
@@ -99,42 +102,11 @@ export default function InventoryAislesSection({
         ),
       },
       {
-        id: 'client_supplier',
-        label: t('inventory.column_aisle_supplier'),
-        cell: (row) => {
-          const sid = row.presentation.clientSupplierId;
-          if (!sid) {
-            return (
-              <Typography variant="body2" color="text.secondary">
-                {t('inventory.aisle_no_supplier')}
-              </Typography>
-            );
-          }
-          const cid = (inventoryClientId ?? '').trim();
-          if (!cid) {
-            return (
-              <Typography variant="body2" color="text.secondary">
-                {t('inventory.aisle_supplier_assigned_no_nav')}
-              </Typography>
-            );
-          }
-          return (
-            <Button
-              component={RouterLink}
-              to={pathToClientSupplier(cid, sid)}
-              size="small"
-              variant="text"
-              onClick={(e) => e.stopPropagation()}
-              sx={{ px: 0, minWidth: 0, textTransform: 'none' }}
-            >
-              {t('inventory.aisle_supplier_view_link')}
-            </Button>
-          );
-        },
-      },
-      {
         id: 'aisle_status',
         label: t('aisle.column_aisle_status'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (row) => String(row.action.processMenuAisle.status),
         cell: (row) => (
           <StatusBadge
             label={row.presentation.aisleStatusLabel}
@@ -146,111 +118,105 @@ export default function InventoryAislesSection({
         id: 'assets',
         label: t('aisle.column_assets'),
         align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (row) => row.presentation.assetsCount,
         cell: (row) => row.presentation.assetsCountDisplay,
-      },
-      {
-        id: 'processing',
-        label: t('aisle.column_processing'),
-        cell: (row) =>
-          row.presentation.latestRun ? (
-            <StatusBadge
-              label={row.presentation.latestRun.statusLabel}
-              semantic={row.presentation.latestRun.statusSemantic}
-            />
-          ) : (
-            emptyLabel
-          ),
-      },
-      {
-        id: 'run_provider',
-        label: t('aisle.column_run_provider'),
-        cell: (row) => row.presentation.latestRun?.providerDisplay ?? emptyLabel,
-      },
-      {
-        id: 'run_model',
-        label: t('aisle.column_run_model'),
-        cell: (row) => row.presentation.latestRun?.modelDisplay ?? emptyLabel,
-      },
-      {
-        id: 'reference_usage',
-        label: t('aisle.column_reference_usage'),
-        cell: (row) => {
-          const summary = row.presentation.referenceUsage;
-          if (!summary) return emptyLabel;
-          return (
-            <Box sx={{ display: 'grid', gap: 0.5, maxWidth: 180 }}>
-              <StatusBadge label={summary.label} semantic={summary.semantic} />
-              {summary.detail ? (
-                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3 }}>
-                  {summary.detail}
-                </Typography>
-              ) : null}
-            </Box>
-          );
-        },
-      },
-      {
-        id: 'results_found',
-        label: t('aisle.column_results_found'),
-        align: 'right',
-        cell: (row) => row.presentation.positionsCountDisplay,
-      },
-      {
-        id: 'pending_review',
-        label: t('aisle.column_pending_review'),
-        align: 'right',
-        cell: (row) => row.presentation.pendingReviewDisplay,
       },
       {
         id: 'last_updated',
         label: t('common.last_updated'),
+        sortable: true,
+        sortType: 'date',
+        sortAccessor: (row) => row.presentation.lastUpdatedSortKey,
         cell: (row) => row.presentation.lastUpdatedDisplay,
       },
       {
-        id: 'actions',
-        label: t('common.actions'),
-        align: 'right',
-        width: 56,
+        id: 'action_upload',
+        label: t('aisle.column_action_upload'),
+        align: 'center',
+        sortable: false,
+        width: 112,
+        cell: (row) => {
+          const p = row.presentation;
+          return (
+            <Button
+              variant="outlined"
+              size="small"
+              data-testid={`aisle-action-upload-${p.id}`}
+              aria-label={t('aisle.upload_assets_row_a11y', { code: p.code })}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRequestUpload(p.id);
+              }}
+              disabled={Boolean(uploadingAisleId)}
+            >
+              {uploadingAisleId === p.id ? t('uploads.photos.uploadingButton') : t('aisle.upload_assets')}
+            </Button>
+          );
+        },
+      },
+      {
+        id: 'action_observability',
+        label: t('aisle.column_action_observability'),
+        align: 'center',
+        sortable: false,
+        width: 112,
+        cell: (row) => {
+          const p = row.presentation;
+          return (
+            <Button
+              variant="outlined"
+              size="small"
+              data-testid={`aisle-action-observability-${p.id}`}
+              aria-label={t('aisle.observability_row_a11y', { code: p.code })}
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(pathToAisleObservability(inventoryId, p.id, row.action.observabilityInitialRunId));
+              }}
+            >
+              {t('aisle.action_observability_view')}
+            </Button>
+          );
+        },
+      },
+      {
+        id: 'action_process',
+        label: t('aisle.column_action_process'),
+        align: 'center',
+        sortable: false,
+        width: 104,
         cell: (row) => {
           const processState = computeProcessAisleMenuState(row.action.processMenuAisle, menuCtx);
           const p = row.presentation;
-          return (
-            <RowActionMenu
-              ariaLabel={t('aisle.row_actions_a11y', { code: p.code })}
-              items={[
-                {
-                  id: 'upload_assets',
-                  label: uploadingAisleId === p.id ? t('common.uploading') : t('aisle.upload_assets'),
-                  onClick: () => onRequestUpload(p.id),
-                  disabled: uploadingAisleId === p.id,
-                },
-                {
-                  id: 'execution_logs',
-                  label: t('aisle.view_observability'),
-                  onClick: () =>
-                    navigate(
-                      pathToAisleObservability(inventoryId, p.id, row.action.observabilityInitialRunId)
-                    ),
-                },
-                {
-                  id: 'process',
-                  label: processingAisleId === p.id ? t('common.starting') : t('aisle.process_aisle'),
-                  onClick: () => void onRequestProcess(p.id, p.code, p.clientSupplierId ?? null),
-                  disabled: processState.disabled,
-                  disabledReason:
-                    processState.disabledReasonKey !== undefined
-                      ? t(processState.disabledReasonKey)
-                      : undefined,
-                },
-              ]}
-            />
+          const label = processingAisleId === p.id ? t('common.starting') : t('aisle.process_start');
+          const btn = (
+            <Button
+              variant="outlined"
+              size="small"
+              data-testid={`aisle-action-process-${p.id}`}
+              aria-label={t('aisle.process_row_a11y', { code: p.code })}
+              disabled={processState.disabled}
+              onClick={(e) => {
+                e.stopPropagation();
+                void onRequestProcess(p.id, p.code, p.clientSupplierId ?? null);
+              }}
+            >
+              {label}
+            </Button>
           );
+          if (processState.disabled && processState.disabledReasonKey) {
+            return (
+              <Tooltip title={t(processState.disabledReasonKey)}>
+                <span>{btn}</span>
+              </Tooltip>
+            );
+          }
+          return btn;
         },
       },
     ],
     [
-      emptyLabel,
-      inventoryClientId,
       inventoryId,
       menuCtx,
       navigate,
@@ -260,6 +226,14 @@ export default function InventoryAislesSection({
       t,
       uploadingAisleId,
     ]
+  );
+
+  const aisleRowsForDisplay = useMemo(
+    () =>
+      !aisleSortBy.trim()
+        ? filteredTableRows
+        : sortDataTableRows(filteredTableRows, columns, aisleSortBy, aisleSortDir),
+    [filteredTableRows, columns, aisleSortBy, aisleSortDir]
   );
 
   return (
@@ -282,7 +256,13 @@ export default function InventoryAislesSection({
         style={{ display: 'none' }}
         onChange={onFileInputChange}
       />
-      <FilterToolbar onReset={() => onAisleTableSearch('')} resetDisabled={!aisleTableSearch.trim()}>
+      <FilterToolbar
+        onReset={() => {
+          setAisleSortBy('');
+          onAisleTableSearch('');
+        }}
+        resetDisabled={!aisleTableSearch.trim() && !aisleSortBy.trim()}
+      >
         <TableSearchField
           label={t('table.search_label')}
           placeholder={t('aisle.search_aisles_placeholder')}
@@ -292,10 +272,15 @@ export default function InventoryAislesSection({
         />
       </FilterToolbar>
       <DataTable<AisleInventoryTableRow>
-        rows={filteredTableRows}
+        rows={aisleRowsForDisplay}
         rowKey={(row) => row.presentation.id}
         columns={columns}
         loading={aislesLoading}
+        sort={{
+          sortBy: aisleSortBy,
+          sortDir: aisleSortDir,
+          onSortChange: handleAisleSortChange,
+        }}
         onRowClick={(row) => navigate(pathToAislePositions(inventoryId, row.presentation.id))}
         emptyState={
           aisleTableSearch.trim() &&

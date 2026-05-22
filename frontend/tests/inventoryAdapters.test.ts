@@ -4,6 +4,7 @@ import type { Aisle, Inventory } from '../src/api/types';
 import {
   toAisleInventoryRowActionContext,
   toAisleInventoryRowPresentation,
+  toAisleInventoryTableRow,
   toInventoryHeaderViewModel,
 } from '../src/features/inventories/adapters';
 
@@ -48,6 +49,10 @@ describe('inventory view-model adapters', () => {
 
     const pres = toAisleInventoryRowPresentation(aisle, '—');
     expect(pres.latestRun?.providerDisplay).toBe('gemini');
+    expect(pres.latestRun?.jobStatusRaw).toBe('succeeded');
+    expect(pres.latestRun?.providerRaw).toBe('gemini');
+    expect(pres.latestRun?.modelRaw).toBe('m1');
+    expect(pres.lastUpdatedSortKey).toBe('2024-01-02T00:00:00Z');
     expect(pres.clientSupplierId).toBeNull();
     expect((pres as { observabilityInitialRunId?: string }).observabilityInitialRunId).toBeUndefined();
   });
@@ -69,5 +74,19 @@ describe('inventory view-model adapters', () => {
     const action = toAisleInventoryRowActionContext(aisle);
     expect(action.observabilityInitialRunId).toBe('job-1');
     expect(action.processMenuAisle).toEqual({ id: 'a1', status: 'processed', assets_count: 2 });
+  });
+
+  it('toAisleInventoryTableRow aggregates presentation and action', () => {
+    const aisle = {
+      id: 'a1',
+      code: 'A-1',
+      status: 'processed',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-01T00:00:00Z',
+    } as unknown as Aisle;
+
+    const row = toAisleInventoryTableRow(aisle, '—');
+    expect(row.presentation.id).toBe('a1');
+    expect(row.action.processMenuAisle.id).toBe('a1');
   });
 });

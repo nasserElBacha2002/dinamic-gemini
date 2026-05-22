@@ -1,24 +1,23 @@
-import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Box,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Divider,
-  Drawer,
-  Typography,
-} from '@mui/material';
+import { Box, Button, Divider, Drawer, Typography } from '@mui/material';
+import { useBeforeUnloadWarning } from '../../hooks/useBeforeUnloadWarning';
 import { getVisibleErrorMessage } from '../../utils/apiErrors';
 import {
+  isTooManyFilesForUpload,
+  maxFilesPerUploadHelperText,
+  tooManyFilesMessage,
+} from '../../utils/uploadFileLimits';
+import {
+  ConfirmDialog,
   DrawerHeader,
   EmptyState,
   ErrorAlert,
   LoadingBlock,
   ImageAssetCard,
   ImagePreviewDialog,
+  PhotoUploadProgressDialog,
+  useAppSnackbar,
 } from '../ui';
 import type { ManagedImageAssetItem } from './types';
 
@@ -68,13 +67,22 @@ export interface ManagedImageAssetsDrawerProps {
   onReplace?: (assetId: string, file: File) => Promise<unknown>;
   isReplacing?: boolean;
   replaceError?: string | null;
-  onDelete: (assetId: string) => Promise<unknown>;
+  onDelete?: (assetId: string) => Promise<unknown>;
   isDeleting?: boolean;
   deleteError?: string | null;
   previewErrorMessageKey?: string;
   /** When this returns a non-empty string, preview is skipped and the message is shown (e.g. video in image-only viewer). */
   previewBlockedMessage?: (item: ManagedImageAssetItem) => string | null;
-  formatDeleteConfirm: (fileName: string) => string;
+  formatDeleteConfirm?: (fileName: string) => string;
+  /** When true: no upload/replace/delete UI, no management panel, preview only. */
+  readOnly?: boolean;
+  /** Passed to {@link LoadingBlock} while `isLoading` is true. */
+  loadingMessage?: string;
+  /**
+   * When false, skip the blocking upload progress dialog (e.g. parent page owns it).
+   * Default true — one dialog per upload flow.
+   */
+  showProgressDialog?: boolean;
 }
 
 export default function ManagedImageAssetsDrawer({
@@ -105,9 +113,14 @@ export default function ManagedImageAssetsDrawer({
   previewErrorMessageKey = 'errors.preview_reference_failed',
   previewBlockedMessage,
   formatDeleteConfirm,
+  readOnly = false,
+  loadingMessage,
+  showProgressDialog = true,
 }: ManagedImageAssetsDrawerProps) {
   const { t } = useTranslation();
+  const { showSnackbar } = useAppSnackbar();
   const effectiveOpen = embedded || open;
+  useBeforeUnloadWarning(isUploading);
   void previewErrorMessageKey;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
@@ -121,6 +134,7 @@ export default function ManagedImageAssetsDrawer({
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [localUploadError, setLocalUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -168,13 +182,24 @@ export default function ManagedImageAssetsDrawer({
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files ? Array.from(event.target.files) : [];
     event.target.value = '';
-    if (files.length === 0 || !onUpload) return;
+    if (files.length === 0 || !onUpload || isUploading) return;
+    if (isTooManyFilesForUpload(files.length)) {
+      setLocalUploadError(tooManyFilesMessage('aisle'));
+      return;
+    }
+    setLocalUploadError(null);
     try {
       await onUpload(files);
+      showSnackbar(t('uploads.photos.success'), 'success');
     } catch {
-      /* surfaced via uploadError */
+      showSnackbar(t('uploads.photos.error'), 'error');
     }
   };
+
+  const guardedOnClose = useCallback(() => {
+    if (isUploading) return;
+    onClose();
+  }, [isUploading, onClose]);
 
   const handleReplaceFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const target = replaceTarget;
@@ -193,7 +218,7 @@ export default function ManagedImageAssetsDrawer({
   };
 
   const handleDeleteConfirm = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !onDelete) return;
     try {
       await onDelete(deleteTarget.id);
       setDeleteTarget(null);
@@ -241,6 +266,9 @@ export default function ManagedImageAssetsDrawer({
   };
 
   const busy = isUploading || isDeleting || isReplacing;
+  const effectiveUploadError = localUploadError ?? uploadError ?? null;
+  const effectiveShowUpload = !readOnly && showUpload;
+  const effectiveShowReplace = !readOnly && showReplace;
 
   const headerSection = embedded ? (
     <Box
@@ -270,7 +298,8 @@ export default function ManagedImageAssetsDrawer({
     <DrawerHeader
       sx={{ py: 1.5, zIndex: 1 }}
       closeLabel={copy.closeAria}
-      onClose={onClose}
+      onClose={guardedOnClose}
+      closeDisabled={isUploading}
       overline={
         <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
           {copy.contextOverline}
@@ -293,7 +322,7 @@ export default function ManagedImageAssetsDrawer({
 
   const scrollSection = (
     <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0, px: 2.5, py: 2 }}>
-          {showUpload ? (
+          {effectiveShowUpload ? (
             <input
               ref={fileInputRef}
               type="file"
@@ -303,7 +332,7 @@ export default function ManagedImageAssetsDrawer({
               onChange={handleFileChange}
             />
           ) : null}
-          {showReplace ? (
+          {effectiveShowReplace ? (
             <input
               ref={replaceInputRef}
               type="file"
@@ -312,38 +341,48 @@ export default function ManagedImageAssetsDrawer({
               onChange={handleReplaceFileChange}
             />
           ) : null}
-          {isLoading ? <LoadingBlock /> : null}
+          {isLoading ? <LoadingBlock message={loadingMessage} /> : null}
 
           {!isLoading && errorMessage ? <ErrorAlert message={errorMessage} onRetry={onRetry} /> : null}
 
           {!isLoading && !errorMessage ? (
             <Box sx={{ display: 'grid', gap: 2 }}>
-              <Box
-                sx={{
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderRadius: 2,
-                  p: 2,
-                  display: 'grid',
-                  gap: 1,
-                }}
-              >
-                <Typography variant="subtitle2">{copy.managementTitle}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {copy.managementBody}
-                </Typography>
-                {uploadExtras ?? null}
-                {showUpload && onUpload ? (
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    <Button variant="contained" size="small" onClick={handleUploadClick} disabled={busy}>
-                      {isUploading ? t('common.uploading') : copy.uploadButton}
-                    </Button>
-                  </Box>
-                ) : null}
-                {uploadError ? <ErrorAlert message={uploadError} /> : null}
-                {replaceError ? <ErrorAlert message={replaceError} /> : null}
-                {deleteError ? <ErrorAlert message={deleteError} /> : null}
-              </Box>
+              {!readOnly ? (
+                <Box
+                  sx={{
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 2,
+                    p: 2,
+                    display: 'grid',
+                    gap: 1,
+                  }}
+                >
+                  <Typography variant="subtitle2">{copy.managementTitle}</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {copy.managementBody}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    {maxFilesPerUploadHelperText()}
+                  </Typography>
+                  {uploadExtras ?? null}
+                  {effectiveShowUpload && onUpload ? (
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      <Button variant="contained" size="small" onClick={handleUploadClick} disabled={busy}>
+                        {isUploading ? t('uploads.photos.uploadingButton') : copy.uploadButton}
+                      </Button>
+                      {isUploading ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ width: '100%' }}>
+                          {t('uploads.photos.waitBeforeLeaving')}
+                        </Typography>
+                      ) : null}
+                    </Box>
+                  ) : null}
+                  {effectiveUploadError ? <ErrorAlert message={effectiveUploadError} /> : null}
+                  {replaceError ? <ErrorAlert message={replaceError} /> : null}
+                  {deleteError ? <ErrorAlert message={deleteError} /> : null}
+                </Box>
+              ) : null}
 
               {items.length === 0 ? (
                 <EmptyState title={copy.emptyTitle} message={copy.emptyMessage} />
@@ -360,7 +399,7 @@ export default function ManagedImageAssetsDrawer({
                             <Button variant="outlined" size="small" onClick={() => void handlePreview(item)}>
                               {copy.preview}
                             </Button>
-                            {showReplace && onReplace ? (
+                            {effectiveShowReplace && onReplace ? (
                               <Button
                                 variant="outlined"
                                 size="small"
@@ -372,15 +411,17 @@ export default function ManagedImageAssetsDrawer({
                                   : (copy.replace ?? '')}
                               </Button>
                             ) : null}
-                            <Button
-                              variant="outlined"
-                              color="error"
-                              size="small"
-                              onClick={() => setDeleteTarget(item)}
-                              disabled={busy}
-                            >
-                              {copy.delete}
-                            </Button>
+                            {!readOnly && onDelete ? (
+                              <Button
+                                variant="outlined"
+                                color="error"
+                                size="small"
+                                onClick={() => setDeleteTarget(item)}
+                                disabled={busy}
+                              >
+                                {copy.delete}
+                              </Button>
+                            ) : null}
                           </>
                         }
                       />
@@ -414,13 +455,18 @@ export default function ManagedImageAssetsDrawer({
 
   return (
     <>
+      {showProgressDialog ? <PhotoUploadProgressDialog open={isUploading} /> : null}
+
       {embedded ? (
         shell
       ) : (
         <Drawer
           anchor="right"
           open={open}
-          onClose={onClose}
+          onClose={(_event, reason) => {
+            if (isUploading && (reason === 'backdropClick' || reason === 'escapeKeyDown')) return;
+            guardedOnClose();
+          }}
           PaperProps={{
             sx: {
               width: { xs: '100%', sm: 'min(720px, 96vw)', lg: 'min(840px, 88vw)' },
@@ -445,23 +491,24 @@ export default function ManagedImageAssetsDrawer({
         error={previewError}
       />
 
-      {effectiveOpen ? (
-        <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
-          <DialogTitle>{copy.deleteTitle}</DialogTitle>
-          <DialogContent>
+      {effectiveOpen && !readOnly && onDelete && formatDeleteConfirm ? (
+        <ConfirmDialog
+          open={Boolean(deleteTarget)}
+          onClose={() => setDeleteTarget(null)}
+          title={copy.deleteTitle}
+          description={
             <Typography variant="body2">
               {formatDeleteConfirm(deleteTarget?.filename ?? copy.deleteFallbackName)}
             </Typography>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setDeleteTarget(null)} disabled={isDeleting}>
-              {t('common.cancel')}
-            </Button>
-            <Button color="error" variant="contained" onClick={() => void handleDeleteConfirm()} disabled={isDeleting}>
-              {isDeleting ? t('common.deleting') : copy.delete}
-            </Button>
-          </DialogActions>
-        </Dialog>
+          }
+          cancelLabel={t('common.cancel')}
+          confirmLabel={copy.delete}
+          confirmPendingLabel={t('common.deleting')}
+          onConfirm={() => void handleDeleteConfirm()}
+          loading={isDeleting}
+          confirmColor="error"
+          maxWidth="xs"
+        />
       ) : null}
     </>
   );

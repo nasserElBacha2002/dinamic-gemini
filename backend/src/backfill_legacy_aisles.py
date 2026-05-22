@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from src.application.use_cases.backfill_legacy_aisles import (
+from src.application.use_cases.aisles.backfill_legacy_aisles import (
     BackfillLegacyAislesCommand,
     BackfillLegacyAislesUseCase,
 )

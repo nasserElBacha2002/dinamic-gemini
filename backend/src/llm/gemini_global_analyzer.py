@@ -16,8 +16,16 @@ from src.exceptions.global_analysis_exceptions import (
     GlobalAnalysisValidationError,
 )
 from src.llm.gemini_client import GeminiClient
-from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base
+from src.llm.prompt_composer.hybrid_assembly import (
+    DEFAULT_HYBRID_PROMPT_PROFILE,
+    compose_hybrid_base,
+)
 from src.llm.types import ContextImageSequence
+from src.llm.vision_multimodal_payload import (
+    LLM_METADATA_KEY_MULTIMODAL_ORDER,
+    LLM_METADATA_KEY_REFERENCE_IMAGE_IDS,
+    build_gemini_interleaved_contents,
+)
 from src.models.schemas import GlobalEntityResponseV21
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
@@ -49,21 +57,14 @@ class GeminiGlobalAnalyzer:
         *,
         context_instruction: str | None = None,
         context_images: ContextImageSequence | None = None,
+        frame_refs: list[str] | None = None,
+        reference_image_ids: list[str] | None = None,
+        request_metadata: dict[str, Any] | None = None,
         **kwargs: object,
     ) -> dict[str, Any]:
         """Envía los frames en una sola llamada a Gemini (Structured Output v2.1) y devuelve el JSON validado.
 
-        Usa response_schema para que Gemini devuelva JSON conforme a GlobalEntityResponseV21.
-        v3.2.4 Phase 4: optional context_instruction + context_images (e.g. visual references) prepended to the call.
-
-        Args:
-            frames: Lista de frames BGR (OpenCV).
-            context_instruction: Optional text instruction (e.g. visual reference description) sent before context images.
-            context_images: Optional list of PIL images (context/reference) sent before primary frames.
-            **kwargs: Optional run logger (e.g. logger=logger), save_raw_to_path.
-
-        Returns:
-            Dict con total_entities_detected y entities.
+        Phase 1: interleaved text labels + images (main prompt first, then reference and primary pairs).
         """
         if not frames:
             raise ValueError("frames no puede estar vacía")
@@ -80,25 +81,39 @@ class GeminiGlobalAnalyzer:
         prompt = (
             self._prompt_text
             if self._prompt_text is not None
-            else compose_hybrid_base("global_v21", None)
+            else compose_hybrid_base(DEFAULT_HYBRID_PROMPT_PROFILE, None)
         )
-        # v3.2.4: apply context_instruction and context_images independently
         if context_instruction and context_instruction.strip():
             prompt = context_instruction.strip() + "\n\n" + prompt
-        if context_images:
-            images = list(context_images) + primary_images
-            log.info(
-                "Enviando %d context + %d frames a Gemini (análisis global v2.1 structured)...",
-                len(context_images),
-                len(frames),
-            )
-        else:
-            images = primary_images
-            log.info(
-                "Enviando %d frames a Gemini (análisis global v2.1 structured)...", len(frames)
-            )
+
+        refs = list(context_images) if context_images else []
+        ref_ids = list(reference_image_ids or [])
+        if request_metadata:
+            raw_ref = request_metadata.get(LLM_METADATA_KEY_REFERENCE_IMAGE_IDS)
+            if isinstance(raw_ref, list) and raw_ref and not ref_ids:
+                ref_ids = [str(x) for x in raw_ref]
+        frefs = list(frame_refs or [])
+
+        gemini_contents, multimodal_order = build_gemini_interleaved_contents(
+            main_prompt_text=prompt,
+            context_images=refs,
+            reference_image_ids=ref_ids,
+            primary_pil_images=primary_images,
+            frame_refs=frefs,
+        )
+        if request_metadata is not None:
+            request_metadata[LLM_METADATA_KEY_MULTIMODAL_ORDER] = multimodal_order
+
+        log.info(
+            "Enviando Gemini interleaved contents: %d parts (%d primary frames)...",
+            len(gemini_contents),
+            len(frames),
+        )
         raw = self.client.generate_global_analysis_structured(
-            images, prompt, GlobalEntityResponseV21
+            [],
+            prompt,
+            GlobalEntityResponseV21,
+            contents=gemini_contents,
         )
         cleaned = raw.strip()
         save_raw_to_path = kwargs.get("save_raw_to_path")
@@ -117,7 +132,6 @@ class GeminiGlobalAnalyzer:
 
         data = parsed
 
-        # Normalize Gemini count mismatch: trust len(entities) as source of truth (deterministic, auditable)
         total = data.get("total_entities_detected")
         entities = data.get("entities") or []
         if (

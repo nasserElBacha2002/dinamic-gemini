@@ -19,6 +19,25 @@ WORKER_LAUNCH_LOG_NAME = "worker-launch.log"
 WORKER_STARTUP_GRACE_SEC = 0.2
 
 
+def _backend_project_root() -> Path:
+    """``backend/`` directory (parent of the ``src`` package)."""
+    # .../backend/src/infrastructure/services/this_file.py
+    return Path(__file__).resolve().parents[3]
+
+
+def _merge_worker_pythonpath(env: dict[str, str]) -> None:
+    """Prepend ``backend/`` to PYTHONPATH so ``import src`` resolves to this repo (not stale installs)."""
+    root = str(_backend_project_root())
+    cur = (env.get("PYTHONPATH") or "").strip()
+    if not cur:
+        env["PYTHONPATH"] = root
+        return
+    parts = [p for p in cur.split(os.pathsep) if p]
+    if root in parts:
+        return
+    env["PYTHONPATH"] = root + os.pathsep + cur
+
+
 class OnDemandWorkerLaunchService(WorkerLaunchService):
     """Launch a single-job worker process using the current runtime image/interpreter."""
 
@@ -28,6 +47,7 @@ class OnDemandWorkerLaunchService(WorkerLaunchService):
         command = self._build_command()
         command = [*command, "--job-id", job_id, "--execution-id", execution_id]
         env = os.environ.copy()
+        _merge_worker_pythonpath(env)
         env["DINAMIC_JOB_ID"] = job_id
         env["DINAMIC_EXECUTION_ID"] = execution_id
         cwd = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -36,7 +56,8 @@ class OnDemandWorkerLaunchService(WorkerLaunchService):
         launch_log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(launch_log_path, "a", encoding="utf-8") as launch_log:
             launch_log.write(
-                f"launch_requested execution_id={execution_id} job_id={job_id} cwd={cwd} python={sys.executable} command={command}\n"
+                f"launch_requested execution_id={execution_id} job_id={job_id} cwd={cwd} "
+                f"python={sys.executable} PYTHONPATH={env.get('PYTHONPATH','')} command={command}\n"
             )
             launch_log.flush()
             try:

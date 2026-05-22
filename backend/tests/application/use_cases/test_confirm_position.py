@@ -15,7 +15,7 @@ from src.application.errors import (
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.confirm_position import ConfirmPositionUseCase
+from src.application.use_cases.positions.confirm_position import ConfirmPositionUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus

@@ -8,31 +8,33 @@ import { render, screen } from '@testing-library/react';
 import TraceabilityChip from '../src/components/ui/TraceabilityChip';
 
 describe('TraceabilityChip', () => {
-  it('renders Valid label for status valid', () => {
+  it('renders non-misleading label for status valid', () => {
     render(<TraceabilityChip status="valid" />);
-    expect(screen.getByText('Válida')).toBeInTheDocument();
+    expect(screen.getByText('ID presente en imágenes analizadas')).toBeInTheDocument();
+    expect(screen.queryByText('Válida')).not.toBeInTheDocument();
   });
 
-  it('renders Missing label for status missing', () => {
+  it('renders label for status missing', () => {
     render(<TraceabilityChip status="missing" />);
-    expect(screen.getByText('Ausente')).toBeInTheDocument();
+    expect(screen.getByText('Sin ID de imagen')).toBeInTheDocument();
   });
 
-  it('renders Invalid label for status invalid', () => {
+  it('renders label for status invalid', () => {
     render(<TraceabilityChip status="invalid" />);
-    expect(screen.getByText('Inválida')).toBeInTheDocument();
+    expect(screen.getByText('ID no coincide con imágenes analizadas')).toBeInTheDocument();
+    expect(screen.queryByText('Inválida')).not.toBeInTheDocument();
   });
 
-  it('renders Unvalidated label for status unvalidated', () => {
+  it('renders label for status unvalidated', () => {
     render(<TraceabilityChip status="unvalidated" />);
-    expect(screen.getByText('Sin validar')).toBeInTheDocument();
+    expect(screen.getByText('No validado')).toBeInTheDocument();
   });
 
   it('shows tooltip when tooltip prop is provided', () => {
     render(
       <TraceabilityChip status="invalid" tooltip="Image not found in job" />
     );
-    expect(screen.getByText('Inválida')).toBeInTheDocument();
+    expect(screen.getByText('ID no coincide con imágenes analizadas')).toBeInTheDocument();
     expect(screen.getByLabelText('Image not found in job')).toBeInTheDocument();
   });
 

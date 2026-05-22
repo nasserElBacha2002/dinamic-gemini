@@ -8,7 +8,7 @@ import pytest
 
 from src.application.errors import InvalidClientNameError
 from src.application.ports.repositories import ClientRepository
-from src.application.use_cases.create_client import CreateClientCommand, CreateClientUseCase
+from src.application.use_cases.clients.create_client import CreateClientCommand, CreateClientUseCase
 from src.domain.client.entities import Client, ClientStatus
 
 

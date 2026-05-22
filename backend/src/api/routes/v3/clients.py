@@ -64,16 +64,16 @@ from src.application.errors import (
     InvalidClientSupplierNameError,
     SupplierPromptConfigNotFoundError,
 )
-from src.application.use_cases.create_client import CreateClientCommand, CreateClientUseCase
-from src.application.use_cases.create_client_supplier import (
+from src.application.use_cases.clients.create_client import CreateClientCommand, CreateClientUseCase
+from src.application.use_cases.clients.get_client import GetClientUseCase
+from src.application.use_cases.clients.list_clients import ListClientsUseCase
+from src.application.use_cases.suppliers.create_client_supplier import (
     CreateClientSupplierCommand,
     CreateClientSupplierUseCase,
 )
-from src.application.use_cases.get_client import GetClientUseCase
-from src.application.use_cases.get_client_supplier import GetClientSupplierUseCase
-from src.application.use_cases.list_client_suppliers import ListClientSuppliersUseCase
-from src.application.use_cases.list_clients import ListClientsUseCase
-from src.application.use_cases.manage_supplier_prompt_configs import (
+from src.application.use_cases.suppliers.get_client_supplier import GetClientSupplierUseCase
+from src.application.use_cases.suppliers.list_client_suppliers import ListClientSuppliersUseCase
+from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
     ActivateSupplierPromptConfigVersionCommand,
     ActivateSupplierPromptConfigVersionUseCase,
     CreateSupplierPromptConfigVersionCommand,
@@ -85,11 +85,11 @@ from src.application.use_cases.manage_supplier_prompt_configs import (
     ListSupplierPromptConfigsCommand,
     ListSupplierPromptConfigsUseCase,
 )
-from src.application.use_cases.manage_supplier_reference_images import (
+from src.application.use_cases.suppliers.manage_supplier_reference_images import (
     DeleteSupplierReferenceImageUseCase,
     GetSupplierReferenceImageUseCase,
 )
-from src.application.use_cases.upload_supplier_reference_images import (
+from src.application.use_cases.suppliers.upload_supplier_reference_images import (
     ListSupplierReferenceImagesUseCase,
     UploadedSupplierReferenceImageFile,
     UploadSupplierReferenceImagesUseCase,

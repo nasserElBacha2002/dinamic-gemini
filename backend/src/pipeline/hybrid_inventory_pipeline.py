@@ -219,14 +219,18 @@ def _build_success_run_metadata(
     prompt_key = getattr(context, "job_prompt_key", None) or getattr(
         settings, "hybrid_prompt", None
     )
+    pc = analysis_result.prompt_composition
+    pc = pc if isinstance(pc, dict) else None
+    if pc:
+        pn = pc.get("profile_name")
+        if isinstance(pn, str) and pn.strip():
+            prompt_key = pn.strip()
     if prompt_key is not None and str(prompt_key).strip():
         pk = str(prompt_key).strip()
         run_metadata["prompt_key"] = pk
         run_metadata["prompt_version"] = f"{pk}@v2.1"
     inv_id, aisle_id = context._execution_log_inventory_aisle_ids()
     spr = context.supplier_prompt_resolution
-    pc = analysis_result.prompt_composition
-    pc = pc if isinstance(pc, dict) else None
     resolved_model = (pc.get("model_name") if pc else None) or getattr(context, "job_model_name", None)
     resolved_model = str(resolved_model).strip() if resolved_model else None
 

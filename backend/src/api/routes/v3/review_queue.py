@@ -15,7 +15,7 @@ from src.api.schemas.review_queue_schemas import (
     ReviewQueueSummaryResponse,
 )
 from src.application.ports.contracts import ReviewQueueQuery
-from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
+from src.application.use_cases.positions.list_review_queue import ListReviewQueueUseCase
 from src.auth.dependencies import get_current_admin
 
 from .shared import position_to_summary

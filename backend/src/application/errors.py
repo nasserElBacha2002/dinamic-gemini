@@ -68,6 +68,34 @@ class EmptyUploadError(Exception):
     """Raised when no files are provided for an aisle asset upload."""
 
 
+class NoSourceAssetsForCodeScanError(Exception):
+    """Raised when a code scan is requested but the aisle has no persisted SourceAsset rows."""
+
+
+class CodeScanDisabledError(Exception):
+    """Raised when aisle code scan is disabled via configuration."""
+
+
+class CodeScanMaxAssetsExceededError(Exception):
+    """Raised when an aisle exceeds the configured max assets per code scan run."""
+
+
+class CodeScanScannerUnavailableError(Exception):
+    """Raised when pyzbar/libzbar is not installed or cannot load in this runtime."""
+
+
+class CodeScanExportNoRunError(Exception):
+    """Raised when a code scan export is requested but no latest run exists for the aisle."""
+
+
+class CodeScanExportUnsupportedTypeError(Exception):
+    """Raised when export type is not detections, unmatched, or summary."""
+
+
+class CodeScanExportUnsupportedFormatError(Exception):
+    """Raised when export format is not csv."""
+
+
 class NoSourceAssetsForAisleProcessingError(Exception):
     """Raised when aisle processing is requested but the aisle has no persisted SourceAsset rows."""
 
@@ -152,6 +180,10 @@ class UnknownProcessingProviderError(Exception):
     """Raised when the client requests a pipeline provider key that is not registered."""
 
 
+class DeprecatedProcessingProviderError(Exception):
+    """Raised when the client requests a registered but inactive (deprecated) pipeline provider."""
+
+
 class ProcessingProviderNotConfiguredError(Exception):
     """Raised when the client explicitly selects a provider that is missing required credentials."""
 
@@ -209,7 +241,11 @@ class CaptureSessionDuplicateItemContentError(Exception):
     """Raised when the same content hash is already registered for this session (unique index)."""
 
 
-class CaptureSessionUploadBatchTooLargeError(Exception):
+class TooManyFilesPerUploadError(Exception):
+    """Raised when a multipart upload request includes more files than allowed per batch."""
+
+
+class CaptureSessionUploadBatchTooLargeError(TooManyFilesPerUploadError):
     """Raised when the number of files in one staging upload exceeds the configured cap."""
 
 

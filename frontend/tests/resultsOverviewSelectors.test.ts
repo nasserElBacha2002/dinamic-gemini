@@ -3,7 +3,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { computeResultsKpi } from '../src/features/results/selectors/resultsKpi';
+import {
+  computeResultsKpi,
+  isExcludedFromCountedTotals,
+} from '../src/features/results/selectors/resultsKpi';
 import { filterResults, type ResultsFilterKind } from '../src/features/results/selectors/resultsFilters';
 import type { ResultSummary } from '../src/features/results/types';
 
@@ -11,6 +14,7 @@ function makeResult(overrides: Partial<ResultSummary> = {}): ResultSummary {
   return {
     id: 'r1',
     sku: 'SKU',
+    positionCode: null,
     detectedQty: 1,
     correctedQty: null,
     resolvedQty: null,
@@ -28,11 +32,13 @@ describe('computeResultsKpi', () => {
   it('returns zeros for empty list', () => {
     const kpi = computeResultsKpi([]);
     expect(kpi.total).toBe(0);
+    expect(kpi.countableResults).toBe(0);
     expect(kpi.needsReview).toBe(0);
     expect(kpi.invalidTraceability).toBe(0);
     expect(kpi.qtyZero).toBe(0);
     expect(kpi.withEvidence).toBe(0);
     expect(kpi.lowConfidence).toBe(0);
+    expect(kpi.aisleTotalCounted).toBe(0);
   });
 
   it('counts total and withEvidence', () => {
@@ -42,6 +48,7 @@ describe('computeResultsKpi', () => {
     ];
     const kpi = computeResultsKpi(results);
     expect(kpi.total).toBe(2);
+    expect(kpi.countableResults).toBe(2);
     expect(kpi.withEvidence).toBe(1);
   });
 
@@ -83,6 +90,72 @@ describe('computeResultsKpi', () => {
     ];
     const kpi = computeResultsKpi(results);
     expect(kpi.lowConfidence).toBe(1);
+  });
+
+  it('excludes review INVALID from aisleTotalCounted and countableResults', () => {
+    const results = [
+      makeResult({ id: 'a', detectedQty: 1, resolvedQty: null, reviewStatus: 'DETECTED' }),
+      makeResult({ id: 'b', detectedQty: 1, resolvedQty: null, reviewStatus: 'DETECTED' }),
+      makeResult({ id: 'c', detectedQty: 1, resolvedQty: null, reviewStatus: 'DETECTED' }),
+      makeResult({ id: 'd', detectedQty: 1, resolvedQty: null, reviewStatus: 'DETECTED' }),
+      makeResult({
+        id: 'inv',
+        detectedQty: 1,
+        resolvedQty: null,
+        reviewStatus: 'INVALID',
+      }),
+    ];
+    const kpi = computeResultsKpi(results);
+    expect(kpi.total).toBe(5);
+    expect(kpi.countableResults).toBe(4);
+    expect(kpi.aisleTotalCounted).toBe(4);
+  });
+
+  it('excludes large invalid quantity from aisleTotalCounted (not 103)', () => {
+    const results = [
+      makeResult({ id: 'a', detectedQty: 1, resolvedQty: null, reviewStatus: 'DETECTED' }),
+      makeResult({ id: 'b', detectedQty: 1, resolvedQty: null, reviewStatus: 'DETECTED' }),
+      makeResult({ id: 'c', detectedQty: 1, resolvedQty: null, reviewStatus: 'DETECTED' }),
+      makeResult({ id: 'd', detectedQty: 1, resolvedQty: null, reviewStatus: 'DETECTED' }),
+      makeResult({
+        id: 'inv',
+        detectedQty: 99,
+        resolvedQty: 99,
+        reviewStatus: 'INVALID',
+      }),
+    ];
+    const kpi = computeResultsKpi(results);
+    expect(kpi.countableResults).toBe(4);
+    expect(kpi.aisleTotalCounted).toBe(4);
+  });
+
+  it('still counts quantity when only traceability is INVALID (not review INVALID)', () => {
+    const results = [
+      makeResult({
+        id: 't',
+        detectedQty: 3,
+        resolvedQty: null,
+        reviewStatus: 'DETECTED',
+        traceabilityStatus: 'INVALID',
+      }),
+    ];
+    const kpi = computeResultsKpi(results);
+    expect(kpi.total).toBe(1);
+    expect(kpi.countableResults).toBe(1);
+    expect(kpi.invalidTraceability).toBe(1);
+    expect(kpi.aisleTotalCounted).toBe(3);
+  });
+});
+
+describe('isExcludedFromCountedTotals', () => {
+  it('is true only for review INVALID', () => {
+    expect(isExcludedFromCountedTotals(makeResult({ reviewStatus: 'INVALID' }))).toBe(true);
+    expect(isExcludedFromCountedTotals(makeResult({ reviewStatus: 'DETECTED' }))).toBe(false);
+    expect(
+      isExcludedFromCountedTotals(
+        makeResult({ reviewStatus: 'DETECTED', traceabilityStatus: 'INVALID' })
+      )
+    ).toBe(false);
   });
 });
 

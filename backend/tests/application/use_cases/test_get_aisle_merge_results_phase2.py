@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.get_aisle_merge_results import (
+from src.application.use_cases.aisles.get_aisle_merge_results import (
     GetAisleMergeResultsCommand,
     GetAisleMergeResultsUseCase,
 )

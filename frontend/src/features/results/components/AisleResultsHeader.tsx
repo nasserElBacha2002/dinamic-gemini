@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
-import { Box, Button, Tooltip } from '@mui/material';
+import { useState, type MouseEvent, type ReactNode } from 'react';
+import { Box, Button, Menu, MenuItem, Tooltip } from '@mui/material';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { useTranslation } from 'react-i18next';
 import { PageHeader, type PageHeaderBreadcrumb } from '../../../components/shell';
 
@@ -24,6 +25,7 @@ export interface AisleResultsHeaderProps {
   onExport: () => void;
   refreshDisabled: boolean;
   onRefresh: () => void;
+  onOpenCodeScan?: () => void;
 }
 
 export default function AisleResultsHeader({
@@ -47,8 +49,19 @@ export default function AisleResultsHeader({
   onExport,
   refreshDisabled,
   onRefresh,
+  onOpenCodeScan,
 }: AisleResultsHeaderProps) {
   const { t } = useTranslation();
+  const [moreActionsAnchorEl, setMoreActionsAnchorEl] = useState<null | HTMLElement>(null);
+  const moreActionsOpen = Boolean(moreActionsAnchorEl);
+
+  const handleOpenMoreActions = (event: MouseEvent<HTMLButtonElement>) => {
+    setMoreActionsAnchorEl(event.currentTarget);
+  };
+
+  const handleCloseMoreActions = () => {
+    setMoreActionsAnchorEl(null);
+  };
 
   return (
     <PageHeader
@@ -56,37 +69,110 @@ export default function AisleResultsHeader({
       title={title}
       subtitle={subtitle}
       actions={
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
-          {assetsAction ?? null}
-          {mergeButtonVisible ? (
-            <Tooltip title={mergeDisabledReason} disableHoverListener={!mergeDisabledReason}>
-              <span>
-                <Button size="small" variant="contained" onClick={onRunMerge} disabled={mergeButtonDisabled}>
-                  {isMerging ? t('common.merging') : t('aisle.merge_repeated_labels')}
-                </Button>
-              </span>
-            </Tooltip>
-          ) : null}
-          {showCompareRuns ? (
-            <Button size="small" variant="outlined" onClick={onCompareRuns}>
-              {t('positions.compare_runs')}
-            </Button>
-          ) : null}
-          {showCompareOperational ? (
-            <Tooltip title={t('aisle.compare_runs_tooltip')}>
-              <Button size="small" variant="outlined" onClick={onCompareOperational}>
-                {t('positions.compare_to_operational')}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1,
+            flexWrap: 'wrap',
+            width: '100%',
+          }}
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              flexWrap: 'wrap',
+            }}
+          >
+            {assetsAction ?? null}
+            {mergeButtonVisible ? (
+              <Tooltip title={mergeDisabledReason} disableHoverListener={!mergeDisabledReason}>
+                <span>
+                  <Button size="small" variant="contained" onClick={onRunMerge} disabled={mergeButtonDisabled}>
+                    {isMerging ? t('common.merging') : t('aisle.merge_repeated_labels')}
+                  </Button>
+                </span>
+              </Tooltip>
+            ) : null}
+            <>
+              <Button
+                data-testid="aisle-results-more-actions"
+                size="small"
+                variant="outlined"
+                endIcon={<KeyboardArrowDownIcon fontSize="small" />}
+                onClick={handleOpenMoreActions}
+                aria-controls={moreActionsOpen ? 'aisle-results-more-actions-menu' : undefined}
+                aria-haspopup="menu"
+                aria-expanded={moreActionsOpen ? 'true' : undefined}
+              >
+                {t('positions.more_actions')}
               </Button>
-            </Tooltip>
-          ) : null}
-          {showPromoteRun ? (
-            <Button size="small" variant="outlined" onClick={onPromoteRun}>
-              {t('positions.promote_run')}
-            </Button>
-          ) : null}
-          <Button size="small" variant="outlined" disabled={exportDisabled} onClick={onExport}>
-            {exportingCsv ? t('common.exporting') : t('positions.export_aisle_csv')}
-          </Button>
+              <Menu
+                id="aisle-results-more-actions-menu"
+                anchorEl={moreActionsAnchorEl}
+                open={moreActionsOpen}
+                onClose={handleCloseMoreActions}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+              >
+                {showCompareRuns ? (
+                  <MenuItem
+                    onClick={() => {
+                      handleCloseMoreActions();
+                      onCompareRuns();
+                    }}
+                  >
+                    {t('positions.compare_runs')}
+                  </MenuItem>
+                ) : null}
+                {showCompareOperational ? (
+                  <MenuItem
+                    onClick={() => {
+                      handleCloseMoreActions();
+                      onCompareOperational();
+                    }}
+                    title={t('aisle.compare_runs_tooltip')}
+                  >
+                    {t('positions.compare_to_operational')}
+                  </MenuItem>
+                ) : null}
+                {showPromoteRun ? (
+                  <MenuItem
+                    onClick={() => {
+                      handleCloseMoreActions();
+                      onPromoteRun();
+                    }}
+                  >
+                    {t('positions.promote_run')}
+                  </MenuItem>
+                ) : null}
+                {onOpenCodeScan ? (
+                  <MenuItem
+                    data-testid="aisle-code-scan-menu-open"
+                    onClick={() => {
+                      handleCloseMoreActions();
+                      onOpenCodeScan();
+                    }}
+                  >
+                    {t('aisleCodeScans.actions.open')}
+                  </MenuItem>
+                ) : null}
+                <MenuItem
+                  data-testid="aisle-export-operational"
+                  onClick={() => {
+                    handleCloseMoreActions();
+                    void onExport();
+                  }}
+                  disabled={exportDisabled}
+                >
+                  {exportingCsv ? t('common.exporting') : t('positions.export_aisle_operational')}
+                </MenuItem>
+              </Menu>
+            </>
+          </Box>
           <Button size="small" variant="outlined" onClick={onRefresh} disabled={refreshDisabled}>
             {t('common.refresh')}
           </Button>

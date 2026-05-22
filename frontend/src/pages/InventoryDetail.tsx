@@ -5,7 +5,7 @@ import { Alert, Box, Button, Typography } from '@mui/material';
 import { ApiError } from '../api/types';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { rowMatchesSearchQuery } from '../utils/tableSearch';
-import { ErrorAlert, LoadingBlock, useAppSnackbar } from '../components/ui';
+import { ErrorAlert, LoadingBlock, PhotoUploadProgressDialog, useAppSnackbar } from '../components/ui';
 import CreateAisleDialog from '../components/CreateAisleDialog';
 import { useInventoryDetail, useAislesList, useCreateAisle } from '../hooks';
 import { ROUTE_HOME } from '../constants/appRoutes';
@@ -48,6 +48,7 @@ export default function InventoryDetail() {
   });
 
   const aisles = useMemo(() => aislesQuery.data?.items ?? [], [aislesQuery.data?.items]);
+
   const emptyDash = t('common.em_dash');
   const tableRows = useMemo(() => toAisleInventoryTableRows(aisles, emptyDash), [aisles, emptyDash]);
   const filteredTableRows = useMemo(() => {
@@ -130,7 +131,6 @@ export default function InventoryDetail() {
 
             <InventoryAislesSection
               inventoryId={inventoryId ?? ''}
-              inventoryClientId={inventory.client_id ?? null}
               tableRows={tableRows}
               filteredTableRows={filteredTableRows}
               aislesLoading={aislesLoading}
@@ -162,11 +162,16 @@ export default function InventoryDetail() {
         onModelKeyChange={processFlow.setModelKey}
         providerOptsQuery={processFlow.providerOptsQuery}
         providerConfig={processFlow.providerConfig}
+        productionMode={processFlow.isProductionInventory}
+        productionOptionsLoading={processFlow.productionOptionsLoading}
+        productionProvidersReady={processFlow.productionProvidersReady}
+        productionProvidersUnavailable={processFlow.productionProvidersUnavailable}
         onClose={processFlow.closeDialog}
         onConfirm={() => void processFlow.confirmDialog()}
         confirmDisabled={
           processFlow.processingAisleId === processFlow.dialogTarget?.aisleId ||
-          (processFlow.providerOptsQuery.isLoading && processFlow.providerKey.trim() !== '')
+          processFlow.productionOptionsLoading ||
+          processFlow.productionProvidersUnavailable
         }
         confirmBusyLabel={processFlow.processingAisleId === processFlow.dialogTarget?.aisleId}
       />
@@ -180,6 +185,9 @@ export default function InventoryDetail() {
         existingAisleCodes={aisles.map((a) => a.code)}
         createAisleFn={createAisleMutation.mutateAsync}
       />
+
+      {/* Table/native-file upload only; drawer uploads use ManagedImageAssetsDrawer dialog. */}
+      <PhotoUploadProgressDialog open={uploadFlow.isUploadingPhotos} />
 
     </>
   );

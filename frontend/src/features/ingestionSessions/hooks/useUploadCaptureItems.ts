@@ -2,20 +2,15 @@
  * Capture staging upload from the browser.
  *
  * **Transport policy:** uploads run as **sequential HTTP POSTs**, each carrying up to
- * ``CAPTURE_STAGING_MAX_FILES_PER_REQUEST`` files (aligned with backend
- * ``v3_capture_max_files_per_upload``). Chunks are **not** sent in parallel: this keeps
- * per-chunk progress, ``items``/``errors`` correlation via ``file_index``, and final
- * ``uploadedCount``/``failedCount`` deterministic without overlapping multipart bodies.
- * There is no hidden “max concurrency = N” pool; throughput is bounded by chunk size
- * and network latency, not parallel staging requests from this hook.
+ * At most ``CAPTURE_STAGING_MAX_FILES_PER_REQUEST`` (5) files per HTTP POST. Selections
+ * larger than that are rejected in the UI/API client before upload starts.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../../../api/queryKeys';
+import { ApiError } from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
-import {
-  CAPTURE_STAGING_MAX_FILES_PER_REQUEST,
-  uploadCaptureSessionStagingFiles,
-} from '../api/captureSessionsApi';
+import { isTooManyFilesForUpload, tooManyFilesMessage } from '../../../utils/uploadFileLimits';
+import { uploadCaptureSessionStagingFiles } from '../api/captureSessionsApi';
 import type { UploadCaptureSessionItemsResponse } from '../../../types/captureSession';
 
 export type UploadItemState = 'pending' | 'uploading' | 'uploaded' | 'failed';
@@ -94,41 +89,40 @@ export function useUploadCaptureItems() {
 
       const notify = () => vars.onQueueUpdate?.(queue.map((q) => ({ ...q })));
 
-      // One staging POST at a time (see module docstring).
-      const chunkSize = CAPTURE_STAGING_MAX_FILES_PER_REQUEST;
-      for (let offset = 0; offset < queue.length; offset += chunkSize) {
-        const slice = queue.slice(offset, offset + chunkSize);
-        for (const entry of slice) {
-          entry.state = 'uploading';
-          entry.progressPct = 0;
-          entry.error = undefined;
+      if (isTooManyFilesForUpload(queue.length)) {
+        throw new ApiError(tooManyFilesMessage('import'));
+      }
+
+      for (const entry of queue) {
+        entry.state = 'uploading';
+        entry.progressPct = 0;
+        entry.error = undefined;
+      }
+      notify();
+      const chunkFiles = queue.map((e) => e.file);
+      try {
+        const result = await uploadCaptureSessionStagingFiles(
+          vars.inventoryId,
+          vars.sessionId,
+          chunkFiles,
+          vars.aisleId,
+          (pct) => {
+            for (const entry of queue) {
+              entry.progressPct = pct;
+            }
+            notify();
+          }
+        );
+        applyStagingChunkResult(queue, 0, chunkFiles, result);
+        notify();
+      } catch (error) {
+        const msg = resolveApiErrorMessage(error, 'errors.request_failed');
+        for (const entry of queue) {
+          entry.state = 'failed';
+          entry.progressPct = 100;
+          entry.error = msg;
         }
         notify();
-        const chunkFiles = slice.map((e) => e.file);
-        try {
-          const result = await uploadCaptureSessionStagingFiles(
-            vars.inventoryId,
-            vars.sessionId,
-            chunkFiles,
-            vars.aisleId,
-            (pct) => {
-              for (const entry of slice) {
-                entry.progressPct = pct;
-              }
-              notify();
-            }
-          );
-          applyStagingChunkResult(queue, offset, chunkFiles, result);
-          notify();
-        } catch (error) {
-          const msg = resolveApiErrorMessage(error, 'errors.request_failed');
-          for (const entry of slice) {
-            entry.state = 'failed';
-            entry.progressPct = 100;
-            entry.error = msg;
-          }
-          notify();
-        }
       }
 
       const uploadedCount = queue.filter((q) => q.state === 'uploaded').length;

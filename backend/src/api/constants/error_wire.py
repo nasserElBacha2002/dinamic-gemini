@@ -47,12 +47,22 @@ HTTP_DETAIL_JOB_NOT_FOUND = "Job not found"
 # Route-level validation / assets (duplicated literals, identical semantics).
 HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED = "Only format=csv is supported"
 HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED = "At least one file is required"
+HTTP_DETAIL_TOO_MANY_FILES_PER_UPLOAD = "Too many files per upload request"
 HTTP_DETAIL_ASSET_NOT_FOUND = "Asset not found"
 HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION = "Cannot modify aisle source assets while a job is queued, starting, running, or cancel requested for this aisle"
 # Structured Category B — 409 ``detail`` (aisle/process cannot proceed with current persisted state).
 HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING = (
     "This aisle has no source assets; upload media before starting processing."
 )
+HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_CODE_SCAN = (
+    "This aisle has no source assets; upload media before scanning codes."
+)
+HTTP_DETAIL_CODE_SCAN_DISABLED = "Aisle code scan is disabled"
+HTTP_DETAIL_CODE_SCAN_MAX_ASSETS_EXCEEDED = "Too many source assets for one code scan run"
+HTTP_DETAIL_CODE_SCAN_SCANNER_UNAVAILABLE = "Code scan engine is unavailable"
+HTTP_DETAIL_CODE_SCAN_EXPORT_NO_RUN = "No code scan run exists for this aisle"
+HTTP_DETAIL_CODE_SCAN_EXPORT_UNSUPPORTED_TYPE = "Unsupported code scan export type"
+HTTP_DETAIL_CODE_SCAN_EXPORT_UNSUPPORTED_FORMAT = "Unsupported code scan export format"
 HTTP_DETAIL_AISLE_NOT_FOUND_SHORT = "Aisle not found"
 HTTP_DETAIL_PREVIEW_NOT_AVAILABLE_FOR_IMAGE = "Preview is not available for this image"
 

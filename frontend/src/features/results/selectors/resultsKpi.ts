@@ -6,8 +6,16 @@
 import type { ResultSummary } from '../types';
 import { LOW_CONFIDENCE_THRESHOLD } from '../constants';
 
+/** Rows excluded from inventory counting totals (header total quantity + ítems contados). */
+export function isExcludedFromCountedTotals(result: ResultSummary): boolean {
+  return result.reviewStatus === 'INVALID';
+}
+
 export interface ResultsKpi {
+  /** All loaded result rows (e.g. quick filter “Todos”). */
   total: number;
+  /** Rows that contribute to counted quantity / ítems contados (excludes review-invalid). */
+  countableResults: number;
   needsReview: number;
   /** Traceability explicitly INVALID (not MISSING / UNVALIDATED). */
   invalidTraceability: number;
@@ -26,6 +34,7 @@ export interface ResultsKpi {
 export function computeResultsKpi(results: ResultSummary[]): ResultsKpi {
   const kpi: ResultsKpi = {
     total: results.length,
+    countableResults: 0,
     needsReview: 0,
     invalidTraceability: 0,
     qtyZero: 0,
@@ -45,7 +54,10 @@ export function computeResultsKpi(results: ResultSummary[]): ResultsKpi {
     if (r.confidence != null && r.confidence < LOW_CONFIDENCE_THRESHOLD) {
       kpi.lowConfidence += 1;
     }
-    kpi.aisleTotalCounted += (r.resolvedQty ?? r.detectedQty ?? 0);
+    if (!isExcludedFromCountedTotals(r)) {
+      kpi.countableResults += 1;
+      kpi.aisleTotalCounted += r.resolvedQty ?? r.detectedQty ?? 0;
+    }
   }
 
   return kpi;

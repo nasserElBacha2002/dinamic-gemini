@@ -2,7 +2,6 @@
  * Sprint 5.2 — inline validation for review corrections.
  */
 
-import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material';
@@ -16,6 +15,7 @@ function WithTheme({ children }: { children: React.ReactNode }) {
 
 const baseResult: ResultDetail = {
   id: 'pos-1',
+  positionCode: null,
   sku: 'SKU-1',
   detectedQty: 3,
   correctedQty: null,

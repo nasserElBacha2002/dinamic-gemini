@@ -106,3 +106,14 @@ tmp/
 
 # OS
 Thumbs.db
+.vercel
+.env*.local
+
+# Local Git review artifacts (/implement, /corrections-scoped workflows)
+review/
+
+# Local pre-commit review artifacts (scripts/review_working_tree.sh)
+.review/
+
+# Legacy review dump (prefer .review/)
+review-working-tree.txt

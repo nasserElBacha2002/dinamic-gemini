@@ -2,7 +2,6 @@
  * Sprint 4.1 — Aisle Results page tests.
  */
 
-import React from 'react';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -17,6 +16,9 @@ const { useRunAisleMergeMock } = vi.hoisted(() => ({
 }));
 const { getAisleMergeResultsMock } = vi.hoisted(() => ({
   getAisleMergeResultsMock: vi.fn(),
+}));
+const { exportAisleOperationalCsvMock } = vi.hoisted(() => ({
+  exportAisleOperationalCsvMock: vi.fn().mockResolvedValue(undefined),
 }));
 const { promoteMutateAsync } = vi.hoisted(() => ({
   promoteMutateAsync: vi.fn().mockResolvedValue({
@@ -38,7 +40,19 @@ const { resultSummariesState } = vi.hoisted(() => ({
 }));
 const { aislesListState } = vi.hoisted(() => ({
   aislesListState: {
-    data: { items: [{ id: 'aisle-1', code: 'A-01', status: 'created' }] },
+    data: {
+      items: [
+        {
+          id: 'aisle-1',
+          code: 'A-01',
+          status: 'created',
+          client_supplier_id: 'sup-1',
+          inventory_id: 'inv-1',
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+    },
     isLoading: false,
     isError: false,
     error: null as unknown,
@@ -65,6 +79,9 @@ const { aisleJobsListState } = vi.hoisted(() => ({
     refetch: vi.fn(),
   },
 }));
+const { useSupplierReferenceImagesMock } = vi.hoisted(() => ({
+  useSupplierReferenceImagesMock: vi.fn(),
+}));
 const { inventoryDetailState } = vi.hoisted(() => ({
   inventoryDetailState: {
     data: {
@@ -73,6 +90,7 @@ const { inventoryDetailState } = vi.hoisted(() => ({
       status: 'draft',
       created_at: null as string | null,
       processing_mode: 'production' as 'production' | 'test',
+      client_id: 'client-1',
     },
     isLoading: false,
     isError: false,
@@ -160,6 +178,7 @@ vi.mock('../src/api/client', async (importOriginal) => {
     ...actual,
     getAisleMergeResults: (...args: Parameters<typeof actual.getAisleMergeResults>) =>
       getAisleMergeResultsMock(...args) as ReturnType<typeof actual.getAisleMergeResults>,
+    exportAisleOperationalCsv: exportAisleOperationalCsvMock,
   };
 });
 
@@ -183,6 +202,7 @@ vi.mock('../src/hooks', async (importOriginal) => {
     useAislesList: () => aislesListState,
     useAisleMergeResults: () => mergeResultsState,
     useAisleJobsList: () => aisleJobsListState,
+    useSupplierReferenceImages: useSupplierReferenceImagesMock,
     useRunAisleMerge: useRunAisleMergeMock,
     usePromoteAisleOperationalJob: () => ({
       mutateAsync: promoteMutateAsync,
@@ -190,6 +210,12 @@ vi.mock('../src/hooks', async (importOriginal) => {
     }),
   };
 });
+
+vi.mock('../src/features/clients/hooks/useSupplierReferencePreview', () => ({
+  useSupplierReferencePreview: () => ({
+    loadPreview: vi.fn().mockResolvedValue({ imageSrc: 'https://example.com/ref.png', revoke: () => {} }),
+  }),
+}));
 
 function renderPage() {
   return renderPageAt('/inventories/inv-1/aisles/aisle-1/positions');
@@ -213,6 +239,10 @@ function renderPageAt(path: string) {
   );
 }
 
+function openAisleResultsMoreActionsMenu() {
+  fireEvent.click(screen.getByTestId('aisle-results-more-actions'));
+}
+
 describe('AislePositionsPage (Aisle Results)', () => {
   beforeEach(() => {
     resultSummariesState.results = mockResults;
@@ -230,6 +260,16 @@ describe('AislePositionsPage (Aisle Results)', () => {
     aisleJobsListState.isLoading = false;
     aisleJobsListState.isFetched = true;
     aisleJobsListState.isFetching = false;
+    useSupplierReferenceImagesMock.mockReset();
+    useSupplierReferenceImagesMock.mockReturnValue({
+      data: { items: [] },
+      isLoading: false,
+      isPending: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as never);
     useRunAisleMergeMock.mockReset();
     getAisleMergeResultsMock.mockReset();
     getAisleMergeResultsMock.mockResolvedValue({ results: [] });
@@ -257,7 +297,10 @@ describe('AislePositionsPage (Aisle Results)', () => {
     expect(screen.getByRole('heading', { name: 'A-01' })).toBeTruthy();
     expect(screen.getAllByText('Test Inventory')).toHaveLength(2);
     expect(screen.getByText(/total contabilizado|counted total/i)).toBeTruthy();
+    expect(screen.getByText(/ítems contados:\s*1|counted items:\s*1/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /fusionar sku repetidos|merge repeated labels/i })).toBeTruthy();
+    expect(screen.getByTestId('aisle-results-more-actions')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /actualizar|refresh/i })).toBeInTheDocument();
   });
 
   it('shows operational columns including Priority and Review status', () => {
@@ -269,6 +312,13 @@ describe('AislePositionsPage (Aisle Results)', () => {
     expect(screen.getByRole('columnheader', { name: /traceability|trazabilidad/i })).toBeTruthy();
     expect(screen.getByText('SKU-001')).toBeTruthy();
     expect(screen.getAllByText('5').length).toBeGreaterThan(0);
+  });
+
+  it('shows counted items label from full results length (not pagination)', () => {
+    resultSummariesState.results = repeatedSkuResults;
+    resultSummariesState.positions = repeatedSkuPositions;
+    renderPage();
+    expect(screen.getByText(/ítems contados:\s*2|counted items:\s*2/i)).toBeInTheDocument();
   });
 
   it('opens review via SKU control without an Actions column', () => {
@@ -572,6 +622,86 @@ describe('AislePositionsPage (Aisle Results)', () => {
     };
     renderPage();
     expect(screen.queryByRole('button', { name: /comparar corridas|compare runs/i })).toBeNull();
+    openAisleResultsMoreActionsMenu();
+    expect(screen.queryByRole('menuitem', { name: /comparar corridas|compare runs/i })).toBeNull();
+  });
+
+  it('opens visual references drawer in read-only mode (preview only, no upload/delete)', async () => {
+    useSupplierReferenceImagesMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'ref-1',
+            client_supplier_id: 'sup-1',
+            filename: 'cat.png',
+            mime_type: 'image/png',
+            file_size: 100,
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isPending: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as never);
+
+    renderPage();
+    fireEvent.click(screen.getByTestId('aisle-visual-references-open'));
+    expect(await screen.findByRole('button', { name: /preview|vista previa/i })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^delete$|^eliminar$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /upload|subir/i })).toBeNull();
+  });
+
+  it('renders source assets and visual references actions in the header', () => {
+    renderPage();
+    expect(screen.getByTestId('aisle-source-assets-manage-open')).toBeInTheDocument();
+    expect(screen.getByTestId('aisle-visual-references-open')).toBeInTheDocument();
+  });
+
+  it('disables Referencias visuales when inventory has no client_id', () => {
+    const prev = inventoryDetailState.data.client_id;
+    inventoryDetailState.data = { ...inventoryDetailState.data, client_id: undefined as unknown as string };
+    try {
+      renderPage();
+      expect(screen.getByTestId('aisle-visual-references-open')).toBeDisabled();
+    } finally {
+      inventoryDetailState.data = { ...inventoryDetailState.data, client_id: prev };
+    }
+  });
+
+  it('disables Referencias visuales when aisle has no client_supplier_id', () => {
+    const prevItems = aislesListState.data.items;
+    aislesListState.data = {
+      ...aislesListState.data,
+      items: [{ ...prevItems[0], client_supplier_id: '' }],
+    };
+    try {
+      renderPage();
+      expect(screen.getByTestId('aisle-visual-references-open')).toBeDisabled();
+    } finally {
+      aislesListState.data = { ...aislesListState.data, items: prevItems };
+    }
+  });
+
+  it('shows empty state in visual references drawer when supplier catalog is empty', async () => {
+    useSupplierReferenceImagesMock.mockReturnValue({
+      data: { items: [] },
+      isLoading: false,
+      isPending: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as never);
+    renderPage();
+    fireEvent.click(screen.getByTestId('aisle-visual-references-open'));
+    expect(
+      await screen.findByText(/available for this aisle|disponibles para este pasillo/i)
+    ).toBeTruthy();
   });
 
   describe('Phase 6 benchmark flows', () => {
@@ -606,6 +736,64 @@ describe('AislePositionsPage (Aisle Results)', () => {
       expect(mergeBtn.getAttribute('disabled')).not.toBeNull();
     });
 
+    it('lists compare runs, promote, and export aisle CSV in more actions menu', () => {
+      resultSummariesState.results = mockResults;
+      resultSummariesState.positions = mockPositions;
+      resultSummariesState.resultJobId = 'job-bench';
+      aisleJobsListState.data = {
+        operational_job_id: 'job-op',
+        jobs: [
+          {
+            id: 'job-op',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+          {
+            id: 'job-bench',
+            status: 'succeeded',
+            created_at: '2024-01-02T00:00:00Z',
+            updated_at: '2024-01-02T00:00:00Z',
+          },
+        ],
+      };
+      renderPage();
+      openAisleResultsMoreActionsMenu();
+      expect(screen.getByRole('menuitem', { name: /comparar corridas|compare runs/i })).toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: /promote run|promover corrida/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('menuitem', { name: /exportar pasillo operativo|export aisle operational/i })
+      ).toBeInTheDocument();
+    });
+
+    it('calls exportAisleOperationalCsv with inventory, aisle, and visible job id', async () => {
+      resultSummariesState.results = mockResults;
+      resultSummariesState.positions = mockPositions;
+      resultSummariesState.resultJobId = 'job-bench';
+      aisleJobsListState.data = {
+        operational_job_id: 'job-op',
+        jobs: [
+          {
+            id: 'job-bench',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+      exportAisleOperationalCsvMock.mockClear();
+      renderPage();
+      openAisleResultsMoreActionsMenu();
+      fireEvent.click(
+        screen.getByRole('menuitem', { name: /exportar pasillo operativo|export aisle operational/i })
+      );
+      await waitFor(() => {
+        expect(exportAisleOperationalCsvMock).toHaveBeenCalledWith('inv-1', 'aisle-1', {
+          jobId: 'job-bench',
+        });
+      });
+    });
+
     it('does not show compare runs when fewer than two jobs exist', () => {
       aisleJobsListState.data = {
         operational_job_id: 'job-op',
@@ -620,6 +808,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
       };
       renderPage();
       expect(screen.queryByRole('button', { name: /comparar corridas|compare runs/i })).toBeNull();
+      openAisleResultsMoreActionsMenu();
+      expect(screen.queryByRole('menuitem', { name: /comparar corridas|compare runs/i })).toBeNull();
     });
 
     it('navigates to analytics compare with preselected runs when compare runs is clicked', async () => {
@@ -663,7 +853,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
         </QueryClientProvider>
       );
 
-      fireEvent.click(screen.getByRole('button', { name: /comparar corridas|compare runs/i }));
+      openAisleResultsMoreActionsMenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: /comparar corridas|compare runs/i }));
 
       await waitFor(() => {
         expect(router.state.location.pathname).toBe('/inventories/inv-1/analytics/compare-many');
@@ -696,7 +887,8 @@ describe('AislePositionsPage (Aisle Results)', () => {
         ],
       };
       renderPage();
-      fireEvent.click(screen.getByRole('button', { name: /promote run|promover corrida/i }));
+      openAisleResultsMoreActionsMenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: /promote run|promover corrida/i }));
       fireEvent.click(screen.getByRole('button', { name: /confirm promote|confirmar promoción/i }));
 
       await waitFor(() => {

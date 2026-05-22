@@ -12,7 +12,9 @@ from fastapi.responses import Response
 from src.api.constants.error_wire import HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED
 from src.api.dependencies import (
     get_create_inventory_use_case,
+    get_export_inventory_package_zip_use_case,
     get_export_inventory_results_use_case,
+    get_export_inventory_summary_csv_use_case,
     get_get_inventory_metrics_use_case,
     get_get_inventory_use_case,
     get_list_inventory_list_items_use_case,
@@ -34,24 +36,28 @@ from src.application.errors import ClientNotFoundError, InventoryNotFoundError
 from src.application.services.inventory_table_query_params import (
     build_inventory_table_query_from_route_params,
 )
-from src.application.services.processing_experiment_catalog import (
-    default_model_for_provider,
-    default_prompt_key,
-    models_for_provider,
-    prompt_profile_catalog,
+from src.application.services.processing_provider_availability import (
+    ProcessingOptionsMode,
+    build_processing_provider_options_payload,
 )
-from src.application.use_cases.create_inventory import (
+from src.application.use_cases.inventories.create_inventory import (
     CreateInventoryCommand,
     CreateInventoryUseCase,
 )
-from src.application.use_cases.export_inventory_results import ExportInventoryResultsUseCase
-from src.application.use_cases.get_inventory import GetInventoryUseCase
-from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
-from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
+from src.application.use_cases.inventories.export_inventory_business import (
+    ExportInventoryPackageZipUseCase,
+    ExportInventorySummaryCsvUseCase,
+)
+from src.application.use_cases.inventories.export_inventory_results import (
+    ExportInventoryResultsUseCase,
+)
+from src.application.use_cases.inventories.get_inventory import GetInventoryUseCase
+from src.application.use_cases.inventories.get_inventory_metrics import GetInventoryMetricsUseCase
+from src.application.use_cases.inventories.list_inventory_list_items import (
+    ListInventoryListItemsUseCase,
+)
 from src.config import load_settings
 from src.domain.inventory.entities import InventoryProcessingMode
-from src.pipeline.provider_keys import normalize_pipeline_provider_key
-from src.pipeline.providers.definitions import PIPELINE_PROVIDER_SPECS
 
 from .shared import inventory_list_item_to_response, inventory_to_response
 
@@ -121,37 +127,90 @@ def list_inventories(
 
 
 @router.get("/processing-provider-options", response_model=ProcessingProviderOptionsResponse)
-def list_processing_provider_options() -> ProcessingProviderOptionsResponse:
+def list_processing_provider_options(
+    mode: ProcessingOptionsMode = Query(
+        "test",
+        description=(
+            "test — all configured models per provider; "
+            "production — only production-ready providers with their default model each."
+        ),
+    ),
+) -> ProcessingProviderOptionsResponse:
     """Selectable pipeline providers, models, and prompt profiles for POST aisle process (Phase 5)."""
     settings = load_settings()
-    default_key = normalize_pipeline_provider_key(None, settings)
-    default_pk = default_prompt_key(settings)
+    payload = build_processing_provider_options_payload(settings, mode=mode)
     prompt_items = [
-        ProcessingPromptOptionItem(key=k, label=lab, description=desc)
-        for k, lab, desc in prompt_profile_catalog()
+        ProcessingPromptOptionItem(**row) for row in payload["prompt_profiles"]
     ]
-    items: list[ProcessingProviderOptionItem] = []
-    for spec in sorted(PIPELINE_PROVIDER_SPECS, key=lambda s: s.key):
-        key = spec.key
-        mode = "native"
-        pairs = models_for_provider(key, settings)
-        mopts = [ProcessingModelOption(id=m, label=lab) for m, lab in pairs]
-        dm = default_model_for_provider(key, settings)
-        items.append(
-            ProcessingProviderOptionItem(
-                key=key,
-                label=spec.label,
-                execution_mode=mode,
-                description=spec.description,
-                models=mopts,
-                default_model=dm,
-            )
+    items = [
+        ProcessingProviderOptionItem(
+            key=row["key"],
+            label=row["label"],
+            execution_mode=row["execution_mode"],
+            description=row.get("description"),
+            models=[ProcessingModelOption(**m) for m in row["models"]],
+            default_model=row.get("default_model"),
+            production_available=row.get("production_available"),
+            unavailable_reason=row.get("unavailable_reason"),
+            is_default_provider=bool(row.get("is_default_provider")),
         )
+        for row in payload["providers"]
+    ]
     return ProcessingProviderOptionsResponse(
-        default_provider_key=default_key,
-        default_prompt_key=default_pk,
+        mode=payload["mode"],
+        default_provider_key=payload["default_provider_key"],
+        default_model_key=payload.get("default_model_key"),
+        default_prompt_key=payload["default_prompt_key"],
         prompt_profiles=prompt_items,
         providers=items,
+    )
+
+
+@router.get("/{inventory_id}/export/summary")
+def export_inventory_summary_csv(
+    inventory_id: str,
+    level: str = Query(
+        "inventory",
+        description="Summary level: inventory (one row) or aisles (one row per aisle).",
+    ),
+    use_case: ExportInventorySummaryCsvUseCase = Depends(get_export_inventory_summary_csv_use_case),
+) -> Response:
+    """Download inventory or aisle rollup summary CSV (business columns, additive)."""
+    lvl = (level or "inventory").strip().lower()
+    try:
+        if lvl == "aisles":
+            body, filename = use_case.execute_aisles_summary_csv(inventory_id)
+        elif lvl == "inventory":
+            body, filename = use_case.execute_inventory_summary_csv(inventory_id)
+        else:
+            raise HTTPException(status_code=422, detail="level must be inventory or aisles")
+    except HTTPException:
+        raise
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return Response(
+        content=body.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/{inventory_id}/export/package")
+def export_inventory_package_zip(
+    inventory_id: str,
+    use_case: ExportInventoryPackageZipUseCase = Depends(get_export_inventory_package_zip_use_case),
+) -> Response:
+    """Download ZIP with inventory summary, aisles summary, and per-aisle business operational CSVs."""
+    try:
+        zip_bytes, filename = use_case.execute_zip(inventory_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

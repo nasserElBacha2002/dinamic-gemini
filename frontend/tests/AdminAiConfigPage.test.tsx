@@ -1,5 +1,4 @@
 import '@testing-library/jest-dom/vitest';
-import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -44,7 +43,7 @@ const sampleComposition = {
 
 const samplePayload = {
   generated_at: '2026-01-01T00:00:00+00:00',
-  server_defaults: { llm_provider: 'gemini', hybrid_prompt_key: 'global_v21', prompt_version: null },
+  server_defaults: { llm_provider: 'gemini', hybrid_prompt_key: 'global_v22', prompt_version: null },
   providers: [
     {
       key: 'gemini',
@@ -69,6 +68,18 @@ const samplePayload = {
           prompt_parity_mode: false,
           variant_label: 'global_v21 · gemini · parity=false',
         },
+        {
+          prompt_key: 'global_v21_b',
+          pipeline_provider_key: 'gemini',
+          prompt_parity_mode: false,
+          variant_label: 'global_v21_b · gemini · parity=false',
+        },
+        {
+          prompt_key: 'global_v22',
+          pipeline_provider_key: 'gemini',
+          prompt_parity_mode: false,
+          variant_label: 'global_v22 · gemini · parity=false',
+        },
       ],
     },
     {
@@ -90,7 +101,15 @@ const samplePayload = {
       prompt_variant_summaries: [],
     },
   ],
-  prompt_catalog: [{ key: 'global_v21', label: 'A', description: 'x' }],
+  prompt_catalog: [
+    { key: 'global_v21', label: 'Global v2.1', description: 'Logistics-first profile (rollback).' },
+    { key: 'global_v21_b', label: 'Global v2.1 B', description: 'Alternate v2.1 profile.' },
+    {
+      key: 'global_v22',
+      label: 'Global v2.2',
+      description: 'Label-first; same JSON root (total_entities_detected, entities).',
+    },
+  ],
   global_instructions_note: 'Global note text.',
 };
 
@@ -128,10 +147,10 @@ describe('AdminAiConfigPage', () => {
   it('shows loading then snapshot and loads composed prompt into the preview region', async () => {
     vi.mocked(client.getAdminAiConfig).mockResolvedValue(samplePayload as never);
     vi.mocked(client.getAdminAiComposedPrompt).mockResolvedValue({
-      prompt_key: 'global_v21',
+      prompt_key: 'global_v22',
       pipeline_provider_key: 'gemini',
       prompt_parity_mode: false,
-      variant_label: 'global_v21 · gemini · parity=false',
+      variant_label: 'global_v22 · gemini · parity=false',
       composed_prompt_text: 'x'.repeat(500),
     } as never);
 
@@ -151,6 +170,26 @@ describe('AdminAiConfigPage', () => {
     });
     await waitFor(() => expect(screen.getByTestId('composed-prompt-body')).toBeInTheDocument());
     expect(screen.getByTestId('composed-prompt-body').textContent).toContain('x'.repeat(80));
+  });
+
+  it('lists global_v21, global_v21_b, and global_v22 in the prompt catalog on the Prompts tab', async () => {
+    vi.mocked(client.getAdminAiConfig).mockResolvedValue(samplePayload as never);
+    renderWithAuth({ username: 'admin' });
+    await waitFor(() => expect(screen.getByText('Gemini')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', { name: /prompts/i }));
+    await waitFor(() => expect(screen.getByText('global_v21_b')).toBeInTheDocument());
+    expect(screen.getAllByText('global_v22').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('filters prompt variants when selecting a different catalog profile chip', async () => {
+    vi.mocked(client.getAdminAiConfig).mockResolvedValue(samplePayload as never);
+    renderWithAuth({ username: 'admin' });
+    await waitFor(() => expect(screen.getByText('Gemini')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', { name: /prompts/i }));
+    await waitFor(() => expect(screen.getByText(/global_v22 · gemini · parity=false/i)).toBeInTheDocument());
+    fireEvent.click(screen.getAllByRole('button', { name: 'global_v21' })[0]);
+    await waitFor(() => expect(screen.queryByText(/global_v22 · gemini · parity=false/i)).not.toBeInTheDocument());
+    expect(screen.getByText(/global_v21 · gemini · parity=false/i)).toBeInTheDocument();
   });
 
   it('shows global instructions on Instructions tab', async () => {

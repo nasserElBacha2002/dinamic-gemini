@@ -30,6 +30,7 @@ from src.pipeline.context.run_context import RunContext
 from src.pipeline.contracts.pipeline_analysis_execution_settings import (
     SupportsPipelineAnalysisExecutionSettings,
 )
+from src.pipeline.providers.definitions import is_pipeline_provider_active
 from src.pipeline.providers.registry import registered_pipeline_provider_keys
 from src.pipeline.services.pipeline_provider_resolver import PipelineProviderResolver
 
@@ -104,6 +105,12 @@ def build_ordered_provider_keys(
                 "Ignoring unknown pipeline_analysis extra provider key %r (known=%s)",
                 k,
                 sorted(known),
+            )
+            continue
+        if not is_pipeline_provider_active(k):
+            logger.warning(
+                "Ignoring deprecated/inactive pipeline_analysis extra provider key %r",
+                k,
             )
             continue
         if k not in ordered_extras:

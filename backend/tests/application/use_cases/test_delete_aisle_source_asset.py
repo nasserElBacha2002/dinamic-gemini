@@ -24,7 +24,7 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import ArtifactStorage
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
+from src.application.use_cases.aisles.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus

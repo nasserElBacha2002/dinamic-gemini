@@ -5,7 +5,8 @@ This module does **not** assemble prompts and is **not** imported by hot-path ad
 cycles. It exists so tests and audits share one definition of:
 
 - **ProtectedSystemContractBlock** — hybrid ``default`` profile text in ``hybrid_profiles.PROMPTS``
-  (e.g. ``global_v21`` / ``global_v21_b``) plus the Claude canonical entity contract string that is
+  (registry keys ``global_v21``, ``global_v21_b``, ``global_v22``; **aisle production** uses
+  ``global_v22`` label-first default) plus the Claude canonical entity contract string that is
   **appended** for Claude-family providers. This text is non–operator-editable and must not be
   replaced by supplier instructions (enforced in E3/E4+).
 
@@ -24,10 +25,12 @@ from __future__ import annotations
 from typing import Final
 
 # --- Audit / persistence identifiers (E6 may echo these on job metadata) ---
-PROTECTED_PROMPT_CONTRACT_KEY: Final[str] = "hybrid_global_analysis_v21"
-PROTECTED_PROMPT_CONTRACT_VERSION: Final[str] = "e1-1"
+# Key name encodes the **wire contract family** (v2.1 entity schema), not the instructional profile id.
+# Aisle runs compose ``global_v22`` bodies while retaining this contract version lineage.
+PROTECTED_PROMPT_CONTRACT_KEY: Final[str] = "hybrid_global_analysis_v22"
+PROTECTED_PROMPT_CONTRACT_VERSION: Final[str] = "e1-2"
 
-# --- Substrings that must remain present in ``compose_hybrid_base("global_v21", ...)`` outputs ---
+# --- Substrings that must remain present in hybrid ``default`` + Claude supplement outputs ---
 # Chosen to be unlikely to appear in future *supplier* text while staying stable across refactors
 # that preserve contract meaning. Prefer short, distinctive phrases from ``hybrid_profiles``.
 #

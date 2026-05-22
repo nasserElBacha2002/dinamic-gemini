@@ -50,7 +50,7 @@ Referencias de código: `backend/src/api/server.py`, `backend/src/config.py`, `b
 - **Python** 3.9 o superior y `pip`.
 - **Node.js** 18+ y `npm` (para el frontend y scripts `npm run dev` en la raíz).
 - **SQL Server** accesible por ODBC si usás persistencia (`SQLSERVER_ENABLED=true`); en macOS/Linux instalá un driver ODBC para SQL Server (p. ej. Microsoft ODBC 18).
-- **Opcional:** credenciales de proveedores LLM según el modo de procesamiento (Gemini, OpenAI, Anthropic, DeepSeek).
+- **Opcional:** credenciales de proveedores LLM según el modo de procesamiento (Gemini, OpenAI, Anthropic). DeepSeek quedó como proveedor legacy solo para lectura de ejecuciones históricas.
 
 ---
 

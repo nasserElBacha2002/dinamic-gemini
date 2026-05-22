@@ -8,14 +8,22 @@ import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, Tooltip, Typography } from '@mui/material';
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
-import { exportAisleResultsCsv, getAisleMergeResults, type AislePositionsListQuery } from '../api/client';
+import ImageSearchOutlinedIcon from '@mui/icons-material/ImageSearchOutlined';
+import { exportAisleOperationalCsv, getAisleMergeResults, type AislePositionsListQuery } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 import { canonicalizeOptionalId } from '../api/queryParamCanonicalization';
 import { recordExplicitRefreshObs, summarizeQueryKey } from '../dev/cacheMutationObservability';
 import { getVisibleErrorMessage } from '../utils/apiErrors';
 import type { RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
-import { FilterToolbar, TableSearchField, useAppSnackbar, useErrorSnackbar } from '../components/ui';
+import {
+  FilterToolbar,
+  TableSearchField,
+  sortDataTableRows,
+  useAppSnackbar,
+  useErrorSnackbar,
+  type DataTableSortDirection,
+} from '../components/ui';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import {
   ROUTE_HOME,
@@ -51,6 +59,7 @@ import {
   AisleResultsHeader,
   AisleResultsTableSection,
 } from '../features/results/components';
+import { buildResultsTableColumns } from '../features/results/components/ResultsTable';
 import { mergeConsolidatedDetail } from '../features/results/adapters/aislePositionsFormatters';
 import {
   summarizeLikelyMergeCandidates,
@@ -59,6 +68,8 @@ import {
 } from '../features/results/adapters/aislePositionsViewModel';
 import PromoteOperationalDialog from '../features/benchmark/PromoteOperationalDialog';
 import AisleSourceAssetsManageModule from '../features/inventories/components/AisleSourceAssetsManageModule';
+import AisleVisualReferencesModule from '../features/inventories/components/AisleVisualReferencesModule';
+import CodeScanDrawer from '../features/aisle-code-scans/components/CodeScanDrawer';
 
 /** List query: photo-grouped order, no SKU merge — matches operator photo-review expectations. */
 const AISLE_RESULTS_LIST_QUERY: AislePositionsListQuery = {
@@ -89,9 +100,13 @@ export default function AislePositionsPage() {
   const [lastMergeSummary, setLastMergeSummary] = useState<MergeResultsSummary | null>(null);
   const [lastMergeContextKey, setLastMergeContextKey] = useState<string | null>(null);
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
+  const [codeScanDrawerOpen, setCodeScanDrawerOpen] = useState(false);
   const [promoteJobId, setPromoteJobId] = useState('');
   /** `photo` keeps API order; `priority` applies client-side review ranking on top of loaded rows. */
   const [tableSort, setTableSort] = useState<'photo' | 'priority'>('photo');
+  const [resultsColumnSortBy, setResultsColumnSortBy] = useState('');
+  const [resultsColumnSortDir, setResultsColumnSortDir] =
+    useState<DataTableSortDirection>('asc');
   const consumedAisleRedirectKey = useRef<string | null>(null);
   const routeIdentityRef = useRef<string>('');
   const queryClient = useQueryClient();
@@ -279,21 +294,58 @@ export default function AislePositionsPage() {
     [filteredBySku, tableSort]
   );
 
-  const maxPage = Math.max(1, Math.ceil(Math.max(sortedForTable.length, 1) / pageSize));
+  const resultsSortColumns = useMemo(
+    () =>
+      buildResultsTableColumns({
+        t,
+        dash: t('common.em_dash'),
+        onOpenReview: () => {},
+      }),
+    [t]
+  );
+
+  const rowsOrderedForTable = useMemo(
+    () =>
+      !resultsColumnSortBy.trim()
+        ? sortedForTable
+        : sortDataTableRows(
+            sortedForTable,
+            resultsSortColumns,
+            resultsColumnSortBy,
+            resultsColumnSortDir
+          ),
+    [sortedForTable, resultsSortColumns, resultsColumnSortBy, resultsColumnSortDir]
+  );
+
+  const maxPage = Math.max(1, Math.ceil(Math.max(rowsOrderedForTable.length, 1) / pageSize));
   const effectivePage = Math.min(page, maxPage);
   const mergeContextKey = `${inventoryId ?? ''}|${aisleId ?? ''}|${jobIdParam ?? ''}`;
   const mergeFeedbackIsCurrentContext = lastMergeContextKey === mergeContextKey;
 
   const tableRows = useMemo(() => {
     const start = (effectivePage - 1) * pageSize;
-    return sortedForTable.slice(start, start + pageSize);
-  }, [sortedForTable, effectivePage, pageSize]);
+    return rowsOrderedForTable.slice(start, start + pageSize);
+  }, [rowsOrderedForTable, effectivePage, pageSize]);
+
+  const handleResultsColumnSortChange = useCallback(
+    (sortBy: string, sortDir: DataTableSortDirection) => {
+      setResultsColumnSortBy(sortBy);
+      setResultsColumnSortDir(sortDir);
+      setPage(1);
+    },
+    []
+  );
 
   const handleResetFilters = useCallback(() => {
     setFilter('all');
     setSkuSearch('');
+    setResultsColumnSortBy('');
     setPage(1);
   }, []);
+
+  useEffect(() => {
+    setResultsColumnSortBy('');
+  }, [tableSort, pickedRunJobId]);
 
   const positionById = useMemo(() => {
     const m = new Map<string, (typeof positions)[number]>();
@@ -322,7 +374,7 @@ export default function AislePositionsPage() {
         aisleCode: aisle?.code ?? t('common.em_dash'),
         aisleId,
         positionId: resultId,
-        resultIds: sortedForTable.map((r) => r.id),
+        resultIds: rowsOrderedForTable.map((r) => r.id),
         returnTo: 'aisle_results',
         filter,
         jobId: visibleJobId ?? undefined,
@@ -335,7 +387,7 @@ export default function AislePositionsPage() {
       inventory,
       aisle?.code,
       aisleId,
-      sortedForTable,
+      rowsOrderedForTable,
       filter,
       visibleJobId,
       t,
@@ -477,32 +529,67 @@ export default function AislePositionsPage() {
 
   return (
     <>
+      <CodeScanDrawer
+        open={codeScanDrawerOpen}
+        onClose={() => setCodeScanDrawerOpen(false)}
+        inventoryId={inventoryId}
+        aisleId={aisleId}
+        jobIdForPreview={pickedRunJobId}
+        jobIdForMatching={pickedRunJobId}
+      />
       <AisleResultsHeader
         breadcrumbs={breadcrumbs}
         title={aisle?.code ?? t('common.aisle')}
         subtitle={inventory?.name ?? (inventoryQuery.isLoading ? t('common.loading') : t('common.em_dash'))}
+        onOpenCodeScan={() => setCodeScanDrawerOpen(true)}
         assetsAction={
-          <AisleSourceAssetsManageModule
-            inventoryId={inventoryId}
-            aisleId={aisleId}
-            inventoryLabel={inventory?.name ?? t('common.em_dash')}
-            jobIdForPreview={pickedRunJobId}
-            inventoryReady={Boolean(inventoryQuery.data)}
-          >
-            {({ openSourceAssets }) => (
-              <Tooltip title={t('aisle_source_assets.action_tooltip')}>
-                <Button
-                  data-testid="aisle-source-assets-manage-open"
-                  size="small"
-                  variant="outlined"
-                  startIcon={<PhotoLibraryOutlinedIcon fontSize="small" />}
-                  onClick={openSourceAssets}
-                >
-                  {t('aisle_source_assets.action_label')}
-                </Button>
-              </Tooltip>
-            )}
-          </AisleSourceAssetsManageModule>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+            <AisleSourceAssetsManageModule
+              inventoryId={inventoryId}
+              aisleId={aisleId}
+              inventoryLabel={inventory?.name ?? t('common.em_dash')}
+              jobIdForPreview={pickedRunJobId}
+              inventoryReady={Boolean(inventoryQuery.data)}
+            >
+              {({ openSourceAssets }) => (
+                <Tooltip title={t('aisle_source_assets.action_tooltip')}>
+                  <Button
+                    data-testid="aisle-source-assets-manage-open"
+                    size="small"
+                    variant="outlined"
+                    startIcon={<PhotoLibraryOutlinedIcon fontSize="small" />}
+                    onClick={openSourceAssets}
+                  >
+                    {t('aisle_source_assets.action_label')}
+                  </Button>
+                </Tooltip>
+              )}
+            </AisleSourceAssetsManageModule>
+            <AisleVisualReferencesModule
+              inventoryLabel={inventory?.name ?? t('common.em_dash')}
+              clientId={inventory?.client_id}
+              clientSupplierId={aisle?.client_supplier_id}
+              aisle={aisle}
+              inventoryReady={Boolean(inventoryQuery.data)}
+            >
+              {({ openVisualReferences, disabled, disabledTooltip }) => (
+                <Tooltip title={disabledTooltip ?? ''} disableHoverListener={!disabledTooltip}>
+                  <span>
+                    <Button
+                      data-testid="aisle-visual-references-open"
+                      size="small"
+                      variant="outlined"
+                      startIcon={<ImageSearchOutlinedIcon fontSize="small" />}
+                      onClick={openVisualReferences}
+                      disabled={disabled}
+                    >
+                      {t('positions.visual_references.action_label')}
+                    </Button>
+                  </span>
+                </Tooltip>
+              )}
+            </AisleVisualReferencesModule>
+          </Box>
         }
         mergeButtonVisible={mergeButtonVisible}
         mergeDisabledReason={mergeDisabledReason}
@@ -531,7 +618,7 @@ export default function AislePositionsPage() {
             if (!inventoryId || !aisleId) return;
             setExportingCsv(true);
             try {
-              await exportAisleResultsCsv(inventoryId, aisleId, {
+              await exportAisleOperationalCsv(inventoryId, aisleId, {
                 jobId: pickedRunJobId ?? jobIdParam,
               });
             } catch (e) {
@@ -584,11 +671,18 @@ export default function AislePositionsPage() {
             <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main' }}>
               {kpi.aisleTotalCounted}
             </Typography>
+            <Typography
+              variant="body2"
+              component="div"
+              sx={{ color: 'text.secondary', mt: 0.75, mb: 2, lineHeight: 1.4 }}
+            >
+              {t('positions.counted_items', { count: kpi.countableResults })}
+            </Typography>
           </Box>
 
           <FilterToolbar
             onReset={handleResetFilters}
-            resetDisabled={filter === 'all' && !skuSearch.trim()}
+            resetDisabled={filter === 'all' && !skuSearch.trim() && !resultsColumnSortBy.trim()}
           >
             <TableSearchField
               label={t('positions.search_label')}
@@ -623,9 +717,10 @@ export default function AislePositionsPage() {
       {!blockPositionsForTestNoJobs && !errorMessage && !resultsLoading && results.length > 0 ? (
         <AisleResultsTableSection
           countedTotal={kpi.aisleTotalCounted}
+          countedResultRows={kpi.countableResults}
           mergeFeedback={mergeFeedback}
           onResetFilters={handleResetFilters}
-          resetDisabled={filter === 'all' && !skuSearch.trim()}
+          resetDisabled={filter === 'all' && !skuSearch.trim() && !resultsColumnSortBy.trim()}
           skuSearch={skuSearch}
           onSkuSearchChange={(v) => {
             setSkuSearch(v);
@@ -646,15 +741,20 @@ export default function AislePositionsPage() {
             invalid_traceability: kpi.invalidTraceability,
             missing_evidence: missingEvidenceCount,
           }}
-          sortedForTableLength={sortedForTable.length}
+          sortedForTableLength={rowsOrderedForTable.length}
           onClearFilterOnly={handleClearFilterOnly}
           tableRows={tableRows}
           onOpenReview={handleOpenReview}
           page={effectivePage}
           pageSize={pageSize}
-          totalItems={sortedForTable.length}
+          totalItems={rowsOrderedForTable.length}
           onPageChange={setPage}
           onPageSizeChange={setPageSize}
+          columnSort={{
+            sortBy: resultsColumnSortBy,
+            sortDir: resultsColumnSortDir,
+            onSortChange: handleResultsColumnSortChange,
+          }}
         />
       ) : null}
 
@@ -685,6 +785,7 @@ export default function AislePositionsPage() {
         open={Boolean(quickContext)}
         context={quickContext}
         onClose={() => setQuickContext(null)}
+        onOpenCodeScan={() => setCodeScanDrawerOpen(true)}
       />
     </>
   );

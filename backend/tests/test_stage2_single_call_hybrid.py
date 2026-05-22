@@ -256,6 +256,6 @@ def test_gemini_global_analyzer_parses_structured_json():
     analyzer = GeminiGlobalAnalyzer(mock_client)
     one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]
 
-    result = analyzer.analyze_video_frames(one_frame)
+    result = analyzer.analyze_video_frames(one_frame, frame_refs=["frame_0"])
 
     assert result == {"total_entities_detected": 0, "entities": []}

@@ -1,6 +1,12 @@
+import type { ReactNode } from 'react';
 import type { TFunction } from 'i18next';
+
+export interface MetricsKpiCardView {
+  label: string;
+  value: ReactNode;
+  description?: string;
+}
 import type {
-  AisleIssueRow,
   AnalyticsSummaryResponse,
   InventoryPerformanceRow,
   ManualInterventionCategory,
@@ -48,22 +54,6 @@ export function sortInventoryRows(
     if (result !== 0) return result * direction;
     return left.inventory_name.localeCompare(right.inventory_name) * direction;
   });
-}
-
-export function sortAisleRowsByAttention(rows: readonly AisleIssueRow[]): AisleIssueRow[] {
-  return [...rows].sort(
-    (left, right) =>
-      (numberOrZero(right.needs_review_count) +
-        numberOrZero(right.unidentified_product_count ?? right.unknown_count) +
-        numberOrZero(right.manual_corrections_count ?? right.corrected_count) +
-        numberOrZero(right.invalid_traceability_count)) -
-        (numberOrZero(left.needs_review_count) +
-          numberOrZero(left.unidentified_product_count ?? left.unknown_count) +
-          numberOrZero(left.manual_corrections_count ?? left.corrected_count) +
-          numberOrZero(left.invalid_traceability_count)) ||
-      numberOrZero(right.needs_review_count) - numberOrZero(left.needs_review_count) ||
-      numberOrZero(right.total_results) - numberOrZero(left.total_results)
-  );
 }
 
 export function orderQualityRows(rows: readonly QualityPatternRow[]): QualityPatternRow[] {

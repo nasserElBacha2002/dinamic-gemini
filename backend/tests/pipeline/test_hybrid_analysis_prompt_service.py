@@ -26,7 +26,53 @@ from src.pipeline.services.hybrid_analysis_prompt import (
 )
 
 
-def test_build_hybrid_prompt_prefers_job_prompt_key() -> None:
+def test_build_hybrid_prompt_no_job_override_uses_global_v22_label_first_wording() -> None:
+    """Regression: production default must not silently use logistics-first v21 opening."""
+    settings = MagicMock()
+    settings.hybrid_prompt = "global_v22"
+    job_input = MagicMock()
+    job_input.input_type = "video"
+    ctx = RunContext(
+        job_id="j",
+        run_id="r",
+        workspace_path=Path("/tmp"),
+        run_dir=Path("/tmp/j/r"),
+        job_input=job_input,
+        settings=settings,
+        logger=MagicMock(),
+    )
+    text = build_hybrid_analysis_prompt_text(ctx)
+    lowered = text.lower()
+    assert "inventory positions" in lowered or "label-first" in lowered
+    assert "visible inventory" in lowered
+    assert "total_entities_detected" in lowered
+    assert "entities" in lowered
+    assert "logistic entities, one entity per visible unit" not in lowered
+
+
+def test_build_hybrid_prompt_job_prompt_key_does_not_switch_profile_always_v22() -> None:
+    """Even with legacy job_prompt_key=global_v21, composed body is label-first v22."""
+    settings = MagicMock()
+    settings.hybrid_prompt = "global_v22"
+    job_input = MagicMock()
+    job_input.input_type = "video"
+    ctx = RunContext(
+        job_id="j",
+        run_id="r",
+        workspace_path=Path("/tmp"),
+        run_dir=Path("/tmp/j/r"),
+        job_input=job_input,
+        settings=settings,
+        logger=MagicMock(),
+        job_prompt_key="global_v21",
+    )
+    text = build_hybrid_analysis_prompt_text(ctx)
+    lowered = text.lower()
+    assert "label-first" in lowered or "inventory positions" in lowered
+    assert "logistic entities, one entity per visible unit" not in lowered
+
+
+def test_build_hybrid_prompt_legacy_job_key_global_v21_b_still_resolves_to_v22_body() -> None:
     settings = MagicMock()
     settings.hybrid_prompt = "global_v21"
     job_input = MagicMock()
@@ -42,11 +88,13 @@ def test_build_hybrid_prompt_prefers_job_prompt_key() -> None:
         job_prompt_key="global_v21_b",
     )
     text = build_hybrid_analysis_prompt_text(ctx)
-    assert "Conservative" in text or "conservative" in text.lower()
-    assert "INSUFFICIENT_EVIDENCE" in text
+    lowered = text.lower()
+    assert "label-first" in lowered or "inventory positions" in lowered
+    assert "insufficient_evidence" not in lowered  # v21_b conservative markers not in v22 default
 
 
 def test_build_hybrid_prompt_uses_settings_hybrid_prompt_key() -> None:
+    """settings.hybrid_prompt does not change profile; composed text stays v22."""
     settings = MagicMock()
     settings.hybrid_prompt = "global_v21"
     job_input = MagicMock()
@@ -61,7 +109,9 @@ def test_build_hybrid_prompt_uses_settings_hybrid_prompt_key() -> None:
         logger=MagicMock(),
     )
     text = build_hybrid_analysis_prompt_text(ctx)
-    assert "warehouse" in text.lower() or "aisle" in text.lower() or len(text) > 50
+    lowered = text.lower()
+    assert "warehouse" in lowered or "aisle" in lowered or len(text) > 50
+    assert "label-first" in lowered or "inventory positions" in lowered
 
 
 def test_build_hybrid_prompt_video_does_not_call_image_enrichment(

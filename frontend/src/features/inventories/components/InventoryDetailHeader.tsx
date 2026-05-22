@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Box, Button, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -8,13 +8,12 @@ import {
   pathToClient,
   pathToInventoryAnalyticsCompare,
 } from '../../../constants/appRoutes';
-import { ApiError, type Inventory } from '../../../api/types';
-import { exportInventoryResultsCsv } from '../../../api/client';
-import { resolveApiErrorMessage } from '../../../utils/apiErrors';
+import type { Inventory } from '../../../api/types';
 import { PageHeader, type PageHeaderBreadcrumb } from '../../../components/shell';
-import { StatusBadge, useAppSnackbar } from '../../../components/ui';
+import { StatusBadge } from '../../../components/ui';
 import { useClient } from '../../../hooks';
 import type { InventoryHeaderViewModel } from '../adapters';
+import InventoryExportMenu from './InventoryExportMenu';
 
 export interface InventoryDetailHeaderProps {
   inventory: Inventory;
@@ -31,8 +30,6 @@ export default function InventoryDetailHeader({
 }: InventoryDetailHeaderProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { showSnackbar } = useAppSnackbar();
-  const [exportingCsv, setExportingCsv] = useState(false);
   const clientId = (inventory.client_id ?? '').trim();
   const clientQuery = useClient(clientId || undefined, { enabled: Boolean(clientId) });
 
@@ -79,25 +76,7 @@ export default function InventoryDetailHeader({
               {t('analytics.compare_runs_link')}
             </Button>
           ) : null}
-          <Button
-            variant="outlined"
-            size="small"
-            disabled={!inventoryId || exportingCsv}
-            onClick={async () => {
-              if (!inventoryId) return;
-              setExportingCsv(true);
-              try {
-                await exportInventoryResultsCsv(inventoryId);
-              } catch (e) {
-                const err = e instanceof ApiError ? e : new ApiError(String(e));
-                showSnackbar(resolveApiErrorMessage(err, 'errors.export_failed'), 'error');
-              } finally {
-                setExportingCsv(false);
-              }
-            }}
-          >
-            {exportingCsv ? t('common.exporting') : t('aisle.export_csv')}
-          </Button>
+          <InventoryExportMenu inventoryId={inventoryId} />
           <Button variant="contained" size="small" onClick={onOpenCreateAisle}>
             {t('aisle.create')}
           </Button>

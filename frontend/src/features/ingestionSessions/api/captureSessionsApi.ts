@@ -1,7 +1,9 @@
 import { V3_INVENTORIES_BASE } from '../../../constants/v3ApiPaths';
+import { MAX_FILES_PER_UPLOAD } from '../../../constants/uploads';
 import { getStoredToken } from '../../auth/storage';
 import { ApiError } from '../../../api/types';
 import i18n from '../../../i18n';
+import { isTooManyFilesForUpload, tooManyFilesMessage } from '../../../utils/uploadFileLimits';
 import { messageFromErrorDetail } from '../../../api/http';
 import { buildQueryString } from '../../../api/queryString';
 import { apiRequestJson } from '../../../api/request';
@@ -148,13 +150,8 @@ export async function previewMaterializedCaptureSessionGroup(
   return apiRequestJson<MaterializedCaptureSessionGroupPreviewResponse>(base, { method: 'POST' });
 }
 
-/**
- * Max files per staging POST (matches backend ``v3_capture_max_files_per_upload``, default 50).
- * The ingestion hook sends **multiple sequential** requests of at most this many files
- * when the user selects more than the limit; it does **not** issue parallel POSTs for
- * different chunks (see ``useUploadCaptureItems``).
- */
-export const CAPTURE_STAGING_MAX_FILES_PER_REQUEST = 50;
+/** Max files per staging POST (matches backend ``MAX_FILES_PER_UPLOAD``). */
+export const CAPTURE_STAGING_MAX_FILES_PER_REQUEST = MAX_FILES_PER_UPLOAD;
 
 function parseUploadStagingResponse(body: Record<string, unknown>): UploadCaptureSessionItemsResponse {
   const items = Array.isArray(body.items) ? (body.items as UploadCaptureSessionItemsResponse['items']) : [];
@@ -181,6 +178,9 @@ export async function uploadCaptureSessionStagingFiles(
 ): Promise<UploadCaptureSessionItemsResponse> {
   if (!files.length) {
     throw new ApiError(i18n.t('errors.request_failed'));
+  }
+  if (isTooManyFilesForUpload(files.length)) {
+    throw new ApiError(tooManyFilesMessage('import'));
   }
   const token = getStoredToken();
   const form = new FormData();

@@ -1,8 +1,10 @@
-import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { useSubmitReviewAction } from '../src/hooks/useMutations';
+import { applyReviewActionToPositionSummary } from '../src/hooks/reviewActionCachePatch';
+import { mapPositionSummaryToResultSummary } from '../src/features/results/mappers/positionToResult';
+import { computeResultsKpi } from '../src/features/results/selectors/resultsKpi';
 import * as client from '../src/api/client';
 import { queryKeys } from '../src/api/queryKeys';
 import {
@@ -33,6 +35,52 @@ function basePosition(overrides: Partial<PositionSummary> = {}): PositionSummary
     ...overrides,
   };
 }
+
+describe('applyReviewActionToPositionSummary', () => {
+  it('CONFIRM patches status reviewed and maps to CONFIRMED', () => {
+    const before = basePosition({ needs_review: true, review_resolution: null });
+    const after = applyReviewActionToPositionSummary(before, { action_type: 'confirm' });
+    expect(after.status).toBe('reviewed');
+    expect(after.needs_review).toBe(false);
+    expect(after.review_resolution).toBe('confirmed');
+    expect(mapPositionSummaryToResultSummary(after).reviewStatus).toBe('CONFIRMED');
+    expect(after).not.toBe(before);
+  });
+
+  it('MARK_IMAGE_MISMATCH patches status reviewed and maps to IMAGE_MISMATCH', () => {
+    const before = basePosition({ needs_review: true });
+    const after = applyReviewActionToPositionSummary(before, { action_type: 'mark_image_mismatch' });
+    expect(after.status).toBe('reviewed');
+    expect(after.review_resolution).toBe('image_mismatch');
+    expect(mapPositionSummaryToResultSummary(after).reviewStatus).toBe('IMAGE_MISMATCH');
+  });
+
+  it('UPDATE_QUANTITY patches status corrected and maps to CONFIRMED', () => {
+    const before = basePosition({ needs_review: true, qty: 3 });
+    const after = applyReviewActionToPositionSummary(before, {
+      action_type: 'update_quantity',
+      corrected_quantity: 9,
+    });
+    expect(after.status).toBe('corrected');
+    expect(after.review_resolution).toBe('qty_corrected');
+    expect(after.qty).toBe(9);
+    expect(after.corrected_quantity).toBe(9);
+    const mapped = mapPositionSummaryToResultSummary(after);
+    expect(mapped.reviewStatus).toBe('CONFIRMED');
+    expect(mapped.resolvedQty).toBe(9);
+    expect(computeResultsKpi([mapped]).aisleTotalCounted).toBe(9);
+  });
+
+  it('returns same reference when patch would be a no-op', () => {
+    const already = basePosition({
+      status: 'reviewed',
+      needs_review: false,
+      review_resolution: 'confirmed',
+    });
+    const after = applyReviewActionToPositionSummary(already, { action_type: 'confirm' });
+    expect(after).toBe(already);
+  });
+});
 
 describe('useSubmitReviewAction cache patching (Phase 5)', () => {
   beforeEach(() => {
@@ -85,7 +133,43 @@ describe('useSubmitReviewAction cache patching (Phase 5)', () => {
       positions: PositionSummary[];
     }>(plKey);
     expect(list?.positions[0].qty).toBe(9);
+    expect(list?.positions[0].corrected_quantity).toBe(9);
+    expect(list?.positions[0].status).toBe('corrected');
     expect(list?.positions[0].review_resolution).toBe('qty_corrected');
+    const mapped = mapPositionSummaryToResultSummary(list!.positions[0]);
+    expect(mapped.resolvedQty).toBe(9);
+    expect(computeResultsKpi([mapped]).aisleTotalCounted).toBe(9);
+  });
+
+  it('aisleResults strategy: delete_position keeps row in list as INVALID', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const plCanon = canonicalizeAislePositionsListQuery({});
+    const plKey = queryKeys.inventories.positionsList('inv-1', 'aisle-1', positionsListKeyPart(plCanon));
+    qc.setQueryData(plKey, {
+      positions: [basePosition({ qty: 20 })],
+      page: 1,
+      page_size: 20,
+      total_items: 1,
+      total_pages: 1,
+      raw_fetch_truncated: false,
+    });
+
+    const { result } = renderHook(
+      () =>
+        useSubmitReviewAction('inv-1', 'aisle-1', 'pos-1', {
+          strategy: 'aisleResults',
+        }),
+      { wrapper: wrapper(qc) }
+    );
+
+    await result.current.mutateAsync({ action_type: 'delete_position' });
+    await waitFor(() => expect(client.submitReviewAction).toHaveBeenCalled());
+
+    const list = qc.getQueryData<{ positions: PositionSummary[] }>(plKey);
+    expect(list?.positions).toHaveLength(1);
+    expect(list?.positions[0].status).toBe('deleted');
+    expect(mapPositionSummaryToResultSummary(list!.positions[0]).reviewStatus).toBe('INVALID');
+    expect(computeResultsKpi(list!.positions.map(mapPositionSummaryToResultSummary)).aisleTotalCounted).toBe(0);
   });
 
   it('detail strategy: patches caches and performs no invalidations', async () => {
@@ -224,6 +308,11 @@ describe('useSubmitReviewAction cache patching (Phase 5)', () => {
 
     await result.current.mutateAsync({ action_type: 'confirm' });
     await waitFor(() => expect(client.submitReviewAction).toHaveBeenCalled());
+
+    const list = qc.getQueryData<{ positions: PositionSummary[] }>(plKey);
+    expect(list?.positions[0].status).toBe('reviewed');
+    expect(list?.positions[0].needs_review).toBe(false);
+    expect(mapPositionSummaryToResultSummary(list!.positions[0]).reviewStatus).toBe('CONFIRMED');
 
     const other = qc.getQueryData<{ positions: PositionSummary[] }>(otherKey);
     expect(other?.positions[0].needs_review).toBe(true);

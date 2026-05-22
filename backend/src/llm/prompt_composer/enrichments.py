@@ -48,3 +48,45 @@ def enrich_prompt_with_image_ids(
         )
     block = "\n".join(lines)
     return base_prompt.rstrip() + "\n" + block + _TRACEABILITY_INSTRUCTION
+
+
+def enrich_prompt_with_sent_image_ids(
+    base_prompt: str,
+    images: list[JobImage],
+    sent_image_ids: list[str],
+) -> str:
+    """
+    Append traceability list for primary evidence frames actually sent to the model (Phase 1).
+
+    Preserves every ID in ``sent_image_ids`` in order. IDs without ``JobImage`` metadata use
+    the ID-only line format.
+    """
+    if not sent_image_ids:
+        return base_prompt
+    by_id = {img.image_id: img for img in images}
+    lines = ["\n\nInput images (use these exact IDs as source_image_id per result):"]
+    for image_id in sent_image_ids:
+        img = by_id.get(image_id)
+        if img is not None:
+            lines.append(
+                f"- {img.image_id} (upload_order={img.upload_order}, "
+                f"original_filename={img.original_filename!r})"
+            )
+        else:
+            lines.append(f"- {image_id}")
+    block = "\n".join(lines)
+    return base_prompt.rstrip() + "\n" + block + _TRACEABILITY_INSTRUCTION
+
+
+def enrich_prompt_with_image_id_strings(
+    base_prompt: str,
+    image_ids: list[str],
+) -> str:
+    """Append ID-only list when JobImage metadata is unavailable for sent frames."""
+    if not image_ids:
+        return base_prompt
+    lines = ["\n\nInput images (use these exact IDs as source_image_id per result):"]
+    for image_id in image_ids:
+        lines.append(f"- {image_id}")
+    block = "\n".join(lines)
+    return base_prompt.rstrip() + "\n" + block + _TRACEABILITY_INSTRUCTION

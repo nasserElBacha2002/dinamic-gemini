@@ -1,6 +1,16 @@
+import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { buildDifferenceSummary } from '../../compare/compareBenchmarkViewModel';
+import CompareDifferenceSummary from '../../compare/components/CompareDifferenceSummary';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { Alert, Box, Button, Paper, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
+import { Alert, Box, Button, Paper, Typography } from '@mui/material';
+import {
+  DataTable,
+  sortDataTableRows,
+  type DataTableColumn,
+  type DataTableSortDirection,
+} from '../../../../components/ui';
 import { semanticColor, signedValue } from '../../adapters/compareFormatters';
 
 type CompareManyDiffRow = {
@@ -33,6 +43,7 @@ type CompareManyComparison = {
     execution_time_delta?: number | null;
   };
   diff_rows: CompareManyDiffRow[];
+  diff_rows_truncated: boolean;
 };
 
 type CompareManyResultsSectionProps = {
@@ -47,14 +58,6 @@ type CompareManyResultsSectionProps = {
   baselineVsTargetLabel: (baseline: string, target: string) => string;
   /** When set, titles each comparison block using full job ids (e.g. model labels from loaded runs). */
   comparisonTitleForJobIds?: (baselineJobId: string, targetJobId: string) => string;
-  diffSummaryLabel: (values: {
-    onlyBaseline: number;
-    onlyTarget: number;
-    both: number;
-    qty: number;
-    sku: number;
-    pos: number;
-  }) => string;
   labels: {
     hide: string;
     showDiffRows: string;
@@ -79,6 +82,117 @@ type CompareManyResultsSectionProps = {
   };
 };
 
+function CompareManyDiffTable({
+  rows,
+  labels,
+}: {
+  rows: CompareManyDiffRow[];
+  labels: CompareManyResultsSectionProps['labels'];
+}) {
+  const [sortBy, setSortBy] = useState('');
+  const [sortDir, setSortDir] = useState<DataTableSortDirection>('asc');
+  const em = labels.emDash;
+
+  const columns = useMemo<DataTableColumn<CompareManyDiffRow>[]>(
+    () => [
+      {
+        id: 'match_key',
+        label: labels.colKey,
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => r.match_key.toLowerCase(),
+        cell: (r) => (
+          <Typography component="span" variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+            {r.match_key}
+          </Typography>
+        ),
+      },
+      {
+        id: 'side',
+        label: labels.colSide,
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => r.side.toLowerCase(),
+        cell: (r) => r.side,
+      },
+      {
+        id: 'quantity_a',
+        label: labels.colQtyA,
+        align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (r) => r.quantity_a,
+        cell: (r) => r.quantity_a ?? em,
+      },
+      {
+        id: 'quantity_b',
+        label: labels.colQtyB,
+        align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (r) => r.quantity_b,
+        cell: (r) => r.quantity_b ?? em,
+      },
+      {
+        id: 'sku_a',
+        label: labels.colSkuA,
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => (r.sku_a ?? '').toLowerCase(),
+        cell: (r) => r.sku_a ?? em,
+      },
+      {
+        id: 'sku_b',
+        label: labels.colSkuB,
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => (r.sku_b ?? '').toLowerCase(),
+        cell: (r) => r.sku_b ?? em,
+      },
+      {
+        id: 'position_code_a',
+        label: labels.colPosA,
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => (r.position_code_a ?? '').toLowerCase(),
+        cell: (r) => r.position_code_a ?? em,
+      },
+      {
+        id: 'position_code_b',
+        label: labels.colPosB,
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (r) => (r.position_code_b ?? '').toLowerCase(),
+        cell: (r) => r.position_code_b ?? em,
+      },
+    ],
+    [em, labels]
+  );
+
+  const displayRows = useMemo(
+    () => (!sortBy.trim() ? [...rows] : sortDataTableRows(rows, columns, sortBy, sortDir)),
+    [rows, columns, sortBy, sortDir]
+  );
+
+  return (
+    <DataTable<CompareManyDiffRow>
+      rows={displayRows}
+      rowKey={(r) => `${r.match_key}-${r.side}`}
+      columns={columns}
+      size="small"
+      rowHover={false}
+      sort={{
+        sortBy,
+        sortDir,
+        onSortChange: (sb: string, sd: DataTableSortDirection) => {
+          setSortBy(sb);
+          setSortDir(sd);
+        },
+      }}
+    />
+  );
+}
+
 export default function CompareManyResultsSection({
   orderedComparisons,
   expandedTargetJobId,
@@ -90,14 +204,17 @@ export default function CompareManyResultsSection({
   deltaExecutionLabel,
   baselineVsTargetLabel,
   comparisonTitleForJobIds,
-  diffSummaryLabel,
   labels,
 }: CompareManyResultsSectionProps) {
+  const { t } = useTranslation();
+
   return (
     <>
       {orderedComparisons.map((comp) => {
         const expanded = expandedTargetJobId === comp.target_job_id;
         const diffRowsLoading = expanded && isEnrichedFetching && !hasEnrichedData;
+        const hasDiffRowsLoaded = expanded && hasEnrichedData && !diffRowsLoading;
+        const differenceSummary = buildDifferenceSummary(comp, hasDiffRowsLoaded, t);
         const noDifferences =
           comp.diff_summary.keys_only_in_a === 0 &&
           comp.diff_summary.keys_only_in_b === 0 &&
@@ -127,6 +244,8 @@ export default function CompareManyResultsSection({
               </Alert>
             ) : null}
 
+            <CompareDifferenceSummary model={differenceSummary} />
+
             <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' } }}>
               <Typography sx={{ color: semanticColor(comp.delta.needs_review_diff, true) }}>
                 {labels.deltaNeedsReview(signedValue(comp.delta.needs_review_diff))}
@@ -143,16 +262,6 @@ export default function CompareManyResultsSection({
               ) : null}
             </Box>
 
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-              {diffSummaryLabel({
-                onlyBaseline: comp.diff_summary.keys_only_in_a,
-                onlyTarget: comp.diff_summary.keys_only_in_b,
-                both: comp.diff_summary.keys_in_both,
-                qty: comp.diff_summary.quantity_changed,
-                sku: comp.diff_summary.sku_changed,
-                pos: comp.diff_summary.position_code_changed,
-              })}
-            </Typography>
             {insightLine ? (
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
                 {insightLine}
@@ -170,34 +279,7 @@ export default function CompareManyResultsSection({
                 {diffRowsLoading ? <Typography>{labels.loadingDiffRows}</Typography> : null}
                 {!diffRowsLoading ? (
                   <Box sx={{ overflowX: 'auto' }}>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>{labels.colKey}</TableCell>
-                          <TableCell>{labels.colSide}</TableCell>
-                          <TableCell align="right">{labels.colQtyA}</TableCell>
-                          <TableCell align="right">{labels.colQtyB}</TableCell>
-                          <TableCell>{labels.colSkuA}</TableCell>
-                          <TableCell>{labels.colSkuB}</TableCell>
-                          <TableCell>{labels.colPosA}</TableCell>
-                          <TableCell>{labels.colPosB}</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {comp.diff_rows.map((row) => (
-                          <TableRow key={`${row.match_key}-${row.side}`}>
-                            <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{row.match_key}</TableCell>
-                            <TableCell>{row.side}</TableCell>
-                            <TableCell align="right">{row.quantity_a ?? labels.emDash}</TableCell>
-                            <TableCell align="right">{row.quantity_b ?? labels.emDash}</TableCell>
-                            <TableCell>{row.sku_a ?? labels.emDash}</TableCell>
-                            <TableCell>{row.sku_b ?? labels.emDash}</TableCell>
-                            <TableCell>{row.position_code_a ?? labels.emDash}</TableCell>
-                            <TableCell>{row.position_code_b ?? labels.emDash}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                    <CompareManyDiffTable rows={comp.diff_rows} labels={labels} />
                   </Box>
                 ) : null}
                 {!diffRowsLoading && comp.diff_rows.length === 0 ? (

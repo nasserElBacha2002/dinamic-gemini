@@ -1,3 +1,17 @@
+# =============================================================================
+# Frontend validate (path-filtered, optional faster feedback)
+# =============================================================================
+#
+# **Option A** — kept for faster PR/push signal on `frontend/**` changes only.
+# This workflow does **NOT** gate DEV deployments. The only blocking gate for DEV deploy
+# is **Develop quality gate** (`develop-quality-gate.yml`), which already runs full
+# frontend check:cache, typecheck, lint, test, and build.
+#
+# Do not treat a green/red result here as permission to deploy; deploy workflows key off
+# the quality gate only.
+#
+# =============================================================================
+#
 # Frontend — typecheck, Phase 9 cache convention checks, and (when re-enabled) Vitest.
 name: Frontend validate
 

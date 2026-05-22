@@ -26,7 +26,11 @@ class ProcessAisleRequest(BaseModel):
     )
     prompt_key: Optional[str] = Field(
         None,
-        description="Hybrid prompt profile key (e.g. global_v21, global_v21_b); omit for HYBRID_PROMPT default.",
+        description=(
+            "Ignored for hybrid body selection: new aisle jobs always use profile global_v22 (label-first). "
+            "Listed keys (global_v21, global_v21_b, global_v22) remain valid for admin/options; "
+            "HYBRID_PROMPT affects documentation and non-pipeline defaults only."
+        ),
     )
 
 
@@ -53,12 +57,35 @@ class ProcessingProviderOptionItem(BaseModel):
     default_model: Optional[str] = Field(
         None, description="Default model id for this provider when model_name is omitted."
     )
+    production_available: Optional[bool] = Field(
+        None,
+        description="True when provider has credentials and a default production model (test catalog only).",
+    )
+    unavailable_reason: Optional[str] = Field(
+        None,
+        description="Why the provider is not production-ready; omitted when production_available is true.",
+    )
+    is_default_provider: bool = Field(
+        False,
+        description="True when this provider matches server default (LLM_PROVIDER).",
+    )
 
 
 class ProcessingProviderOptionsResponse(BaseModel):
     """GET /api/v3/inventories/processing-provider-options — discovery for POST process."""
 
+    mode: Literal["test", "production"] = Field(
+        "test",
+        description=(
+            "Catalog scope: test lists all configured models; production lists one model per "
+            "provider from explicit env (GEMINI_MODEL_NAME, OPENAI_MODEL, ANTHROPIC_MODEL) only."
+        ),
+    )
     default_provider_key: str
+    default_model_key: Optional[str] = Field(
+        None,
+        description="Default model id for default_provider_key in this catalog mode.",
+    )
     default_prompt_key: str
     prompt_profiles: list[ProcessingPromptOptionItem] = Field(default_factory=list)
     providers: list[ProcessingProviderOptionItem] = Field(default_factory=list)

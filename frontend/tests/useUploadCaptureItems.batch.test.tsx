@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { UploadCaptureSessionItemsResponse } from '../src/types/captureSession';
 
 vi.mock('../src/features/ingestionSessions/api/captureSessionsApi', () => ({
-  CAPTURE_STAGING_MAX_FILES_PER_REQUEST: 50,
+  CAPTURE_STAGING_MAX_FILES_PER_REQUEST: 5,
   uploadCaptureSessionStagingFiles: vi.fn(),
 }));
 
@@ -85,5 +85,25 @@ describe('useUploadCaptureItems — batch staging flow', () => {
     const terminal = lastQueues[lastQueues.length - 1];
     expect(terminal[0].state).toBe('uploaded');
     expect(terminal[1].state).toBe('failed');
+  });
+
+  it('rejects more than CAPTURE_STAGING_MAX_FILES_PER_REQUEST without calling upload API', async () => {
+    const { result } = renderHook(() => useUploadCaptureItems(), { wrapper: createWrapper() });
+    const files = Array.from(
+      { length: 6 },
+      (_, i) => new File(['x'], `f${i}.jpg`, { type: 'image/jpeg' })
+    );
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          inventoryId: 'inv-1',
+          sessionId: 'sess-1',
+          files,
+        })
+      ).rejects.toThrow();
+    });
+
+    expect(mockedUpload).not.toHaveBeenCalled();
   });
 });

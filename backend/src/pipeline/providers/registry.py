@@ -80,7 +80,7 @@ _EXECUTOR_BUILDERS: Final[
 
 
 def registered_pipeline_provider_keys() -> frozenset[str]:
-    """Keys accepted for explicit processing provider selection (API / UI)."""
+    """All registered provider keys (active + legacy); used by executor resolution and historical jobs."""
     return _KNOWN_KEYS
 
 

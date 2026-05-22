@@ -98,7 +98,7 @@ def test_composition_carries_job_prompt_key_profile_and_prompt_version_together(
         job_prompt_version="job-trace-1",
     )
     _, meta = build_hybrid_analysis_prompt_with_traceability(ctx)
-    assert meta["profile_name"] == "global_v21_b"
+    assert meta["profile_name"] == "global_v22"
     assert meta["job_prompt_key"] == "global_v21_b"
     assert meta["settings_hybrid_prompt_key"] == "global_v21"
     assert meta["prompt_version"] == "job-trace-1"

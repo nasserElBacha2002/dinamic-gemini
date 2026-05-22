@@ -356,7 +356,8 @@ def test_gemini_provider_uses_request_prompt_when_provided():
 
 
 def test_gemini_provider_fallback_to_hybrid_prompt_when_request_prompt_empty():
-    """When request.prompt is empty, GeminiProvider uses get_hybrid_prompt()."""
+    """When request.prompt is empty, Gemini uses compose_hybrid_base_from_settings (always v22)."""
+    from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
     from src.llm.providers.gemini_provider import GeminiProvider
     from src.llm.types import LLMRequest
 
@@ -394,4 +395,7 @@ def test_gemini_provider_fallback_to_hybrid_prompt_when_request_prompt_empty():
     kwargs = analyzer_cls.call_args.kwargs
     passed_prompt = kwargs.get("prompt_text") or ""
     assert "Analyze the provided warehouse aisle evidence" in passed_prompt
-    assert passed_prompt == get_hybrid_prompt("global_v21")
+    expected = compose_hybrid_base_from_settings(settings, pipeline_provider_key=None)
+    assert passed_prompt == expected
+    assert passed_prompt == get_hybrid_prompt("global_v22")
+    assert "Label-first" in passed_prompt

@@ -48,7 +48,10 @@ class LlmProviderSettings(BaseModel):
     # Stage 2.2.D / Phase 8 — default LLM provider for pipeline runs without per-job override
     llm_provider: str = Field(
         default_factory=lambda: (os.getenv("LLM_PROVIDER", "gemini") or "gemini").strip().lower(),
-        description="Default pipeline provider: gemini, openai, claude, or deepseek. Env: LLM_PROVIDER.",
+        description=(
+            "Default pipeline provider: gemini, openai, claude, or deepseek (legacy; deepseek is remapped "
+            "to gemini for new runs). Env: LLM_PROVIDER."
+        ),
     )
     llm_pricing_catalog_json: str = Field(
         default_factory=lambda: (os.getenv("LLM_PRICING_CATALOG_JSON", "") or "").strip(),
@@ -134,11 +137,11 @@ class LlmProviderSettings(BaseModel):
         ),
     )
     hybrid_prompt: str = Field(
-        default_factory=lambda: (os.getenv("HYBRID_PROMPT", "global_v21") or "global_v21").strip(),
+        default_factory=lambda: (os.getenv("HYBRID_PROMPT", "global_v22") or "global_v22").strip(),
         description=(
-            "Perfil de prompt para el pipeline híbrido (ej. global_v21) — **selects the prompt profile / "
-            "family** (which template body is composed). Env: HYBRID_PROMPT. Distinct from "
-            "`prompt_version`, which is an optional traceability label only."
+            "Hybrid prompt profile key for **non–aisle-hybrid defaults and documentation** (e.g. global_v21, "
+            "global_v21_b, global_v22). Aisle process jobs **always** compose ``global_v22`` for the protected "
+            "hybrid body. Env: HYBRID_PROMPT. Distinct from `prompt_version` (traceability label only)."
         ),
     )
     prompt_version: str | None = Field(
@@ -181,7 +184,7 @@ class LlmProviderSettings(BaseModel):
     # Phase 9 — DeepSeek (OpenAI-compatible Chat Completions API)
     deepseek_api_key: str = Field(
         default_factory=lambda: os.getenv("DEEPSEEK_API_KEY", ""),
-        description="DeepSeek API key (pipeline provider deepseek). Env: DEEPSEEK_API_KEY.",
+        description="Deprecated: DeepSeek is no longer selectable for new executions. Env: DEEPSEEK_API_KEY.",
     )
     deepseek_model: str = Field(
         default_factory=lambda: (
@@ -741,6 +744,27 @@ class LimitsAndSchemaSettings(BaseModel):
         default_factory=lambda: (os.getenv("DEPLOYMENT_ID") or "").strip() or None,
         description="Deployment identifier used to annotate migration history. Env: DEPLOYMENT_ID.",
     )
+    code_scan_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CODE_SCAN_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+        ),
+        description="Enable aisle QR/barcode code scan API. Env: CODE_SCAN_ENABLED.",
+    )
+    code_scan_max_assets_per_run: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_ASSETS_PER_RUN", "50")),
+        ge=1,
+        le=500,
+        description="Max source assets processed per code scan run. Env: CODE_SCAN_MAX_ASSETS_PER_RUN.",
+    )
+    code_scan_max_decoded_payload_length: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_DECODED_PAYLOAD_LENGTH", "8192")),
+        ge=32,
+        le=65536,
+        description=(
+            "Max normalized code value length accepted per detection. "
+            "Env: CODE_SCAN_MAX_DECODED_PAYLOAD_LENGTH."
+        ),
+    )
     v3_capture_max_open_sessions_per_aisle: int = Field(
         default_factory=lambda: int(os.getenv("V3_CAPTURE_MAX_OPEN_SESSIONS_PER_AISLE", "1")),
         ge=1,
@@ -770,12 +794,6 @@ class LimitsAndSchemaSettings(BaseModel):
             "Relative prefix under artifact storage for capture staging blobs (not aisle SourceAsset paths). "
             "Env: V3_CAPTURE_STAGING_STORAGE_PREFIX."
         ),
-    )
-    v3_capture_max_files_per_upload: int = Field(
-        default_factory=lambda: int(os.getenv("V3_CAPTURE_MAX_FILES_PER_UPLOAD", "50")),
-        ge=1,
-        le=200,
-        description="Max files per POST .../capture-sessions/{id}/items staging upload. Env: V3_CAPTURE_MAX_FILES_PER_UPLOAD.",
     )
     v3_capture_grouping_max_gap_seconds: int = Field(
         default_factory=lambda: int(os.getenv("V3_CAPTURE_GROUPING_MAX_GAP_SECONDS", "60")),

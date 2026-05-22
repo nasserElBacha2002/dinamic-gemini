@@ -23,6 +23,7 @@ from src.api.dependencies import (
     get_create_aisle_use_case,
     get_export_aisle_benchmark_compare_csv_use_case,
     get_export_aisle_benchmark_run_csv_use_case,
+    get_export_aisle_business_csv_use_case,
     get_export_aisle_results_csv_use_case,
     get_get_aisle_merge_results_use_case,
     get_get_aisle_processing_status_use_case,
@@ -91,44 +92,60 @@ from src.application.services.execution_log_enrichment import (
 )
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.run_auditability_service import RunAuditabilityService
-from src.application.use_cases.cancel_aisle_job import CancelAisleJobCommand, CancelAisleJobUseCase
-from src.application.use_cases.compare_aisle_runs import (
+from src.application.use_cases.aisles.cancel_aisle_job import (
+    CancelAisleJobCommand,
+    CancelAisleJobUseCase,
+)
+from src.application.use_cases.aisles.create_aisle import CreateAisleCommand, CreateAisleUseCase
+from src.application.use_cases.aisles.get_aisle_merge_results import (
+    GetAisleMergeResultsCommand,
+    GetAisleMergeResultsUseCase,
+)
+from src.application.use_cases.aisles.get_aisle_processing_status import (
+    GetAisleProcessingStatusUseCase,
+)
+from src.application.use_cases.aisles.list_aisle_jobs import (
+    ListAisleJobsCommand,
+    ListAisleJobsUseCase,
+)
+from src.application.use_cases.aisles.list_aisles_with_status import ListAislesWithStatusUseCase
+from src.application.use_cases.aisles.promote_aisle_operational_job import (
+    PromoteAisleOperationalJobCommand,
+    PromoteAisleOperationalJobUseCase,
+)
+from src.application.use_cases.aisles.resolve_aisle_job_for_inventory_read import (
+    ResolveAisleJobForInventoryReadUseCase,
+)
+from src.application.use_cases.aisles.retry_aisle_job import (
+    RetryAisleJobCommand,
+    RetryAisleJobUseCase,
+)
+from src.application.use_cases.aisles.run_aisle_merge import (
+    RunAisleMergeCommand,
+    RunAisleMergeUseCase,
+)
+from src.application.use_cases.aisles.start_aisle_processing import (
+    StartAisleProcessingCommand,
+    StartAisleProcessingUseCase,
+)
+from src.application.use_cases.analytics.compare_aisle_runs import (
     CompareAisleRunsCommand,
     CompareAisleRunsUseCase,
 )
-from src.application.use_cases.compare_many_aisle_runs import (
+from src.application.use_cases.analytics.compare_many_aisle_runs import (
     CompareManyAisleRunsCommand,
     CompareManyAisleRunsUseCase,
 )
-from src.application.use_cases.create_aisle import CreateAisleCommand, CreateAisleUseCase
-from src.application.use_cases.export_aisle_benchmark import (
+from src.application.use_cases.analytics.export_aisle_benchmark import (
     ExportAisleBenchmarkCompareCsvUseCase,
     ExportAisleBenchmarkRunCommand,
     ExportAisleBenchmarkRunCsvUseCase,
 )
-from src.application.use_cases.export_inventory_results import ExportAisleResultsCsvUseCase
-from src.application.use_cases.get_aisle_merge_results import (
-    GetAisleMergeResultsCommand,
-    GetAisleMergeResultsUseCase,
+from src.application.use_cases.inventories.export_inventory_business import (
+    ExportAisleBusinessCsvUseCase,
 )
-from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
-from src.application.use_cases.list_aisle_jobs import ListAisleJobsCommand, ListAisleJobsUseCase
-from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
-from src.application.use_cases.promote_aisle_operational_job import (
-    PromoteAisleOperationalJobCommand,
-    PromoteAisleOperationalJobUseCase,
-)
-from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
-    ResolveAisleJobForInventoryReadUseCase,
-)
-from src.application.use_cases.retry_aisle_job import RetryAisleJobCommand, RetryAisleJobUseCase
-from src.application.use_cases.run_aisle_merge import (
-    RunAisleMergeCommand,
-    RunAisleMergeUseCase,
-)
-from src.application.use_cases.start_aisle_processing import (
-    StartAisleProcessingCommand,
-    StartAisleProcessingUseCase,
+from src.application.use_cases.inventories.export_inventory_results import (
+    ExportAisleResultsCsvUseCase,
 )
 from src.domain.jobs.entities import Job
 from src.infrastructure.artifacts.stored_artifact_reader import read_execution_log_events_for_job
@@ -723,6 +740,10 @@ def export_aisle_results_csv(
     inventory_id: str,
     aisle_id: str,
     export_format: str = Query("csv", alias="format", description="Only csv supported."),
+    profile: str = Query(
+        "legacy",
+        description="Export column profile: legacy (default, unchanged) or business (Spanish headers).",
+    ),
     technical: bool = Query(
         False,
         description="When true, export the technical snapshot CSV (same contract as inventory export).",
@@ -735,6 +756,7 @@ def export_aisle_results_csv(
         ),
     ),
     use_case: ExportAisleResultsCsvUseCase = Depends(get_export_aisle_results_csv_use_case),
+    business_use_case: ExportAisleBusinessCsvUseCase = Depends(get_export_aisle_business_csv_use_case),
 ) -> Response:
     """Download this aisle's consolidated results CSV — **same columns and slice rules** as GET …/positions.
 
@@ -743,18 +765,31 @@ def export_aisle_results_csv(
     """
     if (export_format or "").strip().lower() != "csv":
         raise HTTPException(status_code=422, detail=HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED)
+    prof = (profile or "legacy").strip().lower()
+    jid = job_id.strip() if job_id and str(job_id).strip() else None
     try:
-        body = use_case.execute_csv(
-            inventory_id,
-            aisle_id,
-            job_id=job_id.strip() if job_id and str(job_id).strip() else None,
-            technical=technical,
-        )
+        if prof == "business" and not technical:
+            body, fname = business_use_case.execute_csv(
+                inventory_id,
+                aisle_id,
+                job_id=jid,
+            )
+        elif prof in ("legacy", ""):
+            body = use_case.execute_csv(
+                inventory_id,
+                aisle_id,
+                job_id=jid,
+                technical=technical,
+            )
+            suffix = "technical" if technical else "results"
+            fname = f"inventory_{inventory_id}_aisle_{aisle_id}_{suffix}.csv"
+        else:
+            raise HTTPException(status_code=422, detail="profile must be legacy or business")
+    except HTTPException:
+        raise
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    suffix = "technical" if technical else "results"
-    fname = f"inventory_{inventory_id}_aisle_{aisle_id}_{suffix}.csv"
     return Response(
         content=body.encode("utf-8"),
         media_type="text/csv; charset=utf-8",

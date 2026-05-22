@@ -114,7 +114,7 @@ def test_analyzer_valid_response_passes():
     analyzer = GeminiGlobalAnalyzer(mock_client)
     one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]
 
-    result = analyzer.analyze_video_frames(one_frame)
+    result = analyzer.analyze_video_frames(one_frame, frame_refs=["img_001"])
 
     assert result["total_entities_detected"] == 0
     assert result["entities"] == []
@@ -128,7 +128,7 @@ def test_analyzer_invalid_json_raises_parsing_error():
     one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]
 
     with pytest.raises(GlobalAnalysisParsingError, match="Invalid JSON"):
-        analyzer.analyze_video_frames(one_frame)
+        analyzer.analyze_video_frames(one_frame, frame_refs=["img_001"])
 
 
 def test_analyzer_invalid_structure_raises_validation_error():
@@ -139,7 +139,7 @@ def test_analyzer_invalid_structure_raises_validation_error():
     one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]
 
     with pytest.raises(GlobalAnalysisValidationError, match="entities"):
-        analyzer.analyze_video_frames(one_frame)
+        analyzer.analyze_video_frames(one_frame, frame_refs=["img_001"])
 
 
 def test_analyzer_uses_provided_logger_for_all_logs():
@@ -150,9 +150,10 @@ def test_analyzer_uses_provided_logger_for_all_logs():
     analyzer = GeminiGlobalAnalyzer(mock_client)
     one_frame = [np.zeros((50, 50, 3), dtype=np.uint8)]
 
-    analyzer.analyze_video_frames(one_frame, logger=mock_logger)
+    analyzer.analyze_video_frames(one_frame, frame_refs=["img_001"], logger=mock_logger)
 
     mock_logger.info.assert_called_once()
     call_args = mock_logger.info.call_args[0]
     assert "Enviando" in call_args[0]
-    assert call_args[1] == 1
+    assert "interleaved" in call_args[0].lower()
+    assert call_args[-1] == 1  # primary frame count

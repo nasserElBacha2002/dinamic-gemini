@@ -585,6 +585,14 @@ export default function AisleObservabilityWorkspace({
                   <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1 }}>
                     <Typography variant="subtitle2">{t('jobs.obs_prompt_meta_heading')}</Typography>
                     <Typography variant="body2" color="text.secondary">
+                      {t('jobs.obs_prompt_profile_row', {
+                        profile:
+                          (typeof promptComposition?.profile_name === 'string' &&
+                            promptComposition.profile_name.trim()) ||
+                          t('common.em_dash'),
+                      })}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
                       {t('jobs.obs_prompt_provider_pipeline', {
                         pipeline: lastProviderRequest.request.pipeline_provider ?? t('common.em_dash'),
                       })}
@@ -614,6 +622,20 @@ export default function AisleObservabilityWorkspace({
                           t('common.em_dash'),
                       })}
                     </Typography>
+                    {typeof promptComposition?.job_prompt_key === 'string' &&
+                    promptComposition.job_prompt_key.trim() ? (
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
+                        {t('jobs.obs_prompt_job_key_row', { key: promptComposition.job_prompt_key.trim() })}
+                      </Typography>
+                    ) : null}
+                    {typeof promptComposition?.settings_hybrid_prompt_key === 'string' &&
+                    promptComposition.settings_hybrid_prompt_key.trim() ? (
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
+                        {t('jobs.obs_prompt_settings_key_row', {
+                          key: promptComposition.settings_hybrid_prompt_key.trim(),
+                        })}
+                      </Typography>
+                    ) : null}
                   </Paper>
                   {lastProviderRequest.request.prompt_text ? (
                     <>

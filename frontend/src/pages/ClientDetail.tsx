@@ -5,6 +5,7 @@ import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 import type { ClientSupplier, InventoryListItem } from '../api/types';
 import CreateClientSupplierDialog from '../components/CreateClientSupplierDialog';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
+import LabelGeneratorDialog from '../features/clients/components/LabelGeneratorDialog';
 import { PageHeader } from '../components/shell';
 import {
   DataTable,
@@ -14,7 +15,9 @@ import {
   SectionCard,
   StatusBadge,
   useAppSnackbar,
+  sortDataTableRows,
   type DataTableColumn,
+  type DataTableSortDirection,
 } from '../components/ui';
 import { ROUTE_CLIENTS, pathToClientSupplier, pathToInventory } from '../constants/appRoutes';
 import {
@@ -43,6 +46,11 @@ export default function ClientDetail() {
   const safeClientId = (clientId ?? '').trim();
   const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
   const [createInventoryOpen, setCreateInventoryOpen] = useState(false);
+  const [labelGeneratorOpen, setLabelGeneratorOpen] = useState(false);
+  const [clientInvSortBy, setClientInvSortBy] = useState('');
+  const [clientInvSortDir, setClientInvSortDir] = useState<DataTableSortDirection>('asc');
+  const [supplierSortBy, setSupplierSortBy] = useState('');
+  const [supplierSortDir, setSupplierSortDir] = useState<DataTableSortDirection>('asc');
 
   const invalidClientId = safeClientId === '';
 
@@ -71,6 +79,9 @@ export default function ClientDetail() {
       {
         id: 'name',
         label: t('inventory.column_inventory'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (inv) => inv.name,
         cell: (inv) => (
           <Button
             component={RouterLink}
@@ -86,6 +97,9 @@ export default function ClientDetail() {
       {
         id: 'status',
         label: t('inventory.column_status'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (inv) => String(inv.status ?? ''),
         cell: (inv) => (
           <StatusBadge
             label={formatInventoryStatusLabel(String(inv.status))}
@@ -97,10 +111,21 @@ export default function ClientDetail() {
         id: 'aisles',
         label: t('inventory.column_aisles'),
         align: 'right',
+        sortable: true,
+        sortType: 'number',
+        sortAccessor: (inv) => inv.aisles_count ?? 0,
         cell: (inv) => inv.aisles_count,
       },
     ],
     [t]
+  );
+
+  const sortedClientInventories = useMemo(
+    () =>
+      !clientInvSortBy.trim()
+        ? clientInventories
+        : sortDataTableRows(clientInventories, inventoryColumns, clientInvSortBy, clientInvSortDir),
+    [clientInventories, inventoryColumns, clientInvSortBy, clientInvSortDir]
   );
 
   const supplierColumns = useMemo<DataTableColumn<ClientSupplier>[]>(
@@ -108,6 +133,9 @@ export default function ClientDetail() {
       {
         id: 'name',
         label: t('clients.suppliers.fields.name'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (supplier) => supplier.name.trim().toLowerCase(),
         cell: (supplier) => (
           <Button
             component={RouterLink}
@@ -123,6 +151,9 @@ export default function ClientDetail() {
       {
         id: 'status',
         label: t('clients.suppliers.fields.status'),
+        sortable: true,
+        sortType: 'string',
+        sortAccessor: (supplier) => String(supplier.status ?? ''),
         cell: (supplier) => (
           <StatusBadge
             label={statusLabel(String(supplier.status), t)}
@@ -133,15 +164,31 @@ export default function ClientDetail() {
       {
         id: 'created_at',
         label: t('clients.suppliers.fields.created_at'),
+        sortable: true,
+        sortType: 'date',
+        sortAccessor: (supplier) => supplier.created_at,
         cell: (supplier) => formatDate(supplier.created_at),
       },
       {
         id: 'updated_at',
         label: t('clients.suppliers.fields.updated_at'),
+        sortable: true,
+        sortType: 'date',
+        sortAccessor: (supplier) => supplier.updated_at,
         cell: (supplier) => formatDate(supplier.updated_at),
       },
     ],
     [safeClientId, t]
+  );
+
+  const supplierItems = useMemo(() => suppliersQuery.data?.items ?? [], [suppliersQuery.data?.items]);
+
+  const sortedSuppliers = useMemo(
+    () =>
+      !supplierSortBy.trim()
+        ? supplierItems
+        : sortDataTableRows(supplierItems, supplierColumns, supplierSortBy, supplierSortDir),
+    [supplierItems, supplierColumns, supplierSortBy, supplierSortDir]
   );
 
   return (
@@ -154,6 +201,14 @@ export default function ClientDetail() {
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
             <Button variant="contained" size="small" onClick={() => setCreateInventoryOpen(true)} disabled={!safeClientId}>
               {t('clients.detail.create_inventory')}
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setLabelGeneratorOpen(true)}
+              disabled={!safeClientId || !clientQuery.data}
+            >
+              {t('clients.labels.action_generate')}
             </Button>
             <Button component={RouterLink} to={ROUTE_CLIENTS} variant="outlined" size="small">
               {t('clients.detail.back_to_list')}
@@ -239,10 +294,18 @@ export default function ClientDetail() {
             />
           ) : (
             <DataTable<ClientSupplier>
-              rows={suppliersQuery.data?.items ?? []}
+              rows={sortedSuppliers}
               rowKey={(supplier) => supplier.id}
               columns={supplierColumns}
               loading={false}
+              sort={{
+                sortBy: supplierSortBy,
+                sortDir: supplierSortDir,
+                onSortChange: (sb, sd) => {
+                  setSupplierSortBy(sb);
+                  setSupplierSortDir(sd);
+                },
+              }}
             />
           )}
         </SectionCard>
@@ -279,10 +342,18 @@ export default function ClientDetail() {
             />
           ) : (
             <DataTable<InventoryListItem>
-              rows={clientInventories}
+              rows={sortedClientInventories}
               rowKey={(inv) => inv.id}
               columns={inventoryColumns}
               loading={false}
+              sort={{
+                sortBy: clientInvSortBy,
+                sortDir: clientInvSortDir,
+                onSortChange: (sb, sd) => {
+                  setClientInvSortBy(sb);
+                  setClientInvSortDir(sd);
+                },
+              }}
             />
           )}
         </SectionCard>
@@ -315,6 +386,17 @@ export default function ClientDetail() {
         }}
         createInventoryFn={createInventoryMutation.mutateAsync}
       />
+
+      {clientQuery.data ? (
+        <LabelGeneratorDialog
+          open={labelGeneratorOpen}
+          onClose={() => setLabelGeneratorOpen(false)}
+          clientId={safeClientId}
+          clientName={clientQuery.data.name}
+          suppliers={supplierItems}
+          suppliersLoading={suppliersQuery.isLoading}
+        />
+      ) : null}
     </>
   );
 }

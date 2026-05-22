@@ -59,14 +59,16 @@ from src.application.services.reference_usage_from_job_result import (
     parse_reference_usage_from_result_json,
 )
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.confirm_position import ConfirmPositionUseCase
-from src.application.use_cases.delete_position import DeletePositionUseCase
-from src.application.use_cases.get_aisle_processing_status import AisleProcessingStatusResult
-from src.application.use_cases.mark_position_image_mismatch import MarkPositionImageMismatchUseCase
-from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
-from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
-from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
-from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
+from src.application.use_cases.aisles.get_aisle_processing_status import AisleProcessingStatusResult
+from src.application.use_cases.positions.confirm_position import ConfirmPositionUseCase
+from src.application.use_cases.positions.delete_position import DeletePositionUseCase
+from src.application.use_cases.positions.mark_position_image_mismatch import (
+    MarkPositionImageMismatchUseCase,
+)
+from src.application.use_cases.positions.mark_position_unknown import MarkPositionUnknownUseCase
+from src.application.use_cases.positions.update_position_code import UpdatePositionCodeUseCase
+from src.application.use_cases.positions.update_product_quantity import UpdateProductQuantityUseCase
+from src.application.use_cases.positions.update_product_sku import UpdateProductSkuUseCase
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
 from src.domain.evidence.entities import Evidence

@@ -17,6 +17,10 @@ export interface LatestRunSnapshotViewModel {
   statusSemantic: StatusBadgeSemantic;
   providerDisplay: string;
   modelDisplay: string;
+  /** Raw API values for client-side column sort (not localized). */
+  jobStatusRaw: string;
+  providerRaw: string;
+  modelRaw: string;
 }
 
 /**
@@ -37,6 +41,8 @@ export interface AisleInventoryRowPresentation {
   pendingReviewCount: number | undefined;
   pendingReviewDisplay: string | number;
   lastUpdatedDisplay: string;
+  /** ISO timestamp for client-side sort (same source as display). */
+  lastUpdatedSortKey: string | null;
   latestRun: LatestRunSnapshotViewModel | null;
   referenceUsage: ReferenceUsageRowViewModel | null;
 }
@@ -63,6 +69,9 @@ export function toAisleInventoryRowPresentation(aisle: Aisle, emptyLabel: string
         statusSemantic: jobStatusToBadgeSemantic(run.status),
         providerDisplay: run.provider_name ? String(run.provider_name) : emptyLabel,
         modelDisplay: run.model_name ? String(run.model_name) : emptyLabel,
+        jobStatusRaw: String(run.status),
+        providerRaw: run.provider_name ? String(run.provider_name) : '',
+        modelRaw: run.model_name ? String(run.model_name) : '',
       }
     : null;
 
@@ -84,6 +93,7 @@ export function toAisleInventoryRowPresentation(aisle: Aisle, emptyLabel: string
         ? aisle.pending_review_positions_count
         : emptyLabel,
     lastUpdatedDisplay: formatDate(aisle.last_activity_at ?? aisle.updated_at),
+    lastUpdatedSortKey: (aisle.last_activity_at ?? aisle.updated_at ?? null) as string | null,
     latestRun,
     referenceUsage: toReferenceUsageRowViewModel(aisle),
   };

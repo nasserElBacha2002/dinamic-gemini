@@ -137,3 +137,96 @@ def test_export_csv_technical_mode_uses_technical_headers_and_filename(
     headers, rows = _parse_csv_body(resp.content)
     assert headers == list(INVENTORY_RESULTS_TECHNICAL_CSV_FIELDS)
     assert rows == []
+
+
+def test_export_inventory_summary_csv(client_v3: TestClient) -> None:
+    create = create_test_inventory(client_v3, name="Summary Export")
+    assert create.status_code == 201
+    inv_id = create.json()["id"]
+    resp = client_v3.get(f"/api/v3/inventories/{inv_id}/export/summary?level=inventory")
+    assert resp.status_code == 200
+    assert "text/csv" in (resp.headers.get("content-type") or "").lower()
+    cd = resp.headers.get("content-disposition") or ""
+    assert "Summary_Export" in cd or "summary" in cd.lower()
+    assert inv_id not in cd or "inventory_Summary" in cd
+    headers, rows = _parse_csv_body(resp.content)
+    assert headers[0] == "Inventario"
+    assert len(rows) == 1
+
+
+def test_export_summary_invalid_level_422(client_v3: TestClient) -> None:
+    create = create_test_inventory(client_v3, name="Bad Level")
+    inv_id = create.json()["id"]
+    resp = client_v3.get(f"/api/v3/inventories/{inv_id}/export/summary?level=totals")
+    assert resp.status_code == 422
+
+
+def test_export_aisle_invalid_profile_422(client_v3: TestClient) -> None:
+    create = create_test_inventory(client_v3, name="Bad Profile")
+    inv = create.json()
+    inv_id = inv["id"]
+    sid = create_test_supplier(client_v3, inv["client_id"])
+    aisle_resp = client_v3.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "X1", "client_supplier_id": sid},
+    )
+    aisle_id = aisle_resp.json()["id"]
+    resp = client_v3.get(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/export?profile=enterprise"
+    )
+    assert resp.status_code == 422
+
+
+def test_export_inventory_package_zip(client_v3: TestClient) -> None:
+    import io
+    import zipfile
+
+    create = create_test_inventory(client_v3, name="Package Export")
+    assert create.status_code == 201
+    inv_id = create.json()["id"]
+    resp = client_v3.get(f"/api/v3/inventories/{inv_id}/export/package")
+    assert resp.status_code == 200
+    assert "zip" in (resp.headers.get("content-type") or "").lower()
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        names = set(zf.namelist())
+    assert "inventory_summary.csv" in names
+    assert "aisles_summary.csv" in names
+
+
+def test_export_aisle_business_profile(client_v3: TestClient) -> None:
+    create = create_test_inventory(client_v3, name="Business Aisle")
+    assert create.status_code == 201
+    inv = create.json()
+    inv_id = inv["id"]
+    sid = create_test_supplier(client_v3, inv["client_id"])
+    aisle_resp = client_v3.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "B1", "client_supplier_id": sid},
+    )
+    assert aisle_resp.status_code == 201
+    aisle_id = aisle_resp.json()["id"]
+    resp = client_v3.get(
+        f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/export?profile=business"
+    )
+    assert resp.status_code == 200
+    headers, _ = _parse_csv_body(resp.content)
+    assert headers[0] == "Inventario"
+    cd = resp.headers.get("content-disposition") or ""
+    assert "operational" in cd
+
+
+def test_export_aisle_legacy_default_unchanged(client_v3: TestClient) -> None:
+    create = create_test_inventory(client_v3, name="Legacy Default")
+    assert create.status_code == 201
+    inv = create.json()
+    inv_id = inv["id"]
+    sid = create_test_supplier(client_v3, inv["client_id"])
+    aisle_resp = client_v3.post(
+        f"/api/v3/inventories/{inv_id}/aisles",
+        json={"code": "L1", "client_supplier_id": sid},
+    )
+    aisle_id = aisle_resp.json()["id"]
+    resp = client_v3.get(f"/api/v3/inventories/{inv_id}/aisles/{aisle_id}/export")
+    assert resp.status_code == 200
+    headers, _ = _parse_csv_body(resp.content)
+    assert headers == list(INVENTORY_RESULTS_CSV_FIELDS)

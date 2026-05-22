@@ -15,6 +15,9 @@
  * already uses mapper output (e.g. review status color helpers) until a single semantic mapping exists.
  *
  * **Limitations:** No built-in row selection or column resize; add per screen when contracts require them.
+ *
+ * **Sort metadata (optional):** `sortType`, `sortAccessor`, `sortComparator`, `serverSortKey` on columns are
+ * for parents and helpers such as `sortDataTableRows` — this component does not reorder `rows` itself.
  */
 
 import type { MouseEvent, ReactNode } from 'react';
@@ -38,12 +41,22 @@ import EmptyState from './EmptyState';
 
 export type DataTableSortDirection = 'asc' | 'desc';
 
+export type DataTableSortType = 'string' | 'number' | 'date' | 'boolean';
+
 export interface DataTableColumn<T> {
-  /** Stable id; for `sortable` columns this is sent as API `sort_by` when parent wires it that way. */
+  /** Stable id; for `sortable` columns this is often sent as API `sort_by` when parent wires it that way. */
   id: string;
   label: string;
   align?: 'left' | 'right' | 'center';
   sortable?: boolean;
+  /** Used by client-side helpers (e.g. `sortDataTableRows`); not applied inside `DataTable`. */
+  sortType?: DataTableSortType;
+  /** Raw value for comparisons — never use translated labels or rendered nodes. */
+  sortAccessor?: (row: T) => unknown;
+  /** Full row comparison when column order cannot be expressed as a scalar accessor. */
+  sortComparator?: (a: T, b: T) => number;
+  /** When API `sort_by` must differ from `id` (server-driven tables). */
+  serverSortKey?: string;
   width?: number | string;
   /** Cell content for one row. */
   cell: (row: T) => ReactNode;

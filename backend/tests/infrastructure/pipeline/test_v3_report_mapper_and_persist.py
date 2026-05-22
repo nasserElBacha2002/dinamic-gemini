@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.application.dto.mapped_aisle_result import MappedAisleResult
-from src.application.use_cases.persist_aisle_result import (
+from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
     should_persist_detected_position,

@@ -1,4 +1,5 @@
 export { useDebouncedSearchInput } from './useDebouncedSearchInput';
+export { useBeforeUnloadWarning } from './useBeforeUnloadWarning';
 export {
   useClients,
   useClient,

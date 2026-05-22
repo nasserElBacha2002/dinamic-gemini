@@ -11,7 +11,7 @@ once here (step 4 of the Phase 5 flow).
 
 **Profile vs Phase 7 version (see also ``prompt_traceability`` module doc):**
 
-- **Profile:** ``resolve_hybrid_profile_name`` + ``compose_hybrid_base`` determine prompt **content**.
+- **Profile:** ``DEFAULT_HYBRID_PROMPT_PROFILE`` (``global_v22``) + ``compose_hybrid_base`` determine prompt **content** (hard-bound; cannot drift to v21 on stale partial deploys).
   Recorded in composition as ``profile_name``, ``job_prompt_key``, ``settings_hybrid_prompt_key``.
 - **``prompt_version``:** Optional label from ``RunContext.job_prompt_version`` or ``settings.prompt_version``
   only; recorded in composition; **no effect** on resolution or text.
@@ -27,10 +27,11 @@ from src.llm.prompt_composer.enrichments import (
     IMAGE_ID_TRACEABILITY_ENRICHMENT_ID,
     SUPPLIER_EDITABLE_INSTRUCTIONS_ENRICHMENT_ID,
     enrich_prompt_with_image_ids,
+    enrich_prompt_with_sent_image_ids,
 )
 from src.llm.prompt_composer.hybrid_assembly import (
+    DEFAULT_HYBRID_PROMPT_PROFILE,
     compose_hybrid_base,
-    resolve_hybrid_profile_name,
 )
 from src.llm.prompt_composer.prompt_traceability import (
     COMPOSITION_STEP_COMPOSE_HYBRID_BASE,
@@ -106,6 +107,8 @@ def _effective_prompt_composition_subtree(
 
 def build_hybrid_analysis_prompt_with_traceability(
     context: RunContext,
+    *,
+    sent_frame_refs: list[str] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """
     Same prompt text as legacy assembly, plus JSON-serializable composition metadata (Phase 6).
@@ -117,10 +120,7 @@ def build_hybrid_analysis_prompt_with_traceability(
     """
     settings = context.settings
     steps: list[dict[str, Any]] = []
-    profile = resolve_hybrid_profile_name(
-        job_prompt_key=getattr(context, "job_prompt_key", None),
-        settings=settings,
-    )
+    profile = DEFAULT_HYBRID_PROMPT_PROFILE
     steps.append({"step": COMPOSITION_STEP_RESOLVE_PROFILE, "profile_name": profile})
     effective_provider = normalize_pipeline_provider_key(
         getattr(context, "pipeline_provider_name", None),
@@ -140,6 +140,8 @@ def build_hybrid_analysis_prompt_with_traceability(
     enrichments_applied: list[str] = []
     prompt_text = base_prompt
     job_input = getattr(context, "job_input", None)
+    prompt_listed_image_ids: list[str] = []
+    frames_sent_ids: list[str] = []
     if job_input and getattr(job_input, "input_type", "") == "photos":
         manifest_rel = (getattr(job_input, "input_manifest_path", None) or "").strip()
         photos_dir_rel = (getattr(job_input, "photos_dir", None) or "").strip()
@@ -148,13 +150,25 @@ def build_hybrid_analysis_prompt_with_traceability(
             manifest_path = job_dir / manifest_rel
             images = load_job_images_from_manifest(manifest_path, photos_dir_rel)
             if images:
-                prompt_text = enrich_prompt_with_image_ids(base_prompt, images)
+                if sent_frame_refs is not None:
+                    frames_sent_ids = list(sent_frame_refs)
+                    prompt_listed_image_ids = list(sent_frame_refs)
+                    if frames_sent_ids:
+                        prompt_text = enrich_prompt_with_sent_image_ids(
+                            base_prompt, images, frames_sent_ids
+                        )
+                    else:
+                        prompt_text = base_prompt
+                else:
+                    prompt_text = enrich_prompt_with_image_ids(base_prompt, images)
+                    prompt_listed_image_ids = [img.image_id for img in images]
                 enrichments_applied.append(IMAGE_ID_TRACEABILITY_ENRICHMENT_ID)
                 steps.append(
                     {
                         "step": COMPOSITION_STEP_ENRICH_IMAGE_IDS,
                         "enrichment_id": IMAGE_ID_TRACEABILITY_ENRICHMENT_ID,
-                        "image_count": len(images),
+                        "image_count": len(prompt_listed_image_ids) or len(images),
+                        "sent_frame_count": len(frames_sent_ids) if sent_frame_refs is not None else None,
                     }
                 )
     jpk = getattr(context, "job_prompt_key", None)
@@ -182,6 +196,10 @@ def build_hybrid_analysis_prompt_with_traceability(
         prompt_version=prompt_version_opt,
         prompt_parity_mode=parity,
     )
+    if prompt_listed_image_ids:
+        composition["prompt_listed_image_ids"] = list(prompt_listed_image_ids)
+    if frames_sent_ids:
+        composition["frames_sent_ids"] = list(frames_sent_ids)
 
     # V3JobExecutor aborts v3 jobs before the hybrid pipeline when SupplierPromptResolver returns
     # resolution_status == "error". This builder still handles error resolutions defensively so

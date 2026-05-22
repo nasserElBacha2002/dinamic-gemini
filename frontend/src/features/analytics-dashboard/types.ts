@@ -1,0 +1,87 @@
+import type { AnalyticsQueryParams } from '../analytics/types';
+import type { AnalyticsCostSummaryParams } from '../../api/types';
+import type { ObservabilityMetricsQueryParams } from '../../api/observabilityApi';
+
+export type AnalyticsDashboardTab =
+  | 'summary'
+  | 'quality'
+  | 'time'
+  | 'providers'
+  | 'inventories'
+  | 'aisles'
+  | 'compare'
+  | 'costs';
+
+export interface AnalyticsDashboardFilters {
+  dateFrom: string;
+  dateTo: string;
+  inventoryId: string;
+  aisleId: string;
+  clientId: string;
+  clientSupplierId: string;
+  providerName: string;
+  modelName: string;
+}
+
+export interface AnalyticsDashboardFilterParams {
+  analytics: AnalyticsQueryParams;
+  observability: ObservabilityMetricsQueryParams;
+  costSummary: AnalyticsCostSummaryParams;
+}
+
+export function buildFilterParams(filters: AnalyticsDashboardFilters): AnalyticsDashboardFilterParams {
+  const fromIso = filters.dateFrom ? `${filters.dateFrom}T00:00:00.000Z` : undefined;
+  const toIso = filters.dateTo ? `${filters.dateTo}T23:59:59.999Z` : undefined;
+  return {
+    analytics: {
+      date_from: filters.dateFrom || undefined,
+      date_to: filters.dateTo || undefined,
+      inventory_id: filters.inventoryId || undefined,
+      aisle_id: filters.aisleId || undefined,
+    },
+    observability: {
+      from: fromIso,
+      to: toIso,
+      clientId: filters.clientId.trim() || undefined,
+      clientSupplierId: filters.clientSupplierId.trim() || undefined,
+      providerName: filters.providerName.trim() || undefined,
+      modelName: filters.modelName.trim() || undefined,
+    },
+    costSummary: {
+      date_from: filters.dateFrom || undefined,
+      date_to: filters.dateTo || undefined,
+      inventory_id: filters.inventoryId || undefined,
+      aisle_id: filters.aisleId || undefined,
+      client_id: filters.clientId.trim() || undefined,
+      client_supplier_id: filters.clientSupplierId.trim() || undefined,
+      provider_name: filters.providerName.trim() || undefined,
+      model_name: filters.modelName.trim() || undefined,
+    },
+  };
+}
+
+export type CompareEligibility =
+  | { allowed: true }
+  | { allowed: false; reason: 'unknown_mode' | 'test_only' };
+
+export function getCompareEligibility(processingMode: string | undefined): CompareEligibility {
+  if (processingMode === 'test') return { allowed: true };
+  if (processingMode === undefined) return { allowed: false, reason: 'unknown_mode' };
+  return { allowed: false, reason: 'test_only' };
+}
+
+export function compareEligibilityTooltipKey(reason: 'unknown_mode' | 'test_only'): string {
+  return reason === 'unknown_mode'
+    ? 'analyticsDashboard.compare.unknownModeTooltip'
+    : 'analyticsDashboard.compare.testOnlyTooltip';
+}
+
+export type AnalyticsDrilldownState =
+  | { type: 'inventory'; inventoryId: string }
+  | { type: 'aisle'; inventoryId: string; aisleId: string }
+  | null;
+
+export interface AnalyticsDrilldownHandlers {
+  onOpenInventoryDrilldown: (inventoryId: string) => void;
+  onOpenAisleDrilldown: (inventoryId: string, aisleId: string) => void;
+}

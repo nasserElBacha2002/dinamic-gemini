@@ -21,9 +21,11 @@ from src.llm.prompt_composer.enrichments import (
     enrich_prompt_with_image_ids,
     enrich_prompt_with_product_label_association,
 )
+from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 from src.llm.prompt_composer.hybrid_profiles import GLOBAL_ENTITY_ANALYSIS_PROMPT_V21
 
 __all__ = [
+    "DEFAULT_HYBRID_PROMPT_PROFILE",
     "GLOBAL_ENTITY_ANALYSIS_PROMPT_V21",
     "enrich_prompt_with_image_ids",
     "enrich_prompt_with_product_label_association",
@@ -32,7 +34,7 @@ __all__ = [
 
 
 def get_hybrid_prompt(
-    profile_name: str = "global_v21",
+    profile_name: str = DEFAULT_HYBRID_PROMPT_PROFILE,
     provider_key: str | None = None,
 ) -> str:
     """Legacy/tests only — delegates to ``default_hybrid_composer.compose_base``."""

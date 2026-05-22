@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from src.application.use_cases.benchmark_compare_support import (
+from src.application.use_cases.shared.benchmark_compare_support import (
     format_execution_duration_human,
     job_execution_duration_human,
     job_execution_duration_seconds,

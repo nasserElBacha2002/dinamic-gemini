@@ -28,7 +28,8 @@ export const queryKeys = {
       [...queryKeys.inventories.list(), params] as const,
     detail: (inventoryId: string) => [...queryKeys.inventories.all, 'detail', inventoryId] as const,
     /** Selectable pipeline providers for POST aisle process (Phase 5). */
-    processingProviderOptions: () => [...queryKeys.inventories.all, 'processing-provider-options'] as const,
+    processingProviderOptions: (mode: 'test' | 'production' = 'test') =>
+      [...queryKeys.inventories.all, 'processing-provider-options', mode] as const,
     metrics: (inventoryId: string) => [...queryKeys.inventories.all, 'metrics', inventoryId] as const,
     aisles: (inventoryId: string) => [...queryKeys.inventories.all, 'aisles', inventoryId] as const,
     /** Inventory-detail default aisles table (single fixed page; see `useAislesList`). */
@@ -67,6 +68,22 @@ export const queryKeys = {
     /** Source assets (uploaded photos/videos) for one aisle. */
     aisleSourceAssets: (inventoryId: string, aisleId: string) =>
       [...queryKeys.inventories.all, 'aisles', inventoryId, 'source-assets', aisleId] as const,
+    aisleCodeScans: (inventoryId: string, aisleId: string) =>
+      [...queryKeys.inventories.all, 'aisles', inventoryId, 'code-scans', aisleId] as const,
+    aisleCodeScanSummary: (inventoryId: string, aisleId: string) =>
+      [...queryKeys.inventories.all, 'aisles', inventoryId, 'code-scans', aisleId, 'summary'] as const,
+    aisleCodeScanReviewSignals: (inventoryId: string, aisleId: string) =>
+      [...queryKeys.inventories.all, 'aisles', inventoryId, 'code-scans', aisleId, 'review-signals'] as const,
+    positionCodeScanEvidence: (inventoryId: string, aisleId: string, positionId: string) =>
+      [
+        ...queryKeys.inventories.all,
+        'aisles',
+        inventoryId,
+        'positions',
+        positionId,
+        'code-scan-evidence',
+        aisleId,
+      ] as const,
     /** Run selector list (`listAisleJobs`); `limit` is part of cache identity. */
     aisleJobsList: (inventoryId: string, aisleId: string, limit: number) =>
       [...queryKeys.inventories.aisleJobs(inventoryId, aisleId), limit] as const,
@@ -176,6 +193,8 @@ export const queryKeys = {
       [...queryKeys.analytics.all, 'aisles', params] as const,
     quality: (params: Record<string, string | undefined>) =>
       [...queryKeys.analytics.all, 'quality', params] as const,
+    costSummary: (params: Record<string, string | undefined>) =>
+      [...queryKeys.analytics.all, 'cost-summary', params] as const,
     manualInterventions: (params: Record<string, string | undefined>) =>
       [...queryKeys.analytics.all, 'manual-interventions', params] as const,
   },
