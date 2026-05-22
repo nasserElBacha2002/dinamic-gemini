@@ -102,12 +102,17 @@ jobs:
           fi
 
           CHANGED=$(git diff --name-only "${BASE}" "${HEAD_SHA}")
-          echo "Changed files:"; echo "${CHANGED}"
-          if echo "${CHANGED}" | grep -qE '^frontend/|^\.github/workflows/deploy-dev-vercel-frontend\.yml'; then
+          FRONTEND_PATH_RE='^frontend/|^\.github/workflows/deploy-dev-vercel-frontend\.yml'
+          echo "head_sha=${HEAD_SHA}"
+          if grep -qE "${FRONTEND_PATH_RE}" <<< "${CHANGED}"; then
+            echo "Frontend-relevant changes detected; deploy=true"
+            grep -E "${FRONTEND_PATH_RE}" <<< "${CHANGED}" | sed -n '1,120p' || true
             echo "deploy=true" >> "$GITHUB_OUTPUT"
             echo "head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
           else
-            echo "No frontend or this workflow changes; skipping deploy."
+            echo "No frontend or this workflow changes; skipping Vercel deploy (deploy=false)."
+            echo "Changed paths (first 40, for context):"
+            sed -n '1,40p' <<< "${CHANGED}"
             echo "deploy=false" >> "$GITHUB_OUTPUT"
             echo "head_sha=" >> "$GITHUB_OUTPUT"
           fi
