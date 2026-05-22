@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import React, { type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material';

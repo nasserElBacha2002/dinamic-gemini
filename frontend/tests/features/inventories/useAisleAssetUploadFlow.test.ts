@@ -1,3 +1,4 @@
+import type { MutableRefObject } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useAisleAssetUploadFlow } from '../../../src/features/inventories/hooks/useAisleAssetUploadFlow';
@@ -111,7 +112,7 @@ describe('useAisleAssetUploadFlow', () => {
     input.type = 'file';
     input.click = clickSpy;
     act(() => {
-      result.current.fileInputRef.current = input;
+      (result.current.fileInputRef as MutableRefObject<HTMLInputElement | null>).current = input;
     });
 
     act(() => {

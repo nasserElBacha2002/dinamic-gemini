@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import React, { type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material';
@@ -86,7 +86,7 @@ describe('ImportSessionUpload upload progress', () => {
 
   it('shows normalized error snackbar and inline alert on failed upload', async () => {
     mutateAsyncMock.mockRejectedValue(
-      new ApiError('upload failed', 500, { code: 'CAPTURE_UPLOAD_FAILED', message: 'Server busy' })
+      new ApiError('upload failed', 500, { code: 'CAPTURE_UPLOAD_FAILED', detail: 'Server busy' })
     );
 
     render(
