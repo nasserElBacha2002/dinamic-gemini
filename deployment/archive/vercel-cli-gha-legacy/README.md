@@ -2,7 +2,7 @@
 
 **Status:** Removed from CI (Option A: Vercel native Git integration).
 
-These scripts were used when `.github/workflows/deploy-dev-vercel-frontend.yml` ran `npx vercel pull` / `npx vercel deploy` from Actions. That approach caused recurring `frontend/frontend` path errors and is no longer wired to any workflow.
+These scripts were used when `.github/workflows/deploy-dev-vercel-frontend.yml` ran `npx vercel pull` / `npx vercel deploy` from Actions. That workflow file has been **deleted**; Vercel deploy is Git integration only. Do not restore CLI deploy in `.github/workflows/`.
 
 **Current DEV frontend deploy:** see [`docs/deployment/DEV-VERCEL.md`](../../../docs/deployment/DEV-VERCEL.md).
 

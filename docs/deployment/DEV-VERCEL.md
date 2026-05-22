@@ -1,86 +1,89 @@
-# DEV frontend — Vercel (Git integration)
+# DEV frontend — Vercel (Git integration only)
 
-GitHub Actions **does not deploy** the frontend. Vercel is the **source of truth** for DEV frontend deployments via its **native GitHub integration** when commits land on `develop`.
+GitHub Actions **does not deploy** the frontend to Vercel. There is **no** Vercel workflow in `.github/workflows/`.
 
-The **Develop quality gate** still validates the frontend in Actions (build, test, lint, typecheck). See [`.github/workflows/develop-quality-gate.yml`](../../.github/workflows/develop-quality-gate.yml).
+GitHub Actions only validates code quality (see **Develop quality gate** in [`.github/workflows/develop-quality-gate.yml`](../../.github/workflows/develop-quality-gate.yml): backend checks and frontend install, typecheck, lint, tests, build).
 
-After a successful push to `develop`, the workflow [**DEV — Vercel frontend handoff**](../../.github/workflows/deploy-dev-vercel-frontend.yml) only logs a reminder. It does **not** call Vercel CLI and does **not** trigger a Vercel build.
+**Vercel** deploys the frontend through its **native GitHub integration** when commits are pushed or merged to **`develop`**.
 
 ## Vercel project settings (required)
 
-In the Vercel dashboard → **Project → Settings**:
+**Project → Settings → Git**
 
 | Setting | Value |
 |---------|--------|
-| **Git** → Connected repository | This monorepo (correct GitHub org/repo) |
+| Connected Git repository | This monorepo (`dinamic-gemini` or your org/repo name) |
 | **Production Branch** | `develop` |
 | **Root Directory** | `frontend` |
+
+**Project → Settings → Build & Development Settings**
+
+| Setting | Value |
+|---------|--------|
+| Framework Preset | Vite (or auto-detected) |
 | **Build Command** | `npm run build` |
 | **Output Directory** | `dist` |
-| **Install Command** | `npm ci` (or default) |
+| **Install Command** | `npm install` or `npm ci` |
 
 Do **not** set Root Directory to `frontend/frontend`. With Root Directory = `frontend`, Vercel builds from that folder only.
 
 ### GitHub App permissions
 
-Under **Settings → Git** (or GitHub → Installed GitHub Apps → Vercel):
-
-- Vercel must have access to this repository.
-- If the repo was recently added to the org, confirm Vercel is allowed on that repo.
+GitHub → **Settings → Applications → Installed GitHub Apps → Vercel**: this repository must be allowed.
 
 ### Ignored Build Step
 
-If **Settings → Git → Ignored Build Step** is set, a matching command can skip automatic builds. For normal DEV flow it should be empty or not block `develop` pushes with `frontend/` changes.
+**Settings → Git → Ignored Build Step** — if set, it can skip automatic builds. For normal DEV flow it should not block pushes to `develop` that touch `frontend/`.
 
-Optional: enable **Wait for GitHub Actions** / required check **Develop quality gate** so Vercel does not build before CI passes.
+Optional: **Wait for GitHub Actions** / required check **Develop quality gate** so Vercel does not build before CI passes.
 
 ## Deploy flow
 
 ```text
-push to develop
-  → Develop quality gate (GitHub Actions): frontend-quality job
+push or merge to develop
+  → Develop quality gate (GitHub Actions): validation only
   → Vercel Git integration: Production deployment (automatic)
-  → DEV — Vercel frontend handoff (GitHub Actions): notice only, no CLI
 ```
 
-GitHub Actions **never** runs:
+GitHub Actions must **never** run:
 
-- `npx vercel pull`
-- `npx vercel build`
-- `npx vercel deploy`
+- `npx vercel pull` / `vercel pull`
+- `npx vercel build` / `vercel build`
+- `npx vercel deploy` / `vercel deploy`
 - `--prebuilt`
 
-Legacy CLI deploys caused `frontend/frontend does not exist`; that path is removed from CI.
+The recurring error `frontend/frontend does not exist` came from Vercel CLI in Actions combined with Root Directory `frontend`. Removing CLI from Actions removes that failure mode.
 
 ## If no deployment appears in Vercel after push to develop
 
-1. Push was to **`develop`** (not only `main`).
-2. **Develop quality gate** succeeded on that commit.
-3. Vercel → **Deployments**: new build for that commit SHA?
-4. Vercel → **Settings → Git**: connected repo, Production Branch = `develop`, Root Directory = `frontend`.
-5. **Ignored Build Step** not blocking the commit.
-6. GitHub App / Vercel installation has permission on this repo.
-7. Changes include files under `frontend/` (or a full rebuild is still expected for any `develop` push if not ignored).
+1. The commit is on **`develop`** (merged or pushed directly).
+2. **Develop quality gate** succeeded on that commit (quality only; Vercel does not wait on Actions unless you configured it).
+3. Vercel → **Deployments**: is there a build for that commit SHA?
+4. **Settings → Git**: correct repo, Production Branch = `develop`, Root Directory = `frontend`.
+5. **Ignored Build Step** is not blocking the commit.
+6. Vercel GitHub App has access to this repository.
+7. Push included changes under `frontend/` (or your Ignored Build Step still allows a build).
 
 Manual redeploy: Vercel → **Deployments** → **Redeploy** on the target commit.
 
-## GitHub workflow handoff (not a deploy)
+## If GitHub Actions still shows Vercel CLI in logs
 
-Workflow name: **DEV — Vercel frontend handoff**
+That is an **old workflow run** (before `.github/workflows/deploy-dev-vercel-frontend.yml` was removed), or a **Re-run jobs** on an old commit. Do not use **Re-run** on those runs.
 
-- Runs after **Develop quality gate** on successful **push** to **develop** only.
-- **`workflow_dispatch`**: informational reminder; does not deploy.
-- Does **not** re-run old jobs that used Vercel CLI.
+After the removal is merged to `develop`, validate locally:
 
-If Actions logs show `npx vercel pull`, `Deploying commit … to Vercel (production, remote build)…`, or `frontend/frontend`, that is an **old workflow run** (Re-run on a commit before the Git-integration migration). Do not use **Re-run jobs** on those runs.
+```bash
+grep -R "npx vercel" .github/workflows || true
+grep -R "vercel deploy" .github/workflows || true
+grep -R "vercel pull" .github/workflows || true
+grep -R "vercel build" .github/workflows || true
+```
 
-## Optional: Deploy Hook (no CLI)
+All commands should print nothing.
 
-**Settings → Git → Deploy Hooks** — trigger a build with `curl -X POST` to the hook URL without using Vercel CLI in Actions.
+## Legacy (archived, not used in CI)
 
-## Legacy: Vercel CLI from Actions (removed)
-
-Archived scripts (do not use in CI): [`deployment/archive/vercel-cli-gha-legacy/`](../../deployment/archive/vercel-cli-gha-legacy/README.md).
+CLI scripts that used to run from Actions: [`deployment/archive/vercel-cli-gha-legacy/`](../../deployment/archive/vercel-cli-gha-legacy/README.md).
 
 ## Related
 

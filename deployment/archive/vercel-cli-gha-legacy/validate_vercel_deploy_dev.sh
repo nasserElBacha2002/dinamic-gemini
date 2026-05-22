@@ -35,20 +35,16 @@ done
 echo "==> [1/4] Static checks (deploy script)"
 bash scripts/test_vercel_deploy_dev_static.sh
 
-echo "==> [2/4] Workflow wiring"
-WORKFLOW=".github/workflows/deploy-dev-vercel-frontend.yml"
-if ! grep -q 'bash scripts/vercel-deploy-dev-production.sh' "${WORKFLOW}"; then
-  echo "ERROR: ${WORKFLOW} must run scripts/vercel-deploy-dev-production.sh" >&2
+echo "==> [2/4] GitHub Actions (no Vercel deploy workflow)"
+if [ -f ".github/workflows/deploy-dev-vercel-frontend.yml" ]; then
+  echo "ERROR: deploy-dev-vercel-frontend.yml must be deleted; Vercel deploy is Git integration only" >&2
   exit 1
 fi
-if grep -qE 'npx vercel (pull|deploy)' "${WORKFLOW}"; then
-  echo "ERROR: ${WORKFLOW} must not call vercel CLI inline (use the script)" >&2
+if grep -RqE 'npx vercel (pull|build|deploy)|vercel deploy|vercel pull|vercel build' .github/workflows 2>/dev/null; then
+  echo "ERROR: .github/workflows must not contain Vercel CLI deploy commands" >&2
   exit 1
 fi
-if awk '/^  deploy:/{p=1} p && /^  [a-z]/ && !/^  deploy:/{p=0} p' "${WORKFLOW}" | grep -q 'working-directory: frontend'; then
-  echo "ERROR: deploy job must not set working-directory: frontend" >&2
-  exit 1
-fi
+echo "OK: no Vercel CLI in .github/workflows"
 echo "OK: workflow delegates to vercel-deploy-dev-production.sh"
 
 echo "==> [3/4] Dry-run path resolution (no Vercel API)"
