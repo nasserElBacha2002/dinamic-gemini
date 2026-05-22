@@ -139,6 +139,14 @@ def test_test_mode_excludes_deepseek() -> None:
     assert all(p["key"] != "deepseek" for p in payload["providers"])
 
 
+def test_deprecated_provider_error_message_matches_contract() -> None:
+    from src.pipeline.providers.definitions import deprecated_processing_provider_message
+
+    msg = deprecated_processing_provider_message("deepseek")
+    assert "deepseek" in msg
+    assert "deprecated" in msg.lower()
+
+
 def test_resolve_production_explicit_deepseek_raises_deprecated() -> None:
     s = _settings(deepseek_api_key="dk", openai_api_key="ok")
     with pytest.raises(DeprecatedProcessingProviderError):

@@ -35,7 +35,7 @@ describe('ResultSummaryCard traceability display', () => {
       </ThemeProvider>
     );
     expect(container.textContent).toMatch(/evidencia incorrecta|imagen no coincide|evidence issue|image mismatch/i);
-    expect(container.textContent).not.toMatch(/\bválida\b|\bvalid\b/i);
+    expect(container.textContent).not.toMatch(/\bválida\b|\bvalid\b|ID presente en imágenes analizadas/i);
     expect(container.textContent).toMatch(/confirmado|confirmed/i);
   });
 });

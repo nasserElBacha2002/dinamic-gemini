@@ -62,6 +62,47 @@ def test_schema_version_and_core_ids() -> None:
     assert snap["metadata_sources"]["prompt_composition"] is False
 
 
+def test_frames_sent_ids_persisted_in_run_audit_snapshot_from_prompt_composition() -> None:
+    comp: dict[str, Any] = {
+        "frames_sent_ids": ["img_001", "img_002"],
+        "prompt_listed_image_ids": ["img_001", "img_002"],
+    }
+    rm = build_run_metadata(None, None, prompt_composition=comp)
+    snap = build_run_audit_snapshot(
+        run_metadata=rm,
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        client_id=None,
+        client_supplier_id=None,
+        provider_name="gemini",
+        model_name=None,
+        supplier_prompt_resolution=None,
+        analysis_context_available=False,
+        created_at_iso="2026-05-11T12:00:00+00:00",
+    )
+    assert snap["frames_sent_ids"] == ["img_001", "img_002"]
+    assert snap["prompt_listed_image_ids"] == ["img_001", "img_002"]
+    assert snap["metadata_sources"]["prompt_composition"] is True
+
+
+def test_frames_sent_ids_empty_when_prompt_composition_missing() -> None:
+    rm = build_run_metadata(None, None)
+    snap = build_run_audit_snapshot(
+        run_metadata=rm,
+        inventory_id=None,
+        aisle_id=None,
+        client_id=None,
+        client_supplier_id=None,
+        provider_name=None,
+        model_name=None,
+        supplier_prompt_resolution=None,
+        analysis_context_available=False,
+        created_at_iso="2026-05-11T12:00:00+00:00",
+    )
+    assert snap["frames_sent_ids"] == []
+    assert snap["prompt_listed_image_ids"] == []
+
+
 def test_effective_prompt_fields_and_references_from_composition() -> None:
     comp: dict[str, Any] = {
         "model_name": "from-comp",

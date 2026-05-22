@@ -126,9 +126,10 @@ describe('ResultsTable image mismatch display', () => {
     );
     expect(container.textContent).toMatch(/imagen no coincide|image mismatch/i);
     expect(container.textContent).not.toMatch(/\bválida\b|\bvalid\b/i);
+    expect(container.textContent).not.toMatch(/ID presente en imágenes analizadas/i);
   });
 
-  it('confirmed row with valid traceability shows valid chip only', () => {
+  it('confirmed row with valid traceability shows sent-frame id chip only', () => {
     const t = i18n.t.bind(i18n);
     const traceCol = buildResultsTableColumns({
       t,
@@ -138,7 +139,8 @@ describe('ResultsTable image mismatch display', () => {
     const { container } = render(
       <ThemeProvider theme={theme}>{traceCol!.cell(confirmedRow())}</ThemeProvider>
     );
-    expect(container.textContent).toMatch(/\bválida\b|\bvalid\b/i);
+    expect(container.textContent).toMatch(/ID presente en imágenes analizadas/i);
+    expect(container.textContent).not.toMatch(/\bválida\b|\bvalid\b/i);
     expect(container.textContent).not.toMatch(/imagen no coincide|evidencia incorrecta|image mismatch/i);
   });
 
@@ -163,6 +165,7 @@ describe('ResultsTable image mismatch display', () => {
     );
     expect(screen.getAllByText(/confirmado|confirmed/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/imagen no coincide|image mismatch/i)).toBeInTheDocument();
-    expect(screen.getByText(/\bválida\b|\bvalid\b/i)).toBeInTheDocument();
+    expect(screen.getByText(/ID presente en imágenes analizadas/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Válida$/i)).not.toBeInTheDocument();
   });
 });

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.pipeline.providers.definitions import is_pipeline_provider_active
-
 
 def normalize_pipeline_provider_key(
     provider_name: str | None,
@@ -19,6 +17,8 @@ def normalize_pipeline_provider_key(
     **Phase 7:** ``settings`` stays ``Any`` so callers may pass full ``AppSettings``, partial test
     doubles, or ``MagicMock``; only ``llm_provider`` is read (via ``getattr`` with a string default).
     """
+    from src.pipeline.providers.definitions import is_pipeline_provider_active
+
     raw = (provider_name or "").strip().lower()
     if raw:
         return raw if is_pipeline_provider_active(raw) else "gemini"

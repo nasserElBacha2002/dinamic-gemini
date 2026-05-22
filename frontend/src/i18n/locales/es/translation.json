@@ -1990,9 +1990,9 @@
     "search_placeholder": "Buscar..."
   },
   "traceability": {
-    "invalid": "Inválida",
-    "missing": "Ausente",
-    "unvalidated": "Sin validar",
-    "valid": "Válida"
+    "invalid": "ID no coincide con imágenes analizadas",
+    "missing": "Sin ID de imagen",
+    "unvalidated": "No validado",
+    "valid": "ID presente en imágenes analizadas"
   }
 }

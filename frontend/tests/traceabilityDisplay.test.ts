@@ -22,3 +22,15 @@ describe('visibleTraceabilityToApiStatus', () => {
     expect(visibleTraceabilityToApiStatus('UNVALIDATED')).toBe('unvalidated');
   });
 });
+
+describe('traceability chip labels (i18n)', () => {
+  it('uses sent-frame id wording for valid status, not visual confirmation', async () => {
+    const { default: i18n } = await import('../src/i18n');
+    await i18n.changeLanguage('es');
+    expect(i18n.t('traceability.valid')).toBe('ID presente en imágenes analizadas');
+    expect(i18n.t('traceability.invalid')).toBe('ID no coincide con imágenes analizadas');
+    expect(i18n.t('traceability.missing')).toBe('Sin ID de imagen');
+    expect(i18n.t('traceability.unvalidated')).toBe('No validado');
+    expect(i18n.t('traceability.valid')).not.toMatch(/^Válida$/i);
+  });
+});

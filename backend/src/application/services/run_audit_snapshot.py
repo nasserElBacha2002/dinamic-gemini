@@ -28,6 +28,17 @@ def _strip(value: Any) -> str | None:
     return s or None
 
 
+def _string_id_list(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        s = _strip(item)
+        if s:
+            out.append(s)
+    return out
+
+
 def _append_warnings_unique(out: list[str], seen: set[str], raw: Any) -> None:
     if raw is None:
         return
@@ -147,6 +158,15 @@ def build_run_audit_snapshot(
     pk = _strip(run_metadata.get("prompt_key"))
     pv = _strip(run_metadata.get("prompt_version"))
 
+    frames_sent_ids = _string_id_list(
+        prompt_comp.get("frames_sent_ids") if prompt_comp else None
+    )
+    prompt_listed_image_ids = _string_id_list(
+        prompt_comp.get("prompt_listed_image_ids") if prompt_comp else None
+    )
+    if not prompt_listed_image_ids and frames_sent_ids:
+        prompt_listed_image_ids = list(frames_sent_ids)
+
     return {
         "schema_version": RUN_AUDIT_SNAPSHOT_SCHEMA_VERSION,
         "client_id": cid,
@@ -165,6 +185,8 @@ def build_run_audit_snapshot(
         "protected_prompt_contract_version": protected_v,
         "effective_prompt_hash": eff_hash,
         "prompt_composition_available": bool(prompt_comp),
+        "frames_sent_ids": frames_sent_ids,
+        "prompt_listed_image_ids": prompt_listed_image_ids,
         "reference_source": ref_src,
         "reference_image_count": ref_count,
         "reference_ids": ref_ids,
