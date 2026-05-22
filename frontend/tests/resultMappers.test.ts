@@ -80,6 +80,7 @@ describe('mapPositionSummaryToResultSummary', () => {
     const p: PositionSummary = {
       id: 'pos-1',
       aisle_id: 'aisle-1',
+      position_code: '',
       status: 'detected',
       confidence: 0.92,
       needs_review: true,
@@ -114,6 +115,7 @@ describe('mapPositionSummaryToResultSummary', () => {
     const p: PositionSummary = {
       id: 'pos-2',
       aisle_id: 'aisle-1',
+      position_code: '',
       status: 'reviewed',
       confidence: 1,
       needs_review: false,
@@ -133,6 +135,7 @@ describe('mapPositionSummaryToResultSummary', () => {
     const p: PositionSummary = {
       id: 'pos-img',
       aisle_id: 'aisle-1',
+      position_code: '',
       status: 'reviewed',
       confidence: 0.9,
       needs_review: false,
@@ -157,6 +160,7 @@ describe('mapPositionSummaryToResultSummary', () => {
     const p: PositionSummary = {
       id: 'pos-s2-blocks',
       aisle_id: 'aisle-1',
+      position_code: '',
       status: 'detected',
       confidence: 0.9,
       needs_review: false,
@@ -200,6 +204,7 @@ describe('mapPositionSummaryToResultSummary', () => {
     const p: PositionSummary = {
       id: 'pos-consolidated',
       aisle_id: 'aisle-1',
+      position_code: '',
       status: 'detected',
       confidence: 0.9,
       needs_review: false,
@@ -224,6 +229,7 @@ describe('mapPositionSummaryToResultSummary', () => {
     const p: PositionSummary = {
       id: 'pos-3',
       aisle_id: 'aisle-1',
+      position_code: '',
       status: 'detected',
       confidence: 0.8,
       needs_review: true,
@@ -242,6 +248,7 @@ describe('mapPositionSummaryToResultSummary', () => {
     const p = {
       id: 'pos-transitional',
       aisle_id: 'aisle-1',
+      position_code: '',
       status: 'detected',
       confidence: 0.8,
       needs_review: false,
@@ -314,7 +321,8 @@ describe('mapPositionDetailToResultDetail', () => {
       position: {
         id: 'pos-1',
         aisle_id: 'aisle-1',
-        status: 'detected',
+      position_code: '',
+      status: 'detected',
         confidence: 0.9,
         needs_review: true,
         primary_evidence_id: 'ev-1',
@@ -380,7 +388,8 @@ describe('mapPositionDetailToResultDetail', () => {
       position: {
         id: 'pos-job',
         aisle_id: 'aisle-1',
-        status: 'detected',
+      position_code: '',
+      status: 'detected',
         confidence: 0.9,
         needs_review: true,
         primary_evidence_id: null,
@@ -410,7 +419,8 @@ describe('mapPositionDetailToResultDetail', () => {
       position: {
         id: 'pos-legacy',
         aisle_id: 'aisle-1',
-        status: 'detected',
+      position_code: '',
+      status: 'detected',
         confidence: 0.9,
         needs_review: true,
         primary_evidence_id: null,
@@ -438,7 +448,8 @@ describe('mapPositionDetailToResultDetail', () => {
       position: {
         id: 'pos-canonical',
         aisle_id: 'aisle-1',
-        status: 'detected',
+      position_code: '',
+      status: 'detected',
         confidence: 0.9,
         needs_review: true,
         primary_evidence_id: 'ev-1',
@@ -473,7 +484,8 @@ describe('mapPositionDetailToResultDetail', () => {
       position: {
         id: 'pos-fallback',
         aisle_id: 'aisle-1',
-        status: 'detected',
+      position_code: '',
+      status: 'detected',
         confidence: 0.8,
         needs_review: false,
         primary_evidence_id: null,
@@ -504,7 +516,8 @@ describe('mapPositionDetailToResultDetail', () => {
       position: {
         id: 'pos-technical-snapshot',
         aisle_id: 'aisle-1',
-        status: 'detected',
+      position_code: '',
+      status: 'detected',
         confidence: 0.8,
         needs_review: false,
         primary_evidence_id: null,
@@ -537,7 +550,8 @@ describe('mapPositionDetailToResultDetail', () => {
       position: {
         id: 'pos-no-source',
         aisle_id: 'aisle-1',
-        status: 'detected',
+      position_code: '',
+      status: 'detected',
         confidence: 0.5,
         needs_review: true,
         primary_evidence_id: null,
@@ -569,7 +583,8 @@ describe('mapPositionDetailToResultDetail', () => {
       position: {
         id: 'pos-2',
         aisle_id: 'aisle-1',
-        status: 'reviewed',
+      position_code: '',
+      status: 'reviewed',
         confidence: 1,
         needs_review: false,
         created_at: '2024-01-01T00:00:00Z',
@@ -593,7 +608,8 @@ describe('mapPositionDetailToResultDetail', () => {
       position: {
         id: 'pos-historical',
         aisle_id: 'aisle-1',
-        status: 'detected',
+      position_code: '',
+      status: 'detected',
         confidence: 0.8,
         needs_review: false,
         created_at: '2024-01-01T00:00:00Z',
@@ -620,6 +636,7 @@ describe('mapPositionDetailToResultDetail', () => {
     const p: PositionSummary = {
       id: 'pos-canonical-false',
       aisle_id: 'aisle-1',
+      position_code: '',
       status: 'detected',
       confidence: 0.9,
       needs_review: true,

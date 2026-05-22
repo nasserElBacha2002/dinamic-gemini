@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.application.errors import (
+    DeprecatedProcessingProviderError,
     InvalidProcessingModelError,
     InvalidProcessingPromptKeyError,
     ProcessingProviderNotConfiguredError,
@@ -20,7 +21,10 @@ from src.llm.prompt_composer.hybrid_resolution import registered_hybrid_prompt_k
 from src.pipeline.provider_keys import normalize_pipeline_provider_key
 from src.pipeline.providers.definitions import (
     credential_configured,
+    deprecated_processing_provider_message,
+    is_pipeline_provider_active,
     pipeline_provider_spec,
+    registered_active_pipeline_provider_keys_from_definitions,
     registered_pipeline_provider_keys_from_definitions,
 )
 
@@ -45,10 +49,14 @@ def resolve_start_processing_request(
         provider_key = normalize_pipeline_provider_key(None, settings)
     else:
         provider_key = raw_p.lower()
-        known = registered_pipeline_provider_keys_from_definitions()
-        if provider_key not in known:
+        if not is_pipeline_provider_active(provider_key):
+            if provider_key in registered_pipeline_provider_keys_from_definitions():
+                raise DeprecatedProcessingProviderError(
+                    deprecated_processing_provider_message(provider_key)
+                )
+            known = sorted(registered_active_pipeline_provider_keys_from_definitions())
             raise UnknownProcessingProviderError(
-                f"Unknown processing provider {provider_key!r}. Known keys: {sorted(known)}"
+                f"Unknown processing provider {provider_key!r}. Known keys: {known}"
             )
         _ensure_explicit_provider_configured(provider_key, settings)
 

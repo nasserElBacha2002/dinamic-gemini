@@ -180,6 +180,10 @@ class UnknownProcessingProviderError(Exception):
     """Raised when the client requests a pipeline provider key that is not registered."""
 
 
+class DeprecatedProcessingProviderError(Exception):
+    """Raised when the client requests a registered but inactive (deprecated) pipeline provider."""
+
+
 class ProcessingProviderNotConfiguredError(Exception):
     """Raised when the client explicitly selects a provider that is missing required credentials."""
 

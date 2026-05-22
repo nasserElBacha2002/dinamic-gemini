@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import React from 'react';
+import { EMPTY_ANALYTICS_COST_SCOPE } from './helpers/fixtures';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -81,7 +81,7 @@ const observabilityData = {
 };
 
 const costSummaryData = {
-  scope: {},
+  scope: EMPTY_ANALYTICS_COST_SCOPE,
   totals: { jobs_total: 0, jobs_with_cost: 0, total_cost: 0 },
   by_provider_model: [],
   by_inventory: [],

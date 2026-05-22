@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from src.application.errors import (
+    DeprecatedProcessingProviderError,
     InvalidProcessingModelError,
     ProcessingProviderNotConfiguredError,
     UnknownProcessingProviderError,
@@ -130,6 +131,31 @@ def test_test_mode_exposes_all_catalog_models() -> None:
     payload = build_processing_provider_options_payload(s, mode="test")
     gemini = next(p for p in payload["providers"] if p["key"] == "gemini")
     assert [m["id"] for m in gemini["models"]] == ["gemini-a", "gemini-b"]
+
+
+def test_test_mode_excludes_deepseek() -> None:
+    s = _settings(deepseek_api_key="dk")
+    payload = build_processing_provider_options_payload(s, mode="test")
+    assert all(p["key"] != "deepseek" for p in payload["providers"])
+
+
+def test_deprecated_provider_error_message_matches_contract() -> None:
+    from src.pipeline.providers.definitions import deprecated_processing_provider_message
+
+    msg = deprecated_processing_provider_message("deepseek")
+    assert "deepseek" in msg
+    assert "deprecated" in msg.lower()
+
+
+def test_resolve_production_explicit_deepseek_raises_deprecated() -> None:
+    s = _settings(deepseek_api_key="dk", openai_api_key="ok")
+    with pytest.raises(DeprecatedProcessingProviderError):
+        resolve_production_processing_keys(
+            _inv(),
+            requested_provider_name="deepseek",
+            requested_model_name=None,
+            settings=s,
+        )
 
 
 def test_production_options_default_provider_openai() -> None:

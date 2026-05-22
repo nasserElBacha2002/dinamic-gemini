@@ -30,6 +30,7 @@ class PipelineProviderSpec:
     processing_models_settings_attr: str
     default_model_settings_attr: str
     default_model_fallback: str
+    is_active: bool = True
 
 
 PIPELINE_PROVIDER_SPECS: Final[tuple[PipelineProviderSpec, ...]] = (
@@ -67,14 +68,15 @@ PIPELINE_PROVIDER_SPECS: Final[tuple[PipelineProviderSpec, ...]] = (
         key="deepseek",
         label="DeepSeek",
         description=(
-            "OpenAI-compatible Chat Completions (text-only on hosted API; image-based aisle analysis "
-            "is disabled until multimodal is supported). DEEPSEEK_API_KEY required when explicitly selected."
+            "Legacy provider (deprecated). Retained for historical jobs and execution logs only; "
+            "not selectable for new aisle processing."
         ),
         credential_settings_attr="deepseek_api_key",
         credential_missing_message="DeepSeek is not configured (DEEPSEEK_API_KEY is missing).",
         processing_models_settings_attr="processing_deepseek_models",
         default_model_settings_attr="deepseek_model",
         default_model_fallback="deepseek-chat",
+        is_active=False,
     ),
 )
 
@@ -86,8 +88,26 @@ def pipeline_provider_spec(key: str) -> PipelineProviderSpec | None:
 
 
 def registered_pipeline_provider_keys_from_definitions() -> frozenset[str]:
-    """Keys accepted for explicit processing provider selection (must match registry)."""
+    """All registered pipeline provider keys (active + legacy; must match registry)."""
     return frozenset(_SPECS_BY_KEY.keys())
+
+
+def registered_active_pipeline_provider_keys_from_definitions() -> frozenset[str]:
+    """Keys selectable for new processing (API options, POST /process, supplier prompt configs)."""
+    return frozenset(s.key for s in PIPELINE_PROVIDER_SPECS if s.is_active)
+
+
+def is_pipeline_provider_active(key: str) -> bool:
+    spec = pipeline_provider_spec(key)
+    return spec is not None and spec.is_active
+
+
+def deprecated_processing_provider_message(key: str) -> str:
+    spec = pipeline_provider_spec(key)
+    label = spec.label if spec is not None else key
+    return (
+        f"Provider {key!r} ({label}) is deprecated and can no longer be used for new executions."
+    )
 
 
 def credential_configured(spec: PipelineProviderSpec, settings: Any) -> bool:

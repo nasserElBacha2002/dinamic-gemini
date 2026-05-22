@@ -1420,9 +1420,9 @@
     "search_placeholder": "Search placeholder"
   },
   "traceability": {
-    "invalid": "Invalid",
-    "missing": "Missing",
-    "unvalidated": "Unvalidated",
-    "valid": "Valid"
+    "invalid": "ID not in analyzed images",
+    "missing": "No image ID",
+    "unvalidated": "Not validated",
+    "valid": "ID present in analyzed images"
   }
 }

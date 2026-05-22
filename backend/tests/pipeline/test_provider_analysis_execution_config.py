@@ -90,3 +90,22 @@ def test_build_ordered_provider_keys_dedupes_and_skips_unknown() -> None:
     )
     keys = build_ordered_provider_keys(ctx, settings)
     assert keys == ["gemini", "openai"]
+
+
+def test_build_ordered_provider_keys_skips_deprecated_deepseek_extra() -> None:
+    settings = MagicMock()
+    settings.llm_provider = "gemini"
+    settings.pipeline_analysis_extra_provider_keys = ""
+    ctx = RunContext(
+        job_id="j",
+        run_id="r",
+        workspace_path=Path("/tmp"),
+        run_dir=Path("/tmp/r"),
+        job_input=MagicMock(),
+        settings=settings,
+        logger=MagicMock(),
+        pipeline_provider_name=None,
+        analysis_extra_provider_keys=("deepseek",),
+    )
+    keys = build_ordered_provider_keys(ctx, settings)
+    assert keys == ["gemini"]

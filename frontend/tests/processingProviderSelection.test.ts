@@ -49,4 +49,28 @@ describe('processingProviderSelection', () => {
     expect(modelKeyForProviderChange('openai', sampleOpts, 'test')).toBe('');
   });
 
+  it('does not expose deepseek in active provider keys from API payload', () => {
+    const withLegacy: ProcessingProviderOptionsResponse = {
+      ...sampleOpts,
+      providers: [
+        ...sampleOpts.providers,
+        {
+          key: 'deepseek',
+          label: 'DeepSeek',
+          execution_mode: 'native',
+          models: [{ id: 'ds-1', label: 'ds-1' }],
+          default_model: 'ds-1',
+        },
+      ],
+    };
+    const keys = withLegacy.providers.map((p) => p.key);
+    expect(keys).toContain('deepseek');
+    const activeOnly = keys.filter((k) => k !== 'deepseek');
+    expect(initialProcessingSelection(
+      { ...withLegacy, providers: withLegacy.providers.filter((p) => p.key !== 'deepseek') },
+      'production'
+    ).providerKey).not.toBe('deepseek');
+    expect(activeOnly).toEqual(['gemini', 'openai']);
+  });
+
 });

@@ -5,6 +5,7 @@ import {
 } from '../src/features/analytics-dashboard/adapters/analyticsDashboardViewModel';
 import { buildTopAislesAttention, SUMMARY_ATTENTION_TOP_N } from '../src/features/analytics-dashboard/adapters/analyticsChartDatasets';
 import i18n from '../src/i18n';
+import { EMPTY_ANALYTICS_COST_SCOPE } from './helpers/fixtures';
 
 const summary = {
   auto_acceptance_rate: 0.5,
@@ -17,6 +18,10 @@ const summary = {
   processed_positions_count: 16,
   reviewed_positions_count: 8,
   total_positions_in_scope: 20,
+  settling_actions_per_day: null,
+  period_day_count: 7,
+  settling_actions_count: 0,
+  positions_in_scope: 20,
   notes: [],
 };
 
@@ -35,7 +40,7 @@ const observability = {
 };
 
 const costSummary = {
-  scope: {},
+  scope: EMPTY_ANALYTICS_COST_SCOPE,
   totals: {
     total_cost: 24.82,
     total_counted_quantity: 100,
@@ -82,6 +87,7 @@ describe('hero executive KPIs', () => {
       corrected_count: 0,
       unidentified_product_count: 0,
       invalid_traceability_count: 0,
+      low_confidence_count: 0,
       most_common_issue: null,
     }));
     const top = buildTopAislesAttention(rows, SUMMARY_ATTENTION_TOP_N);

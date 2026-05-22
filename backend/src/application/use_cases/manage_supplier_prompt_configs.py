@@ -25,7 +25,12 @@ from src.application.ports.repositories import (
 )
 from src.application.services.processing_experiment_catalog import normalize_requested_model
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
-from src.pipeline.providers.definitions import registered_pipeline_provider_keys_from_definitions
+from src.pipeline.providers.definitions import (
+    deprecated_processing_provider_message,
+    is_pipeline_provider_active,
+    registered_active_pipeline_provider_keys_from_definitions,
+    registered_pipeline_provider_keys_from_definitions,
+)
 
 
 @dataclass
@@ -95,10 +100,14 @@ def _validate_provider_model_scope(
                 "provider_name is required when model_name is provided"
             )
         return
-    known = registered_pipeline_provider_keys_from_definitions()
-    if provider_name not in known:
+    if not is_pipeline_provider_active(provider_name):
+        if provider_name in registered_pipeline_provider_keys_from_definitions():
+            raise SupplierPromptConfigInvalidProviderError(
+                deprecated_processing_provider_message(provider_name)
+            )
+        known = sorted(registered_active_pipeline_provider_keys_from_definitions())
         raise SupplierPromptConfigInvalidProviderError(
-            f"Unknown provider_name {provider_name!r}. Known keys: {sorted(known)}"
+            f"Unknown provider_name {provider_name!r}. Known keys: {known}"
         )
     if model_name is None:
         return

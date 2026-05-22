@@ -45,13 +45,17 @@ export function resolveExecutionLogProviderKey(
 }
 
 /** Short brand label for section titles (proper nouns where applicable). */
-export function formatProviderBrandLabel(rawKey: string): string {
+export function formatProviderBrandLabel(rawKey: string, t?: TFunction): string {
   const k = rawKey.trim().toLowerCase();
   if (!k) return '';
   if (k === 'gemini') return 'Gemini';
   if (k === 'claude' || k === 'anthropic') return 'Claude';
   if (k === 'openai') return 'OpenAI';
-  if (k === 'deepseek') return 'DeepSeek';
+  if (k === 'deepseek') {
+    return t
+      ? t('execution_log.provider_deepseek_deprecated', { defaultValue: 'DeepSeek (deprecado)' })
+      : 'DeepSeek (deprecated)';
+  }
   if (k === 'azure_openai' || k === 'azure-openai') return 'Azure OpenAI';
   const spaced = rawKey.replace(/[_-]+/g, ' ').trim();
   if (!spaced) return '';
@@ -67,7 +71,7 @@ export function buildProviderRequestPaperTitle(
   requestCount: number
 ): string {
   const slug = resolveExecutionLogProviderKey(event, parsed);
-  const brand = formatProviderBrandLabel(slug);
+  const brand = formatProviderBrandLabel(slug, t);
   if (brand) {
     return requestCount > 1
       ? t('execution_log.provider_request_title_named_n', { name: brand, n: requestIndex + 1 })

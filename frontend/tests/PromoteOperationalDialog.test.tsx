@@ -2,7 +2,6 @@
  * Phase 6 — promote operational pointer (no automatic correction transfer).
  */
 
-import React from 'react';
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';

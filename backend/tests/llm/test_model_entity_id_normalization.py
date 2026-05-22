@@ -129,6 +129,21 @@ def test_openai_adapter_accepts_null_model_entity_id() -> None:
     assert out.usage.get("model_entity_id_repair_warnings")
 
 
+def test_repair_does_not_invent_business_fields() -> None:
+    data = {
+        "total_entities_detected": 1,
+        "entities": [_entity(model_entity_id=None)],
+    }
+    out, diagnostics = normalize_model_entity_ids(data)
+    ent = out["entities"][0]
+    assert ent["model_entity_id"] == "E1"
+    assert diagnostics and diagnostics[0].kind == "missing"
+    assert set(ent.keys()) <= {"entity_type", "confidence", "has_boxes", "model_entity_id"}
+    assert "source_image_id" not in ent
+    assert "internal_code" not in ent
+    assert "product_label_quantity" not in ent
+
+
 def test_openai_parse_validate_regression_null_mid() -> None:
     raw = json.dumps(
         {

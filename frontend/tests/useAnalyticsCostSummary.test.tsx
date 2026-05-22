@@ -2,9 +2,9 @@ import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import React from 'react';
 import { useAnalyticsCostSummary } from '../src/hooks/useAnalyticsCostSummary';
 import * as analyticsApi from '../src/api/analyticsApi';
+import { EMPTY_ANALYTICS_COST_SCOPE } from './helpers/fixtures';
 
 vi.mock('../src/api/analyticsApi', async () => {
   const actual = await vi.importActual<typeof import('../src/api/analyticsApi')>('../src/api/analyticsApi');
@@ -24,7 +24,7 @@ function wrapper({ children }: { children: React.ReactNode }) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetCostSummary.mockResolvedValue({
-    scope: {},
+    scope: EMPTY_ANALYTICS_COST_SCOPE,
     totals: { jobs_total: 1, jobs_with_cost: 1, jobs_without_cost: 0 } as never,
     by_provider_model: [],
     by_inventory: [],

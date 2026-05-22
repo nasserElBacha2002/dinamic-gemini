@@ -2,7 +2,6 @@
  * Deep link `/positions/:id` redirects to list views with openReviewDrawer state (single review UX).
  */
 
-import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { rankTopN } from '../src/features/analytics-dashboard/adapters/charting/sharedChartBuilders';
 import { buildAisleEntityKey } from '../src/features/analytics-dashboard/adapters/aisleEntityKeys';
 import { buildCostByAisleLookup } from '../src/features/analytics-dashboard/adapters/analyticsCostViewModel';
+import { EMPTY_ANALYTICS_COST_SCOPE } from './helpers/fixtures';
 
 describe('rankTopN', () => {
   it('excludes null and invalid values', () => {
@@ -48,7 +49,7 @@ describe('buildAisleEntityKey', () => {
     expect(keyA).not.toBe(keyB);
 
     const lookup = buildCostByAisleLookup({
-      scope: {},
+      scope: EMPTY_ANALYTICS_COST_SCOPE,
       totals: {} as never,
       by_provider_model: [],
       by_inventory: [],

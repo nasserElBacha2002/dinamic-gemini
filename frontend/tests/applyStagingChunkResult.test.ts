@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { applyStagingChunkResult } from '../src/features/ingestionSessions/hooks/useUploadCaptureItems';
+import {
+  applyStagingChunkResult,
+  type UploadQueueItem,
+} from '../src/features/ingestionSessions/hooks/useUploadCaptureItems';
 import type { UploadCaptureSessionItemsResponse } from '../src/types/captureSession';
 
 function makeFile(name: string, body: string): File {
@@ -9,7 +12,7 @@ function makeFile(name: string, body: string): File {
 describe('applyStagingChunkResult', () => {
   it('marks rows from structured errors and successful imported items', () => {
     const files = [makeFile('a.jpg', 'x'), makeFile('b.jpg', 'y'), makeFile('c.jpg', 'z')];
-    const queue = files.map((file, i) => ({
+    const queue: UploadQueueItem[] = files.map((file, i) => ({
       key: `k-${i}`,
       file,
       state: 'uploading' as const,
@@ -47,7 +50,9 @@ describe('applyStagingChunkResult', () => {
 
   it('marks failed when server returns import_failed row without validation error', () => {
     const files = [makeFile('a.jpg', 'x')];
-    const queue = [{ key: 'k0', file: files[0], state: 'uploading' as const, progressPct: 0 }];
+    const queue: UploadQueueItem[] = [
+      { key: 'k0', file: files[0], state: 'uploading', progressPct: 0 },
+    ];
     const result: UploadCaptureSessionItemsResponse = {
       items: [
         {
