@@ -25,7 +25,7 @@ After **Develop quality gate** succeeds on a push to `develop` (with `backend/**
 4. **Automatic DB migrations** — `backend/scripts/dev_deploy_db_migrate.sh`
 5. Poll `http://127.0.0.1:${BACKEND_HOST_PORT}/health` on the server
 
-Frontend DEV: [`.github/workflows/deploy-dev-vercel-frontend.yml`](../../.github/workflows/deploy-dev-vercel-frontend.yml).
+Frontend DEV (Vercel): [`DEV-VERCEL.md`](DEV-VERCEL.md) — deploy via Vercel Git integration, not GitHub Actions CLI.
 
 ## Automatic database migrations (DEV)
 

@@ -10,7 +10,7 @@
 #   visibly** (`should-deploy` exits 1) so the run is red and no SSH deploy runs.
 # - **PRs** and **manual** quality-gate runs: `should-deploy` exits 0 with `deploy=false` (no deploy).
 # - **workflow_dispatch** here: manual backend deploy still runs (does not depend on the gate).
-# - Frontend DEV (Vercel): see `deploy-dev-vercel-frontend.yml` — same gate contract.
+# - Frontend DEV (Vercel): Git integration on push to `develop` — see `docs/deployment/DEV-VERCEL.md`.
 #
 # Branching: feature → main → develop; automatic DEV deploy runs from develop only.
 # main is not production. Production will use a dedicated branch later.

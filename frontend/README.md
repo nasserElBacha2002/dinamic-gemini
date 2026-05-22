@@ -2,6 +2,8 @@
 
 React + Material UI frontend (TypeScript) for the v3 inventories and aisles API.
 
+**DEV deploy:** Vercel Git integration on branch `develop` (not Vercel CLI in GitHub Actions). See [`docs/deployment/DEV-VERCEL.md`](../docs/deployment/DEV-VERCEL.md).
+
 ## Setup
 
 ```bash
