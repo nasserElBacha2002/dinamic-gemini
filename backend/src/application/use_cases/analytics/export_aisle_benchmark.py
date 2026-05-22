@@ -32,10 +32,13 @@ from src.application.services.inventory_processing_mode import (
     require_test_inventory_for_experimental_features,
 )
 from src.application.services.position_sku_consolidation import consolidate_positions_by_sku
-from src.application.use_cases.benchmark_compare_support import CompareDiffRow, compare_csv_row_dict
-from src.application.use_cases.compare_aisle_runs import (
+from src.application.use_cases.analytics.compare_aisle_runs import (
     CompareAisleRunsCommand,
     CompareAisleRunsUseCase,
+)
+from src.application.use_cases.shared.benchmark_compare_support import (
+    CompareDiffRow,
+    compare_csv_row_dict,
 )
 from src.domain.positions.entities import PositionStatus
 

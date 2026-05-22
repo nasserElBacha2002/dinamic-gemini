@@ -20,13 +20,19 @@ from src.application.services.capture_staging_time_metadata import (
     PillowCaptureStagingTimeMetadataExtractor,
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.close_capture_session import CloseCaptureSessionUseCase
-from src.application.use_cases.compute_capture_session_assignment_preview import (
+from src.application.use_cases.capture_sessions.close_capture_session import (
+    CloseCaptureSessionUseCase,
+)
+from src.application.use_cases.capture_sessions.compute_capture_session_assignment_preview import (
     ComputeCaptureSessionAssignmentPreviewUseCase,
 )
-from src.application.use_cases.create_capture_session import CreateCaptureSessionUseCase
-from src.application.use_cases.materialize_capture_session import MaterializeCaptureSessionUseCase
-from src.application.use_cases.upload_capture_session_staging_items import (
+from src.application.use_cases.capture_sessions.create_capture_session import (
+    CreateCaptureSessionUseCase,
+)
+from src.application.use_cases.capture_sessions.materialize_capture_session import (
+    MaterializeCaptureSessionUseCase,
+)
+from src.application.use_cases.capture_sessions.upload_capture_session_staging_items import (
     UploadCaptureSessionStagingItemsUseCase,
 )
 from src.domain.capture.entities import CaptureSessionItemAssignmentStatus, CaptureSessionStatus

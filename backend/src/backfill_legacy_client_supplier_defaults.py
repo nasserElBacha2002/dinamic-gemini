@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sys
 
-from src.application.use_cases.backfill_legacy_client_supplier_defaults import (
+from src.application.use_cases.suppliers.backfill_legacy_client_supplier_defaults import (
     BackfillLegacyClientSupplierDefaultsUseCase,
 )
 from src.runtime.v3_deps import (

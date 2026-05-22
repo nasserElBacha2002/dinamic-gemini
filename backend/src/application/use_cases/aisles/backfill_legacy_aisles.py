@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from src.application.ports.repositories import AisleRepository, InventoryRepository
-from src.application.use_cases.recompute_consolidated_counts import (
+from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
     RecomputeConsolidatedCountsResult,
     RecomputeConsolidatedCountsUseCase,

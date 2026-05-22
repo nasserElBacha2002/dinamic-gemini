@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 import pytest
 
 from src.application.ports.repositories import AisleRepository, InventoryRepository
-from src.application.use_cases.create_aisle import InventoryNotFoundError
-from src.application.use_cases.list_aisles_by_inventory import ListAislesByInventoryUseCase
+from src.application.use_cases.aisles.create_aisle import InventoryNotFoundError
+from src.application.use_cases.aisles.list_aisles_by_inventory import ListAislesByInventoryUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.list_aisle_positions import (
+from src.application.use_cases.positions.list_aisle_positions import (
     ListAislePositionsCommand,
     ListAislePositionsUseCase,
 )

@@ -47,7 +47,7 @@ from src.application.services.analytics_cost_summary_service import (
     resolve_cost_summary_time_range,
 )
 from src.application.services.analytics_query_service import AnalyticsQueryService
-from src.application.use_cases.compare_aisle_runs import (
+from src.application.use_cases.analytics.compare_aisle_runs import (
     CompareAisleRunsCommand,
     CompareAisleRunsUseCase,
 )

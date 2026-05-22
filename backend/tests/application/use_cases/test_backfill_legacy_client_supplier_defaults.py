@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.application.use_cases.backfill_legacy_client_supplier_defaults import (
+from src.application.use_cases.suppliers.backfill_legacy_client_supplier_defaults import (
     LEGACY_DEFAULT_CLIENT_NAME,
     LEGACY_DEFAULT_SUPPLIER_NAME,
     BackfillLegacyClientSupplierDefaultsUseCase,

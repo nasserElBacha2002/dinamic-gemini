@@ -42,7 +42,7 @@ from src.application.services.run_auditability_execution_log import (
     ANALYSIS_STAGE,
 )
 from src.application.services.run_auditability_service import RunAuditabilityService
-from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
+from src.application.use_cases.aisles.resolve_aisle_job_for_inventory_read import (
     ResolveAisleJobForInventoryReadUseCase,
 )
 from src.auth.dependencies import get_current_admin

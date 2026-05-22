@@ -9,7 +9,7 @@ from src.application.errors import (
 )
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
-from src.application.use_cases.recompute_consolidated_counts import (
+from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
     RecomputeConsolidatedCountsResult,
     RecomputeConsolidatedCountsUseCase,

@@ -17,7 +17,7 @@ from src.application.ports.repositories import (
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import ArtifactStorage
-from src.application.use_cases.manage_supplier_reference_images import (
+from src.application.use_cases.suppliers.manage_supplier_reference_images import (
     DeleteSupplierReferenceImageUseCase,
 )
 from src.domain.client.entities import Client, ClientStatus

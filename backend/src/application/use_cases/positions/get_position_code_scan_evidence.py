@@ -11,7 +11,7 @@ from src.application.ports.repositories import (
     InventoryRepository,
     PositionRepository,
 )
-from src.application.use_cases.review_validation import resolve_position
+from src.application.use_cases.shared.review_validation import resolve_position
 from src.domain.code_scans.entities import CodeScanDetection, CodeScanRun
 
 

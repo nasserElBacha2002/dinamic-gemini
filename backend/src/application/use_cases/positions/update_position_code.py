@@ -1,8 +1,7 @@
 """
-MarkPositionImageMismatch use case — traceability-only review outcome.
+UpdatePositionCode use case — v3.4 (Sprint 4.5).
 
-Flags that the row's visual evidence / image association is wrong without changing SKU, quantity,
-or deleting the position. Distinct from mark_unknown and product corrections.
+Corrects the effective position_code for a position; sets position to corrected and records ReviewAction.
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ from src.application.ports.repositories import (
     ReviewActionRepository,
 )
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
-from src.application.use_cases.review_validation import (
+from src.application.use_cases.shared.review_validation import (
     ensure_position_not_deleted,
     ensure_review_job_matches_position,
     resolve_position,
@@ -27,7 +26,7 @@ from src.domain.positions.entities import PositionReviewResolution, PositionStat
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 
 
-class MarkPositionImageMismatchUseCase:
+class UpdatePositionCodeUseCase:
     def __init__(
         self,
         inventory_repo: InventoryRepository,
@@ -50,6 +49,7 @@ class MarkPositionImageMismatchUseCase:
         aisle_id: str,
         position_id: str,
         job_id: str | None,
+        position_code: str,
     ) -> None:
         position = resolve_position(
             self._inventory_repo,
@@ -61,28 +61,36 @@ class MarkPositionImageMismatchUseCase:
         )
         ensure_position_not_deleted(position)
         ensure_review_job_matches_position(job_id, position)
+
+        new_code = (position_code or "").strip()
+        if not new_code:
+            raise ValueError("position_code is required")
+
         now = self._clock.now()
-        before_status = position.status.value
+        before_code = position.corrected_position_code
         before_resolution = (
             position.review_resolution.value if position.review_resolution is not None else None
         )
-        position.status = PositionStatus.REVIEWED
-        position.review_resolution = PositionReviewResolution.IMAGE_MISMATCH
+
+        position.corrected_position_code = new_code
+        position.status = PositionStatus.CORRECTED
+        position.review_resolution = PositionReviewResolution.POSITION_CODE_CORRECTED
         position.needs_review = False
         position.updated_at = now
+
         self._position_repo.save(position)
 
         review = ReviewAction(
             id=str(uuid.uuid4()),
             position_id=position_id,
-            action_type=ReviewActionType.MARK_IMAGE_MISMATCH,
+            action_type=ReviewActionType.UPDATE_POSITION_CODE,
             before_json={
-                "status": before_status,
+                "corrected_position_code": before_code,
                 "review_resolution": before_resolution,
             },
             after_json={
-                "status": PositionStatus.REVIEWED.value,
-                "review_resolution": PositionReviewResolution.IMAGE_MISMATCH.value,
+                "corrected_position_code": new_code,
+                "review_resolution": PositionReviewResolution.POSITION_CODE_CORRECTED.value,
             },
             created_at=now,
             job_id=storage_job_id_for_review_audit(position),

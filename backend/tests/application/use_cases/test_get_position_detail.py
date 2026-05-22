@@ -7,7 +7,7 @@ import pytest
 
 from src.application.errors import PositionResultContextMismatchError
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
+from src.application.use_cases.positions.get_position_detail import GetPositionDetailUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.inventory.entities import Inventory, InventoryStatus

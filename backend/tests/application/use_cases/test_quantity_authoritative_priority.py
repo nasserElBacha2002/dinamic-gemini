@@ -6,11 +6,11 @@ from pathlib import Path
 
 from src.application.services.final_count_builder import FinalCountBuilder
 from src.application.services.label_normalization import LabelNormalizationService
-from src.application.use_cases.persist_aisle_result import (
+from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
 )
-from src.application.use_cases.recompute_consolidated_counts import (
+from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
     RecomputeConsolidatedCountsUseCase,
 )

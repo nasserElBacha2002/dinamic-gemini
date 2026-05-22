@@ -21,8 +21,8 @@ from src.application.ports.repositories import (
     SourceAssetRepository,
 )
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.create_aisle import InventoryNotFoundError
-from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
+from src.application.use_cases.aisles.create_aisle import InventoryNotFoundError
+from src.application.use_cases.aisles.list_aisles_with_status import ListAislesWithStatusUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset
 from src.domain.inventory.entities import Inventory, InventoryStatus

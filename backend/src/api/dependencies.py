@@ -50,88 +50,96 @@ from src.application.services.operational_execution_config_resolver import (
     OperationalExecutionConfigResolver,
 )
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.cancel_aisle_job import CancelAisleJobUseCase
-from src.application.use_cases.compare_aisle_runs import CompareAisleRunsUseCase
-from src.application.use_cases.compare_many_aisle_runs import CompareManyAisleRunsUseCase
-from src.application.use_cases.confirm_position import ConfirmPositionUseCase
-from src.application.use_cases.create_aisle import CreateAisleUseCase
-from src.application.use_cases.create_client import CreateClientUseCase
-from src.application.use_cases.create_client_supplier import CreateClientSupplierUseCase
-from src.application.use_cases.create_inventory import CreateInventoryUseCase
-from src.application.use_cases.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
-from src.application.use_cases.delete_position import DeletePositionUseCase
-from src.application.use_cases.export_aisle_benchmark import (
+from src.application.use_cases.aisles.cancel_aisle_job import CancelAisleJobUseCase
+from src.application.use_cases.aisles.create_aisle import CreateAisleUseCase
+from src.application.use_cases.aisles.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
+from src.application.use_cases.aisles.get_aisle_merge_results import (
+    GetAisleMergeResultsUseCase,
+)
+from src.application.use_cases.aisles.get_aisle_processing_status import (
+    GetAisleProcessingStatusUseCase,
+)
+from src.application.use_cases.aisles.list_aisle_assets import ListAisleAssetsUseCase
+from src.application.use_cases.aisles.list_aisle_jobs import ListAisleJobsUseCase
+from src.application.use_cases.aisles.list_aisles_by_inventory import ListAislesByInventoryUseCase
+from src.application.use_cases.aisles.list_aisles_with_status import ListAislesWithStatusUseCase
+from src.application.use_cases.aisles.promote_aisle_operational_job import (
+    PromoteAisleOperationalJobUseCase,
+)
+from src.application.use_cases.aisles.resolve_aisle_job_for_inventory_read import (
+    ResolveAisleJobForInventoryReadUseCase,
+)
+from src.application.use_cases.aisles.retry_aisle_job import RetryAisleJobUseCase
+from src.application.use_cases.aisles.run_aisle_merge import RunAisleMergeUseCase
+from src.application.use_cases.aisles.start_aisle_processing import StartAisleProcessingUseCase
+from src.application.use_cases.aisles.upload_aisle_assets import UploadAisleAssetsUseCase
+from src.application.use_cases.analytics.compare_aisle_runs import CompareAisleRunsUseCase
+from src.application.use_cases.analytics.compare_many_aisle_runs import CompareManyAisleRunsUseCase
+from src.application.use_cases.analytics.export_aisle_benchmark import (
     ExportAisleBenchmarkCompareCsvUseCase,
     ExportAisleBenchmarkRunCsvUseCase,
 )
-from src.application.use_cases.export_aisle_code_scans import ExportAisleCodeScansUseCase
-from src.application.use_cases.export_inventory_business import (
+from src.application.use_cases.clients.create_client import CreateClientUseCase
+from src.application.use_cases.clients.get_client import GetClientUseCase
+from src.application.use_cases.clients.list_clients import ListClientsUseCase
+from src.application.use_cases.code_scans.export_aisle_code_scans import ExportAisleCodeScansUseCase
+from src.application.use_cases.code_scans.get_aisle_code_scan_review_signals import (
+    GetAisleCodeScanReviewSignalsUseCase,
+)
+from src.application.use_cases.code_scans.list_aisle_code_scans import ListAisleCodeScansUseCase
+from src.application.use_cases.code_scans.match_aisle_code_scan_detections import (
+    MatchAisleCodeScanDetectionsUseCase,
+)
+from src.application.use_cases.code_scans.run_aisle_code_scan import RunAisleCodeScanUseCase
+from src.application.use_cases.code_scans.summarize_aisle_code_scans import (
+    SummarizeAisleCodeScansUseCase,
+)
+from src.application.use_cases.inventories.create_inventory import CreateInventoryUseCase
+from src.application.use_cases.inventories.export_inventory_business import (
     ExportAisleBusinessCsvUseCase,
     ExportInventoryPackageZipUseCase,
     ExportInventorySummaryCsvUseCase,
 )
-from src.application.use_cases.export_inventory_results import (
+from src.application.use_cases.inventories.export_inventory_results import (
     ExportAisleResultsCsvUseCase,
     ExportInventoryResultsUseCase,
 )
-from src.application.use_cases.get_aisle_code_scan_review_signals import (
-    GetAisleCodeScanReviewSignalsUseCase,
+from src.application.use_cases.inventories.get_inventory import GetInventoryUseCase
+from src.application.use_cases.inventories.get_inventory_metrics import GetInventoryMetricsUseCase
+from src.application.use_cases.inventories.list_inventories import ListInventoriesUseCase
+from src.application.use_cases.inventories.list_inventory_list_items import (
+    ListInventoryListItemsUseCase,
 )
-from src.application.use_cases.get_aisle_merge_results import (
-    GetAisleMergeResultsUseCase,
-)
-from src.application.use_cases.get_aisle_processing_status import GetAisleProcessingStatusUseCase
-from src.application.use_cases.get_client import GetClientUseCase
-from src.application.use_cases.get_client_supplier import GetClientSupplierUseCase
-from src.application.use_cases.get_inventory import GetInventoryUseCase
-from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
-from src.application.use_cases.get_position_code_scan_evidence import (
+from src.application.use_cases.positions.confirm_position import ConfirmPositionUseCase
+from src.application.use_cases.positions.delete_position import DeletePositionUseCase
+from src.application.use_cases.positions.get_position_code_scan_evidence import (
     GetPositionCodeScanEvidenceUseCase,
 )
-from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
-from src.application.use_cases.list_aisle_assets import ListAisleAssetsUseCase
-from src.application.use_cases.list_aisle_code_scans import ListAisleCodeScansUseCase
-from src.application.use_cases.list_aisle_jobs import ListAisleJobsUseCase
-from src.application.use_cases.list_aisle_positions import ListAislePositionsUseCase
-from src.application.use_cases.list_aisles_by_inventory import ListAislesByInventoryUseCase
-from src.application.use_cases.list_aisles_with_status import ListAislesWithStatusUseCase
-from src.application.use_cases.list_client_suppliers import ListClientSuppliersUseCase
-from src.application.use_cases.list_clients import ListClientsUseCase
-from src.application.use_cases.list_inventories import ListInventoriesUseCase
-from src.application.use_cases.list_inventory_list_items import ListInventoryListItemsUseCase
-from src.application.use_cases.list_review_queue import ListReviewQueueUseCase
-from src.application.use_cases.manage_supplier_prompt_configs import (
+from src.application.use_cases.positions.get_position_detail import GetPositionDetailUseCase
+from src.application.use_cases.positions.list_aisle_positions import ListAislePositionsUseCase
+from src.application.use_cases.positions.list_review_queue import ListReviewQueueUseCase
+from src.application.use_cases.positions.mark_position_image_mismatch import (
+    MarkPositionImageMismatchUseCase,
+)
+from src.application.use_cases.positions.mark_position_unknown import MarkPositionUnknownUseCase
+from src.application.use_cases.positions.update_position_code import UpdatePositionCodeUseCase
+from src.application.use_cases.positions.update_product_quantity import UpdateProductQuantityUseCase
+from src.application.use_cases.positions.update_product_sku import UpdateProductSkuUseCase
+from src.application.use_cases.suppliers.create_client_supplier import CreateClientSupplierUseCase
+from src.application.use_cases.suppliers.get_client_supplier import GetClientSupplierUseCase
+from src.application.use_cases.suppliers.list_client_suppliers import ListClientSuppliersUseCase
+from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
     ActivateSupplierPromptConfigVersionUseCase,
     CreateSupplierPromptConfigVersionUseCase,
     GetActiveSupplierPromptConfigUseCase,
     GetSupplierPromptConfigUseCase,
     ListSupplierPromptConfigsUseCase,
 )
-from src.application.use_cases.manage_supplier_reference_images import (
+from src.application.use_cases.suppliers.manage_supplier_reference_images import (
     DeleteSupplierReferenceImageUseCase,
     GetSupplierReferenceImageUseCase,
 )
-from src.application.use_cases.mark_position_image_mismatch import MarkPositionImageMismatchUseCase
-from src.application.use_cases.mark_position_unknown import MarkPositionUnknownUseCase
-from src.application.use_cases.match_aisle_code_scan_detections import (
-    MatchAisleCodeScanDetectionsUseCase,
-)
-from src.application.use_cases.promote_aisle_operational_job import (
-    PromoteAisleOperationalJobUseCase,
-)
-from src.application.use_cases.resolve_aisle_job_for_inventory_read import (
-    ResolveAisleJobForInventoryReadUseCase,
-)
-from src.application.use_cases.retry_aisle_job import RetryAisleJobUseCase
-from src.application.use_cases.run_aisle_code_scan import RunAisleCodeScanUseCase
-from src.application.use_cases.run_aisle_merge import RunAisleMergeUseCase
-from src.application.use_cases.start_aisle_processing import StartAisleProcessingUseCase
-from src.application.use_cases.summarize_aisle_code_scans import SummarizeAisleCodeScansUseCase
-from src.application.use_cases.update_position_code import UpdatePositionCodeUseCase
-from src.application.use_cases.update_product_quantity import UpdateProductQuantityUseCase
-from src.application.use_cases.update_product_sku import UpdateProductSkuUseCase
-from src.application.use_cases.upload_aisle_assets import UploadAisleAssetsUseCase
-from src.application.use_cases.upload_supplier_reference_images import (
+from src.application.use_cases.suppliers.upload_supplier_reference_images import (
     ListSupplierReferenceImagesUseCase,
     UploadSupplierReferenceImagesUseCase,
 )
@@ -1227,7 +1235,9 @@ def get_create_capture_session_use_case(
     session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
     clock: Clock = Depends(get_clock),
 ):
-    from src.application.use_cases.create_capture_session import CreateCaptureSessionUseCase
+    from src.application.use_cases.capture_sessions.create_capture_session import (
+        CreateCaptureSessionUseCase,
+    )
     from src.config import load_settings
 
     s = load_settings()
@@ -1245,7 +1255,9 @@ def get_close_capture_session_use_case(
     item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
     clock: Clock = Depends(get_clock),
 ):
-    from src.application.use_cases.close_capture_session import CloseCaptureSessionUseCase
+    from src.application.use_cases.capture_sessions.close_capture_session import (
+        CloseCaptureSessionUseCase,
+    )
 
     return CloseCaptureSessionUseCase(session_repo=session_repo, item_repo=item_repo, clock=clock)
 
@@ -1256,7 +1268,9 @@ def get_cancel_capture_session_use_case(
     artifact_storage=Depends(get_artifact_storage),
     clock: Clock = Depends(get_clock),
 ):
-    from src.application.use_cases.cancel_capture_session import CancelCaptureSessionUseCase
+    from src.application.use_cases.capture_sessions.cancel_capture_session import (
+        CancelCaptureSessionUseCase,
+    )
 
     return CancelCaptureSessionUseCase(
         session_repo=session_repo,
@@ -1270,7 +1284,9 @@ def get_list_capture_sessions_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
 ):
-    from src.application.use_cases.list_capture_sessions import ListCaptureSessionsUseCase
+    from src.application.use_cases.capture_sessions.list_capture_sessions import (
+        ListCaptureSessionsUseCase,
+    )
     from src.config import load_settings
 
     s = load_settings()
@@ -1287,7 +1303,9 @@ def get_get_capture_session_detail_use_case(
     session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
     item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
 ):
-    from src.application.use_cases.get_capture_session_detail import GetCaptureSessionDetailUseCase
+    from src.application.use_cases.capture_sessions.get_capture_session_detail import (
+        GetCaptureSessionDetailUseCase,
+    )
 
     return GetCaptureSessionDetailUseCase(
         inventory_repo=inventory_repo,
@@ -1317,7 +1335,7 @@ def get_upload_capture_session_staging_items_use_case(
     clock: Clock = Depends(get_clock),
     time_metadata_extractor=Depends(get_capture_staging_time_metadata_extractor),
 ):
-    from src.application.use_cases.upload_capture_session_staging_items import (
+    from src.application.use_cases.capture_sessions.upload_capture_session_staging_items import (
         UploadCaptureSessionStagingItemsUseCase,
     )
     from src.config import load_settings
@@ -1340,7 +1358,7 @@ def get_update_capture_session_clock_offset_use_case(
     item_repo: CaptureSessionItemRepository = Depends(get_capture_session_item_repo),
     clock: Clock = Depends(get_clock),
 ):
-    from src.application.use_cases.update_capture_session_clock_offset import (
+    from src.application.use_cases.capture_sessions.update_capture_session_clock_offset import (
         UpdateCaptureSessionClockOffsetUseCase,
     )
     from src.config import load_settings
@@ -1361,7 +1379,7 @@ def get_compute_capture_session_assignment_preview_use_case(
     position_repo: PositionRepository = Depends(get_position_repo),
     clock: Clock = Depends(get_clock),
 ):
-    from src.application.use_cases.compute_capture_session_assignment_preview import (
+    from src.application.use_cases.capture_sessions.compute_capture_session_assignment_preview import (
         ComputeCaptureSessionAssignmentPreviewUseCase,
     )
     from src.config import load_settings
@@ -1382,7 +1400,7 @@ def get_compute_capture_session_groups_use_case(
     group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
     clock: Clock = Depends(get_clock),
 ):
-    from src.application.use_cases.compute_capture_session_groups import (
+    from src.application.use_cases.capture_sessions.compute_capture_session_groups import (
         ComputeCaptureSessionGroupsUseCase,
     )
     from src.config import load_settings
@@ -1401,7 +1419,9 @@ def get_get_capture_session_groups_use_case(
     session_repo: CaptureSessionRepository = Depends(get_capture_session_repo),
     group_repo: CaptureSessionGroupRepository = Depends(get_capture_session_group_repo),
 ):
-    from src.application.use_cases.get_capture_session_groups import GetCaptureSessionGroupsUseCase
+    from src.application.use_cases.capture_sessions.get_capture_session_groups import (
+        GetCaptureSessionGroupsUseCase,
+    )
 
     return GetCaptureSessionGroupsUseCase(session_repo=session_repo, group_repo=group_repo)
 
@@ -1412,7 +1432,7 @@ def get_assign_capture_session_group_to_existing_aisle_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     clock: Clock = Depends(get_clock),
 ):
-    from src.application.use_cases.assign_capture_session_group_to_existing_aisle import (
+    from src.application.use_cases.capture_sessions.assign_capture_session_group_to_existing_aisle import (
         AssignCaptureSessionGroupToExistingAisleUseCase,
     )
 
@@ -1430,7 +1450,7 @@ def get_create_aisle_and_assign_capture_session_group_use_case(
     create_aisle: CreateAisleUseCase = Depends(get_create_aisle_use_case),
     clock: Clock = Depends(get_clock),
 ):
-    from src.application.use_cases.create_aisle_and_assign_capture_session_group import (
+    from src.application.use_cases.capture_sessions.create_aisle_and_assign_capture_session_group import (
         CreateAisleAndAssignCaptureSessionGroupUseCase,
     )
 
@@ -1449,7 +1469,7 @@ def get_compute_materialized_capture_session_group_preview_use_case(
     position_repo: PositionRepository = Depends(get_position_repo),
     asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
 ):
-    from src.application.use_cases.compute_materialized_capture_session_group_preview import (
+    from src.application.use_cases.capture_sessions.compute_materialized_capture_session_group_preview import (
         ComputeMaterializedCaptureSessionGroupPreviewUseCase,
     )
     from src.config import load_settings
@@ -1475,7 +1495,7 @@ def get_materialize_capture_session_group_use_case(
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
     clock: Clock = Depends(get_clock),
 ):
-    from src.application.use_cases.materialize_capture_session_group import (
+    from src.application.use_cases.capture_sessions.materialize_capture_session_group import (
         MaterializeCaptureSessionGroupUseCase,
     )
 
@@ -1503,7 +1523,7 @@ def get_materialize_capture_session_use_case(
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
     clock: Clock = Depends(get_clock),
 ):
-    from src.application.use_cases.materialize_capture_session import (
+    from src.application.use_cases.capture_sessions.materialize_capture_session import (
         MaterializeCaptureSessionUseCase,
     )
 

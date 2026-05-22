@@ -6,14 +6,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.get_position_detail import GetPositionDetailUseCase
-from src.application.use_cases.list_aisle_positions import (
-    ListAislePositionsCommand,
-    ListAislePositionsUseCase,
-)
-from src.application.use_cases.persist_aisle_result import (
+from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
+)
+from src.application.use_cases.positions.get_position_detail import GetPositionDetailUseCase
+from src.application.use_cases.positions.list_aisle_positions import (
+    ListAislePositionsCommand,
+    ListAislePositionsUseCase,
 )
 from src.decision.count_status import assign_count_status
 from src.domain.aisle.entities import Aisle, AisleStatus

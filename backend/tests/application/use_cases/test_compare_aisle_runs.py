@@ -14,7 +14,7 @@ from src.application.errors import (
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
 )
-from src.application.use_cases.compare_aisle_runs import (
+from src.application.use_cases.analytics.compare_aisle_runs import (
     CompareAisleRunsCommand,
     CompareAisleRunsUseCase,
 )

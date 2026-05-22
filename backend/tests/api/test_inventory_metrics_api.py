@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from src.api.dependencies import get_get_inventory_metrics_use_case, get_inventory_repo
 from src.api.server import app
-from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
+from src.application.use_cases.inventories.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus

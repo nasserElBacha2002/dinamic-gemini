@@ -50,7 +50,9 @@ from src.application.services.observability_metrics_service import (
     _provider_model_for_job,
     resolve_metrics_time_range,
 )
-from src.application.use_cases.benchmark_compare_support import job_execution_duration_seconds
+from src.application.use_cases.shared.benchmark_compare_support import (
+    job_execution_duration_seconds,
+)
 from src.domain.jobs.entities import Job, JobStatus
 
 logger = logging.getLogger(__name__)

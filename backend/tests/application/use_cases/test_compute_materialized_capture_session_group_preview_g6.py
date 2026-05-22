@@ -14,12 +14,12 @@ from src.application.errors import (
     CaptureSessionGroupNotMaterializedForPreviewError,
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.compute_materialized_capture_session_group_preview import (
+from src.application.use_cases.capture_sessions.compute_materialized_capture_session_group_preview import (
     ComputeMaterializedCaptureSessionGroupPreviewUseCase,
     _classify_g6_preview_status,
     _G6PreviewStatusInputs,
 )
-from src.application.use_cases.materialize_capture_session_group import (
+from src.application.use_cases.capture_sessions.materialize_capture_session_group import (
     MaterializeCaptureSessionGroupUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus

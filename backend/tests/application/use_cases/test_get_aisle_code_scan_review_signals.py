@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from src.application.use_cases.get_aisle_code_scan_review_signals import (
+from src.application.use_cases.code_scans.get_aisle_code_scan_review_signals import (
     GetAisleCodeScanReviewSignalsCommand,
     GetAisleCodeScanReviewSignalsUseCase,
 )

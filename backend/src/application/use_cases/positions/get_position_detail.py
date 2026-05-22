@@ -28,7 +28,7 @@ from src.application.ports.repositories import (
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.position_sku_consolidation import consolidate_positions_by_sku
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.review_validation import resolve_position
+from src.application.use_cases.shared.review_validation import resolve_position
 from src.domain.evidence.entities import Evidence
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord

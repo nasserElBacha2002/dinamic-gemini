@@ -11,7 +11,7 @@ from src.application.errors import InventoryNotFoundError
 from src.application.ports.contracts import InventoryMetricsResult
 from src.application.ports.repositories import InventoryRepository
 from src.application.ports.services import MetricsCalculator
-from src.application.use_cases.get_inventory_metrics import GetInventoryMetricsUseCase
+from src.application.use_cases.inventories.get_inventory_metrics import GetInventoryMetricsUseCase
 from src.domain.inventory.entities import Inventory, InventoryStatus
 
 

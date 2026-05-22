@@ -13,7 +13,7 @@ from PIL import Image
 from src.application.errors import CaptureSessionGroupNotAssignedForMaterializationError
 from src.application.ports.clock import Clock
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.materialize_capture_session_group import (
+from src.application.use_cases.capture_sessions.materialize_capture_session_group import (
     MaterializeCaptureSessionGroupUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus

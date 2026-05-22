@@ -42,7 +42,7 @@ from src.application.services.capture_flow_observability import (
 )
 from src.application.services.capture_group_item_integrity import validate_group_items_coherent
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.capture_session_group_assignment_guard import (
+from src.application.use_cases.shared.capture_session_group_assignment_guard import (
     ensure_group_aisle_assignment_allowed,
 )
 from src.domain.capture.entities import (

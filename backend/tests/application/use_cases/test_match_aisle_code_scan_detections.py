@@ -11,7 +11,7 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
 )
-from src.application.use_cases.match_aisle_code_scan_detections import (
+from src.application.use_cases.code_scans.match_aisle_code_scan_detections import (
     MISSING_RESULT_CONTEXT_WARNING,
     MatchAisleCodeScanDetectionsCommand,
     MatchAisleCodeScanDetectionsUseCase,

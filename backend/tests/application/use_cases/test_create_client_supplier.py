@@ -12,7 +12,7 @@ from src.application.errors import (
     InvalidClientSupplierNameError,
 )
 from src.application.ports.repositories import ClientRepository, ClientSupplierRepository
-from src.application.use_cases.create_client_supplier import (
+from src.application.use_cases.suppliers.create_client_supplier import (
     CreateClientSupplierCommand,
     CreateClientSupplierUseCase,
 )

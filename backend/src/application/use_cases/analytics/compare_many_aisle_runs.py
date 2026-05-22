@@ -22,7 +22,7 @@ from src.application.services.aisle_inventory_scope import require_aisle_scoped_
 from src.application.services.inventory_processing_mode import (
     require_test_inventory_for_experimental_features,
 )
-from src.application.use_cases.benchmark_compare_support import (
+from src.application.use_cases.shared.benchmark_compare_support import (
     aggregate_metrics,
     build_compare_diff_rows,
     compute_compare_diff,

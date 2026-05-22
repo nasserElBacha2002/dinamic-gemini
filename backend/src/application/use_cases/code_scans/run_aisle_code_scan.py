@@ -31,7 +31,7 @@ from src.application.services.code_scan_run_metadata import (
     build_run_metadata,
     skipped_asset_entry,
 )
-from src.application.use_cases.match_aisle_code_scan_detections import (
+from src.application.use_cases.code_scans.match_aisle_code_scan_detections import (
     MATCHING_WARNING_MESSAGE,
     MatchAisleCodeScanDetectionsCommand,
     MatchAisleCodeScanDetectionsUseCase,

@@ -9,7 +9,7 @@ import pytest
 
 from src.application.errors import InventoryNotFoundError
 from src.application.ports.repositories import InventoryRepository
-from src.application.use_cases.get_inventory import GetInventoryUseCase
+from src.application.use_cases.inventories.get_inventory import GetInventoryUseCase
 from src.domain.inventory.entities import Inventory, InventoryStatus
 
 

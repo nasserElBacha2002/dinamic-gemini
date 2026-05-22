@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.api.schemas.benchmark_schemas import LlmCostSnapshotResponse
-from src.application.use_cases.benchmark_compare_support import (
+from src.application.use_cases.shared.benchmark_compare_support import (
     sanitize_llm_cost_snapshot_for_compare,
 )
 

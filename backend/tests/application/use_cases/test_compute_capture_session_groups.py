@@ -10,7 +10,7 @@ from src.application.errors import (
     CaptureSessionGroupingNotAllowedError,
     CaptureSessionNoItemsForGroupingError,
 )
-from src.application.use_cases.compute_capture_session_groups import (
+from src.application.use_cases.capture_sessions.compute_capture_session_groups import (
     TIME_GAP_ALGORITHM_VERSION,
     ComputeCaptureSessionGroupsUseCase,
 )
