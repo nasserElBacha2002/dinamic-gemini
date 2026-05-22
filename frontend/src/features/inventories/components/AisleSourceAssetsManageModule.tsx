@@ -60,6 +60,7 @@ export default function AisleSourceAssetsManageModule({
   const deleteMutation = useDeleteAisleSourceAsset(inventoryId, aisleId);
 
   const handleClose = useCallback(() => {
+    if (uploadMutation.isPending) return;
     setOpen(false);
     uploadMutation.reset();
     deleteMutation.reset();

@@ -4,7 +4,7 @@ import { ApiError } from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import { isTooManyFilesForUpload, tooManyFilesMessage } from '../../../utils/uploadFileLimits';
 import { useAppSnackbar } from '../../../components/ui';
-import { useUploadAisleAssetsFlex } from '../../../hooks';
+import { useBeforeUnloadWarning, useUploadAisleAssetsFlex } from '../../../hooks';
 
 export interface UseAisleAssetUploadFlowOptions {
   inventoryId: string;
@@ -27,6 +27,8 @@ export interface UseAisleAssetUploadFlowOptions {
  * Internal: `pendingPickAisleIdRef` holds the aisle id between `input.click()` and the `change` event.
  * React state updates from `beginUploadForAisle` are not guaranteed to flush before `change` fires, so
  * the ref is the reliable hand-off; it is not part of the public API and is cleared after each pick.
+ *
+ * `uploadingAisleIdRef` mirrors `uploadingAisleId` state so callbacks always see the latest active upload.
  */
 export function useAisleAssetUploadFlow({
   inventoryId,
@@ -40,6 +42,7 @@ export function useAisleAssetUploadFlow({
   const fileInputRef = useRef<HTMLInputElement>(null);
   /** See module doc — bridges native file input timing only; never exposed to consumers. */
   const pendingPickAisleIdRef = useRef<string | null>(null);
+  const uploadingAisleIdRef = useRef<string | null>(null);
   const [internalError, setInternalError] = useState<string | null>(null);
   const [uploadingAisleId, setUploadingAisleId] = useState<string | null>(null);
   const [currentTargetAisleId, setCurrentTargetAisleId] = useState<string | null>(null);
@@ -49,33 +52,54 @@ export function useAisleAssetUploadFlow({
   const setUploadError = controlled ? controlledSetError! : setInternalError;
 
   const uploadMutation = useUploadAisleAssetsFlex(inventoryId);
+  const isUploadingPhotos = uploadingAisleId !== null;
+
+  useBeforeUnloadWarning(isUploadingPhotos);
+
+  const setActiveUploadingAisleId = useCallback((aisleId: string | null) => {
+    uploadingAisleIdRef.current = aisleId;
+    setUploadingAisleId(aisleId);
+  }, []);
 
   const uploadFilesForAisle = useCallback(
     async (aisleId: string, files: File[]) => {
       if (!inventoryId || !files.length) return;
+      if (uploadingAisleIdRef.current !== null) return;
       if (isTooManyFilesForUpload(files.length)) {
         setUploadError(tooManyFilesMessage('aisle'));
         return;
       }
       onBeforeUploadAttempt?.();
       setUploadError(null);
-      setUploadingAisleId(aisleId);
+      setActiveUploadingAisleId(aisleId);
       try {
         const result = await uploadMutation.mutateAsync({ aisleId, files });
         showSnackbar(t('aisle.assets_uploaded_snackbar', { count: result.assets.length }), 'success');
         onAfterSuccess?.();
       } catch (err) {
         const apiErr = err instanceof ApiError ? err : new ApiError(String(err));
-        setUploadError(resolveApiErrorMessage(apiErr, 'errors.upload_failed'));
+        const message = resolveApiErrorMessage(apiErr, 'errors.upload_failed');
+        setUploadError(message);
+        showSnackbar(message, 'error');
       } finally {
-        setUploadingAisleId(null);
+        setActiveUploadingAisleId(null);
       }
     },
-    [inventoryId, onAfterSuccess, onBeforeUploadAttempt, setUploadError, showSnackbar, t, uploadMutation]
+    [
+      inventoryId,
+      onAfterSuccess,
+      onBeforeUploadAttempt,
+      setActiveUploadingAisleId,
+      setUploadError,
+      showSnackbar,
+      t,
+      uploadMutation,
+    ]
   );
 
   const beginUploadForAisle = useCallback(
     (aisleId: string) => {
+      if (uploadingAisleIdRef.current !== null) return;
       setUploadError(null);
       pendingPickAisleIdRef.current = aisleId;
       setCurrentTargetAisleId(aisleId);
@@ -100,6 +124,7 @@ export function useAisleAssetUploadFlow({
   /** Programmatic entry (e.g. drag-and-drop) when the target aisle is already known. */
   const handleFilesSelectedForAisle = useCallback(
     async (aisleId: string, files: File[]) => {
+      if (uploadingAisleIdRef.current !== null) return;
       setCurrentTargetAisleId(null);
       pendingPickAisleIdRef.current = null;
       await uploadFilesForAisle(aisleId, files);
@@ -111,6 +136,7 @@ export function useAisleAssetUploadFlow({
     fileInputRef,
     currentTargetAisleId,
     uploadingAisleId,
+    isUploadingPhotos,
     uploadError,
     setUploadError,
     beginUploadForAisle,

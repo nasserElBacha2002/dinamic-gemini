@@ -12,6 +12,13 @@ vi.mock('../src/features/clients/hooks/useSupplierReferencePreview', () => ({
   }),
 }));
 
+vi.mock('../src/components/ui/useAppSnackbar', () => ({
+  useAppSnackbar: () => ({
+    showSnackbar: vi.fn(),
+    closeSnackbar: vi.fn(),
+  }),
+}));
+
 const defaultItem = {
   id: 'img-1',
   client_supplier_id: 'supplier-1',

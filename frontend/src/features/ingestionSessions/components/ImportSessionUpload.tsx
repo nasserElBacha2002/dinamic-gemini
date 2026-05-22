@@ -17,6 +17,9 @@ import {
 import { useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
+import { ErrorAlert, PhotoUploadProgressDialog, useAppSnackbar } from '../../../components/ui';
+import { useBeforeUnloadWarning } from '../../../hooks/useBeforeUnloadWarning';
+import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import {
   isTooManyFilesForUpload,
   maxFilesPerUploadHelperText,
@@ -55,14 +58,19 @@ export default function ImportSessionUpload({
   onCompleted,
 }: ImportSessionUploadProps) {
   const { t } = useTranslation();
+  const { showSnackbar } = useAppSnackbar();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [lastSummary, setLastSummary] = useState<{ ok: number; fail: number } | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const uploadMutation = useUploadCaptureItems();
+  const isUploadingPhotos = uploadMutation.isPending;
 
-  const canSelect = !disabled && !uploadMutation.isPending;
+  useBeforeUnloadWarning(isUploadingPhotos);
+
+  const canSelect = !disabled && !isUploadingPhotos;
 
   const startUpload = async (files: File[]) => {
     if (!files.length || !canSelect) return;
@@ -71,16 +79,30 @@ export default function ImportSessionUpload({
       return;
     }
     setSelectionError(null);
+    setUploadError(null);
     setLastSummary(null);
-    const result = await uploadMutation.mutateAsync({
-      inventoryId,
-      sessionId,
-      aisleId,
-      files,
-      onQueueUpdate: setQueue,
-    });
-    setLastSummary({ ok: result.uploadedCount, fail: result.failedCount });
-    onCompleted?.();
+    try {
+      const result = await uploadMutation.mutateAsync({
+        inventoryId,
+        sessionId,
+        aisleId,
+        files,
+        onQueueUpdate: setQueue,
+      });
+      setLastSummary({ ok: result.uploadedCount, fail: result.failedCount });
+      if (result.failedCount === 0) {
+        showSnackbar(t('uploads.photos.success'), 'success');
+      } else if (result.uploadedCount === 0) {
+        const message = t('uploads.photos.error');
+        setUploadError(message);
+        showSnackbar(message, 'error');
+      }
+      onCompleted?.();
+    } catch (err) {
+      const message = resolveApiErrorMessage(err, 'uploads.photos.error');
+      setUploadError(message);
+      showSnackbar(message, 'error');
+    }
   };
 
   const summaryNode =
@@ -99,6 +121,8 @@ export default function ImportSessionUpload({
 
   return (
     <Box>
+      <PhotoUploadProgressDialog open={isUploadingPhotos} />
+
       <Paper
         variant="outlined"
         sx={{
@@ -162,6 +186,12 @@ export default function ImportSessionUpload({
         <Alert severity="warning" sx={{ mt: 2 }}>
           {t('ingestion_sessions.upload.error_summary')}
         </Alert>
+      ) : null}
+
+      {uploadError ? (
+        <Box sx={{ mt: 2 }} data-testid="import-session-upload-error">
+          <ErrorAlert message={uploadError} onClose={() => setUploadError(null)} />
+        </Box>
       ) : null}
 
       {summaryNode}

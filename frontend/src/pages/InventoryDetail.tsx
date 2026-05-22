@@ -5,7 +5,7 @@ import { Alert, Box, Button, Typography } from '@mui/material';
 import { ApiError } from '../api/types';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { rowMatchesSearchQuery } from '../utils/tableSearch';
-import { ErrorAlert, LoadingBlock, useAppSnackbar } from '../components/ui';
+import { ErrorAlert, LoadingBlock, PhotoUploadProgressDialog, useAppSnackbar } from '../components/ui';
 import CreateAisleDialog from '../components/CreateAisleDialog';
 import { useInventoryDetail, useAislesList, useCreateAisle } from '../hooks';
 import { ROUTE_HOME } from '../constants/appRoutes';
@@ -185,6 +185,9 @@ export default function InventoryDetail() {
         existingAisleCodes={aisles.map((a) => a.code)}
         createAisleFn={createAisleMutation.mutateAsync}
       />
+
+      {/* Table/native-file upload only; drawer uploads use ManagedImageAssetsDrawer dialog. */}
+      <PhotoUploadProgressDialog open={uploadFlow.isUploadingPhotos} />
 
     </>
   );

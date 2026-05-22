@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Box, Button, Divider, Drawer, Typography } from '@mui/material';
+import { useBeforeUnloadWarning } from '../../hooks/useBeforeUnloadWarning';
 import { getVisibleErrorMessage } from '../../utils/apiErrors';
 import {
   isTooManyFilesForUpload,
@@ -15,6 +16,8 @@ import {
   LoadingBlock,
   ImageAssetCard,
   ImagePreviewDialog,
+  PhotoUploadProgressDialog,
+  useAppSnackbar,
 } from '../ui';
 import type { ManagedImageAssetItem } from './types';
 
@@ -75,6 +78,11 @@ export interface ManagedImageAssetsDrawerProps {
   readOnly?: boolean;
   /** Passed to {@link LoadingBlock} while `isLoading` is true. */
   loadingMessage?: string;
+  /**
+   * When false, skip the blocking upload progress dialog (e.g. parent page owns it).
+   * Default true — one dialog per upload flow.
+   */
+  showProgressDialog?: boolean;
 }
 
 export default function ManagedImageAssetsDrawer({
@@ -107,9 +115,12 @@ export default function ManagedImageAssetsDrawer({
   formatDeleteConfirm,
   readOnly = false,
   loadingMessage,
+  showProgressDialog = true,
 }: ManagedImageAssetsDrawerProps) {
   const { t } = useTranslation();
+  const { showSnackbar } = useAppSnackbar();
   const effectiveOpen = embedded || open;
+  useBeforeUnloadWarning(isUploading);
   void previewErrorMessageKey;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
@@ -171,7 +182,7 @@ export default function ManagedImageAssetsDrawer({
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files ? Array.from(event.target.files) : [];
     event.target.value = '';
-    if (files.length === 0 || !onUpload) return;
+    if (files.length === 0 || !onUpload || isUploading) return;
     if (isTooManyFilesForUpload(files.length)) {
       setLocalUploadError(tooManyFilesMessage('aisle'));
       return;
@@ -179,10 +190,16 @@ export default function ManagedImageAssetsDrawer({
     setLocalUploadError(null);
     try {
       await onUpload(files);
+      showSnackbar(t('uploads.photos.success'), 'success');
     } catch {
-      /* surfaced via uploadError */
+      showSnackbar(t('uploads.photos.error'), 'error');
     }
   };
+
+  const guardedOnClose = useCallback(() => {
+    if (isUploading) return;
+    onClose();
+  }, [isUploading, onClose]);
 
   const handleReplaceFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const target = replaceTarget;
@@ -281,7 +298,8 @@ export default function ManagedImageAssetsDrawer({
     <DrawerHeader
       sx={{ py: 1.5, zIndex: 1 }}
       closeLabel={copy.closeAria}
-      onClose={onClose}
+      onClose={guardedOnClose}
+      closeDisabled={isUploading}
       overline={
         <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 0.5 }}>
           {copy.contextOverline}
@@ -351,8 +369,13 @@ export default function ManagedImageAssetsDrawer({
                   {effectiveShowUpload && onUpload ? (
                     <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                       <Button variant="contained" size="small" onClick={handleUploadClick} disabled={busy}>
-                        {isUploading ? t('common.uploading') : copy.uploadButton}
+                        {isUploading ? t('uploads.photos.uploadingButton') : copy.uploadButton}
                       </Button>
+                      {isUploading ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ width: '100%' }}>
+                          {t('uploads.photos.waitBeforeLeaving')}
+                        </Typography>
+                      ) : null}
                     </Box>
                   ) : null}
                   {effectiveUploadError ? <ErrorAlert message={effectiveUploadError} /> : null}
@@ -432,13 +455,18 @@ export default function ManagedImageAssetsDrawer({
 
   return (
     <>
+      {showProgressDialog ? <PhotoUploadProgressDialog open={isUploading} /> : null}
+
       {embedded ? (
         shell
       ) : (
         <Drawer
           anchor="right"
           open={open}
-          onClose={onClose}
+          onClose={(_event, reason) => {
+            if (isUploading && (reason === 'backdropClick' || reason === 'escapeKeyDown')) return;
+            guardedOnClose();
+          }}
           PaperProps={{
             sx: {
               width: { xs: '100%', sm: 'min(720px, 96vw)', lg: 'min(840px, 88vw)' },
