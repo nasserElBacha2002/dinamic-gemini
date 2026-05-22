@@ -350,6 +350,7 @@ from src.application.errors import (
     SupplierPromptConfigNotFoundError,
     SupplierReferenceImageNotFoundError,
     TooManyFilesPerUploadError,
+    DeprecatedProcessingProviderError,
     UnknownProcessingProviderError,
     UnsupportedAssetTypeError,
     ZeroByteFileError,
@@ -602,6 +603,7 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         422, error_code=ZERO_BYTE_FILE, detail=HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED
     ),
     UnknownProcessingProviderError: _plain_http(422),
+    DeprecatedProcessingProviderError: _plain_http(422),
     InvalidProcessingModelError: _plain_http(422),
     InvalidProcessingPromptKeyError: _plain_http(422),
     ProcessingProviderNotConfiguredError: _plain_http(422),

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.application.errors import (
+    DeprecatedProcessingProviderError,
     InvalidProcessingModelError,
     InvalidProcessingPromptKeyError,
     ProcessingProviderNotConfiguredError,
@@ -168,22 +169,21 @@ def test_resolve_explicit_claude_without_key_raises() -> None:
         )
 
 
-def test_resolve_explicit_deepseek_uses_default_catalog_model() -> None:
+def test_resolve_explicit_deepseek_raises_deprecated() -> None:
     s = _settings(deepseek_api_key="sk-ds-test", gemini_api_key="")
-    p, m, pk = resolve_start_processing_request(
-        requested_provider_name="deepseek",
-        requested_model_name=None,
-        requested_prompt_key=None,
-        settings=s,
-    )
-    assert p == "deepseek"
-    assert m == "deepseek-chat"
-    assert pk == "global_v22"
+    with pytest.raises(DeprecatedProcessingProviderError) as exc:
+        resolve_start_processing_request(
+            requested_provider_name="deepseek",
+            requested_model_name=None,
+            requested_prompt_key=None,
+            settings=s,
+        )
+    assert "deprecated" in str(exc.value).lower()
 
 
-def test_resolve_explicit_deepseek_without_key_raises() -> None:
+def test_resolve_explicit_deepseek_without_key_still_raises_deprecated() -> None:
     s = _settings(deepseek_api_key="", gemini_api_key="gk")
-    with pytest.raises(ProcessingProviderNotConfiguredError):
+    with pytest.raises(DeprecatedProcessingProviderError):
         resolve_start_processing_request(
             requested_provider_name="deepseek",
             requested_model_name=None,

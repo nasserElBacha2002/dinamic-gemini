@@ -1071,6 +1071,7 @@
     "provider_request_title_generic_n": "Solicitud al proveedor (#{{n}})",
     "provider_request_title_named": "Solicitud a {{name}}",
     "provider_request_title_named_n": "Solicitud a {{name}} (#{{n}})",
+    "provider_deepseek_deprecated": "DeepSeek (deprecado)",
     "reference_guidance": "Guía de referencias",
     "reference_images": "Imágenes de referencia",
     "requested_job": "Ejecución solicitada",

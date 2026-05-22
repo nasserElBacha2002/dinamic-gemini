@@ -394,7 +394,7 @@ def test_get_processing_provider_options_returns_registered_keys() -> None:
         profile_keys = {p["key"] for p in data["prompt_profiles"]}
         assert {"global_v21", "global_v21_b", "global_v22"}.issubset(profile_keys)
         keys = {p["key"] for p in data["providers"]}
-        assert keys == {"gemini", "openai", "claude", "deepseek"}
+        assert keys == {"gemini", "openai", "claude"}
         for p in data["providers"]:
             assert p["execution_mode"] == "native"
             assert "models" in p and isinstance(p["models"], list) and len(p["models"]) >= 1
@@ -413,7 +413,6 @@ def test_get_processing_provider_options_reflects_env_processing_model_lists(
     monkeypatch.setenv("PROCESSING_GEMINI_MODELS", "gemini-alpha,gemini-beta")
     monkeypatch.setenv("PROCESSING_OPENAI_MODELS", "gpt-alpha,gpt-beta")
     monkeypatch.setenv("PROCESSING_CLAUDE_MODELS", "claude-alpha,claude-beta")
-    monkeypatch.setenv("PROCESSING_DEEPSEEK_MODELS", "ds-alpha,ds-beta")
     config_mod._settings = None
     app.dependency_overrides[get_current_admin] = _fake_admin
     try:
@@ -423,21 +422,18 @@ def test_get_processing_provider_options_reflects_env_processing_model_lists(
         gemini = next(p for p in data["providers"] if p["key"] == "gemini")
         openai_p = next(p for p in data["providers"] if p["key"] == "openai")
         claude_p = next(p for p in data["providers"] if p["key"] == "claude")
-        deepseek_p = next(p for p in data["providers"] if p["key"] == "deepseek")
         assert [m["id"] for m in gemini["models"]] == ["gemini-alpha", "gemini-beta"]
         assert [m["id"] for m in openai_p["models"]] == ["gpt-alpha", "gpt-beta"]
         assert [m["id"] for m in claude_p["models"]] == ["claude-alpha", "claude-beta"]
-        assert [m["id"] for m in deepseek_p["models"]] == ["ds-alpha", "ds-beta"]
         assert gemini["default_model"] == "gemini-alpha"
         assert openai_p["default_model"] == "gpt-alpha"
         assert claude_p["default_model"] == "claude-alpha"
-        assert deepseek_p["default_model"] == "ds-alpha"
+        assert all(p["key"] != "deepseek" for p in data["providers"])
     finally:
         app.dependency_overrides.pop(get_current_admin, None)
         monkeypatch.delenv("PROCESSING_GEMINI_MODELS", raising=False)
         monkeypatch.delenv("PROCESSING_OPENAI_MODELS", raising=False)
         monkeypatch.delenv("PROCESSING_CLAUDE_MODELS", raising=False)
-        monkeypatch.delenv("PROCESSING_DEEPSEEK_MODELS", raising=False)
         config_mod._settings = None
 
 
@@ -559,7 +555,7 @@ def test_post_process_production_unconfigured_provider_returns_422(
         assert prod_opts.status_code == 200
         available = {p["key"] for p in prod_opts.json()["providers"]}
         unconfigured = next(
-            (k for k in ("openai", "claude", "deepseek") if k not in available),
+            (k for k in ("openai", "claude") if k not in available),
             None,
         )
         if unconfigured is None:

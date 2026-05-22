@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from src.application.errors import (
+    DeprecatedProcessingProviderError,
     InvalidProcessingModelError,
     ProcessingProviderNotConfiguredError,
     UnknownProcessingProviderError,
@@ -22,15 +23,14 @@ from src.pipeline.providers.definitions import (
     PIPELINE_PROVIDER_SPECS,
     PipelineProviderSpec,
     credential_configured,
+    deprecated_processing_provider_message,
+    is_pipeline_provider_active,
     pipeline_provider_spec,
+    registered_active_pipeline_provider_keys_from_definitions,
     registered_pipeline_provider_keys_from_definitions,
 )
 
 ProcessingOptionsMode = Literal["test", "production"]
-
-
-def _multimodal_aisle_analysis_supported(provider_key: str) -> bool:
-    return provider_key.strip().lower() != "deepseek"
 
 
 def explicit_production_default_model_id(provider_key: str, settings: Any) -> str | None:
@@ -50,12 +50,10 @@ def explicit_production_default_model_id(provider_key: str, settings: Any) -> st
 
 
 def production_provider_unavailable_reason(spec: PipelineProviderSpec, settings: Any) -> str | None:
+    if not spec.is_active:
+        return deprecated_processing_provider_message(spec.key)
     if not credential_configured(spec, settings):
         return spec.credential_missing_message
-    if not _multimodal_aisle_analysis_supported(spec.key):
-        return (
-            f"{spec.label} is not available for vision-based aisle analysis in production mode."
-        )
     if not explicit_production_default_model_id(spec.key, settings):
         return (
             f"{spec.label} has no explicit default production model configured "
@@ -68,6 +66,8 @@ def production_provider_catalog(settings: Any) -> dict[str, str]:
     """Map provider key → sole production model id for providers that are production-ready."""
     out: dict[str, str] = {}
     for spec in PIPELINE_PROVIDER_SPECS:
+        if not spec.is_active:
+            continue
         reason = production_provider_unavailable_reason(spec, settings)
         if reason is not None:
             continue
@@ -116,6 +116,8 @@ def build_processing_provider_options_payload(
         )
         providers_out: list[dict[str, Any]] = []
         for spec in sorted(PIPELINE_PROVIDER_SPECS, key=lambda s: s.key):
+            if not spec.is_active:
+                continue
             model_id = catalog.get(spec.key)
             if model_id is None:
                 continue
@@ -143,6 +145,8 @@ def build_processing_provider_options_payload(
 
     providers_out = []
     for spec in sorted(PIPELINE_PROVIDER_SPECS, key=lambda s: s.key):
+        if not spec.is_active:
+            continue
         pairs = models_for_provider(spec.key, settings)
         dm = default_model_for_provider(spec.key, settings)
         unavailable = production_provider_unavailable_reason(spec, settings)
@@ -202,8 +206,12 @@ def resolve_production_processing_keys(
     inv_p = (inventory.primary_provider_name or "").strip().lower()
 
     if req_p:
-        if req_p not in registered_pipeline_provider_keys_from_definitions():
-            known = sorted(registered_pipeline_provider_keys_from_definitions())
+        if not is_pipeline_provider_active(req_p):
+            if req_p in registered_pipeline_provider_keys_from_definitions():
+                raise DeprecatedProcessingProviderError(
+                    deprecated_processing_provider_message(req_p)
+                )
+            known = sorted(registered_active_pipeline_provider_keys_from_definitions())
             raise UnknownProcessingProviderError(
                 f"Unknown processing provider {req_p!r}. Known keys: {known}"
             )

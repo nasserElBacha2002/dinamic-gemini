@@ -51,4 +51,11 @@ describe('executionLogProviderTitle', () => {
     expect(formatProviderBrandLabel('gemini')).toBe('Gemini');
     expect(formatProviderBrandLabel('openai')).toBe('OpenAI');
   });
+
+  it('marks historical deepseek logs as deprecated', () => {
+    expect(formatProviderBrandLabel('deepseek')).toBe('DeepSeek (deprecated)');
+    expect(formatProviderBrandLabel('deepseek', ((k: string) => k) as never)).toBe(
+      'execution_log.provider_deepseek_deprecated'
+    );
+  });
 });

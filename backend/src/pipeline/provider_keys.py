@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.pipeline.providers.definitions import is_pipeline_provider_active
+
 
 def normalize_pipeline_provider_key(
     provider_name: str | None,
@@ -19,6 +21,7 @@ def normalize_pipeline_provider_key(
     """
     raw = (provider_name or "").strip().lower()
     if raw:
-        return raw
+        return raw if is_pipeline_provider_active(raw) else "gemini"
     sp = getattr(settings, "llm_provider", "gemini") or "gemini"
-    return str(sp).strip().lower()
+    key = str(sp).strip().lower()
+    return key if is_pipeline_provider_active(key) else "gemini"

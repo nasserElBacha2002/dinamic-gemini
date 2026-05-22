@@ -48,7 +48,10 @@ class LlmProviderSettings(BaseModel):
     # Stage 2.2.D / Phase 8 — default LLM provider for pipeline runs without per-job override
     llm_provider: str = Field(
         default_factory=lambda: (os.getenv("LLM_PROVIDER", "gemini") or "gemini").strip().lower(),
-        description="Default pipeline provider: gemini, openai, claude, or deepseek. Env: LLM_PROVIDER.",
+        description=(
+            "Default pipeline provider: gemini, openai, claude, or deepseek (legacy; deepseek is remapped "
+            "to gemini for new runs). Env: LLM_PROVIDER."
+        ),
     )
     llm_pricing_catalog_json: str = Field(
         default_factory=lambda: (os.getenv("LLM_PRICING_CATALOG_JSON", "") or "").strip(),
@@ -181,7 +184,7 @@ class LlmProviderSettings(BaseModel):
     # Phase 9 — DeepSeek (OpenAI-compatible Chat Completions API)
     deepseek_api_key: str = Field(
         default_factory=lambda: os.getenv("DEEPSEEK_API_KEY", ""),
-        description="DeepSeek API key (pipeline provider deepseek). Env: DEEPSEEK_API_KEY.",
+        description="Deprecated: DeepSeek is no longer selectable for new executions. Env: DEEPSEEK_API_KEY.",
     )
     deepseek_model: str = Field(
         default_factory=lambda: (
