@@ -137,6 +137,6 @@ jobs:
           node-version: "20"
 
       # Vercel dashboard Root Directory = `frontend`. See scripts/vercel-deploy-dev-production.sh
-      # (pull at repo root, clear local rootDirectory, deploy from frontend/ — no path arg).
+      # (pull + deploy only from frontend/; clear local rootDirectory in frontend/.vercel).
       - name: Vercel deploy remote build production
         run: bash scripts/vercel-deploy-dev-production.sh

@@ -8,12 +8,13 @@ TARGET="${ROOT}/scripts/vercel-deploy-dev-production.sh"
 bash -n "${TARGET}"
 
 for needle in \
-  'GITHUB_WORKSPACE' \
-  'basename "${PWD}")" = "frontend"' \
-  'rm -rf .vercel frontend/.vercel' \
+  'FRONTEND_DIR' \
+  'cd "${FRONTEND_DIR}"' \
+  'basename "${PWD}")" != "frontend"' \
+  'rm -rf .vercel' \
   'vercel pull' \
   'rootDirectory' \
-  'cd frontend' \
+  '.vercel/project.json' \
   'vercel deploy --prod --yes'; do
   if ! grep -q "${needle}" "${TARGET}"; then
     echo "missing expected content: ${needle}" >&2
@@ -26,8 +27,14 @@ if grep -qE 'npx vercel (deploy|pull) frontend|--cwd frontend' "${TARGET}"; then
   exit 1
 fi
 
-if grep -q 'vercel build' "${TARGET}"; then
+if grep -qE 'npx vercel build|vercel build --' "${TARGET}"; then
   echo "script must not run vercel build" >&2
+  exit 1
+fi
+
+# Must not require pull only at repo root (CLI writes frontend/.vercel when root is frontend).
+if grep -q 'expected link only at repo root' "${TARGET}"; then
+  echo "script must not reject frontend/.vercel after pull" >&2
   exit 1
 fi
 

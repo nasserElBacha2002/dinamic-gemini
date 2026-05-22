@@ -122,17 +122,52 @@ Removed job-level `working-directory: frontend` from the deploy job. Vercel step
 
 `vercel pull` at repo root writes `.vercel/project.json` with `settings.rootDirectory: "frontend"` (from the dashboard). Some CLI versions then **also** resolve the app path relative to cwd, producing `frontend/frontend` when cwd or deploy semantics do not match.
 
-### Fix (CI script)
+### Fix (CI script, revised)
 
-`scripts/vercel-deploy-dev-production.sh`:
+Observed in CI logs:
 
-1. `cd "${GITHUB_WORKSPACE}"` (repo root).
-2. `vercel pull` at repo root.
-3. Set `settings.rootDirectory` to `null` in **local** `.vercel/project.json` only (dashboard unchanged).
-4. `cd frontend` and `vercel deploy --prod --yes` with **no** `frontend` path argument.
-5. Defensive checks: refuse to start from `frontend/`, remove stale `.vercel` dirs, fail if `frontend/.vercel` appears after pull.
+```text
+Downloaded project settings to .../frontend/.vercel/project.json
+```
 
-Workflow step: `bash scripts/vercel-deploy-dev-production.sh` (no inline `vercel` commands, no `working-directory: frontend`).
+So `vercel pull` targets **`frontend/`**, not repo-root `.vercel`. Pull/deploy from repo root still produced `frontend/frontend`.
+
+`scripts/vercel-deploy-dev-production.sh` (current):
+
+1. `cd "${GITHUB_WORKSPACE}/frontend"` only.
+2. `vercel pull` → `./.vercel/project.json` under `frontend/`.
+3. Set `settings.rootDirectory` to `null` in that file (local CI only).
+4. `vercel deploy --prod --yes` from `frontend/` (no path argument).
+5. Remove stray repo-root `.vercel` if present.
+
+Workflow step: `bash scripts/vercel-deploy-dev-production.sh` — **not** inline `vercel pull`/`deploy` at repo root.
+
+If logs still show `Deploying commit ... to Vercel (production, remote build)...` without `Vercel app directory:`, the branch does not include this script yet — merge/push the workflow fix or use `workflow_dispatch` after updating `develop`.
+
+## Validate before deploy (local)
+
+Run from repository root **without** deploying:
+
+```bash
+bash scripts/validate_vercel_deploy_dev.sh
+```
+
+Checks:
+
+1. Static rules on `scripts/vercel-deploy-dev-production.sh`
+2. Workflow uses the script (no inline `vercel pull`/`deploy` in YAML)
+3. Dry-run path math (`frontend/` cwd + `rootDirectory` cleared → no `frontend/frontend`)
+
+Optional live check (only `vercel pull`, **no deploy**):
+
+```bash
+export VERCEL_TOKEN="..."
+export VERCEL_ORG_ID="..."      # same as GitHub secrets
+export VERCEL_PROJECT_ID="..."
+bash scripts/validate_vercel_deploy_dev.sh --live-pull
+```
+
+Expect: `frontend/.vercel/project.json` exists, `rootDirectory` patches to `null`, no `frontend/frontend` error.
 
 ## Manual validation (local shell)
 
