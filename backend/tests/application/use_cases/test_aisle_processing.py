@@ -28,7 +28,9 @@ from src.application.services.job_stale_reconciler import (
     STALE_FAILURE_MESSAGE,
     JobStaleReconciler,
 )
-from src.application.use_cases.aisles.get_aisle_processing_status import GetAisleProcessingStatusUseCase
+from src.application.use_cases.aisles.get_aisle_processing_status import (
+    GetAisleProcessingStatusUseCase,
+)
 from src.application.use_cases.aisles.start_aisle_processing import (
     StartAisleProcessingCommand,
     StartAisleProcessingUseCase,

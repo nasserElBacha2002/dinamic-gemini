@@ -11,12 +11,12 @@ from src.application.errors import (
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
 )
-from src.application.use_cases.pipeline.recompute_consolidated_counts import (
-    RecomputeConsolidatedCountsResult,
-)
 from src.application.use_cases.aisles.run_aisle_merge import (
     RunAisleMergeCommand,
     RunAisleMergeUseCase,
+)
+from src.application.use_cases.pipeline.recompute_consolidated_counts import (
+    RecomputeConsolidatedCountsResult,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus

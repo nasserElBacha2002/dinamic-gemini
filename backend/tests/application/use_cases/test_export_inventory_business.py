@@ -24,7 +24,9 @@ from src.application.use_cases.inventories.export_inventory_business import (
     ExportInventorySummaryCsvUseCase,
     build_business_aisle_operational_csv_from_bundle,
 )
-from src.application.use_cases.inventories.export_inventory_results import ExportAisleResultsCsvUseCase
+from src.application.use_cases.inventories.export_inventory_results import (
+    ExportAisleResultsCsvUseCase,
+)
 from src.application.use_cases.positions.list_aisle_positions import (
     ListAislePositionsCommand,
     ListAislePositionsUseCase,

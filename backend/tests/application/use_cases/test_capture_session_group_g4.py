@@ -14,10 +14,10 @@ from src.application.errors import (
     CaptureSessionNotFoundError,
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.use_cases.aisles.create_aisle import CreateAisleUseCase
 from src.application.use_cases.capture_sessions.assign_capture_session_group_to_existing_aisle import (
     AssignCaptureSessionGroupToExistingAisleUseCase,
 )
-from src.application.use_cases.aisles.create_aisle import CreateAisleUseCase
 from src.application.use_cases.capture_sessions.create_aisle_and_assign_capture_session_group import (
     CreateAisleAndAssignCaptureSessionGroupUseCase,
 )

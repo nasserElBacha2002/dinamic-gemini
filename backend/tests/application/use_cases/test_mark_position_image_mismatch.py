@@ -10,7 +10,9 @@ import pytest
 from src.application.errors import PositionNotFoundError
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.use_cases.positions.mark_position_image_mismatch import MarkPositionImageMismatchUseCase
+from src.application.use_cases.positions.mark_position_image_mismatch import (
+    MarkPositionImageMismatchUseCase,
+)
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus

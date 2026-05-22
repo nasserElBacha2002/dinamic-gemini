@@ -19,11 +19,15 @@ from src.application.ports.clock import Clock
 from src.application.services.capture_staging_time_metadata import (
     PillowCaptureStagingTimeMetadataExtractor,
 )
-from src.application.use_cases.capture_sessions.close_capture_session import CloseCaptureSessionUseCase
+from src.application.use_cases.capture_sessions.close_capture_session import (
+    CloseCaptureSessionUseCase,
+)
 from src.application.use_cases.capture_sessions.compute_capture_session_assignment_preview import (
     ComputeCaptureSessionAssignmentPreviewUseCase,
 )
-from src.application.use_cases.capture_sessions.create_capture_session import CreateCaptureSessionUseCase
+from src.application.use_cases.capture_sessions.create_capture_session import (
+    CreateCaptureSessionUseCase,
+)
 from src.application.use_cases.capture_sessions.update_capture_session_clock_offset import (
     UpdateCaptureSessionClockOffsetUseCase,
 )
@@ -257,7 +261,9 @@ def test_clock_offset_blocked_after_cancel(tmp_path) -> None:
         clock=clock,
         max_open_sessions_per_aisle=3,
     ).execute(inv_id, aisle_id)
-    from src.application.use_cases.capture_sessions.cancel_capture_session import CancelCaptureSessionUseCase
+    from src.application.use_cases.capture_sessions.cancel_capture_session import (
+        CancelCaptureSessionUseCase,
+    )
 
     CancelCaptureSessionUseCase(
         session_repo=session_repo,
