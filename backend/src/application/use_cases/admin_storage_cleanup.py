@@ -10,10 +10,12 @@ from src.config import AppSettings
 from src.infrastructure.storage.artifact_storage_maintenance import (
     CONFIRM_DELETE_TOKEN,
     LocalCleanupSection,
+    PROTECTED_PREFIXES_REPORT,
     RemoteCleanupSection,
     StorageCleanupResult,
-    build_local_safe_roots,
+    build_local_cleanup_roots,
     cleanup_local_roots,
+    inventory_operational_relative_prefixes,
     run_remote_cleanup,
 )
 
@@ -59,12 +61,14 @@ class AdminStorageCleanupUseCase:
             elif provider == "gcs":
                 bucket = (self._settings.artifact_gcs_bucket or "").strip()
                 prefix = (self._settings.artifact_gcs_prefix or "").strip()
+            staging_prefix = (self._settings.v3_capture_staging_storage_prefix or "").strip()
             remote = run_remote_cleanup(
                 provider=provider,
                 artifact_store=self._artifact_store,
                 prefix=prefix,
                 bucket=bucket,
                 dry_run=dry_run,
+                staging_prefix=staging_prefix,
             )
 
         if target in ("local", "both"):
@@ -74,22 +78,44 @@ class AdminStorageCleanupUseCase:
                 local.skipped = True
                 local.skip_reason = "include_legacy_local=false"
             else:
+                staging_prefix = (self._settings.v3_capture_staging_storage_prefix or "").strip()
                 try:
-                    roots = build_local_safe_roots(
+                    roots, v3_uploads = build_local_cleanup_roots(
                         output_dir=output_dir,
+                        staging_prefix=staging_prefix,
                         include_pipeline_temp=include_pipeline_temp,
                     )
                 except ValueError as exc:
                     local.skipped = True
                     local.skip_reason = str(exc)
                     roots = []
-                local.safe_roots = [str(r) for r in roots]
+                    v3_uploads = None
+                local.safe_roots = [str(r.path) for r in roots]
+                local.allowed_roots = list(
+                    inventory_operational_relative_prefixes(staging_prefix=staging_prefix)
+                )
+                local.protected_roots = list(PROTECTED_PREFIXES_REPORT)
                 if roots:
-                    ff, bf, fd, bd, errors = cleanup_local_roots(roots=roots, dry_run=dry_run)
+                    (
+                        ff,
+                        bf,
+                        fd,
+                        bd,
+                        skip_prot,
+                        skip_na,
+                        errors,
+                    ) = cleanup_local_roots(
+                        roots=roots,
+                        v3_uploads_root=v3_uploads,
+                        staging_prefix=staging_prefix,
+                        dry_run=dry_run,
+                    )
                     local.files_found = ff
                     local.bytes_found = bf
                     local.files_deleted = fd
                     local.bytes_deleted = bd
+                    local.files_skipped_protected = skip_prot
+                    local.files_skipped_not_allowed = skip_na
                     local.errors = errors
                     logger.info(
                         "storage_cleanup local dry_run=%s roots=%s files_found=%s",

@@ -15,7 +15,7 @@ class AdminStorageCleanupRequest(BaseModel):
     mode: CleanupMode = "dry_run"
     confirm: str | None = Field(
         default=None,
-        description="Required DELETE_ARTIFACTS when mode=delete.",
+        description="Required DELETE_INVENTORY_ARTIFACTS when mode=delete.",
     )
     include_legacy_local: bool = True
     include_pipeline_temp: bool = False
@@ -27,23 +27,31 @@ class RemoteCleanupSectionResponse(BaseModel):
     prefix: str | None = None
     objects_found: int = 0
     objects_deleted: int = 0
+    objects_skipped_protected: int = 0
+    objects_skipped_not_allowed: int = 0
     bytes_found: int = 0
     bytes_deleted: int = 0
     skipped: bool = False
     skip_reason: str | None = None
     errors: list[str] = Field(default_factory=list)
+    protected_prefixes: list[str] = Field(default_factory=list)
+    allowed_prefixes: list[str] = Field(default_factory=list)
 
 
 class LocalCleanupSectionResponse(BaseModel):
     output_dir: str
     safe_roots: list[str] = Field(default_factory=list)
+    allowed_roots: list[str] = Field(default_factory=list)
     files_found: int = 0
     files_deleted: int = 0
+    files_skipped_protected: int = 0
+    files_skipped_not_allowed: int = 0
     bytes_found: int = 0
     bytes_deleted: int = 0
     skipped: bool = False
     skip_reason: str | None = None
     errors: list[str] = Field(default_factory=list)
+    protected_roots: list[str] = Field(default_factory=list)
 
 
 class AdminStorageCleanupResponse(BaseModel):

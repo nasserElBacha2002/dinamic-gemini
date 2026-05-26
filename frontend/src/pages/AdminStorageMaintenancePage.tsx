@@ -17,7 +17,7 @@ import { ApiError } from '../api/types';
 import PageHeader from '../components/shell/PageHeader';
 import { useAppSnackbar } from '../components/ui';
 
-const CONFIRM_TOKEN = 'DELETE_ARTIFACTS';
+const CONFIRM_TOKEN = 'DELETE_INVENTORY_ARTIFACTS';
 
 function formatBytes(bytes: number, locale: string): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -60,6 +60,10 @@ function RemoteSummaryCard({
           </Typography>
           <Typography variant="body2">
             {t('admin_storage_cleanup.objects_found')}: {section.objects_found}
+          </Typography>
+          <Typography variant="body2">
+            {t('admin_storage_cleanup.objects_skipped_protected')}:{' '}
+            {section.objects_skipped_protected ?? 0}
           </Typography>
           <Typography variant="body2">
             {t('admin_storage_cleanup.bytes_found')}: {formatBytes(section.bytes_found, locale)}
@@ -110,6 +114,10 @@ function LocalSummaryCard({
           </Typography>
           <Typography variant="body2">
             {t('admin_storage_cleanup.files_found')}: {section.files_found}
+          </Typography>
+          <Typography variant="body2">
+            {t('admin_storage_cleanup.files_skipped_protected')}:{' '}
+            {section.files_skipped_protected ?? 0}
           </Typography>
           <Typography variant="body2">
             {t('admin_storage_cleanup.bytes_found')}: {formatBytes(section.bytes_found, locale)}

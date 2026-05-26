@@ -37,7 +37,9 @@ def post_admin_storage_cleanup(
     artifact_storage=Depends(get_artifact_storage),
 ) -> AdminStorageCleanupResponse:
     """
-    Dry-run or delete remote bucket objects (configured prefix only) and safe local artifact roots.
+    Dry-run or delete inventory operational artifacts (allowlisted prefixes only).
+
+    Supplier reference images under ``client_suppliers/`` are never deleted.
 
     Requires primary administrator principal (same gate as ``/admin/ai-config``).
     """

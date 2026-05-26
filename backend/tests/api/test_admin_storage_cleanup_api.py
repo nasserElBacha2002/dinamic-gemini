@@ -95,3 +95,42 @@ def test_storage_cleanup_delete_requires_confirm() -> None:
         assert r.status_code == 400
     finally:
         _restore_overrides()
+
+
+def test_storage_cleanup_delete_accepts_inventory_confirm_token(monkeypatch) -> None:
+    from src.application.use_cases import admin_storage_cleanup as mod
+    from src.infrastructure.storage.artifact_storage_maintenance import (
+        CONFIRM_DELETE_TOKEN,
+        LocalCleanupSection,
+        RemoteCleanupSection,
+        StorageCleanupResult,
+    )
+
+    assert CONFIRM_DELETE_TOKEN == "DELETE_INVENTORY_ARTIFACTS"
+    called = {"mode": None}
+
+    def _execute(self, **kwargs):
+        called["mode"] = kwargs.get("mode")
+        return StorageCleanupResult(
+            ok=True,
+            mode="delete",
+            target="both",
+            remote=RemoteCleanupSection(provider="gcs"),
+            local=LocalCleanupSection(output_dir="output"),
+        )
+
+    monkeypatch.setattr(mod.AdminStorageCleanupUseCase, "execute", _execute)
+    app.dependency_overrides[get_current_admin] = lambda: AuthUser(
+        id="admin", username="admin", role="administrator"
+    )
+    try:
+        client = TestClient(app)
+        r = client.post(
+            "/api/v3/admin/storage/cleanup",
+            json={"mode": "delete", "confirm": "DELETE_INVENTORY_ARTIFACTS"},
+        )
+    finally:
+        _restore_overrides()
+
+    assert r.status_code == 200
+    assert called["mode"] == "delete"

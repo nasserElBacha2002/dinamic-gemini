@@ -76,12 +76,12 @@ describe('AdminStorageMaintenancePage', () => {
     });
 
     const deleteBtn = screen.getByRole('button', {
-      name: /eliminar archivos del bucket y output/i,
+      name: /eliminar archivos operativos de inventario/i,
     });
     expect(deleteBtn).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText(/confirmación/i), {
-      target: { value: 'DELETE_ARTIFACTS' },
+      target: { value: 'DELETE_INVENTORY_ARTIFACTS' },
     });
     expect(deleteBtn).not.toBeDisabled();
   });

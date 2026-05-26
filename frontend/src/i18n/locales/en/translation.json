@@ -70,23 +70,25 @@
     "bucket": "Bucket",
     "bytes_found": "Bytes found",
     "confirm_label": "Confirmation",
-    "delete_button": "Delete bucket and output files",
+    "delete_button": "Delete inventory operational files",
     "delete_success": "Cleanup completed.",
     "dry_run_success": "Dry run completed.",
     "error_generic": "Cleanup failed.",
     "files_found": "Files found",
+    "files_skipped_protected": "Files skipped (protected)",
     "include_pipeline_temp": "Include pipeline temp workspace (job/run folders)",
     "irreversible_warning": "This action is irreversible.",
     "local_section": "Local files",
     "mode_label": "Mode",
     "objects_found": "Objects found",
+    "objects_skipped_protected": "Objects skipped (protected)",
     "output_dir": "Output directory",
     "prefix": "Prefix",
     "provider": "Provider",
     "remote_section": "Remote storage",
     "safe_roots": "Allowed roots",
-    "scope_hint": "Only objects under the configured bucket prefix and allowed local roots (e.g. output/v3_uploads) are affected.",
-    "simulate": "Simulate cleanup",
+    "scope_hint": "This action removes files tied to inventory operational uploads. It does not delete supplier reference images or other reusable configuration assets.",
+    "simulate": "Simulate inventory cleanup",
     "skipped": "Skipped"
   },
   "aisle": {
@@ -1323,7 +1325,7 @@
     },
     "admin_storage_maintenance": {
       "title": "Maintenance panel",
-      "subtitle": "Cleanup bucket and local output files"
+      "subtitle": "Inventory operational file cleanup (local and remote)"
     }
   },
   "ingestion_sessions": {

@@ -12,8 +12,12 @@ export interface RemoteCleanupSection {
   prefix?: string | null;
   objects_found: number;
   objects_deleted: number;
+  objects_skipped_protected?: number;
+  objects_skipped_not_allowed?: number;
   bytes_found: number;
   bytes_deleted: number;
+  protected_prefixes?: string[];
+  allowed_prefixes?: string[];
   skipped: boolean;
   skip_reason?: string | null;
   errors: string[];
@@ -22,10 +26,14 @@ export interface RemoteCleanupSection {
 export interface LocalCleanupSection {
   output_dir: string;
   safe_roots: string[];
+  allowed_roots?: string[];
   files_found: number;
   files_deleted: number;
+  files_skipped_protected?: number;
+  files_skipped_not_allowed?: number;
   bytes_found: number;
   bytes_deleted: number;
+  protected_roots?: string[];
   skipped: boolean;
   skip_reason?: string | null;
   errors: string[];
