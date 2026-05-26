@@ -22,6 +22,11 @@ CONTAINER_DEFAULT_PATH="/app/secrets/gcp-service-account.json"
 OVERRIDE_FILE="${BACKEND_ROOT}/docker-compose.override.yml"
 OVERRIDE_EXAMPLE="${BACKEND_ROOT}/docker-compose.override.example.yml"
 
+# Bash 3.2 compatible (macOS default bash lacks ${var,,}).
+to_lower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 read_env_var() {
   local key="$1"
   if [[ ! -f "${ENV_FILE}" ]]; then
@@ -44,7 +49,7 @@ gcp_creds_required() {
   local creds provider
   creds="$(read_env_var GOOGLE_APPLICATION_CREDENTIALS 2>/dev/null || true)"
   provider="$(read_env_var ARTIFACT_STORAGE_PROVIDER 2>/dev/null || true)"
-  provider="${provider,,}"
+  provider="$(to_lower "${provider}")"
   if [[ -n "${creds}" && "${creds}" == /app/secrets/* ]]; then
     return 0
   fi
@@ -89,11 +94,20 @@ The main compose file already mounts repo-root secrets when the key is at:
 
 Place the JSON on the server, ensure the mount, then rerun deploy.
 
+If the file exists on the host but not in the container, recreate the api service so volumes apply:
+
+  cd ${BACKEND_ROOT}
+  ${COMPOSE} up -d --force-recreate ${SERVICE}
+
+docker-compose may print WARN lines about unset variables when .env contains literal \$ characters
+(for example password hashes). Escape them as \$\$ in .env for Compose, or ignore if mounts work.
+
 Manual checks:
   cd backend
   ls -la secrets/gcp-service-account.json
   ls -la ../secrets/gcp-service-account.json
-  docker-compose exec api ls -la ${creds_path}
+  ${COMPOSE} exec -T ${SERVICE} ls -la /app/secrets/
+  ${COMPOSE} exec -T ${SERVICE} test -f ${creds_path}
 EOF
 }
 
@@ -136,19 +150,50 @@ check_host() {
   exit 1
 }
 
+container_secrets_mount_source() {
+  local cid mount_source
+  cid="$(${COMPOSE} ps -q "${SERVICE}" 2>/dev/null | head -n 1 || true)"
+  [[ -n "${cid}" ]] || return 1
+  mount_source="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app/secrets"}}{{.Source}}{{end}}{{end}}' "${cid}" 2>/dev/null || true)"
+  [[ -n "${mount_source}" ]] || return 1
+  printf '%s' "${mount_source}"
+}
+
 check_container() {
   if ! gcp_creds_required; then
     echo "==> GCP container secrets check skipped"
     return 0
   fi
 
-  local creds_path
+  local creds_path mount_source
   creds_path="$(resolve_container_creds_path)"
   echo "==> Checking GCP credentials inside ${SERVICE} container: ${creds_path}"
 
-  if ${COMPOSE} exec -T "${SERVICE}" test -f "${creds_path}"; then
+  mount_source="$(container_secrets_mount_source || true)"
+  if [[ -z "${mount_source}" ]]; then
+    echo "ERROR: running ${SERVICE} container has no /app/secrets volume mount." >&2
+    echo "       docker-compose.yml defines ../secrets:/app/secrets:ro but this container was" >&2
+    echo "       likely started before that mount existed (or from a different compose project)." >&2
+    echo "       Recreate from backend/:" >&2
+    echo "         cd ${BACKEND_ROOT} && ${COMPOSE} up -d --force-recreate ${SERVICE}" >&2
+    print_mount_fix_message "${creds_path}"
+    exit 1
+  fi
+  echo "OK: ${SERVICE} has volume mount /app/secrets <- ${mount_source}" >&2
+
+  if ${COMPOSE} exec -T "${SERVICE}" test -f "${creds_path}" 2>/dev/null; then
     echo "OK: ${creds_path} exists inside ${SERVICE}"
     return 0
+  fi
+
+  echo "==> Container diagnostics: listing /app/secrets/" >&2
+  ${COMPOSE} exec -T "${SERVICE}" ls -la /app/secrets/ >&2 || true
+
+  if host_secret_exists; then
+    echo "HINT: host secret file exists and /app/secrets is mounted, but ${creds_path} is missing." >&2
+    echo "      Ensure the file name matches and rerun:" >&2
+    echo "        ls -la ${HOST_REPO_SECRET}" >&2
+    echo "        ${COMPOSE} exec -T ${SERVICE} ls -la /app/secrets/" >&2
   fi
 
   print_mount_fix_message "${creds_path}"

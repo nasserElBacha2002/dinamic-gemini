@@ -79,6 +79,28 @@ the file is missing **inside the container** (mount or host path wrong). Fix the
 
 `dev_deploy_db_migrate.sh` runs inside the API container after `docker-compose up -d`.
 
+### Manual preflight (before full GitHub Actions deploy)
+
+Validate the migration wrapper on the server **without applying** migrations:
+
+```bash
+cd /opt/dinamic/dinamic-gemini/backend
+
+bash -n scripts/dev_deploy_db_migrate.sh
+
+DEV_DEPLOY_DB_MIGRATE_CHECK_ONLY=true bash scripts/dev_deploy_db_migrate.sh
+```
+
+`CHECK_ONLY` mode runs: `docker-compose` / `api` checks → exec readiness → GCP secrets (host + container) → `config-check` → `status` (capture + JSON parse + pending count) → `validate`. It never runs `apply`, rebuild, or restart.
+
+On success:
+
+```text
+CHECK_ONLY OK: migration preflight passed; ...
+```
+
+Use this after placing `secrets/gcp-service-account.json` and starting the API container, before pushing to trigger a full deploy.
+
 | Step | Command | On failure |
 |------|---------|------------|
 | Secrets | `check_deploy_secrets.sh container` | Deploy stops |
@@ -104,6 +126,7 @@ export RUN_MIGRATION_DOCTOR_ON_DEPLOY=true
 |----------|---------|---------|
 | `AUTO_APPLY_DEV_MIGRATIONS` | `true` | Apply pending migrations; if `false`, pending migrations fail the deploy |
 | `RUN_MIGRATION_DOCTOR_ON_DEPLOY` | `false` | When `true`, run `doctor` after `config-check` |
+| `DEV_DEPLOY_DB_MIGRATE_CHECK_ONLY` | `false` | When `true`, preflight only (no `apply`) — for manual/server validation |
 
 ## Exit code 137 (process killed)
 
