@@ -88,17 +88,31 @@ class WorkerInputArtifactResolver:
 
     def _copy_local_provider_path(self, rel_path: str, target_path: Path, *, label: str) -> Path:
         src = self._safe_legacy_path(rel_path)
-        if not src.exists():
-            raise RuntimeError(f"{label}: local provider file not found at {src}")
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_bytes(src.read_bytes())
-        logger.info(
-            "%s source selected provider=local storage_path=%s target=%s",
-            label,
-            rel_path,
-            str(target_path),
-        )
-        return target_path
+        if src.exists():
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(src.read_bytes())
+            logger.info(
+                "%s source selected provider=local storage_path=%s target=%s",
+                label,
+                rel_path,
+                str(target_path),
+            )
+            return target_path
+        if self._artifact_store is not None and hasattr(self._artifact_store, "download_to_path"):
+            logger.info(
+                "%s source selected provider=local artifact_store key=%s target=%s",
+                label,
+                rel_path,
+                str(target_path),
+            )
+            try:
+                self._artifact_store.download_to_path(rel_path, target_path, bucket=None)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"{label}: local provider file not found at {src} and artifact store download failed for key={rel_path}"
+                ) from exc
+            return target_path
+        raise RuntimeError(f"{label}: local provider file not found at {src}")
 
     def resolve_source_asset(self, asset: SourceAsset, target_path: Path) -> Path:
         provider = (asset.storage_provider or "").strip().lower()

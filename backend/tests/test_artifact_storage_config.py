@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 import src.config as config_mod
 from src.api import dependencies as deps
@@ -70,8 +71,8 @@ def test_settings_accepts_gcs_provider_with_bucket() -> None:
 
 def test_settings_rejects_unknown_artifact_storage_provider() -> None:
     with patch.dict(os.environ, {"ARTIFACT_STORAGE_PROVIDER": "azure"}, clear=False):
-        with pytest.raises(Exception):
-            Settings()
+        with pytest.raises(ValidationError):
+            Settings(artifact_storage_provider="azure")
 
 
 def test_get_artifact_storage_local_provider() -> None:

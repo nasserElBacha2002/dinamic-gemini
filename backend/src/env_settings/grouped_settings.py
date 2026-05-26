@@ -5,8 +5,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from typing import Literal, cast
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing_extensions import Self
+
+ArtifactStorageProvider = Literal["local", "s3", "gcs"]
 
 from src.env_settings.parsing import (
     parse_heuristic_resize_max_side,
@@ -620,9 +624,10 @@ class ApiRuntimeSettings(BaseModel):
 class ArtifactStorageSettings(BaseModel):
     model_config = {"extra": "forbid"}
 
-    artifact_storage_provider: str = Field(
-        default_factory=lambda: (
-            (os.getenv("ARTIFACT_STORAGE_PROVIDER", "local") or "local").strip().lower()
+    artifact_storage_provider: ArtifactStorageProvider = Field(
+        default_factory=lambda: cast(
+            ArtifactStorageProvider,
+            (os.getenv("ARTIFACT_STORAGE_PROVIDER", "local") or "local").strip().lower(),
         ),
         description="Artifact storage provider: local | s3 | gcs. Env: ARTIFACT_STORAGE_PROVIDER.",
     )
@@ -702,13 +707,10 @@ class ArtifactStorageSettings(BaseModel):
         ),
     )
 
-    @field_validator("artifact_storage_provider")
+    @field_validator("artifact_storage_provider", mode="before")
     @classmethod
-    def validate_artifact_storage_provider(cls, v: str) -> str:
-        p = (v or "local").strip().lower()
-        if p not in ("local", "s3", "gcs"):
-            raise ValueError("artifact_storage_provider must be one of: local, s3, gcs")
-        return p
+    def normalize_artifact_storage_provider(cls, v: object) -> str:
+        return (str(v or "local")).strip().lower()
 
     @model_validator(mode="after")
     def validate_remote_artifact_storage_when_provider_requires(self) -> Self:

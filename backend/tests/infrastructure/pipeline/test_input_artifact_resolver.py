@@ -90,11 +90,42 @@ def test_resolve_visual_reference_gcs_uses_artifact_store(tmp_path: Path) -> Non
     remote_store.download_to_path.assert_called_once()
 
 
+def test_resolve_visual_reference_local_uses_artifact_store_when_legacy_file_missing(
+    tmp_path: Path,
+) -> None:
+    legacy_base = tmp_path / "v3_uploads"
+    legacy_base.mkdir()
+    key = "client_suppliers/sup-1/reference_images/ref-remote.jpg"
+
+    def _fake_download(rel_key: str, target_path: Path, *, bucket: str | None = None) -> None:
+        assert rel_key == key
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(b"from-store")
+
+    remote_store = MagicMock()
+    remote_store.download_to_path.side_effect = _fake_download
+
+    resolver = WorkerInputArtifactResolver(
+        remote_store,
+        legacy_base=legacy_base,
+        legacy_local_read_enabled=True,
+    )
+    target = tmp_path / "work" / "ref.jpg"
+    out = resolver.resolve_visual_reference(
+        "ref-1",
+        reference_record=_Ref(storage_provider="local", storage_key=key),
+        source_path="",
+        target_path=target,
+    )
+    assert out.read_bytes() == b"from-store"
+    remote_store.download_to_path.assert_called_once()
+
+
 def test_resolve_visual_reference_local_missing_file_raises_clear_error(tmp_path: Path) -> None:
     legacy_base = tmp_path / "v3_uploads"
     legacy_base.mkdir()
     resolver = WorkerInputArtifactResolver(
-        MagicMock(),
+        None,
         legacy_base=legacy_base,
         legacy_local_read_enabled=True,
     )
