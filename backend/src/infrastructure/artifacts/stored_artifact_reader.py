@@ -42,7 +42,7 @@ def provider_meta_complete(meta: Mapping[str, Any]) -> bool:
     key = (meta.get("storage_key") or "").strip()
     if not prov or not key:
         return False
-    if prov == "s3":
+    if prov in ("s3", "gcs"):
         return bool((meta.get("storage_bucket") or "").strip())
     return True
 

@@ -26,6 +26,31 @@ def test_settings_require_s3_bucket_when_provider_is_s3() -> None:
             Settings()
 
 
+def test_settings_require_gcs_bucket_when_provider_is_gcs() -> None:
+    with patch.dict(
+        os.environ, {"ARTIFACT_STORAGE_PROVIDER": "gcs", "GCS_BUCKET_NAME": ""}, clear=False
+    ):
+        with pytest.raises(Exception):
+            Settings()
+
+
+def test_settings_accepts_gcs_provider_with_bucket() -> None:
+    with patch.dict(
+        os.environ,
+        {"ARTIFACT_STORAGE_PROVIDER": "gcs", "GCS_BUCKET_NAME": "my-gcs-bucket"},
+        clear=False,
+    ):
+        settings = Settings()
+        assert settings.artifact_storage_provider == "gcs"
+        assert settings.artifact_gcs_bucket == "my-gcs-bucket"
+
+
+def test_settings_rejects_unknown_artifact_storage_provider() -> None:
+    with patch.dict(os.environ, {"ARTIFACT_STORAGE_PROVIDER": "azure"}, clear=False):
+        with pytest.raises(Exception):
+            Settings()
+
+
 def test_get_artifact_storage_local_provider() -> None:
     _reset_config_cache()
     with patch.dict(
@@ -69,4 +94,34 @@ def test_get_artifact_storage_s3_provider_uses_s3_adapter() -> None:
             storage = deps.get_artifact_storage()
         assert isinstance(storage, _FakeS3Adapter)
         assert storage.bucket == "bucket-a"
+        assert storage.prefix == "v3"
+
+
+def test_get_artifact_storage_gcs_provider_uses_gcs_adapter() -> None:
+    _reset_config_cache()
+
+    class _FakeGcsAdapter:
+        def __init__(self, **kwargs):
+            self.bucket = kwargs["bucket"]
+            self.prefix = kwargs["prefix"]
+
+    with patch.dict(
+        os.environ,
+        {
+            "ARTIFACT_STORAGE_PROVIDER": "gcs",
+            "GCS_BUCKET_NAME": "bucket-gcs",
+            "GCS_PROJECT_ID": "proj-1",
+            "GCS_OBJECT_PREFIX": "v3",
+            "GCS_SIGNED_URL_TTL_SECONDS": "600",
+        },
+        clear=False,
+    ):
+        _ = load_settings()
+        with patch(
+            "src.infrastructure.storage.gcs_artifact_storage_adapter.GcsArtifactStorageAdapter",
+            _FakeGcsAdapter,
+        ):
+            storage = deps.get_artifact_storage()
+        assert isinstance(storage, _FakeGcsAdapter)
+        assert storage.bucket == "bucket-gcs"
         assert storage.prefix == "v3"

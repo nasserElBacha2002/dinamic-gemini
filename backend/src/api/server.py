@@ -58,6 +58,15 @@ if artifact_provider == "s3":
         settings.artifact_s3_signed_url_ttl_sec,
         settings.artifact_storage_legacy_local_read_enabled,
     )
+elif artifact_provider == "gcs":
+    logger.info(
+        "Artifact storage config: provider=gcs bucket=%s project=%s prefix=%s signed_url_ttl_sec=%s legacy_local_read=%s",
+        settings.artifact_gcs_bucket,
+        settings.artifact_gcs_project_id or "<default>",
+        settings.artifact_gcs_prefix,
+        settings.artifact_gcs_signed_url_ttl_sec,
+        settings.artifact_storage_legacy_local_read_enabled,
+    )
 else:
     logger.info(
         "Artifact storage config: provider=local output_dir=%s legacy_local_read=%s",

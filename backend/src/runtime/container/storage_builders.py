@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_artifact_storage(settings: AppSettings) -> ArtifactStorage:
-    """Local or S3 artifact storage — same behavior as legacy ``AppContainer.get_artifact_storage`` body."""
+    """Local, S3, or GCS artifact storage — same behavior as legacy ``AppContainer.get_artifact_storage`` body."""
     provider = (settings.artifact_storage_provider or "local").strip().lower()
     if provider == "s3":
         from src.infrastructure.storage.s3_artifact_storage_adapter import S3ArtifactStorageAdapter
@@ -36,6 +36,28 @@ def build_artifact_storage(settings: AppSettings) -> ArtifactStorage:
             settings.artifact_storage_legacy_local_read_enabled,
         )
         return s3_storage
+
+    if provider == "gcs":
+        from src.infrastructure.storage.gcs_artifact_storage_adapter import GcsArtifactStorageAdapter
+
+        if not settings.artifact_gcs_bucket:
+            raise RuntimeError("GCS_BUCKET_NAME is required when ARTIFACT_STORAGE_PROVIDER=gcs")
+        gcs_storage: ArtifactStorage = GcsArtifactStorageAdapter(
+            bucket=settings.artifact_gcs_bucket,
+            prefix=settings.artifact_gcs_prefix,
+            project_id=settings.artifact_gcs_project_id or None,
+            signed_url_ttl_sec=settings.artifact_gcs_signed_url_ttl_sec,
+        )
+        logger.info(
+            "Artifact storage configured: provider=gcs bucket=%s project=%s prefix=%s "
+            "signed_url_ttl_sec=%s legacy_local_read=%s",
+            settings.artifact_gcs_bucket,
+            settings.artifact_gcs_project_id or "<default>",
+            settings.artifact_gcs_prefix,
+            settings.artifact_gcs_signed_url_ttl_sec,
+            settings.artifact_storage_legacy_local_read_enabled,
+        )
+        return gcs_storage
 
     from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 

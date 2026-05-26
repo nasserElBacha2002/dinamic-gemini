@@ -624,7 +624,7 @@ class ArtifactStorageSettings(BaseModel):
         default_factory=lambda: (
             (os.getenv("ARTIFACT_STORAGE_PROVIDER", "local") or "local").strip().lower()
         ),
-        description="Artifact storage provider: local | s3. Env: ARTIFACT_STORAGE_PROVIDER.",
+        description="Artifact storage provider: local | s3 | gcs. Env: ARTIFACT_STORAGE_PROVIDER.",
     )
     artifact_s3_bucket: str = Field(
         default_factory=lambda: (os.getenv("ARTIFACT_S3_BUCKET", "") or "").strip(),
@@ -643,6 +643,31 @@ class ArtifactStorageSettings(BaseModel):
         ge=30,
         le=86400,
         description="Signed URL TTL in seconds for S3 artifact URLs. Env: ARTIFACT_S3_SIGNED_URL_TTL_SEC.",
+    )
+    artifact_gcs_bucket: str = Field(
+        default_factory=lambda: (os.getenv("GCS_BUCKET_NAME", "") or "").strip(),
+        description="GCS bucket name for artifact storage when provider=gcs. Env: GCS_BUCKET_NAME.",
+    )
+    artifact_gcs_project_id: str = Field(
+        default_factory=lambda: (os.getenv("GCS_PROJECT_ID", "") or "").strip(),
+        description="Optional GCP project id for GCS client. Env: GCS_PROJECT_ID.",
+    )
+    artifact_gcs_prefix: str = Field(
+        default_factory=lambda: (os.getenv("GCS_OBJECT_PREFIX", "v3") or "v3").strip().strip("/"),
+        description="GCS object name prefix for artifact storage. Env: GCS_OBJECT_PREFIX.",
+    )
+    artifact_gcs_signed_url_ttl_sec: int = Field(
+        default_factory=lambda: int(os.getenv("GCS_SIGNED_URL_TTL_SECONDS", "900")),
+        ge=30,
+        le=86400,
+        description="Signed URL TTL in seconds for GCS artifact URLs. Env: GCS_SIGNED_URL_TTL_SECONDS.",
+    )
+    google_application_credentials: str = Field(
+        default_factory=lambda: (os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "") or "").strip(),
+        description=(
+            "Path to GCP service account JSON for GCS (ADC). "
+            "Env: GOOGLE_APPLICATION_CREDENTIALS."
+        ),
     )
     artifact_storage_legacy_local_read_enabled: bool = Field(
         default_factory=lambda: (
@@ -681,14 +706,25 @@ class ArtifactStorageSettings(BaseModel):
     @classmethod
     def validate_artifact_storage_provider(cls, v: str) -> str:
         p = (v or "local").strip().lower()
-        if p not in ("local", "s3"):
-            raise ValueError("artifact_storage_provider must be one of: local, s3")
+        if p not in ("local", "s3", "gcs"):
+            raise ValueError("artifact_storage_provider must be one of: local, s3, gcs")
         return p
 
     @model_validator(mode="after")
-    def validate_s3_bucket_when_s3_provider(self) -> Self:
+    def validate_remote_artifact_storage_when_provider_requires(self) -> Self:
         if self.artifact_storage_provider == "s3" and not (self.artifact_s3_bucket or "").strip():
             raise ValueError("artifact_s3_bucket is required when artifact_storage_provider=s3")
+        if self.artifact_storage_provider == "gcs" and not (self.artifact_gcs_bucket or "").strip():
+            raise ValueError("artifact_gcs_bucket is required when artifact_storage_provider=gcs")
+        creds_path = (self.google_application_credentials or "").strip()
+        if self.artifact_storage_provider == "gcs" and creds_path:
+            from pathlib import Path as _Path
+
+            if not _Path(creds_path).is_file():
+                raise ValueError(
+                    "google_application_credentials must point to an existing file "
+                    f"when set (got {creds_path!r})"
+                )
         return self
 
 
