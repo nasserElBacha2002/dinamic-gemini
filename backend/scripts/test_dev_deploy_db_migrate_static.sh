@@ -53,4 +53,38 @@ if awk '/^main_check_only\(\)/,/^}/' "${TARGET}" | grep -q 'run_migrate apply'; 
   exit 1
 fi
 
+# Embedded Python must compile (catches f-string backslash-in-expression errors).
+_python_snippet() {
+  local fn="$1"
+  awk -v fn="${fn}" '
+    $0 ~ "^" fn "\\(\\) \\{" { found=1; next }
+    found && /^[[:space:]]*cat <<.?PY/ { heredoc=1; next }
+    heredoc && /^PY$/ { exit }
+    heredoc { print }
+  ' "${TARGET}"
+}
+
+_tmpdir="$(mktemp -d)"
+trap 'rm -rf "${_tmpdir}"' EXIT
+_read_file="${_tmpdir}/read_status.py"
+_assert_file="${_tmpdir}/assert_status_clean.py"
+_python_snippet _python_read_status_json >"${_read_file}"
+_python_snippet _python_assert_status_clean >"${_assert_file}"
+python3 -c 'import ast, sys; [ast.parse(open(p).read(), p) for p in sys.argv[1:]]' \
+  "${_read_file}" "${_assert_file}"
+
+# Smoke: status JSON parse + assert_status_clean (no Docker).
+sample='{"pending_versions":[],"compatible":true,"required_version":"0036","current_version":"0036"}'
+parsed="$(printf '%s' "${sample}" | python3 "${_read_file}")"
+if ! printf '%s' "${parsed}" | STATUS_LABEL=smoke python3 "${_assert_file}" | grep -q 'OK: smoke'; then
+  echo "assert_status_clean smoke test failed" >&2
+  exit 1
+fi
+
+if grep -E 'data\.get\\(\\"' "${TARGET}" >/dev/null 2>&1; then
+  echo "found escaped quotes inside f-string expression (invalid in Python 3.11+)" >&2
+  grep -n -E 'data\.get\\(\\"' "${TARGET}" >&2 || true
+  exit 1
+fi
+
 echo "dev_deploy_db_migrate.sh static checks OK"
