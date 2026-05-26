@@ -30,6 +30,15 @@ export function supplierReferenceImageFilePath(clientId: string, supplierId: str
   return `${supplierReferenceImagePath(clientId, supplierId, imageId)}/file`;
 }
 
+/** GET …/reference-images/{imageId}/image-display-url */
+export function supplierReferenceImageDisplayUrlPath(
+  clientId: string,
+  supplierId: string,
+  imageId: string
+): string {
+  return `${supplierReferenceImagePath(clientId, supplierId, imageId)}/image-display-url`;
+}
+
 /** GET|POST .../clients/{clientId}/suppliers/{supplierId}/prompt-configs */
 export function supplierPromptConfigsPath(clientId: string, supplierId: string): string {
   return `${pathToClientSuppliersBase(clientId)}/${encodeURIComponent(supplierId)}/prompt-configs`;

@@ -1,9 +1,9 @@
 """
-Phase 4: resolve operator-facing artifacts from provider-aware metadata (S3/local ArtifactStore).
+Phase 4: resolve operator-facing artifacts from provider-aware metadata (S3/GCS/local ArtifactStore).
 
 Strategy:
-- **S3** (`storage_provider == "s3"`): **307 Temporary Redirect** to a presigned GET URL (low backend
-  bandwidth; matches inventory visual-reference behavior).
+- **S3 / GCS** (`storage_provider` in ``s3``, ``gcs``): **307 Temporary Redirect** to a signed GET URL
+  (low backend bandwidth; matches inventory visual-reference behavior).
 - **Local** adapter (`storage_provider == "local"`): **FileResponse** from ``{output_dir}/v3_uploads/{storage_key}``
   with path traversal checks (signed URLs are not supported for local).
 
@@ -33,7 +33,7 @@ from src.config import load_settings
 from src.infrastructure.artifacts.stored_artifact_reader import (
     StoredArtifactAccessError,
     cast_mapping,
-    ensure_s3_bucket_matches_configured,
+    ensure_remote_bucket_matches_configured,
     fetch_json_from_durable_meta,
     provider_meta_complete,
 )
@@ -140,7 +140,7 @@ def presigned_s3_get_url_for_provider_key(
         "storage_bucket": storage_bucket,
         "storage_key": key,
     }
-    ensure_s3_bucket_matches_configured(meta_dict, artifact_store)
+    ensure_remote_bucket_matches_configured(meta_dict, artifact_store)
     sign = getattr(artifact_store, "generate_signed_url", None)
     if not callable(sign):
         raise StoredArtifactAccessError(
@@ -169,6 +169,55 @@ def presigned_s3_get_url_for_provider_key(
     return str(url)
 
 
+def presigned_gcs_get_url_for_provider_key(
+    *,
+    storage_key: str,
+    storage_bucket: str | None,
+    artifact_store: Any,
+) -> str:
+    """Generate a signed GET URL for GCS-backed ``storage_key`` (after bucket validation)."""
+    key = (storage_key or "").strip()
+    if not key:
+        raise StoredArtifactAccessError(
+            404,
+            "Stored artifact metadata is incomplete (missing key).",
+            "incomplete_metadata",
+        )
+    settings = load_settings()
+    meta_dict = {
+        "storage_provider": "gcs",
+        "storage_bucket": storage_bucket,
+        "storage_key": key,
+    }
+    ensure_remote_bucket_matches_configured(meta_dict, artifact_store)
+    sign = getattr(artifact_store, "generate_signed_url", None)
+    if not callable(sign):
+        raise StoredArtifactAccessError(
+            500,
+            "Artifact storage is not configured for signed URL generation.",
+            "signed_url_unavailable",
+        )
+    ttl = int(settings.artifact_gcs_signed_url_ttl_sec)
+    try:
+        url = sign(key, ttl)
+    except Exception as exc:
+        logger.exception(
+            "artifact_access signed_url_failed provider=gcs storage_key=%s",
+            key,
+        )
+        raise StoredArtifactAccessError(
+            502,
+            f"Could not generate download URL for artifact: {exc}",
+            "signed_url_failed",
+        ) from exc
+    logger.info(
+        "artifact_access source=gcs mode=signed_url storage_key=%s ttl_sec=%s",
+        key,
+        ttl,
+    )
+    return str(url)
+
+
 def serve_provider_artifact_response(
     *,
     filename: str,
@@ -178,7 +227,7 @@ def serve_provider_artifact_response(
     storage_bucket: str | None,
     artifact_store: Any,
 ) -> Response:
-    """Return redirect (S3) or FileResponse (local) for a provider-backed object."""
+    """Return redirect (S3/GCS) or FileResponse (local) for a provider-backed object."""
     prov = (storage_provider or "").strip().lower()
     key = (storage_key or "").strip()
     if not prov or not key:
@@ -193,7 +242,7 @@ def serve_provider_artifact_response(
         "storage_bucket": storage_bucket,
         "storage_key": key,
     }
-    ensure_s3_bucket_matches_configured(meta_dict, artifact_store)
+    ensure_remote_bucket_matches_configured(meta_dict, artifact_store)
 
     if prov == "s3":
         url = presigned_s3_get_url_for_provider_key(
@@ -205,6 +254,19 @@ def serve_provider_artifact_response(
             "artifact_access source=s3 mode=signed_redirect storage_key=%s ttl_sec=%s",
             key,
             int(settings.artifact_s3_signed_url_ttl_sec),
+        )
+        return RedirectResponse(url=url, status_code=307)
+
+    if prov == "gcs":
+        url = presigned_gcs_get_url_for_provider_key(
+            storage_key=key,
+            storage_bucket=storage_bucket,
+            artifact_store=artifact_store,
+        )
+        logger.info(
+            "artifact_access source=gcs mode=signed_redirect storage_key=%s ttl_sec=%s",
+            key,
+            int(settings.artifact_gcs_signed_url_ttl_sec),
         )
         return RedirectResponse(url=url, status_code=307)
 
@@ -293,7 +355,7 @@ def resolve_source_asset_image_display(
     """Resolve how the SPA should display a non-HEIC source asset image.
 
     Returns ``(image_url, requires_authenticated_fetch)``:
-    - **S3:** ``(presigned_https_url, False)`` — safe for ``<img src>`` without Bearer.
+    - **S3 / GCS:** ``(signed_https_url, False)`` — safe for ``<img src>`` without Bearer.
     - **Local provider / legacy path-only rows:** ``(None, True)`` only after the same path checks
       ``GET .../file`` would pass for readable bytes under ``v3_uploads``. If the file is missing,
       legacy is disabled, or the path is unsafe, raises :class:`StoredArtifactAccessError` (same as
@@ -322,6 +384,13 @@ def resolve_source_asset_image_display(
             )
         if prov == "s3":
             signed = presigned_s3_get_url_for_provider_key(
+                storage_key=key,
+                storage_bucket=bucket,
+                artifact_store=artifact_store,
+            )
+            return (signed, False)
+        if prov == "gcs":
+            signed = presigned_gcs_get_url_for_provider_key(
                 storage_key=key,
                 storage_bucket=bucket,
                 artifact_store=artifact_store,
@@ -388,6 +457,15 @@ def resolve_supplier_reference_image_file_response(
 ) -> Response:
     """Serve a SupplierReferenceImage using the same provider / legacy rules as other reference images."""
     return resolve_reference_image_file_response(image, artifact_store=artifact_store)
+
+
+def resolve_supplier_reference_image_display(
+    image: Any,
+    *,
+    artifact_store: Any,
+) -> tuple[str | None, bool]:
+    """Resolve how the SPA should display a supplier reference image (same contract as source assets)."""
+    return resolve_source_asset_image_display(image, artifact_store=artifact_store)
 
 
 def load_hybrid_report_json_for_api(

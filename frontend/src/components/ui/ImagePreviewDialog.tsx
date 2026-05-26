@@ -29,20 +29,22 @@ export default function ImagePreviewDialog({
         sx: { borderRadius: 2 }
       }}
     >
-      <DialogTitle 
-        sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between', 
-          pr: 2, 
+      <DialogTitle
+        component="div"
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          pr: 2,
           py: 1.5,
           borderBottom: 1,
-          borderColor: 'divider'
+          borderColor: 'divider',
         }}
       >
-        <Typography 
-          variant="subtitle1" 
-          noWrap 
+        <Typography
+          component="span"
+          variant="subtitle1"
+          noWrap
           sx={{ flex: 1, fontWeight: 700, mr: 2 }}
         >
           {title || t('results.image_preview_fallback_title')}

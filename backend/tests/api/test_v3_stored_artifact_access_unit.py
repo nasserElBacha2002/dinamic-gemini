@@ -14,6 +14,7 @@ from src.api.services.v3_stored_artifact_access import (
     resolve_reference_image_file_response,
     resolve_source_asset_file_response,
     resolve_source_asset_image_display,
+    resolve_supplier_reference_image_display,
 )
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
@@ -86,6 +87,95 @@ def test_resolve_source_asset_s3_uses_redirect(monkeypatch) -> None:
     resp = resolve_source_asset_file_response(asset, artifact_store=mock_store)
     assert resp.status_code == 307
     assert resp.headers["location"] == "https://example/presigned"
+
+
+def test_resolve_source_asset_gcs_uses_redirect(monkeypatch) -> None:
+    asset = SourceAsset(
+        id="a1",
+        aisle_id="aisle",
+        type=SourceAssetType.PHOTO,
+        original_filename="p.jpg",
+        storage_path="legacy/ignored",
+        mime_type="image/jpeg",
+        uploaded_at=datetime.now(timezone.utc),
+        storage_provider="gcs",
+        storage_bucket="my-gcs-bucket",
+        storage_key="k1",
+    )
+    mock_store = MagicMock()
+    mock_store.bucket = "my-gcs-bucket"
+    mock_store.generate_signed_url.return_value = "https://example/gcs-signed"
+
+    monkeypatch.setattr(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        lambda: type(
+            "S",
+            (),
+            {"artifact_gcs_signed_url_ttl_sec": 900, **_DEFAULT_STORE_ACCESS_SETTINGS},
+        )(),
+    )
+    resp = resolve_source_asset_file_response(asset, artifact_store=mock_store)
+    assert resp.status_code == 307
+    assert resp.headers["location"] == "https://example/gcs-signed"
+
+
+def test_resolve_source_asset_image_display_gcs_returns_signed_url(monkeypatch) -> None:
+    asset = SourceAsset(
+        id="a1",
+        aisle_id="aisle",
+        type=SourceAssetType.PHOTO,
+        original_filename="p.jpg",
+        storage_path="legacy/ignored",
+        mime_type="image/jpeg",
+        uploaded_at=datetime.now(timezone.utc),
+        storage_provider="gcs",
+        storage_bucket="my-gcs-bucket",
+        storage_key="k1",
+    )
+    mock_store = MagicMock()
+    mock_store.bucket = "my-gcs-bucket"
+    mock_store.generate_signed_url.return_value = "https://example/gcs-signed"
+    monkeypatch.setattr(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        lambda: type(
+            "S",
+            (),
+            {"artifact_gcs_signed_url_ttl_sec": 900, **_DEFAULT_STORE_ACCESS_SETTINGS},
+        )(),
+    )
+    url, need_fetch = resolve_source_asset_image_display(asset, artifact_store=mock_store)
+    assert url == "https://example/gcs-signed"
+    assert need_fetch is False
+
+
+def test_resolve_supplier_reference_image_display_gcs_returns_signed_url(monkeypatch) -> None:
+    image = SupplierReferenceImage(
+        id="ref-1",
+        client_supplier_id="supplier-1",
+        filename="ref.jpg",
+        storage_path="legacy/ignored",
+        mime_type="image/jpeg",
+        file_size=10,
+        storage_provider="gcs",
+        storage_bucket="my-gcs-bucket",
+        storage_key="client_suppliers/s/ref.jpg",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+    mock_store = MagicMock()
+    mock_store.bucket = "my-gcs-bucket"
+    mock_store.generate_signed_url.return_value = "https://example/gcs-supplier-signed"
+    monkeypatch.setattr(
+        "src.api.services.v3_stored_artifact_access.load_settings",
+        lambda: type(
+            "S",
+            (),
+            {"artifact_gcs_signed_url_ttl_sec": 900, **_DEFAULT_STORE_ACCESS_SETTINGS},
+        )(),
+    )
+    url, need_fetch = resolve_supplier_reference_image_display(image, artifact_store=mock_store)
+    assert url == "https://example/gcs-supplier-signed"
+    assert need_fetch is False
 
 
 def test_resolve_source_asset_image_display_s3_returns_presigned_url(monkeypatch) -> None:

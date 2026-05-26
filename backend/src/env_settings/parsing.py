@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+_DOCKER_GCP_SECRETS_PREFIX = "/app/secrets/"
 
 
 def parse_max_frames_to_send() -> int | None:
@@ -50,6 +53,37 @@ def parse_heuristic_resize_max_side() -> int | None:
         return v if v > 0 else None
     except ValueError:
         return None
+
+
+def resolve_google_application_credentials_path(path: str) -> str:
+    """Resolve GOOGLE_APPLICATION_CREDENTIALS for local dev vs Docker.
+
+    Docker Compose mounts ``<repo>/secrets`` at ``/app/secrets``. When the env var
+    still points at ``/app/secrets/...`` but the process runs on the host (e.g. ``./dev.sh``),
+    fall back to ``<repo>/secrets/<file>`` if that file exists.
+    """
+    raw = (path or "").strip()
+    if not raw:
+        return raw
+    candidate = Path(raw).expanduser()
+    if candidate.is_file():
+        return str(candidate.resolve())
+    if raw.startswith(_DOCKER_GCP_SECRETS_PREFIX):
+        name = raw[len(_DOCKER_GCP_SECRETS_PREFIX) :].lstrip("/")
+        if name:
+            search_roots: list[Path] = [Path.cwd(), Path.cwd().parent]
+            # backend/src/env_settings/parsing.py → repo root is parents[3]
+            search_roots.append(Path(__file__).resolve().parents[3])
+            seen: set[Path] = set()
+            for root in search_roots:
+                root = root.resolve()
+                if root in seen:
+                    continue
+                seen.add(root)
+                local = (root / "secrets" / name).resolve()
+                if local.is_file():
+                    return str(local)
+    return raw
 
 
 def parse_photos_max_single_bytes() -> int | None:

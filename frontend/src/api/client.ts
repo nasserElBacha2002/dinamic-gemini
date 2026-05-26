@@ -71,6 +71,11 @@ export {
   getAdminAiConfig,
   getProcessingProviderOptions,
 } from './adminAiApi';
+export { postAdminStorageCleanup } from './adminStorageApi';
+export type {
+  AdminStorageCleanupRequest,
+  AdminStorageCleanupResponse,
+} from './adminStorageApi';
 export type {
   CodeScanCodeType,
   CodeScanDetection,
@@ -95,10 +100,12 @@ export {
   createSupplierPromptConfigVersion,
   createClientSupplier,
   deleteSupplierReferenceImage,
+  fetchSupplierReferenceImageDisplay,
   fetchSupplierReferenceImageFile,
   getActiveSupplierPromptConfig,
   getClientSupplier,
   getSupplierPromptConfigById,
+  getSupplierReferenceImageDisplayUrl,
   getSupplierReferenceImageFileUrl,
   listClientSuppliers,
   listSupplierPromptConfigs,

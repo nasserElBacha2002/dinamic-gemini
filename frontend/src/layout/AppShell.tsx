@@ -31,6 +31,7 @@ import { ROUTE_HOME, ROUTE_INVENTORIES_ROOT } from '../constants/appRoutes';
 import { useAuth } from '../features/auth';
 import {
   ADMIN_AI_CONFIG_NAV_ITEM,
+  ADMIN_STORAGE_MAINTENANCE_NAV_ITEM,
   DRAWER_WIDTH,
   PRIMARY_NAV_ITEMS,
   type PrimaryNavItem,
@@ -60,7 +61,7 @@ export default function AppShell() {
   const { titleKey, subtitleKey } = topBarCopy(pathname);
   const navItems = useMemo((): PrimaryNavItem[] => {
     if (user?.username === 'admin') {
-      return [...PRIMARY_NAV_ITEMS, ADMIN_AI_CONFIG_NAV_ITEM];
+      return [...PRIMARY_NAV_ITEMS, ADMIN_AI_CONFIG_NAV_ITEM, ADMIN_STORAGE_MAINTENANCE_NAV_ITEM];
     }
     return PRIMARY_NAV_ITEMS;
   }, [user?.username]);

@@ -56,7 +56,7 @@ class WorkerInputArtifactResolver:
                 f"{label}: storage_provider={provider} storage_bucket={bucket} storage_key={key} but artifact store is unavailable"
             )
         configured_bucket = (getattr(self._artifact_store, "bucket", None) or "").strip()
-        if provider == "s3" and configured_bucket and bucket and configured_bucket != bucket:
+        if provider in ("s3", "gcs") and configured_bucket and bucket and configured_bucket != bucket:
             raise RuntimeError(
                 f"{label}: bucket mismatch record_bucket={bucket} configured_bucket={configured_bucket}"
             )
@@ -88,17 +88,31 @@ class WorkerInputArtifactResolver:
 
     def _copy_local_provider_path(self, rel_path: str, target_path: Path, *, label: str) -> Path:
         src = self._safe_legacy_path(rel_path)
-        if not src.exists():
-            raise RuntimeError(f"{label}: local provider file not found at {src}")
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_bytes(src.read_bytes())
-        logger.info(
-            "%s source selected provider=local storage_path=%s target=%s",
-            label,
-            rel_path,
-            str(target_path),
-        )
-        return target_path
+        if src.exists():
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(src.read_bytes())
+            logger.info(
+                "%s source selected provider=local storage_path=%s target=%s",
+                label,
+                rel_path,
+                str(target_path),
+            )
+            return target_path
+        if self._artifact_store is not None and hasattr(self._artifact_store, "download_to_path"):
+            logger.info(
+                "%s source selected provider=local artifact_store key=%s target=%s",
+                label,
+                rel_path,
+                str(target_path),
+            )
+            try:
+                self._artifact_store.download_to_path(rel_path, target_path, bucket=None)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"{label}: local provider file not found at {src} and artifact store download failed for key={rel_path}"
+                ) from exc
+            return target_path
+        raise RuntimeError(f"{label}: local provider file not found at {src}")
 
     def resolve_source_asset(self, asset: SourceAsset, target_path: Path) -> Path:
         provider = (asset.storage_provider or "").strip().lower()
@@ -109,7 +123,7 @@ class WorkerInputArtifactResolver:
                 raise RuntimeError(
                     f"source asset {asset.id}: storage_key is set but storage_provider is missing"
                 )
-            if provider == "s3":
+            if provider in ("s3", "gcs"):
                 if not bucket:
                     raise RuntimeError(
                         f"source asset {asset.id}: storage_provider={provider} but storage_bucket is missing"
@@ -126,16 +140,11 @@ class WorkerInputArtifactResolver:
                     label=f"source asset {asset.id}",
                 )
             if provider == "local":
-                if key:
-                    return self._download_provider_key(
-                        provider=provider,
-                        bucket=None,
-                        key=key,
-                        target_path=target_path,
-                        label=f"source asset {asset.id}",
-                    )
+                # Local rows always live under legacy_base (v3_uploads), even when runtime
+                # ARTIFACT_STORAGE_PROVIDER is s3/gcs for new uploads.
+                rel = key or (asset.storage_path or "").strip()
                 return self._copy_local_provider_path(
-                    asset.storage_path,
+                    rel,
                     target_path,
                     label=f"source asset {asset.id}",
                 )
@@ -173,7 +182,7 @@ class WorkerInputArtifactResolver:
                 raise RuntimeError(
                     f"visual reference {reference_id}: storage_key is set but storage_provider is missing"
                 )
-            if provider == "s3":
+            if provider in ("s3", "gcs"):
                 if not bucket:
                     raise RuntimeError(
                         f"visual reference {reference_id}: storage_provider={provider} but storage_bucket is missing"
@@ -190,16 +199,9 @@ class WorkerInputArtifactResolver:
                     label=f"visual reference {reference_id}",
                 )
             if provider == "local":
-                if key:
-                    return self._download_provider_key(
-                        provider=provider,
-                        bucket=None,
-                        key=key,
-                        target_path=target_path,
-                        label=f"visual reference {reference_id}",
-                    )
+                rel = key or (source_path or "").strip()
                 return self._copy_local_provider_path(
-                    source_path,
+                    rel,
                     target_path,
                     label=f"visual reference {reference_id}",
                 )

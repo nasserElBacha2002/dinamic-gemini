@@ -328,6 +328,44 @@ def test_delete_supplier_reference_image_wrong_client() -> None:
     assert r.json().get("code") == CLIENT_SUPPLIER_CLIENT_MISMATCH
 
 
+def test_supplier_reference_image_image_display_url_presigned_s3(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ARTIFACT_STORAGE_PROVIDER", "s3")
+    monkeypatch.setenv("ARTIFACT_S3_BUCKET", "bucket-x")
+    monkeypatch.setenv("ARTIFACT_S3_SIGNED_URL_TTL_SEC", "777")
+    config_module._settings = AppSettings()
+    reset_app_container_for_tests()
+    app.dependency_overrides[get_artifact_storage] = lambda: StubSignedUrlArtifactStorage()
+    try:
+        cid = _create_client()
+        sid = _create_supplier(cid)
+        upload_resp = client.post(
+            f"/api/v3/clients/{cid}/suppliers/{sid}/reference-images",
+            files=[("files", ("ref.jpg", BytesIO(b"jpeg-data"), "image/jpeg"))],
+            headers=_auth_headers(),
+        )
+        assert upload_resp.status_code == 201
+        image_id = upload_resp.json()["items"][0]["id"]
+
+        display_resp = client.get(
+            f"/api/v3/clients/{cid}/suppliers/{sid}/reference-images/{image_id}/image-display-url",
+            headers=_auth_headers(),
+        )
+        assert display_resp.status_code == 200
+        body = display_resp.json()
+        assert body["display_strategy"] == "presigned_url"
+        assert body["requires_authenticated_fetch"] is False
+        assert body["image_url"].startswith("https://signed.example/client_suppliers/")
+    finally:
+        app.dependency_overrides.pop(get_artifact_storage, None)
+        monkeypatch.delenv("ARTIFACT_STORAGE_PROVIDER", raising=False)
+        monkeypatch.delenv("ARTIFACT_S3_BUCKET", raising=False)
+        monkeypatch.delenv("ARTIFACT_S3_SIGNED_URL_TTL_SEC", raising=False)
+        reload_settings()
+        reset_app_container_for_tests()
+
+
 def test_supplier_reference_image_file_redirect_s3(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ARTIFACT_STORAGE_PROVIDER", "s3")
     monkeypatch.setenv("ARTIFACT_S3_BUCKET", "bucket-x")

@@ -23,6 +23,19 @@ if [[ -f "${ROOT}/.env" ]]; then
   done < "${ROOT}/.env"
 fi
 
+# Docker uses /app/secrets/...; local dev uses repo secrets/ (same file, host path).
+if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" && ! -f "${GOOGLE_APPLICATION_CREDENTIALS}" ]]; then
+  case "${GOOGLE_APPLICATION_CREDENTIALS}" in
+    /app/secrets/*)
+      _gcp_secret_name="${GOOGLE_APPLICATION_CREDENTIALS#/app/secrets/}"
+      if [[ -f "${ROOT}/secrets/${_gcp_secret_name}" ]]; then
+        export GOOGLE_APPLICATION_CREDENTIALS="${ROOT}/secrets/${_gcp_secret_name}"
+        echo "[dev] GOOGLE_APPLICATION_CREDENTIALS remapped to ${GOOGLE_APPLICATION_CREDENTIALS}"
+      fi
+      ;;
+  esac
+fi
+
 # Prefer backend's venv (has backend deps); fallback to root .venv or system python
 if [[ -x "${ROOT}/backend/.venv/bin/python" ]]; then
   PYTHON="${ROOT}/backend/.venv/bin/python"

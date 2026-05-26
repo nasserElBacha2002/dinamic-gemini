@@ -42,12 +42,13 @@ def provider_meta_complete(meta: Mapping[str, Any]) -> bool:
     key = (meta.get("storage_key") or "").strip()
     if not prov or not key:
         return False
-    if prov == "s3":
+    if prov in ("s3", "gcs"):
         return bool((meta.get("storage_bucket") or "").strip())
     return True
 
 
-def ensure_s3_bucket_matches_configured(meta: Mapping[str, Any], artifact_store: Any) -> None:
+def ensure_remote_bucket_matches_configured(meta: Mapping[str, Any], artifact_store: Any) -> None:
+    """Validate record bucket matches configured S3/GCS adapter bucket when both are set."""
     configured = (getattr(artifact_store, "bucket", None) or "").strip()
     record_bucket = (meta.get("storage_bucket") or "").strip()
     if not configured or not record_bucket:
@@ -204,7 +205,7 @@ def load_artifact_content_from_provider_meta(
             f"{label}: incomplete storage metadata (provider, key, and for S3 a bucket are required).",
             "incomplete_metadata",
         )
-    ensure_s3_bucket_matches_configured(meta, artifact_store)
+    ensure_remote_bucket_matches_configured(meta, artifact_store)
     key = (meta.get("storage_key") or "").strip()
     prov = (meta.get("storage_provider") or "").strip().lower()
     bucket = (meta.get("storage_bucket") or "").strip() or None
@@ -357,7 +358,7 @@ def read_execution_log_events_for_job(job: Any, *, artifact_store: Any) -> list[
         )
 
     if meta and provider_meta_complete(meta):
-        ensure_s3_bucket_matches_configured(meta, artifact_store)
+        ensure_remote_bucket_matches_configured(meta, artifact_store)
         prov = (meta.get("storage_provider") or "").strip().lower()
         key = (meta.get("storage_key") or "").strip()
         bucket = (meta.get("storage_bucket") or "").strip() or None
