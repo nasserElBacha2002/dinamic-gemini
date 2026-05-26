@@ -4,13 +4,13 @@ import {
   supplierPromptConfigByIdPath,
   supplierPromptConfigsActivePath,
   supplierPromptConfigsPath,
+  supplierReferenceImageDisplayUrlPath,
   supplierReferenceImageFilePath,
   supplierReferenceImagesPath,
   supplierReferenceImagePath,
   V3_CLIENTS_BASE,
 } from '../constants/v3ApiPaths';
 import type {
-  ApiErrorDetail,
   ClientSupplier,
   ClientSuppliersListResponse,
   CreateSupplierPromptConfigRequest,
@@ -22,7 +22,10 @@ import type {
   UploadSupplierReferenceImagesRequest,
   UploadSupplierReferenceImagesResponse,
 } from './types';
-import { protectedFetch, throwApiErrorIfNotOk } from './http';
+import {
+  fetchReferenceImageDisplay,
+  type FetchReferenceImageDisplayResult,
+} from '../utils/fetchReferenceImageDisplay';
 import { buildQueryString } from './queryString';
 import { apiRequestJson } from './request';
 
@@ -118,29 +121,41 @@ export function getSupplierReferenceImageFileUrl(
   return `${API_BASE}${supplierReferenceImageFilePath(clientId, supplierId, imageId)}`;
 }
 
+export function getSupplierReferenceImageDisplayUrl(
+  clientId: string,
+  supplierId: string,
+  imageId: string
+): string {
+  return `${API_BASE}${supplierReferenceImageDisplayUrlPath(clientId, supplierId, imageId)}`;
+}
+
+export type FetchSupplierReferenceImageDisplayResult = FetchReferenceImageDisplayResult;
+
+/** Resolve preview URL via image-display-url (presigned GCS/S3) or authenticated /file blob. */
+export async function fetchSupplierReferenceImageDisplay(
+  clientId: string,
+  supplierId: string,
+  imageId: string
+): Promise<FetchSupplierReferenceImageDisplayResult> {
+  return fetchReferenceImageDisplay(
+    getSupplierReferenceImageDisplayUrl(clientId, supplierId, imageId),
+    getSupplierReferenceImageFileUrl(clientId, supplierId, imageId)
+  );
+}
+
+/** @deprecated Prefer fetchSupplierReferenceImageDisplay for preview (avoids CORS on GCS signed URLs). */
 export async function fetchSupplierReferenceImageFile(
   clientId: string,
   supplierId: string,
   imageId: string
 ): Promise<{ imageSrc: string; revoke: () => void }> {
-  const response = await protectedFetch(
-    `${API_BASE}${supplierReferenceImageFilePath(clientId, supplierId, imageId)}`
-  );
-  if (!response.ok) {
-    const text = await response.text();
-    let data: ApiErrorDetail;
-    try {
-      data = (text ? JSON.parse(text) : {}) as ApiErrorDetail;
-    } catch {
-      data = {};
-    }
-    throwApiErrorIfNotOk(response, text, data);
+  const result = await fetchSupplierReferenceImageDisplay(clientId, supplierId, imageId);
+  if (!result.ok) {
+    throw new Error(result.detail ?? 'Preview failed');
   }
-  const blob = await response.blob();
-  const imageSrc = URL.createObjectURL(blob);
   return {
-    imageSrc,
-    revoke: () => URL.revokeObjectURL(imageSrc),
+    imageSrc: result.imageSrc,
+    revoke: result.revoke ?? (() => {}),
   };
 }
 

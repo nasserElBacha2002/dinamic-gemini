@@ -459,6 +459,15 @@ def resolve_supplier_reference_image_file_response(
     return resolve_reference_image_file_response(image, artifact_store=artifact_store)
 
 
+def resolve_supplier_reference_image_display(
+    image: Any,
+    *,
+    artifact_store: Any,
+) -> tuple[str | None, bool]:
+    """Resolve how the SPA should display a supplier reference image (same contract as source assets)."""
+    return resolve_source_asset_image_display(image, artifact_store=artifact_store)
+
+
 def load_hybrid_report_json_for_api(
     job: Any,
     *,

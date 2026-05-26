@@ -48,6 +48,7 @@ from src.api.schemas.supplier_prompt_config_schemas import (
     SupplierPromptConfigResponse,
     SupplierPromptConfigsListResponse,
 )
+from src.api.schemas.asset_schemas import SourceAssetImageDisplayUrlResponse
 from src.api.schemas.supplier_reference_image_schemas import (
     DeleteSupplierReferenceImageResponse,
     SupplierReferenceImageResponse,
@@ -56,6 +57,7 @@ from src.api.schemas.supplier_reference_image_schemas import (
 )
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
+    resolve_supplier_reference_image_display,
     resolve_supplier_reference_image_file_response,
 )
 from src.application.errors import (
@@ -397,6 +399,60 @@ def delete_supplier_reference_image(
         reraise_if_mapped(e)
         raise
     return DeleteSupplierReferenceImageResponse(deleted=True, id=image_id)
+
+
+def _supplier_reference_image_display_response(
+    *,
+    image_url: str | None,
+    need_fetch: bool,
+) -> SourceAssetImageDisplayUrlResponse:
+    if image_url:
+        return SourceAssetImageDisplayUrlResponse(
+            image_url=image_url,
+            requires_authenticated_fetch=False,
+            display_strategy="presigned_url",
+        )
+    return SourceAssetImageDisplayUrlResponse(
+        image_url=None,
+        requires_authenticated_fetch=True,
+        display_strategy="authenticated_file_fetch",
+    )
+
+
+@router.get(
+    "/{client_id}/suppliers/{supplier_id}/reference-images/{image_id}/image-display-url",
+    response_model=SourceAssetImageDisplayUrlResponse,
+)
+def get_supplier_reference_image_display_url(
+    client_id: str,
+    supplier_id: str,
+    image_id: str,
+    use_case: GetSupplierReferenceImageUseCase = Depends(
+        get_get_supplier_reference_image_use_case
+    ),
+    artifact_storage=Depends(get_artifact_storage),
+) -> SourceAssetImageDisplayUrlResponse:
+    """Return how to display a supplier reference image: presigned URL or authenticated GET on ``.../file``."""
+    try:
+        image = use_case.execute(client_id, supplier_id, image_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    try:
+        image_url, need_fetch = resolve_supplier_reference_image_display(
+            image, artifact_store=artifact_storage
+        )
+    except StoredArtifactAccessError as e:
+        logger.warning(
+            "Supplier reference image-display-url failed: client_id=%s supplier_id=%s image_id=%s reason=%s",
+            client_id,
+            supplier_id,
+            image_id,
+            e.reason_code,
+        )
+        reraise_if_mapped(e, cause=e)
+        raise
+    return _supplier_reference_image_display_response(image_url=image_url, need_fetch=need_fetch)
 
 
 @router.get("/{client_id}/suppliers/{supplier_id}/reference-images/{image_id}/file")
