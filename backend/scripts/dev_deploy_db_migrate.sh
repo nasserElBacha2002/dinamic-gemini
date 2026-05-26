@@ -7,16 +7,23 @@
 #   - Compose loads ../.env via env_file (same DB credentials as the API).
 #
 # Environment:
-#   AUTO_APPLY_DEV_MIGRATIONS       default true — when false, pending migrations abort deploy (exit 1).
-#   RUN_MIGRATION_DOCTOR_ON_DEPLOY  default false — when true, run doctor before apply (memory-heavy).
-#   DEV_MIGRATE_SERVICE             default api
-#   COMPOSE                         default docker-compose (v1 standalone on OpenCloud server)
+#   AUTO_APPLY_DEV_MIGRATIONS          default true — when false, pending migrations abort deploy (exit 1).
+#   RUN_MIGRATION_DOCTOR_ON_DEPLOY     default false — when true, run doctor before apply (memory-heavy).
+#   DEV_DEPLOY_DB_MIGRATE_CHECK_ONLY   default false — preflight only; never runs apply.
+#   DEV_MIGRATE_SERVICE                default api
+#   COMPOSE                            default docker-compose (v1 standalone on OpenCloud server)
 #
-# Sequence (default):
+# Normal sequence:
 #   config-check → status → [apply if pending] → validate → status (must be clean)
 #
-# doctor is NOT run by default (same as config-check in CLI; skipped to avoid redundant work and
-# extra memory use on small DEV hosts). Enable RUN_MIGRATION_DOCTOR_ON_DEPLOY=true for deep diagnostics.
+# CHECK_ONLY sequence (manual/server preflight before full GHA deploy):
+#   docker-compose + api checks → exec ready → GCP secrets → config-check → status (capture/parse)
+#   → validate → success summary (no apply, no doctor by default)
+#
+# Manual preflight:
+#   cd backend
+#   bash -n scripts/dev_deploy_db_migrate.sh
+#   DEV_DEPLOY_DB_MIGRATE_CHECK_ONLY=true bash scripts/dev_deploy_db_migrate.sh
 #
 # Do not run against production unless this script is explicitly wired into a prod deploy.
 set -euo pipefail
@@ -29,23 +36,69 @@ COMPOSE="${COMPOSE:-docker-compose}"
 SERVICE="${DEV_MIGRATE_SERVICE:-api}"
 AUTO_APPLY="${AUTO_APPLY_DEV_MIGRATIONS:-true}"
 RUN_DOCTOR="${RUN_MIGRATION_DOCTOR_ON_DEPLOY:-false}"
+CHECK_ONLY="${DEV_DEPLOY_DB_MIGRATE_CHECK_ONLY:-false}"
+
+is_check_only() {
+  case "${CHECK_ONLY}" in
+    true | 1 | yes | YES | True) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 run_migrate() {
   echo "==> db_migrate.py $*" >&2
   ${COMPOSE} exec -T "${SERVICE}" python3 scripts/db_migrate.py "$@"
 }
 
-# stdout: JSON only (for capture). Log lines go to stderr.
-capture_status_json() {
-  echo "==> Running migration status..." >&2
-  ${COMPOSE} exec -T "${SERVICE}" python3 scripts/db_migrate.py status
+# stdout: JSON only (for command substitution). Human logs go to stderr.
+run_migration_status_json() {
+  local label="${1:-status}"
+  echo "==> Running migration status (${label})..." >&2
+
+  local output
+  if ! output="$(${COMPOSE} exec -T "${SERVICE}" python3 scripts/db_migrate.py status)"; then
+    echo "ERROR: db_migrate.py status failed (${label})." >&2
+    return 1
+  fi
+
+  if [[ -z "$(printf '%s' "${output}" | tr -d '[:space:]')" ]]; then
+    echo "ERROR: db_migrate.py status returned empty output (${label})." >&2
+    return 1
+  fi
+
+  printf '%s\n' "${output}"
 }
 
-log_migration_status() {
-  local label="$1"
-  local json="$2"
-  echo "==> ${label} migration status" >&2
-  printf '%s\n' "${json}"
+require_docker_compose() {
+  echo "==> Checking docker-compose is available..." >&2
+  if ! command -v "${COMPOSE%% *}" >/dev/null 2>&1; then
+    echo "ERROR: ${COMPOSE} not found on PATH (install docker-compose v1 standalone on the server)." >&2
+    exit 1
+  fi
+  if ! ${COMPOSE} version >/dev/null 2>&1; then
+    echo "ERROR: ${COMPOSE} version check failed." >&2
+    exit 1
+  fi
+}
+
+require_api_service() {
+  echo "==> Checking compose defines service '${SERVICE}'..." >&2
+  local services
+  if ! services="$(${COMPOSE} config --services 2>/dev/null)"; then
+    echo "ERROR: ${COMPOSE} config --services failed (is docker-compose.yml valid?)." >&2
+    exit 1
+  fi
+  if ! printf '%s\n' "${services}" | grep -Fxq "${SERVICE}"; then
+    echo "ERROR: service '${SERVICE}' is not defined in docker-compose.yml" >&2
+    printf '%s\n' "${services}" >&2
+    exit 1
+  fi
+  echo "==> Checking '${SERVICE}' container is running..." >&2
+  if ! ${COMPOSE} ps -q "${SERVICE}" 2>/dev/null | grep -q .; then
+    echo "ERROR: ${SERVICE} container is not running. Start it with: ${COMPOSE} up -d" >&2
+    ${COMPOSE} ps >&2 || true
+    exit 1
+  fi
 }
 
 wait_for_api_exec() {
@@ -65,16 +118,14 @@ wait_for_api_exec() {
   return 1
 }
 
-# Prints pending_versions length to stdout. Exits non-zero on empty/invalid JSON.
-pending_migration_count() {
-  local json="$1"
-  local label="${2:-initial}"
-  printf '%s' "${json}" | STATUS_LABEL="${label}" python3 - <<'PY'
+# stdin must be migration status JSON (do not combine pipe with python3 - <<'PY' — heredoc wins stdin).
+_python_read_status_json() {
+  cat <<'PY'
 import json
 import os
 import sys
 
-label = os.environ.get("STATUS_LABEL", "initial")
+label = os.environ.get("STATUS_LABEL", "status")
 raw = sys.stdin.read().strip()
 if not raw:
     print(f"ERROR: db_migrate.py status returned empty output ({label}).", file=sys.stderr)
@@ -89,33 +140,34 @@ except json.JSONDecodeError as exc:
     print("--- end raw output ---", file=sys.stderr)
     sys.exit(1)
 
-print(len(data.get("pending_versions") or []))
+sys.stdout.write(json.dumps(data))
 PY
+}
+
+pending_migration_count() {
+  local json="$1"
+  local label="${2:-initial}"
+  export STATUS_LABEL="${label}"
+  printf '%s' "${json}" | python3 -c "$(_python_read_status_json)" | python3 -c '
+import json
+import sys
+
+data = json.load(sys.stdin)
+print(len(data.get("pending_versions") or []))
+'
 }
 
 assert_status_clean() {
   local json="$1"
   local label="${2:-final}"
-  printf '%s' "${json}" | STATUS_LABEL="${label}" python3 - <<'PY'
+  export STATUS_LABEL="${label}"
+  printf '%s' "${json}" | python3 -c "$(_python_read_status_json)" | STATUS_LABEL="${label}" python3 -c '
 import json
 import os
 import sys
 
 label = os.environ.get("STATUS_LABEL", "final")
-raw = sys.stdin.read().strip()
-if not raw:
-    print(f"ERROR: db_migrate.py status returned empty output ({label}).", file=sys.stderr)
-    sys.exit(1)
-
-try:
-    data = json.loads(raw)
-except json.JSONDecodeError as exc:
-    print(f"ERROR: invalid JSON from db_migrate.py status ({label}): {exc}", file=sys.stderr)
-    print("--- raw captured output ---", file=sys.stderr)
-    print(raw, file=sys.stderr)
-    print("--- end raw output ---", file=sys.stderr)
-    sys.exit(1)
-
+data = json.load(sys.stdin)
 pending = data.get("pending_versions") or []
 compatible = data.get("compatible")
 if pending:
@@ -124,15 +176,19 @@ if pending:
 if not compatible:
     print(
         f"ERROR: {label} status not compatible "
-        f"(required={data.get('required_version')!r}, current={data.get('current_version')!r})",
+        f"(required={data.get(\"required_version\")!r}, current={data.get(\"current_version\")!r})",
         file=sys.stderr,
     )
     sys.exit(1)
 print(f"OK: {label} — no pending migrations, schema compatible")
-PY
+'
 }
 
 maybe_run_doctor() {
+  if is_check_only; then
+    echo "==> Skipping migration doctor in CHECK_ONLY mode." >&2
+    return 0
+  fi
   case "${RUN_DOCTOR}" in
     true | 1 | yes | YES | True)
       echo "WARNING: RUN_MIGRATION_DOCTOR_ON_DEPLOY=${RUN_DOCTOR} — running migration doctor (may be memory-intensive on small hosts)." >&2
@@ -146,23 +202,59 @@ maybe_run_doctor() {
   esac
 }
 
-main() {
-  wait_for_api_exec
-
-  echo "==> Validating GCP credentials mount inside container (before migrations)..." >&2
+run_gcp_secrets_preflight() {
+  echo "==> Validating GCP credentials on host (if configured)..." >&2
+  bash "${SCRIPT_DIR}/check_deploy_secrets.sh" host
+  echo "==> Validating GCP credentials inside container (if configured)..." >&2
   bash "${SCRIPT_DIR}/check_deploy_secrets.sh" container
+}
+
+main_check_only() {
+  echo "==> DEV deploy DB migrate CHECK_ONLY (preflight only — apply is disabled)" >&2
+
+  require_docker_compose
+  require_api_service
+  wait_for_api_exec
+  run_gcp_secrets_preflight
 
   echo "==> Running migration config-check..." >&2
   run_migrate config-check
 
   maybe_run_doctor
 
-  local initial_status
-  initial_status="$(capture_status_json)"
-  log_migration_status "Initial" "${initial_status}"
+  local status_json pending_count
+  status_json="$(run_migration_status_json preflight)"
+  echo "==> Preflight migration status" >&2
+  printf '%s\n' "${status_json}"
+  pending_count="$(pending_migration_count "${status_json}" preflight)"
+  echo "==> Parsed pending migration count (preflight): ${pending_count}" >&2
 
-  local pending_count
-  pending_count="$(pending_migration_count "${initial_status}" "initial")"
+  echo "==> Running migration validate..." >&2
+  run_migrate validate
+
+  if [[ "${pending_count}" -gt 0 ]]; then
+    echo "CHECK_ONLY OK: migration preflight passed; ${pending_count} pending migration(s) detected (apply was not run)." >&2
+  else
+    echo "CHECK_ONLY OK: migration preflight passed; no pending migrations; apply was not run." >&2
+  fi
+}
+
+main_deploy_migrations() {
+  require_docker_compose
+  require_api_service
+  wait_for_api_exec
+  run_gcp_secrets_preflight
+
+  echo "==> Running migration config-check..." >&2
+  run_migrate config-check
+
+  maybe_run_doctor
+
+  local initial_status_json pending_count
+  initial_status_json="$(run_migration_status_json initial)"
+  echo "==> Initial migration status" >&2
+  printf '%s\n' "${initial_status_json}"
+  pending_count="$(pending_migration_count "${initial_status_json}" initial)"
 
   if [[ "${pending_count}" -gt 0 ]]; then
     echo "==> Pending migrations detected" >&2
@@ -173,7 +265,7 @@ main() {
         ;;
       *)
         echo "ERROR: AUTO_APPLY_DEV_MIGRATIONS=${AUTO_APPLY} — pending migrations were NOT applied." >&2
-        printf '%s\n' "${initial_status}" >&2
+        printf '%s\n' "${initial_status_json}" >&2
         exit 1
         ;;
     esac
@@ -184,12 +276,21 @@ main() {
   echo "==> Running migration validate..." >&2
   run_migrate validate
 
-  local final_status
-  final_status="$(capture_status_json)"
-  log_migration_status "Final" "${final_status}"
-  assert_status_clean "${final_status}" "post-deploy"
+  local final_status_json
+  final_status_json="$(run_migration_status_json final)"
+  echo "==> Final migration status" >&2
+  printf '%s\n' "${final_status_json}"
+  assert_status_clean "${final_status_json}" post-deploy
 
   echo "==> DEV database migrations completed successfully" >&2
+}
+
+main() {
+  if is_check_only; then
+    main_check_only
+  else
+    main_deploy_migrations
+  fi
 }
 
 main "$@"
