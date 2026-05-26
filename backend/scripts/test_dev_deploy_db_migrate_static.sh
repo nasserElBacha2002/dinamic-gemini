@@ -12,6 +12,12 @@ for needle in \
   "config-check" \
   "RUN_MIGRATION_DOCTOR_ON_DEPLOY" \
   "Skipping migration doctor during deploy" \
+  "capture_status_json" \
+  "Running migration status" \
+  ">&2" \
+  "sys.stdin.read" \
+  "pending_migration_count" \
+  "empty output" \
   "status" \
   "apply" \
   "validate" \
