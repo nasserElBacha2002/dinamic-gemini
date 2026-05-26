@@ -4,13 +4,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-
 from typing import Literal, cast
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing_extensions import Self
-
-ArtifactStorageProvider = Literal["local", "s3", "gcs"]
 
 from src.env_settings.parsing import (
     parse_heuristic_resize_max_side,
@@ -23,6 +20,8 @@ from src.env_settings.pipeline_analysis_execution_strings import (
     validate_pipeline_analysis_strategy_for_settings,
 )
 from src.env_settings.sqlserver_resolution import default_sqlserver_connection_string
+
+ArtifactStorageProvider = Literal["local", "s3", "gcs"]
 
 
 class LlmProviderSettings(BaseModel):
