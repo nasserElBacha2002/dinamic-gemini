@@ -20,10 +20,8 @@ _MIN_REMOTE_PREFIX_LEN = 1
 
 # Relative storage keys (no configured bucket prefix such as ``v3/``).
 _DEFAULT_CAPTURE_STAGING_PREFIX = "capture/staging"
-_INVENTORY_OPERATIONAL_PREFIXES: tuple[str, ...] = (
-    "uploads/",
-    "jobs/",
-)
+_BASE_INVENTORY_OPERATIONAL_PREFIXES: tuple[str, ...] = ("uploads/",)
+_JOBS_OPERATIONAL_PREFIX: str = "jobs/"
 
 PROTECTED_RELATIVE_PREFIXES: tuple[str, ...] = (
     "client_suppliers/",
@@ -110,10 +108,17 @@ def _normalize_relative_key(key: str) -> str:
     return normalized
 
 
-def inventory_operational_relative_prefixes(*, staging_prefix: str) -> tuple[str, ...]:
+def inventory_operational_relative_prefixes(
+    *,
+    staging_prefix: str,
+    include_jobs: bool = False,
+) -> tuple[str, ...]:
     staging = _normalize_prefix(staging_prefix) or _DEFAULT_CAPTURE_STAGING_PREFIX
     staging_key = f"{staging}/"
-    return _INVENTORY_OPERATIONAL_PREFIXES + (staging_key,)
+    prefixes: list[str] = list(_BASE_INVENTORY_OPERATIONAL_PREFIXES) + [staging_key]
+    if include_jobs:
+        prefixes.append(_JOBS_OPERATIONAL_PREFIX)
+    return tuple(prefixes)
 
 
 def is_protected_relative_key(relative_key: str) -> bool:
@@ -129,11 +134,19 @@ def is_protected_relative_key(relative_key: str) -> bool:
     return False
 
 
-def is_allowlisted_relative_key(relative_key: str, *, staging_prefix: str) -> bool:
+def is_allowlisted_relative_key(
+    relative_key: str,
+    *,
+    staging_prefix: str,
+    include_jobs: bool = False,
+) -> bool:
     key = _normalize_relative_key(relative_key)
     if not key:
         return False
-    for allowed in inventory_operational_relative_prefixes(staging_prefix=staging_prefix):
+    for allowed in inventory_operational_relative_prefixes(
+        staging_prefix=staging_prefix,
+        include_jobs=include_jobs,
+    ):
         if key.startswith(allowed) or key == allowed.rstrip("/"):
             return True
     return False
@@ -143,11 +156,16 @@ def classify_relative_storage_key(
     relative_key: str,
     *,
     staging_prefix: str,
+    include_jobs: bool = False,
 ) -> ObjectDisposition:
     key = _normalize_relative_key(relative_key)
     if is_protected_relative_key(key):
         return "skip_protected"
-    if is_allowlisted_relative_key(key, staging_prefix=staging_prefix):
+    if is_allowlisted_relative_key(
+        key,
+        staging_prefix=staging_prefix,
+        include_jobs=include_jobs,
+    ):
         return "eligible"
     return "skip_not_allowed"
 
@@ -157,6 +175,7 @@ def classify_remote_object_key(
     *,
     bucket_prefix: str,
     staging_prefix: str,
+    include_jobs: bool = False,
 ) -> ObjectDisposition:
     key = (physical_key or "").strip().replace("\\", "/")
     bp = _normalize_prefix(bucket_prefix)
@@ -165,7 +184,11 @@ def classify_remote_object_key(
         relative = relative[len(bp) :].lstrip("/")
     elif bp == "" and relative.startswith("v3/"):
         relative = relative[3:]
-    return classify_relative_storage_key(relative, staging_prefix=staging_prefix)
+    return classify_relative_storage_key(
+        relative,
+        staging_prefix=staging_prefix,
+        include_jobs=include_jobs,
+    )
 
 
 def _remote_prefix_guard(prefix: str) -> str:
@@ -284,6 +307,7 @@ def build_local_cleanup_roots(
     output_dir: str,
     staging_prefix: str,
     include_pipeline_temp: bool,
+    include_jobs: bool = False,
 ) -> tuple[list[LocalCleanupRoot], Path | None]:
     base = Path(output_dir).resolve()
     if _is_unsafe_root(base):
@@ -293,7 +317,10 @@ def build_local_cleanup_roots(
         raise ValueError(f"Refusing local cleanup: unsafe v3_uploads root under {output_dir!r}")
 
     roots: list[LocalCleanupRoot] = []
-    for rel in inventory_operational_relative_prefixes(staging_prefix=staging_prefix):
+    for rel in inventory_operational_relative_prefixes(
+        staging_prefix=staging_prefix,
+        include_jobs=include_jobs,
+    ):
         candidate = (v3_uploads / rel.rstrip("/")).resolve()
         try:
             candidate.relative_to(v3_uploads)
@@ -322,12 +349,14 @@ def build_local_safe_roots(
     output_dir: str,
     include_pipeline_temp: bool,
     staging_prefix: str = _DEFAULT_CAPTURE_STAGING_PREFIX,
+    include_jobs: bool = False,
 ) -> list[Path]:
     """Backward-compatible helper returning scan roots only."""
     roots, _ = build_local_cleanup_roots(
         output_dir=output_dir,
         staging_prefix=staging_prefix,
         include_pipeline_temp=include_pipeline_temp,
+        include_jobs=include_jobs,
     )
     return [r.path for r in roots]
 
@@ -371,6 +400,7 @@ def cleanup_local_roots(
     v3_uploads_root: Path | None,
     staging_prefix: str,
     dry_run: bool,
+    include_jobs: bool = False,
 ) -> tuple[int, int, int, int, int, int, list[str]]:
     files_found = 0
     bytes_found = 0
@@ -393,7 +423,11 @@ def cleanup_local_roots(
                 if rel_key is None:
                     files_skipped_not_allowed += 1
                     continue
-                disposition = classify_relative_storage_key(rel_key, staging_prefix=staging_prefix)
+                disposition = classify_relative_storage_key(
+                    rel_key,
+                    staging_prefix=staging_prefix,
+                    include_jobs=include_jobs,
+                )
                 if disposition == "skip_protected":
                     files_skipped_protected += 1
                     continue
@@ -456,6 +490,7 @@ def _partition_remote_objects(
     *,
     bucket_prefix: str,
     staging_prefix: str,
+    include_jobs: bool = False,
 ) -> tuple[list[ObjectSummary], int, int]:
     eligible: list[ObjectSummary] = []
     skipped_protected = 0
@@ -465,6 +500,7 @@ def _partition_remote_objects(
             obj.key,
             bucket_prefix=bucket_prefix,
             staging_prefix=staging_prefix,
+            include_jobs=include_jobs,
         )
         if disposition == "eligible":
             eligible.append(obj)
@@ -483,10 +519,16 @@ def run_remote_cleanup(
     bucket: str,
     dry_run: bool,
     staging_prefix: str,
+    include_jobs: bool = False,
 ) -> RemoteCleanupSection:
     prov = (provider or "").strip().lower()
     bucket_prefix = _normalize_prefix(prefix)
-    allowed = list(inventory_operational_relative_prefixes(staging_prefix=staging_prefix))
+    allowed = list(
+        inventory_operational_relative_prefixes(
+            staging_prefix=staging_prefix,
+            include_jobs=include_jobs,
+        )
+    )
     section = RemoteCleanupSection(
         provider=prov,
         bucket=bucket or None,
@@ -536,6 +578,7 @@ def run_remote_cleanup(
             all_objects,
             bucket_prefix=bucket_prefix,
             staging_prefix=staging_prefix,
+            include_jobs=include_jobs,
         )
         if prov == "gcs":
             deleted, bytes_del, errors = delete_gcs_objects(

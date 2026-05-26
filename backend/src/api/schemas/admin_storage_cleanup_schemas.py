@@ -19,6 +19,7 @@ class AdminStorageCleanupRequest(BaseModel):
     )
     include_legacy_local: bool = True
     include_pipeline_temp: bool = False
+    include_jobs: bool = False
 
 
 class RemoteCleanupSectionResponse(BaseModel):

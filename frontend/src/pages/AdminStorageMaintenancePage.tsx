@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -19,6 +19,10 @@ import { useAppSnackbar } from '../components/ui';
 
 const CONFIRM_TOKEN = 'DELETE_INVENTORY_ARTIFACTS';
 
+function cleanupOptionsKey(includePipelineTemp: boolean, includeJobs: boolean): string {
+  return JSON.stringify({ includePipelineTemp, includeJobs });
+}
+
 function formatBytes(bytes: number, locale: string): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ['KB', 'MB', 'GB', 'TB'];
@@ -29,6 +33,24 @@ function formatBytes(bytes: number, locale: string): string {
     unit += 1;
   }
   return `${value.toLocaleString(locale, { maximumFractionDigits: 1 })} ${units[unit]}`;
+}
+
+function PrefixList({ items, label }: { items?: string[]; label: string }) {
+  if (!items?.length) return null;
+  return (
+    <Typography variant="body2" component="div">
+      {label}:
+      <ul style={{ margin: 0, paddingLeft: 20 }}>
+        {items.map((item) => (
+          <li key={item}>
+            <Typography variant="body2" component="span">
+              {item}
+            </Typography>
+          </li>
+        ))}
+      </ul>
+    </Typography>
+  );
 }
 
 function RemoteSummaryCard({
@@ -58,12 +80,21 @@ function RemoteSummaryCard({
           <Typography variant="body2">
             {t('admin_storage_cleanup.prefix')}: {section.prefix ?? '—'}
           </Typography>
+          <PrefixList items={section.allowed_prefixes} label={t('admin_storage_cleanup.allowed_prefixes')} />
+          <PrefixList
+            items={section.protected_prefixes}
+            label={t('admin_storage_cleanup.protected_prefixes')}
+          />
           <Typography variant="body2">
             {t('admin_storage_cleanup.objects_found')}: {section.objects_found}
           </Typography>
           <Typography variant="body2">
             {t('admin_storage_cleanup.objects_skipped_protected')}:{' '}
             {section.objects_skipped_protected ?? 0}
+          </Typography>
+          <Typography variant="body2">
+            {t('admin_storage_cleanup.objects_skipped_not_allowed')}:{' '}
+            {section.objects_skipped_not_allowed ?? 0}
           </Typography>
           <Typography variant="body2">
             {t('admin_storage_cleanup.bytes_found')}: {formatBytes(section.bytes_found, locale)}
@@ -100,6 +131,8 @@ function LocalSummaryCard({
           <Typography variant="body2">
             {t('admin_storage_cleanup.output_dir')}: {section.output_dir}
           </Typography>
+          <PrefixList items={section.allowed_roots} label={t('admin_storage_cleanup.allowed_prefixes')} />
+          <PrefixList items={section.protected_roots} label={t('admin_storage_cleanup.protected_roots')} />
           <Typography variant="body2" component="div">
             {t('admin_storage_cleanup.safe_roots')}:
             <ul style={{ margin: 0, paddingLeft: 20 }}>
@@ -120,6 +153,10 @@ function LocalSummaryCard({
             {section.files_skipped_protected ?? 0}
           </Typography>
           <Typography variant="body2">
+            {t('admin_storage_cleanup.files_skipped_not_allowed')}:{' '}
+            {section.files_skipped_not_allowed ?? 0}
+          </Typography>
+          <Typography variant="body2">
             {t('admin_storage_cleanup.bytes_found')}: {formatBytes(section.bytes_found, locale)}
           </Typography>
         </Stack>
@@ -137,15 +174,28 @@ export default function AdminStorageMaintenancePage() {
   const { t, i18n } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
   const [includePipelineTemp, setIncludePipelineTemp] = useState(false);
+  const [includeJobs, setIncludeJobs] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [summary, setSummary] = useState<AdminStorageCleanupResponse | null>(null);
   const [dryRunDone, setDryRunDone] = useState(false);
+  const [dryRunOptionsKey, setDryRunOptionsKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const currentOptionsKey = cleanupOptionsKey(includePipelineTemp, includeJobs);
+
+  useEffect(() => {
+    setDryRunDone(false);
+    setDryRunOptionsKey(null);
+  }, [includePipelineTemp, includeJobs]);
+
   const canDelete = useMemo(
-    () => dryRunDone && confirmText.trim() === CONFIRM_TOKEN && !loading,
-    [confirmText, dryRunDone, loading]
+    () =>
+      dryRunDone &&
+      dryRunOptionsKey === currentOptionsKey &&
+      confirmText.trim() === CONFIRM_TOKEN &&
+      !loading,
+    [confirmText, currentOptionsKey, dryRunDone, dryRunOptionsKey, loading]
   );
 
   const runCleanup = async (mode: 'dry_run' | 'delete') => {
@@ -158,14 +208,17 @@ export default function AdminStorageMaintenancePage() {
         confirm: mode === 'delete' ? CONFIRM_TOKEN : undefined,
         include_legacy_local: true,
         include_pipeline_temp: includePipelineTemp,
+        include_jobs: includeJobs,
       });
       setSummary(result);
       if (mode === 'dry_run') {
         setDryRunDone(true);
+        setDryRunOptionsKey(currentOptionsKey);
         showSnackbar(t('admin_storage_cleanup.dry_run_success'), 'info');
       } else {
         showSnackbar(t('admin_storage_cleanup.delete_success'), 'success');
         setDryRunDone(false);
+        setDryRunOptionsKey(null);
         setConfirmText('');
       }
     } catch (e) {
@@ -180,24 +233,41 @@ export default function AdminStorageMaintenancePage() {
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 960 }}>
       <PageHeader
-        title={t('routes.admin_storage_maintenance.title')}
-        subtitle={t('routes.admin_storage_maintenance.subtitle')}
+        title={t('admin_storage_cleanup.page_title')}
+        subtitle={t('admin_storage_cleanup.page_description')}
       />
       <Alert severity="error" sx={{ mb: 2 }}>
         {t('admin_storage_cleanup.irreversible_warning')}
       </Alert>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
         {t('admin_storage_cleanup.scope_hint')}
       </Typography>
-      <FormControlLabel
-        control={
-          <Checkbox
-            checked={includePipelineTemp}
-            onChange={(e) => setIncludePipelineTemp(e.target.checked)}
-          />
-        }
-        label={t('admin_storage_cleanup.include_pipeline_temp')}
-      />
+      <Alert severity="info" sx={{ mb: 2 }}>
+        {t('admin_storage_cleanup.protected_assets_note')}
+      </Alert>
+      <Stack spacing={0}>
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={includeJobs}
+              onChange={(e) => setIncludeJobs(e.target.checked)}
+            />
+          }
+          label={t('admin_storage_cleanup.include_jobs')}
+        />
+        <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mb: 1 }}>
+          {t('admin_storage_cleanup.include_jobs_hint')}
+        </Typography>
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={includePipelineTemp}
+              onChange={(e) => setIncludePipelineTemp(e.target.checked)}
+            />
+          }
+          label={t('admin_storage_cleanup.include_pipeline_temp')}
+        />
+      </Stack>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 2 }}>
         <Button variant="outlined" disabled={loading} onClick={() => runCleanup('dry_run')}>
           {t('admin_storage_cleanup.simulate')}
@@ -208,7 +278,7 @@ export default function AdminStorageMaintenancePage() {
           placeholder={CONFIRM_TOKEN}
           value={confirmText}
           onChange={(e) => setConfirmText(e.target.value)}
-          disabled={!dryRunDone || loading}
+          disabled={!dryRunDone || dryRunOptionsKey !== currentOptionsKey || loading}
           sx={{ flex: 1, minWidth: 220 }}
         />
         <Button

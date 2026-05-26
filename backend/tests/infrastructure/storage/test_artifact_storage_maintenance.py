@@ -12,6 +12,8 @@ from src.infrastructure.storage.artifact_storage_maintenance import (
     classify_remote_object_key,
     cleanup_local_roots,
     delete_gcs_objects,
+    inventory_operational_relative_prefixes,
+    is_allowlisted_relative_key,
     is_protected_relative_key,
     list_gcs_objects,
     run_remote_cleanup,
@@ -110,6 +112,31 @@ def test_run_remote_cleanup_refuses_empty_prefix() -> None:
     assert "prefix" in (section.skip_reason or "").lower()
 
 
+def test_default_allowlist_excludes_jobs() -> None:
+    allowed = inventory_operational_relative_prefixes(staging_prefix="capture/staging")
+    assert "uploads/" in allowed
+    assert "capture/staging/" in allowed
+    assert "jobs/" not in allowed
+    assert not is_allowlisted_relative_key(
+        "jobs/job-1/run/log.jsonl",
+        staging_prefix="capture/staging",
+        include_jobs=False,
+    )
+
+
+def test_include_jobs_adds_jobs_prefix() -> None:
+    allowed = inventory_operational_relative_prefixes(
+        staging_prefix="capture/staging",
+        include_jobs=True,
+    )
+    assert "jobs/" in allowed
+    assert is_allowlisted_relative_key(
+        "jobs/job-1/run/log.jsonl",
+        staging_prefix="capture/staging",
+        include_jobs=True,
+    )
+
+
 def test_run_remote_cleanup_deletes_inventory_prefix_only() -> None:
     blobs = {
         "v3/uploads/aisles/x.jpg": _FakeBlob("v3/uploads/aisles/x.jpg", 10),
@@ -199,33 +226,64 @@ def test_local_cleanup_does_not_delete_under_client_suppliers_root(tmp_path: Pat
     assert skip_prot == 0
 
 
-def test_local_dry_run_finds_inventory_scoped_files(tmp_path: Path) -> None:
+def test_local_dry_run_finds_uploads_not_jobs_by_default(tmp_path: Path) -> None:
     output = tmp_path / "output"
-    inventory_file = output / "v3_uploads" / "jobs" / "job-1" / "run" / "log.jsonl"
-    inventory_file.parent.mkdir(parents=True)
-    inventory_file.write_bytes(b"{}")
+    uploads_file = output / "v3_uploads" / "uploads" / "aisles" / "x.jpg"
+    uploads_file.parent.mkdir(parents=True)
+    uploads_file.write_bytes(b"abc")
+    jobs_file = output / "v3_uploads" / "jobs" / "job-1" / "run" / "log.jsonl"
+    jobs_file.parent.mkdir(parents=True)
+    jobs_file.write_bytes(b"{}")
 
     roots, v3_uploads = build_local_cleanup_roots(
         output_dir=str(output),
         staging_prefix="capture/staging",
         include_pipeline_temp=False,
+        include_jobs=False,
     )
     ff, _, fd, _, _, _, _ = cleanup_local_roots(
         roots=roots,
         v3_uploads_root=v3_uploads,
         staging_prefix="capture/staging",
         dry_run=True,
+        include_jobs=False,
     )
     assert ff == 1
     assert fd == 0
-    assert inventory_file.exists()
+    assert uploads_file.exists()
+    assert jobs_file.exists()
+
+
+def test_local_cleanup_deletes_jobs_only_when_include_jobs(tmp_path: Path) -> None:
+    output = tmp_path / "output"
+    jobs_file = output / "v3_uploads" / "jobs" / "job-1" / "run" / "log.jsonl"
+    jobs_file.parent.mkdir(parents=True)
+    jobs_file.write_bytes(b"{}")
+
+    roots, v3_uploads = build_local_cleanup_roots(
+        output_dir=str(output),
+        staging_prefix="capture/staging",
+        include_pipeline_temp=False,
+        include_jobs=True,
+    )
+    _, _, fd, _, _, _, errors = cleanup_local_roots(
+        roots=roots,
+        v3_uploads_root=v3_uploads,
+        staging_prefix="capture/staging",
+        dry_run=False,
+        include_jobs=True,
+    )
+    assert errors == []
+    assert fd == 1
+    assert not jobs_file.exists()
 
 
 def test_build_local_safe_roots_returns_allowlist_subdirs_only(tmp_path: Path) -> None:
     output = tmp_path / "output"
     (output / "v3_uploads" / "uploads").mkdir(parents=True)
     roots = build_local_safe_roots(output_dir=str(output), include_pipeline_temp=False)
-    assert all("uploads" in str(r) or "jobs" in str(r) or "capture" in str(r) for r in roots)
+    assert all("uploads" in str(r) or "capture" in str(r) for r in roots)
+    assert not any("jobs" in str(r) for r in roots)
     assert not any(str(r).endswith("v3_uploads") for r in roots)
 
 

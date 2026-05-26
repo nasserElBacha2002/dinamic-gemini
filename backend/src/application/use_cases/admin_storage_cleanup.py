@@ -9,8 +9,8 @@ from typing import Any, Literal
 from src.config import AppSettings
 from src.infrastructure.storage.artifact_storage_maintenance import (
     CONFIRM_DELETE_TOKEN,
-    LocalCleanupSection,
     PROTECTED_PREFIXES_REPORT,
+    LocalCleanupSection,
     RemoteCleanupSection,
     StorageCleanupResult,
     build_local_cleanup_roots,
@@ -42,6 +42,7 @@ class AdminStorageCleanupUseCase:
         confirm: str | None = None,
         include_legacy_local: bool = True,
         include_pipeline_temp: bool = False,
+        include_jobs: bool = False,
     ) -> StorageCleanupResult:
         if mode == "delete" and (confirm or "").strip() != CONFIRM_DELETE_TOKEN:
             raise AdminStorageCleanupError(
@@ -69,6 +70,7 @@ class AdminStorageCleanupUseCase:
                 bucket=bucket,
                 dry_run=dry_run,
                 staging_prefix=staging_prefix,
+                include_jobs=include_jobs,
             )
 
         if target in ("local", "both"):
@@ -84,6 +86,7 @@ class AdminStorageCleanupUseCase:
                         output_dir=output_dir,
                         staging_prefix=staging_prefix,
                         include_pipeline_temp=include_pipeline_temp,
+                        include_jobs=include_jobs,
                     )
                 except ValueError as exc:
                     local.skipped = True
@@ -92,7 +95,10 @@ class AdminStorageCleanupUseCase:
                     v3_uploads = None
                 local.safe_roots = [str(r.path) for r in roots]
                 local.allowed_roots = list(
-                    inventory_operational_relative_prefixes(staging_prefix=staging_prefix)
+                    inventory_operational_relative_prefixes(
+                        staging_prefix=staging_prefix,
+                        include_jobs=include_jobs,
+                    )
                 )
                 local.protected_roots = list(PROTECTED_PREFIXES_REPORT)
                 if roots:
@@ -109,6 +115,7 @@ class AdminStorageCleanupUseCase:
                         v3_uploads_root=v3_uploads,
                         staging_prefix=staging_prefix,
                         dry_run=dry_run,
+                        include_jobs=include_jobs,
                     )
                     local.files_found = ff
                     local.bytes_found = bf

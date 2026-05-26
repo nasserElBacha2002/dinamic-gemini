@@ -53,6 +53,7 @@ export interface AdminStorageCleanupRequest {
   confirm?: string;
   include_legacy_local?: boolean;
   include_pipeline_temp?: boolean;
+  include_jobs?: boolean;
 }
 
 export async function postAdminStorageCleanup(

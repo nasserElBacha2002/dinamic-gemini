@@ -52,6 +52,7 @@ def post_admin_storage_cleanup(
             confirm=body.confirm,
             include_legacy_local=body.include_legacy_local,
             include_pipeline_temp=body.include_pipeline_temp,
+            include_jobs=body.include_jobs,
         )
     except AdminStorageCleanupError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
