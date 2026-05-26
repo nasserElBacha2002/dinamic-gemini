@@ -4,6 +4,8 @@ from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
 
+from google.api_core.exceptions import NotFound
+
 from src.infrastructure.storage.gcs_artifact_storage_adapter import GcsArtifactStorageAdapter
 
 
@@ -46,6 +48,8 @@ class _FakeGcsBlob:
         Path(filename).write_bytes(self.download_as_bytes())
 
     def delete(self) -> None:
+        if (self.bucket_name, self.name) not in self._store:
+            raise NotFound(f"object {self.name!r} not found in bucket {self.bucket_name!r}")
         self._store.pop((self.bucket_name, self.name), None)
 
     def exists(self) -> bool:
@@ -132,6 +136,34 @@ def test_gcs_adapter_generate_signed_url_accepts_already_prefixed_key_without_do
     )
     assert "bucket-gcs/v3/inventories/inv-1/visual_references/r1.jpg" in url
     assert "bucket-gcs/v3/v3/inventories" not in url
+
+
+def test_gcs_adapter_put_object_records_full_size_when_stream_cursor_at_eof() -> None:
+    client = _FakeGcsClient()
+    adapter = GcsArtifactStorageAdapter(
+        bucket="bucket-gcs",
+        prefix="v3",
+        storage_client=client,
+    )
+
+    body = BytesIO(b"hello")
+    body.seek(len(b"hello"))
+
+    stored = adapter.put_object("a/b.txt", body, "text/plain")
+
+    assert stored.file_size_bytes == 5
+    assert adapter.get_object("a/b.txt").content == b"hello"
+
+
+def test_gcs_adapter_delete_object_is_idempotent_for_missing_object() -> None:
+    client = _FakeGcsClient()
+    adapter = GcsArtifactStorageAdapter(
+        bucket="bucket-gcs",
+        prefix="v3",
+        storage_client=client,
+    )
+
+    adapter.delete_object("missing/object.jpg")
 
 
 def test_gcs_adapter_download_to_path_creates_parent_dirs_and_writes(tmp_path: Path) -> None:

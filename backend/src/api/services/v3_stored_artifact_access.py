@@ -33,7 +33,7 @@ from src.config import load_settings
 from src.infrastructure.artifacts.stored_artifact_reader import (
     StoredArtifactAccessError,
     cast_mapping,
-    ensure_s3_bucket_matches_configured,
+    ensure_remote_bucket_matches_configured,
     fetch_json_from_durable_meta,
     provider_meta_complete,
 )
@@ -140,7 +140,7 @@ def presigned_s3_get_url_for_provider_key(
         "storage_bucket": storage_bucket,
         "storage_key": key,
     }
-    ensure_s3_bucket_matches_configured(meta_dict, artifact_store)
+    ensure_remote_bucket_matches_configured(meta_dict, artifact_store)
     sign = getattr(artifact_store, "generate_signed_url", None)
     if not callable(sign):
         raise StoredArtifactAccessError(
@@ -189,7 +189,7 @@ def presigned_gcs_get_url_for_provider_key(
         "storage_bucket": storage_bucket,
         "storage_key": key,
     }
-    ensure_s3_bucket_matches_configured(meta_dict, artifact_store)
+    ensure_remote_bucket_matches_configured(meta_dict, artifact_store)
     sign = getattr(artifact_store, "generate_signed_url", None)
     if not callable(sign):
         raise StoredArtifactAccessError(
@@ -242,7 +242,7 @@ def serve_provider_artifact_response(
         "storage_bucket": storage_bucket,
         "storage_key": key,
     }
-    ensure_s3_bucket_matches_configured(meta_dict, artifact_store)
+    ensure_remote_bucket_matches_configured(meta_dict, artifact_store)
 
     if prov == "s3":
         url = presigned_s3_get_url_for_provider_key(

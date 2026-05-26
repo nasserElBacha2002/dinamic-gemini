@@ -9,6 +9,7 @@ import pytest
 import src.config as config_mod
 from src.api import dependencies as deps
 from src.config import Settings, load_settings
+from src.env_settings.parsing import resolve_google_application_credentials_path
 from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 from src.runtime.app_container import reset_app_container_for_tests
 
@@ -16,6 +17,28 @@ from src.runtime.app_container import reset_app_container_for_tests
 def _reset_config_cache() -> None:
     config_mod._settings = None
     reset_app_container_for_tests()
+
+
+def test_resolve_google_application_credentials_docker_path_to_repo_secrets(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    secrets_dir = repo / "secrets"
+    secrets_dir.mkdir(parents=True)
+    key_file = secrets_dir / "gcp-service-account.json"
+    key_file.write_text("{}", encoding="utf-8")
+    docker_path = "/app/secrets/gcp-service-account.json"
+    resolved = resolve_google_application_credentials_path(docker_path)
+    # Without cwd under repo, resolution uses parsing.py anchor (real repo) or cwd — test anchor via chdir
+    import os
+
+    prev = os.getcwd()
+    try:
+        os.chdir(repo)
+        resolved = resolve_google_application_credentials_path(docker_path)
+    finally:
+        os.chdir(prev)
+    assert resolved == str(key_file.resolve())
 
 
 def test_settings_require_s3_bucket_when_provider_is_s3() -> None:

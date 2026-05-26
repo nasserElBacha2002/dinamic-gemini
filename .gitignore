@@ -42,6 +42,10 @@ venv.bak/
 *~
 .DS_Store
 
+# GCP service account JSON (real key — never commit)
+secrets/gcp-service-account.json
+!secrets/gcp-service-account.json.example
+
 # Environment variables
 .env
 .env.test

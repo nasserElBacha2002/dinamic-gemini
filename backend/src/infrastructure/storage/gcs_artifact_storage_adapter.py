@@ -95,16 +95,16 @@ class GcsArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
 
     def put_object(self, key: str, file_obj: BinaryIO, content_type: str) -> StoredArtifact:
         blob, object_key = self._blob(key)
-        size: int | None = None
+        stream_size: int | None = None
         try:
             cur = file_obj.tell()
             file_obj.seek(0, 2)
             end = file_obj.tell()
             file_obj.seek(cur)
-            if isinstance(end, int) and isinstance(cur, int):
-                size = max(0, end - cur)
+            if isinstance(end, int):
+                stream_size = int(end)
         except Exception:
-            size = None
+            stream_size = None
         try:
             blob.upload_from_file(
                 file_obj,
@@ -113,18 +113,19 @@ class GcsArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             )
         except Exception as exc:
             logger.exception(
-                "GCS put_object failed bucket=%s key=%s size=%s",
+                "GCS put_object failed bucket=%s key=%s stream_size=%s",
                 self._bucket,
                 object_key,
-                size,
+                stream_size,
             )
             raise RuntimeError(
                 f"GCS upload failed for key={object_key!r} bucket={self._bucket!r}"
             ) from exc
+        size: int | None = stream_size
         etag: str | None = None
         try:
             blob.reload()
-            if size is None and blob.size is not None:
+            if blob.size is not None:
                 size = int(blob.size)
             etag = (blob.etag or "").strip() or None
         except Exception:
@@ -200,9 +201,18 @@ class GcsArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             ) from exc
 
     def delete_object(self, key: str) -> None:
+        from google.api_core.exceptions import NotFound
+
         blob, object_key = self._blob(key)
         try:
             blob.delete()
+        except NotFound:
+            logger.info(
+                "GCS delete_object no-op (already missing) bucket=%s key=%s",
+                self._bucket,
+                object_key,
+            )
+            return
         except Exception as exc:
             logger.exception("GCS delete_object failed bucket=%s key=%s", self._bucket, object_key)
             raise RuntimeError(

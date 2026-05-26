@@ -17,6 +17,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/gcp-service-account.json
 - `GCS_OBJECT_PREFIX` defaults to `v3`.
 - `GCS_SIGNED_URL_TTL_SECONDS` defaults to `900`.
 - `GOOGLE_APPLICATION_CREDENTIALS` is the preferred credentials mechanism (Application Default Credentials). The file must exist at startup when set. **Never commit** the service account JSON.
+- **Docker:** place the key at `secrets/gcp-service-account.json` in the repo root; `backend/docker-compose.yml` mounts it read-only at `/app/secrets/`. See `secrets/README.md`.
 
 ## Security
 

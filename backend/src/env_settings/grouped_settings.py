@@ -716,15 +716,23 @@ class ArtifactStorageSettings(BaseModel):
             raise ValueError("artifact_s3_bucket is required when artifact_storage_provider=s3")
         if self.artifact_storage_provider == "gcs" and not (self.artifact_gcs_bucket or "").strip():
             raise ValueError("artifact_gcs_bucket is required when artifact_storage_provider=gcs")
-        creds_path = (self.google_application_credentials or "").strip()
-        if self.artifact_storage_provider == "gcs" and creds_path:
-            from pathlib import Path as _Path
 
+        from pathlib import Path as _Path
+
+        from src.env_settings.parsing import resolve_google_application_credentials_path
+
+        raw_creds = (self.google_application_credentials or "").strip()
+        creds_path = (
+            resolve_google_application_credentials_path(raw_creds) if raw_creds else ""
+        )
+        if self.artifact_storage_provider == "gcs" and creds_path:
             if not _Path(creds_path).is_file():
                 raise ValueError(
                     "google_application_credentials must point to an existing file "
-                    f"when set (got {creds_path!r})"
+                    f"when set (got {raw_creds!r}; for local dev use secrets/gcp-service-account.json "
+                    "or keep /app/secrets/... with repo secrets/ present)"
                 )
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
         return self
 
 

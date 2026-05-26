@@ -34,6 +34,7 @@ from src.env_settings.sqlserver_resolution import (
     resolve_sqlserver_connection_config,
     sqlserver_configuration_error_message,
 )
+from src.env_settings.parsing import resolve_google_application_credentials_path
 from src.env_settings.sqlserver_resolution import (
     remap_sqlserver_connection_string_server_if_needed as remap_sqlserver_connection_string_server_if_needed,
 )
@@ -133,6 +134,17 @@ Settings = AppSettings
 _settings: AppSettings | None = None
 
 
+def _normalize_gcp_credentials_settings(settings: AppSettings) -> AppSettings:
+    """Map Docker ``/app/secrets/...`` paths to repo ``secrets/`` for local ``./dev.sh``."""
+    raw = (settings.google_application_credentials or "").strip()
+    if not raw:
+        return settings
+    resolved = resolve_google_application_credentials_path(raw)
+    if resolved == raw:
+        return settings
+    return settings.model_copy(update={"google_application_credentials": resolved})
+
+
 def load_settings() -> AppSettings:
     """Carga la configuración desde variables de entorno.
 
@@ -145,7 +157,7 @@ def load_settings() -> AppSettings:
     """
     global _settings
     if _settings is None:
-        _settings = AppSettings()
+        _settings = _normalize_gcp_credentials_settings(AppSettings())
     return _settings
 
 
@@ -159,7 +171,7 @@ def reload_settings() -> AppSettings:
     """
     global _settings
     _load_dotenv_files(for_reload=True)
-    _settings = AppSettings()
+    _settings = _normalize_gcp_credentials_settings(AppSettings())
     return _settings
 
 
