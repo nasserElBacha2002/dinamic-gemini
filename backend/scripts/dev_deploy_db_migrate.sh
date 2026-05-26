@@ -48,6 +48,23 @@ log_migration_status() {
   printf '%s\n' "${json}"
 }
 
+wait_for_api_exec() {
+  echo "==> Waiting for ${SERVICE} container to accept exec..." >&2
+  local attempt
+  for attempt in $(seq 1 45); do
+    if ${COMPOSE} exec -T "${SERVICE}" python3 -c "pass" >/dev/null 2>&1; then
+      echo "==> ${SERVICE} ready for exec (attempt ${attempt})" >&2
+      return 0
+    fi
+    echo "==> ${SERVICE} not ready (attempt ${attempt}/45); sleeping 2s..." >&2
+    sleep 2
+  done
+  echo "ERROR: ${SERVICE} container did not become ready for docker-compose exec within ~90s" >&2
+  ${COMPOSE} ps >&2 || true
+  ${COMPOSE} logs --tail=100 "${SERVICE}" >&2 || true
+  return 1
+}
+
 # Prints pending_versions length to stdout. Exits non-zero on empty/invalid JSON.
 pending_migration_count() {
   local json="$1"
