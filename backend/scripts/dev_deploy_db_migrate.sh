@@ -157,11 +157,8 @@ print(len(data.get("pending_versions") or []))
 '
 }
 
-assert_status_clean() {
-  local json="$1"
-  local label="${2:-final}"
-  export STATUS_LABEL="${label}"
-  printf '%s' "${json}" | python3 -c "$(_python_read_status_json)" | STATUS_LABEL="${label}" python3 -c '
+_python_assert_status_clean() {
+  cat <<'PY'
 import json
 import os
 import sys
@@ -174,14 +171,23 @@ if pending:
     print(f"ERROR: {label} status has pending_versions={pending}", file=sys.stderr)
     sys.exit(1)
 if not compatible:
+    required = data.get("required_version")
+    current = data.get("current_version")
     print(
         f"ERROR: {label} status not compatible "
-        f"(required={data.get(\"required_version\")!r}, current={data.get(\"current_version\")!r})",
+        f"(required={required!r}, current={current!r})",
         file=sys.stderr,
     )
     sys.exit(1)
 print(f"OK: {label} — no pending migrations, schema compatible")
-'
+PY
+}
+
+assert_status_clean() {
+  local json="$1"
+  local label="${2:-final}"
+  export STATUS_LABEL="${label}"
+  printf '%s' "${json}" | python3 -c "$(_python_read_status_json)" | STATUS_LABEL="${label}" python3 -c "$(_python_assert_status_clean)"
 }
 
 maybe_run_doctor() {
