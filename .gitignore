@@ -45,6 +45,9 @@ venv.bak/
 # GCP service account JSON (real key — never commit)
 secrets/gcp-service-account.json
 !secrets/gcp-service-account.json.example
+backend/secrets/
+!backend/secrets/.gitkeep
+backend/docker-compose.override.yml
 
 # Environment variables
 .env

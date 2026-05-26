@@ -13,7 +13,8 @@ services:
     # Persist local artifacts (OUTPUT_DIR=output → /app/output/v3_uploads) across image rebuilds / container recreate.
     volumes:
       - ../data/output:/app/output
-      # GCP ADC for ARTIFACT_STORAGE_PROVIDER=gcs (host: repo secrets/ → container /app/secrets/)
+      # GCP ADC for ARTIFACT_STORAGE_PROVIDER=gcs (host: repo secrets/ → /app/secrets/)
+      # Alternative host path: backend/secrets/ via server-local docker-compose.override.yml
       - ../secrets:/app/secrets:ro
     # Linux Docker: map host.docker.internal → host gateway (Mac/Win Desktop already provide the name).
     extra_hosts:

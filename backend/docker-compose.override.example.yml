@@ -1,0 +1,17 @@
+# Server-local override (copy to docker-compose.override.yml — not committed).
+#
+# Use when the GCP key lives under backend/secrets/ instead of the repo root secrets/ folder.
+# The main docker-compose.yml already mounts ../secrets:/app/secrets for repo-root layout.
+#
+#   cp docker-compose.override.example.yml docker-compose.override.yml
+#
+# Host file (create on server, never commit):
+#   backend/secrets/gcp-service-account.json
+#
+# Container path (.env):
+#   GOOGLE_APPLICATION_CREDENTIALS=/app/secrets/gcp-service-account.json
+
+services:
+  api:
+    volumes:
+      - ./secrets:/app/secrets:ro

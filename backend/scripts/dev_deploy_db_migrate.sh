@@ -112,6 +112,9 @@ maybe_run_doctor() {
 main() {
   wait_for_api_exec
 
+  echo "==> Validating GCP credentials mount inside container (before migrations)..."
+  bash "${SCRIPT_DIR}/check_deploy_secrets.sh" container
+
   echo "==> Running migration config-check..."
   run_migrate config-check
 
