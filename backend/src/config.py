@@ -29,12 +29,12 @@ from src.env_settings.grouped_settings import (
     PhotosInputSettings,
     PipelineVisionSettings,
 )
+from src.env_settings.parsing import resolve_google_application_credentials_path
 from src.env_settings.sqlserver_resolution import (
     SqlServerConfigurationError,
     resolve_sqlserver_connection_config,
     sqlserver_configuration_error_message,
 )
-from src.env_settings.parsing import resolve_google_application_credentials_path
 from src.env_settings.sqlserver_resolution import (
     remap_sqlserver_connection_string_server_if_needed as remap_sqlserver_connection_string_server_if_needed,
 )

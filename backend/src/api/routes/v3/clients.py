@@ -32,6 +32,7 @@ from src.api.dependencies import (
     get_upload_supplier_reference_images_use_case,
 )
 from src.api.errors import reraise_if_mapped
+from src.api.schemas.asset_schemas import SourceAssetImageDisplayUrlResponse
 from src.api.schemas.client_schemas import (
     ClientResponse,
     CreateClientRequest,
@@ -48,7 +49,6 @@ from src.api.schemas.supplier_prompt_config_schemas import (
     SupplierPromptConfigResponse,
     SupplierPromptConfigsListResponse,
 )
-from src.api.schemas.asset_schemas import SourceAssetImageDisplayUrlResponse
 from src.api.schemas.supplier_reference_image_schemas import (
     DeleteSupplierReferenceImageResponse,
     SupplierReferenceImageResponse,
