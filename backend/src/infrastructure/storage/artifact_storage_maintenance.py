@@ -39,6 +39,8 @@ PROTECTED_PREFIXES_REPORT: tuple[str, ...] = (
 )
 
 ObjectDisposition = Literal["eligible", "skip_protected", "skip_not_allowed"]
+CleanupTarget = Literal["remote", "local", "both"]
+CleanupMode = Literal["dry_run", "delete"]
 
 
 @dataclass(frozen=True)
@@ -91,8 +93,8 @@ class LocalCleanupSection:
 @dataclass
 class StorageCleanupResult:
     ok: bool
-    mode: str
-    target: str
+    mode: CleanupMode
+    target: CleanupTarget
     remote: RemoteCleanupSection
     local: LocalCleanupSection
 
