@@ -31,7 +31,8 @@
 #
 # Server: repo at /opt/dinamic/dinamic-gemini, reset to origin/develop, then:
 #   cd backend → docker-compose down → build api → up -d → dev_deploy_db_migrate.sh
-#   (config-check, doctor, status, conditional apply, validate, final status) → /health poll.
+#   (config-check, status, conditional apply, validate, final status; doctor skipped by default)
+#   → /health poll. Optional: RUN_MIGRATION_DOCTOR_ON_DEPLOY=true for doctor during deploy.
 # git fetch origin must work non-interactively (deploy key or credentials on the server).
 # Env file for the API is at repo root: /opt/dinamic/dinamic-gemini/.env (see backend/docker-compose.yml env_file).
 #
@@ -229,7 +230,8 @@ jobs:
             docker-compose ps
 
             export AUTO_APPLY_DEV_MIGRATIONS="${AUTO_APPLY_DEV_MIGRATIONS:-true}"
-            echo "Running DEV database migrations (AUTO_APPLY_DEV_MIGRATIONS=${AUTO_APPLY_DEV_MIGRATIONS})..."
+            export RUN_MIGRATION_DOCTOR_ON_DEPLOY="${RUN_MIGRATION_DOCTOR_ON_DEPLOY:-false}"
+            echo "Running DEV database migrations (AUTO_APPLY_DEV_MIGRATIONS=${AUTO_APPLY_DEV_MIGRATIONS}, RUN_MIGRATION_DOCTOR_ON_DEPLOY=${RUN_MIGRATION_DOCTOR_ON_DEPLOY})..."
             bash "${REPO_ROOT}/backend/scripts/dev_deploy_db_migrate.sh"
             ok=0
             for i in $(seq 1 45); do

@@ -7,12 +7,16 @@
 #   - Compose loads ../.env via env_file (same DB credentials as the API).
 #
 # Environment:
-#   AUTO_APPLY_DEV_MIGRATIONS  default true — when false, pending migrations abort deploy (exit 1).
-#   DEV_MIGRATE_SERVICE        default api
-#   COMPOSE                    default docker-compose (v1 standalone on OpenCloud server)
+#   AUTO_APPLY_DEV_MIGRATIONS       default true — when false, pending migrations abort deploy (exit 1).
+#   RUN_MIGRATION_DOCTOR_ON_DEPLOY  default false — when true, run doctor before apply (memory-heavy).
+#   DEV_MIGRATE_SERVICE             default api
+#   COMPOSE                         default docker-compose (v1 standalone on OpenCloud server)
 #
-# Sequence:
-#   config-check → doctor → status → [apply if pending] → validate → status (must be clean)
+# Sequence (default):
+#   config-check → status → [apply if pending] → validate → status (must be clean)
+#
+# doctor is NOT run by default (same as config-check in CLI; skipped to avoid redundant work and
+# extra memory use on small DEV hosts). Enable RUN_MIGRATION_DOCTOR_ON_DEPLOY=true for deep diagnostics.
 #
 # Do not run against production unless this script is explicitly wired into a prod deploy.
 set -euo pipefail
@@ -24,6 +28,7 @@ cd "${BACKEND_ROOT}"
 COMPOSE="${COMPOSE:-docker-compose}"
 SERVICE="${DEV_MIGRATE_SERVICE:-api}"
 AUTO_APPLY="${AUTO_APPLY_DEV_MIGRATIONS:-true}"
+RUN_DOCTOR="${RUN_MIGRATION_DOCTOR_ON_DEPLOY:-false}"
 
 run_migrate() {
   echo "==> db_migrate.py $*"
@@ -31,6 +36,7 @@ run_migrate() {
 }
 
 capture_status_json() {
+  echo "==> Running migration status..."
   ${COMPOSE} exec -T "${SERVICE}" python3 scripts/db_migrate.py status
 }
 
@@ -89,11 +95,27 @@ print(f"OK: {label} — no pending migrations, schema compatible")
 PY
 }
 
+maybe_run_doctor() {
+  case "${RUN_DOCTOR}" in
+    true | 1 | yes | YES | True)
+      echo "WARNING: RUN_MIGRATION_DOCTOR_ON_DEPLOY=${RUN_DOCTOR} — running migration doctor (may be memory-intensive on small hosts)." >&2
+      echo "==> Running migration doctor..."
+      run_migrate doctor
+      ;;
+    *)
+      echo "==> Skipping migration doctor during deploy. Run it manually for deep diagnostics:"
+      echo "    ${COMPOSE} exec ${SERVICE} python3 scripts/db_migrate.py doctor"
+      ;;
+  esac
+}
+
 main() {
   wait_for_api_exec
 
+  echo "==> Running migration config-check..."
   run_migrate config-check
-  run_migrate doctor
+
+  maybe_run_doctor
 
   echo "==> Initial migration status"
   initial_status="$(capture_status_json)"
@@ -103,10 +125,11 @@ main() {
     echo "==> Pending migrations detected"
     case "${AUTO_APPLY}" in
       true | 1 | yes | YES | True)
+        echo "==> Applying pending DEV migrations..."
         run_migrate apply
         ;;
       *)
-        echo "WARNING: AUTO_APPLY_DEV_MIGRATIONS=${AUTO_APPLY} — pending migrations were NOT applied." >&2
+        echo "ERROR: AUTO_APPLY_DEV_MIGRATIONS=${AUTO_APPLY} — pending migrations were NOT applied." >&2
         echo "${initial_status}" >&2
         exit 1
         ;;
@@ -115,12 +138,15 @@ main() {
     echo "==> No pending migrations; skipping apply (apply would no-op)"
   fi
 
+  echo "==> Running migration validate..."
   run_migrate validate
 
   echo "==> Final migration status"
   final_status="$(capture_status_json)"
   echo "${final_status}"
   assert_status_clean "${final_status}" "post-deploy"
+
+  echo "==> DEV database migrations completed successfully"
 }
 
 main "$@"

@@ -10,7 +10,8 @@ bash -n "${TARGET}"
 for needle in \
   "set -euo pipefail" \
   "config-check" \
-  "doctor" \
+  "RUN_MIGRATION_DOCTOR_ON_DEPLOY" \
+  "Skipping migration doctor during deploy" \
   "status" \
   "apply" \
   "validate" \
@@ -23,5 +24,10 @@ for needle in \
     exit 1
   fi
 done
+
+if grep -q 'run_migrate doctor' "${TARGET}" && ! grep -q 'maybe_run_doctor' "${TARGET}"; then
+  echo "doctor must only run via maybe_run_doctor (optional flag)" >&2
+  exit 1
+fi
 
 echo "dev_deploy_db_migrate.sh static checks OK"
