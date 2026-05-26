@@ -31,8 +31,8 @@
 #
 # Server: repo at /opt/dinamic/dinamic-gemini, reset to origin/develop, then:
 #   cd backend → docker-compose down → build api → up -d → dev_deploy_db_migrate.sh
-#   (config-check, status, conditional apply, validate, final status; doctor skipped by default)
-#   → /health poll. Optional: RUN_MIGRATION_DOCTOR_ON_DEPLOY=true for doctor during deploy.
+#   check_deploy_secrets (host + container) → migrations (doctor skipped by default) → /health poll.
+#   Server-local backend/docker-compose.override.yml is preserved (not deleted on deploy).
 # git fetch origin must work non-interactively (deploy key or credentials on the server).
 # Env file for the API is at repo root: /opt/dinamic/dinamic-gemini/.env (see backend/docker-compose.yml env_file).
 #
@@ -206,8 +206,6 @@ jobs:
               echo "ERROR: docker-compose not found on PATH (install docker-compose v1 standalone)" >&2
               exit 1
             fi
-            rm -f "${REPO_ROOT}/backend/docker-compose.override.yml"
-
             BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8001}"
             export BACKEND_HOST_PORT
 
@@ -219,6 +217,11 @@ jobs:
 
             cd "${REPO_ROOT}/backend"
 
+            chmod +x scripts/check_deploy_secrets.sh scripts/dev_deploy_db_migrate.sh 2>/dev/null || true
+            echo "==> GCP secrets preflight (host paths + optional compose override)..."
+            bash scripts/check_deploy_secrets.sh ensure-override
+            bash scripts/check_deploy_secrets.sh host
+
             docker-compose down --remove-orphans || true
 
             echo "Building backend image..."
@@ -228,6 +231,9 @@ jobs:
             docker-compose up -d
 
             docker-compose ps
+
+            echo "==> GCP secrets preflight (inside api container)..."
+            bash scripts/check_deploy_secrets.sh container
 
             export AUTO_APPLY_DEV_MIGRATIONS="${AUTO_APPLY_DEV_MIGRATIONS:-true}"
             export RUN_MIGRATION_DOCTOR_ON_DEPLOY="${RUN_MIGRATION_DOCTOR_ON_DEPLOY:-false}"
