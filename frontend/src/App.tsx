@@ -21,6 +21,7 @@ import ClientsList from './pages/ClientsList';
 import ClientDetail from './pages/ClientDetail';
 import ClientSupplierDetail from './pages/ClientSupplierDetail';
 import AdminAiConfigPage from './pages/AdminAiConfigPage';
+import AdminStorageMaintenancePage from './pages/AdminStorageMaintenancePage';
 import RequireUsernameAdmin from './features/auth/RequireUsernameAdmin';
 import IngestionSessionsPage from './features/ingestionSessions/pages/IngestionSessionsPage';
 import IngestionSessionDetailPage from './features/ingestionSessions/pages/IngestionSessionDetailPage';
@@ -68,6 +69,14 @@ function App() {
     ),
     []
   );
+  const adminStorageMaintenanceEl = useMemo(
+    () => (
+      <RequireUsernameAdmin>
+        <AdminStorageMaintenancePage />
+      </RequireUsernameAdmin>
+    ),
+    []
+  );
   const ingestionSessionsEl = useMemo(() => <IngestionSessionsPage />, []);
   const ingestionSessionDetailEl = useMemo(() => <IngestionSessionDetailPage />, []);
   const aisleObservabilityEl = useMemo(() => <AisleObservabilityPage />, []);
@@ -96,6 +105,7 @@ function App() {
         <Route path={ROUTE_PATH.ingestionSessions} element={ingestionSessionsEl} />
         <Route path={ROUTE_PATH.ingestionSessionDetail} element={ingestionSessionDetailEl} />
         <Route path={ROUTE_PATH.adminAiConfig} element={adminAiConfigEl} />
+        <Route path={ROUTE_PATH.adminStorageMaintenance} element={adminStorageMaintenanceEl} />
         <Route path={ROUTE_PATH.dashboard} element={<Navigate to={ROUTE_HOME} replace />} />
         <Route path={ROUTE_PATH.settings} element={<Navigate to={ROUTE_HOME} replace />} />
         <Route path={ROUTE_PATH.observabilidad} element={observabilityLegacyRedirectEl} />

@@ -66,6 +66,29 @@
     "unauthorized_title": "Unauthorized title",
     "validation_fn": "Validation fn"
   },
+  "admin_storage_cleanup": {
+    "bucket": "Bucket",
+    "bytes_found": "Bytes found",
+    "confirm_label": "Confirmation",
+    "delete_button": "Delete bucket and output files",
+    "delete_success": "Cleanup completed.",
+    "dry_run_success": "Dry run completed.",
+    "error_generic": "Cleanup failed.",
+    "files_found": "Files found",
+    "include_pipeline_temp": "Include pipeline temp workspace (job/run folders)",
+    "irreversible_warning": "This action is irreversible.",
+    "local_section": "Local files",
+    "mode_label": "Mode",
+    "objects_found": "Objects found",
+    "output_dir": "Output directory",
+    "prefix": "Prefix",
+    "provider": "Provider",
+    "remote_section": "Remote storage",
+    "safe_roots": "Allowed roots",
+    "scope_hint": "Only objects under the configured bucket prefix and allowed local roots (e.g. output/v3_uploads) are affected.",
+    "simulate": "Simulate cleanup",
+    "skipped": "Skipped"
+  },
   "aisle": {
     "aisle_created_snackbar": "Aisle created snackbar",
     "assets_uploaded_snackbar": "Assets uploaded snackbar",
@@ -1263,7 +1286,8 @@
     "ingestion_sessions": "Import sessions",
     "analytics": "Analytics",
     "clients": "Clients",
-    "ai_config": "AI configuration"
+    "ai_config": "AI configuration",
+    "storage_maintenance": "File maintenance"
   },
   "root": {
     "not_found": "Not found"
@@ -1296,6 +1320,10 @@
     "admin_ai_config": {
       "title": "AI configuration",
       "subtitle": "Manage providers, prompts, and prompt parity"
+    },
+    "admin_storage_maintenance": {
+      "title": "Maintenance panel",
+      "subtitle": "Cleanup bucket and local output files"
     }
   },
   "ingestion_sessions": {

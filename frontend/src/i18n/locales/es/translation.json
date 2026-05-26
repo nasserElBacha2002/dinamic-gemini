@@ -66,6 +66,29 @@
     "unauthorized_title": "Acceso restringido",
     "validation_fn": "Función de validación"
   },
+  "admin_storage_cleanup": {
+    "bucket": "Bucket",
+    "bytes_found": "Bytes encontrados",
+    "confirm_label": "Confirmación",
+    "delete_button": "Eliminar archivos del bucket y output",
+    "delete_success": "Limpieza completada.",
+    "dry_run_success": "Simulación completada.",
+    "error_generic": "No se pudo ejecutar la limpieza.",
+    "files_found": "Archivos encontrados",
+    "include_pipeline_temp": "Incluir workspace temporal del pipeline (carpetas job/run)",
+    "irreversible_warning": "Esta acción es irreversible.",
+    "local_section": "Archivos locales",
+    "mode_label": "Modo",
+    "objects_found": "Objetos encontrados",
+    "output_dir": "Directorio output",
+    "prefix": "Prefijo",
+    "provider": "Proveedor",
+    "remote_section": "Almacenamiento remoto",
+    "safe_roots": "Raíces permitidas",
+    "scope_hint": "Solo se eliminarán objetos dentro del prefijo configurado del bucket y archivos locales permitidos (por ejemplo output/v3_uploads).",
+    "simulate": "Simular limpieza",
+    "skipped": "Omitido"
+  },
   "aisle": {
     "aisle_created_snackbar": "Pasillo creado correctamente",
     "assets_uploaded_snackbar": "Activos subidos correctamente",
@@ -1821,7 +1844,8 @@
     "ingestion_sessions": "Sesiones de importación",
     "analytics": "Analítica",
     "clients": "Clientes",
-    "ai_config": "Configuración de IA"
+    "ai_config": "Configuración de IA",
+    "storage_maintenance": "Mantenimiento de archivos"
   },
   "root": {
     "not_found": "Página no encontrada"
@@ -1866,6 +1890,10 @@
     "admin_ai_config": {
       "title": "Configuración de IA",
       "subtitle": "Administrá proveedores, prompts y paridad de prompts"
+    },
+    "admin_storage_maintenance": {
+      "title": "Panel de mantenimiento",
+      "subtitle": "Limpieza de archivos en bucket y output local"
     }
   },
   "ingestion_sessions": {

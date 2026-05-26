@@ -71,6 +71,11 @@ export {
   getAdminAiConfig,
   getProcessingProviderOptions,
 } from './adminAiApi';
+export { postAdminStorageCleanup } from './adminStorageApi';
+export type {
+  AdminStorageCleanupRequest,
+  AdminStorageCleanupResponse,
+} from './adminStorageApi';
 export type {
   CodeScanCodeType,
   CodeScanDetection,

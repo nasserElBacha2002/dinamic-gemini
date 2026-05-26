@@ -20,6 +20,7 @@ from src.api.constants.error_wire import (
 from src.api.errors.structured_api_http import INTERNAL_SERVER_ERROR, StructuredApiHttpError
 from src.api.routes.v3 import router as v3_router
 from src.api.routes.v3.admin_ai_config import router as v3_admin_ai_config_router
+from src.api.routes.v3.admin_storage import router as v3_admin_storage_router
 from src.api.routes.v3.analytics_api import router as v3_analytics_router
 from src.api.routes.v3.clients import router as v3_clients_router
 from src.api.routes.v3.observability import router as v3_observability_router
@@ -97,6 +98,7 @@ app.include_router(v3_review_queue_router)
 app.include_router(v3_observability_router)
 app.include_router(auth_router)
 app.include_router(v3_admin_ai_config_router)
+app.include_router(v3_admin_storage_router)
 
 
 @app.exception_handler(AuthHttpError)

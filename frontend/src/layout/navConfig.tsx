@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   ROUTE_ADMIN_AI_CONFIG,
+  ROUTE_ADMIN_STORAGE_MAINTENANCE,
   ROUTE_CLIENTS,
   ROUTE_HOME,
   ROUTE_INGESTION_SESSIONS,
@@ -9,6 +10,7 @@ import {
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import AnalyticsOutlinedIcon from '@mui/icons-material/AnalyticsOutlined';
 import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
+import CleaningServicesOutlinedIcon from '@mui/icons-material/CleaningServicesOutlined';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
 
@@ -38,4 +40,10 @@ export const ADMIN_AI_CONFIG_NAV_ITEM: PrimaryNavItem = {
   labelKey: 'nav.ai_config',
   to: ROUTE_ADMIN_AI_CONFIG,
   icon: <PsychologyOutlinedIcon fontSize="small" />,
+};
+
+export const ADMIN_STORAGE_MAINTENANCE_NAV_ITEM: PrimaryNavItem = {
+  labelKey: 'nav.storage_maintenance',
+  to: ROUTE_ADMIN_STORAGE_MAINTENANCE,
+  icon: <CleaningServicesOutlinedIcon fontSize="small" />,
 };

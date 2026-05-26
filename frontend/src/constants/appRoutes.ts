@@ -17,6 +17,7 @@ export const LEGACY_METRICS_ROUTE = ROUTE_METRICS;
 export const LEGACY_OBSERVABILITY_ROUTE = ROUTE_OBSERVABILIDAD;
 export const ROUTE_CLIENTS = '/clientes';
 export const ROUTE_ADMIN_AI_CONFIG = '/admin/ai-config';
+export const ROUTE_ADMIN_STORAGE_MAINTENANCE = '/admin/storage-maintenance';
 export const ROUTE_INGESTION_SESSIONS = '/ingestion-sessions';
 
 /** URL segment for inventory-scoped paths (leading slash added in builders). */
@@ -35,6 +36,7 @@ export const ROUTE_PATH = {
   clientSupplierDetail: 'clientes/:clientId/proveedores/:supplierId',
   ingestionSessions: 'ingestion-sessions',
   adminAiConfig: 'admin/ai-config',
+  adminStorageMaintenance: 'admin/storage-maintenance',
   dashboard: 'dashboard',
   settings: 'settings',
   inventoryDetail: 'inventories/:inventoryId',
