@@ -12,6 +12,7 @@ for needle in \
   "config-check" \
   "RUN_MIGRATION_DOCTOR_ON_DEPLOY" \
   "Skipping migration doctor during deploy" \
+  "wait_for_api_exec" \
   "capture_status_json" \
   "Running migration status" \
   ">&2" \
