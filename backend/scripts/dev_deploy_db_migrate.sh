@@ -31,54 +31,74 @@ AUTO_APPLY="${AUTO_APPLY_DEV_MIGRATIONS:-true}"
 RUN_DOCTOR="${RUN_MIGRATION_DOCTOR_ON_DEPLOY:-false}"
 
 run_migrate() {
-  echo "==> db_migrate.py $*"
+  echo "==> db_migrate.py $*" >&2
   ${COMPOSE} exec -T "${SERVICE}" python3 scripts/db_migrate.py "$@"
 }
 
+# stdout: JSON only (for capture). Log lines go to stderr.
 capture_status_json() {
-  echo "==> Running migration status..."
+  echo "==> Running migration status..." >&2
   ${COMPOSE} exec -T "${SERVICE}" python3 scripts/db_migrate.py status
 }
 
-wait_for_api_exec() {
-  echo "==> Waiting for ${SERVICE} container to accept exec..."
-  local attempt
-  for attempt in $(seq 1 45); do
-    if ${COMPOSE} exec -T "${SERVICE}" python3 -c "pass" 2>/dev/null; then
-      echo "==> ${SERVICE} ready for exec (attempt ${attempt})"
-      return 0
-    fi
-    echo "==> ${SERVICE} not ready (attempt ${attempt}/45); sleeping 2s..."
-    sleep 2
-  done
-  echo "ERROR: ${SERVICE} not ready for exec within ~90s" >&2
-  ${COMPOSE} ps >&2 || true
-  exit 1
+log_migration_status() {
+  local label="$1"
+  local json="$2"
+  echo "==> ${label} migration status" >&2
+  printf '%s\n' "${json}"
 }
 
-json_has_pending() {
+# Prints pending_versions length to stdout. Exits non-zero on empty/invalid JSON.
+pending_migration_count() {
   local json="$1"
-  STATUS_JSON="${json}" python3 - <<'PY'
+  local label="${2:-initial}"
+  printf '%s' "${json}" | STATUS_LABEL="${label}" python3 - <<'PY'
 import json
 import os
 import sys
 
-data = json.loads(os.environ["STATUS_JSON"])
-pending = data.get("pending_versions") or []
-sys.exit(0 if pending else 1)
+label = os.environ.get("STATUS_LABEL", "initial")
+raw = sys.stdin.read().strip()
+if not raw:
+    print(f"ERROR: db_migrate.py status returned empty output ({label}).", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    data = json.loads(raw)
+except json.JSONDecodeError as exc:
+    print(f"ERROR: invalid JSON from db_migrate.py status ({label}): {exc}", file=sys.stderr)
+    print("--- raw captured output ---", file=sys.stderr)
+    print(raw, file=sys.stderr)
+    print("--- end raw output ---", file=sys.stderr)
+    sys.exit(1)
+
+print(len(data.get("pending_versions") or []))
 PY
 }
 
 assert_status_clean() {
   local json="$1"
   local label="${2:-final}"
-  STATUS_JSON="${json}" STATUS_LABEL="${label}" python3 - <<'PY'
+  printf '%s' "${json}" | STATUS_LABEL="${label}" python3 - <<'PY'
 import json
 import os
 import sys
 
-data = json.loads(os.environ["STATUS_JSON"])
 label = os.environ.get("STATUS_LABEL", "final")
+raw = sys.stdin.read().strip()
+if not raw:
+    print(f"ERROR: db_migrate.py status returned empty output ({label}).", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    data = json.loads(raw)
+except json.JSONDecodeError as exc:
+    print(f"ERROR: invalid JSON from db_migrate.py status ({label}): {exc}", file=sys.stderr)
+    print("--- raw captured output ---", file=sys.stderr)
+    print(raw, file=sys.stderr)
+    print("--- end raw output ---", file=sys.stderr)
+    sys.exit(1)
+
 pending = data.get("pending_versions") or []
 compatible = data.get("compatible")
 if pending:
@@ -99,12 +119,12 @@ maybe_run_doctor() {
   case "${RUN_DOCTOR}" in
     true | 1 | yes | YES | True)
       echo "WARNING: RUN_MIGRATION_DOCTOR_ON_DEPLOY=${RUN_DOCTOR} — running migration doctor (may be memory-intensive on small hosts)." >&2
-      echo "==> Running migration doctor..."
+      echo "==> Running migration doctor..." >&2
       run_migrate doctor
       ;;
     *)
-      echo "==> Skipping migration doctor during deploy. Run it manually for deep diagnostics:"
-      echo "    ${COMPOSE} exec ${SERVICE} python3 scripts/db_migrate.py doctor"
+      echo "==> Skipping migration doctor during deploy. Run it manually for deep diagnostics:" >&2
+      echo "    ${COMPOSE} exec ${SERVICE} python3 scripts/db_migrate.py doctor" >&2
       ;;
   esac
 }
@@ -112,44 +132,47 @@ maybe_run_doctor() {
 main() {
   wait_for_api_exec
 
-  echo "==> Validating GCP credentials mount inside container (before migrations)..."
+  echo "==> Validating GCP credentials mount inside container (before migrations)..." >&2
   bash "${SCRIPT_DIR}/check_deploy_secrets.sh" container
 
-  echo "==> Running migration config-check..."
+  echo "==> Running migration config-check..." >&2
   run_migrate config-check
 
   maybe_run_doctor
 
-  echo "==> Initial migration status"
+  local initial_status
   initial_status="$(capture_status_json)"
-  echo "${initial_status}"
+  log_migration_status "Initial" "${initial_status}"
 
-  if json_has_pending "${initial_status}"; then
-    echo "==> Pending migrations detected"
+  local pending_count
+  pending_count="$(pending_migration_count "${initial_status}" "initial")"
+
+  if [[ "${pending_count}" -gt 0 ]]; then
+    echo "==> Pending migrations detected" >&2
     case "${AUTO_APPLY}" in
       true | 1 | yes | YES | True)
-        echo "==> Applying pending DEV migrations..."
+        echo "==> Applying pending DEV migrations..." >&2
         run_migrate apply
         ;;
       *)
         echo "ERROR: AUTO_APPLY_DEV_MIGRATIONS=${AUTO_APPLY} — pending migrations were NOT applied." >&2
-        echo "${initial_status}" >&2
+        printf '%s\n' "${initial_status}" >&2
         exit 1
         ;;
     esac
   else
-    echo "==> No pending migrations; skipping apply (apply would no-op)"
+    echo "==> No pending migrations; skipping apply (apply would no-op)" >&2
   fi
 
-  echo "==> Running migration validate..."
+  echo "==> Running migration validate..." >&2
   run_migrate validate
 
-  echo "==> Final migration status"
+  local final_status
   final_status="$(capture_status_json)"
-  echo "${final_status}"
+  log_migration_status "Final" "${final_status}"
   assert_status_clean "${final_status}" "post-deploy"
 
-  echo "==> DEV database migrations completed successfully"
+  echo "==> DEV database migrations completed successfully" >&2
 }
 
 main "$@"
