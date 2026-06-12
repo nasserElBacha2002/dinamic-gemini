@@ -17,6 +17,8 @@ from src.application.ports.clock import Clock
 from src.application.services.artifact_publication_verifier import verify_remote_object
 from src.domain.jobs.artifact_manifest import (
     ArtifactManifestStatus,
+)
+from src.domain.jobs.artifact_manifest import (
     ArtifactVerificationLevel as ManifestVerificationLevel,
 )
 from src.domain.jobs.artifact_publication_outbox import (

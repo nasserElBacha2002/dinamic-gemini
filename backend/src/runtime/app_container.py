@@ -47,7 +47,6 @@ from src.application.ports.repositories import (
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
-from src.infrastructure.storage.artifact_store import ArtifactStore
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
 from src.application.services.artifact_publication_dispatcher import ArtifactPublicationDispatcher
 from src.application.services.artifact_recovery_source_resolver import (
@@ -116,6 +115,7 @@ from src.infrastructure.persistence.sql_job_result_unit_of_work import (
 from src.infrastructure.persistence.sql_operational_job_promotion_repository import (
     SqlOperationalJobPromotionRepository,
 )
+from src.infrastructure.storage.artifact_store import ArtifactStore
 from src.runtime.container.analytics_builders import build_analytics_repository
 from src.runtime.container.capture_session_builders import (
     build_capture_session_confirm_repository,

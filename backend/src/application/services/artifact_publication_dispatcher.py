@@ -39,13 +39,13 @@ from src.application.services.artifact_publication_verifier import verify_remote
 from src.application.services.automatic_finalization_continuation_use_case import (
     AutomaticFinalizationContinuationUseCase,
 )
+from src.domain.jobs.artifact_manifest import ArtifactVerificationLevel as ManifestVerificationLevel
 from src.domain.jobs.artifact_policy import (
     ALL_EXPECTED_ARTIFACT_KINDS,
     ARTIFACT_KIND_EXECUTION_LOG,
     ARTIFACT_KIND_HYBRID_REPORT_JSON,
     is_required_artifact_kind,
 )
-from src.domain.jobs.artifact_manifest import ArtifactVerificationLevel as ManifestVerificationLevel
 from src.domain.jobs.artifact_publication_outbox import (
     ArtifactPublicationOutboxEntry,
     ArtifactPublicationOutboxStatus,
