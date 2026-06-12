@@ -26,6 +26,9 @@ from src.application.services.default_job_scoped_recompute_factory import (
 )
 from src.application.services.final_count_builder import FinalCountBuilder
 from src.application.services.label_normalization import LabelNormalizationService
+from src.application.services.operational_result_promotion_service import (
+    OperationalResultPromotionService,
+)
 from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
@@ -38,6 +41,9 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.labels.merge import MergeRuleEngine
+from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
+    MemoryOperationalJobPromotionRepository,
+)
 from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWorkFactory,
 )
@@ -294,9 +300,21 @@ class ExecutorHarness:
         )
 
     def make_executor(self, **kwargs: Any) -> V3JobExecutor:
+        job_repo = kwargs.get("job_repo", self.job_repo)
+        aisle_repo = kwargs.get("aisle_repo", self.aisle_repo)
+        promotion_svc = kwargs.get("operational_promotion_service")
+        if promotion_svc is None:
+            promotion_svc = OperationalResultPromotionService(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                promotion_repo=MemoryOperationalJobPromotionRepository(
+                    aisle_repo=aisle_repo,
+                    job_repo=job_repo,
+                ),
+            )
         return V3JobExecutor(
-            job_repo=kwargs.get("job_repo", self.job_repo),
-            aisle_repo=kwargs.get("aisle_repo", self.aisle_repo),
+            job_repo=job_repo,
+            aisle_repo=aisle_repo,
             source_asset_repo=self.source_asset_repo,
             position_repo=kwargs.get("position_repo", self.position_repo),
             product_record_repo=self.product_repo,
@@ -315,6 +333,7 @@ class ExecutorHarness:
                 "job_result_uow_factory", MemoryJobResultUnitOfWorkFactory()
             ),
             recompute_consolidated_uc=kwargs.get("recompute_uc", self.recompute_uc),
+            operational_promotion_service=promotion_svc,
         )
 
     def seed_run_dir(self, report: dict[str, Any] | None = None) -> Path:

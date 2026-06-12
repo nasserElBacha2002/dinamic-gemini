@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from src.infrastructure.pipeline.finalization_errors import ArtifactStoreUnavailableError
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
     publish_worker_durable_artifacts,
 )
@@ -26,9 +27,9 @@ class V3ExecutionArtifactsService:
         self._artifact_store = artifact_store
 
     def require_store(self) -> None:
-        """Raise with the same message the executor used when no store is configured."""
+        """Raise when no store is configured."""
         if self._artifact_store is None:
-            raise RuntimeError(
+            raise ArtifactStoreUnavailableError(
                 "Artifact store not configured; cannot upload durable worker outputs"
             )
 

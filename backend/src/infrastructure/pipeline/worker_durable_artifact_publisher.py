@@ -27,6 +27,10 @@ from pathlib import Path
 from typing import Any
 
 from src.infrastructure.storage.artifact_store import ArtifactStore, StoredArtifact
+from src.infrastructure.pipeline.finalization_errors import (
+    ArtifactPublishError,
+    ArtifactPublishPartialError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +147,20 @@ def publish_worker_durable_artifacts(
             },
         )
         with open(path, "rb") as fh:
-            stored = store.put_object(logical_key, fh, content_type)
+            try:
+                stored = store.put_object(logical_key, fh, content_type)
+            except Exception as exc:
+                if out:
+                    raise ArtifactPublishPartialError(
+                        f"Durable artifact upload failed after partial success: {kind} "
+                        f"(job_id={job_id} run_segment={run_segment}): {exc}",
+                        published=dict(out),
+                        failed_kind=kind,
+                    ) from exc
+                raise ArtifactPublishError(
+                    f"Durable artifact upload failed: {kind} "
+                    f"(job_id={job_id} run_segment={run_segment}): {exc}"
+                ) from exc
 
         logger.info(
             "worker_durable_artifact_upload_ok",

@@ -122,6 +122,10 @@ class JobSummary(BaseModel):
     model_name: Optional[str] = None
     prompt_key: Optional[str] = None
     prompt_version: Optional[str] = None
+    finalization_status: Optional[str] = None
+    current_finalization_step: Optional[str] = None
+    last_completed_finalization_step: Optional[str] = None
+    finalization_error_code: Optional[str] = None
     #: True when this job is the aisle ``operational_job_id`` pointer (Phase 6 run browser).
     is_operational: bool = False
     #: Optional LLM cost snapshot from ``result_json`` (sanitized; additive for run pickers).

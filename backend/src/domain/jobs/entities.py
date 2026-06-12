@@ -6,10 +6,16 @@ Technical work item associated with an aisle. Distinct from src/jobs (queue/stor
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
+
+from src.domain.jobs.finalization import (
+    CurrentFinalizationStep,
+    FinalizationStatus,
+    LastCompletedFinalizationStep,
+)
 
 
 class JobStatus(str, Enum):
@@ -59,3 +65,15 @@ class Job:
     engine_params_json: dict[str, Any] | None = None
     #: Resolved prompt profile version / schema tag for audit (e.g. ``global_v21@v2.1``).
     prompt_version: str | None = None
+    # Phase 3.2 — explicit finalization progress (distinct from pipeline current_stage).
+    finalization_status: FinalizationStatus = FinalizationStatus.NOT_STARTED
+    current_finalization_step: CurrentFinalizationStep | None = None
+    last_completed_finalization_step: LastCompletedFinalizationStep = (
+        LastCompletedFinalizationStep.NONE
+    )
+    finalization_error_code: str | None = None
+    finalization_error_metadata: dict[str, Any] | None = field(default=None)
+    finalization_started_at: datetime | None = None
+    finalization_completed_at: datetime | None = None
+    domain_persisted_at: datetime | None = None
+    artifacts_published_at: datetime | None = None

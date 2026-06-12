@@ -157,7 +157,7 @@ def test_execute_success_invokes_state_runner_and_artifacts(tmp_path: Path) -> N
     spy_runner.run_hybrid_pipeline.assert_called_once()
     spy_artifacts.require_store.assert_called_once()
     spy_artifacts.publish_worker_durables.assert_called_once()
-    spy_state.mark_success.assert_called_once()
+    spy_state.finalize_success.assert_called_once()
     executor._persist_use_case.execute.assert_called_once()
 
 

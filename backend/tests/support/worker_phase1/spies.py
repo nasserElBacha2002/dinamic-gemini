@@ -18,6 +18,7 @@ class ExecutionSpy:
     artifact_put_calls: int = 0
     mark_success_calls: int = 0
     fail_job_and_aisle_calls: int = 0
+    fail_finalization_and_aisle_calls: int = 0
     cancel_job_calls: int = 0
     cancel_job_and_aisle_calls: int = 0
 
@@ -25,7 +26,7 @@ class ExecutionSpy:
     _original_mark_success: Any = field(default=None, repr=False)
     _original_fail_job_and_aisle: Any = field(default=None, repr=False)
     _original_cancel_job: Any = field(default=None, repr=False)
-    _original_cancel_job_and_aisle: Any = field(default=None, repr=False)
+    _original_fail_finalization_and_aisle: Any = field(default=None, repr=False)
     _artifact_store: Any = field(default=None, repr=False)
     _original_put_object: Any = field(default=None, repr=False)
 
@@ -63,6 +64,14 @@ class ExecutionSpy:
 
         executor._state.fail_job_and_aisle = fail_spy  # type: ignore[method-assign]
 
+        self._original_fail_finalization_and_aisle = executor._state.fail_finalization_and_aisle
+
+        def fail_finalization_spy(*args: Any, **kwargs: Any) -> None:
+            self.fail_finalization_and_aisle_calls += 1
+            self._original_fail_finalization_and_aisle(*args, **kwargs)
+
+        executor._state.fail_finalization_and_aisle = fail_finalization_spy  # type: ignore[method-assign]
+
         self._original_cancel_job = executor._state.cancel_job
 
         def cancel_job_spy(*args: Any, **kwargs: Any) -> None:
@@ -99,6 +108,8 @@ class ExecutionSpy:
             executor._state.mark_success = self._original_mark_success  # type: ignore[method-assign]
         if self._original_fail_job_and_aisle is not None:
             executor._state.fail_job_and_aisle = self._original_fail_job_and_aisle  # type: ignore[method-assign]
+        if self._original_fail_finalization_and_aisle is not None:
+            executor._state.fail_finalization_and_aisle = self._original_fail_finalization_and_aisle  # type: ignore[method-assign]
         if self._original_cancel_job is not None:
             executor._state.cancel_job = self._original_cancel_job  # type: ignore[method-assign]
         if self._original_cancel_job_and_aisle is not None:

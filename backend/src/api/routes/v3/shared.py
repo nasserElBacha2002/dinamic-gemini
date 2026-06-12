@@ -570,6 +570,12 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
         model_name=j.model_name,
         prompt_key=j.prompt_key,
         prompt_version=j.prompt_version,
+        finalization_status=j.finalization_status.value,
+        current_finalization_step=(
+            j.current_finalization_step.value if j.current_finalization_step else None
+        ),
+        last_completed_finalization_step=j.last_completed_finalization_step.value,
+        finalization_error_code=j.finalization_error_code,
         is_operational=is_operational,
         llm_cost_snapshot=_llm_cost_snapshot_from_job_result(j.result_json),
     )
