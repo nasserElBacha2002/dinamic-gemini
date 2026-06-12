@@ -286,6 +286,21 @@ class ArtifactPublicationDispatcher:
         result.required_complete = self._manifest.required_kinds_published(job_id)
         if (
             result.required_complete
+            and inline_worker
+            and continuation_aisle is not None
+            and report_path is not None
+            and self._continuation is not None
+        ):
+            result.continuation_started = self._continuation.continue_if_required_complete(
+                job_id=job_id,
+                aisle=continuation_aisle,
+                report_path=report_path,
+                tracker=tracker,
+                run_metadata=run_metadata,
+                durable_artifacts=result.durable_meta,
+            )
+        elif (
+            result.required_complete
             and not inline_worker
             and self._try_automatic_continuation(job_id, result)
         ):

@@ -56,6 +56,8 @@ class ArtifactFinalizationContinuationCoordinator:
             terminal_stage = self._stage_store.get_stage(job_id, FinalizationStage.JOB_TERMINALIZATION)
             if terminal_stage is not None and terminal_stage.status == StageStatus.COMPLETED:
                 return True
+        if required_stage is None or required_stage.status != StageStatus.COMPLETED:
+            tracker.record_artifacts_published(durable_artifacts=durable_artifacts)
         logger.info("artifact.finalization_continuation.started job_id=%s", job_id)
         self._state.finalize_success(
             job_id,

@@ -78,6 +78,7 @@ from src.application.use_cases.pipeline.recompute_consolidated_counts import (
 )
 from src.config import Settings, load_settings
 from src.domain.aisle.entities import Aisle
+from src.domain.jobs.artifact_manifest import ArtifactManifestStatus
 from src.domain.jobs.artifact_policy import is_required_artifact_kind
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.jobs.finalization import (
@@ -328,6 +329,7 @@ class V3JobExecutor:
                 manifest_store=artifact_manifest_store,
                 clock=clock,
             )
+        self._artifact_manifest_store = artifact_manifest_store
         self._artifact_dispatcher: ArtifactPublicationDispatcher | None = None
         if (
             artifact_publication_outbox_store is not None
@@ -929,6 +931,38 @@ class V3JobExecutor:
                 run_metadata=p.result.run_metadata,
             )
         except Exception as exc:
+            job = self._job_repo.get_by_id(p.job_id)
+            if job is not None and job.finalization_error_code:
+                return True
+            manifest = self._artifact_manifest_store
+            if manifest is not None and manifest.required_kinds_published(p.job_id):
+                published_kinds = sorted(
+                    entry.artifact_kind
+                    for entry in manifest.list_entries(p.job_id)
+                    if entry.status == ArtifactManifestStatus.PUBLISHED
+                )
+                p.exec_log.error(
+                    "Artifacts",
+                    f"Artifact marker write failed: {exc}",
+                    payload={"error": str(exc)[:500]},
+                )
+                self._state.fail_finalization_and_aisle(
+                    p.job_id,
+                    p.aisle,
+                    tracker=tracker,
+                    error_code=FinalizationErrorCode.FINALIZATION_METADATA_WRITE_FAILED,
+                    current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                    message=f"Artifact marker write failed: {exc}",
+                    metadata={
+                        "artifact_upload_completed": True,
+                        "marker_write_completed": False,
+                        "verification_required": True,
+                        "failed_marker": "ARTIFACTS_PUBLISHED",
+                        "published_artifact_kinds": published_kinds,
+                        "exception_type": type(exc).__name__,
+                    },
+                )
+                return True
             p.exec_log.error(
                 "Artifacts",
                 f"Artifact publication dispatch failed: {exc}",
