@@ -17,6 +17,9 @@ from typing import Any, Callable
 from src.application.ports.clock import Clock
 from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
+from src.application.services.operational_result_promotion_service import (
+    OperationalResultPromotionService,
+)
 from src.application.ports.repositories import FinalCountRepository, NormalizedLabelRepository
 from src.application.ports.repositories import (
     AisleRepository,
@@ -202,6 +205,7 @@ class V3JobExecutor:
         job_scoped_recompute_factory: JobScopedRecomputeFactory | None = None,
         job_result_uow_factory: JobResultUnitOfWorkFactory | None = None,
         recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
+        operational_promotion_service: OperationalResultPromotionService | None = None,
         client_supplier_repo: ClientSupplierRepository | None = None,
         supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None,
     ) -> None:
@@ -222,6 +226,7 @@ class V3JobExecutor:
             inventory_repo=inventory_repo,
             clock=clock,
             inventory_status_reconciler=inventory_status_reconciler,
+            operational_promotion_service=operational_promotion_service,
         )
         self._artifacts = V3ExecutionArtifactsService(artifact_store)
         supplier_resolver = SupplierReferenceImageResolver(supplier_reference_image_repo)

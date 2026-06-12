@@ -1162,10 +1162,16 @@ def get_promote_aisle_operational_job_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),
 ) -> PromoteAisleOperationalJobUseCase:
+    from src.runtime.v3_deps import get_app_container
+
     return PromoteAisleOperationalJobUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
         job_repo=job_repo,
+        operational_promotion_service=get_app_container().build_operational_result_promotion_service(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+        ),
     )
 
 

@@ -18,13 +18,23 @@ exist and target this aisle. Stale or cross-aisle pointers fail fast (no silent 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Literal
 
 from src.application.errors import JobDoesNotBelongToAisleError, JobNotFoundError
 from src.application.ports.repositories import JobRepository, PositionRepository
 from src.domain.aisle.entities import Aisle
 
-ResultContextSource = Literal["explicit", "operational", "legacy"]
+ResultContextSource = Literal["explicit", "operational", "legacy", "audit_all"]
+
+
+class ResultReadMode(str, Enum):
+    """How operational consumers resolve a job slice."""
+
+    OPERATIONAL = "operational"
+    EXPLICIT_JOB = "explicit_job"
+    AUDIT_ALL = "audit_all"
+    LEGACY = "legacy"
 
 
 @dataclass(frozen=True)
@@ -33,6 +43,9 @@ class ResolvedAisleResultContext:
 
     job_id_for_slice: str | None
     source: ResultContextSource
+    read_mode: ResultReadMode
+    is_legacy: bool
+    selection_reason: str
 
 
 class ResultContextResolver:
@@ -53,15 +66,65 @@ class ResultContextResolver:
         if job.target_type != "aisle" or job.target_id != aisle.id:
             raise JobDoesNotBelongToAisleError(f"Job {job_id} does not belong to aisle {aisle.id}")
 
-    def resolve(self, *, aisle: Aisle, explicit_job_id: str | None) -> ResolvedAisleResultContext:
-        if explicit_job_id is not None and str(explicit_job_id).strip():
+    def resolve(
+        self,
+        *,
+        aisle: Aisle,
+        explicit_job_id: str | None,
+        read_mode: ResultReadMode | None = None,
+    ) -> ResolvedAisleResultContext:
+        mode = read_mode or (
+            ResultReadMode.EXPLICIT_JOB
+            if explicit_job_id and str(explicit_job_id).strip()
+            else ResultReadMode.OPERATIONAL
+        )
+
+        if mode == ResultReadMode.AUDIT_ALL:
+            return ResolvedAisleResultContext(
+                job_id_for_slice="all",
+                source="audit_all",
+                read_mode=mode,
+                is_legacy=False,
+                selection_reason="explicit audit_all mode",
+            )
+
+        if mode == ResultReadMode.EXPLICIT_JOB or (
+            explicit_job_id is not None and str(explicit_job_id).strip()
+        ):
             jid = str(explicit_job_id).strip()
             self._assert_job_targets_aisle(job_id=jid, aisle=aisle)
-            return ResolvedAisleResultContext(job_id_for_slice=jid, source="explicit")
+            return ResolvedAisleResultContext(
+                job_id_for_slice=jid,
+                source="explicit",
+                read_mode=ResultReadMode.EXPLICIT_JOB,
+                is_legacy=False,
+                selection_reason="explicit job_id parameter",
+            )
+
+        if mode == ResultReadMode.LEGACY:
+            return ResolvedAisleResultContext(
+                job_id_for_slice=None,
+                source="legacy",
+                read_mode=mode,
+                is_legacy=True,
+                selection_reason="legacy null-job slice",
+            )
 
         op = str(aisle.operational_job_id).strip() if aisle.operational_job_id else ""
         if op:
             self._assert_job_targets_aisle(job_id=op, aisle=aisle)
-            return ResolvedAisleResultContext(job_id_for_slice=op, source="operational")
+            return ResolvedAisleResultContext(
+                job_id_for_slice=op,
+                source="operational",
+                read_mode=ResultReadMode.OPERATIONAL,
+                is_legacy=False,
+                selection_reason="aisles.operational_job_id",
+            )
 
-        return ResolvedAisleResultContext(job_id_for_slice=None, source="legacy")
+        return ResolvedAisleResultContext(
+            job_id_for_slice=None,
+            source="legacy",
+            read_mode=ResultReadMode.LEGACY,
+            is_legacy=True,
+            selection_reason="no operational pointer; legacy null-job slice",
+        )

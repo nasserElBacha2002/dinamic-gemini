@@ -257,6 +257,11 @@ class ExecutorHarness:
             def list_by_aisle(self, aid: str) -> Sequence[SourceAsset]:
                 return assets if aid == aisle_id else []
 
+            def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]):
+                from src.application.ports.contracts import AisleAssetRollup
+
+                return {aid: AisleAssetRollup(count=0, last_uploaded_at=None) for aid in aisle_ids}
+
         resolved_source_asset_repo = source_asset_repo or _AssetRepo()
 
         if recompute_uc is None:

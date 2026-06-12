@@ -70,6 +70,7 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             get_final_count_repo,
             get_job_repo,
             get_job_result_uow_factory,
+            get_operational_result_promotion_service,
             get_job_scoped_recompute_factory,
             get_normalized_label_repo,
             get_position_repo,
@@ -129,6 +130,7 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             job_scoped_recompute_factory=get_job_scoped_recompute_factory(),
             job_result_uow_factory=get_job_result_uow_factory(),
             recompute_consolidated_uc=get_recompute_consolidated_counts_use_case(),
+            operational_promotion_service=get_operational_result_promotion_service(),
             client_supplier_repo=get_client_supplier_repo(),
             supplier_prompt_config_repo=get_supplier_prompt_config_repo(),
         )

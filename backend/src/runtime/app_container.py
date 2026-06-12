@@ -47,6 +47,9 @@ from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
 from src.application.services.default_job_scoped_recompute_factory import (
     DefaultJobScopedRecomputeFactory,
 )
+from src.application.services.operational_result_promotion_service import (
+    OperationalResultPromotionService,
+)
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
 )
@@ -62,8 +65,14 @@ from src.database.sqlserver import SqlServerClient
 from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWorkFactory,
 )
+from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
+    MemoryOperationalJobPromotionRepository,
+)
 from src.infrastructure.persistence.sql_job_result_unit_of_work import (
     SqlJobResultUnitOfWorkFactory,
+)
+from src.infrastructure.persistence.sql_operational_job_promotion_repository import (
+    SqlOperationalJobPromotionRepository,
 )
 from src.runtime.container.analytics_builders import build_analytics_repository
 from src.runtime.container.capture_session_builders import (
@@ -560,6 +569,32 @@ class AppContainer:
 
     def get_job_scoped_recompute_factory(self) -> JobScopedRecomputeFactory:
         return DefaultJobScopedRecomputeFactory()
+
+    def build_operational_result_promotion_service(
+        self,
+        *,
+        aisle_repo: AisleRepository,
+        job_repo: JobRepository,
+    ) -> OperationalResultPromotionService:
+        module = type(aisle_repo).__module__
+        if module.startswith("src.infrastructure.repositories.sql_"):
+            promotion_repo = SqlOperationalJobPromotionRepository(self._get_v3_sql_client())
+        else:
+            promotion_repo = MemoryOperationalJobPromotionRepository(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+            )
+        return OperationalResultPromotionService(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+            promotion_repo=promotion_repo,
+        )
+
+    def get_operational_result_promotion_service(self) -> OperationalResultPromotionService:
+        return self.build_operational_result_promotion_service(
+            aisle_repo=self.get_aisle_repo(),
+            job_repo=self.get_job_repo(),
+        )
 
     def get_list_supplier_prompt_configs_use_case(self) -> ListSupplierPromptConfigsUseCase:
         return build_list_supplier_prompt_configs_use_case(
