@@ -39,15 +39,13 @@ class ExecutionSpy:
 
         executor._persist_use_case.execute = persist_spy  # type: ignore[method-assign]
 
-        recompute = getattr(executor._persist_use_case, "_recompute_uc", None)
-        if recompute is not None:
-            original_recompute = recompute.execute
+        original_recompute_scoped = executor._persist_use_case._recompute_job_scoped
 
-            def recompute_spy(cmd: Any) -> Any:
-                self.recompute_calls += 1
-                return original_recompute(cmd)
+        def recompute_scoped_spy(*args: Any, **kwargs: Any) -> Any:
+            self.recompute_calls += 1
+            return original_recompute_scoped(*args, **kwargs)
 
-            recompute.execute = recompute_spy  # type: ignore[method-assign]
+        executor._persist_use_case._recompute_job_scoped = recompute_scoped_spy  # type: ignore[method-assign]
 
         self._original_mark_success = executor._state.mark_success
 

@@ -145,3 +145,15 @@ def get_capture_session_confirm_repo() -> CaptureSessionConfirmIdempotencyReposi
 
 def get_recompute_consolidated_counts_use_case():
     return get_app_container().get_recompute_consolidated_counts_use_case()
+
+
+def get_job_result_uow_factory():
+    return get_app_container().get_job_result_uow_factory()
+
+
+def get_job_scoped_recompute_factory():
+    return get_app_container().get_job_scoped_recompute_factory()
+
+
+def get_operational_result_promotion_service():
+    return get_app_container().get_operational_result_promotion_service()

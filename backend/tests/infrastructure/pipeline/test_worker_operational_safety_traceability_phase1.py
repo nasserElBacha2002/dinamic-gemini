@@ -12,7 +12,6 @@ import pytest
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
-    PersistAisleResultUseCase,
 )
 from src.application.use_cases.positions.list_aisle_positions import (
     ListAislePositionsCommand,
@@ -26,9 +25,6 @@ from src.domain.traceability import (
     TRACEABILITY_INVALID,
     TRACEABILITY_VALID,
     apply_traceability_validation,
-)
-from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
-    default_map_hybrid_report_to_domain,
 )
 from src.infrastructure.pipeline.v3_report_mapper import map_hybrid_report_to_domain
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
@@ -62,7 +58,7 @@ from src.pipeline.stages.frame_acquisition_stage import (
     FrameAcquisitionStage,
 )
 from src.pipeline.stages.input_preparation_stage import PreparedInput
-from tests.support.worker_phase1.executor_harness import FixedClock, build_recompute_use_case
+from tests.support.worker_phase1.executor_harness import FixedClock
 
 
 def _photos_job_input(manifest_path: str, photos_dir: str) -> MagicMock:
@@ -400,21 +396,17 @@ def test_wkr_p1_t011b_reference_id_returned_as_provider_source_is_traceability_i
         )
     )
 
-    persist = PersistAisleResultUseCase(
+    from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
+
+    persist = build_persist_aisle_result_use_case(
         position_repo=pos_repo,
         product_record_repo=prod_repo,
         evidence_repo=ev_repo,
-        clock=FixedClock(now),
-        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
         raw_label_repo=raw_repo,
-        recompute_consolidated_uc=build_recompute_use_case(
-            raw_repo=raw_repo,
-            norm_repo=MemoryNormalizedLabelRepository(),
-            final_repo=MemoryFinalCountRepository(),
-            product_repo=prod_repo,
-            position_repo=pos_repo,
-        ),
+        normalized_label_repo=MemoryNormalizedLabelRepository(),
+        final_count_repo=MemoryFinalCountRepository(),
+        clock=FixedClock(now),
     )
     persist.execute(
         PersistAisleResultCommand(
@@ -562,21 +554,17 @@ def test_wkr_p1_t013_source_image_id_preserved_through_persist_and_read_model(
         )
     )
 
-    persist = PersistAisleResultUseCase(
+    from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
+
+    persist = build_persist_aisle_result_use_case(
         position_repo=pos_repo,
         product_record_repo=prod_repo,
         evidence_repo=ev_repo,
-        clock=FixedClock(now),
-        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
         raw_label_repo=raw_repo,
-        recompute_consolidated_uc=build_recompute_use_case(
-            raw_repo=raw_repo,
-            norm_repo=MemoryNormalizedLabelRepository(),
-            final_repo=MemoryFinalCountRepository(),
-            product_repo=prod_repo,
-            position_repo=pos_repo,
-        ),
+        normalized_label_repo=MemoryNormalizedLabelRepository(),
+        final_count_repo=MemoryFinalCountRepository(),
+        clock=FixedClock(now),
     )
     persist.execute(
         PersistAisleResultCommand(

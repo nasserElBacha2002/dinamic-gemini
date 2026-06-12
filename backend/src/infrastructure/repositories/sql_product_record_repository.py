@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from src.application.ports.repositories import ProductRecordRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.products.entities import ProductRecord
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 
 
@@ -77,8 +78,9 @@ def _safe_load_json(raw: object) -> object | None:
 
 
 class SqlProductRecordRepository(ProductRecordRepository):
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
 
     def save(self, product: ProductRecord) -> None:
         if product.created_at is None or product.updated_at is None:
@@ -86,7 +88,7 @@ class SqlProductRecordRepository(ProductRecordRepository):
         created = _ensure_utc(product.created_at)
         updated = _ensure_utc(product.updated_at)
         raw_qty_json = _safe_dump_json(product.raw_qty)
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 UPDATE product_records
@@ -136,7 +138,7 @@ class SqlProductRecordRepository(ProductRecordRepository):
                 )
 
     def get_by_id(self, product_id: str) -> ProductRecord | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 SELECT id, position_id, sku, description, detected_quantity, corrected_quantity, confidence,
@@ -151,7 +153,7 @@ class SqlProductRecordRepository(ProductRecordRepository):
         return _row_to_product(row)
 
     def list_by_position(self, position_id: str) -> Sequence[ProductRecord]:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 SELECT id, position_id, sku, description, detected_quantity, corrected_quantity, confidence,
@@ -171,7 +173,7 @@ class SqlProductRecordRepository(ProductRecordRepository):
             return []
         placeholders = ",".join("?" * len(uniq))
         # IN clause: ? placeholders; position ids passed as params (deduped).
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"""
                 SELECT id, position_id, sku, description, detected_quantity, corrected_quantity, confidence,

@@ -33,6 +33,15 @@ class SqlServerClient:
             raise RuntimeError("pyodbc is not installed; install with: pip install pyodbc")
         self._connection_string = connection_string.strip()
 
+    @property
+    def connection_string(self) -> str:
+        return self._connection_string
+
+    def begin_transaction(self):
+        from src.infrastructure.database.sql_transaction import SqlServerTransaction
+
+        return SqlServerTransaction(self.connection_string)
+
     @contextmanager
     def cursor(self) -> Generator["pyodbc.Cursor", None, None]:
         """Yield a cursor; connection is closed on exit. Commits on success, rolls back on exception."""

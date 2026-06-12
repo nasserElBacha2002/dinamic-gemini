@@ -29,6 +29,24 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def build_operational_promotion_service_from_repos(inv_repo, aisle_repo, job_repo):
+    from src.application.services.operational_result_promotion_service import (
+        OperationalResultPromotionService,
+    )
+    from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
+        MemoryOperationalJobPromotionRepository,
+    )
+
+    return OperationalResultPromotionService(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        promotion_repo=MemoryOperationalJobPromotionRepository(
+            aisle_repo=aisle_repo,
+            job_repo=job_repo,
+        ),
+    )
+
+
 def test_promote_only_succeeded_process_aisle_for_scoped_job() -> None:
     now = _now()
     inv_repo = MemoryInventoryRepository()
@@ -72,7 +90,8 @@ def test_promote_only_succeeded_process_aisle_for_scoped_job() -> None:
         )
     )
 
-    uc = PromoteAisleOperationalJobUseCase(inv_repo, aisle_repo, job_repo)
+    promotion = build_operational_promotion_service_from_repos(inv_repo, aisle_repo, job_repo)
+    uc = PromoteAisleOperationalJobUseCase(inv_repo, aisle_repo, job_repo, promotion)
     with pytest.raises(JobPromotionNotAllowedError):
         uc.execute(PromoteAisleOperationalJobCommand("inv1", "a1", "jfail"))
 
@@ -108,7 +127,8 @@ def test_promote_validates_inventory_and_aisle_scope() -> None:
             updated_at=now,
         )
     )
-    uc = PromoteAisleOperationalJobUseCase(inv_repo, aisle_repo, job_repo)
+    promotion = build_operational_promotion_service_from_repos(inv_repo, aisle_repo, job_repo)
+    uc = PromoteAisleOperationalJobUseCase(inv_repo, aisle_repo, job_repo, promotion)
     with pytest.raises(InventoryNotFoundError):
         uc.execute(PromoteAisleOperationalJobCommand("missing", "a1", "jok"))
     with pytest.raises(AisleNotFoundError):

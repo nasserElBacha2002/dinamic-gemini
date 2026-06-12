@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from src.application.ports.repositories import LabelJobScope, RawLabelRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.labels.entities import RawLabel
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:
@@ -80,13 +81,14 @@ def _row_to_raw_label(row) -> RawLabel:
 
 
 class SqlRawLabelRepository(RawLabelRepository):
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
 
     def save_many(self, labels: list[RawLabel]) -> None:
         if not labels:
             return
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             for lb in labels:
                 created = _ensure_utc(lb.created_at)
                 if created is None:
@@ -170,7 +172,7 @@ class SqlRawLabelRepository(RawLabelRepository):
     ) -> Sequence[RawLabel]:
         extra_sql, extra_params = _sql_job_predicate(job_id)
         # extra_sql from _sql_job_predicate only (see module helper).
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"""
                 SELECT

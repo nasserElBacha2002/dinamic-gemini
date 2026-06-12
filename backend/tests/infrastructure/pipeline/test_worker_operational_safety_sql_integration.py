@@ -12,41 +12,29 @@ from uuid import uuid4
 
 import pytest
 
-from src.application.use_cases.pipeline.persist_aisle_result import (
-    PersistAisleResultCommand,
-    PersistAisleResultUseCase,
-)
+from src.application.use_cases.pipeline.persist_aisle_result import PersistAisleResultCommand
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
-from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
-    default_map_hybrid_report_to_domain,
-)
-from src.infrastructure.repositories.memory_final_count_repository import (
-    MemoryFinalCountRepository,
-)
-from src.infrastructure.repositories.memory_normalized_label_repository import (
-    MemoryNormalizedLabelRepository,
-)
-from src.infrastructure.repositories.memory_raw_label_repository import (
-    MemoryRawLabelRepository,
-)
+from src.infrastructure.persistence.sql_job_result_unit_of_work import SqlJobResultUnitOfWorkFactory
 from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
 from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
+from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
+from src.infrastructure.repositories.sql_normalized_label_repository import (
+    SqlNormalizedLabelRepository,
+)
 from src.infrastructure.repositories.sql_position_repository import SqlPositionRepository
 from src.infrastructure.repositories.sql_product_record_repository import (
     SqlProductRecordRepository,
 )
-from tests.support.worker_phase1.doubles import FailOnNthSavePositionRepository
-from tests.support.worker_phase1.executor_harness import (
-    FixedClock,
-    build_recompute_use_case,
-    make_two_entity_hybrid_report,
-)
+from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
+from tests.support.worker_phase1.executor_harness import FixedClock, make_two_entity_hybrid_report
 from tests.support.worker_phase1.sql_cleanup import (
     assert_sql_integration_database_is_safe,
     cleanup_worker_phase1_sql_scope,
 )
+from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
+from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
 
 
 @pytest.fixture
@@ -66,7 +54,7 @@ def sql_client_or_skip():
 
 
 def test_wkr_p1_t001_sql_partial_persist_characterization(sql_client_or_skip) -> None:
-    """When SQL is available, per-save commits leave partial rows (confirms memory characterization)."""
+    """When SQL is available, transactional persist rolls back fully on recompute failure."""
     client = sql_client_or_skip
     now = datetime.now(timezone.utc)
     suffix = uuid4().hex[:12]
@@ -76,11 +64,12 @@ def test_wkr_p1_t001_sql_partial_persist_characterization(sql_client_or_skip) ->
 
     inv_repo = SqlInventoryRepository(client)
     aisle_repo = SqlAisleRepository(client)
-    inner_pos = SqlPositionRepository(client)
-    pos_repo = FailOnNthSavePositionRepository(inner_pos, fail_on_call=2)
+    pos_repo = SqlPositionRepository(client)
     prod_repo = SqlProductRecordRepository(client)
     ev_repo = SqlEvidenceRepository(client)
-    raw_repo = MemoryRawLabelRepository()
+    raw_repo = SqlRawLabelRepository(client)
+    norm_repo = SqlNormalizedLabelRepository(client)
+    final_repo = SqlFinalCountRepository(client)
 
     try:
         inv_repo.save(Inventory(inv_id, "WKR SQL", InventoryStatus.PROCESSING, now, now))
@@ -88,24 +77,20 @@ def test_wkr_p1_t001_sql_partial_persist_characterization(sql_client_or_skip) ->
             Aisle(aisle_id, inv_id, "WKR", AisleStatus.PROCESSING, now, now)
         )
 
-        persist = PersistAisleResultUseCase(
+        persist = build_persist_aisle_result_use_case(
             position_repo=pos_repo,
             product_record_repo=prod_repo,
             evidence_repo=ev_repo,
-            clock=FixedClock(now),
-            hybrid_mapper=default_map_hybrid_report_to_domain,
             aisle_repo=aisle_repo,
             raw_label_repo=raw_repo,
-            recompute_consolidated_uc=build_recompute_use_case(
-                raw_repo=raw_repo,
-                norm_repo=MemoryNormalizedLabelRepository(),
-                final_repo=MemoryFinalCountRepository(),
-                product_repo=prod_repo,
-                position_repo=inner_pos,
-            ),
+            normalized_label_repo=norm_repo,
+            final_count_repo=final_repo,
+            clock=FixedClock(now),
+            job_scoped_recompute_factory=FailingJobScopedRecomputeFactory(),
+            job_result_uow_factory=SqlJobResultUnitOfWorkFactory(client),
         )
 
-        with pytest.raises(RuntimeError, match="simulated position save failure"):
+        with pytest.raises(RuntimeError, match="simulated recompute failure"):
             persist.execute(
                 PersistAisleResultCommand(
                     aisle_id=aisle_id,
@@ -116,28 +101,7 @@ def test_wkr_p1_t001_sql_partial_persist_characterization(sql_client_or_skip) ->
                 )
             )
 
-        committed = list(inner_pos.list_by_aisle(aisle_id, job_id=job_id))
-        assert len(committed) == 1
-        first_pos = committed[0]
-        assert first_pos.job_id == job_id
-
-        products_first = list(prod_repo.list_by_position(first_pos.id))
-        assert len(products_first) == 1
-
-        evidence_first = list(ev_repo.list_by_entity("position", first_pos.id))
-        assert len(evidence_first) >= 1
-
-        all_positions = list(inner_pos.list_by_aisle(aisle_id, job_id=job_id))
-        assert len(all_positions) == 1
-        assert all_positions[0].id == first_pos.id
-
-        report = make_two_entity_hybrid_report()
-        second_entity_uid = report["entities"][1]["entity_uid"]
-        assert not any(
-            p.detected_summary_json
-            and p.detected_summary_json.get("entity_uid") == second_entity_uid
-            for p in all_positions
-        )
+        assert list(pos_repo.list_by_aisle(aisle_id, job_id=job_id)) == []
     finally:
         cleanup_worker_phase1_sql_scope(
             client,
@@ -145,4 +109,4 @@ def test_wkr_p1_t001_sql_partial_persist_characterization(sql_client_or_skip) ->
             aisle_id=aisle_id,
             job_id=job_id,
         )
-        assert list(inner_pos.list_by_aisle(aisle_id, job_id=job_id)) == []
+        assert list(pos_repo.list_by_aisle(aisle_id, job_id=job_id)) == []

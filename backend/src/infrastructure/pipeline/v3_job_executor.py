@@ -15,12 +15,16 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.application.ports.clock import Clock
+from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
+from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
 from src.application.ports.repositories import (
     AisleRepository,
     ClientSupplierRepository,
     EvidenceRepository,
+    FinalCountRepository,
     InventoryRepository,
     JobRepository,
+    NormalizedLabelRepository,
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
@@ -33,6 +37,9 @@ from src.application.services.aisle_analysis_context_builder import (
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_engine_params import coerce_prompt_parity_mode
+from src.application.services.operational_result_promotion_service import (
+    OperationalResultPromotionService,
+)
 from src.application.services.supplier_prompt_resolver import (
     SupplierPromptResolution,
     SupplierPromptResolutionErrorCode,
@@ -194,7 +201,12 @@ class V3JobExecutor:
         supplier_reference_image_repo: SupplierReferenceImageRepository,
         artifact_store=None,
         raw_label_repo: RawLabelRepository | None = None,
+        normalized_label_repo: NormalizedLabelRepository | None = None,
+        final_count_repo: FinalCountRepository | None = None,
+        job_scoped_recompute_factory: JobScopedRecomputeFactory | None = None,
+        job_result_uow_factory: JobResultUnitOfWorkFactory | None = None,
         recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
+        operational_promotion_service: OperationalResultPromotionService | None = None,
         client_supplier_repo: ClientSupplierRepository | None = None,
         supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None,
     ) -> None:
@@ -215,6 +227,7 @@ class V3JobExecutor:
             inventory_repo=inventory_repo,
             clock=clock,
             inventory_status_reconciler=inventory_status_reconciler,
+            operational_promotion_service=operational_promotion_service,
         )
         self._artifacts = V3ExecutionArtifactsService(artifact_store)
         supplier_resolver = SupplierReferenceImageResolver(supplier_reference_image_repo)
@@ -232,6 +245,19 @@ class V3JobExecutor:
                 client_supplier_repo=client_supplier_repo,
                 supplier_prompt_config_repo=supplier_prompt_config_repo,
             )
+        if (
+            raw_label_repo is None
+            or normalized_label_repo is None
+            or final_count_repo is None
+            or aisle_repo is None
+            or job_scoped_recompute_factory is None
+            or job_result_uow_factory is None
+        ):
+            raise ValueError(
+                "V3JobExecutor requires raw_label_repo, normalized_label_repo, "
+                "final_count_repo, aisle_repo, job_scoped_recompute_factory, "
+                "and job_result_uow_factory for PersistAisleResultUseCase"
+            )
         self._persist_use_case = PersistAisleResultUseCase(
             position_repo=position_repo,
             product_record_repo=product_record_repo,
@@ -240,8 +266,12 @@ class V3JobExecutor:
             hybrid_mapper=default_map_hybrid_report_to_domain,
             aisle_repo=aisle_repo,
             raw_label_repo=raw_label_repo,
-            recompute_consolidated_uc=recompute_consolidated_uc,
+            normalized_label_repo=normalized_label_repo,
+            final_count_repo=final_count_repo,
+            job_scoped_recompute_factory=job_scoped_recompute_factory,
+            job_result_uow_factory=job_result_uow_factory,
         )
+        _ = recompute_consolidated_uc
         self._heartbeat_interval_sec = 10
 
     def execute(self, base_path: Path, job_id: str) -> bool:

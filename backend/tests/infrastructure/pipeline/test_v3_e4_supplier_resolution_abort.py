@@ -20,6 +20,7 @@ from tests.infrastructure.pipeline.test_v3_job_executor_phase5 import (
     InMemoryJobRepo,
     NoopRepo,
 )
+from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
 
 
 def test_v3_hybrid_run_aborts_before_pipeline_when_resolver_errors(tmp_path: Path) -> None:
@@ -87,7 +88,7 @@ def test_v3_hybrid_run_aborts_before_pipeline_when_resolver_errors(tmp_path: Pat
         inventory_repo=inv_repo,
         supplier_reference_image_repo=noop,
         artifact_store=None,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
     spy_runner = MagicMock()
     executor._pipeline_runner = spy_runner

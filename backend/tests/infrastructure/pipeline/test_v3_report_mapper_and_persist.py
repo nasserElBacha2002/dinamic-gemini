@@ -9,14 +9,11 @@ import pytest
 from src.application.dto.mapped_aisle_result import MappedAisleResult
 from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
-    PersistAisleResultUseCase,
     should_persist_detected_position,
 )
 from src.domain.positions.entities import PositionStatus
-from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
-    default_map_hybrid_report_to_domain,
-)
 from src.infrastructure.pipeline.v3_report_mapper import map_hybrid_report_to_domain
+from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
 
 
 def test_map_hybrid_report_to_domain_empty_entities():
@@ -375,11 +372,23 @@ def test_map_hybrid_report_stores_position_barcode_and_review_display_label_for_
     assert summary.get("internal_code") is None
 
 
+def _mock_bundle_repo(repo: MagicMock) -> MagicMock:
+    repo._store = {}
+    repo.list_by_aisle.return_value = []
+    repo.list_for_scope.return_value = []
+    repo.list_by_position.return_value = []
+    repo.list_by_entity.return_value = []
+    return repo
+
+
 def test_persist_aisle_result_use_case_saves_positions_products_evidences() -> None:
     """PersistAisleResultUseCase saves positions, products, evidences."""
-    position_repo = MagicMock()
-    product_repo = MagicMock()
-    evidence_repo = MagicMock()
+    position_repo = _mock_bundle_repo(MagicMock())
+    product_repo = _mock_bundle_repo(MagicMock())
+    evidence_repo = _mock_bundle_repo(MagicMock())
+    raw_repo = _mock_bundle_repo(MagicMock())
+    norm_repo = _mock_bundle_repo(MagicMock())
+    final_repo = _mock_bundle_repo(MagicMock())
     aisle_repo = MagicMock()
     mock_aisle = MagicMock()
     mock_aisle.inventory_id = "inv-persist-test"
@@ -388,13 +397,15 @@ def test_persist_aisle_result_use_case_saves_positions_products_evidences() -> N
     now = datetime.now(timezone.utc)
     clock.now.return_value = now
 
-    use_case = PersistAisleResultUseCase(
+    use_case = build_persist_aisle_result_use_case(
         position_repo=position_repo,
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
-        clock=clock,
-        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
+        raw_label_repo=raw_repo,
+        normalized_label_repo=norm_repo,
+        final_count_repo=final_repo,
+        clock=clock,
     )
     report = {
         "entities": [
@@ -452,9 +463,12 @@ def test_should_persist_detected_position_business_rule(sku, qty, expected):
 def test_persist_aisle_result_use_case_applies_unknown_zero_filter(
     internal_code, final_quantity, expected_saves
 ) -> None:
-    position_repo = MagicMock()
-    product_repo = MagicMock()
-    evidence_repo = MagicMock()
+    position_repo = _mock_bundle_repo(MagicMock())
+    product_repo = _mock_bundle_repo(MagicMock())
+    evidence_repo = _mock_bundle_repo(MagicMock())
+    raw_repo = _mock_bundle_repo(MagicMock())
+    norm_repo = _mock_bundle_repo(MagicMock())
+    final_repo = _mock_bundle_repo(MagicMock())
     aisle_repo = MagicMock()
     mock_aisle = MagicMock()
     mock_aisle.inventory_id = "inv-persist-test"
@@ -463,13 +477,15 @@ def test_persist_aisle_result_use_case_applies_unknown_zero_filter(
     now = datetime.now(timezone.utc)
     clock.now.return_value = now
 
-    use_case = PersistAisleResultUseCase(
+    use_case = build_persist_aisle_result_use_case(
         position_repo=position_repo,
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
-        clock=clock,
-        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
+        raw_label_repo=raw_repo,
+        normalized_label_repo=norm_repo,
+        final_count_repo=final_repo,
+        clock=clock,
     )
     report = {
         "entities": [
@@ -533,13 +549,23 @@ def test_persist_aisle_result_raises_on_mapped_length_mismatch() -> None:
     def _fake_mapper(**_kwargs: object) -> MappedAisleResult:
         return mapped
 
-    use_case = PersistAisleResultUseCase(
+    raw_repo = _mock_bundle_repo(MagicMock())
+    norm_repo = _mock_bundle_repo(MagicMock())
+    final_repo = _mock_bundle_repo(MagicMock())
+    position_repo = _mock_bundle_repo(position_repo)
+    product_repo = _mock_bundle_repo(product_repo)
+    evidence_repo = _mock_bundle_repo(evidence_repo)
+
+    use_case = build_persist_aisle_result_use_case(
         position_repo=position_repo,
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
+        aisle_repo=aisle_repo,
+        raw_label_repo=raw_repo,
+        normalized_label_repo=norm_repo,
+        final_count_repo=final_repo,
         clock=clock,
         hybrid_mapper=_fake_mapper,
-        aisle_repo=aisle_repo,
     )
 
     with pytest.raises(

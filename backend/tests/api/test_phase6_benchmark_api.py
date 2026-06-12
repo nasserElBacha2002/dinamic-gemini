@@ -56,7 +56,8 @@ def _seed() -> None:
     aisle_repo.save(
         Aisle("aisle-b6", "inv-b6", "A", AisleStatus.PROCESSED, now, now, operational_job_id="j1")
     )
-    for jid, dur_sec in (("j1", 10.0), ("j2", 100.0), ("j3", 50.0)):
+    for idx, (jid, dur_sec) in enumerate((("j1", 10.0), ("j2", 100.0), ("j3", 50.0))):
+        created = now + timedelta(minutes=idx)
         job_repo.save(
             Job(
                 id=jid,
@@ -65,8 +66,8 @@ def _seed() -> None:
                 job_type="process_aisle",
                 status=JobStatus.SUCCEEDED,
                 payload_json={},
-                created_at=now,
-                updated_at=now,
+                created_at=created,
+                updated_at=created,
                 started_at=now,
                 finished_at=now + timedelta(seconds=int(dur_sec)),
                 provider_name="openai",

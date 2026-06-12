@@ -12,8 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from src.application.ports.clock import Clock
+from src.application.ports.operational_job_promotion import PromotionOutcome
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.services.operational_result_promotion_service import (
+    OperationalResultPromotionService,
+)
 from src.domain.aisle.entities import Aisle
 from src.domain.inventory.entities import InventoryProcessingMode
 from src.domain.jobs.entities import Job, JobStatus
@@ -50,12 +54,14 @@ class V3JobExecutionStateService:
         inventory_repo: InventoryRepository,
         clock: Clock,
         inventory_status_reconciler: InventoryStatusReconciler,
+        operational_promotion_service: OperationalResultPromotionService | None = None,
     ) -> None:
         self._job_repo = job_repo
         self._aisle_repo = aisle_repo
         self._inventory_repo = inventory_repo
         self._clock = clock
         self._inventory_status_reconciler = inventory_status_reconciler
+        self._operational_promotion_service = operational_promotion_service
 
     def reconcile_inventory_for_aisle(self, aisle: Aisle) -> None:
         self._inventory_status_reconciler.reconcile(aisle.inventory_id)
@@ -137,12 +143,31 @@ class V3JobExecutionStateService:
                 job_id,
                 bool(durable_artifacts),
             )
-        # Production: pin the aisle operational pointer to this succeeded job so default result reads
-        # and review mutations use the same slice (ResultContextResolver + review_validation).
-        # Policy: always set to job_id on success (latest succeeded run is operational). Test inventories
-        # are unchanged here — operators use promote-operational for benchmark pinning.
         inv = self._inventory_repo.get_by_id(aisle.inventory_id)
-        if inv is not None and inv.processing_mode == InventoryProcessingMode.PRODUCTION:
+        if (
+            inv is not None
+            and inv.processing_mode == InventoryProcessingMode.PRODUCTION
+            and self._operational_promotion_service is not None
+        ):
+            promotion = self._operational_promotion_service.promote_for_success(
+                aisle_id=aisle.id,
+                candidate_job_id=job_id,
+            )
+            refreshed = self._aisle_repo.get_by_id(aisle.id)
+            if refreshed is not None:
+                aisle.operational_job_id = refreshed.operational_job_id
+            if promotion.outcome in (
+                PromotionOutcome.REJECTED_STALE,
+                PromotionOutcome.ALREADY_OPERATIONAL,
+                PromotionOutcome.PROMOTED,
+            ):
+                logger.info(
+                    "v3_mark_success promotion outcome=%s job_id=%s operational=%s",
+                    promotion.outcome.value,
+                    job_id,
+                    aisle.operational_job_id,
+                )
+        elif inv is not None and inv.processing_mode == InventoryProcessingMode.PRODUCTION:
             aisle.operational_job_id = job_id
         aisle.mark_processed(completion_now)
         self._aisle_repo.save(aisle)
@@ -207,6 +232,21 @@ class V3JobExecutionStateService:
     def fail_job_and_aisle(self, job_id: str, aisle: Aisle, error_message: str) -> None:
         now = self._clock.now()
         self.fail_job(job_id, error_message)
+        if self._operational_promotion_service is not None and (
+            self._operational_promotion_service.is_stale_non_operational_failure(
+                aisle_id=aisle.id,
+                failing_job_id=job_id,
+            )
+        ):
+            logger.warning(
+                "v3_fail_job_and_aisle stale failure suppressed for aisle_id=%s job_id=%s "
+                "operational_job_id=%s",
+                aisle.id,
+                job_id,
+                aisle.operational_job_id,
+            )
+            self.reconcile_inventory_for_aisle(aisle)
+            return
         aisle.mark_failed(
             now,
             error_code="PROCESSING_FAILED",

@@ -1,0 +1,53 @@
+"""Shared helpers for worker Phase 2 idempotency and ownership characterization tests."""
+
+from tests.support.worker_phase2.duplicate_detection import (
+    duplicate_evidence_by_scope,
+    duplicate_final_counts,
+    duplicate_normalized_labels,
+    duplicate_positions_by_job_entity_uid,
+    duplicate_products_by_job_position_sku,
+    duplicate_raw_labels,
+    entity_uid_from_position,
+    repeated_evidence_by_job_path,
+    repeated_final_counts_by_job_sku,
+    repeated_normalized_labels_by_job_sku,
+    repeated_products_by_job_sku,
+    repeated_raw_labels_by_source_reference,
+)
+from tests.support.worker_phase2.job_scope_inspection import (
+    JobScopeSnapshot,
+    assert_no_row_id_overlap,
+    evidence_for_job,
+    final_counts_for_job,
+    normalized_labels_for_job,
+    operational_job_id_for_aisle,
+    position_job_id_map,
+    products_for_job,
+    raw_labels_for_job,
+    snapshot_job_scope,
+)
+
+__all__ = [
+    "JobScopeSnapshot",
+    "assert_no_row_id_overlap",
+    "duplicate_evidence_by_scope",
+    "duplicate_final_counts",
+    "duplicate_normalized_labels",
+    "duplicate_positions_by_job_entity_uid",
+    "duplicate_products_by_job_position_sku",
+    "duplicate_raw_labels",
+    "entity_uid_from_position",
+    "evidence_for_job",
+    "final_counts_for_job",
+    "normalized_labels_for_job",
+    "operational_job_id_for_aisle",
+    "position_job_id_map",
+    "products_for_job",
+    "raw_labels_for_job",
+    "repeated_evidence_by_job_path",
+    "repeated_final_counts_by_job_sku",
+    "repeated_normalized_labels_by_job_sku",
+    "repeated_products_by_job_sku",
+    "repeated_raw_labels_by_source_reference",
+    "snapshot_job_scope",
+]

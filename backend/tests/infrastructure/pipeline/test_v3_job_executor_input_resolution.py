@@ -26,6 +26,7 @@ from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
 from src.infrastructure.repositories.sql_source_asset_repository import _row_to_asset
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
+from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
 
 
 def _runner_build_pipeline_input(
@@ -104,6 +105,9 @@ class _NoopRepo(
     EvidenceRepository,
     RawLabelRepository,
 ):
+    def __init__(self) -> None:
+        self._store: dict[str, object] = {}
+
     def save(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         return None
 
@@ -230,6 +234,7 @@ def _executor(
         ),
         supplier_reference_image_repo=_SupplierRepo(list(supplier_refs)),
         artifact_store=artifact_store,
+        **memory_executor_persist_kwargs(),
     )
 
 

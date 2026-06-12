@@ -14,7 +14,6 @@ from src.application.services.final_count_builder import FinalCountBuilder
 from src.application.services.label_normalization import LabelNormalizationService
 from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
-    PersistAisleResultUseCase,
 )
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
@@ -24,9 +23,6 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.labels.entities import RawLabel
 from src.domain.labels.merge import MergeRuleEngine
 from src.domain.positions.entities import Position, PositionStatus
-from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
-    default_map_hybrid_report_to_domain,
-)
 from src.infrastructure.pipeline.v3_report_mapper import map_hybrid_report_to_domain
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
@@ -82,6 +78,18 @@ def memory_stack():
     aisle_repo.save(_aisle(inv_id, aisle_id))
     clock = MagicMock()
     clock.now.return_value = datetime.now(timezone.utc)
+    from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
+
+    persist = build_persist_aisle_result_use_case(
+        position_repo=pos,
+        product_record_repo=prod,
+        evidence_repo=ev,
+        clock=clock,
+        aisle_repo=aisle_repo,
+        raw_label_repo=raw,
+        normalized_label_repo=norm,
+        final_count_repo=final,
+    )
     recompute = RecomputeConsolidatedCountsUseCase(
         raw_label_repo=raw,
         normalized_label_repo=norm,
@@ -90,16 +98,6 @@ def memory_stack():
         position_repo=pos,
         normalization_service=LabelNormalizationService(merge_rule_engine=MergeRuleEngine()),
         final_count_builder=FinalCountBuilder(),
-    )
-    persist = PersistAisleResultUseCase(
-        position_repo=pos,
-        product_record_repo=prod,
-        evidence_repo=ev,
-        clock=clock,
-        hybrid_mapper=default_map_hybrid_report_to_domain,
-        aisle_repo=aisle_repo,
-        raw_label_repo=raw,
-        recompute_consolidated_uc=recompute,
     )
     return {
         "position_repo": pos,

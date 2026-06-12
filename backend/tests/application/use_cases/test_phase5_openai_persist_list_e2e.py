@@ -6,10 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.application.use_cases.pipeline.persist_aisle_result import (
-    PersistAisleResultCommand,
-    PersistAisleResultUseCase,
-)
+from src.application.use_cases.pipeline.persist_aisle_result import PersistAisleResultCommand
 from src.application.use_cases.positions.get_position_detail import GetPositionDetailUseCase
 from src.application.use_cases.positions.list_aisle_positions import (
     ListAislePositionsCommand,
@@ -19,23 +16,26 @@ from src.decision.count_status import assign_count_status
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
-from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
-    default_map_hybrid_report_to_domain,
-)
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
+from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+from src.infrastructure.repositories.memory_normalized_label_repository import (
+    MemoryNormalizedLabelRepository,
+)
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.repositories.memory_product_record_repository import (
     MemoryProductRecordRepository,
 )
+from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
 from src.infrastructure.repositories.memory_review_action_repository import (
     MemoryReviewActionRepository,
 )
 from src.llm.normalization.entity_normalizer import normalize_llm_response
 from src.parsing.global_analysis_parser import parse_entities
 from src.reporting.hybrid_report import build_hybrid_report
+from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
 
 
 class FixedClock:
@@ -54,6 +54,9 @@ def test_openai_normalize_persist_list_detail_job_metadata_and_slice_isolation()
     pos_repo = MemoryPositionRepository()
     product_repo = MemoryProductRecordRepository()
     evidence_repo = MemoryEvidenceRepository()
+    raw_repo = MemoryRawLabelRepository()
+    norm_repo = MemoryNormalizedLabelRepository()
+    final_repo = MemoryFinalCountRepository()
     job_repo = MemoryJobRepository()
     review_repo = MemoryReviewActionRepository()
 
@@ -88,13 +91,15 @@ def test_openai_normalize_persist_list_detail_job_metadata_and_slice_isolation()
         )
 
     clock = FixedClock(now)
-    persist = PersistAisleResultUseCase(
+    persist = build_persist_aisle_result_use_case(
         position_repo=pos_repo,
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
-        clock=clock,
-        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
+        raw_label_repo=raw_repo,
+        normalized_label_repo=norm_repo,
+        final_count_repo=final_repo,
+        clock=clock,
     )
 
     raw_a = {
@@ -216,6 +221,9 @@ def test_openai_pallet_unknown_sku_quantity_alias_hybrid_persist_list_explicit_j
     pos_repo = MemoryPositionRepository()
     product_repo = MemoryProductRecordRepository()
     evidence_repo = MemoryEvidenceRepository()
+    raw_repo = MemoryRawLabelRepository()
+    norm_repo = MemoryNormalizedLabelRepository()
+    final_repo = MemoryFinalCountRepository()
     job_repo = MemoryJobRepository()
 
     inv_id, aisle_id, job_explicit = "inv-pallet-qty", "aisle-pallet-qty", "job-openai-pallet-qty"
@@ -278,13 +286,15 @@ def test_openai_pallet_unknown_sku_quantity_alias_hybrid_persist_list_explicit_j
     hybrid = build_hybrid_report("/tmp/photos_job.mp4", entities, frames_selected=1)
 
     clock = FixedClock(now)
-    persist = PersistAisleResultUseCase(
+    persist = build_persist_aisle_result_use_case(
         position_repo=pos_repo,
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
-        clock=clock,
-        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
+        raw_label_repo=raw_repo,
+        normalized_label_repo=norm_repo,
+        final_count_repo=final_repo,
+        clock=clock,
     )
     persist.execute(
         PersistAisleResultCommand(

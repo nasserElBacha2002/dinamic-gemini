@@ -109,12 +109,27 @@ class FailOnNthSavePositionRepository(PositionRepository):
 class FailingRecomputeUseCase(RecomputeConsolidatedCountsUseCase):
     """Raises on execute after optionally recording invocation."""
 
-    def __init__(self) -> None:
+    def __init__(self, delegate: RecomputeConsolidatedCountsUseCase | None = None) -> None:
         self.execute_calls = 0
+        self._delegate = delegate
+        if delegate is not None:
+            self._normalized_repo = delegate._normalized_repo
+            self._final_repo = delegate._final_repo
+            self._normalization = delegate._normalization
+            self._builder = delegate._builder
 
     def execute(
         self, command: RecomputeConsolidatedCountsCommand
     ) -> RecomputeConsolidatedCountsResult:
+        self.execute_calls += 1
+        raise RuntimeError("simulated recompute failure")
+
+    def run_persist_recompute(
+        self,
+        recompute: RecomputeConsolidatedCountsUseCase,
+        command: RecomputeConsolidatedCountsCommand,
+    ) -> RecomputeConsolidatedCountsResult:
+        """Invoked by PersistAisleResultUseCase so failures use transaction-bound repos."""
         self.execute_calls += 1
         raise RuntimeError("simulated recompute failure")
 

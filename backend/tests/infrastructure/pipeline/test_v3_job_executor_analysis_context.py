@@ -31,6 +31,7 @@ from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
+from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
 
 
 class FixedClock(Clock):
@@ -270,8 +271,7 @@ def test_v3_job_executor_injects_analysis_context_metadata(tmp_path: Path) -> No
         clock=clock,
         inventory_repo=inv_repo,
         supplier_reference_image_repo=supplier_repo,
-        raw_label_repo=noop,
-        recompute_consolidated_uc=DummyRecomputeCounts(),
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
 
     # We don't actually run the full pipeline in this test; we only assert that
