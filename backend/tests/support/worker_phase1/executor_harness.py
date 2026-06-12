@@ -23,6 +23,10 @@ from src.application.ports.repositories import (
 )
 from src.application.services.final_count_builder import FinalCountBuilder
 from src.application.services.label_normalization import LabelNormalizationService
+from src.application.use_cases.pipeline.persist_aisle_result import (
+    PersistAisleResultCommand,
+    PersistAisleResultUseCase,
+)
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
 )
@@ -31,25 +35,10 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.labels.merge import MergeRuleEngine
-from src.application.use_cases.pipeline.persist_aisle_result import (
-    PersistAisleResultCommand,
-    PersistAisleResultUseCase,
-)
 from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
     default_map_hybrid_report_to_domain,
 )
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID, V3JobExecutor
-from tests.support.worker_phase1.job_scope_inspection import (
-    JobScopeSnapshot,
-    evidence_for_job,
-    final_counts_for_job,
-    normalized_labels_for_job,
-    operational_job_id_for_aisle,
-    position_job_id_map,
-    products_for_job,
-    raw_labels_for_job,
-    snapshot_job_scope,
-)
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
 from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
@@ -67,6 +56,17 @@ from src.infrastructure.repositories.memory_supplier_reference_image_repository 
     MemorySupplierReferenceImageRepository,
 )
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
+from tests.support.worker_phase2.job_scope_inspection import (
+    JobScopeSnapshot,
+    evidence_for_job,
+    final_counts_for_job,
+    normalized_labels_for_job,
+    operational_job_id_for_aisle,
+    position_job_id_map,
+    products_for_job,
+    raw_labels_for_job,
+    snapshot_job_scope,
+)
 
 
 class FixedClock(Clock):

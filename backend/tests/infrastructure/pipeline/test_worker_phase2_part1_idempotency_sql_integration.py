@@ -1,4 +1,4 @@
-"""Phase 2 Part 1 — optional SQL Server idempotency characterization (P2-T001-SQL)."""
+"""Phase 2 Part 1 — SQL Server position-layer idempotency (P2-T001-SQL-POSITIONS)."""
 
 from __future__ import annotations
 
@@ -31,7 +31,6 @@ from src.infrastructure.repositories.sql_position_repository import SqlPositionR
 from src.infrastructure.repositories.sql_product_record_repository import (
     SqlProductRecordRepository,
 )
-from tests.support.worker_phase1.duplicate_detection import duplicate_positions_by_job_entity_uid
 from tests.support.worker_phase1.executor_harness import (
     FixedClock,
     build_recompute_use_case,
@@ -41,6 +40,8 @@ from tests.support.worker_phase1.sql_cleanup import (
     assert_sql_integration_database_is_safe,
     cleanup_worker_phase1_sql_scope,
 )
+from tests.support.worker_phase2.duplicate_detection import duplicate_positions_by_job_entity_uid
+from tests.support.worker_phase2.sql_verification import verify_sql_scope_fully_removed
 
 
 @pytest.fixture
@@ -59,8 +60,13 @@ def sql_client_or_skip():
     return sql_server_client_or_skip(resolve_sqlserver_connection_config().connection_string)
 
 
-def test_p2_t001_sql_same_job_identical_persist_duplicates_rows(sql_client_or_skip) -> None:
-    """P2-T001-SQL: identical persist twice on SQL leaves duplicate positions (NON_IDEMPOTENT)."""
+def test_p2_t001_sql_positions_same_job_identical_persist_duplicates_rows(
+    sql_client_or_skip,
+) -> None:
+    """P2-T001-SQL-POSITIONS: SQL position rows duplicate on identical re-persist (NON_IDEMPOTENT).
+
+    Products and evidence are SQL-backed in this test but raw/normalized/final use memory repos.
+    """
     client = sql_client_or_skip
     now = datetime.now(timezone.utc)
     suffix = uuid4().hex[:12]
@@ -103,6 +109,7 @@ def test_p2_t001_sql_same_job_identical_persist_duplicates_rows(sql_client_or_sk
             run_dir=Path("/tmp/p2-sql"),
             run_id="run",
         )
+
         persist.execute(cmd)
         after_first = list(pos_repo.list_by_aisle(aisle_id, job_id=job_id))
         assert len(after_first) == 2
@@ -124,4 +131,12 @@ def test_p2_t001_sql_same_job_identical_persist_duplicates_rows(sql_client_or_sk
             aisle_id=aisle_id,
             job_id=job_id,
         )
-        assert list(pos_repo.list_by_aisle(aisle_id, job_id=job_id)) == []
+        verify_sql_scope_fully_removed(
+            client,
+            inventory_repo=inv_repo,
+            aisle_repo=aisle_repo,
+            position_repo=pos_repo,
+            inventory_id=inv_id,
+            aisle_id=aisle_id,
+            job_id=job_id,
+        )

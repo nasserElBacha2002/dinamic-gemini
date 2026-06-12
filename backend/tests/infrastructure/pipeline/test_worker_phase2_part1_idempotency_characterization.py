@@ -1,15 +1,13 @@
-"""Phase 2 Part 1 — result ownership and idempotency characterization (P2-T001–T003)."""
+"""Phase 2 Part 1 — result ownership and idempotency characterization."""
 
 from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
 
-import pytest
-
 from src.application.services.export_inventory_collector import ExportInventoryCollector
-from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.result_context_resolver import ResultContextResolver
+from src.application.use_cases.aisles.retry_aisle_job import RetryAisleJobCommand
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
 )
@@ -18,26 +16,30 @@ from src.application.use_cases.positions.list_aisle_positions import (
     ListAislePositionsUseCase,
 )
 from src.domain.aisle.entities import AisleStatus
-from src.domain.inventory.entities import InventoryProcessingMode
+from src.domain.inventory.entities import InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import JobStatus
-from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
-from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
-from tests.support.worker_phase1.doubles import FailOnNthSavePositionRepository
-from tests.support.worker_phase1.duplicate_detection import (
-    duplicate_evidence_by_job_path,
-    duplicate_final_counts_by_sku,
-    duplicate_normalized_labels_by_sku,
-    duplicate_positions_by_job_entity_uid,
-    duplicate_products_by_job_sku,
-    duplicate_raw_labels_by_source_reference,
-    entity_uid_from_position,
-)
+from tests.support.worker_phase1.doubles import ArtifactUploadSpy, FailingRecomputeUseCase
 from tests.support.worker_phase1.executor_harness import (
     ExecutorHarness,
-    FixedClock,
     make_entity_hybrid_report,
     make_two_entity_hybrid_report,
 )
+from tests.support.worker_phase2.duplicate_detection import (
+    duplicate_evidence_by_scope,
+    duplicate_final_counts,
+    duplicate_normalized_labels,
+    duplicate_positions_by_job_entity_uid,
+    duplicate_products_by_job_position_sku,
+    duplicate_raw_labels,
+    entity_uid_from_position,
+    repeated_evidence_by_job_path,
+    repeated_final_counts_by_job_sku,
+    repeated_normalized_labels_by_job_sku,
+    repeated_products_by_job_sku,
+    repeated_raw_labels_by_source_reference,
+)
+from tests.support.worker_phase2.job_scope_inspection import assert_no_row_id_overlap
+from tests.support.worker_phase2.retry_flow import build_retry_flow_services
 
 
 def _standard_two_entity_report() -> dict:
@@ -99,19 +101,60 @@ def _abc_report(
     return make_entity_hybrid_report(entities)
 
 
-# --- P2-T001 ------------------------------------------------------------------
+def _single_entity_report(
+    *,
+    entity_uid: str,
+    sku: str,
+    quantity: int,
+    evidence_path: str,
+    source_image_id: str = "asset-1",
+) -> dict:
+    return make_entity_hybrid_report(
+        [
+            {
+                "entity_uid": entity_uid,
+                "entity_type": "PALLET",
+                "model_entity_id": entity_uid.upper(),
+                "internal_code": sku,
+                "final_quantity": quantity,
+                "product_label_quantity": quantity,
+                "confidence": 0.9,
+                "count_status": "COUNTED",
+                "evidence_path": evidence_path,
+                "source_image_id": source_image_id,
+            }
+        ]
+    )
+
+
+def _shared_retry_harness(
+    tmp_path: Path,
+    *,
+    job_id: str,
+    recompute_uc,
+    processing_mode: InventoryProcessingMode = InventoryProcessingMode.PRODUCTION,
+    **shared,
+) -> ExecutorHarness:
+    return ExecutorHarness.build(
+        tmp_path,
+        job_id=job_id,
+        recompute_uc=recompute_uc,
+        processing_mode=processing_mode,
+        **shared,
+    )
+
+
+# --- P2-T001: direct persist characterization ---------------------------------
 
 
 def test_p2_t001_same_job_identical_persist_is_non_idempotent(tmp_path: Path) -> None:
     """P2-T001: second identical persist duplicates rows (NON_IDEMPOTENT)."""
     harness = ExecutorHarness.build(tmp_path, job_id="job-p2-t001")
     report = _standard_two_entity_report()
-    cmd_report = report
 
-    harness.persist_report(cmd_report, job_id="job-p2-t001")
+    harness.persist_report(report, job_id="job-p2-t001")
     snap1 = harness.snapshot_job_scope("job-p2-t001")
-
-    harness.persist_report(cmd_report, job_id="job-p2-t001")
+    harness.persist_report(report, job_id="job-p2-t001")
     snap2 = harness.snapshot_job_scope("job-p2-t001")
 
     assert snap1.position_count == 2
@@ -121,47 +164,49 @@ def test_p2_t001_same_job_identical_persist_is_non_idempotent(tmp_path: Path) ->
 
     all_positions = harness.positions_for_job("job-p2-t001")
     dup_pos = duplicate_positions_by_job_entity_uid(all_positions)
-    assert ("job-p2-t001", "e1") in dup_pos
     assert dup_pos[("job-p2-t001", "e1")] == 2
     assert dup_pos[("job-p2-t001", "e2")] == 2
 
     pos_map = harness.position_job_id_map("job-p2-t001")
-    all_products = [
-        p for pos in all_positions for p in harness.product_repo.list_by_position(pos.id)
-    ]
-    dup_prod = duplicate_products_by_job_sku(all_products, position_job_id=pos_map)
-    assert dup_prod[("job-p2-t001", "SKU-ONE")] == 2
-    assert dup_prod[("job-p2-t001", "SKU-TWO")] == 2
+    all_products = harness.products_for_job("job-p2-t001")
+    assert duplicate_products_by_job_position_sku(all_products, position_job_id=pos_map) == {}
+    repeated_prod = repeated_products_by_job_sku(all_products, position_job_id=pos_map)
+    assert repeated_prod[("job-p2-t001", "SKU-ONE")] == 2
+    assert repeated_prod[("job-p2-t001", "SKU-TWO")] == 2
 
     all_evidence = harness.evidence_for_job("job-p2-t001")
-    dup_ev = duplicate_evidence_by_job_path(all_evidence, position_job_id=pos_map)
-    assert len(dup_ev) == 2
-    assert all(count == 2 for count in dup_ev.values())
+    assert duplicate_evidence_by_scope(all_evidence, position_job_id=pos_map) == {}
+    repeated_ev = repeated_evidence_by_job_path(all_evidence, position_job_id=pos_map)
+    assert len(repeated_ev) == 2
+    assert all(count == 2 for count in repeated_ev.values())
 
     raw_labels = harness.raw_labels_for_job("job-p2-t001")
     assert len(raw_labels) == 4
-    raw_dup = duplicate_raw_labels_by_source_reference(raw_labels)
-    assert raw_dup[("job-p2-t001", "e1")] == 2
-    assert raw_dup[("job-p2-t001", "e2")] == 2
+    assert duplicate_raw_labels(raw_labels) == {}
+    repeated_raw = repeated_raw_labels_by_source_reference(raw_labels)
+    assert repeated_raw[("job-p2-t001", "e1")] == 2
+    assert repeated_raw[("job-p2-t001", "e2")] == 2
 
     norm_labels = harness.normalized_labels_for_job("job-p2-t001")
     assert len(norm_labels) == 4
-    norm_dup = duplicate_normalized_labels_by_sku(norm_labels)
-    assert norm_dup[("job-p2-t001", "SKU-ONE")] == 2
-    assert norm_dup[("job-p2-t001", "SKU-TWO")] == 2
+    assert duplicate_normalized_labels(norm_labels) == {}
+    repeated_norm = repeated_normalized_labels_by_job_sku(norm_labels)
+    assert repeated_norm[("job-p2-t001", "SKU-ONE")] == 2
+    assert repeated_norm[("job-p2-t001", "SKU-TWO")] == 2
 
     finals = harness.final_counts_for_job("job-p2-t001")
     assert len(finals) == 4
-    final_dup = duplicate_final_counts_by_sku(finals)
-    assert final_dup[("job-p2-t001", "SKU-ONE")] == 2
-    assert final_dup[("job-p2-t001", "SKU-TWO")] == 2
+    assert duplicate_final_counts(finals) == {}
+    repeated_final = repeated_final_counts_by_job_sku(finals)
+    assert repeated_final[("job-p2-t001", "SKU-ONE")] == 2
+    assert repeated_final[("job-p2-t001", "SKU-TWO")] == 2
 
 
-# --- P2-T002 ------------------------------------------------------------------
+# --- P2-T002: direct persist characterization ---------------------------------
 
 
 def test_p2_t002_same_job_changed_report_appends_stale_and_new_rows(tmp_path: Path) -> None:
-    """P2-T002: changed report on same job_id appends; entity A duplicated; B stale; C added."""
+    """P2-T002: changed report on same job_id appends stale rows and duplicates A."""
     harness = ExecutorHarness.build(tmp_path, job_id="job-p2-t002")
     first = _abc_report(qty_a=2, qty_b=4, include_b=True, include_c=False)
     second = _abc_report(qty_a=99, qty_b=4, include_b=False, include_c=True, qty_c=5)
@@ -179,19 +224,36 @@ def test_p2_t002_same_job_changed_report_appends_stale_and_new_rows(tmp_path: Pa
     assert len(by_uid["e1"]) == 2
     assert len(by_uid["e2"]) == 1
     assert len(by_uid["e3"]) == 1
-
-    qtys_e1 = sorted(
-        (p.detected_summary_json or {}).get("final_quantity") for p in by_uid["e1"]
-    )
-    assert qtys_e1 == [2, 99]
-
-    stale_b = by_uid["e2"][0]
-    assert (stale_b.detected_summary_json or {}).get("final_quantity") == 4
-
-    new_c = by_uid["e3"][0]
-    assert (new_c.detected_summary_json or {}).get("final_quantity") == 5
-
+    assert sorted((p.detected_summary_json or {}).get("final_quantity") for p in by_uid["e1"]) == [
+        2,
+        99,
+    ]
+    assert (by_uid["e2"][0].detected_summary_json or {}).get("final_quantity") == 4
+    assert (by_uid["e3"][0].detected_summary_json or {}).get("final_quantity") == 5
     assert duplicate_positions_by_job_entity_uid(positions)[("job-p2-t002", "e1")] == 2
+
+    pos_map = harness.position_job_id_map("job-p2-t002")
+    products = harness.products_for_job("job-p2-t002")
+    products_by_pos = {prod.position_id: prod for prod in products}
+    e1_pos_ids = {p.id for p in by_uid["e1"]}
+    assert len(products) == 4
+    assert all(products_by_pos[pid].sku == "SKU-A" for pid in e1_pos_ids)
+    assert {products_by_pos[pid].detected_quantity for pid in e1_pos_ids} == {2, 99}
+    stale_b_product = products_by_pos[by_uid["e2"][0].id]
+    assert stale_b_product.sku == "SKU-B"
+    assert stale_b_product.detected_quantity == 4
+    new_c_product = products_by_pos[by_uid["e3"][0].id]
+    assert new_c_product.sku == "SKU-C"
+    assert new_c_product.detected_quantity == 5
+    assert duplicate_products_by_job_position_sku(products, position_job_id=pos_map) == {}
+
+    evidence = harness.evidence_for_job("job-p2-t002")
+    evidence_by_pos = {ev.entity_id: ev for ev in evidence}
+    assert len(evidence) == 4
+    assert all("crop_a.jpg" in evidence_by_pos[pid].storage_path for pid in e1_pos_ids)
+    assert "crop_b.jpg" in evidence_by_pos[by_uid["e2"][0].id].storage_path
+    assert "crop_c.jpg" in evidence_by_pos[by_uid["e3"][0].id].storage_path
+    assert duplicate_evidence_by_scope(evidence, position_job_id=pos_map) == {}
 
     raw_labels = harness.raw_labels_for_job("job-p2-t002")
     assert len(raw_labels) == 4
@@ -199,159 +261,333 @@ def test_p2_t002_same_job_changed_report_appends_stale_and_new_rows(tmp_path: Pa
     assert raw_entity_counts[("job-p2-t002", "e1")] == 2
     assert raw_entity_counts[("job-p2-t002", "e2")] == 1
     assert raw_entity_counts[("job-p2-t002", "e3")] == 1
-    assert duplicate_raw_labels_by_source_reference(raw_labels)[("job-p2-t002", "e1")] == 2
+    assert duplicate_raw_labels(raw_labels) == {}
+    assert repeated_raw_labels_by_source_reference(raw_labels)[("job-p2-t002", "e1")] == 2
 
     norm_labels = harness.normalized_labels_for_job("job-p2-t002")
+    norm_sku_counts = Counter(n.canonical_sku for n in norm_labels)
     assert len(norm_labels) == 4
+    assert norm_sku_counts["SKU-A"] == 2
+    assert norm_sku_counts["SKU-B"] == 1
+    assert norm_sku_counts["SKU-C"] == 1
+    assert duplicate_normalized_labels(norm_labels) == {}
+    assert repeated_normalized_labels_by_job_sku(norm_labels)[("job-p2-t002", "SKU-A")] == 2
 
     finals = harness.final_counts_for_job("job-p2-t002")
+    final_sku_counts = Counter(f.sku for f in finals)
     assert len(finals) == 4
+    assert final_sku_counts["SKU-A"] == 2
+    assert final_sku_counts["SKU-B"] == 1
+    assert final_sku_counts["SKU-C"] == 1
+    final_qtys_a = sorted(f.quantity for f in finals if f.sku == "SKU-A")
+    assert final_qtys_a == [1, 1]
+    assert next(f.quantity for f in finals if f.sku == "SKU-B") == 1
+    assert next(f.quantity for f in finals if f.sku == "SKU-C") == 1
+    assert repeated_final_counts_by_job_sku(finals)[("job-p2-t002", "SKU-A")] == 2
+    assert duplicate_final_counts(finals) == {}
 
 
-# --- P2-T003 ------------------------------------------------------------------
+# --- P2-T003: real executor failure + RetryAisleJobUseCase --------------------
 
 
-def test_p2_t003_partial_fail_then_success_retry_isolates_by_job_id(tmp_path: Path) -> None:
-    """P2-T003: failed partial job rows retained; success job operational; readers isolated."""
-    inner_pos = MemoryPositionRepository()
-    failing_pos = FailOnNthSavePositionRepository(inner_pos, fail_on_call=2)
-
-    harness_fail = ExecutorHarness.build(
+def test_p2_t003_real_failed_job_retry_isolates_all_layers(tmp_path: Path) -> None:
+    """P2-T003: executor failure → FAILED job; RetryAisleJobUseCase → success; layers isolated."""
+    failing_recompute = FailingRecomputeUseCase()
+    harness = _shared_retry_harness(
         tmp_path,
         job_id="job-failed",
-        position_repo=failing_pos,
-        processing_mode=InventoryProcessingMode.PRODUCTION,
+        recompute_uc=failing_recompute,
     )
-    fail_report = _abc_report(qty_a=99, qty_b=99, include_b=True, include_c=False)
+    failed_report = _single_entity_report(
+        entity_uid="e-failed",
+        sku="SKU-FAILED",
+        quantity=99,
+        evidence_path="evidence/failed.jpg",
+    )
+    executor = harness.make_executor(recompute_uc=failing_recompute)
+    handled = harness.run_with_mock_pipeline(executor, report=failed_report)
+    assert handled is True
+    assert failing_recompute.execute_calls == 1
 
-    with pytest.raises(RuntimeError, match="simulated position save failure"):
-        harness_fail.persist_report(fail_report, job_id="job-failed")
+    failed_job = harness.job_repo.get_by_id("job-failed")
+    assert failed_job is not None
+    assert failed_job.status == JobStatus.FAILED
+    assert failed_job.failure_code == "PROCESSING_FAILED"
+    assert failed_job.error_message is not None
+    assert failed_job.error_message.startswith("Persist:")
 
-    snap_failed = harness_fail.snapshot_job_scope("job-failed")
+    failed_aisle = harness.aisle_repo.get_by_id(harness.aisle_id)
+    assert failed_aisle is not None
+    assert failed_aisle.status == AisleStatus.FAILED
+    assert failed_aisle.operational_job_id is None
+
+    failed_inv = harness.inventory_repo.get_by_id(harness.inventory_id)
+    assert failed_inv is not None
+    assert failed_inv.status == InventoryStatus.FAILED
+
+    snap_failed = harness.snapshot_job_scope("job-failed")
     assert snap_failed.position_count == 1
-    assert snap_failed.raw_label_count == 0
+    assert snap_failed.product_count == 1
+    assert snap_failed.evidence_count == 1
+    assert snap_failed.raw_label_count == 1
+    assert snap_failed.normalized_label_count == 0
+    assert snap_failed.final_count_count == 0
 
-    aisle = harness_fail.aisle_repo.get_by_id(harness_fail.aisle_id)
-    assert aisle is not None
-    aisle.status = AisleStatus.QUEUED
-    aisle.operational_job_id = None
-    harness_fail.aisle_repo.save(aisle)
+    retry_services = build_retry_flow_services(harness)
+    retry_job = retry_services.retry_use_case.execute(
+        RetryAisleJobCommand(harness.inventory_id, harness.aisle_id, "job-failed")
+    )
+    assert retry_job.id != "job-failed"
+    assert retry_job.retry_of_job_id == "job-failed"
+    assert retry_job.status == JobStatus.STARTING
+    assert retry_job.target_id == harness.aisle_id
+    assert retry_services.worker_launch.launched == [retry_job.id]
 
-    harness_ok = ExecutorHarness.build(
+    retry_harness = _shared_retry_harness(
         tmp_path,
-        job_id="job-success",
-        job_status=JobStatus.STARTING,
-        aisle_status=AisleStatus.QUEUED,
-        processing_mode=InventoryProcessingMode.PRODUCTION,
-        job_repo=harness_fail.job_repo,
-        aisle_repo=harness_fail.aisle_repo,
-        inventory_repo=harness_fail.inventory_repo,
-        position_repo=inner_pos,
-        product_repo=harness_fail.product_repo,
-        evidence_repo=harness_fail.evidence_repo,
-        raw_repo=harness_fail.raw_repo,
-        norm_repo=harness_fail.norm_repo,
-        final_repo=harness_fail.final_repo,
+        job_id=retry_job.id,
+        recompute_uc=None,
+        job_repo=harness.job_repo,
+        aisle_repo=harness.aisle_repo,
+        inventory_repo=harness.inventory_repo,
+        position_repo=harness.position_repo,
+        product_repo=harness.product_repo,
+        evidence_repo=harness.evidence_repo,
+        raw_repo=harness.raw_repo,
+        norm_repo=harness.norm_repo,
+        final_repo=harness.final_repo,
     )
-    success_report = _abc_report(qty_a=5, qty_b=5, include_b=True, include_c=False)
-    harness_ok.persist_report(success_report, job_id="job-success")
-
-    state_svc = V3JobExecutionStateService(
-        job_repo=harness_ok.job_repo,
-        aisle_repo=harness_ok.aisle_repo,
-        inventory_repo=harness_ok.inventory_repo,
-        inventory_status_reconciler=InventoryStatusReconciler(
-            harness_ok.inventory_repo,
-            harness_ok.aisle_repo,
-            FixedClock(harness_ok.now),
-        ),
-        clock=FixedClock(harness_ok.now),
+    success_report = _single_entity_report(
+        entity_uid="e-success",
+        sku="SKU-SUCCESS",
+        quantity=5,
+        evidence_path="evidence/success.jpg",
     )
-    aisle_for_success = harness_ok.aisle_repo.get_by_id(harness_ok.aisle_id)
-    assert aisle_for_success is not None
-    state_svc.mark_success(
-        "job-success",
-        aisle_for_success,
-        report_path=tmp_path / "hybrid_report.json",
-        run_metadata={"provider": "test"},
-    )
+    retry_executor = retry_harness.make_executor(artifact_store=ArtifactUploadSpy())
+    assert retry_harness.run_with_mock_pipeline(retry_executor, report=success_report) is True
 
-    assert harness_ok.operational_job_id() == "job-success"
+    success_job = retry_harness.job_repo.get_by_id(retry_job.id)
+    assert success_job is not None
+    assert success_job.status == JobStatus.SUCCEEDED
 
-    snap_success = harness_ok.snapshot_job_scope("job-success")
-    assert snap_success.position_count == 2
-    assert snap_success.raw_label_count >= 1
-    assert not duplicate_positions_by_job_entity_uid(harness_ok.positions_for_job("job-success"))
+    aisle_after = retry_harness.aisle_repo.get_by_id(retry_harness.aisle_id)
+    assert aisle_after is not None
+    assert aisle_after.status == AisleStatus.PROCESSED
+    assert aisle_after.operational_job_id == retry_job.id
+    assert operational_job_id_for_retry(retry_harness) == retry_job.id
 
-    failed_positions = harness_ok.positions_for_job("job-failed")
-    success_positions = harness_ok.positions_for_job("job-success")
-    assert len(failed_positions) == 1
-    assert len(success_positions) == 2
-    assert (failed_positions[0].detected_summary_json or {}).get("final_quantity") == 99
-    assert all(
-        (p.detected_summary_json or {}).get("final_quantity") == 5 for p in success_positions
-    )
+    snap_success = retry_harness.snapshot_job_scope(retry_job.id)
+    assert snap_success.position_count == 1
+    assert snap_success.raw_label_count == 1
+    assert snap_success.normalized_label_count == 1
+    assert snap_success.final_count_count == 1
 
-    resolver = ResultContextResolver(harness_ok.job_repo)
+    _assert_cross_job_layer_isolation(retry_harness, "job-failed", retry_job.id)
+
+    resolver = ResultContextResolver(retry_harness.job_repo)
     list_uc = ListAislePositionsUseCase(
-        harness_ok.inventory_repo,
-        harness_ok.aisle_repo,
-        harness_ok.position_repo,
+        retry_harness.inventory_repo,
+        retry_harness.aisle_repo,
+        retry_harness.position_repo,
         resolver,
-        harness_ok.product_repo,
+        retry_harness.product_repo,
         positions_aisle_raw_cap=500,
     )
     list_result = list_uc.execute(
         ListAislePositionsCommand(
-            inventory_id=harness_ok.inventory_id,
-            aisle_id=harness_ok.aisle_id,
+            inventory_id=retry_harness.inventory_id,
+            aisle_id=retry_harness.aisle_id,
             page=1,
             page_size=50,
         )
     )
-    assert list_result.resolved_job_id == "job-success"
+    assert list_result.resolved_job_id == retry_job.id
+    success_positions = retry_harness.positions_for_job(retry_job.id)
     assert {p.id for p in list_result.positions} == {p.id for p in success_positions}
-    assert not {p.id for p in list_result.positions} & {p.id for p in failed_positions}
+    assert all(
+        (p.detected_summary_json or {}).get("final_quantity") == 5 for p in list_result.positions
+    )
+    assert "SKU-FAILED" not in {
+        p.sku for p in list_result.primary_products if p is not None
+    }
 
     export_collector = ExportInventoryCollector(
-        harness_ok.inventory_repo,
-        harness_ok.aisle_repo,
-        harness_ok.position_repo,
-        harness_ok.product_repo,
+        retry_harness.inventory_repo,
+        retry_harness.aisle_repo,
+        retry_harness.position_repo,
+        retry_harness.product_repo,
         resolver,
     )
     export_data = export_collector.collect_aisle(
-        harness_ok.inventory_id,
-        harness_ok.aisle_id,
+        retry_harness.inventory_id,
+        retry_harness.aisle_id,
     )
     bundle = export_data.aisle_bundles[0]
-    assert bundle.job_id_for_slice == "job-success"
-    export_qtys = sorted(
-        int(row.internal_row.get("final_quantity") or 0) for row in bundle.rows
-    )
-    assert export_qtys == [5, 5]
+    assert bundle.job_id_for_slice == retry_job.id
+    export_skus = sorted(row.internal_row.get("product_sku") or "" for row in bundle.rows)
+    assert export_skus == ["SKU-SUCCESS"]
+    export_qtys = [int(row.internal_row.get("final_quantity") or 0) for row in bundle.rows]
+    assert export_qtys == [5]
     assert 99 not in export_qtys
 
-    recompute_result = harness_ok.recompute_uc.execute(
+
+def operational_job_id_for_retry(harness: ExecutorHarness) -> str | None:
+    aisle = harness.aisle_repo.get_by_id(harness.aisle_id)
+    if aisle is None or not aisle.operational_job_id:
+        return None
+    return str(aisle.operational_job_id).strip() or None
+
+
+def _assert_cross_job_layer_isolation(
+    harness: ExecutorHarness,
+    failed_job_id: str,
+    success_job_id: str,
+) -> None:
+    failed_positions = harness.positions_for_job(failed_job_id)
+    success_positions = harness.positions_for_job(success_job_id)
+    assert len(failed_positions) == 1
+    assert len(success_positions) == 1
+    assert (failed_positions[0].detected_summary_json or {}).get("final_quantity") == 99
+    assert (success_positions[0].detected_summary_json or {}).get("final_quantity") == 5
+    assert duplicate_positions_by_job_entity_uid(failed_positions + success_positions) == {}
+
+    failed_products = harness.products_for_job(failed_job_id)
+    success_products = harness.products_for_job(success_job_id)
+    assert len(failed_products) == 1
+    assert len(success_products) == 1
+    assert failed_products[0].sku == "SKU-FAILED"
+    assert failed_products[0].detected_quantity == 99
+    assert success_products[0].sku == "SKU-SUCCESS"
+    assert success_products[0].detected_quantity == 5
+
+    failed_evidence = harness.evidence_for_job(failed_job_id)
+    success_evidence = harness.evidence_for_job(success_job_id)
+    assert len(failed_evidence) == 1
+    assert len(success_evidence) == 1
+    assert "failed.jpg" in failed_evidence[0].storage_path
+    assert "success.jpg" in success_evidence[0].storage_path
+
+    failed_raw = harness.raw_labels_for_job(failed_job_id)
+    success_raw = harness.raw_labels_for_job(success_job_id)
+    assert len(failed_raw) == 1
+    assert len(success_raw) == 1
+    assert failed_raw[0].sku_raw == "SKU-FAILED"
+    assert success_raw[0].sku_raw == "SKU-SUCCESS"
+
+    failed_norm = harness.normalized_labels_for_job(failed_job_id)
+    success_norm = harness.normalized_labels_for_job(success_job_id)
+    assert len(failed_norm) == 0
+    assert len(success_norm) == 1
+    assert success_norm[0].canonical_sku == "SKU-SUCCESS"
+
+    failed_final = harness.final_counts_for_job(failed_job_id)
+    success_final = harness.final_counts_for_job(success_job_id)
+    assert len(failed_final) == 0
+    assert len(success_final) == 1
+    assert success_final[0].sku == "SKU-SUCCESS"
+    assert success_final[0].quantity == 1
+
+    snap_failed = harness.snapshot_job_scope(failed_job_id)
+    snap_success = harness.snapshot_job_scope(success_job_id)
+    assert_no_row_id_overlap(
+        snap_failed.position_ids,
+        snap_success.position_ids,
+        snap_failed.product_ids,
+        snap_success.product_ids,
+        snap_failed.evidence_ids,
+        snap_success.evidence_ids,
+        snap_failed.raw_label_ids,
+        snap_success.raw_label_ids,
+        snap_success.normalized_label_ids,
+        snap_success.final_count_ids,
+    )
+
+
+# --- P2-T003-ALL-SCOPE: cross-job recompute leakage ---------------------------
+
+
+def test_p2_t003_all_scope_recompute_mixes_failed_and_success_raw_labels(
+    tmp_path: Path,
+) -> None:
+    """P2-T003-ALL-SCOPE: job_scope='all' includes raw labels from FAILED and SUCCEEDED jobs."""
+    failing_recompute = FailingRecomputeUseCase()
+    harness = _shared_retry_harness(
+        tmp_path,
+        job_id="job-failed-all",
+        recompute_uc=failing_recompute,
+    )
+    failed_report = _single_entity_report(
+        entity_uid="e-failed",
+        sku="SKU-FAILED",
+        quantity=99,
+        evidence_path="evidence/failed.jpg",
+    )
+    harness.run_with_mock_pipeline(
+        harness.make_executor(recompute_uc=failing_recompute),
+        report=failed_report,
+    )
+    assert harness.job_repo.get_by_id("job-failed-all").status == JobStatus.FAILED
+    assert harness.raw_labels_for_job("job-failed-all").__len__() == 1
+
+    retry_job = build_retry_flow_services(harness).retry_use_case.execute(
+        RetryAisleJobCommand(harness.inventory_id, harness.aisle_id, "job-failed-all")
+    )
+    retry_harness = _shared_retry_harness(
+        tmp_path,
+        job_id=retry_job.id,
+        recompute_uc=None,
+        job_repo=harness.job_repo,
+        aisle_repo=harness.aisle_repo,
+        inventory_repo=harness.inventory_repo,
+        position_repo=harness.position_repo,
+        product_repo=harness.product_repo,
+        evidence_repo=harness.evidence_repo,
+        raw_repo=harness.raw_repo,
+        norm_repo=harness.norm_repo,
+        final_repo=harness.final_repo,
+    )
+    success_report = _single_entity_report(
+        entity_uid="e-success",
+        sku="SKU-SUCCESS",
+        quantity=5,
+        evidence_path="evidence/success.jpg",
+    )
+    retry_harness.run_with_mock_pipeline(
+        retry_harness.make_executor(artifact_store=ArtifactUploadSpy()),
+        report=success_report,
+    )
+    assert retry_harness.job_repo.get_by_id(retry_job.id).status == JobStatus.SUCCEEDED
+
+    expected_failed_raw = 1
+    expected_success_raw = 1
+    success_scope = retry_harness.recompute_uc.execute(
         RecomputeConsolidatedCountsCommand(
-            inventory_id=harness_ok.inventory_id,
-            aisle_id=harness_ok.aisle_id,
+            inventory_id=retry_harness.inventory_id,
+            aisle_id=retry_harness.aisle_id,
             apply_to_product_records=False,
-            job_scope="job-success",
+            job_scope=retry_job.id,
         )
     )
-    assert recompute_result.raw_count >= 1
-    success_raw = harness_ok.raw_labels_for_job("job-success")
-    failed_raw = harness_ok.raw_labels_for_job("job-failed")
-    assert len(failed_raw) == 0
-    assert len(success_raw) >= 1
-
-    all_scope_recompute = harness_ok.recompute_uc.execute(
+    all_scope = retry_harness.recompute_uc.execute(
         RecomputeConsolidatedCountsCommand(
-            inventory_id=harness_ok.inventory_id,
-            aisle_id=harness_ok.aisle_id,
+            inventory_id=retry_harness.inventory_id,
+            aisle_id=retry_harness.aisle_id,
             apply_to_product_records=False,
             job_scope="all",
         )
     )
-    assert all_scope_recompute.raw_count >= len(success_raw)
+    assert success_scope.raw_count == expected_success_raw
+    assert all_scope.raw_count == expected_failed_raw + expected_success_raw
+    assert all_scope.raw_count > success_scope.raw_count
+    assert all_scope.normalized_count == 2
+    assert success_scope.normalized_count == 1
+    assert all_scope.final_count == 2
+    assert success_scope.final_count == 1
+
+    all_norm = list(
+        retry_harness.norm_repo.list_for_scope(
+            retry_harness.inventory_id, retry_harness.aisle_id, job_id="all"
+        )
+    )
+    assert len(all_norm) == 2
+    assert {n.canonical_sku for n in all_norm} == {"SKU-FAILED", "SKU-SUCCESS"}

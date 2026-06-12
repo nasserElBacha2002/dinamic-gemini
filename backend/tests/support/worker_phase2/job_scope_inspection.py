@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,6 +34,15 @@ class JobScopeSnapshot:
     raw_label_count: int
     normalized_label_count: int
     final_count_count: int
+
+
+def assert_no_row_id_overlap(*row_id_groups: Sequence[str]) -> None:
+    """Ensure persisted row id sets from different jobs do not overlap."""
+    seen: set[str] = set()
+    for group in row_id_groups:
+        ids = set(group)
+        assert not seen & ids, f"row id overlap detected: {seen & ids}"
+        seen |= ids
 
 
 def position_job_id_map(

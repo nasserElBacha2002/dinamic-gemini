@@ -1,15 +1,10 @@
 # Worker Phase 2 — Result Ownership and Retry Policy (Proposed)
 
-**Status:** Characterization baseline — **not fully implemented**.  
-**Scope:** Phase 2 Part 1 evidence only. No production idempotency fixes in this block.
+**Status:** Characterization baseline — **not fully implemented**.
 
-Legend:
+Legend: **DESIRED_POLICY** | **CURRENT_BEHAVIOR** | **PENDING_IMPLEMENTATION**
 
-| Tag | Meaning |
-|-----|---------|
-| **DESIRED_POLICY** | Target invariant for production |
-| **CURRENT_BEHAVIOR** | Observed today (memory/component tests unless noted) |
-| **PENDING_IMPLEMENTATION** | Requires Phase 2 Part 2+ work |
+Evidence labels: `CONFIRMED_IN_COMPONENT_TEST` | `CONFIRMED_IN_SQL_SERVER` | `INFERRED_FROM_CODE` | `NOT_ASSERTED` | `NOT_TESTED` | `PENDING_SQL_VERIFICATION`
 
 ---
 
@@ -17,129 +12,141 @@ Legend:
 
 | | |
 |--|--|
-| **DESIRED_POLICY** | Retries and re-runs are distinct jobs with distinct `job_id` values. |
-| **CURRENT_BEHAVIOR** | `RetryAisleJobUseCase` creates a new job; worker executes under that id. Confirmed in Phase 1 T012 and P2-T003. |
-| **Gap** | Manual re-invocation of persist with the same `job_id` is possible (no guard). |
-| **Test** | P2-T003 (`job-failed` vs `job-success`); Phase 1 T012 |
-| **Block** | Part 2 — optional persist guard / worker contract |
-
----
-
-## Rule 2 — All job-produced domain results remain attributable to the creating `job_id`
-
-| | |
-|--|--|
-| **DESIRED_POLICY** | Positions, products, evidence, raw/normalized/final labels carry the job that created them. |
-| **CURRENT_BEHAVIOR** | Mapper stamps `job_id` on positions and raw labels; child rows inherit via `position_id`. P2-T003 confirms failed rows stay on `job-failed`, success on `job-success`. |
-| **Gap** | No DB unique constraints enforcing ownership; duplicate rows share the same `job_id`. |
-| **Test** | P2-T001, P2-T003; helpers `*_for_job()` |
-| **Block** | Part 2 — schema constraints + delete/replace by job scope |
-
----
-
-## Rule 3 — Only a SUCCEEDED job may become the operational result for an aisle
-
-| | |
-|--|--|
-| **DESIRED_POLICY** | `operational_job_id` points only to a terminal-success `process_aisle` job. |
-| **CURRENT_BEHAVIOR** | `V3JobExecutionStateService.mark_success` sets `operational_job_id` for **PRODUCTION** inventories only. Failed jobs do not promote (P2-T003). |
-| **Gap** | No compare-and-set; last successful writer wins. Failed job could theoretically be set if caller bypasses state service. |
-| **Test** | P2-T003 (`operational_job_id == job-success`) |
-| **Block** | Part 2 — operational promotion guard |
-
----
-
-## Rule 4 — Results from FAILED or CANCELED jobs must never appear in operational UI, exports, summaries, or totals
-
-| | |
-|--|--|
-| **DESIRED_POLICY** | Operational readers filter by `operational_job_id` / explicit job slice. |
-| **CURRENT_BEHAVIOR** | `ResultContextResolver` → `ListAislePositionsUseCase` and `ExportInventoryCollector` return only the operational slice (P2-T003: qty 5, not 99). |
-| **Gap** | `RecomputeConsolidatedCounts` with `job_scope="all"` mixes every attempt; analytics paths may count all runs (not covered in Part 1 tests). Failed rows **remain in DB** and are visible if a consumer uses `job_scope="all"` or aisle-wide listing without resolver. |
-| **Test** | P2-T003 (positions list + export); aggregate `job_scope="all"` characterized as **NOT_JOB_SCOPED** |
-| **Block** | Part 2 — read-model unification; Part 3 — analytics alignment |
-
----
-
-## Rule 5 — Re-executing persistence for the same `job_id` must be idempotent
-
-| | |
-|--|--|
-| **DESIRED_POLICY** | Second identical persist produces no net new business rows. |
-| **CURRENT_BEHAVIOR** | **NON_IDEMPOTENT**. P2-T001: positions 2→4; duplicate `entity_uid` per job; raw labels append (2→4); normalized/final rebuilt from all raw (4 rows, duplicate SKUs). No delete-before-insert. |
-| **Gap** | `v3_report_mapper` assigns new UUIDs per entity on every map (`uuid4()`). Insert-only persist loop. |
-| **Test** | P2-T001; P2-T001-SQL (`PENDING_SQL_VERIFICATION`) |
-| **Block** | **Part 2** — primary implementation target |
-
----
-
-## Rule 6 — A successful retry using a new `job_id` must not mix its rows with the previous failed attempt
-
-| | |
-|--|--|
-| **DESIRED_POLICY** | Operational consumers see only the success job; historical failed rows are non-operational. |
-| **CURRENT_BEHAVIOR** | Row isolation by `job_id` works at persistence layer. Operational readers resolve `job-success` only (P2-T003). |
-| **Gap** | Failed partial rows retained indefinitely; `job_scope="all"` recompute sees both attempts. |
+| **DESIRED_POLICY** | Retries are distinct jobs. |
+| **CURRENT_BEHAVIOR** | `RetryAisleJobUseCase` creates new UUID job with `retry_of_job_id` lineage. **Evidence:** P2-T003 (`CONFIRMED_IN_COMPONENT_TEST`). |
+| **Gap** | Direct re-persist with same `job_id` still possible. |
 | **Test** | P2-T003 |
-| **Block** | Part 2 — explicit cleanup; Part 2 — recompute default scope |
+| **Block** | Part 2 optional guard |
 
 ---
 
-## Rule 7 — Historical results may be retained but must remain non-operational unless explicitly selected for audit
+## Rule 2 — Results attributable to creating `job_id`
 
 | | |
 |--|--|
-| **DESIRED_POLICY** | Audit/history views may pass explicit `job_id`; default views use operational slice. |
-| **CURRENT_BEHAVIOR** | Failed rows retained (P2-T003: 1 position on `job-failed`). Explicit `job_id` supported by `ResultContextResolver`. |
-| **Gap** | No first-class “audit history” API in Part 1 scope. |
-| **Test** | P2-T003 (retention); resolver unit behavior (existing) |
-| **Block** | Later — audit UI/API |
+| **DESIRED_POLICY** | All domain rows stamped with creating job. |
+| **CURRENT_BEHAVIOR** | Rows scoped by `job_id`; cross-job ID sets do not overlap. **Evidence:** P2-T003 (`CONFIRMED_IN_COMPONENT_TEST`). |
+| **Gap** | No DB uniqueness on business keys. |
+| **Test** | P2-T003 `assert_no_row_id_overlap` |
+| **Block** | Part 2 |
 
 ---
 
-## Rule 8 — Cleanup of failed partial results must be explicit and must not delete the operational job
+## Rule 3 — Only SUCCEEDED job becomes operational
 
 | | |
 |--|--|
-| **DESIRED_POLICY** | Cleanup is a deliberate, job-scoped operation with operational-job protection. |
-| **CURRENT_BEHAVIOR** | **No automatic cleanup**. Failed partial rows **retained** (P2-T003). |
-| **Gap** | No delete-by-job use case or worker hook. |
-| **Test** | P2-T003 (cleanup classification: **retained**) |
-| **Block** | **Part 2** — explicit cleanup use case |
+| **DESIRED_POLICY** | `operational_job_id` → success job only. |
+| **CURRENT_BEHAVIOR** | Executor `mark_success` on PRODUCTION inventory sets pointer to retry job. Failed job never operational. **Evidence:** P2-T003 (`CONFIRMED_IN_COMPONENT_TEST`). |
+| **Gap** | No compare-and-set (`INFERRED_FROM_CODE`). |
+| **Test** | P2-T003 |
+| **Block** | Part 2 |
 
 ---
 
-## Rule 9 — Read models must resolve the same operational job consistently
+## Rule 4 — FAILED/CANCELED rows not in operational UI
 
 | | |
 |--|--|
-| **DESIRED_POLICY** | All operational consumers use `ResultContextResolver` (or equivalent) and agree on `job_id_for_slice`. |
-| **CURRENT_BEHAVIOR** | Positions list and export agree on `job-success` in P2-T003. |
-| **Gap** | Recompute default in persist uses concrete `job_id` (good); ad-hoc `job_scope="all"` does not. Analytics not tested in Part 1. |
-| **Test** | P2-T003 (`ListAislePositionsUseCase`, `ExportInventoryCollector`) |
-| **Block** | Part 2 — consumer audit; Part 3 — analytics |
+| **DESIRED_POLICY** | Operational consumers filter by operational job. |
+| **CURRENT_BEHAVIOR** | Positions list + export return success slice only (SKU-SUCCESS qty 5, not SKU-FAILED 99). **Evidence:** P2-T003 (`CONFIRMED_IN_COMPONENT_TEST`). |
+| **Gap** | `job_scope="all"` includes failed raw/normalized/final. Analytics/inventory summary `NOT_TESTED`. |
+| **Test** | P2-T003, P2-T003-ALL-SCOPE |
+| **Block** | Part 2–3 |
 
 ---
 
-## Rule 10 — Aggregate layers must not combine multiple job attempts
+## Rule 5 — Same `job_id` re-persist idempotent
 
 | | |
 |--|--|
-| **DESIRED_POLICY** | Totals and exports for operational views use a single job slice. |
-| **CURRENT_BEHAVIOR** | Export operational slice: **ISOLATED** (P2-T003). `RecomputeConsolidatedCounts` with `job_scope="all"`: **NOT_JOB_SCOPED** — raw count includes all attempts. |
-| **Gap** | Consolidation layer can aggregate cross-job when scope is `"all"`. |
-| **Test** | P2-T003 (`job_scope` success vs `"all"`) |
-| **Block** | Part 2 — default recompute scope; Part 3 — analytics |
+| **DESIRED_POLICY** | No net new rows on identical re-persist. |
+| **CURRENT_BEHAVIOR** | **NON_IDEMPOTENT** — structural position dup + semantic SKU repetition. **Evidence:** P2-T001 (`CONFIRMED_IN_COMPONENT_TEST`). |
+| **Gap** | UUID per entity in mapper (`INFERRED_FROM_CODE`). |
+| **Test** | P2-T001; SQL positions `PENDING_SQL_VERIFICATION` |
+| **Block** | **Part 2** |
 
 ---
 
-## Memory vs SQL evidence
+## Rule 6 — Successful retry does not mix with failed attempt
 
-| Area | Memory / component | SQL Server |
-|------|-------------------|------------|
-| Same-job duplicate persist | `CONFIRMED_IN_COMPONENT_TEST` (P2-T001) | `PENDING_SQL_VERIFICATION` (P2-T001-SQL skipped) |
-| Changed-report same job | `CONFIRMED_IN_COMPONENT_TEST` (P2-T002) | Not tested |
-| Retry isolation | `CONFIRMED_IN_COMPONENT_TEST` (P2-T003) | Not tested |
-| Operational read isolation | `CONFIRMED_IN_COMPONENT_TEST` (P2-T003) | Not tested |
+| | |
+|--|--|
+| **DESIRED_POLICY** | Operational slice = success job only. |
+| **CURRENT_BEHAVIOR** | Isolated by `job_id` at persistence; operational readers use retry job. **Evidence:** P2-T003 (`CONFIRMED_IN_COMPONENT_TEST`). |
+| **Gap** | Failed rows retained; `all` scope mixes (`CONFIRMED_IN_COMPONENT_TEST`). |
+| **Test** | P2-T003, P2-T003-ALL-SCOPE |
+| **Block** | Part 2 cleanup + scope defaults |
 
-Do not infer SQL uniqueness or transaction boundaries from memory repositories alone.
+---
+
+## Rule 7 — Historical results retained, non-operational
+
+| | |
+|--|--|
+| **DESIRED_POLICY** | Audit via explicit `job_id`. |
+| **CURRENT_BEHAVIOR** | Failed rows remain in DB. **Evidence:** P2-T003 (`CONFIRMED_IN_COMPONENT_TEST`). |
+| **Gap** | No audit API (`NOT_TESTED`). |
+| **Test** | P2-T003 |
+| **Block** | Later |
+
+---
+
+## Rule 8 — Cleanup explicit, protects operational job
+
+| | |
+|--|--|
+| **DESIRED_POLICY** | Deliberate job-scoped cleanup. |
+| **CURRENT_BEHAVIOR** | No automatic cleanup; failed rows **retained**. **Evidence:** P2-T003 (`CONFIRMED_IN_COMPONENT_TEST`). |
+| **Test** | P2-T003 |
+| **Block** | Part 2 |
+
+---
+
+## Rule 9 — Read models resolve operational job consistently
+
+| | |
+|--|--|
+| **DESIRED_POLICY** | Same `job_id_for_slice` across operational consumers. |
+| **CURRENT_BEHAVIOR** | List + export agree on retry job. **Evidence:** P2-T003 (`CONFIRMED_IN_COMPONENT_TEST`). |
+| **Gap** | Inventory summary, analytics `NOT_TESTED`. |
+| **Test** | P2-T003 |
+| **Block** | Part 2–3 |
+
+---
+
+## Rule 10 — Aggregates must not combine attempts (operational views)
+
+| | |
+|--|--|
+| **DESIRED_POLICY** | Operational totals use single job slice. |
+| **CURRENT_BEHAVIOR** | Export isolated; `job_scope="all"` recompute aggregates failed+success raw (2 vs 1). **Evidence:** P2-T003-ALL-SCOPE (`CONFIRMED_IN_COMPONENT_TEST`). |
+| **Test** | P2-T003-ALL-SCOPE |
+| **Block** | Part 2 |
+
+---
+
+## Duplicate detection conventions (tests)
+
+| Layer | Structural key | Semantic repetition key |
+|-------|----------------|-------------------------|
+| Position | `job_id + entity_uid` | — |
+| Product | `job_id + position_id + sku` | `repeated_products_by_job_sku` |
+| Evidence | `job_id + position_id + path` | `repeated_evidence_by_job_path` |
+| Raw label | `job_id + position_id + group_key + source_reference` | `repeated_raw_labels_by_source_reference` |
+| Normalized | `job_id + position_id + group_key + canonical_sku` | `repeated_normalized_labels_by_job_sku` |
+| Final count | `job_id + position_id + sku` | `repeated_final_counts_by_job_sku` |
+
+Helpers live under `tests/support/worker_phase2/duplicate_detection.py`.
+
+---
+
+## Memory vs SQL
+
+| Claim | Level |
+|-------|-------|
+| Same-job position duplication | `CONFIRMED_IN_COMPONENT_TEST`; SQL `PENDING_SQL_VERIFICATION` |
+| Products/evidence on changed report | `CONFIRMED_IN_COMPONENT_TEST` |
+| Real failed retry flow | `CONFIRMED_IN_COMPONENT_TEST` |
+| `job_scope="all"` leakage | `CONFIRMED_IN_COMPONENT_TEST` |
+| SQL raw/normalized/final | `NOT_ASSERTED` (memory repos in SQL test) |
