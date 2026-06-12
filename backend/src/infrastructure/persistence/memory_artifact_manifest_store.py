@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from src.application.ports.artifact_manifest_store import ArtifactManifestConcurrencyError
-from src.domain.jobs.artifact_manifest import ArtifactManifestEntry, ArtifactManifestStatus
+from src.domain.jobs.artifact_manifest import ArtifactManifestEntry, ArtifactManifestStatus, ArtifactVerificationLevel
 from src.domain.jobs.artifact_policy import ALL_EXPECTED_ARTIFACT_KINDS, REQUIRED_ARTIFACT_KINDS
 
 
@@ -125,6 +125,10 @@ class MemoryArtifactManifestStore:
         required: bool,
         now: datetime,
         expected_version: int | None = None,
+        source_sha256: str | None = None,
+        storage_etag: str | None = None,
+        verified_at: datetime | None = None,
+        verification_level: ArtifactVerificationLevel | None = None,
     ) -> ArtifactManifestEntry:
         existing = self._rows.get(_key(job_id, artifact_kind))
         if expected_version is None and existing is not None:
@@ -141,10 +145,14 @@ class MemoryArtifactManifestStore:
             artifact_kind=artifact_kind,
             required=required,
             storage_key=storage_key,
+            source_sha256=source_sha256 or content_hash,
             content_hash=content_hash,
+            storage_etag=storage_etag,
             size_bytes=size_bytes,
             status=ArtifactManifestStatus.PUBLISHED,
             published_at=now,
+            verified_at=verified_at or now,
+            verification_level=verification_level,
             attempt_count=(existing.attempt_count + 1) if existing else 1,
             last_error=None,
             version=version,

@@ -1,109 +1,118 @@
-# Phase 3.5 — Robust Artifact Publication
+# Phase 3.5 — Robust Artifact Publication (Corrections)
 
 ## Summary
 
-Phase 3.5 introduces a durable **artifact publication outbox** so required worker artifacts can be published reliably through transient storage failures without re-running the provider, normalization, or domain persistence.
+Phase 3.5 makes artifact publication **autonomous, crash-safe, and durable**. Required artifacts are staged to exact durable bytes before outbox registration; an independent outbox worker executes retries without the original `V3JobExecutor`; finalization continues from `job_id` and durable state only.
 
 ## Architecture
 
 | Component | Responsibility |
 | --- | --- |
-| `artifact_publication_outbox` | Authoritative **work queue** — what still needs publishing, retry state, leases |
-| `job_artifact_manifest` | Authoritative **artifact state** — current published/failed status per kind |
-| `ArtifactPublicationDispatcher` | Claims work, resolves local source, uploads/verifies, updates manifest + outbox |
-| `ArtifactFinalizationContinuationCoordinator` | Idempotent continuation of terminalization → promotion → reconciliation |
+| `artifact_publication_outbox` | Work queue — retry state, leases, checksum fields |
+| `job_artifact_manifest` | Published artifact state + verification level |
+| `ArtifactStagingStore` | Exact-byte durable staging (`artifact-staging/{job_id}/{kind}/{sha256}`) |
+| `ArtifactPublicationDispatcher` | Stage/register, claim, verify (SHA-256), upload, manifest + outbox updates |
+| `ArtifactPublicationOutboxWorker` | Autonomous poll loop — `release → claim due → publish → continue` |
+| `ArtifactPublicationStateReconciler` | Repairs manifest/outbox split writes after crash windows |
+| `AutomaticFinalizationContinuationUseCase` | `continue_finalization(job_id)` — no worker context |
 
 Flow after domain commit:
 
 ```text
-ensure manifest entries
-→ register outbox work (durable intent)
-→ dispatch (claim → upload/verify → manifest PUBLISHED → outbox PUBLISHED)
-→ REQUIRED_ARTIFACTS completed
-→ finalization continuation (no provider replay)
+generate artifact → stage exact bytes → register outbox (EXACT_DURABLE_SOURCE)
+→ claim → verify SHA-256 → upload if needed → manifest PUBLISHED → outbox PUBLISHED
+→ REQUIRED_ARTIFACTS completed → automatic finalization continuation
 ```
 
-## Source durability policy
+## Autonomous worker
 
-| Artifact | Required | Durable source | Retryable | Reconstruction allowed |
-| --- | ---: | --- | ---: | --- |
-| execution_log | Yes | EXACT_LOCAL_SOURCE (run_dir file) | Yes | No — do not fabricate from DB events |
-| hybrid_report_json | Yes | EXACT_LOCAL_SOURCE / report_path | Yes | No — do not rebuild from domain rows |
-| hybrid_report_csv | No | RECONSTRUCTABLE if deterministic | Yes | Yes — optional; absence does not block required set |
+Deploy:
 
-Ephemeral worker directories: publication intent is recorded while local sources exist; if sources are gone before retry, required artifacts move to `PERMANENTLY_FAILED` (`source_missing`).
+```bash
+python -m src.jobs.artifact_publication_worker
+```
 
-## Deterministic keys
+Env:
 
-Logical storage keys remain:
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ARTIFACT_PUBLICATION_WORKER_ENABLED` | `false` | Enable worker process |
+| `ARTIFACT_PUBLICATION_POLL_SECONDS` | `5` | Idle poll interval |
+| `ARTIFACT_PUBLICATION_BATCH_SIZE` | `10` | Max rows claimed per poll |
+| `ARTIFACT_STAGING_BASE_PATH` | `data/artifact-staging` | Durable staging root |
+
+Eligible outbox rows: `PENDING`, `RETRY_SCHEDULED` (due), `CLAIMED` (expired lease).
+
+## Deployment
+
+**Required migration order:** `0040_artifact_publication_outbox.sql` → `0041_artifact_publication_durable_sources_and_checksums.sql`
+
+**Process topology:**
 
 ```text
-jobs/{job_id}/run/{filename}
+V3JobExecutor (inline first pass) ──► stages + registers outbox
+ArtifactPublicationOutboxWorker ─────► autonomous retries + continuation
+Manual recovery ───────────────────► verify / retry_now / resume (unchanged)
 ```
 
-Retries reuse the same key; confirmed existing objects skip re-upload when size matches.
+## Source lifecycle
 
-## Retry matrix
+| Source | Durable | Survives restart | Exact | Cleanup condition |
+| --- | ---: | ---: | ---: | --- |
+| execution_log staging | Yes | Yes | Yes | After confirmed publication (policy TBD) |
+| hybrid_report_json staging | Yes | Yes | Yes | After confirmed publication (policy TBD) |
+| hybrid_report_csv | Optional | Local/reconstructable | If present | Optional; does not block required set |
 
-| Failure | Retry | Final state |
-| --- | ---: | --- |
-| Storage timeout | Yes | RETRY_SCHEDULED |
-| Source missing | No | PERMANENTLY_FAILED |
-| Object mismatch | No | PERMANENTLY_FAILED |
-| Max attempts exceeded | No | PERMANENTLY_FAILED |
+Staging failure → `ARTIFACT_SOURCE_STAGING_FAILED`; **no** retryable outbox row for missing local bytes.
 
-Defaults (configurable via env):
+## State semantics
 
-- `ARTIFACT_PUBLICATION_MAX_ATTEMPTS=5`
-- `ARTIFACT_PUBLICATION_LEASE_SECONDS=120`
-- `ARTIFACT_PUBLICATION_BACKOFF_SECONDS=0,30,120,600,1800`
+| State | Job status | Finalization status | UI | Automatic action |
+| --- | --- | --- | --- | --- |
+| Pending initial publication | RUNNING | IN_PROGRESS | Publicando artefactos | Worker/dispatcher claims |
+| Retry scheduled | RUNNING | IN_PROGRESS | Reintentando publicación | Outbox worker at `next_attempt_at` |
+| Claimed | RUNNING | IN_PROGRESS | Publicando artefactos | Publish or lease expiry reclaim |
+| Published required set | RUNNING → SUCCEEDED | IN_PROGRESS → COMPLETED | Completado | Automatic continuation |
+| Permanent failure | FAILED | FAILED | Error definitivo | Admin recovery only |
+| Source conflict | FAILED / inconsistent | FAILED | Conflicto de origen | Investigation required |
 
-## Claim / lease strategy
+Retry-pending jobs are **not** terminal failures. Stale reconciler skips jobs with active retryable outbox work.
 
-- SQL: `UPDLOCK + ROWLOCK` on claim; expired leases released to `PENDING` / `RETRY_SCHEDULED`
-- Memory store mirrors semantics for tests
-- One active claim per `(job_id, artifact_kind)` row
+## Checksum model
 
-## Crash recovery
+Separate fields: `source_sha256`, `storage_etag`, `storage_checksum_value`, `storage_checksum_algorithm`, `verified_at`, `verification_level`.
 
-| Window | Behavior |
-| --- | --- |
-| Crash after upload, before manifest | Next dispatch sees object in storage → confirms without upload → updates manifest + outbox |
-| Crash after manifest, before outbox | Next dispatch reconciles outbox to PUBLISHED without upload |
-| Crash mid-claim | Lease expires → row reclaimable |
+Verification priority: remote SHA-256 metadata → confirmed; known-algorithm checksum → confirmed; size only → `POSITIVE_EVIDENCE_ONLY` (not confirmed).
 
-Partial publication is preserved: successful artifacts stay `PUBLISHED`; failed required kinds remain retryable or permanently failed.
+## Typed error classification
 
-## Finalization continuation
+Programming errors (`NameError`, `TypeError`, …) → `internal_publication_error`, non-retryable. Transient network/storage → retryable. Unknown exceptions default non-retryable unless evidence of transience.
 
-When all required manifest entries are `PUBLISHED` and verified, the dispatcher calls `tracker.record_artifacts_published()` then `ArtifactFinalizationContinuationCoordinator.continue_if_required_complete()` which reuses existing `V3JobExecutionStateService.finalize_success()` — no duplicated terminalization logic.
+## SQL migration 0041
 
-## Manual recovery compatibility
+Adds checksum columns, status/source_type CHECK constraints, due-work index `IX_artifact_publication_outbox_due_work`. Does not modify deployed `0040`.
 
-Admin recovery (`verify`, `republish`, `resume`) remains unchanged. Outbox upsert is idempotent on `(job_id, artifact_kind)` — manual operations do not create duplicate logical rows.
+Foreign keys: intentionally omitted so outbox/manifest evidence can survive job cleanup (documented policy).
 
 ## API visibility
 
-`GET .../jobs/{job_id}` includes optional `artifact_publication` block with required counts, retry/permanent failure counts, next attempt, and per-item sanitized status.
-
-## Retention
-
-- Published outbox rows retained for audit
-- Temporary local sources should remain until required publication confirmed (worker run_dir policy unchanged)
+`artifact_publication` block on job detail; degrades to `null` with warning log when migration/store unavailable (`MissingMigrationOrStoreUnavailableError`).
 
 ## Tests
 
-`tests/infrastructure/pipeline/test_worker_phase3_part5_artifact_outbox.py` — 17 tests covering outbox registration, publication, partial failure, retry/permanent classification, claim/lease, skip-upload, continuation idempotency, executor integration, crash reconciliation, SQL concurrency (skipped when SQL/migration unavailable).
+- `test_worker_phase3_part5_artifact_outbox.py` — inline dispatcher / executor integration
+- `test_worker_phase3_part5_artifact_outbox_worker.py` — autonomous worker, staging, continuation, checksum, stale skip, API degrade
 
-## Known limitations
+SQL integration: concurrent claim / migration 0041 tests skip when SQL Server unavailable.
 
-- No background scheduler — retries occur on next worker dispatch or manual recovery
-- SQL integration tests require migration `0040_artifact_publication_outbox.sql` applied
-- Optional CSV outbox row created only when local file exists at registration time
+## Remaining limitations
+
+- Staging cleanup after publication not automated
+- SQL integration tests require live SQL Server + migrations applied
+- Frontend copy for retry vs permanent failure may need localized strings update
 
 ## Explicit non-goals (confirmed)
 
 - No provider re-execution
 - No domain persistence replay
 - No automatic full-job retry
-- No UI redesign

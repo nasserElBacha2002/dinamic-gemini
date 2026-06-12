@@ -171,6 +171,14 @@ def get_artifact_publication_outbox_store():
     return get_app_container().get_artifact_publication_outbox_store()
 
 
+def get_artifact_staging_store():
+    return get_app_container().get_artifact_staging_store()
+
+
+def get_artifact_publication_dispatcher():
+    return get_app_container().get_artifact_publication_dispatcher()
+
+
 def get_finalization_assessment_service():
     return get_app_container().get_finalization_assessment_service()
 

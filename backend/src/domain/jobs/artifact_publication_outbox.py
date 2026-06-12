@@ -23,6 +23,12 @@ class ArtifactSourceType(str, Enum):
     UNAVAILABLE = "unavailable"
 
 
+class ArtifactVerificationLevel(str, Enum):
+    CONFIRMED = "confirmed"
+    POSITIVE_EVIDENCE_ONLY = "positive_evidence_only"
+    UNVERIFIABLE = "unverifiable"
+
+
 @dataclass
 class ArtifactPublicationOutboxEntry:
     id: str
@@ -32,7 +38,11 @@ class ArtifactPublicationOutboxEntry:
     source_type: ArtifactSourceType
     source_reference: str | None = None
     destination_key: str | None = None
-    content_hash: str | None = None
+    source_sha256: str | None = None
+    content_hash: str | None = None  # legacy alias; prefer source_sha256
+    storage_etag: str | None = None
+    storage_checksum_value: str | None = None
+    storage_checksum_algorithm: str | None = None
     size_bytes: int | None = None
     status: ArtifactPublicationOutboxStatus = ArtifactPublicationOutboxStatus.PENDING
     attempt_count: int = 0
@@ -46,6 +56,8 @@ class ArtifactPublicationOutboxEntry:
     created_at: datetime | None = None
     updated_at: datetime | None = None
     published_at: datetime | None = None
+    verified_at: datetime | None = None
+    verification_level: ArtifactVerificationLevel | None = None
     version: int = 1
 
 

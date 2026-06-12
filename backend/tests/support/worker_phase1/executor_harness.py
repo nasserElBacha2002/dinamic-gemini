@@ -50,6 +50,9 @@ from src.infrastructure.persistence.memory_artifact_manifest_store import (
 from src.infrastructure.persistence.memory_artifact_publication_outbox_store import (
     MemoryArtifactPublicationOutboxStore,
 )
+from src.infrastructure.artifacts.filesystem_artifact_staging_store import (
+    FileSystemArtifactStagingStore,
+)
 from src.infrastructure.persistence.memory_finalization_stage_store import (
     MemoryFinalizationStageStore,
 )
@@ -176,6 +179,7 @@ class ExecutorHarness:
     stage_store: MemoryFinalizationStageStore | None = None
     manifest_store: MemoryArtifactManifestStore | None = None
     outbox_store: MemoryArtifactPublicationOutboxStore | None = None
+    staging_store: FileSystemArtifactStagingStore | None = None
     pipeline_invocations: int = field(default=0, init=False)
 
     @classmethod
@@ -294,6 +298,7 @@ class ExecutorHarness:
         stage_store = MemoryFinalizationStageStore()
         manifest_store = MemoryArtifactManifestStore()
         outbox_store = MemoryArtifactPublicationOutboxStore()
+        staging_store = FileSystemArtifactStagingStore(tmp_path / "artifact-staging")
 
         return cls(
             base_path=tmp_path,
@@ -316,6 +321,7 @@ class ExecutorHarness:
             stage_store=stage_store,
             manifest_store=manifest_store,
             outbox_store=outbox_store,
+            staging_store=staging_store,
         )
 
     def make_executor(self, **kwargs: Any) -> V3JobExecutor:
@@ -361,6 +367,7 @@ class ExecutorHarness:
             artifact_publication_outbox_store=kwargs.get(
                 "artifact_publication_outbox_store", self.outbox_store
             ),
+            artifact_staging_store=kwargs.get("artifact_staging_store", self.staging_store),
         )
 
     def seed_run_dir(self, report: dict[str, Any] | None = None) -> Path:

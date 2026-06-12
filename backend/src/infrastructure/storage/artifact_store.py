@@ -65,6 +65,15 @@ class ArtifactDownload:
     etag: str | None = None
 
 
+@dataclass(frozen=True)
+class StoredObjectMetadata:
+    file_size_bytes: int
+    etag: str | None = None
+    sha256: str | None = None
+    checksum_value: str | None = None
+    checksum_algorithm: str | None = None
+
+
 class ArtifactStore(ABC):
     """Storage provider contract for durable artifacts."""
 
@@ -91,3 +100,7 @@ class ArtifactStore(ABC):
 
     @abstractmethod
     def generate_signed_url(self, key: str, expires_in_sec: int) -> str: ...
+
+    def get_object_metadata(self, key: str, *, bucket: str | None = None) -> StoredObjectMetadata:
+        size = self.object_size_bytes(key, bucket=bucket)
+        return StoredObjectMetadata(file_size_bytes=size)

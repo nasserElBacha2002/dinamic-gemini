@@ -723,6 +723,27 @@ class ArtifactStorageSettings(BaseModel):
         ),
         description="Comma-separated retry backoff seconds for artifact publication. Env: ARTIFACT_PUBLICATION_BACKOFF_SECONDS.",
     )
+    artifact_publication_worker_enabled: bool = Field(
+        default_factory=lambda: os.getenv("ARTIFACT_PUBLICATION_WORKER_ENABLED", "false").lower()
+        in ("1", "true", "yes"),
+        description="Enable autonomous artifact publication outbox worker. Env: ARTIFACT_PUBLICATION_WORKER_ENABLED.",
+    )
+    artifact_publication_poll_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("ARTIFACT_PUBLICATION_POLL_SECONDS", "5")),
+        ge=1,
+        le=3600,
+        description="Poll interval for artifact publication worker. Env: ARTIFACT_PUBLICATION_POLL_SECONDS.",
+    )
+    artifact_publication_batch_size: int = Field(
+        default_factory=lambda: int(os.getenv("ARTIFACT_PUBLICATION_BATCH_SIZE", "10")),
+        ge=1,
+        le=500,
+        description="Max outbox rows claimed per worker poll. Env: ARTIFACT_PUBLICATION_BATCH_SIZE.",
+    )
+    artifact_staging_base_path: str = Field(
+        default_factory=lambda: (os.getenv("ARTIFACT_STAGING_BASE_PATH", "data/artifact-staging") or "data/artifact-staging").strip(),
+        description="Filesystem root for durable artifact staging bytes. Env: ARTIFACT_STAGING_BASE_PATH.",
+    )
 
     @staticmethod
     def parse_backoff_seconds(raw: str) -> tuple[int, ...]:

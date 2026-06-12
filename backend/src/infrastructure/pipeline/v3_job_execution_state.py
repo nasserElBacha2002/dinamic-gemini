@@ -627,3 +627,30 @@ class V3JobExecutionStateService:
             error_code=error_code.value,
             message=message,
         )
+
+    def mark_artifact_publication_retry_pending(
+        self,
+        job_id: str,
+        *,
+        tracker: JobFinalizationTracker,
+        retry_kinds: set[str],
+        published_kinds: set[str] | None = None,
+    ) -> None:
+        """Keep job active while autonomous outbox worker retries publication."""
+        now = self._clock.now()
+        tracker.set_current_step(CurrentFinalizationStep.PUBLISH_ARTIFACTS)
+        job = self._job_repo.get_by_id(job_id)
+        if job is None:
+            return
+        job.status = JobStatus.RUNNING
+        job.finalization_status = FinalizationStatus.IN_PROGRESS
+        job.current_finalization_step = CurrentFinalizationStep.PUBLISH_ARTIFACTS
+        job.last_heartbeat_at = now
+        job.updated_at = now
+        self._job_repo.save(job)
+        logger.info(
+            "artifact.publication.retry_pending job_id=%s retry_kinds=%s published_kinds=%s",
+            job_id,
+            sorted(retry_kinds),
+            sorted(published_kinds or []),
+        )

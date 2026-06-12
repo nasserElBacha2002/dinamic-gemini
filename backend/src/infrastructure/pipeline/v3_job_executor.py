@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from src.application.ports.artifact_manifest_store import ArtifactManifestStore
 from src.application.ports.artifact_publication_outbox_store import ArtifactPublicationOutboxStore
+from src.application.ports.artifact_staging_store import ArtifactStagingStore
 from src.application.ports.finalization_stage_store import FinalizationStageStore
 from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
@@ -40,7 +41,16 @@ from src.application.services.aisle_analysis_context_builder import (
 from src.application.services.artifact_finalization_continuation import (
     ArtifactFinalizationContinuationCoordinator,
 )
-from src.application.services.artifact_publication_dispatcher import ArtifactPublicationDispatcher
+from src.application.services.automatic_finalization_continuation_use_case import (
+    AutomaticFinalizationContinuationUseCase,
+)
+from src.application.services.artifact_publication_state_reconciler import (
+    ArtifactPublicationStateReconciler,
+)
+from src.application.services.artifact_publication_dispatcher import (
+    ArtifactPublicationDispatcher,
+    ArtifactSourceStagingFailedError,
+)
 from src.application.services.artifact_publication_retry_policy import DEFAULT_BACKOFF_SECONDS
 from src.application.services.finalization_projection_service import (
     FinalizationProjectionService,
@@ -235,6 +245,7 @@ class V3JobExecutor:
         finalization_stage_store: FinalizationStageStore | None = None,
         artifact_manifest_store: ArtifactManifestStore | None = None,
         artifact_publication_outbox_store: ArtifactPublicationOutboxStore | None = None,
+        artifact_staging_store: ArtifactStagingStore | None = None,
         artifact_publication_max_attempts: int = 5,
         artifact_publication_lease_seconds: int = 120,
         artifact_publication_backoff_seconds: tuple[int, ...] = DEFAULT_BACKOFF_SECONDS,
@@ -328,6 +339,21 @@ class V3JobExecutor:
                 stage_store=finalization_stage_store,
                 state_service=self._state,
             )
+            reconciler = ArtifactPublicationStateReconciler(
+                outbox_store=artifact_publication_outbox_store,
+                manifest_store=artifact_manifest_store,
+                artifact_store=artifact_store,
+                clock=clock,
+            )
+            automatic_continuation = AutomaticFinalizationContinuationUseCase(
+                job_repo=job_repo,
+                aisle_repo=aisle_repo,
+                inventory_repo=inventory_repo,
+                manifest_store=artifact_manifest_store,
+                stage_store=finalization_stage_store,
+                state_service=self._state,
+                clock=clock,
+            )
             self._artifact_dispatcher = ArtifactPublicationDispatcher(
                 outbox_store=artifact_publication_outbox_store,
                 manifest_store=artifact_manifest_store,
@@ -335,6 +361,9 @@ class V3JobExecutor:
                 artifact_store=artifact_store,
                 stage_recorder=self._stage_recorder,
                 continuation=continuation,
+                automatic_continuation=automatic_continuation,
+                staging_store=artifact_staging_store,
+                reconciler=reconciler,
                 clock=clock,
                 lease_seconds=artifact_publication_lease_seconds,
                 max_attempts=artifact_publication_max_attempts,
@@ -865,11 +894,28 @@ class V3JobExecutor:
         tracker: JobFinalizationTracker,
     ) -> bool:
         assert self._artifact_dispatcher is not None
-        self._artifact_dispatcher.register_publication_work(
-            job_id=p.job_id,
-            run_segment=RUN_ID,
-            run_dir=p.run_dir,
-        )
+        try:
+            self._artifact_dispatcher.register_publication_work(
+                job_id=p.job_id,
+                run_segment=RUN_ID,
+                run_dir=p.run_dir,
+            )
+        except ArtifactSourceStagingFailedError as exc:
+            p.exec_log.error(
+                "Artifacts",
+                f"Required artifact staging failed: {exc}",
+                payload={"error": str(exc)[:500]},
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.ARTIFACT_SOURCE_STAGING_FAILED,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Required artifact staging failed: {exc}",
+                metadata={"verification_required": True},
+            )
+            return True
         try:
             dispatch_result = self._artifact_dispatcher.dispatch_job(
                 job_id=p.job_id,
@@ -964,34 +1010,22 @@ class V3JobExecutor:
                 },
             )
             return True
-        if dispatch_result.retry_scheduled_kinds or dispatch_result.published_kinds:
-            p.exec_log.error(
+        if dispatch_result.retry_scheduled_kinds:
+            p.exec_log.info(
                 "Artifacts",
-                "Partial durable artifact publication; retry scheduled",
+                "Durable artifact publication incomplete; autonomous retry scheduled",
                 payload={
                     "retry_kinds": sorted(dispatch_result.retry_scheduled_kinds),
                     "published_kinds": sorted(dispatch_result.published_kinds),
                 },
             )
-            error_code = (
-                FinalizationErrorCode.ARTIFACT_PUBLISH_PARTIAL
-                if dispatch_result.published_kinds
-                else FinalizationErrorCode.ARTIFACT_PUBLISH_FAILED
-            )
-            self._state.fail_finalization_and_aisle(
+            self._state.mark_artifact_publication_retry_pending(
                 p.job_id,
-                p.aisle,
                 tracker=tracker,
-                error_code=error_code,
-                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
-                message="Durable artifact publication incomplete; retry scheduled",
-                metadata={
-                    "retry_scheduled_kinds": sorted(dispatch_result.retry_scheduled_kinds),
-                    "published_artifact_kinds": sorted(dispatch_result.published_kinds),
-                    "verification_required": True,
-                },
+                retry_kinds=dispatch_result.retry_scheduled_kinds,
+                published_kinds=dispatch_result.published_kinds,
             )
-            return True
+            return False
         p.exec_log.error("Artifacts", "Required artifact publication produced no durable outputs")
         self._state.fail_finalization_and_aisle(
             p.job_id,

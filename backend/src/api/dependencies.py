@@ -193,11 +193,17 @@ def get_job_stale_reconciler(
     from src.config import load_settings
 
     settings = load_settings()
+    outbox_store = None
+    try:
+        outbox_store = _get_artifact_publication_outbox_store()
+    except Exception:
+        outbox_store = None
     return JobStaleReconciler(
         job_repo=job_repo,
         aisle_repo=aisle_repo,
         clock=clock,
         stale_after_seconds=int(getattr(settings, "worker_stale_running_timeout_sec", 0) or 0),
+        artifact_publication_outbox=outbox_store,
     )
 
 

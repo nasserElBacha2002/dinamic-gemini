@@ -8,7 +8,11 @@ from typing import Any
 
 from src.application.ports.artifact_manifest_store import ArtifactManifestConcurrencyError
 from src.database.sqlserver import SqlServerClient
-from src.domain.jobs.artifact_manifest import ArtifactManifestEntry, ArtifactManifestStatus
+from src.domain.jobs.artifact_manifest import (
+    ArtifactManifestEntry,
+    ArtifactManifestStatus,
+    ArtifactVerificationLevel,
+)
 from src.domain.jobs.artifact_policy import ALL_EXPECTED_ARTIFACT_KINDS, REQUIRED_ARTIFACT_KINDS
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
@@ -24,15 +28,23 @@ def _ensure_utc(dt: datetime | None) -> datetime | None:
 def _row_to_entry(row: Any) -> ArtifactManifestEntry:
     required_raw = getattr(row, "required", True)
     required = bool(required_raw) if not isinstance(required_raw, bool) else required_raw
+    verification_raw = getattr(row, "verification_level", None)
+    verification = (
+        ArtifactVerificationLevel(str(verification_raw)) if verification_raw else None
+    )
     return ArtifactManifestEntry(
         job_id=str(row.job_id),
         artifact_kind=str(row.artifact_kind),
         required=required,
         storage_key=getattr(row, "storage_key", None),
+        source_sha256=getattr(row, "source_sha256", None) or getattr(row, "content_hash", None),
         content_hash=getattr(row, "content_hash", None),
+        storage_etag=getattr(row, "storage_etag", None),
         size_bytes=getattr(row, "size_bytes", None),
         status=ArtifactManifestStatus(str(row.status)),
         published_at=_ensure_utc(getattr(row, "published_at", None)),
+        verified_at=_ensure_utc(getattr(row, "verified_at", None)),
+        verification_level=verification,
         attempt_count=int(getattr(row, "attempt_count", 0) or 0),
         last_error=getattr(row, "last_error", None),
         version=int(getattr(row, "version", 1) or 1),
@@ -50,8 +62,9 @@ class SqlArtifactManifestStore:
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
-                SELECT job_id, artifact_kind, required, storage_key, content_hash, size_bytes,
-                       status, published_at, attempt_count, last_error, version,
+                SELECT job_id, artifact_kind, required, storage_key, source_sha256, content_hash,
+                       storage_etag, size_bytes, status, published_at, verified_at,
+                       verification_level, attempt_count, last_error, version,
                        created_at, updated_at
                 FROM job_artifact_manifest
                 WHERE job_id = ? AND artifact_kind = ?
@@ -65,8 +78,9 @@ class SqlArtifactManifestStore:
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
-                SELECT job_id, artifact_kind, required, storage_key, content_hash, size_bytes,
-                       status, published_at, attempt_count, last_error, version,
+                SELECT job_id, artifact_kind, required, storage_key, source_sha256, content_hash,
+                       storage_etag, size_bytes, status, published_at, verified_at,
+                       verification_level, attempt_count, last_error, version,
                        created_at, updated_at
                 FROM job_artifact_manifest
                 WHERE job_id = ?
@@ -252,6 +266,10 @@ class SqlArtifactManifestStore:
         required: bool,
         now: datetime,
         expected_version: int | None = None,
+        source_sha256: str | None = None,
+        storage_etag: str | None = None,
+        verified_at: datetime | None = None,
+        verification_level: ArtifactVerificationLevel | None = None,
     ) -> ArtifactManifestEntry:
         existing = self.get_entry(job_id, artifact_kind)
         if existing is None:
@@ -268,25 +286,32 @@ class SqlArtifactManifestStore:
         version = 1 if existing is None else existing.version + 1
         created_at = existing.created_at if existing and existing.created_at else now
         attempt = (existing.attempt_count + 1) if existing else 1
+        sha = source_sha256 or content_hash
+        verified = verified_at or now
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             if existing is None:
                 cur.execute(
                     """
                     INSERT INTO job_artifact_manifest (
-                        job_id, artifact_kind, required, storage_key, content_hash, size_bytes,
-                        status, published_at, attempt_count, last_error, version,
+                        job_id, artifact_kind, required, storage_key, source_sha256, content_hash,
+                        storage_etag, size_bytes, status, published_at, verified_at,
+                        verification_level, attempt_count, last_error, version,
                         created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job_id,
                         artifact_kind,
                         1 if required else 0,
                         storage_key,
+                        sha,
                         content_hash,
+                        storage_etag,
                         size_bytes,
                         ArtifactManifestStatus.PUBLISHED.value,
                         now,
+                        verified,
+                        verification_level.value if verification_level else None,
                         attempt,
                         None,
                         version,
@@ -298,10 +323,14 @@ class SqlArtifactManifestStore:
                 params = (
                     1 if required else 0,
                     storage_key,
+                    sha,
                     content_hash,
+                    storage_etag,
                     size_bytes,
                     ArtifactManifestStatus.PUBLISHED.value,
                     now,
+                    verified,
+                    verification_level.value if verification_level else None,
                     attempt,
                     version,
                     now,
@@ -312,9 +341,10 @@ class SqlArtifactManifestStore:
                     cur.execute(
                         """
                         UPDATE job_artifact_manifest
-                        SET required = ?, storage_key = ?, content_hash = ?, size_bytes = ?,
-                            status = ?, published_at = ?, attempt_count = ?, version = ?,
-                            updated_at = ?
+                        SET required = ?, storage_key = ?, source_sha256 = ?, content_hash = ?,
+                            storage_etag = ?, size_bytes = ?, status = ?, published_at = ?,
+                            verified_at = ?, verification_level = ?, attempt_count = ?,
+                            version = ?, updated_at = ?
                         WHERE job_id = ? AND artifact_kind = ? AND version = ?
                         """,
                         (*params, expected_version),
@@ -327,9 +357,10 @@ class SqlArtifactManifestStore:
                     cur.execute(
                         """
                         UPDATE job_artifact_manifest
-                        SET required = ?, storage_key = ?, content_hash = ?, size_bytes = ?,
-                            status = ?, published_at = ?, attempt_count = ?, version = ?,
-                            updated_at = ?
+                        SET required = ?, storage_key = ?, source_sha256 = ?, content_hash = ?,
+                            storage_etag = ?, size_bytes = ?, status = ?, published_at = ?,
+                            verified_at = ?, verification_level = ?, attempt_count = ?,
+                            version = ?, updated_at = ?
                         WHERE job_id = ? AND artifact_kind = ?
                         """,
                         params,

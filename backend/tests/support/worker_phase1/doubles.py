@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -156,6 +157,7 @@ class FailingArtifactStore:
         self._fail_mode = fail_mode
         self.uploaded_keys: list[str] = []
         self.uploaded_sizes: dict[str, int] = {}
+        self.uploaded_sha256: dict[str, str] = {}
 
     def _should_fail(self) -> bool:
         if self._fail_mode == "exact":
@@ -169,6 +171,7 @@ class FailingArtifactStore:
         payload = file_obj.read()
         self.uploaded_keys.append(path)
         self.uploaded_sizes[path] = len(payload)
+        self.uploaded_sha256[path] = hashlib.sha256(payload).hexdigest()
         return type(
             "StoredArtifactStub",
             (),
@@ -190,6 +193,18 @@ class FailingArtifactStore:
 
     def object_size_bytes(self, key: str, *, bucket: str | None = None) -> int:
         return self.uploaded_sizes.get(key, 10)
+
+    def get_object_metadata(self, key: str, *, bucket: str | None = None):
+        from src.infrastructure.storage.artifact_store import StoredObjectMetadata
+
+        _ = bucket
+        if key not in self.uploaded_sizes:
+            raise FileNotFoundError(key)
+        return StoredObjectMetadata(
+            file_size_bytes=self.uploaded_sizes[key],
+            etag="etag-test",
+            sha256=self.uploaded_sha256.get(key),
+        )
 
     def delete_file(self, path: str) -> None:
         pass

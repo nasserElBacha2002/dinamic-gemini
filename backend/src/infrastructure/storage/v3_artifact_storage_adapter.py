@@ -16,6 +16,7 @@ from src.infrastructure.storage.artifact_store import (
     ArtifactDownload,
     ArtifactStore,
     StoredArtifact,
+    StoredObjectMetadata,
 )
 
 
@@ -39,14 +40,27 @@ class V3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
         with open(full, "wb") as dest:
             shutil.copyfileobj(file_obj, dest)
         size = int(full.stat().st_size)
+        sha256 = self._sha256_file(full)
+        sidecar = full.with_suffix(full.suffix + ".sha256")
+        sidecar.write_text(sha256, encoding="utf-8")
         return StoredArtifact(
             storage_provider="local",
             storage_bucket=None,
             storage_key=key,
             content_type=(content_type or "application/octet-stream"),
             file_size_bytes=size,
-            etag=None,
+            etag=sha256,
         )
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        import hashlib
+
+        digest = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     def get_object(self, key: str) -> ArtifactDownload:
         full = self._resolve_safe(key)
@@ -86,6 +100,22 @@ class V3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
 
     def generate_signed_url(self, key: str, expires_in_sec: int) -> str:
         raise NotImplementedError("Signed URL is not supported for local storage provider")
+
+    def get_object_metadata(self, key: str, *, bucket: str | None = None) -> StoredObjectMetadata:
+        _ = bucket
+        full = self._resolve_safe(key)
+        if not full.is_file():
+            raise FileNotFoundError(f"local artifact not found: {key!r}")
+        size = int(full.stat().st_size)
+        sidecar = full.with_suffix(full.suffix + ".sha256")
+        sha256 = sidecar.read_text(encoding="utf-8").strip() if sidecar.is_file() else None
+        return StoredObjectMetadata(
+            file_size_bytes=size,
+            etag=sha256,
+            sha256=sha256,
+            checksum_value=sha256,
+            checksum_algorithm="sha256" if sha256 else None,
+        )
 
     # Backward-compatible application port methods
     def save_file(self, path: str, file_obj: BinaryIO, content_type: str) -> str:

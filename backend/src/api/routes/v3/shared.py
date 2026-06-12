@@ -46,7 +46,10 @@ from src.api.schemas.processing_schemas import (
     JobDetailResponse,
     JobSummary,
 )
-from src.application.ports.artifact_publication_outbox_store import ArtifactPublicationOutboxStore
+from src.application.ports.artifact_publication_outbox_store import (
+    ArtifactPublicationOutboxStore,
+    MissingMigrationOrStoreUnavailableError,
+)
 from src.infrastructure.pipeline.job_finalization_tracker import sanitize_finalization_error_metadata
 from src.domain.jobs.finalization_evidence import FinalizationAssessment
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
@@ -666,9 +669,17 @@ def job_to_detail(
     )
     publication_block = None
     if artifact_publication_outbox is not None:
-        publication_block = artifact_publication_to_response(
-            artifact_publication_outbox.summary_for_job(j.id)
-        )
+        try:
+            publication_block = artifact_publication_to_response(
+                artifact_publication_outbox.summary_for_job(j.id)
+            )
+        except MissingMigrationOrStoreUnavailableError as exc:
+            logging.getLogger(__name__).warning(
+                "artifact_publication.summary_unavailable job_id=%s error=%s",
+                j.id,
+                exc,
+            )
+            publication_block = None
     return JobDetailResponse(
         **summary.model_dump(),
         finalization_started_at=j.finalization_started_at,

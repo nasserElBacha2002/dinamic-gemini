@@ -3,50 +3,51 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
 
-RETRYABLE_ERROR_CODES: frozenset[str] = frozenset(
-    {
-        "storage_unavailable",
-        "storage_timeout",
-        "network_error",
-        "rate_limited",
-        "transient_storage_error",
-    }
+INTERNAL_PROGRAMMING_ERRORS = (
+    NameError,
+    TypeError,
+    AttributeError,
+    AssertionError,
+    NotImplementedError,
 )
 
-NON_RETRYABLE_ERROR_CODES: frozenset[str] = frozenset(
-    {
-        "source_missing",
-        "source_unavailable",
-        "checksum_mismatch",
-        "invalid_destination_key",
-        "unsupported_artifact_kind",
-        "authorization_error",
-        "object_mismatch",
-    }
+RETRYABLE_EXCEPTIONS = (
+    TimeoutError,
+    ConnectionError,
+    OSError,
 )
 
 DEFAULT_BACKOFF_SECONDS: tuple[int, ...] = (0, 30, 120, 600, 1800)
 
 
 def classify_publication_error(exc: BaseException) -> tuple[str, bool]:
+    if isinstance(exc, INTERNAL_PROGRAMMING_ERRORS):
+        return "internal_publication_error", False
     if isinstance(exc, FileNotFoundError):
         return "source_missing", False
+    if isinstance(exc, PermissionError):
+        return "authorization_error", False
+    if isinstance(exc, RETRYABLE_EXCEPTIONS):
+        if isinstance(exc, TimeoutError):
+            return "storage_timeout", True
+        return "storage_unavailable", True
     message = str(exc).lower()
     if "timeout" in message or "timed out" in message:
         return "storage_timeout", True
     if "rate limit" in message or "429" in message:
         return "rate_limited", True
-    if "unavailable" in message or "connection" in message or "network" in message:
-        return "storage_unavailable", True
-    if "mismatch" in message or "checksum" in message or "etag" in message:
+    if "checksum" in message or "sha256" in message:
+        return "checksum_mismatch", False
+    if "mismatch" in message:
         return "object_mismatch", False
     if "permission" in message or "authorization" in message or "403" in message:
         return "authorization_error", False
     if "invalid" in message and "key" in message:
         return "invalid_destination_key", False
-    return "transient_storage_error", True
+    if "unavailable" in message or "connection" in message or "network" in message:
+        return "storage_unavailable", True
+    return "publication_error", False
 
 
 def compute_next_attempt_at(

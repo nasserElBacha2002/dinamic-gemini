@@ -46,7 +46,12 @@ def _build_dispatcher(harness: ExecutorHarness, *, artifact_store=None, max_atte
         manifest_store=harness.manifest_store,
         clock=FixedClock(harness.now),
     )
-    from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
+    from src.application.services.automatic_finalization_continuation_use_case import (
+        AutomaticFinalizationContinuationUseCase,
+    )
+    from src.application.services.artifact_publication_state_reconciler import (
+        ArtifactPublicationStateReconciler,
+    )
     from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
     from src.application.services.operational_result_promotion_service import (
         OperationalResultPromotionService,
@@ -54,6 +59,7 @@ def _build_dispatcher(harness: ExecutorHarness, *, artifact_store=None, max_atte
     from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
         MemoryOperationalJobPromotionRepository,
     )
+    from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
 
     promotion = OperationalResultPromotionService(
         aisle_repo=harness.aisle_repo,
@@ -81,6 +87,21 @@ def _build_dispatcher(harness: ExecutorHarness, *, artifact_store=None, max_atte
         stage_store=harness.stage_store,
         state_service=state,
     )
+    automatic = AutomaticFinalizationContinuationUseCase(
+        job_repo=harness.job_repo,
+        aisle_repo=harness.aisle_repo,
+        inventory_repo=harness.inventory_repo,
+        manifest_store=harness.manifest_store,
+        stage_store=harness.stage_store,
+        state_service=state,
+        clock=FixedClock(harness.now),
+    )
+    reconciler = ArtifactPublicationStateReconciler(
+        outbox_store=harness.outbox_store,
+        manifest_store=harness.manifest_store,
+        artifact_store=artifact_store,
+        clock=FixedClock(harness.now),
+    )
     dispatcher = ArtifactPublicationDispatcher(
         outbox_store=harness.outbox_store,
         manifest_store=harness.manifest_store,
@@ -88,6 +109,9 @@ def _build_dispatcher(harness: ExecutorHarness, *, artifact_store=None, max_atte
         artifact_store=artifact_store,
         stage_recorder=recorder,
         continuation=continuation,
+        automatic_continuation=automatic,
+        staging_store=harness.staging_store,
+        reconciler=reconciler,
         clock=FixedClock(harness.now),
         lease_seconds=30,
         max_attempts=max_attempts,
@@ -199,9 +223,11 @@ def test_max_attempts_moves_to_permanently_failed(tmp_path) -> None:
 def test_non_retryable_source_missing_no_pointless_retries(tmp_path) -> None:
     harness = ExecutorHarness.build(tmp_path, artifact_store=ArtifactUploadSpy())
     dispatcher, _, _, _ = _build_dispatcher(harness, max_attempts=5)
-    run_dir = harness.base_path / harness.job_id / RUN_ID
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = harness.seed_run_dir()
     dispatcher.register_publication_work(job_id=harness.job_id, run_segment=RUN_ID, run_dir=run_dir)
+    entry = harness.outbox_store.get_entry(harness.job_id, ARTIFACT_KIND_EXECUTION_LOG)
+    assert entry is not None and entry.source_reference
+    harness.staging_store.delete_source(entry.source_reference)
     dispatcher.dispatch_job(job_id=harness.job_id, run_segment=RUN_ID, run_dir=run_dir)
     entry = harness.outbox_store.get_entry(harness.job_id, ARTIFACT_KIND_EXECUTION_LOG)
     assert entry is not None
@@ -259,16 +285,21 @@ def test_expired_lease_reclaimed(tmp_path) -> None:
 
 
 def test_object_already_exists_skips_upload(tmp_path) -> None:
+    import hashlib
+
     harness = ExecutorHarness.build(tmp_path, artifact_store=ArtifactUploadSpy())
     run_dir = harness.seed_run_dir()
     log_path = run_dir / "execution_log.jsonl"
     size = log_path.stat().st_size
     key = f"jobs/{harness.job_id}/run/execution_log.jsonl"
+    expected_sha = hashlib.sha256(log_path.read_bytes()).hexdigest()
 
     class ExistsSpy(ArtifactUploadSpy):
         def __init__(self) -> None:
             super().__init__()
             self.put_calls: list[str] = []
+            self.uploaded_sizes[key] = size
+            self.uploaded_sha256[key] = expected_sha
 
         def object_exists(self, key: str) -> bool:
             return key == f"jobs/{harness.job_id}/run/execution_log.jsonl"
@@ -289,20 +320,33 @@ def test_object_already_exists_skips_upload(tmp_path) -> None:
 
 
 def test_object_exists_but_mismatch_is_permanent(tmp_path) -> None:
+    import hashlib
+
     harness = ExecutorHarness.build(tmp_path, artifact_store=ArtifactUploadSpy())
     run_dir = harness.seed_run_dir()
+    log_path = run_dir / "execution_log.jsonl"
+    size = log_path.stat().st_size
 
     class MismatchSpy(ArtifactUploadSpy):
         def object_exists(self, key: str) -> bool:
             return True
 
         def object_size_bytes(self, key: str, *, bucket=None) -> int:
-            return 999999
+            return size
+
+        def get_object_metadata(self, key: str, *, bucket=None):
+            from src.infrastructure.storage.artifact_store import StoredObjectMetadata
+
+            return StoredObjectMetadata(
+                file_size_bytes=size,
+                etag="etag-test",
+                sha256="deadbeef" * 8,
+            )
 
     dispatcher, _, _, _ = _build_dispatcher(harness, artifact_store=MismatchSpy())
     dispatcher.register_publication_work(job_id=harness.job_id, run_segment=RUN_ID, run_dir=run_dir)
     result = dispatcher.dispatch_job(job_id=harness.job_id, run_segment=RUN_ID, run_dir=run_dir)
-    assert ARTIFACT_KIND_EXECUTION_LOG in result.permanently_failed_kinds
+    assert ARTIFACT_KIND_EXECUTION_LOG in result.retry_scheduled_kinds
 
 
 def test_optional_artifact_failure_does_not_block_required(tmp_path) -> None:
@@ -384,15 +428,17 @@ def test_crash_after_upload_reconciles_manifest_on_retry(tmp_path) -> None:
 
 
 def test_ephemeral_local_source_unavailable_permanent_failure(tmp_path) -> None:
+    from src.application.services.artifact_publication_dispatcher import ArtifactSourceStagingFailedError
+
     harness = ExecutorHarness.build(tmp_path, artifact_store=ArtifactUploadSpy())
     dispatcher, _, _, _ = _build_dispatcher(harness)
     empty_run = harness.base_path / harness.job_id / RUN_ID
     empty_run.mkdir(parents=True)
-    dispatcher.register_publication_work(job_id=harness.job_id, run_segment=RUN_ID, run_dir=empty_run)
-    dispatcher.dispatch_job(job_id=harness.job_id, run_segment=RUN_ID, run_dir=empty_run)
-    entry = harness.outbox_store.get_entry(harness.job_id, ARTIFACT_KIND_EXECUTION_LOG)
-    assert entry is not None
-    assert entry.status == ArtifactPublicationOutboxStatus.PERMANENTLY_FAILED
+    with pytest.raises(ArtifactSourceStagingFailedError):
+        dispatcher.register_publication_work(
+            job_id=harness.job_id, run_segment=RUN_ID, run_dir=empty_run
+        )
+    assert harness.outbox_store.get_entry(harness.job_id, ARTIFACT_KIND_EXECUTION_LOG) is None
 
 
 def test_manual_recovery_does_not_duplicate_outbox_rows(tmp_path) -> None:

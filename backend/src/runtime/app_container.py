@@ -627,6 +627,107 @@ class AppContainer:
             self._artifact_publication_outbox_store = MemoryArtifactPublicationOutboxStore()
         return self._artifact_publication_outbox_store
 
+    def get_artifact_staging_store(self):
+        from src.application.ports.artifact_staging_store import ArtifactStagingStore
+        from src.infrastructure.artifacts.filesystem_artifact_staging_store import (
+            FileSystemArtifactStagingStore,
+        )
+
+        base = self._settings.artifact_staging_base_path
+        return FileSystemArtifactStagingStore(base)
+
+    def get_artifact_publication_dispatcher(self) -> ArtifactPublicationDispatcher:
+        from src.application.services.artifact_finalization_continuation import (
+            ArtifactFinalizationContinuationCoordinator,
+        )
+        from src.application.services.artifact_publication_dispatcher import (
+            ArtifactPublicationDispatcher,
+        )
+        from src.application.services.artifact_publication_retry_policy import DEFAULT_BACKOFF_SECONDS
+        from src.application.services.artifact_publication_state_reconciler import (
+            ArtifactPublicationStateReconciler,
+        )
+        from src.application.services.automatic_finalization_continuation_use_case import (
+            AutomaticFinalizationContinuationUseCase,
+        )
+        from src.application.services.finalization_projection_service import (
+            FinalizationProjectionService,
+        )
+        from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
+        from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
+        from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+
+        settings = self._settings
+        backoff = settings.parse_backoff_seconds(settings.artifact_publication_backoff_seconds)
+        job_repo = self.get_job_repo()
+        aisle_repo = self.get_aisle_repo()
+        inventory_repo = self.get_inventory_repo()
+        clock = self.get_clock()
+        stage_store = self.get_finalization_stage_store()
+        manifest_store = self.get_artifact_manifest_store()
+        outbox_store = self.get_artifact_publication_outbox_store()
+        artifact_store = self.get_artifact_storage()
+        state = V3JobExecutionStateService(
+            job_repo=job_repo,
+            aisle_repo=aisle_repo,
+            inventory_repo=inventory_repo,
+            clock=clock,
+            inventory_status_reconciler=InventoryStatusReconciler(
+                inventory_repo=inventory_repo,
+                aisle_repo=aisle_repo,
+                clock=clock,
+            ),
+            operational_promotion_service=self.get_operational_result_promotion_service(),
+        )
+        projection = FinalizationProjectionService(
+            job_repo=job_repo,
+            stage_store=stage_store,
+            clock=clock,
+        )
+        recorder = FinalizationStageRecorder(
+            stage_store=stage_store,
+            projection=projection,
+            manifest_store=manifest_store,
+            clock=clock,
+        )
+        continuation = ArtifactFinalizationContinuationCoordinator(
+            job_repo=job_repo,
+            manifest_store=manifest_store,
+            stage_store=stage_store,
+            state_service=state,
+        )
+        automatic = AutomaticFinalizationContinuationUseCase(
+            job_repo=job_repo,
+            aisle_repo=aisle_repo,
+            inventory_repo=inventory_repo,
+            manifest_store=manifest_store,
+            stage_store=stage_store,
+            state_service=state,
+            clock=clock,
+        )
+        reconciler = ArtifactPublicationStateReconciler(
+            outbox_store=outbox_store,
+            manifest_store=manifest_store,
+            artifact_store=artifact_store,
+            clock=clock,
+        )
+        return ArtifactPublicationDispatcher(
+            outbox_store=outbox_store,
+            manifest_store=manifest_store,
+            stage_store=stage_store,
+            artifact_store=artifact_store,
+            stage_recorder=recorder,
+            continuation=continuation,
+            automatic_continuation=automatic,
+            staging_store=self.get_artifact_staging_store(),
+            reconciler=reconciler,
+            clock=clock,
+            lease_seconds=settings.artifact_publication_lease_seconds,
+            max_attempts=settings.artifact_publication_max_attempts,
+            backoff_seconds=backoff,
+            claimed_by_prefix="artifact-outbox-worker",
+        )
+
     def get_finalization_assessment_service(self) -> FinalizationAssessmentService:
         return FinalizationAssessmentService(
             job_repo=self.get_job_repo(),
