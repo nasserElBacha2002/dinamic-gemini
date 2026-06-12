@@ -2,7 +2,7 @@
  * Full-page (or embedded) aisle observability: execution logs, prompt inspection, attachments, traceability.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
@@ -23,8 +23,12 @@ import { ApiError } from '../api/types';
 import i18n from '../i18n';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
-import { getJobStatusLabel, jobStatusToBadgeSemantic } from '../utils/jobStatus';
+import { jobStatusToBadgeSemantic } from '../utils/jobStatus';
 import { resolveDisplayFinishedAt } from '../utils/jobDisplayTimestamps';
+import { deriveEffectiveJobDisplayState, shouldPollJobDetail } from '../utils/deriveJobDisplayState';
+import { getJobProcessingStatusLabel } from '../utils/jobFinalizationLabels';
+import AdminFinalizationRecoveryPanel from './AdminFinalizationRecoveryPanel';
+import { useAuth } from '../features/auth';
 import { useExecutionLogDownloads } from '../features/executionLogs/hooks/useExecutionLogDownloads';
 import ExecutionLogPanel from './ExecutionLogPanel';
 import { ErrorAlert, StatusBadge, useAppSnackbar } from './ui';
@@ -167,8 +171,19 @@ export default function AisleObservabilityWorkspace({
     enabled: active && Boolean(inventoryId && aisleId),
     limit: AISLE_OBSERVABILITY_JOBS_LIMIT,
   });
+  const { user } = useAuth();
+  const pollStartedAtRef = useRef<number>(Date.now());
+  useEffect(() => {
+    pollStartedAtRef.current = Date.now();
+  }, [selectedJobId]);
+
   const jobDetailQuery = useAisleJobDetail(inventoryId, aisleId, selectedJobId || undefined, {
     enabled: active && Boolean(inventoryId && aisleId && selectedJobId),
+    refetchInterval: (query) => {
+      const job = query.state.data;
+      const elapsed = Date.now() - pollStartedAtRef.current;
+      return shouldPollJobDetail(job ?? null, elapsed) ? 4000 : false;
+    },
   });
   const executionLogQuery = useExecutionLog(inventoryId, aisleId, selectedJobId || undefined, {
     enabled: active && Boolean(inventoryId && aisleId && selectedJobId) && logScope === 'job',
@@ -497,8 +512,17 @@ export default function AisleObservabilityWorkspace({
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center' }}>
                   {selectedJob ? (
                     <StatusBadge
-                      label={getJobStatusLabel(selectedJob.status)}
-                      semantic={jobStatusToBadgeSemantic(selectedJob.status)}
+                      label={getJobProcessingStatusLabel(selectedJob, t)}
+                      semantic={
+                        (() => {
+                          const display = deriveEffectiveJobDisplayState(selectedJob);
+                          if (display === 'failed') return 'error';
+                          if (display === 'completed') return 'success';
+                          if (display === 'completed_with_finalization_warning') return 'warning';
+                          if (display === 'canceled') return 'warning';
+                          return jobStatusToBadgeSemantic(selectedJob.status);
+                        })()
+                      }
                     />
                   ) : null}
                   {jobDetailQuery.isLoading ? (
@@ -531,6 +555,11 @@ export default function AisleObservabilityWorkspace({
                     </Box>
                   ))}
                 </Box>
+                <AdminFinalizationRecoveryPanel
+                  job={selectedJob}
+                  isAdmin={user?.role === 'administrator'}
+                  onRecovered={handleRefresh}
+                />
               </Stack>
             </Paper>
           ) : (

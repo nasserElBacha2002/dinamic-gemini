@@ -14,6 +14,12 @@ from src.application.use_cases.positions.list_aisle_positions import (
 from src.domain.aisle.entities import AisleStatus
 from src.domain.inventory.entities import InventoryStatus
 from src.domain.jobs.entities import JobStatus
+from src.domain.jobs.finalization import (
+    CurrentFinalizationStep,
+    FinalizationErrorCode,
+    FinalizationStatus,
+    LastCompletedFinalizationStep,
+)
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
@@ -59,7 +65,7 @@ def test_wkr_p1_t001_persist_fails_on_second_position_rolls_back_domain_rows(
     assert job.status == JobStatus.FAILED
     assert job.error_message is not None
     assert job.error_message.startswith("Persist:")
-    assert job.failure_code == "PROCESSING_FAILED"
+    assert job.failure_code == FinalizationErrorCode.DOMAIN_PERSISTENCE_FAILED.value
 
     aisle = harness.aisle_repo.get_by_id(harness.aisle_id)
     assert aisle is not None
@@ -263,7 +269,11 @@ def test_wkr_p1_t002_artifact_failure_after_persist_leaves_domain_rows_failed_jo
     job = harness.job_repo.get_by_id(harness.job_id)
     assert job is not None
     assert job.status == JobStatus.FAILED
-    assert "Durable artifact upload failed" in (job.error_message or "")
+    assert job.failure_code == FinalizationErrorCode.ARTIFACT_PUBLISH_FAILED.value
+    assert job.error_message and (
+        "Durable artifact upload failed" in job.error_message
+        or "Required artifact publication permanently failed" in job.error_message
+    )
     assert job.result_json is None or "durable_artifacts" not in (job.result_json or {})
 
     assert len(harness.positions_for_job()) == 2
@@ -304,8 +314,6 @@ def test_wkr_p1_t003_case_a_mark_success_job_save_fails_after_artifacts(
     assert spy.persist_calls == 1
     assert spy.recompute_calls == 1
     assert spy.artifact_put_calls >= 2
-    assert spy.mark_success_calls >= 1
-    assert spy.fail_job_and_aisle_calls >= 1
 
     succeeded_attempts = [
         a for a in failing_job.save_attempts if a.status == JobStatus.SUCCEEDED.value
@@ -316,6 +324,11 @@ def test_wkr_p1_t003_case_a_mark_success_job_save_fails_after_artifacts(
     job = inner_job.get_by_id(harness.job_id)
     assert job is not None
     assert job.status == JobStatus.FAILED
+    assert job.finalization_status == FinalizationStatus.FAILED
+    assert job.current_finalization_step == CurrentFinalizationStep.TERMINALIZE_JOB
+    assert job.last_completed_finalization_step == LastCompletedFinalizationStep.ARTIFACTS_PUBLISHED
+    assert job.finalization_error_code == FinalizationErrorCode.JOB_TERMINALIZATION_FAILED.value
+    assert job.failure_code == FinalizationErrorCode.JOB_TERMINALIZATION_FAILED.value
     aisle = harness.aisle_repo.get_by_id(harness.aisle_id)
     assert aisle is not None
     assert aisle.status == AisleStatus.FAILED
@@ -336,8 +349,6 @@ def test_wkr_p1_t003_case_b_aisle_save_fails_after_job_would_succeed(tmp_path) -
 
     assert handled is True
     assert len(artifact_store.uploaded_keys) >= 2
-    assert spy.mark_success_calls >= 1
-    assert spy.fail_job_and_aisle_calls >= 1
 
     processed_attempts = [
         a for a in failing_aisle.save_attempts if a.status == AisleStatus.PROCESSED.value
@@ -347,7 +358,15 @@ def test_wkr_p1_t003_case_b_aisle_save_fails_after_job_would_succeed(tmp_path) -
 
     job = harness.job_repo.get_by_id(harness.job_id)
     assert job is not None
-    assert job.status == JobStatus.FAILED
+    assert job.status == JobStatus.SUCCEEDED
+    assert job.finalization_status == FinalizationStatus.FAILED
+    assert job.current_finalization_step == CurrentFinalizationStep.UPDATE_AISLE
+    assert job.last_completed_finalization_step in (
+        LastCompletedFinalizationStep.JOB_TERMINALIZED,
+        LastCompletedFinalizationStep.OPERATIONAL_RESULT_PROMOTED,
+    )
+    assert job.finalization_error_code == FinalizationErrorCode.AISLE_RECONCILIATION_FAILED.value
+    assert job.failure_code == FinalizationErrorCode.AISLE_RECONCILIATION_FAILED.value
     aisle = inner_aisle.get_by_id(harness.aisle_id)
     assert aisle is not None
     assert aisle.status != AisleStatus.PROCESSED
@@ -383,12 +402,15 @@ def test_wkr_p1_t003_case_c_inventory_reconcile_fails_after_terminal_writes(
     assert handled is True
     assert len(reconcile_calls) >= 2
     assert spy.persist_calls == 1
-    assert spy.mark_success_calls >= 1
     assert spy.artifact_put_calls >= 2
-    assert spy.fail_job_and_aisle_calls >= 1
     job = harness.job_repo.get_by_id(harness.job_id)
     assert job is not None
-    assert job.status == JobStatus.FAILED
+    assert job.status == JobStatus.SUCCEEDED
+    assert job.finalization_status == FinalizationStatus.FAILED
+    assert job.current_finalization_step == CurrentFinalizationStep.RECONCILE_INVENTORY
+    assert job.last_completed_finalization_step == LastCompletedFinalizationStep.AISLE_UPDATED
+    assert job.finalization_error_code == FinalizationErrorCode.INVENTORY_RECONCILIATION_FAILED.value
+    assert job.failure_code == FinalizationErrorCode.INVENTORY_RECONCILIATION_FAILED.value
     aisle = harness.aisle_repo.get_by_id(harness.aisle_id)
     assert aisle is not None
     assert aisle.status == AisleStatus.FAILED
@@ -540,15 +562,15 @@ def test_wkr_p1_t006b_cancel_after_persist_stops_before_artifacts_not_mark_succe
     assert spy.recompute_calls == 1
     assert spy.artifact_put_calls == 0
     assert spy.mark_success_calls == 0
-    assert spy.fail_job_and_aisle_calls >= 1
-    assert spy.cancel_job_and_aisle_calls == 0
+    assert spy.fail_job_and_aisle_calls == 0
+    assert spy.cancel_job_and_aisle_calls >= 1
     assert len(harness.positions_for_job()) == 2
     job = harness.job_repo.get_by_id(harness.job_id)
     assert job is not None
-    assert job.status == JobStatus.FAILED
-    assert "artifact" in (job.error_message or "").lower() or "canceled" in (
-        job.error_message or ""
-    ).lower()
+    assert job.status == JobStatus.CANCELED
+    assert job.finalization_status.value == "canceled"
+    assert job.failure_code == FinalizationErrorCode.FINALIZATION_CANCELED.value
+    assert job.last_completed_finalization_step.value == "domain_results_persisted"
     aisle = harness.aisle_repo.get_by_id(harness.aisle_id)
     assert aisle is not None
     assert aisle.status == AisleStatus.FAILED

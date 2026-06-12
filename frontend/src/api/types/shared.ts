@@ -43,6 +43,25 @@ export const JOB_STATUSES = [
 ] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
+export const FINALIZATION_STATUSES = [
+  'not_started',
+  'in_progress',
+  'failed',
+  'completed',
+  'canceled',
+] as const;
+export type FinalizationStatus = (typeof FINALIZATION_STATUSES)[number];
+
+export const FINALIZATION_STEPS = [
+  'persist_domain_results',
+  'publish_artifacts',
+  'terminalize_job',
+  'promote_operational_result',
+  'update_aisle',
+  'reconcile_inventory',
+] as const;
+export type FinalizationStep = (typeof FINALIZATION_STEPS)[number];
+
 /** Backend position status values (result model — Épica 6). */
 export const POSITION_STATUSES = ['detected', 'reviewed', 'corrected', 'deleted'] as const;
 export type PositionStatus = (typeof POSITION_STATUSES)[number];

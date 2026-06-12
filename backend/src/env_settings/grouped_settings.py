@@ -705,6 +705,52 @@ class ArtifactStorageSettings(BaseModel):
             "Env: ARTIFACT_STORE_MAX_JSON_LOAD_BYTES."
         ),
     )
+    artifact_publication_max_attempts: int = Field(
+        default_factory=lambda: int(os.getenv("ARTIFACT_PUBLICATION_MAX_ATTEMPTS", "5")),
+        ge=1,
+        le=20,
+        description="Max publication attempts per artifact outbox row. Env: ARTIFACT_PUBLICATION_MAX_ATTEMPTS.",
+    )
+    artifact_publication_lease_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("ARTIFACT_PUBLICATION_LEASE_SECONDS", "120")),
+        ge=10,
+        le=3600,
+        description="Claim lease duration for artifact publication dispatcher. Env: ARTIFACT_PUBLICATION_LEASE_SECONDS.",
+    )
+    artifact_publication_backoff_seconds: str = Field(
+        default_factory=lambda: os.getenv(
+            "ARTIFACT_PUBLICATION_BACKOFF_SECONDS", "0,30,120,600,1800"
+        ),
+        description="Comma-separated retry backoff seconds for artifact publication. Env: ARTIFACT_PUBLICATION_BACKOFF_SECONDS.",
+    )
+    artifact_publication_worker_enabled: bool = Field(
+        default_factory=lambda: os.getenv("ARTIFACT_PUBLICATION_WORKER_ENABLED", "false").lower()
+        in ("1", "true", "yes"),
+        description="Enable autonomous artifact publication outbox worker. Env: ARTIFACT_PUBLICATION_WORKER_ENABLED.",
+    )
+    artifact_publication_poll_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("ARTIFACT_PUBLICATION_POLL_SECONDS", "5")),
+        ge=1,
+        le=3600,
+        description="Poll interval for artifact publication worker. Env: ARTIFACT_PUBLICATION_POLL_SECONDS.",
+    )
+    artifact_publication_batch_size: int = Field(
+        default_factory=lambda: int(os.getenv("ARTIFACT_PUBLICATION_BATCH_SIZE", "10")),
+        ge=1,
+        le=500,
+        description="Max outbox rows claimed per worker poll. Env: ARTIFACT_PUBLICATION_BATCH_SIZE.",
+    )
+    artifact_staging_base_path: str = Field(
+        default_factory=lambda: (os.getenv("ARTIFACT_STAGING_BASE_PATH", "data/artifact-staging") or "data/artifact-staging").strip(),
+        description="Filesystem root for durable artifact staging bytes. Env: ARTIFACT_STAGING_BASE_PATH.",
+    )
+
+    @staticmethod
+    def parse_backoff_seconds(raw: str) -> tuple[int, ...]:
+        parts = [p.strip() for p in (raw or "").split(",") if p.strip()]
+        if not parts:
+            return (0, 30, 120, 600, 1800)
+        return tuple(max(0, int(p)) for p in parts)
 
     @field_validator("artifact_storage_provider", mode="before")
     @classmethod

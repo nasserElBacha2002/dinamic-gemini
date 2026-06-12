@@ -26,6 +26,9 @@ from src.application.services.default_job_scoped_recompute_factory import (
 )
 from src.application.services.final_count_builder import FinalCountBuilder
 from src.application.services.label_normalization import LabelNormalizationService
+from src.application.services.operational_result_promotion_service import (
+    OperationalResultPromotionService,
+)
 from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
@@ -38,8 +41,23 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.labels.merge import MergeRuleEngine
+from src.infrastructure.artifacts.filesystem_artifact_staging_store import (
+    FileSystemArtifactStagingStore,
+)
+from src.infrastructure.persistence.memory_artifact_manifest_store import (
+    MemoryArtifactManifestStore,
+)
+from src.infrastructure.persistence.memory_artifact_publication_outbox_store import (
+    MemoryArtifactPublicationOutboxStore,
+)
+from src.infrastructure.persistence.memory_finalization_stage_store import (
+    MemoryFinalizationStageStore,
+)
 from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWorkFactory,
+)
+from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
+    MemoryOperationalJobPromotionRepository,
 )
 from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
     default_map_hybrid_report_to_domain,
@@ -158,6 +176,10 @@ class ExecutorHarness:
     source_asset_repo: SourceAssetRepository
     artifact_store: Any = None
     recompute_uc: RecomputeConsolidatedCountsUseCase | None = None
+    stage_store: MemoryFinalizationStageStore | None = None
+    manifest_store: MemoryArtifactManifestStore | None = None
+    outbox_store: MemoryArtifactPublicationOutboxStore | None = None
+    staging_store: FileSystemArtifactStagingStore | None = None
     pipeline_invocations: int = field(default=0, init=False)
 
     @classmethod
@@ -273,6 +295,11 @@ class ExecutorHarness:
                 position_repo=position_repo,
             )
 
+        stage_store = MemoryFinalizationStageStore()
+        manifest_store = MemoryArtifactManifestStore()
+        outbox_store = MemoryArtifactPublicationOutboxStore()
+        staging_store = FileSystemArtifactStagingStore(tmp_path / "artifact-staging")
+
         return cls(
             base_path=tmp_path,
             job_id=job_id,
@@ -291,12 +318,28 @@ class ExecutorHarness:
             source_asset_repo=resolved_source_asset_repo,
             artifact_store=artifact_store,
             recompute_uc=recompute_uc,
+            stage_store=stage_store,
+            manifest_store=manifest_store,
+            outbox_store=outbox_store,
+            staging_store=staging_store,
         )
 
     def make_executor(self, **kwargs: Any) -> V3JobExecutor:
+        job_repo = kwargs.get("job_repo", self.job_repo)
+        aisle_repo = kwargs.get("aisle_repo", self.aisle_repo)
+        promotion_svc = kwargs.get("operational_promotion_service")
+        if promotion_svc is None:
+            promotion_svc = OperationalResultPromotionService(
+                aisle_repo=aisle_repo,
+                job_repo=job_repo,
+                promotion_repo=MemoryOperationalJobPromotionRepository(
+                    aisle_repo=aisle_repo,
+                    job_repo=job_repo,
+                ),
+            )
         return V3JobExecutor(
-            job_repo=kwargs.get("job_repo", self.job_repo),
-            aisle_repo=kwargs.get("aisle_repo", self.aisle_repo),
+            job_repo=job_repo,
+            aisle_repo=aisle_repo,
             source_asset_repo=self.source_asset_repo,
             position_repo=kwargs.get("position_repo", self.position_repo),
             product_record_repo=self.product_repo,
@@ -312,9 +355,19 @@ class ExecutorHarness:
                 "job_scoped_recompute_factory", DefaultJobScopedRecomputeFactory()
             ),
             job_result_uow_factory=kwargs.get(
-                "job_result_uow_factory", MemoryJobResultUnitOfWorkFactory()
+                "job_result_uow_factory",
+                MemoryJobResultUnitOfWorkFactory(
+                    stage_store=kwargs.get("stage_store", self.stage_store)
+                ),
             ),
             recompute_consolidated_uc=kwargs.get("recompute_uc", self.recompute_uc),
+            operational_promotion_service=promotion_svc,
+            finalization_stage_store=kwargs.get("finalization_stage_store", self.stage_store),
+            artifact_manifest_store=kwargs.get("artifact_manifest_store", self.manifest_store),
+            artifact_publication_outbox_store=kwargs.get(
+                "artifact_publication_outbox_store", self.outbox_store
+            ),
+            artifact_staging_store=kwargs.get("artifact_staging_store", self.staging_store),
         )
 
     def seed_run_dir(self, report: dict[str, Any] | None = None) -> Path:

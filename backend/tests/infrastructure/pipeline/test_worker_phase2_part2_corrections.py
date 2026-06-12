@@ -283,6 +283,8 @@ def test_p2_p2_c012_sql_shared_connection() -> None:
 
     uow = SqlJobResultUnitOfWorkFactory(client)(sql_bundle)
     with uow:
+        assert uow.scope_store is not None
+        assert uow.finalization_evidence is not None
         conn = mock_conn
         repos = uow.repositories
         for repo in (

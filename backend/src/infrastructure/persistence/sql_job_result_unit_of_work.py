@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+from src.application.ports.finalization_evidence_writer import FinalizationEvidenceWriter
 from src.application.ports.job_result_scope_store import JobResultScopeStore
 from src.application.ports.job_result_unit_of_work import (
     JobResultRepositories,
@@ -15,6 +16,10 @@ from src.infrastructure.database.sql_transaction import SqlServerTransaction, Tr
 from src.infrastructure.persistence.job_result_bundle_validation import (
     assert_sql_job_result_bundle,
 )
+from src.infrastructure.persistence.sql_finalization_evidence_writer import (
+    SqlFinalizationEvidenceWriter,
+)
+from src.infrastructure.persistence.sql_finalization_stage_store import SqlFinalizationStageStore
 from src.infrastructure.persistence.sql_job_result_scope_store import SqlJobResultScopeStore
 from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
 from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository
@@ -37,6 +42,7 @@ class SqlJobResultUnitOfWork:
     _tx: SqlServerTransaction | None = field(default=None, init=False)
     _tx_repos: JobResultRepositories | None = field(default=None, init=False)
     _scope_store: JobResultScopeStore | None = field(default=None, init=False)
+    _evidence_writer: SqlFinalizationEvidenceWriter | None = field(default=None, init=False)
     _committed: bool = field(default=False, init=False)
     _rolled_back: bool = field(default=False, init=False)
 
@@ -52,11 +58,17 @@ class SqlJobResultUnitOfWork:
             raise RuntimeError("SqlJobResultUnitOfWork is not active")
         return self._scope_store
 
+    @property
+    def finalization_evidence(self) -> FinalizationEvidenceWriter | None:
+        return self._evidence_writer
+
     def commit(self) -> None:
         if self._rolled_back:
             raise RuntimeError("Cannot commit after rollback")
         if self._tx is None:
             raise RuntimeError("SqlJobResultUnitOfWork is not active")
+        if self._evidence_writer is not None:
+            self._evidence_writer.flush()
         self._tx.commit()
         self._committed = True
         logger.debug("SqlJobResultUnitOfWork committed")
@@ -64,6 +76,8 @@ class SqlJobResultUnitOfWork:
     def rollback(self) -> None:
         if self._rolled_back:
             return
+        if self._evidence_writer is not None:
+            self._evidence_writer.discard()
         if self._tx is not None and self._tx.state == TransactionState.ACTIVE:
             self._tx.rollback()
         self._committed = False
@@ -83,6 +97,8 @@ class SqlJobResultUnitOfWork:
             final_count_repo=SqlFinalCountRepository(self._client, connection=conn),
         )
         self._scope_store = SqlJobResultScopeStore(self._tx_repos, connection=conn)
+        stage_store = SqlFinalizationStageStore(self._client, connection=conn)
+        self._evidence_writer = SqlFinalizationEvidenceWriter(stage_store)
         self._committed = False
         self._rolled_back = False
         return self
@@ -99,6 +115,7 @@ class SqlJobResultUnitOfWork:
             self._tx = None
             self._tx_repos = None
             self._scope_store = None
+            self._evidence_writer = None
 
 
 class SqlJobResultUnitOfWorkFactory:

@@ -10,6 +10,8 @@ import type {
   InventoryProcessingMode,
   AisleStatus,
   JobStatus,
+  FinalizationStatus,
+  FinalizationStep,
   PositionStatus,
   EvidenceType,
   ReviewActionType,
@@ -179,6 +181,10 @@ export interface AisleJobSummary {
   provider_name?: string | null;
   model_name?: string | null;
   prompt_key?: string | null;
+  finalization_status?: FinalizationStatus | string | null;
+  current_finalization_step?: FinalizationStep | string | null;
+  last_completed_finalization_step?: string | null;
+  finalization_error_code?: string | null;
 }
 
 export interface Aisle {
@@ -344,6 +350,28 @@ export interface AdminAiConfigResponse {
   global_instructions_note: string;
 }
 
+// ─── Jobs / finalization ───────────────────────────────────────────────────
+
+export interface FinalizationStageAssessment {
+  stage: string;
+  status: string;
+  evidence_level: string;
+  completed_at?: string | null;
+  verification_required: boolean;
+  last_error_code?: string | null;
+}
+
+export interface FinalizationAssessment {
+  outcome: string;
+  technical_result_status: string;
+  finalization_status: string;
+  last_confirmed_stage?: string | null;
+  next_required_stage?: string | null;
+  recovery_candidate: boolean;
+  blocking_reason?: string | null;
+  stages: Record<string, FinalizationStageAssessment>;
+}
+
 export interface JobSummary {
   id: string;
   status: JobStatus | string;
@@ -368,6 +396,16 @@ export interface JobSummary {
   prompt_key?: string | null;
   /** Tracked prompt line (e.g. prompt_key@v2.1); empty if unknown. */
   prompt_version?: string | null;
+  finalization_status?: FinalizationStatus | string | null;
+  current_finalization_step?: FinalizationStep | string | null;
+  last_completed_finalization_step?: string | null;
+  finalization_error_code?: string | null;
+  finalization_error_metadata?: Record<string, unknown> | null;
+  finalization_started_at?: string | null;
+  finalization_completed_at?: string | null;
+  domain_persisted_at?: string | null;
+  artifacts_published_at?: string | null;
+  finalization_assessment?: FinalizationAssessment | null;
   /** True when this job is the aisle operational pointer (Phase 6 jobs list). */
   is_operational?: boolean;
   /** Present when ``result_json`` includes a validated LLM cost snapshot (list jobs; additive). */

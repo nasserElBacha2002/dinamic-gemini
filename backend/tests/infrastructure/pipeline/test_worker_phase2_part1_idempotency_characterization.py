@@ -260,7 +260,7 @@ def test_p2_t003_real_failed_job_retry_isolates_all_layers(tmp_path: Path) -> No
     failed_job = harness.job_repo.get_by_id("job-failed")
     assert failed_job is not None
     assert failed_job.status == JobStatus.FAILED
-    assert failed_job.failure_code == "PROCESSING_FAILED"
+    assert failed_job.failure_code == "DOMAIN_PERSISTENCE_FAILED"
     assert failed_job.error_message is not None
     assert failed_job.error_message.startswith("Persist:")
 

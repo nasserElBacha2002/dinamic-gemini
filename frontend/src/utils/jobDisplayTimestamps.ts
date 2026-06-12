@@ -10,7 +10,13 @@ function parseTs(iso: string): number {
   return Number.isNaN(t) ? NaN : t;
 }
 
-const TERMINAL_LOG_MESSAGES = new Set(['job.succeeded', 'job.failed', 'job.canceled']);
+const TERMINAL_LOG_MESSAGES = new Set([
+  'job.succeeded',
+  'provider_pipeline.completed',
+  'analysis.completed',
+  'job.failed',
+  'job.canceled',
+]);
 
 export type JobLikeForFinished = {
   status: string;

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from src.application.ports.finalization_evidence_writer import FinalizationEvidenceWriter
 from src.application.ports.job_result_scope_store import JobResultScopeStore
 from src.application.ports.repositories import (
     EvidenceRepository,
@@ -37,6 +38,9 @@ class JobResultUnitOfWork(Protocol):
 
     @property
     def scope_store(self) -> JobResultScopeStore: ...
+
+    @property
+    def finalization_evidence(self) -> FinalizationEvidenceWriter | None: ...
 
     def commit(self) -> None: ...
 

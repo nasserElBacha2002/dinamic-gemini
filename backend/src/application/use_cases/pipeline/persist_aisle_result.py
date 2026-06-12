@@ -35,6 +35,7 @@ from src.application.ports.repositories import (
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
 )
+from src.domain.jobs.finalization_evidence import EvidenceLevel, FinalizationStage
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,15 @@ class PersistAisleResultUseCase:
                 )
                 self._insert_mapped(active, command, mapped)
                 self._recompute_job_scoped(active, command, inventory_id, job_id)
+                writer = uow.finalization_evidence
+                if writer is not None:
+                    writer.mark_stage_completed(
+                        job_id=job_id,
+                        stage=FinalizationStage.DOMAIN_RESULTS,
+                        evidence_level=EvidenceLevel.TRANSACTIONAL,
+                        completed_at=now,
+                        verification_source="persist_uow",
+                    )
                 uow.commit()
                 logger.info(
                     "job_result_replacement committed inventory_id=%s aisle_id=%s job_id=%s",

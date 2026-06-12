@@ -3,6 +3,7 @@
  */
 
 import type { Aisle } from '../../../api/types';
+import { deriveEffectiveJobDisplayState } from '../../../utils/deriveJobDisplayState';
 
 /** Minimal aisle fields for process-menu gating (avoids tying the helper to full list DTOs). */
 export type AisleProcessMenuInput = Pick<Aisle, 'id' | 'status' | 'assets_count'>;
@@ -29,8 +30,14 @@ export interface ProcessAisleMenuContext {
 }
 
 export function isAisleProcessingBusy(aisle: AisleProcessMenuInput, processingAisleId: string | null): boolean {
+  if (processingAisleId === aisle.id) return true;
+  const latestJob = (aisle as { latest_job?: { status?: string; finalization_status?: string } }).latest_job;
+  if (latestJob) {
+    const terminal = deriveEffectiveJobDisplayState(latestJob);
+    if (terminal !== 'processing') return false;
+  }
   const status = (aisle.status || '').toLowerCase();
-  return status === 'queued' || status === 'processing' || processingAisleId === aisle.id;
+  return status === 'queued' || status === 'processing';
 }
 
 export function computeProcessAisleMenuState(

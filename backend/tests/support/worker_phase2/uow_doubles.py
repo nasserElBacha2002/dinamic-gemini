@@ -64,9 +64,15 @@ class SpyScopeStoreUnitOfWorkFactory:
         return uow
 
 
-@dataclass
 class _SpyScopeStoreMemoryUoW(MemoryJobResultUnitOfWork):
-    factory: SpyScopeStoreUnitOfWorkFactory
+    def __init__(
+        self,
+        repositories: JobResultRepositories,
+        factory: SpyScopeStoreUnitOfWorkFactory,
+        stage_store=None,
+    ) -> None:
+        super().__init__(repositories=repositories, stage_store=stage_store)
+        self.factory = factory
 
     def __enter__(self) -> _SpyScopeStoreMemoryUoW:
         super().__enter__()

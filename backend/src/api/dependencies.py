@@ -44,6 +44,7 @@ from src.application.ports.services import MetricsCalculator, WorkerLaunchServic
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.analytics_query_service import AnalyticsQueryService
+from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.operational_execution_config_resolver import (
@@ -169,6 +170,12 @@ from src.runtime.v3_deps import (
     get_supplier_reference_image_repo,
     get_worker_launch_service,
 )
+from src.runtime.v3_deps import (
+    get_artifact_publication_outbox_store as _get_artifact_publication_outbox_store,
+)
+from src.runtime.v3_deps import (
+    get_finalization_assessment_service as _get_finalization_assessment_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -184,16 +191,32 @@ def get_worker_launch_service_dep() -> WorkerLaunchService:
 
 def get_job_stale_reconciler(
     job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
     clock: Clock = Depends(get_clock),
 ) -> JobStaleReconciler:
     from src.config import load_settings
 
     settings = load_settings()
+    outbox_store = None
+    try:
+        outbox_store = _get_artifact_publication_outbox_store()
+    except Exception:
+        outbox_store = None
     return JobStaleReconciler(
         job_repo=job_repo,
+        aisle_repo=aisle_repo,
         clock=clock,
         stale_after_seconds=int(getattr(settings, "worker_stale_running_timeout_sec", 0) or 0),
+        artifact_publication_outbox=outbox_store,
     )
+
+
+def get_finalization_assessment_service() -> FinalizationAssessmentService:
+    return _get_finalization_assessment_service()
+
+
+def get_artifact_publication_outbox_store():
+    return _get_artifact_publication_outbox_store()
 
 
 def get_operational_execution_config_resolver() -> OperationalExecutionConfigResolver:

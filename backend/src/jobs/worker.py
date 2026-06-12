@@ -62,11 +62,15 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
         from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
         from src.runtime.v3_deps import (
             get_aisle_repo,
+            get_artifact_manifest_store,
+            get_artifact_publication_outbox_store,
+            get_artifact_staging_store,
             get_artifact_store,
             get_client_supplier_repo,
             get_clock,
             get_evidence_repo,
             get_final_count_repo,
+            get_finalization_stage_store,
             get_inventory_repo,
             get_job_repo,
             get_job_result_uow_factory,
@@ -133,6 +137,10 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             operational_promotion_service=get_operational_result_promotion_service(),
             client_supplier_repo=get_client_supplier_repo(),
             supplier_prompt_config_repo=get_supplier_prompt_config_repo(),
+            finalization_stage_store=get_finalization_stage_store(),
+            artifact_manifest_store=get_artifact_manifest_store(),
+            artifact_publication_outbox_store=get_artifact_publication_outbox_store(),
+            artifact_staging_store=get_artifact_staging_store(),
         )
         append_worker_bootstrap_event(
             job_id=job_id,

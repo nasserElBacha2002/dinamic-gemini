@@ -14,7 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from src.application.ports.artifact_manifest_store import ArtifactManifestStore
+from src.application.ports.artifact_publication_outbox_store import ArtifactPublicationOutboxStore
+from src.application.ports.artifact_staging_store import ArtifactStagingStore
 from src.application.ports.clock import Clock
+from src.application.ports.finalization_stage_store import FinalizationStageStore
 from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
 from src.application.ports.repositories import (
@@ -34,6 +38,23 @@ from src.application.ports.repositories import (
 )
 from src.application.services.aisle_analysis_context_builder import (
     AisleAnalysisContextBuilder,
+)
+from src.application.services.artifact_finalization_continuation import (
+    ArtifactFinalizationContinuationCoordinator,
+)
+from src.application.services.artifact_publication_dispatcher import (
+    ArtifactPublicationDispatcher,
+    ArtifactSourceStagingFailedError,
+)
+from src.application.services.artifact_publication_retry_policy import DEFAULT_BACKOFF_SECONDS
+from src.application.services.artifact_publication_state_reconciler import (
+    ArtifactPublicationStateReconciler,
+)
+from src.application.services.automatic_finalization_continuation_use_case import (
+    AutomaticFinalizationContinuationUseCase,
+)
+from src.application.services.finalization_projection_service import (
+    FinalizationProjectionService,
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_engine_params import coerce_prompt_parity_mode
@@ -57,10 +78,24 @@ from src.application.use_cases.pipeline.recompute_consolidated_counts import (
 )
 from src.config import Settings, load_settings
 from src.domain.aisle.entities import Aisle
+from src.domain.jobs.artifact_manifest import ArtifactManifestStatus
+from src.domain.jobs.artifact_policy import is_required_artifact_kind
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.jobs.finalization import (
+    CurrentFinalizationStep,
+    FinalizationErrorCode,
+    LastCompletedFinalizationStep,
+)
+from src.infrastructure.pipeline.finalization_errors import (
+    ArtifactPublishError,
+    ArtifactPublishPartialError,
+    ArtifactStoreUnavailableError,
+)
+from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
 from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
     default_map_hybrid_report_to_domain,
 )
+from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
 from src.infrastructure.pipeline.v3_execution_artifacts_service import V3ExecutionArtifactsService
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
 from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
@@ -159,6 +194,7 @@ class _V3FinalizeAfterPipelineParams:
     report_path: Path
     report: dict[str, Any]
     cancellation_checkpoint: Callable[[str, str | None, str], None]
+    cancel_event_emitted: dict[str, bool]
 
 
 @dataclass(frozen=True)
@@ -209,6 +245,13 @@ class V3JobExecutor:
         operational_promotion_service: OperationalResultPromotionService | None = None,
         client_supplier_repo: ClientSupplierRepository | None = None,
         supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None,
+        finalization_stage_store: FinalizationStageStore | None = None,
+        artifact_manifest_store: ArtifactManifestStore | None = None,
+        artifact_publication_outbox_store: ArtifactPublicationOutboxStore | None = None,
+        artifact_staging_store: ArtifactStagingStore | None = None,
+        artifact_publication_max_attempts: int = 5,
+        artifact_publication_lease_seconds: int = 120,
+        artifact_publication_backoff_seconds: tuple[int, ...] = DEFAULT_BACKOFF_SECONDS,
     ) -> None:
         self._job_repo = job_repo
         self._aisle_repo = aisle_repo
@@ -273,6 +316,63 @@ class V3JobExecutor:
         )
         _ = recompute_consolidated_uc
         self._heartbeat_interval_sec = 10
+        self._stage_recorder: FinalizationStageRecorder | None = None
+        if finalization_stage_store is not None:
+            projection = FinalizationProjectionService(
+                job_repo=job_repo,
+                stage_store=finalization_stage_store,
+                clock=clock,
+            )
+            self._stage_recorder = FinalizationStageRecorder(
+                stage_store=finalization_stage_store,
+                projection=projection,
+                manifest_store=artifact_manifest_store,
+                clock=clock,
+            )
+        self._artifact_manifest_store = artifact_manifest_store
+        self._artifact_dispatcher: ArtifactPublicationDispatcher | None = None
+        if (
+            artifact_publication_outbox_store is not None
+            and finalization_stage_store is not None
+            and artifact_manifest_store is not None
+            and artifact_store is not None
+        ):
+            continuation = ArtifactFinalizationContinuationCoordinator(
+                job_repo=job_repo,
+                manifest_store=artifact_manifest_store,
+                stage_store=finalization_stage_store,
+                state_service=self._state,
+            )
+            reconciler = ArtifactPublicationStateReconciler(
+                outbox_store=artifact_publication_outbox_store,
+                manifest_store=artifact_manifest_store,
+                artifact_store=artifact_store,
+                clock=clock,
+            )
+            automatic_continuation = AutomaticFinalizationContinuationUseCase(
+                job_repo=job_repo,
+                aisle_repo=aisle_repo,
+                inventory_repo=inventory_repo,
+                manifest_store=artifact_manifest_store,
+                stage_store=finalization_stage_store,
+                state_service=self._state,
+                clock=clock,
+            )
+            self._artifact_dispatcher = ArtifactPublicationDispatcher(
+                outbox_store=artifact_publication_outbox_store,
+                manifest_store=artifact_manifest_store,
+                stage_store=finalization_stage_store,
+                artifact_store=artifact_store,
+                stage_recorder=self._stage_recorder,
+                continuation=continuation,
+                automatic_continuation=automatic_continuation,
+                staging_store=artifact_staging_store,
+                reconciler=reconciler,
+                clock=clock,
+                lease_seconds=artifact_publication_lease_seconds,
+                max_attempts=artifact_publication_max_attempts,
+                backoff_seconds=artifact_publication_backoff_seconds,
+            )
 
     def execute(self, base_path: Path, job_id: str) -> bool:
         """
@@ -538,7 +638,42 @@ class V3JobExecutor:
         return report, result, report_path
 
     def _v3_persist_durables_and_mark_success(self, p: _V3FinalizeAfterPipelineParams) -> bool:
-        """Persist domain, upload durables, mark_success. True => caller must return True (failure)."""
+        """Persist domain, upload durables, finalize success. True => caller must return True (failure)."""
+        tracker = JobFinalizationTracker(
+            job_repo=self._job_repo,
+            clock=self._clock,
+            job_id=p.job_id,
+            stage_recorder=self._stage_recorder,
+        )
+        tracker.begin()
+        try:
+            return self._v3_persist_durables_and_mark_success_body(p, tracker)
+        except PipelineCancellationRequestedError as cancel_exc:
+            if tracker.last_completed == LastCompletedFinalizationStep.DOMAIN_RESULTS_PERSISTED:
+                self._state.cancel_finalization_after_domain_commit(
+                    p.job_id,
+                    p.aisle,
+                    str(cancel_exc),
+                    tracker=tracker,
+                    exec_log=p.exec_log,
+                    cancel_event_emitted=p.cancel_event_emitted,
+                )
+            else:
+                self._state.cancel_job_and_aisle(
+                    p.job_id,
+                    p.aisle,
+                    str(cancel_exc),
+                    exec_log=p.exec_log,
+                    cancel_event_emitted=p.cancel_event_emitted,
+                    tracker=tracker,
+                )
+            return True
+
+    def _v3_persist_durables_and_mark_success_body(
+        self,
+        p: _V3FinalizeAfterPipelineParams,
+        tracker: JobFinalizationTracker,
+    ) -> bool:
         p.exec_log.info("Persist", "Persist started", payload={"aisle_id": p.aisle_id})
         try:
             p.cancellation_checkpoint(
@@ -555,14 +690,50 @@ class V3JobExecutor:
                     run_id=RUN_ID,
                 )
             )
-            p.exec_log.info("Persist", "Persist completed")
+        except PipelineCancellationRequestedError:
+            raise
         except Exception as persist_e:
             p.exec_log.error(
                 "Persist",
                 f"Persist failed: {persist_e}",
                 payload={"error": str(persist_e)[:500]},
             )
-            self._state.fail_job_and_aisle(p.job_id, p.aisle, f"Persist: {persist_e}")
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.DOMAIN_PERSISTENCE_FAILED,
+                current_step=CurrentFinalizationStep.PERSIST_DOMAIN_RESULTS,
+                message=f"Persist: {persist_e}",
+                metadata={"exception_type": type(persist_e).__name__},
+            )
+            return True
+
+        try:
+            # Post-UoW marker — see JobFinalizationTracker docstring for crash-window note.
+            tracker.record_domain_persisted()
+            p.exec_log.info("Persist", "Persist completed")
+        except Exception as marker_e:
+            p.exec_log.error(
+                "Persist",
+                f"Domain marker write failed: {marker_e}",
+                payload={"error": str(marker_e)[:500]},
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.FINALIZATION_METADATA_WRITE_FAILED,
+                current_step=CurrentFinalizationStep.PERSIST_DOMAIN_RESULTS,
+                message=f"Domain marker write failed: {marker_e}",
+                metadata={
+                    "domain_commit_completed": True,
+                    "marker_write_completed": False,
+                    "verification_required": True,
+                    "failed_marker": "DOMAIN_RESULTS_PERSISTED",
+                    "exception_type": type(marker_e).__name__,
+                },
+            )
             return True
 
         logger.info(
@@ -573,18 +744,29 @@ class V3JobExecutor:
 
         try:
             self._artifacts.require_store()
-        except RuntimeError as store_err:
+        except ArtifactStoreUnavailableError as store_err:
             msg = str(store_err)
             logger.error("v3_job_id=%s %s", p.job_id, msg)
             p.exec_log.error("Artifacts", msg)
-            self._state.fail_job_and_aisle(p.job_id, p.aisle, msg)
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.ARTIFACT_STORE_UNAVAILABLE,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=msg,
+            )
             return True
+
+        durable_meta: dict[str, dict[str, Any]] | None = None
         try:
             p.cancellation_checkpoint(
                 "Artifacts",
                 "pre_upload",
                 "Job canceled before artifact upload",
             )
+            if self._artifact_dispatcher is not None:
+                return self._publish_artifacts_via_outbox(p, tracker)
             durable_meta = self._artifacts.publish_worker_durables(
                 job_id=p.job_id,
                 run_segment=RUN_ID,
@@ -595,40 +777,112 @@ class V3JobExecutor:
                 p.job_id,
                 sorted(durable_meta.keys()),
             )
-        except Exception as artifact_exc:
+        except PipelineCancellationRequestedError:
+            raise
+        except ArtifactPublishPartialError as partial_exc:
             logger.exception(
-                "worker_durable_artifact_publish_failed job_id=%s",
+                "worker_durable_artifact_publish_partial job_id=%s failed_kind=%s",
                 p.job_id,
+                partial_exc.failed_kind,
             )
-            logger.error(
-                "v3_job_finalization_partial_state job_id=%s aisle_id=%s "
-                "domain_persist_completed=true durable_upload_succeeded=false "
-                "operator_hint=%s",
+            p.exec_log.error(
+                "Artifacts",
+                f"Partial durable artifact upload: {partial_exc}",
+                payload={"error": str(partial_exc)[:500]},
+            )
+            self._state.fail_finalization_and_aisle(
                 p.job_id,
-                p.aisle_id,
-                "PersistAisleResult may have committed domain data; job/aisle FAILED; "
-                "no durable_artifacts in DB. Ops: inspect aisle/product state; use new job or "
-                "reset workflow if reprocessing is required.",
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.ARTIFACT_PUBLISH_PARTIAL,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Durable artifact upload partial failure: {partial_exc}",
+                metadata={
+                    "failed_kind": partial_exc.failed_kind,
+                    "published_artifacts": partial_exc.published,
+                },
+            )
+            return True
+        except (ArtifactPublishError, FileNotFoundError) as artifact_exc:
+            logger.exception(
+                "worker_durable_artifact_upload_failed job_id=%s",
+                p.job_id,
             )
             p.exec_log.error(
                 "Artifacts",
                 f"Durable artifact upload failed: {artifact_exc}",
                 payload={"error": str(artifact_exc)[:500]},
             )
-            self._state.fail_job_and_aisle(
+            self._state.fail_finalization_and_aisle(
                 p.job_id,
                 p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.ARTIFACT_PUBLISH_FAILED,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Durable artifact upload failed: {artifact_exc}",
+            )
+            return True
+        except Exception as artifact_exc:
+            logger.exception(
+                "worker_durable_artifact_publish_unexpected job_id=%s",
+                p.job_id,
+            )
+            p.exec_log.error(
+                "Artifacts",
                 f"Durable artifact upload failed: {artifact_exc}",
+                payload={"error": str(artifact_exc)[:500]},
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.ARTIFACT_PUBLISH_FAILED,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Durable artifact upload failed: {artifact_exc}",
+                metadata={"exception_type": type(artifact_exc).__name__},
             )
             return True
 
-        self._state.mark_success(
-            p.job_id,
-            p.aisle,
-            p.report_path,
-            run_metadata=p.result.run_metadata,
-            durable_artifacts=durable_meta,
-        )
+        assert durable_meta is not None
+        try:
+            tracker.record_artifacts_published(durable_artifacts=durable_meta)
+        except Exception as marker_e:
+            p.exec_log.error(
+                "Artifacts",
+                f"Artifact marker write failed: {marker_e}",
+                payload={"error": str(marker_e)[:500]},
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.FINALIZATION_METADATA_WRITE_FAILED,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Artifact marker write failed: {marker_e}",
+                metadata={
+                    "artifact_upload_completed": True,
+                    "marker_write_completed": False,
+                    "verification_required": True,
+                    "failed_marker": "ARTIFACTS_PUBLISHED",
+                    "published_artifact_kinds": sorted(durable_meta.keys()),
+                    "exception_type": type(marker_e).__name__,
+                },
+            )
+            return True
+
+        try:
+            self._state.finalize_success(
+                p.job_id,
+                p.aisle,
+                p.report_path,
+                tracker=tracker,
+                run_metadata=p.result.run_metadata,
+                durable_artifacts=durable_meta,
+            )
+        except Exception:
+            logger.exception("v3_job_finalization_terminal_failed job_id=%s", p.job_id)
+            return True
+
         logger.info(
             "v3 mark success: job_id=%s inventory_id=%s aisle_id=%s report_path=%s",
             p.job_id,
@@ -637,6 +891,222 @@ class V3JobExecutor:
             str(p.report_path),
         )
         return False
+
+    def _publish_artifacts_via_outbox(
+        self,
+        p: _V3FinalizeAfterPipelineParams,
+        tracker: JobFinalizationTracker,
+    ) -> bool:
+        assert self._artifact_dispatcher is not None
+        try:
+            self._artifact_dispatcher.register_publication_work(
+                job_id=p.job_id,
+                run_segment=RUN_ID,
+                run_dir=p.run_dir,
+            )
+        except ArtifactSourceStagingFailedError as exc:
+            p.exec_log.error(
+                "Artifacts",
+                f"Required artifact staging failed: {exc}",
+                payload={"error": str(exc)[:500]},
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.ARTIFACT_SOURCE_STAGING_FAILED,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Required artifact staging failed: {exc}",
+                metadata={"verification_required": True},
+            )
+            return True
+        try:
+            dispatch_result = self._artifact_dispatcher.dispatch_job(
+                job_id=p.job_id,
+                run_segment=RUN_ID,
+                run_dir=p.run_dir,
+                tracker=tracker,
+                continuation_aisle=p.aisle,
+                report_path=p.report_path,
+                run_metadata=p.result.run_metadata,
+            )
+        except Exception as exc:
+            job = self._job_repo.get_by_id(p.job_id)
+            if job is not None and job.finalization_error_code:
+                return True
+            manifest = self._artifact_manifest_store
+            if manifest is not None and manifest.required_kinds_published(p.job_id):
+                published_kinds = sorted(
+                    entry.artifact_kind
+                    for entry in manifest.list_entries(p.job_id)
+                    if entry.status == ArtifactManifestStatus.PUBLISHED
+                )
+                p.exec_log.error(
+                    "Artifacts",
+                    f"Artifact marker write failed: {exc}",
+                    payload={"error": str(exc)[:500]},
+                )
+                self._state.fail_finalization_and_aisle(
+                    p.job_id,
+                    p.aisle,
+                    tracker=tracker,
+                    error_code=FinalizationErrorCode.FINALIZATION_METADATA_WRITE_FAILED,
+                    current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                    message=f"Artifact marker write failed: {exc}",
+                    metadata={
+                        "artifact_upload_completed": True,
+                        "marker_write_completed": False,
+                        "verification_required": True,
+                        "failed_marker": "ARTIFACTS_PUBLISHED",
+                        "published_artifact_kinds": published_kinds,
+                        "exception_type": type(exc).__name__,
+                    },
+                )
+                return True
+            p.exec_log.error(
+                "Artifacts",
+                f"Artifact publication dispatch failed: {exc}",
+                payload={"error": str(exc)[:500]},
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.FINALIZATION_METADATA_WRITE_FAILED,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Artifact publication dispatch failed: {exc}",
+                metadata={
+                    "artifact_upload_completed": False,
+                    "marker_write_completed": False,
+                    "verification_required": True,
+                    "exception_type": type(exc).__name__,
+                },
+            )
+            return True
+        if dispatch_result.continuation_started:
+            logger.info(
+                "v3 mark success via outbox: job_id=%s inventory_id=%s aisle_id=%s",
+                p.job_id,
+                p.aisle.inventory_id,
+                p.aisle_id,
+            )
+            return False
+        if dispatch_result.required_complete:
+            try:
+                tracker.record_artifacts_published(durable_artifacts=dispatch_result.durable_meta)
+            except Exception as marker_e:
+                p.exec_log.error(
+                    "Artifacts",
+                    f"Artifact marker write failed: {marker_e}",
+                    payload={"error": str(marker_e)[:500]},
+                )
+                self._state.fail_finalization_and_aisle(
+                    p.job_id,
+                    p.aisle,
+                    tracker=tracker,
+                    error_code=FinalizationErrorCode.FINALIZATION_METADATA_WRITE_FAILED,
+                    current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                    message=f"Artifact marker write failed: {marker_e}",
+                    metadata={
+                        "artifact_upload_completed": True,
+                        "marker_write_completed": False,
+                        "verification_required": True,
+                        "failed_marker": "ARTIFACTS_PUBLISHED",
+                        "published_artifact_kinds": sorted(dispatch_result.durable_meta.keys()),
+                        "exception_type": type(marker_e).__name__,
+                    },
+                )
+                return True
+            try:
+                self._state.finalize_success(
+                    p.job_id,
+                    p.aisle,
+                    p.report_path,
+                    tracker=tracker,
+                    run_metadata=p.result.run_metadata,
+                    durable_artifacts=dispatch_result.durable_meta,
+                )
+            except Exception:
+                return True
+            return False
+        published_required = {
+            kind for kind in dispatch_result.published_kinds if is_required_artifact_kind(kind)
+        }
+        failed_required = {
+            kind
+            for kind in dispatch_result.permanently_failed_kinds
+            if is_required_artifact_kind(kind)
+        }
+        if published_required and failed_required and not dispatch_result.required_complete:
+            failed_kind = sorted(failed_required)[0]
+            p.exec_log.error(
+                "Artifacts",
+                f"Partial durable artifact upload: {failed_kind}",
+                payload={"failed_kind": failed_kind},
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.ARTIFACT_PUBLISH_PARTIAL,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Durable artifact upload partial failure: {failed_kind}",
+                metadata={
+                    "failed_kind": failed_kind,
+                    "published_artifacts": {
+                        kind: dispatch_result.durable_meta[kind]
+                        for kind in sorted(published_required)
+                        if kind in dispatch_result.durable_meta
+                    },
+                },
+            )
+            return True
+        if dispatch_result.permanently_failed_kinds:
+            p.exec_log.error(
+                "Artifacts",
+                "Required artifact publication permanently failed",
+                payload={"failed_kinds": sorted(dispatch_result.permanently_failed_kinds)},
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.ARTIFACT_PUBLISH_FAILED,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message="Required artifact publication permanently failed",
+                metadata={
+                    "failed_kinds": sorted(dispatch_result.permanently_failed_kinds),
+                    "published_artifact_kinds": sorted(dispatch_result.published_kinds),
+                    "verification_required": True,
+                },
+            )
+            return True
+        if dispatch_result.retry_scheduled_kinds:
+            p.exec_log.info(
+                "Artifacts",
+                "Durable artifact publication incomplete; autonomous retry scheduled",
+                payload={
+                    "retry_kinds": sorted(dispatch_result.retry_scheduled_kinds),
+                    "published_kinds": sorted(dispatch_result.published_kinds),
+                },
+            )
+            self._state.mark_artifact_publication_retry_pending(
+                p.job_id,
+                tracker=tracker,
+                retry_kinds=dispatch_result.retry_scheduled_kinds,
+                published_kinds=dispatch_result.published_kinds,
+            )
+            return False
+        p.exec_log.error("Artifacts", "Required artifact publication produced no durable outputs")
+        self._state.fail_finalization_and_aisle(
+            p.job_id,
+            p.aisle,
+            tracker=tracker,
+            error_code=FinalizationErrorCode.ARTIFACT_PUBLISH_FAILED,
+            current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+            message="Required artifact publication produced no durable outputs",
+        )
+        return True
 
     def _v3_begin_run_monitoring(self, req: _V3RunMonitoringRequest) -> _V3WorkerRuntimeHandles:
         """Create run_dir logger, execution log, and cooperative heartbeat thread."""
@@ -806,6 +1276,7 @@ class V3JobExecutor:
                     report_path=report_path,
                     report=report,
                     cancellation_checkpoint=cancellation_checkpoint,
+                    cancel_event_emitted=rt.cancel_event_emitted,
                 )
             ):
                 return True

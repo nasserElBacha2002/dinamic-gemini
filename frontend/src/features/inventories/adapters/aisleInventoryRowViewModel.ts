@@ -4,9 +4,12 @@
 
 import type { Aisle } from '../../../api/types';
 import type { StatusBadgeSemantic } from '../../../components/ui/StatusBadge';
+import i18n from '../../../i18n';
 import { formatDate } from '../../../utils/formatDate';
 import { getAisleStatusLabel, aisleStatusToBadgeSemantic } from '../../../utils/aisleStatus';
-import { getJobStatusLabel, jobStatusToBadgeSemantic } from '../../../utils/jobStatus';
+import { jobStatusToBadgeSemantic } from '../../../utils/jobStatus';
+import { deriveAisleEffectiveDisplayState } from '../../../utils/deriveJobDisplayState';
+import { getJobProcessingStatusLabel } from '../../../utils/jobFinalizationLabels';
 import { toReferenceUsageRowViewModel, type ReferenceUsageRowViewModel } from './referenceUsageViewModel';
 import type { AisleProcessMenuInput } from './processAisleMenuState';
 import { getLatestRunFromAisleListItem } from './aisleListRunSource';
@@ -63,10 +66,17 @@ export interface AisleInventoryTableRow {
 
 export function toAisleInventoryRowPresentation(aisle: Aisle, emptyLabel: string): AisleInventoryRowPresentation {
   const run = getLatestRunFromAisleListItem(aisle);
+  const effectiveDisplay = deriveAisleEffectiveDisplayState(aisle, run);
   const latestRun: LatestRunSnapshotViewModel | null = run
     ? {
-        statusLabel: getJobStatusLabel(run.status),
-        statusSemantic: jobStatusToBadgeSemantic(run.status),
+        statusLabel: getJobProcessingStatusLabel(run, i18n.t.bind(i18n)),
+        statusSemantic: (() => {
+          if (effectiveDisplay === 'failed') return 'error';
+          if (effectiveDisplay === 'completed') return 'success';
+          if (effectiveDisplay === 'completed_with_finalization_warning') return 'warning';
+          if (effectiveDisplay === 'canceled') return 'warning';
+          return jobStatusToBadgeSemantic(run.status);
+        })(),
         providerDisplay: run.provider_name ? String(run.provider_name) : emptyLabel,
         modelDisplay: run.model_name ? String(run.model_name) : emptyLabel,
         jobStatusRaw: String(run.status),
@@ -75,12 +85,26 @@ export function toAisleInventoryRowPresentation(aisle: Aisle, emptyLabel: string
       }
     : null;
 
+  const aisleDisplay = deriveAisleEffectiveDisplayState(aisle, run);
+  const aisleStatusLabel =
+    aisleDisplay === 'processing' && run
+      ? getJobProcessingStatusLabel(run, i18n.t.bind(i18n))
+      : getAisleStatusLabel(String(aisle.status));
+  const aisleStatusSemantic =
+    aisleDisplay === 'failed'
+      ? 'error'
+      : aisleDisplay === 'completed_with_finalization_warning'
+        ? 'warning'
+        : aisleDisplay === 'completed'
+          ? 'success'
+          : aisleStatusToBadgeSemantic(String(aisle.status));
+
   return {
     id: aisle.id,
     code: aisle.code,
     clientSupplierId: aisle.client_supplier_id ?? null,
-    aisleStatusLabel: getAisleStatusLabel(String(aisle.status)),
-    aisleStatusSemantic: aisleStatusToBadgeSemantic(String(aisle.status)),
+    aisleStatusLabel,
+    aisleStatusSemantic,
     assetsCount: aisle.assets_count,
     assetsCountDisplay:
       typeof aisle.assets_count === 'number' ? aisle.assets_count : emptyLabel,

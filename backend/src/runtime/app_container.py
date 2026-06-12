@@ -15,6 +15,8 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from src.application.ports.analytics_repository import AnalyticsRepository
+from src.application.ports.artifact_manifest_store import ArtifactManifestStore
+from src.application.ports.artifact_publication_outbox_store import ArtifactPublicationOutboxStore
 from src.application.ports.capture_repositories import (
     CaptureSessionConfirmIdempotencyRepository,
     CaptureSessionGroupRepository,
@@ -23,6 +25,7 @@ from src.application.ports.capture_repositories import (
 )
 from src.application.ports.clock import Clock
 from src.application.ports.code_scan_repository import CodeScanRepository
+from src.application.ports.finalization_stage_store import FinalizationStageStore
 from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
 from src.application.ports.operational_job_promotion import OperationalJobPromotionRepository
@@ -45,11 +48,28 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
+from src.application.services.artifact_publication_dispatcher import ArtifactPublicationDispatcher
+from src.application.services.artifact_recovery_source_resolver import (
+    ArtifactRecoverySourceResolver,
+)
 from src.application.services.default_job_scoped_recompute_factory import (
     DefaultJobScopedRecomputeFactory,
 )
+from src.application.services.finalization_assessment_service import FinalizationAssessmentService
+from src.application.services.finalization_recovery_eligibility import (
+    FinalizationRecoveryEligibility,
+)
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.services.job_artifact_verifier import JobArtifactVerifier
+from src.application.services.job_domain_result_verifier import JobDomainResultVerifier
 from src.application.services.operational_result_promotion_service import (
     OperationalResultPromotionService,
+)
+from src.application.use_cases.finalization_recovery.resume_job_finalization import (
+    FinalizationRecoveryCoordinator,
+)
+from src.application.use_cases.finalization_recovery.verify_and_republish import (
+    FinalizationRecoveryDependencies,
 )
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
@@ -63,18 +83,39 @@ from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
 )
 from src.config import AppSettings
 from src.database.sqlserver import SqlServerClient
+from src.infrastructure.persistence.memory_artifact_manifest_store import (
+    MemoryArtifactManifestStore,
+)
+from src.infrastructure.persistence.memory_artifact_publication_outbox_store import (
+    MemoryArtifactPublicationOutboxStore,
+)
+from src.infrastructure.persistence.memory_finalization_recovery_store import (
+    MemoryFinalizationRecoveryStore,
+)
+from src.infrastructure.persistence.memory_finalization_stage_store import (
+    MemoryFinalizationStageStore,
+)
 from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWorkFactory,
 )
 from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
     MemoryOperationalJobPromotionRepository,
 )
+from src.infrastructure.persistence.sql_artifact_manifest_store import SqlArtifactManifestStore
+from src.infrastructure.persistence.sql_artifact_publication_outbox_store import (
+    SqlArtifactPublicationOutboxStore,
+)
+from src.infrastructure.persistence.sql_finalization_recovery_store import (
+    SqlFinalizationRecoveryStore,
+)
+from src.infrastructure.persistence.sql_finalization_stage_store import SqlFinalizationStageStore
 from src.infrastructure.persistence.sql_job_result_unit_of_work import (
     SqlJobResultUnitOfWorkFactory,
 )
 from src.infrastructure.persistence.sql_operational_job_promotion_repository import (
     SqlOperationalJobPromotionRepository,
 )
+from src.infrastructure.storage.artifact_store import ArtifactStore
 from src.runtime.container.analytics_builders import build_analytics_repository
 from src.runtime.container.capture_session_builders import (
     build_capture_session_confirm_repository,
@@ -189,6 +230,10 @@ class AppContainer:
         self._capture_session_group_repo: CaptureSessionGroupRepository | None = None
         self._code_scan_repo: CodeScanRepository | None = None
         self._stored_artifact_reader: StoredArtifactReader | None = None
+        self._finalization_stage_store: FinalizationStageStore | None = None
+        self._artifact_manifest_store: ArtifactManifestStore | None = None
+        self._artifact_publication_outbox_store: ArtifactPublicationOutboxStore | None = None
+        self._finalization_recovery_store = None
         self._repository_backend_resolution: RepositoryBackendResolution | None = None
 
     @property
@@ -470,6 +515,15 @@ class AppContainer:
         self._artifact_storage = build_artifact_storage(self._settings)
         return self._artifact_storage
 
+    def get_artifact_store(self) -> ArtifactStore:
+        """Provider-aware artifact store for publication verification and recovery."""
+        storage = self.get_artifact_storage()
+        if not isinstance(storage, ArtifactStore):
+            raise RuntimeError(
+                f"Artifact storage {type(storage).__name__} does not implement ArtifactStore"
+            )
+        return storage
+
     def get_stored_artifact_reader(self) -> StoredArtifactReader:
         """Hybrid reads for stored job JSON / reports (port adapter; shared by API + worker)."""
         if self._stored_artifact_reader is not None:
@@ -562,11 +616,221 @@ class AppContainer:
             position_repo=self.get_position_repo(),
         )
 
+    def get_finalization_stage_store(self) -> FinalizationStageStore:
+        if self._finalization_stage_store is not None:
+            return self._finalization_stage_store
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._finalization_stage_store = SqlFinalizationStageStore(self._get_v3_sql_client())
+        else:
+            self._finalization_stage_store = MemoryFinalizationStageStore()
+        return self._finalization_stage_store
+
+    def get_artifact_manifest_store(self) -> ArtifactManifestStore:
+        if self._artifact_manifest_store is not None:
+            return self._artifact_manifest_store
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._artifact_manifest_store = SqlArtifactManifestStore(self._get_v3_sql_client())
+        else:
+            self._artifact_manifest_store = MemoryArtifactManifestStore()
+        return self._artifact_manifest_store
+
+    def get_artifact_publication_outbox_store(self) -> ArtifactPublicationOutboxStore:
+        if self._artifact_publication_outbox_store is not None:
+            return self._artifact_publication_outbox_store
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._artifact_publication_outbox_store = SqlArtifactPublicationOutboxStore(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._artifact_publication_outbox_store = MemoryArtifactPublicationOutboxStore()
+        return self._artifact_publication_outbox_store
+
+    def get_artifact_staging_store(self):
+        from src.infrastructure.artifacts.filesystem_artifact_staging_store import (
+            FileSystemArtifactStagingStore,
+        )
+
+        base = self._settings.artifact_staging_base_path
+        return FileSystemArtifactStagingStore(base)
+
+    def get_artifact_publication_dispatcher(self) -> ArtifactPublicationDispatcher:
+        from src.application.services.artifact_finalization_continuation import (
+            ArtifactFinalizationContinuationCoordinator,
+        )
+        from src.application.services.artifact_publication_dispatcher import (
+            ArtifactPublicationDispatcher,
+        )
+        from src.application.services.artifact_publication_state_reconciler import (
+            ArtifactPublicationStateReconciler,
+        )
+        from src.application.services.automatic_finalization_continuation_use_case import (
+            AutomaticFinalizationContinuationUseCase,
+        )
+        from src.application.services.finalization_projection_service import (
+            FinalizationProjectionService,
+        )
+        from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+        from src.infrastructure.pipeline.finalization_stage_recorder import (
+            FinalizationStageRecorder,
+        )
+        from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
+
+        settings = self._settings
+        backoff = settings.parse_backoff_seconds(settings.artifact_publication_backoff_seconds)
+        job_repo = self.get_job_repo()
+        aisle_repo = self.get_aisle_repo()
+        inventory_repo = self.get_inventory_repo()
+        clock = self.get_clock()
+        stage_store = self.get_finalization_stage_store()
+        manifest_store = self.get_artifact_manifest_store()
+        outbox_store = self.get_artifact_publication_outbox_store()
+        artifact_store = self.get_artifact_store()
+        state = V3JobExecutionStateService(
+            job_repo=job_repo,
+            aisle_repo=aisle_repo,
+            inventory_repo=inventory_repo,
+            clock=clock,
+            inventory_status_reconciler=InventoryStatusReconciler(
+                inventory_repo=inventory_repo,
+                aisle_repo=aisle_repo,
+                clock=clock,
+            ),
+            operational_promotion_service=self.get_operational_result_promotion_service(),
+        )
+        projection = FinalizationProjectionService(
+            job_repo=job_repo,
+            stage_store=stage_store,
+            clock=clock,
+        )
+        recorder = FinalizationStageRecorder(
+            stage_store=stage_store,
+            projection=projection,
+            manifest_store=manifest_store,
+            clock=clock,
+        )
+        continuation = ArtifactFinalizationContinuationCoordinator(
+            job_repo=job_repo,
+            manifest_store=manifest_store,
+            stage_store=stage_store,
+            state_service=state,
+        )
+        automatic = AutomaticFinalizationContinuationUseCase(
+            job_repo=job_repo,
+            aisle_repo=aisle_repo,
+            inventory_repo=inventory_repo,
+            manifest_store=manifest_store,
+            stage_store=stage_store,
+            state_service=state,
+            clock=clock,
+        )
+        reconciler = ArtifactPublicationStateReconciler(
+            outbox_store=outbox_store,
+            manifest_store=manifest_store,
+            artifact_store=artifact_store,
+            clock=clock,
+        )
+        return ArtifactPublicationDispatcher(
+            outbox_store=outbox_store,
+            manifest_store=manifest_store,
+            stage_store=stage_store,
+            artifact_store=artifact_store,
+            stage_recorder=recorder,
+            continuation=continuation,
+            automatic_continuation=automatic,
+            staging_store=self.get_artifact_staging_store(),
+            reconciler=reconciler,
+            clock=clock,
+            lease_seconds=settings.artifact_publication_lease_seconds,
+            max_attempts=settings.artifact_publication_max_attempts,
+            backoff_seconds=backoff,
+            claimed_by_prefix="artifact-outbox-worker",
+        )
+
+    def get_finalization_assessment_service(self) -> FinalizationAssessmentService:
+        return FinalizationAssessmentService(
+            job_repo=self.get_job_repo(),
+            aisle_repo=self.get_aisle_repo(),
+            stage_store=self.get_finalization_stage_store(),
+            manifest_store=self.get_artifact_manifest_store(),
+            domain_verifier=JobDomainResultVerifier(
+                aisle_repo=self.get_aisle_repo(),
+                position_repo=self.get_position_repo(),
+                product_repo=self.get_product_record_repo(),
+                evidence_repo=self.get_evidence_repo(),
+                raw_label_repo=self.get_raw_label_repo(),
+                normalized_label_repo=self.get_normalized_label_repo(),
+                final_count_repo=self.get_final_count_repo(),
+                stage_store=self.get_finalization_stage_store(),
+            ),
+            artifact_verifier=JobArtifactVerifier(
+                manifest_store=self.get_artifact_manifest_store(),
+                artifact_store=self.get_artifact_store(),
+            ),
+        )
+
+    def get_finalization_recovery_store(self):
+        if self._finalization_recovery_store is not None:
+            return self._finalization_recovery_store
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._finalization_recovery_store = SqlFinalizationRecoveryStore(self._get_v3_sql_client())
+        else:
+            self._finalization_recovery_store = MemoryFinalizationRecoveryStore()
+        return self._finalization_recovery_store
+
+    def get_finalization_recovery_coordinator(self) -> FinalizationRecoveryCoordinator:
+        eligibility = FinalizationRecoveryEligibility()
+        domain_verifier = JobDomainResultVerifier(
+            aisle_repo=self.get_aisle_repo(),
+            position_repo=self.get_position_repo(),
+            product_repo=self.get_product_record_repo(),
+            evidence_repo=self.get_evidence_repo(),
+            raw_label_repo=self.get_raw_label_repo(),
+            normalized_label_repo=self.get_normalized_label_repo(),
+            final_count_repo=self.get_final_count_repo(),
+            stage_store=self.get_finalization_stage_store(),
+        )
+        artifact_verifier = JobArtifactVerifier(
+            manifest_store=self.get_artifact_manifest_store(),
+            artifact_store=self.get_artifact_store(),
+        )
+        deps = FinalizationRecoveryDependencies(
+            job_repo=self.get_job_repo(),
+            aisle_repo=self.get_aisle_repo(),
+            inventory_repo=self.get_inventory_repo(),
+            stage_store=self.get_finalization_stage_store(),
+            manifest_store=self.get_artifact_manifest_store(),
+            recovery_store=self.get_finalization_recovery_store(),
+            assessment_service=self.get_finalization_assessment_service(),
+            domain_verifier=domain_verifier,
+            artifact_verifier=artifact_verifier,
+            source_resolver=ArtifactRecoverySourceResolver(
+                artifact_verifier=artifact_verifier,
+                output_dir=self._settings.output_dir,
+            ),
+            promotion_service=self.get_operational_result_promotion_service(),
+            inventory_reconciler=InventoryStatusReconciler(
+                inventory_repo=self.get_inventory_repo(),
+                aisle_repo=self.get_aisle_repo(),
+                clock=self.get_clock(),
+            ),
+            artifact_store=self.get_artifact_store(),
+            clock=self.get_clock(),
+            eligibility=eligibility,
+        )
+        return FinalizationRecoveryCoordinator(deps)
+
     def get_job_result_uow_factory(self) -> JobResultUnitOfWorkFactory:
         resolution = self._get_repository_backend_resolution()
         if resolution.mode == RepositoryBackendMode.SQL:
             return SqlJobResultUnitOfWorkFactory(self._get_v3_sql_client())
-        return MemoryJobResultUnitOfWorkFactory()
+        stage_store = self.get_finalization_stage_store()
+        if not isinstance(stage_store, MemoryFinalizationStageStore):
+            return MemoryJobResultUnitOfWorkFactory()
+        return MemoryJobResultUnitOfWorkFactory(stage_store=stage_store)
 
     def get_job_scoped_recompute_factory(self) -> JobScopedRecomputeFactory:
         return DefaultJobScopedRecomputeFactory()

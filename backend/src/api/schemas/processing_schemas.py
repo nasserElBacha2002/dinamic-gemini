@@ -122,10 +122,71 @@ class JobSummary(BaseModel):
     model_name: Optional[str] = None
     prompt_key: Optional[str] = None
     prompt_version: Optional[str] = None
+    finalization_status: Optional[str] = None
+    current_finalization_step: Optional[str] = None
+    last_completed_finalization_step: Optional[str] = None
+    finalization_error_code: Optional[str] = None
     #: True when this job is the aisle ``operational_job_id`` pointer (Phase 6 run browser).
     is_operational: bool = False
     #: Optional LLM cost snapshot from ``result_json`` (sanitized; additive for run pickers).
     llm_cost_snapshot: Optional[LlmCostSnapshotResponse] = None
+
+
+class FinalizationStageAssessmentItem(BaseModel):
+    """Sanitized per-stage finalization evidence for job detail."""
+
+    stage: str
+    status: str
+    evidence_level: str
+    completed_at: Optional[datetime] = None
+    verification_required: bool = False
+    last_error_code: Optional[str] = None
+
+
+class FinalizationAssessmentBlock(BaseModel):
+    """Read-only finalization assessment (Phase 3.3)."""
+
+    outcome: str
+    technical_result_status: str
+    finalization_status: str
+    last_confirmed_stage: Optional[str] = None
+    next_required_stage: Optional[str] = None
+    recovery_candidate: bool = False
+    blocking_reason: Optional[str] = None
+    stages: dict[str, FinalizationStageAssessmentItem] = Field(default_factory=dict)
+
+
+class ArtifactPublicationItemResponse(BaseModel):
+    artifact_kind: str
+    required: bool
+    status: str
+    attempt_count: int = 0
+    max_attempts: int = 5
+    next_attempt_at: Optional[datetime] = None
+    last_error_code: Optional[str] = None
+    source_type: Optional[str] = None
+
+
+class ArtifactPublicationBlock(BaseModel):
+    required_total: int = 0
+    required_published: int = 0
+    pending: int = 0
+    retry_scheduled: int = 0
+    permanently_failed: int = 0
+    next_attempt_at: Optional[datetime] = None
+    items: list[ArtifactPublicationItemResponse] = Field(default_factory=list)
+
+
+class JobDetailResponse(JobSummary):
+    """Extended job detail for GET .../jobs/{job_id} — finalization timestamps and diagnostics."""
+
+    finalization_started_at: Optional[datetime] = None
+    finalization_completed_at: Optional[datetime] = None
+    domain_persisted_at: Optional[datetime] = None
+    artifacts_published_at: Optional[datetime] = None
+    finalization_error_metadata: Optional[dict[str, Any]] = None
+    finalization_assessment: Optional[FinalizationAssessmentBlock] = None
+    artifact_publication: Optional[ArtifactPublicationBlock] = None
 
 
 class AisleStatusResponse(BaseModel):

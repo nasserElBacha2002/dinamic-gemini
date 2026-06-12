@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.application.ports.finalization_evidence_writer import FinalizationEvidenceWriter
 from src.application.ports.job_result_scope_store import JobResultScopeStore
 from src.application.ports.job_result_unit_of_work import (
     JobResultRepositories,
@@ -14,6 +15,12 @@ from src.application.ports.job_result_unit_of_work import (
 )
 from src.infrastructure.persistence.job_result_bundle_validation import (
     assert_memory_job_result_bundle,
+)
+from src.infrastructure.persistence.memory_finalization_evidence_writer import (
+    MemoryFinalizationEvidenceWriter,
+)
+from src.infrastructure.persistence.memory_finalization_stage_store import (
+    MemoryFinalizationStageStore,
 )
 from src.infrastructure.persistence.memory_job_result_scope_store import (
     MemoryJobResultScopeStore,
@@ -52,7 +59,10 @@ def _restore_store(repo: Any, snapshot: dict | None) -> None:
 @dataclass
 class MemoryJobResultUnitOfWork:
     repositories: JobResultRepositories
+    stage_store: MemoryFinalizationStageStore | None = field(default=None)
     _scope_store: JobResultScopeStore | None = field(default=None, init=False)
+    _evidence_writer: MemoryFinalizationEvidenceWriter | None = field(default=None, init=False)
+    _stage_snapshot: dict | None = field(default=None, init=False)
     _snapshots: dict[str, dict | None] | None = field(default=None, init=False)
     _committed: bool = field(default=False, init=False)
     _rolled_back: bool = field(default=False, init=False)
@@ -63,16 +73,29 @@ class MemoryJobResultUnitOfWork:
             raise RuntimeError("MemoryJobResultUnitOfWork is not active")
         return self._scope_store
 
+    @property
+    def finalization_evidence(self) -> FinalizationEvidenceWriter | None:
+        return self._evidence_writer
+
     def commit(self) -> None:
         if self._rolled_back:
             raise RuntimeError("Cannot commit after rollback")
+        if self._evidence_writer is not None:
+            from datetime import datetime, timezone
+
+            self._evidence_writer.flush(datetime.now(timezone.utc))
         self._committed = True
         self._snapshots = None
+        self._stage_snapshot = None
         logger.debug("MemoryJobResultUnitOfWork committed")
 
     def rollback(self) -> None:
         if self._rolled_back:
             return
+        if self._evidence_writer is not None:
+            self._evidence_writer.discard()
+        if self._stage_snapshot is not None and self.stage_store is not None:
+            self.stage_store.restore(self._stage_snapshot)
         if self._snapshots is None:
             self._rolled_back = True
             return
@@ -84,12 +107,19 @@ class MemoryJobResultUnitOfWork:
         _restore_store(repos.normalized_label_repo, self._snapshots.get("normalized_labels"))
         _restore_store(repos.final_count_repo, self._snapshots.get("final_counts"))
         self._snapshots = None
+        self._stage_snapshot = None
         self._rolled_back = True
         logger.warning("MemoryJobResultUnitOfWork rolled back to prior snapshot")
 
     def __enter__(self) -> MemoryJobResultUnitOfWork:
         repos = self.repositories
         self._scope_store = MemoryJobResultScopeStore(repos)
+        if self.stage_store is not None:
+            self._stage_snapshot = self.stage_store.snapshot()
+            self._evidence_writer = MemoryFinalizationEvidenceWriter(self.stage_store)
+        else:
+            self._evidence_writer = None
+            self._stage_snapshot = None
         self._snapshots = {
             "positions": _snapshot_store(repos.position_repo),
             "products": _snapshot_store(repos.product_record_repo),
@@ -113,6 +143,12 @@ class MemoryJobResultUnitOfWork:
 
 
 class MemoryJobResultUnitOfWorkFactory:
+    def __init__(self, stage_store: MemoryFinalizationStageStore | None = None) -> None:
+        self._stage_store = stage_store
+
     def __call__(self, repositories: JobResultRepositories) -> JobResultUnitOfWork:
         assert_memory_job_result_bundle(repositories)
-        return MemoryJobResultUnitOfWork(repositories=repositories)
+        return MemoryJobResultUnitOfWork(
+            repositories=repositories,
+            stage_store=self._stage_store,
+        )

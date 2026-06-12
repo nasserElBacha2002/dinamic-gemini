@@ -26,13 +26,22 @@ from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
 
+from src.domain.jobs.artifact_policy import (
+    ARTIFACT_KIND_EXECUTION_LOG as DURABLE_ARTIFACT_KIND_EXECUTION_LOG,
+)
+from src.domain.jobs.artifact_policy import (
+    ARTIFACT_KIND_HYBRID_REPORT_CSV as DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV,
+)
+from src.domain.jobs.artifact_policy import (
+    ARTIFACT_KIND_HYBRID_REPORT_JSON as DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON,
+)
+from src.infrastructure.pipeline.finalization_errors import (
+    ArtifactPublishError,
+    ArtifactPublishPartialError,
+)
 from src.infrastructure.storage.artifact_store import ArtifactStore, StoredArtifact
 
 logger = logging.getLogger(__name__)
-
-DURABLE_ARTIFACT_KIND_EXECUTION_LOG = "execution_log"
-DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON = "hybrid_report_json"
-DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV = "hybrid_report_csv"
 
 # Default run directory basename; must match ``RUN_ID`` in ``v3_job_executor`` (single source of truth here).
 DEFAULT_V3_WORKER_RUN_SEGMENT = "run"
@@ -143,7 +152,20 @@ def publish_worker_durable_artifacts(
             },
         )
         with open(path, "rb") as fh:
-            stored = store.put_object(logical_key, fh, content_type)
+            try:
+                stored = store.put_object(logical_key, fh, content_type)
+            except Exception as exc:
+                if out:
+                    raise ArtifactPublishPartialError(
+                        f"Durable artifact upload failed after partial success: {kind} "
+                        f"(job_id={job_id} run_segment={run_segment}): {exc}",
+                        published=dict(out),
+                        failed_kind=kind,
+                    ) from exc
+                raise ArtifactPublishError(
+                    f"Durable artifact upload failed: {kind} "
+                    f"(job_id={job_id} run_segment={run_segment}): {exc}"
+                ) from exc
 
         logger.info(
             "worker_durable_artifact_upload_ok",
@@ -161,6 +183,47 @@ def publish_worker_durable_artifacts(
         )
         out[kind] = stored_artifact_to_dict(stored)
 
+    return out
+
+
+def republish_worker_durable_artifacts(
+    store: ArtifactStore,
+    *,
+    job_id: str,
+    run_segment: str,
+    run_dir: Path,
+    kinds: frozenset[str],
+    source_paths: dict[str, Path] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Upload only selected artifact kinds for manual recovery republication."""
+    keys = worker_output_storage_keys(job_id, run_segment)
+    run_dir = Path(run_dir)
+    source_paths = source_paths or {}
+    out: dict[str, dict[str, Any]] = {}
+    specs: dict[str, tuple[str, bool]] = {
+        DURABLE_ARTIFACT_KIND_EXECUTION_LOG: ("application/x-ndjson", True),
+        DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON: ("application/json", True),
+        DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV: ("text/csv", False),
+    }
+    for kind in sorted(kinds):
+        if kind not in specs:
+            continue
+        content_type, required = specs[kind]
+        path = source_paths.get(kind) or run_dir / {
+            DURABLE_ARTIFACT_KIND_EXECUTION_LOG: "execution_log.jsonl",
+            DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON: "hybrid_report.json",
+            DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV: "hybrid_report.csv",
+        }[kind]
+        if not path.is_file():
+            if required:
+                raise FileNotFoundError(
+                    f"Required recovery artifact missing: {path} (job_id={job_id})"
+                )
+            continue
+        logical_key = keys[kind]
+        with open(path, "rb") as fh:
+            stored = store.put_object(logical_key, fh, content_type)
+        out[kind] = stored_artifact_to_dict(stored)
     return out
 
 

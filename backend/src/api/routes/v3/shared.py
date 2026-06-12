@@ -37,7 +37,15 @@ from src.api.schemas.position_schemas import (
     ReviewActionRequest,
     ReviewActionResponse,
 )
-from src.api.schemas.processing_schemas import AisleStatusResponse, JobSummary
+from src.api.schemas.processing_schemas import (
+    AisleStatusResponse,
+    ArtifactPublicationBlock,
+    ArtifactPublicationItemResponse,
+    FinalizationAssessmentBlock,
+    FinalizationStageAssessmentItem,
+    JobDetailResponse,
+    JobSummary,
+)
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 from src.application.errors import (
     AisleNotFoundError,
@@ -49,6 +57,10 @@ from src.application.errors import (
 from src.application.mappers.position_canonical_view import (
     PositionCanonicalView,
     build_position_canonical_view,
+)
+from src.application.ports.artifact_publication_outbox_store import (
+    ArtifactPublicationOutboxStore,
+    MissingMigrationOrStoreUnavailableError,
 )
 from src.application.ports.contracts import InventoryListItem
 from src.application.services.inventory_primary_execution_config import (
@@ -74,9 +86,13 @@ from src.domain.assets.entities import SourceAsset
 from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
 from src.domain.jobs.entities import Job
+from src.domain.jobs.finalization_evidence import FinalizationAssessment
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction
+from src.infrastructure.pipeline.job_finalization_tracker import (
+    sanitize_finalization_error_metadata,
+)
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 from src.utils.validation import validate_relative_path
 
@@ -570,8 +586,113 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
         model_name=j.model_name,
         prompt_key=j.prompt_key,
         prompt_version=j.prompt_version,
+        finalization_status=j.finalization_status.value,
+        current_finalization_step=(
+            j.current_finalization_step.value if j.current_finalization_step else None
+        ),
+        last_completed_finalization_step=j.last_completed_finalization_step.value,
+        finalization_error_code=j.finalization_error_code,
         is_operational=is_operational,
         llm_cost_snapshot=_llm_cost_snapshot_from_job_result(j.result_json),
+    )
+
+
+def finalization_assessment_to_response(
+    assessment: FinalizationAssessment,
+) -> FinalizationAssessmentBlock:
+    stages = {
+        key: FinalizationStageAssessmentItem(
+            stage=value.stage.value,
+            status=value.status.value,
+            evidence_level=value.evidence_level.value,
+            completed_at=value.completed_at,
+            verification_required=value.verification_required,
+            last_error_code=value.last_error_code,
+        )
+        for key, value in assessment.stages.items()
+    }
+    return FinalizationAssessmentBlock(
+        outcome=assessment.outcome.value,
+        technical_result_status=assessment.technical_result_status,
+        finalization_status=assessment.finalization_status,
+        last_confirmed_stage=(
+            assessment.last_confirmed_stage.value if assessment.last_confirmed_stage else None
+        ),
+        next_required_stage=(
+            assessment.next_required_stage.value if assessment.next_required_stage else None
+        ),
+        recovery_candidate=assessment.recovery_candidate,
+        blocking_reason=assessment.blocking_reason,
+        stages=stages,
+    )
+
+
+def artifact_publication_to_response(
+    summary,
+) -> ArtifactPublicationBlock | None:
+    if summary is None:
+        return None
+    items = [
+        ArtifactPublicationItemResponse(
+            artifact_kind=item.artifact_kind,
+            required=item.required,
+            status=item.status.value,
+            attempt_count=item.attempt_count,
+            max_attempts=item.max_attempts,
+            next_attempt_at=item.next_attempt_at,
+            last_error_code=item.last_error_code,
+            source_type=item.source_type.value,
+        )
+        for item in summary.items
+    ]
+    return ArtifactPublicationBlock(
+        required_total=summary.required_total,
+        required_published=summary.required_published,
+        pending=summary.pending,
+        retry_scheduled=summary.retry_scheduled,
+        permanently_failed=summary.permanently_failed,
+        next_attempt_at=summary.next_attempt_at,
+        items=items,
+    )
+
+
+def job_to_detail(
+    j: Job,
+    *,
+    is_operational: bool = False,
+    finalization_assessment: FinalizationAssessment | None = None,
+    artifact_publication_outbox: ArtifactPublicationOutboxStore | None = None,
+) -> JobDetailResponse:
+    summary = job_to_summary(j, is_operational=is_operational)
+    assessment_block = (
+        finalization_assessment_to_response(finalization_assessment)
+        if finalization_assessment is not None
+        else None
+    )
+    publication_block = None
+    if artifact_publication_outbox is not None:
+        try:
+            publication_block = artifact_publication_to_response(
+                artifact_publication_outbox.summary_for_job(j.id)
+            )
+        except MissingMigrationOrStoreUnavailableError as exc:
+            logging.getLogger(__name__).warning(
+                "artifact_publication.summary_unavailable job_id=%s error=%s",
+                j.id,
+                exc,
+            )
+            publication_block = None
+    return JobDetailResponse(
+        **summary.model_dump(),
+        finalization_started_at=j.finalization_started_at,
+        finalization_completed_at=j.finalization_completed_at,
+        domain_persisted_at=j.domain_persisted_at,
+        artifacts_published_at=j.artifacts_published_at,
+        finalization_error_metadata=sanitize_finalization_error_metadata(
+            j.finalization_error_metadata
+        ),
+        finalization_assessment=assessment_block,
+        artifact_publication=publication_block,
     )
 
 

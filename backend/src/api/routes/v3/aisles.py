@@ -16,6 +16,7 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED,
 )
 from src.api.dependencies import (
+    get_artifact_publication_outbox_store,
     get_artifact_storage,
     get_cancel_aisle_job_use_case,
     get_compare_aisle_runs_use_case,
@@ -25,6 +26,7 @@ from src.api.dependencies import (
     get_export_aisle_benchmark_run_csv_use_case,
     get_export_aisle_business_csv_use_case,
     get_export_aisle_results_csv_use_case,
+    get_finalization_assessment_service,
     get_get_aisle_merge_results_use_case,
     get_get_aisle_processing_status_use_case,
     get_job_stale_reconciler,
@@ -57,6 +59,7 @@ from src.api.schemas.processing_schemas import (
     AisleJobsListResponse,
     AisleStatusResponse,
     ExecutionLogResponse,
+    JobDetailResponse,
     JobSummary,
     ProcessAisleRequest,
     ProcessAisleResponse,
@@ -90,6 +93,7 @@ from src.application.services.execution_log_enrichment import (
     execution_log_attachment_filename,
     format_execution_log_plaintext,
 )
+from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.run_auditability_service import RunAuditabilityService
 from src.application.use_cases.aisles.cancel_aisle_job import (
@@ -150,7 +154,7 @@ from src.application.use_cases.inventories.export_inventory_results import (
 from src.domain.jobs.entities import Job
 from src.infrastructure.artifacts.stored_artifact_reader import read_execution_log_events_for_job
 
-from .shared import aisle_to_response, job_to_summary, status_response_from_result
+from .shared import aisle_to_response, job_to_detail, job_to_summary, status_response_from_result
 
 logger = logging.getLogger(__name__)
 
@@ -507,7 +511,7 @@ def retry_aisle_job(
 
 @router.get(
     "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}",
-    response_model=JobSummary,
+    response_model=JobDetailResponse,
 )
 def get_aisle_job_detail(
     inventory_id: str,
@@ -517,12 +521,19 @@ def get_aisle_job_detail(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
     stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
-) -> JobSummary:
+    assessment_service: FinalizationAssessmentService = Depends(get_finalization_assessment_service),
+    artifact_publication_outbox=Depends(get_artifact_publication_outbox_store),
+) -> JobDetailResponse:
     job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
     reconciled = stale_reconciler.reconcile(job)
     if reconciled is None:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND)
-    return job_to_summary(reconciled)
+    assessment = assessment_service.assess(reconciled.id)
+    return job_to_detail(
+        reconciled,
+        finalization_assessment=assessment,
+        artifact_publication_outbox=artifact_publication_outbox,
+    )
 
 
 @router.get(

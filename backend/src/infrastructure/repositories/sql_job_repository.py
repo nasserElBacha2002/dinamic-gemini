@@ -21,6 +21,11 @@ from src.application.services.job_stale_reconciler import (
 )
 from src.database.sqlserver import SqlServerClient
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.jobs.finalization import (
+    CurrentFinalizationStep,
+    FinalizationStatus,
+    LastCompletedFinalizationStep,
+)
 from src.infrastructure.repositories.db_row_text import normalize_db_str
 
 logger = logging.getLogger(__name__)
@@ -51,6 +56,36 @@ def _status_from_row(row, job_id: str = "?") -> JobStatus:
             job_id,
         )
         return JobStatus.QUEUED
+
+
+def _finalization_status_from_row(row: Any) -> FinalizationStatus:
+    raw = getattr(row, "finalization_status", None)
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return FinalizationStatus.NOT_STARTED
+    try:
+        return FinalizationStatus(str(raw).strip())
+    except ValueError:
+        return FinalizationStatus.NOT_STARTED
+
+
+def _current_finalization_step_from_row(row: Any) -> CurrentFinalizationStep | None:
+    raw = getattr(row, "current_finalization_step", None)
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None
+    try:
+        return CurrentFinalizationStep(str(raw).strip())
+    except ValueError:
+        return None
+
+
+def _last_completed_step_from_row(row: Any) -> LastCompletedFinalizationStep:
+    raw = getattr(row, "last_completed_finalization_step", None)
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return LastCompletedFinalizationStep.NONE
+    try:
+        return LastCompletedFinalizationStep(str(raw).strip())
+    except ValueError:
+        return LastCompletedFinalizationStep.NONE
 
 
 def _parse_json(raw: object) -> dict[str, Any]:
@@ -94,7 +129,10 @@ _JOB_SELECT_FIELDS = (
     "started_at, finished_at, last_heartbeat_at, cancel_requested_at, "
     "current_stage, current_substep, current_step_started_at, "
     "attempt_count, retry_of_job_id, failure_code, failure_message, execution_id, "
-    "provider_name, model_name, prompt_key, engine_params_json, prompt_version"
+    "provider_name, model_name, prompt_key, engine_params_json, prompt_version, "
+    "finalization_status, current_finalization_step, last_completed_finalization_step, "
+    "finalization_error_code, finalization_error_metadata, finalization_started_at, "
+    "finalization_completed_at, domain_persisted_at, artifacts_published_at"
 )
 
 
@@ -136,6 +174,17 @@ def _row_to_job(row: Any) -> Job:
         prompt_key=getattr(row, "prompt_key", None),
         engine_params_json=_parse_optional_json(getattr(row, "engine_params_json", None)),
         prompt_version=getattr(row, "prompt_version", None),
+        finalization_status=_finalization_status_from_row(row),
+        current_finalization_step=_current_finalization_step_from_row(row),
+        last_completed_finalization_step=_last_completed_step_from_row(row),
+        finalization_error_code=getattr(row, "finalization_error_code", None),
+        finalization_error_metadata=_parse_optional_json(
+            getattr(row, "finalization_error_metadata", None)
+        ),
+        finalization_started_at=_ensure_utc(getattr(row, "finalization_started_at", None)),
+        finalization_completed_at=_ensure_utc(getattr(row, "finalization_completed_at", None)),
+        domain_persisted_at=_ensure_utc(getattr(row, "domain_persisted_at", None)),
+        artifacts_published_at=_ensure_utc(getattr(row, "artifacts_published_at", None)),
     )
 
 
@@ -155,6 +204,11 @@ class SqlJobRepository(JobRepository):
             if job.engine_params_json
             else None
         )
+        finalization_meta_str = (
+            json.dumps(job.finalization_error_metadata, ensure_ascii=False)
+            if job.finalization_error_metadata
+            else None
+        )
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -165,7 +219,11 @@ class SqlJobRepository(JobRepository):
                     current_stage = ?, current_substep = ?, current_step_started_at = ?,
                     attempt_count = ?, retry_of_job_id = ?, failure_code = ?, failure_message = ?, execution_id = ?,
                     provider_name = ?, model_name = ?, prompt_key = ?, engine_params_json = ?,
-                    prompt_version = ?
+                    prompt_version = ?,
+                    finalization_status = ?, current_finalization_step = ?,
+                    last_completed_finalization_step = ?, finalization_error_code = ?,
+                    finalization_error_metadata = ?, finalization_started_at = ?,
+                    finalization_completed_at = ?, domain_persisted_at = ?, artifacts_published_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -194,6 +252,15 @@ class SqlJobRepository(JobRepository):
                     job.prompt_key,
                     engine_str,
                     job.prompt_version,
+                    job.finalization_status.value,
+                    job.current_finalization_step.value if job.current_finalization_step else None,
+                    job.last_completed_finalization_step.value,
+                    job.finalization_error_code,
+                    finalization_meta_str,
+                    _ensure_utc(job.finalization_started_at),
+                    _ensure_utc(job.finalization_completed_at),
+                    _ensure_utc(job.domain_persisted_at),
+                    _ensure_utc(job.artifacts_published_at),
                     job.id,
                 ),
             )
@@ -205,8 +272,12 @@ class SqlJobRepository(JobRepository):
                         started_at, finished_at, last_heartbeat_at, cancel_requested_at,
                         current_stage, current_substep, current_step_started_at,
                         attempt_count, retry_of_job_id, failure_code, failure_message, execution_id,
-                        provider_name, model_name, prompt_key, engine_params_json, prompt_version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        provider_name, model_name, prompt_key, engine_params_json, prompt_version,
+                        finalization_status, current_finalization_step, last_completed_finalization_step,
+                        finalization_error_code, finalization_error_metadata, finalization_started_at,
+                        finalization_completed_at, domain_persisted_at, artifacts_published_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job.id,
@@ -236,6 +307,15 @@ class SqlJobRepository(JobRepository):
                         job.prompt_key,
                         engine_str,
                         job.prompt_version,
+                        job.finalization_status.value,
+                        job.current_finalization_step.value if job.current_finalization_step else None,
+                        job.last_completed_finalization_step.value,
+                        job.finalization_error_code,
+                        finalization_meta_str,
+                        _ensure_utc(job.finalization_started_at),
+                        _ensure_utc(job.finalization_completed_at),
+                        _ensure_utc(job.domain_persisted_at),
+                        _ensure_utc(job.artifacts_published_at),
                     ),
                 )
 
