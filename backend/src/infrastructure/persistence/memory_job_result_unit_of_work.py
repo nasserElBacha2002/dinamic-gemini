@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import copy
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from src.application.ports.job_result_scope_store import JobResultScopeStore
 from src.application.ports.job_result_unit_of_work import (
     JobResultRepositories,
     JobResultUnitOfWork,
+)
+from src.infrastructure.persistence.job_result_bundle_validation import (
+    assert_memory_job_result_bundle,
+)
+from src.infrastructure.persistence.memory_job_result_scope_store import (
+    MemoryJobResultScopeStore,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,16 +51,29 @@ def _restore_store(repo: Any, snapshot: dict | None) -> None:
 @dataclass
 class MemoryJobResultUnitOfWork:
     repositories: JobResultRepositories
-    _snapshots: dict[str, dict | None] | None = None
-    _committed: bool = False
+    _scope_store: JobResultScopeStore | None = field(default=None, init=False)
+    _snapshots: dict[str, dict | None] | None = field(default=None, init=False)
+    _committed: bool = field(default=False, init=False)
+    _rolled_back: bool = field(default=False, init=False)
+
+    @property
+    def scope_store(self) -> JobResultScopeStore:
+        if self._scope_store is None:
+            raise RuntimeError("MemoryJobResultUnitOfWork is not active")
+        return self._scope_store
 
     def commit(self) -> None:
+        if self._rolled_back:
+            raise RuntimeError("Cannot commit after rollback")
         self._committed = True
         self._snapshots = None
         logger.debug("MemoryJobResultUnitOfWork committed")
 
     def rollback(self) -> None:
+        if self._rolled_back:
+            return
         if self._snapshots is None:
+            self._rolled_back = True
             return
         repos = self.repositories
         _restore_store(repos.position_repo, self._snapshots.get("positions"))
@@ -63,10 +83,12 @@ class MemoryJobResultUnitOfWork:
         _restore_store(repos.normalized_label_repo, self._snapshots.get("normalized_labels"))
         _restore_store(repos.final_count_repo, self._snapshots.get("final_counts"))
         self._snapshots = None
+        self._rolled_back = True
         logger.warning("MemoryJobResultUnitOfWork rolled back to prior snapshot")
 
     def __enter__(self) -> MemoryJobResultUnitOfWork:
         repos = self.repositories
+        self._scope_store = MemoryJobResultScopeStore(repos)
         self._snapshots = {
             "positions": _snapshot_store(repos.position_repo),
             "products": _snapshot_store(repos.product_record_repo),
@@ -76,15 +98,20 @@ class MemoryJobResultUnitOfWork:
             "final_counts": _snapshot_store(repos.final_count_repo),
         }
         self._committed = False
+        self._rolled_back = False
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
-        if exc_type is not None and not self._committed:
-            self.rollback()
-        elif not self._committed and exc_type is None:
-            self.rollback()
+        try:
+            if exc_type is not None and not self._committed:
+                self.rollback()
+            elif not self._committed and exc_type is None:
+                self.rollback()
+        finally:
+            self._scope_store = None
 
 
 class MemoryJobResultUnitOfWorkFactory:
     def __call__(self, repositories: JobResultRepositories) -> JobResultUnitOfWork:
+        assert_memory_job_result_bundle(repositories)
         return MemoryJobResultUnitOfWork(repositories=repositories)

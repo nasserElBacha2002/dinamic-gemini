@@ -43,6 +43,7 @@ from src.pipeline.run_metadata import (
     build_run_metadata,
     default_empty_block,
 )
+from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
 
 
 class InMemoryJobRepo(JobRepository):
@@ -103,6 +104,9 @@ class NoopRepo(
     InventoryRepository,
     SupplierReferenceImageRepository,
 ):
+    def __init__(self) -> None:
+        self._store: dict[str, object] = {}
+
     def save(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         pass
 
@@ -253,7 +257,7 @@ def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
         clock=FixedClock(now),
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
     report_path = Path("/tmp/run/hybrid_report.json")
     executor._state.mark_success("j1", aisle, report_path, run_metadata=None)
@@ -309,7 +313,7 @@ def test_mark_success_clears_stale_aisle_error_fields_after_previous_failure() -
         clock=FixedClock(now),
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
     executor._state.mark_success(
         "j-retry-ok", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None
@@ -371,7 +375,7 @@ def test_mark_success_sets_operational_job_id_for_production_inventory() -> None
         clock=FixedClock(now),
         inventory_repo=inv_repo,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
     executor._state.mark_success(
         "j-prod-1", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None
@@ -431,7 +435,7 @@ def test_mark_success_overwrites_operational_job_id_on_subsequent_production_run
         clock=FixedClock(now),
         inventory_repo=inv_repo,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
     executor._state.mark_success(
         "j-second", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None
@@ -489,7 +493,7 @@ def test_mark_success_does_not_set_operational_job_id_for_test_inventory() -> No
         clock=FixedClock(now),
         inventory_repo=inv_repo,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
     executor._state.mark_success(
         "j-test-1", aisle, Path("/tmp/run/hybrid_report.json"), run_metadata=None
@@ -548,7 +552,7 @@ def test_failed_job_does_not_update_operational_job_id() -> None:
         clock=FixedClock(now),
         inventory_repo=inv_repo,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
     executor._state.fail_job_and_aisle("j-fail-1", aisle, "boom")
     saved = aisle_repo.get_by_id("aisle-1")
@@ -593,7 +597,7 @@ def test_mark_running_transitions_starting_job_to_running() -> None:
         clock=FixedClock(now),
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
 
     executor._state.mark_running("job-running", aisle, now)
@@ -637,7 +641,7 @@ def test_update_runtime_status_only_resets_step_started_at_when_stage_or_substep
         clock=clock,
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
 
     clock.set_now(later)
@@ -686,7 +690,7 @@ def test_heartbeat_reads_job_once_and_updates_timestamp() -> None:
         clock=clock,
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
 
     updated = executor._state.heartbeat("job-heartbeat")
@@ -732,7 +736,7 @@ def test_mark_success_persists_provider_and_prompt_key_in_result_json() -> None:
         clock=FixedClock(now),
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
     run_metadata = {
         RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT: default_empty_block(),
@@ -791,7 +795,7 @@ def test_mark_success_with_run_metadata_merges_into_result_json() -> None:
         clock=FixedClock(now),
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
 
     run_metadata = {
@@ -881,7 +885,7 @@ def test_execute_persists_visual_reference_context_when_resolution_fails_before_
         clock=FixedClock(now),
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
 
     base_path = tmp_path
@@ -1007,7 +1011,7 @@ def test_execute_passes_resolved_visual_reference_context_to_pipeline(tmp_path: 
         inventory_repo=inventory_repo,
         supplier_reference_image_repo=supplier_ref_repo,
         artifact_store=StubArtifactStorage(),
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
 
     base_path = tmp_path
@@ -1132,7 +1136,7 @@ def test_reference_updates_affect_only_future_jobs_and_preserve_historical_trace
         clock=clock,
         inventory_repo=inventory_repo,
         supplier_reference_image_repo=supplier_repo,
-        raw_label_repo=NoopRepo(),
+        **memory_executor_persist_kwargs(raw_label_repo=NoopRepo()),
     )
     executor._state.mark_success(
         "job-a", aisle_for_ctx, Path("/tmp/run-a/hybrid_report.json"), run_metadata=run_metadata_a
@@ -1253,7 +1257,7 @@ def test_persist_failure_sets_error_message_with_persist_prefix() -> None:
         clock=FixedClock(now),
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
 
     persist_uc = MagicMock()
@@ -1361,7 +1365,7 @@ def test_execute_rejects_running_status_reentry() -> None:
         clock=FixedClock(now),
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
         artifact_store=artifact_store,
     )
 
@@ -1463,7 +1467,7 @@ def test_execute_cooperatively_cancels_when_cancel_requested_detected(tmp_path: 
         clock=FixedClock(now),
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
         artifact_store=artifact_store,
     )
 
@@ -1610,7 +1614,7 @@ def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
         clock=FixedClock(now),
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
         artifact_store=artifact_store,
     )
 
@@ -1727,7 +1731,7 @@ def test_execute_durable_upload_failure_after_persist_partial_finalization_expli
         clock=FixedClock(now),
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
         artifact_store=artifact_store,
     )
 
@@ -1847,7 +1851,7 @@ def test_execute_rejects_mixed_video_and_photo_assets() -> None:
         clock=FixedClock(now),
         inventory_repo=noop,
         supplier_reference_image_repo=noop,
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
 
     base_path = Path("/tmp/test_execute_mixed_assets")

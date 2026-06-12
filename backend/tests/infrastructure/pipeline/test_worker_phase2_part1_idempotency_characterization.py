@@ -20,7 +20,8 @@ from src.domain.aisle.entities import AisleStatus
 from src.domain.labels.entities import RawLabel
 from src.domain.inventory.entities import InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import JobStatus
-from tests.support.worker_phase1.doubles import ArtifactUploadSpy, FailingRecomputeUseCase
+from tests.support.worker_phase1.doubles import ArtifactUploadSpy
+from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
 from tests.support.worker_phase1.executor_harness import (
     ExecutorHarness,
     make_entity_hybrid_report,
@@ -244,17 +245,17 @@ def test_p2_t002_same_job_changed_report_replaces_stale_rows_after_part2(tmp_pat
 def test_p2_t003_real_failed_job_retry_isolates_all_layers(tmp_path: Path) -> None:
     """P2-T003: executor failure → FAILED job; RetryAisleJobUseCase → success; layers isolated."""
     harness = _shared_retry_harness(tmp_path, job_id="job-failed", recompute_uc=None)
-    failing_recompute = FailingRecomputeUseCase(harness.recompute_uc)
+    failing_factory = FailingJobScopedRecomputeFactory()
     failed_report = _single_entity_report(
         entity_uid="e-failed",
         sku="SKU-FAILED",
         quantity=99,
         evidence_path="evidence/failed.jpg",
     )
-    executor = harness.make_executor(recompute_uc=failing_recompute)
+    executor = harness.make_executor(job_scoped_recompute_factory=failing_factory)
     handled = harness.run_with_mock_pipeline(executor, report=failed_report)
     assert handled is True
-    assert failing_recompute.execute_calls == 1
+    assert failing_factory.execute_calls == 1
 
     failed_job = harness.job_repo.get_by_id("job-failed")
     assert failed_job is not None
@@ -481,7 +482,7 @@ def test_p2_t003_all_scope_recompute_mixes_failed_and_success_raw_labels(
 ) -> None:
     """P2-T003-ALL-SCOPE: job_scope='all' includes raw labels from FAILED and SUCCEEDED jobs."""
     harness = _shared_retry_harness(tmp_path, job_id="job-failed-all", recompute_uc=None)
-    failing_recompute = FailingRecomputeUseCase(harness.recompute_uc)
+    failing_factory = FailingJobScopedRecomputeFactory()
     failed_report = _single_entity_report(
         entity_uid="e-failed",
         sku="SKU-FAILED",
@@ -489,7 +490,7 @@ def test_p2_t003_all_scope_recompute_mixes_failed_and_success_raw_labels(
         evidence_path="evidence/failed.jpg",
     )
     harness.run_with_mock_pipeline(
-        harness.make_executor(recompute_uc=failing_recompute),
+        harness.make_executor(job_scoped_recompute_factory=failing_factory),
         report=failed_report,
     )
     assert harness.job_repo.get_by_id("job-failed-all").status == JobStatus.FAILED

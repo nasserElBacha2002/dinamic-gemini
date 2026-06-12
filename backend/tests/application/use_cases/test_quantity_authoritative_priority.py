@@ -88,16 +88,17 @@ def test_explicit_qty_preserved_after_persist_flow() -> None:
     raw_repo = MemoryRawLabelRepository()
     norm_repo = MemoryNormalizedLabelRepository()
     final_repo = MemoryFinalCountRepository()
-    recompute = _recompute_uc(raw_repo, norm_repo, final_repo, product_repo, position_repo)
-    uc = PersistAisleResultUseCase(
+    from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
+
+    uc = build_persist_aisle_result_use_case(
         position_repo=position_repo,
         product_record_repo=product_repo,
         evidence_repo=evidence_repo,
         clock=_FixedClock(now),
-        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
         raw_label_repo=raw_repo,
-        recompute_consolidated_uc=recompute,
+        normalized_label_repo=norm_repo,
+        final_count_repo=final_repo,
     )
     report = {
         "entities": [

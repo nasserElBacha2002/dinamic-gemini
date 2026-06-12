@@ -2,7 +2,7 @@
 PersistAisleResult use case — v3.0 Épica 6, v3.2.3 consolidation.
 
 Maps a hybrid pipeline report to v3 domain entities and persists them.
-v3.2.3: Also persists raw_labels and runs RecomputeConsolidatedCountsUseCase so
+v3.2.3: Also persists raw_labels and runs job-scoped recompute so
 final quantity comes from normalized/final_count layer.
 
 Phase 2 Part 2: delete-and-replace by ``job_id`` inside a transactional Unit of Work.
@@ -14,7 +14,6 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from src.application.dto.mapped_aisle_result import MappedAisleResult
 from src.application.ports.clock import Clock
@@ -23,20 +22,18 @@ from src.application.ports.job_result_unit_of_work import (
     JobResultRepositories,
     JobResultUnitOfWorkFactory,
 )
+from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
 from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
+    FinalCountRepository,
+    NormalizedLabelRepository,
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
 )
-from src.application.services.job_result_scope_cleaner import JobResultScopeCleaner
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
-    RecomputeConsolidatedCountsUseCase,
-)
-from src.infrastructure.persistence.memory_job_result_unit_of_work import (
-    MemoryJobResultUnitOfWorkFactory,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,13 +58,22 @@ class PersistAisleResultUseCase:
         evidence_repo: EvidenceRepository,
         clock: Clock,
         hybrid_mapper: HybridReportToDomainMapper,
-        aisle_repo: AisleRepository | None = None,
-        raw_label_repo: RawLabelRepository | None = None,
-        recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
+        aisle_repo: AisleRepository,
+        raw_label_repo: RawLabelRepository,
+        normalized_label_repo: NormalizedLabelRepository,
+        final_count_repo: FinalCountRepository,
         *,
-        scope_cleaner: JobResultScopeCleaner | None = None,
-        job_result_uow_factory: JobResultUnitOfWorkFactory | None = None,
+        job_scoped_recompute_factory: JobScopedRecomputeFactory,
+        job_result_uow_factory: JobResultUnitOfWorkFactory,
     ) -> None:
+        if job_result_uow_factory is None:
+            raise ValueError(
+                "PersistAisleResultUseCase requires an explicit JobResultUnitOfWorkFactory"
+            )
+        if job_scoped_recompute_factory is None:
+            raise ValueError(
+                "PersistAisleResultUseCase requires an explicit JobScopedRecomputeFactory"
+            )
         self._position_repo = position_repo
         self._product_record_repo = product_record_repo
         self._evidence_repo = evidence_repo
@@ -75,15 +81,10 @@ class PersistAisleResultUseCase:
         self._hybrid_mapper = hybrid_mapper
         self._aisle_repo = aisle_repo
         self._raw_label_repo = raw_label_repo
-        self._recompute_uc = recompute_consolidated_uc
-        self._norm_repo = (
-            recompute_consolidated_uc._normalized_repo if recompute_consolidated_uc else None
-        )
-        self._final_repo = (
-            recompute_consolidated_uc._final_repo if recompute_consolidated_uc else None
-        )
-        self._scope_cleaner = scope_cleaner or JobResultScopeCleaner()
-        self._uow_factory = job_result_uow_factory or MemoryJobResultUnitOfWorkFactory()
+        self._normalized_label_repo = normalized_label_repo
+        self._final_count_repo = final_count_repo
+        self._recompute_factory = job_scoped_recompute_factory
+        self._uow_factory = job_result_uow_factory
 
     def execute(self, command: PersistAisleResultCommand) -> None:
         job_id = (command.job_id or "").strip()
@@ -97,29 +98,22 @@ class PersistAisleResultUseCase:
         mapped = self._map_hybrid(command, inventory_id, now)
         self._raise_if_mapped_lengths_mismatch(command, mapped)
 
-        if self._raw_label_repo is None or self._norm_repo is None or self._final_repo is None:
-            raise ValueError(
-                "PersistAisleResultUseCase requires raw_label_repo and recompute_consolidated_uc"
-            )
         base_repos = JobResultRepositories(
             position_repo=self._position_repo,
             product_record_repo=self._product_record_repo,
             evidence_repo=self._evidence_repo,
             raw_label_repo=self._raw_label_repo,
-            normalized_label_repo=self._norm_repo,
-            final_count_repo=self._final_repo,
+            normalized_label_repo=self._normalized_label_repo,
+            final_count_repo=self._final_count_repo,
         )
 
         with self._uow_factory(base_repos) as uow:
             active = uow.repositories
-            sql_cursor = _sql_cursor_from_uow(uow)
             try:
-                before = self._scope_cleaner.delete_scope(
-                    active,
+                before = uow.scope_store.delete_scope(
                     inventory_id=inventory_id,
                     aisle_id=command.aisle_id,
                     job_id=job_id,
-                    sql_cursor=sql_cursor,
                 )
                 logger.info(
                     "job_result_replacement started inventory_id=%s aisle_id=%s job_id=%s "
@@ -149,10 +143,6 @@ class PersistAisleResultUseCase:
                 raise
 
     def _inventory_id_for_aisle(self, aisle_id: str) -> str:
-        if self._aisle_repo is None:
-            raise ValueError(
-                "PersistAisleResultUseCase requires AisleRepository for v3.2.3 consolidation"
-            )
         aisle = self._aisle_repo.get_by_id(aisle_id)
         if aisle is None:
             raise ValueError(f"Aisle not found while persisting results: {aisle_id}")
@@ -234,32 +224,18 @@ class PersistAisleResultUseCase:
         inventory_id: str,
         job_id: str,
     ) -> None:
-        if self._recompute_uc is None or not self._raw_label_repo:
-            return
         if job_id in _BROAD_RECOMPUTE_SCOPES:
             raise ValueError(
                 "PersistAisleResult rejects broad recompute scope during operational persist"
             )
-        command = RecomputeConsolidatedCountsCommand(
+        recompute_cmd = RecomputeConsolidatedCountsCommand(
             inventory_id=inventory_id,
             aisle_id=command.aisle_id,
             apply_to_product_records=False,
             job_scope=job_id,
         )
-        recompute = RecomputeConsolidatedCountsUseCase(
-            raw_label_repo=repos.raw_label_repo,
-            normalized_label_repo=repos.normalized_label_repo,
-            final_count_repo=repos.final_count_repo,
-            product_record_repo=repos.product_record_repo,
-            position_repo=repos.position_repo,
-            normalization_service=self._recompute_uc._normalization,
-            final_count_builder=self._recompute_uc._builder,
-        )
-        run_persist_recompute = getattr(self._recompute_uc, "run_persist_recompute", None)
-        if run_persist_recompute is not None:
-            result = run_persist_recompute(recompute, command)
-        else:
-            result = recompute.execute(command)
+        recompute = self._recompute_factory.create(repos)
+        result = recompute.execute(recompute_cmd)
         logger.debug(
             "PersistAisleResult: recompute consolidated raw=%d normalized=%d final=%d",
             result.raw_count,
@@ -273,13 +249,3 @@ def should_persist_detected_position(sku: str | None, final_quantity: int | None
     is_unknown_sku = sku_norm == "" or sku_norm.upper() == "UNKNOWN"
     qty_norm = 0 if final_quantity is None else final_quantity
     return not (is_unknown_sku and qty_norm == 0)
-
-
-def _sql_cursor_from_uow(uow: Any) -> Any | None:
-    if hasattr(uow, "sql_cursor"):
-        try:
-            return uow.sql_cursor
-        except RuntimeError:
-            return None
-    return None
-

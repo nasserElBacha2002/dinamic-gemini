@@ -23,9 +23,15 @@ from src.application.ports.repositories import (
 )
 from src.application.services.final_count_builder import FinalCountBuilder
 from src.application.services.label_normalization import LabelNormalizationService
+from src.application.services.default_job_scoped_recompute_factory import (
+    DefaultJobScopedRecomputeFactory,
+)
 from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
+)
+from src.infrastructure.persistence.memory_job_result_unit_of_work import (
+    MemoryJobResultUnitOfWorkFactory,
 )
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
@@ -294,7 +300,15 @@ class ExecutorHarness:
             inventory_repo=kwargs.get("inventory_repo", self.inventory_repo),
             supplier_reference_image_repo=MemorySupplierReferenceImageRepository(),
             artifact_store=kwargs.get("artifact_store", self.artifact_store),
-            raw_label_repo=self.raw_repo,
+            raw_label_repo=kwargs.get("raw_repo", self.raw_repo),
+            normalized_label_repo=kwargs.get("norm_repo", self.norm_repo),
+            final_count_repo=kwargs.get("final_repo", self.final_repo),
+            job_scoped_recompute_factory=kwargs.get(
+                "job_scoped_recompute_factory", DefaultJobScopedRecomputeFactory()
+            ),
+            job_result_uow_factory=kwargs.get(
+                "job_result_uow_factory", MemoryJobResultUnitOfWorkFactory()
+            ),
             recompute_consolidated_uc=kwargs.get("recompute_uc", self.recompute_uc),
         )
 
@@ -361,11 +375,14 @@ class ExecutorHarness:
             ),
             aisle_repo=kwargs.get("aisle_repo", self.aisle_repo),
             raw_label_repo=kwargs.get("raw_label_repo", self.raw_repo),
-            recompute_consolidated_uc=kwargs.get(
-                "recompute_consolidated_uc", self.recompute_uc
+            normalized_label_repo=kwargs.get("normalized_label_repo", self.norm_repo),
+            final_count_repo=kwargs.get("final_count_repo", self.final_repo),
+            job_scoped_recompute_factory=kwargs.get(
+                "job_scoped_recompute_factory", DefaultJobScopedRecomputeFactory()
             ),
-            scope_cleaner=kwargs.get("scope_cleaner"),
-            job_result_uow_factory=kwargs.get("job_result_uow_factory"),
+            job_result_uow_factory=kwargs.get(
+                "job_result_uow_factory", MemoryJobResultUnitOfWorkFactory()
+            ),
         )
 
     def persist_report(

@@ -23,6 +23,7 @@ from tests.infrastructure.pipeline.test_v3_job_executor_phase5 import (
     NoopRepo,
     StubArtifactStorage,
 )
+from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
 
 
 def test_execute_success_invokes_state_runner_and_artifacts(tmp_path: Path) -> None:
@@ -94,7 +95,7 @@ def test_execute_success_invokes_state_runner_and_artifacts(tmp_path: Path) -> N
         inventory_repo=inv_repo,
         supplier_reference_image_repo=noop,
         artifact_store=StubArtifactStorage(),
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
     v3_base = tmp_path / "v3_uploads"
     (v3_base / "a1").mkdir(parents=True, exist_ok=True)
@@ -229,7 +230,7 @@ def test_execute_nonzero_pipeline_exit_delegates_fail_job_and_aisle(tmp_path: Pa
         inventory_repo=inv_repo,
         supplier_reference_image_repo=noop,
         artifact_store=StubArtifactStorage(),
-        raw_label_repo=noop,
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
     v3_base = tmp_path / "v3_uploads"
     (v3_base / "a1").mkdir(parents=True, exist_ok=True)

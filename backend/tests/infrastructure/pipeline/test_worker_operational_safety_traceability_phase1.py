@@ -400,21 +400,17 @@ def test_wkr_p1_t011b_reference_id_returned_as_provider_source_is_traceability_i
         )
     )
 
-    persist = PersistAisleResultUseCase(
+    from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
+
+    persist = build_persist_aisle_result_use_case(
         position_repo=pos_repo,
         product_record_repo=prod_repo,
         evidence_repo=ev_repo,
-        clock=FixedClock(now),
-        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
         raw_label_repo=raw_repo,
-        recompute_consolidated_uc=build_recompute_use_case(
-            raw_repo=raw_repo,
-            norm_repo=MemoryNormalizedLabelRepository(),
-            final_repo=MemoryFinalCountRepository(),
-            product_repo=prod_repo,
-            position_repo=pos_repo,
-        ),
+        normalized_label_repo=MemoryNormalizedLabelRepository(),
+        final_count_repo=MemoryFinalCountRepository(),
+        clock=FixedClock(now),
     )
     persist.execute(
         PersistAisleResultCommand(
@@ -562,21 +558,17 @@ def test_wkr_p1_t013_source_image_id_preserved_through_persist_and_read_model(
         )
     )
 
-    persist = PersistAisleResultUseCase(
+    from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
+
+    persist = build_persist_aisle_result_use_case(
         position_repo=pos_repo,
         product_record_repo=prod_repo,
         evidence_repo=ev_repo,
-        clock=FixedClock(now),
-        hybrid_mapper=default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,
         raw_label_repo=raw_repo,
-        recompute_consolidated_uc=build_recompute_use_case(
-            raw_repo=raw_repo,
-            norm_repo=MemoryNormalizedLabelRepository(),
-            final_repo=MemoryFinalCountRepository(),
-            product_repo=prod_repo,
-            position_repo=pos_repo,
-        ),
+        normalized_label_repo=MemoryNormalizedLabelRepository(),
+        final_count_repo=MemoryFinalCountRepository(),
+        clock=FixedClock(now),
     )
     persist.execute(
         PersistAisleResultCommand(

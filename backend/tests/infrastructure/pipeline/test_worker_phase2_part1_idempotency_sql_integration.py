@@ -8,40 +8,29 @@ from uuid import uuid4
 
 import pytest
 
-from src.application.use_cases.pipeline.persist_aisle_result import (
-    PersistAisleResultCommand,
-    PersistAisleResultUseCase,
-)
+from src.application.use_cases.pipeline.persist_aisle_result import PersistAisleResultCommand
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.infrastructure.persistence.sql_job_result_unit_of_work import SqlJobResultUnitOfWorkFactory
-from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
-    default_map_hybrid_report_to_domain,
-)
-from src.infrastructure.repositories.memory_final_count_repository import (
-    MemoryFinalCountRepository,
-)
-from src.infrastructure.repositories.memory_normalized_label_repository import (
-    MemoryNormalizedLabelRepository,
-)
-from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
 from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
 from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
+from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
+from src.infrastructure.repositories.sql_normalized_label_repository import (
+    SqlNormalizedLabelRepository,
+)
 from src.infrastructure.repositories.sql_position_repository import SqlPositionRepository
 from src.infrastructure.repositories.sql_product_record_repository import (
     SqlProductRecordRepository,
 )
-from tests.support.worker_phase1.executor_harness import (
-    FixedClock,
-    build_recompute_use_case,
-    make_two_entity_hybrid_report,
-)
+from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
+from tests.support.worker_phase1.executor_harness import FixedClock, make_two_entity_hybrid_report
 from tests.support.worker_phase1.sql_cleanup import (
     assert_sql_integration_database_is_safe,
     cleanup_worker_phase1_sql_scope,
 )
 from tests.support.worker_phase2.duplicate_detection import duplicate_positions_by_job_entity_uid
+from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
 from tests.support.worker_phase2.sql_verification import verify_sql_scope_fully_removed
 
 
@@ -77,27 +66,23 @@ def test_p2_t001_sql_positions_same_job_identical_persist_is_idempotent(
     pos_repo = SqlPositionRepository(client)
     prod_repo = SqlProductRecordRepository(client)
     ev_repo = SqlEvidenceRepository(client)
-    raw_repo = MemoryRawLabelRepository()
+    raw_repo = SqlRawLabelRepository(client)
+    norm_repo = SqlNormalizedLabelRepository(client)
+    final_repo = SqlFinalCountRepository(client)
 
     try:
         inv_repo.save(Inventory(inv_id, "P2 SQL", InventoryStatus.PROCESSING, now, now))
         aisle_repo.save(Aisle(aisle_id, inv_id, "P2", AisleStatus.PROCESSING, now, now))
 
-        persist = PersistAisleResultUseCase(
+        persist = build_persist_aisle_result_use_case(
             position_repo=pos_repo,
             product_record_repo=prod_repo,
             evidence_repo=ev_repo,
-            clock=FixedClock(now),
-            hybrid_mapper=default_map_hybrid_report_to_domain,
             aisle_repo=aisle_repo,
             raw_label_repo=raw_repo,
-            recompute_consolidated_uc=build_recompute_use_case(
-                raw_repo=raw_repo,
-                norm_repo=MemoryNormalizedLabelRepository(),
-                final_repo=MemoryFinalCountRepository(),
-                product_repo=prod_repo,
-                position_repo=pos_repo,
-            ),
+            normalized_label_repo=norm_repo,
+            final_count_repo=final_repo,
+            clock=FixedClock(now),
             job_result_uow_factory=SqlJobResultUnitOfWorkFactory(client),
         )
         report = make_two_entity_hybrid_report()

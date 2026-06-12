@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from src.application.services.export_inventory_collector import ExportInventoryCollector
-from src.application.services.job_result_scope_cleaner import JobResultScopeCleaner
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.aisles.retry_aisle_job import RetryAisleJobCommand
 from src.application.use_cases.pipeline.persist_aisle_result import PersistAisleResultCommand
@@ -16,11 +15,9 @@ from src.application.use_cases.positions.list_aisle_positions import (
     ListAislePositionsUseCase,
 )
 from src.domain.jobs.entities import JobStatus
-from tests.support.worker_phase1.doubles import (
-    ArtifactUploadSpy,
-    FailingRecomputeUseCase,
-    FailOnNthSavePositionRepository,
-)
+from tests.support.worker_phase1.doubles import ArtifactUploadSpy, FailOnNthSavePositionRepository
+from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
+from tests.support.worker_phase2.uow_doubles import HookingMemoryJobResultUnitOfWorkFactory
 from tests.support.worker_phase1.executor_harness import (
     ExecutorHarness,
     make_entity_hybrid_report,
@@ -172,7 +169,9 @@ def test_p2_p2_t004_rollback_after_deletion_restores_prior_snapshot(tmp_path: Pa
         raise RuntimeError("fail after delete")
 
     persist = harness.make_persist_use_case(
-        scope_cleaner=JobResultScopeCleaner(after_delete_hook=_fail),
+        job_result_uow_factory=HookingMemoryJobResultUnitOfWorkFactory(
+            after_delete_hook=_fail
+        ),
     )
     with pytest.raises(RuntimeError, match="fail after delete"):
         persist.execute(
@@ -210,7 +209,7 @@ def test_p2_p2_t006_rollback_during_recompute_restores_snapshot(tmp_path: Path) 
     harness.persist_report(_abc_report(), job_id="job-rb-rec")
     before = harness.snapshot_job_scope("job-rb-rec")
     persist = harness.make_persist_use_case(
-        recompute_consolidated_uc=FailingRecomputeUseCase(harness.recompute_uc)
+        job_scoped_recompute_factory=FailingJobScopedRecomputeFactory()
     )
     with pytest.raises(RuntimeError, match="simulated recompute failure"):
         persist.execute(
@@ -226,9 +225,9 @@ def test_p2_p2_t006_rollback_during_recompute_restores_snapshot(tmp_path: Path) 
 
 def test_p2_p2_t007_retry_job_isolated_after_transactional_persist(tmp_path: Path) -> None:
     harness = ExecutorHarness.build(tmp_path, job_id="job-failed")
-    failing_recompute = FailingRecomputeUseCase(harness.recompute_uc)
+    failing_factory = FailingJobScopedRecomputeFactory()
     harness.run_with_mock_pipeline(
-        harness.make_executor(recompute_uc=failing_recompute),
+        harness.make_executor(job_scoped_recompute_factory=failing_factory),
         report=_single_entity_report(
             entity_uid="e-failed",
             sku="SKU-FAILED",
@@ -277,9 +276,9 @@ def test_p2_p2_t007_retry_job_isolated_after_transactional_persist(tmp_path: Pat
 
 def test_p2_p2_t008_operational_readers_resolve_success_job_only(tmp_path: Path) -> None:
     harness = ExecutorHarness.build(tmp_path, job_id="job-f")
-    failing_recompute = FailingRecomputeUseCase(harness.recompute_uc)
+    failing_factory = FailingJobScopedRecomputeFactory()
     harness.run_with_mock_pipeline(
-        harness.make_executor(recompute_uc=failing_recompute),
+        harness.make_executor(job_scoped_recompute_factory=failing_factory),
         report=_single_entity_report(
             entity_uid="e-f",
             sku="SKU-FAILED",

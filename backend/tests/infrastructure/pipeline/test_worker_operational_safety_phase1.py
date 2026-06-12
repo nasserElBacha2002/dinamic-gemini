@@ -23,7 +23,6 @@ from src.llm.types import LLMRequest
 from tests.support.worker_phase1.doubles import (
     ArtifactUploadSpy,
     FailingArtifactStore,
-    FailingRecomputeUseCase,
     FailOnNthSavePositionRepository,
     PartialFailingAisleRepository,
     PartialFailingJobRepository,
@@ -95,13 +94,15 @@ def test_wkr_p1_t007_recompute_failure_after_entity_persist_marks_job_failed(
 ) -> None:
     """WKR-P1-T007: entity rows persist; recompute failure fails job; aggregates may be empty."""
     harness = ExecutorHarness.build(tmp_path)
-    failing_recompute = FailingRecomputeUseCase(harness.recompute_uc)
-    executor = harness.make_executor(recompute_uc=failing_recompute)
+    from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
+
+    failing_factory = FailingJobScopedRecomputeFactory()
+    executor = harness.make_executor(job_scoped_recompute_factory=failing_factory)
 
     handled = harness.run_with_mock_pipeline(executor)
 
     assert handled is True
-    assert failing_recompute.execute_calls == 1
+    assert failing_factory.execute_calls == 1
     job = harness.job_repo.get_by_id(harness.job_id)
     assert job is not None
     assert job.status == JobStatus.FAILED

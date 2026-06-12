@@ -43,6 +43,10 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
+from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
+from src.application.services.default_job_scoped_recompute_factory import (
+    DefaultJobScopedRecomputeFactory,
+)
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
 )
@@ -553,6 +557,9 @@ class AppContainer:
         if resolution.mode == RepositoryBackendMode.SQL:
             return SqlJobResultUnitOfWorkFactory(self._get_v3_sql_client())
         return MemoryJobResultUnitOfWorkFactory()
+
+    def get_job_scoped_recompute_factory(self) -> JobScopedRecomputeFactory:
+        return DefaultJobScopedRecomputeFactory()
 
     def get_list_supplier_prompt_configs_use_case(self) -> ListSupplierPromptConfigsUseCase:
         return build_list_supplier_prompt_configs_use_case(
