@@ -31,11 +31,12 @@ def _storage_repo(repo: Any) -> Any | None:
     return None
 
 
-def _snapshot_store(repo: Any) -> dict | None:
+def _snapshot_store(repo: Any) -> dict[Any, Any] | None:
     storage = _storage_repo(repo)
     if storage is None:
         return None
-    return copy.deepcopy(storage._store)
+    store: dict[Any, Any] = copy.deepcopy(storage._store)
+    return store
 
 
 def _restore_store(repo: Any, snapshot: dict | None) -> None:

@@ -25,6 +25,7 @@ from src.application.ports.clock import Clock
 from src.application.ports.code_scan_repository import CodeScanRepository
 from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
+from src.application.ports.operational_job_promotion import OperationalJobPromotionRepository
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -577,6 +578,7 @@ class AppContainer:
         job_repo: JobRepository,
     ) -> OperationalResultPromotionService:
         module = type(aisle_repo).__module__
+        promotion_repo: OperationalJobPromotionRepository
         if module.startswith("src.infrastructure.repositories.sql_"):
             promotion_repo = SqlOperationalJobPromotionRepository(self._get_v3_sql_client())
         else:
