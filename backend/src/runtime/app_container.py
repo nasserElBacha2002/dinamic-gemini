@@ -46,14 +46,23 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
+from src.application.services.artifact_recovery_source_resolver import ArtifactRecoverySourceResolver
 from src.application.services.default_job_scoped_recompute_factory import (
     DefaultJobScopedRecomputeFactory,
 )
+from src.application.services.finalization_recovery_eligibility import FinalizationRecoveryEligibility
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_artifact_verifier import JobArtifactVerifier
 from src.application.services.job_domain_result_verifier import JobDomainResultVerifier
 from src.application.services.operational_result_promotion_service import (
     OperationalResultPromotionService,
+)
+from src.application.use_cases.finalization_recovery.resume_job_finalization import (
+    FinalizationRecoveryCoordinator,
+)
+from src.application.use_cases.finalization_recovery.verify_and_republish import (
+    FinalizationRecoveryDependencies,
 )
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
@@ -68,13 +77,16 @@ from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
 from src.config import AppSettings
 from src.database.sqlserver import SqlServerClient
 from src.infrastructure.persistence.memory_artifact_manifest_store import MemoryArtifactManifestStore
-from src.infrastructure.persistence.memory_finalization_stage_store import (
-    MemoryFinalizationStageStore,
+from src.infrastructure.persistence.memory_finalization_recovery_store import (
+    MemoryFinalizationRecoveryStore,
 )
 from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWorkFactory,
 )
 from src.infrastructure.persistence.sql_artifact_manifest_store import SqlArtifactManifestStore
+from src.infrastructure.persistence.sql_finalization_recovery_store import (
+    SqlFinalizationRecoveryStore,
+)
 from src.infrastructure.persistence.sql_finalization_stage_store import SqlFinalizationStageStore
 from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
     MemoryOperationalJobPromotionRepository,
@@ -201,6 +213,7 @@ class AppContainer:
         self._stored_artifact_reader: StoredArtifactReader | None = None
         self._finalization_stage_store: FinalizationStageStore | None = None
         self._artifact_manifest_store: ArtifactManifestStore | None = None
+        self._finalization_recovery_store = None
         self._repository_backend_resolution: RepositoryBackendResolution | None = None
 
     @property
@@ -615,6 +628,58 @@ class AppContainer:
                 artifact_store=self.get_artifact_storage(),
             ),
         )
+
+    def get_finalization_recovery_store(self):
+        if self._finalization_recovery_store is not None:
+            return self._finalization_recovery_store
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._finalization_recovery_store = SqlFinalizationRecoveryStore(self._get_v3_sql_client())
+        else:
+            self._finalization_recovery_store = MemoryFinalizationRecoveryStore()
+        return self._finalization_recovery_store
+
+    def get_finalization_recovery_coordinator(self) -> FinalizationRecoveryCoordinator:
+        eligibility = FinalizationRecoveryEligibility()
+        domain_verifier = JobDomainResultVerifier(
+            aisle_repo=self.get_aisle_repo(),
+            position_repo=self.get_position_repo(),
+            product_repo=self.get_product_record_repo(),
+            evidence_repo=self.get_evidence_repo(),
+            raw_label_repo=self.get_raw_label_repo(),
+            normalized_label_repo=self.get_normalized_label_repo(),
+            final_count_repo=self.get_final_count_repo(),
+            stage_store=self.get_finalization_stage_store(),
+        )
+        artifact_verifier = JobArtifactVerifier(
+            manifest_store=self.get_artifact_manifest_store(),
+            artifact_store=self.get_artifact_storage(),
+        )
+        deps = FinalizationRecoveryDependencies(
+            job_repo=self.get_job_repo(),
+            aisle_repo=self.get_aisle_repo(),
+            inventory_repo=self.get_inventory_repo(),
+            stage_store=self.get_finalization_stage_store(),
+            manifest_store=self.get_artifact_manifest_store(),
+            recovery_store=self.get_finalization_recovery_store(),
+            assessment_service=self.get_finalization_assessment_service(),
+            domain_verifier=domain_verifier,
+            artifact_verifier=artifact_verifier,
+            source_resolver=ArtifactRecoverySourceResolver(
+                artifact_verifier=artifact_verifier,
+                output_dir=self._settings.output_dir,
+            ),
+            promotion_service=self.get_operational_result_promotion_service(),
+            inventory_reconciler=InventoryStatusReconciler(
+                inventory_repo=self.get_inventory_repo(),
+                aisle_repo=self.get_aisle_repo(),
+                clock=self.get_clock(),
+            ),
+            artifact_store=self.get_artifact_storage(),
+            clock=self.get_clock(),
+            eligibility=eligibility,
+        )
+        return FinalizationRecoveryCoordinator(deps)
 
     def get_job_result_uow_factory(self) -> JobResultUnitOfWorkFactory:
         resolution = self._get_repository_backend_resolution()

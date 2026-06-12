@@ -155,6 +155,7 @@ class FailingArtifactStore:
         self._fail_on_call = fail_on_call
         self._fail_mode = fail_mode
         self.uploaded_keys: list[str] = []
+        self.uploaded_sizes: dict[str, int] = {}
 
     def _should_fail(self) -> bool:
         if self._fail_mode == "exact":
@@ -167,6 +168,7 @@ class FailingArtifactStore:
             raise RuntimeError("simulated durable artifact upload failure")
         payload = file_obj.read()
         self.uploaded_keys.append(path)
+        self.uploaded_sizes[path] = len(payload)
         return type(
             "StoredArtifactStub",
             (),
@@ -184,10 +186,10 @@ class FailingArtifactStore:
         return path
 
     def object_exists(self, key: str) -> bool:
-        return True
+        return key in self.uploaded_sizes or True
 
     def object_size_bytes(self, key: str, *, bucket: str | None = None) -> int:
-        return 10
+        return self.uploaded_sizes.get(key, 10)
 
     def delete_file(self, path: str) -> None:
         pass

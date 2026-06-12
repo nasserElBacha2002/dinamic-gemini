@@ -169,3 +169,7 @@ def get_artifact_manifest_store():
 
 def get_finalization_assessment_service():
     return get_app_container().get_finalization_assessment_service()
+
+
+def get_finalization_recovery_coordinator():
+    return get_app_container().get_finalization_recovery_coordinator()
