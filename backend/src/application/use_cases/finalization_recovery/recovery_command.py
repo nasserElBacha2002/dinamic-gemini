@@ -6,6 +6,16 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class RecoveryExecutionContext:
+    """Parent lease context for coordinated resume — children must not acquire their own lease."""
+
+    recovery_id: str
+    attempt_id: str
+    requested_by: str
+    source: str
+
+
+@dataclass(frozen=True)
 class RecoveryCommand:
     job_id: str
     dry_run: bool = False
@@ -13,3 +23,8 @@ class RecoveryCommand:
     source: str = "api"
     allow_canceled_terminalization: bool = False
     include_optional_artifacts: bool = False
+    execution_context: RecoveryExecutionContext | None = None
+
+    @property
+    def lease_exempt(self) -> bool:
+        return self.execution_context is not None

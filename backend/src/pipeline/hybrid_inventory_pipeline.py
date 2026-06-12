@@ -562,7 +562,7 @@ class HybridInventoryPipeline:
 
         run_metadata = _build_success_run_metadata(context, settings, analysis_result, logger)
         exec_log.info("Pipeline", "Job completed successfully")
-        context.emit_stage_event(stage="Pipeline", event="job.succeeded")
+        context.emit_stage_event(stage="Pipeline", event="provider_pipeline.completed")
         _report_progress(params.progress_callback, logger, context.job_id, "done", 100)
         return PipelineRunResult(exit_code=0, run_metadata=run_metadata)
 

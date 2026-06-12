@@ -94,13 +94,17 @@ export function useAisleJobDetail(
   inventoryId: string | undefined,
   aisleId: string | undefined,
   jobId: string | undefined,
-  options?: { enabled?: boolean }
+  options?: {
+    enabled?: boolean;
+    refetchInterval?: number | false | ((query: { state: { data?: unknown } }) => number | false);
+  }
 ) {
   return useQuery({
     queryKey: queryKeys.inventories.jobDetail(inventoryId ?? '', aisleId ?? '', jobId ?? ''),
     queryFn: () => getAisleJobDetail(inventoryId!, aisleId!, jobId!),
     enabled: Boolean(inventoryId && aisleId && jobId) && (options?.enabled !== false),
     refetchOnWindowFocus: false,
+    refetchInterval: options?.refetchInterval,
   });
 }
 

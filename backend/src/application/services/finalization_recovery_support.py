@@ -13,7 +13,6 @@ from src.application.ports.finalization_recovery_store import (
 )
 from src.application.ports.repositories import JobRepository
 from src.application.ports.finalization_stage_store import FinalizationStageStore
-from src.application.ports.repositories import JobRepository
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.finalization_projection_service import FinalizationProjectionService
 from src.application.services.finalization_recovery_eligibility import FinalizationRecoveryEligibility
@@ -41,6 +40,30 @@ def sanitize_recovery_message(message: str | None) -> str | None:
         if token in lowered:
             return "recovery_failed"
     return text
+
+
+def map_recovery_outcome_to_attempt_status(outcome: RecoveryOutcome) -> RecoveryAttemptStatus:
+    """Map recovery outcome to durable attempt audit status."""
+    if outcome in (
+        RecoveryOutcome.RECOVERED,
+        RecoveryOutcome.ALREADY_COMPLETE,
+        RecoveryOutcome.ALREADY_OPERATIONAL,
+        RecoveryOutcome.ALREADY_SUPERSEDED,
+    ):
+        return RecoveryAttemptStatus.SUCCEEDED
+    if outcome == RecoveryOutcome.FAILED:
+        return RecoveryAttemptStatus.FAILED
+    if outcome == RecoveryOutcome.PARTIALLY_RECOVERED:
+        return RecoveryAttemptStatus.PARTIAL
+    if outcome in (
+        RecoveryOutcome.NOT_ELIGIBLE,
+        RecoveryOutcome.INCONSISTENT,
+        RecoveryOutcome.CONCURRENCY_CONFLICT,
+        RecoveryOutcome.VERIFICATION_REQUIRED,
+        RecoveryOutcome.SOURCE_UNAVAILABLE,
+    ):
+        return RecoveryAttemptStatus.REJECTED
+    return RecoveryAttemptStatus.REJECTED
 
 
 def build_stage_recorder(
@@ -84,6 +107,14 @@ class RecoverySession:
         self._lease_seconds = lease_seconds
         self._attempt_id: str | None = None
         self._recovery_id: str | None = None
+
+    @property
+    def recovery_id(self) -> str | None:
+        return self._recovery_id
+
+    @property
+    def attempt_id(self) -> str | None:
+        return self._attempt_id
 
     def fresh_assessment(self, job_id: str) -> FinalizationAssessment:
         return self._assessment_service.assess(job_id)
@@ -144,17 +175,7 @@ class RecoverySession:
         stages_skipped=(),
     ) -> RecoveryResult:
         if not dry_run and self._attempt_id is not None:
-            status = RecoveryAttemptStatus.SUCCEEDED
-            if outcome in (RecoveryOutcome.FAILED, RecoveryOutcome.NOT_ELIGIBLE):
-                status = RecoveryAttemptStatus.FAILED
-            elif outcome == RecoveryOutcome.PARTIALLY_RECOVERED:
-                status = RecoveryAttemptStatus.PARTIAL
-            elif outcome in (
-                RecoveryOutcome.CONCURRENCY_CONFLICT,
-                RecoveryOutcome.INCONSISTENT,
-                RecoveryOutcome.NOT_ELIGIBLE,
-            ):
-                status = RecoveryAttemptStatus.REJECTED
+            status = map_recovery_outcome_to_attempt_status(outcome)
             self._recovery_store.finish_attempt(
                 attempt_id=self._attempt_id,
                 status=status.value,

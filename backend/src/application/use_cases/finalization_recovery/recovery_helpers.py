@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from src.application.services.finalization_recovery_eligibility import FinalizationRecoveryEligibility
-from src.application.services.finalization_recovery_support import sanitize_recovery_message
+from src.application.services.finalization_recovery_support import RecoverySession, sanitize_recovery_message
 from src.application.use_cases.finalization_recovery.recovery_command import RecoveryCommand
 from src.domain.jobs.finalization_recovery import RecoveryOperation, RecoveryOutcome, RecoveryResult
 
@@ -37,7 +37,8 @@ def make_recovery_result(
         error_code=error_code,
         sanitized_message=sanitize_recovery_message(sanitized_message),
         dry_run=command.dry_run,
-        recovery_id=recovery_id,
+        recovery_id=recovery_id
+        or (command.execution_context.recovery_id if command.execution_context else None),
         eligible_operations=eligibility.eligible_operations(new, job),
         blocked_operations=eligibility.blocked_operations(new, job),
     )
@@ -91,3 +92,72 @@ def gate_or_dry_run(command, assessment, job, operation, eligibility, deps):
             deps,
         )
     return None
+
+
+def begin_recovery_lease(
+    session: RecoverySession,
+    command: RecoveryCommand,
+    *,
+    job_id: str,
+    operation: RecoveryOperation,
+    requested_by: str,
+    source: str,
+    assessment,
+    dry_run: bool,
+) -> RecoveryResult | None:
+    if command.lease_exempt:
+        return None
+    return session.begin(
+        job_id=job_id,
+        operation=operation,
+        requested_by=requested_by,
+        source=source,
+        assessment=assessment,
+        dry_run=dry_run,
+    )
+
+
+def finish_recovery_lease(
+    session: RecoverySession,
+    command: RecoveryCommand,
+    deps,
+    *,
+    outcome: RecoveryOutcome,
+    previous,
+    new,
+    operation: RecoveryOperation,
+    job_id: str,
+    error_code: str | None = None,
+    sanitized_message: str | None = None,
+    dry_run: bool = False,
+    stages_attempted=(),
+    stages_completed=(),
+    stages_skipped=(),
+) -> RecoveryResult:
+    if command.lease_exempt:
+        return make_recovery_result(
+            command,
+            previous,
+            new,
+            outcome,
+            operation,
+            deps,
+            error_code=error_code,
+            sanitized_message=sanitized_message,
+            stages_attempted=stages_attempted,
+            stages_completed=stages_completed,
+            stages_skipped=stages_skipped,
+        )
+    return session.finish(
+        outcome=outcome,
+        previous=previous,
+        new=new,
+        operation=operation,
+        job_id=job_id,
+        error_code=error_code,
+        sanitized_message=sanitized_message,
+        dry_run=dry_run,
+        stages_attempted=stages_attempted,
+        stages_completed=stages_completed,
+        stages_skipped=stages_skipped,
+    )

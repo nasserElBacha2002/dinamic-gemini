@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from src.application.services.finalization_recovery_eligibility import FinalizationRecoveryEligibility
-from src.application.use_cases.finalization_recovery.recovery_command import RecoveryCommand
+from src.application.use_cases.finalization_recovery.recovery_command import (
+    RecoveryCommand,
+    RecoveryExecutionContext,
+)
 from src.application.use_cases.finalization_recovery.recovery_helpers import (
+    begin_recovery_lease,
+    finish_recovery_lease,
     gate_or_dry_run,
     make_recovery_result,
     not_eligible,
@@ -80,6 +85,28 @@ class ResumeJobFinalizationUseCase:
                     allow_canceled_terminalization=command.allow_canceled_terminalization,
                 )
             )
+
+        session = self._deps.session()
+        conflict = begin_recovery_lease(
+            session,
+            command,
+            job_id=command.job_id,
+            operation=self.operation,
+            requested_by=command.requested_by,
+            source=command.source,
+            assessment=assessment,
+            dry_run=False,
+        )
+        if conflict is not None:
+            return conflict
+        assert session.recovery_id is not None and session.attempt_id is not None
+        child_context = RecoveryExecutionContext(
+            recovery_id=session.recovery_id,
+            attempt_id=session.attempt_id,
+            requested_by=command.requested_by,
+            source=command.source,
+        )
+
         attempted: list[RecoveryOperation] = []
         completed: list[RecoveryOperation] = []
         attempted_stages: list[FinalizationStage] = []
@@ -91,6 +118,7 @@ class ResumeJobFinalizationUseCase:
                 requested_by=command.requested_by,
                 source=command.source,
                 allow_canceled_terminalization=command.allow_canceled_terminalization,
+                execution_context=child_context,
             )
             result = use_case.execute(step_cmd)
             current_assessment = result.new_assessment
@@ -109,13 +137,15 @@ class ResumeJobFinalizationUseCase:
                 continue
             if result.outcome in (RecoveryOutcome.ALREADY_SUPERSEDED, RecoveryOutcome.VERIFICATION_REQUIRED):
                 continue
-            return make_recovery_result(
+            return finish_recovery_lease(
+                session,
                 command,
-                assessment,
-                current_assessment,
-                RecoveryOutcome.PARTIALLY_RECOVERED,
-                self.operation,
                 self._deps,
+                outcome=RecoveryOutcome.PARTIALLY_RECOVERED,
+                previous=assessment,
+                new=current_assessment,
+                operation=self.operation,
+                job_id=command.job_id,
                 error_code=result.error_code,
                 sanitized_message=result.sanitized_message,
                 stages_attempted=tuple(attempted_stages),
@@ -127,13 +157,15 @@ class ResumeJobFinalizationUseCase:
             if final.outcome.value == "complete"
             else RecoveryOutcome.PARTIALLY_RECOVERED
         )
-        return make_recovery_result(
+        return finish_recovery_lease(
+            session,
             command,
-            assessment,
-            final,
-            outcome,
-            self.operation,
             self._deps,
+            outcome=outcome,
+            previous=assessment,
+            new=final,
+            operation=self.operation,
+            job_id=command.job_id,
             stages_attempted=tuple(attempted_stages),
             stages_completed=tuple(completed_stages),
         )

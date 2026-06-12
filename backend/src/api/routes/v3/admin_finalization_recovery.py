@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix=API_V3_ADMIN_ROUTER_PREFIX,
     tags=["admin-v3"],
-    dependencies=[Depends(get_current_admin)],
 )
 
 _OPERATION_MAP = {

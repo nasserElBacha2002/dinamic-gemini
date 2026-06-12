@@ -22,6 +22,8 @@ from src.application.services.operational_result_promotion_service import (
 )
 from src.application.use_cases.finalization_recovery.recovery_command import RecoveryCommand
 from src.application.use_cases.finalization_recovery.recovery_helpers import (
+    begin_recovery_lease,
+    finish_recovery_lease,
     gate_or_dry_run,
     make_recovery_result,
     not_eligible,
@@ -112,7 +114,7 @@ class VerifyJobFinalizationUseCase:
                 self._deps,
             )
         session = self._deps.session()
-        conflict = session.begin(
+        conflict = begin_recovery_lease(session, command,
             job_id=command.job_id,
             operation=self.operation,
             requested_by=command.requested_by,
@@ -158,7 +160,7 @@ class VerifyJobFinalizationUseCase:
             if new_assessment.outcome != assessment.outcome
             else RecoveryOutcome.VERIFICATION_REQUIRED
         )
-        return session.finish(
+        return finish_recovery_lease(session, command, self._deps,
             outcome=outcome,
             previous=assessment,
             new=new_assessment,
@@ -222,7 +224,7 @@ class RepublishJobArtifactsUseCase:
                 sanitized_message=unavailable[0].detail,
             )
         session = self._deps.session()
-        conflict = session.begin(
+        conflict = begin_recovery_lease(session, command,
             job_id=command.job_id,
             operation=self.operation,
             requested_by=command.requested_by,
@@ -240,7 +242,7 @@ class RepublishJobArtifactsUseCase:
                 source_paths[src.artifact_kind] = Path(src.local_path)
         run_dir = Path(pending[0].run_dir) if pending and pending[0].run_dir else None
         if run_dir is None or self._deps.artifact_store is None:
-            return session.finish(
+            return finish_recovery_lease(session, command, self._deps,
                 outcome=RecoveryOutcome.SOURCE_UNAVAILABLE,
                 previous=assessment,
                 new=assessment,
@@ -286,7 +288,7 @@ class RepublishJobArtifactsUseCase:
             if all(c.verdict == ArtifactVerificationVerdict.CONFIRMED for c in post_checks)
             else RecoveryOutcome.VERIFICATION_REQUIRED
         )
-        return session.finish(
+        return finish_recovery_lease(session, command, self._deps,
             outcome=outcome,
             previous=assessment,
             new=new_assessment,

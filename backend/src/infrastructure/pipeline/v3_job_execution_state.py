@@ -610,12 +610,16 @@ class V3JobExecutionStateService:
                 metadata=metadata,
                 job_status=job_status,
             )
-        except Exception:
-            logger.error(
-                "finalization_job_metadata_unavailable job_id=%s step=%s code=%s",
+        except Exception as reporting_exc:
+            logger.critical(
+                "finalization_job_metadata_unavailable job_id=%s aisle_id=%s step=%s code=%s "
+                "failure_state_persisted=false reporting_error_type=%s",
                 job_id,
+                aisle.id,
                 current_step.value,
                 error_code.value,
+                type(reporting_exc).__name__,
+                exc_info=reporting_exc,
             )
         self._fail_aisle_for_finalization(
             aisle,

@@ -19,6 +19,7 @@ from src.infrastructure.persistence.job_result_bundle_validation import (
 from src.infrastructure.persistence.sql_finalization_evidence_writer import (
     SqlFinalizationEvidenceWriter,
 )
+from src.infrastructure.persistence.sql_job_result_scope_store import SqlJobResultScopeStore
 from src.infrastructure.persistence.sql_finalization_stage_store import SqlFinalizationStageStore
 from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
 from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository

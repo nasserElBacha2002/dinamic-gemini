@@ -32,7 +32,7 @@ class SqlFinalizationRecoveryStore:
                        requested_by, source, initial_assessment_outcome, initial_blocking_reason,
                        final_assessment_outcome, final_blocking_reason, error_code, sanitized_error,
                        lease_expires_at, created_at
-                FROM job_finalization_recovery_attempts
+                FROM job_finalization_recovery_attempts WITH (UPDLOCK, HOLDLOCK)
                 WHERE job_id = ? AND status = ? AND lease_expires_at > ?
                 ORDER BY started_at DESC
                 """,
@@ -54,13 +54,20 @@ class SqlFinalizationRecoveryStore:
         lease_expires_at: datetime,
         now: datetime,
     ) -> RecoveryAttemptRecord:
-        active = self.get_active_lease(job_id, now=now)
-        if active is not None:
-            raise RecoveryLeaseConflictError(
-                f"Active recovery lease job_id={job_id} recovery_id={active.recovery_id}"
-            )
         attempt_id = str(uuid.uuid4())
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                """
+                SELECT TOP 1 id
+                FROM job_finalization_recovery_attempts WITH (UPDLOCK, HOLDLOCK)
+                WHERE job_id = ? AND status = ? AND lease_expires_at > ?
+                """,
+                (job_id, RecoveryAttemptStatus.RUNNING.value, now.replace(tzinfo=None)),
+            )
+            if cur.fetchone() is not None:
+                raise RecoveryLeaseConflictError(
+                    f"Active recovery lease job_id={job_id}"
+                )
             cur.execute(
                 """
                 INSERT INTO job_finalization_recovery_attempts (

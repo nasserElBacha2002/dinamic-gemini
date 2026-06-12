@@ -7,6 +7,8 @@ import logging
 from src.application.ports.operational_job_promotion import PromotionOutcome
 from src.application.use_cases.finalization_recovery.recovery_command import RecoveryCommand
 from src.application.use_cases.finalization_recovery.recovery_helpers import (
+    begin_recovery_lease,
+    finish_recovery_lease,
     gate_or_dry_run,
     make_recovery_result,
     not_eligible,
@@ -74,7 +76,7 @@ class TerminalizeRecoveredJobUseCase:
                 command, assessment, self.operation, "required_artifacts_not_verified", self._deps
             )
         session = self._deps.session()
-        conflict = session.begin(
+        conflict = begin_recovery_lease(session, command,
             job_id=command.job_id,
             operation=self.operation,
             requested_by=command.requested_by,
@@ -104,7 +106,7 @@ class TerminalizeRecoveredJobUseCase:
             verification_source="recovery_terminalize",
         )
         new_assessment = session.fresh_assessment(command.job_id)
-        return session.finish(
+        return finish_recovery_lease(session, command, self._deps,
             outcome=RecoveryOutcome.RECOVERED,
             previous=assessment,
             new=new_assessment,
@@ -152,7 +154,7 @@ class PromoteRecoveredOperationalResultUseCase:
                 self._deps,
             )
         session = self._deps.session()
-        conflict = session.begin(
+        conflict = begin_recovery_lease(session, command,
             job_id=command.job_id,
             operation=self.operation,
             requested_by=command.requested_by,
@@ -167,7 +169,7 @@ class PromoteRecoveredOperationalResultUseCase:
             candidate_job_id=command.job_id,
         )
         if promotion.outcome == PromotionOutcome.REJECTED_STALE:
-            return session.finish(
+            return finish_recovery_lease(session, command, self._deps,
                 outcome=RecoveryOutcome.ALREADY_SUPERSEDED,
                 previous=assessment,
                 new=session.fresh_assessment(command.job_id),
@@ -180,7 +182,7 @@ class PromoteRecoveredOperationalResultUseCase:
         elif promotion.outcome == PromotionOutcome.PROMOTED:
             outcome = RecoveryOutcome.RECOVERED
         else:
-            return session.finish(
+            return finish_recovery_lease(session, command, self._deps,
                 outcome=RecoveryOutcome.NOT_ELIGIBLE,
                 previous=assessment,
                 new=session.fresh_assessment(command.job_id),
@@ -196,7 +198,7 @@ class PromoteRecoveredOperationalResultUseCase:
             verification_source="recovery_promote",
         )
         new_assessment = session.fresh_assessment(command.job_id)
-        return session.finish(
+        return finish_recovery_lease(session, command, self._deps,
             outcome=outcome,
             previous=assessment,
             new=new_assessment,
@@ -244,7 +246,7 @@ class ReconcileRecoveredAisleUseCase:
                 self._deps,
             )
         session = self._deps.session()
-        conflict = session.begin(
+        conflict = begin_recovery_lease(session, command,
             job_id=command.job_id,
             operation=self.operation,
             requested_by=command.requested_by,
@@ -258,7 +260,7 @@ class ReconcileRecoveredAisleUseCase:
         if aisle.operational_job_id and aisle.operational_job_id != command.job_id:
             op = self._deps.job_repo.get_by_id(aisle.operational_job_id)
             if op and op.status == JobStatus.SUCCEEDED and op.created_at > job.created_at:
-                return session.finish(
+                return finish_recovery_lease(session, command, self._deps,
                     outcome=RecoveryOutcome.ALREADY_SUPERSEDED,
                     previous=assessment,
                     new=session.fresh_assessment(command.job_id),
@@ -276,7 +278,7 @@ class ReconcileRecoveredAisleUseCase:
             verification_source="recovery_aisle_reconcile",
         )
         new_assessment = session.fresh_assessment(command.job_id)
-        return session.finish(
+        return finish_recovery_lease(session, command, self._deps,
             outcome=RecoveryOutcome.RECOVERED,
             previous=assessment,
             new=new_assessment,
@@ -331,7 +333,7 @@ class ReconcileRecoveredInventoryUseCase:
         if aisle is None:
             return not_eligible(command, assessment, self.operation, "aisle_not_found", self._deps)
         session = self._deps.session()
-        conflict = session.begin(
+        conflict = begin_recovery_lease(session, command,
             job_id=command.job_id,
             operation=self.operation,
             requested_by=command.requested_by,
@@ -355,7 +357,7 @@ class ReconcileRecoveredInventoryUseCase:
             if new_assessment.outcome.value == "complete"
             else RecoveryOutcome.VERIFICATION_REQUIRED
         )
-        return session.finish(
+        return finish_recovery_lease(session, command, self._deps,
             outcome=outcome,
             previous=assessment,
             new=new_assessment,

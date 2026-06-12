@@ -186,6 +186,7 @@ def get_worker_launch_service_dep() -> WorkerLaunchService:
 
 def get_job_stale_reconciler(
     job_repo: JobRepository = Depends(get_job_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
     clock: Clock = Depends(get_clock),
 ) -> JobStaleReconciler:
     from src.config import load_settings
@@ -193,6 +194,7 @@ def get_job_stale_reconciler(
     settings = load_settings()
     return JobStaleReconciler(
         job_repo=job_repo,
+        aisle_repo=aisle_repo,
         clock=clock,
         stale_after_seconds=int(getattr(settings, "worker_stale_running_timeout_sec", 0) or 0),
     )

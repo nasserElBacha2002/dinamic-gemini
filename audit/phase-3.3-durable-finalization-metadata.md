@@ -246,3 +246,7 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m compileall src
 .venv/bin/pytest tests/infrastructure/pipeline/test_worker_phase2_part3_operational_promotion_concurrency.py
 .venv/bin/pytest tests/infrastructure/pipeline/test_v3_job_executor_coordination.py
 ```
+
+### Production regression follow-up (2026-06)
+
+Missing `SqlJobResultScopeStore` import in `sql_job_result_unit_of_work.py` caused persistence `NameError` and stuck processing UI. Corrected in scoped patch; persistence failure path terminalizes job/aisle via existing executor handler. Details: `audit/phase-3-processing-stuck-and-frontend-alignment.md`.

@@ -148,3 +148,14 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m compileall src
 .venv/bin/pytest tests/infrastructure/pipeline/test_worker_phase3_part3_durable_metadata.py
 .venv/bin/pytest tests/infrastructure/pipeline/test_worker_phase3_part2_finalization_semantics.py
 ```
+
+## 17. Post-production corrections (2026-06)
+
+See `audit/phase-3-processing-stuck-and-frontend-alignment.md` for:
+
+- SQL UoW `SqlJobResultScopeStore` import fix
+- Atomic SQL recovery lease (`UPDLOCK, HOLDLOCK`)
+- Single parent lease for `resume` via `RecoveryExecutionContext`
+- Attempt status mapping (`NOT_ELIGIBLE` → `REJECTED`)
+- Admin router auth dependency cleanup
+- Frontend terminal-state derivation and admin recovery panel
