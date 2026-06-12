@@ -8,7 +8,6 @@ from src.application.services.final_count_builder import FinalCountBuilder
 from src.application.services.label_normalization import LabelNormalizationService
 from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
-    PersistAisleResultUseCase,
 )
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
@@ -19,9 +18,6 @@ from src.domain.labels.entities import RawLabel
 from src.domain.labels.merge import MergeRuleEngine
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
-from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
-    default_map_hybrid_report_to_domain,
-)
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
 from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository

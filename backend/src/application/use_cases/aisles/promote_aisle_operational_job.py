@@ -12,12 +12,12 @@ from src.application.errors import (
 )
 from src.application.ports.operational_job_promotion import PromotionOutcome
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
-from src.application.services.operational_result_promotion_service import (
-    OperationalResultPromotionService,
-)
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.inventory_processing_mode import (
     require_test_inventory_for_experimental_features,
+)
+from src.application.services.operational_result_promotion_service import (
+    OperationalResultPromotionService,
 )
 from src.domain.jobs.entities import JobStatus
 
@@ -47,7 +47,7 @@ class PromoteAisleOperationalJobUseCase:
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
         require_test_inventory_for_experimental_features(inv)
-        aisle = require_aisle_scoped_to_inventory(
+        require_aisle_scoped_to_inventory(
             self._aisle_repo,
             inventory_id=command.inventory_id,
             aisle_id=command.aisle_id,

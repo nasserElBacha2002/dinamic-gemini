@@ -16,25 +16,25 @@ from src.application.use_cases.pipeline.persist_aisle_result import PersistAisle
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.infrastructure.persistence.sql_job_result_unit_of_work import SqlJobResultUnitOfWorkFactory
+from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
+from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
 from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository
+from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
 from src.infrastructure.repositories.sql_normalized_label_repository import (
     SqlNormalizedLabelRepository,
 )
-from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
-from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
-from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
-from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
 from src.infrastructure.repositories.sql_position_repository import SqlPositionRepository
 from src.infrastructure.repositories.sql_product_record_repository import (
     SqlProductRecordRepository,
 )
+from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
 from tests.support.worker_phase1.executor_harness import FixedClock, make_two_entity_hybrid_report
-from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
-from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
 from tests.support.worker_phase1.sql_cleanup import (
     assert_sql_integration_database_is_safe,
     cleanup_worker_phase1_sql_scope,
 )
+from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
+from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
 
 
 @pytest.fixture

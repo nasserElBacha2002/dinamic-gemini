@@ -16,8 +16,6 @@ from src.application.use_cases.positions.list_aisle_positions import (
 )
 from src.domain.jobs.entities import JobStatus
 from tests.support.worker_phase1.doubles import ArtifactUploadSpy, FailOnNthSavePositionRepository
-from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
-from tests.support.worker_phase2.uow_doubles import HookingMemoryJobResultUnitOfWorkFactory
 from tests.support.worker_phase1.executor_harness import (
     ExecutorHarness,
     make_entity_hybrid_report,
@@ -29,7 +27,9 @@ from tests.support.worker_phase2.duplicate_detection import (
     repeated_final_counts_by_job_sku,
 )
 from tests.support.worker_phase2.job_scope_inspection import assert_no_row_id_overlap
+from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
 from tests.support.worker_phase2.retry_flow import build_retry_flow_services
+from tests.support.worker_phase2.uow_doubles import HookingMemoryJobResultUnitOfWorkFactory
 
 
 def _abc_report(

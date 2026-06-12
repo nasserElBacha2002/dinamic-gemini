@@ -11,12 +11,9 @@ from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     should_persist_detected_position,
 )
-from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
 from src.domain.positions.entities import PositionStatus
-from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
-    default_map_hybrid_report_to_domain,
-)
 from src.infrastructure.pipeline.v3_report_mapper import map_hybrid_report_to_domain
+from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
 
 
 def test_map_hybrid_report_to_domain_empty_entities():

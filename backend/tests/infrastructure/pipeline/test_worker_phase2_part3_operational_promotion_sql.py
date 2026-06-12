@@ -112,7 +112,9 @@ def test_p2_p3_t016_sql_cleanup_protects_operational_job(sql_client_or_skip) -> 
     """Operational job cleanup rejected at application layer (SQL-backed repos)."""
     from src.application.ports.job_result_unit_of_work import JobResultRepositories
     from src.application.use_cases.pipeline.cleanup_job_results import CleanupJobResultsUseCase
-    from src.infrastructure.persistence.sql_job_result_unit_of_work import SqlJobResultUnitOfWorkFactory
+    from src.infrastructure.persistence.sql_job_result_unit_of_work import (
+        SqlJobResultUnitOfWorkFactory,
+    )
     from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
     from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository
     from src.infrastructure.repositories.sql_normalized_label_repository import (

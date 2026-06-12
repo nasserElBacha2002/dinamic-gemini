@@ -13,8 +13,8 @@ from typing import Any
 from src.application.ports.contracts import POSITION_LIST_JOB_ID_UNSET, PositionListQuery
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository
 from src.database.sqlserver import SqlServerClient
-from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.infrastructure.repositories.db_row_text import normalize_db_str
 
 logger = logging.getLogger(__name__)

@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 
 from src.application.ports.repositories import LabelJobScope, RawLabelRepository
 from src.database.sqlserver import SqlServerClient
-from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.domain.labels.entities import RawLabel
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:

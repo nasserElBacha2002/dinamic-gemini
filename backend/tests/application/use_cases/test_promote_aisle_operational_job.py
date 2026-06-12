@@ -23,7 +23,6 @@ from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
-from tests.support.worker_phase2.promotion_builders import build_operational_promotion_service
 
 
 def _now() -> datetime:

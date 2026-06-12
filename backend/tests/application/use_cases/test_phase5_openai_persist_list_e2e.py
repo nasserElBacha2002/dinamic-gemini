@@ -17,18 +17,18 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
 from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
+from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_normalized_label_repository import (
     MemoryNormalizedLabelRepository,
 )
-from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
-from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
-from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
-from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.repositories.memory_product_record_repository import (
     MemoryProductRecordRepository,
 )
+from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
 from src.infrastructure.repositories.memory_review_action_repository import (
     MemoryReviewActionRepository,
 )

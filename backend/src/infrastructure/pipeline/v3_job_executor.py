@@ -17,16 +17,14 @@ from typing import Any, Callable
 from src.application.ports.clock import Clock
 from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
-from src.application.services.operational_result_promotion_service import (
-    OperationalResultPromotionService,
-)
-from src.application.ports.repositories import FinalCountRepository, NormalizedLabelRepository
 from src.application.ports.repositories import (
     AisleRepository,
     ClientSupplierRepository,
     EvidenceRepository,
+    FinalCountRepository,
     InventoryRepository,
     JobRepository,
+    NormalizedLabelRepository,
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
@@ -39,6 +37,9 @@ from src.application.services.aisle_analysis_context_builder import (
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_engine_params import coerce_prompt_parity_mode
+from src.application.services.operational_result_promotion_service import (
+    OperationalResultPromotionService,
+)
 from src.application.services.supplier_prompt_resolver import (
     SupplierPromptResolution,
     SupplierPromptResolutionErrorCode,

@@ -21,17 +21,14 @@ from src.application.ports.repositories import (
     RawLabelRepository,
     SourceAssetRepository,
 )
-from src.application.services.final_count_builder import FinalCountBuilder
-from src.application.services.label_normalization import LabelNormalizationService
 from src.application.services.default_job_scoped_recompute_factory import (
     DefaultJobScopedRecomputeFactory,
 )
+from src.application.services.final_count_builder import FinalCountBuilder
+from src.application.services.label_normalization import LabelNormalizationService
 from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
-)
-from src.infrastructure.persistence.memory_job_result_unit_of_work import (
-    MemoryJobResultUnitOfWorkFactory,
 )
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
@@ -41,6 +38,9 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.labels.merge import MergeRuleEngine
+from src.infrastructure.persistence.memory_job_result_unit_of_work import (
+    MemoryJobResultUnitOfWorkFactory,
+)
 from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
     default_map_hybrid_report_to_domain,
 )

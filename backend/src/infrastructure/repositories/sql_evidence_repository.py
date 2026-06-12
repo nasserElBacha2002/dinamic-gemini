@@ -11,8 +11,8 @@ from typing import Any
 
 from src.application.ports.repositories import EvidenceRepository
 from src.database.sqlserver import SqlServerClient
-from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.domain.evidence.entities import Evidence, EvidenceType
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_for_row
 

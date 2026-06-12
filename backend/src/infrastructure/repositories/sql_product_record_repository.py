@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 
 from src.application.ports.repositories import ProductRecordRepository
 from src.database.sqlserver import SqlServerClient
-from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.domain.products.entities import ProductRecord
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 
 

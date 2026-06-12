@@ -24,6 +24,7 @@ from src.application.ports.capture_repositories import (
 from src.application.ports.clock import Clock
 from src.application.ports.code_scan_repository import CodeScanRepository
 from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
+from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -43,7 +44,6 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
-from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
 from src.application.services.default_job_scoped_recompute_factory import (
     DefaultJobScopedRecomputeFactory,
 )

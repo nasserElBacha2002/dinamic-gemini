@@ -12,7 +12,6 @@ import pytest
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
-    PersistAisleResultUseCase,
 )
 from src.application.use_cases.positions.list_aisle_positions import (
     ListAislePositionsCommand,
@@ -26,9 +25,6 @@ from src.domain.traceability import (
     TRACEABILITY_INVALID,
     TRACEABILITY_VALID,
     apply_traceability_validation,
-)
-from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
-    default_map_hybrid_report_to_domain,
 )
 from src.infrastructure.pipeline.v3_report_mapper import map_hybrid_report_to_domain
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
@@ -62,7 +58,7 @@ from src.pipeline.stages.frame_acquisition_stage import (
     FrameAcquisitionStage,
 )
 from src.pipeline.stages.input_preparation_stage import PreparedInput
-from tests.support.worker_phase1.executor_harness import FixedClock, build_recompute_use_case
+from tests.support.worker_phase1.executor_harness import FixedClock
 
 
 def _photos_job_input(manifest_path: str, photos_dir: str) -> MagicMock:
