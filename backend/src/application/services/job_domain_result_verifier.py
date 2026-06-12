@@ -159,8 +159,8 @@ class JobDomainResultVerifier:
                     detail="evidence_position_out_of_scope",
                 )
 
-        for label in raw_labels:
-            if label.position_id and label.position_id not in position_ids:
+        for raw_label in raw_labels:
+            if raw_label.position_id and raw_label.position_id not in position_ids:
                 return DomainSnapshotVerification(
                     verdict=DomainSnapshotVerdict.INCOMPLETE,
                     position_count=counts.position_count,
@@ -172,8 +172,8 @@ class JobDomainResultVerifier:
                     detail="raw_label_position_out_of_scope",
                 )
 
-        for label in normalized:
-            if label.position_id and label.position_id not in position_ids:
+        for normalized_label in normalized:
+            if normalized_label.position_id and normalized_label.position_id not in position_ids:
                 return DomainSnapshotVerification(
                     verdict=DomainSnapshotVerdict.INCOMPLETE,
                     position_count=counts.position_count,

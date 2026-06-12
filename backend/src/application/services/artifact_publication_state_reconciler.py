@@ -15,7 +15,10 @@ from src.application.ports.artifact_publication_outbox_store import (
 )
 from src.application.ports.clock import Clock
 from src.application.services.artifact_publication_verifier import verify_remote_object
-from src.domain.jobs.artifact_manifest import ArtifactManifestStatus
+from src.domain.jobs.artifact_manifest import (
+    ArtifactManifestStatus,
+    ArtifactVerificationLevel as ManifestVerificationLevel,
+)
 from src.domain.jobs.artifact_publication_outbox import (
     ArtifactPublicationOutboxStatus,
     ArtifactVerificationLevel,
@@ -106,7 +109,7 @@ class ArtifactPublicationStateReconciler:
                     source_sha256=source_sha256,
                     storage_etag=storage_etag,
                     verified_at=verified_at,
-                    verification_level=level,
+                    verification_level=ManifestVerificationLevel(level.value),
                 )
                 outcome = ReconciliationOutcome(
                     manifest_repaired=True,

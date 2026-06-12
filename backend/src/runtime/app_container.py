@@ -47,6 +47,7 @@ from src.application.ports.repositories import (
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
+from src.infrastructure.storage.artifact_store import ArtifactStore
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
 from src.application.services.artifact_publication_dispatcher import ArtifactPublicationDispatcher
 from src.application.services.artifact_recovery_source_resolver import (
@@ -514,6 +515,15 @@ class AppContainer:
         self._artifact_storage = build_artifact_storage(self._settings)
         return self._artifact_storage
 
+    def get_artifact_store(self) -> ArtifactStore:
+        """Provider-aware artifact store for publication verification and recovery."""
+        storage = self.get_artifact_storage()
+        if not isinstance(storage, ArtifactStore):
+            raise RuntimeError(
+                f"Artifact storage {type(storage).__name__} does not implement ArtifactStore"
+            )
+        return storage
+
     def get_stored_artifact_reader(self) -> StoredArtifactReader:
         """Hybrid reads for stored job JSON / reports (port adapter; shared by API + worker)."""
         if self._stored_artifact_reader is not None:
@@ -677,7 +687,7 @@ class AppContainer:
         stage_store = self.get_finalization_stage_store()
         manifest_store = self.get_artifact_manifest_store()
         outbox_store = self.get_artifact_publication_outbox_store()
-        artifact_store = self.get_artifact_storage()
+        artifact_store = self.get_artifact_store()
         state = V3JobExecutionStateService(
             job_repo=job_repo,
             aisle_repo=aisle_repo,
@@ -757,7 +767,7 @@ class AppContainer:
             ),
             artifact_verifier=JobArtifactVerifier(
                 manifest_store=self.get_artifact_manifest_store(),
-                artifact_store=self.get_artifact_storage(),
+                artifact_store=self.get_artifact_store(),
             ),
         )
 
@@ -785,7 +795,7 @@ class AppContainer:
         )
         artifact_verifier = JobArtifactVerifier(
             manifest_store=self.get_artifact_manifest_store(),
-            artifact_store=self.get_artifact_storage(),
+            artifact_store=self.get_artifact_store(),
         )
         deps = FinalizationRecoveryDependencies(
             job_repo=self.get_job_repo(),
@@ -807,7 +817,7 @@ class AppContainer:
                 aisle_repo=self.get_aisle_repo(),
                 clock=self.get_clock(),
             ),
-            artifact_store=self.get_artifact_storage(),
+            artifact_store=self.get_artifact_store(),
             clock=self.get_clock(),
             eligibility=eligibility,
         )

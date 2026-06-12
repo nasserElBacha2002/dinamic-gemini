@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from src.application.services.finalization_recovery_eligibility import (
     FinalizationRecoveryEligibility,
 )
@@ -12,14 +14,21 @@ from src.application.services.finalization_recovery_support import (
 from src.application.use_cases.finalization_recovery.recovery_command import RecoveryCommand
 from src.domain.jobs.finalization_recovery import RecoveryOperation, RecoveryOutcome, RecoveryResult
 
+if TYPE_CHECKING:
+    from src.application.services.finalization_assessment_service import FinalizationAssessment
+    from src.application.use_cases.finalization_recovery.verify_and_republish import (
+        FinalizationRecoveryDependencies,
+    )
+    from src.domain.jobs.entities import Job
+
 
 def make_recovery_result(
     command: RecoveryCommand,
-    previous,
-    new,
+    previous: FinalizationAssessment,
+    new: FinalizationAssessment,
     outcome: RecoveryOutcome,
     operation: RecoveryOperation,
-    deps,
+    deps: FinalizationRecoveryDependencies,
     *,
     error_code: str | None = None,
     sanitized_message: str | None = None,
@@ -49,7 +58,13 @@ def make_recovery_result(
     )
 
 
-def not_eligible(command, assessment, operation, code, deps):
+def not_eligible(
+    command: RecoveryCommand,
+    assessment: FinalizationAssessment,
+    operation: RecoveryOperation,
+    code: str,
+    deps: FinalizationRecoveryDependencies,
+) -> RecoveryResult:
     return make_recovery_result(
         command,
         assessment,
@@ -61,7 +76,14 @@ def not_eligible(command, assessment, operation, code, deps):
     )
 
 
-def gate_or_dry_run(command, assessment, job, operation, eligibility, deps):
+def gate_or_dry_run(
+    command: RecoveryCommand,
+    assessment: FinalizationAssessment,
+    job: Job,
+    operation: RecoveryOperation,
+    eligibility: FinalizationRecoveryEligibility,
+    deps: FinalizationRecoveryDependencies,
+) -> RecoveryResult | None:
     blocked = eligibility.refuse_global_assessment(assessment, operation)
     if blocked:
         outcome = RecoveryOutcome.NOT_ELIGIBLE
@@ -107,7 +129,7 @@ def begin_recovery_lease(
     operation: RecoveryOperation,
     requested_by: str,
     source: str,
-    assessment,
+    assessment: FinalizationAssessment,
     dry_run: bool,
 ) -> RecoveryResult | None:
     if command.lease_exempt:
@@ -125,11 +147,11 @@ def begin_recovery_lease(
 def finish_recovery_lease(
     session: RecoverySession,
     command: RecoveryCommand,
-    deps,
+    deps: FinalizationRecoveryDependencies,
     *,
     outcome: RecoveryOutcome,
-    previous,
-    new,
+    previous: FinalizationAssessment,
+    new: FinalizationAssessment,
     operation: RecoveryOperation,
     job_id: str,
     error_code: str | None = None,

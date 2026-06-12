@@ -35,6 +35,7 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
+from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.runtime.app_container import get_app_container
 
 
@@ -179,7 +180,7 @@ def get_artifact_publication_dispatcher():
     return get_app_container().get_artifact_publication_dispatcher()
 
 
-def get_finalization_assessment_service():
+def get_finalization_assessment_service() -> FinalizationAssessmentService:
     return get_app_container().get_finalization_assessment_service()
 
 

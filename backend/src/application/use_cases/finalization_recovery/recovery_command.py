@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
+
+from src.domain.jobs.finalization_recovery import RecoveryResult
 
 
 @dataclass(frozen=True)
@@ -28,3 +31,7 @@ class RecoveryCommand:
     @property
     def lease_exempt(self) -> bool:
         return self.execution_context is not None
+
+
+class RecoveryStepUseCase(Protocol):
+    def execute(self, command: RecoveryCommand) -> RecoveryResult: ...

@@ -104,12 +104,16 @@ class FinalizationProjectionService:
         job.current_finalization_step = current_step
 
         domain = stages.get(FinalizationStage.DOMAIN_RESULTS)
-        job.domain_persisted_at = domain.completed_at if _valid_completed(domain) else None
+        if domain is not None and _valid_completed(domain):
+            job.domain_persisted_at = domain.completed_at
+        else:
+            job.domain_persisted_at = None
 
         artifacts = stages.get(FinalizationStage.REQUIRED_ARTIFACTS)
-        job.artifacts_published_at = (
-            artifacts.completed_at if _valid_completed(artifacts) else None
-        )
+        if artifacts is not None and _valid_completed(artifacts):
+            job.artifacts_published_at = artifacts.completed_at
+        else:
+            job.artifacts_published_at = None
 
         if finalization_status == FinalizationStatus.COMPLETED:
             inv = stages.get(FinalizationStage.INVENTORY_RECONCILIATION)

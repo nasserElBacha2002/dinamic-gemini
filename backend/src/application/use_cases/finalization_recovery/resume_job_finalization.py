@@ -8,6 +8,7 @@ from src.application.services.finalization_recovery_eligibility import (
 from src.application.use_cases.finalization_recovery.recovery_command import (
     RecoveryCommand,
     RecoveryExecutionContext,
+    RecoveryStepUseCase,
 )
 from src.application.use_cases.finalization_recovery.recovery_helpers import (
     begin_recovery_lease,
@@ -51,7 +52,7 @@ class ResumeJobFinalizationUseCase:
         self._promote = PromoteRecoveredOperationalResultUseCase(deps)
         self._reconcile_aisle = ReconcileRecoveredAisleUseCase(deps)
         self._reconcile_inventory = ReconcileRecoveredInventoryUseCase(deps)
-        self._use_cases = {
+        self._use_cases: dict[RecoveryOperation, RecoveryStepUseCase] = {
             RecoveryOperation.REPUBLISH_ARTIFACTS: self._republish,
             RecoveryOperation.TERMINALIZE: self._terminalize,
             RecoveryOperation.PROMOTE: self._promote,
@@ -73,9 +74,9 @@ class ResumeJobFinalizationUseCase:
                 command, assessment, assessment, RecoveryOutcome.ALREADY_COMPLETE, self.operation, self._deps
             )
         start_idx = FINALIZATION_STAGE_ORDER.index(first)
-        steps: list[tuple[RecoveryOperation, object]] = []
-        for stage in FINALIZATION_STAGE_ORDER[start_idx:]:
-            op = self._eligibility.resume_operation_for_stage(stage)
+        steps: list[tuple[RecoveryOperation, RecoveryStepUseCase]] = []
+        for resume_stage in FINALIZATION_STAGE_ORDER[start_idx:]:
+            op = self._eligibility.resume_operation_for_stage(resume_stage)
             if op is not None and op in self._use_cases:
                 steps.append((op, self._use_cases[op]))
         if not steps:
@@ -125,17 +126,17 @@ class ResumeJobFinalizationUseCase:
             result = use_case.execute(step_cmd)
             current_assessment = result.new_assessment
             attempted.append(op)
-            stage = _OP_TO_STAGE.get(op)
-            if stage is not None:
-                attempted_stages.append(stage)
+            mapped_stage = _OP_TO_STAGE.get(op)
+            if mapped_stage is not None:
+                attempted_stages.append(mapped_stage)
             if result.outcome in (
                 RecoveryOutcome.RECOVERED,
                 RecoveryOutcome.ALREADY_COMPLETE,
                 RecoveryOutcome.ALREADY_OPERATIONAL,
             ):
                 completed.append(op)
-                if stage is not None:
-                    completed_stages.append(stage)
+                if mapped_stage is not None:
+                    completed_stages.append(mapped_stage)
                 continue
             if result.outcome in (RecoveryOutcome.ALREADY_SUPERSEDED, RecoveryOutcome.VERIFICATION_REQUIRED):
                 continue
@@ -178,7 +179,7 @@ class FinalizationRecoveryCoordinator:
 
     def __init__(self, deps: FinalizationRecoveryDependencies) -> None:
         self._deps = deps
-        self._handlers = {
+        self._handlers: dict[RecoveryOperation, RecoveryStepUseCase] = {
             RecoveryOperation.VERIFY: VerifyJobFinalizationUseCase(deps),
             RecoveryOperation.REPUBLISH_ARTIFACTS: RepublishJobArtifactsUseCase(deps),
             RecoveryOperation.TERMINALIZE: TerminalizeRecoveredJobUseCase(deps),

@@ -161,13 +161,17 @@ class SqlFinalizationRecoveryStore:
 def _row_to_record(row) -> RecoveryAttemptRecord:
     from src.domain.jobs.finalization_recovery import RecoveryOperation
 
+    started_at = _ensure_utc(row.started_at)
+    if started_at is None:
+        raise ValueError("recovery attempt row missing started_at")
+
     return RecoveryAttemptRecord(
         id=str(row.id),
         recovery_id=str(row.recovery_id),
         job_id=str(row.job_id),
         operation=RecoveryOperation(str(row.operation)),
         status=RecoveryAttemptStatus(str(row.status)),
-        started_at=_ensure_utc(row.started_at),
+        started_at=started_at,
         finished_at=_ensure_utc(getattr(row, "finished_at", None)),
         requested_by=str(row.requested_by),
         source=str(row.source),

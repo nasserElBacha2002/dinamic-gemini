@@ -6,7 +6,10 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
-from src.domain.jobs.artifact_manifest import ArtifactManifestEntry
+from src.domain.jobs.artifact_manifest import (
+    ArtifactManifestEntry,
+    ArtifactVerificationLevel,
+)
 
 
 class ArtifactManifestConcurrencyError(Exception):
@@ -49,6 +52,10 @@ class ArtifactManifestStore(Protocol):
         required: bool,
         now: datetime,
         expected_version: int | None = None,
+        source_sha256: str | None = None,
+        storage_etag: str | None = None,
+        verified_at: datetime | None = None,
+        verification_level: ArtifactVerificationLevel | None = None,
     ) -> ArtifactManifestEntry: ...
 
     def mark_failed(
