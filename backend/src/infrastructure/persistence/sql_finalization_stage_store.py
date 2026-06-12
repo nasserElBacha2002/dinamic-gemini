@@ -134,11 +134,15 @@ class SqlFinalizationStageStore:
         now: datetime,
     ) -> FinalizationStageRecord:
         existing = self.get_stage(job_id, stage)
-        if expected_version is not None:
-            if existing is None or existing.version != expected_version:
+        if existing is None:
+            if expected_version is not None:
                 raise FinalizationStageConcurrencyError(
-                    f"Stage version conflict job_id={job_id} stage={stage.value}"
+                    f"Stage create conflict job_id={job_id} stage={stage.value}"
                 )
+        elif expected_version is None or existing.version != expected_version:
+            raise FinalizationStageConcurrencyError(
+                f"Stage version conflict job_id={job_id} stage={stage.value}"
+            )
         current_status = existing.status if existing else StageStatus.NOT_STARTED
         assert_stage_transition_allowed(current_status, new_status)
         version = 1 if existing is None else existing.version + 1

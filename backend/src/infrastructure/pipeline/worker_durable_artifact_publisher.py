@@ -34,9 +34,14 @@ from src.infrastructure.pipeline.finalization_errors import (
 
 logger = logging.getLogger(__name__)
 
-DURABLE_ARTIFACT_KIND_EXECUTION_LOG = "execution_log"
-DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON = "hybrid_report_json"
-DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV = "hybrid_report_csv"
+from src.domain.jobs.artifact_policy import (
+    ARTIFACT_KIND_EXECUTION_LOG as DURABLE_ARTIFACT_KIND_EXECUTION_LOG,
+    ARTIFACT_KIND_HYBRID_REPORT_CSV as DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV,
+    ARTIFACT_KIND_HYBRID_REPORT_JSON as DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON,
+    ALL_EXPECTED_ARTIFACT_KINDS,
+    OPTIONAL_ARTIFACT_KINDS,
+    REQUIRED_ARTIFACT_KINDS,
+)
 
 # Default run directory basename; must match ``RUN_ID`` in ``v3_job_executor`` (single source of truth here).
 DEFAULT_V3_WORKER_RUN_SEGMENT = "run"

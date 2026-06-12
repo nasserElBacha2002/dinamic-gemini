@@ -138,3 +138,111 @@ Stage rows include `version`. Updates use `expected_version` compare-and-set; co
 | Job succeeded, promotion missing | `TECHNICALLY_SUCCEEDED_RECONCILIATION_PENDING` | yes | None |
 | Inventory reconciliation failed | `TECHNICALLY_SUCCEEDED_RECONCILIATION_PENDING` | yes | None |
 | Historical job with unknown evidence | `VERIFICATION_REQUIRED` / not `COMPLETE` | yes | None |
+| Missing job with orphan evidence | `INCONSISTENT` (`orphan_finalization_evidence`) | no | None |
+| Stage order gap (later complete, earlier missing) | `INCONSISTENT` (`stage_order_gap`) | no | None |
+| Published manifest, storage missing | `DOMAIN_COMMITTED_ARTIFACTS_MISSING` | yes | None |
+| Published manifest, size mismatch | `INCONSISTENT` (`artifact_storage_mismatch`) | no | None |
+| Storage verification unavailable | `VERIFICATION_REQUIRED` | yes | None |
+| All stages complete + verified artifacts + valid domain | `COMPLETE` | no | None |
+
+## 17. Review corrections (post code review)
+
+### Central artifact policy
+
+`backend/src/domain/jobs/artifact_policy.py` is the single source of truth:
+
+- `REQUIRED_ARTIFACT_KINDS`: `execution_log`, `hybrid_report_json`
+- `OPTIONAL_ARTIFACT_KINDS`: `hybrid_report_csv`
+- `ALL_EXPECTED_ARTIFACT_KINDS`: union of required + optional
+
+Publisher, manifest recorder, verifier, assessment, and tests import from this module — no duplicated kind lists.
+
+### Manifest pre-registration
+
+`ensure_expected_entries()` creates deterministic `PENDING` rows for all expected kinds before publication. Required artifacts never disappear from the manifest; absent uploads are explicitly `FAILED` with a sanitized reason.
+
+### Required-set completeness
+
+`required_kinds_published()` validates the full required set (not partial overlap). `missing_required_kinds()` supports diagnostics.
+
+### Storage verification integration
+
+`JobArtifactVerifier.verify_required()` checks every required kind even when no manifest row exists. `FinalizationAssessmentService` actively uses verifier results:
+
+| Condition | Assessment |
+| --------- | ---------- |
+| All required artifacts `CONFIRMED` | Continue assessment |
+| Required manifest absent / pending / failed | `DOMAIN_COMMITTED_ARTIFACTS_MISSING` |
+| Storage object missing | `DOMAIN_COMMITTED_ARTIFACTS_MISSING` |
+| Size/hash mismatch | `INCONSISTENT` |
+| Storage cannot be checked | `VERIFICATION_REQUIRED` |
+| Published but no storage key | `INCONSISTENT` |
+
+### Evidence levels (corrected)
+
+| Event | Evidence level |
+| ----- | -------------- |
+| Stage marked `IN_PROGRESS` | `POSITIVE_EVIDENCE_ONLY` |
+| Artifact uploaded, manifest saved, not externally verified | `POSITIVE_EVIDENCE_ONLY` |
+| Storage existence + metadata verified | `CONFIRMED` |
+| UoW + stage update in same transaction | `TRANSACTIONAL` |
+| Verification unavailable | `VERIFICATION_REQUIRED` |
+| Derived from durable metadata only | `DERIVED` |
+
+### Domain snapshot verification
+
+Removed global `positions == products == evidence` assumption. Verifier checks referential integrity per entity (products/evidence/labels reference valid position IDs; each position requires ≥1 product). Multiple evidences per position is valid.
+
+Empty snapshot is `CONFIRMED_EMPTY_VALID` only when `DOMAIN_RESULTS=COMPLETED` with `TRANSACTIONAL` evidence (via injected `stage_store`). Without transactional stage evidence, zero rows → `NOT_FOUND`, `AMBIGUOUS`, or `VERIFICATION_REQUIRED`.
+
+### Strict COMPLETE invariant
+
+`COMPLETE` requires all stages `COMPLETED` with timestamps, `job.status=SUCCEEDED`, required artifacts verified (`CONFIRMED`), operational pointer valid, and domain snapshot complete. Stage order gaps → `INCONSISTENT`.
+
+### Missing-job assessment
+
+Missing job → `INCONSISTENT`, `recovery_candidate=false`, `blocking_reason=job_not_found` or `orphan_finalization_evidence`. Never classified as `FAILED_BEFORE_DOMAIN_COMMIT`.
+
+### Optimistic concurrency
+
+Create: `expected_version=None`, row must not exist. Update: `expected_version=current version`, row must match. Blind overwrites raise `FinalizationStageConcurrencyError` / `ArtifactManifestConcurrencyError`. UoW evidence writers pass current version when flushing buffered stage writes.
+
+### Projection determinism
+
+`refresh_summary()` fully derives `domain_persisted_at`, `artifacts_published_at`, `finalization_completed_at`, and error fields from authoritative evidence every refresh — stale timestamps are cleared when evidence is no longer valid. Projection failures log structured fields (`job_id`, `authoritative_last_stage`, `projection_target_status`, `exception_type`) without downgrading authoritative evidence.
+
+### Migration 0038
+
+Foreign keys omitted to preserve compatibility with existing cleanup/retention policies. Check constraints deferred to a forward-only migration if needed after data validation.
+
+### SQL integration validation
+
+SQL Server integration tests for migration, manifest CAS, and transactional domain rollback remain **pending** (ODBC driver unavailable in CI/dev sandbox).
+
+### Review corrections matrix
+
+| Finding | Correction | Test |
+| ------- | ---------- | ---- |
+| Missing import | Restored `AisleJobLaunchService`, `ActiveJobExistsError`; API entrypoint `src.api.server` | `test_p3_3_corr_t01_api_import_smoke` |
+| Required artifact absent | Central policy + `required_kinds_published` exact-set validation | `test_p3_3_corr_t02_one_required_artifact_missing` |
+| Storage verification ignored | `verify_required()` integrated in assessment | `test_p3_3_t07`, corr T4–T6 |
+| Invalid domain cardinality | Referential verifier replaces count equality | `test_p3_3_t04`, corr T7–T8 |
+| Loose COMPLETE rule | Strict all-stages + verified artifacts | `test_p3_3_corr_t11`, corr T17 |
+| Missing-job assessment | `INCONSISTENT` with `orphan_finalization_evidence` | `test_p3_3_corr_t12` |
+| Weak CAS behavior | Strict create/update version contract | `test_p3_3_t11`, `test_p3_3_corr_t13` |
+| Stale projection timestamps | Deterministic refresh clears invalid timestamps | `test_p3_3_corr_t16` |
+| Manifest PENDING lost | `upsert_entry` preserves all statuses literally | corr T15 (memory/SQL) |
+| Validation commands | `compileall`, API import, pytest suites | See validation summary |
+
+### Validation commands
+
+```bash
+cd backend
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m compileall src
+.venv/bin/python -c "from src.api.server import app; print('api_import_ok')"
+.venv/bin/pytest tests/infrastructure/pipeline/test_worker_phase3_part3_durable_metadata.py
+.venv/bin/pytest tests/infrastructure/pipeline/test_worker_phase3_part2_finalization_semantics.py
+.venv/bin/pytest tests/infrastructure/pipeline/test_worker_phase2_part2_transactional_idempotency.py
+.venv/bin/pytest tests/infrastructure/pipeline/test_worker_phase2_part3_operational_promotion_concurrency.py
+.venv/bin/pytest tests/infrastructure/pipeline/test_v3_job_executor_coordination.py
+```

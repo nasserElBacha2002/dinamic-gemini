@@ -183,6 +183,12 @@ class FailingArtifactStore:
     def save_file(self, path: str, file_obj: Any, content_type: str) -> str:
         return path
 
+    def object_exists(self, key: str) -> bool:
+        return True
+
+    def object_size_bytes(self, key: str, *, bucket: str | None = None) -> int:
+        return 10
+
     def delete_file(self, path: str) -> None:
         pass
 

@@ -41,6 +41,7 @@ from src.application.ports.repositories import (
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
+from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.analytics_query_service import AnalyticsQueryService

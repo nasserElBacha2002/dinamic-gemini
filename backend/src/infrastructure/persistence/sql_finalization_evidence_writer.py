@@ -43,6 +43,7 @@ class SqlFinalizationEvidenceWriter:
     def flush(self, now: datetime | None = None) -> None:
         ts = now or datetime.now(timezone.utc)
         for job_id, stage, status, level, completed_at, source in self._buffer:
+            existing = self._stage_store.get_stage(job_id, stage)
             self._stage_store.transition_stage(
                 job_id=job_id,
                 stage=stage,
@@ -51,6 +52,7 @@ class SqlFinalizationEvidenceWriter:
                 completed_at=completed_at,
                 verified_at=completed_at if level == EvidenceLevel.TRANSACTIONAL else None,
                 verification_source=source or "uow_commit",
+                expected_version=existing.version if existing else None,
                 now=ts,
             )
         self._buffer.clear()

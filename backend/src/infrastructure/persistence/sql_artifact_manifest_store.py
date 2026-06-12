@@ -8,7 +8,7 @@ from typing import Any
 
 from src.application.ports.artifact_manifest_store import ArtifactManifestConcurrencyError
 from src.database.sqlserver import SqlServerClient
-from src.domain.jobs.artifact_manifest import ArtifactManifestEntry, ArtifactManifestStatus
+from src.domain.jobs.artifact_policy import ALL_EXPECTED_ARTIFACT_KINDS, REQUIRED_ARTIFACT_KINDS
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
 
@@ -81,25 +81,164 @@ class SqlArtifactManifestStore:
         *,
         expected_version: int | None = None,
     ) -> ArtifactManifestEntry:
-        if entry.status == ArtifactManifestStatus.PUBLISHED and entry.storage_key:
-            return self.mark_published(
-                job_id=entry.job_id,
-                artifact_kind=entry.artifact_kind,
-                storage_key=entry.storage_key,
-                size_bytes=entry.size_bytes,
-                content_hash=entry.content_hash,
-                required=entry.required,
-                now=entry.updated_at or datetime.now(timezone.utc),
-                expected_version=expected_version,
+        existing = self.get_entry(entry.job_id, entry.artifact_kind)
+        if existing is None:
+            if expected_version is not None:
+                raise ArtifactManifestConcurrencyError(
+                    f"Manifest create conflict job_id={entry.job_id} kind={entry.artifact_kind}"
+                )
+        elif expected_version is None or existing.version != expected_version:
+            raise ArtifactManifestConcurrencyError(
+                f"Manifest version conflict job_id={entry.job_id} kind={entry.artifact_kind}"
             )
-        return self.mark_failed(
-            job_id=entry.job_id,
-            artifact_kind=entry.artifact_kind,
-            required=entry.required,
-            error=entry.last_error or "unknown",
-            now=entry.updated_at or datetime.now(timezone.utc),
-            expected_version=expected_version,
-        )
+        version = 1 if existing is None else existing.version + 1
+        now = entry.updated_at or datetime.now(timezone.utc)
+        created_at = existing.created_at if existing and existing.created_at else entry.created_at or now
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            if existing is None:
+                cur.execute(
+                    """
+                    INSERT INTO job_artifact_manifest (
+                        job_id, artifact_kind, required, storage_key, content_hash, size_bytes,
+                        status, published_at, attempt_count, last_error, version,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        entry.job_id,
+                        entry.artifact_kind,
+                        1 if entry.required else 0,
+                        entry.storage_key,
+                        entry.content_hash,
+                        entry.size_bytes,
+                        entry.status.value,
+                        entry.published_at,
+                        entry.attempt_count or 1,
+                        entry.last_error,
+                        version,
+                        created_at,
+                        now,
+                    ),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE job_artifact_manifest
+                    SET required = ?, storage_key = ?, content_hash = ?, size_bytes = ?,
+                        status = ?, published_at = ?, attempt_count = ?, last_error = ?,
+                        version = ?, updated_at = ?
+                    WHERE job_id = ? AND artifact_kind = ? AND version = ?
+                    """,
+                    (
+                        1 if entry.required else 0,
+                        entry.storage_key,
+                        entry.content_hash,
+                        entry.size_bytes,
+                        entry.status.value,
+                        entry.published_at,
+                        entry.attempt_count,
+                        entry.last_error,
+                        version,
+                        now,
+                        entry.job_id,
+                        entry.artifact_kind,
+                        expected_version,
+                    ),
+                )
+                if cur.rowcount == 0:
+                    raise ArtifactManifestConcurrencyError(
+                        f"Manifest version conflict job_id={entry.job_id} kind={entry.artifact_kind}"
+                    )
+        stored = self.get_entry(entry.job_id, entry.artifact_kind)
+        if stored is None:
+            raise RuntimeError(
+                f"Manifest row missing after upsert job_id={entry.job_id} kind={entry.artifact_kind}"
+            )
+        return stored
+
+    def ensure_expected_entries(self, job_id: str, *, now: datetime) -> None:
+        for kind in ALL_EXPECTED_ARTIFACT_KINDS:
+            if self.get_entry(job_id, kind) is None:
+                self.mark_pending(
+                    job_id=job_id,
+                    artifact_kind=kind,
+                    required=kind in REQUIRED_ARTIFACT_KINDS,
+                    now=now,
+                    expected_version=None,
+                )
+
+    def mark_pending(
+        self,
+        *,
+        job_id: str,
+        artifact_kind: str,
+        required: bool,
+        now: datetime,
+        expected_version: int | None = None,
+    ) -> ArtifactManifestEntry:
+        existing = self.get_entry(job_id, artifact_kind)
+        if existing is None:
+            if expected_version is not None:
+                raise ArtifactManifestConcurrencyError(
+                    f"Manifest create conflict job_id={job_id} kind={artifact_kind}"
+                )
+        elif expected_version is None or existing.version != expected_version:
+            raise ArtifactManifestConcurrencyError(
+                f"Manifest version conflict job_id={job_id} kind={artifact_kind}"
+            )
+        version = 1 if existing is None else existing.version + 1
+        created_at = existing.created_at if existing and existing.created_at else now
+        attempt = (existing.attempt_count + 1) if existing else 1
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            if existing is None:
+                cur.execute(
+                    """
+                    INSERT INTO job_artifact_manifest (
+                        job_id, artifact_kind, required, storage_key, content_hash, size_bytes,
+                        status, published_at, attempt_count, last_error, version,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        job_id,
+                        artifact_kind,
+                        1 if required else 0,
+                        None,
+                        None,
+                        None,
+                        ArtifactManifestStatus.PENDING.value,
+                        None,
+                        attempt,
+                        None,
+                        version,
+                        created_at,
+                        now,
+                    ),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE job_artifact_manifest
+                    SET required = ?, status = ?, attempt_count = ?, version = ?, updated_at = ?
+                    WHERE job_id = ? AND artifact_kind = ? AND version = ?
+                    """,
+                    (
+                        1 if required else 0,
+                        ArtifactManifestStatus.PENDING.value,
+                        attempt,
+                        version,
+                        now,
+                        job_id,
+                        artifact_kind,
+                        expected_version,
+                    ),
+                )
+        stored = self.get_entry(job_id, artifact_kind)
+        if stored is None:
+            raise RuntimeError(
+                f"Manifest row missing after pending upsert job_id={job_id} kind={artifact_kind}"
+            )
+        return stored
 
     def mark_published(
         self,
@@ -114,11 +253,18 @@ class SqlArtifactManifestStore:
         expected_version: int | None = None,
     ) -> ArtifactManifestEntry:
         existing = self.get_entry(job_id, artifact_kind)
-        version = 1 if existing is None else existing.version + 1
-        if expected_version is not None and existing is not None and existing.version != expected_version:
+        if existing is None:
+            if expected_version is not None:
+                raise ArtifactManifestConcurrencyError(
+                    f"Manifest create conflict job_id={job_id} kind={artifact_kind}"
+                )
+        elif expected_version is None:
+            expected_version = existing.version
+        elif existing.version != expected_version:
             raise ArtifactManifestConcurrencyError(
                 f"Manifest version conflict job_id={job_id} kind={artifact_kind}"
             )
+        version = 1 if existing is None else existing.version + 1
         created_at = existing.created_at if existing and existing.created_at else now
         attempt = (existing.attempt_count + 1) if existing else 1
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
@@ -205,11 +351,18 @@ class SqlArtifactManifestStore:
         expected_version: int | None = None,
     ) -> ArtifactManifestEntry:
         existing = self.get_entry(job_id, artifact_kind)
-        version = 1 if existing is None else existing.version + 1
-        if expected_version is not None and existing is not None and existing.version != expected_version:
+        if existing is None:
+            if expected_version is not None:
+                raise ArtifactManifestConcurrencyError(
+                    f"Manifest create conflict job_id={job_id} kind={artifact_kind}"
+                )
+        elif expected_version is None:
+            expected_version = existing.version
+        elif existing.version != expected_version:
             raise ArtifactManifestConcurrencyError(
                 f"Manifest version conflict job_id={job_id} kind={artifact_kind}"
             )
+        version = 1 if existing is None else existing.version + 1
         created_at = existing.created_at if existing and existing.created_at else now
         attempt = (existing.attempt_count + 1) if existing else 1
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
@@ -265,9 +418,26 @@ class SqlArtifactManifestStore:
         return stored
 
     def required_kinds_published(self, job_id: str) -> bool:
-        entries = self.list_entries(job_id)
-        required = [e for e in entries if e.required]
-        return bool(required) and all(e.status == ArtifactManifestStatus.PUBLISHED for e in required)
+        entries = {entry.artifact_kind: entry for entry in self.list_entries(job_id)}
+        return all(
+            kind in entries
+            and entries[kind].required is True
+            and entries[kind].status == ArtifactManifestStatus.PUBLISHED
+            for kind in REQUIRED_ARTIFACT_KINDS
+        )
+
+    def missing_required_kinds(self, job_id: str) -> set[str]:
+        entries = {entry.artifact_kind: entry for entry in self.list_entries(job_id)}
+        missing: set[str] = set()
+        for kind in REQUIRED_ARTIFACT_KINDS:
+            entry = entries.get(kind)
+            if (
+                entry is None
+                or not entry.required
+                or entry.status != ArtifactManifestStatus.PUBLISHED
+            ):
+                missing.add(kind)
+        return missing
 
     def any_required_failed(self, job_id: str) -> bool:
         return any(

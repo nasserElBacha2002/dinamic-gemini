@@ -46,6 +46,9 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
+from src.application.services.default_job_scoped_recompute_factory import (
+    DefaultJobScopedRecomputeFactory,
+)
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.job_artifact_verifier import JobArtifactVerifier
 from src.application.services.job_domain_result_verifier import JobDomainResultVerifier
@@ -605,6 +608,7 @@ class AppContainer:
                 raw_label_repo=self.get_raw_label_repo(),
                 normalized_label_repo=self.get_normalized_label_repo(),
                 final_count_repo=self.get_final_count_repo(),
+                stage_store=self.get_finalization_stage_store(),
             ),
             artifact_verifier=JobArtifactVerifier(
                 manifest_store=self.get_artifact_manifest_store(),

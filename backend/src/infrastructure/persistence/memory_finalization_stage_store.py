@@ -50,11 +50,15 @@ class MemoryFinalizationStageStore:
     ) -> FinalizationStageRecord:
         k = _key(record.job_id, record.stage)
         existing = self._rows.get(k)
-        if expected_version is not None:
-            if existing is None or existing.version != expected_version:
+        if existing is None:
+            if expected_version is not None:
                 raise FinalizationStageConcurrencyError(
-                    f"Stage version conflict job_id={record.job_id} stage={record.stage.value}"
+                    f"Stage create conflict job_id={record.job_id} stage={record.stage.value}"
                 )
+        elif expected_version is None or existing.version != expected_version:
+            raise FinalizationStageConcurrencyError(
+                f"Stage version conflict job_id={record.job_id} stage={record.stage.value}"
+            )
         if existing is not None:
             assert_stage_transition_allowed(existing.status, record.status)
         stored = copy.deepcopy(record)
@@ -77,11 +81,15 @@ class MemoryFinalizationStageStore:
         now: datetime,
     ) -> FinalizationStageRecord:
         existing = self._rows.get(_key(job_id, stage))
-        if expected_version is not None:
-            if existing is None or existing.version != expected_version:
+        if existing is None:
+            if expected_version is not None:
                 raise FinalizationStageConcurrencyError(
-                    f"Stage version conflict job_id={job_id} stage={stage.value}"
+                    f"Stage create conflict job_id={job_id} stage={stage.value}"
                 )
+        elif expected_version is None or existing.version != expected_version:
+            raise FinalizationStageConcurrencyError(
+                f"Stage version conflict job_id={job_id} stage={stage.value}"
+            )
         current_status = existing.status if existing else StageStatus.NOT_STARTED
         assert_stage_transition_allowed(current_status, new_status)
         version = 1 if existing is None else existing.version + 1

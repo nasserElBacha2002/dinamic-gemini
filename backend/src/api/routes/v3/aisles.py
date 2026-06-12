@@ -69,6 +69,7 @@ from src.api.services.v3_stored_artifact_access import (
 )
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.errors import (
+    ActiveJobExistsError,
     AisleNotFoundError,
     ClientSupplierClientMismatchError,
     ClientSupplierNotFoundError,

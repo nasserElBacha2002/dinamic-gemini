@@ -15,6 +15,7 @@ from src.domain.jobs.finalization import (
 from src.domain.jobs.finalization_evidence import (
     FINALIZATION_STAGE_ORDER,
     FinalizationStage,
+    FinalizationStageRecord,
     StageStatus,
 )
 
@@ -41,6 +42,10 @@ _STAGE_TO_COMPLETED: dict[FinalizationStage, LastCompletedFinalizationStep] = {
 }
 
 
+def _valid_completed(rec: FinalizationStageRecord | None) -> bool:
+    return rec is not None and rec.status == StageStatus.COMPLETED and rec.completed_at is not None
+
+
 class FinalizationProjectionService:
     """Denormalized summary on ``inventory_jobs`` — authoritative data lives in stage store."""
 
@@ -64,8 +69,12 @@ class FinalizationProjectionService:
         last_completed = LastCompletedFinalizationStep.NONE
         current_step: CurrentFinalizationStep | None = None
         finalization_status = FinalizationStatus.IN_PROGRESS
+        authoritative_last_stage: FinalizationStage | None = None
+
         for stage in FINALIZATION_STAGE_ORDER:
             rec = stages.get(stage)
+            if rec is not None and rec.status == StageStatus.COMPLETED:
+                authoritative_last_stage = stage
             if rec is None or rec.status in (StageStatus.UNKNOWN, StageStatus.NOT_STARTED):
                 current_step = _STAGE_TO_CURRENT[stage]
                 break
@@ -83,27 +92,67 @@ class FinalizationProjectionService:
             current_step = _STAGE_TO_CURRENT[stage]
             break
         else:
-            finalization_status = FinalizationStatus.COMPLETED
-            current_step = None
-            last_completed = LastCompletedFinalizationStep.INVENTORY_RECONCILED
+            if all(_valid_completed(stages.get(stage)) for stage in FINALIZATION_STAGE_ORDER):
+                finalization_status = FinalizationStatus.COMPLETED
+                current_step = None
+                last_completed = LastCompletedFinalizationStep.INVENTORY_RECONCILED
+            else:
+                finalization_status = FinalizationStatus.IN_PROGRESS
 
         job.finalization_status = finalization_status
         job.last_completed_finalization_step = last_completed
         job.current_finalization_step = current_step
+
         domain = stages.get(FinalizationStage.DOMAIN_RESULTS)
-        if domain and domain.completed_at:
-            job.domain_persisted_at = domain.completed_at
+        job.domain_persisted_at = domain.completed_at if _valid_completed(domain) else None
+
         artifacts = stages.get(FinalizationStage.REQUIRED_ARTIFACTS)
-        if artifacts and artifacts.completed_at:
-            job.artifacts_published_at = artifacts.completed_at
+        job.artifacts_published_at = (
+            artifacts.completed_at if _valid_completed(artifacts) else None
+        )
+
         if finalization_status == FinalizationStatus.COMPLETED:
-            job.finalization_completed_at = now
+            inv = stages.get(FinalizationStage.INVENTORY_RECONCILIATION)
+            job.finalization_completed_at = (
+                inv.completed_at if inv and inv.completed_at else self._latest_completed_at(stages)
+            )
+        else:
+            job.finalization_completed_at = None
+
+        if finalization_status == FinalizationStatus.FAILED:
+            failed_rec = next(
+                (
+                    stages[stage]
+                    for stage in FINALIZATION_STAGE_ORDER
+                    if stages.get(stage)
+                    and stages[stage].status in (StageStatus.FAILED, StageStatus.VERIFICATION_REQUIRED)
+                ),
+                None,
+            )
+            job.finalization_error_code = failed_rec.last_error_code if failed_rec else None
+        else:
+            job.finalization_error_code = None
+
         job.updated_at = now
         try:
             self._job_repo.save(job)
         except Exception as exc:
             logger.error(
-                "finalization_summary_projection_failed job_id=%s error=%s",
+                "finalization_summary_projection_failed job_id=%s authoritative_last_stage=%s "
+                "projection_target_status=%s exception_type=%s error=%s",
                 job_id,
+                authoritative_last_stage.value if authoritative_last_stage else None,
+                finalization_status.value,
+                type(exc).__name__,
                 exc,
             )
+
+    def _latest_completed_at(
+        self, stages: dict[FinalizationStage, FinalizationStageRecord]
+    ):
+        latest = None
+        for stage in FINALIZATION_STAGE_ORDER:
+            rec = stages.get(stage)
+            if rec and rec.completed_at and (latest is None or rec.completed_at > latest):
+                latest = rec.completed_at
+        return latest

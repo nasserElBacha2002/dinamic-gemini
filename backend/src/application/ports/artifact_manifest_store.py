@@ -26,6 +26,18 @@ class ArtifactManifestStore(Protocol):
         expected_version: int | None = None,
     ) -> ArtifactManifestEntry: ...
 
+    def ensure_expected_entries(self, job_id: str, *, now: datetime) -> None: ...
+
+    def mark_pending(
+        self,
+        *,
+        job_id: str,
+        artifact_kind: str,
+        required: bool,
+        now: datetime,
+        expected_version: int | None = None,
+    ) -> ArtifactManifestEntry: ...
+
     def mark_published(
         self,
         *,
@@ -51,5 +63,7 @@ class ArtifactManifestStore(Protocol):
     ) -> ArtifactManifestEntry: ...
 
     def required_kinds_published(self, job_id: str) -> bool: ...
+
+    def missing_required_kinds(self, job_id: str) -> set[str]: ...
 
     def any_required_failed(self, job_id: str) -> bool: ...

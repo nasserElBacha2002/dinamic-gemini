@@ -12,6 +12,12 @@ from src.application.ports.finalization_stage_store import FinalizationStageStor
 from src.application.services.finalization_projection_service import (
     FinalizationProjectionService,
 )
+from src.domain.jobs.artifact_policy import (
+    ALL_EXPECTED_ARTIFACT_KINDS,
+    OPTIONAL_ARTIFACT_KINDS,
+    REQUIRED_ARTIFACT_KINDS,
+    is_required_artifact_kind,
+)
 from src.domain.jobs.finalization import (
     CurrentFinalizationStep,
     LastCompletedFinalizationStep,
@@ -20,11 +26,6 @@ from src.domain.jobs.finalization_evidence import (
     EvidenceLevel,
     FinalizationStage,
     StageStatus,
-)
-from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
-    DURABLE_ARTIFACT_KIND_EXECUTION_LOG,
-    DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV,
-    DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,12 +52,6 @@ _CURRENT_TO_STAGE: dict[CurrentFinalizationStep, FinalizationStage] = {
     CurrentFinalizationStep.RECONCILE_INVENTORY: FinalizationStage.INVENTORY_RECONCILIATION,
 }
 
-_REQUIRED_ARTIFACT_KINDS = (
-    DURABLE_ARTIFACT_KIND_EXECUTION_LOG,
-    DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON,
-)
-_OPTIONAL_ARTIFACT_KINDS = (DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV,)
-
 
 class FinalizationStageRecorder:
     def __init__(
@@ -74,11 +69,13 @@ class FinalizationStageRecorder:
 
     def mark_in_progress(self, job_id: str, step: CurrentFinalizationStep) -> None:
         stage = _CURRENT_TO_STAGE[step]
+        if step == CurrentFinalizationStep.PUBLISH_ARTIFACTS and self._manifest_store is not None:
+            self._manifest_store.ensure_expected_entries(job_id, now=self._clock.now())
         self._transition(
             job_id=job_id,
             stage=stage,
             status=StageStatus.IN_PROGRESS,
-            evidence_level=EvidenceLevel.CONFIRMED,
+            evidence_level=EvidenceLevel.POSITIVE_EVIDENCE_ONLY,
         )
 
     def mark_completed_for_step(
@@ -86,7 +83,7 @@ class FinalizationStageRecorder:
         job_id: str,
         completed: LastCompletedFinalizationStep,
         *,
-        evidence_level: EvidenceLevel = EvidenceLevel.CONFIRMED,
+        evidence_level: EvidenceLevel = EvidenceLevel.POSITIVE_EVIDENCE_ONLY,
         verification_source: str | None = None,
     ) -> None:
         stage = _COMPLETED_TO_STAGE[completed]
@@ -115,7 +112,7 @@ class FinalizationStageRecorder:
         *,
         error_code: str,
         metadata: dict[str, Any] | None = None,
-        evidence_level: EvidenceLevel = EvidenceLevel.CONFIRMED,
+        evidence_level: EvidenceLevel = EvidenceLevel.POSITIVE_EVIDENCE_ONLY,
     ) -> None:
         stage = _CURRENT_TO_STAGE[step]
         self._transition(
@@ -152,8 +149,10 @@ class FinalizationStageRecorder:
         if self._manifest_store is None:
             return
         now = self._clock.now()
-        for kind in _REQUIRED_ARTIFACT_KINDS:
+        self._manifest_store.ensure_expected_entries(job_id, now=now)
+        for kind in ALL_EXPECTED_ARTIFACT_KINDS:
             meta = durable_meta.get(kind)
+            required = is_required_artifact_kind(kind)
             if meta and meta.get("storage_key"):
                 self._manifest_store.mark_published(
                     job_id=job_id,
@@ -161,19 +160,15 @@ class FinalizationStageRecorder:
                     storage_key=str(meta["storage_key"]),
                     size_bytes=meta.get("file_size_bytes"),
                     content_hash=meta.get("etag"),
-                    required=True,
+                    required=required,
                     now=now,
                 )
-        for kind in _OPTIONAL_ARTIFACT_KINDS:
-            meta = durable_meta.get(kind)
-            if meta and meta.get("storage_key"):
-                self._manifest_store.mark_published(
+            elif required:
+                self._manifest_store.mark_failed(
                     job_id=job_id,
                     artifact_kind=kind,
-                    storage_key=str(meta["storage_key"]),
-                    size_bytes=meta.get("file_size_bytes"),
-                    content_hash=meta.get("etag"),
-                    required=False,
+                    required=True,
+                    error="required_artifact_not_uploaded",
                     now=now,
                 )
 

@@ -43,10 +43,11 @@ from src.infrastructure.persistence.memory_job_result_unit_of_work import (
 from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
     default_map_hybrid_report_to_domain,
 )
-from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
-    DURABLE_ARTIFACT_KIND_EXECUTION_LOG,
-    DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV,
-    DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON,
+from src.domain.jobs.artifact_policy import (
+    ARTIFACT_KIND_EXECUTION_LOG,
+    ARTIFACT_KIND_HYBRID_REPORT_CSV,
+    ARTIFACT_KIND_HYBRID_REPORT_JSON,
+    REQUIRED_ARTIFACT_KINDS,
 )
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
@@ -60,6 +61,7 @@ from src.infrastructure.repositories.memory_product_record_repository import (
     MemoryProductRecordRepository,
 )
 from src.infrastructure.persistence.memory_artifact_manifest_store import MemoryArtifactManifestStore
+from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
 from tests.support.worker_phase1.doubles import ArtifactUploadSpy
 from tests.support.worker_phase1.executor_harness import (
     ExecutorHarness,
@@ -67,6 +69,18 @@ from tests.support.worker_phase1.executor_harness import (
     make_entity_hybrid_report,
 )
 from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
+
+
+def _cas_transition(store, *, job_id: str, stage: FinalizationStage, now: datetime, **kwargs):
+    """Transition with optimistic concurrency using the current row version."""
+    existing = store.get_stage(job_id, stage)
+    return store.transition_stage(
+        job_id=job_id,
+        stage=stage,
+        expected_version=existing.version if existing else None,
+        now=now,
+        **kwargs,
+    )
 
 
 def _build_assessment_service(
@@ -85,6 +99,7 @@ def _build_assessment_service(
             raw_label_repo=harness.raw_repo,
             normalized_label_repo=harness.norm_repo,
             final_count_repo=harness.final_repo,
+            stage_store=harness.stage_store,
         ),
         artifact_verifier=JobArtifactVerifier(
             manifest_store=harness.manifest_store,
@@ -198,6 +213,7 @@ def test_p3_3_t03_valid_empty_domain_snapshot(tmp_path) -> None:
         raw_label_repo=harness.raw_repo,
         normalized_label_repo=harness.norm_repo,
         final_count_repo=harness.final_repo,
+        stage_store=harness.stage_store,
     )
     snap = verifier.verify(job_id=harness.job_id, aisle_id=harness.aisle_id)
     assert snap.verdict == DomainSnapshotVerdict.CONFIRMED_EMPTY_VALID
@@ -244,9 +260,9 @@ def test_p3_3_t05_full_artifact_manifest_on_success(tmp_path) -> None:
     handled = harness.run_with_mock_pipeline(executor)
     assert handled is True
     entries = {e.artifact_kind: e for e in harness.manifest_store.list_entries(harness.job_id)}
-    assert entries[DURABLE_ARTIFACT_KIND_EXECUTION_LOG].required is True
-    assert entries[DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON].required is True
-    assert entries[DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV].required is False
+    assert entries[ARTIFACT_KIND_EXECUTION_LOG].required is True
+    assert entries[ARTIFACT_KIND_HYBRID_REPORT_JSON].required is True
+    assert entries[ARTIFACT_KIND_HYBRID_REPORT_CSV].required is False
     stage = harness.stage_store.get_stage(harness.job_id, FinalizationStage.REQUIRED_ARTIFACTS)
     assert stage is not None and stage.status == StageStatus.COMPLETED
 
@@ -256,7 +272,7 @@ def test_p3_3_t06_partial_artifact_publication_visible(tmp_path) -> None:
     now = harness.now
     harness.manifest_store.mark_published(
         job_id=harness.job_id,
-        artifact_kind=DURABLE_ARTIFACT_KIND_EXECUTION_LOG,
+        artifact_kind=ARTIFACT_KIND_EXECUTION_LOG,
         storage_key="logs/exec.jsonl",
         size_bytes=10,
         content_hash=None,
@@ -265,19 +281,21 @@ def test_p3_3_t06_partial_artifact_publication_visible(tmp_path) -> None:
     )
     harness.manifest_store.mark_failed(
         job_id=harness.job_id,
-        artifact_kind=DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON,
+        artifact_kind=ARTIFACT_KIND_HYBRID_REPORT_JSON,
         required=True,
         error="upload failed",
         now=now,
     )
-    harness.stage_store.transition_stage(
+    _cas_transition(
+        harness.stage_store,
         job_id=harness.job_id,
         stage=FinalizationStage.REQUIRED_ARTIFACTS,
         new_status=StageStatus.IN_PROGRESS,
         evidence_level=EvidenceLevel.CONFIRMED,
         now=now,
     )
-    harness.stage_store.transition_stage(
+    _cas_transition(
+        harness.stage_store,
         job_id=harness.job_id,
         stage=FinalizationStage.REQUIRED_ARTIFACTS,
         new_status=StageStatus.FAILED,
@@ -295,7 +313,7 @@ def test_p3_3_t07_artifact_storage_missing_reports_inconsistent(tmp_path) -> Non
     now = harness.now
     harness.manifest_store.mark_published(
         job_id=harness.job_id,
-        artifact_kind=DURABLE_ARTIFACT_KIND_EXECUTION_LOG,
+        artifact_kind=ARTIFACT_KIND_EXECUTION_LOG,
         storage_key="missing/key.jsonl",
         size_bytes=5,
         content_hash=None,
@@ -314,9 +332,9 @@ def test_p3_3_t07_artifact_storage_missing_reports_inconsistent(tmp_path) -> Non
         manifest_store=harness.manifest_store,
         artifact_store=_MissingStore(),
     )
-    result = verifier.verify_entry(harness.job_id, DURABLE_ARTIFACT_KIND_EXECUTION_LOG)
+    result = verifier.verify_entry(harness.job_id, ARTIFACT_KIND_EXECUTION_LOG)
     assert result.verdict.value == "missing"
-    assert harness.manifest_store.get_entry(harness.job_id, DURABLE_ARTIFACT_KIND_EXECUTION_LOG)
+    assert harness.manifest_store.get_entry(harness.job_id, ARTIFACT_KIND_EXECUTION_LOG)
 
 
 def test_p3_3_t08_technical_terminalization_verification_required(tmp_path) -> None:
@@ -355,8 +373,18 @@ def test_p3_3_t09_operational_pointer_invariant_detection(tmp_path) -> None:
 
 
 def test_p3_3_t10_reconciliation_stage_separation(tmp_path) -> None:
-    harness = ExecutorHarness.build(tmp_path, job_status=JobStatus.SUCCEEDED)
+    harness = ExecutorHarness.build(tmp_path, job_status=JobStatus.SUCCEEDED, artifact_store=ArtifactUploadSpy())
     now = harness.now
+    for kind in REQUIRED_ARTIFACT_KINDS:
+        harness.manifest_store.mark_published(
+            job_id=harness.job_id,
+            artifact_kind=kind,
+            storage_key=f"artifacts/{kind}",
+            size_bytes=10,
+            content_hash=None,
+            required=True,
+            now=now,
+        )
     for stage in (
         FinalizationStage.DOMAIN_RESULTS,
         FinalizationStage.REQUIRED_ARTIFACTS,
@@ -364,7 +392,8 @@ def test_p3_3_t10_reconciliation_stage_separation(tmp_path) -> None:
         FinalizationStage.OPERATIONAL_PROMOTION,
         FinalizationStage.AISLE_RECONCILIATION,
     ):
-        harness.stage_store.transition_stage(
+        _cas_transition(
+            harness.stage_store,
             job_id=harness.job_id,
             stage=stage,
             new_status=StageStatus.COMPLETED,
@@ -372,14 +401,16 @@ def test_p3_3_t10_reconciliation_stage_separation(tmp_path) -> None:
             completed_at=now,
             now=now,
         )
-    harness.stage_store.transition_stage(
+    _cas_transition(
+        harness.stage_store,
         job_id=harness.job_id,
         stage=FinalizationStage.INVENTORY_RECONCILIATION,
         new_status=StageStatus.IN_PROGRESS,
         evidence_level=EvidenceLevel.CONFIRMED,
         now=now,
     )
-    harness.stage_store.transition_stage(
+    _cas_transition(
+        harness.stage_store,
         job_id=harness.job_id,
         stage=FinalizationStage.INVENTORY_RECONCILIATION,
         new_status=StageStatus.FAILED,
@@ -505,3 +536,159 @@ def test_p3_3_t15_projection_failure_preserves_authoritative_stage(tmp_path) -> 
     assert stage is not None and stage.status == StageStatus.COMPLETED
     assessment = _build_assessment_service(harness).assess(harness.job_id)
     assert assessment.stages[FinalizationStage.DOMAIN_RESULTS.value].status == StageStatus.COMPLETED
+
+
+def test_p3_3_corr_t01_api_import_smoke() -> None:
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    backend_root = Path(__file__).resolve().parents[3]
+    result = subprocess.run(
+        [sys.executable, "-c", "from src.api.server import app; print('api_import_ok')"],
+        cwd=str(backend_root),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "api_import_ok" in result.stdout
+
+
+def test_p3_3_corr_t02_one_required_artifact_missing(tmp_path) -> None:
+    harness = ExecutorHarness.build(tmp_path, job_id="job-one-req")
+    now = harness.now
+    harness.manifest_store.mark_published(
+        job_id=harness.job_id,
+        artifact_kind=ARTIFACT_KIND_EXECUTION_LOG,
+        storage_key="logs/exec.jsonl",
+        size_bytes=10,
+        content_hash=None,
+        required=True,
+        now=now,
+    )
+    assert not harness.manifest_store.required_kinds_published(harness.job_id)
+    assert ARTIFACT_KIND_HYBRID_REPORT_JSON in harness.manifest_store.missing_required_kinds(
+        harness.job_id
+    )
+    assessment = _build_assessment_service(harness).assess(harness.job_id)
+    assert assessment.outcome != FinalizationAssessmentOutcome.COMPLETE
+
+
+def test_p3_3_corr_t03_required_artifact_pending(tmp_path) -> None:
+    harness = ExecutorHarness.build(tmp_path, job_id="job-pending")
+    harness.manifest_store.ensure_expected_entries(harness.job_id, now=harness.now)
+    assert not harness.manifest_store.required_kinds_published(harness.job_id)
+
+
+def test_p3_3_corr_t11_inventory_complete_missing_intermediate(tmp_path) -> None:
+    harness = ExecutorHarness.build(tmp_path, job_status=JobStatus.SUCCEEDED)
+    now = harness.now
+    harness.stage_store.transition_stage(
+        job_id=harness.job_id,
+        stage=FinalizationStage.INVENTORY_RECONCILIATION,
+        new_status=StageStatus.COMPLETED,
+        evidence_level=EvidenceLevel.CONFIRMED,
+        completed_at=now,
+        now=now,
+    )
+    job = harness.job_repo.get_by_id(harness.job_id)
+    assert job is not None
+    job.status = JobStatus.SUCCEEDED
+    harness.job_repo.save(job)
+    assessment = _build_assessment_service(harness).assess(harness.job_id)
+    assert assessment.outcome == FinalizationAssessmentOutcome.INCONSISTENT
+    assert assessment.blocking_reason == "stage_order_gap"
+
+
+def test_p3_3_corr_t12_missing_job_with_evidence() -> None:
+    store = MemoryFinalizationStageStore()
+    manifest = MemoryArtifactManifestStore()
+    now = datetime(2026, 6, 12, tzinfo=timezone.utc)
+    store.transition_stage(
+        job_id="ghost-job",
+        stage=FinalizationStage.DOMAIN_RESULTS,
+        new_status=StageStatus.COMPLETED,
+        evidence_level=EvidenceLevel.TRANSACTIONAL,
+        completed_at=now,
+        now=now,
+    )
+    svc = FinalizationAssessmentService(
+        job_repo=MemoryJobRepository(),
+        aisle_repo=MemoryAisleRepository(),
+        stage_store=store,
+        manifest_store=manifest,
+        domain_verifier=JobDomainResultVerifier(
+            aisle_repo=MemoryAisleRepository(),
+            position_repo=MemoryPositionRepository(),
+            product_repo=MemoryProductRecordRepository(),
+            evidence_repo=MemoryEvidenceRepository(),
+            raw_label_repo=MemoryRawLabelRepository(),
+            normalized_label_repo=MemoryNormalizedLabelRepository(),
+            final_count_repo=MemoryFinalCountRepository(),
+            stage_store=store,
+        ),
+        artifact_verifier=JobArtifactVerifier(manifest_store=manifest, artifact_store=None),
+    )
+    assessment = svc.assess("ghost-job")
+    assert assessment.outcome == FinalizationAssessmentOutcome.INCONSISTENT
+    assert assessment.recovery_candidate is False
+    assert assessment.blocking_reason == "orphan_finalization_evidence"
+
+
+def test_p3_3_corr_t13_concurrent_create_conflict() -> None:
+    store = MemoryFinalizationStageStore()
+    now = datetime(2026, 6, 12, tzinfo=timezone.utc)
+    store.transition_stage(
+        job_id="job-cc",
+        stage=FinalizationStage.DOMAIN_RESULTS,
+        new_status=StageStatus.IN_PROGRESS,
+        evidence_level=EvidenceLevel.POSITIVE_EVIDENCE_ONLY,
+        now=now,
+    )
+    from src.application.ports.finalization_stage_store import FinalizationStageConcurrencyError
+
+    with pytest.raises(FinalizationStageConcurrencyError):
+        store.transition_stage(
+            job_id="job-cc",
+            stage=FinalizationStage.DOMAIN_RESULTS,
+            new_status=StageStatus.IN_PROGRESS,
+            evidence_level=EvidenceLevel.POSITIVE_EVIDENCE_ONLY,
+            expected_version=None,
+            now=now,
+        )
+
+
+def test_p3_3_corr_t16_projection_clears_stale_timestamps(tmp_path) -> None:
+    harness = ExecutorHarness.build(tmp_path, job_id="job-clear")
+    job = harness.job_repo.get_by_id(harness.job_id)
+    assert job is not None
+    job.domain_persisted_at = harness.now
+    job.artifacts_published_at = harness.now
+    harness.job_repo.save(job)
+    _cas_transition(
+        harness.stage_store,
+        job_id=harness.job_id,
+        stage=FinalizationStage.DOMAIN_RESULTS,
+        new_status=StageStatus.IN_PROGRESS,
+        evidence_level=EvidenceLevel.POSITIVE_EVIDENCE_ONLY,
+        now=harness.now,
+    )
+    _cas_transition(
+        harness.stage_store,
+        job_id=harness.job_id,
+        stage=FinalizationStage.DOMAIN_RESULTS,
+        new_status=StageStatus.FAILED,
+        evidence_level=EvidenceLevel.CONFIRMED,
+        now=harness.now,
+    )
+    projection = FinalizationProjectionService(
+        job_repo=harness.job_repo,
+        stage_store=harness.stage_store,
+        clock=FixedClock(harness.now),
+    )
+    projection.refresh_summary(harness.job_id)
+    job = harness.job_repo.get_by_id(harness.job_id)
+    assert job is not None
+    assert job.domain_persisted_at is None
+    assert job.artifacts_published_at is None
