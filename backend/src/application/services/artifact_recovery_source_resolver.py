@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from src.application.services.job_artifact_verifier import JobArtifactVerifier
 from src.domain.jobs.artifact_policy import (

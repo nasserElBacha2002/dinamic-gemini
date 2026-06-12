@@ -41,8 +41,8 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.labels.merge import MergeRuleEngine
-from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
-    MemoryOperationalJobPromotionRepository,
+from src.infrastructure.artifacts.filesystem_artifact_staging_store import (
+    FileSystemArtifactStagingStore,
 )
 from src.infrastructure.persistence.memory_artifact_manifest_store import (
     MemoryArtifactManifestStore,
@@ -50,14 +50,14 @@ from src.infrastructure.persistence.memory_artifact_manifest_store import (
 from src.infrastructure.persistence.memory_artifact_publication_outbox_store import (
     MemoryArtifactPublicationOutboxStore,
 )
-from src.infrastructure.artifacts.filesystem_artifact_staging_store import (
-    FileSystemArtifactStagingStore,
-)
 from src.infrastructure.persistence.memory_finalization_stage_store import (
     MemoryFinalizationStageStore,
 )
 from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWorkFactory,
+)
+from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
+    MemoryOperationalJobPromotionRepository,
 )
 from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
     default_map_hybrid_report_to_domain,

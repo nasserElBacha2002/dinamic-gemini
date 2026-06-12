@@ -25,7 +25,9 @@ from src.domain.jobs.finalization_evidence import (
     StageStatus,
 )
 from src.domain.jobs.finalization_recovery import RecoveryOperation, RecoveryOutcome
-from src.infrastructure.pipeline.worker_durable_artifact_publisher import merge_durable_into_result_json
+from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
+    merge_durable_into_result_json,
+)
 
 logger = logging.getLogger(__name__)
 

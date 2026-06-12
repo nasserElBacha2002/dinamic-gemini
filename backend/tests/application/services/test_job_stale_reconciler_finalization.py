@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from src.application.services.job_stale_reconciler import JobStaleReconciler, STALE_FAILURE_CODE
+from src.application.services.job_stale_reconciler import STALE_FAILURE_CODE, JobStaleReconciler
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.jobs.finalization import FinalizationStatus

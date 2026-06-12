@@ -42,9 +42,9 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
-from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.analytics_query_service import AnalyticsQueryService
+from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.operational_execution_config_resolver import (
@@ -158,8 +158,6 @@ from src.runtime.v3_deps import (
     get_code_scan_repo,
     get_evidence_repo,
     get_final_count_repo,
-    get_finalization_assessment_service as _get_finalization_assessment_service,
-    get_artifact_publication_outbox_store as _get_artifact_publication_outbox_store,
     get_inventory_repo,
     get_job_repo,
     get_metrics_calculator,
@@ -171,6 +169,12 @@ from src.runtime.v3_deps import (
     get_supplier_prompt_config_repo,
     get_supplier_reference_image_repo,
     get_worker_launch_service,
+)
+from src.runtime.v3_deps import (
+    get_artifact_publication_outbox_store as _get_artifact_publication_outbox_store,
+)
+from src.runtime.v3_deps import (
+    get_finalization_assessment_service as _get_finalization_assessment_service,
 )
 
 logger = logging.getLogger(__name__)

@@ -46,12 +46,6 @@ from src.api.schemas.processing_schemas import (
     JobDetailResponse,
     JobSummary,
 )
-from src.application.ports.artifact_publication_outbox_store import (
-    ArtifactPublicationOutboxStore,
-    MissingMigrationOrStoreUnavailableError,
-)
-from src.infrastructure.pipeline.job_finalization_tracker import sanitize_finalization_error_metadata
-from src.domain.jobs.finalization_evidence import FinalizationAssessment
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 from src.application.errors import (
     AisleNotFoundError,
@@ -63,6 +57,10 @@ from src.application.errors import (
 from src.application.mappers.position_canonical_view import (
     PositionCanonicalView,
     build_position_canonical_view,
+)
+from src.application.ports.artifact_publication_outbox_store import (
+    ArtifactPublicationOutboxStore,
+    MissingMigrationOrStoreUnavailableError,
 )
 from src.application.ports.contracts import InventoryListItem
 from src.application.services.inventory_primary_execution_config import (
@@ -88,9 +86,13 @@ from src.domain.assets.entities import SourceAsset
 from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
 from src.domain.jobs.entities import Job
+from src.domain.jobs.finalization_evidence import FinalizationAssessment
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 from src.domain.reviews.entities import ReviewAction
+from src.infrastructure.pipeline.job_finalization_tracker import (
+    sanitize_finalization_error_metadata,
+)
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID
 from src.utils.validation import validate_relative_path
 

@@ -10,10 +10,17 @@ from src.application.ports.clock import Clock
 from src.application.ports.finalization_recovery_store import FinalizationRecoveryStore
 from src.application.ports.finalization_stage_store import FinalizationStageStore
 from src.application.ports.repositories import AisleRepository, InventoryRepository, JobRepository
-from src.application.services.artifact_recovery_source_resolver import ArtifactRecoverySourceResolver
+from src.application.services.artifact_recovery_source_resolver import (
+    ArtifactRecoverySourceResolver,
+)
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
-from src.application.services.finalization_recovery_eligibility import FinalizationRecoveryEligibility
-from src.application.services.finalization_recovery_support import RecoverySession, build_stage_recorder
+from src.application.services.finalization_recovery_eligibility import (
+    FinalizationRecoveryEligibility,
+)
+from src.application.services.finalization_recovery_support import (
+    RecoverySession,
+    build_stage_recorder,
+)
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_artifact_verifier import JobArtifactVerifier
 from src.application.services.job_domain_result_verifier import JobDomainResultVerifier

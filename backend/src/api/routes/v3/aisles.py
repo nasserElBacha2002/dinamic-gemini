@@ -16,6 +16,7 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED,
 )
 from src.api.dependencies import (
+    get_artifact_publication_outbox_store,
     get_artifact_storage,
     get_cancel_aisle_job_use_case,
     get_compare_aisle_runs_use_case,
@@ -26,7 +27,6 @@ from src.api.dependencies import (
     get_export_aisle_business_csv_use_case,
     get_export_aisle_results_csv_use_case,
     get_finalization_assessment_service,
-    get_artifact_publication_outbox_store,
     get_get_aisle_merge_results_use_case,
     get_get_aisle_processing_status_use_case,
     get_job_stale_reconciler,
@@ -68,7 +68,6 @@ from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     load_hybrid_report_json_for_api,
 )
-from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.errors import (
     ActiveJobExistsError,
     AisleNotFoundError,
@@ -94,6 +93,7 @@ from src.application.services.execution_log_enrichment import (
     execution_log_attachment_filename,
     format_execution_log_plaintext,
 )
+from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.run_auditability_service import RunAuditabilityService
 from src.application.use_cases.aisles.cancel_aisle_job import (

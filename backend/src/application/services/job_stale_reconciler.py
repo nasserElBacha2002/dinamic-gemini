@@ -3,10 +3,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from src.application.ports.artifact_publication_outbox_store import ArtifactPublicationOutboxStore
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, JobRepository
-from src.application.ports.artifact_publication_outbox_store import ArtifactPublicationOutboxStore
-from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.aisle.entities import AisleStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.jobs.finalization import FinalizationStatus
 

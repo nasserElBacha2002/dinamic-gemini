@@ -7,7 +7,11 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from src.application.ports.artifact_manifest_store import ArtifactManifestConcurrencyError
-from src.domain.jobs.artifact_manifest import ArtifactManifestEntry, ArtifactManifestStatus, ArtifactVerificationLevel
+from src.domain.jobs.artifact_manifest import (
+    ArtifactManifestEntry,
+    ArtifactManifestStatus,
+    ArtifactVerificationLevel,
+)
 from src.domain.jobs.artifact_policy import ALL_EXPECTED_ARTIFACT_KINDS, REQUIRED_ARTIFACT_KINDS
 
 

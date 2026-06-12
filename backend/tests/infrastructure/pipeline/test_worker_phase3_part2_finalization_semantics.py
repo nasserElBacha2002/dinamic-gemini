@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
-import pytest
-
 from src.application.ports.operational_job_promotion import PromotionOutcome, PromotionResult
 from src.application.services.operational_result_promotion_service import (
     OperationalResultPromotionService,
@@ -33,7 +29,6 @@ from tests.support.worker_phase1.doubles import (
     RecordingPipelineRunner,
 )
 from tests.support.worker_phase1.executor_harness import ExecutorHarness, FixedClock
-from tests.support.worker_phase1.spies import ExecutionSpy
 from tests.support.worker_phase2.recompute_doubles import FailingJobScopedRecomputeFactory
 
 

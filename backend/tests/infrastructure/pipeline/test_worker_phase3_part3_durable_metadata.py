@@ -7,17 +7,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.domain.jobs.finalization import FinalizationStatus, LastCompletedFinalizationStep
-from src.domain.jobs.finalization_evidence import (
-    DomainSnapshotVerdict,
-    EvidenceLevel,
-    FinalizationAssessment,
-    FinalizationAssessmentOutcome,
-    FinalizationStage,
-    StageAssessment,
-    StageStatus,
-)
-from src.infrastructure.pipeline.job_finalization_tracker import sanitize_finalization_error_metadata
 from src.application.services.default_job_scoped_recompute_factory import (
     DefaultJobScopedRecomputeFactory,
 )
@@ -33,7 +22,26 @@ from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
 )
+from src.domain.jobs.artifact_policy import (
+    ARTIFACT_KIND_EXECUTION_LOG,
+    ARTIFACT_KIND_HYBRID_REPORT_CSV,
+    ARTIFACT_KIND_HYBRID_REPORT_JSON,
+    REQUIRED_ARTIFACT_KINDS,
+)
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.jobs.finalization import FinalizationStatus, LastCompletedFinalizationStep
+from src.domain.jobs.finalization_evidence import (
+    DomainSnapshotVerdict,
+    EvidenceLevel,
+    FinalizationAssessment,
+    FinalizationAssessmentOutcome,
+    FinalizationStage,
+    StageAssessment,
+    StageStatus,
+)
+from src.infrastructure.persistence.memory_artifact_manifest_store import (
+    MemoryArtifactManifestStore,
+)
 from src.infrastructure.persistence.memory_finalization_stage_store import (
     MemoryFinalizationStageStore,
 )
@@ -43,11 +51,8 @@ from src.infrastructure.persistence.memory_job_result_unit_of_work import (
 from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
     default_map_hybrid_report_to_domain,
 )
-from src.domain.jobs.artifact_policy import (
-    ARTIFACT_KIND_EXECUTION_LOG,
-    ARTIFACT_KIND_HYBRID_REPORT_CSV,
-    ARTIFACT_KIND_HYBRID_REPORT_JSON,
-    REQUIRED_ARTIFACT_KINDS,
+from src.infrastructure.pipeline.job_finalization_tracker import (
+    sanitize_finalization_error_metadata,
 )
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
@@ -60,7 +65,6 @@ from src.infrastructure.repositories.memory_position_repository import MemoryPos
 from src.infrastructure.repositories.memory_product_record_repository import (
     MemoryProductRecordRepository,
 )
-from src.infrastructure.persistence.memory_artifact_manifest_store import MemoryArtifactManifestStore
 from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
 from tests.support.worker_phase1.doubles import ArtifactUploadSpy
 from tests.support.worker_phase1.executor_harness import (

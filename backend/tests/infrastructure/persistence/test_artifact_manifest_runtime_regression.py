@@ -17,7 +17,6 @@ from src.domain.jobs.artifact_policy import (
     ARTIFACT_KIND_EXECUTION_LOG,
     ARTIFACT_KIND_HYBRID_REPORT_CSV,
     ARTIFACT_KIND_HYBRID_REPORT_JSON,
-    REQUIRED_ARTIFACT_KINDS,
 )
 from src.domain.jobs.entities import JobStatus
 from src.domain.jobs.finalization import LastCompletedFinalizationStep
@@ -27,7 +26,9 @@ from src.domain.jobs.finalization_evidence import (
     FinalizationStage,
     StageStatus,
 )
-from src.infrastructure.persistence.memory_artifact_manifest_store import MemoryArtifactManifestStore
+from src.infrastructure.persistence.memory_artifact_manifest_store import (
+    MemoryArtifactManifestStore,
+)
 from src.infrastructure.persistence.sql_artifact_manifest_store import SqlArtifactManifestStore
 from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
@@ -60,7 +61,6 @@ def test_expected_manifest_pre_registration_pending() -> None:
 
 def test_sql_artifact_manifest_store_enum_referenced_at_runtime() -> None:
     from src.infrastructure.persistence.sql_artifact_manifest_store import (
-        SqlArtifactManifestStore,
         _row_to_entry,
     )
 
@@ -237,9 +237,6 @@ def test_full_happy_path_reaches_succeeded(tmp_path) -> None:
 
 def test_resume_dry_run_from_domain_committed_artifacts_missing(tmp_path) -> None:
     from src.application.use_cases.finalization_recovery.recovery_command import RecoveryCommand
-    from src.application.use_cases.finalization_recovery.resume_job_finalization import (
-        FinalizationRecoveryCoordinator,
-    )
     from src.domain.jobs.finalization_recovery import RecoveryOperation, RecoveryOutcome
     from tests.infrastructure.pipeline.test_worker_phase3_part4_targeted_recovery import (
         _build_coordinator,

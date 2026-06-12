@@ -12,7 +12,6 @@ from src.domain.jobs.finalization_evidence import (
 )
 from src.domain.jobs.finalization_recovery import RecoveryOperation
 
-
 _VERIFY_ALLOWED_OUTCOMES = frozenset(
     {
         FinalizationAssessmentOutcome.VERIFICATION_REQUIRED,

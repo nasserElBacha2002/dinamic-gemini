@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import logging
 import signal
-import sys
 import time
 from dataclasses import dataclass, field
 
 from src.application.services.artifact_publication_dispatcher import ArtifactPublicationDispatcher
 from src.config import load_settings
-from src.runtime.v3_deps import get_clock
 
 logger = logging.getLogger(__name__)
 

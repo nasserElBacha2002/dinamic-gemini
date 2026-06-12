@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
-from src.application.services.finalization_recovery_eligibility import FinalizationRecoveryEligibility
-from src.application.services.finalization_recovery_support import RecoverySession, sanitize_recovery_message
+from src.application.services.finalization_recovery_eligibility import (
+    FinalizationRecoveryEligibility,
+)
+from src.application.services.finalization_recovery_support import (
+    RecoverySession,
+    sanitize_recovery_message,
+)
 from src.application.use_cases.finalization_recovery.recovery_command import RecoveryCommand
 from src.domain.jobs.finalization_recovery import RecoveryOperation, RecoveryOutcome, RecoveryResult
 

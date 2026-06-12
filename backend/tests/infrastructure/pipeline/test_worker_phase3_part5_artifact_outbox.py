@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import threading
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,11 +23,12 @@ from src.domain.jobs.artifact_policy import (
 )
 from src.domain.jobs.artifact_publication_outbox import ArtifactPublicationOutboxStatus
 from src.domain.jobs.entities import JobStatus
-from src.domain.jobs.finalization import LastCompletedFinalizationStep
 from src.domain.jobs.finalization_evidence import FinalizationStage, StageStatus
 from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
-from src.infrastructure.pipeline.worker_durable_artifact_publisher import DEFAULT_V3_WORKER_RUN_SEGMENT
+from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
+    DEFAULT_V3_WORKER_RUN_SEGMENT,
+)
 from tests.support.worker_phase1.doubles import ArtifactUploadSpy
 from tests.support.worker_phase1.executor_harness import ExecutorHarness, FixedClock
 
@@ -46,11 +46,11 @@ def _build_dispatcher(harness: ExecutorHarness, *, artifact_store=None, max_atte
         manifest_store=harness.manifest_store,
         clock=FixedClock(harness.now),
     )
-    from src.application.services.automatic_finalization_continuation_use_case import (
-        AutomaticFinalizationContinuationUseCase,
-    )
     from src.application.services.artifact_publication_state_reconciler import (
         ArtifactPublicationStateReconciler,
+    )
+    from src.application.services.automatic_finalization_continuation_use_case import (
+        AutomaticFinalizationContinuationUseCase,
     )
     from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
     from src.application.services.operational_result_promotion_service import (
@@ -320,7 +320,6 @@ def test_object_already_exists_skips_upload(tmp_path) -> None:
 
 
 def test_object_exists_but_mismatch_is_permanent(tmp_path) -> None:
-    import hashlib
 
     harness = ExecutorHarness.build(tmp_path, artifact_store=ArtifactUploadSpy())
     run_dir = harness.seed_run_dir()
@@ -410,7 +409,7 @@ def test_crash_after_upload_reconciles_manifest_on_retry(tmp_path) -> None:
     run_dir = harness.seed_run_dir()
     dispatcher.register_publication_work(job_id=harness.job_id, run_segment=RUN_ID, run_dir=run_dir)
     now = harness.now
-    claimed = harness.outbox_store.claim_entry(
+    harness.outbox_store.claim_entry(
         job_id=harness.job_id,
         artifact_kind=ARTIFACT_KIND_EXECUTION_LOG,
         claimed_by="worker",
@@ -428,7 +427,9 @@ def test_crash_after_upload_reconciles_manifest_on_retry(tmp_path) -> None:
 
 
 def test_ephemeral_local_source_unavailable_permanent_failure(tmp_path) -> None:
-    from src.application.services.artifact_publication_dispatcher import ArtifactSourceStagingFailedError
+    from src.application.services.artifact_publication_dispatcher import (
+        ArtifactSourceStagingFailedError,
+    )
 
     harness = ExecutorHarness.build(tmp_path, artifact_store=ArtifactUploadSpy())
     dispatcher, _, _, _ = _build_dispatcher(harness)
@@ -460,12 +461,12 @@ def test_sql_concurrent_claims(tmp_path) -> None:
         client = sql_server_client_or_skip()
     except Exception:
         pytest.skip("SQL Server unavailable")
-    from src.infrastructure.persistence.sql_artifact_publication_outbox_store import (
-        SqlArtifactPublicationOutboxStore,
-    )
     from src.domain.jobs.artifact_publication_outbox import (
         ArtifactPublicationOutboxEntry,
         ArtifactSourceType,
+    )
+    from src.infrastructure.persistence.sql_artifact_publication_outbox_store import (
+        SqlArtifactPublicationOutboxStore,
     )
 
     store = SqlArtifactPublicationOutboxStore(client)

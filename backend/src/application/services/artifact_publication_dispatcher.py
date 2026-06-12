@@ -19,7 +19,6 @@ from src.application.ports.artifact_publication_outbox_store import (
     ArtifactPublicationOutboxClaimConflictError,
     ArtifactPublicationOutboxConcurrencyError,
     ArtifactPublicationOutboxStore,
-    ArtifactPublicationSourceConflictError,
 )
 from src.application.ports.artifact_staging_store import ArtifactStagingStore
 from src.application.ports.clock import Clock

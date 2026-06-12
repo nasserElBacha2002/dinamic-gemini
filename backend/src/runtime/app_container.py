@@ -14,9 +14,9 @@ import threading
 from collections.abc import Callable
 from typing import TypeVar
 
+from src.application.ports.analytics_repository import AnalyticsRepository
 from src.application.ports.artifact_manifest_store import ArtifactManifestStore
 from src.application.ports.artifact_publication_outbox_store import ArtifactPublicationOutboxStore
-from src.application.ports.finalization_stage_store import FinalizationStageStore
 from src.application.ports.capture_repositories import (
     CaptureSessionConfirmIdempotencyRepository,
     CaptureSessionGroupRepository,
@@ -25,6 +25,7 @@ from src.application.ports.capture_repositories import (
 )
 from src.application.ports.clock import Clock
 from src.application.ports.code_scan_repository import CodeScanRepository
+from src.application.ports.finalization_stage_store import FinalizationStageStore
 from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
 from src.application.ports.operational_job_promotion import OperationalJobPromotionRepository
@@ -47,12 +48,17 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
-from src.application.services.artifact_recovery_source_resolver import ArtifactRecoverySourceResolver
+from src.application.services.artifact_publication_dispatcher import ArtifactPublicationDispatcher
+from src.application.services.artifact_recovery_source_resolver import (
+    ArtifactRecoverySourceResolver,
+)
 from src.application.services.default_job_scoped_recompute_factory import (
     DefaultJobScopedRecomputeFactory,
 )
-from src.application.services.finalization_recovery_eligibility import FinalizationRecoveryEligibility
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
+from src.application.services.finalization_recovery_eligibility import (
+    FinalizationRecoveryEligibility,
+)
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_artifact_verifier import JobArtifactVerifier
 from src.application.services.job_domain_result_verifier import JobDomainResultVerifier
@@ -77,15 +83,23 @@ from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
 )
 from src.config import AppSettings
 from src.database.sqlserver import SqlServerClient
-from src.infrastructure.persistence.memory_artifact_manifest_store import MemoryArtifactManifestStore
+from src.infrastructure.persistence.memory_artifact_manifest_store import (
+    MemoryArtifactManifestStore,
+)
 from src.infrastructure.persistence.memory_artifact_publication_outbox_store import (
     MemoryArtifactPublicationOutboxStore,
 )
 from src.infrastructure.persistence.memory_finalization_recovery_store import (
     MemoryFinalizationRecoveryStore,
 )
+from src.infrastructure.persistence.memory_finalization_stage_store import (
+    MemoryFinalizationStageStore,
+)
 from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWorkFactory,
+)
+from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
+    MemoryOperationalJobPromotionRepository,
 )
 from src.infrastructure.persistence.sql_artifact_manifest_store import SqlArtifactManifestStore
 from src.infrastructure.persistence.sql_artifact_publication_outbox_store import (
@@ -95,9 +109,6 @@ from src.infrastructure.persistence.sql_finalization_recovery_store import (
     SqlFinalizationRecoveryStore,
 )
 from src.infrastructure.persistence.sql_finalization_stage_store import SqlFinalizationStageStore
-from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
-    MemoryOperationalJobPromotionRepository,
-)
 from src.infrastructure.persistence.sql_job_result_unit_of_work import (
     SqlJobResultUnitOfWorkFactory,
 )
@@ -628,7 +639,6 @@ class AppContainer:
         return self._artifact_publication_outbox_store
 
     def get_artifact_staging_store(self):
-        from src.application.ports.artifact_staging_store import ArtifactStagingStore
         from src.infrastructure.artifacts.filesystem_artifact_staging_store import (
             FileSystemArtifactStagingStore,
         )
@@ -643,7 +653,6 @@ class AppContainer:
         from src.application.services.artifact_publication_dispatcher import (
             ArtifactPublicationDispatcher,
         )
-        from src.application.services.artifact_publication_retry_policy import DEFAULT_BACKOFF_SECONDS
         from src.application.services.artifact_publication_state_reconciler import (
             ArtifactPublicationStateReconciler,
         )
@@ -653,9 +662,11 @@ class AppContainer:
         from src.application.services.finalization_projection_service import (
             FinalizationProjectionService,
         )
-        from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
-        from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
         from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+        from src.infrastructure.pipeline.finalization_stage_recorder import (
+            FinalizationStageRecorder,
+        )
+        from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
 
         settings = self._settings
         backoff = settings.parse_backoff_seconds(settings.artifact_publication_backoff_seconds)

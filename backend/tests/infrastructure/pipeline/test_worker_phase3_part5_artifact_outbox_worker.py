@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-import threading
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
 
 import pytest
 
@@ -13,18 +11,26 @@ from src.application.ports.artifact_publication_outbox_store import (
     ArtifactPublicationSourceConflictError,
     MissingMigrationOrStoreUnavailableError,
 )
+from src.application.services.artifact_publication_retry_policy import classify_publication_error
 from src.application.services.automatic_finalization_continuation_use_case import (
     AutomaticFinalizationContinuationUseCase,
 )
-from src.application.services.artifact_publication_retry_policy import classify_publication_error
-from src.domain.jobs.artifact_policy import ARTIFACT_KIND_EXECUTION_LOG, ARTIFACT_KIND_HYBRID_REPORT_JSON
+from src.domain.jobs.artifact_policy import (
+    ARTIFACT_KIND_EXECUTION_LOG,
+    ARTIFACT_KIND_HYBRID_REPORT_JSON,
+)
 from src.domain.jobs.artifact_publication_outbox import (
     ArtifactPublicationOutboxStatus,
     ArtifactSourceType,
 )
 from src.domain.jobs.entities import JobStatus
 from src.domain.jobs.finalization import FinalizationStatus
-from src.domain.jobs.finalization_evidence import EvidenceLevel, FinalizationStage, FinalizationStageRecord, StageStatus
+from src.domain.jobs.finalization_evidence import (
+    EvidenceLevel,
+    FinalizationStage,
+    FinalizationStageRecord,
+    StageStatus,
+)
 from src.jobs.artifact_publication_worker import ArtifactPublicationOutboxWorker
 from tests.infrastructure.pipeline.test_worker_phase3_part5_artifact_outbox import (
     RUN_ID,
@@ -115,7 +121,9 @@ def test_durable_source_survives_restart(tmp_path) -> None:
 
 
 def test_staging_failure_no_retryable_row(tmp_path) -> None:
-    from src.application.services.artifact_publication_dispatcher import ArtifactSourceStagingFailedError
+    from src.application.services.artifact_publication_dispatcher import (
+        ArtifactSourceStagingFailedError,
+    )
 
     harness = ExecutorHarness.build(tmp_path, artifact_store=ArtifactUploadSpy())
     dispatcher, _, _, _ = _build_dispatcher(harness)

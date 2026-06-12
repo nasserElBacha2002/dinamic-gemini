@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
-from src.domain.jobs.artifact_manifest import ArtifactManifestEntry, ArtifactManifestStatus
+from src.domain.jobs.artifact_manifest import ArtifactManifestEntry
 
 
 class ArtifactManifestConcurrencyError(Exception):

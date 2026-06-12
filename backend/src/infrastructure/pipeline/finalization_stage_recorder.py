@@ -14,8 +14,6 @@ from src.application.services.finalization_projection_service import (
 )
 from src.domain.jobs.artifact_policy import (
     ALL_EXPECTED_ARTIFACT_KINDS,
-    OPTIONAL_ARTIFACT_KINDS,
-    REQUIRED_ARTIFACT_KINDS,
     is_required_artifact_kind,
 )
 from src.domain.jobs.finalization import (

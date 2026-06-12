@@ -17,6 +17,7 @@ from typing import Any, Callable
 from src.application.ports.artifact_manifest_store import ArtifactManifestStore
 from src.application.ports.artifact_publication_outbox_store import ArtifactPublicationOutboxStore
 from src.application.ports.artifact_staging_store import ArtifactStagingStore
+from src.application.ports.clock import Clock
 from src.application.ports.finalization_stage_store import FinalizationStageStore
 from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
@@ -41,17 +42,17 @@ from src.application.services.aisle_analysis_context_builder import (
 from src.application.services.artifact_finalization_continuation import (
     ArtifactFinalizationContinuationCoordinator,
 )
-from src.application.services.automatic_finalization_continuation_use_case import (
-    AutomaticFinalizationContinuationUseCase,
-)
-from src.application.services.artifact_publication_state_reconciler import (
-    ArtifactPublicationStateReconciler,
-)
 from src.application.services.artifact_publication_dispatcher import (
     ArtifactPublicationDispatcher,
     ArtifactSourceStagingFailedError,
 )
 from src.application.services.artifact_publication_retry_policy import DEFAULT_BACKOFF_SECONDS
+from src.application.services.artifact_publication_state_reconciler import (
+    ArtifactPublicationStateReconciler,
+)
+from src.application.services.automatic_finalization_continuation_use_case import (
+    AutomaticFinalizationContinuationUseCase,
+)
 from src.application.services.finalization_projection_service import (
     FinalizationProjectionService,
 )
@@ -78,9 +79,6 @@ from src.application.use_cases.pipeline.recompute_consolidated_counts import (
 from src.config import Settings, load_settings
 from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import Job, JobStatus
-from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
-    default_map_hybrid_report_to_domain,
-)
 from src.domain.jobs.finalization import (
     CurrentFinalizationStep,
     FinalizationErrorCode,
@@ -92,6 +90,9 @@ from src.infrastructure.pipeline.finalization_errors import (
     ArtifactStoreUnavailableError,
 )
 from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
+from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
+    default_map_hybrid_report_to_domain,
+)
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
 from src.infrastructure.pipeline.v3_execution_artifacts_service import V3ExecutionArtifactsService
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService

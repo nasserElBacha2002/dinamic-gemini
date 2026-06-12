@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.application.services.finalization_recovery_support import map_recovery_outcome_to_attempt_status
+from src.application.services.finalization_recovery_support import (
+    map_recovery_outcome_to_attempt_status,
+)
 from src.domain.jobs.finalization_recovery import RecoveryAttemptStatus, RecoveryOutcome
 
 

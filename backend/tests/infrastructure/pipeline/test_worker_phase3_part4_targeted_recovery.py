@@ -8,12 +8,19 @@ from pathlib import Path
 
 import pytest
 
-from src.application.services.artifact_recovery_source_resolver import ArtifactRecoverySourceResolver
+from src.application.services.artifact_recovery_source_resolver import (
+    ArtifactRecoverySourceResolver,
+)
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
-from src.application.services.finalization_recovery_eligibility import FinalizationRecoveryEligibility
+from src.application.services.finalization_recovery_eligibility import (
+    FinalizationRecoveryEligibility,
+)
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_artifact_verifier import JobArtifactVerifier
 from src.application.services.job_domain_result_verifier import JobDomainResultVerifier
+from src.application.services.operational_result_promotion_service import (
+    OperationalResultPromotionService,
+)
 from src.application.use_cases.finalization_recovery.recovery_command import RecoveryCommand
 from src.application.use_cases.finalization_recovery.resume_job_finalization import (
     FinalizationRecoveryCoordinator,
@@ -28,7 +35,6 @@ from src.domain.jobs.artifact_policy import (
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.jobs.finalization_evidence import (
     EvidenceLevel,
-    FinalizationAssessmentOutcome,
     FinalizationStage,
     StageStatus,
 )
@@ -39,10 +45,9 @@ from src.infrastructure.persistence.memory_finalization_recovery_store import (
 from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
     MemoryOperationalJobPromotionRepository,
 )
-from src.application.services.operational_result_promotion_service import (
-    OperationalResultPromotionService,
+from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
+    DEFAULT_V3_WORKER_RUN_SEGMENT,
 )
-from src.infrastructure.pipeline.worker_durable_artifact_publisher import DEFAULT_V3_WORKER_RUN_SEGMENT
 from tests.support.worker_phase1.doubles import ArtifactUploadSpy
 from tests.support.worker_phase1.executor_harness import ExecutorHarness, FixedClock
 

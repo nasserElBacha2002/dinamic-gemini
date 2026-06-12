@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta
-from typing import Any
+from datetime import timedelta
 
 from src.application.ports.clock import Clock
 from src.application.ports.finalization_recovery_store import (
     FinalizationRecoveryStore,
     RecoveryLeaseConflictError,
 )
-from src.application.ports.repositories import JobRepository
 from src.application.ports.finalization_stage_store import FinalizationStageStore
+from src.application.ports.repositories import JobRepository
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.finalization_projection_service import FinalizationProjectionService
-from src.application.services.finalization_recovery_eligibility import FinalizationRecoveryEligibility
+from src.application.services.finalization_recovery_eligibility import (
+    FinalizationRecoveryEligibility,
+)
 from src.domain.jobs.finalization_evidence import FinalizationAssessment
 from src.domain.jobs.finalization_recovery import (
     RecoveryAttemptStatus,
