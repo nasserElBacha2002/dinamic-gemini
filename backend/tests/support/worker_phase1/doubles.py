@@ -189,7 +189,7 @@ class FailingArtifactStore:
         return path
 
     def object_exists(self, key: str) -> bool:
-        return key in self.uploaded_sizes or True
+        return key in self.uploaded_sizes
 
     def object_size_bytes(self, key: str, *, bucket: str | None = None) -> int:
         return self.uploaded_sizes.get(key, 10)

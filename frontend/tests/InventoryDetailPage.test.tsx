@@ -37,6 +37,18 @@ const { processAisleMutateAsyncMock, useProcessingProviderOptionsMock } = vi.hoi
   processAisleMutateAsyncMock: vi.fn().mockResolvedValue({ job_id: 'job-new' }),
   useProcessingProviderOptionsMock: vi.fn(),
 }));
+const mockUseAuth = vi.hoisted(() =>
+  vi.fn(() => ({
+    user: { role: 'administrator' as const, username: 'admin' },
+    login: vi.fn(),
+    logout: vi.fn(),
+  }))
+);
+
+vi.mock('../src/features/auth', () => ({
+  useAuth: () => mockUseAuth(),
+}));
+
 const { inventoryDetailHookState } = vi.hoisted(() => ({
   inventoryDetailHookState: {
     data: {

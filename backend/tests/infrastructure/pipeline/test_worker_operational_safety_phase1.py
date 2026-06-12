@@ -270,7 +270,10 @@ def test_wkr_p1_t002_artifact_failure_after_persist_leaves_domain_rows_failed_jo
     assert job is not None
     assert job.status == JobStatus.FAILED
     assert job.failure_code == FinalizationErrorCode.ARTIFACT_PUBLISH_FAILED.value
-    assert "Durable artifact upload failed" in (job.error_message or "")
+    assert job.error_message and (
+        "Durable artifact upload failed" in job.error_message
+        or "Required artifact publication permanently failed" in job.error_message
+    )
     assert job.result_json is None or "durable_artifacts" not in (job.result_json or {})
 
     assert len(harness.positions_for_job()) == 2

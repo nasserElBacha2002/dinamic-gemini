@@ -29,9 +29,14 @@ def _row_to_entry(row: Any) -> ArtifactManifestEntry:
     required_raw = getattr(row, "required", True)
     required = bool(required_raw) if not isinstance(required_raw, bool) else required_raw
     verification_raw = getattr(row, "verification_level", None)
-    verification = (
-        ArtifactVerificationLevel(str(verification_raw)) if verification_raw else None
-    )
+    verification: ArtifactVerificationLevel | None = None
+    if isinstance(verification_raw, ArtifactVerificationLevel):
+        verification = verification_raw
+    elif isinstance(verification_raw, str) and verification_raw:
+        try:
+            verification = ArtifactVerificationLevel(verification_raw)
+        except ValueError:
+            verification = None
     return ArtifactManifestEntry(
         job_id=str(row.job_id),
         artifact_kind=str(row.artifact_kind),

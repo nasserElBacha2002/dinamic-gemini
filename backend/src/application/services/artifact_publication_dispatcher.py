@@ -43,6 +43,7 @@ from src.domain.jobs.artifact_manifest import ArtifactVerificationLevel as Manif
 from src.domain.jobs.artifact_policy import (
     ALL_EXPECTED_ARTIFACT_KINDS,
     ARTIFACT_KIND_EXECUTION_LOG,
+    ARTIFACT_KIND_HYBRID_REPORT_CSV,
     ARTIFACT_KIND_HYBRID_REPORT_JSON,
     is_required_artifact_kind,
 )
@@ -59,6 +60,12 @@ from src.infrastructure.pipeline.worker_durable_artifact_publisher import stored
 from src.infrastructure.storage.artifact_store import ArtifactStore
 
 logger = logging.getLogger(__name__)
+
+WORKER_ARTIFACT_PUBLISH_ORDER: tuple[str, ...] = (
+    ARTIFACT_KIND_EXECUTION_LOG,
+    ARTIFACT_KIND_HYBRID_REPORT_JSON,
+    ARTIFACT_KIND_HYBRID_REPORT_CSV,
+)
 
 _REQUIRED_DURABLE_KINDS = frozenset({ARTIFACT_KIND_EXECUTION_LOG, ARTIFACT_KIND_HYBRID_REPORT_JSON})
 
@@ -231,7 +238,8 @@ class ArtifactPublicationDispatcher:
         self._outbox.release_expired_claims(now=self._clock.now())
         result = ArtifactPublicationDispatchResult()
         now = self._clock.now()
-        for kind in sorted(ALL_EXPECTED_ARTIFACT_KINDS):
+        inline_worker = tracker is not None
+        for kind in WORKER_ARTIFACT_PUBLISH_ORDER:
             existing = self._outbox.get_entry(job_id, kind)
             if existing is None:
                 continue
@@ -270,27 +278,19 @@ class ArtifactPublicationDispatcher:
                 source_paths=source_paths,
                 result=result,
             )
-        result.required_complete = self._manifest.required_kinds_published(job_id)
-        if result.required_complete:
             if (
-                tracker is not None
-                and continuation_aisle is not None
-                and report_path is not None
-                and self._continuation is not None
+                inline_worker
+                and kind in result.permanently_failed_kinds
+                and is_required_artifact_kind(kind)
             ):
-                required_stage = self._stage_store.get_stage(job_id, FinalizationStage.REQUIRED_ARTIFACTS)
-                if required_stage is None or required_stage.status != StageStatus.COMPLETED:
-                    tracker.record_artifacts_published(durable_artifacts=result.durable_meta)
-                result.continuation_started = self._continuation.continue_if_required_complete(
-                    job_id=job_id,
-                    aisle=continuation_aisle,
-                    report_path=report_path,
-                    tracker=tracker,
-                    run_metadata=run_metadata,
-                    durable_artifacts=result.durable_meta,
-                )
-            elif self._try_automatic_continuation(job_id, result):
-                result.continuation_started = True
+                break
+        result.required_complete = self._manifest.required_kinds_published(job_id)
+        if (
+            result.required_complete
+            and not inline_worker
+            and self._try_automatic_continuation(job_id, result)
+        ):
+            result.continuation_started = True
         return result
 
     def _try_automatic_continuation(

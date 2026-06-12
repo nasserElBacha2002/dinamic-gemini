@@ -79,6 +79,7 @@ from src.application.use_cases.pipeline.recompute_consolidated_counts import (
 from src.config import Settings, load_settings
 from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.jobs.artifact_policy import is_required_artifact_kind
 from src.domain.jobs.finalization import (
     CurrentFinalizationStep,
     FinalizationErrorCode,
@@ -959,14 +960,6 @@ class V3JobExecutor:
         if dispatch_result.required_complete:
             try:
                 tracker.record_artifacts_published(durable_artifacts=dispatch_result.durable_meta)
-                self._state.finalize_success(
-                    p.job_id,
-                    p.aisle,
-                    p.report_path,
-                    tracker=tracker,
-                    run_metadata=p.result.run_metadata,
-                    durable_artifacts=dispatch_result.durable_meta,
-                )
             except Exception as marker_e:
                 p.exec_log.error(
                     "Artifacts",
@@ -990,7 +983,50 @@ class V3JobExecutor:
                     },
                 )
                 return True
+            try:
+                self._state.finalize_success(
+                    p.job_id,
+                    p.aisle,
+                    p.report_path,
+                    tracker=tracker,
+                    run_metadata=p.result.run_metadata,
+                    durable_artifacts=dispatch_result.durable_meta,
+                )
+            except Exception:
+                return True
             return False
+        published_required = {
+            kind for kind in dispatch_result.published_kinds if is_required_artifact_kind(kind)
+        }
+        failed_required = {
+            kind
+            for kind in dispatch_result.permanently_failed_kinds
+            if is_required_artifact_kind(kind)
+        }
+        if published_required and failed_required and not dispatch_result.required_complete:
+            failed_kind = sorted(failed_required)[0]
+            p.exec_log.error(
+                "Artifacts",
+                f"Partial durable artifact upload: {failed_kind}",
+                payload={"failed_kind": failed_kind},
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.ARTIFACT_PUBLISH_PARTIAL,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Durable artifact upload partial failure: {failed_kind}",
+                metadata={
+                    "failed_kind": failed_kind,
+                    "published_artifacts": {
+                        kind: dispatch_result.durable_meta[kind]
+                        for kind in sorted(published_required)
+                        if kind in dispatch_result.durable_meta
+                    },
+                },
+            )
+            return True
         if dispatch_result.permanently_failed_kinds:
             p.exec_log.error(
                 "Artifacts",
