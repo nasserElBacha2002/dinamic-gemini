@@ -2,197 +2,181 @@
 
 ## 1. Summary of changes
 
-Phase 3.2 introduces an explicit, durable finalization state model on `inventory_jobs`, a specific error taxonomy for post-pipeline failures, stepwise progress recording around finalization, and corrected cancellation routing during artifact publication.
+Phase 3.2 introduces an explicit, durable finalization state model on `inventory_jobs`, a specific error taxonomy for post-pipeline failures, stepwise progress recording, corrected cancellation routing, and **post-review corrections** that prevent metadata from misrepresenting completed operations.
 
 **In scope (implemented):**
 
 - Durable finalization metadata columns + domain enums
-- `JobFinalizationTracker` for progress updates
-- `V3JobExecutor` finalization flow with ordered exception handling
-- `V3JobExecutionStateService.finalize_success()` with per-step failure classification
-- Artifact error types (`ArtifactStoreUnavailableError`, `ArtifactPublishError`, `ArtifactPublishPartialError`)
-- Backward-compatible optional API fields on `JobSummary`
-- Focused test suite (`test_worker_phase3_part2_finalization_semantics.py`) + updates to existing worker tests
+- `JobFinalizationTracker` with `job_status` parameter on `fail()`
+- Separate exception boundaries for domain commit vs marker write vs artifact upload vs marker write
+- `FINALIZATION_METADATA_WRITE_FAILED` for post-operation marker persistence failures
+- Technical success vs operational finalization (job stays `SUCCEEDED` after terminalization when reconciliation fails)
+- Operational pointer invariant preserved
+- Failure-reporting fallback with critical structured logging when job repo is unavailable
+- `JobDetailResponse` for GET job detail with timestamps + sanitized error metadata
+- Focused test suite + correction tests (A–J)
 
 **Explicitly not implemented (deferred to Phase 3.3+):**
 
-- `recover_job_finalization` command
-- Artifact outbox / automatic artifact retries
-- Background retry worker
-- Large `V3JobExecutor` decomposition
-- UI recovery controls
-- Provider failover changes
+- Recovery command, artifact outbox, automatic retries, UI recovery, large executor refactor
 
 ## 2. Finalization state model
 
-Two concepts are modeled separately (never conflated):
+Two concepts are modeled separately:
 
 | Concept | Field | Enum |
 | ------- | ----- | ---- |
 | Overall finalization lifecycle | `finalization_status` | `NOT_STARTED`, `IN_PROGRESS`, `FAILED`, `COMPLETED`, `CANCELED` |
 | Step currently executing | `current_finalization_step` | `PERSIST_DOMAIN_RESULTS`, `PUBLISH_ARTIFACTS`, `TERMINALIZE_JOB`, `PROMOTE_OPERATIONAL_RESULT`, `UPDATE_AISLE`, `RECONCILE_INVENTORY` |
-| Last step completed successfully | `last_completed_finalization_step` | `NONE`, `DOMAIN_RESULTS_PERSISTED`, `ARTIFACTS_PUBLISHED`, `JOB_TERMINALIZED`, `OPERATIONAL_RESULT_PROMOTED`, `AISLE_UPDATED`, `INVENTORY_RECONCILED` |
+| Last step completed successfully | `last_completed_finalization_step` | `NONE`, `DOMAIN_RESULTS_PERSISTED`, …, `INVENTORY_RECONCILED` |
 
-Additional durable fields:
+Additional fields: `finalization_error_code`, `finalization_error_metadata` (errors only), timestamps (`finalization_started_at`, `finalization_completed_at`, `domain_persisted_at`, `artifacts_published_at`).
 
-- `finalization_error_code`, `finalization_error_metadata`
-- `finalization_started_at`, `finalization_completed_at`
-- `domain_persisted_at`, `artifacts_published_at`
-
-Domain definitions: `backend/src/domain/jobs/finalization.py`  
-Tracker implementation: `backend/src/infrastructure/pipeline/job_finalization_tracker.py`
+Success artifact kinds live in `result_json.durable_artifacts` after terminalization — **not** in `finalization_error_metadata`.
 
 ## 3. Error taxonomy
 
-Finalization failures use specific codes (replacing generic `PROCESSING_FAILED` where the failure is finalization-scoped):
-
 | Code | When used |
 | ---- | --------- |
-| `DOMAIN_PERSISTENCE_FAILED` | Persist UoW failure (includes recompute failure inside the same transaction) |
-| `ARTIFACT_STORE_UNAVAILABLE` | Artifact store not configured / unavailable before upload |
-| `ARTIFACT_PUBLISH_FAILED` | Required artifact upload failure (no prior successful required uploads in attempt) |
-| `ARTIFACT_PUBLISH_PARTIAL` | At least one required artifact uploaded, then a later required artifact failed |
+| `DOMAIN_PERSISTENCE_FAILED` | Persist UoW failure (includes recompute inside transaction) |
+| `FINALIZATION_METADATA_WRITE_FAILED` | Marker persistence failed after upstream step succeeded |
+| `ARTIFACT_STORE_UNAVAILABLE` | Store unavailable before upload |
+| `ARTIFACT_PUBLISH_FAILED` | Required artifact upload failure |
+| `ARTIFACT_PUBLISH_PARTIAL` | Partial required artifact upload |
 | `JOB_TERMINALIZATION_FAILED` | Job row terminal save failed after artifacts |
-| `OPERATIONAL_PROMOTION_FAILED` | Operational promotion rejected or raised |
-| `AISLE_RECONCILIATION_FAILED` | Aisle `PROCESSED` save failed |
-| `INVENTORY_RECONCILIATION_FAILED` | Inventory status reconcile failed |
+| `OPERATIONAL_PROMOTION_FAILED` | Promotion rejected or raised (job already `SUCCEEDED`) |
+| `AISLE_RECONCILIATION_FAILED` | Aisle update failed (job stays `SUCCEEDED`) |
+| `INVENTORY_RECONCILIATION_FAILED` | Inventory reconcile failed (job stays `SUCCEEDED`) |
 | `FINALIZATION_CANCELED` | Effective cancellation during finalization |
 
-Provider/pipeline failures before finalization still use `PROCESSING_FAILED` via `fail_job_and_aisle`.
+## 4. Corrected exception boundaries
 
-Recompute failures are **not** exposed as `RECOMPUTE_FAILED`; they roll back the persist UoW and are classified as `DOMAIN_PERSISTENCE_FAILED` with exception metadata.
-
-## 4. Cancellation policy
-
-### Before domain commit
-
-- Job → `CANCELED`
-- `finalization_status` → `CANCELED` (if finalization had begun)
-- `last_completed_finalization_step` → `NONE`
-- No committed domain rows from this attempt
-- Error code → `FINALIZATION_CANCELED` (not artifact failure codes)
-
-### After domain commit (post-UoW)
-
-When cancellation is detected at artifact checkpoints after persistence:
-
-- Job → `CANCELED`
-- `finalization_status` → `CANCELED`
-- `last_completed_finalization_step` → `DOMAIN_RESULTS_PERSISTED`
-- Domain rows **remain** job-scoped and non-operational
-- Artifacts are **not** published
-- `finalization_error_metadata.cancel_after_domain_commit = true`
-- No cleanup of committed results
-
-### Exception ordering (artifact block)
+### Domain persistence vs marker
 
 ```python
-except PipelineCancellationRequestedError:
-    raise
-except ArtifactPublishPartialError:
-    ...
-except (ArtifactPublishError, FileNotFoundError):
-    ...
+try:
+    persist_use_case.execute(...)   # UoW commit
 except Exception:
-    ...
+    DOMAIN_PERSISTENCE_FAILED
+
+try:
+    tracker.record_domain_persisted()
+except Exception:
+    FINALIZATION_METADATA_WRITE_FAILED
+    metadata: domain_commit_completed=true, verification_required=true
 ```
 
-Cancellation at `pre_upload` is no longer swallowed as a generic artifact failure.
+### Artifact upload vs marker
 
-## 5. Transactional guarantees
+```python
+try:
+    durable_meta = publish_worker_durables(...)
+except Artifact*Error:
+    specific artifact codes
 
-**Unchanged from Phase 2:**
+try:
+    tracker.record_artifacts_published()
+except Exception:
+    FINALIZATION_METADATA_WRITE_FAILED
+    metadata: artifact_upload_completed=true, published_artifact_kinds=[...]
+```
 
-- Delete-replace, result inserts, and job-scoped recompute run in one `JobResultUnitOfWork` transaction.
-- Recompute failure rolls back the entire persistence transaction.
+## 5. Technical success vs operational finalization
 
-**Phase 3.2 addition:**
+**Technical success** (job may become `FAILED` if this fails):
 
-- `DOMAIN_RESULTS_PERSISTED` is written **immediately after** UoW commit via `JobFinalizationTracker.record_domain_persisted()` (acceptable fallback — see below).
+- Domain persisted (UoW committed)
+- Required artifacts uploaded
+- Job row saved as `SUCCEEDED` (`_terminalize_job_row`)
 
-## 6. Known crash windows
+**Operational finalization** (job remains `SUCCEEDED`; `finalization_status=FAILED` on failure):
 
-| Window | Risk | Mitigation in Phase 3.2 |
-| ------ | ---- | ------------------------ |
-| Between UoW commit and `record_domain_persisted()` | Rows committed but marker absent | Documented in tracker; recovery must verify rows by `job_id` |
-| After UoW commit, before artifact upload | Committed rows, no artifacts | Classified on next failure or cancel |
-| After artifact upload, during terminalization | Artifacts durable, job not SUCCEEDED | `last_completed=ARTIFACTS_PUBLISHED`, specific terminal error |
-| `mark_success` / terminal saves | Multiple independent saves | Each step records progress; split state is explicit in metadata |
+- Operational promotion
+- Aisle `PROCESSED` update
+- Inventory reconciliation
 
-## 7. Success invariants
+`finalization_status=COMPLETED` only after inventory reconciliation succeeds.
 
-Success is **not** defined circularly via `finalization_status=COMPLETED` alone.
+## 6. Operational pointer invariant
 
-**Preconditions before terminalization (`finalize_success`):**
+```text
+if aisle.operational_job_id == job.id:
+    job.status must equal SUCCEEDED
+```
 
-- Domain results committed (UoW committed + `DOMAIN_RESULTS_PERSISTED` marker)
-- Required worker durable artifacts published
-- No effective pre-terminal cancellation
-- Job in executable non-terminal state
+Post-promotion reconciliation failures keep `job.status=SUCCEEDED` so the invariant holds when promotion succeeded. Promotion failures leave the job non-operational (`operational_job_id != job.id`).
 
-**Terminal sequence (`finalize_success`):**
+## 7. Job status behavior by failing step
 
-1. Terminalize job row (`SUCCEEDED`, `result_json` with artifacts)
-2. Promote operational result (production mode)
-3. Mark aisle `PROCESSED`
-4. Reconcile inventory
-5. `tracker.complete()` → `finalization_status=COMPLETED`, `last_completed=INVENTORY_RECONCILED`
+| Failing step | `job.status` | `finalization_status` |
+| ------------ | ------------ | --------------------- |
+| Persist UoW | `FAILED` | `FAILED` |
+| Domain marker write | `FAILED` | `FAILED` |
+| Artifact upload | `FAILED` | `FAILED` |
+| Artifact marker write | `FAILED` | `FAILED` |
+| Terminalization | `FAILED` | `FAILED` |
+| Promotion / aisle / inventory | `SUCCEEDED` | `FAILED` |
+| Full success | `SUCCEEDED` | `COMPLETED` |
 
-**Final outcome on full success:**
+## 8. Failure-reporting fallback
 
-- `job.status = SUCCEEDED`
-- `finalization_status = COMPLETED`
-- `last_completed_finalization_step = INVENTORY_RECONCILED`
+`report_finalization_failure()` critical-logs when `job_repo.save()` fails during failure recording. `fail_finalization_and_aisle()` continues to mark the aisle failed even when job metadata cannot be persisted. The critical log includes `job_id`, error code, step, and `known_last_completed_step`. Callers must not assume durable failure metadata was saved when reporting fails.
 
-Inventory reconciliation **is** part of the success path in current product semantics; failure leaves job `FAILED` with `INVENTORY_RECONCILIATION_FAILED` while preserving earlier step markers.
+## 9. Known crash windows
 
-## 8. Artifact criticality assumptions
+| Window | Risk |
+| ------ | ---- |
+| UoW commit → `record_domain_persisted()` | Rows committed, marker absent |
+| Artifact upload → `record_artifacts_published()` | Artifacts durable, marker absent |
+| In-memory job repo | Object mutated before failed save (SQL repos differ) |
 
-- Worker durable artifacts (`execution_log`, `hybrid_report`, etc.) published via `WorkerDurableArtifactPublisher` are **required** for success.
-- Optional artifacts that fail without any prior successful required upload → `ARTIFACT_PUBLISH_FAILED`.
-- Some required artifacts succeed, then a later required artifact fails → `ARTIFACT_PUBLISH_PARTIAL`; published references are preserved in metadata (`published_artifact_kinds` / partial error metadata).
-- Optional-only failures without blocking required uploads: behavior unchanged from pre-3.2 (not separately classified in this phase).
+Recovery must verify by `job_id` when `verification_required=true`.
 
-## 9. Backward compatibility
+## 10. Cancellation policy
 
-- Migration `0037_inventory_jobs_finalization_metadata.sql` adds columns with safe defaults (`not_started`, `none`).
-- Historical jobs remain readable; unset fields default at entity/ORM layer.
-- `JobSummary` exposes new fields as optional — existing API consumers unaffected.
-- Job status filters and retry creation unchanged.
-- `mark_success()` remains as backward-compatible wrapper delegating to `finalize_success()` when a tracker is supplied.
+Unchanged from initial 3.2: pre-commit cancel → `CANCELED`, no rows; post-commit cancel → `CANCELED`, rows retained, no artifacts.
 
-## 10. Tests added
+## 11. API visibility
 
-| Test | File | Coverage |
-| ---- | ---- | -------- |
-| T01 persistence rollback | `test_worker_phase3_part2_finalization_semantics.py` | Domain failure metadata, no rows |
-| T02 recompute in UoW | same | `DOMAIN_PERSISTENCE_FAILED` |
-| T03 artifact after commit | same | `ARTIFACT_PUBLISH_FAILED`, domain rows kept |
-| T04 partial artifacts | same | `ARTIFACT_PUBLISH_PARTIAL` |
-| T05 cancel before persist | same | `CANCELED`, no rows |
-| T06 cancel at pre_upload | same | Post-commit cancel policy |
-| T07 terminalization failure | same | `JOB_TERMINALIZATION_FAILED` |
-| T07b promotion hard fail | same | `OPERATIONAL_PROMOTION_FAILED` |
-| T08 aisle failure | same | `AISLE_RECONCILIATION_FAILED` |
-| T09 inventory failure | same | `INVENTORY_RECONCILIATION_FAILED` |
-| T10 happy path | same | Full progression + timestamps |
-| T11 historical compatibility | same | Entity defaults |
-| T12 cancel not swallowed | same | Exception ordering regression |
+- `JobSummary`: compact finalization fields (list/status endpoints)
+- `JobDetailResponse`: adds timestamps + sanitized `finalization_error_metadata`
+- GET `.../jobs/{job_id}` returns `JobDetailResponse`
 
-Updated: `test_worker_operational_safety_phase1.py`, `test_v3_job_executor_coordination.py`, `test_worker_phase2_part1_idempotency_characterization.py`.
+## 12. Tests added/updated
 
-## 11. Deferred work (Phase 3.3+)
+| Test | Coverage |
+| ---- | -------- |
+| corr A | Domain marker failure → `FINALIZATION_METADATA_WRITE_FAILED` |
+| corr B | Artifact marker failure after upload |
+| corr C/D | Aisle/inventory failure → job `SUCCEEDED`, finalization `FAILED` |
+| corr E | Promotion hard fail → job `SUCCEEDED`, not operational |
+| corr F | Terminalization fail → job `FAILED` (existing T07) |
+| corr G | Critical log when failure reporting save fails |
+| corr H | Operational pointer invariant helper |
+| corr I | Error metadata empty on success; artifacts in `result_json` |
+| corr J | Happy path regression (T10) |
 
-- Targeted recovery command (`recover_job_finalization`)
-- Artifact-only retry / outbox pattern
-- Recompute-only recovery path
-- Automatic backoff retry worker
-- UI surfaces for partial finalization recovery
+## 13. Behavioral matrix
+
+| Failure point | Job status | Finalization status | Last completed step | Operational pointer allowed |
+| ------------- | ---------- | ------------------- | ------------------- | --------------------------- |
+| Domain UoW failure | `FAILED` | `FAILED` | `NONE` | No |
+| Domain marker failure after commit | `FAILED` | `FAILED` | prior / verification required | No |
+| Artifact upload failure | `FAILED` | `FAILED` | `DOMAIN_RESULTS_PERSISTED` | No |
+| Artifact marker failure after upload | `FAILED` | `FAILED` | verification required | No |
+| Terminalization failure | `FAILED` | `FAILED` | `ARTIFACTS_PUBLISHED` | No |
+| Promotion failure | `SUCCEEDED` | `FAILED` | `JOB_TERMINALIZED` | No |
+| Aisle update failure | `SUCCEEDED` | `FAILED` | `OPERATIONAL_RESULT_PROMOTED` | Yes (if promoted) |
+| Inventory reconcile failure | `SUCCEEDED` | `FAILED` | `AISLE_UPDATED` | Yes (if promoted) |
+| Success | `SUCCEEDED` | `COMPLETED` | `INVENTORY_RECONCILED` | Yes |
+
+## 14. Deferred work (Phase 3.3+)
+
+- Targeted recovery command
+- Artifact outbox / automatic retries
+- SQL integration validation under concurrency
 - Executor decomposition
-- SQL integration validation for finalization columns under concurrency
 
 ## Appendix: Is `DOMAIN_RESULTS_PERSISTED` transactional?
 
-**No — post-UoW marker (acceptable fallback).**
-
-It is written in a separate `job_repo.save()` immediately after `PersistAisleResultUseCase.execute()` returns (UoW already committed). A crash between commit and marker leaves committed rows without the marker. Recovery logic must verify persisted rows by `job_id`; marker absence is not proof of rollback. This limitation is documented in `JobFinalizationTracker` class docstring.
+**No — post-UoW marker.** Written in a separate save after UoW commit. Marker write failures are classified as `FINALIZATION_METADATA_WRITE_FAILED` with `domain_commit_completed=true`, not `DOMAIN_PERSISTENCE_FAILED`.

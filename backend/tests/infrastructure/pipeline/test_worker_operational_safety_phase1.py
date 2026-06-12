@@ -355,7 +355,7 @@ def test_wkr_p1_t003_case_b_aisle_save_fails_after_job_would_succeed(tmp_path) -
 
     job = harness.job_repo.get_by_id(harness.job_id)
     assert job is not None
-    assert job.status == JobStatus.FAILED
+    assert job.status == JobStatus.SUCCEEDED
     assert job.finalization_status == FinalizationStatus.FAILED
     assert job.current_finalization_step == CurrentFinalizationStep.UPDATE_AISLE
     assert job.last_completed_finalization_step in (
@@ -402,7 +402,7 @@ def test_wkr_p1_t003_case_c_inventory_reconcile_fails_after_terminal_writes(
     assert spy.artifact_put_calls >= 2
     job = harness.job_repo.get_by_id(harness.job_id)
     assert job is not None
-    assert job.status == JobStatus.FAILED
+    assert job.status == JobStatus.SUCCEEDED
     assert job.finalization_status == FinalizationStatus.FAILED
     assert job.current_finalization_step == CurrentFinalizationStep.RECONCILE_INVENTORY
     assert job.last_completed_finalization_step == LastCompletedFinalizationStep.AISLE_UPDATED

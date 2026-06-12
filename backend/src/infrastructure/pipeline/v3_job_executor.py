@@ -601,9 +601,6 @@ class V3JobExecutor:
                     run_id=RUN_ID,
                 )
             )
-            # Post-UoW marker — see JobFinalizationTracker docstring for crash-window note.
-            tracker.record_domain_persisted()
-            p.exec_log.info("Persist", "Persist completed")
         except PipelineCancellationRequestedError:
             raise
         except Exception as persist_e:
@@ -620,6 +617,33 @@ class V3JobExecutor:
                 current_step=CurrentFinalizationStep.PERSIST_DOMAIN_RESULTS,
                 message=f"Persist: {persist_e}",
                 metadata={"exception_type": type(persist_e).__name__},
+            )
+            return True
+
+        try:
+            # Post-UoW marker — see JobFinalizationTracker docstring for crash-window note.
+            tracker.record_domain_persisted()
+            p.exec_log.info("Persist", "Persist completed")
+        except Exception as marker_e:
+            p.exec_log.error(
+                "Persist",
+                f"Domain marker write failed: {marker_e}",
+                payload={"error": str(marker_e)[:500]},
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.FINALIZATION_METADATA_WRITE_FAILED,
+                current_step=CurrentFinalizationStep.PERSIST_DOMAIN_RESULTS,
+                message=f"Domain marker write failed: {marker_e}",
+                metadata={
+                    "domain_commit_completed": True,
+                    "marker_write_completed": False,
+                    "verification_required": True,
+                    "failed_marker": "DOMAIN_RESULTS_PERSISTED",
+                    "exception_type": type(marker_e).__name__,
+                },
             )
             return True
 
@@ -645,6 +669,7 @@ class V3JobExecutor:
             )
             return True
 
+        durable_meta: dict[str, dict[str, Any]] | None = None
         try:
             p.cancellation_checkpoint(
                 "Artifacts",
@@ -661,7 +686,6 @@ class V3JobExecutor:
                 p.job_id,
                 sorted(durable_meta.keys()),
             )
-            tracker.record_artifacts_published(durable_artifacts=durable_meta)
         except PipelineCancellationRequestedError:
             raise
         except ArtifactPublishPartialError as partial_exc:
@@ -690,7 +714,7 @@ class V3JobExecutor:
             return True
         except (ArtifactPublishError, FileNotFoundError) as artifact_exc:
             logger.exception(
-                "worker_durable_artifact_publish_failed job_id=%s",
+                "worker_durable_artifact_upload_failed job_id=%s",
                 p.job_id,
             )
             p.exec_log.error(
@@ -725,6 +749,33 @@ class V3JobExecutor:
                 current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
                 message=f"Durable artifact upload failed: {artifact_exc}",
                 metadata={"exception_type": type(artifact_exc).__name__},
+            )
+            return True
+
+        assert durable_meta is not None
+        try:
+            tracker.record_artifacts_published()
+        except Exception as marker_e:
+            p.exec_log.error(
+                "Artifacts",
+                f"Artifact marker write failed: {marker_e}",
+                payload={"error": str(marker_e)[:500]},
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.FINALIZATION_METADATA_WRITE_FAILED,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Artifact marker write failed: {marker_e}",
+                metadata={
+                    "artifact_upload_completed": True,
+                    "marker_write_completed": False,
+                    "verification_required": True,
+                    "failed_marker": "ARTIFACTS_PUBLISHED",
+                    "published_artifact_kinds": sorted(durable_meta.keys()),
+                    "exception_type": type(marker_e).__name__,
+                },
             )
             return True
 

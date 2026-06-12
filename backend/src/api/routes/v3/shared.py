@@ -37,7 +37,8 @@ from src.api.schemas.position_schemas import (
     ReviewActionRequest,
     ReviewActionResponse,
 )
-from src.api.schemas.processing_schemas import AisleStatusResponse, JobSummary
+from src.api.schemas.processing_schemas import AisleStatusResponse, JobDetailResponse, JobSummary
+from src.infrastructure.pipeline.job_finalization_tracker import sanitize_finalization_error_metadata
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 from src.application.errors import (
     AisleNotFoundError,
@@ -578,6 +579,20 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
         finalization_error_code=j.finalization_error_code,
         is_operational=is_operational,
         llm_cost_snapshot=_llm_cost_snapshot_from_job_result(j.result_json),
+    )
+
+
+def job_to_detail(j: Job, *, is_operational: bool = False) -> JobDetailResponse:
+    summary = job_to_summary(j, is_operational=is_operational)
+    return JobDetailResponse(
+        **summary.model_dump(),
+        finalization_started_at=j.finalization_started_at,
+        finalization_completed_at=j.finalization_completed_at,
+        domain_persisted_at=j.domain_persisted_at,
+        artifacts_published_at=j.artifacts_published_at,
+        finalization_error_metadata=sanitize_finalization_error_metadata(
+            j.finalization_error_metadata
+        ),
     )
 
 

@@ -57,6 +57,7 @@ from src.api.schemas.processing_schemas import (
     AisleJobsListResponse,
     AisleStatusResponse,
     ExecutionLogResponse,
+    JobDetailResponse,
     JobSummary,
     ProcessAisleRequest,
     ProcessAisleResponse,
@@ -150,7 +151,7 @@ from src.application.use_cases.inventories.export_inventory_results import (
 from src.domain.jobs.entities import Job
 from src.infrastructure.artifacts.stored_artifact_reader import read_execution_log_events_for_job
 
-from .shared import aisle_to_response, job_to_summary, status_response_from_result
+from .shared import aisle_to_response, job_to_detail, job_to_summary, status_response_from_result
 
 logger = logging.getLogger(__name__)
 
@@ -507,7 +508,7 @@ def retry_aisle_job(
 
 @router.get(
     "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}",
-    response_model=JobSummary,
+    response_model=JobDetailResponse,
 )
 def get_aisle_job_detail(
     inventory_id: str,
@@ -517,12 +518,12 @@ def get_aisle_job_detail(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
     stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
-) -> JobSummary:
+) -> JobDetailResponse:
     job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
     reconciled = stale_reconciler.reconcile(job)
     if reconciled is None:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND)
-    return job_to_summary(reconciled)
+    return job_to_detail(reconciled)
 
 
 @router.get(

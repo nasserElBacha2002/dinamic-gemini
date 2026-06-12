@@ -27,7 +27,10 @@ from src.domain.jobs.finalization import (
     LastCompletedFinalizationStep,
     is_hard_promotion_failure,
 )
-from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
+from src.infrastructure.pipeline.job_finalization_tracker import (
+    JobFinalizationTracker,
+    report_finalization_failure,
+)
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
     merge_durable_into_result_json,
 )
@@ -103,12 +106,20 @@ class V3JobExecutionStateService:
                 durable_artifacts=durable_artifacts,
             )
         except Exception as exc:
-            tracker.fail(
-                error_code=FinalizationErrorCode.JOB_TERMINALIZATION_FAILED,
-                current_step=CurrentFinalizationStep.TERMINALIZE_JOB,
-                message=f"Job terminalization failed: {exc}",
-                metadata={"exception_type": type(exc).__name__},
-            )
+            try:
+                report_finalization_failure(
+                    tracker,
+                    error_code=FinalizationErrorCode.JOB_TERMINALIZATION_FAILED,
+                    current_step=CurrentFinalizationStep.TERMINALIZE_JOB,
+                    message=f"Job terminalization failed: {exc}",
+                    metadata={"exception_type": type(exc).__name__},
+                    job_status=JobStatus.FAILED,
+                )
+            except Exception:
+                logger.error(
+                    "finalization_job_metadata_unavailable job_id=%s step=terminalize_job",
+                    job_id,
+                )
             self._fail_aisle_for_finalization(
                 aisle,
                 failing_job_id=job_id,
@@ -123,12 +134,20 @@ class V3JobExecutionStateService:
         try:
             promotion_outcome = self._promote_operational_result(job_id, aisle)
         except Exception as exc:
-            tracker.fail(
-                error_code=FinalizationErrorCode.OPERATIONAL_PROMOTION_FAILED,
-                current_step=CurrentFinalizationStep.PROMOTE_OPERATIONAL_RESULT,
-                message=f"Operational promotion failed: {exc}",
-                metadata={"exception_type": type(exc).__name__},
-            )
+            try:
+                report_finalization_failure(
+                    tracker,
+                    error_code=FinalizationErrorCode.OPERATIONAL_PROMOTION_FAILED,
+                    current_step=CurrentFinalizationStep.PROMOTE_OPERATIONAL_RESULT,
+                    message=f"Operational promotion failed: {exc}",
+                    metadata={"exception_type": type(exc).__name__},
+                    job_status=JobStatus.SUCCEEDED,
+                )
+            except Exception:
+                logger.error(
+                    "finalization_job_metadata_unavailable job_id=%s step=promote_operational_result",
+                    job_id,
+                )
             self._fail_aisle_for_finalization(
                 aisle,
                 failing_job_id=job_id,
@@ -139,12 +158,20 @@ class V3JobExecutionStateService:
 
         if is_hard_promotion_failure(promotion_outcome):
             msg = f"Operational promotion rejected: {promotion_outcome}"
-            tracker.fail(
-                error_code=FinalizationErrorCode.OPERATIONAL_PROMOTION_FAILED,
-                current_step=CurrentFinalizationStep.PROMOTE_OPERATIONAL_RESULT,
-                message=msg,
-                metadata={"promotion_outcome": promotion_outcome},
-            )
+            try:
+                report_finalization_failure(
+                    tracker,
+                    error_code=FinalizationErrorCode.OPERATIONAL_PROMOTION_FAILED,
+                    current_step=CurrentFinalizationStep.PROMOTE_OPERATIONAL_RESULT,
+                    message=msg,
+                    metadata={"promotion_outcome": promotion_outcome},
+                    job_status=JobStatus.SUCCEEDED,
+                )
+            except Exception:
+                logger.error(
+                    "finalization_job_metadata_unavailable job_id=%s step=promote_operational_result",
+                    job_id,
+                )
             self._fail_aisle_for_finalization(
                 aisle,
                 failing_job_id=job_id,
@@ -160,12 +187,20 @@ class V3JobExecutionStateService:
             aisle.mark_processed(completion_now)
             self._aisle_repo.save(aisle)
         except Exception as exc:
-            tracker.fail(
-                error_code=FinalizationErrorCode.AISLE_RECONCILIATION_FAILED,
-                current_step=CurrentFinalizationStep.UPDATE_AISLE,
-                message=f"Aisle update failed: {exc}",
-                metadata={"exception_type": type(exc).__name__},
-            )
+            try:
+                report_finalization_failure(
+                    tracker,
+                    error_code=FinalizationErrorCode.AISLE_RECONCILIATION_FAILED,
+                    current_step=CurrentFinalizationStep.UPDATE_AISLE,
+                    message=f"Aisle update failed: {exc}",
+                    metadata={"exception_type": type(exc).__name__},
+                    job_status=JobStatus.SUCCEEDED,
+                )
+            except Exception:
+                logger.error(
+                    "finalization_job_metadata_unavailable job_id=%s step=update_aisle",
+                    job_id,
+                )
             self._fail_aisle_for_finalization(
                 aisle,
                 failing_job_id=job_id,
@@ -180,12 +215,20 @@ class V3JobExecutionStateService:
         try:
             self.reconcile_inventory_for_aisle(aisle)
         except Exception as exc:
-            tracker.fail(
-                error_code=FinalizationErrorCode.INVENTORY_RECONCILIATION_FAILED,
-                current_step=CurrentFinalizationStep.RECONCILE_INVENTORY,
-                message=f"Inventory reconciliation failed: {exc}",
-                metadata={"exception_type": type(exc).__name__},
-            )
+            try:
+                report_finalization_failure(
+                    tracker,
+                    error_code=FinalizationErrorCode.INVENTORY_RECONCILIATION_FAILED,
+                    current_step=CurrentFinalizationStep.RECONCILE_INVENTORY,
+                    message=f"Inventory reconciliation failed: {exc}",
+                    metadata={"exception_type": type(exc).__name__},
+                    job_status=JobStatus.SUCCEEDED,
+                )
+            except Exception:
+                logger.error(
+                    "finalization_job_metadata_unavailable job_id=%s step=reconcile_inventory",
+                    job_id,
+                )
             self._fail_aisle_for_finalization(
                 aisle,
                 failing_job_id=job_id,
@@ -556,13 +599,24 @@ class V3JobExecutionStateService:
         current_step: CurrentFinalizationStep,
         message: str,
         metadata: dict[str, Any] | None = None,
+        job_status: JobStatus = JobStatus.FAILED,
     ) -> None:
-        tracker.fail(
-            error_code=error_code,
-            current_step=current_step,
-            message=message,
-            metadata=metadata,
-        )
+        try:
+            report_finalization_failure(
+                tracker,
+                error_code=error_code,
+                current_step=current_step,
+                message=message,
+                metadata=metadata,
+                job_status=job_status,
+            )
+        except Exception:
+            logger.error(
+                "finalization_job_metadata_unavailable job_id=%s step=%s code=%s",
+                job_id,
+                current_step.value,
+                error_code.value,
+            )
         self._fail_aisle_for_finalization(
             aisle,
             failing_job_id=job_id,

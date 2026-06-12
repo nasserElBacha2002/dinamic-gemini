@@ -132,6 +132,16 @@ class JobSummary(BaseModel):
     llm_cost_snapshot: Optional[LlmCostSnapshotResponse] = None
 
 
+class JobDetailResponse(JobSummary):
+    """Extended job detail for GET .../jobs/{job_id} — finalization timestamps and diagnostics."""
+
+    finalization_started_at: Optional[datetime] = None
+    finalization_completed_at: Optional[datetime] = None
+    domain_persisted_at: Optional[datetime] = None
+    artifacts_published_at: Optional[datetime] = None
+    finalization_error_metadata: Optional[dict[str, Any]] = None
+
+
 class AisleStatusResponse(BaseModel):
     """Response for GET .../aisles/{aisle_id}/status."""
 

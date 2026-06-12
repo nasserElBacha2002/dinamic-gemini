@@ -21,6 +21,25 @@ logger = logging.getLogger(__name__)
 
 _METADATA_MAX = 4000
 
+# Keys allowed in API-facing sanitized error metadata (diagnostic only).
+_PUBLIC_ERROR_METADATA_KEYS = frozenset(
+    {
+        "domain_commit_completed",
+        "artifact_upload_completed",
+        "marker_write_completed",
+        "verification_required",
+        "failed_marker",
+        "published_artifact_kinds",
+        "exception_type",
+        "promotion_outcome",
+        "failed_kind",
+        "published_artifacts",
+        "cancel_after_domain_commit",
+        "cancel_before_domain_commit",
+        "reason",
+    }
+)
+
 
 def _bounded_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     try:
@@ -30,6 +49,20 @@ def _bounded_metadata(payload: dict[str, Any]) -> dict[str, Any]:
         return {"truncated": True, "preview": encoded[:_METADATA_MAX]}
     except (TypeError, ValueError):
         return {"serialization_error": True}
+
+
+def sanitize_finalization_error_metadata(
+    metadata: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Return a client-safe subset of finalization error metadata."""
+    if not metadata:
+        return None
+    sanitized = {
+        key: metadata[key]
+        for key in _PUBLIC_ERROR_METADATA_KEYS
+        if key in metadata
+    }
+    return sanitized or None
 
 
 class JobFinalizationTracker:
@@ -51,6 +84,10 @@ class JobFinalizationTracker:
         self._clock = clock
         self._job_id = job_id
         self._last_completed = LastCompletedFinalizationStep.NONE
+
+    @property
+    def job_id(self) -> str:
+        return self._job_id
 
     @property
     def last_completed(self) -> LastCompletedFinalizationStep:
@@ -100,10 +137,6 @@ class JobFinalizationTracker:
         job.artifacts_published_at = now
         job.last_completed_finalization_step = LastCompletedFinalizationStep.ARTIFACTS_PUBLISHED
         job.current_finalization_step = CurrentFinalizationStep.TERMINALIZE_JOB
-        if durable_artifacts:
-            meta = dict(job.finalization_error_metadata or {})
-            meta["published_artifact_kinds"] = sorted(durable_artifacts.keys())
-            job.finalization_error_metadata = meta
         job.updated_at = now
         self._job_repo.save(job)
         self._last_completed = LastCompletedFinalizationStep.ARTIFACTS_PUBLISHED
@@ -138,12 +171,17 @@ class JobFinalizationTracker:
         current_step: CurrentFinalizationStep,
         message: str,
         metadata: dict[str, Any] | None = None,
+        job_status: JobStatus = JobStatus.FAILED,
     ) -> None:
         now = self._clock.now()
         job = self._require_job()
-        job.status = JobStatus.FAILED
-        job.finished_at = now
-        job.last_heartbeat_at = now
+        if job_status == JobStatus.FAILED:
+            job.status = JobStatus.FAILED
+            job.finished_at = now
+            job.last_heartbeat_at = now
+        elif job_status == JobStatus.SUCCEEDED:
+            job.status = JobStatus.SUCCEEDED
+            job.last_heartbeat_at = now
         job.finalization_status = FinalizationStatus.FAILED
         job.current_finalization_step = current_step
         job.finalization_error_code = error_code.value
@@ -156,10 +194,11 @@ class JobFinalizationTracker:
         job.updated_at = now
         self._job_repo.save(job)
         logger.error(
-            "job_finalization_failed job_id=%s step=%s code=%s last_completed=%s",
+            "job_finalization_failed job_id=%s step=%s code=%s job_status=%s last_completed=%s",
             self._job_id,
             current_step.value,
             error_code.value,
+            job.status.value,
             job.last_completed_finalization_step.value,
         )
 
@@ -213,6 +252,82 @@ class JobFinalizationTracker:
         if job is None:
             raise RuntimeError(f"Job not found for finalization tracking: {self._job_id}")
         return job
+
+
+def report_finalization_failure(
+    tracker: JobFinalizationTracker,
+    *,
+    error_code: FinalizationErrorCode,
+    current_step: CurrentFinalizationStep,
+    message: str,
+    metadata: dict[str, Any] | None = None,
+    job_status: JobStatus = JobStatus.FAILED,
+) -> None:
+    """Persist finalization failure metadata; critical-log if the job repo is unavailable."""
+    try:
+        tracker.fail(
+            error_code=error_code,
+            current_step=current_step,
+            message=message,
+            metadata=metadata,
+            job_status=job_status,
+        )
+    except Exception as reporting_exc:
+        logger.critical(
+            "finalization_failure_reporting_failed",
+            extra={
+                "job_id": tracker.job_id,
+                "original_error_code": error_code.value,
+                "original_step": current_step.value,
+                "known_last_completed_step": tracker.last_completed.value,
+                "intended_job_status": job_status.value,
+                "reporting_error_type": type(reporting_exc).__name__,
+                "reporting_error": str(reporting_exc)[:500],
+            },
+        )
+        raise reporting_exc
+
+
+def report_metadata_marker_failure(
+    tracker: JobFinalizationTracker,
+    *,
+    failed_marker: str,
+    current_step: CurrentFinalizationStep,
+    marker_exc: Exception,
+    diagnostic_metadata: dict[str, Any],
+    job_status: JobStatus = JobStatus.FAILED,
+) -> None:
+    """Report post-operation marker persistence failure without misclassifying the upstream step."""
+    metadata = {
+        "marker_write_completed": False,
+        "verification_required": True,
+        "failed_marker": failed_marker,
+        **diagnostic_metadata,
+    }
+    message = f"Finalization marker write failed ({failed_marker}): {marker_exc}"
+    try:
+        tracker.fail(
+            error_code=FinalizationErrorCode.FINALIZATION_METADATA_WRITE_FAILED,
+            current_step=current_step,
+            message=message,
+            metadata=metadata,
+            job_status=job_status,
+        )
+    except Exception as reporting_exc:
+        logger.critical(
+            "finalization_metadata_write_failure_reporting_failed",
+            extra={
+                "job_id": tracker.job_id,
+                "failed_marker": failed_marker,
+                "known_completed_operation": diagnostic_metadata,
+                "marker_error_type": type(marker_exc).__name__,
+                "marker_error": str(marker_exc)[:500],
+                "reporting_error_type": type(reporting_exc).__name__,
+                "reporting_error": str(reporting_exc)[:500],
+                "verification_required": True,
+            },
+        )
+        raise marker_exc from reporting_exc
 
 
 def _next_current_after_completed(
