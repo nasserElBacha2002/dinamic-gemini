@@ -31,7 +31,25 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.labels.merge import MergeRuleEngine
+from src.application.use_cases.pipeline.persist_aisle_result import (
+    PersistAisleResultCommand,
+    PersistAisleResultUseCase,
+)
+from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
+    default_map_hybrid_report_to_domain,
+)
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID, V3JobExecutor
+from tests.support.worker_phase1.job_scope_inspection import (
+    JobScopeSnapshot,
+    evidence_for_job,
+    final_counts_for_job,
+    normalized_labels_for_job,
+    operational_job_id_for_aisle,
+    position_job_id_map,
+    products_for_job,
+    raw_labels_for_job,
+    snapshot_job_scope,
+)
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
 from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
@@ -57,6 +75,12 @@ class FixedClock(Clock):
 
     def now(self) -> datetime:
         return self._now
+
+
+def make_entity_hybrid_report(
+    entities: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {"entities": entities}
 
 
 def make_two_entity_hybrid_report() -> dict[str, Any]:
@@ -325,6 +349,88 @@ class ExecutorHarness:
     def positions_for_job(self, job_id: str | None = None) -> list:
         jid = job_id or self.job_id
         return list(self.position_repo.list_by_aisle(self.aisle_id, job_id=jid))
+
+    def make_persist_use_case(self) -> PersistAisleResultUseCase:
+        return PersistAisleResultUseCase(
+            position_repo=self.position_repo,
+            product_record_repo=self.product_repo,
+            evidence_repo=self.evidence_repo,
+            clock=FixedClock(self.now),
+            hybrid_mapper=default_map_hybrid_report_to_domain,
+            aisle_repo=self.aisle_repo,
+            raw_label_repo=self.raw_repo,
+            recompute_consolidated_uc=self.recompute_uc,
+        )
+
+    def persist_report(
+        self,
+        report: dict[str, Any],
+        *,
+        job_id: str | None = None,
+        run_id: str = "run",
+    ) -> None:
+        jid = job_id or self.job_id
+        self.make_persist_use_case().execute(
+            PersistAisleResultCommand(
+                aisle_id=self.aisle_id,
+                job_id=jid,
+                report=report,
+                run_dir=self.base_path / jid,
+                run_id=run_id,
+            )
+        )
+
+    def products_for_job(self, job_id: str | None = None) -> list:
+        jid = job_id or self.job_id
+        return products_for_job(
+            self.position_repo, self.product_repo, self.aisle_id, jid
+        )
+
+    def evidence_for_job(self, job_id: str | None = None) -> list:
+        jid = job_id or self.job_id
+        return evidence_for_job(
+            self.position_repo, self.evidence_repo, self.aisle_id, jid
+        )
+
+    def raw_labels_for_job(self, job_id: str | None = None) -> list:
+        jid = job_id or self.job_id
+        return raw_labels_for_job(
+            self.raw_repo, self.inventory_id, self.aisle_id, jid
+        )
+
+    def normalized_labels_for_job(self, job_id: str | None = None) -> list:
+        jid = job_id or self.job_id
+        return normalized_labels_for_job(
+            self.norm_repo, self.inventory_id, self.aisle_id, jid
+        )
+
+    def final_counts_for_job(self, job_id: str | None = None) -> list:
+        jid = job_id or self.job_id
+        return final_counts_for_job(
+            self.final_repo, self.inventory_id, self.aisle_id, jid
+        )
+
+    def snapshot_job_scope(self, job_id: str | None = None) -> JobScopeSnapshot:
+        jid = job_id or self.job_id
+        return snapshot_job_scope(
+            position_repo=self.position_repo,
+            product_repo=self.product_repo,
+            evidence_repo=self.evidence_repo,
+            raw_repo=self.raw_repo,
+            norm_repo=self.norm_repo,
+            final_repo=self.final_repo,
+            inventory_id=self.inventory_id,
+            aisle_id=self.aisle_id,
+            job_id=jid,
+        )
+
+    def position_job_id_map(self, job_id: str | None = None) -> dict[str, str | None]:
+        jid = job_id or self.job_id
+        return position_job_id_map(self.position_repo, self.aisle_id, jid)
+
+    def operational_job_id(self) -> str | None:
+        aisle = self.aisle_repo.get_by_id(self.aisle_id)
+        return operational_job_id_for_aisle(aisle)
 
     def execution_log_text(self) -> str:
         path = self.base_path / self.job_id / RUN_ID / "execution_log.jsonl"
