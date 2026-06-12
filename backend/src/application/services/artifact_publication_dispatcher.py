@@ -287,6 +287,7 @@ class ArtifactPublicationDispatcher:
         if (
             result.required_complete
             and inline_worker
+            and tracker is not None
             and continuation_aisle is not None
             and report_path is not None
             and self._continuation is not None
