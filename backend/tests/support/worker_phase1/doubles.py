@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Sequence
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.repositories import (
@@ -117,17 +119,36 @@ class FailingRecomputeUseCase(RecomputeConsolidatedCountsUseCase):
         raise RuntimeError("simulated recompute failure")
 
 
-class FailingArtifactStore:
-    """Artifact store double that fails ``put_object`` after optional successful uploads."""
+ArtifactFailMode = Literal["exact", "from_onward"]
 
-    def __init__(self, *, fail_on_call: int = 1) -> None:
+
+class FailingArtifactStore:
+    """Artifact store double that fails ``put_object`` on a configured call.
+
+    ``fail_mode``:
+    - ``exact``: fail only when ``put_object_calls == fail_on_call``
+    - ``from_onward``: fail when ``put_object_calls >= fail_on_call`` (default)
+    """
+
+    def __init__(
+        self,
+        *,
+        fail_on_call: int = 1,
+        fail_mode: ArtifactFailMode = "from_onward",
+    ) -> None:
         self.put_object_calls = 0
         self._fail_on_call = fail_on_call
+        self._fail_mode = fail_mode
         self.uploaded_keys: list[str] = []
+
+    def _should_fail(self) -> bool:
+        if self._fail_mode == "exact":
+            return self.put_object_calls == self._fail_on_call
+        return self.put_object_calls >= self._fail_on_call
 
     def put_object(self, path: str, file_obj: Any, content_type: str) -> Any:
         self.put_object_calls += 1
-        if self.put_object_calls >= self._fail_on_call:
+        if self._should_fail():
             raise RuntimeError("simulated durable artifact upload failure")
         payload = file_obj.read()
         self.uploaded_keys.append(path)
@@ -158,18 +179,55 @@ class ArtifactUploadSpy(FailingArtifactStore):
         super().__init__(fail_on_call=10_000)
 
 
+@dataclass(frozen=True)
+class SaveAttemptSnapshot:
+    committed: bool
+    status: str
+    error_message: str | None
+    failure_code: str | None
+
+
+def _job_snapshot(job: Job) -> SaveAttemptSnapshot:
+    return SaveAttemptSnapshot(
+        committed=False,
+        status=job.status.value if hasattr(job.status, "value") else str(job.status),
+        error_message=job.error_message,
+        failure_code=job.failure_code,
+    )
+
+
 class PartialFailingJobRepository(JobRepository):
-    """Fails ``save`` when persisting a job transitioning to SUCCEEDED."""
+    """Fails ``save`` when persisting a job transitioning to SUCCEEDED; records attempts."""
 
     def __init__(self, inner: JobRepository) -> None:
         self._inner = inner
         self.save_calls = 0
+        self.save_attempts: list[SaveAttemptSnapshot] = []
 
     def save(self, job: Job) -> None:
         self.save_calls += 1
+        snap = _job_snapshot(job)
         if job.status == JobStatus.SUCCEEDED:
+            self.save_attempts.append(
+                SaveAttemptSnapshot(
+                    committed=False,
+                    status=snap.status,
+                    error_message=snap.error_message,
+                    failure_code=snap.failure_code,
+                )
+            )
             raise RuntimeError("simulated job mark_success save failure")
-        self._inner.save(job)
+        self._inner.save(copy.deepcopy(job))
+        committed = self._inner.get_by_id(job.id)
+        assert committed is not None
+        self.save_attempts.append(
+            SaveAttemptSnapshot(
+                committed=True,
+                status=committed.status.value,
+                error_message=committed.error_message,
+                failure_code=committed.failure_code,
+            )
+        )
 
     def get_by_id(self, job_id: str) -> Job | None:
         return self._inner.get_by_id(job_id)
@@ -188,20 +246,57 @@ class PartialFailingJobRepository(JobRepository):
         return self._inner.list_jobs_for_target(target_type, target_id, limit=limit)
 
 
+@dataclass(frozen=True)
+class AisleSaveAttemptSnapshot:
+    committed: bool
+    status: str
+    operational_job_id: str | None
+    error_code: str | None
+
+
+def _aisle_snapshot(aisle: Aisle) -> AisleSaveAttemptSnapshot:
+    return AisleSaveAttemptSnapshot(
+        committed=False,
+        status=aisle.status.value if hasattr(aisle.status, "value") else str(aisle.status),
+        operational_job_id=aisle.operational_job_id,
+        error_code=aisle.error_code,
+    )
+
+
 class PartialFailingAisleRepository(AisleRepository):
     """Fails ``save`` when aisle status is PROCESSED (mark_success terminal aisle write)."""
 
     def __init__(self, inner: AisleRepository) -> None:
         self._inner = inner
         self.save_calls = 0
+        self.save_attempts: list[AisleSaveAttemptSnapshot] = []
 
     def save(self, aisle: Aisle) -> None:
         self.save_calls += 1
         from src.domain.aisle.entities import AisleStatus
 
+        snap = _aisle_snapshot(aisle)
         if aisle.status == AisleStatus.PROCESSED:
+            self.save_attempts.append(
+                AisleSaveAttemptSnapshot(
+                    committed=False,
+                    status=snap.status,
+                    operational_job_id=snap.operational_job_id,
+                    error_code=snap.error_code,
+                )
+            )
             raise RuntimeError("simulated aisle mark_processed save failure")
-        self._inner.save(aisle)
+        self._inner.save(copy.deepcopy(aisle))
+        committed = self._inner.get_by_id(aisle.id)
+        assert committed is not None
+        self.save_attempts.append(
+            AisleSaveAttemptSnapshot(
+                committed=True,
+                status=committed.status.value,
+                operational_job_id=committed.operational_job_id,
+                error_code=committed.error_code,
+            )
+        )
 
     def get_by_id(self, aisle_id: str) -> Aisle | None:
         return self._inner.get_by_id(aisle_id)
@@ -216,8 +311,14 @@ class PartialFailingAisleRepository(AisleRepository):
 class RecordingPipelineRunner:
     """Wraps pipeline runner methods to count invocations and inject cancellation."""
 
-    def __init__(self, inner: V3ProcessAislePipelineRunner) -> None:
+    def __init__(
+        self,
+        inner: V3ProcessAislePipelineRunner,
+        *,
+        clock: Any | None = None,
+    ) -> None:
         self._inner = inner
+        self._clock = clock
         self.run_hybrid_pipeline_calls = 0
         self.build_analysis_context_calls = 0
         self.build_pipeline_input_calls = 0
@@ -279,8 +380,12 @@ class RecordingPipelineRunner:
         job = self._job_repo_for_cancel.get_by_id(self._job_id_for_cancel)
         if job is None:
             return
-        from datetime import datetime, timezone
+        if self._clock is not None:
+            now = self._clock.now()
+        else:
+            from datetime import datetime, timezone
 
+            now = datetime.now(timezone.utc)
         job.status = JobStatus.CANCEL_REQUESTED
-        job.cancel_requested_at = datetime.now(timezone.utc)
+        job.cancel_requested_at = now
         self._job_repo_for_cancel.save(job)

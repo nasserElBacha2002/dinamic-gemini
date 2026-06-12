@@ -143,6 +143,12 @@ class ExecutorHarness:
         processing_mode: InventoryProcessingMode = InventoryProcessingMode.PRODUCTION,
         photo_count: int = 2,
         position_repo: PositionRepository | None = None,
+        product_repo: ProductRecordRepository | None = None,
+        evidence_repo: EvidenceRepository | None = None,
+        raw_repo: RawLabelRepository | None = None,
+        norm_repo: MemoryNormalizedLabelRepository | None = None,
+        final_repo: MemoryFinalCountRepository | None = None,
+        source_asset_repo: SourceAssetRepository | None = None,
         artifact_store: Any | None = None,
         recompute_uc: RecomputeConsolidatedCountsUseCase | None = None,
         job_repo: JobRepository | None = None,
@@ -154,11 +160,11 @@ class ExecutorHarness:
         aisle_repo = aisle_repo or MemoryAisleRepository()
         inventory_repo = inventory_repo or MemoryInventoryRepository()
         position_repo = position_repo or MemoryPositionRepository()
-        product_repo = MemoryProductRecordRepository()
-        evidence_repo = MemoryEvidenceRepository()
-        raw_repo = MemoryRawLabelRepository()
-        norm_repo = MemoryNormalizedLabelRepository()
-        final_repo = MemoryFinalCountRepository()
+        product_repo = product_repo or MemoryProductRecordRepository()
+        evidence_repo = evidence_repo or MemoryEvidenceRepository()
+        raw_repo = raw_repo or MemoryRawLabelRepository()
+        norm_repo = norm_repo or MemoryNormalizedLabelRepository()
+        final_repo = final_repo or MemoryFinalCountRepository()
 
         if inventory_repo.get_by_id(inventory_id) is None:
             inventory_repo.save(
@@ -221,6 +227,8 @@ class ExecutorHarness:
             def list_by_aisle(self, aid: str) -> Sequence[SourceAsset]:
                 return assets if aid == aisle_id else []
 
+        resolved_source_asset_repo = source_asset_repo or _AssetRepo()
+
         if recompute_uc is None:
             recompute_uc = build_recompute_use_case(
                 raw_repo=raw_repo,
@@ -245,7 +253,7 @@ class ExecutorHarness:
             raw_repo=raw_repo,
             norm_repo=norm_repo,
             final_repo=final_repo,
-            source_asset_repo=_AssetRepo(),
+            source_asset_repo=resolved_source_asset_repo,
             artifact_store=artifact_store,
             recompute_uc=recompute_uc,
         )

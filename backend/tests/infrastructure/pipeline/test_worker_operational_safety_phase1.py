@@ -14,10 +14,9 @@ from src.application.use_cases.positions.list_aisle_positions import (
 from src.domain.aisle.entities import AisleStatus
 from src.domain.inventory.entities import InventoryStatus
 from src.domain.jobs.entities import JobStatus
+from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
-from src.infrastructure.repositories.memory_product_record_repository import (
-    MemoryProductRecordRepository,
-)
+from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.llm.deepseek_sdk_adapter import DeepSeekSdkAdapter
 from src.llm.errors import LLMProviderError
 from src.llm.types import LLMRequest
@@ -32,8 +31,10 @@ from tests.support.worker_phase1.doubles import (
 )
 from tests.support.worker_phase1.executor_harness import (
     ExecutorHarness,
+    FixedClock,
     make_two_entity_hybrid_report,
 )
+from tests.support.worker_phase1.spies import ExecutionSpy
 
 # --- Block 1: WKR-P1-T001 -----------------------------------------------------
 
@@ -42,10 +43,7 @@ def test_wkr_p1_t001_persist_fails_on_second_position_leaves_first_entity_commit
     tmp_path,
 ) -> None:
     """WKR-P1-T001: mid-persist failure leaves earlier domain rows committed (non-atomic)."""
-    inner_pos = __import__(
-        "src.infrastructure.repositories.memory_position_repository",
-        fromlist=["MemoryPositionRepository"],
-    ).MemoryPositionRepository()
+    inner_pos = MemoryPositionRepository()
     failing_pos = FailOnNthSavePositionRepository(inner_pos, fail_on_call=2)
     harness = ExecutorHarness.build(tmp_path, position_repo=failing_pos)
     executor = harness.make_executor()
@@ -134,10 +132,7 @@ def test_wkr_p1_t012_retry_isolates_job_scoped_results_safe_with_conditions(
     tmp_path,
 ) -> None:
     """WKR-P1-T012: partial fail job-1 rows remain; job-2 operational slice is isolated."""
-    inner_pos = __import__(
-        "src.infrastructure.repositories.memory_position_repository",
-        fromlist=["MemoryPositionRepository"],
-    ).MemoryPositionRepository()
+    inner_pos = MemoryPositionRepository()
     failing_pos = FailOnNthSavePositionRepository(inner_pos, fail_on_call=2)
 
     harness1 = ExecutorHarness.build(
@@ -168,6 +163,11 @@ def test_wkr_p1_t012_retry_isolates_job_scoped_results_safe_with_conditions(
         aisle_repo=harness1.aisle_repo,
         inventory_repo=harness1.inventory_repo,
         position_repo=inner_pos,
+        product_repo=harness1.product_repo,
+        evidence_repo=harness1.evidence_repo,
+        raw_repo=harness1.raw_repo,
+        norm_repo=harness1.norm_repo,
+        final_repo=harness1.final_repo,
     )
 
     executor2 = harness2.make_executor(artifact_store=ArtifactUploadSpy())
@@ -185,13 +185,51 @@ def test_wkr_p1_t012_retry_isolates_job_scoped_results_safe_with_conditions(
     assert len(harness2.positions_for_job("job-fail-partial")) == 1
     assert len(harness2.positions_for_job("job-success")) == 2
 
-    job_repo = harness2.job_repo
+    fail_products = [
+        p
+        for pos in harness2.positions_for_job("job-fail-partial")
+        for p in harness2.product_repo.list_by_position(pos.id)
+    ]
+    success_products = [
+        p
+        for pos in harness2.positions_for_job("job-success")
+        for p in harness2.product_repo.list_by_position(pos.id)
+    ]
+    assert len(fail_products) == 1
+    assert len(success_products) == 2
+
+    fail_evidence = [
+        e
+        for pos in harness2.positions_for_job("job-fail-partial")
+        for e in harness2.evidence_repo.list_by_entity("position", pos.id)
+    ]
+    success_evidence = [
+        e
+        for pos in harness2.positions_for_job("job-success")
+        for e in harness2.evidence_repo.list_by_entity("position", pos.id)
+    ]
+    assert len(fail_evidence) >= 1
+    assert len(success_evidence) >= 2
+
+    fail_raw = list(
+        harness2.raw_repo.list_for_scope(
+            harness2.inventory_id, harness2.aisle_id, job_id="job-fail-partial"
+        )
+    )
+    success_raw = list(
+        harness2.raw_repo.list_for_scope(
+            harness2.inventory_id, harness2.aisle_id, job_id="job-success"
+        )
+    )
+    assert len(fail_raw) == 0
+    assert len(success_raw) >= 1
+
     list_uc = ListAislePositionsUseCase(
         harness2.inventory_repo,
         harness2.aisle_repo,
-        inner_pos,
-        ResultContextResolver(job_repo, inner_pos),
-        MemoryProductRecordRepository(),
+        harness2.position_repo,
+        ResultContextResolver(harness2.job_repo, harness2.position_repo),
+        harness2.product_repo,
         positions_aisle_raw_cap=500,
     )
     result = list_uc.execute(
@@ -204,6 +242,7 @@ def test_wkr_p1_t012_retry_isolates_job_scoped_results_safe_with_conditions(
     )
     assert result.resolved_job_id == "job-success"
     assert {p.id for p in result.positions} == {p.id for p in harness2.positions_for_job("job-success")}
+    assert not {p.id for p in result.positions} & {p.id for p in harness2.positions_for_job("job-fail-partial")}
 
 
 # --- Block 2: WKR-P1-T002 -----------------------------------------------------
@@ -256,63 +295,106 @@ def test_wkr_p1_t003_case_a_mark_success_job_save_fails_after_artifacts(
     failing_job = PartialFailingJobRepository(inner_job)
     harness = ExecutorHarness.build(tmp_path, job_repo=failing_job, artifact_store=artifact_store)
     executor = harness.make_executor()
+    spy = ExecutionSpy()
+    spy.attach(executor, artifact_store=artifact_store)
 
     handled = harness.run_with_mock_pipeline(executor)
 
     assert handled is True
     assert len(artifact_store.uploaded_keys) >= 2
+    assert harness.pipeline_invocations == 1
+    assert spy.persist_calls == 1
+    assert spy.recompute_calls == 1
+    assert spy.artifact_put_calls >= 2
+    assert spy.mark_success_calls >= 1
+    assert spy.fail_job_and_aisle_calls >= 1
+
+    succeeded_attempts = [
+        a for a in failing_job.save_attempts if a.status == JobStatus.SUCCEEDED.value
+    ]
+    assert succeeded_attempts
+    assert all(not a.committed for a in succeeded_attempts)
+
     job = inner_job.get_by_id(harness.job_id)
     assert job is not None
     assert job.status == JobStatus.FAILED
+    aisle = harness.aisle_repo.get_by_id(harness.aisle_id)
+    assert aisle is not None
+    assert aisle.status == AisleStatus.FAILED
     assert len(harness.positions_for_job()) == 2
 
 
 def test_wkr_p1_t003_case_b_aisle_save_fails_after_job_would_succeed(tmp_path) -> None:
-    """WKR-P1-T003 Case B: aisle PROCESSED save fails; job may remain SUCCEEDED in memory before handler."""
+    """WKR-P1-T003 Case B: aisle PROCESSED save fails after job SUCCEEDED committed (component)."""
     artifact_store = ArtifactUploadSpy()
-    inner_aisle = __import__(
-        "src.infrastructure.repositories.memory_aisle_repository",
-        fromlist=["MemoryAisleRepository"],
-    ).MemoryAisleRepository()
+    inner_aisle = MemoryAisleRepository()
     failing_aisle = PartialFailingAisleRepository(inner_aisle)
     harness = ExecutorHarness.build(tmp_path, aisle_repo=failing_aisle, artifact_store=artifact_store)
     executor = harness.make_executor()
+    spy = ExecutionSpy()
+    spy.attach(executor, artifact_store=artifact_store)
 
     handled = harness.run_with_mock_pipeline(executor)
 
     assert handled is True
+    assert len(artifact_store.uploaded_keys) >= 2
+    assert spy.mark_success_calls >= 1
+    assert spy.fail_job_and_aisle_calls >= 1
+
+    processed_attempts = [
+        a for a in failing_aisle.save_attempts if a.status == AisleStatus.PROCESSED.value
+    ]
+    assert processed_attempts
+    assert all(not a.committed for a in processed_attempts)
+
     job = harness.job_repo.get_by_id(harness.job_id)
     assert job is not None
     assert job.status == JobStatus.FAILED
     aisle = inner_aisle.get_by_id(harness.aisle_id)
     assert aisle is not None
     assert aisle.status != AisleStatus.PROCESSED
+    assert aisle.status == AisleStatus.FAILED
 
 
 def test_wkr_p1_t003_case_c_inventory_reconcile_fails_after_terminal_writes(
-    tmp_path,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """WKR-P1-T003 Case C: reconcile failure surfaces as FAILED job after artifacts."""
     artifact_store = ArtifactUploadSpy()
     harness = ExecutorHarness.build(tmp_path, artifact_store=artifact_store)
     executor = harness.make_executor()
+    spy = ExecutionSpy()
+    spy.attach(executor, artifact_store=artifact_store)
     reconcile_calls: list[str] = []
+    original_reconcile = executor._state._inventory_status_reconciler.reconcile
 
     def _fail_on_second_reconcile(inv_id: str) -> bool:
         reconcile_calls.append(inv_id)
         if len(reconcile_calls) == 2:
             raise RuntimeError("simulated inventory reconcile failure")
-        return False
+        return original_reconcile(inv_id)
 
-    executor._state._inventory_status_reconciler.reconcile = _fail_on_second_reconcile  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        executor._state._inventory_status_reconciler,
+        "reconcile",
+        _fail_on_second_reconcile,
+    )
 
     handled = harness.run_with_mock_pipeline(executor)
 
     assert handled is True
     assert len(reconcile_calls) >= 2
+    assert spy.persist_calls == 1
+    assert spy.mark_success_calls >= 1
+    assert spy.artifact_put_calls >= 2
+    assert spy.fail_job_and_aisle_calls >= 1
     job = harness.job_repo.get_by_id(harness.job_id)
     assert job is not None
     assert job.status == JobStatus.FAILED
+    aisle = harness.aisle_repo.get_by_id(harness.aisle_id)
+    assert aisle is not None
+    assert aisle.status == AisleStatus.FAILED
+    assert len(artifact_store.uploaded_keys) >= 2
 
 
 # --- Block 3: WKR-P1-T004 -----------------------------------------------------
@@ -332,20 +414,32 @@ def test_wkr_p1_t004_cancel_requested_before_executor_skips_pipeline_and_aisle_s
     job.cancel_requested_at = harness.now
     harness.job_repo.save(job)
     executor = harness.make_executor()
-    runner = RecordingPipelineRunner(executor._pipeline_runner)
+    runner = RecordingPipelineRunner(executor._pipeline_runner, clock=FixedClock(harness.now))
     executor._pipeline_runner = runner
+    spy = ExecutionSpy()
+    spy.attach(executor)
 
     handled = executor.execute(harness.base_path, harness.job_id)
 
     assert handled is True
     assert runner.run_hybrid_pipeline_calls == 0
+    assert spy.persist_calls == 0
+    assert spy.recompute_calls == 0
+    assert spy.artifact_put_calls == 0
+    assert spy.mark_success_calls == 0
+    assert spy.cancel_job_calls >= 1
+    assert spy.cancel_job_and_aisle_calls == 0
     job = harness.job_repo.get_by_id(harness.job_id)
     assert job is not None
     assert job.status == JobStatus.CANCELED
     assert job.failure_code == "CANCELED"
+    assert job.cancel_requested_at == harness.now
     aisle = harness.aisle_repo.get_by_id(harness.aisle_id)
     assert aisle is not None
     assert aisle.status == AisleStatus.QUEUED
+    inv = harness.inventory_repo.get_by_id(harness.inventory_id)
+    assert inv is not None
+    assert inv.status == InventoryStatus.PROCESSING
 
 
 # --- Block 3: WKR-P1-T005 -----------------------------------------------------
@@ -355,16 +449,30 @@ def test_wkr_p1_t005_cancel_before_provider_checkpoint_skips_persist(tmp_path) -
     """WKR-P1-T005: RUNNING job; cancel at pre_pipeline; provider path aborted."""
     harness = ExecutorHarness.build(tmp_path, job_status=JobStatus.STARTING)
     executor = harness.make_executor()
-    runner = RecordingPipelineRunner(executor._pipeline_runner)
+    runner = RecordingPipelineRunner(
+        executor._pipeline_runner, clock=FixedClock(harness.now)
+    )
     runner.arm_cancel_before_hybrid_run(job_repo=harness.job_repo, job_id=harness.job_id)
     executor._pipeline_runner = runner
+    spy = ExecutionSpy()
+    spy.attach(executor)
 
     handled = harness.run_with_mock_pipeline(executor)
     assert handled is True
+    assert runner.run_hybrid_pipeline_calls == 1
+    assert harness.pipeline_invocations == 0
+    assert spy.persist_calls == 0
+    assert spy.recompute_calls == 0
+    assert spy.artifact_put_calls == 0
+    assert spy.mark_success_calls == 0
+    assert spy.cancel_job_and_aisle_calls >= 1
     job = harness.job_repo.get_by_id(harness.job_id)
     assert job is not None
     assert job.status == JobStatus.CANCELED
+    assert job.failure_code == "CANCELED"
     assert len(harness.positions_for_job()) == 0
+    log = harness.execution_log_text()
+    assert "job.cancel_detected" in log or job.status == JobStatus.CANCELED
 
 
 # --- Block 3: WKR-P1-T006 -----------------------------------------------------
@@ -376,14 +484,24 @@ def test_wkr_p1_t006_cancel_after_provider_before_persist_skips_domain_writes(
     """WKR-P1-T006: provider completes; post_pipeline cancel prevents persistence."""
     harness = ExecutorHarness.build(tmp_path)
     executor = harness.make_executor()
-    runner = RecordingPipelineRunner(executor._pipeline_runner)
+    runner = RecordingPipelineRunner(
+        executor._pipeline_runner, clock=FixedClock(harness.now)
+    )
     runner.arm_cancel_after_provider(job_repo=harness.job_repo, job_id=harness.job_id)
     executor._pipeline_runner = runner
+    spy = ExecutionSpy()
+    spy.attach(executor)
 
     handled = harness.run_with_mock_pipeline(executor)
 
     assert handled is True
     assert runner.run_hybrid_pipeline_calls == 1
+    assert harness.pipeline_invocations == 1
+    assert spy.persist_calls == 0
+    assert spy.recompute_calls == 0
+    assert spy.artifact_put_calls == 0
+    assert spy.mark_success_calls == 0
+    assert spy.cancel_job_and_aisle_calls >= 1
     job = harness.job_repo.get_by_id(harness.job_id)
     assert job is not None
     assert job.status == JobStatus.CANCELED
@@ -396,37 +514,46 @@ def test_wkr_p1_t006_cancel_after_provider_before_persist_skips_domain_writes(
 
 
 def test_wkr_p1_t006b_cancel_after_persist_stops_before_artifacts_not_mark_success(
-    tmp_path,
+    tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """WKR-P1-T006B: persist completes; pre_upload cancel prevents artifacts and success."""
     artifact_store = ArtifactUploadSpy()
     harness = ExecutorHarness.build(tmp_path, artifact_store=artifact_store)
     executor = harness.make_executor()
-
-    real_persist = executor._persist_use_case.execute
+    spy = ExecutionSpy()
+    spy.attach(executor, artifact_store=artifact_store)
+    spied_persist = executor._persist_use_case.execute
 
     def persist_then_request_cancel(cmd):  # type: ignore[no-untyped-def]
-        real_persist(cmd)
+        spied_persist(cmd)
         job = harness.job_repo.get_by_id(harness.job_id)
         assert job is not None
         job.status = JobStatus.CANCEL_REQUESTED
         job.cancel_requested_at = harness.now
         harness.job_repo.save(job)
 
-    executor._persist_use_case.execute = persist_then_request_cancel  # type: ignore[method-assign]
+    monkeypatch.setattr(executor._persist_use_case, "execute", persist_then_request_cancel)
 
     handled = harness.run_with_mock_pipeline(executor)
 
     assert handled is True
+    assert harness.pipeline_invocations == 1
+    assert spy.persist_calls == 1
+    assert spy.recompute_calls == 1
+    assert spy.artifact_put_calls == 0
+    assert spy.mark_success_calls == 0
+    assert spy.fail_job_and_aisle_calls >= 1
+    assert spy.cancel_job_and_aisle_calls == 0
     assert len(harness.positions_for_job()) == 2
-    assert artifact_store.put_object_calls == 0
     job = harness.job_repo.get_by_id(harness.job_id)
     assert job is not None
-    # pre_upload cancel is caught by artifact handler (not cancel_job_and_aisle) → FAILED.
     assert job.status == JobStatus.FAILED
     assert "artifact" in (job.error_message or "").lower() or "canceled" in (
         job.error_message or ""
     ).lower()
+    aisle = harness.aisle_repo.get_by_id(harness.aisle_id)
+    assert aisle is not None
+    assert aisle.status == AisleStatus.FAILED
 
 
 # --- Block 4: WKR-P1-T008 -----------------------------------------------------
