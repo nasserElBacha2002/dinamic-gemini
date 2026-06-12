@@ -132,6 +132,30 @@ class JobSummary(BaseModel):
     llm_cost_snapshot: Optional[LlmCostSnapshotResponse] = None
 
 
+class FinalizationStageAssessmentItem(BaseModel):
+    """Sanitized per-stage finalization evidence for job detail."""
+
+    stage: str
+    status: str
+    evidence_level: str
+    completed_at: Optional[datetime] = None
+    verification_required: bool = False
+    last_error_code: Optional[str] = None
+
+
+class FinalizationAssessmentBlock(BaseModel):
+    """Read-only finalization assessment (Phase 3.3)."""
+
+    outcome: str
+    technical_result_status: str
+    finalization_status: str
+    last_confirmed_stage: Optional[str] = None
+    next_required_stage: Optional[str] = None
+    recovery_candidate: bool = False
+    blocking_reason: Optional[str] = None
+    stages: dict[str, FinalizationStageAssessmentItem] = Field(default_factory=dict)
+
+
 class JobDetailResponse(JobSummary):
     """Extended job detail for GET .../jobs/{job_id} — finalization timestamps and diagnostics."""
 
@@ -140,6 +164,7 @@ class JobDetailResponse(JobSummary):
     domain_persisted_at: Optional[datetime] = None
     artifacts_published_at: Optional[datetime] = None
     finalization_error_metadata: Optional[dict[str, Any]] = None
+    finalization_assessment: Optional[FinalizationAssessmentBlock] = None
 
 
 class AisleStatusResponse(BaseModel):

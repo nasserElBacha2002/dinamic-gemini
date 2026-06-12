@@ -44,6 +44,12 @@ from src.domain.labels.merge import MergeRuleEngine
 from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
     MemoryOperationalJobPromotionRepository,
 )
+from src.infrastructure.persistence.memory_artifact_manifest_store import (
+    MemoryArtifactManifestStore,
+)
+from src.infrastructure.persistence.memory_finalization_stage_store import (
+    MemoryFinalizationStageStore,
+)
 from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWorkFactory,
 )
@@ -164,6 +170,8 @@ class ExecutorHarness:
     source_asset_repo: SourceAssetRepository
     artifact_store: Any = None
     recompute_uc: RecomputeConsolidatedCountsUseCase | None = None
+    stage_store: MemoryFinalizationStageStore | None = None
+    manifest_store: MemoryArtifactManifestStore | None = None
     pipeline_invocations: int = field(default=0, init=False)
 
     @classmethod
@@ -279,6 +287,9 @@ class ExecutorHarness:
                 position_repo=position_repo,
             )
 
+        stage_store = MemoryFinalizationStageStore()
+        manifest_store = MemoryArtifactManifestStore()
+
         return cls(
             base_path=tmp_path,
             job_id=job_id,
@@ -297,6 +308,8 @@ class ExecutorHarness:
             source_asset_repo=resolved_source_asset_repo,
             artifact_store=artifact_store,
             recompute_uc=recompute_uc,
+            stage_store=stage_store,
+            manifest_store=manifest_store,
         )
 
     def make_executor(self, **kwargs: Any) -> V3JobExecutor:
@@ -330,10 +343,15 @@ class ExecutorHarness:
                 "job_scoped_recompute_factory", DefaultJobScopedRecomputeFactory()
             ),
             job_result_uow_factory=kwargs.get(
-                "job_result_uow_factory", MemoryJobResultUnitOfWorkFactory()
+                "job_result_uow_factory",
+                MemoryJobResultUnitOfWorkFactory(
+                    stage_store=kwargs.get("stage_store", self.stage_store)
+                ),
             ),
             recompute_consolidated_uc=kwargs.get("recompute_uc", self.recompute_uc),
             operational_promotion_service=promotion_svc,
+            finalization_stage_store=kwargs.get("finalization_stage_store", self.stage_store),
+            artifact_manifest_store=kwargs.get("artifact_manifest_store", self.manifest_store),
         )
 
     def seed_run_dir(self, report: dict[str, Any] | None = None) -> Path:

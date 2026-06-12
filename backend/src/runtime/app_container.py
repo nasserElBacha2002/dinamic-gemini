@@ -14,7 +14,8 @@ import threading
 from collections.abc import Callable
 from typing import TypeVar
 
-from src.application.ports.analytics_repository import AnalyticsRepository
+from src.application.ports.artifact_manifest_store import ArtifactManifestStore
+from src.application.ports.finalization_stage_store import FinalizationStageStore
 from src.application.ports.capture_repositories import (
     CaptureSessionConfirmIdempotencyRepository,
     CaptureSessionGroupRepository,
@@ -45,9 +46,9 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
-from src.application.services.default_job_scoped_recompute_factory import (
-    DefaultJobScopedRecomputeFactory,
-)
+from src.application.services.finalization_assessment_service import FinalizationAssessmentService
+from src.application.services.job_artifact_verifier import JobArtifactVerifier
+from src.application.services.job_domain_result_verifier import JobDomainResultVerifier
 from src.application.services.operational_result_promotion_service import (
     OperationalResultPromotionService,
 )
@@ -63,9 +64,15 @@ from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
 )
 from src.config import AppSettings
 from src.database.sqlserver import SqlServerClient
+from src.infrastructure.persistence.memory_artifact_manifest_store import MemoryArtifactManifestStore
+from src.infrastructure.persistence.memory_finalization_stage_store import (
+    MemoryFinalizationStageStore,
+)
 from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWorkFactory,
 )
+from src.infrastructure.persistence.sql_artifact_manifest_store import SqlArtifactManifestStore
+from src.infrastructure.persistence.sql_finalization_stage_store import SqlFinalizationStageStore
 from src.infrastructure.persistence.memory_operational_job_promotion_repository import (
     MemoryOperationalJobPromotionRepository,
 )
@@ -189,6 +196,8 @@ class AppContainer:
         self._capture_session_group_repo: CaptureSessionGroupRepository | None = None
         self._code_scan_repo: CodeScanRepository | None = None
         self._stored_artifact_reader: StoredArtifactReader | None = None
+        self._finalization_stage_store: FinalizationStageStore | None = None
+        self._artifact_manifest_store: ArtifactManifestStore | None = None
         self._repository_backend_resolution: RepositoryBackendResolution | None = None
 
     @property
@@ -562,11 +571,55 @@ class AppContainer:
             position_repo=self.get_position_repo(),
         )
 
+    def get_finalization_stage_store(self) -> FinalizationStageStore:
+        if self._finalization_stage_store is not None:
+            return self._finalization_stage_store
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._finalization_stage_store = SqlFinalizationStageStore(self._get_v3_sql_client())
+        else:
+            self._finalization_stage_store = MemoryFinalizationStageStore()
+        return self._finalization_stage_store
+
+    def get_artifact_manifest_store(self) -> ArtifactManifestStore:
+        if self._artifact_manifest_store is not None:
+            return self._artifact_manifest_store
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._artifact_manifest_store = SqlArtifactManifestStore(self._get_v3_sql_client())
+        else:
+            self._artifact_manifest_store = MemoryArtifactManifestStore()
+        return self._artifact_manifest_store
+
+    def get_finalization_assessment_service(self) -> FinalizationAssessmentService:
+        return FinalizationAssessmentService(
+            job_repo=self.get_job_repo(),
+            aisle_repo=self.get_aisle_repo(),
+            stage_store=self.get_finalization_stage_store(),
+            manifest_store=self.get_artifact_manifest_store(),
+            domain_verifier=JobDomainResultVerifier(
+                aisle_repo=self.get_aisle_repo(),
+                position_repo=self.get_position_repo(),
+                product_repo=self.get_product_record_repo(),
+                evidence_repo=self.get_evidence_repo(),
+                raw_label_repo=self.get_raw_label_repo(),
+                normalized_label_repo=self.get_normalized_label_repo(),
+                final_count_repo=self.get_final_count_repo(),
+            ),
+            artifact_verifier=JobArtifactVerifier(
+                manifest_store=self.get_artifact_manifest_store(),
+                artifact_store=self.get_artifact_storage(),
+            ),
+        )
+
     def get_job_result_uow_factory(self) -> JobResultUnitOfWorkFactory:
         resolution = self._get_repository_backend_resolution()
         if resolution.mode == RepositoryBackendMode.SQL:
             return SqlJobResultUnitOfWorkFactory(self._get_v3_sql_client())
-        return MemoryJobResultUnitOfWorkFactory()
+        stage_store = self.get_finalization_stage_store()
+        if not isinstance(stage_store, MemoryFinalizationStageStore):
+            return MemoryJobResultUnitOfWorkFactory()
+        return MemoryJobResultUnitOfWorkFactory(stage_store=stage_store)
 
     def get_job_scoped_recompute_factory(self) -> JobScopedRecomputeFactory:
         return DefaultJobScopedRecomputeFactory()

@@ -41,7 +41,7 @@ from src.application.ports.repositories import (
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
-from src.application.services.aisle_job_launch_service import AisleJobLaunchService
+from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.analytics_query_service import AnalyticsQueryService
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
@@ -157,6 +157,7 @@ from src.runtime.v3_deps import (
     get_code_scan_repo,
     get_evidence_repo,
     get_final_count_repo,
+    get_finalization_assessment_service as _get_finalization_assessment_service,
     get_inventory_repo,
     get_job_repo,
     get_metrics_calculator,
@@ -194,6 +195,10 @@ def get_job_stale_reconciler(
         clock=clock,
         stale_after_seconds=int(getattr(settings, "worker_stale_running_timeout_sec", 0) or 0),
     )
+
+
+def get_finalization_assessment_service() -> FinalizationAssessmentService:
+    return _get_finalization_assessment_service()
 
 
 def get_operational_execution_config_resolver() -> OperationalExecutionConfigResolver:

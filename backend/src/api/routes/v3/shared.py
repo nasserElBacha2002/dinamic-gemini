@@ -37,8 +37,15 @@ from src.api.schemas.position_schemas import (
     ReviewActionRequest,
     ReviewActionResponse,
 )
-from src.api.schemas.processing_schemas import AisleStatusResponse, JobDetailResponse, JobSummary
+from src.api.schemas.processing_schemas import (
+    AisleStatusResponse,
+    FinalizationAssessmentBlock,
+    FinalizationStageAssessmentItem,
+    JobDetailResponse,
+    JobSummary,
+)
 from src.infrastructure.pipeline.job_finalization_tracker import sanitize_finalization_error_metadata
+from src.domain.jobs.finalization_evidence import FinalizationAssessment
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 from src.application.errors import (
     AisleNotFoundError,
@@ -582,8 +589,48 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
     )
 
 
-def job_to_detail(j: Job, *, is_operational: bool = False) -> JobDetailResponse:
+def finalization_assessment_to_response(
+    assessment: FinalizationAssessment,
+) -> FinalizationAssessmentBlock:
+    stages = {
+        key: FinalizationStageAssessmentItem(
+            stage=value.stage.value,
+            status=value.status.value,
+            evidence_level=value.evidence_level.value,
+            completed_at=value.completed_at,
+            verification_required=value.verification_required,
+            last_error_code=value.last_error_code,
+        )
+        for key, value in assessment.stages.items()
+    }
+    return FinalizationAssessmentBlock(
+        outcome=assessment.outcome.value,
+        technical_result_status=assessment.technical_result_status,
+        finalization_status=assessment.finalization_status,
+        last_confirmed_stage=(
+            assessment.last_confirmed_stage.value if assessment.last_confirmed_stage else None
+        ),
+        next_required_stage=(
+            assessment.next_required_stage.value if assessment.next_required_stage else None
+        ),
+        recovery_candidate=assessment.recovery_candidate,
+        blocking_reason=assessment.blocking_reason,
+        stages=stages,
+    )
+
+
+def job_to_detail(
+    j: Job,
+    *,
+    is_operational: bool = False,
+    finalization_assessment: FinalizationAssessment | None = None,
+) -> JobDetailResponse:
     summary = job_to_summary(j, is_operational=is_operational)
+    assessment_block = (
+        finalization_assessment_to_response(finalization_assessment)
+        if finalization_assessment is not None
+        else None
+    )
     return JobDetailResponse(
         **summary.model_dump(),
         finalization_started_at=j.finalization_started_at,
@@ -593,6 +640,7 @@ def job_to_detail(j: Job, *, is_operational: bool = False) -> JobDetailResponse:
         finalization_error_metadata=sanitize_finalization_error_metadata(
             j.finalization_error_metadata
         ),
+        finalization_assessment=assessment_block,
     )
 
 

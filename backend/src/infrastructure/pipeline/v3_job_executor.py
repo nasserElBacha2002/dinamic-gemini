@@ -14,7 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from src.application.ports.clock import Clock
+from src.application.ports.artifact_manifest_store import ArtifactManifestStore
+from src.application.ports.finalization_stage_store import FinalizationStageStore
 from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
 from src.application.ports.repositories import (
@@ -34,6 +35,9 @@ from src.application.ports.repositories import (
 )
 from src.application.services.aisle_analysis_context_builder import (
     AisleAnalysisContextBuilder,
+)
+from src.application.services.finalization_projection_service import (
+    FinalizationProjectionService,
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_engine_params import coerce_prompt_parity_mode
@@ -71,6 +75,7 @@ from src.infrastructure.pipeline.finalization_errors import (
     ArtifactPublishPartialError,
     ArtifactStoreUnavailableError,
 )
+from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
 from src.infrastructure.pipeline.v3_execution_artifacts_service import V3ExecutionArtifactsService
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
@@ -221,6 +226,8 @@ class V3JobExecutor:
         operational_promotion_service: OperationalResultPromotionService | None = None,
         client_supplier_repo: ClientSupplierRepository | None = None,
         supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None,
+        finalization_stage_store: FinalizationStageStore | None = None,
+        artifact_manifest_store: ArtifactManifestStore | None = None,
     ) -> None:
         self._job_repo = job_repo
         self._aisle_repo = aisle_repo
@@ -285,6 +292,19 @@ class V3JobExecutor:
         )
         _ = recompute_consolidated_uc
         self._heartbeat_interval_sec = 10
+        self._stage_recorder: FinalizationStageRecorder | None = None
+        if finalization_stage_store is not None:
+            projection = FinalizationProjectionService(
+                job_repo=job_repo,
+                stage_store=finalization_stage_store,
+                clock=clock,
+            )
+            self._stage_recorder = FinalizationStageRecorder(
+                stage_store=finalization_stage_store,
+                projection=projection,
+                manifest_store=artifact_manifest_store,
+                clock=clock,
+            )
 
     def execute(self, base_path: Path, job_id: str) -> bool:
         """
@@ -555,6 +575,7 @@ class V3JobExecutor:
             job_repo=self._job_repo,
             clock=self._clock,
             job_id=p.job_id,
+            stage_recorder=self._stage_recorder,
         )
         tracker.begin()
         try:
@@ -754,7 +775,7 @@ class V3JobExecutor:
 
         assert durable_meta is not None
         try:
-            tracker.record_artifacts_published()
+            tracker.record_artifacts_published(durable_artifacts=durable_meta)
         except Exception as marker_e:
             p.exec_log.error(
                 "Artifacts",

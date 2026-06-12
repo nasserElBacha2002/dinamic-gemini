@@ -25,6 +25,7 @@ from src.api.dependencies import (
     get_export_aisle_benchmark_run_csv_use_case,
     get_export_aisle_business_csv_use_case,
     get_export_aisle_results_csv_use_case,
+    get_finalization_assessment_service,
     get_get_aisle_merge_results_use_case,
     get_get_aisle_processing_status_use_case,
     get_job_stale_reconciler,
@@ -66,8 +67,8 @@ from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     load_hybrid_report_json_for_api,
 )
+from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.errors import (
-    ActiveJobExistsError,
     AisleNotFoundError,
     ClientSupplierClientMismatchError,
     ClientSupplierNotFoundError,
@@ -518,12 +519,14 @@ def get_aisle_job_detail(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
     stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
+    assessment_service: FinalizationAssessmentService = Depends(get_finalization_assessment_service),
 ) -> JobDetailResponse:
     job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
     reconciled = stale_reconciler.reconcile(job)
     if reconciled is None:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND)
-    return job_to_detail(reconciled)
+    assessment = assessment_service.assess(reconciled.id)
+    return job_to_detail(reconciled, finalization_assessment=assessment)
 
 
 @router.get(

@@ -16,6 +16,8 @@ from src.domain.jobs.finalization import (
     FinalizationStatus,
     LastCompletedFinalizationStep,
 )
+from src.domain.jobs.finalization_evidence import EvidenceLevel
+from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +81,12 @@ class JobFinalizationTracker:
         job_repo: JobRepository,
         clock: Clock,
         job_id: str,
+        stage_recorder: FinalizationStageRecorder | None = None,
     ) -> None:
         self._job_repo = job_repo
         self._clock = clock
         self._job_id = job_id
+        self._stage_recorder = stage_recorder
         self._last_completed = LastCompletedFinalizationStep.NONE
 
     @property
@@ -108,6 +112,10 @@ class JobFinalizationTracker:
         job.updated_at = now
         self._job_repo.save(job)
         self._last_completed = LastCompletedFinalizationStep.NONE
+        if self._stage_recorder is not None:
+            self._stage_recorder.mark_in_progress(
+                self._job_id, CurrentFinalizationStep.PERSIST_DOMAIN_RESULTS
+            )
 
     def set_current_step(self, step: CurrentFinalizationStep) -> None:
         now = self._clock.now()
@@ -126,6 +134,13 @@ class JobFinalizationTracker:
         job.updated_at = now
         self._job_repo.save(job)
         self._last_completed = LastCompletedFinalizationStep.DOMAIN_RESULTS_PERSISTED
+        if self._stage_recorder is not None:
+            self._stage_recorder.mark_completed_for_step(
+                self._job_id,
+                LastCompletedFinalizationStep.DOMAIN_RESULTS_PERSISTED,
+                evidence_level=EvidenceLevel.POSITIVE_EVIDENCE_ONLY,
+                verification_source="post_uow_marker",
+            )
 
     def record_artifacts_published(
         self,
@@ -140,6 +155,15 @@ class JobFinalizationTracker:
         job.updated_at = now
         self._job_repo.save(job)
         self._last_completed = LastCompletedFinalizationStep.ARTIFACTS_PUBLISHED
+        if self._stage_recorder is not None:
+            if durable_artifacts:
+                self._stage_recorder.record_artifact_manifest(self._job_id, durable_artifacts)
+            self._stage_recorder.mark_completed_for_step(
+                self._job_id,
+                LastCompletedFinalizationStep.ARTIFACTS_PUBLISHED,
+                evidence_level=EvidenceLevel.CONFIRMED,
+                verification_source="artifact_upload",
+            )
 
     def record_step_completed(self, step: LastCompletedFinalizationStep) -> None:
         now = self._clock.now()
@@ -150,6 +174,12 @@ class JobFinalizationTracker:
         job.current_finalization_step = next_step
         self._job_repo.save(job)
         self._last_completed = step
+        if self._stage_recorder is not None:
+            self._stage_recorder.mark_completed_for_step(
+                self._job_id,
+                step,
+                evidence_level=EvidenceLevel.CONFIRMED,
+            )
 
     def complete(self) -> None:
         now = self._clock.now()
@@ -163,6 +193,12 @@ class JobFinalizationTracker:
         job.updated_at = now
         self._job_repo.save(job)
         self._last_completed = LastCompletedFinalizationStep.INVENTORY_RECONCILED
+        if self._stage_recorder is not None:
+            self._stage_recorder.mark_completed_for_step(
+                self._job_id,
+                LastCompletedFinalizationStep.INVENTORY_RECONCILED,
+                evidence_level=EvidenceLevel.CONFIRMED,
+            )
 
     def fail(
         self,
@@ -201,6 +237,13 @@ class JobFinalizationTracker:
             job.status.value,
             job.last_completed_finalization_step.value,
         )
+        if self._stage_recorder is not None:
+            self._stage_recorder.mark_failed_for_step(
+                self._job_id,
+                current_step,
+                error_code=error_code.value,
+                metadata=metadata,
+            )
 
     def cancel_after_domain_commit(
         self,

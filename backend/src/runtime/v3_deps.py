@@ -157,3 +157,15 @@ def get_job_scoped_recompute_factory():
 
 def get_operational_result_promotion_service():
     return get_app_container().get_operational_result_promotion_service()
+
+
+def get_finalization_stage_store():
+    return get_app_container().get_finalization_stage_store()
+
+
+def get_artifact_manifest_store():
+    return get_app_container().get_artifact_manifest_store()
+
+
+def get_finalization_assessment_service():
+    return get_app_container().get_finalization_assessment_service()
