@@ -350,16 +350,22 @@ class ExecutorHarness:
         jid = job_id or self.job_id
         return list(self.position_repo.list_by_aisle(self.aisle_id, job_id=jid))
 
-    def make_persist_use_case(self) -> PersistAisleResultUseCase:
+    def make_persist_use_case(self, **kwargs: Any) -> PersistAisleResultUseCase:
         return PersistAisleResultUseCase(
-            position_repo=self.position_repo,
-            product_record_repo=self.product_repo,
-            evidence_repo=self.evidence_repo,
-            clock=FixedClock(self.now),
-            hybrid_mapper=default_map_hybrid_report_to_domain,
-            aisle_repo=self.aisle_repo,
-            raw_label_repo=self.raw_repo,
-            recompute_consolidated_uc=self.recompute_uc,
+            position_repo=kwargs.get("position_repo", self.position_repo),
+            product_record_repo=kwargs.get("product_record_repo", self.product_repo),
+            evidence_repo=kwargs.get("evidence_repo", self.evidence_repo),
+            clock=kwargs.get("clock", FixedClock(self.now)),
+            hybrid_mapper=kwargs.get(
+                "hybrid_mapper", default_map_hybrid_report_to_domain
+            ),
+            aisle_repo=kwargs.get("aisle_repo", self.aisle_repo),
+            raw_label_repo=kwargs.get("raw_label_repo", self.raw_repo),
+            recompute_consolidated_uc=kwargs.get(
+                "recompute_consolidated_uc", self.recompute_uc
+            ),
+            scope_cleaner=kwargs.get("scope_cleaner"),
+            job_result_uow_factory=kwargs.get("job_result_uow_factory"),
         )
 
     def persist_report(

@@ -39,10 +39,10 @@ from tests.support.worker_phase1.spies import ExecutionSpy
 # --- Block 1: WKR-P1-T001 -----------------------------------------------------
 
 
-def test_wkr_p1_t001_persist_fails_on_second_position_leaves_first_entity_committed(
+def test_wkr_p1_t001_persist_fails_on_second_position_rolls_back_domain_rows(
     tmp_path,
 ) -> None:
-    """WKR-P1-T001: mid-persist failure leaves earlier domain rows committed (non-atomic)."""
+    """WKR-P1-T001: mid-persist failure rolls back the job snapshot (Part 2 transactional)."""
     inner_pos = MemoryPositionRepository()
     failing_pos = FailOnNthSavePositionRepository(inner_pos, fail_on_call=2)
     harness = ExecutorHarness.build(tmp_path, position_repo=failing_pos)
@@ -71,10 +71,7 @@ def test_wkr_p1_t001_persist_fails_on_second_position_leaves_first_entity_commit
     assert inv.status == InventoryStatus.FAILED
 
     committed = harness.positions_for_job(harness.job_id)
-    assert len(committed) == 1
-    assert committed[0].job_id == harness.job_id
-
-    assert len(list(harness.product_repo.list_by_position(committed[0].id))) == 1
+    assert len(committed) == 0
     assert harness.execution_log_text()
     assert "Persist" in harness.execution_log_text() or "Persist failed" in (
         job.error_message or ""
@@ -97,9 +94,9 @@ def test_wkr_p1_t007_recompute_failure_after_entity_persist_marks_job_failed(
     tmp_path,
 ) -> None:
     """WKR-P1-T007: entity rows persist; recompute failure fails job; aggregates may be empty."""
-    failing_recompute = FailingRecomputeUseCase()
-    harness = ExecutorHarness.build(tmp_path, recompute_uc=failing_recompute)
-    executor = harness.make_executor()
+    harness = ExecutorHarness.build(tmp_path)
+    failing_recompute = FailingRecomputeUseCase(harness.recompute_uc)
+    executor = harness.make_executor(recompute_uc=failing_recompute)
 
     handled = harness.run_with_mock_pipeline(executor)
 
@@ -111,8 +108,8 @@ def test_wkr_p1_t007_recompute_failure_after_entity_persist_marks_job_failed(
     assert "Persist:" in (job.error_message or "")
 
     positions = harness.positions_for_job()
-    assert len(positions) == 2
-    # Recompute failed before normalized/final layers were written for this scope.
+    assert len(positions) == 0
+    # Transactional persist rolls back domain rows when recompute fails.
     assert (
         len(
             list(
@@ -131,7 +128,7 @@ def test_wkr_p1_t007_recompute_failure_after_entity_persist_marks_job_failed(
 def test_wkr_p1_t012_retry_isolates_job_scoped_results_safe_with_conditions(
     tmp_path,
 ) -> None:
-    """WKR-P1-T012: partial fail job-1 rows remain; job-2 operational slice is isolated."""
+    """WKR-P1-T012: failed job-1 leaves no partial rows; job-2 operational slice is isolated."""
     inner_pos = MemoryPositionRepository()
     failing_pos = FailOnNthSavePositionRepository(inner_pos, fail_on_call=2)
 
@@ -144,7 +141,7 @@ def test_wkr_p1_t012_retry_isolates_job_scoped_results_safe_with_conditions(
     harness1.run_with_mock_pipeline(executor1)
 
     partial_rows = harness1.positions_for_job("job-fail-partial")
-    assert len(partial_rows) == 1
+    assert len(partial_rows) == 0
 
     aisle = harness1.aisle_repo.get_by_id(harness1.aisle_id)
     assert aisle is not None
@@ -182,7 +179,7 @@ def test_wkr_p1_t012_retry_isolates_job_scoped_results_safe_with_conditions(
     assert aisle_after.status == AisleStatus.PROCESSED
     assert aisle_after.operational_job_id == "job-success"
 
-    assert len(harness2.positions_for_job("job-fail-partial")) == 1
+    assert len(harness2.positions_for_job("job-fail-partial")) == 0
     assert len(harness2.positions_for_job("job-success")) == 2
 
     fail_products = [
@@ -195,7 +192,7 @@ def test_wkr_p1_t012_retry_isolates_job_scoped_results_safe_with_conditions(
         for pos in harness2.positions_for_job("job-success")
         for p in harness2.product_repo.list_by_position(pos.id)
     ]
-    assert len(fail_products) == 1
+    assert len(fail_products) == 0
     assert len(success_products) == 2
 
     fail_evidence = [
@@ -208,7 +205,7 @@ def test_wkr_p1_t012_retry_isolates_job_scoped_results_safe_with_conditions(
         for pos in harness2.positions_for_job("job-success")
         for e in harness2.evidence_repo.list_by_entity("position", pos.id)
     ]
-    assert len(fail_evidence) >= 1
+    assert len(fail_evidence) == 0
     assert len(success_evidence) >= 2
 
     fail_raw = list(

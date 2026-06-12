@@ -13,6 +13,7 @@ from typing import Any
 from src.application.ports.contracts import POSITION_LIST_JOB_ID_UNSET, PositionListQuery
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository
 from src.database.sqlserver import SqlServerClient
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
 from src.infrastructure.repositories.db_row_text import normalize_db_str
 
@@ -108,8 +109,9 @@ def _row_to_position(row: Any) -> Position:
 
 
 class SqlPositionRepository(PositionRepository):
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
 
     def save(self, position: Position) -> None:
         if position.created_at is None or position.updated_at is None:
@@ -126,7 +128,7 @@ class SqlPositionRepository(PositionRepository):
             if position.corrected_summary_json
             else None
         )
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 UPDATE positions
@@ -178,7 +180,7 @@ class SqlPositionRepository(PositionRepository):
                 )
 
     def get_by_id(self, position_id: str) -> Position | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 SELECT id, aisle_id, status, review_resolution, confidence, needs_review, primary_evidence_id,
@@ -259,7 +261,7 @@ class SqlPositionRepository(PositionRepository):
                 {order_clause}
                 OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
                 """  # nosec B608
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
         return [_row_to_position(row) for row in rows]
@@ -289,7 +291,7 @@ class SqlPositionRepository(PositionRepository):
             return []
         placeholders = ",".join("?" * len(aisle_ids))
         # IN clause: placeholders only; aisle_ids bound as parameters.
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"""
                 SELECT id, aisle_id, status, confidence, needs_review, primary_evidence_id,

@@ -23,6 +23,7 @@ from src.application.ports.capture_repositories import (
 )
 from src.application.ports.clock import Clock
 from src.application.ports.code_scan_repository import CodeScanRepository
+from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -54,6 +55,12 @@ from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
 )
 from src.config import AppSettings
 from src.database.sqlserver import SqlServerClient
+from src.infrastructure.persistence.memory_job_result_unit_of_work import (
+    MemoryJobResultUnitOfWorkFactory,
+)
+from src.infrastructure.persistence.sql_job_result_unit_of_work import (
+    SqlJobResultUnitOfWorkFactory,
+)
 from src.runtime.container.analytics_builders import build_analytics_repository
 from src.runtime.container.capture_session_builders import (
     build_capture_session_confirm_repository,
@@ -540,6 +547,12 @@ class AppContainer:
             product_record_repo=self.get_product_record_repo(),
             position_repo=self.get_position_repo(),
         )
+
+    def get_job_result_uow_factory(self) -> JobResultUnitOfWorkFactory:
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            return SqlJobResultUnitOfWorkFactory(self._get_v3_sql_client())
+        return MemoryJobResultUnitOfWorkFactory()
 
     def get_list_supplier_prompt_configs_use_case(self) -> ListSupplierPromptConfigsUseCase:
         return build_list_supplier_prompt_configs_use_case(

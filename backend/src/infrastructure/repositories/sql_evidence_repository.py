@@ -11,6 +11,7 @@ from typing import Any
 
 from src.application.ports.repositories import EvidenceRepository
 from src.database.sqlserver import SqlServerClient
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.domain.evidence.entities import Evidence, EvidenceType
 from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_for_row
@@ -83,15 +84,16 @@ def _row_to_evidence(row) -> Evidence:
 
 
 class SqlEvidenceRepository(EvidenceRepository):
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
 
     def save(self, evidence: Evidence) -> None:
         bbox_str = (
             json.dumps(evidence.bbox_json, ensure_ascii=False) if evidence.bbox_json else None
         )
         source_asset_id = evidence.source_asset_id  # None stored as NULL
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 UPDATE evidences
@@ -152,7 +154,7 @@ class SqlEvidenceRepository(EvidenceRepository):
                 )
 
     def get_by_id(self, evidence_id: str) -> Evidence | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 SELECT id, entity_type, entity_id, type, storage_path, source_asset_id, is_primary,
@@ -168,7 +170,7 @@ class SqlEvidenceRepository(EvidenceRepository):
         return _row_to_evidence(row)
 
     def list_by_entity(self, entity_type: str, entity_id: str) -> Sequence[Evidence]:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 SELECT id, entity_type, entity_id, type, storage_path, source_asset_id, is_primary,

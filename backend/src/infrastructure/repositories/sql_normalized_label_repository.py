@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from src.application.ports.repositories import LabelJobScope, NormalizedLabelRepository
 from src.database.sqlserver import SqlServerClient
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.domain.labels.entities import NormalizedLabel
 
 
@@ -91,13 +92,14 @@ def _row_to_normalized_label(row) -> NormalizedLabel:
 
 
 class SqlNormalizedLabelRepository(NormalizedLabelRepository):
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
 
     def save_many(self, labels: list[NormalizedLabel]) -> None:
         if not labels:
             return
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             for lb in labels:
                 created = _ensure_utc(lb.created_at)
                 if created is None:
@@ -175,7 +177,7 @@ class SqlNormalizedLabelRepository(NormalizedLabelRepository):
     ) -> Sequence[NormalizedLabel]:
         extra_sql, extra_params = _sql_job_predicate(job_id)
         # extra_sql from _sql_job_predicate only (see module helper).
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"""
                 SELECT
@@ -199,7 +201,7 @@ class SqlNormalizedLabelRepository(NormalizedLabelRepository):
         job_id: LabelJobScope = "all",
     ) -> None:
         extra_sql, extra_params = _sql_job_predicate(job_id)
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"DELETE FROM normalized_labels WHERE inventory_id = ? AND aisle_id = ?{extra_sql}",  # nosec B608
                 (inventory_id, aisle_id, *extra_params),

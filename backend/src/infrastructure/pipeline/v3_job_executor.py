@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.application.ports.clock import Clock
+from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.repositories import (
     AisleRepository,
     ClientSupplierRepository,
@@ -195,6 +196,7 @@ class V3JobExecutor:
         artifact_store=None,
         raw_label_repo: RawLabelRepository | None = None,
         recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
+        job_result_uow_factory: JobResultUnitOfWorkFactory | None = None,
         client_supplier_repo: ClientSupplierRepository | None = None,
         supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None,
     ) -> None:
@@ -241,6 +243,7 @@ class V3JobExecutor:
             aisle_repo=aisle_repo,
             raw_label_repo=raw_label_repo,
             recompute_consolidated_uc=recompute_consolidated_uc,
+            job_result_uow_factory=job_result_uow_factory,
         )
         self._heartbeat_interval_sec = 10
 

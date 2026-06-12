@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from src.application.ports.repositories import FinalCountRepository, LabelJobScope
 from src.database.sqlserver import SqlServerClient
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.domain.labels.entities import FinalCountRecord
 
 
@@ -61,13 +62,14 @@ def _row_to_final_count(row) -> FinalCountRecord:
 
 
 class SqlFinalCountRepository(FinalCountRepository):
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
 
     def save_many(self, records: Sequence[FinalCountRecord]) -> None:
         if not records:
             return
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             for rec in records:
                 created = _ensure_utc(rec.created_at)
                 if created is None:
@@ -150,7 +152,7 @@ class SqlFinalCountRepository(FinalCountRepository):
     ) -> Sequence[FinalCountRecord]:
         extra_sql, extra_params = _sql_job_predicate(job_id)
         # extra_sql is only "", " AND job_id IS NULL", or " AND job_id = ?" (_sql_job_predicate).
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"""
                 SELECT
@@ -177,7 +179,7 @@ class SqlFinalCountRepository(FinalCountRepository):
         return [_row_to_final_count(row) for row in rows]
 
     def list_by_position(self, position_id: str) -> Sequence[FinalCountRecord]:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 SELECT
@@ -211,7 +213,7 @@ class SqlFinalCountRepository(FinalCountRepository):
         job_id: LabelJobScope = "all",
     ) -> None:
         extra_sql, extra_params = _sql_job_predicate(job_id)
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"DELETE FROM final_count_records WHERE inventory_id = ? AND aisle_id = ?{extra_sql}",  # nosec B608
                 (inventory_id, aisle_id, *extra_params),

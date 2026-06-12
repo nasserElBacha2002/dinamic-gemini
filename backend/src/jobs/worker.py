@@ -68,6 +68,7 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             get_evidence_repo,
             get_inventory_repo,
             get_job_repo,
+            get_job_result_uow_factory,
             get_position_repo,
             get_product_record_repo,
             get_raw_label_repo,
@@ -121,6 +122,7 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             artifact_store=get_artifact_store(),
             raw_label_repo=get_raw_label_repo(),
             recompute_consolidated_uc=get_recompute_consolidated_counts_use_case(),
+            job_result_uow_factory=get_job_result_uow_factory(),
             client_supplier_repo=get_client_supplier_repo(),
             supplier_prompt_config_repo=get_supplier_prompt_config_repo(),
         )

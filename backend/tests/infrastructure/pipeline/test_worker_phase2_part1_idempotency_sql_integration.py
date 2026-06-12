@@ -14,6 +14,7 @@ from src.application.use_cases.pipeline.persist_aisle_result import (
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.infrastructure.persistence.sql_job_result_unit_of_work import SqlJobResultUnitOfWorkFactory
 from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
     default_map_hybrid_report_to_domain,
 )
@@ -60,13 +61,10 @@ def sql_client_or_skip():
     return sql_server_client_or_skip(resolve_sqlserver_connection_config().connection_string)
 
 
-def test_p2_t001_sql_positions_same_job_identical_persist_duplicates_rows(
+def test_p2_t001_sql_positions_same_job_identical_persist_is_idempotent(
     sql_client_or_skip,
 ) -> None:
-    """P2-T001-SQL-POSITIONS: SQL position rows duplicate on identical re-persist (NON_IDEMPOTENT).
-
-    Products and evidence are SQL-backed in this test but raw/normalized/final use memory repos.
-    """
+    """P2-T001-SQL-POSITIONS: SQL position rows stay stable on identical re-persist after Part 2."""
     client = sql_client_or_skip
     now = datetime.now(timezone.utc)
     suffix = uuid4().hex[:12]
@@ -100,6 +98,7 @@ def test_p2_t001_sql_positions_same_job_identical_persist_duplicates_rows(
                 product_repo=prod_repo,
                 position_repo=pos_repo,
             ),
+            job_result_uow_factory=SqlJobResultUnitOfWorkFactory(client),
         )
         report = make_two_entity_hybrid_report()
         cmd = PersistAisleResultCommand(
@@ -116,14 +115,12 @@ def test_p2_t001_sql_positions_same_job_identical_persist_duplicates_rows(
 
         persist.execute(cmd)
         after_second = list(pos_repo.list_by_aisle(aisle_id, job_id=job_id))
-        assert len(after_second) == 4
-        dup = duplicate_positions_by_job_entity_uid(after_second)
-        assert dup.get((job_id, "e1")) == 2
-        assert dup.get((job_id, "e2")) == 2
+        assert len(after_second) == 2
+        assert duplicate_positions_by_job_entity_uid(after_second) == {}
 
         persist.execute(cmd)
         after_third = list(pos_repo.list_by_aisle(aisle_id, job_id=job_id))
-        assert len(after_third) == 6
+        assert len(after_third) == 2
     finally:
         cleanup_worker_phase1_sql_scope(
             client,
