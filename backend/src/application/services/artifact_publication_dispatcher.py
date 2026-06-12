@@ -53,7 +53,6 @@ from src.domain.jobs.artifact_publication_outbox import (
     ArtifactSourceType,
     ArtifactVerificationLevel,
 )
-from src.domain.jobs.finalization_evidence import FinalizationStage, StageStatus
 from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import stored_artifact_to_dict

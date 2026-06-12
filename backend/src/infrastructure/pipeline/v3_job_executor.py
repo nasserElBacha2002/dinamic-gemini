@@ -78,8 +78,8 @@ from src.application.use_cases.pipeline.recompute_consolidated_counts import (
 )
 from src.config import Settings, load_settings
 from src.domain.aisle.entities import Aisle
-from src.domain.jobs.entities import Job, JobStatus
 from src.domain.jobs.artifact_policy import is_required_artifact_kind
+from src.domain.jobs.entities import Job, JobStatus
 from src.domain.jobs.finalization import (
     CurrentFinalizationStep,
     FinalizationErrorCode,
