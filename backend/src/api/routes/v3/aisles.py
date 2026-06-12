@@ -26,6 +26,7 @@ from src.api.dependencies import (
     get_export_aisle_business_csv_use_case,
     get_export_aisle_results_csv_use_case,
     get_finalization_assessment_service,
+    get_artifact_publication_outbox_store,
     get_get_aisle_merge_results_use_case,
     get_get_aisle_processing_status_use_case,
     get_job_stale_reconciler,
@@ -521,13 +522,18 @@ def get_aisle_job_detail(
     ),
     stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
     assessment_service: FinalizationAssessmentService = Depends(get_finalization_assessment_service),
+    artifact_publication_outbox=Depends(get_artifact_publication_outbox_store),
 ) -> JobDetailResponse:
     job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
     reconciled = stale_reconciler.reconcile(job)
     if reconciled is None:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND)
     assessment = assessment_service.assess(reconciled.id)
-    return job_to_detail(reconciled, finalization_assessment=assessment)
+    return job_to_detail(
+        reconciled,
+        finalization_assessment=assessment,
+        artifact_publication_outbox=artifact_publication_outbox,
+    )
 
 
 @router.get(

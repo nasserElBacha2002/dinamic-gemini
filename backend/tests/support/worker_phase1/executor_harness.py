@@ -47,6 +47,9 @@ from src.infrastructure.persistence.memory_operational_job_promotion_repository 
 from src.infrastructure.persistence.memory_artifact_manifest_store import (
     MemoryArtifactManifestStore,
 )
+from src.infrastructure.persistence.memory_artifact_publication_outbox_store import (
+    MemoryArtifactPublicationOutboxStore,
+)
 from src.infrastructure.persistence.memory_finalization_stage_store import (
     MemoryFinalizationStageStore,
 )
@@ -172,6 +175,7 @@ class ExecutorHarness:
     recompute_uc: RecomputeConsolidatedCountsUseCase | None = None
     stage_store: MemoryFinalizationStageStore | None = None
     manifest_store: MemoryArtifactManifestStore | None = None
+    outbox_store: MemoryArtifactPublicationOutboxStore | None = None
     pipeline_invocations: int = field(default=0, init=False)
 
     @classmethod
@@ -289,6 +293,7 @@ class ExecutorHarness:
 
         stage_store = MemoryFinalizationStageStore()
         manifest_store = MemoryArtifactManifestStore()
+        outbox_store = MemoryArtifactPublicationOutboxStore()
 
         return cls(
             base_path=tmp_path,
@@ -310,6 +315,7 @@ class ExecutorHarness:
             recompute_uc=recompute_uc,
             stage_store=stage_store,
             manifest_store=manifest_store,
+            outbox_store=outbox_store,
         )
 
     def make_executor(self, **kwargs: Any) -> V3JobExecutor:
@@ -352,6 +358,9 @@ class ExecutorHarness:
             operational_promotion_service=promotion_svc,
             finalization_stage_store=kwargs.get("finalization_stage_store", self.stage_store),
             artifact_manifest_store=kwargs.get("artifact_manifest_store", self.manifest_store),
+            artifact_publication_outbox_store=kwargs.get(
+                "artifact_publication_outbox_store", self.outbox_store
+            ),
         )
 
     def seed_run_dir(self, report: dict[str, Any] | None = None) -> Path:

@@ -15,6 +15,7 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from src.application.ports.artifact_manifest_store import ArtifactManifestStore
+from src.application.ports.artifact_publication_outbox_store import ArtifactPublicationOutboxStore
 from src.application.ports.finalization_stage_store import FinalizationStageStore
 from src.application.ports.capture_repositories import (
     CaptureSessionConfirmIdempotencyRepository,
@@ -77,6 +78,9 @@ from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
 from src.config import AppSettings
 from src.database.sqlserver import SqlServerClient
 from src.infrastructure.persistence.memory_artifact_manifest_store import MemoryArtifactManifestStore
+from src.infrastructure.persistence.memory_artifact_publication_outbox_store import (
+    MemoryArtifactPublicationOutboxStore,
+)
 from src.infrastructure.persistence.memory_finalization_recovery_store import (
     MemoryFinalizationRecoveryStore,
 )
@@ -84,6 +88,9 @@ from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWorkFactory,
 )
 from src.infrastructure.persistence.sql_artifact_manifest_store import SqlArtifactManifestStore
+from src.infrastructure.persistence.sql_artifact_publication_outbox_store import (
+    SqlArtifactPublicationOutboxStore,
+)
 from src.infrastructure.persistence.sql_finalization_recovery_store import (
     SqlFinalizationRecoveryStore,
 )
@@ -213,6 +220,7 @@ class AppContainer:
         self._stored_artifact_reader: StoredArtifactReader | None = None
         self._finalization_stage_store: FinalizationStageStore | None = None
         self._artifact_manifest_store: ArtifactManifestStore | None = None
+        self._artifact_publication_outbox_store: ArtifactPublicationOutboxStore | None = None
         self._finalization_recovery_store = None
         self._repository_backend_resolution: RepositoryBackendResolution | None = None
 
@@ -606,6 +614,18 @@ class AppContainer:
         else:
             self._artifact_manifest_store = MemoryArtifactManifestStore()
         return self._artifact_manifest_store
+
+    def get_artifact_publication_outbox_store(self) -> ArtifactPublicationOutboxStore:
+        if self._artifact_publication_outbox_store is not None:
+            return self._artifact_publication_outbox_store
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._artifact_publication_outbox_store = SqlArtifactPublicationOutboxStore(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._artifact_publication_outbox_store = MemoryArtifactPublicationOutboxStore()
+        return self._artifact_publication_outbox_store
 
     def get_finalization_assessment_service(self) -> FinalizationAssessmentService:
         return FinalizationAssessmentService(

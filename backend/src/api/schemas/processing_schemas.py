@@ -156,6 +156,27 @@ class FinalizationAssessmentBlock(BaseModel):
     stages: dict[str, FinalizationStageAssessmentItem] = Field(default_factory=dict)
 
 
+class ArtifactPublicationItemResponse(BaseModel):
+    artifact_kind: str
+    required: bool
+    status: str
+    attempt_count: int = 0
+    max_attempts: int = 5
+    next_attempt_at: Optional[datetime] = None
+    last_error_code: Optional[str] = None
+    source_type: Optional[str] = None
+
+
+class ArtifactPublicationBlock(BaseModel):
+    required_total: int = 0
+    required_published: int = 0
+    pending: int = 0
+    retry_scheduled: int = 0
+    permanently_failed: int = 0
+    next_attempt_at: Optional[datetime] = None
+    items: list[ArtifactPublicationItemResponse] = Field(default_factory=list)
+
+
 class JobDetailResponse(JobSummary):
     """Extended job detail for GET .../jobs/{job_id} — finalization timestamps and diagnostics."""
 
@@ -165,6 +186,7 @@ class JobDetailResponse(JobSummary):
     artifacts_published_at: Optional[datetime] = None
     finalization_error_metadata: Optional[dict[str, Any]] = None
     finalization_assessment: Optional[FinalizationAssessmentBlock] = None
+    artifact_publication: Optional[ArtifactPublicationBlock] = None
 
 
 class AisleStatusResponse(BaseModel):

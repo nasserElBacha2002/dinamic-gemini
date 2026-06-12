@@ -66,3 +66,17 @@ Backend: 77 tests in required suites + mapping/stale/auth tests. Frontend: `deri
 - SQL integration tests for lease concurrency require SQL Server in CI
 - Full frontend test matrix (14 cases) partially covered; extend in follow-up
 - Existing stuck jobs with no domain commit must be marked failed manually and retried with a new job id
+
+## Artifact manifest NameError correction (2026-06 follow-up)
+
+After the SQL UoW import fix, domain persistence completes successfully. A second production regression occurred in `SqlArtifactManifestStore`: the module referenced `ArtifactManifestEntry` and `ArtifactManifestStatus` without importing them from `src.domain.jobs.artifact_manifest`.
+
+**Symptom:** `Artifact marker write failed: name 'ArtifactManifestStatus' is not defined` after successful artifact upload.
+
+**Classification:** `FINALIZATION_METADATA_WRITE_FAILED` (domain commit succeeded; metadata write failed).
+
+**Fix:** Added `from src.domain.jobs.artifact_manifest import ArtifactManifestEntry, ArtifactManifestStatus` to `sql_artifact_manifest_store.py`.
+
+**Recovery for affected jobs:** Admin `verify` → `resume` (dry-run first) from `domain_committed_artifacts_missing` — no provider or persistence replay.
+
+**Tests:** `tests/infrastructure/persistence/test_artifact_manifest_runtime_regression.py`

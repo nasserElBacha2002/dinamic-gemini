@@ -376,10 +376,12 @@ def test_p3_3_t10_reconciliation_stage_separation(tmp_path) -> None:
     harness = ExecutorHarness.build(tmp_path, job_status=JobStatus.SUCCEEDED, artifact_store=ArtifactUploadSpy())
     now = harness.now
     for kind in REQUIRED_ARTIFACT_KINDS:
+        storage_key = f"artifacts/{kind}"
+        harness.artifact_store.uploaded_sizes[storage_key] = 10
         harness.manifest_store.mark_published(
             job_id=harness.job_id,
             artifact_kind=kind,
-            storage_key=f"artifacts/{kind}",
+            storage_key=storage_key,
             size_bytes=10,
             content_hash=None,
             required=True,

@@ -159,6 +159,7 @@ from src.runtime.v3_deps import (
     get_evidence_repo,
     get_final_count_repo,
     get_finalization_assessment_service as _get_finalization_assessment_service,
+    get_artifact_publication_outbox_store as _get_artifact_publication_outbox_store,
     get_inventory_repo,
     get_job_repo,
     get_metrics_calculator,
@@ -202,6 +203,10 @@ def get_job_stale_reconciler(
 
 def get_finalization_assessment_service() -> FinalizationAssessmentService:
     return _get_finalization_assessment_service()
+
+
+def get_artifact_publication_outbox_store():
+    return _get_artifact_publication_outbox_store()
 
 
 def get_operational_execution_config_resolver() -> OperationalExecutionConfigResolver:

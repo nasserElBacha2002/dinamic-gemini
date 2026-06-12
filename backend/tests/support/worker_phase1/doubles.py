@@ -201,6 +201,9 @@ class ArtifactUploadSpy(FailingArtifactStore):
     def __init__(self) -> None:
         super().__init__(fail_on_call=10_000)
 
+    def object_exists(self, key: str) -> bool:
+        return key in self.uploaded_sizes
+
 
 @dataclass(frozen=True)
 class SaveAttemptSnapshot:

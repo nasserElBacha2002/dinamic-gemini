@@ -250,3 +250,5 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m compileall src
 ### Production regression follow-up (2026-06)
 
 Missing `SqlJobResultScopeStore` import in `sql_job_result_unit_of_work.py` caused persistence `NameError` and stuck processing UI. Corrected in scoped patch; persistence failure path terminalizes job/aisle via existing executor handler. Details: `audit/phase-3-processing-stuck-and-frontend-alignment.md`.
+
+**Second regression (artifact manifest):** `SqlArtifactManifestStore` used `ArtifactManifestStatus` without import after domain persist succeeded. Fixed by importing from `src.domain.jobs.artifact_manifest`. Failure classified as `FINALIZATION_METADATA_WRITE_FAILED`; recovery via admin `resume` from `domain_committed_artifacts_missing`.

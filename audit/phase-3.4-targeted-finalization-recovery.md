@@ -159,3 +159,7 @@ See `audit/phase-3-processing-stuck-and-frontend-alignment.md` for:
 - Attempt status mapping (`NOT_ELIGIBLE` → `REJECTED`)
 - Admin router auth dependency cleanup
 - Frontend terminal-state derivation and admin recovery panel
+
+## 18. Artifact manifest import regression (2026-06)
+
+After SQL UoW correction, domain persistence completes but SQL artifact manifest store raised `NameError` on `ArtifactManifestStatus` during `record_artifact_manifest`. Import added to `sql_artifact_manifest_store.py`. Affected jobs recover via admin `resume` without provider re-execution. See `audit/phase-3-processing-stuck-and-frontend-alignment.md`.

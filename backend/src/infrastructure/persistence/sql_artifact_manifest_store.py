@@ -8,6 +8,7 @@ from typing import Any
 
 from src.application.ports.artifact_manifest_store import ArtifactManifestConcurrencyError
 from src.database.sqlserver import SqlServerClient
+from src.domain.jobs.artifact_manifest import ArtifactManifestEntry, ArtifactManifestStatus
 from src.domain.jobs.artifact_policy import ALL_EXPECTED_ARTIFACT_KINDS, REQUIRED_ARTIFACT_KINDS
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
