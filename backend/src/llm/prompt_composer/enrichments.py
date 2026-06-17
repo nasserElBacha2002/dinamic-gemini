@@ -8,7 +8,12 @@ keeps enrichment policy at the request-building layer.
 
 from __future__ import annotations
 
-from src.domain.execution_image_manifest import EVIDENCE_RETURN_IDENTIFIER_FIELD, ExecutionImageManifest, ExecutionImageRole
+from src.domain.execution_image_manifest import (
+    EVIDENCE_RETURN_IDENTIFIER_FIELD,
+    LEGACY_EVIDENCE_RETURN_FIELD,
+    ExecutionImageManifest,
+    ExecutionImageRole,
+)
 from src.jobs.image_identity import JobImage
 
 # Traceability id for Phase 6 metadata (when ``enrich_prompt_with_image_ids`` applies).
@@ -95,10 +100,14 @@ def enrich_prompt_with_image_id_strings(
 
 _MANIFEST_TRACEABILITY_INSTRUCTION: str = """
 
-TRACEABILITY (Phase 4.3): Only PRIMARY EVIDENCE images may be returned as {field}.
+TRACEABILITY (Phase 4.4): Only PRIMARY EVIDENCE images may be returned as {field}.
 REFERENCE images are classification context only — never use them as evidence.
-Return the exact {field} from the PRIMARY EVIDENCE section for each result.
-""".format(field=EVIDENCE_RETURN_IDENTIFIER_FIELD)
+Return the exact {field} from the PRIMARY EVIDENCE section for each result (e.g. IMG_001).
+Legacy {legacy_field} is accepted for compatibility but {field} is preferred.
+""".format(
+    field=EVIDENCE_RETURN_IDENTIFIER_FIELD,
+    legacy_field=LEGACY_EVIDENCE_RETURN_FIELD,
+)
 
 
 def enrich_prompt_with_execution_manifest(

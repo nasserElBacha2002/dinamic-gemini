@@ -16,8 +16,10 @@ from typing import Any
 MANIFEST_VERSION = 1
 COMPOSITION_KEY_EXECUTION_IMAGE_MANIFEST = "execution_image_manifest"
 
-# Canonical provider-return field for evidence (stable source asset ID, not manifest_entry_id).
-EVIDENCE_RETURN_IDENTIFIER_FIELD = "source_image_id"
+# Canonical provider-return field for evidence (model-facing manifest entry ID).
+EVIDENCE_RETURN_IDENTIFIER_FIELD = "manifest_entry_id"
+# Compatibility-only legacy field accepted from model responses when manifest_entry_id absent.
+LEGACY_EVIDENCE_RETURN_FIELD = "source_image_id"
 
 
 class ExecutionImageManifestError(ValueError):
@@ -150,6 +152,27 @@ class ExecutionImageManifest:
 
     def primary_manifest_entry_ids(self) -> tuple[str, ...]:
         return tuple(e.manifest_entry_id for e in self.primary_entries())
+
+    def entry_by_manifest_id(self) -> dict[str, ExecutionImageEntry]:
+        return {e.manifest_entry_id: e for e in self.ordered_entries()}
+
+    def resolve_source_image_id(self, evidence_id: str) -> str | None:
+        """Map manifest_entry_id or source_image_id to canonical source_image_id."""
+        key = (evidence_id or "").strip()
+        if not key:
+            return None
+        for entry in self.ordered_entries():
+            if key == entry.manifest_entry_id or key == entry.source_image_id:
+                return entry.source_image_id
+        return None
+
+    def is_reference_manifest_entry_id(self, evidence_id: str) -> bool:
+        key = (evidence_id or "").strip().upper()
+        return key.startswith("REF_")
+
+    def is_primary_manifest_entry_id(self, evidence_id: str) -> bool:
+        key = (evidence_id or "").strip().upper()
+        return key.startswith("IMG_")
 
     def excluded_source_image_ids(self) -> frozenset[str]:
         return frozenset(e.source_image_id for e in self.excluded_entries)

@@ -24,8 +24,11 @@ from src.llm.types import ContextImageSequence
 from src.llm.vision_multimodal_payload import (
     LLM_METADATA_KEY_MULTIMODAL_ORDER,
     LLM_METADATA_KEY_REFERENCE_IMAGE_IDS,
+    build_gemini_contents_from_serialized,
     build_gemini_interleaved_contents,
+    resolve_serialized_payload_for_adapter,
 )
+from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
 from src.models.schemas import GlobalEntityResponseV21
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
@@ -94,14 +97,29 @@ class GeminiGlobalAnalyzer:
                 ref_ids = [str(x) for x in raw_ref]
         frefs = list(frame_refs or [])
 
-        gemini_contents, multimodal_order = build_gemini_interleaved_contents(
-            main_prompt_text=prompt,
-            context_images=refs,
-            reference_image_ids=ref_ids,
-            primary_pil_images=primary_images,
-            frame_refs=frefs,
-            request_metadata=request_metadata,
-        )
+        try:
+            serialized = resolve_serialized_payload_for_adapter(
+                request_metadata,
+                job_id=None,
+                provider="gemini",
+            )
+        except ProviderImageExecutionError:
+            raise
+
+        if serialized is not None:
+            gemini_contents, multimodal_order = build_gemini_contents_from_serialized(
+                main_prompt_text=prompt,
+                serialized=serialized,
+            )
+        else:
+            gemini_contents, multimodal_order = build_gemini_interleaved_contents(
+                main_prompt_text=prompt,
+                context_images=refs,
+                reference_image_ids=ref_ids,
+                primary_pil_images=primary_images,
+                frame_refs=frefs,
+                request_metadata=request_metadata,
+            )
         if request_metadata is not None:
             request_metadata[LLM_METADATA_KEY_MULTIMODAL_ORDER] = multimodal_order
 

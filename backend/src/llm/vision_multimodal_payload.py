@@ -361,3 +361,172 @@ def traceability_metadata_payload(
         LLM_METADATA_KEY_REFERENCE_IMAGE_IDS: list(reference_image_ids),
         LLM_METADATA_KEY_MULTIMODAL_ORDER: list(multimodal_order),
     }
+
+
+def _append_serialized_image_pair(
+    *,
+    image_entry: Any,
+    label_text: str,
+    content_out: list[Any],
+    order: list[dict[str, Any]],
+    content_index: int,
+    is_primary_ndarray: bool,
+) -> int:
+    """Append label + image placeholder; return next content index."""
+    from src.pipeline.services.provider_payload_serialization import SerializedImagePayloadEntry
+
+    entry: SerializedImagePayloadEntry = image_entry
+    content_out.append({"type": "text", "text": label_text})
+    _append_order_entry(
+        order,
+        index=content_index,
+        role="text",
+        kind="reference_image_label" if entry.role.value == "reference_image" else "primary_image_label",
+        manifest_entry_id=entry.manifest_entry_id,
+        source_image_id=entry.source_image_id,
+    )
+    content_index += 1
+    placeholder: dict[str, Any] = {
+        "type": "image_placeholder",
+        "_image": entry.encoded_resource,
+        "_manifest_entry_id": entry.manifest_entry_id,
+    }
+    if is_primary_ndarray:
+        placeholder["_bgr"] = True
+    content_out.append(placeholder)
+    _append_order_entry(
+        order,
+        index=content_index,
+        role="image",
+        kind="reference" if entry.role.value == "reference_image" else "primary_evidence",
+        manifest_entry_id=entry.manifest_entry_id,
+        source_image_id=entry.source_image_id,
+        provider_image_position=entry.provider_image_position,
+    )
+    return content_index + 1
+
+
+def build_openai_vision_from_serialized(
+    *,
+    main_prompt_text: str,
+    serialized: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Phase 4.4 — OpenAI content parts from serialized manifest-ordered images only."""
+    from src.pipeline.services.provider_payload_serialization import (
+        SerializedMultimodalPayload,
+        manifest_entry_label,
+    )
+
+    payload: SerializedMultimodalPayload = serialized
+    content: list[dict[str, Any]] = [{"type": "text", "text": main_prompt_text}]
+    order: list[dict[str, Any]] = []
+    idx = 0
+    _append_order_entry(
+        order, index=idx, role="text", kind="main_prompt", char_len=len(main_prompt_text)
+    )
+    idx += 1
+    for entry in payload.entries:
+        label = manifest_entry_label(entry)
+        is_primary = entry.role.value == "primary_evidence"
+        idx = _append_serialized_image_pair(
+            image_entry=entry,
+            label_text=label,
+            content_out=content,
+            order=order,
+            content_index=idx,
+            is_primary_ndarray=is_primary,
+        )
+    return content, order
+
+
+def build_anthropic_vision_from_serialized(
+    *,
+    main_prompt_text: str,
+    serialized: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Phase 4.4 — Anthropic content blocks from serialized manifest-ordered images."""
+    return build_openai_vision_from_serialized(
+        main_prompt_text=main_prompt_text,
+        serialized=serialized,
+    )
+
+
+def build_gemini_contents_from_serialized(
+    *,
+    main_prompt_text: str,
+    serialized: Any,
+) -> tuple[list[Any], list[dict[str, Any]]]:
+    """Phase 4.4 — Gemini interleaved contents from serialized manifest-ordered images."""
+    from src.pipeline.services.provider_payload_serialization import (
+        SerializedMultimodalPayload,
+        manifest_entry_label,
+    )
+
+    payload: SerializedMultimodalPayload = serialized
+    contents: list[Any] = [main_prompt_text]
+    order: list[dict[str, Any]] = []
+    idx = 0
+    _append_order_entry(
+        order, index=idx, role="text", kind="main_prompt", char_len=len(main_prompt_text)
+    )
+    idx += 1
+    for entry in payload.entries:
+        contents.append(manifest_entry_label(entry))
+        _append_order_entry(
+            order,
+            index=idx,
+            role="text",
+            kind="reference_image_label"
+            if entry.role.value == "reference_image"
+            else "primary_image_label",
+            manifest_entry_id=entry.manifest_entry_id,
+            source_image_id=entry.source_image_id,
+        )
+        idx += 1
+        contents.append(entry.encoded_resource)
+        _append_order_entry(
+            order,
+            index=idx,
+            role="image",
+            kind="reference" if entry.role.value == "reference_image" else "primary_evidence",
+            manifest_entry_id=entry.manifest_entry_id,
+            source_image_id=entry.source_image_id,
+            provider_image_position=entry.provider_image_position,
+        )
+        idx += 1
+    return contents, order
+
+
+def resolve_serialized_payload_for_adapter(
+    metadata: dict[str, Any] | None,
+    *,
+    job_id: str | None = None,
+    provider: str | None = None,
+) -> Any | None:
+    """
+    Return pre-serialized payload from metadata or serialize from attached provider request.
+
+    Raises ``ProviderImageExecutionError`` on manifest parity failure.
+    """
+    if not metadata:
+        return None
+    cached = metadata.get("_serialized_multimodal_payload")
+    if cached is not None:
+        return cached
+    provider_req = metadata.get("_provider_execution_request_object")
+    if provider_req is None:
+        return None
+    from src.pipeline.services.provider_payload_serialization import serialize_provider_images
+
+    serialized = serialize_provider_images(
+        provider_req,
+        job_id=job_id,
+        provider=provider,
+    )
+    metadata["_serialized_multimodal_payload"] = serialized
+    from src.pipeline.services.provider_payload_serialization import (
+        record_provider_image_manifest_order,
+    )
+
+    record_provider_image_manifest_order(metadata, serialized)
+    return serialized

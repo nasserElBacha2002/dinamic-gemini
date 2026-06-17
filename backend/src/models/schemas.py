@@ -102,7 +102,12 @@ class EntityV21(BaseModel):
     has_boxes: bool = Field(..., description="True si hay cajas visibles.")
     confidence: float = Field(..., ge=0, le=1, description="Confianza de la detección en [0,1].")
     source_image_id: str | None = Field(
-        None, description="Epic 3.1.B: image_id of source image for this entity."
+        None,
+        description="Epic 3.1.B / legacy: stable source asset ID (compatibility).",
+    )
+    manifest_entry_id: str | None = Field(
+        None,
+        description="Phase 4.4: canonical evidence ID (IMG_001, IMG_002, …).",
     )
 
 

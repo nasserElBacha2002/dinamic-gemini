@@ -70,9 +70,18 @@ from src.pipeline.services.execution_image_manifest_builder import (
 )
 from src.pipeline.services.execution_image_manifest_payload import (
     bind_provider_payload_from_manifest,
-    multimodal_source_ids_from_payload,
     primary_lookups_from_acquired,
     reference_lookup_from_visual_bundle,
+)
+from src.pipeline.services.provider_execution_bridge import legacy_lists_from_provider_request
+from src.pipeline.services.provider_execution_request import (
+    attach_provider_execution_request,
+    build_provider_execution_request,
+)
+from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
+from src.pipeline.services.provider_payload_serialization import (
+    record_provider_image_manifest_order,
+    serialize_provider_images,
 )
 from src.pipeline.services.hybrid_analysis_prompt import (
     build_hybrid_analysis_prompt_with_traceability,
@@ -259,6 +268,7 @@ class HybridGlobalAnalysisStrategy:
 
         execution_manifest = None
         bound_payload = None
+        provider_execution_request = None
         job_input = getattr(run_ctx, "job_input", None)
         is_photos = job_input and getattr(job_input, "input_type", "") == "photos"
         if is_photos:
@@ -302,6 +312,30 @@ class HybridGlobalAnalysisStrategy:
             execution_manifest=execution_manifest,
         )
 
+        if execution_manifest is not None and bound_payload is not None:
+            try:
+                provider_execution_request = build_provider_execution_request(
+                    job_id=job_id,
+                    prompt=prompt_text,
+                    manifest=execution_manifest,
+                    bound_payload=bound_payload,
+                    schema_version="v2.1",
+                    metadata=metadata,
+                )
+                legacy = legacy_lists_from_provider_request(provider_execution_request)
+                frame_paths = list(legacy.frame_paths)
+                frames_nd = list(legacy.frames_nd)
+                frame_refs = list(legacy.frame_refs)
+                context_images = list(legacy.context_images)
+                resolved_reference_ids = list(legacy.reference_image_ids)
+            except (ProviderImageExecutionError, ExecutionImageManifestError) as exc:
+                logger.error(
+                    "provider_execution_request_invalid job_id=%s error=%s",
+                    job_id,
+                    str(exc),
+                )
+                raise ValueError(str(exc)) from exc
+
         if frames_nd:
             validate_primary_frame_refs(frames_nd, frame_refs)
         sent_ids = list(frame_refs)
@@ -321,13 +355,20 @@ class HybridGlobalAnalysisStrategy:
                 multimodal_order=[],
             ),
         }
-        if execution_manifest is not None and bound_payload is not None:
-            req_meta["manifest_bound_multimodal_order"] = [
-                {"role": role, "source_image_id": sid, "provider_position": pos}
-                for role, sid, pos in multimodal_source_ids_from_payload(bound_payload)
-            ]
-        jm = getattr(run_ctx, "job_model_name", None)
         rk = (resolved_key or "").strip().lower()
+        if provider_execution_request is not None:
+            attach_provider_execution_request(req_meta, provider_execution_request)
+            serialized = serialize_provider_images(
+                provider_execution_request,
+                job_id=job_id,
+                provider=rk,
+            )
+            record_provider_image_manifest_order(req_meta, serialized)
+            req_meta["_serialized_multimodal_payload"] = serialized
+            req_meta[LLM_METADATA_KEY_MULTIMODAL_ORDER] = list(
+                serialized.provider_image_manifest_order
+            )
+        jm = getattr(run_ctx, "job_model_name", None)
         model_for_meta = apply_job_model_name_to_llm_request_metadata(
             resolved_provider_key=rk,
             job_model_name=jm,

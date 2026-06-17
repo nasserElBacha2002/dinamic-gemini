@@ -41,8 +41,11 @@ from src.llm.vision_multimodal_payload import (
     LLM_METADATA_KEY_MULTIMODAL_ORDER,
     LLM_METADATA_KEY_REFERENCE_IMAGE_IDS,
     build_openai_vision_content_parts,
+    build_openai_vision_from_serialized,
     materialize_openai_content_parts,
+    resolve_serialized_payload_for_adapter,
 )
+from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
 logger = logging.getLogger(__name__)
@@ -273,14 +276,32 @@ def _openai_build_user_content(
         [str(x) for x in ref_ids_raw] if isinstance(ref_ids_raw, list) else []
     )
     frame_refs = list(request.frame_refs) if request.frame_refs else []
-    parts, multimodal_order = build_openai_vision_content_parts(
-        main_prompt_text=prompt_text,
-        context_images=ctx_imgs,
-        reference_image_ids=reference_image_ids,
-        primary_frames_nd=frames_nd,
-        frame_refs=frame_refs,
-        request_metadata=meta,
-    )
+    try:
+        serialized = resolve_serialized_payload_for_adapter(
+            meta,
+            job_id=request.job_id,
+            provider=v.logical_provider,
+        )
+    except ProviderImageExecutionError as exc:
+        raise LLMProviderError(
+            code=exc.code,
+            message=exc.message,
+            details=exc.to_details(),
+        ) from exc
+    if serialized is not None:
+        parts, multimodal_order = build_openai_vision_from_serialized(
+            main_prompt_text=prompt_text,
+            serialized=serialized,
+        )
+    else:
+        parts, multimodal_order = build_openai_vision_content_parts(
+            main_prompt_text=prompt_text,
+            context_images=ctx_imgs,
+            reference_image_ids=reference_image_ids,
+            primary_frames_nd=frames_nd,
+            frame_refs=frame_refs,
+            request_metadata=meta,
+        )
     meta[LLM_METADATA_KEY_MULTIMODAL_ORDER] = multimodal_order
     content = materialize_openai_content_parts(
         parts,

@@ -16,6 +16,7 @@ from src.decision.entity_order import sort_entities_deterministically
 from src.decision.pallet_id import resolve_pallet_id
 from src.decision.quality_score import compute_entity_quality_score
 from src.domain.entity import Entity
+from src.domain.manifest_evidence_resolution import normalize_entity_evidence_identifiers
 from src.domain.traceability import (
     apply_traceability_validation,
     extract_reference_image_ids,
@@ -59,6 +60,7 @@ class EntityResolutionStage:
         logger.info("Entidades detectadas (hybrid v2.1): %d", len(entities))
 
         composition = data.prompt_composition or {}
+        normalize_entity_evidence_identifiers(entities, composition=composition)
         provider_metadata = data.provider_metadata or {}
         reference_image_ids = extract_reference_image_ids(
             composition, provider_metadata=provider_metadata

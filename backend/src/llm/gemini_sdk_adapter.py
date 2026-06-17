@@ -18,7 +18,9 @@ from src.exceptions.global_analysis_exceptions import (
     GlobalAnalysisValidationError,
 )
 from src.llm.errors import LLMProviderError
+from src.llm.errors import LLMProviderError
 from src.llm.gemini_client import GeminiClient
+from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
 from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_PARITY_MODE
@@ -115,6 +117,12 @@ class GeminiSdkAdapter:
                 code="UNKNOWN",
                 message=str(e),
                 details={"provider": "gemini"},
+            ) from e
+        except ProviderImageExecutionError as e:
+            raise LLMProviderError(
+                code=e.code,
+                message=e.message,
+                details=e.to_details(),
             ) from e
         except ValueError as e:
             raise LLMProviderError(

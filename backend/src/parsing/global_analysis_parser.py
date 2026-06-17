@@ -9,6 +9,7 @@ import logging
 from typing import Any, Optional
 
 from src.domain.entity import Entity
+from src.domain.manifest_evidence_resolution import extract_raw_evidence_id_from_entity_dict
 from src.domain.pallet import Pallet
 
 logger = logging.getLogger(__name__)
@@ -187,6 +188,8 @@ def parse_entities(data: dict[str, Any], job_id: str = "") -> list[Entity]:
 
         qty = _safe_int(e.get("product_label_quantity"))
 
+        raw_evidence = extract_raw_evidence_id_from_entity_dict(e)
+
         result.append(
             Entity(
                 entity_uid=entity_uid,
@@ -208,7 +211,7 @@ def parse_entities(data: dict[str, Any], job_id: str = "") -> list[Entity]:
                 conflict_reason=None,
                 entity_quality_score=0.0,
                 original_index=i,
-                source_image_id=_safe_str(e.get("source_image_id")),
+                source_image_id=raw_evidence or _safe_str(e.get("source_image_id")),
                 traceability_status=None,
                 traceability_warning=None,
             )
