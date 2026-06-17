@@ -56,9 +56,23 @@ from src.pipeline.ports.analysis_provider import (
     AnalysisResult,
     ProviderCapabilities,
 )
+from src.domain.execution_image_manifest import ExecutionImageManifestError
 from src.pipeline.services.analysis_visual_reference_prep import (
     build_primary_evidence_attachments,
     prepare_visual_reference_inputs,
+)
+from src.pipeline.services.execution_image_manifest_builder import (
+    build_execution_image_manifest,
+    exclusions_from_acquisition_metadata,
+    log_manifest_diagnostics,
+    primary_candidates_from_acquired,
+    reference_candidates_from_visual_bundle,
+)
+from src.pipeline.services.execution_image_manifest_payload import (
+    bind_provider_payload_from_manifest,
+    multimodal_source_ids_from_payload,
+    primary_lookups_from_acquired,
+    reference_lookup_from_visual_bundle,
 )
 from src.pipeline.services.hybrid_analysis_prompt import (
     build_hybrid_analysis_prompt_with_traceability,
@@ -230,17 +244,6 @@ class HybridGlobalAnalysisStrategy:
         executor = resolved_exec.executor
         resolved_key = resolved_exec.normalized_provider_key
 
-        prompt_text, composition_base = build_hybrid_analysis_prompt_with_traceability(
-            run_ctx,
-            sent_frame_refs=frame_refs,
-        )
-        logger.info(
-            "Hybrid analysis prompt built: profile_name=%s hybrid_analysis_prompt=%s job_id=%s",
-            composition_base.get("profile_name"),
-            hybrid_prompt_service.__file__,
-            job_id,
-        )
-
         analysis_context: AnalysisContext | None = resolve_analysis_context_for_run(run_ctx)
         visual_references_available = bool(analysis_context and analysis_context.visual_references)
         vb = _prepare_hybrid_llm_visual_bundle(
@@ -254,20 +257,75 @@ class HybridGlobalAnalysisStrategy:
         resolved_reference_ids = vb.resolved_reference_ids
         consumed_count = vb.consumed_count
 
+        execution_manifest = None
+        bound_payload = None
+        job_input = getattr(run_ctx, "job_input", None)
+        is_photos = job_input and getattr(job_input, "input_type", "") == "photos"
+        if is_photos:
+            try:
+                execution_manifest = build_execution_image_manifest(
+                    job_id=job_id,
+                    primary_candidates=primary_candidates_from_acquired(
+                        frame_paths, frame_refs
+                    ),
+                    reference_candidates=reference_candidates_from_visual_bundle(
+                        analysis_context, resolved_reference_ids
+                    ),
+                    excluded=exclusions_from_acquisition_metadata(metadata),
+                )
+                log_manifest_diagnostics(manifest=execution_manifest, provider=resolved_key)
+            except ExecutionImageManifestError as exc:
+                logger.error(
+                    "execution_image_manifest_invalid job_id=%s error=%s",
+                    job_id,
+                    str(exc),
+                )
+                raise ValueError(str(exc)) from exc
+            path_by, nd_by = primary_lookups_from_acquired(frame_paths, frame_refs, frames_nd)
+            ref_by = reference_lookup_from_visual_bundle(context_images, resolved_reference_ids)
+            bound_payload = bind_provider_payload_from_manifest(
+                execution_manifest,
+                primary_path_by_source_id=path_by,
+                primary_nd_by_source_id=nd_by,
+                reference_image_by_source_id=ref_by,
+            )
+            frame_paths = list(bound_payload.frame_paths)
+            frames_nd = list(bound_payload.frames_nd)
+            frame_refs = list(bound_payload.frame_refs)
+            context_images = list(bound_payload.context_images)
+            resolved_reference_ids = list(bound_payload.reference_image_ids)
+            consumed_count = len(bound_payload.reference_image_ids)
+
+        prompt_text, composition_base = build_hybrid_analysis_prompt_with_traceability(
+            run_ctx,
+            sent_frame_refs=frame_refs if not execution_manifest else None,
+            execution_manifest=execution_manifest,
+        )
+
         if frames_nd:
             validate_primary_frame_refs(frames_nd, frame_refs)
         sent_ids = list(frame_refs)
         prompt_listed = list(composition_base.get("prompt_listed_image_ids") or sent_ids)
+        ref_ids_for_meta = (
+            list(execution_manifest.reference_source_image_ids())
+            if execution_manifest is not None
+            else list(resolved_reference_ids)
+        )
         req_meta: dict[str, Any] = {
             **metadata,
             "run_dir": str(run_ctx.run_dir),
             **traceability_metadata_payload(
                 frames_sent_ids=sent_ids,
                 prompt_listed_image_ids=prompt_listed,
-                reference_image_ids=resolved_reference_ids,
+                reference_image_ids=ref_ids_for_meta,
                 multimodal_order=[],
             ),
         }
+        if execution_manifest is not None and bound_payload is not None:
+            req_meta["manifest_bound_multimodal_order"] = [
+                {"role": role, "source_image_id": sid, "provider_position": pos}
+                for role, sid, pos in multimodal_source_ids_from_payload(bound_payload)
+            ]
         jm = getattr(run_ctx, "job_model_name", None)
         rk = (resolved_key or "").strip().lower()
         model_for_meta = apply_job_model_name_to_llm_request_metadata(
@@ -284,7 +342,7 @@ class HybridGlobalAnalysisStrategy:
             model_name=model_for_meta,
         )
         if resolved_reference_ids:
-            prompt_composition["reference_image_ids"] = list(resolved_reference_ids)
+            prompt_composition["reference_image_ids"] = list(ref_ids_for_meta)
         if prompt_composition.get("final_prompt_text") != prompt_text:
             logger.warning(
                 "prompt_composition final_prompt_text mismatch vs assembled prompt (job_id=%s)",

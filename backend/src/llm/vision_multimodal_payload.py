@@ -21,6 +21,27 @@ MULTIMODAL_ORDER_STATUS_PENDING = "pending_adapter_materialization"
 PRIMARY_FRAME_REFS_MISMATCH = "PRIMARY_FRAME_REFS_MISMATCH"
 
 
+def _validate_provider_lists_against_request_manifest(
+    metadata: dict[str, Any] | None,
+    frame_refs: list[str],
+    reference_image_ids: list[str],
+) -> None:
+    """When request metadata embeds a manifest, adapter lists must match it exactly."""
+    from src.pipeline.services.execution_image_manifest_payload import (
+        manifest_from_request_metadata,
+        validate_provider_lists_against_manifest,
+    )
+
+    manifest = manifest_from_request_metadata(metadata)
+    if manifest is None:
+        return
+    validate_provider_lists_against_manifest(
+        manifest,
+        frame_refs=frame_refs,
+        reference_image_ids=reference_image_ids,
+    )
+
+
 def validate_primary_frame_refs(
     primary_frames_nd: list[Any],
     frame_refs: list[str],
@@ -83,10 +104,14 @@ def build_openai_vision_content_parts(
     reference_image_ids: list[str],
     primary_frames_nd: list[Any],
     frame_refs: list[str],
+    request_metadata: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
     OpenAI Chat Completions user ``content`` parts: main text, then labeled reference and primary pairs.
     """
+    _validate_provider_lists_against_request_manifest(
+        request_metadata, frame_refs, reference_image_ids
+    )
     validate_primary_frame_refs(primary_frames_nd, frame_refs)
     content: list[dict[str, Any]] = [{"type": "text", "text": main_prompt_text}]
     order: list[dict[str, Any]] = []
@@ -172,8 +197,12 @@ def build_anthropic_message_content_parts(
     reference_image_ids: list[str],
     primary_frames_nd: list[Any],
     frame_refs: list[str],
+    request_metadata: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Claude message content: same labeled interleaving as OpenAI (text + image blocks)."""
+    _validate_provider_lists_against_request_manifest(
+        request_metadata, frame_refs, reference_image_ids
+    )
     validate_primary_frame_refs(primary_frames_nd, frame_refs)
     content: list[dict[str, Any]] = [{"type": "text", "text": main_prompt_text}]
     order: list[dict[str, Any]] = []
@@ -257,10 +286,14 @@ def build_gemini_interleaved_contents(
     reference_image_ids: list[str],
     primary_pil_images: list[Any],
     frame_refs: list[str],
+    request_metadata: dict[str, Any] | None = None,
 ) -> tuple[list[Any], list[dict[str, Any]]]:
     """
     Gemini ``contents``: main prompt text first, then labeled reference and primary pairs (PIL images).
     """
+    _validate_provider_lists_against_request_manifest(
+        request_metadata, frame_refs, reference_image_ids
+    )
     validate_primary_frame_refs(primary_pil_images, frame_refs)
     contents: list[Any] = [main_prompt_text]
     order: list[dict[str, Any]] = []

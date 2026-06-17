@@ -341,6 +341,7 @@ def _anthropic_build_message_content(
         reference_image_ids=reference_image_ids,
         primary_frames_nd=frames_nd,
         frame_refs=frame_refs,
+        request_metadata=meta,
     )
     meta[LLM_METADATA_KEY_MULTIMODAL_ORDER] = multimodal_order
     content = materialize_anthropic_content_parts(

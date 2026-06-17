@@ -8,6 +8,7 @@ keeps enrichment policy at the request-building layer.
 
 from __future__ import annotations
 
+from src.domain.execution_image_manifest import EVIDENCE_RETURN_IDENTIFIER_FIELD, ExecutionImageManifest, ExecutionImageRole
 from src.jobs.image_identity import JobImage
 
 # Traceability id for Phase 6 metadata (when ``enrich_prompt_with_image_ids`` applies).
@@ -90,3 +91,38 @@ def enrich_prompt_with_image_id_strings(
         lines.append(f"- {image_id}")
     block = "\n".join(lines)
     return base_prompt.rstrip() + "\n" + block + _TRACEABILITY_INSTRUCTION
+
+
+_MANIFEST_TRACEABILITY_INSTRUCTION: str = """
+
+TRACEABILITY (Phase 4.3): Only PRIMARY EVIDENCE images may be returned as {field}.
+REFERENCE images are classification context only — never use them as evidence.
+Return the exact {field} from the PRIMARY EVIDENCE section for each result.
+""".format(field=EVIDENCE_RETURN_IDENTIFIER_FIELD)
+
+
+def enrich_prompt_with_execution_manifest(
+    base_prompt: str,
+    manifest: ExecutionImageManifest,
+) -> str:
+    """Append canonical manifest sections for model-facing image identity (Phase 4.3)."""
+    primary_lines: list[str] = []
+    reference_lines: list[str] = []
+    for entry in manifest.ordered_entries():
+        fname = f", filename={entry.original_filename!r}" if entry.original_filename else ""
+        line = (
+            f"- {entry.manifest_entry_id} "
+            f"(source_image_id={entry.source_image_id!r}{fname})"
+        )
+        if entry.role == ExecutionImageRole.PRIMARY_EVIDENCE:
+            primary_lines.append(line)
+        else:
+            reference_lines.append(line)
+
+    sections = ["\n\nPRIMARY EVIDENCE IMAGES"]
+    sections.extend(primary_lines or ["- (none)"])
+    if reference_lines:
+        sections.append("\nREFERENCE IMAGES (classification context only)")
+        sections.extend(reference_lines)
+    block = "\n".join(sections)
+    return base_prompt.rstrip() + "\n" + block + _MANIFEST_TRACEABILITY_INSTRUCTION

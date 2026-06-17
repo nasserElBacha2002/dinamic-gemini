@@ -79,10 +79,26 @@ def is_traceability_evidence_displayable(
 def extract_sent_image_ids_from_composition(
     composition: dict[str, Any] | None,
 ) -> frozenset[str] | None:
-    """Return final sent primary IDs from ``frames_sent_ids`` only, or None when unavailable.
+    """Return final sent primary IDs from canonical manifest or derived ``frames_sent_ids``.
 
     ``prompt_listed_image_ids`` is diagnostic only and must never authorize VALID traceability.
+    When a serialized manifest key is present but invalid, fail closed (no legacy fallback).
     """
+    from src.domain.execution_image_manifest import (
+        ExecutionImageManifestError,
+        composition_has_execution_image_manifest,
+        require_manifest_from_composition,
+    )
+
+    if composition_has_execution_image_manifest(composition):
+        try:
+            manifest = require_manifest_from_composition(composition)
+        except ExecutionImageManifestError:
+            return None
+        if manifest is None:
+            return None
+        ids = manifest.primary_source_image_ids()
+        return frozenset(ids) if ids else None
     if not composition:
         return None
     sent_raw = composition.get("frames_sent_ids")
@@ -116,7 +132,20 @@ def extract_reference_image_ids(
     *,
     provider_metadata: dict[str, Any] | None = None,
 ) -> frozenset[str]:
-    """Collect supplier/reference image IDs from composition or provider metadata."""
+    """Collect supplier/reference image IDs from manifest, composition, or provider metadata."""
+    from src.domain.execution_image_manifest import (
+        ExecutionImageManifestError,
+        composition_has_execution_image_manifest,
+        require_manifest_from_composition,
+    )
+
+    if composition_has_execution_image_manifest(composition):
+        try:
+            manifest = require_manifest_from_composition(composition)
+        except ExecutionImageManifestError:
+            return frozenset()
+        if manifest is not None:
+            return frozenset(manifest.reference_source_image_ids())
     refs: set[str] = set()
     if composition:
         raw = composition.get("reference_image_ids")

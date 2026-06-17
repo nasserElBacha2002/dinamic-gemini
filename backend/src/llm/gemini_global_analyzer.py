@@ -100,6 +100,7 @@ class GeminiGlobalAnalyzer:
             reference_image_ids=ref_ids,
             primary_pil_images=primary_images,
             frame_refs=frefs,
+            request_metadata=request_metadata,
         )
         if request_metadata is not None:
             request_metadata[LLM_METADATA_KEY_MULTIMODAL_ORDER] = multimodal_order

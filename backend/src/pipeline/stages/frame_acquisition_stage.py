@@ -113,6 +113,17 @@ class FrameAcquisitionStage:
             max_load = HYBRID_MAX_FRAMES_LOAD_CAP
         frames_to_load = bundle.frames[: int(max_load)]
         refs = bundle.frame_refs or []
+        manifest_exclusions: list[dict[str, Any]] = []
+        for i in range(int(max_load), len(bundle.frames)):
+            ref = refs[i] if i < len(refs) else f"frame_{i}"
+            manifest_exclusions.append(
+                {
+                    "source_image_id": ref,
+                    "source_asset_id": ref,
+                    "reason": "frame_cap",
+                    "original_filename": bundle.frames[i].name if i < len(bundle.frames) else None,
+                }
+            )
         bundle_indices: list[int] | None = None
         if isinstance(bundle.metadata.get("frame_indices"), list):
             bundle_indices = bundle.metadata["frame_indices"]
@@ -160,6 +171,15 @@ class FrameAcquisitionStage:
                     details=file_details,
                     level="error",
                 )
+                ref = refs[i] if i < len(refs) else f"frame_{i}"
+                manifest_exclusions.append(
+                    {
+                        "source_image_id": ref,
+                        "source_asset_id": ref,
+                        "reason": "missing_storage_object",
+                        "original_filename": p.name,
+                    }
+                )
                 continue
             self._emit_substep(
                 context,
@@ -201,6 +221,16 @@ class FrameAcquisitionStage:
                 details=decode_details,
                 level="info" if img is not None else "error",
             )
+            if img is None:
+                ref = refs[i] if i < len(refs) else f"frame_{i}"
+                manifest_exclusions.append(
+                    {
+                        "source_image_id": ref,
+                        "source_asset_id": ref,
+                        "reason": "decode_failed",
+                        "original_filename": p.name,
+                    }
+                )
             if img is not None:
                 self._emit_substep(
                     context,
@@ -232,6 +262,8 @@ class FrameAcquisitionStage:
 
         metadata = {**bundle.metadata, "frame_count": len(loaded_frames_nd)}
         metadata["frame_indices"] = loaded_frame_indices
+        if manifest_exclusions:
+            metadata["manifest_exclusions"] = manifest_exclusions
 
         self._emit_substep(
             context,

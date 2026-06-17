@@ -160,6 +160,37 @@ def test_malformed_frames_sent_ids_returns_none() -> None:
     assert extract_sent_image_ids_from_composition({"frames_sent_ids": {}}) is None
 
 
+def test_extract_sent_ids_prefers_canonical_manifest_over_prompt_listed() -> None:
+    composition = {
+        "prompt_listed_image_ids": ["IMG_001"],
+        "execution_image_manifest": {
+            "job_id": "job-1",
+            "version": 1,
+            "entries": [
+                {
+                    "manifest_entry_id": "IMG_001",
+                    "source_asset_id": "asset-1",
+                    "source_image_id": "asset-1",
+                    "role": "primary_evidence",
+                    "payload_ordinal": 1,
+                    "storage_reference": "a.jpg",
+                }
+            ],
+            "excluded_entries": [],
+        },
+    }
+    assert extract_sent_image_ids_from_composition(composition) == frozenset({"asset-1"})
+
+
+def test_corrupt_manifest_key_fails_closed_no_frames_sent_fallback() -> None:
+    composition = {
+        "execution_image_manifest": {"job_id": "job-1", "version": 99, "entries": []},
+        "frames_sent_ids": ["asset-1"],
+        "prompt_listed_image_ids": ["IMG_001"],
+    }
+    assert extract_sent_image_ids_from_composition(composition) is None
+
+
 def test_resolve_has_valid_evidence_fail_closed_matrix() -> None:
     assert resolve_has_valid_evidence_displayable(
         traceability_status=TRACEABILITY_VALID,

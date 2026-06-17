@@ -109,11 +109,16 @@ def test_hybrid_strategy_propagates_sent_frame_ids_to_entity_resolution(
 
     req = captured["request"]
     assert req.metadata[LLM_METADATA_KEY_FRAMES_SENT_IDS] == sent_refs
-    assert req.metadata[LLM_METADATA_KEY_PROMPT_LISTED_IMAGE_IDS] == sent_refs
+    listed = req.metadata[LLM_METADATA_KEY_PROMPT_LISTED_IMAGE_IDS]
+    assert listed[:3] == ["IMG_001", "IMG_002", "IMG_003"]
+    assert len(listed) == len(sent_refs)
     pc = req.metadata[LLM_METADATA_KEY_PROMPT_COMPOSITION]
     assert pc["frames_sent_ids"] == sent_refs
-    assert pc["prompt_listed_image_ids"] == sent_refs
-    assert "img_048" in req.prompt
+    assert pc["prompt_listed_image_ids"][:3] == ["IMG_001", "IMG_002", "IMG_003"]
+    assert pc.get("execution_image_manifest") is not None
+    assert "manifest_bound_multimodal_order" in req.metadata
+    assert "IMG_048" in req.prompt
+    assert "source_image_id='img_048'" in req.prompt
     assert "img_050" not in req.prompt
     assert "img_080" not in req.prompt
 
