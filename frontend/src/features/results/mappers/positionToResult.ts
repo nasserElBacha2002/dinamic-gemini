@@ -19,6 +19,7 @@ import type {
   ReviewStatus,
   TraceabilityStatus,
 } from '../types';
+import { isEvidenceDisplayable } from '../utils/evidenceEligibility';
 
 /** Backend traceability is lowercase; visible model uses uppercase.
  * Unknown/missing → UNVALIDATED (document-only fallback: backend sends valid|missing|invalid|unvalidated). */
@@ -95,6 +96,10 @@ export function mapPositionSummaryToResultSummary(
   const traceabilityStatus = mapTraceabilityToVisible(
     p.traceability?.status ?? p.traceability_status
   );
+  const hasValidEvidence =
+    typeof p.traceability?.has_valid_evidence === 'boolean'
+      ? p.traceability.has_valid_evidence
+      : isEvidenceDisplayable(traceabilityStatus, false, p.traceability?.source_image_id);
 
   return {
     id: p.id,
@@ -116,6 +121,7 @@ export function mapPositionSummaryToResultSummary(
     needsReview: p.needs_review,
     updatedAt: p.updated_at,
     hasEvidence,
+    hasValidEvidence,
   };
 }
 
@@ -204,8 +210,16 @@ export function mapPositionDetailToResultDetail(
   const traceabilityStatus = mapTraceabilityToVisible(
     position.traceability?.status ?? position.traceability_status
   );
+  const hasValidEvidence =
+    typeof position.traceability?.has_valid_evidence === 'boolean'
+      ? position.traceability.has_valid_evidence
+      : isEvidenceDisplayable(traceabilityStatus, false, typedSourceImageId);
+  const traceabilityWarning =
+    position.traceability?.traceability_warning != null &&
+    String(position.traceability.traceability_warning).trim() !== ''
+      ? String(position.traceability.traceability_warning).trim()
+      : null;
 
-  /** Storage row job id only — POST /reviews ``job_id`` must match this (never run_context fallbacks). */
   const storageJobId =
     position.job_id != null && String(position.job_id).trim() !== ''
       ? String(position.job_id).trim()
@@ -246,6 +260,8 @@ export function mapPositionDetailToResultDetail(
       sourceFileName != null && sourceFileName !== ''
         ? sourceFileName
         : null,
+    hasValidEvidence,
+    traceabilityWarning,
     evidence: evidences.map(mapEvidenceToResultEvidence),
     reviewHistory: review_actions.map(mapReviewActionToHistoryItem),
     technicalMetadata: {

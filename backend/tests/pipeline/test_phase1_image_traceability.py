@@ -12,6 +12,8 @@ from src.domain.traceability import (
     TRACEABILITY_INVALID,
     TRACEABILITY_MISSING,
     TRACEABILITY_VALID,
+    WARNING_NOT_IN_JOB,
+    WARNING_NOT_IN_SENT,
     apply_traceability_validation,
 )
 from src.frames.sources.video_source import VideoFrameSource
@@ -40,10 +42,10 @@ def test_frame_cap_invalid_when_id_not_in_sent_frames() -> None:
         entities,
         frozenset(sent_ids),
         manifest_image_ids=manifest_ids,
+        sent_metadata_available=True,
     )
     assert entities[0].traceability_status == TRACEABILITY_INVALID
-    assert entities[0].traceability_warning is not None
-    assert "not part of the model input frames" in entities[0].traceability_warning
+    assert entities[0].traceability_warning == WARNING_NOT_IN_SENT
 
 
 def test_valid_when_source_image_id_in_sent_frames() -> None:
@@ -56,7 +58,7 @@ def test_valid_when_source_image_id_in_sent_frames() -> None:
         )
     ]
     sent = frozenset(f"img_{i:03d}" for i in range(1, 49))
-    apply_traceability_validation(entities, sent, manifest_image_ids=sent | {"img_080"})
+    apply_traceability_validation(entities, sent, manifest_image_ids=sent | {"img_080"}, sent_metadata_available=True)
     assert entities[0].traceability_status == TRACEABILITY_VALID
 
 
@@ -69,7 +71,7 @@ def test_missing_source_image_id_unchanged() -> None:
             source_image_id=None,
         )
     ]
-    apply_traceability_validation(entities, frozenset({"img_001"}))
+    apply_traceability_validation(entities, frozenset({"img_001"}), sent_metadata_available=True)
     assert entities[0].traceability_status == TRACEABILITY_MISSING
 
 
@@ -86,9 +88,10 @@ def test_unknown_id_not_in_manifest_uses_generic_warning() -> None:
         entities,
         frozenset({"img_001"}),
         manifest_image_ids=frozenset({"img_001", "img_002"}),
+        sent_metadata_available=True,
     )
     assert entities[0].traceability_status == TRACEABILITY_INVALID
-    assert "not in job" in (entities[0].traceability_warning or "")
+    assert entities[0].traceability_warning == WARNING_NOT_IN_JOB
 
 
 def test_video_frame_source_produces_non_empty_aligned_refs(
@@ -227,6 +230,4 @@ def test_entity_resolution_uses_frames_sent_ids_from_composition(
 
     resolved = EntityResolutionStage().run(context, analysis_result)
     assert resolved.entities[0].traceability_status == TRACEABILITY_INVALID
-    assert "not part of the model input frames" in (
-        resolved.entities[0].traceability_warning or ""
-    )
+    assert resolved.entities[0].traceability_warning == WARNING_NOT_IN_SENT

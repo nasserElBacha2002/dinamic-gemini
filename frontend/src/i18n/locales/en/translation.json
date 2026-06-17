@@ -1170,7 +1170,10 @@
       "recorded_no_preview": "Recorded no preview",
       "source_file": "Source file",
       "supporting_count": "Supporting count",
-      "supporting_heading": "Supporting heading"
+      "supporting_heading": "Supporting heading",
+      "unavailable_invalid": "Evidence could not be validated for this result.",
+      "unavailable_missing": "No evidence image was returned for this result.",
+      "unavailable_unvalidated": "Evidence is unavailable because traceability could not be confirmed."
     },
     "evidence_present": "Evidence present",
     "evidence_viewer": {

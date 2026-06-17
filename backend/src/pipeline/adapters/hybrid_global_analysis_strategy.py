@@ -283,6 +283,8 @@ class HybridGlobalAnalysisStrategy:
             resolved_llm_provider_key=rk,
             model_name=model_for_meta,
         )
+        if resolved_reference_ids:
+            prompt_composition["reference_image_ids"] = list(resolved_reference_ids)
         if prompt_composition.get("final_prompt_text") != prompt_text:
             logger.warning(
                 "prompt_composition final_prompt_text mismatch vs assembled prompt (job_id=%s)",

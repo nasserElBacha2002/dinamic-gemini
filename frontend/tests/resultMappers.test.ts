@@ -650,6 +650,67 @@ describe('mapPositionDetailToResultDetail', () => {
     const r = mapPositionSummaryToResultSummary(p);
     expect(r.hasEvidence).toBe(false);
   });
+
+  it('Phase 4.2: hasValidEvidence follows traceability.has_valid_evidence', () => {
+    const p: PositionSummary = {
+      id: 'pos-hve',
+      aisle_id: 'aisle-1',
+      position_code: '',
+      status: 'detected',
+      confidence: 0.9,
+      needs_review: true,
+      primary_evidence_id: 'ev-1',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-02T00:00:00Z',
+      qty: 1,
+      qtySource: 'detected',
+      has_evidence: true,
+      traceability: {
+        status: 'invalid',
+        source_image_id: 'asset-bad',
+        has_evidence: true,
+        has_valid_evidence: false,
+      },
+    };
+    const r = mapPositionSummaryToResultSummary(p);
+    expect(r.hasValidEvidence).toBe(false);
+    expect(r.traceabilityStatus).toBe('INVALID');
+  });
+});
+
+describe('mapPositionDetailToResultDetail Phase 4.2', () => {
+  it('invalid traceability keeps sourceImageId but hasValidEvidence false', () => {
+    const data: PositionDetailResponse = {
+      position: {
+        id: 'pos-inv',
+        aisle_id: 'aisle-1',
+        position_code: '',
+        status: 'detected',
+        confidence: 0.9,
+        needs_review: true,
+        primary_evidence_id: 'ev-1',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+        qty: 1,
+        qtySource: 'detected',
+        has_evidence: true,
+        traceability: {
+          status: 'invalid',
+          source_image_id: 'asset-bad',
+          has_evidence: true,
+          has_valid_evidence: false,
+          traceability_warning: 'Returned image ID was not part of the final provider payload.',
+        },
+      },
+      evidences: [],
+      review_actions: [],
+      run_context: rcLegacy(),
+    };
+    const r = mapPositionDetailToResultDetail(data);
+    expect(r.sourceImageId).toBe('asset-bad');
+    expect(r.hasValidEvidence).toBe(false);
+    expect(r.traceabilityWarning).toContain('final provider payload');
+  });
 });
 
 describe('detectedSummary helpers', () => {

@@ -49,7 +49,10 @@ export interface ResultSummary {
   traceabilityStatus: TraceabilityStatus;
   needsReview: boolean;
   updatedAt: string;
+  /** Crop row exists (primary_evidence_id); not the same as validated display evidence. */
   hasEvidence: boolean;
+  /** Phase 4.2: true only when traceability is VALID and backend confirms display eligibility. */
+  hasValidEvidence: boolean;
 }
 
 /** Single evidence item (image/crop) for a result. */
@@ -103,6 +106,10 @@ export interface ResultDetail {
   updatedAt: string;
   sourceImageId: string | null;
   sourceFileName: string | null;
+  /** Phase 4.2: validated display eligibility from API traceability.has_valid_evidence. */
+  hasValidEvidence: boolean;
+  /** Operational diagnostic from API (may be shown in technical/expandable UI). */
+  traceabilityWarning?: string | null;
   evidence: ResultEvidence[];
   reviewHistory: ReviewHistoryItem[];
   technicalMetadata?: {

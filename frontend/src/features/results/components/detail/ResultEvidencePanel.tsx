@@ -1,14 +1,17 @@
 /**
  * Epic 4 — Evidence panel for Result Detail.
  * Phase 6: Primary vs supporting evidence clearly labeled for operator hierarchy.
+ * Phase 4.2: Display image only when traceability is VALID and has_valid_evidence.
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Paper, Typography, Box, Button, CircularProgress } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import BaseDialog from '../../../../components/ui/BaseDialog';
 import type { ResultDetail } from '../../types';
 import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
+import { isEvidenceDisplayable } from '../../utils/evidenceEligibility';
+import { evidenceUnavailableMessage } from '../../utils/evidenceUnavailableMessage';
 
 export interface ResultEvidencePanelProps {
   result: ResultDetail;
@@ -28,7 +31,21 @@ export default function ResultEvidencePanel({
     result.sourceImageId != null && String(result.sourceImageId).trim() !== ''
       ? result.sourceImageId.trim()
       : null;
-  const canShowImage = Boolean(sourceImageId && inventoryId && aisleId);
+  const canShowImage = Boolean(
+    isEvidenceDisplayable(
+      result.traceabilityStatus,
+      result.hasValidEvidence,
+      sourceImageId
+    ) &&
+      inventoryId &&
+      aisleId
+  );
+
+  useEffect(() => {
+    if (!canShowImage) {
+      setDialogOpen(false);
+    }
+  }, [canShowImage]);
   const jobId = (() => {
     const entityId = result.technicalMetadata?.entityId;
     if (!entityId || typeof entityId !== 'string') return null;
@@ -49,7 +66,8 @@ export default function ResultEvidencePanel({
 
   const primaryEvidence = result.evidence.find((e) => e.role === 'PRIMARY');
   const supportingEvidence = result.evidence.filter((e) => e.role === 'SUPPORTING');
-  const hasAnyEvidence = result.evidence.length > 0 || canShowImage;
+  const hasCropRecords = result.evidence.length > 0;
+  const showUnavailableState = !canShowImage;
 
   return (
     <Paper sx={{ p: 2, mb: 2 }}>
@@ -57,7 +75,7 @@ export default function ResultEvidencePanel({
         {t('results.evidence_panel.heading')}
       </Typography>
 
-      {!hasAnyEvidence && !canShowImage && (
+      {showUnavailableState && !hasCropRecords && (
         <Box
           sx={{
             py: 3,
@@ -67,7 +85,9 @@ export default function ResultEvidencePanel({
             borderRadius: 1,
           }}
         >
-          <Typography color="text.secondary">{t('results.evidence_panel.none')}</Typography>
+          <Typography color="text.secondary">
+            {evidenceUnavailableMessage(result.traceabilityStatus, t)}
+          </Typography>
         </Box>
       )}
 
@@ -143,8 +163,11 @@ export default function ResultEvidencePanel({
         </Box>
       )}
 
-      {!canShowImage && hasAnyEvidence && (
+      {showUnavailableState && hasCropRecords && (
         <Box sx={{ py: 2 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            {evidenceUnavailableMessage(result.traceabilityStatus, t)}
+          </Typography>
           {primaryEvidence && (
             <>
               <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>

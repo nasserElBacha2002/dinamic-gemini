@@ -205,6 +205,7 @@ def test_wkr_p1_t010_above_frame_cap_truncates_deterministically(
         [dropped_entity],
         frozenset(acquired.frame_refs),
         manifest_image_ids=frozenset(refs),
+        sent_metadata_available=True,
     )
     assert dropped_entity.traceability_status == TRACEABILITY_INVALID
 

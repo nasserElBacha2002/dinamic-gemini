@@ -864,6 +864,9 @@ export interface PositionTraceabilityBlock {
   source_image_original_filename?: string | null;
   primary_evidence_id?: string | null;
   has_evidence: boolean;
+  /** Phase 4.2: safe to display as operator evidence. */
+  has_valid_evidence?: boolean;
+  traceability_warning?: string | null;
 }
 
 /** Sprint 3 — explicit technical/debug snapshot for detail responses. */

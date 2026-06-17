@@ -22,6 +22,7 @@ from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.labels.entities import RawLabel
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
+from src.domain.traceability import is_traceability_evidence_displayable
 from src.domain.quantity.resolution import (
     QtyParseStatus,
     QtySource,
@@ -72,6 +73,7 @@ def _summary_merge_optional_string_projections(entity: dict[str, Any], out: dict
         "review_display_label",
         "source_image_id",
         "traceability_status",
+        "traceability_warning",
     ):
         val = entity.get(src_key)
         if val is not None:
@@ -117,6 +119,10 @@ def _detected_summary(entity: dict[str, Any], audit: dict[str, Any]) -> dict[str
     _summary_merge_bbox_lists(entity, out)
     _summary_merge_optional_string_projections(entity, out)
     _summary_merge_filename_and_int_projections(entity, out)
+    out["has_valid_evidence"] = is_traceability_evidence_displayable(
+        traceability_status=out.get("traceability_status"),
+        source_image_id=out.get("source_image_id"),
+    )
     if audit:
         out["_audit"] = audit
     return out

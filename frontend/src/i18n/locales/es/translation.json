@@ -1728,7 +1728,10 @@
       "recorded_no_preview": "No hay vista previa disponible",
       "source_file": "Archivo de origen",
       "supporting_count": "Soporte {{n}}",
-      "supporting_heading": "Soporte"
+      "supporting_heading": "Soporte",
+      "unavailable_invalid": "No se pudo validar la evidencia de este resultado.",
+      "unavailable_missing": "El proveedor no devolvió una imagen de evidencia para este resultado.",
+      "unavailable_unvalidated": "La evidencia no está disponible porque no se pudo confirmar la trazabilidad."
     },
     "evidence_present": "Con evidencia",
     "evidence_viewer": {

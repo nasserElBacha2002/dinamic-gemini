@@ -750,6 +750,8 @@ def _position_summary_response_from_view(
         primary_evidence_frame_index=view.traceability.primary_evidence_frame_index,
         primary_evidence_id=view.review.primary_evidence_id,
         has_evidence=view.review.has_evidence,
+        has_valid_evidence=view.traceability.has_valid_evidence,
+        traceability_warning=view.traceability.traceability_warning,
     )
     return PositionSummaryResponse(
         id=p.id,

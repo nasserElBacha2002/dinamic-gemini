@@ -3,12 +3,14 @@
  * Refactored in Phase 2 Revised: Uses on-demand cards instead of invasive inline viewer.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Box, Button, Typography, Divider } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { ImageAssetCard, ImagePreviewDialog } from '../../../../components/ui';
 import type { ResultDetail } from '../../types';
 import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
+import { isEvidenceDisplayable } from '../../utils/evidenceEligibility';
+import { evidenceUnavailableMessage } from '../../utils/evidenceUnavailableMessage';
 import i18n from '../../../../i18n';
 
 export interface ResultEvidenceViewerProps {
@@ -32,6 +34,16 @@ function jobIdFromResult(result: ResultDetail): string | null {
 }
 
 function buildFrames(result: ResultDetail): EvidenceFrame[] {
+  if (
+    !isEvidenceDisplayable(
+      result.traceabilityStatus,
+      result.hasValidEvidence,
+      result.sourceImageId
+    )
+  ) {
+    return [];
+  }
+
   const seen = new Set<string>();
   const drafts: Array<{ key: string; fileName: string | null; label: string }> = [];
 
@@ -85,18 +97,33 @@ function buildFrames(result: ResultDetail): EvidenceFrame[] {
 
 export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: ResultEvidenceViewerProps) {
   const { t } = useTranslation();
-  const frames = useMemo(() => buildFrames(result), [result]);
+  const evidenceIsDisplayable = isEvidenceDisplayable(
+    result.traceabilityStatus,
+    result.hasValidEvidence,
+    result.sourceImageId
+  );
+  const frames = useMemo(
+    () => (evidenceIsDisplayable ? buildFrames(result) : []),
+    [result, evidenceIsDisplayable]
+  );
   const [previewTarget, setPreviewTarget] = useState<EvidenceFrame | null>(null);
 
-  const jobId = jobIdFromResult(result);
-  const imageSpec = previewTarget
-    ? { inventoryId, aisleId, assetId: previewTarget.key, jobId }
-    : null;
+  useEffect(() => {
+    if (!evidenceIsDisplayable) {
+      setPreviewTarget(null);
+    }
+  }, [evidenceIsDisplayable]);
 
-  // Image loading is only triggered when previewTarget is set (on-demand).
+  const jobId = jobIdFromResult(result);
+  const imageSpec =
+    evidenceIsDisplayable && previewTarget
+      ? { inventoryId, aisleId, assetId: previewTarget.key, jobId }
+      : null;
+
   const loadState = useEvidenceImageLoad(imageSpec);
 
-  const hasRecordOnly = result.evidence.length > 0 && frames.length === 0;
+  const hasRecordOnly =
+    evidenceIsDisplayable && result.evidence.length > 0 && frames.length === 0;
 
   return (
     <Box>
@@ -104,7 +131,7 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
         {t('results.evidence_viewer.heading')}
       </Typography>
 
-      {frames.length === 0 && !hasRecordOnly && (
+      {!evidenceIsDisplayable && (
         <Box
           sx={{
             py: 4,
@@ -117,7 +144,9 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
             justifyContent: 'center',
           }}
         >
-          <Typography color="text.secondary">{t('results.evidence_viewer.no_images')}</Typography>
+          <Typography color="text.secondary">
+            {evidenceUnavailableMessage(result.traceabilityStatus, t)}
+          </Typography>
         </Box>
       )}
 

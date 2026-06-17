@@ -145,7 +145,24 @@ class PositionTraceabilityBlock(BaseModel):
         None,
         description="Primary evidence crop id; mirrors deprecated top-level ``primary_evidence_id``.",
     )
-    has_evidence: bool = Field(False, description="Mirrors deprecated ``has_evidence``.")
+    has_evidence: bool = Field(
+        False,
+        description=(
+            "True when a primary evidence crop row exists (``primary_evidence_id``). "
+            "Does not imply the source image was validated for display."
+        ),
+    )
+    has_valid_evidence: bool = Field(
+        False,
+        description=(
+            "True only when ``status`` is ``valid`` and ``source_image_id`` is present — "
+            "safe to display as operator evidence (Phase 4.2)."
+        ),
+    )
+    traceability_warning: Optional[str] = Field(
+        None,
+        description="Operational diagnostic when traceability is not valid (Phase 4.2).",
+    )
 
 
 class PositionSummaryResponse(BaseModel):

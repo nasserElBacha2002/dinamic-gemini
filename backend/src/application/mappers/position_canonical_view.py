@@ -16,6 +16,9 @@ from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 from src.application.services.position_traceability import enrich_position_traceability_from_report
+from src.domain.traceability import (
+    resolve_has_valid_evidence_displayable,
+)
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 from src.domain.quantity.resolution import (
@@ -169,10 +172,11 @@ def resolve_qty_contract_from_position_legacy(p: Position, *, has_evidence: bool
 
 def _traceability_from_position(
     p: Position,
-) -> tuple[str | None, str | None, str | None, int | None, int | None]:
+) -> tuple[str | None, str | None, str | None, str | None, int | None, int | None, bool]:
     summary_json = p.detected_summary_json if isinstance(p.detected_summary_json, dict) else {}
     source_image_id: str | None = summary_json.get("source_image_id") or None
     traceability_status: str | None = summary_json.get("traceability_status") or None
+    traceability_warning: str | None = summary_json.get("traceability_warning") or None
     source_image_original_filename: str | None = (
         summary_json.get("source_image_original_filename") or None
     )
@@ -205,12 +209,19 @@ def _traceability_from_position(
             traceability_status = ts_from_report
         if source_image_original_filename is None and sof_from_report is not None:
             source_image_original_filename = sof_from_report
+    has_valid_evidence = resolve_has_valid_evidence_displayable(
+        traceability_status=traceability_status,
+        source_image_id=source_image_id,
+        persisted_has_valid_evidence=summary_json.get("has_valid_evidence"),
+    )
     return (
         source_image_id,
         traceability_status,
+        traceability_warning,
         source_image_original_filename,
         source_image_sequence,
         primary_evidence_frame_index,
+        has_valid_evidence,
     )
 
 
@@ -298,9 +309,11 @@ class PositionCanonicalQuantity:
 class PositionCanonicalTraceability:
     source_image_id: str | None
     traceability_status: str | None
+    traceability_warning: str | None
     source_image_original_filename: str | None
     source_image_sequence: int | None
     primary_evidence_frame_index: int | None
+    has_valid_evidence: bool
 
 
 @dataclass(frozen=True)
@@ -369,9 +382,11 @@ def build_position_canonical_view(
     traceability = PositionCanonicalTraceability(
         source_image_id=trace[0],
         traceability_status=trace[1],
-        source_image_original_filename=trace[2],
-        source_image_sequence=trace[3],
-        primary_evidence_frame_index=trace[4],
+        traceability_warning=trace[2],
+        source_image_original_filename=trace[3],
+        source_image_sequence=trace[4],
+        primary_evidence_frame_index=trace[5],
+        has_valid_evidence=trace[6],
     )
     pos_code = resolve_effective_position_code(p)
     review = PositionCanonicalReview(
