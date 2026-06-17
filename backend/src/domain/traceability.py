@@ -187,6 +187,10 @@ def apply_traceability_validation(
     reference_ids = reference_image_ids or frozenset()
 
     for ent in entities:
+        pre_status = normalize_traceability_status(getattr(ent, "traceability_status", None))
+        if pre_status == TraceabilityStatus.INVALID.value:
+            continue
+
         sid = getattr(ent, "source_image_id", None)
         sid = (sid or "").strip() if sid else ""
 

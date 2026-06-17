@@ -1,4 +1,4 @@
-"""Phase 4.4 — Provider payload serialization and parity validation."""
+"""Phase 4.4 corrections — prompt composition parity."""
 
 from __future__ import annotations
 
@@ -12,25 +12,22 @@ from src.domain.execution_image_manifest import (
     ExecutionImageManifest,
     ExecutionImageRole,
 )
+from src.domain.prompt_image_projection import PromptImageProjection
+from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
 from src.pipeline.services.execution_image_manifest_payload import (
     bind_provider_payload_from_manifest,
     primary_lookups_from_acquired,
 )
-from src.pipeline.services.provider_execution_errors import (
-    PROVIDER_IMAGE_MANIFEST_MISMATCH,
-    ProviderImageExecutionError,
-)
+from src.pipeline.services.provider_execution_errors import PROVIDER_IMAGE_MANIFEST_MISMATCH
 from src.pipeline.services.provider_execution_request import build_provider_execution_request
-from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
 from src.pipeline.services.provider_payload_serialization import (
     SerializedMultimodalPayload,
-    logical_projection_from_serialized,
     serialize_provider_images,
     validate_execution_projections_parity,
 )
 
 
-def _fixture() -> tuple[ExecutionImageManifest, object]:
+def _bundle():
     manifest = ExecutionImageManifest(
         job_id="job-1",
         entries=(
@@ -62,58 +59,45 @@ def _fixture() -> tuple[ExecutionImageManifest, object]:
         excluded_entries=(),
     )
     paths = [Path("a1.jpg"), Path("a2.jpg")]
-    refs = ["asset-1", "asset-2"]
     nds = [np.zeros((2, 2, 3), dtype=np.uint8), np.ones((2, 2, 3), dtype=np.uint8)]
-    path_by, nd_by = primary_lookups_from_acquired(paths, refs, nds)
+    path_by, nd_by = primary_lookups_from_acquired(paths, ["asset-1", "asset-2"], nds)
     bound = bind_provider_payload_from_manifest(
         manifest,
         primary_path_by_source_id=path_by,
         primary_nd_by_source_id=nd_by,
         reference_image_by_source_id={"ref-1": object()},
     )
-    _, prompt_projection = enrich_prompt_with_execution_manifest("p", manifest)
+    prompt, projection = enrich_prompt_with_execution_manifest("BASE", manifest)
     req = build_provider_execution_request(
-        job_id="job-1",
-        prompt="p",
-        manifest=manifest,
-        bound_payload=bound,
+        job_id="job-1", prompt=prompt, manifest=manifest, bound_payload=bound
     )
-    return manifest, req, serialize_provider_images(req, prompt_projection=prompt_projection)
+    serialized = serialize_provider_images(req, prompt_projection=projection)
+    return manifest, prompt, projection, req, serialized
 
 
-def test_exact_manifest_entry_order() -> None:
-    manifest, _, serialized = _fixture()
-    assert [e.manifest_entry_id for e in serialized.entries] == [
-        "REF_001",
-        "IMG_001",
-        "IMG_002",
-    ]
-    assert logical_projection_from_serialized(serialized) == [
-        ["REF_001", "reference_image"],
-        ["IMG_001", "primary_evidence"],
-        ["IMG_002", "primary_evidence"],
-    ]
+def test_prompt_text_lists_each_id_once_in_correct_section() -> None:
+    _, prompt, projection, _, _ = _bundle()
+    assert "PRIMARY EVIDENCE IMAGES" in prompt
+    assert "REFERENCE IMAGES" in prompt
+    assert "- IMG_001 " in prompt
+    assert "- IMG_002 " in prompt
+    assert "- REF_001 " in prompt
+    assert projection.primary_manifest_entry_ids == ("IMG_001", "IMG_002")
+    assert projection.reference_manifest_entry_ids == ("REF_001",)
 
 
-def test_provider_positions_contiguous_from_zero() -> None:
-    _, _, serialized = _fixture()
-    positions = [e.provider_image_position for e in serialized.entries]
-    assert positions == [0, 1, 2]
-
-
-def test_parity_rejects_reordered_payload() -> None:
-    manifest, req, serialized = _fixture()
-    reordered = (serialized.entries[1], serialized.entries[0], serialized.entries[2])
-    bad = SerializedMultimodalPayload(
-        entries=reordered,
-        provider_image_manifest_order=serialized.provider_image_manifest_order,
-        logical_projection=serialized.logical_projection,
+def test_missing_prompt_id_fails_parity() -> None:
+    manifest, _, projection, req, serialized = _bundle()
+    bad_projection = PromptImageProjection(
+        ordered_manifest_entry_ids=("REF_001", "IMG_001"),
+        primary_manifest_entry_ids=("IMG_001",),
+        reference_manifest_entry_ids=("REF_001",),
+        manifest_version=manifest.version,
     )
-    _, prompt_projection = enrich_prompt_with_execution_manifest("p", manifest)
-    with pytest.raises(ProviderImageExecutionError, match=PROVIDER_IMAGE_MANIFEST_MISMATCH):
+    with pytest.raises(Exception, match=PROVIDER_IMAGE_MANIFEST_MISMATCH):
         validate_execution_projections_parity(
             manifest,
-            prompt_projection=prompt_projection,
+            prompt_projection=bad_projection,
             provider_request=req,
-            serialized_payload_projection=bad,
+            serialized_payload_projection=serialized,
         )

@@ -63,9 +63,10 @@ _JSON_OBJECT_SUFFIX = (
     "\n\nOutput requirement: respond with a single JSON object only (no markdown fences). "
     'Root keys: "total_entities_detected" (non-negative integer) and "entities" (array). '
     "Each entity must include these canonical keys (use null when unknown): "
-    "entity_type, model_entity_id, source_image_id, confidence, has_boxes, "
+    "entity_type, model_entity_id, manifest_entry_id, confidence, has_boxes, "
     "position_barcode, internal_code, position_label_bbox, product_label_bbox, "
-    "product_label_quantity. If a product label/SKU code is visible, put it in internal_code. "
+    "product_label_quantity. manifest_entry_id is the preferred evidence identifier (e.g. IMG_001). "
+    "source_image_id is optional legacy compatibility only. "
     "If a position/location barcode is visible, put it in position_barcode. "
     "If quantity is explicitly printed on the product label, put it in product_label_quantity. "
     "If the product-label region is visible, provide product_label_bbox as normalized [x1,y1,x2,y2]. "
@@ -73,6 +74,7 @@ _JSON_OBJECT_SUFFIX = (
     "Compatibility keys quantity/bbox may appear, but canonical fields are authoritative."
 )
 _OPENAI_CANONICAL_ENTITY_KEYS: tuple[str, ...] = (
+    "manifest_entry_id",
     "source_image_id",
     "position_barcode",
     "internal_code",
@@ -278,8 +280,7 @@ def _openai_build_user_content(
     frame_refs = list(request.frame_refs) if request.frame_refs else []
     try:
         serialized = resolve_serialized_payload_for_adapter(
-            meta,
-            job_id=request.job_id,
+            request,
             provider=v.logical_provider,
         )
     except ProviderImageExecutionError as exc:

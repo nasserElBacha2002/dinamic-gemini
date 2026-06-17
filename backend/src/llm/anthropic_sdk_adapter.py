@@ -340,8 +340,7 @@ def _anthropic_build_message_content(
     frame_refs = list(request.frame_refs) if request.frame_refs else []
     try:
         serialized = resolve_serialized_payload_for_adapter(
-            meta,
-            job_id=request.job_id,
+            request,
             provider="claude",
         )
     except ProviderImageExecutionError as exc:

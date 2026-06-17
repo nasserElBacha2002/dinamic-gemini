@@ -1,11 +1,19 @@
 """Global-analysis executor I/O types (provider-neutral). v3.2.4: context_instruction / context_images."""
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from src.pipeline.services.provider_execution_request import ProviderExecutionRequest
+    from src.pipeline.services.provider_payload_serialization import SerializedMultimodalPayload
 
 # Optional extra images (e.g. visual references); concrete type is implementation-defined (often PIL).
 ContextImageSequence = Sequence[Any]
+
+IMAGE_EXECUTION_CONTRACT_CANONICAL_MANIFEST = "canonical_manifest"
 
 
 class LLMRequest:
@@ -27,6 +35,9 @@ class LLMRequest:
         frames_nd: Optional[list[Any]] = None,
         context_instruction: Optional[str] = None,
         context_images: Optional[ContextImageSequence] = None,
+        provider_execution_request: Optional[ProviderExecutionRequest] = None,
+        canonical_provider_payload_required: bool = False,
+        image_execution_contract: Optional[str] = None,
     ):
         self.job_id = job_id
         self.frames = list(frames)
@@ -40,6 +51,19 @@ class LLMRequest:
         # Optional operator/inventory context (e.g. instructions + reference images) before primary frames.
         self.context_instruction: Optional[str] = context_instruction
         self.context_images: Optional[list[Any]] = list(context_images) if context_images else None
+        # Phase 4.4: runtime-only adapter context (excluded from JSON metadata persistence).
+        self.provider_execution_request = provider_execution_request
+        self.canonical_provider_payload_required = bool(canonical_provider_payload_required)
+        self.image_execution_contract = image_execution_contract
+        self._serialized_multimodal_payload: Optional[SerializedMultimodalPayload] = None
+
+    @property
+    def serialized_multimodal_payload(self) -> Optional[SerializedMultimodalPayload]:
+        return self._serialized_multimodal_payload
+
+    @serialized_multimodal_payload.setter
+    def serialized_multimodal_payload(self, value: Optional[SerializedMultimodalPayload]) -> None:
+        self._serialized_multimodal_payload = value
 
 
 class LLMResponse:

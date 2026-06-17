@@ -16,6 +16,7 @@ from src.llm.vision_multimodal_payload import (
     build_gemini_contents_from_serialized,
     build_openai_vision_from_serialized,
 )
+from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
 from src.pipeline.services.execution_image_manifest_payload import (
     bind_provider_payload_from_manifest,
     primary_lookups_from_acquired,
@@ -68,13 +69,14 @@ def _serialized():
         primary_nd_by_source_id=nd_by,
         reference_image_by_source_id={"ref-1": object()},
     )
+    prompt, projection = enrich_prompt_with_execution_manifest("prompt", manifest)
     req = build_provider_execution_request(
         job_id="job-1",
-        prompt="prompt",
+        prompt=prompt,
         manifest=manifest,
         bound_payload=bound,
     )
-    return serialize_provider_images(req)
+    return serialize_provider_images(req, prompt_projection=projection)
 
 
 def test_cross_provider_same_logical_projection() -> None:

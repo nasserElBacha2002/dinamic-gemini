@@ -135,6 +135,18 @@ def test_provider_position_mapping_deterministic() -> None:
     assert ordinals == [1, 2, 3]
 
 
+def test_request_metadata_is_immutable_mapping() -> None:
+    manifest = _manifest()
+    req = build_provider_execution_request(
+        job_id="job-1",
+        prompt="p",
+        manifest=manifest,
+        bound_payload=_bound(manifest),
+    )
+    with pytest.raises(TypeError):
+        req.metadata["mutated"] = True  # type: ignore[index]
+
+
 def test_count_mismatch_rejected() -> None:
     manifest = _manifest()
     req = build_provider_execution_request(

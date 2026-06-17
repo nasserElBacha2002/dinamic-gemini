@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from src.domain.execution_image_manifest import LEGACY_EVIDENCE_RETURN_FIELD
 from src.domain.traceability import TRACEABILITY_INVALID, WARNING_NOT_IN_SENT
 from src.jobs.image_identity import JobImage
 from src.llm.normalization.entity_normalizer import normalize_llm_response
@@ -18,7 +19,7 @@ from src.llm.vision_multimodal_payload import (
     LLM_METADATA_KEY_FRAMES_SENT_IDS,
     LLM_METADATA_KEY_PROMPT_LISTED_IMAGE_IDS,
 )
-from src.pipeline.services.provider_execution_request import PROVIDER_IMAGE_MANIFEST_ORDER_KEY
+from src.llm.types import IMAGE_EXECUTION_CONTRACT_CANONICAL_MANIFEST
 from src.pipeline.adapters.hybrid_global_analysis_strategy import HybridGlobalAnalysisStrategy
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.stages.analysis_stage import AnalysisStageResult
@@ -117,10 +118,9 @@ def test_hybrid_strategy_propagates_sent_frame_ids_to_entity_resolution(
     assert pc["frames_sent_ids"] == sent_refs
     assert pc["prompt_listed_image_ids"][:3] == ["IMG_001", "IMG_002", "IMG_003"]
     assert pc.get("execution_image_manifest") is not None
-    assert PROVIDER_IMAGE_MANIFEST_ORDER_KEY in req.metadata
-    order = req.metadata[PROVIDER_IMAGE_MANIFEST_ORDER_KEY]
-    assert order[0]["manifest_entry_id"].startswith("IMG_")
-    assert order[0]["provider_position"] == 0
+    assert req.provider_execution_request is not None
+    assert req.canonical_provider_payload_required is True
+    assert req.image_execution_contract == "canonical_manifest"
     assert "IMG_048" in req.prompt
     assert "source_image_id='img_048'" in req.prompt
     assert "img_050" not in req.prompt
@@ -152,4 +152,6 @@ def test_hybrid_strategy_propagates_sent_frame_ids_to_entity_resolution(
 
     resolved = EntityResolutionStage().run(context, analysis_stage_result)
     assert resolved.entities[0].traceability_status == TRACEABILITY_INVALID
-    assert resolved.entities[0].traceability_warning == WARNING_NOT_IN_SENT
+    assert resolved.entities[0].traceability_warning == (
+        f"Unknown {LEGACY_EVIDENCE_RETURN_FIELD}: img_050"
+    )

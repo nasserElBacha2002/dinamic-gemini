@@ -20,7 +20,7 @@ from src.llm.prompt_composer.hybrid_assembly import (
     DEFAULT_HYBRID_PROMPT_PROFILE,
     compose_hybrid_base,
 )
-from src.llm.types import ContextImageSequence
+from src.llm.types import LLMRequest
 from src.llm.vision_multimodal_payload import (
     LLM_METADATA_KEY_MULTIMODAL_ORDER,
     LLM_METADATA_KEY_REFERENCE_IMAGE_IDS,
@@ -97,10 +97,13 @@ class GeminiGlobalAnalyzer:
                 ref_ids = [str(x) for x in raw_ref]
         frefs = list(frame_refs or [])
 
+        llm_request = kwargs.get("llm_request")
+        if llm_request is not None and not isinstance(llm_request, LLMRequest):
+            llm_request = None
+
         try:
             serialized = resolve_serialized_payload_for_adapter(
-                request_metadata,
-                job_id=None,
+                llm_request,
                 provider="gemini",
             )
         except ProviderImageExecutionError:

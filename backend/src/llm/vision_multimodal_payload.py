@@ -498,35 +498,53 @@ def build_gemini_contents_from_serialized(
 
 
 def resolve_serialized_payload_for_adapter(
-    metadata: dict[str, Any] | None,
+    request: Any,
     *,
-    job_id: str | None = None,
     provider: str | None = None,
 ) -> Any | None:
     """
-    Return pre-serialized payload from metadata or serialize from attached provider request.
+    Serialize manifest-aligned payload at adapter boundary from runtime LLMRequest context.
 
-    Raises ``ProviderImageExecutionError`` on manifest parity failure.
+    Raises ``ProviderImageExecutionError`` when canonical photo execution is required but missing.
     """
-    if not metadata:
+    from src.domain.prompt_image_projection import prompt_projection_from_composition
+    from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
+    from src.llm.types import LLMRequest
+    from src.pipeline.services.provider_execution_errors import (
+        PROVIDER_IMAGE_MANIFEST_MISMATCH,
+        ProviderImageExecutionError,
+    )
+    from src.pipeline.services.provider_payload_serialization import (
+        record_provider_image_manifest_order,
+        serialize_provider_images,
+    )
+
+    if not isinstance(request, LLMRequest):
         return None
-    cached = metadata.get("_serialized_multimodal_payload")
-    if cached is not None:
-        return cached
-    provider_req = metadata.get("_provider_execution_request_object")
+
+    if request.canonical_provider_payload_required and request.provider_execution_request is None:
+        raise ProviderImageExecutionError(
+            PROVIDER_IMAGE_MANIFEST_MISMATCH,
+            "canonical provider execution request required for photo manifest execution",
+            job_id=request.job_id,
+            provider=provider,
+        )
+
+    provider_req = request.provider_execution_request
     if provider_req is None:
         return None
-    from src.pipeline.services.provider_payload_serialization import serialize_provider_images
+
+    meta = request.metadata or {}
+    comp = meta.get(LLM_METADATA_KEY_PROMPT_COMPOSITION)
+    prompt_projection = prompt_projection_from_composition(comp if isinstance(comp, dict) else None)
 
     serialized = serialize_provider_images(
         provider_req,
-        job_id=job_id,
+        prompt_projection=prompt_projection,
+        job_id=request.job_id,
         provider=provider,
     )
-    metadata["_serialized_multimodal_payload"] = serialized
-    from src.pipeline.services.provider_payload_serialization import (
-        record_provider_image_manifest_order,
-    )
-
-    record_provider_image_manifest_order(metadata, serialized)
+    request.serialized_multimodal_payload = serialized
+    record_provider_image_manifest_order(meta, serialized)
+    meta[LLM_METADATA_KEY_MULTIMODAL_ORDER] = list(serialized.provider_image_manifest_order)
     return serialized

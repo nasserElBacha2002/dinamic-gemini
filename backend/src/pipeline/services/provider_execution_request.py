@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from src.domain.execution_image_manifest import (
@@ -20,11 +21,14 @@ from src.pipeline.services.execution_image_manifest_payload import ManifestBound
 from src.pipeline.services.provider_execution_errors import (
     PROVIDER_IMAGE_MANIFEST_MISMATCH,
     PROVIDER_IMAGE_RESOURCE_MISSING,
+    PROVIDER_IMAGE_UNSUPPORTED_FORMAT,
     ProviderImageExecutionError,
 )
 
 PROVIDER_EXECUTION_REQUEST_METADATA_KEY = "provider_execution_request"
 PROVIDER_IMAGE_MANIFEST_ORDER_KEY = "provider_image_manifest_order"
+LLM_METADATA_KEY_CANONICAL_PROVIDER_PAYLOAD_REQUIRED = "canonical_provider_payload_required"
+LLM_METADATA_KEY_IMAGE_EXECUTION_CONTRACT = "image_execution_contract"
 
 SUPPORTED_IMAGE_MIME_TYPES = frozenset(
     {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"}
@@ -94,12 +98,20 @@ def infer_mime_type(
     declared_mime: str | None,
     storage_path: Path | None,
     original_filename: str | None = None,
+    manifest_entry_id: str | None = None,
+    job_id: str | None = None,
 ) -> str:
-    """Central MIME inference — filename used only when no declared MIME."""
+    """Central MIME inference — reject unsupported declared MIME; infer only when absent."""
     if declared_mime and str(declared_mime).strip():
         m = str(declared_mime).strip().lower()
         if m in SUPPORTED_IMAGE_MIME_TYPES:
             return m
+        raise ProviderImageExecutionError(
+            PROVIDER_IMAGE_UNSUPPORTED_FORMAT,
+            f"unsupported declared MIME: {m}",
+            job_id=job_id,
+            manifest_entry_id=manifest_entry_id,
+        )
     name = (original_filename or (str(storage_path) if storage_path else "")).lower()
     if name.endswith(".png"):
         return "image/png"
@@ -178,15 +190,9 @@ def build_provider_execution_request(
             declared_mime=entry.mime_type,
             storage_path=runtime.storage_path,
             original_filename=entry.original_filename,
+            manifest_entry_id=entry.manifest_entry_id,
+            job_id=job_id,
         )
-        if mime not in SUPPORTED_IMAGE_MIME_TYPES:
-            raise ProviderImageExecutionError(
-                "PROVIDER_IMAGE_UNSUPPORTED_FORMAT",
-                f"unsupported MIME for {entry.manifest_entry_id}: {mime}",
-                job_id=job_id,
-                manifest_entry_id=entry.manifest_entry_id,
-                role=entry.role.value,
-            )
         images.append(
             ProviderExecutionImage(
                 manifest_entry_id=entry.manifest_entry_id,
@@ -205,7 +211,7 @@ def build_provider_execution_request(
         image_manifest=manifest,
         images=tuple(images),
         schema_version=schema_version,
-        metadata=dict(metadata or {}),
+        metadata=MappingProxyType(dict(metadata or {})),
     )
     validate_provider_execution_request(request)
     return request
@@ -313,10 +319,9 @@ def provider_execution_request_from_metadata(
     return None
 
 
-def attach_provider_execution_request(
+def attach_provider_execution_request_snapshot(
     metadata: dict[str, Any],
     request: ProviderExecutionRequest,
 ) -> None:
-    """Store serializable contract snapshot (manifest + image identity, not raw bytes)."""
+    """Store JSON-serializable provider request snapshot only (no runtime resources)."""
     metadata[PROVIDER_EXECUTION_REQUEST_METADATA_KEY] = request.to_dict()
-    metadata["_provider_execution_request_object"] = request

@@ -36,7 +36,7 @@ from src.llm.prompt_composer.prompt_traceability import (
     prompt_composition_summary_for_execution_log,
     sha256_utf8,
 )
-from src.llm.types import ContextImageSequence, LLMRequest
+from src.llm.types import ContextImageSequence, IMAGE_EXECUTION_CONTRACT_CANONICAL_MANIFEST, LLMRequest
 from src.llm.vision_multimodal_payload import (
     LLM_METADATA_KEY_FRAMES_SENT_IDS,
     LLM_METADATA_KEY_MULTIMODAL_ORDER,
@@ -57,6 +57,10 @@ from src.pipeline.ports.analysis_provider import (
     ProviderCapabilities,
 )
 from src.domain.execution_image_manifest import ExecutionImageManifestError
+from src.domain.prompt_image_projection import (
+    COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION,
+    PromptImageProjection,
+)
 from src.pipeline.services.analysis_visual_reference_prep import (
     build_primary_evidence_attachments,
     prepare_visual_reference_inputs,
@@ -75,14 +79,12 @@ from src.pipeline.services.execution_image_manifest_payload import (
 )
 from src.pipeline.services.provider_execution_bridge import legacy_lists_from_provider_request
 from src.pipeline.services.provider_execution_request import (
-    attach_provider_execution_request,
+    LLM_METADATA_KEY_CANONICAL_PROVIDER_PAYLOAD_REQUIRED,
+    LLM_METADATA_KEY_IMAGE_EXECUTION_CONTRACT,
+    attach_provider_execution_request_snapshot,
     build_provider_execution_request,
 )
 from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
-from src.pipeline.services.provider_payload_serialization import (
-    record_provider_image_manifest_order,
-    serialize_provider_images,
-)
 from src.pipeline.services.hybrid_analysis_prompt import (
     build_hybrid_analysis_prompt_with_traceability,
     resolve_analysis_context_for_run,
@@ -269,6 +271,7 @@ class HybridGlobalAnalysisStrategy:
         execution_manifest = None
         bound_payload = None
         provider_execution_request = None
+        prompt_image_projection: PromptImageProjection | None = None
         job_input = getattr(run_ctx, "job_input", None)
         is_photos = job_input and getattr(job_input, "input_type", "") == "photos"
         if is_photos:
@@ -311,6 +314,9 @@ class HybridGlobalAnalysisStrategy:
             sent_frame_refs=frame_refs if not execution_manifest else None,
             execution_manifest=execution_manifest,
         )
+        raw_projection = composition_base.get(COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION)
+        if isinstance(raw_projection, dict):
+            prompt_image_projection = PromptImageProjection.from_dict(raw_projection)
 
         if execution_manifest is not None and bound_payload is not None:
             try:
@@ -357,17 +363,12 @@ class HybridGlobalAnalysisStrategy:
         }
         rk = (resolved_key or "").strip().lower()
         if provider_execution_request is not None:
-            attach_provider_execution_request(req_meta, provider_execution_request)
-            serialized = serialize_provider_images(
-                provider_execution_request,
-                job_id=job_id,
-                provider=rk,
-            )
-            record_provider_image_manifest_order(req_meta, serialized)
-            req_meta["_serialized_multimodal_payload"] = serialized
-            req_meta[LLM_METADATA_KEY_MULTIMODAL_ORDER] = list(
-                serialized.provider_image_manifest_order
-            )
+            attach_provider_execution_request_snapshot(req_meta, provider_execution_request)
+            req_meta[LLM_METADATA_KEY_CANONICAL_PROVIDER_PAYLOAD_REQUIRED] = is_photos
+            if is_photos:
+                req_meta[LLM_METADATA_KEY_IMAGE_EXECUTION_CONTRACT] = (
+                    IMAGE_EXECUTION_CONTRACT_CANONICAL_MANIFEST
+                )
         jm = getattr(run_ctx, "job_model_name", None)
         model_for_meta = apply_job_model_name_to_llm_request_metadata(
             resolved_provider_key=rk,
@@ -407,6 +408,13 @@ class HybridGlobalAnalysisStrategy:
             frames_nd=frames_nd,
             context_instruction=context_instruction,
             context_images=context_images,
+            provider_execution_request=provider_execution_request,
+            canonical_provider_payload_required=bool(is_photos and execution_manifest is not None),
+            image_execution_contract=(
+                IMAGE_EXECUTION_CONTRACT_CANONICAL_MANIFEST
+                if is_photos and execution_manifest is not None
+                else None
+            ),
         )
         run_logger = getattr(run_ctx, "logger", None)
         if run_logger is not None:

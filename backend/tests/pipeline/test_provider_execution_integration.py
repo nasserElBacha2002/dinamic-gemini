@@ -13,7 +13,9 @@ from src.domain.execution_image_manifest import (
     ExecutionImageRole,
     manifest_composition_projection,
 )
+from src.domain.prompt_image_projection import COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION
 from src.domain.manifest_evidence_resolution import normalize_entity_evidence_identifiers
+from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
 from src.domain.traceability import (
     TraceabilityStatus,
     apply_traceability_validation,
@@ -63,14 +65,16 @@ def _pipeline_fixtures():
         primary_nd_by_source_id=nd_by,
         reference_image_by_source_id={"ref-1": object()},
     )
+    _, prompt_projection = enrich_prompt_with_execution_manifest("p", manifest)
     req = build_provider_execution_request(
         job_id="job-1",
         prompt="p",
         manifest=manifest,
         bound_payload=bound,
     )
-    serialized = serialize_provider_images(req)
+    serialized = serialize_provider_images(req, prompt_projection=prompt_projection)
     composition = manifest_composition_projection(manifest)
+    composition[COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION] = prompt_projection.to_dict()
     return manifest, composition, serialized
 
 
@@ -131,4 +135,24 @@ def test_unknown_img_999_is_invalid() -> None:
         sent or frozenset(),
         sent_metadata_available=True,
     )
+    assert entities[0].traceability_status == TraceabilityStatus.INVALID.value
+
+
+def test_conflicting_manifest_and_legacy_ids_invalid() -> None:
+    _, composition, _ = _pipeline_fixtures()
+    payload = {
+        "total_entities_detected": 1,
+        "entities": [
+            {
+                "entity_type": "PALLET",
+                "model_entity_id": "E1",
+                "has_boxes": True,
+                "confidence": 0.9,
+                "manifest_entry_id": "IMG_001",
+                "source_image_id": "ref-1",
+            }
+        ],
+    }
+    entities = parse_entities(payload, job_id="job-1")
+    normalize_entity_evidence_identifiers(entities, composition=composition)
     assert entities[0].traceability_status == TraceabilityStatus.INVALID.value

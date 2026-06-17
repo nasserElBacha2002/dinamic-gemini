@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from src.domain.execution_image_manifest import ExecutionImageEntry, ExecutionImageManifest, ExecutionImageRole
+from src.domain.prompt_image_projection import COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION
 from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
-from src.domain.execution_image_manifest import ExecutionImageRole
 from src.pipeline.services.hybrid_analysis_prompt import build_hybrid_analysis_prompt_with_traceability
 from src.pipeline.context.run_context import RunContext
 from unittest.mock import MagicMock
@@ -36,13 +36,14 @@ def _manifest() -> ExecutionImageManifest:
 
 
 def test_enrich_prompt_separates_primary_and_reference_sections() -> None:
-    text = enrich_prompt_with_execution_manifest("BASE", _manifest())
+    text, projection = enrich_prompt_with_execution_manifest("BASE", _manifest())
     assert "PRIMARY EVIDENCE IMAGES" in text
     assert "REFERENCE IMAGES" in text
     assert "IMG_001" in text
     assert "REF_001" in text
     assert "source_image_id='asset-1'" in text
-    assert "never use them as evidence" in text.lower() or "REFERENCE images" in text
+    assert "manifest_entry_id" in text.lower() or "IMG_001" in text
+    assert projection.ordered_manifest_entry_ids == ("REF_001", "IMG_001")
 
 
 def test_build_hybrid_prompt_uses_manifest_projection(monkeypatch) -> None:
@@ -68,3 +69,4 @@ def test_build_hybrid_prompt_uses_manifest_projection(monkeypatch) -> None:
     assert composition["frames_sent_ids"] == ["asset-1"]
     assert "IMG_001" in composition["prompt_listed_image_ids"]
     assert composition.get("execution_image_manifest") is not None
+    assert COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION in composition

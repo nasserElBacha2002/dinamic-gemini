@@ -8,11 +8,17 @@ keeps enrichment policy at the request-building layer.
 
 from __future__ import annotations
 
+import hashlib
+
 from src.domain.execution_image_manifest import (
     EVIDENCE_RETURN_IDENTIFIER_FIELD,
     LEGACY_EVIDENCE_RETURN_FIELD,
     ExecutionImageManifest,
     ExecutionImageRole,
+)
+from src.domain.prompt_image_projection import (
+    PromptImageProjection,
+    build_prompt_image_projection_from_manifest,
 )
 from src.jobs.image_identity import JobImage
 
@@ -113,8 +119,8 @@ Legacy {legacy_field} is accepted for compatibility but {field} is preferred.
 def enrich_prompt_with_execution_manifest(
     base_prompt: str,
     manifest: ExecutionImageManifest,
-) -> str:
-    """Append canonical manifest sections for model-facing image identity (Phase 4.3)."""
+) -> tuple[str, PromptImageProjection]:
+    """Append canonical manifest sections; return prompt text and structured image projection."""
     primary_lines: list[str] = []
     reference_lines: list[str] = []
     for entry in manifest.ordered_entries():
@@ -134,4 +140,9 @@ def enrich_prompt_with_execution_manifest(
         sections.append("\nREFERENCE IMAGES (classification context only)")
         sections.extend(reference_lines)
     block = "\n".join(sections)
-    return base_prompt.rstrip() + "\n" + block + _MANIFEST_TRACEABILITY_INSTRUCTION
+    prompt_text = base_prompt.rstrip() + "\n" + block + _MANIFEST_TRACEABILITY_INSTRUCTION
+    projection = build_prompt_image_projection_from_manifest(
+        manifest,
+        image_section_text=block,
+    )
+    return prompt_text, projection

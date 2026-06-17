@@ -22,7 +22,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.domain.execution_image_manifest import ExecutionImageManifest, manifest_composition_projection
+from src.domain.execution_image_manifest import (
+    ExecutionImageManifest,
+    manifest_composition_projection,
+)
+from src.domain.prompt_image_projection import (
+    COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION,
+    PromptImageProjection,
+)
 from src.jobs.image_identity import load_job_images_from_manifest
 from src.llm.prompt_composer.enrichments import (
     IMAGE_ID_TRACEABILITY_ENRICHMENT_ID,
@@ -145,8 +152,11 @@ def build_hybrid_analysis_prompt_with_traceability(
     job_input = getattr(context, "job_input", None)
     prompt_listed_image_ids: list[str] = []
     frames_sent_ids: list[str] = []
+    prompt_image_projection: PromptImageProjection | None = None
     if execution_manifest is not None:
-        prompt_text = enrich_prompt_with_execution_manifest(base_prompt, execution_manifest)
+        prompt_text, prompt_image_projection = enrich_prompt_with_execution_manifest(
+            base_prompt, execution_manifest
+        )
         projection = manifest_composition_projection(execution_manifest)
         frames_sent_ids = list(projection["frames_sent_ids"])
         prompt_listed_image_ids = list(projection["prompt_listed_image_ids"])
@@ -220,6 +230,8 @@ def build_hybrid_analysis_prompt_with_traceability(
         composition["frames_sent_ids"] = list(frames_sent_ids)
     if execution_manifest is not None:
         composition.update(manifest_composition_projection(execution_manifest))
+        if prompt_image_projection is not None:
+            composition[COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION] = prompt_image_projection.to_dict()
 
     # V3JobExecutor aborts v3 jobs before the hybrid pipeline when SupplierPromptResolver returns
     # resolution_status == "error". This builder still handles error resolutions defensively so

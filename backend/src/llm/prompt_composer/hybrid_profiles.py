@@ -192,6 +192,7 @@ CLAUDE_CONTRACT_MARKER: Final[str] = "CLAUDE JSON ENTITY CONTRACT"
 CLAUDE_JSON_ENTITY_OUTPUT_KEYS: Final[tuple[str, ...]] = (
     "entity_type",
     "model_entity_id",
+    "manifest_entry_id",
     "source_image_id",
     "confidence",
     "has_boxes",
@@ -255,7 +256,8 @@ _CLAUDE_V21_CANONICAL_ENTITY_CONTRACT: Final[str] = (
     "Each entity object MUST include these keys. Use JSON null when a value is not clearly visible, "
     "not readable, or uncertain. Do not omit keys.\n\n"
     "Required core (unchanged semantics):\n"
-    "- entity_type, model_entity_id, source_image_id, confidence, has_boxes\n\n"
+    "- entity_type, model_entity_id, manifest_entry_id, confidence, has_boxes\n"
+    "- source_image_id (optional legacy compatibility only; prefer manifest_entry_id when listed)\n\n"
     "PRIMARY VISUAL TARGET — product label first (inventory needs WHAT is on the pallet, not only WHERE):\n"
     "- The most important surface to inspect is the PRODUCT label on the load: printed SKU/text on boxes, "
     "case cartons, shrink-wrap stickers, or tape on the wrapped goods. That is where internal_code, "
@@ -293,6 +295,10 @@ _CLAUDE_V21_CANONICAL_ENTITY_CONTRACT: Final[str] = (
     "- Do not inflate rows to fill JSON: respect the default hybrid rules for distinct units, but avoid "
     "splitting or duplicating mainly because you saw location text while ignoring an unread product face.\n\n"
     "FIELD REFERENCE (canonical keys):\n"
+    "- manifest_entry_id (string or null): Preferred evidence identifier from the PRIMARY EVIDENCE "
+    "image list (e.g. IMG_001). Never return REF_* entries as primary evidence. Filenames and provider "
+    "positions are invalid.\n"
+    "- source_image_id (string or null): Legacy compatibility only when manifest_entry_id is unavailable.\n"
     "- internal_code (string or null): ONLY from the product label surface above. NEVER a position code.\n"
     "- position_barcode (string or null): ONLY from the location/position label. Not the SKU.\n"
     "- product_label_quantity (integer or null): ONLY digits printed on the product label in the same "

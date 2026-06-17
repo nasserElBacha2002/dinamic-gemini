@@ -7,7 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from src.domain.execution_image_manifest import ExecutionImageRole
+from src.domain.execution_image_manifest import ExecutionImageManifest, ExecutionImageRole
+from src.domain.prompt_image_projection import PromptImageProjection
 from src.llm.vision_multimodal_payload import (
     ROLE_PRIMARY_EVIDENCE,
     ROLE_REFERENCE_ONLY,
@@ -86,6 +87,7 @@ def _validate_runtime_resource(image: ProviderExecutionImage) -> None:
 def serialize_provider_images(
     request: ProviderExecutionRequest,
     *,
+    prompt_projection: PromptImageProjection | None = None,
     job_id: str | None = None,
     provider: str | None = None,
 ) -> SerializedMultimodalPayload:
@@ -129,9 +131,10 @@ def serialize_provider_images(
         provider_image_manifest_order=tuple(order_meta),
         logical_projection=tuple(logical),
     )
-    validate_prompt_payload_manifest_parity(
+    validate_execution_projections_parity(
         request.image_manifest,
-        prompt_projection=_prompt_image_projection_from_manifest(request),
+        prompt_projection=prompt_projection,
+        provider_request=request,
         serialized_payload_projection=payload,
         job_id=job_id or request.job_id,
         provider=provider,
@@ -139,48 +142,74 @@ def serialize_provider_images(
     return payload
 
 
-def _prompt_image_projection_from_manifest(
-    request: ProviderExecutionRequest,
-) -> list[tuple[str, str, int]]:
-    """Manifest entry IDs listed in prompt order (payload_ordinal ascending)."""
-    return [
-        (img.manifest_entry_id, img.role.value, img.payload_ordinal)
-        for img in request.ordered_images()
-    ]
-
-
-def validate_prompt_payload_manifest_parity(
-    manifest: Any,
+def validate_execution_projections_parity(
+    manifest: ExecutionImageManifest,
     *,
-    prompt_projection: list[tuple[str, str, int]],
+    prompt_projection: PromptImageProjection | None,
+    provider_request: ProviderExecutionRequest,
     serialized_payload_projection: SerializedMultimodalPayload,
     job_id: str | None = None,
     provider: str | None = None,
 ) -> None:
-    """Detect prompt/payload/manifest identity or order mismatches before remote execution."""
-    manifest_ordered = manifest.ordered_entries()
-    prompt_ids = [row[0] for row in prompt_projection]
-    payload_ids = [e.manifest_entry_id for e in serialized_payload_projection.entries]
-    manifest_ids = [e.manifest_entry_id for e in manifest_ordered]
+    """Validate prompt, manifest, provider request, and serialized payload projections match."""
+    if prompt_projection is None:
+        raise ProviderImageExecutionError(
+            PROVIDER_IMAGE_MANIFEST_MISMATCH,
+            "prompt_image_projection is required for canonical execution parity",
+            job_id=job_id,
+            provider=provider,
+        )
 
-    if prompt_ids != manifest_ids:
+    manifest_ordered = manifest.ordered_entries()
+    manifest_ids = [e.manifest_entry_id for e in manifest_ordered]
+    prompt_ids = list(prompt_projection.ordered_manifest_entry_ids)
+    request_ids = [img.manifest_entry_id for img in provider_request.ordered_images()]
+    payload_ids = [e.manifest_entry_id for e in serialized_payload_projection.entries]
+
+    if prompt_projection.manifest_version != manifest.version:
         raise ProviderImageExecutionError(
             PROVIDER_IMAGE_MANIFEST_MISMATCH,
-            f"prompt/manifest entry order mismatch: prompt={prompt_ids!r} manifest={manifest_ids!r}",
+            f"prompt/manifest version mismatch: prompt={prompt_projection.manifest_version} manifest={manifest.version}",
             job_id=job_id,
             provider=provider,
         )
-    if payload_ids != manifest_ids:
+
+    for label, ids in (
+        ("prompt", prompt_ids),
+        ("provider_request", request_ids),
+        ("payload", payload_ids),
+    ):
+        if ids != manifest_ids:
+            raise ProviderImageExecutionError(
+                PROVIDER_IMAGE_MANIFEST_MISMATCH,
+                f"{label}/manifest entry order mismatch: {label}={ids!r} manifest={manifest_ids!r}",
+                job_id=job_id,
+                provider=provider,
+            )
+        if len(ids) != len(set(ids)):
+            raise ProviderImageExecutionError(
+                PROVIDER_IMAGE_MANIFEST_MISMATCH,
+                f"duplicate manifest_entry_id in {label} projection",
+                job_id=job_id,
+                provider=provider,
+            )
+
+    primary_prompt = list(prompt_projection.primary_manifest_entry_ids)
+    primary_manifest = [e.manifest_entry_id for e in manifest.primary_entries()]
+    if primary_prompt != primary_manifest:
         raise ProviderImageExecutionError(
             PROVIDER_IMAGE_MANIFEST_MISMATCH,
-            f"payload/manifest entry order mismatch: payload={payload_ids!r} manifest={manifest_ids!r}",
+            "primary manifest_entry_id section mismatch",
             job_id=job_id,
             provider=provider,
         )
-    if len(prompt_ids) != len(set(prompt_ids)):
+
+    ref_prompt = list(prompt_projection.reference_manifest_entry_ids)
+    ref_manifest = [e.manifest_entry_id for e in manifest.reference_entries()]
+    if ref_prompt != ref_manifest:
         raise ProviderImageExecutionError(
             PROVIDER_IMAGE_MANIFEST_MISMATCH,
-            "duplicate manifest_entry_id in prompt projection",
+            "reference manifest_entry_id section mismatch",
             job_id=job_id,
             provider=provider,
         )
@@ -213,16 +242,9 @@ def validate_prompt_payload_manifest_parity(
                 manifest_entry_id=entry.manifest_entry_id,
             )
 
-    for row in prompt_projection:
-        mid, role, ordinal = row
-        if ordinal < 1 or ordinal > len(manifest_ordered):
-            raise ProviderImageExecutionError(
-                PROVIDER_IMAGE_MANIFEST_MISMATCH,
-                f"invalid prompt ordinal for {mid}",
-                job_id=job_id,
-                provider=provider,
-                manifest_entry_id=mid,
-            )
+
+# Backward-compatible alias.
+validate_prompt_payload_manifest_parity = validate_execution_projections_parity
 
 
 def manifest_entry_label(image: SerializedImagePayloadEntry) -> str:
