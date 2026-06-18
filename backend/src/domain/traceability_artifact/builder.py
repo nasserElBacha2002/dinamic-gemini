@@ -299,7 +299,7 @@ def build_traceability_manifest(payload: TraceabilityManifestBuildInput) -> dict
 
 def traceability_manifest_is_json_safe(obj: Any) -> bool:
     """Return True when value is JSON-serializable without runtime objects."""
-    forbidden = (bytes, bytearray)
+    forbidden: tuple[type[Any], ...] = (bytes, bytearray)
     try:
         import numpy as np
 

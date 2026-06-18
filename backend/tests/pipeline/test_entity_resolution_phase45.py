@@ -21,14 +21,14 @@ from src.domain.manifest_evidence_resolution import (
     apply_evidence_resolution_to_entities,
 )
 from src.domain.traceability import (
-    TraceabilityStatus,
     WARNING_UNVALIDATED,
+    TraceabilityStatus,
     apply_traceability_validation,
     extract_sent_image_ids_from_composition,
     resolve_has_valid_evidence_displayable,
 )
-from src.parsing.global_analysis_parser import parse_entities
 from src.jobs.image_identity import JobImage
+from src.parsing.global_analysis_parser import parse_entities
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.stages.analysis_stage import AnalysisStageResult
 from src.pipeline.stages.entity_resolution_stage import EntityResolutionStage

@@ -11,8 +11,8 @@ from src.domain.result_evidence.entities import (
     ResultEvidenceRecord,
     ResultEvidenceRole,
 )
-from src.domain.traceability import TraceabilityStatus
 from src.domain.result_evidence.validation import ResultEvidenceValidationError
+from src.domain.traceability import TraceabilityStatus
 from src.infrastructure.repositories.memory_result_evidence_repository import (
     MemoryResultEvidenceRepository,
 )

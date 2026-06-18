@@ -8,13 +8,14 @@ from datetime import datetime, timezone
 import pytest
 
 from src.application.services.artifact_publication_dispatcher import (
-    ArtifactPublicationDispatcher,
     ArtifactSourceStagingFailedError,
 )
 from src.domain.jobs.artifact_manifest import ArtifactManifestStatus
-from src.domain.jobs.artifact_policy import ARTIFACT_KIND_EXECUTION_LOG, ARTIFACT_KIND_HYBRID_REPORT_JSON
+from src.domain.jobs.artifact_policy import (
+    ARTIFACT_KIND_EXECUTION_LOG,
+    ARTIFACT_KIND_HYBRID_REPORT_JSON,
+)
 from src.domain.jobs.artifact_publication_outbox import (
-    ArtifactPublicationOutboxEntry,
     ArtifactPublicationOutboxStatus,
     ArtifactSourceType,
 )

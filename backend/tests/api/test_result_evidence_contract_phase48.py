@@ -83,7 +83,9 @@ class StubEvidenceQuery:
         )
 
     def get_traceability_artifact(self, job_id=None, **_kwargs):
-        from src.application.services.result_evidence_query_service import TraceabilityArtifactReadModel
+        from src.application.services.result_evidence_query_service import (
+            TraceabilityArtifactReadModel,
+        )
 
         return TraceabilityArtifactReadModel(
             kind="traceability_manifest",
@@ -126,7 +128,7 @@ def test_position_detail_uses_resolved_job_id_for_evidence_lookup() -> None:
 
     class MismatchedStorageUseCase(StubDetailUseCase):
         def execute(self, *_args, **_kwargs) -> PositionDetailResult:
-            result = super().execute()
+            super().execute()
             return PositionDetailResult(
                 position=Position(
                     id="pos-1",
@@ -165,7 +167,9 @@ def test_position_detail_uses_resolved_job_id_for_evidence_lookup() -> None:
 def test_invalid_evidence_has_no_image_url() -> None:
     class InvalidQuery(StubEvidenceQuery):
         def get_position_evidence_view(self, **_kwargs):
-            from src.application.services.result_evidence_query_service import ResultEvidenceViewModel
+            from src.application.services.result_evidence_query_service import (
+                ResultEvidenceViewModel,
+            )
 
             return ResultEvidenceViewModel(
                 displayable=False,

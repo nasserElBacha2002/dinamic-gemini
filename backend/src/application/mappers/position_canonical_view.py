@@ -16,9 +16,6 @@ from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 from src.application.services.position_traceability import enrich_position_traceability_from_report
-from src.domain.traceability import (
-    resolve_has_valid_evidence_displayable,
-)
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 from src.domain.quantity.resolution import (
@@ -27,6 +24,9 @@ from src.domain.quantity.resolution import (
     is_product_present_for_qty_inference,
     normalize_raw_qty,
     resolve_final_qty,
+)
+from src.domain.traceability import (
+    resolve_has_valid_evidence_displayable,
 )
 
 # --- Quantity contract (matches public PositionSummaryResponse qty* semantics) ---

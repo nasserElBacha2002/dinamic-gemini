@@ -75,7 +75,7 @@ class EntityResolutionStage:
         valid_image_ids: frozenset[str] = frozenset()
         manifest_image_ids: frozenset[str] = frozenset()
         sent_metadata_available = False
-        if is_photo_job:
+        if is_photo_job and job_input is not None:
             run_dir = context.run_dir
             manifest_path = resolve_manifest_path(run_dir, job_input)
             photos_dir_rel = photos_dir_relative_for_manifest(job_input)

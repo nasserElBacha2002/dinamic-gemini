@@ -6,23 +6,22 @@ from pathlib import Path
 
 import numpy as np
 
+from src.domain.entity import Entity
 from src.domain.execution_image_manifest import (
-    COMPOSITION_KEY_EXECUTION_IMAGE_MANIFEST,
     ExecutionImageEntry,
     ExecutionImageManifest,
     ExecutionImageRole,
     manifest_composition_projection,
 )
-from src.domain.prompt_image_projection import COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION
 from src.domain.manifest_evidence_resolution import normalize_entity_evidence_identifiers
-from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
+from src.domain.prompt_image_projection import COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION
 from src.domain.traceability import (
     TraceabilityStatus,
     apply_traceability_validation,
     extract_reference_image_ids,
     extract_sent_image_ids_from_composition,
 )
-from src.domain.entity import Entity
+from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
 from src.parsing.global_analysis_parser import parse_entities
 from src.pipeline.services.execution_image_manifest_payload import (
     bind_provider_payload_from_manifest,

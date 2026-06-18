@@ -6,10 +6,11 @@ Single authoritative input contract for all active visual provider adapters.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 
 from src.domain.execution_image_manifest import (
     ExecutionImageManifest,
@@ -309,7 +310,7 @@ def provider_execution_request_from_metadata(
             "provider_execution_request.image_manifest missing",
         )
     try:
-        manifest = ExecutionImageManifest.from_dict(manifest_raw)
+        ExecutionImageManifest.from_dict(manifest_raw)
     except ExecutionImageManifestError as exc:
         raise ProviderImageExecutionError(
             PROVIDER_IMAGE_MANIFEST_MISMATCH,

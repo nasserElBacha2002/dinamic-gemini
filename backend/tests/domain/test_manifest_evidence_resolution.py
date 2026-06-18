@@ -10,13 +10,13 @@ from src.domain.execution_image_manifest import (
     ExecutionImageRole,
 )
 from src.domain.manifest_evidence_resolution import (
-    EvidenceResolutionOutcome,
-    RawEvidenceIdentifier,
     WARNING_CONFLICTING_EVIDENCE_IDS,
-    WARNING_MANIFEST_UNAVAILABLE,
     WARNING_MALFORMED_MANIFEST_ENTRY_ID,
+    WARNING_MANIFEST_UNAVAILABLE,
     WARNING_MISSING_EVIDENCE_ID,
     WARNING_REFERENCE_AS_EVIDENCE,
+    EvidenceResolutionOutcome,
+    RawEvidenceIdentifier,
     resolve_raw_evidence_identifier,
 )
 from src.domain.traceability import TraceabilityStatus

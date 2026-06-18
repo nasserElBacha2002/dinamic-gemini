@@ -33,10 +33,10 @@ from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWorkFactory,
 )
+from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
 from src.infrastructure.repositories.memory_result_evidence_repository import (
     MemoryResultEvidenceRepository,
 )
-from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
 from tests.support.worker_phase1.executor_harness import (
     ExecutorHarness,
     FixedClock,

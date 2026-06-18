@@ -12,12 +12,12 @@ from src.domain.execution_image_manifest import (
     ExecutionImageManifest,
     ExecutionImageRole,
 )
+from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
 from src.llm.vision_multimodal_payload import (
     build_anthropic_vision_from_serialized,
     build_gemini_contents_from_serialized,
     build_openai_vision_from_serialized,
 )
-from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
 from src.pipeline.services.execution_image_manifest_payload import (
     bind_provider_payload_from_manifest,
     primary_lookups_from_acquired,

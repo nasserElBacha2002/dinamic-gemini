@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from src.domain.execution_image_manifest import ExecutionImageEntry, ExecutionImageManifest, ExecutionImageRole
+from unittest.mock import MagicMock
+
+from src.domain.execution_image_manifest import (
+    ExecutionImageEntry,
+    ExecutionImageManifest,
+    ExecutionImageRole,
+)
 from src.domain.prompt_image_projection import COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION
 from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
-from src.pipeline.services.hybrid_analysis_prompt import build_hybrid_analysis_prompt_with_traceability
 from src.pipeline.context.run_context import RunContext
-from unittest.mock import MagicMock
+from src.pipeline.services.hybrid_analysis_prompt import (
+    build_hybrid_analysis_prompt_with_traceability,
+)
 
 
 def _manifest() -> ExecutionImageManifest:

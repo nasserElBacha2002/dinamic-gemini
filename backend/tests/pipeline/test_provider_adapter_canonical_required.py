@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from src.llm.anthropic_sdk_adapter import _anthropic_build_message_content
 from src.llm.errors import LLMProviderError
-from src.llm.openai_sdk_adapter import _openai_build_user_content, _OPENAI_VENDOR
+from src.llm.openai_sdk_adapter import _OPENAI_VENDOR, _openai_build_user_content
 from src.llm.types import LLMRequest
 from src.pipeline.services.provider_execution_errors import PROVIDER_IMAGE_MANIFEST_MISMATCH
-import numpy as np
 
 
 def _canonical_required_request() -> LLMRequest:

@@ -17,6 +17,7 @@ from src.application.services.artifact_finalization_continuation import (
 )
 from src.application.services.artifact_publication_dispatcher import ArtifactPublicationDispatcher
 from src.application.services.finalization_projection_service import FinalizationProjectionService
+from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.jobs.artifact_manifest import ArtifactManifestStatus
 from src.domain.jobs.artifact_policy import (
     ARTIFACT_KIND_EXECUTION_LOG,
@@ -25,7 +26,6 @@ from src.domain.jobs.artifact_policy import (
 from src.domain.jobs.artifact_publication_outbox import ArtifactPublicationOutboxStatus
 from src.domain.jobs.entities import JobStatus
 from src.domain.jobs.finalization_evidence import FinalizationStage, StageStatus
-from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import (

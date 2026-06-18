@@ -97,19 +97,19 @@ def extract_sent_image_ids_from_composition(
             return None
         if manifest is None:
             return None
-        ids = manifest.primary_source_image_ids()
-        return frozenset(ids) if ids else None
+        primary_ids = manifest.primary_source_image_ids()
+        return frozenset(primary_ids) if primary_ids else None
     if not composition:
         return None
     sent_raw = composition.get("frames_sent_ids")
     if not isinstance(sent_raw, list):
         return None
-    ids = frozenset(
+    sent_ids = frozenset(
         str(value).strip()
         for value in sent_raw
         if value is not None and str(value).strip()
     )
-    return ids if ids else None
+    return sent_ids if sent_ids else None
 
 
 def resolve_has_valid_evidence_displayable(

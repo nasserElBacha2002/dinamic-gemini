@@ -20,7 +20,7 @@ from src.llm.prompt_composer.hybrid_assembly import (
     DEFAULT_HYBRID_PROMPT_PROFILE,
     compose_hybrid_base,
 )
-from src.llm.types import LLMRequest
+from src.llm.types import ContextImageSequence, LLMRequest
 from src.llm.vision_multimodal_payload import (
     LLM_METADATA_KEY_MULTIMODAL_ORDER,
     LLM_METADATA_KEY_REFERENCE_IMAGE_IDS,
@@ -28,8 +28,8 @@ from src.llm.vision_multimodal_payload import (
     build_gemini_interleaved_contents,
     resolve_serialized_payload_for_adapter,
 )
-from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
 from src.models.schemas import GlobalEntityResponseV21
+from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
 logger = logging.getLogger(__name__)

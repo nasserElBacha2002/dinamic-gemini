@@ -70,17 +70,17 @@ def build_execution_image_manifest(
 
     seen_ref: set[str] = set()
     ref_index = 0
-    for cand in reference_candidates:
-        sid = (cand.source_image_id or "").strip()
+    for ref_cand in reference_candidates:
+        sid = (ref_cand.source_image_id or "").strip()
         if not sid:
             continue
-        if not cand.loaded:
+        if not ref_cand.loaded:
             excluded_entries = excluded_entries + (
                 ExcludedExecutionImage(
-                    source_asset_id=cand.source_asset_id or sid,
+                    source_asset_id=ref_cand.source_asset_id or sid,
                     source_image_id=sid,
                     reason=ImageExclusionReason.MISSING_STORAGE_OBJECT,
-                    original_filename=cand.original_filename,
+                    original_filename=ref_cand.original_filename,
                 ),
             )
             excluded_ids = frozenset(e.source_image_id for e in excluded_entries)
@@ -92,13 +92,13 @@ def build_execution_image_manifest(
         entries.append(
             ExecutionImageEntry(
                 manifest_entry_id=_reference_entry_id(ref_index),
-                source_asset_id=(cand.source_asset_id or sid).strip(),
+                source_asset_id=(ref_cand.source_asset_id or sid).strip(),
                 source_image_id=sid,
                 role=ExecutionImageRole.REFERENCE_IMAGE,
                 payload_ordinal=ordinal,
-                storage_reference=cand.storage_reference,
-                original_filename=cand.original_filename,
-                mime_type=cand.mime_type,
+                storage_reference=ref_cand.storage_reference,
+                original_filename=ref_cand.original_filename,
+                mime_type=ref_cand.mime_type,
             )
         )
         ordinal += 1
@@ -222,7 +222,7 @@ def reference_candidates_from_visual_bundle(
                 source_image_id=rid,
                 source_asset_id=rid,
                 storage_reference=Path(path).name if path else rid,
-                original_filename=Path((ref.source_path or rid)).name or None,
+                original_filename=Path(ref.source_path or rid).name or None,
                 mime_type=getattr(ref, "mime_type", None),
                 loaded=rid in resolved_set,
             )

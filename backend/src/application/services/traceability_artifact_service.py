@@ -21,12 +21,12 @@ from src.domain.traceability_artifact.builder import (
     build_traceability_manifest,
     traceability_manifest_is_json_safe,
 )
+from src.domain.traceability_artifact.canonical_json import canonical_json_dumps
 from src.domain.traceability_artifact.errors import (
     TraceabilityEvidenceMissingError,
     TraceabilityManifestInvalidError,
     TraceabilityManifestMissingError,
 )
-from src.domain.traceability_artifact.canonical_json import canonical_json_dumps
 
 logger = logging.getLogger(__name__)
 

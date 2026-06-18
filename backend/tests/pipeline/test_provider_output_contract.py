@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
+from src.domain.execution_image_manifest import (
+    EVIDENCE_RETURN_IDENTIFIER_FIELD,
+    LEGACY_EVIDENCE_RETURN_FIELD,
+    ExecutionImageEntry,
+    ExecutionImageManifest,
+    ExecutionImageRole,
+)
 from src.llm.openai_sdk_adapter import _JSON_OBJECT_SUFFIX
 from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
 from src.llm.prompt_composer.hybrid_profiles import (
     CLAUDE_JSON_ENTITY_OUTPUT_KEYS,
     CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX,
-)
-from src.domain.execution_image_manifest import (
-    ExecutionImageEntry,
-    ExecutionImageManifest,
-    ExecutionImageRole,
-    EVIDENCE_RETURN_IDENTIFIER_FIELD,
-    LEGACY_EVIDENCE_RETURN_FIELD,
 )
 from src.models.schemas import EntityV21
 

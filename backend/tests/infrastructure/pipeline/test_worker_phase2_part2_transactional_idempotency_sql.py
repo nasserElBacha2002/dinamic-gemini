@@ -14,9 +14,6 @@ from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.infrastructure.persistence.sql_job_result_unit_of_work import SqlJobResultUnitOfWorkFactory
 from src.infrastructure.repositories.sql_aisle_repository import SqlAisleRepository
 from src.infrastructure.repositories.sql_evidence_repository import SqlEvidenceRepository
-from src.infrastructure.repositories.sql_result_evidence_repository import (
-    SqlResultEvidenceRepository,
-)
 from src.infrastructure.repositories.sql_final_count_repository import SqlFinalCountRepository
 from src.infrastructure.repositories.sql_inventory_repository import SqlInventoryRepository
 from src.infrastructure.repositories.sql_normalized_label_repository import (
@@ -27,6 +24,9 @@ from src.infrastructure.repositories.sql_product_record_repository import (
     SqlProductRecordRepository,
 )
 from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
+from src.infrastructure.repositories.sql_result_evidence_repository import (
+    SqlResultEvidenceRepository,
+)
 from tests.support.worker_phase1.executor_harness import (
     FixedClock,
     make_entity_hybrid_report,

@@ -25,10 +25,10 @@ from src.infrastructure.persistence.memory_job_result_unit_of_work import (
 )
 from src.infrastructure.persistence.sql_job_result_unit_of_work import SqlJobResultUnitOfWorkFactory
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
+from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from src.infrastructure.repositories.memory_result_evidence_repository import (
     MemoryResultEvidenceRepository,
 )
-from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from tests.support.worker_phase1.executor_harness import (
     ExecutorHarness,
     FixedClock,
@@ -264,6 +264,7 @@ def test_p2_p2_c012_sql_shared_connection() -> None:
     from src.infrastructure.repositories.sql_product_record_repository import (
         SqlProductRecordRepository,
     )
+    from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
     from src.infrastructure.repositories.sql_result_evidence_repository import (
         SqlResultEvidenceRepository,
     )

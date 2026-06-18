@@ -15,7 +15,6 @@ from src.domain.jobs.artifact_policy import ARTIFACT_KIND_TRACEABILITY_MANIFEST
 from src.domain.positions.entities import Position
 from src.domain.result_evidence.display import (
     EVIDENCE_IMAGE_URL_UNAVAILABLE_WARNING,
-    SOURCE_ASSET_MISMATCH_WARNING,
     STRUCTURAL_EVIDENCE_UNAVAILABLE_WARNING,
     TRACEABILITY_ARTIFACT_UNAVAILABLE_WARNING,
     api_traceability_status_for_row,

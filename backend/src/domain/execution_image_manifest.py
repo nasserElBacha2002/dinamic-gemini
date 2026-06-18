@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-
 MANIFEST_VERSION = 1
 COMPOSITION_KEY_EXECUTION_IMAGE_MANIFEST = "execution_image_manifest"
 

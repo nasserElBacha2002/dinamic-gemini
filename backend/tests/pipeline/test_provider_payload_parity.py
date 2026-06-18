@@ -12,6 +12,7 @@ from src.domain.execution_image_manifest import (
     ExecutionImageManifest,
     ExecutionImageRole,
 )
+from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
 from src.pipeline.services.execution_image_manifest_payload import (
     bind_provider_payload_from_manifest,
     primary_lookups_from_acquired,
@@ -21,7 +22,6 @@ from src.pipeline.services.provider_execution_errors import (
     ProviderImageExecutionError,
 )
 from src.pipeline.services.provider_execution_request import build_provider_execution_request
-from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
 from src.pipeline.services.provider_payload_serialization import (
     SerializedMultimodalPayload,
     logical_projection_from_serialized,

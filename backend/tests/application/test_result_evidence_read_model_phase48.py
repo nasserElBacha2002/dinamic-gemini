@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 
 from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
 from src.domain.assets.entities import SourceAsset, SourceAssetType
-from src.domain.jobs.artifact_manifest import ArtifactManifestEntry, ArtifactManifestStatus
 from src.domain.jobs.artifact_policy import ARTIFACT_KIND_TRACEABILITY_MANIFEST
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.result_evidence.display import compute_structural_api_displayable

@@ -9,9 +9,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.domain.execution_image_manifest import (
+    MANIFEST_VERSION,
     ExecutionImageManifest,
     ExecutionImageRole,
-    MANIFEST_VERSION,
 )
 
 COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION = "prompt_image_projection"

@@ -31,12 +31,12 @@ from src.api.schemas.position_schemas import (
 )
 from src.application.mappers.position_canonical_view import build_position_canonical_view
 from src.application.services.display_primary_product import select_display_primary_product
+from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
 from src.application.use_cases.positions.get_position_code_scan_evidence import (
     GetPositionCodeScanEvidenceCommand,
     GetPositionCodeScanEvidenceUseCase,
 )
 from src.application.use_cases.positions.get_position_detail import GetPositionDetailUseCase
-from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
 from src.application.use_cases.positions.list_aisle_positions import (
     ListAislePositionsCommand,
     ListAislePositionsUseCase,

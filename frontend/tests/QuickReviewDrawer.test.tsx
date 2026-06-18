@@ -347,6 +347,12 @@ describe('QuickReviewDrawer', () => {
         result: mockResultDetail({
           sourceImageId: 'img_002',
           sourceFileName: 'IMG_1024.JPG',
+          evidenceView: {
+            displayable: true,
+            traceabilityStatus: 'valid',
+            sourceKind: 'structural_result_evidence',
+            imageUrl: 'https://cdn.example/IMG_1024.JPG',
+          },
         }),
       })
     );
@@ -357,10 +363,20 @@ describe('QuickReviewDrawer', () => {
     expect(screen.getByText(/IMG_1024.JPG/)).toBeInTheDocument();
   });
 
-  it('shows Preview when sourceImageId is present', async () => {
+  it('shows Preview when structural evidenceView is displayable', async () => {
     const { useResultDetail } = await import('../src/features/results');
     vi.mocked(useResultDetail).mockReturnValue(
-      stubUseResultDetail({ result: mockResultDetail({ sourceImageId: 'asset-uuid-123' }) })
+      stubUseResultDetail({
+        result: mockResultDetail({
+          sourceImageId: 'asset-uuid-123',
+          evidenceView: {
+            displayable: true,
+            traceabilityStatus: 'valid',
+            sourceKind: 'structural_result_evidence',
+            imageUrl: 'https://cdn.example/asset-uuid-123.jpg',
+          },
+        }),
+      })
     );
 
     renderDrawer(baseContext);

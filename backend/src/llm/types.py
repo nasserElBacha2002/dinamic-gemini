@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from src.pipeline.services.provider_execution_request import ProviderExecutionRequest
@@ -31,13 +31,13 @@ class LLMRequest:
         frame_refs: list[str],
         prompt: str,
         schema_version: str,
-        metadata: Optional[dict[str, Any]] = None,
-        frames_nd: Optional[list[Any]] = None,
-        context_instruction: Optional[str] = None,
-        context_images: Optional[ContextImageSequence] = None,
-        provider_execution_request: Optional[ProviderExecutionRequest] = None,
+        metadata: dict[str, Any] | None = None,
+        frames_nd: list[Any] | None = None,
+        context_instruction: str | None = None,
+        context_images: ContextImageSequence | None = None,
+        provider_execution_request: ProviderExecutionRequest | None = None,
         canonical_provider_payload_required: bool = False,
-        image_execution_contract: Optional[str] = None,
+        image_execution_contract: str | None = None,
     ):
         self.job_id = job_id
         self.frames = list(frames)
@@ -47,22 +47,22 @@ class LLMRequest:
         # Shallow copy; nested values (e.g. Phase 6 ``metadata["prompt_composition"]``) keep object identity.
         self.metadata = dict(metadata) if metadata else {}
         # Optional in-memory frames (e.g. BGR ndarray) to avoid re-loading from disk.
-        self.frames_nd: Optional[list[Any]] = list(frames_nd) if frames_nd else None
+        self.frames_nd: list[Any] | None = list(frames_nd) if frames_nd else None
         # Optional operator/inventory context (e.g. instructions + reference images) before primary frames.
-        self.context_instruction: Optional[str] = context_instruction
-        self.context_images: Optional[list[Any]] = list(context_images) if context_images else None
+        self.context_instruction: str | None = context_instruction
+        self.context_images: list[Any] | None = list(context_images) if context_images else None
         # Phase 4.4: runtime-only adapter context (excluded from JSON metadata persistence).
         self.provider_execution_request = provider_execution_request
         self.canonical_provider_payload_required = bool(canonical_provider_payload_required)
         self.image_execution_contract = image_execution_contract
-        self._serialized_multimodal_payload: Optional[SerializedMultimodalPayload] = None
+        self._serialized_multimodal_payload: SerializedMultimodalPayload | None = None
 
     @property
-    def serialized_multimodal_payload(self) -> Optional[SerializedMultimodalPayload]:
+    def serialized_multimodal_payload(self) -> SerializedMultimodalPayload | None:
         return self._serialized_multimodal_payload
 
     @serialized_multimodal_payload.setter
-    def serialized_multimodal_payload(self, value: Optional[SerializedMultimodalPayload]) -> None:
+    def serialized_multimodal_payload(self, value: SerializedMultimodalPayload | None) -> None:
         self._serialized_multimodal_payload = value
 
 
@@ -79,11 +79,11 @@ class LLMResponse:
     def __init__(  # noqa: PLR0913 — stable executor contract (B8.5)
         self,
         provider: str,
-        model: Optional[str],
-        latency_ms: Optional[int],
+        model: str | None,
+        latency_ms: int | None,
         parsed_json: dict[str, Any],
-        raw_text: Optional[str] = None,
-        usage: Optional[dict[str, Any]] = None,
+        raw_text: str | None = None,
+        usage: dict[str, Any] | None = None,
     ):
         self.provider = provider
         self.model = model

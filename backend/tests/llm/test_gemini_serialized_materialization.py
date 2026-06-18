@@ -17,13 +17,13 @@ from src.domain.execution_image_manifest import (
 )
 from src.domain.prompt_image_projection import build_prompt_image_projection_from_manifest
 from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
+from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
 from src.llm.types import IMAGE_EXECUTION_CONTRACT_CANONICAL_MANIFEST, LLMRequest
 from src.llm.vision_multimodal_payload import (
     build_gemini_contents_from_serialized,
     materialize_gemini_serialized_image,
     resolve_serialized_payload_for_adapter,
 )
-from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
 from src.pipeline.services.execution_image_manifest_payload import (
     bind_provider_payload_from_manifest,
     primary_lookups_from_acquired,

@@ -21,7 +21,6 @@ from src.pipeline.services.execution_image_manifest_payload import (
 from src.pipeline.services.provider_execution_errors import PROVIDER_IMAGE_MANIFEST_MISMATCH
 from src.pipeline.services.provider_execution_request import build_provider_execution_request
 from src.pipeline.services.provider_payload_serialization import (
-    SerializedMultimodalPayload,
     serialize_provider_images,
     validate_execution_projections_parity,
 )

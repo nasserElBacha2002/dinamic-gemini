@@ -7,7 +7,10 @@ from typing import Any
 
 from src.application.ports.job_result_scope_store import JobResultScopeStore, JobScopeRowCounts
 from src.application.ports.job_result_unit_of_work import JobResultRepositories
-from src.application.ports.repositories import EvidenceRepository, ProductRecordRepository, ResultEvidenceRepository
+from src.application.ports.repositories import (
+    EvidenceRepository,
+    ProductRecordRepository,
+)
 
 logger = logging.getLogger(__name__)
 _POSITION_ENTITY_TYPE = "position"

@@ -27,7 +27,11 @@ from typing import Any, NamedTuple
 
 import numpy as np
 
-import src.pipeline.services.hybrid_analysis_prompt as hybrid_prompt_service
+from src.domain.execution_image_manifest import ExecutionImageManifestError
+from src.domain.prompt_image_projection import (
+    COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION,
+    PromptImageProjection,
+)
 from src.llm.prompt_composer.prompt_traceability import (
     LLM_IDENTITY_METADATA_KEY,
     LLM_METADATA_KEY_PROMPT_COMPOSITION,
@@ -36,7 +40,11 @@ from src.llm.prompt_composer.prompt_traceability import (
     prompt_composition_summary_for_execution_log,
     sha256_utf8,
 )
-from src.llm.types import ContextImageSequence, IMAGE_EXECUTION_CONTRACT_CANONICAL_MANIFEST, LLMRequest
+from src.llm.types import (
+    IMAGE_EXECUTION_CONTRACT_CANONICAL_MANIFEST,
+    ContextImageSequence,
+    LLMRequest,
+)
 from src.llm.vision_multimodal_payload import (
     LLM_METADATA_KEY_FRAMES_SENT_IDS,
     LLM_METADATA_KEY_MULTIMODAL_ORDER,
@@ -48,6 +56,7 @@ from src.llm.vision_multimodal_payload import (
 )
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.contracts.analysis_context import AnalysisContext
+from src.pipeline.llm_metadata_json_safety import sanitize_llm_metadata
 from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS,
@@ -55,11 +64,6 @@ from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCES_CONSUMED,
     AnalysisResult,
     ProviderCapabilities,
-)
-from src.domain.execution_image_manifest import ExecutionImageManifestError
-from src.domain.prompt_image_projection import (
-    COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION,
-    PromptImageProjection,
 )
 from src.pipeline.services.analysis_visual_reference_prep import (
     build_primary_evidence_attachments,
@@ -77,14 +81,6 @@ from src.pipeline.services.execution_image_manifest_payload import (
     primary_lookups_from_acquired,
     reference_lookup_from_visual_bundle,
 )
-from src.pipeline.services.provider_execution_bridge import legacy_lists_from_provider_request
-from src.pipeline.services.provider_execution_request import (
-    LLM_METADATA_KEY_CANONICAL_PROVIDER_PAYLOAD_REQUIRED,
-    LLM_METADATA_KEY_IMAGE_EXECUTION_CONTRACT,
-    attach_provider_execution_request_snapshot,
-    build_provider_execution_request,
-)
-from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
 from src.pipeline.services.hybrid_analysis_prompt import (
     build_hybrid_analysis_prompt_with_traceability,
     resolve_analysis_context_for_run,
@@ -101,7 +97,14 @@ from src.pipeline.services.provider_analysis_execution_config import (
 from src.pipeline.services.provider_analysis_result_normalization import (
     build_analysis_result_from_llm_response,
 )
-from src.pipeline.llm_metadata_json_safety import sanitize_llm_metadata
+from src.pipeline.services.provider_execution_bridge import legacy_lists_from_provider_request
+from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
+from src.pipeline.services.provider_execution_request import (
+    LLM_METADATA_KEY_CANONICAL_PROVIDER_PAYLOAD_REQUIRED,
+    LLM_METADATA_KEY_IMAGE_EXECUTION_CONTRACT,
+    attach_provider_execution_request_snapshot,
+    build_provider_execution_request,
+)
 from src.pipeline.services.provider_llm_request_metadata import (
     apply_job_model_name_to_llm_request_metadata,
 )
@@ -272,7 +275,6 @@ class HybridGlobalAnalysisStrategy:
         execution_manifest = None
         bound_payload = None
         provider_execution_request = None
-        prompt_image_projection: PromptImageProjection | None = None
         job_input = getattr(run_ctx, "job_input", None)
         is_photos = job_input and getattr(job_input, "input_type", "") == "photos"
         if is_photos:
@@ -296,7 +298,10 @@ class HybridGlobalAnalysisStrategy:
                 )
                 raise ValueError(str(exc)) from exc
             path_by, nd_by = primary_lookups_from_acquired(frame_paths, frame_refs, frames_nd)
-            ref_by = reference_lookup_from_visual_bundle(context_images, resolved_reference_ids)
+            ref_by = reference_lookup_from_visual_bundle(
+                list(context_images) if context_images is not None else None,
+                resolved_reference_ids,
+            )
             bound_payload = bind_provider_payload_from_manifest(
                 execution_manifest,
                 primary_path_by_source_id=path_by,
@@ -317,7 +322,7 @@ class HybridGlobalAnalysisStrategy:
         )
         raw_projection = composition_base.get(COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION)
         if isinstance(raw_projection, dict):
-            prompt_image_projection = PromptImageProjection.from_dict(raw_projection)
+            PromptImageProjection.from_dict(raw_projection)
 
         if execution_manifest is not None and bound_payload is not None:
             try:

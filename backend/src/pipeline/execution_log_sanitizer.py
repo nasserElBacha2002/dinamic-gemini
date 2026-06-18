@@ -12,7 +12,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 REDACTED_RUNTIME_OBJECT_KEY = "__redacted_runtime_object__"
 
@@ -156,7 +156,7 @@ def make_json_safe_for_execution_log(
 
     if is_dataclass(value):
         return make_json_safe_for_execution_log(
-            asdict(value),
+            asdict(cast(Any, value)),
             path=path,
             _depth=_depth + 1,
         )

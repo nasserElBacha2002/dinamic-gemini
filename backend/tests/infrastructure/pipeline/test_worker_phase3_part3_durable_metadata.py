@@ -22,9 +22,6 @@ from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
 )
-from src.infrastructure.repositories.memory_result_evidence_repository import (
-    MemoryResultEvidenceRepository,
-)
 from src.domain.jobs.artifact_policy import (
     ARTIFACT_KIND_EXECUTION_LOG,
     ARTIFACT_KIND_HYBRID_REPORT_CSV,
@@ -69,6 +66,9 @@ from src.infrastructure.repositories.memory_product_record_repository import (
     MemoryProductRecordRepository,
 )
 from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
+from src.infrastructure.repositories.memory_result_evidence_repository import (
+    MemoryResultEvidenceRepository,
+)
 from tests.support.worker_phase1.doubles import ArtifactUploadSpy
 from tests.support.worker_phase1.executor_harness import (
     ExecutorHarness,

@@ -10,7 +10,10 @@ from typing import Any, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.api.schemas.listing_schemas import PageMeta
-from src.api.schemas.result_evidence_schemas import ResultEvidenceViewResponse, TraceabilityArtifactMetadataResponse
+from src.api.schemas.result_evidence_schemas import (
+    ResultEvidenceViewResponse,
+    TraceabilityArtifactMetadataResponse,
+)
 from src.domain.reviews.entities import ReviewActionType
 
 _QtySourcePublic = Literal[

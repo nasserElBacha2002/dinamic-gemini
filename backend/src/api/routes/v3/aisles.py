@@ -98,8 +98,8 @@ from src.application.services.execution_log_enrichment import (
 )
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
-from src.application.services.run_auditability_service import RunAuditabilityService
 from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
+from src.application.services.run_auditability_service import RunAuditabilityService
 from src.application.use_cases.aisles.cancel_aisle_job import (
     CancelAisleJobCommand,
     CancelAisleJobUseCase,

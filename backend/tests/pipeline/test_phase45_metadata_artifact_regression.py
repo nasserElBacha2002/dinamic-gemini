@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
-
-import pytest
 
 from src.domain.execution_image_manifest import (
     ExecutionImageEntry,

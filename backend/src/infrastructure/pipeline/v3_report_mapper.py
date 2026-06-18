@@ -22,12 +22,6 @@ from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.labels.entities import RawLabel
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
-from src.domain.result_evidence.entities import ResultEvidenceRecord
-from src.domain.result_evidence.mapper import (
-    ResultEvidenceMapContext,
-    map_entity_to_result_evidence,
-)
-from src.domain.traceability import is_traceability_evidence_displayable
 from src.domain.quantity.resolution import (
     QtyParseStatus,
     QtySource,
@@ -36,6 +30,12 @@ from src.domain.quantity.resolution import (
     normalize_raw_qty,
     resolve_final_qty,
 )
+from src.domain.result_evidence.entities import ResultEvidenceRecord
+from src.domain.result_evidence.mapper import (
+    ResultEvidenceMapContext,
+    map_entity_to_result_evidence,
+)
+from src.domain.traceability import is_traceability_evidence_displayable
 
 logger = logging.getLogger(__name__)
 

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from src.domain.entity import Entity
 from src.domain.manifest_evidence_resolution import (
-    EvidenceResolutionOutcome,
-    EvidenceResolutionResult,
     WARNING_MANIFEST_UNAVAILABLE,
     WARNING_MERGE_MULTIPLE_VALID_SOURCES,
+    EvidenceResolutionOutcome,
+    EvidenceResolutionResult,
     merge_entity_evidence_fields,
     merge_evidence_resolution_results,
 )

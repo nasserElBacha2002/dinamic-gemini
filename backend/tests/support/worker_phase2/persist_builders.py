@@ -16,9 +16,6 @@ from src.application.ports.repositories import (
     RawLabelRepository,
     ResultEvidenceRepository,
 )
-from src.infrastructure.repositories.memory_result_evidence_repository import (
-    MemoryResultEvidenceRepository,
-)
 from src.application.services.default_job_scoped_recompute_factory import (
     DefaultJobScopedRecomputeFactory,
 )
@@ -28,6 +25,9 @@ from src.infrastructure.persistence.memory_job_result_unit_of_work import (
 )
 from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
     default_map_hybrid_report_to_domain,
+)
+from src.infrastructure.repositories.memory_result_evidence_repository import (
+    MemoryResultEvidenceRepository,
 )
 
 

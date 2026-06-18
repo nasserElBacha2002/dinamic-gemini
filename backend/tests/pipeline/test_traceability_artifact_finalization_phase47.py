@@ -29,7 +29,11 @@ from src.domain.traceability_artifact.errors import (
 from src.infrastructure.repositories.memory_result_evidence_repository import (
     MemoryResultEvidenceRepository,
 )
-from tests.support.worker_phase1.executor_harness import ExecutorHarness, FixedClock, make_entity_hybrid_report
+from tests.support.worker_phase1.executor_harness import (
+    ExecutorHarness,
+    FixedClock,
+    make_entity_hybrid_report,
+)
 
 
 def _manifest_composition(job_id: str) -> dict:

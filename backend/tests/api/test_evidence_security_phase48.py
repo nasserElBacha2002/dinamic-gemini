@@ -58,9 +58,10 @@ def test_non_displayable_evidence_has_no_signed_url() -> None:
 
 
 def test_artifact_metadata_has_no_credentials_fields() -> None:
+    from datetime import datetime, timezone
+
     from src.api.mappers.result_evidence_mapper import artifact_read_model_to_response
     from src.application.services.result_evidence_query_service import TraceabilityArtifactReadModel
-    from datetime import datetime, timezone
 
     model = TraceabilityArtifactReadModel(
         kind="traceability_manifest",

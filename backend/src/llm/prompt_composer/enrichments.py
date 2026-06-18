@@ -8,8 +8,6 @@ keeps enrichment policy at the request-building layer.
 
 from __future__ import annotations
 
-import hashlib
-
 from src.domain.execution_image_manifest import (
     EVIDENCE_RETURN_IDENTIFIER_FIELD,
     LEGACY_EVIDENCE_RETURN_FIELD,
@@ -104,16 +102,13 @@ def enrich_prompt_with_image_id_strings(
     return base_prompt.rstrip() + "\n" + block + _TRACEABILITY_INSTRUCTION
 
 
-_MANIFEST_TRACEABILITY_INSTRUCTION: str = """
+_MANIFEST_TRACEABILITY_INSTRUCTION: str = f"""
 
-TRACEABILITY (Phase 4.4): Only PRIMARY EVIDENCE images may be returned as {field}.
+TRACEABILITY (Phase 4.4): Only PRIMARY EVIDENCE images may be returned as {EVIDENCE_RETURN_IDENTIFIER_FIELD}.
 REFERENCE images are classification context only — never use them as evidence.
-Return the exact {field} from the PRIMARY EVIDENCE section for each result (e.g. IMG_001).
-Legacy {legacy_field} is accepted for compatibility but {field} is preferred.
-""".format(
-    field=EVIDENCE_RETURN_IDENTIFIER_FIELD,
-    legacy_field=LEGACY_EVIDENCE_RETURN_FIELD,
-)
+Return the exact {EVIDENCE_RETURN_IDENTIFIER_FIELD} from the PRIMARY EVIDENCE section for each result (e.g. IMG_001).
+Legacy {LEGACY_EVIDENCE_RETURN_FIELD} is accepted for compatibility but {EVIDENCE_RETURN_IDENTIFIER_FIELD} is preferred.
+"""
 
 
 def enrich_prompt_with_execution_manifest(

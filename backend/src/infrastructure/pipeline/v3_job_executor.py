@@ -75,21 +75,23 @@ from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
 )
-from src.domain.jobs.artifact_policy import ARTIFACT_KIND_TRACEABILITY_MANIFEST
-from src.domain.traceability_artifact.errors import TraceabilityArtifactError
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
 )
 from src.config import Settings, load_settings
 from src.domain.aisle.entities import Aisle
 from src.domain.jobs.artifact_manifest import ArtifactManifestStatus
-from src.domain.jobs.artifact_policy import is_required_artifact_kind
+from src.domain.jobs.artifact_policy import (
+    ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+    is_required_artifact_kind,
+)
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.jobs.finalization import (
     CurrentFinalizationStep,
     FinalizationErrorCode,
     LastCompletedFinalizationStep,
 )
+from src.domain.traceability_artifact.errors import TraceabilityArtifactError
 from src.infrastructure.pipeline.finalization_errors import (
     ArtifactPublishError,
     ArtifactPublishPartialError,
@@ -111,11 +113,11 @@ from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
 )
 from src.io.logging import setup_logger
 from src.jobs.worker_bootstrap import append_worker_bootstrap_event, checkpoint_v3_job_bootstrap
+from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.execution_log import ExecutionLogWriter, read_last_stage_error
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, PipelineRunResult
-from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
 from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
 
 logger = logging.getLogger(__name__)

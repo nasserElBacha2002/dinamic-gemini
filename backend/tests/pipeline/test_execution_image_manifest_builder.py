@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 
 from src.domain.execution_image_manifest import (
+    ExcludedExecutionImage,
     ExecutionImageManifestError,
     ExecutionImageRole,
     ImageExclusionReason,
-    ExcludedExecutionImage,
 )
 from src.pipeline.services.execution_image_manifest_builder import (
     ManifestPrimaryCandidate,

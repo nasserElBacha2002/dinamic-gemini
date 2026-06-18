@@ -6,9 +6,10 @@ The manifest is the sole authority for which images are sent and in what order.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from src.domain.execution_image_manifest import (
     ExecutionImageManifest,
@@ -176,11 +177,11 @@ def manifest_from_request_metadata(metadata: dict[str, Any] | None) -> Execution
     """Load manifest from LLM request metadata prompt composition when present."""
     if not metadata:
         return None
-    from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
     from src.domain.execution_image_manifest import (
         composition_has_execution_image_manifest,
         require_manifest_from_composition,
     )
+    from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
 
     comp = metadata.get(LLM_METADATA_KEY_PROMPT_COMPOSITION)
     if not isinstance(comp, dict) or not composition_has_execution_image_manifest(comp):

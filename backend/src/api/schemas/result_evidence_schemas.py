@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -36,19 +36,19 @@ class ResultEvidenceViewResponse(BaseModel):
 
     displayable: bool
     traceability_status: EvidenceTraceabilityStatusLiteral | str
-    traceability_warning: Optional[str] = None
-    role: Optional[str] = None
-    source_image_id: Optional[str] = None
-    source_asset_id: Optional[str] = None
-    resolved_manifest_entry_id: Optional[str] = None
-    raw_manifest_entry_id: Optional[str] = None
-    raw_source_image_id: Optional[str] = None
-    image_url: Optional[str] = None
-    thumbnail_url: Optional[str] = None
-    image_access_status: Optional[ImageAccessStatusLiteral | str] = None
+    traceability_warning: str | None = None
+    role: str | None = None
+    source_image_id: str | None = None
+    source_asset_id: str | None = None
+    resolved_manifest_entry_id: str | None = None
+    raw_manifest_entry_id: str | None = None
+    raw_source_image_id: str | None = None
+    image_url: str | None = None
+    thumbnail_url: str | None = None
+    image_access_status: ImageAccessStatusLiteral | str | None = None
     source_kind: EvidenceSourceKindLiteral | str
-    provider: Optional[str] = None
-    model_name: Optional[str] = None
+    provider: str | None = None
+    model_name: str | None = None
 
 
 class TraceabilityArtifactMetadataResponse(BaseModel):
@@ -58,10 +58,10 @@ class TraceabilityArtifactMetadataResponse(BaseModel):
     published: bool
     required: bool
     status: str
-    storage_key: Optional[str] = None
-    content_hash: Optional[str] = None
-    size_bytes: Optional[int] = None
-    published_at: Optional[datetime] = None
+    storage_key: str | None = None
+    content_hash: str | None = None
+    size_bytes: int | None = None
+    published_at: datetime | None = None
 
 
 class TraceabilitySummaryResponse(BaseModel):
@@ -96,9 +96,9 @@ class JobTraceabilityEnvelopeResponse(BaseModel):
 class JobTraceabilityEntityResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    position_id: Optional[str] = None
-    entity_uid: Optional[str] = None
-    model_entity_id: Optional[str] = None
+    position_id: str | None = None
+    entity_uid: str | None = None
+    model_entity_id: str | None = None
     evidence: ResultEvidenceViewResponse
 
 
