@@ -101,6 +101,7 @@ from src.pipeline.services.provider_analysis_execution_config import (
 from src.pipeline.services.provider_analysis_result_normalization import (
     build_analysis_result_from_llm_response,
 )
+from src.pipeline.llm_metadata_json_safety import sanitize_llm_metadata
 from src.pipeline.services.provider_llm_request_metadata import (
     apply_job_model_name_to_llm_request_metadata,
 )
@@ -397,6 +398,7 @@ class HybridGlobalAnalysisStrategy:
         _lid = prompt_composition.get("llm_identity")
         if isinstance(_lid, dict):
             req_meta[LLM_IDENTITY_METADATA_KEY] = dict(_lid)
+        req_meta = sanitize_llm_metadata(req_meta)
 
         request = LLMRequest(
             job_id=job_id,

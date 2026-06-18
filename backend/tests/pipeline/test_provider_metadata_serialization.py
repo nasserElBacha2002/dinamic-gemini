@@ -16,6 +16,10 @@ from src.domain.execution_image_manifest import (
 from src.domain.prompt_image_projection import COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION
 from src.llm.prompt_composer.enrichments import enrich_prompt_with_execution_manifest
 from src.llm.types import IMAGE_EXECUTION_CONTRACT_CANONICAL_MANIFEST, LLMRequest
+from src.pipeline.llm_metadata_json_safety import (
+    assert_metadata_json_serializable,
+    sanitize_llm_metadata,
+)
 from src.pipeline.services.execution_image_manifest_payload import (
     bind_provider_payload_from_manifest,
     primary_lookups_from_acquired,
@@ -86,6 +90,8 @@ def test_no_runtime_objects_in_metadata() -> None:
     req = _request()
     assert "_provider_execution_request_object" not in req.metadata
     assert "_serialized_multimodal_payload" not in req.metadata
+    sanitized = sanitize_llm_metadata(req.metadata)
+    assert_metadata_json_serializable(sanitized)
 
 
 def test_runtime_on_llm_request_not_metadata() -> None:

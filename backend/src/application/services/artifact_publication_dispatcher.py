@@ -57,6 +57,7 @@ from src.infrastructure.pipeline.finalization_stage_recorder import Finalization
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import stored_artifact_to_dict
 from src.infrastructure.storage.artifact_store import ArtifactStore
+from src.pipeline.execution_log import validate_execution_log_jsonl_file
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +165,13 @@ class ArtifactPublicationDispatcher:
                 raise ArtifactSourceStagingFailedError(
                     f"Required source missing for staging: {kind} job_id={job_id}"
                 )
+            if kind == ARTIFACT_KIND_EXECUTION_LOG:
+                try:
+                    validate_execution_log_jsonl_file(resolved.local_path)
+                except (OSError, ValueError) as exc:
+                    raise ArtifactSourceStagingFailedError(
+                        f"execution_log artifact invalid before staging (job_id={job_id}): {exc}"
+                    ) from exc
             if self._staging is None:
                 raise ArtifactSourceStagingFailedError("Staging store not configured")
             with open(resolved.local_path, "rb") as fh:

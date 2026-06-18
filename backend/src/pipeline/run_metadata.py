@@ -15,6 +15,7 @@ from src.pipeline.contracts.analysis_context import (
     AnalysisContext,
     analysis_context_from_dict,
 )
+from src.pipeline.execution_log_sanitizer import make_json_safe_for_execution_log
 from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS,
@@ -168,7 +169,9 @@ def build_run_metadata(
         ),
     }
     if prompt_composition is not None:
-        out[RUN_METADATA_KEY_PROMPT_COMPOSITION] = prompt_composition
+        safe_pc = make_json_safe_for_execution_log(prompt_composition)
+        if isinstance(safe_pc, dict):
+            out[RUN_METADATA_KEY_PROMPT_COMPOSITION] = safe_pc
     if llm_cost_snapshot is not None:
         out[RUN_METADATA_KEY_LLM_COST_SNAPSHOT] = llm_cost_snapshot
     return out
