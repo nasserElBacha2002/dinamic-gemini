@@ -139,6 +139,19 @@ class FailingResultEvidenceRepository(ResultEvidenceRepository):
     def list_valid_by_job_id(self, job_id: str):
         return self._inner.list_valid_by_job_id(job_id)
 
+    def list_for_scope(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        job_id: str,
+    ):
+        return self._inner.list_for_scope(
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            job_id=job_id,
+        )
+
 
 class FailingRecomputeUseCase(RecomputeConsolidatedCountsUseCase):
     """Raises on execute after optionally recording invocation."""

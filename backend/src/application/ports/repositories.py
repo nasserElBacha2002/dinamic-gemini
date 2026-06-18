@@ -493,6 +493,17 @@ class ResultEvidenceRepository(ABC):
         ...
 
     @abstractmethod
+    def list_for_scope(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        job_id: str,
+    ) -> Sequence[ResultEvidenceRecord]:
+        """Return evidence rows for one operational job result scope."""
+        ...
+
+    @abstractmethod
     def list_valid_by_job_id(self, job_id: str) -> Sequence[ResultEvidenceRecord]:
         """Return displayable-valid evidence rows for a job."""
         ...

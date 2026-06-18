@@ -204,3 +204,21 @@ class SqlResultEvidenceRepository(ResultEvidenceRepository):
                 (job_id,),
             )
             return [_row_to_record(row) for row in cur.fetchall()]
+
+    def list_for_scope(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        job_id: str,
+    ) -> Sequence[ResultEvidenceRecord]:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                """
+                SELECT * FROM result_evidence
+                WHERE inventory_id = ? AND aisle_id = ? AND job_id = ?
+                ORDER BY entity_uid, model_entity_id, id
+                """,
+                (inventory_id, aisle_id, job_id),
+            )
+            return [_row_to_record(row) for row in cur.fetchall()]

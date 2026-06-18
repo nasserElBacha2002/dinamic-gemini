@@ -70,10 +70,13 @@ from src.application.services.supplier_prompt_resolver import (
 from src.application.services.supplier_reference_image_resolver import (
     SupplierReferenceImageResolver,
 )
+from src.application.services.traceability_artifact_service import TraceabilityArtifactService
 from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
 )
+from src.domain.jobs.artifact_policy import ARTIFACT_KIND_TRACEABILITY_MANIFEST
+from src.domain.traceability_artifact.errors import TraceabilityArtifactError
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
 )
@@ -329,6 +332,10 @@ class V3JobExecutor:
             final_count_repo=final_count_repo,
             job_scoped_recompute_factory=job_scoped_recompute_factory,
             job_result_uow_factory=job_result_uow_factory,
+        )
+        self._traceability_artifact_service = TraceabilityArtifactService(
+            result_evidence_repo=result_evidence_repo,
+            clock=clock,
         )
         _ = recompute_consolidated_uc
         self._heartbeat_interval_sec = 10
@@ -757,7 +764,76 @@ class V3JobExecutor:
             return True
 
         logger.info(
-            "v3_job_domain_persist_complete job_id=%s aisle_id=%s next_step=durable_artifact_upload",
+            "v3_job_domain_persist_complete job_id=%s aisle_id=%s next_step=traceability_artifact_generation",
+            p.job_id,
+            p.aisle_id,
+        )
+
+        prompt_composition = _prompt_composition_from_run_metadata(p.result.run_metadata)
+        required_kind_overrides: dict[str, bool] = {}
+        try:
+            if self._traceability_artifact_service.is_required_for_run(
+                prompt_composition=prompt_composition
+            ):
+                self._traceability_artifact_service.generate_and_write(
+                    job_id=p.job_id,
+                    inventory_id=p.aisle.inventory_id,
+                    aisle_id=p.aisle_id,
+                    run_id=RUN_ID,
+                    run_dir=p.run_dir,
+                    provider=(p.job.provider_name or "").strip() or None,
+                    model_name=(p.job.model_name or "").strip() or None,
+                    prompt_composition=prompt_composition,
+                    run_metadata=p.result.run_metadata,
+                    hybrid_report=p.report,
+                )
+                required_kind_overrides[ARTIFACT_KIND_TRACEABILITY_MANIFEST] = True
+        except TraceabilityArtifactError as trace_exc:
+            p.exec_log.error(
+                "Artifacts",
+                f"Traceability artifact generation failed: {trace_exc}",
+                payload={
+                    "error": str(trace_exc)[:500],
+                    "traceability_error_code": trace_exc.error_code,
+                },
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.ARTIFACT_SOURCE_STAGING_FAILED,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Traceability artifact generation failed: {trace_exc}",
+                metadata={
+                    "artifact_kind": ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+                    "traceability_error_code": trace_exc.error_code,
+                    "domain_commit_completed": True,
+                },
+            )
+            return True
+        except Exception as trace_exc:
+            p.exec_log.error(
+                "Artifacts",
+                f"Traceability artifact generation failed: {trace_exc}",
+                payload={"error": str(trace_exc)[:500]},
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.ARTIFACT_SOURCE_STAGING_FAILED,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Traceability artifact generation failed: {trace_exc}",
+                metadata={
+                    "artifact_kind": ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+                    "exception_type": type(trace_exc).__name__,
+                    "domain_commit_completed": True,
+                },
+            )
+            return True
+
+        logger.info(
+            "v3_job_traceability_artifact_ready job_id=%s aisle_id=%s next_step=durable_artifact_upload",
             p.job_id,
             p.aisle_id,
         )
@@ -786,7 +862,9 @@ class V3JobExecutor:
                 "Job canceled before artifact upload",
             )
             if self._artifact_dispatcher is not None:
-                return self._publish_artifacts_via_outbox(p, tracker)
+                return self._publish_artifacts_via_outbox(
+                    p, tracker, required_kind_overrides=required_kind_overrides
+                )
             durable_meta = self._artifacts.publish_worker_durables(
                 job_id=p.job_id,
                 run_segment=RUN_ID,
@@ -916,6 +994,8 @@ class V3JobExecutor:
         self,
         p: _V3FinalizeAfterPipelineParams,
         tracker: JobFinalizationTracker,
+        *,
+        required_kind_overrides: dict[str, bool] | None = None,
     ) -> bool:
         assert self._artifact_dispatcher is not None
         try:
@@ -923,6 +1003,7 @@ class V3JobExecutor:
                 job_id=p.job_id,
                 run_segment=RUN_ID,
                 run_dir=p.run_dir,
+                required_kind_overrides=required_kind_overrides,
             )
         except ArtifactSourceStagingFailedError as exc:
             staging_code = getattr(exc, "error_code", "ARTIFACT_STAGING_FAILED")

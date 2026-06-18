@@ -53,3 +53,20 @@ class MemoryResultEvidenceRepository(ResultEvidenceRepository):
             for row in self._store.values()
             if row.job_id == job_id and row.has_valid_evidence is True
         ]
+
+    def list_for_scope(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        job_id: str,
+    ) -> Sequence[ResultEvidenceRecord]:
+        rows = [
+            row
+            for row in self._store.values()
+            if row.job_id == job_id
+            and row.inventory_id == inventory_id
+            and row.aisle_id == aisle_id
+        ]
+        rows.sort(key=lambda r: (r.entity_uid or "", r.model_entity_id or "", r.id))
+        return rows

@@ -53,6 +53,7 @@ from src.domain.jobs.artifact_policy import (
     ARTIFACT_KIND_EXECUTION_LOG,
     ARTIFACT_KIND_HYBRID_REPORT_CSV,
     ARTIFACT_KIND_HYBRID_REPORT_JSON,
+    ARTIFACT_KIND_TRACEABILITY_MANIFEST,
     is_required_artifact_kind,
 )
 from src.domain.jobs.artifact_publication_outbox import (
@@ -72,10 +73,24 @@ logger = logging.getLogger(__name__)
 WORKER_ARTIFACT_PUBLISH_ORDER: tuple[str, ...] = (
     ARTIFACT_KIND_EXECUTION_LOG,
     ARTIFACT_KIND_HYBRID_REPORT_JSON,
+    ARTIFACT_KIND_TRACEABILITY_MANIFEST,
     ARTIFACT_KIND_HYBRID_REPORT_CSV,
 )
 
-_REQUIRED_DURABLE_KINDS = frozenset({ARTIFACT_KIND_EXECUTION_LOG, ARTIFACT_KIND_HYBRID_REPORT_JSON})
+_REQUIRED_DURABLE_KINDS = frozenset(
+    {
+        ARTIFACT_KIND_EXECUTION_LOG,
+        ARTIFACT_KIND_HYBRID_REPORT_JSON,
+    }
+)
+
+_EXACT_STAGED_KINDS = frozenset(
+    {
+        ARTIFACT_KIND_EXECUTION_LOG,
+        ARTIFACT_KIND_HYBRID_REPORT_JSON,
+        ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+    }
+)
 
 
 class ArtifactSourceStagingFailedError(Exception):
@@ -139,19 +154,34 @@ class ArtifactPublicationDispatcher:
         run_segment: str,
         run_dir: Path,
         source_paths: dict[str, Path] | None = None,
+        required_kind_overrides: dict[str, bool] | None = None,
     ) -> None:
         now = self._clock.now()
         self._manifest.ensure_expected_entries(job_id, now=now)
+        overrides = required_kind_overrides or {}
         for kind in sorted(ALL_EXPECTED_ARTIFACT_KINDS):
+            required_override = overrides.get(kind)
             resolved = resolve_local_source(
                 job_id=job_id,
                 artifact_kind=kind,
                 run_segment=run_segment,
                 run_dir=run_dir,
                 source_paths=source_paths,
+                required_override=required_override,
             )
             if not resolved.required and resolved.local_path is None:
                 continue
+            if required_override is True:
+                existing_manifest = self._manifest.get_entry(job_id, kind)
+                self._manifest.mark_pending(
+                    job_id=job_id,
+                    artifact_kind=kind,
+                    required=True,
+                    now=now,
+                    expected_version=(
+                        existing_manifest.version if existing_manifest is not None else None
+                    ),
+                )
             entry = self._build_outbox_entry(
                 job_id=job_id,
                 kind=kind,
@@ -186,7 +216,7 @@ class ArtifactPublicationDispatcher:
         kind: str,
         resolved,
     ) -> ArtifactPublicationOutboxEntry:
-        if kind in _REQUIRED_DURABLE_KINDS:
+        if kind in _EXACT_STAGED_KINDS and resolved.required:
             if resolved.local_path is None or not resolved.local_path.is_file():
                 raise ArtifactSourceStagingFailedError(
                     f"Required source missing for staging: {kind} job_id={job_id}",
@@ -307,7 +337,7 @@ class ArtifactPublicationDispatcher:
                 self._collect_published_meta(job_id, kind, result)
                 continue
             if existing.status == ArtifactPublicationOutboxStatus.PERMANENTLY_FAILED:
-                if is_required_artifact_kind(kind):
+                if is_required_artifact_kind(kind, entry_required=existing.required):
                     result.permanently_failed_kinds.add(kind)
                     if existing is not None:
                         result.failed_entries.append(failed_outbox_entry_summary(existing))
@@ -324,7 +354,7 @@ class ArtifactPublicationDispatcher:
                 continue
             if existing.status == ArtifactPublicationOutboxStatus.RETRY_SCHEDULED:
                 if existing.next_attempt_at and existing.next_attempt_at > now:
-                    if is_required_artifact_kind(kind):
+                    if is_required_artifact_kind(kind, entry_required=existing.required):
                         result.retry_scheduled_kinds.add(kind)
                     continue
             if self._reconciler is not None:
@@ -353,7 +383,7 @@ class ArtifactPublicationDispatcher:
             if (
                 inline_worker
                 and kind in result.permanently_failed_kinds
-                and is_required_artifact_kind(kind)
+                and is_required_artifact_kind(kind, entry_required=claimed.required)
             ):
                 log_publication_step(
                     logging.WARNING,

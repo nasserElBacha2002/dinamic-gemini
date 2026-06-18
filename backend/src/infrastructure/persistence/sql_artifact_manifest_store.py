@@ -455,13 +455,10 @@ class SqlArtifactManifestStore:
         return stored
 
     def required_kinds_published(self, job_id: str) -> bool:
-        entries = {entry.artifact_kind: entry for entry in self.list_entries(job_id)}
-        return all(
-            kind in entries
-            and entries[kind].required is True
-            and entries[kind].status == ArtifactManifestStatus.PUBLISHED
-            for kind in REQUIRED_ARTIFACT_KINDS
-        )
+        entries = [entry for entry in self.list_entries(job_id) if entry.required]
+        if not entries:
+            return False
+        return all(entry.status == ArtifactManifestStatus.PUBLISHED for entry in entries)
 
     def missing_required_kinds(self, job_id: str) -> set[str]:
         entries = {entry.artifact_kind: entry for entry in self.list_entries(job_id)}

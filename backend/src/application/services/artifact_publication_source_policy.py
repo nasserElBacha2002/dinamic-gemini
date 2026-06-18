@@ -10,6 +10,7 @@ from src.domain.jobs.artifact_policy import (
     ARTIFACT_KIND_EXECUTION_LOG,
     ARTIFACT_KIND_HYBRID_REPORT_CSV,
     ARTIFACT_KIND_HYBRID_REPORT_JSON,
+    ARTIFACT_KIND_TRACEABILITY_MANIFEST,
     is_required_artifact_kind,
 )
 from src.domain.jobs.artifact_publication_outbox import ArtifactSourceType
@@ -19,12 +20,14 @@ _KIND_TO_FILENAME = {
     ARTIFACT_KIND_EXECUTION_LOG: "execution_log.jsonl",
     ARTIFACT_KIND_HYBRID_REPORT_JSON: "hybrid_report.json",
     ARTIFACT_KIND_HYBRID_REPORT_CSV: "hybrid_report.csv",
+    ARTIFACT_KIND_TRACEABILITY_MANIFEST: "traceability_manifest.json",
 }
 
 _CONTENT_TYPES = {
     ARTIFACT_KIND_EXECUTION_LOG: "application/x-ndjson",
     ARTIFACT_KIND_HYBRID_REPORT_JSON: "application/json",
     ARTIFACT_KIND_HYBRID_REPORT_CSV: "text/csv",
+    ARTIFACT_KIND_TRACEABILITY_MANIFEST: "application/json",
 }
 
 
@@ -44,7 +47,11 @@ class ResolvedArtifactSource:
 def classify_source_type(artifact_kind: str) -> ArtifactSourceType:
     if artifact_kind == ARTIFACT_KIND_HYBRID_REPORT_CSV:
         return ArtifactSourceType.RECONSTRUCTABLE
-    if artifact_kind in (ARTIFACT_KIND_EXECUTION_LOG, ARTIFACT_KIND_HYBRID_REPORT_JSON):
+    if artifact_kind in (
+        ARTIFACT_KIND_EXECUTION_LOG,
+        ARTIFACT_KIND_HYBRID_REPORT_JSON,
+        ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+    ):
         return ArtifactSourceType.EXACT_LOCAL_SOURCE
     return ArtifactSourceType.UNAVAILABLE
 
@@ -64,8 +71,13 @@ def resolve_local_source(
     run_segment: str,
     run_dir: Path,
     source_paths: dict[str, Path] | None = None,
+    required_override: bool | None = None,
 ) -> ResolvedArtifactSource:
-    required = is_required_artifact_kind(artifact_kind)
+    required = (
+        required_override
+        if required_override is not None
+        else is_required_artifact_kind(artifact_kind)
+    )
     destination_key = worker_output_storage_keys(job_id, run_segment)[artifact_kind]
     content_type = _CONTENT_TYPES.get(artifact_kind, "application/octet-stream")
     source_type = classify_source_type(artifact_kind)

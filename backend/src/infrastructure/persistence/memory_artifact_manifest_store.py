@@ -205,13 +205,10 @@ class MemoryArtifactManifestStore:
         return copy.deepcopy(entry)
 
     def required_kinds_published(self, job_id: str) -> bool:
-        entries = {entry.artifact_kind: entry for entry in self.list_entries(job_id)}
-        return all(
-            kind in entries
-            and entries[kind].required is True
-            and entries[kind].status == ArtifactManifestStatus.PUBLISHED
-            for kind in REQUIRED_ARTIFACT_KINDS
-        )
+        entries = [e for e in self.list_entries(job_id) if e.required]
+        if not entries:
+            return False
+        return all(e.status == ArtifactManifestStatus.PUBLISHED for e in entries)
 
     def missing_required_kinds(self, job_id: str) -> set[str]:
         entries = {entry.artifact_kind: entry for entry in self.list_entries(job_id)}
