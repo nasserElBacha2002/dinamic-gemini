@@ -55,6 +55,7 @@ from src.api.errors.structured_api_http import (
     JOB_PROMOTION_NOT_ALLOWED,
     POSITION_NOT_FOUND,
     PRODUCT_NOT_FOUND,
+    PROVIDER_INCOMPATIBLE_WITH_JOB,
     SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
     UNSUPPORTED_ASSET_TYPE,
     ZERO_BYTE_FILE,
@@ -87,11 +88,30 @@ from src.application.errors import (
     MergeJobScopeAmbiguousError,
     NoSourceAssetsForAisleProcessingError,
     PositionNotFoundError,
+    ProcessingProviderIncompatibleWithJobError,
     ProductNotFoundError,
     SupplierReferenceImageNotFoundError,
     UnsupportedAssetTypeError,
     ZeroByteFileError,
 )
+
+
+def test_mapped_provider_incompatible_with_job_returns_structured_422() -> None:
+    detail = (
+        "Provider 'deepseek' does not support visual inventory processing "
+        "(requires vision and image binding)."
+    )
+    exc = ProcessingProviderIncompatibleWithJobError(
+        detail,
+        provider_key="deepseek",
+        job_kind="visual_inventory",
+    )
+    http = mapped_http_exception(exc)
+    assert http is not None
+    assert http.status_code == 422
+    assert isinstance(http, StructuredApiHttpError)
+    assert http.error_code == PROVIDER_INCOMPATIBLE_WITH_JOB
+    assert http.detail == detail
 
 
 def test_mapped_http_exception_job_scope_returns_404() -> None:

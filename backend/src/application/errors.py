@@ -196,6 +196,25 @@ class InvalidProcessingPromptKeyError(Exception):
     """Raised when prompt_key is not a registered hybrid prompt profile."""
 
 
+class ProcessingProviderIncompatibleWithJobError(Exception):
+    """Raised when provider/model capabilities do not satisfy the job type (Phase 5)."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider_key: str | None = None,
+        model_name: str | None = None,
+        resolved_provider_key: str | None = None,
+        job_kind: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.provider_key = provider_key
+        self.model_name = model_name
+        self.resolved_provider_key = resolved_provider_key
+        self.job_kind = job_kind
+
+
 class JobPromotionNotAllowedError(Exception):
     """Raised when a benchmark run cannot be promoted to operational (wrong scope, state, or type)."""
 

@@ -255,9 +255,18 @@ class HybridGlobalAnalysisStrategy:
         resolved_exec = PipelineProviderResolver.resolve_for_run(
             pipeline_provider_name=pipeline_provider_name,
             settings=settings,
+            job_model_name=getattr(run_ctx, "job_model_name", None),
         )
         executor = resolved_exec.executor
         resolved_key = resolved_exec.normalized_provider_key
+        logger.info(
+            "provider_execution_resolution job_id=%s requested=%s resolved=%s source=%s contract=%s",
+            job_id,
+            resolved_exec.requested_provider_key,
+            resolved_key,
+            resolved_exec.resolution_source,
+            resolved_exec.provider_contract_version,
+        )
 
         analysis_context: AnalysisContext | None = resolve_analysis_context_for_run(run_ctx)
         visual_references_available = bool(analysis_context and analysis_context.visual_references)
@@ -455,6 +464,10 @@ class HybridGlobalAnalysisStrategy:
             log_payload: dict[str, Any] = {
                 "event_type": "analysis_request",
                 "pipeline_provider": resolved_key,
+                "requested_provider_key": resolved_exec.requested_provider_key,
+                "resolved_provider_key": resolved_key,
+                "provider_resolution_source": resolved_exec.resolution_source,
+                "provider_contract_version": resolved_exec.provider_contract_version,
                 "context_instruction": context_instruction,
                 "attachment_summary": {
                     "primary_evidence_count": len(primary_attachments),

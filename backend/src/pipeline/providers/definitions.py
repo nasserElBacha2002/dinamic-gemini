@@ -1,21 +1,31 @@
 """
 Central pipeline provider definitions (pre-Phase 10).
 
-Single source for: registry keys, processing catalog field names, credential checks, and API
-labels. Adding a provider should start here, then wire ``resolve_llm_executor`` (adapter factory).
+Single source for: registry keys, processing catalog field names, credential checks, capability
+specs, and API labels. Adding a provider should start here, then wire ``resolve_llm_executor``
+(adapter factory).
 
 This is **not** a plugin framework — only declarative metadata to reduce drift between registry,
 ``processing_experiment_catalog``, ``processing_provider_resolution``, and API option text.
 
-**Checklist when adding a provider:** (1) append a ``PipelineProviderSpec`` here; (2) register an
-adapter factory in ``_EXECUTOR_BUILDERS`` in ``registry.py``; (3) run tests that assert definition
-keys match the registry — ``registered_pipeline_provider_keys()`` is derived from this module.
+**Provider contract (Phase 5):** capabilities in :mod:`src.pipeline.providers.capabilities` are
+authoritative for visual-inventory job compatibility. Runtime failover between vendors is **not**
+implemented unless ``pipeline_analysis_execution_strategy`` enables multi-provider fallback in settings.
+
+**Checklist when adding a provider:** (1) append a ``PipelineProviderSpec`` here; (2) declare
+capabilities in ``capabilities.py``; (3) register an adapter factory in ``registry.py``; (4) run tests
+that assert definition keys match the registry.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Final
+
+from src.pipeline.providers.capabilities import (
+    ProviderCapabilitySpec,
+    pipeline_provider_capabilities,
+)
 
 
 @dataclass(frozen=True)
@@ -31,6 +41,11 @@ class PipelineProviderSpec:
     default_model_settings_attr: str
     default_model_fallback: str
     is_active: bool = True
+
+    @property
+    def capabilities(self) -> ProviderCapabilitySpec | None:
+        """Declared capabilities for this provider (Phase 5 contract)."""
+        return pipeline_provider_capabilities(self.key)
 
 
 PIPELINE_PROVIDER_SPECS: Final[tuple[PipelineProviderSpec, ...]] = (

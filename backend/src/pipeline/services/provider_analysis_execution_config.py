@@ -20,12 +20,18 @@ from __future__ import annotations
 
 import logging
 
+from src.application.errors import ProcessingProviderIncompatibleWithJobError
+from src.application.services.provider_contract_validation import (
+    validate_ordered_providers_for_visual_inventory_job,
+)
 from src.env_settings.pipeline_analysis_execution_strings import (
     STRATEGY_MULTI_PARALLEL,  # noqa: F401
     STRATEGY_MULTI_SEQUENTIAL,  # noqa: F401
     STRATEGY_SINGLE,
     normalize_pipeline_analysis_strategy_value,
 )
+from src.llm.errors import LLMProviderError
+from src.llm.provider_error_taxonomy import PROVIDER_INCOMPATIBLE_WITH_JOB
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.contracts.pipeline_analysis_execution_settings import (
     SupportsPipelineAnalysisExecutionSettings,
@@ -82,6 +88,21 @@ def effective_extra_provider_keys(
     return _parse_comma_separated_keys(s)
 
 
+def _raise_extra_provider_contract_error(provider_key: str, *, reason: str) -> None:
+    raise LLMProviderError(
+        code=PROVIDER_INCOMPATIBLE_WITH_JOB,
+        message=(
+            f"Extra pipeline provider {provider_key!r} cannot be used for visual inventory "
+            f"processing ({reason})."
+        ),
+        details={
+            "provider": provider_key,
+            "extra_provider_key": provider_key,
+            "phase": "multi_provider_extra_validation",
+        },
+    )
+
+
 def build_ordered_provider_keys(
     context: RunContext,
     settings: SupportsPipelineAnalysisExecutionSettings,
@@ -89,13 +110,15 @@ def build_ordered_provider_keys(
     """
     Return ``[primary, ...extras]`` with deduplication; extras must be registered pipeline keys.
 
-    Unknown extra tokens are skipped with a warning (deterministic, no silent wrong-vendor runs).
+    Unknown extra tokens are skipped with a warning. Inactive or visually incompatible extras
+    fail closed with :class:`~src.llm.errors.LLMProviderError`.
     """
     primary = PipelineProviderResolver.effective_provider_key(
         context.pipeline_provider_name, settings
     )
     known = registered_pipeline_provider_keys()
     extras = effective_extra_provider_keys(context, settings)
+    model_name = getattr(context, "job_model_name", None)
     ordered_extras: list[str] = []
     for k in extras:
         if k == primary:
@@ -108,11 +131,21 @@ def build_ordered_provider_keys(
             )
             continue
         if not is_pipeline_provider_active(k):
-            logger.warning(
-                "Ignoring deprecated/inactive pipeline_analysis extra provider key %r",
-                k,
-            )
-            continue
+            _raise_extra_provider_contract_error(k, reason="inactive or deprecated")
         if k not in ordered_extras:
             ordered_extras.append(k)
-    return [primary] + ordered_extras
+    ordered = [primary] + ordered_extras
+    try:
+        validate_ordered_providers_for_visual_inventory_job(ordered, model_name=model_name)
+    except ProcessingProviderIncompatibleWithJobError as exc:
+        raise LLMProviderError(
+            code=PROVIDER_INCOMPATIBLE_WITH_JOB,
+            message=str(exc),
+            details={
+                "provider": exc.provider_key,
+                "extra_provider_key": exc.provider_key,
+                "model_name": exc.model_name,
+                "phase": "multi_provider_extra_validation",
+            },
+        ) from exc
+    return ordered

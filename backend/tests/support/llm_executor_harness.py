@@ -33,6 +33,10 @@ from typing import Any
 import pytest
 
 from src.llm.types import LLMRequest, LLMResponse
+from src.pipeline.services.pipeline_provider_resolver import (
+    PipelineProviderResolver,
+    ResolvedPipelineExecution,
+)
 
 # Logical provider key returned as the second element of ``resolve_llm_executor_for_context`` when
 # using ``patch_hybrid_resolve_llm_executor`` with defaults — not a registered production key.
@@ -128,16 +132,49 @@ def patch_hybrid_resolve_llm_executor(
     ``\"openai\"`` when exercising provider-specific request metadata branches.
     """
 
-    def _fake_resolve(
+    def _fake_resolve_llm_executor_for_context(
         pipeline_provider_name: str | None,
         settings: Any,
+        *,
+        model_name: str | None = None,
+        **kwargs: Any,
     ) -> tuple[Any, str]:
-        del pipeline_provider_name, settings
+        del pipeline_provider_name, settings, model_name, kwargs
         return executor, resolved_provider_key
+
+    def _fake_resolve_for_run(
+        *,
+        pipeline_provider_name: str | None,
+        settings: Any,
+        job_model_name: str | None = None,
+    ) -> ResolvedPipelineExecution:
+        del settings, job_model_name
+        requested = (pipeline_provider_name or "").strip().lower() or None
+        return ResolvedPipelineExecution(
+            executor=executor,
+            normalized_provider_key=resolved_provider_key,
+            requested_provider_key=requested,
+            resolution_source="explicit_job_provider" if requested else "settings_default",
+        )
+
+    def _noop_validate_ordered_providers_for_visual_inventory_job(
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> None:
+        """Offline harness runs must not fail Phase 5 contract preflight on MagicMock settings."""
 
     monkeypatch.setattr(
         "src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context",
-        _fake_resolve,
+        _fake_resolve_llm_executor_for_context,
+    )
+    monkeypatch.setattr(
+        PipelineProviderResolver,
+        "resolve_for_run",
+        staticmethod(_fake_resolve_for_run),
+    )
+    monkeypatch.setattr(
+        "src.pipeline.services.provider_analysis_execution_config.validate_ordered_providers_for_visual_inventory_job",
+        _noop_validate_ordered_providers_for_visual_inventory_job,
     )
 
 

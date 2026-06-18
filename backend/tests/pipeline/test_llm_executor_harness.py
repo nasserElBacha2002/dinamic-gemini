@@ -238,7 +238,7 @@ def test_patch_hybrid_default_resolved_key_is_harness_logical_provider(
         workspace_path=Path("/tmp"),
         run_dir=Path("/tmp/j1/r1"),
         job_input=MagicMock(),
-        settings=MagicMock(),
+        settings=MagicMock(llm_provider="gemini"),
         logger=MagicMock(),
         execution_log=MagicMock(),
     )

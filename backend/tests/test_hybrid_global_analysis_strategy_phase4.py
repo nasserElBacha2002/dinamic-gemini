@@ -26,6 +26,7 @@ from src.pipeline.ports.analysis_provider import (
 from src.pipeline.services.hybrid_analysis_prompt import (
     build_hybrid_analysis_prompt_with_traceability,
 )
+from src.pipeline.services.pipeline_provider_resolver import ResolvedPipelineExecution
 from tests.support.llm_executor_harness import HARNESS_LOGICAL_PROVIDER_KEY
 
 
@@ -533,8 +534,13 @@ def test_openai_job_model_name_passed_in_llm_request_metadata(tmp_path: Path) ->
     )
 
     with patch(
-        "src.pipeline.services.pipeline_provider_resolver.resolve_llm_executor_for_context",
-        return_value=(mock_executor, "openai"),
+        "src.pipeline.services.pipeline_provider_resolver.PipelineProviderResolver.resolve_for_run",
+        return_value=ResolvedPipelineExecution(
+            executor=mock_executor,
+            normalized_provider_key="openai",
+            requested_provider_key="openai",
+            resolution_source="explicit_job_provider",
+        ),
     ):
         provider = HybridGlobalAnalysisStrategy()
         provider.analyze(
