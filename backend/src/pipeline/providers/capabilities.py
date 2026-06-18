@@ -97,18 +97,56 @@ CAPABILITIES_BY_PROVIDER_KEY: Final[dict[str, ProviderCapabilitySpec]] = {
     "deepseek": _DEEPSEEK_CAPABILITIES,
 }
 
+# Known text-only model ids (lowercase) that must not run visual inventory jobs per provider.
+# Conservative denylist — unlisted catalog models for vision-capable providers are allowed.
+KNOWN_TEXT_ONLY_MODEL_IDS_BY_PROVIDER: Final[dict[str, frozenset[str]]] = {
+    "openai": frozenset(
+        {
+            "gpt-3.5-turbo",
+            "gpt-4",
+            "gpt-4-0314",
+            "gpt-4-0613",
+            "gpt-4-32k",
+            "gpt-4-32k-0314",
+            "gpt-4-32k-0613",
+            "o1-preview",
+            "o1-mini",
+        }
+    ),
+    "claude": frozenset(),
+    "gemini": frozenset(),
+    "deepseek": frozenset({"deepseek-chat", "deepseek-reasoner", "deepseek-coder"}),
+}
+
+PROVIDER_CONTRACT_VERSION: Final[str] = "phase5.provider_contract.v1"
+
 
 def pipeline_provider_capabilities(provider_key: str) -> ProviderCapabilitySpec | None:
     return CAPABILITIES_BY_PROVIDER_KEY.get((provider_key or "").strip().lower())
 
 
 def provider_supports_visual_inventory(provider_key: str) -> bool:
-    """True when provider can run multimodal visual inventory (aisle photo/video) jobs."""
+    """True when provider has a declared capability spec supporting visual inventory jobs."""
     caps = pipeline_provider_capabilities(provider_key)
     if caps is None:
-        # Unknown / test doubles — defer to registry resolution; do not preflight here.
-        return True
+        return False
     return caps.supports_vision and caps.supports_image_binding
+
+
+def model_supports_visual_inventory(provider_key: str, model_name: str | None) -> bool:
+    """
+    True when provider + model can run visual inventory jobs.
+
+    Provider must have a capability spec. Models on the per-provider text-only denylist fail.
+    Empty model_name skips model-level check (catalog validation handles missing models).
+    """
+    if not provider_supports_visual_inventory(provider_key):
+        return False
+    raw = (model_name or "").strip()
+    if not raw:
+        return True
+    deny = KNOWN_TEXT_ONLY_MODEL_IDS_BY_PROVIDER.get((provider_key or "").strip().lower(), frozenset())
+    return raw.lower() not in deny
 
 
 def assert_capabilities_registered_for_all_provider_keys(

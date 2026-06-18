@@ -21,6 +21,8 @@ class ResolvedPipelineProviderKey:
     resolved_key: str
     #: Non-empty when the caller passed an explicit provider (e.g. job.provider_name).
     requested_key: str | None = None
+    #: How the resolved key was chosen (audit / ops).
+    resolution_source: str = "settings_default"
 
     @property
     def remapped(self) -> bool:
@@ -64,14 +66,30 @@ def resolve_pipeline_provider_key(
             raise InactivePipelineProviderKeyError(
                 f"Pipeline provider {raw!r} is inactive or deprecated."
             )
-        return ResolvedPipelineProviderKey(resolved_key=raw, requested_key=raw)
+        return ResolvedPipelineProviderKey(
+            resolved_key=raw,
+            requested_key=raw,
+            resolution_source="explicit_job_provider",
+        )
 
     sp = str(getattr(settings, "llm_provider", "gemini") or "gemini").strip().lower()
     if is_pipeline_provider_active(sp):
-        return ResolvedPipelineProviderKey(resolved_key=sp, requested_key=None)
+        return ResolvedPipelineProviderKey(
+            resolved_key=sp,
+            requested_key=None,
+            resolution_source="settings_default",
+        )
     if pipeline_provider_spec(sp) is not None:
-        return ResolvedPipelineProviderKey(resolved_key="gemini", requested_key=None)
-    return ResolvedPipelineProviderKey(resolved_key=sp, requested_key=None)
+        return ResolvedPipelineProviderKey(
+            resolved_key="gemini",
+            requested_key=None,
+            resolution_source="settings_default_remapped",
+        )
+    return ResolvedPipelineProviderKey(
+        resolved_key=sp,
+        requested_key=None,
+        resolution_source="settings_default",
+    )
 
 
 def normalize_pipeline_provider_key(

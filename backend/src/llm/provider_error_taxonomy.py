@@ -26,6 +26,9 @@ PROVIDER_UNKNOWN_ERROR: Final[str] = "PROVIDER_UNKNOWN_ERROR"
 PROVIDER_NOT_CONFIGURED: Final[str] = "PROVIDER_NOT_CONFIGURED"
 PROVIDER_INCOMPATIBLE_WITH_JOB: Final[str] = "PROVIDER_INCOMPATIBLE_WITH_JOB"
 
+# Canonical codes with no dedicated legacy adapter emitters yet (identity / direct raise only).
+RESERVED_CANONICAL_PROVIDER_ERROR_CODES: Final[frozenset[str]] = frozenset()
+
 CANONICAL_PROVIDER_ERROR_CODES: Final[frozenset[str]] = frozenset(
     {
         PROVIDER_TIMEOUT,
@@ -59,6 +62,12 @@ _LEGACY_TO_CANONICAL: Final[dict[str, str]] = {
     "PROVIDER_IMAGE_UNSUPPORTED_FORMAT": PROVIDER_INCOMPATIBLE_WITH_JOB,
     "PROVIDER_IMAGE_LIMIT_EXCEEDED": PROVIDER_INCOMPATIBLE_WITH_JOB,
     "PROVIDER_IMAGE_RESOURCE_MISSING": PROVIDER_INCOMPATIBLE_WITH_JOB,
+    "AUTH_FAILED": PROVIDER_AUTH_FAILED,
+    "INVALID_API_KEY": PROVIDER_AUTH_FAILED,
+    "MODEL_NOT_FOUND": PROVIDER_MODEL_NOT_FOUND,
+    "QUOTA_EXCEEDED": PROVIDER_QUOTA_EXCEEDED,
+    "CONTENT_BLOCKED": PROVIDER_CONTENT_BLOCKED,
+    "SAFETY_BLOCKED": PROVIDER_CONTENT_BLOCKED,
 }
 
 # Canonical codes retryable by default (adapter / worker policy may narrow per provider).
@@ -104,3 +113,8 @@ def provider_error_retryable(
         if caps is not None and canonical in caps.retryable_errors:
             return True
     return canonical in _DEFAULT_RETRYABLE_CANONICAL
+
+
+def is_reserved_canonical_provider_error_code(code: str) -> bool:
+    """True when canonical code is documented but not yet emitted by adapters."""
+    return canonical_provider_error_code(code) in RESERVED_CANONICAL_PROVIDER_ERROR_CODES

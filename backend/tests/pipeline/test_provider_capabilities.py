@@ -5,6 +5,7 @@ from __future__ import annotations
 from src.pipeline.providers.capabilities import (
     CAPABILITIES_BY_PROVIDER_KEY,
     assert_capabilities_registered_for_all_provider_keys,
+    model_supports_visual_inventory,
     provider_supports_visual_inventory,
 )
 from src.pipeline.providers.definitions import (
@@ -38,8 +39,14 @@ def test_deepseek_does_not_support_visual_inventory() -> None:
     assert caps.supports_image_binding is False
 
 
-def test_unknown_provider_key_defers_visual_preflight() -> None:
-    assert provider_supports_visual_inventory("test_llm_harness_provider")
+def test_unknown_provider_key_fails_visual_inventory() -> None:
+    assert not provider_supports_visual_inventory("test_llm_harness_provider")
+    assert not provider_supports_visual_inventory("not_a_real_provider_ever")
+
+
+def test_text_only_openai_model_rejected_for_visual_inventory() -> None:
+    assert not model_supports_visual_inventory("openai", "gpt-3.5-turbo")
+    assert model_supports_visual_inventory("openai", "gpt-4o")
 
 
 def test_gemini_structured_output_declared() -> None:

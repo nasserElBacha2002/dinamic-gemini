@@ -268,6 +268,7 @@ from src.api.errors.structured_api_http import (
     OPEN_CAPTURE_SESSION_EXISTS,
     POSITION_NOT_FOUND,
     PRODUCT_NOT_FOUND,
+    PROVIDER_INCOMPATIBLE_WITH_JOB,
     SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED,
     SUPPLIER_PROMPT_CONFIG_EMPTY_INSTRUCTIONS,
     SUPPLIER_PROMPT_CONFIG_INVALID_MODEL,
@@ -607,7 +608,11 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
     DeprecatedProcessingProviderError: _plain_http(422),
     InvalidProcessingModelError: _plain_http(422),
     InvalidProcessingPromptKeyError: _plain_http(422),
-    ProcessingProviderIncompatibleWithJobError: _plain_http(422),
+    ProcessingProviderIncompatibleWithJobError: _structured_detail(
+        422,
+        error_code=PROVIDER_INCOMPATIBLE_WITH_JOB,
+        detail=lambda e: str(e),
+    ),
     ProcessingProviderNotConfiguredError: _plain_http(422),
     BenchmarkCompareJobsMustDifferError: _structured_fixed(
         422,

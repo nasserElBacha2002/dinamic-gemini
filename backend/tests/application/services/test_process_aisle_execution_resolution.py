@@ -76,6 +76,27 @@ def test_test_mode_delegates_to_resolve_start(mock_resolve) -> None:
 
 
 @patch(
+    "src.application.services.process_aisle_execution_resolution.validate_provider_model_for_visual_inventory_job"
+)
+@patch(
+    "src.application.services.process_aisle_execution_resolution.resolve_production_processing_keys"
+)
+def test_production_validates_provider_model_contract(
+    mock_resolve, mock_validate
+) -> None:
+    mock_resolve.return_value = ("openai", "gpt-4o", "global_v22")
+    settings = object()
+    resolve_process_aisle_execution_keys(
+        _inv(mode=InventoryProcessingMode.PRODUCTION),
+        requested_provider_name="openai",
+        requested_model_name="gpt-4o",
+        requested_prompt_key=None,
+        settings=settings,
+    )
+    mock_validate.assert_called_once_with("openai", "gpt-4o")
+
+
+@patch(
     "src.application.services.process_aisle_execution_resolution.resolve_production_processing_keys"
 )
 def test_production_logs_when_prompt_override_sent(

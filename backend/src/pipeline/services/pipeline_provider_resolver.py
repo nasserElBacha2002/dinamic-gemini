@@ -19,7 +19,7 @@ from typing import Any
 
 from src.application.errors import ProcessingProviderIncompatibleWithJobError
 from src.application.services.provider_contract_validation import (
-    validate_provider_for_visual_inventory_job,
+    validate_provider_model_for_visual_inventory_job,
 )
 from src.llm.errors import LLMProviderError
 from src.llm.provider_error_taxonomy import PROVIDER_INCOMPATIBLE_WITH_JOB
@@ -30,6 +30,7 @@ from src.pipeline.provider_keys import (
     UnknownPipelineProviderKeyError,
     resolve_pipeline_provider_key,
 )
+from src.pipeline.providers.capabilities import PROVIDER_CONTRACT_VERSION
 from src.pipeline.providers.definitions import deprecated_processing_provider_message
 from src.pipeline.providers.registry import resolve_llm_executor
 
@@ -43,6 +44,8 @@ class ResolvedPipelineExecution:
     executor: LlmGlobalAnalysisExecutor
     normalized_provider_key: str
     requested_provider_key: str | None = None
+    resolution_source: str = "settings_default"
+    provider_contract_version: str = PROVIDER_CONTRACT_VERSION
 
 
 def _contract_error_from_resolution(exc: BaseException, *, requested: str | None) -> LLMProviderError:
@@ -67,6 +70,7 @@ def resolve_pipeline_provider_for_execution(
     settings: Any,
     *,
     validate_visual_inventory: bool = True,
+    model_name: str | None = None,
 ) -> ResolvedPipelineProviderKey:
     """
     Resolve provider key for worker execution (fail-closed on explicit inactive/unknown).
@@ -95,7 +99,10 @@ def resolve_pipeline_provider_for_execution(
 
     if validate_visual_inventory:
         try:
-            validate_provider_for_visual_inventory_job(resolved.resolved_key)
+            validate_provider_model_for_visual_inventory_job(
+                resolved.resolved_key,
+                model_name,
+            )
         except ProcessingProviderIncompatibleWithJobError as exc:
             raise LLMProviderError(
                 code=PROVIDER_INCOMPATIBLE_WITH_JOB,
@@ -103,6 +110,7 @@ def resolve_pipeline_provider_for_execution(
                 details={
                     "provider": resolved.resolved_key,
                     "requested_provider_key": resolved.requested_key,
+                    "model_name": (model_name or "").strip() or None,
                     "phase": "provider_capability_validation",
                 },
             ) from exc
@@ -120,13 +128,19 @@ def resolve_pipeline_provider_for_execution(
 def resolve_llm_executor_for_context(
     pipeline_provider_name: str | None,
     settings: Any,
+    *,
+    model_name: str | None = None,
 ) -> tuple[LlmGlobalAnalysisExecutor, str]:
     """
     Resolve executor and normalized provider key for this run.
 
     Prefer explicit ``pipeline_provider_name`` (job / RunContext). Otherwise ``settings.llm_provider``.
     """
-    resolved = resolve_pipeline_provider_for_execution(pipeline_provider_name, settings)
+    resolved = resolve_pipeline_provider_for_execution(
+        pipeline_provider_name,
+        settings,
+        model_name=model_name,
+    )
     return resolve_llm_executor(resolved.resolved_key, settings), resolved.resolved_key
 
 
@@ -138,13 +152,25 @@ class PipelineProviderResolver:
         *,
         pipeline_provider_name: str | None,
         settings: Any,
+        job_model_name: str | None = None,
     ) -> ResolvedPipelineExecution:
-        executor, key = resolve_llm_executor_for_context(pipeline_provider_name, settings)
+        executor, key = resolve_llm_executor_for_context(
+            pipeline_provider_name,
+            settings,
+            model_name=job_model_name,
+        )
+        meta = resolve_pipeline_provider_for_execution(
+            pipeline_provider_name,
+            settings,
+            model_name=job_model_name,
+            validate_visual_inventory=False,
+        )
         requested = (pipeline_provider_name or "").strip().lower() or None
         return ResolvedPipelineExecution(
             executor=executor,
             normalized_provider_key=key,
             requested_provider_key=requested,
+            resolution_source=meta.resolution_source,
         )
 
     @staticmethod

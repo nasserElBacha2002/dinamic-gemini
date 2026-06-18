@@ -17,7 +17,7 @@ from src.application.services.processing_provider_availability import (
 )
 from src.application.services.processing_provider_resolution import resolve_start_processing_request
 from src.application.services.provider_contract_validation import (
-    validate_provider_for_visual_inventory_job,
+    validate_provider_model_for_visual_inventory_job,
 )
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode
 
@@ -71,5 +71,5 @@ def resolve_process_aisle_execution_keys(
             requested_prompt_key=requested_prompt_key,
             settings=settings,
         )
-    validate_provider_for_visual_inventory_job(provider_key)
+    validate_provider_model_for_visual_inventory_job(provider_key, model_name)
     return provider_key, model_name, prompt_key

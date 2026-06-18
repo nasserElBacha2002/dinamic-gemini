@@ -2,7 +2,7 @@
 Phase 5 — provider contract validation for visual inventory (aisle) processing.
 
 Visual inventory jobs require ``supports_vision`` and ``supports_image_binding`` on the selected
-provider. Validation runs at job creation and defensively at worker execution resolution.
+provider and model. Validation runs at job creation and defensively at worker execution resolution.
 
 **Not runtime failover:** rejecting an incompatible provider does not switch to another vendor.
 """
@@ -16,7 +16,11 @@ from src.pipeline.provider_keys import (
     UnknownPipelineProviderKeyError,
     resolve_pipeline_provider_key,
 )
-from src.pipeline.providers.capabilities import provider_supports_visual_inventory
+from src.pipeline.providers.capabilities import (
+    model_supports_visual_inventory,
+    pipeline_provider_capabilities,
+    provider_supports_visual_inventory,
+)
 from src.pipeline.providers.definitions import (
     deprecated_processing_provider_message,
     pipeline_provider_spec,
@@ -26,9 +30,14 @@ from src.pipeline.providers.definitions import (
 VISUAL_INVENTORY_JOB_KIND = "visual_inventory"
 
 
-def _incompatible_message(provider_key: str) -> str:
+def _incompatible_provider_message(provider_key: str) -> str:
     spec = pipeline_provider_spec(provider_key)
     label = spec.label if spec is not None else provider_key
+    if pipeline_provider_capabilities(provider_key) is None:
+        return (
+            f"Provider {provider_key!r} has no declared capability spec and cannot be used "
+            f"for visual inventory processing."
+        )
     return (
         f"Provider {provider_key!r} ({label}) does not support visual inventory processing "
         f"(requires vision and image binding). Select a compatible provider such as "
@@ -36,22 +45,60 @@ def _incompatible_message(provider_key: str) -> str:
     )
 
 
+def _incompatible_model_message(provider_key: str, model_name: str) -> str:
+    spec = pipeline_provider_spec(provider_key)
+    label = spec.label if spec is not None else provider_key
+    return (
+        f"Model {model_name!r} is not compatible with visual inventory processing for "
+        f"provider {provider_key!r} ({label})."
+    )
+
+
 def validate_provider_for_visual_inventory_job(provider_key: str) -> None:
     """
-    Raise :class:`ProcessingProviderIncompatibleWithJobError` when capabilities are insufficient.
+    Raise :class:`ProcessingProviderIncompatibleWithJobError` when provider capabilities are insufficient.
     """
     key = (provider_key or "").strip().lower()
     if not provider_supports_visual_inventory(key):
         raise ProcessingProviderIncompatibleWithJobError(
-            _incompatible_message(key),
+            _incompatible_provider_message(key),
             provider_key=key,
             job_kind=VISUAL_INVENTORY_JOB_KIND,
         )
 
 
+def validate_provider_model_for_visual_inventory_job(
+    provider_key: str,
+    model_name: str | None,
+) -> None:
+    """Validate provider + optional model for visual inventory jobs (fail closed)."""
+    key = (provider_key or "").strip().lower()
+    validate_provider_for_visual_inventory_job(key)
+    raw_model = (model_name or "").strip()
+    if raw_model and not model_supports_visual_inventory(key, raw_model):
+        raise ProcessingProviderIncompatibleWithJobError(
+            _incompatible_model_message(key, raw_model),
+            provider_key=key,
+            model_name=raw_model,
+            job_kind=VISUAL_INVENTORY_JOB_KIND,
+        )
+
+
+def validate_ordered_providers_for_visual_inventory_job(
+    provider_keys: list[str],
+    *,
+    model_name: str | None,
+) -> None:
+    """Fail closed when any provider in a multi-provider list is incompatible with visual jobs."""
+    for key in provider_keys:
+        validate_provider_model_for_visual_inventory_job(key, model_name)
+
+
 def resolve_and_validate_pipeline_provider_for_visual_job(
     provider_name: str | None,
     settings: object,
+    *,
+    model_name: str | None = None,
 ) -> ResolvedPipelineProviderKey:
     """
     Resolve provider key (fail-closed on explicit inactive/unknown) and validate visual capabilities.
@@ -85,5 +132,5 @@ def resolve_and_validate_pipeline_provider_for_visual_job(
             job_kind=VISUAL_INVENTORY_JOB_KIND,
         )
 
-    validate_provider_for_visual_inventory_job(resolved.resolved_key)
+    validate_provider_model_for_visual_inventory_job(resolved.resolved_key, model_name)
     return resolved

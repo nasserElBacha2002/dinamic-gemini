@@ -13,6 +13,8 @@ from src.env_settings.pipeline_analysis_execution_strings import (
     normalize_pipeline_analysis_strategy_value,
     validate_pipeline_analysis_strategy_for_settings,
 )
+from src.llm.errors import LLMProviderError
+from src.llm.provider_error_taxonomy import PROVIDER_INCOMPATIBLE_WITH_JOB
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.services.provider_analysis_execution_config import (
     build_ordered_provider_keys,
@@ -92,7 +94,25 @@ def test_build_ordered_provider_keys_dedupes_and_skips_unknown() -> None:
     assert keys == ["gemini", "openai"]
 
 
-def test_build_ordered_provider_keys_skips_deprecated_deepseek_extra() -> None:
+def test_build_ordered_provider_keys_compatible_extras_pass() -> None:
+    settings = MagicMock()
+    settings.llm_provider = "gemini"
+    settings.pipeline_analysis_extra_provider_keys = "openai,claude"
+    ctx = RunContext(
+        job_id="j",
+        run_id="r",
+        workspace_path=Path("/tmp"),
+        run_dir=Path("/tmp/r"),
+        job_input=MagicMock(),
+        settings=settings,
+        logger=MagicMock(),
+        pipeline_provider_name=None,
+    )
+    keys = build_ordered_provider_keys(ctx, settings)
+    assert keys == ["gemini", "openai", "claude"]
+
+
+def test_build_ordered_provider_keys_rejects_deepseek_extra() -> None:
     settings = MagicMock()
     settings.llm_provider = "gemini"
     settings.pipeline_analysis_extra_provider_keys = ""
@@ -107,5 +127,7 @@ def test_build_ordered_provider_keys_skips_deprecated_deepseek_extra() -> None:
         pipeline_provider_name=None,
         analysis_extra_provider_keys=("deepseek",),
     )
-    keys = build_ordered_provider_keys(ctx, settings)
-    assert keys == ["gemini"]
+    with pytest.raises(LLMProviderError) as exc:
+        build_ordered_provider_keys(ctx, settings)
+    assert exc.value.canonical_code == PROVIDER_INCOMPATIBLE_WITH_JOB
+    assert exc.value.details.get("extra_provider_key") == "deepseek"

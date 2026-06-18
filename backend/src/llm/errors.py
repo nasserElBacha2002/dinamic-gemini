@@ -41,4 +41,9 @@ class LLMProviderError(Exception):
                 details_retryable_class=details_retryable_bool,
             )
         )
-        super().__init__(f"[{self.canonical_code}] {message}")
+        if self.code != self.canonical_code:
+            self.details.setdefault("legacy_code", self.code)
+        legacy_suffix = (
+            f" legacy_code={self.code}" if self.code != self.canonical_code else ""
+        )
+        super().__init__(f"[{self.canonical_code}] {message}{legacy_suffix}")
