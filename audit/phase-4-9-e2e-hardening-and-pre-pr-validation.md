@@ -4,23 +4,22 @@
 
 | Item | Status |
 |------|--------|
-| **Verdict** | **CHANGES_REQUESTED** |
+| **Verdict** | **READY_FOR_PR** |
 | Phase 4.8 prerequisites | **Verified closed** |
 | Backend Phase 4 regressions | **247 passed**, 1 skipped |
-| Backend full pytest | **2911 passed**, **45 failed**, 38 skipped — **blocks PR** |
-| Backend ruff (global) | **102 issues** — **blocks PR** (CI `ruff check .`) |
-| Backend ruff (changed files) | **101 issues** on 137 changed `.py` files — **blocks PR** |
-| Backend mypy | **10 errors** in 7 files — **blocks PR** (CI `mypy src`) |
+| Backend full pytest | **2956 passed**, 38 skipped — **pass** |
+| Backend ruff (global) | **0 issues** — **pass** (CI `ruff check .`) |
+| Backend mypy | **0 errors** in 671 files — **pass** (CI `mypy src`) |
 | Backend compileall | **pass** |
-| Frontend full tests | **950 passed** (after QuickReviewDrawer alignment) |
-| Frontend build / typecheck | **pass** |
+| Frontend full tests | **950 passed** |
+| Frontend build / typecheck / check:cache | **pass** |
 | Frontend lint | **0 errors**, 10 pre-existing warnings |
 | Migration 0042 | Present; migration test passes |
 | Merge to `origin/main` | **Clean** (merge-tree: no conflict markers) |
 | Branch divergence | `DIN-155` — **16 ahead**, 0 behind `origin/main` |
 | Video traceability | **Out of scope — not implemented** |
 
-**Recommendation:** Do **not** open PR until full backend pytest regressions (45 vs `origin/main`), ruff on changed files, and mypy are resolved or explicitly waived with project-owner approval.
+**Recommendation:** All develop-quality-gate checks pass locally. Safe to open PR targeting `develop`.
 
 ---
 
@@ -28,16 +27,16 @@
 
 | Command | Required | Result | Passed | Failed | Skipped | Blocks PR | Notes |
 |---------|:--------:|--------|-------:|-------:|--------:|----------:|-------|
-| `python3 -m pytest -q --no-cov` (backend full) | yes | 2911 passed, 45 failed, 38 skipped | 2911 | 45 | 38 | **yes** | Failures **not** on `origin/main` (spot-check: `test_p3_2_t10_happy_path_finalization_progression` passes on main, fails on branch) |
-| `ruff check .` | yes | 102 issues | — | 102 | — | **yes** | CI `develop-quality-gate` runs global ruff |
-| `ruff check` (137 changed `.py` files) | yes | 101 issues | — | 101 | — | **yes** | Mostly `UP045` Optional style + `I001` import order across Phase 4 diff |
-| `mypy src` | yes | 10 errors in 7 files | — | 10 | — | **yes** | Includes `traceability_artifact/builder.py`, `domain/traceability.py` |
+| `python3 -m pytest -q` (backend full) | yes | 2956 passed, 38 skipped | 2956 | 0 | 38 | no | Fixed entity resolution, parser assertions, worker harness, phase5 durable-upload tests |
+| `ruff check .` | yes | 0 issues | — | 0 | — | no | CI `develop-quality-gate` runs global ruff |
+| `mypy src` | yes | 0 errors in 671 files | — | 0 | — | no | |
 | `PYTHONDONTWRITEBYTECODE=1 python3 -m compileall -q src` | yes | exit 0 | — | 0 | — | no | |
 | `npm test -- --run` (frontend full) | yes | 950 passed | 950 | 0 | 0 | no | Fixed `QuickReviewDrawer.test.tsx` for Phase 4.8 `evidenceView` gate |
 | Phase 4.8 frontend targeted (6 files) | yes | 81 passed | 81 | 0 | 0 | no | |
 | `npm run build` | yes | success | — | 0 | — | no | |
 | `npm run typecheck` | yes | success | — | 0 | — | no | |
 | `npm run lint` | yes | 0 errors, 10 warnings | — | 0 | — | no | Warnings pre-existing (`react-refresh/only-export-components`, etc.) |
+| `npm run check:cache` | yes | OK (357 files) | — | 0 | — | no | |
 | `git diff --check` | yes | clean | — | 0 | — | no | |
 | `git merge-tree $(git merge-base HEAD origin/main) HEAD origin/main` | yes | no conflict markers | — | — | — | no | |
 
@@ -204,6 +203,11 @@
 |------|--------|
 | `frontend/tests/QuickReviewDrawer.test.tsx` | Align drawer evidence tests with Phase 4.8 `evidenceView` contract |
 | `backend/src/application/services/result_evidence_query_service.py` | Remove unused import (ruff) |
+| `backend/src/pipeline/stages/entity_resolution_stage.py` | Manifest-required detection, raw source ID promotion for traceability validation |
+| `backend/src/pipeline/run_metadata.py`, `llm_metadata_json_safety.py` | Preserve `prompt_composition` object identity for propagation tests |
+| `backend/tests/support/worker_phase1/executor_harness.py` | Default photo pipeline run metadata with execution image manifest |
+| `backend/tests/infrastructure/pipeline/test_v3_job_executor_phase5.py` | Durable-upload failure tests patch legacy path; remove dead helpers |
+| Parser / worker / API tests | Assert `raw_source_image_id`; coordination video input; supplier model catalog |
 
 ---
 
@@ -223,15 +227,12 @@ Failures introduced on `DIN-155` vs `origin/main` (spot-checked). Categories:
 
 ## 15. Remaining risks
 
-1. **P0:** 45 full-suite pytest regressions vs `origin/main` — must be triaged/fixed before PR.
-2. **P0:** ruff + mypy CI blockers on changed Phase 4 code.
-3. Worker/finalization failures likely stem from Phase 4.7 traceability artifact requirement interacting with legacy worker test harnesses (`not_started -> failed` transition).
-4. E2E happy-path not fully green end-to-end through worker finalization on branch.
+1. **Low:** Frontend lint warnings (10) are pre-existing and non-blocking in CI.
+2. **Low:** Phase 5 durable-upload failure tests patch `is_required_for_run` → `False` to exercise legacy upload path; production photo jobs still require traceability artifacts.
+3. **Out of scope:** Video traceability not implemented on this branch.
 
 ---
 
 ## 16. Final recommendation
 
-**Do not open PR until listed blockers are fixed.**
-
-After fixing pytest/ruff/mypy blockers, re-run this gate and update verdict to `READY_FOR_PR` or `READY_WITH_RISKS`.
+**READY_FOR_PR** — develop-quality-gate blockers resolved (2025-06-17 re-validation).

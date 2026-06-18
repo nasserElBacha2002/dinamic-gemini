@@ -39,7 +39,8 @@ def test_parse_entities_with_source_image_id():
     }
     entities = parse_entities(data, job_id="job1")
     assert len(entities) == 1
-    assert entities[0].source_image_id == "img_001"
+    assert entities[0].raw_source_image_id == "img_001"
+    assert entities[0].source_image_id is None
     assert entities[0].traceability_status is None  # not yet validated
 
 

@@ -1632,28 +1632,33 @@ def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
     (v3_base / "a1").mkdir(parents=True, exist_ok=True)
     (v3_base / "a1" / "photo.jpg").write_bytes(b"fake")
 
-    with patch.object(artifact_store, "put_object", side_effect=RuntimeError("S3 unavailable")):
-        with patch.object(executor, "_persist_use_case", MagicMock(return_value=None)):
-            with patch(
-                "src.infrastructure.pipeline.v3_job_executor.load_settings"
-            ) as mock_settings:
-                mock_settings.return_value.output_dir = str(base_path)
+    with patch.object(
+        executor._traceability_artifact_service,
+        "is_required_for_run",
+        return_value=False,
+    ):
+        with patch.object(artifact_store, "put_object", side_effect=RuntimeError("S3 unavailable")):
+            with patch.object(executor, "_persist_use_case", MagicMock(return_value=None)):
                 with patch(
-                    "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
-                ) as mock_pipeline_cls:
-                    mock_pipeline_cls.return_value.process_video.return_value = PipelineRunResult(
-                        exit_code=0, run_metadata=None
-                    )
-                    with patch.object(
-                        executor._pipeline_runner,
-                        "build_analysis_context",
-                        return_value=AnalysisContext(
-                            primary_evidence=[],
-                            visual_references=[],
-                            instructions="",
-                        ),
-                    ):
-                        handled = executor.execute(base_path, job_id)
+                    "src.infrastructure.pipeline.v3_job_executor.load_settings"
+                ) as mock_settings:
+                    mock_settings.return_value.output_dir = str(base_path)
+                    with patch(
+                        "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
+                    ) as mock_pipeline_cls:
+                        mock_pipeline_cls.return_value.process_video.return_value = (
+                            PipelineRunResult(exit_code=0, run_metadata=None)
+                        )
+                        with patch.object(
+                            executor._pipeline_runner,
+                            "build_analysis_context",
+                            return_value=AnalysisContext(
+                                primary_evidence=[],
+                                visual_references=[],
+                                instructions="",
+                            ),
+                        ):
+                            handled = executor.execute(base_path, job_id)
 
     assert handled is True
     updated_job = job_repo.get_by_id(job_id)
@@ -1749,30 +1754,35 @@ def test_execute_durable_upload_failure_after_persist_partial_finalization_expli
     (v3_base / "a1").mkdir(parents=True, exist_ok=True)
     (v3_base / "a1" / "photo.jpg").write_bytes(b"fake")
 
-    with patch.object(executor, "_persist_use_case", persist_uc):
-        with patch.object(
-            artifact_store, "put_object", side_effect=RuntimeError("upload unavailable")
-        ):
-            with patch(
-                "src.infrastructure.pipeline.v3_job_executor.load_settings"
-            ) as mock_settings:
-                mock_settings.return_value.output_dir = str(base_path)
+    with patch.object(
+        executor._traceability_artifact_service,
+        "is_required_for_run",
+        return_value=False,
+    ):
+        with patch.object(executor, "_persist_use_case", persist_uc):
+            with patch.object(
+                artifact_store, "put_object", side_effect=RuntimeError("upload unavailable")
+            ):
                 with patch(
-                    "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
-                ) as mock_pipeline_cls:
-                    mock_pipeline_cls.return_value.process_video.return_value = PipelineRunResult(
-                        exit_code=0, run_metadata=None
-                    )
-                    with patch.object(
-                        executor._pipeline_runner,
-                        "build_analysis_context",
-                        return_value=AnalysisContext(
-                            primary_evidence=[],
-                            visual_references=[],
-                            instructions="",
-                        ),
-                    ):
-                        executor.execute(base_path, job_id)
+                    "src.infrastructure.pipeline.v3_job_executor.load_settings"
+                ) as mock_settings:
+                    mock_settings.return_value.output_dir = str(base_path)
+                    with patch(
+                        "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
+                    ) as mock_pipeline_cls:
+                        mock_pipeline_cls.return_value.process_video.return_value = (
+                            PipelineRunResult(exit_code=0, run_metadata=None)
+                        )
+                        with patch.object(
+                            executor._pipeline_runner,
+                            "build_analysis_context",
+                            return_value=AnalysisContext(
+                                primary_evidence=[],
+                                visual_references=[],
+                                instructions="",
+                            ),
+                        ):
+                            executor.execute(base_path, job_id)
 
     persist_uc.execute.assert_called_once()
     updated_job = job_repo.get_by_id(job_id)

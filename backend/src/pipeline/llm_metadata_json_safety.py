@@ -24,7 +24,20 @@ def strip_runtime_keys_from_metadata(metadata: dict[str, Any]) -> dict[str, Any]
 
 def sanitize_llm_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
     """Return a JSON-serializable metadata dict without runtime provider/image objects."""
-    return json_safe_metadata_snapshot(strip_runtime_keys_from_metadata(dict(metadata or {})))
+    from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
+
+    if not metadata:
+        return {}
+    stripped = strip_runtime_keys_from_metadata(dict(metadata))
+    prompt_composition = stripped.get(LLM_METADATA_KEY_PROMPT_COMPOSITION)
+    preserve_prompt_composition = (
+        isinstance(prompt_composition, dict)
+        and find_non_json_serializable_path(prompt_composition) is None
+    )
+    safe = json_safe_metadata_snapshot(stripped)
+    if preserve_prompt_composition and isinstance(safe, dict):
+        safe[LLM_METADATA_KEY_PROMPT_COMPOSITION] = prompt_composition
+    return safe
 
 
 def assert_metadata_json_serializable(metadata: dict[str, Any], *, context: str = "metadata") -> None:

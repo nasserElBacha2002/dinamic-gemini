@@ -565,7 +565,7 @@ def test_openai_normalize_parse_preserves_internal_code_and_canonical_fields() -
     assert ent.position_barcode == "POS-777"
     assert ent.product_label_quantity == 8
     assert ent.product_label_bbox == [0.2, 0.2, 0.4, 0.4]
-    assert ent.source_image_id == "img-1"
+    assert ent.raw_source_image_id == "img-1"
 
 
 def test_openai_quantity_only_response_does_not_create_fake_internal_code() -> None:

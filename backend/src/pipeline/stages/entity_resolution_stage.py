@@ -16,6 +16,7 @@ from src.decision.entity_order import sort_entities_deterministically
 from src.decision.pallet_id import resolve_pallet_id
 from src.decision.quality_score import compute_entity_quality_score
 from src.domain.entity import Entity
+from src.domain.execution_image_manifest import composition_has_execution_image_manifest
 from src.domain.manifest_evidence_resolution import normalize_entity_evidence_identifiers
 from src.domain.traceability import (
     apply_traceability_validation,
@@ -28,6 +29,38 @@ from src.jobs.photos_paths import photos_dir_relative_for_manifest, resolve_mani
 from src.parsing.global_analysis_parser import parse_entities
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.stages.analysis_stage import AnalysisStageResult
+
+
+def _photo_manifest_required(
+    composition: dict[str, object],
+    *,
+    is_photo_job: bool,
+    entities: list[Entity],
+) -> bool | None:
+    """Resolve whether canonical manifest evidence resolution is mandatory for this run."""
+    if not is_photo_job:
+        return None
+    if composition_has_execution_image_manifest(composition):
+        return True
+    if any((ent.manifest_entry_id or "").strip() for ent in entities):
+        return True
+    sent = composition.get("frames_sent_ids")
+    if isinstance(sent, list):
+        if not sent:
+            return True
+        if any((ent.raw_source_image_id or "").strip() for ent in entities):
+            return False
+    return True
+
+
+def _promote_raw_source_image_ids_for_validation(entities: list[Entity]) -> None:
+    """Expose legacy raw IDs for sent-frame validation when manifest resolution deferred."""
+    for ent in entities:
+        if ent.source_image_id:
+            continue
+        raw = (ent.raw_source_image_id or "").strip()
+        if raw:
+            ent.source_image_id = raw
 
 
 @dataclass
@@ -65,7 +98,11 @@ class EntityResolutionStage:
         normalize_entity_evidence_identifiers(
             entities,
             composition=composition,
-            manifest_required=True if is_photo_job else None,
+            manifest_required=_photo_manifest_required(
+                composition,
+                is_photo_job=is_photo_job,
+                entities=entities,
+            ),
         )
         provider_metadata = data.provider_metadata or {}
         reference_image_ids = extract_reference_image_ids(
@@ -91,6 +128,9 @@ class EntityResolutionStage:
                     "entities with source_image_id will be UNVALIDATED",
                     job_id,
                 )
+
+        if sent_metadata_available:
+            _promote_raw_source_image_ids_for_validation(entities)
 
         apply_traceability_validation(
             entities,

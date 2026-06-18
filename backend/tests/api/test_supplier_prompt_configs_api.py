@@ -14,11 +14,19 @@ from src.api.errors.structured_api_http import (
     SUPPLIER_PROMPT_CONFIG_NOT_FOUND,
 )
 from src.api.server import app
+from src.application.services.processing_experiment_catalog import models_for_provider
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
+from src.config import load_settings
 from src.runtime.app_container import reset_app_container_for_tests
 
 client = TestClient(app)
+
+
+def _allowed_gemini_model() -> str:
+    pairs = models_for_provider("gemini", load_settings())
+    assert pairs, "expected at least one configured gemini model"
+    return pairs[0][0]
 
 
 def _fake_admin() -> AuthUser:
@@ -139,6 +147,7 @@ def test_post_inactive_version_preserves_current_active() -> None:
 def test_default_and_model_specific_scopes_are_independent() -> None:
     cid = _create_client("Scope Client")
     sid = _create_supplier(cid, "Scope Supplier")
+    gemini_model = _allowed_gemini_model()
     default_v1 = _create_prompt_config(
         cid, sid, provider_name="gemini", model_name=None, instructions_text="default v1"
     )
@@ -146,7 +155,7 @@ def test_default_and_model_specific_scopes_are_independent() -> None:
         cid,
         sid,
         provider_name="gemini",
-        model_name="gemini-2.0-flash-exp",
+        model_name=gemini_model,
         instructions_text="model v1",
     )
     default_v2 = _create_prompt_config(
@@ -159,7 +168,7 @@ def test_default_and_model_specific_scopes_are_independent() -> None:
     )
     r_model = client.get(
         f"/api/v3/clients/{cid}/suppliers/{sid}/prompt-configs/active",
-        params={"provider_name": "gemini", "model_name": "gemini-2.0-flash-exp"},
+        params={"provider_name": "gemini", "model_name": gemini_model},
         headers=_auth_headers(),
     )
     assert r_default.status_code == 200 and r_model.status_code == 200
@@ -171,11 +180,12 @@ def test_default_and_model_specific_scopes_are_independent() -> None:
 def test_get_prompt_config_by_id_success() -> None:
     cid = _create_client("GetById Client")
     sid = _create_supplier(cid, "GetById Supplier")
+    gemini_model = _allowed_gemini_model()
     created = _create_prompt_config(
         cid,
         sid,
         provider_name="gemini",
-        model_name="gemini-2.0-flash-exp",
+        model_name=gemini_model,
         instructions_text="  line 1\nline 2  ",
         activate=False,
     )
@@ -188,7 +198,7 @@ def test_get_prompt_config_by_id_success() -> None:
     assert payload["id"] == created["id"]
     assert payload["client_supplier_id"] == sid
     assert payload["provider_name"] == "gemini"
-    assert payload["model_name"] == "gemini-2.0-flash-exp"
+    assert payload["model_name"] == gemini_model
     assert payload["instructions_text"] == "line 1\nline 2"
     assert payload["version"] == 1
     assert payload["is_active"] is False

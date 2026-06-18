@@ -170,7 +170,7 @@ def test_phase3_fixtures_validate_parse_normalize_gemini(
     entities = parse_entities(normalized, job_id=f"job-{fixture_name}")
     assert len(entities) == len(fixture["entities"])
     for ent in entities:
-        assert ent.source_image_id is not None
+        assert ent.raw_source_image_id is not None
         assert 0.0 <= ent.confidence <= 1.0
 
 
@@ -179,8 +179,8 @@ def test_phase3_fixture_b_distinct_internal_codes_and_image_ids() -> None:
     ents = parse_entities(data, job_id="job-b")
     assert ents[0].internal_code == "SKU-A"
     assert ents[1].internal_code == "SKU-B"
-    assert ents[0].source_image_id == "img-1"
-    assert ents[1].source_image_id == "img-2"
+    assert ents[0].raw_source_image_id == "img-1"
+    assert ents[1].raw_source_image_id == "img-2"
 
 
 def test_phase3_supplier_fallback_payload_no_quantity_source_field() -> None:
