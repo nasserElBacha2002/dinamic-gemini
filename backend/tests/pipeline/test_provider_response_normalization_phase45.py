@@ -107,6 +107,7 @@ def test_provider_ref_invalid(provider: str) -> None:
         },
     )
     assert entities[0].traceability_status == TraceabilityStatus.INVALID.value
+    assert entities[0].source_image_id is None
 
 
 @pytest.mark.parametrize("provider", ["gemini", "openai", "claude"])

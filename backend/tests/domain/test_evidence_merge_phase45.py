@@ -6,6 +6,7 @@ from src.domain.entity import Entity
 from src.domain.manifest_evidence_resolution import (
     EvidenceResolutionOutcome,
     EvidenceResolutionResult,
+    WARNING_MANIFEST_UNAVAILABLE,
     WARNING_MERGE_MULTIPLE_VALID_SOURCES,
     merge_entity_evidence_fields,
     merge_evidence_resolution_results,
@@ -76,3 +77,65 @@ def test_entity_merge_warns_on_two_valid_sources() -> None:
     )
     merge_entity_evidence_fields(target, candidate)
     assert target.traceability_warning == WARNING_MERGE_MULTIPLE_VALID_SOURCES
+
+
+def test_resolved_beats_legacy_deferred() -> None:
+    left = EvidenceResolutionResult(
+        outcome=EvidenceResolutionOutcome.RESOLVED,
+        traceability_status=None,
+        resolved_source_image_id="asset-1",
+    )
+    right = EvidenceResolutionResult(
+        outcome=EvidenceResolutionOutcome.LEGACY_DEFERRED,
+        traceability_status=None,
+        raw_source_image_id="asset-2",
+    )
+    merged = merge_evidence_resolution_results(left, right)
+    assert merged.outcome == EvidenceResolutionOutcome.RESOLVED
+    assert merged.resolved_source_image_id == "asset-1"
+
+
+def test_resolved_beats_invalid() -> None:
+    left = EvidenceResolutionResult(
+        outcome=EvidenceResolutionOutcome.INVALID_UNKNOWN,
+        traceability_status=TraceabilityStatus.INVALID.value,
+    )
+    right = EvidenceResolutionResult(
+        outcome=EvidenceResolutionOutcome.RESOLVED,
+        traceability_status=None,
+        resolved_source_image_id="asset-1",
+    )
+    merged = merge_evidence_resolution_results(left, right)
+    assert merged.outcome == EvidenceResolutionOutcome.RESOLVED
+    assert merged.resolved_source_image_id == "asset-1"
+
+
+def test_conflict_loses_to_resolved() -> None:
+    left = EvidenceResolutionResult(
+        outcome=EvidenceResolutionOutcome.CONFLICT,
+        traceability_status=TraceabilityStatus.INVALID.value,
+        traceability_warning=WARNING_MANIFEST_UNAVAILABLE,
+    )
+    right = EvidenceResolutionResult(
+        outcome=EvidenceResolutionOutcome.RESOLVED,
+        traceability_status=TraceabilityStatus.VALID.value,
+        resolved_source_image_id="asset-1",
+    )
+    merged = merge_evidence_resolution_results(left, right)
+    assert merged.outcome == EvidenceResolutionOutcome.RESOLVED
+    assert merged.resolved_source_image_id == "asset-1"
+
+
+def test_legacy_deferred_loses_to_missing() -> None:
+    """MISSING (explicit status) outranks LEGACY_DEFERRED (deferred, no status)."""
+    left = EvidenceResolutionResult(
+        outcome=EvidenceResolutionOutcome.LEGACY_DEFERRED,
+        traceability_status=None,
+        raw_source_image_id="asset-1",
+    )
+    right = EvidenceResolutionResult(
+        outcome=EvidenceResolutionOutcome.MISSING,
+        traceability_status=TraceabilityStatus.MISSING.value,
+    )
+    merged = merge_evidence_resolution_results(left, right)
+    assert merged.outcome == EvidenceResolutionOutcome.MISSING

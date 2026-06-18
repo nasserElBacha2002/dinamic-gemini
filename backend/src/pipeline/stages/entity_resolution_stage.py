@@ -60,7 +60,13 @@ class EntityResolutionStage:
         logger.info("Entidades detectadas (hybrid v2.1): %d", len(entities))
 
         composition = data.prompt_composition or {}
-        normalize_entity_evidence_identifiers(entities, composition=composition)
+        job_input = getattr(context, "job_input", None)
+        is_photo_job = job_input is not None and getattr(job_input, "input_type", "") == "photos"
+        normalize_entity_evidence_identifiers(
+            entities,
+            composition=composition,
+            manifest_required=True if is_photo_job else None,
+        )
         provider_metadata = data.provider_metadata or {}
         reference_image_ids = extract_reference_image_ids(
             composition, provider_metadata=provider_metadata
@@ -69,8 +75,7 @@ class EntityResolutionStage:
         valid_image_ids: frozenset[str] = frozenset()
         manifest_image_ids: frozenset[str] = frozenset()
         sent_metadata_available = False
-        job_input = getattr(context, "job_input", None)
-        if job_input and getattr(job_input, "input_type", "") == "photos":
+        if is_photo_job:
             run_dir = context.run_dir
             manifest_path = resolve_manifest_path(run_dir, job_input)
             photos_dir_rel = photos_dir_relative_for_manifest(job_input)

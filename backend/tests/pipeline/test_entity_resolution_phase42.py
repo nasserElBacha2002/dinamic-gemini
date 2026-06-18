@@ -7,7 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.domain.traceability import TRACEABILITY_UNVALIDATED, WARNING_UNVALIDATED
+from src.domain.manifest_evidence_resolution import WARNING_MANIFEST_UNAVAILABLE
+from src.domain.traceability import TRACEABILITY_UNVALIDATED
 from src.jobs.image_identity import JobImage
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.stages.analysis_stage import AnalysisStageResult
@@ -61,7 +62,7 @@ def test_entity_resolution_unvalidated_when_frames_sent_ids_missing(
 
     resolved = EntityResolutionStage().run(context, analysis_result)
     assert resolved.entities[0].traceability_status == TRACEABILITY_UNVALIDATED
-    assert resolved.entities[0].traceability_warning == WARNING_UNVALIDATED
+    assert resolved.entities[0].traceability_warning == WARNING_MANIFEST_UNAVAILABLE
 
 
 def test_entity_resolution_unvalidated_when_only_prompt_listed_ids(
@@ -112,7 +113,7 @@ def test_entity_resolution_unvalidated_when_only_prompt_listed_ids(
 
     resolved = EntityResolutionStage().run(context, analysis_result)
     assert resolved.entities[0].traceability_status == TRACEABILITY_UNVALIDATED
-    assert resolved.entities[0].traceability_warning == WARNING_UNVALIDATED
+    assert resolved.entities[0].traceability_warning == WARNING_MANIFEST_UNAVAILABLE
 
 
 def test_entity_resolution_unvalidated_when_frames_sent_ids_empty_with_prompt_listed(
@@ -165,4 +166,4 @@ def test_entity_resolution_unvalidated_when_frames_sent_ids_empty_with_prompt_li
 
     resolved = EntityResolutionStage().run(context, analysis_result)
     assert resolved.entities[0].traceability_status == TRACEABILITY_UNVALIDATED
-    assert resolved.entities[0].traceability_warning == WARNING_UNVALIDATED
+    assert resolved.entities[0].traceability_warning == WARNING_MANIFEST_UNAVAILABLE

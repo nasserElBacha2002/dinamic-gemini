@@ -133,3 +133,61 @@ def test_ref_warning_text() -> None:
         RawEvidenceIdentifier("REF_001", None), _manifest()
     )
     assert result.warning == WARNING_REFERENCE_AS_EVIDENCE
+
+
+def test_ref_does_not_set_resolved_source_image_id() -> None:
+    result = resolve_raw_evidence_identifier(
+        RawEvidenceIdentifier("REF_001", None), _manifest()
+    )
+    assert result.resolved_source_image_id is None
+    assert result.resolved_manifest_entry_id == "REF_001"
+
+
+def test_legacy_ref_source_id_invalid_without_populating_source() -> None:
+    result = resolve_raw_evidence_identifier(
+        RawEvidenceIdentifier(None, "ref-1"), _manifest()
+    )
+    assert result.outcome == EvidenceResolutionOutcome.INVALID_REFERENCE
+    assert result.resolved_source_image_id is None
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_outcome"),
+    [
+        ("img_001", EvidenceResolutionOutcome.INVALID_MALFORMED),
+        ("filename.jpg", EvidenceResolutionOutcome.INVALID_MALFORMED),
+        ("image 1", EvidenceResolutionOutcome.INVALID_MALFORMED),
+        ("1", EvidenceResolutionOutcome.INVALID_MALFORMED),
+        ("IMG_999", EvidenceResolutionOutcome.INVALID_UNKNOWN),
+    ],
+)
+def test_manifest_entry_id_format_classification(
+    value: str, expected_outcome: EvidenceResolutionOutcome
+) -> None:
+    result = resolve_raw_evidence_identifier(
+        RawEvidenceIdentifier(value, None), _manifest()
+    )
+    assert result.outcome == expected_outcome
+
+
+def test_apply_resolution_ref_entity_source_image_id_none() -> None:
+    from src.domain.entity import Entity
+    from src.domain.manifest_evidence_resolution import (
+        _apply_resolution_to_entity,
+    )
+
+    ent = Entity(
+        entity_uid="job_E1",
+        entity_type="PALLET",
+        model_entity_id="E1",
+        has_boxes=True,
+        confidence=0.9,
+    )
+    result = resolve_raw_evidence_identifier(
+        RawEvidenceIdentifier("REF_001", None), _manifest()
+    )
+    _apply_resolution_to_entity(ent, result)
+    assert ent.source_image_id is None
+    assert ent.raw_source_image_id is None
+    assert ent.resolved_manifest_entry_id == "REF_001"
+    assert ent.traceability_status == TraceabilityStatus.INVALID.value

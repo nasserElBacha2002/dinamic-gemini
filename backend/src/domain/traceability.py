@@ -202,7 +202,7 @@ def apply_traceability_validation(
             raw_sid = getattr(ent, "raw_source_image_id", None)
             raw_sid = (raw_sid or "").strip() if raw_sid else ""
             if raw_sid and not has_context:
-                ent.source_image_id = raw_sid
+                ent.source_image_id = None
                 ent.traceability_status = TraceabilityStatus.UNVALIDATED.value
                 ent.traceability_warning = WARNING_UNVALIDATED
                 continue

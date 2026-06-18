@@ -6,6 +6,7 @@ Central resolver for provider-returned ``manifest_entry_id`` and legacy ``source
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -88,16 +89,34 @@ class EvidenceResolutionResult:
         return self.resolved_source_image_id
 
 
-def _looks_like_manifest_entry_id(value: str) -> bool:
-    key = value.strip().upper()
-    return key.startswith("IMG_") or key.startswith("REF_")
+_PRIMARY_MANIFEST_ENTRY_ID_RE = re.compile(r"^IMG_\d+$")
+_REFERENCE_MANIFEST_ENTRY_ID_RE = re.compile(r"^REF_\d+$")
 
 
-def _is_malformed_manifest_entry_id(value: str) -> bool:
-    stripped = value.strip()
+def is_well_formed_manifest_entry_id(value: str) -> bool:
+    """Case-sensitive manifest entry ID format (IMG_nnn / REF_nnn)."""
+    stripped = (value or "").strip()
     if not stripped:
         return False
-    return not _looks_like_manifest_entry_id(stripped)
+    return bool(
+        _PRIMARY_MANIFEST_ENTRY_ID_RE.match(stripped)
+        or _REFERENCE_MANIFEST_ENTRY_ID_RE.match(stripped)
+    )
+
+
+def is_malformed_manifest_entry_id(value: str) -> bool:
+    stripped = (value or "").strip()
+    if not stripped:
+        return False
+    return not is_well_formed_manifest_entry_id(stripped)
+
+
+def _is_reference_manifest_entry_id(value: str) -> bool:
+    return bool(_REFERENCE_MANIFEST_ENTRY_ID_RE.match((value or "").strip()))
+
+
+def _is_primary_manifest_entry_id(value: str) -> bool:
+    return bool(_PRIMARY_MANIFEST_ENTRY_ID_RE.match((value or "").strip()))
 
 
 def _invalid_result(
@@ -105,7 +124,6 @@ def _invalid_result(
     raw: RawEvidenceIdentifier,
     outcome: EvidenceResolutionOutcome,
     warning: str,
-    resolved_source_image_id: str | None = None,
     resolved_manifest_entry_id: str | None = None,
     role: ExecutionImageRole | None = None,
 ) -> EvidenceResolutionResult:
@@ -115,7 +133,7 @@ def _invalid_result(
         raw_manifest_entry_id=raw.manifest_entry_id,
         raw_source_image_id=raw.legacy_source_image_id,
         resolved_manifest_entry_id=resolved_manifest_entry_id,
-        resolved_source_image_id=resolved_source_image_id,
+        resolved_source_image_id=None,
         role=role,
         traceability_warning=warning,
     )
@@ -160,7 +178,7 @@ def raw_evidence_from_entity_dict(entity_dict: dict[str, Any]) -> RawEvidenceIde
 
 
 def raw_evidence_from_entity(entity: Entity) -> RawEvidenceIdentifier:
-    raw_legacy = getattr(entity, "raw_source_image_id", None) or entity.source_image_id
+    raw_legacy = getattr(entity, "raw_source_image_id", None)
     return RawEvidenceIdentifier(
         manifest_entry_id=(
             str(entity.manifest_entry_id).strip()
@@ -208,7 +226,7 @@ def resolve_raw_evidence_identifier(
             raw_source_image_id=legacy,
         )
 
-    if mid and _is_malformed_manifest_entry_id(mid):
+    if mid and is_malformed_manifest_entry_id(mid):
         return _invalid_result(
             raw=raw,
             outcome=EvidenceResolutionOutcome.INVALID_MALFORMED,
@@ -220,17 +238,15 @@ def resolve_raw_evidence_identifier(
 
     mid_resolved: EvidenceResolutionResult | None = None
     if mid_key:
-        if manifest.is_reference_manifest_entry_id(mid_key):
-            entry = manifest.entry_by_manifest_id().get(mid_key)
+        if _is_reference_manifest_entry_id(mid_key):
             return _invalid_result(
                 raw=raw,
                 outcome=EvidenceResolutionOutcome.INVALID_REFERENCE,
                 warning=WARNING_REFERENCE_AS_EVIDENCE,
-                resolved_source_image_id=entry.source_image_id if entry else None,
                 resolved_manifest_entry_id=mid_key,
                 role=ExecutionImageRole.REFERENCE_IMAGE,
             )
-        if manifest.is_primary_manifest_entry_id(mid_key) or _looks_like_manifest_entry_id(mid_key):
+        if _is_primary_manifest_entry_id(mid_key):
             entry = manifest.entry_by_manifest_id().get(mid_key)
             if entry is None:
                 return _invalid_result(
@@ -255,7 +271,7 @@ def resolve_raw_evidence_identifier(
 
     if mid_key and legacy_key:
         if mid_resolved is None and mid_key:
-            if manifest.is_reference_manifest_entry_id(mid_key):
+            if _is_reference_manifest_entry_id(mid_key):
                 return _invalid_result(
                     raw=raw,
                     outcome=EvidenceResolutionOutcome.INVALID_REFERENCE,
@@ -263,7 +279,7 @@ def resolve_raw_evidence_identifier(
                     resolved_manifest_entry_id=mid_key,
                     role=ExecutionImageRole.REFERENCE_IMAGE,
                 )
-            if _looks_like_manifest_entry_id(mid_key):
+            if _is_primary_manifest_entry_id(mid_key):
                 return _invalid_result(
                     raw=raw,
                     outcome=EvidenceResolutionOutcome.INVALID_UNKNOWN,
@@ -275,7 +291,6 @@ def resolve_raw_evidence_identifier(
                     raw=raw,
                     outcome=EvidenceResolutionOutcome.CONFLICT,
                     warning=WARNING_UNKNOWN_LEGACY_SOURCE,
-                    resolved_source_image_id=mid_resolved.resolved_source_image_id,
                     resolved_manifest_entry_id=mid_resolved.resolved_manifest_entry_id,
                 )
             return _invalid_result(
@@ -288,7 +303,6 @@ def resolve_raw_evidence_identifier(
                 raw=raw,
                 outcome=EvidenceResolutionOutcome.CONFLICT,
                 warning=WARNING_CONFLICTING_EVIDENCE_IDS,
-                resolved_source_image_id=mid_resolved.resolved_source_image_id,
                 resolved_manifest_entry_id=mid_resolved.resolved_manifest_entry_id,
             )
         if mid_resolved:
@@ -306,7 +320,6 @@ def resolve_raw_evidence_identifier(
                 raw=raw,
                 outcome=EvidenceResolutionOutcome.INVALID_REFERENCE,
                 warning=WARNING_REFERENCE_AS_EVIDENCE,
-                resolved_source_image_id=legacy_resolved_sid,
                 resolved_manifest_entry_id=legacy_resolved_mid,
                 role=ExecutionImageRole.REFERENCE_IMAGE,
             )
@@ -332,7 +345,6 @@ def resolve_raw_evidence_identifier(
             raw=raw,
             outcome=EvidenceResolutionOutcome.INVALID_REFERENCE,
             warning=WARNING_REFERENCE_SOURCE_ID,
-            resolved_source_image_id=legacy_resolved_sid,
             resolved_manifest_entry_id=legacy_resolved_mid,
             role=ExecutionImageRole.REFERENCE_IMAGE,
         )
@@ -375,12 +387,8 @@ def _apply_resolution_to_entity(ent: Entity, result: EvidenceResolutionResult) -
 
     if result.outcome == EvidenceResolutionOutcome.RESOLVED:
         ent.source_image_id = result.resolved_source_image_id
-        return
-
-    if result.outcome == EvidenceResolutionOutcome.MISSING:
+    else:
         ent.source_image_id = None
-    elif result.resolved_source_image_id:
-        ent.source_image_id = result.resolved_source_image_id
 
     if result.traceability_status:
         ent.traceability_status = result.traceability_status
@@ -392,13 +400,19 @@ def apply_evidence_resolution_to_entities(
     entities: list[Entity],
     *,
     composition: dict[str, Any] | None,
+    manifest_required: bool | None = None,
 ) -> None:
     """Resolve raw evidence fields to canonical source_image_id or pre-mark invalid outcomes."""
-    canonical_expected = composition_has_execution_image_manifest(composition)
+    composition_has_key = composition_has_execution_image_manifest(composition)
+    if manifest_required is None:
+        require_manifest = composition_has_key
+    else:
+        require_manifest = manifest_required
+
     manifest: ExecutionImageManifest | None = None
     manifest_invalid = False
 
-    if canonical_expected:
+    if composition_has_key:
         try:
             manifest = require_manifest_from_composition(composition)
         except ExecutionImageManifestError:
@@ -420,7 +434,7 @@ def apply_evidence_resolution_to_entities(
             result = resolve_raw_evidence_identifier(
                 raw,
                 manifest,
-                manifest_required=canonical_expected,
+                manifest_required=require_manifest,
             )
         _apply_resolution_to_entity(ent, result)
 
@@ -431,13 +445,11 @@ def merge_evidence_resolution_results(
 ) -> EvidenceResolutionResult:
     """Deterministic merge policy for duplicate entity evidence (Phase 4.5)."""
 
-    def _rank(status: str | None) -> int:
+    def _rank(result: EvidenceResolutionResult) -> int:
+        status = result.traceability_status
         if status == TraceabilityStatus.VALID.value:
             return 4
-        if status in (None,) and (
-            left.outcome == EvidenceResolutionOutcome.RESOLVED
-            or right.outcome == EvidenceResolutionOutcome.RESOLVED
-        ):
+        if result.outcome == EvidenceResolutionOutcome.RESOLVED:
             return 3
         if status == TraceabilityStatus.INVALID.value:
             return 2
@@ -445,8 +457,8 @@ def merge_evidence_resolution_results(
             return 1
         return 0
 
-    left_rank = _rank(left.traceability_status)
-    right_rank = _rank(right.traceability_status)
+    left_rank = _rank(left)
+    right_rank = _rank(right)
     if left_rank > right_rank:
         winner, loser = left, right
     elif right_rank > left_rank:
