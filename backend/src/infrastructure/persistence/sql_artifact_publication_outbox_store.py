@@ -159,6 +159,41 @@ class SqlArtifactPublicationOutboxStore:
                         source_sha256 = COALESCE(?, source_sha256),
                         content_hash = COALESCE(?, content_hash),
                         size_bytes = ?, required = ?,
+                        status = CASE
+                            WHEN status IN (?, ?)
+                                OR (source_reference IS NOT NULL AND ? IS NOT NULL
+                                    AND source_reference <> ?)
+                            THEN ?
+                            ELSE status
+                        END,
+                        attempt_count = CASE
+                            WHEN status IN (?, ?)
+                                OR (source_reference IS NOT NULL AND ? IS NOT NULL
+                                    AND source_reference <> ?)
+                            THEN 0
+                            ELSE attempt_count
+                        END,
+                        last_error_code = CASE
+                            WHEN status IN (?, ?)
+                                OR (source_reference IS NOT NULL AND ? IS NOT NULL
+                                    AND source_reference <> ?)
+                            THEN NULL
+                            ELSE last_error_code
+                        END,
+                        last_error_message = CASE
+                            WHEN status IN (?, ?)
+                                OR (source_reference IS NOT NULL AND ? IS NOT NULL
+                                    AND source_reference <> ?)
+                            THEN NULL
+                            ELSE last_error_message
+                        END,
+                        next_attempt_at = CASE
+                            WHEN status IN (?, ?)
+                                OR (source_reference IS NOT NULL AND ? IS NOT NULL
+                                    AND source_reference <> ?)
+                            THEN NULL
+                            ELSE next_attempt_at
+                        END,
                         updated_at = ?, version = version + 1
                     WHERE job_id = ? AND artifact_kind = ? AND version = ?
                     """,
@@ -170,6 +205,32 @@ class SqlArtifactPublicationOutboxStore:
                         new_hash,
                         entry.size_bytes,
                         entry.required,
+                        ArtifactPublicationOutboxStatus.PERMANENTLY_FAILED.value,
+                        ArtifactPublicationOutboxStatus.RETRY_SCHEDULED.value,
+                        entry.source_reference,
+                        entry.source_reference,
+                        existing.source_reference,
+                        ArtifactPublicationOutboxStatus.PENDING.value,
+                        ArtifactPublicationOutboxStatus.PERMANENTLY_FAILED.value,
+                        ArtifactPublicationOutboxStatus.RETRY_SCHEDULED.value,
+                        entry.source_reference,
+                        entry.source_reference,
+                        existing.source_reference,
+                        ArtifactPublicationOutboxStatus.PERMANENTLY_FAILED.value,
+                        ArtifactPublicationOutboxStatus.RETRY_SCHEDULED.value,
+                        entry.source_reference,
+                        entry.source_reference,
+                        existing.source_reference,
+                        ArtifactPublicationOutboxStatus.PERMANENTLY_FAILED.value,
+                        ArtifactPublicationOutboxStatus.RETRY_SCHEDULED.value,
+                        entry.source_reference,
+                        entry.source_reference,
+                        existing.source_reference,
+                        ArtifactPublicationOutboxStatus.PERMANENTLY_FAILED.value,
+                        ArtifactPublicationOutboxStatus.RETRY_SCHEDULED.value,
+                        entry.source_reference,
+                        entry.source_reference,
+                        existing.source_reference,
                         now.replace(tzinfo=None),
                         entry.job_id,
                         entry.artifact_kind,

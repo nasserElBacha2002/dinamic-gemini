@@ -91,6 +91,19 @@ class MemoryArtifactPublicationOutboxStore:
                 updated.destination_key = entry.destination_key
                 updated.size_bytes = entry.size_bytes
                 updated.required = entry.required
+                if existing.status in (
+                    ArtifactPublicationOutboxStatus.PERMANENTLY_FAILED,
+                    ArtifactPublicationOutboxStatus.RETRY_SCHEDULED,
+                ) or (
+                    existing.source_reference
+                    and entry.source_reference
+                    and existing.source_reference != entry.source_reference
+                ):
+                    updated.status = ArtifactPublicationOutboxStatus.PENDING
+                    updated.attempt_count = 0
+                    updated.last_error_code = None
+                    updated.last_error_message = None
+                    updated.next_attempt_at = None
                 updated.updated_at = now
                 updated.version += 1
                 self._rows[_key(entry.job_id, entry.artifact_kind)] = updated

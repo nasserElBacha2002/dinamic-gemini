@@ -330,6 +330,7 @@ class V3JobExecutor:
                 clock=clock,
             )
         self._artifact_manifest_store = artifact_manifest_store
+        self._artifact_outbox_store = artifact_publication_outbox_store
         self._artifact_dispatcher: ArtifactPublicationDispatcher | None = None
         if (
             artifact_publication_outbox_store is not None
@@ -905,10 +906,14 @@ class V3JobExecutor:
                 run_dir=p.run_dir,
             )
         except ArtifactSourceStagingFailedError as exc:
+            staging_code = getattr(exc, "error_code", "ARTIFACT_STAGING_FAILED")
             p.exec_log.error(
                 "Artifacts",
                 f"Required artifact staging failed: {exc}",
-                payload={"error": str(exc)[:500]},
+                payload={
+                    "error": str(exc)[:500],
+                    "staging_error_code": staging_code,
+                },
             )
             self._state.fail_finalization_and_aisle(
                 p.job_id,
@@ -917,7 +922,10 @@ class V3JobExecutor:
                 error_code=FinalizationErrorCode.ARTIFACT_SOURCE_STAGING_FAILED,
                 current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
                 message=f"Required artifact staging failed: {exc}",
-                metadata={"verification_required": True},
+                metadata={
+                    "verification_required": True,
+                    "staging_error_code": staging_code,
+                },
             )
             return True
         try:
@@ -1062,10 +1070,29 @@ class V3JobExecutor:
             )
             return True
         if dispatch_result.permanently_failed_kinds:
+            failed_entries = list(dispatch_result.failed_entries)
+            if not failed_entries and self._artifact_outbox_store is not None:
+                from src.application.services.artifact_publication_diagnostics import (
+                    failed_outbox_entry_summary,
+                )
+
+                for kind in sorted(dispatch_result.permanently_failed_kinds):
+                    entry = self._artifact_outbox_store.get_entry(p.job_id, kind)
+                    if entry is not None:
+                        failed_entries.append(failed_outbox_entry_summary(entry))
+            logger.error(
+                "artifact.publication.required_permanently_failed job_id=%s failed_kinds=%s failed_entries=%s",
+                p.job_id,
+                sorted(dispatch_result.permanently_failed_kinds),
+                failed_entries,
+            )
             p.exec_log.error(
                 "Artifacts",
                 "Required artifact publication permanently failed",
-                payload={"failed_kinds": sorted(dispatch_result.permanently_failed_kinds)},
+                payload={
+                    "failed_kinds": sorted(dispatch_result.permanently_failed_kinds),
+                    "failed_entries": failed_entries,
+                },
             )
             self._state.fail_finalization_and_aisle(
                 p.job_id,
@@ -1076,6 +1103,7 @@ class V3JobExecutor:
                 message="Required artifact publication permanently failed",
                 metadata={
                     "failed_kinds": sorted(dispatch_result.permanently_failed_kinds),
+                    "failed_entries": failed_entries,
                     "published_artifact_kinds": sorted(dispatch_result.published_kinds),
                     "verification_required": True,
                 },

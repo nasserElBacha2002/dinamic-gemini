@@ -220,6 +220,24 @@ class ArtifactUploadSpy(FailingArtifactStore):
         return key in self.uploaded_sizes
 
 
+class SizeOnlyArtifactStore(FailingArtifactStore):
+    """Mimics S3/GCS: upload succeeds but HEAD metadata exposes size only (no SHA-256)."""
+
+    def __init__(self) -> None:
+        super().__init__(fail_on_call=10_000)
+
+    def get_object_metadata(self, key: str, *, bucket: str | None = None):
+        from src.infrastructure.storage.artifact_store import StoredObjectMetadata
+
+        _ = bucket
+        if key not in self.uploaded_sizes:
+            raise FileNotFoundError(key)
+        return StoredObjectMetadata(
+            file_size_bytes=self.uploaded_sizes[key],
+            etag="etag-size-only",
+        )
+
+
 @dataclass(frozen=True)
 class SaveAttemptSnapshot:
     committed: bool

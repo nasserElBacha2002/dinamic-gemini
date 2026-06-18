@@ -35,7 +35,15 @@ from src.application.services.artifact_publication_source_policy import resolve_
 from src.application.services.artifact_publication_state_reconciler import (
     ArtifactPublicationStateReconciler,
 )
-from src.application.services.artifact_publication_verifier import verify_remote_object
+from src.application.services.artifact_publication_diagnostics import (
+    failed_outbox_entry_summary,
+    log_publication_step,
+    publication_step_context,
+)
+from src.application.services.artifact_publication_verifier import (
+    resolve_publication_verification_level,
+    verify_remote_object,
+)
 from src.application.services.automatic_finalization_continuation_use_case import (
     AutomaticFinalizationContinuationUseCase,
 )
@@ -73,12 +81,17 @@ _REQUIRED_DURABLE_KINDS = frozenset({ARTIFACT_KIND_EXECUTION_LOG, ARTIFACT_KIND_
 class ArtifactSourceStagingFailedError(Exception):
     """Required artifact bytes could not be staged durably."""
 
+    def __init__(self, message: str, *, error_code: str = "ARTIFACT_STAGING_FAILED") -> None:
+        super().__init__(message)
+        self.error_code = error_code
+
 
 @dataclass
 class ArtifactPublicationDispatchResult:
     published_kinds: set[str] = field(default_factory=set)
     retry_scheduled_kinds: set[str] = field(default_factory=set)
     permanently_failed_kinds: set[str] = field(default_factory=set)
+    failed_entries: list[dict[str, Any]] = field(default_factory=list)
     durable_meta: dict[str, dict[str, Any]] = field(default_factory=dict)
     required_complete: bool = False
     continuation_started: bool = False
@@ -145,12 +158,25 @@ class ArtifactPublicationDispatcher:
                 resolved=resolved,
             )
             stored = self._outbox.ensure_publication_work(entry=entry, now=now)
-            logger.info(
-                "artifact.outbox.created job_id=%s artifact_kind=%s status=%s source_type=%s",
-                job_id,
-                kind,
-                stored.status.value,
-                stored.source_type.value,
+            log_publication_step(
+                logging.INFO,
+                "artifact.outbox.registered",
+                **publication_step_context(
+                    job_id=job_id,
+                    artifact_kind=kind,
+                    publication_step="outbox_registered",
+                    run_segment=run_segment,
+                    local_path=resolved.local_path,
+                    destination_key=resolved.destination_key,
+                    source_type=stored.source_type.value,
+                    source_reference=stored.source_reference,
+                    staging_key=stored.source_reference
+                    if stored.source_type == ArtifactSourceType.EXACT_DURABLE_SOURCE
+                    else None,
+                    outbox_entry=stored,
+                    local_size_bytes=resolved.size_bytes,
+                    local_sha256=resolved.content_hash,
+                ),
             )
 
     def _build_outbox_entry(
@@ -163,23 +189,50 @@ class ArtifactPublicationDispatcher:
         if kind in _REQUIRED_DURABLE_KINDS:
             if resolved.local_path is None or not resolved.local_path.is_file():
                 raise ArtifactSourceStagingFailedError(
-                    f"Required source missing for staging: {kind} job_id={job_id}"
+                    f"Required source missing for staging: {kind} job_id={job_id}",
+                    error_code="ARTIFACT_SOURCE_MISSING",
                 )
             if kind == ARTIFACT_KIND_EXECUTION_LOG:
                 try:
                     validate_execution_log_jsonl_file(resolved.local_path)
                 except (OSError, ValueError) as exc:
                     raise ArtifactSourceStagingFailedError(
-                        f"execution_log artifact invalid before staging (job_id={job_id}): {exc}"
+                        f"execution_log artifact invalid before staging (job_id={job_id}): {exc}",
+                        error_code="ARTIFACT_SOURCE_INVALID_JSONL",
                     ) from exc
             if self._staging is None:
-                raise ArtifactSourceStagingFailedError("Staging store not configured")
-            with open(resolved.local_path, "rb") as fh:
-                staged = self._staging.put_exact_source(
+                raise ArtifactSourceStagingFailedError(
+                    "Staging store not configured",
+                    error_code="ARTIFACT_STAGING_FAILED",
+                )
+            try:
+                with open(resolved.local_path, "rb") as fh:
+                    staged = self._staging.put_exact_source(
+                        job_id=job_id,
+                        artifact_kind=kind,
+                        file_obj=fh,
+                    )
+            except OSError as exc:
+                raise ArtifactSourceStagingFailedError(
+                    f"Staging store write failed for {kind} job_id={job_id}: {exc}",
+                    error_code="ARTIFACT_STAGING_FAILED",
+                ) from exc
+            log_publication_step(
+                logging.INFO,
+                "artifact.staging.succeeded",
+                **publication_step_context(
                     job_id=job_id,
                     artifact_kind=kind,
-                    file_obj=fh,
-                )
+                    publication_step="staging_succeeded",
+                    local_path=resolved.local_path,
+                    destination_key=resolved.destination_key,
+                    source_type=ArtifactSourceType.EXACT_DURABLE_SOURCE.value,
+                    source_reference=staged.staging_key,
+                    staging_key=staged.staging_key,
+                    local_size_bytes=staged.size_bytes,
+                    local_sha256=staged.source_sha256,
+                ),
+            )
             return ArtifactPublicationOutboxEntry(
                 id=str(uuid.uuid4()),
                 job_id=job_id,
@@ -256,6 +309,18 @@ class ArtifactPublicationDispatcher:
             if existing.status == ArtifactPublicationOutboxStatus.PERMANENTLY_FAILED:
                 if is_required_artifact_kind(kind):
                     result.permanently_failed_kinds.add(kind)
+                    if existing is not None:
+                        result.failed_entries.append(failed_outbox_entry_summary(existing))
+                    log_publication_step(
+                        logging.ERROR,
+                        "artifact.publish.skipped_terminal_failed",
+                        **publication_step_context(
+                            job_id=job_id,
+                            artifact_kind=kind,
+                            publication_step="outbox_terminal_failed_skip",
+                            outbox_entry=existing,
+                        ),
+                    )
                 continue
             if existing.status == ArtifactPublicationOutboxStatus.RETRY_SCHEDULED:
                 if existing.next_attempt_at and existing.next_attempt_at > now:
@@ -290,6 +355,13 @@ class ArtifactPublicationDispatcher:
                 and kind in result.permanently_failed_kinds
                 and is_required_artifact_kind(kind)
             ):
+                log_publication_step(
+                    logging.WARNING,
+                    "artifact.publish.order_blocked",
+                    job_id=job_id,
+                    artifact_kind=kind,
+                    publication_step="required_kind_failed_blocks_later_kinds",
+                )
                 break
         result.required_complete = self._manifest.required_kinds_published(job_id)
         if (
@@ -364,7 +436,21 @@ class ArtifactPublicationDispatcher:
         kind = claimed.artifact_kind
         now = self._clock.now()
         started = time.monotonic()
-        logger.info("artifact.publish.started job_id=%s artifact_kind=%s", job_id, kind)
+        staged_trusted = claimed.source_type == ArtifactSourceType.EXACT_DURABLE_SOURCE
+        log_publication_step(
+            logging.INFO,
+            "artifact.publish.started",
+            **publication_step_context(
+                job_id=job_id,
+                artifact_kind=kind,
+                publication_step="publish_started",
+                destination_key=claimed.destination_key,
+                source_type=claimed.source_type.value,
+                source_reference=claimed.source_reference,
+                staging_key=claimed.source_reference if staged_trusted else None,
+                outbox_entry=claimed,
+            ),
+        )
         try:
             content_type, source_sha256, size_bytes, source_handle = self._resolve_source(
                 claimed=claimed,
@@ -411,6 +497,13 @@ class ArtifactPublicationDispatcher:
                     expected_sha256=source_sha256 or "",
                     expected_size=size_bytes,
                 )
+                level = resolve_publication_verification_level(
+                    level=level,
+                    metadata=metadata,
+                    expected_sha256=source_sha256 or "",
+                    expected_size=size_bytes,
+                    trust_size_matched_upload=False,
+                )
                 if level == ArtifactVerificationLevel.CONFIRMED:
                     self._mark_published_pair(
                         claimed=claimed,
@@ -447,8 +540,18 @@ class ArtifactPublicationDispatcher:
                 expected_sha256=source_sha256 or "",
                 expected_size=stored.file_size_bytes,
             )
+            level = resolve_publication_verification_level(
+                level=level,
+                metadata=metadata,
+                expected_sha256=source_sha256 or "",
+                expected_size=stored.file_size_bytes,
+                trust_size_matched_upload=bool(source_sha256),
+            )
             if level != ArtifactVerificationLevel.CONFIRMED:
-                raise RuntimeError("checksum_mismatch: uploaded object not SHA-256 confirmed")
+                raise RuntimeError(
+                    f"checksum_mismatch: uploaded object not SHA-256 confirmed "
+                    f"(destination_key={destination_key}, level={level.value})"
+                )
             self._mark_published_pair(
                 claimed=claimed,
                 destination_key=destination_key,
@@ -659,6 +762,7 @@ class ArtifactPublicationDispatcher:
             now=now,
             expected_version=claimed.version,
         )
+        failed_entry = self._outbox.get_entry(claimed.job_id, claimed.artifact_kind)
         if claimed.required:
             self._manifest.mark_failed(
                 job_id=claimed.job_id,
@@ -668,11 +772,25 @@ class ArtifactPublicationDispatcher:
                 now=now,
             )
             result.permanently_failed_kinds.add(claimed.artifact_kind)
-        logger.error(
-            "artifact.publish.permanently_failed job_id=%s artifact_kind=%s attempt_count=%s error_code=%s duration_ms=%s",
-            claimed.job_id,
-            claimed.artifact_kind,
-            next_attempt,
-            error_code,
-            duration_ms,
+            if failed_entry is not None:
+                result.failed_entries.append(failed_outbox_entry_summary(failed_entry))
+        log_publication_step(
+            logging.ERROR,
+            "artifact.publish.permanently_failed",
+            job_id=claimed.job_id,
+            artifact_kind=claimed.artifact_kind,
+            publication_step="publish_permanently_failed",
+            destination_key=claimed.destination_key,
+            source_type=claimed.source_type.value,
+            source_reference=claimed.source_reference,
+            staging_key=claimed.source_reference
+            if claimed.source_type == ArtifactSourceType.EXACT_DURABLE_SOURCE
+            else None,
+            outbox_entry_id=(failed_entry or claimed).id,
+            outbox_status=(failed_entry or claimed).status.value,
+            attempt_count=next_attempt,
+            max_attempts=claimed.max_attempts,
+            last_error_code=error_code,
+            last_error_message=error_message,
+            duration_ms=duration_ms,
         )
