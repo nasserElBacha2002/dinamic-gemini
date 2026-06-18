@@ -451,10 +451,149 @@ def build_anthropic_vision_from_serialized(
     )
 
 
+def _ndarray_bgr_to_pil_rgb(frame: Any) -> Any:
+    """Convert OpenCV BGR ndarray to PIL RGB (same contract as legacy Gemini analyzer)."""
+    import cv2
+    import numpy as np
+
+    from src.pipeline.services.provider_execution_errors import (
+        PROVIDER_IMAGE_SERIALIZATION_FAILED,
+        ProviderImageExecutionError,
+    )
+
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ProviderImageExecutionError(
+            PROVIDER_IMAGE_SERIALIZATION_FAILED,
+            "Pillow required for Gemini image materialization",
+        ) from exc
+
+    arr = np.asarray(frame)
+    if arr.size == 0:
+        raise ProviderImageExecutionError(
+            PROVIDER_IMAGE_SERIALIZATION_FAILED,
+            "empty ndarray cannot be materialized for Gemini",
+        )
+    rgb = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(rgb)
+
+
+def _is_pil_image(resource: Any) -> bool:
+    try:
+        from PIL import Image
+
+        return isinstance(resource, Image.Image)
+    except ImportError:
+        return False
+
+
+def _normalize_gemini_mime_type(mime_type: str | None) -> str | None:
+    if not mime_type or not str(mime_type).strip():
+        return None
+    normalized = str(mime_type).strip().lower()
+    if normalized == "image/jpg":
+        return "image/jpeg"
+    return normalized
+
+
+def _gemini_supported_mime_types() -> frozenset[str]:
+    from src.pipeline.services.provider_execution_request import SUPPORTED_IMAGE_MIME_TYPES
+
+    return frozenset(
+        m if m != "image/jpg" else "image/jpeg" for m in SUPPORTED_IMAGE_MIME_TYPES
+    )
+
+
+def materialize_gemini_serialized_image(
+    entry: Any,
+    *,
+    job_id: str | None = None,
+    provider: str = "gemini",
+) -> Any:
+    """
+    Materialize one serialized manifest image entry into a Gemini-compatible content item.
+
+    Accepts PIL Image (pass-through), BGR ndarray (primary evidence), or bytes with MIME.
+    """
+    from src.pipeline.services.provider_execution_errors import (
+        PROVIDER_IMAGE_SERIALIZATION_FAILED,
+        PROVIDER_IMAGE_UNSUPPORTED_FORMAT,
+        ProviderImageExecutionError,
+    )
+    from src.pipeline.services.provider_payload_serialization import SerializedImagePayloadEntry
+
+    image: SerializedImagePayloadEntry = entry
+    resource = image.encoded_resource
+    mime_type = _normalize_gemini_mime_type(image.mime_type)
+    resource_type = type(resource).__name__
+
+    if _is_pil_image(resource):
+        return resource
+
+    if isinstance(resource, (bytes, bytearray)):
+        if not mime_type:
+            raise ProviderImageExecutionError(
+                PROVIDER_IMAGE_SERIALIZATION_FAILED,
+                "bytes resource requires mime_type for Gemini materialization",
+                job_id=job_id,
+                provider=provider,
+                manifest_entry_id=image.manifest_entry_id,
+                role=image.role.value,
+                details={
+                    "resource_type": resource_type,
+                    "mime_type": image.mime_type,
+                },
+            )
+        if mime_type not in _gemini_supported_mime_types():
+            raise ProviderImageExecutionError(
+                PROVIDER_IMAGE_UNSUPPORTED_FORMAT,
+                f"unsupported MIME for Gemini bytes resource: {mime_type}",
+                job_id=job_id,
+                provider=provider,
+                manifest_entry_id=image.manifest_entry_id,
+                role=image.role.value,
+                details={"resource_type": resource_type, "mime_type": mime_type},
+            )
+        from google.genai import types
+
+        return types.Part.from_bytes(data=bytes(resource), mime_type=mime_type)
+
+    try:
+        import numpy as np
+
+        if isinstance(resource, np.ndarray):
+            return _ndarray_bgr_to_pil_rgb(resource)
+    except ProviderImageExecutionError:
+        raise
+    except Exception as exc:
+        raise ProviderImageExecutionError(
+            PROVIDER_IMAGE_SERIALIZATION_FAILED,
+            f"failed to materialize ndarray for Gemini: {exc}",
+            job_id=job_id,
+            provider=provider,
+            manifest_entry_id=image.manifest_entry_id,
+            role=image.role.value,
+            details={"resource_type": resource_type, "mime_type": mime_type},
+        ) from exc
+
+    raise ProviderImageExecutionError(
+        PROVIDER_IMAGE_SERIALIZATION_FAILED,
+        f"unsupported resource type for Gemini: {resource_type}",
+        job_id=job_id,
+        provider=provider,
+        manifest_entry_id=image.manifest_entry_id,
+        role=image.role.value,
+        details={"resource_type": resource_type, "mime_type": mime_type},
+    )
+
+
 def build_gemini_contents_from_serialized(
     *,
     main_prompt_text: str,
     serialized: Any,
+    job_id: str | None = None,
+    provider: str = "gemini",
 ) -> tuple[list[Any], list[dict[str, Any]]]:
     """Phase 4.4 — Gemini interleaved contents from serialized manifest-ordered images."""
     from src.pipeline.services.provider_payload_serialization import (
@@ -483,7 +622,13 @@ def build_gemini_contents_from_serialized(
             source_image_id=entry.source_image_id,
         )
         idx += 1
-        contents.append(entry.encoded_resource)
+        contents.append(
+            materialize_gemini_serialized_image(
+                entry,
+                job_id=job_id,
+                provider=provider,
+            )
+        )
         _append_order_entry(
             order,
             index=idx,

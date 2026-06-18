@@ -113,6 +113,8 @@ class GeminiGlobalAnalyzer:
             gemini_contents, multimodal_order = build_gemini_contents_from_serialized(
                 main_prompt_text=prompt,
                 serialized=serialized,
+                job_id=getattr(llm_request, "job_id", None) if llm_request else None,
+                provider="gemini",
             )
         else:
             gemini_contents, multimodal_order = build_gemini_interleaved_contents(

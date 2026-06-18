@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
 from src.domain.execution_image_manifest import (
     ExecutionImageEntry,
@@ -67,7 +68,7 @@ def _serialized():
         manifest,
         primary_path_by_source_id=path_by,
         primary_nd_by_source_id=nd_by,
-        reference_image_by_source_id={"ref-1": object()},
+        reference_image_by_source_id={"ref-1": Image.new("RGB", (2, 2), color=(1, 2, 3))},
     )
     prompt, projection = enrich_prompt_with_execution_manifest("prompt", manifest)
     req = build_provider_execution_request(
