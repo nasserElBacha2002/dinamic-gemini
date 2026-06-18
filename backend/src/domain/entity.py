@@ -57,7 +57,11 @@ class Entity:
     # Original JSON index for deterministic sort tie-breaker
     original_index: int = 0
     # Epic 3.1.B: image traceability (parsed from provider; validated against job images)
+    manifest_entry_id: Optional[str] = None
+    #: Raw legacy ``source_image_id`` from provider before manifest resolution (Phase 4.5).
+    raw_source_image_id: Optional[str] = None
     source_image_id: Optional[str] = None
+    resolved_manifest_entry_id: Optional[str] = None
     traceability_status: Optional[str] = (
         None  # one of TraceabilityStatus (valid, missing, invalid, unvalidated)
     )

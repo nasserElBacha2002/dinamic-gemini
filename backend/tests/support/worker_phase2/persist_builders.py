@@ -14,6 +14,7 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
+    ResultEvidenceRepository,
 )
 from src.application.services.default_job_scoped_recompute_factory import (
     DefaultJobScopedRecomputeFactory,
@@ -25,6 +26,9 @@ from src.infrastructure.persistence.memory_job_result_unit_of_work import (
 from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
     default_map_hybrid_report_to_domain,
 )
+from src.infrastructure.repositories.memory_result_evidence_repository import (
+    MemoryResultEvidenceRepository,
+)
 
 
 def build_persist_aisle_result_use_case(
@@ -32,6 +36,7 @@ def build_persist_aisle_result_use_case(
     position_repo: PositionRepository,
     product_record_repo: ProductRecordRepository,
     evidence_repo: EvidenceRepository,
+    result_evidence_repo: ResultEvidenceRepository | None = None,
     aisle_repo: AisleRepository,
     raw_label_repo: RawLabelRepository,
     normalized_label_repo: NormalizedLabelRepository,
@@ -45,6 +50,7 @@ def build_persist_aisle_result_use_case(
         position_repo=position_repo,
         product_record_repo=product_record_repo,
         evidence_repo=evidence_repo,
+        result_evidence_repo=result_evidence_repo or MemoryResultEvidenceRepository(),
         clock=clock,
         hybrid_mapper=hybrid_mapper or default_map_hybrid_report_to_domain,
         aisle_repo=aisle_repo,

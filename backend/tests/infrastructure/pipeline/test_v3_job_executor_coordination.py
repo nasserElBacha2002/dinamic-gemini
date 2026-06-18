@@ -111,9 +111,9 @@ def test_execute_success_invokes_state_runner_and_artifacts(tmp_path: Path) -> N
     spy_runner.build_analysis_context.return_value = ac
     spy_runner.build_pipeline_input.return_value = (
         JobInput(
-            video_path="",
+            video_path="/tmp/video.mp4",
             mode="hybrid",
-            input_type="photos",
+            input_type="video",
             input_manifest_path="input_manifest.json",
             photos_dir="input_photos",
             metadata={"analysis_context": analysis_context_to_dict(ac)},

@@ -28,6 +28,7 @@ def assert_memory_job_result_bundle(repositories: JobResultRepositories) -> None
         repositories.raw_label_repo,
         repositories.normalized_label_repo,
         repositories.final_count_repo,
+        repositories.result_evidence_repo,
     )
     for repo in fields:
         if not _is_memory_compatible(repo):
@@ -45,6 +46,7 @@ def assert_sql_job_result_bundle(repositories: JobResultRepositories) -> None:
         repositories.raw_label_repo,
         repositories.normalized_label_repo,
         repositories.final_count_repo,
+        repositories.result_evidence_repo,
     )
     for repo in fields:
         if not _is_sql_compatible(repo):

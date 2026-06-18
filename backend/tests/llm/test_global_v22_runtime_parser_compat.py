@@ -71,10 +71,10 @@ def test_label_first_payload_normalize_parse_roundtrip_gemini() -> None:
     assert entities[0].model_entity_id == "entity_1"
     assert entities[0].internal_code == "10334301"
     assert entities[0].product_label_quantity == 16
-    assert entities[0].source_image_id == "img-1"
+    assert entities[0].raw_source_image_id == "img-1"
     assert entities[1].entity_type == "EMPTY_PALLET"
     assert entities[1].product_label_quantity == 0
-    assert entities[1].source_image_id == "img-2"
+    assert entities[1].raw_source_image_id == "img-2"
 
 
 def test_optional_entity_metadata_accepted_by_validator_preserved_in_normalized_dict_dropped_by_parser() -> None:

@@ -22,10 +22,19 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.domain.execution_image_manifest import (
+    ExecutionImageManifest,
+    manifest_composition_projection,
+)
+from src.domain.prompt_image_projection import (
+    COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION,
+    PromptImageProjection,
+)
 from src.jobs.image_identity import load_job_images_from_manifest
 from src.llm.prompt_composer.enrichments import (
     IMAGE_ID_TRACEABILITY_ENRICHMENT_ID,
     SUPPLIER_EDITABLE_INSTRUCTIONS_ENRICHMENT_ID,
+    enrich_prompt_with_execution_manifest,
     enrich_prompt_with_image_ids,
     enrich_prompt_with_sent_image_ids,
 )
@@ -109,6 +118,7 @@ def build_hybrid_analysis_prompt_with_traceability(
     context: RunContext,
     *,
     sent_frame_refs: list[str] | None = None,
+    execution_manifest: ExecutionImageManifest | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """
     Same prompt text as legacy assembly, plus JSON-serializable composition metadata (Phase 6).
@@ -142,7 +152,25 @@ def build_hybrid_analysis_prompt_with_traceability(
     job_input = getattr(context, "job_input", None)
     prompt_listed_image_ids: list[str] = []
     frames_sent_ids: list[str] = []
-    if job_input and getattr(job_input, "input_type", "") == "photos":
+    prompt_image_projection: PromptImageProjection | None = None
+    if execution_manifest is not None:
+        prompt_text, prompt_image_projection = enrich_prompt_with_execution_manifest(
+            base_prompt, execution_manifest
+        )
+        projection = manifest_composition_projection(execution_manifest)
+        frames_sent_ids = list(projection["frames_sent_ids"])
+        prompt_listed_image_ids = list(projection["prompt_listed_image_ids"])
+        enrichments_applied.append(IMAGE_ID_TRACEABILITY_ENRICHMENT_ID)
+        steps.append(
+            {
+                "step": COMPOSITION_STEP_ENRICH_IMAGE_IDS,
+                "enrichment_id": IMAGE_ID_TRACEABILITY_ENRICHMENT_ID,
+                "image_count": len(execution_manifest.entries),
+                "sent_frame_count": len(frames_sent_ids),
+                "manifest_version": execution_manifest.version,
+            }
+        )
+    elif job_input and getattr(job_input, "input_type", "") == "photos":
         manifest_rel = (getattr(job_input, "input_manifest_path", None) or "").strip()
         photos_dir_rel = (getattr(job_input, "photos_dir", None) or "").strip()
         if manifest_rel and photos_dir_rel:
@@ -200,6 +228,10 @@ def build_hybrid_analysis_prompt_with_traceability(
         composition["prompt_listed_image_ids"] = list(prompt_listed_image_ids)
     if frames_sent_ids:
         composition["frames_sent_ids"] = list(frames_sent_ids)
+    if execution_manifest is not None:
+        composition.update(manifest_composition_projection(execution_manifest))
+        if prompt_image_projection is not None:
+            composition[COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION] = prompt_image_projection.to_dict()
 
     # V3JobExecutor aborts v3 jobs before the hybrid pipeline when SupplierPromptResolver returns
     # resolution_status == "error". This builder still handles error resolutions defensively so

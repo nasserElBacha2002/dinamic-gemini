@@ -125,6 +125,9 @@ def test_p2_p3_t016_sql_cleanup_protects_operational_job(sql_client_or_skip) -> 
         SqlProductRecordRepository,
     )
     from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
+    from src.infrastructure.repositories.sql_result_evidence_repository import (
+        SqlResultEvidenceRepository,
+    )
 
     client = sql_client_or_skip
     now = datetime.now(timezone.utc)
@@ -143,6 +146,7 @@ def test_p2_p3_t016_sql_cleanup_protects_operational_job(sql_client_or_skip) -> 
         raw_label_repo=SqlRawLabelRepository(client),
         normalized_label_repo=SqlNormalizedLabelRepository(client),
         final_count_repo=SqlFinalCountRepository(client),
+        result_evidence_repo=SqlResultEvidenceRepository(client),
     )
     cleanup = CleanupJobResultsUseCase(
         aisle_repo=aisle_repo,

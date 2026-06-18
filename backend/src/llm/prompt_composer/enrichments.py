@@ -8,6 +8,16 @@ keeps enrichment policy at the request-building layer.
 
 from __future__ import annotations
 
+from src.domain.execution_image_manifest import (
+    EVIDENCE_RETURN_IDENTIFIER_FIELD,
+    LEGACY_EVIDENCE_RETURN_FIELD,
+    ExecutionImageManifest,
+    ExecutionImageRole,
+)
+from src.domain.prompt_image_projection import (
+    PromptImageProjection,
+    build_prompt_image_projection_from_manifest,
+)
 from src.jobs.image_identity import JobImage
 
 # Traceability id for Phase 6 metadata (when ``enrich_prompt_with_image_ids`` applies).
@@ -90,3 +100,44 @@ def enrich_prompt_with_image_id_strings(
         lines.append(f"- {image_id}")
     block = "\n".join(lines)
     return base_prompt.rstrip() + "\n" + block + _TRACEABILITY_INSTRUCTION
+
+
+_MANIFEST_TRACEABILITY_INSTRUCTION: str = f"""
+
+TRACEABILITY (Phase 4.4): Only PRIMARY EVIDENCE images may be returned as {EVIDENCE_RETURN_IDENTIFIER_FIELD}.
+REFERENCE images are classification context only — never use them as evidence.
+Return the exact {EVIDENCE_RETURN_IDENTIFIER_FIELD} from the PRIMARY EVIDENCE section for each result (e.g. IMG_001).
+Legacy {LEGACY_EVIDENCE_RETURN_FIELD} is accepted for compatibility but {EVIDENCE_RETURN_IDENTIFIER_FIELD} is preferred.
+"""
+
+
+def enrich_prompt_with_execution_manifest(
+    base_prompt: str,
+    manifest: ExecutionImageManifest,
+) -> tuple[str, PromptImageProjection]:
+    """Append canonical manifest sections; return prompt text and structured image projection."""
+    primary_lines: list[str] = []
+    reference_lines: list[str] = []
+    for entry in manifest.ordered_entries():
+        fname = f", filename={entry.original_filename!r}" if entry.original_filename else ""
+        line = (
+            f"- {entry.manifest_entry_id} "
+            f"(source_image_id={entry.source_image_id!r}{fname})"
+        )
+        if entry.role == ExecutionImageRole.PRIMARY_EVIDENCE:
+            primary_lines.append(line)
+        else:
+            reference_lines.append(line)
+
+    sections = ["\n\nPRIMARY EVIDENCE IMAGES"]
+    sections.extend(primary_lines or ["- (none)"])
+    if reference_lines:
+        sections.append("\nREFERENCE IMAGES (classification context only)")
+        sections.extend(reference_lines)
+    block = "\n".join(sections)
+    prompt_text = base_prompt.rstrip() + "\n" + block + _MANIFEST_TRACEABILITY_INSTRUCTION
+    projection = build_prompt_image_projection_from_manifest(
+        manifest,
+        image_section_text=block,
+    )
+    return prompt_text, projection

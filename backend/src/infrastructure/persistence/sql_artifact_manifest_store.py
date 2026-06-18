@@ -13,7 +13,12 @@ from src.domain.jobs.artifact_manifest import (
     ArtifactManifestStatus,
     ArtifactVerificationLevel,
 )
-from src.domain.jobs.artifact_policy import ALL_EXPECTED_ARTIFACT_KINDS, REQUIRED_ARTIFACT_KINDS
+from src.domain.jobs.artifact_policy import (
+    ALL_EXPECTED_ARTIFACT_KINDS,
+    REQUIRED_ARTIFACT_KINDS,
+    artifact_manifest_missing_required_kinds,
+    artifact_manifest_required_kinds_published,
+)
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
 
@@ -455,26 +460,10 @@ class SqlArtifactManifestStore:
         return stored
 
     def required_kinds_published(self, job_id: str) -> bool:
-        entries = {entry.artifact_kind: entry for entry in self.list_entries(job_id)}
-        return all(
-            kind in entries
-            and entries[kind].required is True
-            and entries[kind].status == ArtifactManifestStatus.PUBLISHED
-            for kind in REQUIRED_ARTIFACT_KINDS
-        )
+        return artifact_manifest_required_kinds_published(self.list_entries(job_id))
 
     def missing_required_kinds(self, job_id: str) -> set[str]:
-        entries = {entry.artifact_kind: entry for entry in self.list_entries(job_id)}
-        missing: set[str] = set()
-        for kind in REQUIRED_ARTIFACT_KINDS:
-            entry = entries.get(kind)
-            if (
-                entry is None
-                or not entry.required
-                or entry.status != ArtifactManifestStatus.PUBLISHED
-            ):
-                missing.add(kind)
-        return missing
+        return artifact_manifest_missing_required_kinds(self.list_entries(job_id))
 
     def any_required_failed(self, job_id: str) -> bool:
         return any(

@@ -1,14 +1,19 @@
 /**
  * Sprint 4.3 — Evidence viewer: main image anchor, zoom, fullscreen, multi-image selection (label chips).
- * Refactored in Phase 2 Revised: Uses on-demand cards instead of invasive inline viewer.
+ * Phase 4.8: When structural evidenceView exists, use backend imageUrl (no legacy asset loader).
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Box, Button, Typography, Divider } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { ImageAssetCard, ImagePreviewDialog } from '../../../../components/ui';
 import type { ResultDetail } from '../../types';
 import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
+import {
+  isEvidenceDisplayable,
+  resolveStructuralEvidenceImageUrl,
+} from '../../utils/evidenceEligibility';
+import { evidenceUnavailableMessage } from '../../utils/evidenceUnavailableMessage';
 import i18n from '../../../../i18n';
 
 export interface ResultEvidenceViewerProps {
@@ -19,9 +24,10 @@ export interface ResultEvidenceViewerProps {
 
 interface EvidenceFrame {
   key: string;
-  /** Operator-facing label; first row is not necessarily “full frame” — crops are preferred. */
   label: string;
   fileName: string | null;
+  imageUrl: string | null;
+  useLegacyLoader: boolean;
 }
 
 function jobIdFromResult(result: ResultDetail): string | null {
@@ -32,8 +38,40 @@ function jobIdFromResult(result: ResultDetail): string | null {
 }
 
 function buildFrames(result: ResultDetail): EvidenceFrame[] {
+  const evidenceIsDisplayable = isEvidenceDisplayable(
+    result.traceabilityStatus,
+    result.hasValidEvidence,
+    result.sourceImageId,
+    result.evidenceView
+  );
+  if (!evidenceIsDisplayable) {
+    return [];
+  }
+
+  const structuralUrl = resolveStructuralEvidenceImageUrl(result.evidenceView);
+  if (result.evidenceView != null) {
+    if (structuralUrl == null) {
+      return [];
+    }
+    return [
+      {
+        key: 'structural-primary',
+        label: i18n.t('results.evidence_viewer.primary'),
+        fileName: result.sourceFileName,
+        imageUrl: structuralUrl,
+        useLegacyLoader: false,
+      },
+    ];
+  }
+
   const seen = new Set<string>();
-  const drafts: Array<{ key: string; fileName: string | null; label: string }> = [];
+  const drafts: Array<{
+    key: string;
+    fileName: string | null;
+    label: string;
+    imageUrl: string | null;
+    useLegacyLoader: boolean;
+  }> = [];
 
   const push = (assetId: string | null | undefined, fileName: string | null, label: string) => {
     const id = assetId != null ? String(assetId).trim() : '';
@@ -43,6 +81,8 @@ function buildFrames(result: ResultDetail): EvidenceFrame[] {
       key: id,
       fileName,
       label,
+      imageUrl: null,
+      useLegacyLoader: true,
     });
   };
 
@@ -80,23 +120,52 @@ function buildFrames(result: ResultDetail): EvidenceFrame[] {
     key: d.key,
     fileName: d.fileName,
     label: d.label,
+    imageUrl: d.imageUrl,
+    useLegacyLoader: d.useLegacyLoader,
   }));
 }
 
 export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: ResultEvidenceViewerProps) {
   const { t } = useTranslation();
-  const frames = useMemo(() => buildFrames(result), [result]);
+  const evidenceIsDisplayable = isEvidenceDisplayable(
+    result.traceabilityStatus,
+    result.hasValidEvidence,
+    result.sourceImageId,
+    result.evidenceView
+  );
+  const frames = useMemo(
+    () => (evidenceIsDisplayable ? buildFrames(result) : []),
+    [result, evidenceIsDisplayable]
+  );
   const [previewTarget, setPreviewTarget] = useState<EvidenceFrame | null>(null);
 
+  useEffect(() => {
+    if (!evidenceIsDisplayable) {
+      setPreviewTarget(null);
+    }
+  }, [evidenceIsDisplayable]);
+
   const jobId = jobIdFromResult(result);
-  const imageSpec = previewTarget
-    ? { inventoryId, aisleId, assetId: previewTarget.key, jobId }
-    : null;
+  const legacyImageSpec =
+    previewTarget?.useLegacyLoader === true
+      ? { inventoryId, aisleId, assetId: previewTarget.key, jobId }
+      : null;
 
-  // Image loading is only triggered when previewTarget is set (on-demand).
-  const loadState = useEvidenceImageLoad(imageSpec);
+  const loadState = useEvidenceImageLoad(legacyImageSpec);
 
-  const hasRecordOnly = result.evidence.length > 0 && frames.length === 0;
+  const previewSrc =
+    previewTarget?.useLegacyLoader === false
+      ? previewTarget.imageUrl
+      : loadState.status === 'loaded'
+        ? loadState.imageSrc
+        : null;
+
+  const hasRecordOnly =
+    evidenceIsDisplayable && result.evidence.length > 0 && frames.length === 0;
+  const structuralUrlMissing =
+    evidenceIsDisplayable &&
+    result.evidenceView != null &&
+    resolveStructuralEvidenceImageUrl(result.evidenceView) == null;
 
   return (
     <Box>
@@ -104,7 +173,7 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
         {t('results.evidence_viewer.heading')}
       </Typography>
 
-      {frames.length === 0 && !hasRecordOnly && (
+      {!evidenceIsDisplayable && (
         <Box
           sx={{
             py: 4,
@@ -117,7 +186,15 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
             justifyContent: 'center',
           }}
         >
-          <Typography color="text.secondary">{t('results.evidence_viewer.no_images')}</Typography>
+          <Typography color="text.secondary">
+            {evidenceUnavailableMessage(result.traceabilityStatus, t)}
+          </Typography>
+        </Box>
+      )}
+
+      {structuralUrlMissing && (
+        <Box sx={{ py: 4, px: 2, bgcolor: 'action.hover', borderRadius: 1, textAlign: 'center' }}>
+          <Typography color="text.secondary">{t('results.evidence_viewer.url_unavailable')}</Typography>
         </Box>
       )}
 
@@ -164,14 +241,18 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
                 ? `${previewTarget.label} · ${previewTarget.fileName}`
                 : previewTarget?.label ?? t('results.evidence_viewer.title_fallback')
             }
-            src={loadState.status === 'loaded' ? loadState.imageSrc : null}
+            src={previewSrc}
             alt={
               previewTarget?.fileName
                 ? t('results.evidence_viewer.alt_file', { fileName: previewTarget.fileName })
                 : t('results.evidence_viewer.alt_image')
             }
-            loading={loadState.status === 'loading'}
-            error={loadState.status === 'error' ? loadState.message : null}
+            loading={previewTarget?.useLegacyLoader === true && loadState.status === 'loading'}
+            error={
+              previewTarget?.useLegacyLoader === true && loadState.status === 'error'
+                ? loadState.message
+                : null
+            }
             caption={previewTarget?.fileName ?? previewTarget?.label}
           />
         </>

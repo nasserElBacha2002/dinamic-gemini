@@ -34,6 +34,9 @@ from src.infrastructure.persistence.memory_job_result_unit_of_work import (
     MemoryJobResultUnitOfWorkFactory,
 )
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
+from src.infrastructure.repositories.memory_result_evidence_repository import (
+    MemoryResultEvidenceRepository,
+)
 from tests.support.worker_phase1.executor_harness import (
     ExecutorHarness,
     FixedClock,
@@ -92,6 +95,7 @@ def _cleanup_uc(harness: ExecutorHarness) -> CleanupJobResultsUseCase:
         raw_label_repo=harness.raw_repo,
         normalized_label_repo=harness.norm_repo,
         final_count_repo=harness.final_repo,
+        result_evidence_repo=MemoryResultEvidenceRepository(),
     )
     return CleanupJobResultsUseCase(
         aisle_repo=harness.aisle_repo,

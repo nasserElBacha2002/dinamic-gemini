@@ -106,6 +106,7 @@ class MemoryJobResultUnitOfWork:
         _restore_store(repos.raw_label_repo, self._snapshots.get("raw_labels"))
         _restore_store(repos.normalized_label_repo, self._snapshots.get("normalized_labels"))
         _restore_store(repos.final_count_repo, self._snapshots.get("final_counts"))
+        _restore_store(repos.result_evidence_repo, self._snapshots.get("result_evidence"))
         self._snapshots = None
         self._stage_snapshot = None
         self._rolled_back = True
@@ -127,6 +128,7 @@ class MemoryJobResultUnitOfWork:
             "raw_labels": _snapshot_store(repos.raw_label_repo),
             "normalized_labels": _snapshot_store(repos.normalized_label_repo),
             "final_counts": _snapshot_store(repos.final_count_repo),
+            "result_evidence": _snapshot_store(repos.result_evidence_repo),
         }
         self._committed = False
         self._rolled_back = False

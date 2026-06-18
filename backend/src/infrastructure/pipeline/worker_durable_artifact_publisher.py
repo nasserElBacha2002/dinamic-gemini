@@ -35,6 +35,9 @@ from src.domain.jobs.artifact_policy import (
 from src.domain.jobs.artifact_policy import (
     ARTIFACT_KIND_HYBRID_REPORT_JSON as DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON,
 )
+from src.domain.jobs.artifact_policy import (
+    ARTIFACT_KIND_TRACEABILITY_MANIFEST as DURABLE_ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+)
 from src.infrastructure.pipeline.finalization_errors import (
     ArtifactPublishError,
     ArtifactPublishPartialError,
@@ -70,6 +73,7 @@ def worker_output_storage_keys(job_id: str, run_segment: str) -> Mapping[str, st
         DURABLE_ARTIFACT_KIND_EXECUTION_LOG: f"{base}/execution_log.jsonl",
         DURABLE_ARTIFACT_KIND_HYBRID_REPORT_JSON: f"{base}/hybrid_report.json",
         DURABLE_ARTIFACT_KIND_HYBRID_REPORT_CSV: f"{base}/hybrid_report.csv",
+        DURABLE_ARTIFACT_KIND_TRACEABILITY_MANIFEST: f"{base}/traceability_manifest.json",
     }
 
 

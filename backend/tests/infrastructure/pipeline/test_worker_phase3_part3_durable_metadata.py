@@ -66,6 +66,9 @@ from src.infrastructure.repositories.memory_product_record_repository import (
     MemoryProductRecordRepository,
 )
 from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
+from src.infrastructure.repositories.memory_result_evidence_repository import (
+    MemoryResultEvidenceRepository,
+)
 from tests.support.worker_phase1.doubles import ArtifactUploadSpy
 from tests.support.worker_phase1.executor_harness import (
     ExecutorHarness,
@@ -124,6 +127,7 @@ def _persist_use_case(harness: ExecutorHarness, **overrides) -> PersistAisleResu
         raw_label_repo=harness.raw_repo,
         normalized_label_repo=harness.norm_repo,
         final_count_repo=harness.final_repo,
+        result_evidence_repo=MemoryResultEvidenceRepository(),
         job_scoped_recompute_factory=overrides.pop(
             "job_scoped_recompute_factory", DefaultJobScopedRecomputeFactory()
         ),

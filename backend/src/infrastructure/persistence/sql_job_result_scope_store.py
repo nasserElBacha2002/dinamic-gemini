@@ -7,7 +7,10 @@ from typing import Any
 
 from src.application.ports.job_result_scope_store import JobResultScopeStore, JobScopeRowCounts
 from src.application.ports.job_result_unit_of_work import JobResultRepositories
-from src.application.ports.repositories import EvidenceRepository, ProductRecordRepository
+from src.application.ports.repositories import (
+    EvidenceRepository,
+    ProductRecordRepository,
+)
 
 logger = logging.getLogger(__name__)
 _POSITION_ENTITY_TYPE = "position"
@@ -43,6 +46,7 @@ class SqlJobResultScopeStore(JobResultScopeStore):
         final_counts = list(
             repos.final_count_repo.list_for_scope(inventory_id, aisle_id, job_id=job_id)
         )
+        result_evidence = list(repos.result_evidence_repo.list_by_job_id(job_id))
         return JobScopeRowCounts(
             positions=len(positions),
             products=len(products),
@@ -50,6 +54,7 @@ class SqlJobResultScopeStore(JobResultScopeStore):
             raw_labels=len(raw_labels),
             normalized_labels=len(norm_labels),
             final_counts=len(final_counts),
+            result_evidence=len(result_evidence),
         )
 
     def delete_scope(
@@ -74,7 +79,7 @@ class SqlJobResultScopeStore(JobResultScopeStore):
             cur.close()
         logger.info(
             "sql_job_result_scope deleted inventory_id=%s aisle_id=%s job_id=%s "
-            "positions=%d products=%d evidence=%d raw=%d normalized=%d final=%d",
+            "positions=%d products=%d evidence=%d raw=%d normalized=%d final=%d result_evidence=%d",
             inventory_id,
             aisle_id,
             job_id,
@@ -84,6 +89,7 @@ class SqlJobResultScopeStore(JobResultScopeStore):
             before.raw_labels,
             before.normalized_labels,
             before.final_counts,
+            before.result_evidence,
         )
         return before
 
@@ -111,6 +117,13 @@ def _delete_sql_job_scope(
     aisle_id: str,
     job_id: str,
 ) -> None:
+    cur.execute(
+        """
+        DELETE FROM result_evidence
+        WHERE inventory_id = ? AND aisle_id = ? AND job_id = ?
+        """,
+        (inventory_id, aisle_id, job_id),
+    )
     cur.execute(
         "DELETE FROM final_count_records WHERE inventory_id = ? AND aisle_id = ? AND job_id = ?",
         (inventory_id, aisle_id, job_id),

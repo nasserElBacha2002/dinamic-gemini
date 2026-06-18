@@ -82,6 +82,7 @@ _INTERNAL_CODE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _CANONICAL_ENTITY_KEYS: tuple[str, ...] = (
     "entity_type",
     "model_entity_id",
+    "manifest_entry_id",
     "confidence",
     "has_boxes",
     "source_image_id",

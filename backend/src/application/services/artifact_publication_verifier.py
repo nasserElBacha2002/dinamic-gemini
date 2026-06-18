@@ -28,3 +28,28 @@ def verify_remote_object(
     if expected_size is not None and metadata.file_size_bytes == expected_size:
         return ArtifactVerificationLevel.POSITIVE_EVIDENCE_ONLY, metadata
     return ArtifactVerificationLevel.UNVERIFIABLE, metadata
+
+
+def resolve_publication_verification_level(
+    *,
+    level: ArtifactVerificationLevel,
+    metadata: StoredObjectMetadata | None,
+    expected_sha256: str,
+    expected_size: int | None,
+    trust_size_matched_upload: bool,
+) -> ArtifactVerificationLevel:
+    """
+    Upgrade size-only remote evidence to CONFIRMED when the expected SHA-256 was known
+  before upload and the remote object size matches.
+
+    Cloud object stores (S3/GCS) often expose size but not SHA-256 in HEAD metadata.
+    """
+    if level == ArtifactVerificationLevel.CONFIRMED:
+        return level
+    if not trust_size_matched_upload or not expected_sha256:
+        return level
+    if level != ArtifactVerificationLevel.POSITIVE_EVIDENCE_ONLY or metadata is None:
+        return level
+    if expected_size is None or metadata.file_size_bytes != expected_size:
+        return level
+    return ArtifactVerificationLevel.CONFIRMED

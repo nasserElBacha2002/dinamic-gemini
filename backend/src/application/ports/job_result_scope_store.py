@@ -14,6 +14,7 @@ class JobScopeRowCounts:
     raw_labels: int
     normalized_labels: int
     final_counts: int
+    result_evidence: int
 
 
 @runtime_checkable

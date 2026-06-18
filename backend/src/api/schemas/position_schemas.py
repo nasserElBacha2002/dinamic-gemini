@@ -10,6 +10,10 @@ from typing import Any, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.api.schemas.listing_schemas import PageMeta
+from src.api.schemas.result_evidence_schemas import (
+    ResultEvidenceViewResponse,
+    TraceabilityArtifactMetadataResponse,
+)
 from src.domain.reviews.entities import ReviewActionType
 
 _QtySourcePublic = Literal[
@@ -145,7 +149,24 @@ class PositionTraceabilityBlock(BaseModel):
         None,
         description="Primary evidence crop id; mirrors deprecated top-level ``primary_evidence_id``.",
     )
-    has_evidence: bool = Field(False, description="Mirrors deprecated ``has_evidence``.")
+    has_evidence: bool = Field(
+        False,
+        description=(
+            "True when a primary evidence crop row exists (``primary_evidence_id``). "
+            "Does not imply the source image was validated for display."
+        ),
+    )
+    has_valid_evidence: bool = Field(
+        False,
+        description=(
+            "True only when ``status`` is ``valid`` and ``source_image_id`` is present — "
+            "safe to display as operator evidence (Phase 4.2)."
+        ),
+    )
+    traceability_warning: Optional[str] = Field(
+        None,
+        description="Operational diagnostic when traceability is not valid (Phase 4.2).",
+    )
 
 
 class PositionSummaryResponse(BaseModel):
@@ -356,6 +377,14 @@ class PositionDetailResponse(BaseModel):
     run_context: PositionRunContextResponse = Field(
         ...,
         description="Phase 2: run identity for this row so clients do not mix multi-run datasets.",
+    )
+    evidence: Optional[ResultEvidenceViewResponse] = Field(
+        None,
+        description="Phase 4.8 structural evidence contract (authoritative for display eligibility).",
+    )
+    traceability_artifact: Optional[TraceabilityArtifactMetadataResponse] = Field(
+        None,
+        description="Phase 4.8 durable traceability_manifest metadata for the resolved job context.",
     )
 
 

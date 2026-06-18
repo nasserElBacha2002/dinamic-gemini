@@ -312,7 +312,10 @@ def test_source_hash_conflict_rejected(tmp_path) -> None:
     run_dir = harness.seed_run_dir()
     dispatcher.register_publication_work(job_id=harness.job_id, run_segment=RUN_ID, run_dir=run_dir)
     run_dir2 = harness.seed_run_dir()
-    (run_dir2 / "execution_log.jsonl").write_text("different bytes\n", encoding="utf-8")
+    (run_dir2 / "execution_log.jsonl").write_text(
+        '{"stage":"Pipeline","level":"info","message":"different bytes"}\n',
+        encoding="utf-8",
+    )
     with pytest.raises(ArtifactPublicationSourceConflictError):
         dispatcher.register_publication_work(job_id=harness.job_id, run_segment=RUN_ID, run_dir=run_dir2)
 

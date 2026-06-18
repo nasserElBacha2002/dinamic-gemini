@@ -32,6 +32,7 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
+    ResultEvidenceRepository,
     SourceAssetRepository,
     SupplierPromptConfigRepository,
     SupplierReferenceImageRepository,
@@ -69,6 +70,7 @@ from src.application.services.supplier_prompt_resolver import (
 from src.application.services.supplier_reference_image_resolver import (
     SupplierReferenceImageResolver,
 )
+from src.application.services.traceability_artifact_service import TraceabilityArtifactService
 from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
@@ -79,13 +81,17 @@ from src.application.use_cases.pipeline.recompute_consolidated_counts import (
 from src.config import Settings, load_settings
 from src.domain.aisle.entities import Aisle
 from src.domain.jobs.artifact_manifest import ArtifactManifestStatus
-from src.domain.jobs.artifact_policy import is_required_artifact_kind
+from src.domain.jobs.artifact_policy import (
+    ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+    is_required_artifact_kind,
+)
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.jobs.finalization import (
     CurrentFinalizationStep,
     FinalizationErrorCode,
     LastCompletedFinalizationStep,
 )
+from src.domain.traceability_artifact.errors import TraceabilityArtifactError
 from src.infrastructure.pipeline.finalization_errors import (
     ArtifactPublishError,
     ArtifactPublishPartialError,
@@ -107,6 +113,7 @@ from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
 )
 from src.io.logging import setup_logger
 from src.jobs.worker_bootstrap import append_worker_bootstrap_event, checkpoint_v3_job_bootstrap
+from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.execution_log import ExecutionLogWriter, read_last_stage_error
@@ -134,6 +141,16 @@ def _supplier_prompt_resolution_failure_message(resolution: SupplierPromptResolu
             f"(Client → Supplier → Instrucciones / prompts)."
         )
     return f"{base}."
+
+
+def _prompt_composition_from_run_metadata(run_metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(run_metadata, dict):
+        return None
+    comp = run_metadata.get(LLM_METADATA_KEY_PROMPT_COMPOSITION)
+    if isinstance(comp, dict):
+        return comp
+    legacy = run_metadata.get("prompt_composition")
+    return legacy if isinstance(legacy, dict) else None
 
 
 @dataclass(frozen=True)
@@ -193,8 +210,11 @@ class _V3FinalizeAfterPipelineParams:
     result: PipelineRunResult
     report_path: Path
     report: dict[str, Any]
+    job: Job
     cancellation_checkpoint: Callable[[str, str | None, str], None]
     cancel_event_emitted: dict[str, bool]
+    input_type: str | None = None
+    canonical_traceability_expected: bool = False
 
 
 @dataclass(frozen=True)
@@ -239,6 +259,7 @@ class V3JobExecutor:
         raw_label_repo: RawLabelRepository | None = None,
         normalized_label_repo: NormalizedLabelRepository | None = None,
         final_count_repo: FinalCountRepository | None = None,
+        result_evidence_repo: ResultEvidenceRepository | None = None,
         job_scoped_recompute_factory: JobScopedRecomputeFactory | None = None,
         job_result_uow_factory: JobResultUnitOfWorkFactory | None = None,
         recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
@@ -292,19 +313,21 @@ class V3JobExecutor:
             raw_label_repo is None
             or normalized_label_repo is None
             or final_count_repo is None
+            or result_evidence_repo is None
             or aisle_repo is None
             or job_scoped_recompute_factory is None
             or job_result_uow_factory is None
         ):
             raise ValueError(
                 "V3JobExecutor requires raw_label_repo, normalized_label_repo, "
-                "final_count_repo, aisle_repo, job_scoped_recompute_factory, "
+                "final_count_repo, result_evidence_repo, aisle_repo, job_scoped_recompute_factory, "
                 "and job_result_uow_factory for PersistAisleResultUseCase"
             )
         self._persist_use_case = PersistAisleResultUseCase(
             position_repo=position_repo,
             product_record_repo=product_record_repo,
             evidence_repo=evidence_repo,
+            result_evidence_repo=result_evidence_repo,
             clock=clock,
             hybrid_mapper=default_map_hybrid_report_to_domain,
             aisle_repo=aisle_repo,
@@ -313,6 +336,10 @@ class V3JobExecutor:
             final_count_repo=final_count_repo,
             job_scoped_recompute_factory=job_scoped_recompute_factory,
             job_result_uow_factory=job_result_uow_factory,
+        )
+        self._traceability_artifact_service = TraceabilityArtifactService(
+            result_evidence_repo=result_evidence_repo,
+            clock=clock,
         )
         _ = recompute_consolidated_uc
         self._heartbeat_interval_sec = 10
@@ -330,6 +357,7 @@ class V3JobExecutor:
                 clock=clock,
             )
         self._artifact_manifest_store = artifact_manifest_store
+        self._artifact_outbox_store = artifact_publication_outbox_store
         self._artifact_dispatcher: ArtifactPublicationDispatcher | None = None
         if (
             artifact_publication_outbox_store is not None
@@ -688,6 +716,9 @@ class V3JobExecutor:
                     report=p.report,
                     run_dir=p.run_dir,
                     run_id=RUN_ID,
+                    provider=(p.job.provider_name or "").strip() or None,
+                    model_name=(p.job.model_name or "").strip() or None,
+                    prompt_composition=_prompt_composition_from_run_metadata(p.result.run_metadata),
                 )
             )
         except PipelineCancellationRequestedError:
@@ -737,7 +768,81 @@ class V3JobExecutor:
             return True
 
         logger.info(
-            "v3_job_domain_persist_complete job_id=%s aisle_id=%s next_step=durable_artifact_upload",
+            "v3_job_domain_persist_complete job_id=%s aisle_id=%s next_step=traceability_artifact_generation",
+            p.job_id,
+            p.aisle_id,
+        )
+
+        prompt_composition = _prompt_composition_from_run_metadata(p.result.run_metadata)
+        required_kind_overrides: dict[str, bool] = {}
+        traceability_required = self._traceability_artifact_service.is_required_for_run(
+            input_type=p.input_type,
+            canonical_traceability_expected=p.canonical_traceability_expected,
+            prompt_composition=prompt_composition,
+        )
+        try:
+            if traceability_required:
+                self._traceability_artifact_service.generate_and_write(
+                    job_id=p.job_id,
+                    inventory_id=p.aisle.inventory_id,
+                    aisle_id=p.aisle_id,
+                    run_id=RUN_ID,
+                    run_dir=p.run_dir,
+                    provider=(p.job.provider_name or "").strip() or None,
+                    model_name=(p.job.model_name or "").strip() or None,
+                    prompt_composition=prompt_composition,
+                    run_metadata=p.result.run_metadata,
+                    hybrid_report=p.report,
+                    input_type=p.input_type,
+                    canonical_traceability_expected=p.canonical_traceability_expected,
+                )
+                required_kind_overrides[ARTIFACT_KIND_TRACEABILITY_MANIFEST] = True
+        except TraceabilityArtifactError as trace_exc:
+            p.exec_log.error(
+                "Artifacts",
+                f"Traceability artifact generation failed: {trace_exc}",
+                payload={
+                    "error": str(trace_exc)[:500],
+                    "traceability_error_code": trace_exc.error_code,
+                },
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.ARTIFACT_SOURCE_STAGING_FAILED,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Traceability artifact generation failed: {trace_exc}",
+                metadata={
+                    "artifact_kind": ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+                    "traceability_error_code": trace_exc.error_code,
+                    "domain_commit_completed": True,
+                },
+            )
+            return True
+        except Exception as trace_exc:
+            p.exec_log.error(
+                "Artifacts",
+                f"Traceability artifact generation failed: {trace_exc}",
+                payload={"error": str(trace_exc)[:500]},
+            )
+            self._state.fail_finalization_and_aisle(
+                p.job_id,
+                p.aisle,
+                tracker=tracker,
+                error_code=FinalizationErrorCode.ARTIFACT_SOURCE_STAGING_FAILED,
+                current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                message=f"Traceability artifact generation failed: {trace_exc}",
+                metadata={
+                    "artifact_kind": ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+                    "exception_type": type(trace_exc).__name__,
+                    "domain_commit_completed": True,
+                },
+            )
+            return True
+
+        logger.info(
+            "v3_job_traceability_artifact_ready job_id=%s aisle_id=%s next_step=durable_artifact_upload",
             p.job_id,
             p.aisle_id,
         )
@@ -765,8 +870,42 @@ class V3JobExecutor:
                 "pre_upload",
                 "Job canceled before artifact upload",
             )
+            if (
+                required_kind_overrides.get(ARTIFACT_KIND_TRACEABILITY_MANIFEST)
+                and self._artifact_dispatcher is None
+            ):
+                msg = (
+                    "Traceability manifest publication requires artifact outbox; "
+                    "legacy non-outbox durable upload path is unsupported for required "
+                    "traceability artifacts"
+                )
+                logger.error("v3_job_id=%s %s", p.job_id, msg)
+                p.exec_log.error(
+                    "Artifacts",
+                    msg,
+                    payload={
+                        "artifact_kind": ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+                        "traceability_error_code": "ARTIFACT_OUTBOX_REQUIRED_FOR_TRACEABILITY",
+                    },
+                )
+                self._state.fail_finalization_and_aisle(
+                    p.job_id,
+                    p.aisle,
+                    tracker=tracker,
+                    error_code=FinalizationErrorCode.ARTIFACT_SOURCE_STAGING_FAILED,
+                    current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                    message=msg,
+                    metadata={
+                        "artifact_kind": ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+                        "traceability_error_code": "ARTIFACT_OUTBOX_REQUIRED_FOR_TRACEABILITY",
+                        "domain_commit_completed": True,
+                    },
+                )
+                return True
             if self._artifact_dispatcher is not None:
-                return self._publish_artifacts_via_outbox(p, tracker)
+                return self._publish_artifacts_via_outbox(
+                    p, tracker, required_kind_overrides=required_kind_overrides
+                )
             durable_meta = self._artifacts.publish_worker_durables(
                 job_id=p.job_id,
                 run_segment=RUN_ID,
@@ -896,6 +1035,8 @@ class V3JobExecutor:
         self,
         p: _V3FinalizeAfterPipelineParams,
         tracker: JobFinalizationTracker,
+        *,
+        required_kind_overrides: dict[str, bool] | None = None,
     ) -> bool:
         assert self._artifact_dispatcher is not None
         try:
@@ -903,12 +1044,17 @@ class V3JobExecutor:
                 job_id=p.job_id,
                 run_segment=RUN_ID,
                 run_dir=p.run_dir,
+                required_kind_overrides=required_kind_overrides,
             )
         except ArtifactSourceStagingFailedError as exc:
+            staging_code = getattr(exc, "error_code", "ARTIFACT_STAGING_FAILED")
             p.exec_log.error(
                 "Artifacts",
                 f"Required artifact staging failed: {exc}",
-                payload={"error": str(exc)[:500]},
+                payload={
+                    "error": str(exc)[:500],
+                    "staging_error_code": staging_code,
+                },
             )
             self._state.fail_finalization_and_aisle(
                 p.job_id,
@@ -917,7 +1063,10 @@ class V3JobExecutor:
                 error_code=FinalizationErrorCode.ARTIFACT_SOURCE_STAGING_FAILED,
                 current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
                 message=f"Required artifact staging failed: {exc}",
-                metadata={"verification_required": True},
+                metadata={
+                    "verification_required": True,
+                    "staging_error_code": staging_code,
+                },
             )
             return True
         try:
@@ -1062,10 +1211,29 @@ class V3JobExecutor:
             )
             return True
         if dispatch_result.permanently_failed_kinds:
+            failed_entries = list(dispatch_result.failed_entries)
+            if not failed_entries and self._artifact_outbox_store is not None:
+                from src.application.services.artifact_publication_diagnostics import (
+                    failed_outbox_entry_summary,
+                )
+
+                for kind in sorted(dispatch_result.permanently_failed_kinds):
+                    entry = self._artifact_outbox_store.get_entry(p.job_id, kind)
+                    if entry is not None:
+                        failed_entries.append(failed_outbox_entry_summary(entry))
+            logger.error(
+                "artifact.publication.required_permanently_failed job_id=%s failed_kinds=%s failed_entries=%s",
+                p.job_id,
+                sorted(dispatch_result.permanently_failed_kinds),
+                failed_entries,
+            )
             p.exec_log.error(
                 "Artifacts",
                 "Required artifact publication permanently failed",
-                payload={"failed_kinds": sorted(dispatch_result.permanently_failed_kinds)},
+                payload={
+                    "failed_kinds": sorted(dispatch_result.permanently_failed_kinds),
+                    "failed_entries": failed_entries,
+                },
             )
             self._state.fail_finalization_and_aisle(
                 p.job_id,
@@ -1076,6 +1244,7 @@ class V3JobExecutor:
                 message="Required artifact publication permanently failed",
                 metadata={
                     "failed_kinds": sorted(dispatch_result.permanently_failed_kinds),
+                    "failed_entries": failed_entries,
                     "published_artifact_kinds": sorted(dispatch_result.published_kinds),
                     "verification_required": True,
                 },
@@ -1275,8 +1444,14 @@ class V3JobExecutor:
                     result=result,
                     report_path=report_path,
                     report=report,
+                    job=job,
                     cancellation_checkpoint=cancellation_checkpoint,
                     cancel_event_emitted=rt.cancel_event_emitted,
+                    input_type=getattr(job_input, "input_type", None),
+                    canonical_traceability_expected=(
+                        getattr(job_input, "input_type", "") == "photos"
+                        and job.job_type == "process_aisle"
+                    ),
                 )
             ):
                 return True

@@ -23,6 +23,7 @@ from src.llm.gemini_global_analyzer import GeminiGlobalAnalyzer
 from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_PARITY_MODE
 from src.llm.types import LLMRequest, LLMResponse
+from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ class GeminiSdkAdapter:
                 context_images=getattr(request, "context_images", None),
                 frame_refs=list(request.frame_refs) if request.frame_refs else None,
                 request_metadata=meta,
+                llm_request=request,
                 logger=logger,
                 save_raw_to_path=save_raw_to_path,
             )
@@ -115,6 +117,12 @@ class GeminiSdkAdapter:
                 code="UNKNOWN",
                 message=str(e),
                 details={"provider": "gemini"},
+            ) from e
+        except ProviderImageExecutionError as e:
+            raise LLMProviderError(
+                code=e.code,
+                message=e.message,
+                details=e.to_details(),
             ) from e
         except ValueError as e:
             raise LLMProviderError(

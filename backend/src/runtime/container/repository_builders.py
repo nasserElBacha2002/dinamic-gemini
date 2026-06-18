@@ -19,6 +19,7 @@ from src.application.ports.repositories import (
     JobRepository,
     PositionRepository,
     ProductRecordRepository,
+    ResultEvidenceRepository,
     ReviewActionRepository,
     SourceAssetRepository,
     SupplierPromptConfigRepository,
@@ -288,6 +289,31 @@ def build_evidence_repository(
     return build_repo(
         backend_info_name="EvidenceRepository",
         sql_error_subject="evidence repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_result_evidence_repository(
+    build_repo: BuildSqlOrMemory[ResultEvidenceRepository],
+) -> ResultEvidenceRepository:
+    def _sql(client: SqlServerClient) -> ResultEvidenceRepository:
+        from src.infrastructure.repositories.sql_result_evidence_repository import (
+            SqlResultEvidenceRepository,
+        )
+
+        return SqlResultEvidenceRepository(client)
+
+    def _memory() -> ResultEvidenceRepository:
+        from src.infrastructure.repositories.memory_result_evidence_repository import (
+            MemoryResultEvidenceRepository,
+        )
+
+        return MemoryResultEvidenceRepository()
+
+    return build_repo(
+        backend_info_name="ResultEvidenceRepository",
+        sql_error_subject="result_evidence repo",
         build_sql=_sql,
         build_memory=_memory,
     )

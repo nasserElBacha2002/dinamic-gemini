@@ -38,6 +38,12 @@ from src.application.use_cases.pipeline.recompute_consolidated_counts import (
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.domain.execution_image_manifest import (
+    ExecutionImageEntry,
+    ExecutionImageManifest,
+    ExecutionImageRole,
+    manifest_composition_projection,
+)
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.labels.merge import MergeRuleEngine
@@ -80,6 +86,7 @@ from src.infrastructure.repositories.memory_supplier_reference_image_repository 
     MemorySupplierReferenceImageRepository,
 )
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
+from src.pipeline.run_metadata import RUN_METADATA_KEY_PROMPT_COMPOSITION
 from tests.support.worker_phase2.job_scope_inspection import (
     JobScopeSnapshot,
     evidence_for_job,
@@ -134,6 +141,37 @@ def make_two_entity_hybrid_report() -> dict[str, Any]:
             },
         ]
     }
+
+
+def make_photo_pipeline_run_metadata(
+    job_id: str,
+    *,
+    photo_count: int = 2,
+) -> dict[str, Any]:
+    """Minimal prompt_composition with execution manifest for harness photo-job finalization."""
+    entries: list[ExecutionImageEntry] = []
+    for index in range(photo_count):
+        asset_id = f"asset-{index + 1}"
+        entries.append(
+            ExecutionImageEntry(
+                manifest_entry_id=f"IMG_{index + 1:03d}",
+                source_asset_id=asset_id,
+                source_image_id=asset_id,
+                role=ExecutionImageRole.PRIMARY_EVIDENCE,
+                payload_ordinal=index + 1,
+                storage_reference=f"photos/{asset_id}.jpg",
+            )
+        )
+    manifest = ExecutionImageManifest(
+        job_id=job_id,
+        entries=tuple(entries),
+        excluded_entries=(),
+    )
+    prompt_composition = {
+        "schema_version": "prompt_composition_v1",
+        **manifest_composition_projection(manifest),
+    }
+    return {RUN_METADATA_KEY_PROMPT_COMPOSITION: prompt_composition}
 
 
 def build_recompute_use_case(
@@ -351,6 +389,13 @@ class ExecutorHarness:
             raw_label_repo=kwargs.get("raw_repo", self.raw_repo),
             normalized_label_repo=kwargs.get("norm_repo", self.norm_repo),
             final_count_repo=kwargs.get("final_repo", self.final_repo),
+            result_evidence_repo=kwargs.get(
+                "result_evidence_repo",
+                __import__(
+                    "src.infrastructure.repositories.memory_result_evidence_repository",
+                    fromlist=["MemoryResultEvidenceRepository"],
+                ).MemoryResultEvidenceRepository(),
+            ),
             job_scoped_recompute_factory=kwargs.get(
                 "job_scoped_recompute_factory", DefaultJobScopedRecomputeFactory()
             ),
@@ -405,7 +450,10 @@ class ExecutorHarness:
             (run_dir / "hybrid_report.json").write_text(
                 json.dumps(payload), encoding="utf-8"
             )
-            return PipelineRunResult(0, run_metadata or {})
+            return PipelineRunResult(
+                0,
+                run_metadata or make_photo_pipeline_run_metadata(self.job_id),
+            )
 
         side_effect = pipeline_side_effect or _pipeline_side_effect
 
@@ -427,6 +475,13 @@ class ExecutorHarness:
             position_repo=kwargs.get("position_repo", self.position_repo),
             product_record_repo=kwargs.get("product_record_repo", self.product_repo),
             evidence_repo=kwargs.get("evidence_repo", self.evidence_repo),
+            result_evidence_repo=kwargs.get(
+                "result_evidence_repo",
+                __import__(
+                    "src.infrastructure.repositories.memory_result_evidence_repository",
+                    fromlist=["MemoryResultEvidenceRepository"],
+                ).MemoryResultEvidenceRepository(),
+            ),
             clock=kwargs.get("clock", FixedClock(self.now)),
             hybrid_mapper=kwargs.get(
                 "hybrid_mapper", default_map_hybrid_report_to_domain

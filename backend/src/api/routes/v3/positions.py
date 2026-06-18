@@ -11,8 +11,13 @@ from src.api.dependencies import (
     get_get_position_code_scan_evidence_use_case,
     get_get_position_detail_use_case,
     get_list_aisle_positions_use_case,
+    get_result_evidence_query_service,
 )
 from src.api.errors import mapped_http_exception
+from src.api.mappers.result_evidence_mapper import (
+    artifact_read_model_to_response,
+    result_evidence_view_to_response,
+)
 from src.api.routes.v3.code_scans import _detection_to_response, _run_to_summary
 from src.api.schemas.code_scan_schemas import (
     PositionCodeScanEvidenceResponse,
@@ -26,6 +31,7 @@ from src.api.schemas.position_schemas import (
 )
 from src.application.mappers.position_canonical_view import build_position_canonical_view
 from src.application.services.display_primary_product import select_display_primary_product
+from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
 from src.application.use_cases.positions.get_position_code_scan_evidence import (
     GetPositionCodeScanEvidenceCommand,
     GetPositionCodeScanEvidenceUseCase,
@@ -224,7 +230,13 @@ def _position_detail_query_dep(
     )
 
 
-def _build_position_detail_response(result: Any) -> PositionDetailResponse:
+def _build_position_detail_response(
+    result: Any,
+    *,
+    evidence_query: ResultEvidenceQueryService | None = None,
+    inventory_id: str | None = None,
+    aisle_id: str | None = None,
+) -> PositionDetailResponse:
     """Assemble PositionDetailResponse from GetPositionDetailUseCase result."""
     primary_product = select_display_primary_product(result.products)
     corrected_quantity = primary_product.corrected_quantity if primary_product is not None else None
@@ -234,6 +246,20 @@ def _build_position_detail_response(result: Any) -> PositionDetailResponse:
         corrected_quantity=corrected_quantity,
     )
     rc = result.run_context
+    resolved_job_id = rc.resolved_job_id or rc.job_id or result.position.job_id
+    evidence_view = None
+    traceability_artifact = None
+    if evidence_query is not None and inventory_id and aisle_id:
+        evidence_view = result_evidence_view_to_response(
+            evidence_query.get_position_evidence_view(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                position=result.position,
+                job_id=resolved_job_id,
+            )
+        )
+        artifact_model = evidence_query.get_traceability_artifact(resolved_job_id)
+        traceability_artifact = artifact_read_model_to_response(artifact_model)
     return PositionDetailResponse(
         position=position_to_summary(
             result.position,
@@ -253,6 +279,8 @@ def _build_position_detail_response(result: Any) -> PositionDetailResponse:
             prompt_key=rc.prompt_key,
             prompt_version=rc.prompt_version,
         ),
+        evidence=evidence_view,
+        traceability_artifact=traceability_artifact,
     )
 
 
@@ -265,6 +293,7 @@ def get_position_detail(
     aisle_id: str,
     position_id: str,
     use_case: GetPositionDetailUseCase = Depends(get_get_position_detail_use_case),
+    evidence_query: ResultEvidenceQueryService = Depends(get_result_evidence_query_service),
     q: _PositionDetailQuery = Depends(_position_detail_query_dep),
 ) -> PositionDetailResponse:
     """Get detail for the operator-facing current review entity of a position.
@@ -285,7 +314,12 @@ def get_position_detail(
             explicit_job_id=q.explicit_job_id,
             exact_position=q.exact_position,
         )
-        return _build_position_detail_response(result)
+        return _build_position_detail_response(
+            result,
+            evidence_query=evidence_query,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+        )
     except Exception as e:
         # REVISAR_NO_TOCAR: broad catch preserves mapped_http_exception handling for domain errors.
         mapped = mapped_http_exception(e)

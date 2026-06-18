@@ -20,13 +20,16 @@ from src.llm.prompt_composer.hybrid_assembly import (
     DEFAULT_HYBRID_PROMPT_PROFILE,
     compose_hybrid_base,
 )
-from src.llm.types import ContextImageSequence
+from src.llm.types import ContextImageSequence, LLMRequest
 from src.llm.vision_multimodal_payload import (
     LLM_METADATA_KEY_MULTIMODAL_ORDER,
     LLM_METADATA_KEY_REFERENCE_IMAGE_IDS,
+    build_gemini_contents_from_serialized,
     build_gemini_interleaved_contents,
+    resolve_serialized_payload_for_adapter,
 )
 from src.models.schemas import GlobalEntityResponseV21
+from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
 logger = logging.getLogger(__name__)
@@ -94,13 +97,34 @@ class GeminiGlobalAnalyzer:
                 ref_ids = [str(x) for x in raw_ref]
         frefs = list(frame_refs or [])
 
-        gemini_contents, multimodal_order = build_gemini_interleaved_contents(
-            main_prompt_text=prompt,
-            context_images=refs,
-            reference_image_ids=ref_ids,
-            primary_pil_images=primary_images,
-            frame_refs=frefs,
-        )
+        llm_request = kwargs.get("llm_request")
+        if llm_request is not None and not isinstance(llm_request, LLMRequest):
+            llm_request = None
+
+        try:
+            serialized = resolve_serialized_payload_for_adapter(
+                llm_request,
+                provider="gemini",
+            )
+        except ProviderImageExecutionError:
+            raise
+
+        if serialized is not None:
+            gemini_contents, multimodal_order = build_gemini_contents_from_serialized(
+                main_prompt_text=prompt,
+                serialized=serialized,
+                job_id=getattr(llm_request, "job_id", None) if llm_request else None,
+                provider="gemini",
+            )
+        else:
+            gemini_contents, multimodal_order = build_gemini_interleaved_contents(
+                main_prompt_text=prompt,
+                context_images=refs,
+                reference_image_ids=ref_ids,
+                primary_pil_images=primary_images,
+                frame_refs=frefs,
+                request_metadata=request_metadata,
+            )
         if request_metadata is not None:
             request_metadata[LLM_METADATA_KEY_MULTIMODAL_ORDER] = multimodal_order
 

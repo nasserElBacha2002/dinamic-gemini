@@ -12,6 +12,53 @@ export type TraceabilityStatus =
   | 'INVALID'
   | 'UNVALIDATED';
 
+/** Phase 4.8 — structural evidence traceability (includes legacy / artifact unavailable). */
+export type EvidenceTraceabilityStatus =
+  | 'valid'
+  | 'invalid'
+  | 'missing'
+  | 'unvalidated'
+  | 'legacy_unavailable'
+  | 'artifact_unavailable';
+
+export type EvidenceSourceKind =
+  | 'structural_result_evidence'
+  | 'legacy_json'
+  | 'unavailable';
+
+export type ImageAccessStatus = 'available' | 'url_unavailable' | 'not_allowed';
+
+/** Phase 4.8 — durable traceability_manifest metadata (safe subset). */
+export interface TraceabilityArtifactMetadata {
+  kind: string;
+  published: boolean;
+  required: boolean;
+  status: string;
+  storageKey?: string | null;
+  contentHash?: string | null;
+  sizeBytes?: number | null;
+  publishedAt?: string | null;
+}
+
+/** Phase 4.8 — mapped from API ResultEvidenceViewResponse. */
+export interface ResultEvidenceView {
+  displayable: boolean;
+  traceabilityStatus: EvidenceTraceabilityStatus | string;
+  traceabilityWarning?: string | null;
+  role?: string | null;
+  sourceImageId?: string | null;
+  sourceAssetId?: string | null;
+  resolvedManifestEntryId?: string | null;
+  rawManifestEntryId?: string | null;
+  rawSourceImageId?: string | null;
+  imageUrl?: string | null;
+  thumbnailUrl?: string | null;
+  imageAccessStatus?: ImageAccessStatus | string | null;
+  sourceKind: EvidenceSourceKind | string;
+  provider?: string | null;
+  modelName?: string | null;
+}
+
 /** Review status for the visible result (maps from position status + needs_review). */
 export type ReviewStatus =
   | 'DETECTED'
@@ -49,7 +96,10 @@ export interface ResultSummary {
   traceabilityStatus: TraceabilityStatus;
   needsReview: boolean;
   updatedAt: string;
+  /** Crop row exists (primary_evidence_id); not the same as validated display evidence. */
   hasEvidence: boolean;
+  /** Phase 4.2: true only when traceability is VALID and backend confirms display eligibility. */
+  hasValidEvidence: boolean;
 }
 
 /** Single evidence item (image/crop) for a result. */
@@ -103,6 +153,14 @@ export interface ResultDetail {
   updatedAt: string;
   sourceImageId: string | null;
   sourceFileName: string | null;
+  /** Phase 4.2: validated display eligibility from API traceability.has_valid_evidence. */
+  hasValidEvidence: boolean;
+  /** Phase 4.8: structural evidence contract from detail API (authoritative when present). */
+  evidenceView?: ResultEvidenceView | null;
+  /** Phase 4.8: durable traceability_manifest metadata for resolved job context. */
+  traceabilityArtifact?: TraceabilityArtifactMetadata | null;
+  /** Operational diagnostic from API (may be shown in technical/expandable UI). */
+  traceabilityWarning?: string | null;
   evidence: ResultEvidence[];
   reviewHistory: ReviewHistoryItem[];
   technicalMetadata?: {

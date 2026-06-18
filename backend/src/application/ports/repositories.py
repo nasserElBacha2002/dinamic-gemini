@@ -25,6 +25,7 @@ from src.domain.jobs.entities import Job
 from src.domain.labels.entities import FinalCountRecord, NormalizedLabel, RawLabel
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
+from src.domain.result_evidence.entities import ResultEvidenceRecord
 from src.domain.reviews.entities import ReviewAction
 
 
@@ -459,5 +460,51 @@ class SupplierPromptConfigRepository(ABC):
     @abstractmethod
     def activate_version(self, config_id: str) -> SupplierPromptConfig | None:
         """Set one version active (and other scope rows inactive), returning the activated row."""
+        ...
+
+
+class ResultEvidenceRepository(ABC):
+    """Structural entity traceability evidence rows (Phase 4.6)."""
+
+    @abstractmethod
+    def save_many(self, records: list[ResultEvidenceRecord]) -> None:
+        """Insert or update evidence rows by primary key."""
+        ...
+
+    @abstractmethod
+    def delete_by_job_id(self, job_id: str) -> int:
+        """Delete all evidence for one job; admin/read helper (prefer delete_for_scope)."""
+        ...
+
+    @abstractmethod
+    def delete_for_scope(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        job_id: str,
+    ) -> int:
+        """Delete evidence rows for one operational job result scope."""
+        ...
+
+    @abstractmethod
+    def list_by_job_id(self, job_id: str) -> Sequence[ResultEvidenceRecord]:
+        """Return all evidence rows for a job (any traceability status)."""
+        ...
+
+    @abstractmethod
+    def list_for_scope(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        job_id: str,
+    ) -> Sequence[ResultEvidenceRecord]:
+        """Return evidence rows for one operational job result scope."""
+        ...
+
+    @abstractmethod
+    def list_valid_by_job_id(self, job_id: str) -> Sequence[ResultEvidenceRecord]:
+        """Return displayable-valid evidence rows for a job."""
         ...
 

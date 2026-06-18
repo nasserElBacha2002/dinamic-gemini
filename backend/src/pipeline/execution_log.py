@@ -15,6 +15,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, cast
 
+from src.pipeline.execution_log_sanitizer import (
+    find_non_json_serializable_path,
+    make_json_safe_for_execution_log,
+)
+
 logger = logging.getLogger(__name__)
 
 EXECUTION_LOG_FILENAME = "execution_log.jsonl"
@@ -25,35 +30,20 @@ _PAYLOAD_STRING_MAX = 512
 _UNTRUNCATED_PAYLOAD_KEYS = frozenset({"prompt_text"})
 
 
-def _sanitize_payload_value(value: Any, *, key: str | None = None) -> Any:
-    """Convert a value to a JSON-serializable form. Recurses into dict/list; stringifies others."""
-    if value is None or isinstance(value, (bool, int, float)):
-        return value
+def _truncate_payload_strings(value: Any, *, key: str | None = None) -> Any:
+    """Apply execution_log string length limits after JSON-safe redaction."""
     if isinstance(value, str):
         if key in _UNTRUNCATED_PAYLOAD_KEYS:
             return value
         return value[:_PAYLOAD_STRING_MAX] if len(value) > _PAYLOAD_STRING_MAX else value
-    if isinstance(value, (datetime, Path)):
-        s = str(value)
-        return s[:_PAYLOAD_STRING_MAX] if len(s) > _PAYLOAD_STRING_MAX else s
-    if isinstance(value, BaseException):
-        s = f"{type(value).__name__}: {value}"
-        return s[:_PAYLOAD_STRING_MAX] if len(s) > _PAYLOAD_STRING_MAX else s
     if isinstance(value, dict):
-        out: dict[str, Any] = {}
-        for k, v in value.items():
-            key_name = str(k)
-            safe_key = key_name[:_PAYLOAD_STRING_MAX]
-            out[safe_key] = _sanitize_payload_value(v, key=key_name)
-        return out
-    if isinstance(value, (list, tuple)):
-        return [_sanitize_payload_value(v, key=key) for v in value]
-    try:
-        s = str(value)
-        return s[:_PAYLOAD_STRING_MAX] if len(s) > _PAYLOAD_STRING_MAX else s
-    except Exception:
-        # OK: sanitize must never raise; unknown objects become a placeholder string.
-        return "<non-serializable>"
+        return {
+            str(k): _truncate_payload_strings(v, key=str(k))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_truncate_payload_strings(item) for item in value]
+    return value
 
 
 def _sanitize_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -61,9 +51,24 @@ def _sanitize_payload(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     if not payload or not isinstance(payload, dict):
         return None
     try:
-        return cast(Optional[dict[str, Any]], _sanitize_payload_value(payload))
-    except Exception:
-        # OK: empty payload on unexpected sanitize failure (caller treats None as no payload).
+        safe = make_json_safe_for_execution_log(payload)
+        if not isinstance(safe, dict):
+            return None
+        truncated = _truncate_payload_strings(safe)
+        bad_path = find_non_json_serializable_path(truncated)
+        if bad_path:
+            logger.warning(
+                "execution_log payload still not JSON-serializable at %s after sanitization",
+                bad_path,
+            )
+        return cast(Optional[dict[str, Any]], truncated)
+    except Exception as exc:
+        bad_path = find_non_json_serializable_path(payload) or "<root>"
+        logger.warning(
+            "execution_log sanitization failed at %s: %s",
+            bad_path,
+            exc,
+        )
         return None
 
 
@@ -93,8 +98,18 @@ class LogEvent:
             d["payload"] = self.payload
         try:
             return json.dumps(d, ensure_ascii=False) + "\n"
-        except (TypeError, ValueError):
-            d["payload"] = {"_serialization_error": "payload could not be serialized"}
+        except (TypeError, ValueError) as exc:
+            bad_path = find_non_json_serializable_path(self.payload or {}) or "<payload>"
+            logger.warning(
+                "execution_log serialization failed at %s: %s",
+                bad_path,
+                exc,
+            )
+            d["payload"] = {
+                "_serialization_error": "payload could not be serialized",
+                "_failing_path": bad_path,
+                "_value_type": type(exc).__name__,
+            }
             try:
                 return json.dumps(d, ensure_ascii=False) + "\n"
             except (TypeError, ValueError):
@@ -262,6 +277,23 @@ def read_execution_log_file(path: Path) -> list[dict[str, Any]]:
     except OSError:
         return []
     return events
+
+
+def validate_execution_log_jsonl_file(path: Path) -> None:
+    """Raise ValueError when any line in execution_log.jsonl is not valid JSON."""
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"execution_log missing: {path}")
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"execution_log invalid JSON at line {line_no}: {exc.msg}"
+            ) from exc
 
 
 def read_execution_log(run_dir: Path) -> list[dict[str, Any]]:

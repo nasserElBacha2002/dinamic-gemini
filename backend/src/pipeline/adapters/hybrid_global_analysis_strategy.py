@@ -27,7 +27,11 @@ from typing import Any, NamedTuple
 
 import numpy as np
 
-import src.pipeline.services.hybrid_analysis_prompt as hybrid_prompt_service
+from src.domain.execution_image_manifest import ExecutionImageManifestError
+from src.domain.prompt_image_projection import (
+    COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION,
+    PromptImageProjection,
+)
 from src.llm.prompt_composer.prompt_traceability import (
     LLM_IDENTITY_METADATA_KEY,
     LLM_METADATA_KEY_PROMPT_COMPOSITION,
@@ -36,7 +40,11 @@ from src.llm.prompt_composer.prompt_traceability import (
     prompt_composition_summary_for_execution_log,
     sha256_utf8,
 )
-from src.llm.types import ContextImageSequence, LLMRequest
+from src.llm.types import (
+    IMAGE_EXECUTION_CONTRACT_CANONICAL_MANIFEST,
+    ContextImageSequence,
+    LLMRequest,
+)
 from src.llm.vision_multimodal_payload import (
     LLM_METADATA_KEY_FRAMES_SENT_IDS,
     LLM_METADATA_KEY_MULTIMODAL_ORDER,
@@ -48,6 +56,7 @@ from src.llm.vision_multimodal_payload import (
 )
 from src.pipeline.context.run_context import RunContext
 from src.pipeline.contracts.analysis_context import AnalysisContext
+from src.pipeline.llm_metadata_json_safety import sanitize_llm_metadata
 from src.pipeline.ports.analysis_provider import (
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_COUNT,
     PROVIDER_METADATA_KEY_VISUAL_REFERENCE_IDS,
@@ -59,6 +68,18 @@ from src.pipeline.ports.analysis_provider import (
 from src.pipeline.services.analysis_visual_reference_prep import (
     build_primary_evidence_attachments,
     prepare_visual_reference_inputs,
+)
+from src.pipeline.services.execution_image_manifest_builder import (
+    build_execution_image_manifest,
+    exclusions_from_acquisition_metadata,
+    log_manifest_diagnostics,
+    primary_candidates_from_acquired,
+    reference_candidates_from_visual_bundle,
+)
+from src.pipeline.services.execution_image_manifest_payload import (
+    bind_provider_payload_from_manifest,
+    primary_lookups_from_acquired,
+    reference_lookup_from_visual_bundle,
 )
 from src.pipeline.services.hybrid_analysis_prompt import (
     build_hybrid_analysis_prompt_with_traceability,
@@ -75,6 +96,14 @@ from src.pipeline.services.provider_analysis_execution_config import (
 )
 from src.pipeline.services.provider_analysis_result_normalization import (
     build_analysis_result_from_llm_response,
+)
+from src.pipeline.services.provider_execution_bridge import legacy_lists_from_provider_request
+from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
+from src.pipeline.services.provider_execution_request import (
+    LLM_METADATA_KEY_CANONICAL_PROVIDER_PAYLOAD_REQUIRED,
+    LLM_METADATA_KEY_IMAGE_EXECUTION_CONTRACT,
+    attach_provider_execution_request_snapshot,
+    build_provider_execution_request,
 )
 from src.pipeline.services.provider_llm_request_metadata import (
     apply_job_model_name_to_llm_request_metadata,
@@ -230,17 +259,6 @@ class HybridGlobalAnalysisStrategy:
         executor = resolved_exec.executor
         resolved_key = resolved_exec.normalized_provider_key
 
-        prompt_text, composition_base = build_hybrid_analysis_prompt_with_traceability(
-            run_ctx,
-            sent_frame_refs=frame_refs,
-        )
-        logger.info(
-            "Hybrid analysis prompt built: profile_name=%s hybrid_analysis_prompt=%s job_id=%s",
-            composition_base.get("profile_name"),
-            hybrid_prompt_service.__file__,
-            job_id,
-        )
-
         analysis_context: AnalysisContext | None = resolve_analysis_context_for_run(run_ctx)
         visual_references_available = bool(analysis_context and analysis_context.visual_references)
         vb = _prepare_hybrid_llm_visual_bundle(
@@ -254,22 +272,110 @@ class HybridGlobalAnalysisStrategy:
         resolved_reference_ids = vb.resolved_reference_ids
         consumed_count = vb.consumed_count
 
+        execution_manifest = None
+        bound_payload = None
+        provider_execution_request = None
+        job_input = getattr(run_ctx, "job_input", None)
+        is_photos = job_input and getattr(job_input, "input_type", "") == "photos"
+        if is_photos:
+            try:
+                execution_manifest = build_execution_image_manifest(
+                    job_id=job_id,
+                    primary_candidates=primary_candidates_from_acquired(
+                        frame_paths, frame_refs
+                    ),
+                    reference_candidates=reference_candidates_from_visual_bundle(
+                        analysis_context, resolved_reference_ids
+                    ),
+                    excluded=exclusions_from_acquisition_metadata(metadata),
+                )
+                log_manifest_diagnostics(manifest=execution_manifest, provider=resolved_key)
+            except ExecutionImageManifestError as exc:
+                logger.error(
+                    "execution_image_manifest_invalid job_id=%s error=%s",
+                    job_id,
+                    str(exc),
+                )
+                raise ValueError(str(exc)) from exc
+            path_by, nd_by = primary_lookups_from_acquired(frame_paths, frame_refs, frames_nd)
+            ref_by = reference_lookup_from_visual_bundle(
+                list(context_images) if context_images is not None else None,
+                resolved_reference_ids,
+            )
+            bound_payload = bind_provider_payload_from_manifest(
+                execution_manifest,
+                primary_path_by_source_id=path_by,
+                primary_nd_by_source_id=nd_by,
+                reference_image_by_source_id=ref_by,
+            )
+            frame_paths = list(bound_payload.frame_paths)
+            frames_nd = list(bound_payload.frames_nd)
+            frame_refs = list(bound_payload.frame_refs)
+            context_images = list(bound_payload.context_images)
+            resolved_reference_ids = list(bound_payload.reference_image_ids)
+            consumed_count = len(bound_payload.reference_image_ids)
+
+        prompt_text, composition_base = build_hybrid_analysis_prompt_with_traceability(
+            run_ctx,
+            sent_frame_refs=frame_refs if not execution_manifest else None,
+            execution_manifest=execution_manifest,
+        )
+        raw_projection = composition_base.get(COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION)
+        if isinstance(raw_projection, dict):
+            PromptImageProjection.from_dict(raw_projection)
+
+        if execution_manifest is not None and bound_payload is not None:
+            try:
+                provider_execution_request = build_provider_execution_request(
+                    job_id=job_id,
+                    prompt=prompt_text,
+                    manifest=execution_manifest,
+                    bound_payload=bound_payload,
+                    schema_version="v2.1",
+                    metadata=metadata,
+                )
+                legacy = legacy_lists_from_provider_request(provider_execution_request)
+                frame_paths = list(legacy.frame_paths)
+                frames_nd = list(legacy.frames_nd)
+                frame_refs = list(legacy.frame_refs)
+                context_images = list(legacy.context_images)
+                resolved_reference_ids = list(legacy.reference_image_ids)
+            except (ProviderImageExecutionError, ExecutionImageManifestError) as exc:
+                logger.error(
+                    "provider_execution_request_invalid job_id=%s error=%s",
+                    job_id,
+                    str(exc),
+                )
+                raise ValueError(str(exc)) from exc
+
         if frames_nd:
             validate_primary_frame_refs(frames_nd, frame_refs)
         sent_ids = list(frame_refs)
         prompt_listed = list(composition_base.get("prompt_listed_image_ids") or sent_ids)
+        ref_ids_for_meta = (
+            list(execution_manifest.reference_source_image_ids())
+            if execution_manifest is not None
+            else list(resolved_reference_ids)
+        )
         req_meta: dict[str, Any] = {
             **metadata,
             "run_dir": str(run_ctx.run_dir),
             **traceability_metadata_payload(
                 frames_sent_ids=sent_ids,
                 prompt_listed_image_ids=prompt_listed,
-                reference_image_ids=resolved_reference_ids,
+                reference_image_ids=ref_ids_for_meta,
                 multimodal_order=[],
             ),
         }
-        jm = getattr(run_ctx, "job_model_name", None)
         rk = (resolved_key or "").strip().lower()
+        if provider_execution_request is not None:
+            attach_provider_execution_request_snapshot(req_meta, provider_execution_request)
+            req_meta[LLM_METADATA_KEY_CANONICAL_PROVIDER_PAYLOAD_REQUIRED] = is_photos
+            if is_photos:
+                req_meta[LLM_METADATA_KEY_IMAGE_EXECUTION_CONTRACT] = (
+                    IMAGE_EXECUTION_CONTRACT_CANONICAL_MANIFEST
+                )
+        jm = getattr(run_ctx, "job_model_name", None)
         model_for_meta = apply_job_model_name_to_llm_request_metadata(
             resolved_provider_key=rk,
             job_model_name=jm,
@@ -283,6 +389,8 @@ class HybridGlobalAnalysisStrategy:
             resolved_llm_provider_key=rk,
             model_name=model_for_meta,
         )
+        if resolved_reference_ids:
+            prompt_composition["reference_image_ids"] = list(ref_ids_for_meta)
         if prompt_composition.get("final_prompt_text") != prompt_text:
             logger.warning(
                 "prompt_composition final_prompt_text mismatch vs assembled prompt (job_id=%s)",
@@ -295,6 +403,7 @@ class HybridGlobalAnalysisStrategy:
         _lid = prompt_composition.get("llm_identity")
         if isinstance(_lid, dict):
             req_meta[LLM_IDENTITY_METADATA_KEY] = dict(_lid)
+        req_meta = sanitize_llm_metadata(req_meta)
 
         request = LLMRequest(
             job_id=job_id,
@@ -306,6 +415,13 @@ class HybridGlobalAnalysisStrategy:
             frames_nd=frames_nd,
             context_instruction=context_instruction,
             context_images=context_images,
+            provider_execution_request=provider_execution_request,
+            canonical_provider_payload_required=bool(is_photos and execution_manifest is not None),
+            image_execution_contract=(
+                IMAGE_EXECUTION_CONTRACT_CANONICAL_MANIFEST
+                if is_photos and execution_manifest is not None
+                else None
+            ),
         )
         run_logger = getattr(run_ctx, "logger", None)
         if run_logger is not None:

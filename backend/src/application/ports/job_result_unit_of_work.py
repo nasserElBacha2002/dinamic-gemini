@@ -14,6 +14,7 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
+    ResultEvidenceRepository,
 )
 
 
@@ -27,6 +28,7 @@ class JobResultRepositories:
     raw_label_repo: RawLabelRepository
     normalized_label_repo: NormalizedLabelRepository
     final_count_repo: FinalCountRepository
+    result_evidence_repo: ResultEvidenceRepository
 
 
 @runtime_checkable

@@ -8,6 +8,7 @@ from src.domain.evidence.entities import Evidence
 from src.domain.labels.entities import RawLabel
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
+from src.domain.result_evidence.entities import ResultEvidenceRecord
 
 
 @dataclass
@@ -18,3 +19,4 @@ class MappedAisleResult:
     product_records: list[ProductRecord]
     evidences: list[Evidence]
     raw_labels: list[RawLabel]
+    result_evidence_records: list[ResultEvidenceRecord]

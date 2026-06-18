@@ -30,6 +30,12 @@ from src.domain.quantity.resolution import (
     normalize_raw_qty,
     resolve_final_qty,
 )
+from src.domain.result_evidence.entities import ResultEvidenceRecord
+from src.domain.result_evidence.mapper import (
+    ResultEvidenceMapContext,
+    map_entity_to_result_evidence,
+)
+from src.domain.traceability import is_traceability_evidence_displayable
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +77,11 @@ def _summary_merge_optional_string_projections(entity: dict[str, Any], out: dict
         "position_barcode",
         "review_display_label",
         "source_image_id",
+        "manifest_entry_id",
+        "raw_source_image_id",
+        "resolved_manifest_entry_id",
         "traceability_status",
+        "traceability_warning",
     ):
         val = entity.get(src_key)
         if val is not None:
@@ -117,6 +127,10 @@ def _detected_summary(entity: dict[str, Any], audit: dict[str, Any]) -> dict[str
     _summary_merge_bbox_lists(entity, out)
     _summary_merge_optional_string_projections(entity, out)
     _summary_merge_filename_and_int_projections(entity, out)
+    out["has_valid_evidence"] = is_traceability_evidence_displayable(
+        traceability_status=out.get("traceability_status"),
+        source_image_id=out.get("source_image_id"),
+    )
     if audit:
         out["_audit"] = audit
     return out
@@ -238,6 +252,10 @@ class _HybridMapContext:
     job_id: str
     now: datetime
     inventory_id: str
+    provider: str | None = None
+    model_name: str | None = None
+    prompt_composition: dict[str, Any] | None = None
+    schema_version: str | None = None
 
 
 def _first_bbox_json(entity: dict[str, Any]) -> dict[str, Any] | None:
@@ -250,7 +268,7 @@ def _first_bbox_json(entity: dict[str, Any]) -> dict[str, Any] | None:
 
 def _map_single_hybrid_entity(
     ctx: _HybridMapContext, entity: dict[str, Any]
-) -> tuple[Position, ProductRecord, Evidence, RawLabel]:
+) -> tuple[Position, ProductRecord, Evidence, RawLabel, ResultEvidenceRecord]:
     """Map one hybrid_report entity to domain rows (same field semantics as pre–B8.4 loop body)."""
     position_id = str(uuid4())
     product_id = str(uuid4())
@@ -387,7 +405,22 @@ def _map_single_hybrid_entity(
         created_at=ctx.now,
         job_id=ctx.job_id,
     )
-    return position, product, evidence, raw_label
+    result_evidence = map_entity_to_result_evidence(
+        entity,
+        ResultEvidenceMapContext(
+            job_id=ctx.job_id,
+            inventory_id=ctx.inventory_id,
+            aisle_id=ctx.aisle_id,
+            now=ctx.now,
+            position_id=position_id,
+            provider=ctx.provider,
+            model_name=ctx.model_name,
+            prompt_composition=ctx.prompt_composition,
+            schema_version=ctx.schema_version,
+            manifest_required=True,
+        ),
+    )
+    return position, product, evidence, raw_label, result_evidence
 
 
 def map_hybrid_report_to_domain(
@@ -398,6 +431,10 @@ def map_hybrid_report_to_domain(
     job_id: str,
     now: datetime,
     inventory_id: str = "",
+    *,
+    provider: str | None = None,
+    model_name: str | None = None,
+    prompt_composition: dict[str, Any] | None = None,
 ) -> MappedAisleResult:
     """
     Map hybrid_report entities to Position, ProductRecord, Evidence, and RawLabel (v3.2.3).
@@ -412,6 +449,11 @@ def map_hybrid_report_to_domain(
     product_records: list[ProductRecord] = []
     evidences: list[Evidence] = []
     raw_labels: list[RawLabel] = []
+    result_evidence_records: list[ResultEvidenceRecord] = []
+
+    schema_version = None
+    if isinstance(report.get("report_version"), str):
+        schema_version = str(report.get("report_version"))
 
     ctx = _HybridMapContext(
         aisle_id=aisle_id,
@@ -419,18 +461,24 @@ def map_hybrid_report_to_domain(
         job_id=job_id,
         now=now,
         inventory_id=inventory_id,
+        provider=provider,
+        model_name=model_name,
+        prompt_composition=prompt_composition,
+        schema_version=schema_version,
     )
     entities = report.get("entities") or []
     for entity in entities:
-        pos, prod, ev, rl = _map_single_hybrid_entity(ctx, entity)
+        pos, prod, ev, rl, re = _map_single_hybrid_entity(ctx, entity)
         positions.append(pos)
         product_records.append(prod)
         evidences.append(ev)
         raw_labels.append(rl)
+        result_evidence_records.append(re)
 
     return MappedAisleResult(
         positions=positions,
         product_records=product_records,
         evidences=evidences,
         raw_labels=raw_labels,
+        result_evidence_records=result_evidence_records,
     )

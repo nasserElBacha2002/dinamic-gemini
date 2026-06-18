@@ -650,6 +650,110 @@ describe('mapPositionDetailToResultDetail', () => {
     const r = mapPositionSummaryToResultSummary(p);
     expect(r.hasEvidence).toBe(false);
   });
+
+  it('Phase 4.2: hasValidEvidence follows traceability.has_valid_evidence', () => {
+    const p: PositionSummary = {
+      id: 'pos-hve',
+      aisle_id: 'aisle-1',
+      position_code: '',
+      status: 'detected',
+      confidence: 0.9,
+      needs_review: true,
+      primary_evidence_id: 'ev-1',
+      created_at: '2024-01-01T00:00:00Z',
+      updated_at: '2024-01-02T00:00:00Z',
+      qty: 1,
+      qtySource: 'detected',
+      has_evidence: true,
+      traceability: {
+        status: 'invalid',
+        source_image_id: 'asset-bad',
+        has_evidence: true,
+        has_valid_evidence: false,
+      },
+    };
+    const r = mapPositionSummaryToResultSummary(p);
+    expect(r.hasValidEvidence).toBe(false);
+    expect(r.traceabilityStatus).toBe('INVALID');
+  });
+});
+
+describe('mapPositionDetailToResultDetail Phase 4.2', () => {
+  it('invalid traceability keeps sourceImageId but hasValidEvidence false', () => {
+    const data: PositionDetailResponse = {
+      position: {
+        id: 'pos-inv',
+        aisle_id: 'aisle-1',
+        position_code: '',
+        status: 'detected',
+        confidence: 0.9,
+        needs_review: true,
+        primary_evidence_id: 'ev-1',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+        qty: 1,
+        qtySource: 'detected',
+        has_evidence: true,
+        traceability: {
+          status: 'invalid',
+          source_image_id: 'asset-bad',
+          has_evidence: true,
+          has_valid_evidence: false,
+          traceability_warning: 'Returned image ID was not part of the final provider payload.',
+        },
+      },
+      evidences: [],
+      review_actions: [],
+      run_context: rcLegacy(),
+    };
+    const r = mapPositionDetailToResultDetail(data);
+    expect(r.sourceImageId).toBe('asset-bad');
+    expect(r.hasValidEvidence).toBe(false);
+    expect(r.traceabilityWarning).toContain('final provider payload');
+  });
+});
+
+describe('mapPositionDetailToResultDetail Phase 4.8', () => {
+  it('prefers structural evidence over legacy traceability block', () => {
+    const data: PositionDetailResponse = {
+      position: {
+        id: 'pos-48',
+        aisle_id: 'aisle-1',
+        position_code: 'P1',
+        status: 'detected',
+        confidence: 0.9,
+        needs_review: false,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+        qty: 1,
+        qtySource: 'detected',
+        has_evidence: true,
+        traceability: {
+          status: 'valid',
+          has_evidence: true,
+          has_valid_evidence: true,
+          source_image_id: 'legacy-id',
+        },
+      },
+      evidences: [],
+      review_actions: [],
+      run_context: rcLegacy(),
+      evidence: {
+        displayable: false,
+        traceability_status: 'artifact_unavailable',
+        source_kind: 'structural_result_evidence',
+        source_image_id: 'struct-id',
+        traceability_warning: 'Artifact not published.',
+      },
+    };
+    const r = mapPositionDetailToResultDetail(data);
+    expect(r.evidenceView?.displayable).toBe(false);
+    expect(r.evidenceView?.traceabilityStatus).toBe('artifact_unavailable');
+    expect(r.traceabilityStatus).toBe('UNVALIDATED');
+    expect(r.hasValidEvidence).toBe(false);
+    expect(r.sourceImageId).toBe('struct-id');
+    expect(r.traceabilityWarning).toBe('Artifact not published.');
+  });
 });
 
 describe('detectedSummary helpers', () => {

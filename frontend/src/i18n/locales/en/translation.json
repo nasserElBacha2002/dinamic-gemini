@@ -1170,7 +1170,23 @@
       "recorded_no_preview": "Recorded no preview",
       "source_file": "Source file",
       "supporting_count": "Supporting count",
-      "supporting_heading": "Supporting heading"
+      "supporting_heading": "Supporting heading",
+      "unavailable_invalid": "Evidence could not be validated for this result.",
+      "unavailable_missing": "No evidence image was returned for this result.",
+      "unavailable_unvalidated": "Evidence is unavailable because traceability could not be confirmed."
+    },
+    "evidence_details": {
+      "artifact_hash": "Artifact hash",
+      "artifact_status": "Artifact status",
+      "heading": "Traceability detail",
+      "image_access_status": "Image access",
+      "model_name": "Model",
+      "provider": "Provider",
+      "raw_manifest_entry_id": "Raw manifest entry ID",
+      "resolved_manifest_entry_id": "Resolved manifest entry ID",
+      "source_kind": "Evidence source",
+      "traceability_status": "Traceability status",
+      "traceability_warning": "Warning"
     },
     "evidence_present": "Evidence present",
     "evidence_viewer": {
@@ -1185,7 +1201,8 @@
       "record_only": "Record only",
       "subtitle_fallback": "Subtitle fallback",
       "supporting": "Supporting",
-      "title_fallback": "Title fallback"
+      "title_fallback": "Title fallback",
+      "url_unavailable": "Evidence image is unavailable."
     },
     "exit_fullscreen": "Exit fullscreen",
     "filtered_empty_message": "Filtered empty message",

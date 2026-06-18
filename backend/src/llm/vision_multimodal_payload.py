@@ -21,6 +21,27 @@ MULTIMODAL_ORDER_STATUS_PENDING = "pending_adapter_materialization"
 PRIMARY_FRAME_REFS_MISMATCH = "PRIMARY_FRAME_REFS_MISMATCH"
 
 
+def _validate_provider_lists_against_request_manifest(
+    metadata: dict[str, Any] | None,
+    frame_refs: list[str],
+    reference_image_ids: list[str],
+) -> None:
+    """When request metadata embeds a manifest, adapter lists must match it exactly."""
+    from src.pipeline.services.execution_image_manifest_payload import (
+        manifest_from_request_metadata,
+        validate_provider_lists_against_manifest,
+    )
+
+    manifest = manifest_from_request_metadata(metadata)
+    if manifest is None:
+        return
+    validate_provider_lists_against_manifest(
+        manifest,
+        frame_refs=frame_refs,
+        reference_image_ids=reference_image_ids,
+    )
+
+
 def validate_primary_frame_refs(
     primary_frames_nd: list[Any],
     frame_refs: list[str],
@@ -83,10 +104,14 @@ def build_openai_vision_content_parts(
     reference_image_ids: list[str],
     primary_frames_nd: list[Any],
     frame_refs: list[str],
+    request_metadata: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
     OpenAI Chat Completions user ``content`` parts: main text, then labeled reference and primary pairs.
     """
+    _validate_provider_lists_against_request_manifest(
+        request_metadata, frame_refs, reference_image_ids
+    )
     validate_primary_frame_refs(primary_frames_nd, frame_refs)
     content: list[dict[str, Any]] = [{"type": "text", "text": main_prompt_text}]
     order: list[dict[str, Any]] = []
@@ -172,8 +197,12 @@ def build_anthropic_message_content_parts(
     reference_image_ids: list[str],
     primary_frames_nd: list[Any],
     frame_refs: list[str],
+    request_metadata: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Claude message content: same labeled interleaving as OpenAI (text + image blocks)."""
+    _validate_provider_lists_against_request_manifest(
+        request_metadata, frame_refs, reference_image_ids
+    )
     validate_primary_frame_refs(primary_frames_nd, frame_refs)
     content: list[dict[str, Any]] = [{"type": "text", "text": main_prompt_text}]
     order: list[dict[str, Any]] = []
@@ -257,10 +286,14 @@ def build_gemini_interleaved_contents(
     reference_image_ids: list[str],
     primary_pil_images: list[Any],
     frame_refs: list[str],
+    request_metadata: dict[str, Any] | None = None,
 ) -> tuple[list[Any], list[dict[str, Any]]]:
     """
     Gemini ``contents``: main prompt text first, then labeled reference and primary pairs (PIL images).
     """
+    _validate_provider_lists_against_request_manifest(
+        request_metadata, frame_refs, reference_image_ids
+    )
     validate_primary_frame_refs(primary_pil_images, frame_refs)
     contents: list[Any] = [main_prompt_text]
     order: list[dict[str, Any]] = []
@@ -328,3 +361,335 @@ def traceability_metadata_payload(
         LLM_METADATA_KEY_REFERENCE_IMAGE_IDS: list(reference_image_ids),
         LLM_METADATA_KEY_MULTIMODAL_ORDER: list(multimodal_order),
     }
+
+
+def _append_serialized_image_pair(
+    *,
+    image_entry: Any,
+    label_text: str,
+    content_out: list[Any],
+    order: list[dict[str, Any]],
+    content_index: int,
+    is_primary_ndarray: bool,
+) -> int:
+    """Append label + image placeholder; return next content index."""
+    from src.pipeline.services.provider_payload_serialization import SerializedImagePayloadEntry
+
+    entry: SerializedImagePayloadEntry = image_entry
+    content_out.append({"type": "text", "text": label_text})
+    _append_order_entry(
+        order,
+        index=content_index,
+        role="text",
+        kind="reference_image_label" if entry.role.value == "reference_image" else "primary_image_label",
+        manifest_entry_id=entry.manifest_entry_id,
+        source_image_id=entry.source_image_id,
+    )
+    content_index += 1
+    placeholder: dict[str, Any] = {
+        "type": "image_placeholder",
+        "_image": entry.encoded_resource,
+        "_manifest_entry_id": entry.manifest_entry_id,
+    }
+    if is_primary_ndarray:
+        placeholder["_bgr"] = True
+    content_out.append(placeholder)
+    _append_order_entry(
+        order,
+        index=content_index,
+        role="image",
+        kind="reference" if entry.role.value == "reference_image" else "primary_evidence",
+        manifest_entry_id=entry.manifest_entry_id,
+        source_image_id=entry.source_image_id,
+        provider_image_position=entry.provider_image_position,
+    )
+    return content_index + 1
+
+
+def build_openai_vision_from_serialized(
+    *,
+    main_prompt_text: str,
+    serialized: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Phase 4.4 — OpenAI content parts from serialized manifest-ordered images only."""
+    from src.pipeline.services.provider_payload_serialization import (
+        SerializedMultimodalPayload,
+        manifest_entry_label,
+    )
+
+    payload: SerializedMultimodalPayload = serialized
+    content: list[dict[str, Any]] = [{"type": "text", "text": main_prompt_text}]
+    order: list[dict[str, Any]] = []
+    idx = 0
+    _append_order_entry(
+        order, index=idx, role="text", kind="main_prompt", char_len=len(main_prompt_text)
+    )
+    idx += 1
+    for entry in payload.entries:
+        label = manifest_entry_label(entry)
+        is_primary = entry.role.value == "primary_evidence"
+        idx = _append_serialized_image_pair(
+            image_entry=entry,
+            label_text=label,
+            content_out=content,
+            order=order,
+            content_index=idx,
+            is_primary_ndarray=is_primary,
+        )
+    return content, order
+
+
+def build_anthropic_vision_from_serialized(
+    *,
+    main_prompt_text: str,
+    serialized: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Phase 4.4 — Anthropic content blocks from serialized manifest-ordered images."""
+    return build_openai_vision_from_serialized(
+        main_prompt_text=main_prompt_text,
+        serialized=serialized,
+    )
+
+
+def _ndarray_bgr_to_pil_rgb(frame: Any) -> Any:
+    """Convert OpenCV BGR ndarray to PIL RGB (same contract as legacy Gemini analyzer)."""
+    import cv2
+    import numpy as np
+
+    from src.pipeline.services.provider_execution_errors import (
+        PROVIDER_IMAGE_SERIALIZATION_FAILED,
+        ProviderImageExecutionError,
+    )
+
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ProviderImageExecutionError(
+            PROVIDER_IMAGE_SERIALIZATION_FAILED,
+            "Pillow required for Gemini image materialization",
+        ) from exc
+
+    arr = np.asarray(frame)
+    if arr.size == 0:
+        raise ProviderImageExecutionError(
+            PROVIDER_IMAGE_SERIALIZATION_FAILED,
+            "empty ndarray cannot be materialized for Gemini",
+        )
+    rgb = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(rgb)
+
+
+def _is_pil_image(resource: Any) -> bool:
+    try:
+        from PIL import Image
+
+        return isinstance(resource, Image.Image)
+    except ImportError:
+        return False
+
+
+def _normalize_gemini_mime_type(mime_type: str | None) -> str | None:
+    if not mime_type or not str(mime_type).strip():
+        return None
+    normalized = str(mime_type).strip().lower()
+    if normalized == "image/jpg":
+        return "image/jpeg"
+    return normalized
+
+
+def _gemini_supported_mime_types() -> frozenset[str]:
+    from src.pipeline.services.provider_execution_request import SUPPORTED_IMAGE_MIME_TYPES
+
+    return frozenset(
+        m if m != "image/jpg" else "image/jpeg" for m in SUPPORTED_IMAGE_MIME_TYPES
+    )
+
+
+def materialize_gemini_serialized_image(
+    entry: Any,
+    *,
+    job_id: str | None = None,
+    provider: str = "gemini",
+) -> Any:
+    """
+    Materialize one serialized manifest image entry into a Gemini-compatible content item.
+
+    Accepts PIL Image (pass-through), BGR ndarray (primary evidence), or bytes with MIME.
+    """
+    from src.pipeline.services.provider_execution_errors import (
+        PROVIDER_IMAGE_SERIALIZATION_FAILED,
+        PROVIDER_IMAGE_UNSUPPORTED_FORMAT,
+        ProviderImageExecutionError,
+    )
+    from src.pipeline.services.provider_payload_serialization import SerializedImagePayloadEntry
+
+    image: SerializedImagePayloadEntry = entry
+    resource = image.encoded_resource
+    mime_type = _normalize_gemini_mime_type(image.mime_type)
+    resource_type = type(resource).__name__
+
+    if _is_pil_image(resource):
+        return resource
+
+    if isinstance(resource, (bytes, bytearray)):
+        if not mime_type:
+            raise ProviderImageExecutionError(
+                PROVIDER_IMAGE_SERIALIZATION_FAILED,
+                "bytes resource requires mime_type for Gemini materialization",
+                job_id=job_id,
+                provider=provider,
+                manifest_entry_id=image.manifest_entry_id,
+                role=image.role.value,
+                details={
+                    "resource_type": resource_type,
+                    "mime_type": image.mime_type,
+                },
+            )
+        if mime_type not in _gemini_supported_mime_types():
+            raise ProviderImageExecutionError(
+                PROVIDER_IMAGE_UNSUPPORTED_FORMAT,
+                f"unsupported MIME for Gemini bytes resource: {mime_type}",
+                job_id=job_id,
+                provider=provider,
+                manifest_entry_id=image.manifest_entry_id,
+                role=image.role.value,
+                details={"resource_type": resource_type, "mime_type": mime_type},
+            )
+        from google.genai import types
+
+        return types.Part.from_bytes(data=bytes(resource), mime_type=mime_type)
+
+    try:
+        import numpy as np
+
+        if isinstance(resource, np.ndarray):
+            return _ndarray_bgr_to_pil_rgb(resource)
+    except ProviderImageExecutionError:
+        raise
+    except Exception as exc:
+        raise ProviderImageExecutionError(
+            PROVIDER_IMAGE_SERIALIZATION_FAILED,
+            f"failed to materialize ndarray for Gemini: {exc}",
+            job_id=job_id,
+            provider=provider,
+            manifest_entry_id=image.manifest_entry_id,
+            role=image.role.value,
+            details={"resource_type": resource_type, "mime_type": mime_type},
+        ) from exc
+
+    raise ProviderImageExecutionError(
+        PROVIDER_IMAGE_SERIALIZATION_FAILED,
+        f"unsupported resource type for Gemini: {resource_type}",
+        job_id=job_id,
+        provider=provider,
+        manifest_entry_id=image.manifest_entry_id,
+        role=image.role.value,
+        details={"resource_type": resource_type, "mime_type": mime_type},
+    )
+
+
+def build_gemini_contents_from_serialized(
+    *,
+    main_prompt_text: str,
+    serialized: Any,
+    job_id: str | None = None,
+    provider: str = "gemini",
+) -> tuple[list[Any], list[dict[str, Any]]]:
+    """Phase 4.4 — Gemini interleaved contents from serialized manifest-ordered images."""
+    from src.pipeline.services.provider_payload_serialization import (
+        SerializedMultimodalPayload,
+        manifest_entry_label,
+    )
+
+    payload: SerializedMultimodalPayload = serialized
+    contents: list[Any] = [main_prompt_text]
+    order: list[dict[str, Any]] = []
+    idx = 0
+    _append_order_entry(
+        order, index=idx, role="text", kind="main_prompt", char_len=len(main_prompt_text)
+    )
+    idx += 1
+    for entry in payload.entries:
+        contents.append(manifest_entry_label(entry))
+        _append_order_entry(
+            order,
+            index=idx,
+            role="text",
+            kind="reference_image_label"
+            if entry.role.value == "reference_image"
+            else "primary_image_label",
+            manifest_entry_id=entry.manifest_entry_id,
+            source_image_id=entry.source_image_id,
+        )
+        idx += 1
+        contents.append(
+            materialize_gemini_serialized_image(
+                entry,
+                job_id=job_id,
+                provider=provider,
+            )
+        )
+        _append_order_entry(
+            order,
+            index=idx,
+            role="image",
+            kind="reference" if entry.role.value == "reference_image" else "primary_evidence",
+            manifest_entry_id=entry.manifest_entry_id,
+            source_image_id=entry.source_image_id,
+            provider_image_position=entry.provider_image_position,
+        )
+        idx += 1
+    return contents, order
+
+
+def resolve_serialized_payload_for_adapter(
+    request: Any,
+    *,
+    provider: str | None = None,
+) -> Any | None:
+    """
+    Serialize manifest-aligned payload at adapter boundary from runtime LLMRequest context.
+
+    Raises ``ProviderImageExecutionError`` when canonical photo execution is required but missing.
+    """
+    from src.domain.prompt_image_projection import prompt_projection_from_composition
+    from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
+    from src.llm.types import LLMRequest
+    from src.pipeline.services.provider_execution_errors import (
+        PROVIDER_IMAGE_MANIFEST_MISMATCH,
+        ProviderImageExecutionError,
+    )
+    from src.pipeline.services.provider_payload_serialization import (
+        record_provider_image_manifest_order,
+        serialize_provider_images,
+    )
+
+    if not isinstance(request, LLMRequest):
+        return None
+
+    if request.canonical_provider_payload_required and request.provider_execution_request is None:
+        raise ProviderImageExecutionError(
+            PROVIDER_IMAGE_MANIFEST_MISMATCH,
+            "canonical provider execution request required for photo manifest execution",
+            job_id=request.job_id,
+            provider=provider,
+        )
+
+    provider_req = request.provider_execution_request
+    if provider_req is None:
+        return None
+
+    meta = request.metadata or {}
+    comp = meta.get(LLM_METADATA_KEY_PROMPT_COMPOSITION)
+    prompt_projection = prompt_projection_from_composition(comp if isinstance(comp, dict) else None)
+
+    serialized = serialize_provider_images(
+        provider_req,
+        prompt_projection=prompt_projection,
+        job_id=request.job_id,
+        provider=provider,
+    )
+    request.serialized_multimodal_payload = serialized
+    record_provider_image_manifest_order(meta, serialized)
+    meta[LLM_METADATA_KEY_MULTIMODAL_ORDER] = list(serialized.provider_image_manifest_order)
+    return serialized

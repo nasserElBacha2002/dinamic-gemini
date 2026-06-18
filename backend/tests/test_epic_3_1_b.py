@@ -11,6 +11,9 @@ from src.domain.traceability import (
     TRACEABILITY_MISSING,
     TRACEABILITY_UNVALIDATED,
     TRACEABILITY_VALID,
+    WARNING_MISSING_ID,
+    WARNING_NOT_IN_JOB,
+    WARNING_UNVALIDATED,
     TraceabilityStatus,
     apply_traceability_validation,
 )
@@ -36,7 +39,8 @@ def test_parse_entities_with_source_image_id():
     }
     entities = parse_entities(data, job_id="job1")
     assert len(entities) == 1
-    assert entities[0].source_image_id == "img_001"
+    assert entities[0].raw_source_image_id == "img_001"
+    assert entities[0].source_image_id is None
     assert entities[0].traceability_status is None  # not yet validated
 
 
@@ -93,7 +97,7 @@ def test_apply_traceability_validation_valid():
         )
     ]
     valid_ids = frozenset({"img_001", "img_002"})
-    apply_traceability_validation(entities, valid_ids)
+    apply_traceability_validation(entities, valid_ids, sent_metadata_available=True)
     assert entities[0].traceability_status == TRACEABILITY_VALID
     assert entities[0].traceability_warning is None
 
@@ -110,9 +114,9 @@ def test_apply_traceability_validation_missing():
             traceability_warning=None,
         )
     ]
-    apply_traceability_validation(entities, frozenset({"img_001"}))
+    apply_traceability_validation(entities, frozenset({"img_001"}), sent_metadata_available=True)
     assert entities[0].traceability_status == TRACEABILITY_MISSING
-    assert entities[0].traceability_warning is None
+    assert entities[0].traceability_warning == WARNING_MISSING_ID
 
 
 def test_apply_traceability_validation_invalid():
@@ -128,9 +132,9 @@ def test_apply_traceability_validation_invalid():
         )
     ]
     valid_ids = frozenset({"img_001", "img_002"})
-    apply_traceability_validation(entities, valid_ids)
+    apply_traceability_validation(entities, valid_ids, sent_metadata_available=True)
     assert entities[0].traceability_status == TRACEABILITY_INVALID
-    assert "img_999" in (entities[0].traceability_warning or "")
+    assert entities[0].traceability_warning == WARNING_NOT_IN_JOB
 
 
 def test_apply_traceability_validation_when_context_missing_present_ref_is_unvalidated():
@@ -145,9 +149,9 @@ def test_apply_traceability_validation_when_context_missing_present_ref_is_unval
             traceability_warning=None,
         )
     ]
-    apply_traceability_validation(entities, frozenset())
+    apply_traceability_validation(entities, frozenset(), sent_metadata_available=False)
     assert entities[0].traceability_status == TRACEABILITY_UNVALIDATED
-    assert entities[0].traceability_warning is None
+    assert entities[0].traceability_warning == WARNING_UNVALIDATED
 
 
 # ---------- Report: traceability fields persisted ----------

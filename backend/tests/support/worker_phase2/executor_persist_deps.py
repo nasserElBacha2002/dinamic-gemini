@@ -21,6 +21,9 @@ from src.infrastructure.repositories.memory_normalized_label_repository import (
     MemoryNormalizedLabelRepository,
 )
 from src.infrastructure.repositories.memory_raw_label_repository import MemoryRawLabelRepository
+from src.infrastructure.repositories.memory_result_evidence_repository import (
+    MemoryResultEvidenceRepository,
+)
 
 
 def memory_executor_persist_kwargs(**overrides: Any) -> dict[str, Any]:
@@ -35,6 +38,7 @@ def memory_executor_persist_kwargs(**overrides: Any) -> dict[str, Any]:
         "raw_label_repo": MemoryRawLabelRepository(),
         "normalized_label_repo": MemoryNormalizedLabelRepository(),
         "final_count_repo": MemoryFinalCountRepository(),
+        "result_evidence_repo": MemoryResultEvidenceRepository(),
         "job_scoped_recompute_factory": DefaultJobScopedRecomputeFactory(),
         "job_result_uow_factory": uow_factory,
         "finalization_stage_store": stage_store,

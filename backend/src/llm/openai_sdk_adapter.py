@@ -41,8 +41,11 @@ from src.llm.vision_multimodal_payload import (
     LLM_METADATA_KEY_MULTIMODAL_ORDER,
     LLM_METADATA_KEY_REFERENCE_IMAGE_IDS,
     build_openai_vision_content_parts,
+    build_openai_vision_from_serialized,
     materialize_openai_content_parts,
+    resolve_serialized_payload_for_adapter,
 )
+from src.pipeline.services.provider_execution_errors import ProviderImageExecutionError
 from src.validation.global_analysis_schema import validate_global_analysis_structure_v21
 
 logger = logging.getLogger(__name__)
@@ -60,9 +63,10 @@ _JSON_OBJECT_SUFFIX = (
     "\n\nOutput requirement: respond with a single JSON object only (no markdown fences). "
     'Root keys: "total_entities_detected" (non-negative integer) and "entities" (array). '
     "Each entity must include these canonical keys (use null when unknown): "
-    "entity_type, model_entity_id, source_image_id, confidence, has_boxes, "
+    "entity_type, model_entity_id, manifest_entry_id, confidence, has_boxes, "
     "position_barcode, internal_code, position_label_bbox, product_label_bbox, "
-    "product_label_quantity. If a product label/SKU code is visible, put it in internal_code. "
+    "product_label_quantity. manifest_entry_id is the preferred evidence identifier (e.g. IMG_001). "
+    "source_image_id is optional legacy compatibility only. "
     "If a position/location barcode is visible, put it in position_barcode. "
     "If quantity is explicitly printed on the product label, put it in product_label_quantity. "
     "If the product-label region is visible, provide product_label_bbox as normalized [x1,y1,x2,y2]. "
@@ -70,6 +74,7 @@ _JSON_OBJECT_SUFFIX = (
     "Compatibility keys quantity/bbox may appear, but canonical fields are authoritative."
 )
 _OPENAI_CANONICAL_ENTITY_KEYS: tuple[str, ...] = (
+    "manifest_entry_id",
     "source_image_id",
     "position_barcode",
     "internal_code",
@@ -273,13 +278,31 @@ def _openai_build_user_content(
         [str(x) for x in ref_ids_raw] if isinstance(ref_ids_raw, list) else []
     )
     frame_refs = list(request.frame_refs) if request.frame_refs else []
-    parts, multimodal_order = build_openai_vision_content_parts(
-        main_prompt_text=prompt_text,
-        context_images=ctx_imgs,
-        reference_image_ids=reference_image_ids,
-        primary_frames_nd=frames_nd,
-        frame_refs=frame_refs,
-    )
+    try:
+        serialized = resolve_serialized_payload_for_adapter(
+            request,
+            provider=v.logical_provider,
+        )
+    except ProviderImageExecutionError as exc:
+        raise LLMProviderError(
+            code=exc.code,
+            message=exc.message,
+            details=exc.to_details(),
+        ) from exc
+    if serialized is not None:
+        parts, multimodal_order = build_openai_vision_from_serialized(
+            main_prompt_text=prompt_text,
+            serialized=serialized,
+        )
+    else:
+        parts, multimodal_order = build_openai_vision_content_parts(
+            main_prompt_text=prompt_text,
+            context_images=ctx_imgs,
+            reference_image_ids=reference_image_ids,
+            primary_frames_nd=frames_nd,
+            frame_refs=frame_refs,
+            request_metadata=meta,
+        )
     meta[LLM_METADATA_KEY_MULTIMODAL_ORDER] = multimodal_order
     content = materialize_openai_content_parts(
         parts,

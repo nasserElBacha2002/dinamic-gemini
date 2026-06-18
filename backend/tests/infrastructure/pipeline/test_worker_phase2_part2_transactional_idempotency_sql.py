@@ -24,6 +24,9 @@ from src.infrastructure.repositories.sql_product_record_repository import (
     SqlProductRecordRepository,
 )
 from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
+from src.infrastructure.repositories.sql_result_evidence_repository import (
+    SqlResultEvidenceRepository,
+)
 from tests.support.worker_phase1.executor_harness import (
     FixedClock,
     make_entity_hybrid_report,
@@ -342,6 +345,7 @@ def test_p2_p2_c013_polymorphic_evidence_preserved_sql(sql_client_or_skip) -> No
             raw_label_repo=SqlRawLabelRepository(client),
             normalized_label_repo=SqlNormalizedLabelRepository(client),
             final_count_repo=SqlFinalCountRepository(client),
+            result_evidence_repo=SqlResultEvidenceRepository(client),
         )
         with SqlJobResultUnitOfWorkFactory(client)(sql_bundle) as uow:
             uow.scope_store.delete_scope(
