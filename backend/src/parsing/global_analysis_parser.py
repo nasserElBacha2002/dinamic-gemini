@@ -212,7 +212,8 @@ def parse_entities(data: dict[str, Any], job_id: str = "") -> list[Entity]:
                 entity_quality_score=0.0,
                 original_index=i,
                 manifest_entry_id=raw.manifest_entry_id,
-                source_image_id=raw.legacy_source_image_id,
+                raw_source_image_id=raw.legacy_source_image_id,
+                source_image_id=None,
                 traceability_status=None,
                 traceability_warning=None,
             )

@@ -150,8 +150,8 @@ def test_hybrid_strategy_propagates_sent_frame_ids_to_entity_resolution(
         lambda _ji: "photos",
     )
 
+    from src.domain.manifest_evidence_resolution import WARNING_UNKNOWN_SOURCE_IMAGE_ID
+
     resolved = EntityResolutionStage().run(context, analysis_stage_result)
     assert resolved.entities[0].traceability_status == TRACEABILITY_INVALID
-    assert resolved.entities[0].traceability_warning == (
-        f"Unknown {LEGACY_EVIDENCE_RETURN_FIELD}: img_050"
-    )
+    assert resolved.entities[0].traceability_warning == WARNING_UNKNOWN_SOURCE_IMAGE_ID

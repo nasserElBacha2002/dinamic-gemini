@@ -102,6 +102,9 @@ def build_hybrid_report(
             "evidence_localization": e.evidence_localization,
             # Epic 3.1.B: traceability (traceability_warning is report-only diagnostic, not persisted to pallet_results)
             "source_image_id": sid,
+            "manifest_entry_id": getattr(e, "manifest_entry_id", None),
+            "raw_source_image_id": getattr(e, "raw_source_image_id", None),
+            "resolved_manifest_entry_id": getattr(e, "resolved_manifest_entry_id", None),
             "traceability_status": getattr(e, "traceability_status", None),
             "traceability_warning": getattr(e, "traceability_warning", None),
             # Epic 5: original filename of source image when available (photos jobs; facilitates review/audit).

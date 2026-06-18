@@ -13,8 +13,13 @@ from src.domain.manifest_evidence_resolution import (
     EvidenceResolutionOutcome,
     RawEvidenceIdentifier,
     WARNING_CONFLICTING_EVIDENCE_IDS,
+    WARNING_MANIFEST_UNAVAILABLE,
+    WARNING_MALFORMED_MANIFEST_ENTRY_ID,
+    WARNING_MISSING_EVIDENCE_ID,
+    WARNING_REFERENCE_AS_EVIDENCE,
     resolve_raw_evidence_identifier,
 )
+from src.domain.traceability import TraceabilityStatus
 
 
 def _manifest() -> ExecutionImageManifest:
@@ -97,3 +102,34 @@ def test_unknown_legacy_source_id_invalid() -> None:
         RawEvidenceIdentifier(None, "unknown-legacy-id"), _manifest()
     )
     assert result.outcome == EvidenceResolutionOutcome.INVALID_UNKNOWN
+
+
+def test_malformed_manifest_entry_id_invalid() -> None:
+    result = resolve_raw_evidence_identifier(
+        RawEvidenceIdentifier("filename.jpg", None), _manifest()
+    )
+    assert result.outcome == EvidenceResolutionOutcome.INVALID_MALFORMED
+    assert result.warning == WARNING_MALFORMED_MANIFEST_ENTRY_ID
+
+
+def test_manifest_missing_unvalidated() -> None:
+    result = resolve_raw_evidence_identifier(
+        RawEvidenceIdentifier("IMG_001", None),
+        None,
+        manifest_required=True,
+    )
+    assert result.outcome == EvidenceResolutionOutcome.MANIFEST_UNAVAILABLE
+    assert result.traceability_status == TraceabilityStatus.UNVALIDATED.value
+    assert result.warning == WARNING_MANIFEST_UNAVAILABLE
+
+
+def test_missing_sets_warning() -> None:
+    result = resolve_raw_evidence_identifier(RawEvidenceIdentifier(None, None), _manifest())
+    assert result.traceability_warning == WARNING_MISSING_EVIDENCE_ID
+
+
+def test_ref_warning_text() -> None:
+    result = resolve_raw_evidence_identifier(
+        RawEvidenceIdentifier("REF_001", None), _manifest()
+    )
+    assert result.warning == WARNING_REFERENCE_AS_EVIDENCE

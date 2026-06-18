@@ -188,13 +188,24 @@ def apply_traceability_validation(
 
     for ent in entities:
         pre_status = normalize_traceability_status(getattr(ent, "traceability_status", None))
-        if pre_status == TraceabilityStatus.INVALID.value:
+        if pre_status in (
+            TraceabilityStatus.INVALID.value,
+            TraceabilityStatus.MISSING.value,
+            TraceabilityStatus.UNVALIDATED.value,
+        ):
             continue
 
         sid = getattr(ent, "source_image_id", None)
         sid = (sid or "").strip() if sid else ""
 
         if not sid:
+            raw_sid = getattr(ent, "raw_source_image_id", None)
+            raw_sid = (raw_sid or "").strip() if raw_sid else ""
+            if raw_sid and not has_context:
+                ent.source_image_id = raw_sid
+                ent.traceability_status = TraceabilityStatus.UNVALIDATED.value
+                ent.traceability_warning = WARNING_UNVALIDATED
+                continue
             ent.traceability_status = TraceabilityStatus.MISSING.value
             ent.traceability_warning = WARNING_MISSING_ID
             continue

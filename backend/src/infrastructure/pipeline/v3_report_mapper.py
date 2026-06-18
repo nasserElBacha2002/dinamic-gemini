@@ -72,6 +72,9 @@ def _summary_merge_optional_string_projections(entity: dict[str, Any], out: dict
         "position_barcode",
         "review_display_label",
         "source_image_id",
+        "manifest_entry_id",
+        "raw_source_image_id",
+        "resolved_manifest_entry_id",
         "traceability_status",
         "traceability_warning",
     ):
