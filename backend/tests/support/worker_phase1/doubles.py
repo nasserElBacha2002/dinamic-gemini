@@ -14,6 +14,7 @@ from src.application.ports.repositories import (
     AisleRepository,
     JobRepository,
     PositionRepository,
+    ResultEvidenceRepository,
 )
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
@@ -105,6 +106,38 @@ class FailOnNthSavePositionRepository(PositionRepository):
             sort_dir=sort_dir,
             job_id=job_id,
         )
+
+
+class FailingResultEvidenceRepository(ResultEvidenceRepository):
+    """Delegates reads/deletes but raises on ``save_many`` for rollback tests."""
+
+    def __init__(self, inner: ResultEvidenceRepository) -> None:
+        self._inner = inner
+
+    def save_many(self, records: list) -> None:
+        raise RuntimeError("result evidence write failed")
+
+    def delete_by_job_id(self, job_id: str) -> int:
+        return self._inner.delete_by_job_id(job_id)
+
+    def delete_for_scope(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        job_id: str,
+    ) -> int:
+        return self._inner.delete_for_scope(
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            job_id=job_id,
+        )
+
+    def list_by_job_id(self, job_id: str):
+        return self._inner.list_by_job_id(job_id)
+
+    def list_valid_by_job_id(self, job_id: str):
+        return self._inner.list_valid_by_job_id(job_id)
 
 
 class FailingRecomputeUseCase(RecomputeConsolidatedCountsUseCase):

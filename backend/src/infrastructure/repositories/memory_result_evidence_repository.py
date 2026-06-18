@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 from src.application.ports.repositories import ResultEvidenceRepository
 from src.domain.result_evidence.entities import ResultEvidenceRecord
+from src.domain.result_evidence.validation import validate_result_evidence_record
 
 
 class MemoryResultEvidenceRepository(ResultEvidenceRepository):
@@ -16,10 +17,29 @@ class MemoryResultEvidenceRepository(ResultEvidenceRepository):
         for record in records:
             if not isinstance(record, ResultEvidenceRecord):
                 raise TypeError(f"Expected ResultEvidenceRecord, got {type(record)!r}")
+            validate_result_evidence_record(record)
             self._store[record.id] = record
 
     def delete_by_job_id(self, job_id: str) -> int:
         to_remove = [rid for rid, row in self._store.items() if row.job_id == job_id]
+        for rid in to_remove:
+            del self._store[rid]
+        return len(to_remove)
+
+    def delete_for_scope(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        job_id: str,
+    ) -> int:
+        to_remove = [
+            rid
+            for rid, row in self._store.items()
+            if row.job_id == job_id
+            and row.inventory_id == inventory_id
+            and row.aisle_id == aisle_id
+        ]
         for rid in to_remove:
             del self._store[rid]
         return len(to_remove)

@@ -570,7 +570,10 @@ def test_persist_aisle_result_raises_on_mapped_length_mismatch() -> None:
 
     with pytest.raises(
         ValueError,
-        match="PersistAisleResult invariant broken: positions=1 product_records=1 evidences=0",
+        match=(
+            "PersistAisleResult invariant broken: positions=1 product_records=1 "
+            "evidences=0 result_evidence_records=1"
+        ),
     ):
         use_case.execute(
             PersistAisleResultCommand(

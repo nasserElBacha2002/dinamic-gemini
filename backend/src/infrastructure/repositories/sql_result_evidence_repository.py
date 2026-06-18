@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from src.application.ports.repositories import ResultEvidenceRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.result_evidence.entities import ResultEvidenceRecord, ResultEvidenceRole
+from src.domain.result_evidence.validation import validate_result_evidence_record
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
 
@@ -77,6 +78,7 @@ class SqlResultEvidenceRepository(ResultEvidenceRepository):
             for record in records:
                 if not isinstance(record, ResultEvidenceRecord):
                     raise TypeError(f"Expected ResultEvidenceRecord, got {type(record)!r}")
+                validate_result_evidence_record(record)
                 created = _ensure_utc(record.created_at)
                 updated = _ensure_utc(record.updated_at)
                 update_params = (
@@ -164,6 +166,23 @@ class SqlResultEvidenceRepository(ResultEvidenceRepository):
     def delete_by_job_id(self, job_id: str) -> int:
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute("DELETE FROM result_evidence WHERE job_id = ?", (job_id,))
+            return int(cur.rowcount or 0)
+
+    def delete_for_scope(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        job_id: str,
+    ) -> int:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                """
+                DELETE FROM result_evidence
+                WHERE inventory_id = ? AND aisle_id = ? AND job_id = ?
+                """,
+                (inventory_id, aisle_id, job_id),
+            )
             return int(cur.rowcount or 0)
 
     def list_by_job_id(self, job_id: str) -> Sequence[ResultEvidenceRecord]:

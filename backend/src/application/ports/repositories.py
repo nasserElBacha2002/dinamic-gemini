@@ -473,7 +473,18 @@ class ResultEvidenceRepository(ABC):
 
     @abstractmethod
     def delete_by_job_id(self, job_id: str) -> int:
-        """Delete all evidence for one job scope; returns rows removed."""
+        """Delete all evidence for one job; admin/read helper (prefer delete_for_scope)."""
+        ...
+
+    @abstractmethod
+    def delete_for_scope(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        job_id: str,
+    ) -> int:
+        """Delete evidence rows for one operational job result scope."""
         ...
 
     @abstractmethod

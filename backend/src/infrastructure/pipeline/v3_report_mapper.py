@@ -417,6 +417,7 @@ def _map_single_hybrid_entity(
             model_name=ctx.model_name,
             prompt_composition=ctx.prompt_composition,
             schema_version=ctx.schema_version,
+            manifest_required=True,
         ),
     )
     return position, product, evidence, raw_label, result_evidence

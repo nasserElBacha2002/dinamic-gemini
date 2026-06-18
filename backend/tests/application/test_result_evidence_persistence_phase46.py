@@ -17,7 +17,10 @@ from src.domain.traceability import TraceabilityStatus
 from src.infrastructure.repositories.memory_result_evidence_repository import (
     MemoryResultEvidenceRepository,
 )
-from tests.support.worker_phase1.doubles import FailOnNthSavePositionRepository
+from tests.support.worker_phase1.doubles import (
+    FailOnNthSavePositionRepository,
+    FailingResultEvidenceRepository,
+)
 from tests.support.worker_phase1.executor_harness import ExecutorHarness, make_entity_hybrid_report
 from tests.support.worker_phase2.persist_builders import build_persist_aisle_result_use_case
 
@@ -173,3 +176,93 @@ def test_position_failure_rolls_back_evidence(tmp_path: Path) -> None:
             )
         )
     assert re_repo.list_by_job_id(harness.job_id) == []
+
+
+def test_skipped_unknown_zero_does_not_persist_result_evidence(tmp_path: Path) -> None:
+    harness = ExecutorHarness.build(tmp_path, job_id="job-skip")
+    re_repo = MemoryResultEvidenceRepository()
+    uc = build_persist_aisle_result_use_case(
+        position_repo=harness.position_repo,
+        product_record_repo=harness.product_repo,
+        evidence_repo=harness.evidence_repo,
+        result_evidence_repo=re_repo,
+        aisle_repo=harness.aisle_repo,
+        raw_label_repo=harness.raw_repo,
+        normalized_label_repo=harness.norm_repo,
+        final_count_repo=harness.final_repo,
+        clock=__import__(
+            "tests.support.worker_phase1.executor_harness", fromlist=["FixedClock"]
+        ).FixedClock(harness.now),
+    )
+    uc.execute(
+        PersistAisleResultCommand(
+            aisle_id=harness.aisle_id,
+            job_id=harness.job_id,
+            report=make_entity_hybrid_report(
+                [
+                    {
+                        "entity_uid": "e-skip",
+                        "entity_type": "PALLET",
+                        "internal_code": "UNKNOWN",
+                        "final_quantity": 0,
+                        "confidence": 0.1,
+                        "count_status": "COUNTED",
+                        "traceability_status": TraceabilityStatus.MISSING.value,
+                    }
+                ]
+            ),
+            run_dir=tmp_path / harness.job_id,
+        )
+    )
+    assert list(harness.position_repo.list_by_aisle(harness.aisle_id, job_id=harness.job_id)) == []
+    assert re_repo.list_by_job_id(harness.job_id) == []
+
+
+def test_result_evidence_failure_rolls_back_all_writes(tmp_path: Path) -> None:
+    harness = ExecutorHarness.build(tmp_path, job_id="job-re-fail")
+    inner_re = MemoryResultEvidenceRepository()
+    failing_re = FailingResultEvidenceRepository(inner_re)
+    uc = build_persist_aisle_result_use_case(
+        position_repo=harness.position_repo,
+        product_record_repo=harness.product_repo,
+        evidence_repo=harness.evidence_repo,
+        result_evidence_repo=failing_re,
+        aisle_repo=harness.aisle_repo,
+        raw_label_repo=harness.raw_repo,
+        normalized_label_repo=harness.norm_repo,
+        final_count_repo=harness.final_repo,
+        clock=__import__(
+            "tests.support.worker_phase1.executor_harness", fromlist=["FixedClock"]
+        ).FixedClock(harness.now),
+    )
+    with pytest.raises(RuntimeError, match="result evidence write failed"):
+        uc.execute(
+            PersistAisleResultCommand(
+                aisle_id=harness.aisle_id,
+                job_id=harness.job_id,
+                report=make_entity_hybrid_report(
+                    [
+                        {
+                            "entity_uid": "e1",
+                            "entity_type": "PALLET",
+                            "internal_code": "SKU-A",
+                            "final_quantity": 1,
+                            "confidence": 0.9,
+                            "count_status": "COUNTED",
+                            "evidence_path": "evidence/crop.jpg",
+                            "manifest_entry_id": "IMG_001",
+                            "resolved_manifest_entry_id": "IMG_001",
+                            "source_image_id": "asset-1",
+                            "traceability_status": TraceabilityStatus.VALID.value,
+                        }
+                    ]
+                ),
+                run_dir=tmp_path / harness.job_id,
+                prompt_composition=_manifest_composition(),
+            )
+        )
+    assert list(harness.position_repo.list_by_aisle(harness.aisle_id, job_id=harness.job_id)) == []
+    assert inner_re.list_by_job_id(harness.job_id) == []
+    assert harness.raw_repo.list_for_scope(
+        harness.inventory_id, harness.aisle_id, job_id=harness.job_id
+    ) == []

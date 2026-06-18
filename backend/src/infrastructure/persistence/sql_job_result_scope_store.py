@@ -115,8 +115,11 @@ def _delete_sql_job_scope(
     job_id: str,
 ) -> None:
     cur.execute(
-        "DELETE FROM result_evidence WHERE job_id = ?",
-        (job_id,),
+        """
+        DELETE FROM result_evidence
+        WHERE inventory_id = ? AND aisle_id = ? AND job_id = ?
+        """,
+        (inventory_id, aisle_id, job_id),
     )
     cur.execute(
         "DELETE FROM final_count_records WHERE inventory_id = ? AND aisle_id = ? AND job_id = ?",

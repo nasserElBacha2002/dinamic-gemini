@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from src.domain.result_evidence.entities import (
     RESULT_EVIDENCE_KIND_ENTITY_TRACEABILITY,
     ResultEvidenceRecord,
     ResultEvidenceRole,
 )
 from src.domain.traceability import TraceabilityStatus
+from src.domain.result_evidence.validation import ResultEvidenceValidationError
 from src.infrastructure.repositories.memory_result_evidence_repository import (
     MemoryResultEvidenceRepository,
 )
@@ -55,3 +58,39 @@ def test_save_list_delete_replace_by_job() -> None:
     removed = repo.delete_by_job_id("job-1")
     assert removed == 2
     assert repo.list_by_job_id("job-1") == []
+
+
+def test_delete_for_scope_matches_inventory_aisle_job_only() -> None:
+    repo = MemoryResultEvidenceRepository()
+    repo.save_many(
+        [
+            _record(job_id="job-shared"),
+            ResultEvidenceRecord(
+                **_record(job_id="job-shared").__dict__
+                | {
+                    "id": "re-other-scope",
+                    "inventory_id": "inv-other",
+                    "aisle_id": "aisle-other",
+                }
+            ),
+        ]
+    )
+    removed = repo.delete_for_scope(
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        job_id="job-shared",
+    )
+    assert removed == 1
+    remaining = list(repo.list_by_job_id("job-shared"))
+    assert len(remaining) == 1
+    assert remaining[0].inventory_id == "inv-other"
+
+
+def test_save_many_validates_before_persist() -> None:
+    repo = MemoryResultEvidenceRepository()
+    invalid = _record(valid=True)
+    invalid = ResultEvidenceRecord(
+        **{**invalid.__dict__, "has_valid_evidence": True, "traceability_status": TraceabilityStatus.INVALID.value}
+    )
+    with pytest.raises(ResultEvidenceValidationError):
+        repo.save_many([invalid])

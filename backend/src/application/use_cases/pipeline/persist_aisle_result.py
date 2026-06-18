@@ -187,20 +187,23 @@ class PersistAisleResultUseCase:
         n_pos = len(mapped.positions)
         n_prod = len(mapped.product_records)
         n_evid = len(mapped.evidences)
-        if n_pos != n_prod or n_prod != n_evid:
+        n_re = len(mapped.result_evidence_records)
+        if n_pos != n_prod or n_prod != n_evid or n_evid != n_re:
             logger.error(
                 "v3.persist_aisle_result mapped_length_mismatch aisle_id=%s job_id=%s "
-                "positions=%d product_records=%d evidences=%d raw_labels=%d",
+                "positions=%d product_records=%d evidences=%d result_evidence_records=%d "
+                "raw_labels=%d",
                 command.aisle_id,
                 command.job_id,
                 n_pos,
                 n_prod,
                 n_evid,
+                n_re,
                 len(mapped.raw_labels),
             )
             raise ValueError(
                 f"PersistAisleResult invariant broken: positions={n_pos} product_records={n_prod} "
-                f"evidences={n_evid} (must be equal before zip)"
+                f"evidences={n_evid} result_evidence_records={n_re} (must be equal before zip)"
             )
 
     def _insert_mapped(
@@ -211,8 +214,12 @@ class PersistAisleResultUseCase:
     ) -> None:
         persisted_positions = 0
         skipped_unknown_zero = 0
-        for position, product, evidence in zip(
-            mapped.positions, mapped.product_records, mapped.evidences
+        persisted_result_evidence_records: list = []
+        for position, product, evidence, result_evidence in zip(
+            mapped.positions,
+            mapped.product_records,
+            mapped.evidences,
+            mapped.result_evidence_records,
         ):
             final_quantity = product.detected_quantity
             if not should_persist_detected_position(product.sku, final_quantity):
@@ -221,6 +228,7 @@ class PersistAisleResultUseCase:
             repos.position_repo.save(position)
             repos.product_record_repo.save(product)
             repos.evidence_repo.save(evidence)
+            persisted_result_evidence_records.append(result_evidence)
             persisted_positions += 1
 
         logger.info(
@@ -237,8 +245,8 @@ class PersistAisleResultUseCase:
         if mapped.raw_labels:
             repos.raw_label_repo.save_many(mapped.raw_labels)
 
-        if mapped.result_evidence_records:
-            repos.result_evidence_repo.save_many(mapped.result_evidence_records)
+        if persisted_result_evidence_records:
+            repos.result_evidence_repo.save_many(persisted_result_evidence_records)
 
     def _recompute_job_scoped(
         self,

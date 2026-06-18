@@ -28,6 +28,7 @@ class ResultEvidenceRecord:
     entity_uid: str | None
     model_entity_id: str | None
     raw_manifest_entry_id: str | None
+    # Backward-compatible alias of raw_manifest_entry_id (provider raw ID, not resolved).
     manifest_entry_id: str | None
     raw_source_image_id: str | None
     resolved_manifest_entry_id: str | None

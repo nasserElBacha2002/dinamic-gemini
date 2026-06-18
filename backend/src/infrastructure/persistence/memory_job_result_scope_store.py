@@ -7,10 +7,7 @@ from typing import Any
 
 from src.application.ports.job_result_scope_store import JobResultScopeStore, JobScopeRowCounts
 from src.application.ports.job_result_unit_of_work import JobResultRepositories
-from src.application.ports.repositories import EvidenceRepository, ProductRecordRepository, ResultEvidenceRepository
-from src.infrastructure.repositories.memory_result_evidence_repository import (
-    MemoryResultEvidenceRepository,
-)
+from src.application.ports.repositories import EvidenceRepository, ProductRecordRepository
 from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
 from src.infrastructure.repositories.memory_normalized_label_repository import (
     MemoryNormalizedLabelRepository,
@@ -93,8 +90,11 @@ class MemoryJobResultScopeStore(JobResultScopeStore):
         if isinstance(repos.final_count_repo, MemoryFinalCountRepository):
             repos.final_count_repo.replace_for_scope(inventory_id, aisle_id, job_id=job_id)
 
-        if isinstance(repos.result_evidence_repo, MemoryResultEvidenceRepository):
-            repos.result_evidence_repo.delete_by_job_id(job_id)
+        repos.result_evidence_repo.delete_for_scope(
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            job_id=job_id,
+        )
 
         logger.info(
             "memory_job_result_scope deleted inventory_id=%s aisle_id=%s job_id=%s "

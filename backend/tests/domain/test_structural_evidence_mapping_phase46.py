@@ -13,6 +13,7 @@ from src.domain.execution_image_manifest import (
 from src.domain.result_evidence.entities import ResultEvidenceRole
 from src.domain.result_evidence.mapper import (
     ResultEvidenceMapContext,
+    compute_structural_has_valid_evidence,
     map_entity_to_result_evidence,
 )
 from src.domain.traceability import TraceabilityStatus
@@ -147,3 +148,59 @@ def test_conflict_invalid_preserves_warning() -> None:
     )
     assert record.has_valid_evidence is False
     assert "conflicting" in (record.traceability_warning or "").lower()
+
+
+def test_manifest_entry_id_mirrors_raw_manifest_entry_id() -> None:
+    record = map_entity_to_result_evidence(
+        {
+            "entity_uid": "job_E1",
+            "manifest_entry_id": "IMG_001",
+            "resolved_manifest_entry_id": "IMG_001",
+            "source_image_id": "asset-1",
+            "traceability_status": TraceabilityStatus.VALID.value,
+        },
+        _ctx(),
+    )
+    assert record.raw_manifest_entry_id == "IMG_001"
+    assert record.manifest_entry_id == record.raw_manifest_entry_id
+
+
+def test_has_valid_evidence_false_when_manifest_required_and_missing() -> None:
+    assert (
+        compute_structural_has_valid_evidence(
+            traceability_status=TraceabilityStatus.VALID.value,
+            source_image_id="asset-1",
+            role=ResultEvidenceRole.PRIMARY_EVIDENCE,
+            manifest=None,
+            manifest_required=True,
+        )
+        is False
+    )
+
+
+def test_has_valid_evidence_true_when_manifest_required_and_primary_match() -> None:
+    manifest = _manifest()
+    assert (
+        compute_structural_has_valid_evidence(
+            traceability_status=TraceabilityStatus.VALID.value,
+            source_image_id="asset-1",
+            role=ResultEvidenceRole.PRIMARY_EVIDENCE,
+            manifest=manifest,
+            manifest_required=True,
+        )
+        is True
+    )
+
+
+def test_has_valid_evidence_false_for_reference_role() -> None:
+    manifest = _manifest()
+    assert (
+        compute_structural_has_valid_evidence(
+            traceability_status=TraceabilityStatus.VALID.value,
+            source_image_id="ref-1",
+            role=ResultEvidenceRole.REFERENCE_IMAGE,
+            manifest=manifest,
+            manifest_required=True,
+        )
+        is False
+    )

@@ -33,6 +33,7 @@ class ResultEvidenceMapContext:
     model_name: str | None = None
     prompt_composition: dict[str, Any] | None = None
     schema_version: str | None = None
+    manifest_required: bool = True
 
 
 def _load_manifest(composition: dict[str, Any] | None) -> ExecutionImageManifest | None:
@@ -119,6 +120,7 @@ def compute_structural_has_valid_evidence(
     source_image_id: str | None,
     role: ResultEvidenceRole | None,
     manifest: ExecutionImageManifest | None,
+    manifest_required: bool = True,
 ) -> bool:
     """Fail-closed display eligibility for structural evidence rows."""
     status = normalize_traceability_status(traceability_status)
@@ -126,6 +128,8 @@ def compute_structural_has_valid_evidence(
     if status != TraceabilityStatus.VALID.value or not sid:
         return False
     if role != ResultEvidenceRole.PRIMARY_EVIDENCE:
+        return False
+    if manifest_required and manifest is None:
         return False
     if manifest is not None:
         for entry in manifest.ordered_entries():
@@ -135,6 +139,8 @@ def compute_structural_has_valid_evidence(
                 break
         else:
             return False
+    elif manifest_required:
+        return False
     return True
 
 
@@ -171,6 +177,7 @@ def map_entity_to_result_evidence(
         source_image_id=str(sid) if sid else None,
         role=role,
         manifest=manifest,
+        manifest_required=ctx.manifest_required,
     )
 
     stable_sid = str(sid).strip() if sid and str(sid).strip() else None
@@ -194,7 +201,7 @@ def map_entity_to_result_evidence(
             else None
         ),
         raw_manifest_entry_id=str(raw_mid).strip() if raw_mid else None,
-        manifest_entry_id=str(raw_mid).strip() if raw_mid else None,
+        manifest_entry_id=str(raw_mid).strip() if raw_mid else None,  # mirrors raw_manifest_entry_id
         raw_source_image_id=str(raw_sid).strip() if raw_sid else None,
         resolved_manifest_entry_id=str(resolved_mid).strip() if resolved_mid else None,
         source_image_id=stable_sid,
@@ -239,6 +246,7 @@ def map_report_entities_to_result_evidence(
             model_name=base_ctx.model_name,
             prompt_composition=base_ctx.prompt_composition,
             schema_version=base_ctx.schema_version,
+            manifest_required=base_ctx.manifest_required,
         )
         records.append(map_entity_to_result_evidence(entity, ctx))
     return records
