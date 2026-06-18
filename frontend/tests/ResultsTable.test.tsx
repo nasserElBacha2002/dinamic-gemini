@@ -24,6 +24,7 @@ function imageMismatchRow(): ResultSummary {
     needsReview: false,
     updatedAt: '2024-01-02T00:00:00Z',
     hasEvidence: true,
+    hasValidEvidence: false,
   };
 }
 
@@ -41,6 +42,7 @@ function confirmedRow(): ResultSummary {
     needsReview: false,
     updatedAt: '2024-01-02T00:00:00Z',
     hasEvidence: true,
+    hasValidEvidence: true,
   };
 }
 

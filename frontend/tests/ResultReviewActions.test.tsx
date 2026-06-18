@@ -30,6 +30,7 @@ const baseResult: ResultDetail = {
   sourceFileName: null,
   evidence: [],
   reviewHistory: [],
+  hasValidEvidence: false,
 };
 
 describe('ResultReviewActions', () => {

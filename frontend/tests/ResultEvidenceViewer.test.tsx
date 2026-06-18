@@ -176,6 +176,58 @@ describe('ResultEvidenceViewer', () => {
     expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
   });
 
+  it('Phase 4.8: evidenceView.displayable=false blocks preview even with sourceImageId', () => {
+    renderViewer(
+      baseResult({
+        traceabilityStatus: 'VALID',
+        hasValidEvidence: true,
+        sourceImageId: 'asset-1',
+        evidenceView: {
+          displayable: false,
+          traceabilityStatus: 'invalid',
+          sourceKind: 'structural_result_evidence',
+        },
+        evidence: [
+          {
+            id: 'ev-1',
+            role: 'PRIMARY',
+            sourceImageId: 'crop-1',
+            sourceFileName: 'crop.jpg',
+            imageUrl: null,
+          },
+        ],
+      })
+    );
+
+    expect(screen.queryByTestId('image-asset-card')).not.toBeInTheDocument();
+    expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
+  });
+
+  it('Phase 4.8: evidenceView.displayable=true shows preview cards', () => {
+    renderViewer(
+      baseResult({
+        traceabilityStatus: 'INVALID',
+        hasValidEvidence: false,
+        evidenceView: {
+          displayable: true,
+          traceabilityStatus: 'valid',
+          sourceKind: 'structural_result_evidence',
+        },
+        evidence: [
+          {
+            id: 'ev-1',
+            role: 'PRIMARY',
+            sourceImageId: 'crop-1',
+            sourceFileName: 'crop.jpg',
+            imageUrl: null,
+          },
+        ],
+      })
+    );
+
+    expect(screen.getAllByTestId('image-asset-card').length).toBeGreaterThan(0);
+  });
+
   it('valid traceability with previewable assets does not show record-only message', () => {
     renderViewer(
       baseResult({

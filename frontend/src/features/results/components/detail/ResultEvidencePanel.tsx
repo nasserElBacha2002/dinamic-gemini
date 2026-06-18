@@ -1,7 +1,8 @@
 /**
  * Epic 4 — Evidence panel for Result Detail.
  * Phase 6: Primary vs supporting evidence clearly labeled for operator hierarchy.
- * Phase 4.2: Display image only when traceability is VALID and has_valid_evidence.
+ * Phase 4.2 / 4.8: Display image only when backend structural evidenceView.displayable is true
+ * (legacy fallback when evidenceView absent).
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
@@ -12,6 +13,7 @@ import type { ResultDetail } from '../../types';
 import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
 import { isEvidenceDisplayable } from '../../utils/evidenceEligibility';
 import { evidenceUnavailableMessage } from '../../utils/evidenceUnavailableMessage';
+import ResultEvidenceDetails from './ResultEvidenceDetails';
 
 export interface ResultEvidencePanelProps {
   result: ResultDetail;
@@ -35,7 +37,8 @@ export default function ResultEvidencePanel({
     isEvidenceDisplayable(
       result.traceabilityStatus,
       result.hasValidEvidence,
-      sourceImageId
+      sourceImageId,
+      result.evidenceView
     ) &&
       inventoryId &&
       aisleId
@@ -214,6 +217,8 @@ export default function ResultEvidencePanel({
         )}
         {loadState.status === 'idle' && null}
       </BaseDialog>
+
+      <ResultEvidenceDetails evidenceView={result.evidenceView} />
     </Paper>
   );
 }

@@ -171,10 +171,16 @@ from src.runtime.v3_deps import (
     get_worker_launch_service,
 )
 from src.runtime.v3_deps import (
+    get_artifact_manifest_store as _get_artifact_manifest_store,
+)
+from src.runtime.v3_deps import (
     get_artifact_publication_outbox_store as _get_artifact_publication_outbox_store,
 )
 from src.runtime.v3_deps import (
     get_finalization_assessment_service as _get_finalization_assessment_service,
+)
+from src.runtime.v3_deps import (
+    get_result_evidence_repo as _get_result_evidence_repo,
 )
 
 logger = logging.getLogger(__name__)
@@ -217,6 +223,32 @@ def get_finalization_assessment_service() -> FinalizationAssessmentService:
 
 def get_artifact_publication_outbox_store():
     return _get_artifact_publication_outbox_store()
+
+
+def get_artifact_manifest_store():
+    return _get_artifact_manifest_store()
+
+
+def get_result_evidence_repo():
+    return _get_result_evidence_repo()
+
+
+def get_result_evidence_query_service(
+    result_evidence_repo=Depends(get_result_evidence_repo),
+    source_asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    manifest_store=Depends(get_artifact_manifest_store),
+    artifact_storage=Depends(get_artifact_storage),
+):
+    from src.api.services.v3_stored_artifact_access import resolve_source_asset_image_display
+    from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
+
+    return ResultEvidenceQueryService(
+        result_evidence_repo=result_evidence_repo,
+        source_asset_repo=source_asset_repo,
+        manifest_store=manifest_store,
+        artifact_store=artifact_storage,
+        image_url_resolver=resolve_source_asset_image_display,
+    )
 
 
 def get_operational_execution_config_resolver() -> OperationalExecutionConfigResolver:

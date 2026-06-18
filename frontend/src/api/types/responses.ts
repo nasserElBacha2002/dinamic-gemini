@@ -1024,6 +1024,88 @@ export interface ReviewActionSummary {
   job_id?: string | null;
 }
 
+/** Phase 4.8 — fail-closed structural evidence contract (authoritative for display eligibility). */
+export type EvidenceTraceabilityStatusLiteral =
+  | 'valid'
+  | 'invalid'
+  | 'missing'
+  | 'unvalidated'
+  | 'legacy_unavailable'
+  | 'artifact_unavailable';
+
+export type EvidenceSourceKindLiteral =
+  | 'structural_result_evidence'
+  | 'legacy_json'
+  | 'unavailable';
+
+export type ImageAccessStatusLiteral = 'available' | 'url_unavailable' | 'not_allowed';
+
+export interface ResultEvidenceViewResponse {
+  displayable: boolean;
+  traceability_status: EvidenceTraceabilityStatusLiteral | string;
+  traceability_warning?: string | null;
+  role?: string | null;
+  source_image_id?: string | null;
+  source_asset_id?: string | null;
+  resolved_manifest_entry_id?: string | null;
+  raw_manifest_entry_id?: string | null;
+  raw_source_image_id?: string | null;
+  image_url?: string | null;
+  thumbnail_url?: string | null;
+  image_access_status?: ImageAccessStatusLiteral | string | null;
+  source_kind: EvidenceSourceKindLiteral | string;
+  provider?: string | null;
+  model_name?: string | null;
+}
+
+export interface TraceabilityArtifactMetadataResponse {
+  kind: string;
+  published: boolean;
+  required: boolean;
+  status: string;
+  storage_key?: string | null;
+  content_hash?: string | null;
+  size_bytes?: number | null;
+  published_at?: string | null;
+}
+
+export interface TraceabilitySummaryResponse {
+  total_evidence_rows: number;
+  valid: number;
+  invalid: number;
+  missing: number;
+  unvalidated: number;
+  displayable: number;
+  not_displayable: number;
+  reference_rejected: number;
+  unknown_identifier: number;
+  conflicting_identifier: number;
+  manifest_unavailable: number;
+  manifest_invalid: number;
+  artifact_published: number;
+}
+
+export interface JobTraceabilityEntityResponse {
+  position_id?: string | null;
+  entity_uid?: string | null;
+  model_entity_id?: string | null;
+  evidence: ResultEvidenceViewResponse;
+}
+
+/** GET /api/v3/inventories/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/traceability */
+export interface JobTraceabilityResponse {
+  job_id: string;
+  inventory_id: string;
+  aisle_id: string;
+  traceability: {
+    status?: string;
+    artifact?: TraceabilityArtifactMetadataResponse | null;
+    summary?: TraceabilitySummaryResponse;
+    [key: string]: unknown;
+  };
+  entities: JobTraceabilityEntityResponse[];
+}
+
 /** Phase 2 / 5: slice + provider metadata for this row (matches list/merge resolver semantics). */
 export interface PositionRunContextSummary {
   job_id?: string | null;
@@ -1043,6 +1125,8 @@ export interface PositionDetailResponse {
   /** Review audit history — Épica 8. v3.2.5 Phase 8: required; backend sends list (default_factory=list). */
   review_actions: ReviewActionSummary[];
   run_context: PositionRunContextSummary;
+  /** Phase 4.8: structural evidence contract (authoritative for display eligibility). */
+  evidence?: ResultEvidenceViewResponse | null;
 }
 
 export interface RunMergeResponse {

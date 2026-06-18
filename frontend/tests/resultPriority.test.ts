@@ -17,6 +17,7 @@ function base(overrides: Partial<ResultSummary> = {}): ResultSummary {
     needsReview: true,
     updatedAt: '2024-01-01T00:00:00Z',
     hasEvidence: true,
+    hasValidEvidence: false,
     ...overrides,
   };
 }

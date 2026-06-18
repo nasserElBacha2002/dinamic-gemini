@@ -137,6 +137,50 @@ describe('ResultEvidencePanel', () => {
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
+  it('Phase 4.8: evidenceView.displayable=false blocks image even with legacy-valid fields', () => {
+    renderPanel(
+      baseResult({
+        traceabilityStatus: 'VALID',
+        hasValidEvidence: true,
+        sourceImageId: 'asset-1',
+        evidenceView: {
+          displayable: false,
+          traceabilityStatus: 'invalid',
+          sourceKind: 'structural_result_evidence',
+        },
+      })
+    );
+
+    expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  });
+
+  it('Phase 4.8: evidenceView.displayable=true allows image regardless of legacy flags', () => {
+    mockUseEvidenceImageLoad.mockReturnValue({
+      status: 'loaded',
+      imageSrc: 'blob:structural',
+    });
+
+    renderPanel(
+      baseResult({
+        traceabilityStatus: 'INVALID',
+        hasValidEvidence: false,
+        sourceImageId: 'asset-1',
+        evidenceView: {
+          displayable: true,
+          traceabilityStatus: 'valid',
+          sourceKind: 'structural_result_evidence',
+          sourceImageId: 'asset-1',
+        },
+      })
+    );
+
+    expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(
+      expect.objectContaining({ assetId: 'asset-1' })
+    );
+    expect(screen.getByRole('img')).toHaveAttribute('src', 'blob:structural');
+  });
+
   it('clears preview when transitioning VALID to INVALID', async () => {
     mockUseEvidenceImageLoad.mockReturnValue({
       status: 'loaded',

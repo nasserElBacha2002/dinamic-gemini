@@ -10,6 +10,7 @@ from typing import Any, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.api.schemas.listing_schemas import PageMeta
+from src.api.schemas.result_evidence_schemas import ResultEvidenceViewResponse
 from src.domain.reviews.entities import ReviewActionType
 
 _QtySourcePublic = Literal[
@@ -373,6 +374,10 @@ class PositionDetailResponse(BaseModel):
     run_context: PositionRunContextResponse = Field(
         ...,
         description="Phase 2: run identity for this row so clients do not mix multi-run datasets.",
+    )
+    evidence: Optional[ResultEvidenceViewResponse] = Field(
+        None,
+        description="Phase 4.8 structural evidence contract (authoritative for display eligibility).",
     )
 
 

@@ -10,6 +10,7 @@ import type {
   PositionDetailResponse,
   EvidenceSummary,
   ReviewActionSummary,
+  ResultEvidenceViewResponse,
 } from '../../../api/types';
 import type {
   ResultSummary,
@@ -18,8 +19,9 @@ import type {
   ReviewHistoryItem,
   ReviewStatus,
   TraceabilityStatus,
+  ResultEvidenceView,
 } from '../types';
-import { isEvidenceDisplayable } from '../utils/evidenceEligibility';
+import { isLegacyEvidenceDisplayable } from '../utils/evidenceEligibility';
 
 /** Backend traceability is lowercase; visible model uses uppercase.
  * Unknown/missing → UNVALIDATED (document-only fallback: backend sends valid|missing|invalid|unvalidated). */
@@ -31,7 +33,34 @@ export function mapTraceabilityToVisible(
   if (s === 'missing') return 'MISSING';
   if (s === 'invalid') return 'INVALID';
   if (s === 'unvalidated') return 'UNVALIDATED';
+  if (s === 'legacy_unavailable' || s === 'artifact_unavailable') return 'UNVALIDATED';
   return 'UNVALIDATED';
+}
+
+/** Map Phase 4.8 API structural evidence to visible model. */
+export function mapResultEvidenceViewResponse(
+  api: ResultEvidenceViewResponse
+): ResultEvidenceView {
+  return {
+    displayable: api.displayable,
+    traceabilityStatus: api.traceability_status,
+    traceabilityWarning:
+      api.traceability_warning != null && String(api.traceability_warning).trim() !== ''
+        ? String(api.traceability_warning).trim()
+        : null,
+    role: api.role ?? null,
+    sourceImageId: api.source_image_id ?? null,
+    sourceAssetId: api.source_asset_id ?? null,
+    resolvedManifestEntryId: api.resolved_manifest_entry_id ?? null,
+    rawManifestEntryId: api.raw_manifest_entry_id ?? null,
+    rawSourceImageId: api.raw_source_image_id ?? null,
+    imageUrl: api.image_url ?? null,
+    thumbnailUrl: api.thumbnail_url ?? null,
+    imageAccessStatus: api.image_access_status ?? null,
+    sourceKind: api.source_kind,
+    provider: api.provider ?? null,
+    modelName: api.model_name ?? null,
+  };
 }
 
 /** Map position status + needs_review to visible ReviewStatus.
@@ -99,7 +128,7 @@ export function mapPositionSummaryToResultSummary(
   const hasValidEvidence =
     typeof p.traceability?.has_valid_evidence === 'boolean'
       ? p.traceability.has_valid_evidence
-      : isEvidenceDisplayable(traceabilityStatus, false, p.traceability?.source_image_id);
+      : isLegacyEvidenceDisplayable(traceabilityStatus, false, p.traceability?.source_image_id);
 
   return {
     id: p.id,
@@ -159,6 +188,8 @@ export function mapPositionDetailToResultDetail(
   const position = data.position;
   const evidences = data.evidences ?? [];
   const review_actions = data.review_actions ?? [];
+  const structuralEvidence =
+    data.evidence != null ? mapResultEvidenceViewResponse(data.evidence) : undefined;
 
   const technicalSnapshot = data.technical_snapshot ?? null;
   /** Canonical: Sprint 2 ``traceability`` block, then typed fields.
@@ -181,8 +212,18 @@ export function mapPositionDetailToResultDetail(
     String(position.source_image_original_filename).trim() !== ''
       ? position.source_image_original_filename.trim()
       : null);
-  const sourceImageId = typedSourceImageId;
+  let sourceImageId = typedSourceImageId;
   const sourceFileName = typedSourceFileName;
+  if (structuralEvidence != null) {
+    const structuralSourceImageId =
+      structuralEvidence.sourceImageId != null &&
+      String(structuralEvidence.sourceImageId).trim() !== ''
+        ? String(structuralEvidence.sourceImageId).trim()
+        : null;
+    if (structuralSourceImageId != null) {
+      sourceImageId = structuralSourceImageId;
+    }
+  }
   const entityId =
     technicalSnapshot != null &&
     typeof technicalSnapshot === 'object' &&
@@ -207,18 +248,29 @@ export function mapPositionDetailToResultDetail(
   const qtyResolved = position.quantity?.resolved ?? position.qtyResolved ?? null;
   const qtyInferenceReason =
     position.quantity?.inference_reason ?? position.qtyInferenceReason ?? null;
-  const traceabilityStatus = mapTraceabilityToVisible(
+  let traceabilityStatus = mapTraceabilityToVisible(
     position.traceability?.status ?? position.traceability_status
   );
-  const hasValidEvidence =
+  let hasValidEvidence =
     typeof position.traceability?.has_valid_evidence === 'boolean'
       ? position.traceability.has_valid_evidence
-      : isEvidenceDisplayable(traceabilityStatus, false, typedSourceImageId);
-  const traceabilityWarning =
+      : isLegacyEvidenceDisplayable(traceabilityStatus, false, typedSourceImageId);
+  let traceabilityWarning =
     position.traceability?.traceability_warning != null &&
     String(position.traceability.traceability_warning).trim() !== ''
       ? String(position.traceability.traceability_warning).trim()
       : null;
+
+  if (structuralEvidence != null) {
+    traceabilityStatus = mapTraceabilityToVisible(structuralEvidence.traceabilityStatus);
+    hasValidEvidence = structuralEvidence.displayable;
+    if (
+      structuralEvidence.traceabilityWarning != null &&
+      structuralEvidence.traceabilityWarning.trim() !== ''
+    ) {
+      traceabilityWarning = structuralEvidence.traceabilityWarning.trim();
+    }
+  }
 
   const storageJobId =
     position.job_id != null && String(position.job_id).trim() !== ''
@@ -262,6 +314,7 @@ export function mapPositionDetailToResultDetail(
         : null,
     hasValidEvidence,
     traceabilityWarning,
+    evidenceView: structuralEvidence ?? null,
     evidence: evidences.map(mapEvidenceToResultEvidence),
     reviewHistory: review_actions.map(mapReviewActionToHistoryItem),
     technicalMetadata: {

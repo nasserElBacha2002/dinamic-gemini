@@ -9,5 +9,6 @@ export {
   mapReviewActionToHistoryItem,
   mapTraceabilityToVisible,
   mapPositionStatusToReviewStatus,
+  mapResultEvidenceViewResponse,
 } from './positionToResult';
 export { getSummaryString, getSummaryNumber } from './detectedSummary';

@@ -24,6 +24,7 @@ function imageMismatchDetail(): ResultDetail {
     sourceFileName: null,
     evidence: [],
     reviewHistory: [],
+    hasValidEvidence: false,
   };
 }
 

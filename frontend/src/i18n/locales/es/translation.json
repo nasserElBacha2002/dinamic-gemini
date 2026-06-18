@@ -1733,6 +1733,18 @@
       "unavailable_missing": "El proveedor no devolvió una imagen de evidencia para este resultado.",
       "unavailable_unvalidated": "La evidencia no está disponible porque no se pudo confirmar la trazabilidad."
     },
+    "evidence_details": {
+      "artifact_status": "Estado del artefacto",
+      "heading": "Detalle de trazabilidad",
+      "image_access_status": "Acceso a imagen",
+      "model_name": "Modelo",
+      "provider": "Proveedor",
+      "raw_manifest_entry_id": "ID manifiesto (raw)",
+      "resolved_manifest_entry_id": "ID manifiesto (resuelto)",
+      "source_kind": "Origen de evidencia",
+      "traceability_status": "Estado de trazabilidad",
+      "traceability_warning": "Advertencia"
+    },
     "evidence_present": "Con evidencia",
     "evidence_viewer": {
       "alt_file": "Vista previa de {{fileName}}",

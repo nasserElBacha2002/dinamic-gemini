@@ -1175,6 +1175,18 @@
       "unavailable_missing": "No evidence image was returned for this result.",
       "unavailable_unvalidated": "Evidence is unavailable because traceability could not be confirmed."
     },
+    "evidence_details": {
+      "artifact_status": "Artifact status",
+      "heading": "Traceability detail",
+      "image_access_status": "Image access",
+      "model_name": "Model",
+      "provider": "Provider",
+      "raw_manifest_entry_id": "Raw manifest entry ID",
+      "resolved_manifest_entry_id": "Resolved manifest entry ID",
+      "source_kind": "Evidence source",
+      "traceability_status": "Traceability status",
+      "traceability_warning": "Warning"
+    },
     "evidence_present": "Evidence present",
     "evidence_viewer": {
       "alt_file": "Alt file",

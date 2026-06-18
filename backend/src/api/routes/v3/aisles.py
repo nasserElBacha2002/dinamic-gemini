@@ -34,12 +34,14 @@ from src.api.dependencies import (
     get_list_aisles_with_status_use_case,
     get_promote_aisle_operational_job_use_case,
     get_resolve_aisle_job_for_inventory_read_use_case,
+    get_result_evidence_query_service,
     get_retry_aisle_job_use_case,
     get_run_aisle_merge_use_case,
     get_run_auditability_service,
     get_start_aisle_processing_use_case,
 )
 from src.api.errors import reraise_if_mapped
+from src.api.mappers.result_evidence_mapper import job_traceability_to_response
 from src.api.schemas.aisle_schemas import AisleResponse, CreateAisleRequest
 from src.api.schemas.benchmark_schemas import (
     AisleBenchmarkCompareManyRequest,
@@ -64,6 +66,7 @@ from src.api.schemas.processing_schemas import (
     ProcessAisleRequest,
     ProcessAisleResponse,
 )
+from src.api.schemas.result_evidence_schemas import JobTraceabilityResponse
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     load_hybrid_report_json_for_api,
@@ -96,6 +99,7 @@ from src.application.services.execution_log_enrichment import (
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.run_auditability_service import RunAuditabilityService
+from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
 from src.application.use_cases.aisles.cancel_aisle_job import (
     CancelAisleJobCommand,
     CancelAisleJobUseCase,
@@ -534,6 +538,29 @@ def get_aisle_job_detail(
         finalization_assessment=assessment,
         artifact_publication_outbox=artifact_publication_outbox,
     )
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/traceability",
+    response_model=JobTraceabilityResponse,
+)
+def get_job_traceability(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
+    evidence_query: ResultEvidenceQueryService = Depends(get_result_evidence_query_service),
+) -> JobTraceabilityResponse:
+    """Structural result_evidence read model and durable traceability artifact metadata."""
+    _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
+    model = evidence_query.get_job_traceability(
+        inventory_id=inventory_id,
+        aisle_id=aisle_id,
+        job_id=job_id,
+    )
+    return job_traceability_to_response(model)
 
 
 @router.get(

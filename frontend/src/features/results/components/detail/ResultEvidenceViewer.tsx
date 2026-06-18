@@ -38,7 +38,8 @@ function buildFrames(result: ResultDetail): EvidenceFrame[] {
     !isEvidenceDisplayable(
       result.traceabilityStatus,
       result.hasValidEvidence,
-      result.sourceImageId
+      result.sourceImageId,
+      result.evidenceView
     )
   ) {
     return [];
@@ -100,7 +101,8 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
   const evidenceIsDisplayable = isEvidenceDisplayable(
     result.traceabilityStatus,
     result.hasValidEvidence,
-    result.sourceImageId
+    result.sourceImageId,
+    result.evidenceView
   );
   const frames = useMemo(
     () => (evidenceIsDisplayable ? buildFrames(result) : []),
