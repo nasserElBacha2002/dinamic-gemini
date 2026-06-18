@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import ResultEvidenceRepository
-from src.domain.execution_image_manifest import composition_has_execution_image_manifest
+from src.domain.execution_image_manifest import (
+    ExecutionImageManifest,
+    ExecutionImageManifestError,
+    composition_has_execution_image_manifest,
+    require_manifest_from_composition,
+)
 from src.domain.jobs.artifact_policy import ARTIFACT_KIND_TRACEABILITY_MANIFEST
 from src.domain.traceability_artifact.builder import (
     TRACEABILITY_MANIFEST_SCHEMA_VERSION,
@@ -17,7 +21,11 @@ from src.domain.traceability_artifact.builder import (
     build_traceability_manifest,
     traceability_manifest_is_json_safe,
 )
-from src.domain.traceability_artifact.errors import TraceabilityEvidenceMissingError
+from src.domain.traceability_artifact.errors import (
+    TraceabilityEvidenceMissingError,
+    TraceabilityManifestInvalidError,
+    TraceabilityManifestMissingError,
+)
 from src.domain.traceability_artifact.canonical_json import canonical_json_dumps
 
 logger = logging.getLogger(__name__)
@@ -40,10 +48,43 @@ class TraceabilityArtifactService:
     @staticmethod
     def is_required_for_run(
         *,
-        prompt_composition: dict[str, Any] | None,
+        input_type: str | None,
+        canonical_traceability_expected: bool,
+        prompt_composition: dict[str, Any] | None = None,
     ) -> bool:
-        """V3 photo jobs with canonical execution image manifest require the artifact."""
-        return composition_has_execution_image_manifest(prompt_composition)
+        """V3 photo canonical jobs require traceability artifact based on job context."""
+        del prompt_composition  # requirement is explicit; manifest validated during generation
+        normalized = (input_type or "").strip().lower()
+        return canonical_traceability_expected and normalized == "photos"
+
+    @staticmethod
+    def _resolve_execution_manifest(
+        prompt_composition: dict[str, Any] | None,
+        *,
+        manifest_required: bool,
+    ) -> tuple[ExecutionImageManifest | None, tuple[str, ...]]:
+        if not manifest_required:
+            if not composition_has_execution_image_manifest(prompt_composition):
+                return None, (
+                    "Execution image manifest was unavailable.",
+                )
+            try:
+                return require_manifest_from_composition(prompt_composition), ()
+            except ExecutionImageManifestError:
+                return None, (
+                    "Execution image manifest was unavailable.",
+                )
+
+        if not composition_has_execution_image_manifest(prompt_composition):
+            raise TraceabilityManifestMissingError(
+                "Canonical execution image manifest missing from prompt composition"
+            )
+        try:
+            return require_manifest_from_composition(prompt_composition), ()
+        except ExecutionImageManifestError as exc:
+            raise TraceabilityManifestInvalidError(
+                f"Canonical execution image manifest is invalid: {exc}"
+            ) from exc
 
     def generate_and_write(
         self,
@@ -58,10 +99,16 @@ class TraceabilityArtifactService:
         prompt_composition: dict[str, Any] | None,
         run_metadata: dict[str, Any] | None,
         hybrid_report: dict[str, Any] | None = None,
+        input_type: str | None = None,
+        canonical_traceability_expected: bool = False,
     ) -> Path:
         """Build traceability_manifest.json from persisted structural evidence."""
         del hybrid_report  # structural rows are authoritative; hybrid_report not used when rows exist
-        required = self.is_required_for_run(prompt_composition=prompt_composition)
+        required = self.is_required_for_run(
+            input_type=input_type,
+            canonical_traceability_expected=canonical_traceability_expected,
+            prompt_composition=prompt_composition,
+        )
         rows = tuple(
             self._result_evidence_repo.list_for_scope(
                 inventory_id=inventory_id,
@@ -80,6 +127,11 @@ class TraceabilityArtifactService:
                 job_id,
             )
 
+        execution_manifest, artifact_warnings = self._resolve_execution_manifest(
+            prompt_composition,
+            manifest_required=required,
+        )
+
         manifest_body = build_traceability_manifest(
             TraceabilityManifestBuildInput(
                 job_id=job_id,
@@ -89,10 +141,11 @@ class TraceabilityArtifactService:
                 provider=provider,
                 model_name=model_name,
                 created_at=self._clock.now(),
-                prompt_composition=prompt_composition,
                 run_metadata=run_metadata,
                 result_evidence_rows=rows,
-                manifest_required=True,
+                execution_manifest=execution_manifest,
+                manifest_required=required,
+                artifact_warnings=artifact_warnings,
             )
         )
         if not traceability_manifest_is_json_safe(manifest_body):

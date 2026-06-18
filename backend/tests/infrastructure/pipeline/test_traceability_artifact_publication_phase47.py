@@ -22,6 +22,8 @@ from src.domain.jobs.artifact_policy import (
     ARTIFACT_KIND_EXECUTION_LOG,
     ARTIFACT_KIND_TRACEABILITY_MANIFEST,
 )
+from src.domain.jobs.entities import JobStatus
+from src.domain.jobs.finalization import FinalizationErrorCode
 from src.domain.result_evidence.entities import (
     RESULT_EVIDENCE_KIND_ENTITY_TRACEABILITY,
     ResultEvidenceRecord,
@@ -32,12 +34,18 @@ from src.infrastructure.repositories.memory_result_evidence_repository import (
     MemoryResultEvidenceRepository,
 )
 from src.pipeline.execution_log import ExecutionLogWriter
+from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
+from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
 from tests.infrastructure.pipeline.test_worker_phase3_part5_artifact_outbox import (
     RUN_ID,
     _build_dispatcher,
 )
 from tests.support.worker_phase1.doubles import SizeOnlyArtifactStore
-from tests.support.worker_phase1.executor_harness import ExecutorHarness, FixedClock
+from tests.support.worker_phase1.executor_harness import (
+    ExecutorHarness,
+    FixedClock,
+    make_entity_hybrid_report,
+)
 
 
 def _write_run_artifacts(harness: ExecutorHarness, run_dir) -> None:
@@ -108,6 +116,8 @@ def _write_traceability_manifest(harness: ExecutorHarness, run_dir) -> None:
         model_name="gemini-2.0",
         prompt_composition=manifest_composition_projection(manifest),
         run_metadata={},
+        input_type="photos",
+        canonical_traceability_expected=True,
     )
 
 
@@ -182,3 +192,70 @@ def test_retry_replaces_single_traceability_outbox_entry(tmp_path) -> None:
     assert ARTIFACT_KIND_EXECUTION_LOG in {
         e.artifact_kind for e in harness.outbox_store.list_entries(harness.job_id)
     }
+
+
+def test_required_traceability_without_artifact_outbox_fails_finalization(tmp_path) -> None:
+    harness = ExecutorHarness.build(
+        tmp_path,
+        artifact_store=SizeOnlyArtifactStore(),
+        photo_count=2,
+        job_id="job-no-outbox",
+    )
+    report = make_entity_hybrid_report(
+        [
+            {
+                "entity_uid": "e1",
+                "entity_type": "PALLET",
+                "internal_code": "SKU-A",
+                "final_quantity": 1,
+                "confidence": 0.9,
+                "count_status": "COUNTED",
+                "evidence_path": "evidence/crop.jpg",
+                "manifest_entry_id": "IMG_001",
+                "resolved_manifest_entry_id": "IMG_001",
+                "source_image_id": "asset-1",
+                "traceability_status": TraceabilityStatus.VALID.value,
+            }
+        ]
+    )
+    manifest = ExecutionImageManifest(
+        job_id=harness.job_id,
+        entries=(
+            ExecutionImageEntry(
+                manifest_entry_id="IMG_001",
+                source_asset_id="asset-1",
+                source_image_id="asset-1",
+                role=ExecutionImageRole.PRIMARY_EVIDENCE,
+                payload_ordinal=1,
+                storage_reference="photos/a.jpg",
+            ),
+        ),
+        excluded_entries=(),
+    )
+    composition = manifest_composition_projection(manifest)
+
+    def _pipeline_side_effect(*_args, **kwargs):
+        bp = kwargs.get("output_path") or kwargs.get("base_path") or harness.base_path
+        jid = kwargs.get("video_id") or kwargs.get("job_id") or harness.job_id
+        run_dir = bp / str(jid) / RUN_ID
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "hybrid_report.json").write_text(json.dumps(report), encoding="utf-8")
+        return PipelineRunResult(
+            0,
+            {LLM_METADATA_KEY_PROMPT_COMPOSITION: composition},
+        )
+
+    executor = harness.make_executor(artifact_publication_outbox_store=None)
+    harness.run_with_mock_pipeline(
+        executor,
+        report=report,
+        pipeline_side_effect=_pipeline_side_effect,
+    )
+    job = harness.job_repo.get_by_id(harness.job_id)
+    assert job is not None
+    assert job.status == JobStatus.FAILED
+    assert job.finalization_error_code == FinalizationErrorCode.ARTIFACT_SOURCE_STAGING_FAILED.value
+    metadata = job.finalization_error_metadata or {}
+    assert metadata.get("artifact_kind") == ARTIFACT_KIND_TRACEABILITY_MANIFEST
+    assert metadata.get("traceability_error_code") == "ARTIFACT_OUTBOX_REQUIRED_FOR_TRACEABILITY"
+    assert "outbox" in (job.failure_message or "").lower()

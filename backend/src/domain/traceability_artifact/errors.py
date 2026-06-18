@@ -14,3 +14,17 @@ class TraceabilityEvidenceMissingError(TraceabilityArtifactError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message, error_code="TRACEABILITY_EVIDENCE_MISSING")
+
+
+class TraceabilityManifestMissingError(TraceabilityArtifactError):
+    """Canonical execution image manifest required but absent from prompt composition."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="TRACEABILITY_MANIFEST_MISSING")
+
+
+class TraceabilityManifestInvalidError(TraceabilityArtifactError):
+    """Canonical execution image manifest present but invalid or corrupt."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, error_code="TRACEABILITY_MANIFEST_INVALID")

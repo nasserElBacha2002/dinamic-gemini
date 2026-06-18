@@ -21,7 +21,11 @@ from src.domain.result_evidence.entities import (
     ResultEvidenceRole,
 )
 from src.domain.traceability import TraceabilityStatus
-from src.domain.traceability_artifact.errors import TraceabilityEvidenceMissingError
+from src.domain.traceability_artifact.errors import (
+    TraceabilityEvidenceMissingError,
+    TraceabilityManifestInvalidError,
+    TraceabilityManifestMissingError,
+)
 from src.infrastructure.repositories.memory_result_evidence_repository import (
     MemoryResultEvidenceRepository,
 )
@@ -44,6 +48,10 @@ def _composition() -> dict:
         excluded_entries=(),
     )
     return manifest_composition_projection(manifest)
+
+
+def _corrupt_composition() -> dict:
+    return {"execution_image_manifest": {"version": 1, "entries": "not-a-list"}}
 
 
 def _record() -> ResultEvidenceRecord:
@@ -76,6 +84,30 @@ def _record() -> ResultEvidenceRecord:
     )
 
 
+def test_is_required_for_photo_v3_canonical_job() -> None:
+    assert TraceabilityArtifactService.is_required_for_run(
+        input_type="photos",
+        canonical_traceability_expected=True,
+        prompt_composition=None,
+    )
+
+
+def test_is_not_required_for_non_photo_job() -> None:
+    assert not TraceabilityArtifactService.is_required_for_run(
+        input_type="video",
+        canonical_traceability_expected=True,
+        prompt_composition=None,
+    )
+
+
+def test_is_not_required_when_canonical_traceability_not_expected() -> None:
+    assert not TraceabilityArtifactService.is_required_for_run(
+        input_type="photos",
+        canonical_traceability_expected=False,
+        prompt_composition=_composition(),
+    )
+
+
 def test_service_writes_traceability_manifest_from_structural_rows(tmp_path: Path) -> None:
     repo = MemoryResultEvidenceRepository()
     repo.save_many([_record()])
@@ -94,6 +126,8 @@ def test_service_writes_traceability_manifest_from_structural_rows(tmp_path: Pat
         model_name="gemini-2.0",
         prompt_composition=_composition(),
         run_metadata={},
+        input_type="photos",
+        canonical_traceability_expected=True,
     )
     assert path.name == "traceability_manifest.json"
     assert path.is_file()
@@ -117,7 +151,82 @@ def test_missing_structural_rows_raises_for_required_photo_job(tmp_path: Path) -
             prompt_composition=_composition(),
             run_metadata={},
             hybrid_report={"entities": [{"entity_uid": "e1"}]},
+            input_type="photos",
+            canonical_traceability_expected=True,
         )
+
+
+def test_missing_manifest_raises_for_required_photo_job(tmp_path: Path) -> None:
+    repo = MemoryResultEvidenceRepository()
+    repo.save_many([_record()])
+    svc = TraceabilityArtifactService(
+        result_evidence_repo=repo,
+        clock=FixedClock(datetime(2026, 6, 18, tzinfo=timezone.utc)),
+    )
+    with pytest.raises(TraceabilityManifestMissingError) as exc_info:
+        svc.generate_and_write(
+            job_id="job-1",
+            inventory_id="inv-1",
+            aisle_id="aisle-1",
+            run_id="run",
+            run_dir=tmp_path / "run",
+            provider="gemini",
+            model_name="gemini-2.0",
+            prompt_composition=None,
+            run_metadata={},
+            input_type="photos",
+            canonical_traceability_expected=True,
+        )
+    assert exc_info.value.error_code == "TRACEABILITY_MANIFEST_MISSING"
+
+
+def test_corrupt_manifest_raises_for_required_photo_job(tmp_path: Path) -> None:
+    repo = MemoryResultEvidenceRepository()
+    repo.save_many([_record()])
+    svc = TraceabilityArtifactService(
+        result_evidence_repo=repo,
+        clock=FixedClock(datetime(2026, 6, 18, tzinfo=timezone.utc)),
+    )
+    with pytest.raises(TraceabilityManifestInvalidError) as exc_info:
+        svc.generate_and_write(
+            job_id="job-1",
+            inventory_id="inv-1",
+            aisle_id="aisle-1",
+            run_id="run",
+            run_dir=tmp_path / "run",
+            provider="gemini",
+            model_name="gemini-2.0",
+            prompt_composition=_corrupt_composition(),
+            run_metadata={},
+            input_type="photos",
+            canonical_traceability_expected=True,
+        )
+    assert exc_info.value.error_code == "TRACEABILITY_MANIFEST_INVALID"
+
+
+def test_optional_non_photo_job_without_rows_does_not_require_manifest(tmp_path: Path) -> None:
+    svc = TraceabilityArtifactService(
+        result_evidence_repo=MemoryResultEvidenceRepository(),
+        clock=FixedClock(datetime(2026, 6, 18, tzinfo=timezone.utc)),
+    )
+    path = svc.generate_and_write(
+        job_id="job-1",
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        run_id="run",
+        run_dir=tmp_path / "run",
+        provider="gemini",
+        model_name="gemini-2.0",
+        prompt_composition=None,
+        run_metadata={},
+        input_type="video",
+        canonical_traceability_expected=False,
+    )
+    import json
+
+    body = json.loads(path.read_text(encoding="utf-8"))
+    assert body["execution_image_manifest"] is None
+    assert body["result_evidence"] == []
 
 
 def test_service_reads_scope_aligned_rows_only(tmp_path: Path) -> None:
@@ -148,6 +257,8 @@ def test_service_reads_scope_aligned_rows_only(tmp_path: Path) -> None:
         model_name="gemini-2.0",
         prompt_composition=_composition(),
         run_metadata={},
+        input_type="photos",
+        canonical_traceability_expected=True,
     )
     import json
 

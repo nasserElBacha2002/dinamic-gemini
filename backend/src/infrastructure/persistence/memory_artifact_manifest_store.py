@@ -12,7 +12,12 @@ from src.domain.jobs.artifact_manifest import (
     ArtifactManifestStatus,
     ArtifactVerificationLevel,
 )
-from src.domain.jobs.artifact_policy import ALL_EXPECTED_ARTIFACT_KINDS, REQUIRED_ARTIFACT_KINDS
+from src.domain.jobs.artifact_policy import (
+    ALL_EXPECTED_ARTIFACT_KINDS,
+    REQUIRED_ARTIFACT_KINDS,
+    artifact_manifest_missing_required_kinds,
+    artifact_manifest_required_kinds_published,
+)
 
 
 def _key(job_id: str, kind: str) -> tuple[str, str]:
@@ -205,23 +210,10 @@ class MemoryArtifactManifestStore:
         return copy.deepcopy(entry)
 
     def required_kinds_published(self, job_id: str) -> bool:
-        entries = [e for e in self.list_entries(job_id) if e.required]
-        if not entries:
-            return False
-        return all(e.status == ArtifactManifestStatus.PUBLISHED for e in entries)
+        return artifact_manifest_required_kinds_published(self.list_entries(job_id))
 
     def missing_required_kinds(self, job_id: str) -> set[str]:
-        entries = {entry.artifact_kind: entry for entry in self.list_entries(job_id)}
-        missing: set[str] = set()
-        for kind in REQUIRED_ARTIFACT_KINDS:
-            entry = entries.get(kind)
-            if (
-                entry is None
-                or not entry.required
-                or entry.status != ArtifactManifestStatus.PUBLISHED
-            ):
-                missing.add(kind)
-        return missing
+        return artifact_manifest_missing_required_kinds(self.list_entries(job_id))
 
     def any_required_failed(self, job_id: str) -> bool:
         return any(

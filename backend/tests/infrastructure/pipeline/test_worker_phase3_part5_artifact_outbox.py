@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,6 +25,7 @@ from src.domain.jobs.artifact_policy import (
 from src.domain.jobs.artifact_publication_outbox import ArtifactPublicationOutboxStatus
 from src.domain.jobs.entities import JobStatus
 from src.domain.jobs.finalization_evidence import FinalizationStage, StageStatus
+from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
@@ -392,8 +394,39 @@ def test_required_set_complete_starts_continuation_once(tmp_path) -> None:
         assert finalize_mock.call_count == 1
 
 
+def _single_video_source_asset_repo(tmp_path: Path, aisle_id: str):
+    now = datetime(2026, 6, 18, tzinfo=timezone.utc)
+    video_dir = tmp_path / "v3_uploads" / "videos"
+    video_dir.mkdir(parents=True, exist_ok=True)
+    (video_dir / "video-1.mp4").write_bytes(b"mp4-bytes")
+    asset = SourceAsset(
+        id="video-1",
+        aisle_id=aisle_id,
+        type=SourceAssetType.VIDEO,
+        original_filename="clip.mp4",
+        storage_path="videos/video-1.mp4",
+        mime_type="video/mp4",
+        uploaded_at=now,
+    )
+
+    class _Repo:
+        def list_by_aisle(self, aid: str):
+            return [asset] if aid == aisle_id else []
+
+        def summarize_assets_for_aisles(self, aisle_ids):
+            from src.application.ports.contracts import AisleAssetRollup
+
+            return {aid: AisleAssetRollup(count=0, last_uploaded_at=None) for aid in aisle_ids}
+
+    return _Repo()
+
+
 def test_full_happy_path_executor_with_outbox(tmp_path) -> None:
-    harness = ExecutorHarness.build(tmp_path, artifact_store=ArtifactUploadSpy())
+    harness = ExecutorHarness.build(
+        tmp_path,
+        artifact_store=ArtifactUploadSpy(),
+        source_asset_repo=_single_video_source_asset_repo(tmp_path, "aisle-1"),
+    )
     executor = harness.make_executor()
     handled = harness.run_with_mock_pipeline(executor)
     assert handled is True

@@ -211,6 +211,8 @@ class _V3FinalizeAfterPipelineParams:
     job: Job
     cancellation_checkpoint: Callable[[str, str | None, str], None]
     cancel_event_emitted: dict[str, bool]
+    input_type: str | None = None
+    canonical_traceability_expected: bool = False
 
 
 @dataclass(frozen=True)
@@ -771,10 +773,13 @@ class V3JobExecutor:
 
         prompt_composition = _prompt_composition_from_run_metadata(p.result.run_metadata)
         required_kind_overrides: dict[str, bool] = {}
+        traceability_required = self._traceability_artifact_service.is_required_for_run(
+            input_type=p.input_type,
+            canonical_traceability_expected=p.canonical_traceability_expected,
+            prompt_composition=prompt_composition,
+        )
         try:
-            if self._traceability_artifact_service.is_required_for_run(
-                prompt_composition=prompt_composition
-            ):
+            if traceability_required:
                 self._traceability_artifact_service.generate_and_write(
                     job_id=p.job_id,
                     inventory_id=p.aisle.inventory_id,
@@ -786,6 +791,8 @@ class V3JobExecutor:
                     prompt_composition=prompt_composition,
                     run_metadata=p.result.run_metadata,
                     hybrid_report=p.report,
+                    input_type=p.input_type,
+                    canonical_traceability_expected=p.canonical_traceability_expected,
                 )
                 required_kind_overrides[ARTIFACT_KIND_TRACEABILITY_MANIFEST] = True
         except TraceabilityArtifactError as trace_exc:
@@ -861,6 +868,38 @@ class V3JobExecutor:
                 "pre_upload",
                 "Job canceled before artifact upload",
             )
+            if (
+                required_kind_overrides.get(ARTIFACT_KIND_TRACEABILITY_MANIFEST)
+                and self._artifact_dispatcher is None
+            ):
+                msg = (
+                    "Traceability manifest publication requires artifact outbox; "
+                    "legacy non-outbox durable upload path is unsupported for required "
+                    "traceability artifacts"
+                )
+                logger.error("v3_job_id=%s %s", p.job_id, msg)
+                p.exec_log.error(
+                    "Artifacts",
+                    msg,
+                    payload={
+                        "artifact_kind": ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+                        "traceability_error_code": "ARTIFACT_OUTBOX_REQUIRED_FOR_TRACEABILITY",
+                    },
+                )
+                self._state.fail_finalization_and_aisle(
+                    p.job_id,
+                    p.aisle,
+                    tracker=tracker,
+                    error_code=FinalizationErrorCode.ARTIFACT_SOURCE_STAGING_FAILED,
+                    current_step=CurrentFinalizationStep.PUBLISH_ARTIFACTS,
+                    message=msg,
+                    metadata={
+                        "artifact_kind": ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+                        "traceability_error_code": "ARTIFACT_OUTBOX_REQUIRED_FOR_TRACEABILITY",
+                        "domain_commit_completed": True,
+                    },
+                )
+                return True
             if self._artifact_dispatcher is not None:
                 return self._publish_artifacts_via_outbox(
                     p, tracker, required_kind_overrides=required_kind_overrides
@@ -1406,6 +1445,11 @@ class V3JobExecutor:
                     job=job,
                     cancellation_checkpoint=cancellation_checkpoint,
                     cancel_event_emitted=rt.cancel_event_emitted,
+                    input_type=getattr(job_input, "input_type", None),
+                    canonical_traceability_expected=(
+                        getattr(job_input, "input_type", "") == "photos"
+                        and job.job_type == "process_aisle"
+                    ),
                 )
             ):
                 return True
