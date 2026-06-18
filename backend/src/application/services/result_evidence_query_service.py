@@ -15,9 +15,12 @@ from src.domain.jobs.artifact_policy import ARTIFACT_KIND_TRACEABILITY_MANIFEST
 from src.domain.positions.entities import Position
 from src.domain.result_evidence.display import (
     EVIDENCE_IMAGE_URL_UNAVAILABLE_WARNING,
+    SOURCE_ASSET_MISMATCH_WARNING,
     STRUCTURAL_EVIDENCE_UNAVAILABLE_WARNING,
+    TRACEABILITY_ARTIFACT_UNAVAILABLE_WARNING,
     api_traceability_status_for_row,
     compute_structural_api_displayable,
+    detect_source_asset_mismatch,
     resolve_source_asset_id,
 )
 from src.domain.result_evidence.entities import ResultEvidenceRecord, ResultEvidenceRole
@@ -143,6 +146,22 @@ class ResultEvidenceQueryService:
             )
         return None, "url_unavailable"
 
+    def _artifact_blocks_display(self, job_id: str | None) -> tuple[bool, str | None]:
+        """True when durable traceability_manifest is required but not published."""
+        if not job_id or self._manifest_store is None:
+            return False, None
+        artifact = self._artifact_read_model(job_id)
+        if artifact is None:
+            return False, None
+        if artifact.required and not artifact.published:
+            return True, TRACEABILITY_ARTIFACT_UNAVAILABLE_WARNING
+        return False, None
+
+    def get_traceability_artifact(self, job_id: str | None) -> TraceabilityArtifactReadModel | None:
+        if not job_id:
+            return None
+        return self._artifact_read_model(job_id)
+
     def build_evidence_view(
         self,
         record: ResultEvidenceRecord | None,
@@ -150,6 +169,7 @@ class ResultEvidenceQueryService:
         inventory_id: str,
         aisle_id: str,
         assets_by_id: dict[str, object],
+        job_id: str | None = None,
     ) -> ResultEvidenceViewModel:
         if record is None:
             return ResultEvidenceViewModel(
@@ -171,14 +191,32 @@ class ResultEvidenceQueryService:
             )
 
         resolved_asset_id = resolve_source_asset_id(record, assets_by_id=assets_by_id)
-        displayable = compute_structural_api_displayable(
+        mismatch_warning = detect_source_asset_mismatch(
             record,
             resolved_source_asset_id=resolved_asset_id,
         )
+        displayable = False
+        traceability_warning = record.traceability_warning
+        if mismatch_warning:
+            traceability_warning = mismatch_warning
+        else:
+            displayable = compute_structural_api_displayable(
+                record,
+                resolved_source_asset_id=resolved_asset_id,
+            )
+
+        artifact_blocks, artifact_warning = self._artifact_blocks_display(job_id)
+        if artifact_blocks:
+            displayable = False
+            traceability_warning = artifact_warning
+
         image_url: str | None = None
         image_access_status: str | None = "not_allowed"
-        traceability_warning = record.traceability_warning
-        if displayable and resolved_asset_id:
+        if mismatch_warning:
+            image_access_status = "not_allowed"
+        elif artifact_blocks:
+            image_access_status = "not_allowed"
+        elif displayable and resolved_asset_id:
             asset = assets_by_id.get(resolved_asset_id)
             image_url, image_access_status = self._resolve_image_url(
                 asset=asset,
@@ -195,6 +233,10 @@ class ResultEvidenceQueryService:
             displayable=displayable,
             image_access_status=image_access_status,
         )
+        if artifact_blocks:
+            traceability_status = "artifact_unavailable"
+        elif mismatch_warning:
+            traceability_status = TraceabilityStatus.INVALID.value
         role_value = record.role.value if record.role is not None else None
         if record.role == ResultEvidenceRole.REFERENCE_IMAGE and not displayable:
             traceability_status = TraceabilityStatus.INVALID.value
@@ -240,11 +282,13 @@ class ResultEvidenceQueryService:
             )
         )
         matched = self._match_row(rows, position=position)
+        assets_by_id = self._assets_by_id(aisle_id)
         return self.build_evidence_view(
             matched,
             inventory_id=inventory_id,
             aisle_id=aisle_id,
-            assets_by_id=self._assets_by_id(aisle_id),
+            assets_by_id=assets_by_id,
+            job_id=job_id,
         )
 
     def _artifact_read_model(self, job_id: str) -> TraceabilityArtifactReadModel | None:
@@ -264,7 +308,12 @@ class ResultEvidenceQueryService:
             published_at=entry.published_at,
         )
 
-    def _summary_from_rows(self, views: list[ResultEvidenceViewModel]) -> dict[str, int]:
+    def _summary_from_rows(
+        self,
+        views: list[ResultEvidenceViewModel],
+        *,
+        artifact: TraceabilityArtifactReadModel | None = None,
+    ) -> dict[str, int]:
         summary = {
             "total_evidence_rows": len(views),
             "valid": 0,
@@ -276,8 +325,12 @@ class ResultEvidenceQueryService:
             "reference_rejected": 0,
             "unknown_identifier": 0,
             "conflicting_identifier": 0,
+            "malformed_identifier": 0,
             "manifest_unavailable": 0,
             "manifest_invalid": 0,
+            "unvalidated_unknown": 0,
+            "artifact_required": 0,
+            "artifact_published": 0,
         }
         for view in views:
             if view.displayable:
@@ -285,25 +338,33 @@ class ResultEvidenceQueryService:
             else:
                 summary["not_displayable"] += 1
             status = normalize_traceability_status(view.traceability_status)
+            warning = (view.traceability_warning or "").lower()
             if status == TraceabilityStatus.VALID.value:
                 summary["valid"] += 1
             elif status == TraceabilityStatus.INVALID.value:
                 summary["invalid"] += 1
+                if "conflicting" in warning:
+                    summary["conflicting_identifier"] += 1
+                elif "unknown" in warning:
+                    summary["unknown_identifier"] += 1
+                elif "malformed" in warning:
+                    summary["malformed_identifier"] += 1
             elif status == TraceabilityStatus.MISSING.value:
                 summary["missing"] += 1
             elif status == TraceabilityStatus.UNVALIDATED.value:
                 summary["unvalidated"] += 1
-            warning = (view.traceability_warning or "").lower()
+                if "manifest was invalid" in warning or "manifest invalid" in warning:
+                    summary["manifest_invalid"] += 1
+                elif "manifest was unavailable" in warning or "manifest unavailable" in warning:
+                    summary["manifest_unavailable"] += 1
+                else:
+                    summary["unvalidated_unknown"] += 1
             if view.role == ResultEvidenceRole.REFERENCE_IMAGE.value or "reference" in warning:
                 summary["reference_rejected"] += 1
-            if "unknown" in warning:
-                summary["unknown_identifier"] += 1
-            if "conflicting" in warning:
-                summary["conflicting_identifier"] += 1
-            if "manifest was unavailable" in warning or "manifest unavailable" in warning:
-                summary["manifest_unavailable"] += 1
-            if "manifest was invalid" in warning or "manifest invalid" in warning:
-                summary["manifest_invalid"] += 1
+        if artifact is not None:
+            if artifact.required:
+                summary["artifact_required"] = 1
+            summary["artifact_published"] = 1 if artifact.published else 0
         return summary
 
     def get_job_traceability(
@@ -327,6 +388,7 @@ class ResultEvidenceQueryService:
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
                 assets_by_id=assets_by_id,
+                job_id=job_id,
             )
             for row in rows
         ]
@@ -348,11 +410,7 @@ class ResultEvidenceQueryService:
                 }
             )
 
-        summary = self._summary_from_rows(views)
-        if artifact is not None:
-            summary["artifact_published"] = 1 if artifact.published else 0
-        else:
-            summary["artifact_published"] = 0
+        summary = self._summary_from_rows(views, artifact=artifact)
 
         return JobTraceabilityReadModel(
             job_id=job_id,

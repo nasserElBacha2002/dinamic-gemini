@@ -8,8 +8,10 @@ import type { ResultEvidenceView } from '../../types';
 
 export interface ResultEvidenceDetailsProps {
   evidenceView: ResultEvidenceView | null | undefined;
-  /** Optional artifact status from job traceability envelope. */
+  /** Optional artifact status from job/position traceability metadata. */
   artifactStatus?: string | null;
+  /** Optional artifact content hash from traceability_manifest metadata. */
+  artifactHash?: string | null;
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
@@ -28,10 +30,15 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 export default function ResultEvidenceDetails({
   evidenceView,
   artifactStatus,
+  artifactHash,
 }: ResultEvidenceDetailsProps) {
   const { t } = useTranslation();
 
-  if (evidenceView == null && (artifactStatus == null || artifactStatus.trim() === '')) {
+  if (
+    evidenceView == null &&
+    (artifactStatus == null || artifactStatus.trim() === '') &&
+    (artifactHash == null || artifactHash.trim() === '')
+  ) {
     return null;
   }
 
@@ -109,6 +116,13 @@ export default function ResultEvidenceDetails({
     rows.push({
       label: t('results.evidence_details.artifact_status'),
       value: artifactStatus.trim(),
+    });
+  }
+
+  if (artifactHash != null && artifactHash.trim() !== '') {
+    rows.push({
+      label: t('results.evidence_details.artifact_hash'),
+      value: artifactHash.trim(),
     });
   }
 

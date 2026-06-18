@@ -14,7 +14,10 @@ from src.api.dependencies import (
     get_result_evidence_query_service,
 )
 from src.api.errors import mapped_http_exception
-from src.api.mappers.result_evidence_mapper import result_evidence_view_to_response
+from src.api.mappers.result_evidence_mapper import (
+    artifact_read_model_to_response,
+    result_evidence_view_to_response,
+)
 from src.api.routes.v3.code_scans import _detection_to_response, _run_to_summary
 from src.api.schemas.code_scan_schemas import (
     PositionCodeScanEvidenceResponse,
@@ -243,16 +246,20 @@ def _build_position_detail_response(
         corrected_quantity=corrected_quantity,
     )
     rc = result.run_context
+    resolved_job_id = rc.resolved_job_id or rc.job_id or result.position.job_id
     evidence_view = None
+    traceability_artifact = None
     if evidence_query is not None and inventory_id and aisle_id:
         evidence_view = result_evidence_view_to_response(
             evidence_query.get_position_evidence_view(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
                 position=result.position,
-                job_id=result.position.job_id,
+                job_id=resolved_job_id,
             )
         )
+        artifact_model = evidence_query.get_traceability_artifact(resolved_job_id)
+        traceability_artifact = artifact_read_model_to_response(artifact_model)
     return PositionDetailResponse(
         position=position_to_summary(
             result.position,
@@ -273,6 +280,7 @@ def _build_position_detail_response(
             prompt_version=rc.prompt_version,
         ),
         evidence=evidence_view,
+        traceability_artifact=traceability_artifact,
     )
 
 

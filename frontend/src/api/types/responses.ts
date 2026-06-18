@@ -1127,6 +1127,8 @@ export interface PositionDetailResponse {
   run_context: PositionRunContextSummary;
   /** Phase 4.8: structural evidence contract (authoritative for display eligibility). */
   evidence?: ResultEvidenceViewResponse | null;
+  /** Phase 4.8: durable traceability_manifest metadata for resolved job context. */
+  traceability_artifact?: TraceabilityArtifactMetadataResponse | null;
 }
 
 export interface RunMergeResponse {

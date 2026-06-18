@@ -5,6 +5,14 @@
 
 import type { ResultEvidenceView, TraceabilityStatus } from '../types';
 
+export interface EvidenceDisplayableOptions {
+  /**
+   * When false (default), legacy inference from traceabilityStatus/sourceImageId is blocked.
+   * Set true only for pre-Phase-4.8 screens that lack structural evidenceView.
+   */
+  allowLegacyEvidenceFallback?: boolean;
+}
+
 /** Legacy path: true only when traceability is VALID and backend confirms has_valid_evidence. */
 export function isLegacyEvidenceDisplayable(
   traceabilityStatus: TraceabilityStatus,
@@ -20,16 +28,31 @@ export function isLegacyEvidenceDisplayable(
 /**
  * Fail-closed display gate.
  * Primary: evidenceView.displayable === true when structural view is present.
- * Legacy fallback (legacy_unavailable): only when evidenceView is absent.
+ * Legacy fallback only when evidenceView is absent and allowLegacyEvidenceFallback is true.
  */
 export function isEvidenceDisplayable(
   traceabilityStatus: TraceabilityStatus,
   hasValidEvidence: boolean | null | undefined,
   sourceImageId: string | null | undefined,
-  evidenceView?: ResultEvidenceView | null
+  evidenceView?: ResultEvidenceView | null,
+  options?: EvidenceDisplayableOptions
 ): boolean {
   if (evidenceView != null) {
     return evidenceView.displayable === true;
   }
+  if (options?.allowLegacyEvidenceFallback !== true) {
+    return false;
+  }
   return isLegacyEvidenceDisplayable(traceabilityStatus, hasValidEvidence, sourceImageId);
+}
+
+/** Resolve primary image URL from structural evidence contract when displayable. */
+export function resolveStructuralEvidenceImageUrl(
+  evidenceView?: ResultEvidenceView | null
+): string | null {
+  if (evidenceView?.displayable !== true) {
+    return null;
+  }
+  const url = evidenceView.imageUrl != null ? String(evidenceView.imageUrl).trim() : '';
+  return url.length > 0 ? url : null;
 }

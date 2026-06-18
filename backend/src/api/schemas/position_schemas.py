@@ -10,7 +10,7 @@ from typing import Any, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.api.schemas.listing_schemas import PageMeta
-from src.api.schemas.result_evidence_schemas import ResultEvidenceViewResponse
+from src.api.schemas.result_evidence_schemas import ResultEvidenceViewResponse, TraceabilityArtifactMetadataResponse
 from src.domain.reviews.entities import ReviewActionType
 
 _QtySourcePublic = Literal[
@@ -378,6 +378,10 @@ class PositionDetailResponse(BaseModel):
     evidence: Optional[ResultEvidenceViewResponse] = Field(
         None,
         description="Phase 4.8 structural evidence contract (authoritative for display eligibility).",
+    )
+    traceability_artifact: Optional[TraceabilityArtifactMetadataResponse] = Field(
+        None,
+        description="Phase 4.8 durable traceability_manifest metadata for the resolved job context.",
     )
 
 

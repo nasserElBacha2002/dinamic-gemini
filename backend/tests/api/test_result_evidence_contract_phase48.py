@@ -82,6 +82,20 @@ class StubEvidenceQuery:
             model_name="gemini-2.0",
         )
 
+    def get_traceability_artifact(self, job_id=None, **_kwargs):
+        from src.application.services.result_evidence_query_service import TraceabilityArtifactReadModel
+
+        return TraceabilityArtifactReadModel(
+            kind="traceability_manifest",
+            published=True,
+            required=True,
+            status="published",
+            storage_key="jobs/job-1/run/traceability_manifest.json",
+            content_hash="hash-abc",
+            size_bytes=100,
+            published_at=NOW,
+        )
+
 
 def test_position_detail_includes_structural_evidence_object() -> None:
     app.dependency_overrides[get_current_admin] = _fake_admin
@@ -96,7 +110,54 @@ def test_position_detail_includes_structural_evidence_object() -> None:
         assert body["evidence"]["displayable"] is True
         assert body["evidence"]["source_kind"] == "structural_result_evidence"
         assert body["evidences"] == []
+        assert body["traceability_artifact"]["content_hash"] == "hash-abc"
         ResultEvidenceViewResponse.model_validate(body["evidence"])
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_position_detail_uses_resolved_job_id_for_evidence_lookup() -> None:
+    captured: dict[str, object] = {}
+
+    class ResolvingQuery(StubEvidenceQuery):
+        def get_position_evidence_view(self, **kwargs):
+            captured.update(kwargs)
+            return super().get_position_evidence_view(**kwargs)
+
+    class MismatchedStorageUseCase(StubDetailUseCase):
+        def execute(self, *_args, **_kwargs) -> PositionDetailResult:
+            result = super().execute()
+            return PositionDetailResult(
+                position=Position(
+                    id="pos-1",
+                    aisle_id="aisle-1",
+                    status=PositionStatus.DETECTED,
+                    confidence=0.9,
+                    needs_review=False,
+                    primary_evidence_id="ev-1",
+                    created_at=NOW,
+                    updated_at=NOW,
+                    detected_summary_json={"entity_uid": "job_E1"},
+                    job_id="old-job",
+                ),
+                products=[],
+                evidences=[],
+                review_actions=[],
+                run_context=PositionDetailRunContext(
+                    job_id="job-1",
+                    result_context_source="operational",
+                    resolved_job_id="current-job",
+                ),
+            )
+
+    app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_get_position_detail_use_case] = lambda: MismatchedStorageUseCase()
+    app.dependency_overrides[get_result_evidence_query_service] = lambda: ResolvingQuery()
+    try:
+        client = TestClient(app)
+        resp = client.get("/api/v3/inventories/inv-1/aisles/aisle-1/positions/pos-1")
+        assert resp.status_code == 200
+        assert captured.get("job_id") == "current-job"
     finally:
         app.dependency_overrides.clear()
 

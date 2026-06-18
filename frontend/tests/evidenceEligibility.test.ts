@@ -7,28 +7,36 @@ import { isEvidenceDisplayable, isLegacyEvidenceDisplayable } from '../src/featu
 import { evidenceUnavailableMessageKey } from '../src/features/results/utils/evidenceUnavailableMessage';
 
 describe('isEvidenceDisplayable', () => {
-  it('returns true only for VALID with hasValidEvidence and sourceImageId (legacy path)', () => {
-    expect(isEvidenceDisplayable('VALID', true, 'asset-1')).toBe(true);
+  it('returns false without evidenceView unless legacy fallback is explicitly allowed', () => {
+    expect(isEvidenceDisplayable('VALID', true, 'asset-1')).toBe(false);
+    expect(
+      isEvidenceDisplayable('VALID', true, 'asset-1', null, {
+        allowLegacyEvidenceFallback: true,
+      })
+    ).toBe(true);
   });
 
-  it('returns false for INVALID even with sourceImageId (legacy path)', () => {
+  it('returns false for INVALID even with legacy fallback', () => {
     expect(isEvidenceDisplayable('INVALID', true, 'asset-1')).toBe(false);
     expect(isEvidenceDisplayable('INVALID', false, 'asset-1')).toBe(false);
   });
 
-  it('returns false for MISSING and UNVALIDATED (legacy path)', () => {
-    expect(isEvidenceDisplayable('MISSING', true, 'asset-1')).toBe(false);
-    expect(isEvidenceDisplayable('UNVALIDATED', true, 'asset-1')).toBe(false);
+  it('returns false for MISSING and UNVALIDATED with legacy fallback', () => {
+    const opts = { allowLegacyEvidenceFallback: true as const };
+    expect(isEvidenceDisplayable('MISSING', true, 'asset-1', null, opts)).toBe(false);
+    expect(isEvidenceDisplayable('UNVALIDATED', true, 'asset-1', null, opts)).toBe(false);
   });
 
   it('returns false when hasValidEvidence is not true (legacy path)', () => {
-    expect(isEvidenceDisplayable('VALID', false, 'asset-1')).toBe(false);
-    expect(isEvidenceDisplayable('VALID', undefined, 'asset-1')).toBe(false);
+    const opts = { allowLegacyEvidenceFallback: true as const };
+    expect(isEvidenceDisplayable('VALID', false, 'asset-1', null, opts)).toBe(false);
+    expect(isEvidenceDisplayable('VALID', undefined, 'asset-1', null, opts)).toBe(false);
   });
 
   it('returns false when sourceImageId is empty (legacy path)', () => {
-    expect(isEvidenceDisplayable('VALID', true, null)).toBe(false);
-    expect(isEvidenceDisplayable('VALID', true, '  ')).toBe(false);
+    const opts = { allowLegacyEvidenceFallback: true as const };
+    expect(isEvidenceDisplayable('VALID', true, null, null, opts)).toBe(false);
+    expect(isEvidenceDisplayable('VALID', true, '  ', null, opts)).toBe(false);
   });
 
   it('Phase 4.8: structural evidenceView.displayable overrides legacy fields', () => {

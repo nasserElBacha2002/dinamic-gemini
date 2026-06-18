@@ -11,6 +11,12 @@ STRUCTURAL_EVIDENCE_UNAVAILABLE_WARNING = (
 EVIDENCE_IMAGE_URL_UNAVAILABLE_WARNING = (
     "Evidence image URL could not be generated."
 )
+TRACEABILITY_ARTIFACT_UNAVAILABLE_WARNING = (
+    "Required traceability manifest is unavailable for this job."
+)
+SOURCE_ASSET_MISMATCH_WARNING = (
+    "Source asset id does not match source image id."
+)
 
 
 def resolve_source_asset_id(
@@ -25,6 +31,19 @@ def resolve_source_asset_id(
     sid = (record.source_image_id or "").strip()
     if sid and sid in assets_by_id:
         return sid
+    return None
+
+
+def detect_source_asset_mismatch(
+    record: ResultEvidenceRecord,
+    *,
+    resolved_source_asset_id: str | None,
+) -> str | None:
+    """Fail closed when persisted source_image_id and resolved asset id disagree."""
+    sid = (record.source_image_id or "").strip()
+    asset_id = (resolved_source_asset_id or "").strip()
+    if sid and asset_id and sid != asset_id:
+        return SOURCE_ASSET_MISMATCH_WARNING
     return None
 
 

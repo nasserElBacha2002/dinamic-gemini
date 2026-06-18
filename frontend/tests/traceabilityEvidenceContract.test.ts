@@ -191,10 +191,15 @@ describe('isEvidenceDisplayable Phase 4.8', () => {
     ).toBe(true);
   });
 
-  it('falls back to legacy gate when evidenceView is absent', () => {
-    expect(isEvidenceDisplayable('VALID', true, 'asset-1')).toBe(true);
-    expect(isEvidenceDisplayable('VALID', true, 'asset-1', null)).toBe(true);
-    expect(isEvidenceDisplayable('VALID', false, 'asset-1', null)).toBe(false);
+  it('falls back to legacy gate only when explicitly allowed', () => {
+    expect(isEvidenceDisplayable('VALID', true, 'asset-1')).toBe(false);
+    expect(isEvidenceDisplayable('VALID', true, 'asset-1', null)).toBe(false);
+    expect(
+      isEvidenceDisplayable('VALID', true, 'asset-1', null, { allowLegacyEvidenceFallback: true })
+    ).toBe(true);
+    expect(
+      isEvidenceDisplayable('VALID', false, 'asset-1', null, { allowLegacyEvidenceFallback: true })
+    ).toBe(false);
   });
 
   it('legacy_unavailable maps to UNVALIDATED for chip display', () => {

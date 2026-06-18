@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from src.api.schemas.result_evidence_schemas import (
     JobTraceabilityEntityResponse,
+    JobTraceabilityEnvelopeResponse,
     JobTraceabilityResponse,
     ResultEvidenceViewResponse,
     TraceabilityArtifactMetadataResponse,
@@ -60,11 +61,11 @@ def job_traceability_to_response(model: JobTraceabilityReadModel) -> JobTraceabi
         job_id=model.job_id,
         inventory_id=model.inventory_id,
         aisle_id=model.aisle_id,
-        traceability={
-            "status": model.traceability_status,
-            "artifact": artifact.model_dump(mode="json") if artifact is not None else None,
-            "summary": summary.model_dump(mode="json"),
-        },
+        traceability=JobTraceabilityEnvelopeResponse(
+            status=model.traceability_status,
+            artifact=artifact,
+            summary=summary,
+        ),
         entities=[
             JobTraceabilityEntityResponse(
                 position_id=entity.get("position_id"),

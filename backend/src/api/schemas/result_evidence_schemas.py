@@ -77,9 +77,20 @@ class TraceabilitySummaryResponse(BaseModel):
     reference_rejected: int = 0
     unknown_identifier: int = 0
     conflicting_identifier: int = 0
+    malformed_identifier: int = 0
     manifest_unavailable: int = 0
     manifest_invalid: int = 0
+    unvalidated_unknown: int = 0
+    artifact_required: int = 0
     artifact_published: int = 0
+
+
+class JobTraceabilityEnvelopeResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["available", "artifact_unavailable", "legacy_unavailable"] | str
+    artifact: TraceabilityArtifactMetadataResponse | None = None
+    summary: TraceabilitySummaryResponse
 
 
 class JobTraceabilityEntityResponse(BaseModel):
@@ -99,8 +110,5 @@ class JobTraceabilityResponse(BaseModel):
     job_id: str
     inventory_id: str
     aisle_id: str
-    traceability: dict[str, object] = Field(
-        ...,
-        description="Traceability envelope with status, artifact metadata, and summary.",
-    )
+    traceability: JobTraceabilityEnvelopeResponse
     entities: list[JobTraceabilityEntityResponse] = Field(default_factory=list)

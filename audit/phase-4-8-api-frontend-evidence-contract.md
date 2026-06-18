@@ -5,13 +5,13 @@
 | Item | Status |
 |------|--------|
 | **Implementation verdict** | **COMPLETE** |
+| Code-review corrections | **Closed** — all P1/P2 findings addressed and tested |
 | Backend API contract | Implemented — structural `result_evidence` read model + job traceability endpoint |
 | Frontend contract | Implemented — `evidence.displayable` is primary gate; details panel added |
 | Structural `result_evidence` usage | Authoritative for V3 photo jobs with persisted rows |
-| Legacy fallback behavior | Fail-closed: `legacy_unavailable`, no image without explicit safe legacy path |
-| Artifact metadata exposure | Safe metadata on job traceability endpoint (no credentials/raw payloads) |
-| Security posture | Fail-closed displayability; no signed URLs for non-displayable evidence |
-| Regression results | Phase 4.7 (43), 4.6 (28), 4.5 (79), Artifact/Gemini (66 passed, 1 skipped) — all pass |
+| Artifact metadata exposure | Position detail `traceability_artifact` + job traceability endpoint |
+| Legacy fallback behavior | Strict fail-closed by default; explicit `allowLegacyEvidenceFallback` for pre-4.8 screens |
+| Regression results | Phase 4.8 (24), 4.7 (50), 4.6 (28), 4.5 (79), Artifact/Gemini (66 passed, 1 skipped) — all pass |
 | Video traceability | **Out of scope — not implemented** |
 | Phase 4.9 status | **Not started** |
 
@@ -21,7 +21,7 @@
 
 1. **Position detail (extended)**  
    `GET /api/v3/inventories/{inventory_id}/aisles/{aisle_id}/positions/{position_id}`  
-   Adds optional `evidence: ResultEvidenceViewResponse` alongside legacy `evidences[]`.
+   Adds optional `evidence` and `traceability_artifact` alongside legacy `evidences[]`.
 
 2. **Job traceability (new)**  
    `GET /api/v3/inventories/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/traceability`  
@@ -31,7 +31,8 @@
 
 - `ResultEvidenceViewResponse` — per-entity evidence contract (`displayable`, `traceability_status`, URLs, manifest ids, `source_kind`, provider/model).
 - `TraceabilityArtifactMetadataResponse` — `kind`, `published`, `storage_key`, `content_hash`, `size_bytes`, `published_at`, `required`, `status`.
-- `TraceabilitySummaryResponse` — row counts (`valid`, `invalid`, `missing`, `unvalidated`, `displayable`, `not_displayable`, classification buckets).
+- `TraceabilitySummaryResponse` — row counts aligned with Phase 4.7 (`malformed_identifier`, `unvalidated_unknown`, `artifact_required`, `artifact_published`, …).
+- `JobTraceabilityEnvelopeResponse` — typed traceability envelope (`status`, `artifact`, `summary`).
 - `JobTraceabilityResponse` — job-scoped aggregate.
 
 ### Source-of-truth rules
@@ -50,8 +51,23 @@
 - `source_image_id` present
 - `source_asset_id` present or resolvable
 - Image URL resolution succeeds
+- Required `traceability_manifest` is published when manifest store marks it required
+- `source_image_id` and resolved `source_asset_id` must match (fail-closed on mismatch)
 
-Reference/invalid/missing/unvalidated → `displayable=false`. No structural row → `legacy_unavailable`. URL failure → `displayable=false`, `image_access_status=url_unavailable` without mutating traceability truth.
+Structural evidence lookup uses **resolved run context job ID**:
+
+```text
+resolved_job_id = run_context.resolved_job_id or run_context.job_id or position.job_id
+```
+
+When required artifact is unpublished:
+
+```text
+displayable=false
+traceability_status=artifact_unavailable
+image_access_status=not_allowed
+image_url=null
+```
 
 ### Legacy compatibility
 
@@ -167,12 +183,12 @@ API and frontend do **not** expose:
 
 | Suite | Result |
 |-------|--------|
-| Phase 4.8 backend (4 modules) | **15 passed**, 0 failed, 0 skipped |
+| Phase 4.8 backend (4 modules) | **24 passed**, 0 failed, 0 skipped |
 | Phase 4.7 regression | **43 passed** |
 | Phase 4.6 regression | **28 passed** |
 | Phase 4.5 regression | **79 passed** |
 | Artifact/Gemini regression | **66 passed**, **1 skipped** |
-| Phase 4.8 frontend (6 files) | **79 passed** |
+| Phase 4.8 frontend (6 files) | **81 passed** |
 | Backend `compileall` | **pass** |
 | Frontend `npm run build` | **pass** |
 | Frontend `npm run lint` | **0 errors**, 10 warnings (pre-existing) |
@@ -203,7 +219,33 @@ API and frontend do **not** expose:
 
 - Types, mappers, eligibility, panel/viewer/details components, i18n, tests
 
-## 9. Remaining risks
+## 9. Phase 4.8 code-review corrections
+
+| Finding | Resolution |
+|---------|------------|
+| P1: artifact unavailable must block position detail | `build_evidence_view(job_id=…)` checks required unpublished manifest → `artifact_unavailable`, `displayable=false`, no URLs |
+| P1: resolved run context job ID | Position detail uses `resolved_job_id or job_id or position.job_id` for evidence lookup |
+| P1: frontend must use `imageUrl` | Panel/viewer render backend `evidenceView.imageUrl`; legacy loader only when `evidenceView` absent |
+| P2: artifact metadata in details | Option A: `traceability_artifact` on position detail → `ResultEvidenceDetails` shows status + hash |
+| P2: typed traceability envelope | `JobTraceabilityEnvelopeResponse` replaces `dict[str, object]` |
+| P2: summary buckets aligned with 4.7 | Added `malformed_identifier`, `unvalidated_unknown`, `artifact_required`, `artifact_published` |
+| P2: source_asset vs source_image | Fail-closed mismatch policy in `detect_source_asset_mismatch()` |
+| P2: legacy fallback explicit | `allowLegacyEvidenceFallback` option (default false); Phase 4.8 screens fail-closed without `evidenceView` |
+
+### Correction test results
+
+| Suite | Result |
+|-------|--------|
+| Phase 4.8 backend | 24 passed |
+| Phase 4.7 regression | 50 passed |
+| Phase 4.6 regression | 28 passed |
+| Phase 4.5 regression | 79 passed |
+| Artifact/Gemini | 66 passed, 1 skipped |
+| Phase 4.8 frontend | 81 passed |
+| Backend compileall | pass |
+| Frontend build/typecheck/lint | pass (0 lint errors, 10 pre-existing warnings) |
+
+## 10. Remaining risks
 
 - E2E hardening pending (Phase 4.9)
 - Historical backfill of structural rows for legacy jobs not in scope
@@ -212,7 +254,7 @@ API and frontend do **not** expose:
 
 No unresolved Phase 4.8 API/frontend contract issues deferred to 4.9.
 
-## 10. Phase 4.9 readiness
+## 11. Phase 4.9 readiness
 
 **Ready to begin Phase 4.9 — End-to-End Hardening and Regression Tests.**
 

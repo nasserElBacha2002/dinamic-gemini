@@ -11,6 +11,7 @@ import type {
   EvidenceSummary,
   ReviewActionSummary,
   ResultEvidenceViewResponse,
+  TraceabilityArtifactMetadataResponse,
 } from '../../../api/types';
 import type {
   ResultSummary,
@@ -20,6 +21,7 @@ import type {
   ReviewStatus,
   TraceabilityStatus,
   ResultEvidenceView,
+  TraceabilityArtifactMetadata,
 } from '../types';
 import { isLegacyEvidenceDisplayable } from '../utils/evidenceEligibility';
 
@@ -60,6 +62,22 @@ export function mapResultEvidenceViewResponse(
     sourceKind: api.source_kind,
     provider: api.provider ?? null,
     modelName: api.model_name ?? null,
+  };
+}
+
+/** Map Phase 4.8 traceability artifact metadata to visible model. */
+export function mapTraceabilityArtifactResponse(
+  api: TraceabilityArtifactMetadataResponse
+): TraceabilityArtifactMetadata {
+  return {
+    kind: api.kind,
+    published: api.published,
+    required: api.required,
+    status: api.status,
+    storageKey: api.storage_key ?? null,
+    contentHash: api.content_hash ?? null,
+    sizeBytes: api.size_bytes ?? null,
+    publishedAt: api.published_at ?? null,
   };
 }
 
@@ -315,6 +333,10 @@ export function mapPositionDetailToResultDetail(
     hasValidEvidence,
     traceabilityWarning,
     evidenceView: structuralEvidence ?? null,
+    traceabilityArtifact:
+      data.traceability_artifact != null
+        ? mapTraceabilityArtifactResponse(data.traceability_artifact)
+        : null,
     evidence: evidences.map(mapEvidenceToResultEvidence),
     reviewHistory: review_actions.map(mapReviewActionToHistoryItem),
     technicalMetadata: {

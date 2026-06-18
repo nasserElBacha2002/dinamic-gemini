@@ -1,17 +1,20 @@
 /**
  * Epic 4 — Evidence panel for Result Detail.
  * Phase 6: Primary vs supporting evidence clearly labeled for operator hierarchy.
- * Phase 4.2 / 4.8: Display image only when backend structural evidenceView.displayable is true
- * (legacy fallback when evidenceView absent).
+ * Phase 4.8: Display image only when backend structural evidenceView.displayable is true
+ * and use backend-provided imageUrl (no legacy asset loader when evidenceView exists).
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Paper, Typography, Box, Button, CircularProgress } from '@mui/material';
+import { Paper, Typography, Box, Button } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import BaseDialog from '../../../../components/ui/BaseDialog';
 import type { ResultDetail } from '../../types';
 import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
-import { isEvidenceDisplayable } from '../../utils/evidenceEligibility';
+import {
+  isEvidenceDisplayable,
+  resolveStructuralEvidenceImageUrl,
+} from '../../utils/evidenceEligibility';
 import { evidenceUnavailableMessage } from '../../utils/evidenceUnavailableMessage';
 import ResultEvidenceDetails from './ResultEvidenceDetails';
 
@@ -29,40 +32,60 @@ export default function ResultEvidencePanel({
   const { t } = useTranslation();
   const [dialogOpen, setDialogOpen] = useState(false);
 
+  const structuralView = result.evidenceView;
+  const evidenceIsDisplayable = isEvidenceDisplayable(
+    result.traceabilityStatus,
+    result.hasValidEvidence,
+    result.sourceImageId,
+    structuralView
+  );
+  const structuralImageUrl = resolveStructuralEvidenceImageUrl(structuralView);
+  const usesStructuralContract = structuralView != null;
+
   const sourceImageId =
     result.sourceImageId != null && String(result.sourceImageId).trim() !== ''
       ? result.sourceImageId.trim()
       : null;
-  const canShowImage = Boolean(
-    isEvidenceDisplayable(
-      result.traceabilityStatus,
-      result.hasValidEvidence,
-      sourceImageId,
-      result.evidenceView
-    ) &&
-      inventoryId &&
-      aisleId
-  );
+
+  const canShowStructuralImage = evidenceIsDisplayable && structuralImageUrl != null;
+  const canShowLegacyImage =
+    !usesStructuralContract &&
+    evidenceIsDisplayable &&
+    Boolean(inventoryId && aisleId && sourceImageId);
+
+  const canShowImage = canShowStructuralImage || canShowLegacyImage;
 
   useEffect(() => {
     if (!canShowImage) {
       setDialogOpen(false);
     }
   }, [canShowImage]);
+
   const jobId = (() => {
     const entityId = result.technicalMetadata?.entityId;
     if (!entityId || typeof entityId !== 'string') return null;
     const idx = entityId.lastIndexOf('_');
     return idx > 0 ? entityId.slice(0, idx) : null;
   })();
-  const imageSpec = useMemo(
+
+  const legacyImageSpec = useMemo(
     () =>
-      canShowImage && inventoryId && aisleId && sourceImageId
+      canShowLegacyImage && inventoryId && aisleId && sourceImageId
         ? { inventoryId, aisleId, assetId: sourceImageId, jobId }
         : null,
-    [canShowImage, inventoryId, aisleId, sourceImageId, jobId]
+    [canShowLegacyImage, inventoryId, aisleId, sourceImageId, jobId]
   );
-  const loadState = useEvidenceImageLoad(imageSpec);
+  const legacyLoadState = useEvidenceImageLoad(legacyImageSpec);
+
+  const imageSrc = canShowStructuralImage
+    ? structuralImageUrl
+    : legacyLoadState.status === 'loaded'
+      ? legacyLoadState.imageSrc
+      : null;
+
+  const imageLoading = !canShowStructuralImage && legacyLoadState.status === 'loading';
+  const imageError =
+    !canShowStructuralImage && legacyLoadState.status === 'error' ? legacyLoadState.message : null;
 
   const handleOpenImage = useCallback(() => setDialogOpen(true), []);
   const handleCloseImage = useCallback(() => setDialogOpen(false), []);
@@ -70,7 +93,7 @@ export default function ResultEvidencePanel({
   const primaryEvidence = result.evidence.find((e) => e.role === 'PRIMARY');
   const supportingEvidence = result.evidence.filter((e) => e.role === 'SUPPORTING');
   const hasCropRecords = result.evidence.length > 0;
-  const showUnavailableState = !canShowImage;
+  const showUnavailableState = !evidenceIsDisplayable || (evidenceIsDisplayable && !imageSrc && !imageLoading);
 
   return (
     <Paper sx={{ p: 2, mb: 2 }}>
@@ -89,7 +112,9 @@ export default function ResultEvidencePanel({
           }}
         >
           <Typography color="text.secondary">
-            {evidenceUnavailableMessage(result.traceabilityStatus, t)}
+            {evidenceIsDisplayable && usesStructuralContract && structuralImageUrl == null
+              ? t('results.evidence_viewer.url_unavailable')
+              : evidenceUnavailableMessage(result.traceabilityStatus, t)}
           </Typography>
         </Box>
       )}
@@ -111,15 +136,14 @@ export default function ResultEvidencePanel({
               position: 'relative',
             }}
           >
-            {loadState.status === 'idle' && null}
-            {loadState.status === 'loading' && (
-              <Box sx={{ py: 4 }}>
-                <CircularProgress size={32} />
-              </Box>
+            {imageLoading && (
+              <Typography color="text.secondary" sx={{ p: 2 }}>
+                {t('common.loading')}
+              </Typography>
             )}
-            {loadState.status === 'loaded' && (
+            {imageSrc && (
               <img
-                src={loadState.imageSrc}
+                src={imageSrc}
                 alt={
                   result.sourceFileName
                     ? t('results.evidence_panel.alt_source_named', { fileName: result.sourceFileName })
@@ -132,9 +156,9 @@ export default function ResultEvidencePanel({
                 }}
               />
             )}
-            {loadState.status === 'error' && (
+            {imageError && (
               <Typography color="error" sx={{ p: 2 }} role="alert">
-                {loadState.message}
+                {imageError}
               </Typography>
             )}
           </Box>
@@ -149,7 +173,7 @@ export default function ResultEvidencePanel({
             onClick={handleOpenImage}
             sx={{ mt: 1 }}
             aria-label={t('results.view_full_image')}
-            disabled={loadState.status !== 'loaded'}
+            disabled={!imageSrc}
           >
             {t('results.view_full_image')}
           </Button>
@@ -169,7 +193,9 @@ export default function ResultEvidencePanel({
       {showUnavailableState && hasCropRecords && (
         <Box sx={{ py: 2 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            {evidenceUnavailableMessage(result.traceabilityStatus, t)}
+            {evidenceIsDisplayable && usesStructuralContract && structuralImageUrl == null
+              ? t('results.evidence_viewer.url_unavailable')
+              : evidenceUnavailableMessage(result.traceabilityStatus, t)}
           </Typography>
           {primaryEvidence && (
             <>
@@ -202,23 +228,24 @@ export default function ResultEvidencePanel({
         title={t('results.evidence_panel.dialog_title')}
         actions={<Button onClick={handleCloseImage}>{t('common.close')}</Button>}
       >
-        {loadState.status === 'loaded' && (
+        {imageSrc && (
           <img
-            src={loadState.imageSrc}
+            src={imageSrc}
             alt={t('results.evidence_panel.dialog_alt')}
             style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
           />
         )}
-        {loadState.status === 'error' && <Typography color="error">{loadState.message}</Typography>}
-        {loadState.status === 'loading' && (
-          <Box sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
-            <CircularProgress />
-          </Box>
+        {imageError && <Typography color="error">{imageError}</Typography>}
+        {imageLoading && (
+          <Typography color="text.secondary">{t('common.loading')}</Typography>
         )}
-        {loadState.status === 'idle' && null}
       </BaseDialog>
 
-      <ResultEvidenceDetails evidenceView={result.evidenceView} />
+      <ResultEvidenceDetails
+        evidenceView={result.evidenceView}
+        artifactStatus={result.traceabilityArtifact?.status ?? null}
+        artifactHash={result.traceabilityArtifact?.contentHash ?? null}
+      />
     </Paper>
   );
 }

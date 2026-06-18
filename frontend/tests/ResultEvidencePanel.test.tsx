@@ -63,18 +63,20 @@ describe('ResultEvidencePanel', () => {
     mockUseEvidenceImageLoad.mockReturnValue({ status: 'idle' });
   });
 
-  it('VALID + hasValidEvidence + sourceImageId allows image loading and preview UI', () => {
-    mockUseEvidenceImageLoad.mockReturnValue({
-      status: 'loaded',
-      imageSrc: 'blob:test-image',
-    });
-
-    renderPanel(baseResult());
-
-    expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(
-      expect.objectContaining({ assetId: 'asset-1', inventoryId: 'inv-1', aisleId: 'aisle-1' })
+  it('VALID + structural evidenceView.imageUrl renders image without legacy loader', () => {
+    renderPanel(
+      baseResult({
+        evidenceView: {
+          displayable: true,
+          traceabilityStatus: 'valid',
+          sourceKind: 'structural_result_evidence',
+          imageUrl: 'https://cdn.example/evidence.jpg',
+        },
+      })
     );
-    expect(screen.getByRole('img')).toHaveAttribute('src', 'blob:test-image');
+
+    expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
+    expect(screen.getByRole('img')).toHaveAttribute('src', 'https://cdn.example/evidence.jpg');
   });
 
   it('INVALID + sourceImageId does not render image and passes null spec to hook', () => {
@@ -155,12 +157,7 @@ describe('ResultEvidencePanel', () => {
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
-  it('Phase 4.8: evidenceView.displayable=true allows image regardless of legacy flags', () => {
-    mockUseEvidenceImageLoad.mockReturnValue({
-      status: 'loaded',
-      imageSrc: 'blob:structural',
-    });
-
+  it('Phase 4.8: evidenceView.displayable=true uses backend imageUrl', () => {
     renderPanel(
       baseResult({
         traceabilityStatus: 'INVALID',
@@ -170,24 +167,44 @@ describe('ResultEvidencePanel', () => {
           displayable: true,
           traceabilityStatus: 'valid',
           sourceKind: 'structural_result_evidence',
-          sourceImageId: 'asset-1',
+          imageUrl: 'https://cdn.example/structural.jpg',
         },
       })
     );
 
-    expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(
-      expect.objectContaining({ assetId: 'asset-1' })
+    expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
+    expect(screen.getByRole('img')).toHaveAttribute('src', 'https://cdn.example/structural.jpg');
+  });
+
+  it('Phase 4.8: displayable true without imageUrl shows safe unavailable state', () => {
+    renderPanel(
+      baseResult({
+        evidenceView: {
+          displayable: true,
+          traceabilityStatus: 'valid',
+          sourceKind: 'structural_result_evidence',
+          imageUrl: null,
+          imageAccessStatus: 'url_unavailable',
+        },
+      })
     );
-    expect(screen.getByRole('img')).toHaveAttribute('src', 'blob:structural');
+
+    expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getByText(/evidence image is unavailable|imagen de evidencia no está disponible/i)).toBeInTheDocument();
   });
 
   it('clears preview when transitioning VALID to INVALID', async () => {
-    mockUseEvidenceImageLoad.mockReturnValue({
-      status: 'loaded',
-      imageSrc: 'blob:test-image',
-    });
-
-    const { rerender } = renderPanel(baseResult());
+    const { rerender } = renderPanel(
+      baseResult({
+        evidenceView: {
+          displayable: true,
+          traceabilityStatus: 'valid',
+          sourceKind: 'structural_result_evidence',
+          imageUrl: 'https://cdn.example/evidence.jpg',
+        },
+      })
+    );
     expect(screen.getByRole('img')).toBeInTheDocument();
 
     const viewButton = screen.getByRole('button', {
@@ -198,7 +215,15 @@ describe('ResultEvidencePanel', () => {
     rerender(
       <ThemeProvider theme={theme}>
         <ResultEvidencePanel
-          result={baseResult({ traceabilityStatus: 'INVALID', hasValidEvidence: false })}
+          result={baseResult({
+            traceabilityStatus: 'INVALID',
+            hasValidEvidence: false,
+            evidenceView: {
+              displayable: false,
+              traceabilityStatus: 'invalid',
+              sourceKind: 'structural_result_evidence',
+            },
+          })}
           inventoryId="inv-1"
           aisleId="aisle-1"
         />
@@ -213,12 +238,16 @@ describe('ResultEvidencePanel', () => {
   });
 
   it('clears preview when transitioning VALID to MISSING', () => {
-    mockUseEvidenceImageLoad.mockReturnValue({
-      status: 'loaded',
-      imageSrc: 'blob:test-image',
-    });
-
-    const { rerender } = renderPanel(baseResult());
+    const { rerender } = renderPanel(
+      baseResult({
+        evidenceView: {
+          displayable: true,
+          traceabilityStatus: 'valid',
+          sourceKind: 'structural_result_evidence',
+          imageUrl: 'https://cdn.example/evidence.jpg',
+        },
+      })
+    );
     expect(screen.getByRole('img')).toBeInTheDocument();
 
     rerender(
@@ -228,6 +257,11 @@ describe('ResultEvidencePanel', () => {
             traceabilityStatus: 'MISSING',
             sourceImageId: null,
             hasValidEvidence: false,
+            evidenceView: {
+              displayable: false,
+              traceabilityStatus: 'missing',
+              sourceKind: 'structural_result_evidence',
+            },
           })}
           inventoryId="inv-1"
           aisleId="aisle-1"

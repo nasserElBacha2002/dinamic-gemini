@@ -28,6 +28,18 @@ export type EvidenceSourceKind =
 
 export type ImageAccessStatus = 'available' | 'url_unavailable' | 'not_allowed';
 
+/** Phase 4.8 — durable traceability_manifest metadata (safe subset). */
+export interface TraceabilityArtifactMetadata {
+  kind: string;
+  published: boolean;
+  required: boolean;
+  status: string;
+  storageKey?: string | null;
+  contentHash?: string | null;
+  sizeBytes?: number | null;
+  publishedAt?: string | null;
+}
+
 /** Phase 4.8 — mapped from API ResultEvidenceViewResponse. */
 export interface ResultEvidenceView {
   displayable: boolean;
@@ -145,6 +157,8 @@ export interface ResultDetail {
   hasValidEvidence: boolean;
   /** Phase 4.8: structural evidence contract from detail API (authoritative when present). */
   evidenceView?: ResultEvidenceView | null;
+  /** Phase 4.8: durable traceability_manifest metadata for resolved job context. */
+  traceabilityArtifact?: TraceabilityArtifactMetadata | null;
   /** Operational diagnostic from API (may be shown in technical/expandable UI). */
   traceabilityWarning?: string | null;
   evidence: ResultEvidence[];

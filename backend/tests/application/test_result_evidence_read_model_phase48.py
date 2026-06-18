@@ -203,3 +203,150 @@ def test_required_artifact_missing_sets_artifact_unavailable() -> None:
 def test_compute_structural_api_displayable_requires_asset() -> None:
     row = _row(source_asset_id=None)
     assert compute_structural_api_displayable(row, resolved_source_asset_id=None) is False
+
+
+def _position(**overrides) -> Position:
+    base = Position(
+        id="pos-1",
+        aisle_id="aisle-1",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id="ev-1",
+        created_at=_now(),
+        updated_at=_now(),
+        detected_summary_json={"entity_uid": "job_E1"},
+        job_id="old-job",
+    )
+    return Position(**{**base.__dict__, **overrides})
+
+
+def test_position_detail_blocks_when_required_artifact_unpublished() -> None:
+    store = MemoryArtifactManifestStore()
+    store.mark_pending(
+        job_id="job-1",
+        artifact_kind=ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+        required=True,
+        now=_now(),
+    )
+    view = _service([_row()], manifest_store=store).get_position_evidence_view(
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        position=_position(),
+        job_id="job-1",
+    )
+    assert view.displayable is False
+    assert view.traceability_status == "artifact_unavailable"
+    assert view.image_url is None
+    assert view.image_access_status == "not_allowed"
+
+
+def test_position_detail_allows_when_required_artifact_published() -> None:
+    store = MemoryArtifactManifestStore()
+    store.mark_published(
+        job_id="job-1",
+        artifact_kind=ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+        storage_key="jobs/job-1/run/traceability_manifest.json",
+        size_bytes=100,
+        content_hash="abc",
+        required=True,
+        now=_now(),
+    )
+    view = _service([_row()], manifest_store=store).get_position_evidence_view(
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        position=_position(),
+        job_id="job-1",
+    )
+    assert view.displayable is True
+    assert view.traceability_status == TraceabilityStatus.VALID.value
+    assert view.image_url is not None
+
+
+def test_position_evidence_uses_resolved_job_not_storage_job_id() -> None:
+    row = _row(job_id="current-job", position_id="pos-1")
+    svc = _service([row])
+    view = svc.get_position_evidence_view(
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        position=_position(job_id="old-job"),
+        job_id="current-job",
+    )
+    assert view.source_kind == "structural_result_evidence"
+    assert view.displayable is True
+
+
+def test_position_evidence_with_null_storage_job_uses_resolved_job() -> None:
+    row = _row(job_id="current-job", position_id="pos-1")
+    svc = _service([row])
+    view = svc.get_position_evidence_view(
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        position=_position(job_id=None),
+        job_id="current-job",
+    )
+    assert view.displayable is True
+    assert view.traceability_status == TraceabilityStatus.VALID.value
+
+
+def test_source_asset_mismatch_blocks_display() -> None:
+    row = _row(source_image_id="asset-1", source_asset_id="asset-2")
+    view = _service([row]).build_evidence_view(
+        row,
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        assets_by_id={"asset-2": _AssetRepo().list_by_aisle("aisle-1")[0]},
+    )
+    assert view.displayable is False
+    assert view.image_access_status == "not_allowed"
+    assert view.traceability_status == TraceabilityStatus.INVALID.value
+    assert "does not match" in (view.traceability_warning or "")
+
+
+def test_summary_malformed_identifier_bucket() -> None:
+    row = _row(
+        traceability_status=TraceabilityStatus.INVALID.value,
+        has_valid_evidence=False,
+        traceability_warning="Malformed identifier img_001.",
+    )
+    view = _service([row]).build_evidence_view(
+        row,
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        assets_by_id={},
+    )
+    summary = _service([row])._summary_from_rows([view])
+    assert summary["malformed_identifier"] == 1
+
+
+def test_summary_unvalidated_unknown_bucket() -> None:
+    row = _row(
+        traceability_status=TraceabilityStatus.UNVALIDATED.value,
+        has_valid_evidence=False,
+        traceability_warning="Could not validate evidence.",
+    )
+    view = _service([row]).build_evidence_view(
+        row,
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        assets_by_id={},
+    )
+    summary = _service([row])._summary_from_rows([view])
+    assert summary["unvalidated_unknown"] == 1
+
+
+def test_summary_artifact_required_unpublished() -> None:
+    store = MemoryArtifactManifestStore()
+    store.mark_pending(
+        job_id="job-1",
+        artifact_kind=ARTIFACT_KIND_TRACEABILITY_MANIFEST,
+        required=True,
+        now=_now(),
+    )
+    model = _service([_row()], manifest_store=store).get_job_traceability(
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        job_id="job-1",
+    )
+    assert model.summary["artifact_required"] == 1
+    assert model.summary["artifact_published"] == 0

@@ -89,22 +89,20 @@ describe('ResultEvidenceViewer', () => {
     mockUseEvidenceImageLoad.mockReturnValue({ status: 'idle' });
   });
 
-  it('VALID + hasValidEvidence renders preview actions', () => {
+  it('VALID + structural evidenceView renders preview using backend imageUrl', () => {
     renderViewer(
       baseResult({
-        evidence: [
-          {
-            id: 'ev-1',
-            role: 'PRIMARY',
-            sourceImageId: 'crop-1',
-            sourceFileName: 'crop.jpg',
-            imageUrl: null,
-          },
-        ],
+        evidenceView: {
+          displayable: true,
+          traceabilityStatus: 'valid',
+          sourceKind: 'structural_result_evidence',
+          imageUrl: 'https://cdn.example/evidence.jpg',
+        },
       })
     );
 
     expect(screen.getAllByTestId('image-asset-card').length).toBeGreaterThan(0);
+    expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
     expect(screen.queryByText(INVALID_MSG)).not.toBeInTheDocument();
   });
 
@@ -203,7 +201,7 @@ describe('ResultEvidenceViewer', () => {
     expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
   });
 
-  it('Phase 4.8: evidenceView.displayable=true shows preview cards', () => {
+  it('Phase 4.8: evidenceView.displayable=true with imageUrl shows preview cards', () => {
     renderViewer(
       baseResult({
         traceabilityStatus: 'INVALID',
@@ -212,6 +210,24 @@ describe('ResultEvidenceViewer', () => {
           displayable: true,
           traceabilityStatus: 'valid',
           sourceKind: 'structural_result_evidence',
+          imageUrl: 'https://cdn.example/evidence.jpg',
+        },
+      })
+    );
+
+    expect(screen.getAllByTestId('image-asset-card').length).toBeGreaterThan(0);
+    expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
+  });
+
+  it('displayable true without imageUrl shows url unavailable, not record-only', () => {
+    renderViewer(
+      baseResult({
+        evidenceView: {
+          displayable: true,
+          traceabilityStatus: 'valid',
+          sourceKind: 'structural_result_evidence',
+          imageUrl: null,
+          imageAccessStatus: 'url_unavailable',
         },
         evidence: [
           {
@@ -225,45 +241,36 @@ describe('ResultEvidenceViewer', () => {
       })
     );
 
-    expect(screen.getAllByTestId('image-asset-card').length).toBeGreaterThan(0);
+    expect(screen.getByText(/evidence image is unavailable|imagen de evidencia no está disponible/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('image-asset-card')).not.toBeInTheDocument();
   });
 
-  it('valid traceability with previewable assets does not show record-only message', () => {
+  it('Phase 4.8: displayable false with imageUrl does not render image or call legacy loader', () => {
     renderViewer(
       baseResult({
-        evidence: [
-          {
-            id: 'ev-1',
-            role: 'PRIMARY',
-            sourceImageId: 'crop-1',
-            sourceFileName: 'crop.jpg',
-            imageUrl: null,
-          },
-        ],
+        sourceImageId: 'asset-1',
+        evidenceView: {
+          displayable: false,
+          traceabilityStatus: 'invalid',
+          sourceKind: 'structural_result_evidence',
+          imageUrl: 'https://cdn.example/evidence.jpg',
+        },
       })
     );
 
-    expect(screen.queryByText(RECORD_ONLY_MSG)).not.toBeInTheDocument();
-    expect(screen.getAllByTestId('image-asset-card').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('image-asset-card')).not.toBeInTheDocument();
+    expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
   });
 
   it('clears preview dialog when transitioning VALID to INVALID', () => {
-    mockUseEvidenceImageLoad.mockReturnValue({
-      status: 'loaded',
-      imageSrc: 'blob:preview',
-    });
-
     const { rerender } = renderViewer(
       baseResult({
-        evidence: [
-          {
-            id: 'ev-1',
-            role: 'PRIMARY',
-            sourceImageId: 'crop-1',
-            sourceFileName: 'crop.jpg',
-            imageUrl: null,
-          },
-        ],
+        evidenceView: {
+          displayable: true,
+          traceabilityStatus: 'valid',
+          sourceKind: 'structural_result_evidence',
+          imageUrl: 'https://cdn.example/evidence.jpg',
+        },
       })
     );
 
@@ -276,15 +283,11 @@ describe('ResultEvidenceViewer', () => {
           result={baseResult({
             traceabilityStatus: 'INVALID',
             hasValidEvidence: false,
-            evidence: [
-              {
-                id: 'ev-1',
-                role: 'PRIMARY',
-                sourceImageId: 'crop-1',
-                sourceFileName: 'crop.jpg',
-                imageUrl: null,
-              },
-            ],
+            evidenceView: {
+              displayable: false,
+              traceabilityStatus: 'invalid',
+              sourceKind: 'structural_result_evidence',
+            },
           })}
           inventoryId="inv-1"
           aisleId="aisle-1"
@@ -298,22 +301,14 @@ describe('ResultEvidenceViewer', () => {
   });
 
   it('clears preview when transitioning VALID to MISSING', () => {
-    mockUseEvidenceImageLoad.mockReturnValue({
-      status: 'loaded',
-      imageSrc: 'blob:preview',
-    });
-
     const { rerender } = renderViewer(
       baseResult({
-        evidence: [
-          {
-            id: 'ev-1',
-            role: 'PRIMARY',
-            sourceImageId: 'crop-1',
-            sourceFileName: 'crop.jpg',
-            imageUrl: null,
-          },
-        ],
+        evidenceView: {
+          displayable: true,
+          traceabilityStatus: 'valid',
+          sourceKind: 'structural_result_evidence',
+          imageUrl: 'https://cdn.example/evidence.jpg',
+        },
       })
     );
 
@@ -327,6 +322,11 @@ describe('ResultEvidenceViewer', () => {
             traceabilityStatus: 'MISSING',
             sourceImageId: null,
             hasValidEvidence: false,
+            evidenceView: {
+              displayable: false,
+              traceabilityStatus: 'missing',
+              sourceKind: 'structural_result_evidence',
+            },
             evidence: [],
           })}
           inventoryId="inv-1"

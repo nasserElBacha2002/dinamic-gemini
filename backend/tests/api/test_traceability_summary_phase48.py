@@ -10,6 +10,12 @@ from src.api.dependencies import (
     get_resolve_aisle_job_for_inventory_read_use_case,
     get_result_evidence_query_service,
 )
+from src.api.schemas.result_evidence_schemas import (
+    JobTraceabilityEnvelopeResponse,
+    JobTraceabilityResponse,
+    TraceabilityArtifactMetadataResponse,
+    TraceabilitySummaryResponse,
+)
 from src.api.server import app
 from src.application.services.result_evidence_query_service import (
     JobTraceabilityReadModel,
@@ -89,6 +95,9 @@ class StubTraceabilityQuery:
                 "conflicting_identifier": 0,
                 "manifest_unavailable": 0,
                 "manifest_invalid": 0,
+                "malformed_identifier": 0,
+                "unvalidated_unknown": 0,
+                "artifact_required": 1,
                 "artifact_published": 1,
             },
             entities=[
@@ -116,5 +125,10 @@ def test_job_traceability_endpoint_shape() -> None:
         assert body["traceability"]["artifact"]["kind"] == "traceability_manifest"
         assert body["entities"][0]["evidence"]["displayable"] is True
         assert body["traceability"]["summary"]["displayable"] == 1
+        JobTraceabilityResponse.model_validate(body)
+        envelope = JobTraceabilityEnvelopeResponse.model_validate(body["traceability"])
+        assert envelope.status == "available"
+        assert isinstance(envelope.artifact, TraceabilityArtifactMetadataResponse)
+        assert isinstance(envelope.summary, TraceabilitySummaryResponse)
     finally:
         app.dependency_overrides.clear()

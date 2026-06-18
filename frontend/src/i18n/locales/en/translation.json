@@ -1176,6 +1176,7 @@
       "unavailable_unvalidated": "Evidence is unavailable because traceability could not be confirmed."
     },
     "evidence_details": {
+      "artifact_hash": "Artifact hash",
       "artifact_status": "Artifact status",
       "heading": "Traceability detail",
       "image_access_status": "Image access",
@@ -1200,7 +1201,8 @@
       "record_only": "Record only",
       "subtitle_fallback": "Subtitle fallback",
       "supporting": "Supporting",
-      "title_fallback": "Title fallback"
+      "title_fallback": "Title fallback",
+      "url_unavailable": "Evidence image is unavailable."
     },
     "exit_fullscreen": "Exit fullscreen",
     "filtered_empty_message": "Filtered empty message",
