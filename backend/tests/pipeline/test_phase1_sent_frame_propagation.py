@@ -36,6 +36,7 @@ def _photos_context(tmp_path: Path) -> RunContext:
     job_input.photos_dir = "photos"
     job_input.metadata = {}
     settings = MagicMock()
+    settings.llm_provider = "gemini"
     settings.hybrid_prompt = "global_v22"
     settings.debug_log_full_analysis_prompt = False
     settings.execution_log_include_full_prompt = False

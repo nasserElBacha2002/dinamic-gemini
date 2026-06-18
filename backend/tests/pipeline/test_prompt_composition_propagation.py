@@ -35,6 +35,7 @@ def _video_context(tmp_path: Path) -> RunContext:
     job_input.input_type = "video"
     job_input.metadata = {}
     settings = MagicMock()
+    settings.llm_provider = "gemini"
     settings.hybrid_prompt = "global_v21"
     settings.debug_log_full_analysis_prompt = False
     run_dir = tmp_path / "j" / "r"

@@ -59,7 +59,14 @@ def test_parallel_runs_each_provider_key(monkeypatch: pytest.MonkeyPatch) -> Non
 
     executor = TestLLMExecutor(handler=handler)
 
-    def fake_resolve(pipeline_provider_name: str | None, settings: object) -> tuple[object, str]:
+    def fake_resolve(
+        pipeline_provider_name: str | None,
+        settings: object,
+        *,
+        model_name: str | None = None,
+        **kwargs: object,
+    ) -> tuple[object, str]:
+        del model_name, kwargs
         key = normalize_pipeline_provider_key(pipeline_provider_name, settings)
         return executor, key
 
@@ -113,7 +120,14 @@ def test_parallel_all_must_succeed_propagates_failure(monkeypatch: pytest.Monkey
 
     executor = TestLLMExecutor(handler=handler)
 
-    def fake_resolve(pipeline_provider_name: str | None, settings: object) -> tuple[object, str]:
+    def fake_resolve(
+        pipeline_provider_name: str | None,
+        settings: object,
+        *,
+        model_name: str | None = None,
+        **kwargs: object,
+    ) -> tuple[object, str]:
+        del model_name, kwargs
         key = normalize_pipeline_provider_key(pipeline_provider_name, settings)
         return executor, key
 
@@ -162,7 +176,14 @@ def test_sequential_fallback_stops_after_first_success_without_calling_later_pro
 
     executor = TestLLMExecutor(handler=handler)
 
-    def fake_resolve(pipeline_provider_name: str | None, settings: object) -> tuple[object, str]:
+    def fake_resolve(
+        pipeline_provider_name: str | None,
+        settings: object,
+        *,
+        model_name: str | None = None,
+        **kwargs: object,
+    ) -> tuple[object, str]:
+        del model_name, kwargs
         key = normalize_pipeline_provider_key(pipeline_provider_name, settings)
         return executor, key
 
@@ -215,7 +236,14 @@ def test_sequential_uses_second_provider_after_llm_error(monkeypatch: pytest.Mon
 
     executor = TestLLMExecutor(handler=handler)
 
-    def fake_resolve(pipeline_provider_name: str | None, settings: object) -> tuple[object, str]:
+    def fake_resolve(
+        pipeline_provider_name: str | None,
+        settings: object,
+        *,
+        model_name: str | None = None,
+        **kwargs: object,
+    ) -> tuple[object, str]:
+        del model_name, kwargs
         key = normalize_pipeline_provider_key(pipeline_provider_name, settings)
         return executor, key
 
@@ -258,8 +286,13 @@ def test_hybrid_single_strategy_ignores_extras(monkeypatch: pytest.MonkeyPatch) 
     resolve_calls: list[str | None] = []
 
     def counting_resolve(
-        pipeline_provider_name: str | None, settings: object
+        pipeline_provider_name: str | None,
+        settings: object,
+        *,
+        model_name: str | None = None,
+        **kwargs: object,
     ) -> tuple[object, str]:
+        del model_name, kwargs
         resolve_calls.append(pipeline_provider_name)
         key = normalize_pipeline_provider_key(pipeline_provider_name, settings)
         return TestLLMExecutor(), key
