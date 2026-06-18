@@ -4,31 +4,36 @@ Phase 3 / 8 — explicit pipeline provider resolution boundary.
 Centralizes how a worker run chooses the logical LLM vendor (Gemini, OpenAI, Claude, DeepSeek)
 and the corresponding :class:`~src.pipeline.ports.llm_execution.LlmGlobalAnalysisExecutor`.
 
-**Execution contract:** vendor calls are made only through ``LlmGlobalAnalysisExecutor.execute``;
-this module does not add a parallel giant protocol — see ``LlmGlobalAnalysisExecutor`` in
-``src.pipeline.ports.llm_execution``.
+**Phase 5 contract:** explicit ``job.provider_name`` is never silently remapped. Visual inventory
+jobs are validated for vision + image-binding capabilities before executor selection.
 
-:func:`resolve_llm_executor_for_context` is the **only** implementation of job-level provider choice
-+ executor resolution (tests patch this symbol on this module to inject offline executors).
-
-Adapter registration (which class implements ``gemini`` / ``openai`` / …) remains in
-:mod:`src.pipeline.providers.registry` — this module delegates to ``registry.resolve_llm_executor``
-after normalizing the logical key.
-
-**Typing note:** :func:`resolve_llm_executor_for_context` keeps ``settings: Any`` so tests and the
-LLM harness can pass duck-typed objects. ``normalize_pipeline_provider_key`` reads only
-``llm_provider``; each adapter’s ``execute`` may read a wider slice of real ``AppSettings`` fields
-(pricing, API keys), so a narrow Protocol on this boundary would be misleading rather than helpful.
+**Runtime failover is not implemented** unless ``pipeline_analysis_execution_strategy`` enables
+multi-provider fallback via settings — that is separate from per-job provider resolution here.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
+from src.application.errors import ProcessingProviderIncompatibleWithJobError
+from src.application.services.provider_contract_validation import (
+    validate_provider_for_visual_inventory_job,
+)
+from src.llm.errors import LLMProviderError
+from src.llm.provider_error_taxonomy import PROVIDER_INCOMPATIBLE_WITH_JOB
 from src.pipeline.ports.llm_execution import LlmGlobalAnalysisExecutor
-from src.pipeline.provider_keys import normalize_pipeline_provider_key
+from src.pipeline.provider_keys import (
+    InactivePipelineProviderKeyError,
+    ResolvedPipelineProviderKey,
+    UnknownPipelineProviderKeyError,
+    resolve_pipeline_provider_key,
+)
+from src.pipeline.providers.definitions import deprecated_processing_provider_message
 from src.pipeline.providers.registry import resolve_llm_executor
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -37,6 +42,79 @@ class ResolvedPipelineExecution:
 
     executor: LlmGlobalAnalysisExecutor
     normalized_provider_key: str
+    requested_provider_key: str | None = None
+
+
+def _contract_error_from_resolution(exc: BaseException, *, requested: str | None) -> LLMProviderError:
+    key = (requested or "").strip().lower() or None
+    if isinstance(exc, InactivePipelineProviderKeyError) and key:
+        message = deprecated_processing_provider_message(key)
+    else:
+        message = str(exc)
+    return LLMProviderError(
+        code=PROVIDER_INCOMPATIBLE_WITH_JOB,
+        message=message,
+        details={
+            "provider": key,
+            "requested_provider_key": key,
+            "phase": "provider_resolution",
+        },
+    )
+
+
+def resolve_pipeline_provider_for_execution(
+    pipeline_provider_name: str | None,
+    settings: Any,
+    *,
+    validate_visual_inventory: bool = True,
+) -> ResolvedPipelineProviderKey:
+    """
+    Resolve provider key for worker execution (fail-closed on explicit inactive/unknown).
+
+    When ``validate_visual_inventory`` is true (default), incompatible providers raise
+    :class:`~src.llm.errors.LLMProviderError` with canonical ``PROVIDER_INCOMPATIBLE_WITH_JOB``.
+    """
+    try:
+        resolved = resolve_pipeline_provider_key(pipeline_provider_name, settings)
+    except (UnknownPipelineProviderKeyError, InactivePipelineProviderKeyError) as exc:
+        raise _contract_error_from_resolution(exc, requested=pipeline_provider_name) from exc
+
+    if resolved.remapped:
+        raise LLMProviderError(
+            code=PROVIDER_INCOMPATIBLE_WITH_JOB,
+            message=(
+                f"Explicit provider {resolved.requested_key!r} cannot be remapped to "
+                f"{resolved.resolved_key!r} for job execution."
+            ),
+            details={
+                "requested_provider_key": resolved.requested_key,
+                "resolved_provider_key": resolved.resolved_key,
+                "phase": "provider_resolution",
+            },
+        )
+
+    if validate_visual_inventory:
+        try:
+            validate_provider_for_visual_inventory_job(resolved.resolved_key)
+        except ProcessingProviderIncompatibleWithJobError as exc:
+            raise LLMProviderError(
+                code=PROVIDER_INCOMPATIBLE_WITH_JOB,
+                message=str(exc),
+                details={
+                    "provider": resolved.resolved_key,
+                    "requested_provider_key": resolved.requested_key,
+                    "phase": "provider_capability_validation",
+                },
+            ) from exc
+
+    if resolved.requested_key and resolved.requested_key != resolved.resolved_key:
+        logger.warning(
+            "provider_key_mismatch requested=%s resolved=%s",
+            resolved.requested_key,
+            resolved.resolved_key,
+        )
+
+    return resolved
 
 
 def resolve_llm_executor_for_context(
@@ -47,20 +125,13 @@ def resolve_llm_executor_for_context(
     Resolve executor and normalized provider key for this run.
 
     Prefer explicit ``pipeline_provider_name`` (job / RunContext). Otherwise ``settings.llm_provider``.
-
-    ``settings`` is typically :class:`~src.config.Settings` (``AppSettings``); typed as ``Any`` because
-    unit tests and the LLM harness pass duck-typed objects (e.g. ``MagicMock``) with the few fields read here.
     """
-    key = normalize_pipeline_provider_key(pipeline_provider_name, settings)
-    return resolve_llm_executor(key, settings), key
+    resolved = resolve_pipeline_provider_for_execution(pipeline_provider_name, settings)
+    return resolve_llm_executor(resolved.resolved_key, settings), resolved.resolved_key
 
 
 class PipelineProviderResolver:
-    """Thin façade: typed entrypoints over :func:`resolve_llm_executor_for_context`.
-
-    Not a second registry — no new provider keys or adapter wiring here. Callers that only need
-    the logical key can use :meth:`effective_provider_key`; full runs use :meth:`resolve_for_run`.
-    """
+    """Thin façade: typed entrypoints over provider resolution + registry."""
 
     @staticmethod
     def resolve_for_run(
@@ -68,14 +139,22 @@ class PipelineProviderResolver:
         pipeline_provider_name: str | None,
         settings: Any,
     ) -> ResolvedPipelineExecution:
-        """Resolve executor + key (see :func:`resolve_llm_executor_for_context` for ``settings`` typing note)."""
         executor, key = resolve_llm_executor_for_context(pipeline_provider_name, settings)
-        return ResolvedPipelineExecution(executor=executor, normalized_provider_key=key)
+        requested = (pipeline_provider_name or "").strip().lower() or None
+        return ResolvedPipelineExecution(
+            executor=executor,
+            normalized_provider_key=key,
+            requested_provider_key=requested,
+        )
 
     @staticmethod
     def effective_provider_key(
         pipeline_provider_name: str | None,
         settings: Any,
     ) -> str:
-        """Return the normalized logical provider key without instantiating an executor."""
-        return normalize_pipeline_provider_key(pipeline_provider_name, settings)
+        """Return normalized key without visual-capability preflight (multi-provider ordering only)."""
+        return resolve_pipeline_provider_for_execution(
+            pipeline_provider_name,
+            settings,
+            validate_visual_inventory=False,
+        ).resolved_key

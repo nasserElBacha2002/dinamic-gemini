@@ -81,7 +81,7 @@ def test_test_mode_delegates_to_resolve_start(mock_resolve) -> None:
 def test_production_logs_when_prompt_override_sent(
     mock_resolve, caplog: pytest.LogCaptureFixture
 ) -> None:
-    mock_resolve.return_value = ("p", "m", "global_v22")
+    mock_resolve.return_value = ("gemini", "m", "global_v22")
     caplog.set_level(logging.WARNING)
     resolve_process_aisle_execution_keys(
         _inv(mode=InventoryProcessingMode.PRODUCTION),

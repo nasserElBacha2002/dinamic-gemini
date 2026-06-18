@@ -236,7 +236,8 @@ class LlmProviderSettings(BaseModel):
             "Phase 4 — hybrid analysis provider strategy: single (default); multi_parallel "
             "(all listed providers must succeed); multi_sequential or multi_fallback (alias) "
             "for sequential fallback (first success only, not full sequential comparison). "
-            "Env: PIPELINE_ANALYSIS_EXECUTION_STRATEGY."
+            "This is **not** automatic per-job runtime failover — explicit job.provider_name is "
+            "never silently replaced by another vendor. Env: PIPELINE_ANALYSIS_EXECUTION_STRATEGY."
         ),
     )
     pipeline_analysis_extra_provider_keys: str = Field(

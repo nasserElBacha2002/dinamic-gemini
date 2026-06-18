@@ -339,6 +339,7 @@ from src.application.errors import (
     PositionDeletedError,
     PositionNotFoundError,
     PositionResultContextMismatchError,
+    ProcessingProviderIncompatibleWithJobError,
     ProcessingProviderNotConfiguredError,
     ProductNotFoundError,
     ReviewMutationNotAllowedError,
@@ -606,6 +607,7 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
     DeprecatedProcessingProviderError: _plain_http(422),
     InvalidProcessingModelError: _plain_http(422),
     InvalidProcessingPromptKeyError: _plain_http(422),
+    ProcessingProviderIncompatibleWithJobError: _plain_http(422),
     ProcessingProviderNotConfiguredError: _plain_http(422),
     BenchmarkCompareJobsMustDifferError: _structured_fixed(
         422,
