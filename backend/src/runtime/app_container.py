@@ -41,6 +41,7 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
+    ResultEvidenceRepository,
     ReviewActionRepository,
     SourceAssetRepository,
     SupplierPromptConfigRepository,
@@ -150,6 +151,7 @@ from src.runtime.container.repository_builders import (
     build_job_repository,
     build_position_repository,
     build_product_record_repository,
+    build_result_evidence_repository,
     build_review_action_repository,
     build_source_asset_repository,
     build_supplier_prompt_config_repository,
@@ -216,6 +218,7 @@ class AppContainer:
         self._position_repo: PositionRepository | None = None
         self._product_record_repo: ProductRecordRepository | None = None
         self._evidence_repo: EvidenceRepository | None = None
+        self._result_evidence_repo: ResultEvidenceRepository | None = None
         self._review_action_repo: ReviewActionRepository | None = None
         self._metrics_calculator: MetricsCalculator | None = None
         self._raw_label_repo: RawLabelRepository | None = None
@@ -304,6 +307,7 @@ class AppContainer:
         self._position_repo = None
         self._product_record_repo = None
         self._evidence_repo = None
+        self._result_evidence_repo = None
         self._review_action_repo = None
         self._metrics_calculator = None
         self._raw_label_repo = None
@@ -487,6 +491,14 @@ class AppContainer:
             return self._evidence_repo
         self._evidence_repo = build_evidence_repository(self._build_sql_repository_or_memory)
         return self._evidence_repo
+
+    def get_result_evidence_repo(self) -> ResultEvidenceRepository:
+        if self._result_evidence_repo is not None:
+            return self._result_evidence_repo
+        self._result_evidence_repo = build_result_evidence_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._result_evidence_repo
 
     def get_review_action_repo(self) -> ReviewActionRepository:
         if self._review_action_repo is not None:

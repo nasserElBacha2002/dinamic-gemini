@@ -32,6 +32,7 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
+    ResultEvidenceRepository,
     SourceAssetRepository,
     SupplierPromptConfigRepository,
     SupplierReferenceImageRepository,
@@ -111,6 +112,7 @@ from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_co
 from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.execution_log import ExecutionLogWriter, read_last_stage_error
 from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, PipelineRunResult
+from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
 from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
 
 logger = logging.getLogger(__name__)
@@ -134,6 +136,16 @@ def _supplier_prompt_resolution_failure_message(resolution: SupplierPromptResolu
             f"(Client → Supplier → Instrucciones / prompts)."
         )
     return f"{base}."
+
+
+def _prompt_composition_from_run_metadata(run_metadata: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(run_metadata, dict):
+        return None
+    comp = run_metadata.get(LLM_METADATA_KEY_PROMPT_COMPOSITION)
+    if isinstance(comp, dict):
+        return comp
+    legacy = run_metadata.get("prompt_composition")
+    return legacy if isinstance(legacy, dict) else None
 
 
 @dataclass(frozen=True)
@@ -193,6 +205,7 @@ class _V3FinalizeAfterPipelineParams:
     result: PipelineRunResult
     report_path: Path
     report: dict[str, Any]
+    job: Job
     cancellation_checkpoint: Callable[[str, str | None, str], None]
     cancel_event_emitted: dict[str, bool]
 
@@ -239,6 +252,7 @@ class V3JobExecutor:
         raw_label_repo: RawLabelRepository | None = None,
         normalized_label_repo: NormalizedLabelRepository | None = None,
         final_count_repo: FinalCountRepository | None = None,
+        result_evidence_repo: ResultEvidenceRepository | None = None,
         job_scoped_recompute_factory: JobScopedRecomputeFactory | None = None,
         job_result_uow_factory: JobResultUnitOfWorkFactory | None = None,
         recompute_consolidated_uc: RecomputeConsolidatedCountsUseCase | None = None,
@@ -292,19 +306,21 @@ class V3JobExecutor:
             raw_label_repo is None
             or normalized_label_repo is None
             or final_count_repo is None
+            or result_evidence_repo is None
             or aisle_repo is None
             or job_scoped_recompute_factory is None
             or job_result_uow_factory is None
         ):
             raise ValueError(
                 "V3JobExecutor requires raw_label_repo, normalized_label_repo, "
-                "final_count_repo, aisle_repo, job_scoped_recompute_factory, "
+                "final_count_repo, result_evidence_repo, aisle_repo, job_scoped_recompute_factory, "
                 "and job_result_uow_factory for PersistAisleResultUseCase"
             )
         self._persist_use_case = PersistAisleResultUseCase(
             position_repo=position_repo,
             product_record_repo=product_record_repo,
             evidence_repo=evidence_repo,
+            result_evidence_repo=result_evidence_repo,
             clock=clock,
             hybrid_mapper=default_map_hybrid_report_to_domain,
             aisle_repo=aisle_repo,
@@ -689,6 +705,9 @@ class V3JobExecutor:
                     report=p.report,
                     run_dir=p.run_dir,
                     run_id=RUN_ID,
+                    provider=(p.job.provider_name or "").strip() or None,
+                    model_name=(p.job.model_name or "").strip() or None,
+                    prompt_composition=_prompt_composition_from_run_metadata(p.result.run_metadata),
                 )
             )
         except PipelineCancellationRequestedError:
@@ -1303,6 +1322,7 @@ class V3JobExecutor:
                     result=result,
                     report_path=report_path,
                     report=report,
+                    job=job,
                     cancellation_checkpoint=cancellation_checkpoint,
                     cancel_event_emitted=rt.cancel_event_emitted,
                 )

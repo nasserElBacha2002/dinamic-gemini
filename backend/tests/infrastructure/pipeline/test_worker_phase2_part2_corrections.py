@@ -25,6 +25,9 @@ from src.infrastructure.persistence.memory_job_result_unit_of_work import (
 )
 from src.infrastructure.persistence.sql_job_result_unit_of_work import SqlJobResultUnitOfWorkFactory
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
+from src.infrastructure.repositories.memory_result_evidence_repository import (
+    MemoryResultEvidenceRepository,
+)
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
 from tests.support.worker_phase1.executor_harness import (
     ExecutorHarness,
@@ -43,6 +46,7 @@ def _memory_repos(harness: ExecutorHarness) -> JobResultRepositories:
         raw_label_repo=harness.raw_repo,
         normalized_label_repo=harness.norm_repo,
         final_count_repo=harness.final_repo,
+        result_evidence_repo=MemoryResultEvidenceRepository(),
     )
 
 
@@ -62,6 +66,7 @@ def test_p2_p2_c001_explicit_uow_required(tmp_path: Path) -> None:
             raw_label_repo=harness.raw_repo,
             normalized_label_repo=harness.norm_repo,
             final_count_repo=harness.final_repo,
+            result_evidence_repo=MemoryResultEvidenceRepository(),
             job_scoped_recompute_factory=DefaultJobScopedRecomputeFactory(),
             job_result_uow_factory=None,  # type: ignore[arg-type]
         )
@@ -88,6 +93,7 @@ def test_p2_p2_c003_sql_memory_factory_mismatch_rejected(tmp_path: Path) -> None
         raw_label_repo=harness.raw_repo,
         normalized_label_repo=harness.norm_repo,
         final_count_repo=harness.final_repo,
+        result_evidence_repo=MemoryResultEvidenceRepository(),
     )
     with pytest.raises(ValueError, match="MemoryJobResultUnitOfWorkFactory requires memory"):
         MemoryJobResultUnitOfWorkFactory()(sql_repos)
@@ -258,7 +264,9 @@ def test_p2_p2_c012_sql_shared_connection() -> None:
     from src.infrastructure.repositories.sql_product_record_repository import (
         SqlProductRecordRepository,
     )
-    from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
+    from src.infrastructure.repositories.sql_result_evidence_repository import (
+        SqlResultEvidenceRepository,
+    )
 
     client = SqlServerClient("DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost;DATABASE=test;")
     harness = ExecutorHarness.build(Path("/tmp/x"), job_id="j")
@@ -273,6 +281,7 @@ def test_p2_p2_c012_sql_shared_connection() -> None:
         raw_label_repo=SqlRawLabelRepository(client),
         normalized_label_repo=SqlNormalizedLabelRepository(client),
         final_count_repo=SqlFinalCountRepository(client),
+        result_evidence_repo=SqlResultEvidenceRepository(client),
     )
     assert_sql_job_result_bundle(sql_bundle)
 

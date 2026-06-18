@@ -31,6 +31,7 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
+    ResultEvidenceRepository,
 )
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
@@ -49,6 +50,9 @@ class PersistAisleResultCommand:
     report: dict
     run_dir: Path
     run_id: str = "run"
+    provider: str | None = None
+    model_name: str | None = None
+    prompt_composition: dict | None = None
 
 
 class PersistAisleResultUseCase:
@@ -57,6 +61,7 @@ class PersistAisleResultUseCase:
         position_repo: PositionRepository,
         product_record_repo: ProductRecordRepository,
         evidence_repo: EvidenceRepository,
+        result_evidence_repo: ResultEvidenceRepository,
         clock: Clock,
         hybrid_mapper: HybridReportToDomainMapper,
         aisle_repo: AisleRepository,
@@ -78,6 +83,7 @@ class PersistAisleResultUseCase:
         self._position_repo = position_repo
         self._product_record_repo = product_record_repo
         self._evidence_repo = evidence_repo
+        self._result_evidence_repo = result_evidence_repo
         self._clock = clock
         self._hybrid_mapper = hybrid_mapper
         self._aisle_repo = aisle_repo
@@ -106,6 +112,7 @@ class PersistAisleResultUseCase:
             raw_label_repo=self._raw_label_repo,
             normalized_label_repo=self._normalized_label_repo,
             final_count_repo=self._final_count_repo,
+            result_evidence_repo=self._result_evidence_repo,
         )
 
         with self._uow_factory(base_repos) as uow:
@@ -169,6 +176,9 @@ class PersistAisleResultUseCase:
             job_id=command.job_id,
             now=now,
             inventory_id=inventory_id,
+            provider=command.provider,
+            model_name=command.model_name,
+            prompt_composition=command.prompt_composition,
         )
 
     def _raise_if_mapped_lengths_mismatch(
@@ -226,6 +236,9 @@ class PersistAisleResultUseCase:
 
         if mapped.raw_labels:
             repos.raw_label_repo.save_many(mapped.raw_labels)
+
+        if mapped.result_evidence_records:
+            repos.result_evidence_repo.save_many(mapped.result_evidence_records)
 
     def _recompute_job_scoped(
         self,

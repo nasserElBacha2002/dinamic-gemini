@@ -18,6 +18,10 @@ def default_map_hybrid_report_to_domain(
     job_id: str,
     now: datetime,
     inventory_id: str,
+    *,
+    provider: str | None = None,
+    model_name: str | None = None,
+    prompt_composition: dict[str, Any] | None = None,
 ) -> MappedAisleResult:
     return map_hybrid_report_to_domain(
         aisle_id=aisle_id,
@@ -27,4 +31,7 @@ def default_map_hybrid_report_to_domain(
         job_id=job_id,
         now=now,
         inventory_id=inventory_id,
+        provider=provider,
+        model_name=model_name,
+        prompt_composition=prompt_composition,
     )

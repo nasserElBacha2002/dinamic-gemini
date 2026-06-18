@@ -22,6 +22,9 @@ from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
     PersistAisleResultUseCase,
 )
+from src.infrastructure.repositories.memory_result_evidence_repository import (
+    MemoryResultEvidenceRepository,
+)
 from src.domain.jobs.artifact_policy import (
     ARTIFACT_KIND_EXECUTION_LOG,
     ARTIFACT_KIND_HYBRID_REPORT_CSV,
@@ -124,6 +127,7 @@ def _persist_use_case(harness: ExecutorHarness, **overrides) -> PersistAisleResu
         raw_label_repo=harness.raw_repo,
         normalized_label_repo=harness.norm_repo,
         final_count_repo=harness.final_repo,
+        result_evidence_repo=MemoryResultEvidenceRepository(),
         job_scoped_recompute_factory=overrides.pop(
             "job_scoped_recompute_factory", DefaultJobScopedRecomputeFactory()
         ),

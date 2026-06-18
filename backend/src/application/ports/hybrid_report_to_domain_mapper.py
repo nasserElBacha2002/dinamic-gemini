@@ -19,6 +19,10 @@ class HybridReportToDomainMapper(Protocol):
         job_id: str,
         now: datetime,
         inventory_id: str,
+        *,
+        provider: str | None = None,
+        model_name: str | None = None,
+        prompt_composition: dict[str, Any] | None = None,
     ) -> MappedAisleResult: ...
 
 

@@ -31,6 +31,9 @@ from src.infrastructure.repositories.sql_product_record_repository import (
     SqlProductRecordRepository,
 )
 from src.infrastructure.repositories.sql_raw_label_repository import SqlRawLabelRepository
+from src.infrastructure.repositories.sql_result_evidence_repository import (
+    SqlResultEvidenceRepository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +98,7 @@ class SqlJobResultUnitOfWork:
             raw_label_repo=SqlRawLabelRepository(self._client, connection=conn),
             normalized_label_repo=SqlNormalizedLabelRepository(self._client, connection=conn),
             final_count_repo=SqlFinalCountRepository(self._client, connection=conn),
+            result_evidence_repo=SqlResultEvidenceRepository(self._client, connection=conn),
         )
         self._scope_store = SqlJobResultScopeStore(self._tx_repos, connection=conn)
         stage_store = SqlFinalizationStageStore(self._client, connection=conn)

@@ -7,7 +7,10 @@ from typing import Any
 
 from src.application.ports.job_result_scope_store import JobResultScopeStore, JobScopeRowCounts
 from src.application.ports.job_result_unit_of_work import JobResultRepositories
-from src.application.ports.repositories import EvidenceRepository, ProductRecordRepository
+from src.application.ports.repositories import EvidenceRepository, ProductRecordRepository, ResultEvidenceRepository
+from src.infrastructure.repositories.memory_result_evidence_repository import (
+    MemoryResultEvidenceRepository,
+)
 from src.infrastructure.repositories.memory_final_count_repository import MemoryFinalCountRepository
 from src.infrastructure.repositories.memory_normalized_label_repository import (
     MemoryNormalizedLabelRepository,
@@ -42,6 +45,7 @@ class MemoryJobResultScopeStore(JobResultScopeStore):
         final_counts = list(
             repos.final_count_repo.list_for_scope(inventory_id, aisle_id, job_id=job_id)
         )
+        result_evidence = list(repos.result_evidence_repo.list_by_job_id(job_id))
         return JobScopeRowCounts(
             positions=len(positions),
             products=len(products),
@@ -49,6 +53,7 @@ class MemoryJobResultScopeStore(JobResultScopeStore):
             raw_labels=len(raw_labels),
             normalized_labels=len(norm_labels),
             final_counts=len(final_counts),
+            result_evidence=len(result_evidence),
         )
 
     def delete_scope(
@@ -88,9 +93,12 @@ class MemoryJobResultScopeStore(JobResultScopeStore):
         if isinstance(repos.final_count_repo, MemoryFinalCountRepository):
             repos.final_count_repo.replace_for_scope(inventory_id, aisle_id, job_id=job_id)
 
+        if isinstance(repos.result_evidence_repo, MemoryResultEvidenceRepository):
+            repos.result_evidence_repo.delete_by_job_id(job_id)
+
         logger.info(
             "memory_job_result_scope deleted inventory_id=%s aisle_id=%s job_id=%s "
-            "positions=%d products=%d evidence=%d raw=%d normalized=%d final=%d",
+            "positions=%d products=%d evidence=%d raw=%d normalized=%d final=%d result_evidence=%d",
             inventory_id,
             aisle_id,
             job_id,
@@ -100,6 +108,7 @@ class MemoryJobResultScopeStore(JobResultScopeStore):
             before.raw_labels,
             before.normalized_labels,
             before.final_counts,
+            before.result_evidence,
         )
         return before
 

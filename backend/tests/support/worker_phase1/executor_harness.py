@@ -351,6 +351,13 @@ class ExecutorHarness:
             raw_label_repo=kwargs.get("raw_repo", self.raw_repo),
             normalized_label_repo=kwargs.get("norm_repo", self.norm_repo),
             final_count_repo=kwargs.get("final_repo", self.final_repo),
+            result_evidence_repo=kwargs.get(
+                "result_evidence_repo",
+                __import__(
+                    "src.infrastructure.repositories.memory_result_evidence_repository",
+                    fromlist=["MemoryResultEvidenceRepository"],
+                ).MemoryResultEvidenceRepository(),
+            ),
             job_scoped_recompute_factory=kwargs.get(
                 "job_scoped_recompute_factory", DefaultJobScopedRecomputeFactory()
             ),
@@ -427,6 +434,13 @@ class ExecutorHarness:
             position_repo=kwargs.get("position_repo", self.position_repo),
             product_record_repo=kwargs.get("product_record_repo", self.product_repo),
             evidence_repo=kwargs.get("evidence_repo", self.evidence_repo),
+            result_evidence_repo=kwargs.get(
+                "result_evidence_repo",
+                __import__(
+                    "src.infrastructure.repositories.memory_result_evidence_repository",
+                    fromlist=["MemoryResultEvidenceRepository"],
+                ).MemoryResultEvidenceRepository(),
+            ),
             clock=kwargs.get("clock", FixedClock(self.now)),
             hybrid_mapper=kwargs.get(
                 "hybrid_mapper", default_map_hybrid_report_to_domain

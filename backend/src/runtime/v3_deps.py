@@ -28,6 +28,7 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
+    ResultEvidenceRepository,
     ReviewActionRepository,
     SourceAssetRepository,
     SupplierPromptConfigRepository,
@@ -84,6 +85,10 @@ def get_product_record_repo() -> ProductRecordRepository:
 
 def get_evidence_repo() -> EvidenceRepository:
     return get_app_container().get_evidence_repo()
+
+
+def get_result_evidence_repo() -> ResultEvidenceRepository:
+    return get_app_container().get_result_evidence_repo()
 
 
 def get_review_action_repo() -> ReviewActionRepository:
