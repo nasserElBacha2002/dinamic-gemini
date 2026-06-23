@@ -60,6 +60,7 @@ def _replace_executor_state(executor: V3JobExecutor, spy_state: Any) -> None:
     executor._cancellation_coordinator._state = spy_state
     executor._pipeline_execution_service._state = spy_state
     executor._finalization_service._state = spy_state
+    executor._failure_handler._state = spy_state
 
 
 def _one_photo_asset_repo(aisle_id: str, now: datetime) -> type:

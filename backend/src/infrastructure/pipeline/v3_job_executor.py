@@ -1,8 +1,9 @@
 """
 V3 process_aisle job executor — Épica 6.
 
-Thin coordinator: resolves aisle assets, delegates pipeline input + hybrid run, persists domain
-results, durable artifacts, and job/aisle status via collaborators (Phase 2 split).
+Thin orchestrator delegating to:
+V3JobPreparationService, V3JobMonitoringService, V3CancellationCoordinator,
+V3PipelineExecutionService, V3JobFinalizationService, V3WorkerFailureHandler.
 """
 
 from __future__ import annotations
@@ -98,12 +99,15 @@ from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
     V3ProcessAislePipelineRunner,
     visual_reference_failure_metadata,
 )
+from src.infrastructure.pipeline.v3_worker_failure_handler import (
+    V3WorkerFailureHandler,
+    V3WorkerFailureRequest,
+)
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
     DEFAULT_V3_WORKER_RUN_SEGMENT,
 )
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.errors import PipelineCancellationRequestedError
-from src.pipeline.execution_log import ExecutionLogWriter
 from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
 
 logger = logging.getLogger(__name__)
@@ -310,6 +314,7 @@ class V3JobExecutor:
             artifact_outbox_store=artifact_publication_outbox_store,
             stage_recorder=self._stage_recorder,
         )
+        self._failure_handler = V3WorkerFailureHandler(state_service=self._state)
 
     @property
     def _artifact_dispatcher(self) -> ArtifactPublicationDispatcher | None:
@@ -568,22 +573,14 @@ class V3JobExecutor:
                     cancel_event_emitted=rt.cancel_event_emitted,
                 )
             except Exception as e:
-                logger.exception("v3 job %s failed: %s", job_id, e)
-                if rt.run_dir.is_dir():
-                    try:
-                        err_log = ExecutionLogWriter(rt.run_dir)
-                        err_log.error(
-                            "Pipeline", f"Job failed: {e}", payload={"error": str(e)[:500]}
-                        )
-                    except Exception:
-                        pass
-                self._state.fail_job_and_aisle(job_id, aisle, str(e))
-                logger.info(
-                    "v3 mark failed: job_id=%s inventory_id=%s aisle_id=%s error=%s",
-                    job_id,
-                    aisle.inventory_id,
-                    aisle_id,
-                    str(e),
+                return self._failure_handler.handle_unexpected_failure(
+                    V3WorkerFailureRequest(
+                        job_id=job_id,
+                        aisle=aisle,
+                        aisle_id=aisle_id,
+                        run_dir=rt.run_dir,
+                        error=e,
+                    )
                 )
 
         return True
