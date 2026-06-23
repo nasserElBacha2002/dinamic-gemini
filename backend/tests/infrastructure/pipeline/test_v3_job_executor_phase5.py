@@ -1046,7 +1046,7 @@ def test_execute_passes_resolved_visual_reference_context_to_pipeline(tmp_path: 
         with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
             mock_settings.return_value.output_dir = str(base_path)
             with patch(
-                "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline",
+                "src.infrastructure.pipeline.v3_pipeline_execution_service.HybridInventoryPipeline",
                 return_value=FakePipeline(),
             ):
                 handled = executor.execute(base_path, job_id)
@@ -1278,7 +1278,7 @@ def test_persist_failure_sets_error_message_with_persist_prefix() -> None:
         with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
             mock_settings.return_value.output_dir = str(base_path)
             with patch(
-                "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
+                "src.infrastructure.pipeline.v3_pipeline_execution_service.HybridInventoryPipeline"
             ) as mock_pipeline_cls:
                 mock_pipeline_cls.return_value.process_video.return_value = PipelineRunResult(
                     exit_code=0, run_metadata=None
@@ -1387,7 +1387,7 @@ def test_execute_rejects_running_status_reentry() -> None:
         with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
             mock_settings.return_value.output_dir = str(base_path)
             with patch(
-                "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
+                "src.infrastructure.pipeline.v3_pipeline_execution_service.HybridInventoryPipeline"
             ) as mock_pipeline_cls:
                 mock_pipeline_cls.return_value.process_video.return_value = PipelineRunResult(
                     exit_code=0, run_metadata=None
@@ -1494,7 +1494,7 @@ def test_execute_cooperatively_cancels_when_cancel_requested_detected(tmp_path: 
         with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as mock_settings:
             mock_settings.return_value.output_dir = str(tmp_path)
             with patch(
-                "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
+                "src.infrastructure.pipeline.v3_pipeline_execution_service.HybridInventoryPipeline"
             ) as mock_pipeline_cls:
                 mock_pipeline_cls.return_value.process_video.side_effect = process_video_side_effect
                 with patch.object(
@@ -1644,7 +1644,7 @@ def test_execute_durable_artifact_upload_failure_marks_job_failed() -> None:
                 ) as mock_settings:
                     mock_settings.return_value.output_dir = str(base_path)
                     with patch(
-                        "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
+                        "src.infrastructure.pipeline.v3_pipeline_execution_service.HybridInventoryPipeline"
                     ) as mock_pipeline_cls:
                         mock_pipeline_cls.return_value.process_video.return_value = (
                             PipelineRunResult(exit_code=0, run_metadata=None)
@@ -1768,7 +1768,7 @@ def test_execute_durable_upload_failure_after_persist_partial_finalization_expli
                 ) as mock_settings:
                     mock_settings.return_value.output_dir = str(base_path)
                     with patch(
-                        "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
+                        "src.infrastructure.pipeline.v3_pipeline_execution_service.HybridInventoryPipeline"
                     ) as mock_pipeline_cls:
                         mock_pipeline_cls.return_value.process_video.return_value = (
                             PipelineRunResult(exit_code=0, run_metadata=None)

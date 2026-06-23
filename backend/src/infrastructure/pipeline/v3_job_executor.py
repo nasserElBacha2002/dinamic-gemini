@@ -7,7 +7,6 @@ results, durable artifacts, and job/aisle status via collaborators (Phase 2 spli
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -57,15 +56,10 @@ from src.application.services.finalization_projection_service import (
     FinalizationProjectionService,
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
-from src.application.services.job_engine_params import coerce_prompt_parity_mode
 from src.application.services.operational_result_promotion_service import (
     OperationalResultPromotionService,
 )
-from src.application.services.supplier_prompt_resolver import (
-    SupplierPromptResolution,
-    SupplierPromptResolutionErrorCode,
-    SupplierPromptResolver,
-)
+from src.application.services.supplier_prompt_resolver import SupplierPromptResolver
 from src.application.services.supplier_reference_image_resolver import (
     SupplierReferenceImageResolver,
 )
@@ -112,6 +106,10 @@ from src.infrastructure.pipeline.v3_job_preparation_service import (
     V3JobPreparationService,
     V3PreparedJob,
 )
+from src.infrastructure.pipeline.v3_pipeline_execution_service import (
+    V3PipelineExecutionRequest,
+    V3PipelineExecutionService,
+)
 from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
     V3ProcessAislePipelineRunner,
     visual_reference_failure_metadata,
@@ -122,31 +120,14 @@ from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.errors import PipelineCancellationRequestedError
-from src.pipeline.execution_log import ExecutionLogWriter, read_last_stage_error
-from src.pipeline.hybrid_inventory_pipeline import HybridInventoryPipeline, PipelineRunResult
+from src.pipeline.execution_log import ExecutionLogWriter
+from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
 from src.pipeline.run_metadata import RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT
 
 logger = logging.getLogger(__name__)
 
 # Pipeline/output directory segment under {base}/{job_id}/; must match DEFAULT_V3_WORKER_RUN_SEGMENT.
 RUN_ID = DEFAULT_V3_WORKER_RUN_SEGMENT
-
-
-def _supplier_prompt_resolution_failure_message(resolution: SupplierPromptResolution) -> str:
-    """Human-readable job failure text for observability (worker logs + job row)."""
-    code = resolution.error_code or "UNKNOWN"
-    base = (
-        f"Supplier prompt resolution failed ({code}) "
-        f"inventory_id={resolution.inventory_id} aisle_id={resolution.aisle_id}"
-    )
-    if code == SupplierPromptResolutionErrorCode.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG:
-        return (
-            f"{base}: No active supplier_prompt_configs for client_supplier_id="
-            f"{resolution.client_supplier_id!r} provider={resolution.provider_name!r} "
-            f"model={resolution.model_name!r}. Configure and activate a supplier prompt "
-            f"(Client → Supplier → Instrucciones / prompts)."
-        )
-    return f"{base}."
 
 
 def _prompt_composition_from_run_metadata(run_metadata: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -170,28 +151,6 @@ class _V3PipelineInputRequest:
     v3_base: Path
     job_dir: Path
     settings: Settings
-
-
-@dataclass(frozen=True)
-class _V3HybridRunParams:
-    """Arguments for hybrid pipeline invocation + report load (B8.4 PLR0913)."""
-
-    base_path: Path
-    job_id: str
-    job: Job
-    aisle: Aisle
-    aisle_id: str
-    run_dir: Path
-    settings: Settings
-    log: Any
-    pipeline_video_path: str
-    job_input: Any
-    analysis_context: AnalysisContext
-    execution_observer: Callable[
-        [str, str | None, str, dict[str, Any] | None],
-        None,
-    ]
-    cancellation_checkpoint: Callable[[str, str | None, str], None]
 
 
 @dataclass(frozen=True)
@@ -268,14 +227,14 @@ class V3JobExecutor:
         self._artifacts = V3ExecutionArtifactsService(artifact_store)
         supplier_resolver = SupplierReferenceImageResolver(supplier_reference_image_repo)
         context_builder = AisleAnalysisContextBuilder(supplier_resolver)
-        self._pipeline_runner = V3ProcessAislePipelineRunner(
+        self.__pipeline_runner = V3ProcessAislePipelineRunner(
             supplier_reference_image_repo=supplier_reference_image_repo,
             artifact_store=artifact_store,
             context_builder=context_builder,
         )
-        self._supplier_prompt_resolver: SupplierPromptResolver | None = None
+        self.__supplier_prompt_resolver: SupplierPromptResolver | None = None
         if client_supplier_repo is not None and supplier_prompt_config_repo is not None:
-            self._supplier_prompt_resolver = SupplierPromptResolver(
+            self.__supplier_prompt_resolver = SupplierPromptResolver(
                 inventory_repo=inventory_repo,
                 aisle_repo=aisle_repo,
                 client_supplier_repo=client_supplier_repo,
@@ -381,6 +340,34 @@ class V3JobExecutor:
         )
         self._monitoring_service = V3JobMonitoringService(state_service=self._state)
         self._cancellation_coordinator = V3CancellationCoordinator(state_service=self._state)
+        self._pipeline_execution_service = V3PipelineExecutionService(
+            state_service=self._state,
+            pipeline_runner=self._pipeline_runner,
+            supplier_prompt_resolver=self._supplier_prompt_resolver,
+        )
+
+    @property
+    def _pipeline_runner(self) -> V3ProcessAislePipelineRunner:
+        # Compatibility bridge for tests/callers that override executor._pipeline_runner.
+        # Keep the extracted pipeline execution service in sync until collaborators are injected directly.
+        return self.__pipeline_runner
+
+    @_pipeline_runner.setter
+    def _pipeline_runner(self, runner: V3ProcessAislePipelineRunner) -> None:
+        self.__pipeline_runner = runner
+        if hasattr(self, "_pipeline_execution_service"):
+            self._pipeline_execution_service._pipeline_runner = runner
+
+    @property
+    def _supplier_prompt_resolver(self) -> SupplierPromptResolver | None:
+        return self.__supplier_prompt_resolver
+
+    @_supplier_prompt_resolver.setter
+    def _supplier_prompt_resolver(self, resolver: SupplierPromptResolver | None) -> None:
+        # Compatibility bridge for tests/callers that override executor._supplier_prompt_resolver.
+        self.__supplier_prompt_resolver = resolver
+        if hasattr(self, "_pipeline_execution_service"):
+            self._pipeline_execution_service._supplier_prompt_resolver = resolver
 
     def execute(self, base_path: Path, job_id: str) -> bool:
         """
@@ -452,109 +439,6 @@ class V3JobExecutor:
 
         assert analysis_context is not None
         return analysis_context, job_input, video_path
-
-    def _v3_hybrid_run_and_load_report(
-        self, p: _V3HybridRunParams
-    ) -> tuple[dict[str, Any], PipelineRunResult, Path] | None:
-        """Run hybrid pipeline and load hybrid_report.json. None => failure handled (caller returns True)."""
-        p.cancellation_checkpoint(
-            "Pipeline",
-            "pre_pipeline",
-            "Job canceled before pipeline execution",
-        )
-        logger.info(
-            "v3 executor start: job_id=%s job_type=%s target_type=%s target_id=%s inventory_id=%s aisle_id=%s",
-            p.job_id,
-            p.job.job_type,
-            p.job.target_type,
-            p.job.target_id,
-            p.aisle.inventory_id,
-            p.aisle_id,
-        )
-        pipeline = HybridInventoryPipeline()
-        pipeline_provider_name = (p.job.provider_name or "").strip() or None
-        job_model = (p.job.model_name or "").strip() or None
-        job_prompt = (p.job.prompt_key or "").strip() or None
-        job_prompt_version = (p.job.prompt_version or "").strip() or None
-        job_prompt_parity_mode = coerce_prompt_parity_mode(p.job.engine_params_json)
-        supplier_prompt_resolution = None
-        spr = self._supplier_prompt_resolver
-        if spr is not None:
-            supplier_prompt_resolution = spr.resolve(
-                inventory_id=p.aisle.inventory_id,
-                aisle_id=p.aisle_id,
-                provider_name=pipeline_provider_name,
-                model_name=job_model,
-                allow_missing_supplier_prompt_fallback=bool(
-                    getattr(p.settings, "v3_allow_missing_supplier_prompt_fallback", False)
-                ),
-            )
-            if supplier_prompt_resolution.resolution_status == "error":
-                err_code = supplier_prompt_resolution.error_code or "UNKNOWN"
-                logger.error(
-                    "v3 supplier prompt resolution error job_id=%s inventory_id=%s aisle_id=%s code=%s",
-                    p.job_id,
-                    p.aisle.inventory_id,
-                    p.aisle_id,
-                    err_code,
-                )
-                self._state.fail_job_and_aisle(
-                    p.job_id,
-                    p.aisle,
-                    _supplier_prompt_resolution_failure_message(supplier_prompt_resolution),
-                )
-                return None
-        result = self._pipeline_runner.run_hybrid_pipeline(
-            pipeline=pipeline,
-            video_path=p.pipeline_video_path,
-            job_id=p.job_id,
-            base_path=p.base_path,
-            run_id=RUN_ID,
-            settings=p.settings,
-            job_input=p.job_input,
-            analysis_context=p.analysis_context,
-            log=p.log,
-            execution_observer=p.execution_observer,
-            cancellation_checkpoint=p.cancellation_checkpoint,
-            pipeline_provider_name=pipeline_provider_name,
-            job_model_name=job_model,
-            job_prompt_key=job_prompt,
-            job_prompt_version=job_prompt_version,
-            job_prompt_parity_mode=job_prompt_parity_mode,
-            supplier_prompt_resolution=supplier_prompt_resolution,
-        )
-        logger.info(
-            "v3 executor finished: job_id=%s exit_code=%s inventory_id=%s aisle_id=%s",
-            p.job_id,
-            result.exit_code,
-            p.aisle.inventory_id,
-            p.aisle_id,
-        )
-        if result.exit_code != 0:
-            last_error = read_last_stage_error(p.run_dir)
-            if last_error:
-                error_message = f"{last_error} (exit code {result.exit_code})"
-            else:
-                error_message = f"Pipeline exited with code {result.exit_code}"
-            self._state.fail_job_and_aisle(p.job_id, p.aisle, error_message)
-            return None
-
-        p.cancellation_checkpoint(
-            "Pipeline",
-            "post_pipeline",
-            "Job canceled after pipeline execution",
-        )
-
-        report_path = p.run_dir / "hybrid_report.json"
-        if not report_path.exists():
-            self._state.fail_job_and_aisle(
-                p.job_id, p.aisle, "Reporting error: Pipeline did not produce hybrid_report.json"
-            )
-            return None
-
-        with open(report_path, encoding="utf-8") as f:
-            report = json.load(f)
-        return report, result, report_path
 
     def _v3_persist_durables_and_mark_success(self, p: _V3FinalizeAfterPipelineParams) -> bool:
         """Persist domain, upload durables, finalize success. True => caller must return True (failure)."""
@@ -1230,8 +1114,8 @@ class V3JobExecutor:
             )
 
             try:
-                hybrid_out = self._v3_hybrid_run_and_load_report(
-                    _V3HybridRunParams(
+                pipeline_out = self._pipeline_execution_service.run(
+                    V3PipelineExecutionRequest(
                         base_path=base_path,
                         job_id=job_id,
                         job=job,
@@ -1247,9 +1131,11 @@ class V3JobExecutor:
                         cancellation_checkpoint=cancellation_checkpoint,
                     )
                 )
-                if hybrid_out is None:
+                if pipeline_out is None:
                     return True
-                report, result, report_path = hybrid_out
+                report = pipeline_out.report
+                result = pipeline_out.pipeline_result
+                report_path = pipeline_out.report_path
 
                 # Finalization order (intentional):
                 # 1) PersistAisleResult — domain rows (positions, product_records, evidences, …).

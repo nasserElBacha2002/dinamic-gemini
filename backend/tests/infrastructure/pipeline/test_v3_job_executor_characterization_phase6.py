@@ -57,6 +57,8 @@ def _replace_executor_state(executor: V3JobExecutor, spy_state: Any) -> None:
     executor._state = spy_state
     executor._preparation_service._state = spy_state
     executor._monitoring_service._state = spy_state
+    executor._cancellation_coordinator._state = spy_state
+    executor._pipeline_execution_service._state = spy_state
 
 
 def _one_photo_asset_repo(aisle_id: str, now: datetime) -> type:
@@ -236,7 +238,7 @@ def test_characterization_successful_execution_call_order(tmp_path: Path) -> Non
                 ms.return_value.output_dir = str(tmp_path)
                 ms.return_value.artifact_storage_legacy_local_read_enabled = True
                 with patch(
-                    "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline",
+                    "src.infrastructure.pipeline.v3_pipeline_execution_service.HybridInventoryPipeline",
                     return_value=_FakePipeline(),
                 ):
                     assert executor.execute(tmp_path, job_id) is True

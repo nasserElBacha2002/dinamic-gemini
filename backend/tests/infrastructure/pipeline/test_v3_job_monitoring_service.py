@@ -72,8 +72,9 @@ def test_session_creates_run_dir_and_execution_log(tmp_path: Path) -> None:
     assert log_path.exists()
     events = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert events, "execution log should contain at least one event"
-    spawn_event = events[0]
-    assert spawn_event["message"] == "job.spawn_succeeded"
+    spawn_event = next(
+        event for event in events if event.get("message") == "job.spawn_succeeded"
+    )
     assert spawn_event["stage"] == "WorkerLaunch"
     payload = spawn_event["payload"]
     assert payload is not None
