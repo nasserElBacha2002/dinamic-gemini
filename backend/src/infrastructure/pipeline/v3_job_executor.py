@@ -85,7 +85,7 @@ from src.domain.jobs.artifact_policy import (
     ARTIFACT_KIND_TRACEABILITY_MANIFEST,
     is_required_artifact_kind,
 )
-from src.domain.jobs.entities import Job, JobStatus
+from src.domain.jobs.entities import Job
 from src.domain.jobs.finalization import (
     CurrentFinalizationStep,
     FinalizationErrorCode,
@@ -104,6 +104,10 @@ from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
 from src.infrastructure.pipeline.v3_execution_artifacts_service import V3ExecutionArtifactsService
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
+from src.infrastructure.pipeline.v3_job_preparation_service import (
+    V3JobPreparationService,
+    V3PreparedJob,
+)
 from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
     V3ProcessAislePipelineRunner,
     visual_reference_failure_metadata,
@@ -112,7 +116,6 @@ from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
     DEFAULT_V3_WORKER_RUN_SEGMENT,
 )
 from src.io.logging import setup_logger
-from src.jobs.worker_bootstrap import append_worker_bootstrap_event, checkpoint_v3_job_bootstrap
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.errors import PipelineCancellationRequestedError
@@ -151,16 +154,6 @@ def _prompt_composition_from_run_metadata(run_metadata: dict[str, Any] | None) -
         return comp
     legacy = run_metadata.get("prompt_composition")
     return legacy if isinstance(legacy, dict) else None
-
-
-@dataclass(frozen=True)
-class _V3PreparedJob:
-    """Gate success: job marked running and ready for pipeline + persistence."""
-
-    job: Job
-    aisle: Aisle
-    aisle_id: str
-    assets: list[Any]
 
 
 @dataclass(frozen=True)
@@ -401,111 +394,24 @@ class V3JobExecutor:
                 max_attempts=artifact_publication_max_attempts,
                 backoff_seconds=artifact_publication_backoff_seconds,
             )
+        self._preparation_service = V3JobPreparationService(
+            job_repo=job_repo,
+            aisle_repo=aisle_repo,
+            source_asset_repo=source_asset_repo,
+            state_service=self._state,
+            clock=clock,
+        )
 
     def execute(self, base_path: Path, job_id: str) -> bool:
         """
         If job_id is a v3 process_aisle job: load aisle/assets, run pipeline, persist, update status; return True.
         Otherwise return False (caller may run legacy flow).
         """
-        gate = self._v3_prepare_dispatch(job_id)
-        if isinstance(gate, bool):
-            return gate
-        return self._v3_run_job_body(base_path, job_id, gate)
-
-    def _v3_should_skip_for_terminal_job_status(self, job: Job, job_id: str) -> bool:
-        """True when execute() must return True without running the pipeline body."""
-        if job.status == JobStatus.CANCELED:
-            logger.info("v3 job %s already canceled, skip", job_id)
-            return True
-        if job.status == JobStatus.CANCEL_REQUESTED:
-            logger.info("v3 job %s cancel requested before start; marking canceled", job_id)
-            self._state.cancel_job(job, "Job canceled before execution", now=self._clock.now())
-            return True
-        if job.status != JobStatus.STARTING:
-            logger.warning(
-                "v3 job %s invalid status for execution (status=%s), skip", job_id, job.status.value
-            )
-            return True
-        return False
-
-    def _v3_prepare_dispatch(self, job_id: str) -> bool | _V3PreparedJob:
-        """Load job/aisle/assets; return False if not v3, True if terminal skip, else prepared context."""
-        job = self._job_repo.get_by_id(job_id)
-        logger.info("v3 dispatch: job_id=%s found=%s", job_id, job is not None)
-        if job is None or job.job_type != "process_aisle":
-            if job is not None:
-                logger.info(
-                    "v3 dispatch skipped: job_id=%s job_type=%s target_type=%s target_id=%s",
-                    job_id,
-                    job.job_type,
-                    job.target_type,
-                    job.target_id,
-                )
-            return False
-        logger.info(
-            "v3 dispatch accepted: job_id=%s job_type=%s target_type=%s target_id=%s status=%s",
-            job_id,
-            job.job_type,
-            job.target_type,
-            job.target_id,
-            job.status.value,
-        )
-        if self._v3_should_skip_for_terminal_job_status(job, job_id):
-            return True
-
-        payload = job.payload_json or {}
-        aisle_id = payload.get("aisle_id")
-        if not aisle_id:
-            self._state.fail_job(job_id, "Missing aisle_id in payload")
-            return True
-
-        aisle = self._aisle_repo.get_by_id(aisle_id)
-        if aisle is None:
-            self._state.fail_job(job_id, f"Aisle not found: {aisle_id}")
-            return True
-        logger.info(
-            "v3 target resolved: job_id=%s job_type=%s target_type=%s target_id=%s inventory_id=%s aisle_id=%s",
-            job_id,
-            job.job_type,
-            job.target_type,
-            job.target_id,
-            aisle.inventory_id,
-            aisle_id,
-        )
-        assets = list(self._source_asset_repo.list_by_aisle(aisle_id))
-        checkpoint_v3_job_bootstrap(
-            job_id=job_id,
-            execution_id=job.execution_id,
-            substep="executor_bootstrap_completed",
-        )
-        if not assets:
-            self._state.fail_job_and_aisle(job_id, aisle, "No source assets for aisle")
-            return True
-
-        now = self._clock.now()
-        logger.info(
-            "v3 mark running: job_id=%s job_type=%s target_type=%s target_id=%s inventory_id=%s aisle_id=%s",
-            job_id,
-            job.job_type,
-            job.target_type,
-            job.target_id,
-            aisle.inventory_id,
-            aisle_id,
-        )
-        append_worker_bootstrap_event(
-            job_id=job_id,
-            execution_id=job.execution_id,
-            event="worker.starting_to_running_transition_started",
-            details={"inventory_id": aisle.inventory_id, "aisle_id": aisle_id},
-        )
-        self._state.mark_running(job_id, aisle, now)
-        append_worker_bootstrap_event(
-            job_id=job_id,
-            execution_id=job.execution_id,
-            event="worker.starting_to_running_transition_completed",
-            details={"inventory_id": aisle.inventory_id, "aisle_id": aisle_id},
-        )
-        return _V3PreparedJob(job=job, aisle=aisle, aisle_id=aisle_id, assets=assets)
+        preparation = self._preparation_service.prepare(job_id)
+        if preparation.stop:
+            return preparation.return_value
+        assert preparation.prepared is not None
+        return self._v3_run_job_body(base_path, job_id, preparation.prepared)
 
     def _v3_resolve_pipeline_inputs_or_abort(
         self, req: _V3PipelineInputRequest
@@ -1333,7 +1239,7 @@ class V3JobExecutor:
             cancel_event_emitted=cancel_event_emitted,
         )
 
-    def _v3_run_job_body(self, base_path: Path, job_id: str, prep: _V3PreparedJob) -> bool:
+    def _v3_run_job_body(self, base_path: Path, job_id: str, prep: V3PreparedJob) -> bool:
         """Dirs, pipeline input, hybrid run, persist, artifacts, success — matches pre-refactor order."""
         job = prep.job
         aisle = prep.aisle
