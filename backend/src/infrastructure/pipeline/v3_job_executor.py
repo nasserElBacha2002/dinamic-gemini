@@ -317,6 +317,8 @@ class V3JobExecutor:
 
     @_artifact_dispatcher.setter
     def _artifact_dispatcher(self, dispatcher: ArtifactPublicationDispatcher | None) -> None:
+        # Compatibility bridge for tests/callers that override executor._artifact_dispatcher.
+        # Keep the extracted finalization service in sync until collaborators are injected directly.
         self.__artifact_dispatcher = dispatcher
         if hasattr(self, "_finalization_service"):
             self._finalization_service._artifact_dispatcher = dispatcher
@@ -350,6 +352,8 @@ class V3JobExecutor:
 
     @_artifacts.setter
     def _artifacts(self, artifacts_service: V3ExecutionArtifactsService) -> None:
+        # Compatibility bridge for tests/callers that override executor._artifacts.
+        # Keep the extracted finalization service in sync until collaborators are injected directly.
         self.__artifacts = artifacts_service
         if hasattr(self, "_finalization_service"):
             self._finalization_service._artifacts = artifacts_service
@@ -360,6 +364,8 @@ class V3JobExecutor:
 
     @_persist_use_case.setter
     def _persist_use_case(self, persist_use_case: PersistAisleResultUseCase) -> None:
+        # Compatibility bridge for tests/callers that override executor._persist_use_case.
+        # Keep the extracted finalization service in sync until collaborators are injected directly.
         self.__persist_use_case = persist_use_case
         if hasattr(self, "_finalization_service"):
             self._finalization_service._persist_use_case = persist_use_case

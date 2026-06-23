@@ -412,10 +412,9 @@ def test_characterization_outbox_publish_success_calls_finalize_success(tmp_path
         durable_meta=durable_meta,
     )
     spy_state = MagicMock(wraps=executor._state)
-    executor._state = spy_state
-    executor._finalization_service._state = spy_state
+    _replace_executor_state(executor, spy_state)
 
-    assert executor._finalization_service.publish_artifacts_via_outbox(params, tracker) is False
+    assert executor._finalization_service._publish_artifacts_via_outbox(params, tracker) is False
 
     dispatcher.register_publication_work.assert_called_once()
     dispatcher.dispatch_job.assert_called_once()
@@ -434,10 +433,9 @@ def test_characterization_outbox_publish_retry_schedules_without_finalize_succes
         retry_scheduled_kinds={ARTIFACT_KIND_HYBRID_REPORT_JSON},
     )
     spy_state = MagicMock(wraps=executor._state)
-    executor._state = spy_state
-    executor._finalization_service._state = spy_state
+    _replace_executor_state(executor, spy_state)
 
-    assert executor._finalization_service.publish_artifacts_via_outbox(params, tracker) is False
+    assert executor._finalization_service._publish_artifacts_via_outbox(params, tracker) is False
 
     spy_state.mark_artifact_publication_retry_pending.assert_called_once()
     spy_state.finalize_success.assert_not_called()
@@ -452,10 +450,9 @@ def test_characterization_outbox_publish_permanent_failure(tmp_path: Path) -> No
         failed_entries=[{"artifact_kind": ARTIFACT_KIND_HYBRID_REPORT_JSON}],
     )
     spy_state = MagicMock(wraps=executor._state)
-    executor._state = spy_state
-    executor._finalization_service._state = spy_state
+    _replace_executor_state(executor, spy_state)
 
-    assert executor._finalization_service.publish_artifacts_via_outbox(params, tracker) is True
+    assert executor._finalization_service._publish_artifacts_via_outbox(params, tracker) is True
 
     spy_state.fail_finalization_and_aisle.assert_called_once()
     fail_kwargs = spy_state.fail_finalization_and_aisle.call_args.kwargs
@@ -476,10 +473,9 @@ def test_characterization_outbox_publish_partial_failure(tmp_path: Path) -> None
         required_complete=False,
     )
     spy_state = MagicMock(wraps=executor._state)
-    executor._state = spy_state
-    executor._finalization_service._state = spy_state
+    _replace_executor_state(executor, spy_state)
 
-    assert executor._finalization_service.publish_artifacts_via_outbox(params, tracker) is True
+    assert executor._finalization_service._publish_artifacts_via_outbox(params, tracker) is True
 
     spy_state.fail_finalization_and_aisle.assert_called_once()
     fail_kwargs = spy_state.fail_finalization_and_aisle.call_args.kwargs
@@ -497,10 +493,9 @@ def test_characterization_outbox_publish_continuation_returns_without_inline_fin
         required_complete=False,
     )
     spy_state = MagicMock(wraps=executor._state)
-    executor._state = spy_state
-    executor._finalization_service._state = spy_state
+    _replace_executor_state(executor, spy_state)
 
-    assert executor._finalization_service.publish_artifacts_via_outbox(params, tracker) is False
+    assert executor._finalization_service._publish_artifacts_via_outbox(params, tracker) is False
 
     spy_state.finalize_success.assert_not_called()
     spy_state.fail_finalization_and_aisle.assert_not_called()
@@ -515,8 +510,7 @@ def test_characterization_cancel_after_domain_commit_uses_post_commit_cancellati
     harness = ExecutorHarness.build(tmp_path, artifact_store=ArtifactUploadSpy())
     executor = harness.make_executor()
     spy_state = MagicMock(wraps=executor._state)
-    executor._state = spy_state
-    executor._finalization_service._state = spy_state
+    _replace_executor_state(executor, spy_state)
     spied_persist = executor._persist_use_case.execute
 
     def persist_then_request_cancel(cmd: Any) -> None:

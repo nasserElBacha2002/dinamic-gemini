@@ -355,7 +355,7 @@ class V3JobFinalizationService:
                 )
                 return True
             if self._artifact_dispatcher is not None:
-                return self.publish_artifacts_via_outbox(
+                return self._publish_artifacts_via_outbox(
                     req, tracker, required_kind_overrides=required_kind_overrides
                 )
             durable_meta = self._artifacts.publish_worker_durables(
@@ -483,7 +483,7 @@ class V3JobFinalizationService:
         )
         return False
 
-    def publish_artifacts_via_outbox(
+    def _publish_artifacts_via_outbox(
         self,
         req: V3JobFinalizationRequest,
         tracker: JobFinalizationTracker,

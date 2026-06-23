@@ -11,17 +11,20 @@ import pytest
 
 from src.application.services.artifact_publication_dispatcher import (
     ArtifactPublicationDispatchResult,
+    ArtifactSourceStagingFailedError,
 )
+from src.domain.jobs.artifact_manifest import ArtifactManifestStatus
 from src.domain.jobs.artifact_policy import (
     ARTIFACT_KIND_EXECUTION_LOG,
     ARTIFACT_KIND_HYBRID_REPORT_JSON,
     ARTIFACT_KIND_TRACEABILITY_MANIFEST,
 )
 from src.domain.jobs.entities import JobStatus
-from src.domain.jobs.finalization import FinalizationErrorCode
+from src.domain.jobs.finalization import CurrentFinalizationStep, FinalizationErrorCode
 from src.domain.traceability_artifact.errors import TraceabilityArtifactError
 from src.infrastructure.pipeline.finalization_errors import (
     ArtifactPublishError,
+    ArtifactPublishPartialError,
     ArtifactStoreUnavailableError,
 )
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
@@ -279,7 +282,7 @@ def test_outbox_required_complete_calls_finalize_success(tmp_path: Any) -> None:
     spy_state = MagicMock(wraps=executor._state)
     service._state = spy_state
 
-    assert service.publish_artifacts_via_outbox(req, tracker) is False
+    assert service._publish_artifacts_via_outbox(req, tracker) is False
 
     spy_state.finalize_success.assert_called_once()
     spy_state.fail_finalization_and_aisle.assert_not_called()
@@ -300,7 +303,7 @@ def test_outbox_retry_schedules_without_finalize_success(tmp_path: Any) -> None:
     spy_state = MagicMock(wraps=executor._state)
     service._state = spy_state
 
-    assert service.publish_artifacts_via_outbox(req, tracker) is False
+    assert service._publish_artifacts_via_outbox(req, tracker) is False
 
     spy_state.mark_artifact_publication_retry_pending.assert_called_once()
     spy_state.finalize_success.assert_not_called()
@@ -320,7 +323,7 @@ def test_outbox_permanent_failure_calls_fail_finalization(tmp_path: Any) -> None
     spy_state = MagicMock(wraps=executor._state)
     service._state = spy_state
 
-    assert service.publish_artifacts_via_outbox(req, tracker) is True
+    assert service._publish_artifacts_via_outbox(req, tracker) is True
 
     spy_state.fail_finalization_and_aisle.assert_called_once()
     assert (
@@ -348,7 +351,7 @@ def test_outbox_partial_required_failure(tmp_path: Any) -> None:
     spy_state = MagicMock(wraps=executor._state)
     service._state = spy_state
 
-    assert service.publish_artifacts_via_outbox(req, tracker) is True
+    assert service._publish_artifacts_via_outbox(req, tracker) is True
 
     fail_kwargs = spy_state.fail_finalization_and_aisle.call_args.kwargs
     assert fail_kwargs["error_code"] == FinalizationErrorCode.ARTIFACT_PUBLISH_PARTIAL
@@ -369,7 +372,7 @@ def test_outbox_continuation_started_returns_without_finalize_success(tmp_path: 
     spy_state = MagicMock(wraps=executor._state)
     service._state = spy_state
 
-    assert service.publish_artifacts_via_outbox(req, tracker) is False
+    assert service._publish_artifacts_via_outbox(req, tracker) is False
 
     spy_state.finalize_success.assert_not_called()
     spy_state.fail_finalization_and_aisle.assert_not_called()
@@ -422,4 +425,114 @@ def test_cancel_after_domain_commit_uses_post_commit_path(
 
     spy_state.cancel_finalization_after_domain_commit.assert_called_once()
     spy_state.cancel_job_and_aisle.assert_not_called()
+    spy_state.finalize_success.assert_not_called()
+
+
+def test_outbox_staging_failure_calls_fail_finalization(tmp_path: Any) -> None:
+    harness = ExecutorHarness.build(tmp_path, artifact_store=ArtifactUploadSpy())
+    executor = harness.make_executor(artifact_store=ArtifactUploadSpy())
+    service = _service_from_executor(executor)
+    req = _build_finalize_request(harness, executor)
+    tracker = _build_outbox_tracker(harness, executor)
+    dispatcher = MagicMock()
+    dispatcher.register_publication_work.side_effect = ArtifactSourceStagingFailedError(
+        "execution log staging failed",
+        error_code="EXECUTION_LOG_STAGING_FAILED",
+    )
+    service._artifact_dispatcher = dispatcher
+    spy_state = MagicMock(wraps=executor._state)
+    service._state = spy_state
+
+    assert service._publish_artifacts_via_outbox(req, tracker) is True
+
+    dispatcher.register_publication_work.assert_called_once()
+    dispatcher.dispatch_job.assert_not_called()
+    spy_state.fail_finalization_and_aisle.assert_called_once()
+    fail_kwargs = spy_state.fail_finalization_and_aisle.call_args.kwargs
+    assert fail_kwargs["error_code"] == FinalizationErrorCode.ARTIFACT_SOURCE_STAGING_FAILED
+    assert fail_kwargs["current_step"] == CurrentFinalizationStep.PUBLISH_ARTIFACTS
+    assert fail_kwargs["metadata"]["staging_error_code"] == "EXECUTION_LOG_STAGING_FAILED"
+    spy_state.finalize_success.assert_not_called()
+
+
+def test_outbox_dispatch_exception_after_required_published_marks_metadata_write_failed(
+    tmp_path: Any,
+) -> None:
+    harness = ExecutorHarness.build(tmp_path, artifact_store=ArtifactUploadSpy())
+    executor = harness.make_executor(artifact_store=ArtifactUploadSpy())
+    service = _service_from_executor(executor)
+    req = _build_finalize_request(harness, executor)
+    tracker = _build_outbox_tracker(harness, executor)
+    dispatcher = MagicMock()
+    dispatcher.dispatch_job.side_effect = RuntimeError("marker failed")
+    service._artifact_dispatcher = dispatcher
+
+    published_entry = MagicMock()
+    published_entry.artifact_kind = ARTIFACT_KIND_EXECUTION_LOG
+    published_entry.status = ArtifactManifestStatus.PUBLISHED
+    manifest_store = MagicMock()
+    manifest_store.required_kinds_published.return_value = True
+    manifest_store.list_entries.return_value = [published_entry]
+    service._artifact_manifest_store = manifest_store
+
+    job = harness.job_repo.get_by_id(harness.job_id)
+    assert job is not None
+    assert job.finalization_error_code is None
+
+    spy_state = MagicMock(wraps=executor._state)
+    service._state = spy_state
+
+    assert service._publish_artifacts_via_outbox(req, tracker) is True
+
+    dispatcher.register_publication_work.assert_called_once()
+    dispatcher.dispatch_job.assert_called_once()
+    spy_state.fail_finalization_and_aisle.assert_called_once()
+    fail_kwargs = spy_state.fail_finalization_and_aisle.call_args.kwargs
+    assert fail_kwargs["error_code"] == FinalizationErrorCode.FINALIZATION_METADATA_WRITE_FAILED
+    assert fail_kwargs["current_step"] == CurrentFinalizationStep.PUBLISH_ARTIFACTS
+    metadata = fail_kwargs["metadata"]
+    assert metadata["artifact_upload_completed"] is True
+    assert metadata["marker_write_completed"] is False
+    assert metadata["verification_required"] is True
+    assert metadata["failed_marker"] == "ARTIFACTS_PUBLISHED"
+    assert metadata["published_artifact_kinds"] == [ARTIFACT_KIND_EXECUTION_LOG]
+    spy_state.finalize_success.assert_not_called()
+
+
+def test_legacy_durable_publish_partial_failure_marks_partial(tmp_path: Any) -> None:
+    harness = ExecutorHarness.build(tmp_path, artifact_store=ArtifactUploadSpy())
+    executor = harness.make_executor(
+        artifact_store=ArtifactUploadSpy(),
+        artifact_publication_outbox_store=None,
+    )
+    service = _service_from_executor(executor)
+    req = _build_finalize_request(harness, executor)
+    service._artifact_dispatcher = None
+    spy_state = MagicMock(wraps=executor._state)
+    service._state = spy_state
+
+    published = {
+        ARTIFACT_KIND_EXECUTION_LOG: {
+            "storage_key": f"jobs/{harness.job_id}/run/execution_log.jsonl",
+        },
+    }
+    partial_err = ArtifactPublishPartialError(
+        "partial durable upload",
+        published=published,
+        failed_kind=ARTIFACT_KIND_HYBRID_REPORT_JSON,
+    )
+
+    with patch.object(service._traceability_artifact_service, "is_required_for_run", return_value=False):
+        with patch.object(
+            service._artifacts,
+            "publish_worker_durables",
+            side_effect=partial_err,
+        ):
+            assert service.finalize_success(req) is True
+
+    spy_state.fail_finalization_and_aisle.assert_called_once()
+    fail_kwargs = spy_state.fail_finalization_and_aisle.call_args.kwargs
+    assert fail_kwargs["error_code"] == FinalizationErrorCode.ARTIFACT_PUBLISH_PARTIAL
+    assert fail_kwargs["metadata"]["failed_kind"] == ARTIFACT_KIND_HYBRID_REPORT_JSON
+    assert fail_kwargs["metadata"]["published_artifacts"] == published
     spy_state.finalize_success.assert_not_called()
