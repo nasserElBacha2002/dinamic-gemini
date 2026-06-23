@@ -461,7 +461,7 @@ class ExecutorHarness:
             ms.return_value.output_dir = str(self.base_path)
             ms.return_value.artifact_storage_legacy_local_read_enabled = True
             with patch(
-                "src.infrastructure.pipeline.v3_job_executor.HybridInventoryPipeline"
+                "src.infrastructure.pipeline.v3_pipeline_execution_service.HybridInventoryPipeline"
             ) as mock_pipeline_cls:
                 mock_pipeline_cls.return_value.process_video.side_effect = side_effect
                 return executor.execute(self.base_path, self.job_id)

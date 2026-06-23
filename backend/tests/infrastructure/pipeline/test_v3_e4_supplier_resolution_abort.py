@@ -10,7 +10,11 @@ from unittest.mock import MagicMock
 from src.application.services.supplier_prompt_resolver import SupplierPromptResolution
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.jobs.entities import Job, JobStatus
-from src.infrastructure.pipeline.v3_job_executor import RUN_ID, V3JobExecutor, _V3HybridRunParams
+from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
+from src.infrastructure.pipeline.v3_pipeline_execution_service import (
+    RUN_ID,
+    V3PipelineExecutionRequest,
+)
 from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import AnalysisContext
 from tests.infrastructure.pipeline.test_v3_job_executor_phase5 import (
@@ -49,7 +53,7 @@ def test_v3_hybrid_run_aborts_before_pipeline_when_resolver_errors(tmp_path: Pat
         updated_at=now,
     )
     ac = AnalysisContext(primary_evidence=[], visual_references=[], instructions=[])
-    p = _V3HybridRunParams(
+    p = V3PipelineExecutionRequest(
         base_path=tmp_path,
         job_id=job_id,
         job=job,
@@ -94,6 +98,7 @@ def test_v3_hybrid_run_aborts_before_pipeline_when_resolver_errors(tmp_path: Pat
     executor._pipeline_runner = spy_runner
     spy_state = MagicMock(wraps=executor._state)
     executor._state = spy_state
+    executor._pipeline_execution_service._state = spy_state
 
     bad = SupplierPromptResolution(
         inventory_id="inv-1",
@@ -115,7 +120,7 @@ def test_v3_hybrid_run_aborts_before_pipeline_when_resolver_errors(tmp_path: Pat
     mock_resolver.resolve.return_value = bad
     executor._supplier_prompt_resolver = mock_resolver
 
-    assert executor._v3_hybrid_run_and_load_report(p) is None
+    assert executor._pipeline_execution_service.run(p) is None
     spy_state.fail_job_and_aisle.assert_called_once()
     assert "CLIENT_SUPPLIER_OWNERSHIP_MISMATCH" in spy_state.fail_job_and_aisle.call_args[0][2]
     spy_runner.run_hybrid_pipeline.assert_not_called()
