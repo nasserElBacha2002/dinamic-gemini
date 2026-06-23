@@ -101,6 +101,7 @@ from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
     default_map_hybrid_report_to_domain,
 )
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
+from src.infrastructure.pipeline.v3_cancellation_coordinator import V3CancellationCoordinator
 from src.infrastructure.pipeline.v3_execution_artifacts_service import V3ExecutionArtifactsService
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
 from src.infrastructure.pipeline.v3_job_monitoring_service import (
@@ -379,6 +380,7 @@ class V3JobExecutor:
             clock=clock,
         )
         self._monitoring_service = V3JobMonitoringService(state_service=self._state)
+        self._cancellation_coordinator = V3CancellationCoordinator(state_service=self._state)
 
     def execute(self, base_path: Path, job_id: str) -> bool:
         """
@@ -1219,17 +1221,13 @@ class V3JobExecutor:
                     substep=substep,
                 )
 
-            def cancellation_checkpoint(stage: str, substep: str | None, reason: str) -> None:
-                self._state.raise_if_cancellation_requested(
-                    job_id,
-                    exec_log=rt.exec_log,
-                    inventory_id=aisle.inventory_id,
-                    aisle_id=aisle_id,
-                    stage=stage,
-                    substep=substep,
-                    reason=reason,
-                    cancel_event_emitted=rt.cancel_event_emitted,
-                )
+            cancellation_checkpoint = self._cancellation_coordinator.checkpoint(
+                job_id=job_id,
+                exec_log=rt.exec_log,
+                inventory_id=aisle.inventory_id,
+                aisle_id=aisle_id,
+                cancel_event_emitted=rt.cancel_event_emitted,
+            )
 
             try:
                 hybrid_out = self._v3_hybrid_run_and_load_report(
@@ -1287,15 +1285,13 @@ class V3JobExecutor:
                 ):
                     return True
             except PipelineCancellationRequestedError as e:
-                logger.info("v3 job %s cancellation detected cooperatively: %s", job_id, e)
-                self._state.cancel_job_and_aisle(
-                    job_id,
-                    aisle,
-                    str(e),
+                return self._cancellation_coordinator.handle_pipeline_cancellation(
+                    job_id=job_id,
+                    aisle=aisle,
+                    error=e,
                     exec_log=rt.exec_log,
                     cancel_event_emitted=rt.cancel_event_emitted,
                 )
-                return True
             except Exception as e:
                 logger.exception("v3 job %s failed: %s", job_id, e)
                 if rt.run_dir.is_dir():

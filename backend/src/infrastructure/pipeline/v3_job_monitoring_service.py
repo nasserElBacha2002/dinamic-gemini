@@ -12,7 +12,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import Job
@@ -45,7 +44,7 @@ class V3WorkerRuntimeHandles:
     """Run directory logger, execution log writer, and heartbeat thread."""
 
     run_dir: Path
-    log: Any
+    log: logging.Logger
     exec_log: ExecutionLogWriter
     stop_heartbeat: threading.Event
     heartbeat_thread: threading.Thread
@@ -59,7 +58,7 @@ class V3JobMonitoringService:
         self,
         *,
         state_service: V3JobExecutionStateService,
-        heartbeat_interval_sec: int = 10,
+        heartbeat_interval_sec: float = 10.0,
     ) -> None:
         self._state = state_service
         self._heartbeat_interval_sec = heartbeat_interval_sec

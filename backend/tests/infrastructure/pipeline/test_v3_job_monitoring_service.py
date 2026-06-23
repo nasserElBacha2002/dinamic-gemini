@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,13 +68,24 @@ def test_session_creates_run_dir_and_execution_log(tmp_path: Path) -> None:
             "cancelled": False,
         }
 
-    assert (handles.run_dir / "execution_log.jsonl").exists()
+    log_path = handles.run_dir / "execution_log.jsonl"
+    assert log_path.exists()
+    events = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert events, "execution log should contain at least one event"
+    spawn_event = events[0]
+    assert spawn_event["message"] == "job.spawn_succeeded"
+    assert spawn_event["stage"] == "WorkerLaunch"
+    payload = spawn_event["payload"]
+    assert payload is not None
+    assert payload["substep"] == "startup_confirmation"
+    assert payload["event"] == "job.spawn_succeeded"
+    assert payload["details"]["execution_id"] == req.job.execution_id
 
 
 def test_heartbeat_thread_calls_state_heartbeat(tmp_path: Path) -> None:
     state = MagicMock()
     state.heartbeat.return_value = MagicMock(attempt_count=1, current_stage="Pipeline")
-    service = V3JobMonitoringService(state_service=state, heartbeat_interval_sec=0)
+    service = V3JobMonitoringService(state_service=state, heartbeat_interval_sec=0.001)
     req = _monitoring_request(tmp_path)
 
     with service.session(req) as handles:
@@ -82,6 +94,20 @@ def test_heartbeat_thread_calls_state_heartbeat(tmp_path: Path) -> None:
         assert state.heartbeat.call_count >= 1
         assert handles.heartbeat_thread.name == f"job-heartbeat-{req.job_id}"
         assert handles.heartbeat_thread.daemon is True
+
+
+def test_heartbeat_continues_when_state_returns_none(tmp_path: Path) -> None:
+    state = MagicMock()
+    state.heartbeat.return_value = None
+    service = V3JobMonitoringService(state_service=state, heartbeat_interval_sec=0.001)
+    req = _monitoring_request(tmp_path)
+
+    with service.session(req) as handles:
+        time.sleep(0.05)
+        assert state.heartbeat.call_count >= 1
+        assert handles.heartbeat_thread.is_alive()
+
+    assert not handles.heartbeat_thread.is_alive()
 
 
 def test_session_stops_and_joins_heartbeat_on_success(tmp_path: Path) -> None:

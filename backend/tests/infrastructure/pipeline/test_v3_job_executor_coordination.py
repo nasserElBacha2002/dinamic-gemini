@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from src.domain.aisle.entities import Aisle, AisleStatus
@@ -24,6 +25,12 @@ from tests.infrastructure.pipeline.test_v3_job_executor_phase5 import (
     StubArtifactStorage,
 )
 from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
+
+
+def _replace_executor_state(executor: V3JobExecutor, spy_state: Any) -> None:
+    executor._state = spy_state
+    executor._preparation_service._state = spy_state
+    executor._monitoring_service._state = spy_state
 
 
 def test_execute_success_invokes_state_runner_and_artifacts(tmp_path: Path) -> None:
@@ -133,9 +140,7 @@ def test_execute_success_invokes_state_runner_and_artifacts(tmp_path: Path) -> N
 
     spy_runner.run_hybrid_pipeline.side_effect = _run_side_effect
 
-    executor._state = spy_state
-    executor._preparation_service._state = spy_state
-    executor._monitoring_service._state = spy_state
+    _replace_executor_state(executor, spy_state)
     executor._pipeline_runner = spy_runner
     executor._artifacts = spy_artifacts
     executor._persist_use_case = MagicMock()
@@ -253,9 +258,7 @@ def test_execute_nonzero_pipeline_exit_delegates_fail_job_and_aisle(tmp_path: Pa
     )
     spy_runner.run_hybrid_pipeline.return_value = PipelineRunResult(2, None)
 
-    executor._state = spy_state
-    executor._preparation_service._state = spy_state
-    executor._monitoring_service._state = spy_state
+    _replace_executor_state(executor, spy_state)
     executor._pipeline_runner = spy_runner
 
     class _FakePipeline:

@@ -53,6 +53,12 @@ from tests.support.worker_phase1.executor_harness import ExecutorHarness
 from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
 
 
+def _replace_executor_state(executor: V3JobExecutor, spy_state: Any) -> None:
+    executor._state = spy_state
+    executor._preparation_service._state = spy_state
+    executor._monitoring_service._state = spy_state
+
+
 def _one_photo_asset_repo(aisle_id: str, now: datetime) -> type:
     class _Repo:
         def list_by_aisle(self, aid: str) -> Sequence[SourceAsset]:
@@ -207,9 +213,7 @@ def test_characterization_successful_execution_call_order(tmp_path: Path) -> Non
         call_order.append("publish_durable_artifacts")
         return real_publish(**kwargs)
 
-    executor._state = spy_state
-    executor._preparation_service._state = spy_state
-    executor._monitoring_service._state = spy_state
+    _replace_executor_state(executor, spy_state)
     executor._pipeline_runner = spy_runner
     executor._persist_use_case = MagicMock()
     executor._persist_use_case.execute.side_effect = lambda cmd: call_order.append(
