@@ -13,6 +13,7 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID, V3JobExecutor
+from src.infrastructure.pipeline.v3_job_finalization_service import V3JobFinalizationRequest
 from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_to_dict
 from src.pipeline.errors import PipelineCancellationRequestedError
@@ -34,6 +35,7 @@ def _replace_executor_state(executor: V3JobExecutor, spy_state: Any) -> None:
     executor._monitoring_service._state = spy_state
     executor._cancellation_coordinator._state = spy_state
     executor._pipeline_execution_service._state = spy_state
+    executor._finalization_service._state = spy_state
 
 
 def test_execute_success_invokes_state_runner_and_artifacts(tmp_path: Path) -> None:
@@ -169,6 +171,141 @@ def test_execute_success_invokes_state_runner_and_artifacts(tmp_path: Path) -> N
     spy_artifacts.publish_worker_durables.assert_called_once()
     spy_state.finalize_success.assert_called_once()
     executor._persist_use_case.execute.assert_called_once()
+
+
+def test_execute_success_delegates_finalization_to_finalization_service(tmp_path: Path) -> None:
+    """After successful pipeline execution, executor delegates to V3JobFinalizationService."""
+    now = datetime(2026, 6, 20, 12, 0, 0, tzinfo=timezone.utc)
+    job_id = "coord-finalization-delegate"
+    aisle_id = "aisle-fin"
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id=job_id,
+            target_type="aisle",
+            target_id=aisle_id,
+            job_type="process_aisle",
+            status=JobStatus.STARTING,
+            payload_json={"aisle_id": aisle_id},
+            created_at=now,
+            updated_at=now,
+            execution_id="ex-fin",
+        )
+    )
+    aisle_repo = InMemoryAisleRepo()
+    aisle_repo.save(
+        Aisle(
+            id=aisle_id,
+            inventory_id="inv-1",
+            code="A01",
+            status=AisleStatus.CREATED,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    inv_repo = InMemoryInventoryRepo()
+    inv_repo.save(
+        Inventory(
+            id="inv-1",
+            name="Inv",
+            status=InventoryStatus.PROCESSING,
+            created_at=now,
+            updated_at=now,
+            processing_mode=InventoryProcessingMode.TEST,
+        )
+    )
+
+    class _OnePhotoRepo:
+        def list_by_aisle(self, aid: str) -> Sequence[SourceAsset]:
+            if aid != aisle_id:
+                return []
+            return [
+                SourceAsset(
+                    id="asset-fin",
+                    aisle_id=aisle_id,
+                    type=SourceAssetType.PHOTO,
+                    original_filename="photo.jpg",
+                    storage_path="a1/photo.jpg",
+                    mime_type="image/jpeg",
+                    uploaded_at=now,
+                )
+            ]
+
+    noop = NoopRepo()
+    executor = V3JobExecutor(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        source_asset_repo=_OnePhotoRepo(),
+        position_repo=noop,
+        product_record_repo=noop,
+        evidence_repo=noop,
+        clock=FixedClock(now),
+        inventory_repo=inv_repo,
+        supplier_reference_image_repo=noop,
+        artifact_store=StubArtifactStorage(),
+        **memory_executor_persist_kwargs(raw_label_repo=noop),
+    )
+    v3_base = tmp_path / "v3_uploads"
+    (v3_base / "a1").mkdir(parents=True, exist_ok=True)
+    (v3_base / "a1" / "photo.jpg").write_bytes(b"x")
+
+    spy_runner = MagicMock()
+    ac = AnalysisContext(primary_evidence=[], visual_references=[], instructions=[])
+    spy_runner.build_analysis_context.return_value = ac
+    spy_runner.build_pipeline_input.return_value = (
+        JobInput(
+            video_path="/tmp/video.mp4",
+            mode="hybrid",
+            input_type="photos",
+            input_manifest_path="input_manifest.json",
+            photos_dir="input_photos",
+            metadata={"analysis_context": analysis_context_to_dict(ac)},
+        ),
+        "",
+    )
+
+    def _run_side_effect(**kwargs: object) -> PipelineRunResult:
+        bp = kwargs["base_path"]
+        assert isinstance(bp, Path)
+        jid = kwargs["job_id"]
+        run_dir = bp / str(jid) / RUN_ID
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "execution_log.jsonl").write_bytes(b"{}\n")
+        (run_dir / "hybrid_report.json").write_text("{}", encoding="utf-8")
+        return PipelineRunResult(0, {"run": "meta"})
+
+    spy_runner.run_hybrid_pipeline.side_effect = _run_side_effect
+    executor._pipeline_runner = spy_runner
+
+    finalization_service = executor._finalization_service
+    spy_finalize = MagicMock(wraps=finalization_service.finalize_success)
+    finalization_service.finalize_success = spy_finalize  # type: ignore[method-assign]
+
+    class _FakePipeline:
+        def process_video(self, *args: object, **kwargs: object) -> PipelineRunResult:
+            raise AssertionError("executor should use runner.run_hybrid_pipeline")
+
+    with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as ms:
+        ms.return_value.output_dir = str(tmp_path)
+        ms.return_value.artifact_storage_legacy_local_read_enabled = True
+        with patch(
+            "src.infrastructure.pipeline.v3_pipeline_execution_service.HybridInventoryPipeline",
+            return_value=_FakePipeline(),
+        ):
+            assert executor.execute(tmp_path, job_id) is True
+
+    spy_finalize.assert_called_once()
+    req = spy_finalize.call_args.args[0]
+    assert isinstance(req, V3JobFinalizationRequest)
+    assert req.job_id == job_id
+    assert req.aisle_id == aisle_id
+    assert req.report_path.name == "hybrid_report.json"
+    assert req.pipeline_result.exit_code == 0
+    assert req.report == {}
+    assert callable(req.cancellation_checkpoint)
+    assert isinstance(req.cancel_event_emitted, dict)
+    assert req.input_type == "photos"
+    assert req.canonical_traceability_expected is True
 
 
 def test_execute_invalid_hybrid_report_json_fails_job_and_skips_finalization(

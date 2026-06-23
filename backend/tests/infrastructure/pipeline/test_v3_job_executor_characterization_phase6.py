@@ -28,8 +28,8 @@ from src.infrastructure.pipeline.job_finalization_tracker import JobFinalization
 from src.infrastructure.pipeline.v3_job_executor import (
     RUN_ID,
     V3JobExecutor,
-    _V3FinalizeAfterPipelineParams,
 )
+from src.infrastructure.pipeline.v3_job_finalization_service import V3JobFinalizationRequest
 from src.infrastructure.pipeline.v3_job_monitoring_service import V3JobMonitoringService
 from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import (
@@ -59,6 +59,7 @@ def _replace_executor_state(executor: V3JobExecutor, spy_state: Any) -> None:
     executor._monitoring_service._state = spy_state
     executor._cancellation_coordinator._state = spy_state
     executor._pipeline_execution_service._state = spy_state
+    executor._finalization_service._state = spy_state
 
 
 def _one_photo_asset_repo(aisle_id: str, now: datetime) -> type:
@@ -325,7 +326,7 @@ def test_characterization_finalization_step_order_before_finalize_success(
         return_value=False,
     ):
         with patch(
-            "src.infrastructure.pipeline.v3_job_executor.JobFinalizationTracker",
+            "src.infrastructure.pipeline.v3_job_finalization_service.JobFinalizationTracker",
             _RecordingTracker,
         ):
             assert harness.run_with_mock_pipeline(executor) is True
@@ -355,7 +356,7 @@ def test_characterization_finalization_step_order_before_finalize_success(
 
 def _build_outbox_executor_params(
     harness: ExecutorHarness,
-) -> tuple[V3JobExecutor, _V3FinalizeAfterPipelineParams, JobFinalizationTracker, MagicMock]:
+) -> tuple[V3JobExecutor, V3JobFinalizationRequest, JobFinalizationTracker, MagicMock]:
     """Executor with outbox dispatcher replaced by a spy; minimal finalize params for direct branch tests."""
     executor = harness.make_executor(artifact_store=ArtifactUploadSpy())
     run_dir = harness.seed_run_dir()
@@ -376,13 +377,13 @@ def _build_outbox_executor_params(
     def _noop_checkpoint(_stage: str, _substep: str | None, _reason: str) -> None:
         return None
 
-    params = _V3FinalizeAfterPipelineParams(
+    params = V3JobFinalizationRequest(
         job_id=harness.job_id,
         aisle=aisle,
         aisle_id=harness.aisle_id,
         run_dir=run_dir,
         exec_log=exec_log,
-        result=PipelineRunResult(0, {}),
+        pipeline_result=PipelineRunResult(0, {}),
         report_path=report_path,
         report=report,
         job=job,
@@ -412,8 +413,9 @@ def test_characterization_outbox_publish_success_calls_finalize_success(tmp_path
     )
     spy_state = MagicMock(wraps=executor._state)
     executor._state = spy_state
+    executor._finalization_service._state = spy_state
 
-    assert executor._publish_artifacts_via_outbox(params, tracker) is False
+    assert executor._finalization_service.publish_artifacts_via_outbox(params, tracker) is False
 
     dispatcher.register_publication_work.assert_called_once()
     dispatcher.dispatch_job.assert_called_once()
@@ -433,8 +435,9 @@ def test_characterization_outbox_publish_retry_schedules_without_finalize_succes
     )
     spy_state = MagicMock(wraps=executor._state)
     executor._state = spy_state
+    executor._finalization_service._state = spy_state
 
-    assert executor._publish_artifacts_via_outbox(params, tracker) is False
+    assert executor._finalization_service.publish_artifacts_via_outbox(params, tracker) is False
 
     spy_state.mark_artifact_publication_retry_pending.assert_called_once()
     spy_state.finalize_success.assert_not_called()
@@ -450,8 +453,9 @@ def test_characterization_outbox_publish_permanent_failure(tmp_path: Path) -> No
     )
     spy_state = MagicMock(wraps=executor._state)
     executor._state = spy_state
+    executor._finalization_service._state = spy_state
 
-    assert executor._publish_artifacts_via_outbox(params, tracker) is True
+    assert executor._finalization_service.publish_artifacts_via_outbox(params, tracker) is True
 
     spy_state.fail_finalization_and_aisle.assert_called_once()
     fail_kwargs = spy_state.fail_finalization_and_aisle.call_args.kwargs
@@ -473,8 +477,9 @@ def test_characterization_outbox_publish_partial_failure(tmp_path: Path) -> None
     )
     spy_state = MagicMock(wraps=executor._state)
     executor._state = spy_state
+    executor._finalization_service._state = spy_state
 
-    assert executor._publish_artifacts_via_outbox(params, tracker) is True
+    assert executor._finalization_service.publish_artifacts_via_outbox(params, tracker) is True
 
     spy_state.fail_finalization_and_aisle.assert_called_once()
     fail_kwargs = spy_state.fail_finalization_and_aisle.call_args.kwargs
@@ -493,8 +498,9 @@ def test_characterization_outbox_publish_continuation_returns_without_inline_fin
     )
     spy_state = MagicMock(wraps=executor._state)
     executor._state = spy_state
+    executor._finalization_service._state = spy_state
 
-    assert executor._publish_artifacts_via_outbox(params, tracker) is False
+    assert executor._finalization_service.publish_artifacts_via_outbox(params, tracker) is False
 
     spy_state.finalize_success.assert_not_called()
     spy_state.fail_finalization_and_aisle.assert_not_called()
@@ -510,6 +516,7 @@ def test_characterization_cancel_after_domain_commit_uses_post_commit_cancellati
     executor = harness.make_executor()
     spy_state = MagicMock(wraps=executor._state)
     executor._state = spy_state
+    executor._finalization_service._state = spy_state
     spied_persist = executor._persist_use_case.execute
 
     def persist_then_request_cancel(cmd: Any) -> None:
