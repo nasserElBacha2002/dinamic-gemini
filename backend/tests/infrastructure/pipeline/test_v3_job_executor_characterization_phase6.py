@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ from src.infrastructure.pipeline.v3_job_executor import (
     V3JobExecutor,
     _V3FinalizeAfterPipelineParams,
 )
+from src.infrastructure.pipeline.v3_job_monitoring_service import V3JobMonitoringService
 from src.jobs.models import JobInput
 from src.pipeline.contracts.analysis_context import (
     AnalysisContext,
@@ -186,11 +188,13 @@ def test_characterization_successful_execution_call_order(tmp_path: Path) -> Non
 
     spy_runner.run_hybrid_pipeline.side_effect = _run_side_effect
 
-    real_monitoring = executor._v3_begin_run_monitoring
+    real_monitoring_service = executor._monitoring_service
 
-    def _monitoring_spy(req: Any) -> Any:
+    @contextmanager
+    def _monitoring_session_spy(req: Any) -> Iterator[Any]:
         call_order.append("begin_monitoring")
-        return real_monitoring(req)
+        with V3JobMonitoringService.session(real_monitoring_service, req) as handles:
+            yield handles
 
     def _traceability_spy(**kwargs: Any) -> None:
         call_order.append("generate_traceability_artifacts")
@@ -205,6 +209,7 @@ def test_characterization_successful_execution_call_order(tmp_path: Path) -> Non
 
     executor._state = spy_state
     executor._preparation_service._state = spy_state
+    executor._monitoring_service._state = spy_state
     executor._pipeline_runner = spy_runner
     executor._persist_use_case = MagicMock()
     executor._persist_use_case.execute.side_effect = lambda cmd: call_order.append(
@@ -222,7 +227,7 @@ def test_characterization_successful_execution_call_order(tmp_path: Path) -> Non
         "is_required_for_run",
         return_value=False,
     ):
-        with patch.object(executor, "_v3_begin_run_monitoring", side_effect=_monitoring_spy):
+        with patch.object(executor._monitoring_service, "session", _monitoring_session_spy):
             with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as ms:
                 ms.return_value.output_dir = str(tmp_path)
                 ms.return_value.artifact_storage_legacy_local_read_enabled = True
@@ -587,7 +592,7 @@ def test_characterization_visual_reference_failure_metadata_before_fail_and_no_p
         instructions=["Use references as context."],
     )
 
-    event_order: list[str] = []
+    events: list[str] = []
     original_save = job_repo.save
 
     def _save_spy(job: Job) -> None:
@@ -595,9 +600,8 @@ def test_characterization_visual_reference_failure_metadata_before_fail_and_no_p
             job.id == job_id
             and job.result_json is not None
             and RUN_METADATA_KEY_VISUAL_REFERENCE_CONTEXT in job.result_json
-            and "metadata_persisted" not in event_order
         ):
-            event_order.append("metadata_persisted")
+            events.append("metadata_persisted")
         original_save(job)
 
     job_repo.save = _save_spy  # type: ignore[method-assign]
@@ -610,11 +614,10 @@ def test_characterization_visual_reference_failure_metadata_before_fail_and_no_p
     spy_runner.run_hybrid_pipeline.side_effect = AssertionError("pipeline must not run")
     executor._pipeline_runner = spy_runner
 
-    fail_calls: list[str] = []
     original_fail = executor._state.fail_job_and_aisle
 
     def _fail_job_and_aisle(*args: Any, **kwargs: Any) -> None:
-        fail_calls.append("fail_job_and_aisle")
+        events.append("fail_job_and_aisle")
         return original_fail(*args, **kwargs)
 
     executor._state.fail_job_and_aisle = _fail_job_and_aisle  # type: ignore[method-assign]
@@ -624,9 +627,7 @@ def test_characterization_visual_reference_failure_metadata_before_fail_and_no_p
         handled = executor.execute(tmp_path, job_id)
 
     assert handled is True
-    assert fail_calls == ["fail_job_and_aisle"]
-    assert event_order == ["metadata_persisted"]
-    assert fail_calls  # fail ran after metadata write (metadata recorded on prior save)
+    assert events.index("metadata_persisted") < events.index("fail_job_and_aisle")
     spy_runner.run_hybrid_pipeline.assert_not_called()
     updated_job = job_repo.get_by_id(job_id)
     assert updated_job is not None

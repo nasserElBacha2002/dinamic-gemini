@@ -135,6 +135,7 @@ def test_execute_success_invokes_state_runner_and_artifacts(tmp_path: Path) -> N
 
     executor._state = spy_state
     executor._preparation_service._state = spy_state
+    executor._monitoring_service._state = spy_state
     executor._pipeline_runner = spy_runner
     executor._artifacts = spy_artifacts
     executor._persist_use_case = MagicMock()
@@ -254,6 +255,7 @@ def test_execute_nonzero_pipeline_exit_delegates_fail_job_and_aisle(tmp_path: Pa
 
     executor._state = spy_state
     executor._preparation_service._state = spy_state
+    executor._monitoring_service._state = spy_state
     executor._pipeline_runner = spy_runner
 
     class _FakePipeline:

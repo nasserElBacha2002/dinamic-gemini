@@ -50,7 +50,7 @@ def _build_service(
     aisle_repo: AisleRepository | None = None,
     source_asset_repo: SourceAssetRepository | None = None,
     now: datetime | None = None,
-) -> tuple[V3JobPreparationService, MagicMock, InMemoryJobRepo, str, str]:
+) -> tuple[V3JobPreparationService, MagicMock, JobRepository, str, str]:
     ts = now or datetime(2026, 6, 18, 12, 0, 0, tzinfo=timezone.utc)
     job_id = "prep-job"
     aisle_id = "aisle-1"
@@ -189,4 +189,115 @@ def test_prepare_fails_when_no_source_assets() -> None:
     assert result.stop is True
     assert result.return_value is True
     state.fail_job_and_aisle.assert_called_once()
+    state.mark_running.assert_not_called()
+
+
+def test_prepare_returns_halt_false_when_job_does_not_exist() -> None:
+    now = datetime(2026, 6, 18, 12, 0, 0, tzinfo=timezone.utc)
+    service, state, _, _, _ = _build_service(now=now)
+
+    result = service.prepare("missing-job")
+
+    assert result.stop is True
+    assert result.return_value is False
+    assert result.prepared is None
+    state.mark_running.assert_not_called()
+    state.fail_job.assert_not_called()
+
+
+def test_prepare_fails_when_payload_missing_aisle_id() -> None:
+    now = datetime(2026, 6, 18, 12, 0, 0, tzinfo=timezone.utc)
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id="no-aisle-id",
+            target_type="aisle",
+            target_id="aisle-1",
+            job_type="process_aisle",
+            status=JobStatus.STARTING,
+            payload_json={},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    service, state, _, _, _ = _build_service(job_repo=job_repo, now=now)
+
+    result = service.prepare("no-aisle-id")
+
+    assert result.stop is True
+    assert result.return_value is True
+    state.fail_job.assert_called_once_with("no-aisle-id", "Missing aisle_id in payload")
+    state.mark_running.assert_not_called()
+
+
+def test_prepare_fails_when_aisle_does_not_exist() -> None:
+    now = datetime(2026, 6, 18, 12, 0, 0, tzinfo=timezone.utc)
+    job_repo = InMemoryJobRepo()
+    job_repo.save(
+        Job(
+            id="missing-aisle",
+            target_type="aisle",
+            target_id="aisle-missing",
+            job_type="process_aisle",
+            status=JobStatus.STARTING,
+            payload_json={"aisle_id": "aisle-missing"},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    service, state, _, _, _ = _build_service(job_repo=job_repo, now=now)
+
+    result = service.prepare("missing-aisle")
+
+    assert result.stop is True
+    assert result.return_value is True
+    state.fail_job.assert_called_once_with("missing-aisle", "Aisle not found: aisle-missing")
+    state.mark_running.assert_not_called()
+
+
+def test_prepare_skips_already_canceled_job() -> None:
+    now = datetime(2026, 6, 18, 12, 0, 0, tzinfo=timezone.utc)
+    job_repo = InMemoryJobRepo()
+    aisle_repo = InMemoryAisleRepo()
+    _seed_starting_job(
+        job_repo,
+        aisle_repo,
+        job_id="canceled",
+        aisle_id="aisle-1",
+        now=now,
+        status=JobStatus.CANCELED,
+    )
+    service, state, _, _, _ = _build_service(
+        job_repo=job_repo, aisle_repo=aisle_repo, now=now
+    )
+
+    result = service.prepare("canceled")
+
+    assert result.stop is True
+    assert result.return_value is True
+    state.mark_running.assert_not_called()
+    state.cancel_job.assert_not_called()
+
+
+def test_prepare_cancel_requested_before_execution_calls_cancel_job() -> None:
+    now = datetime(2026, 6, 18, 12, 0, 0, tzinfo=timezone.utc)
+    job_repo = InMemoryJobRepo()
+    aisle_repo = InMemoryAisleRepo()
+    _seed_starting_job(
+        job_repo,
+        aisle_repo,
+        job_id="cancel-before",
+        aisle_id="aisle-1",
+        now=now,
+        status=JobStatus.CANCEL_REQUESTED,
+    )
+    service, state, _, _, _ = _build_service(
+        job_repo=job_repo, aisle_repo=aisle_repo, now=now
+    )
+
+    result = service.prepare("cancel-before")
+
+    assert result.stop is True
+    assert result.return_value is True
+    state.cancel_job.assert_called_once()
     state.mark_running.assert_not_called()

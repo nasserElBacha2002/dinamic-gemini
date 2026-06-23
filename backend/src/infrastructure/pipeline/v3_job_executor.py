@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -104,6 +103,10 @@ from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
 from src.infrastructure.pipeline.v3_execution_artifacts_service import V3ExecutionArtifactsService
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
+from src.infrastructure.pipeline.v3_job_monitoring_service import (
+    V3JobMonitoringRequest,
+    V3JobMonitoringService,
+)
 from src.infrastructure.pipeline.v3_job_preparation_service import (
     V3JobPreparationService,
     V3PreparedJob,
@@ -115,7 +118,6 @@ from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import (
     DEFAULT_V3_WORKER_RUN_SEGMENT,
 )
-from src.io.logging import setup_logger
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_COMPOSITION
 from src.pipeline.contracts.analysis_context import AnalysisContext, analysis_context_from_dict
 from src.pipeline.errors import PipelineCancellationRequestedError
@@ -208,30 +210,6 @@ class _V3FinalizeAfterPipelineParams:
     cancel_event_emitted: dict[str, bool]
     input_type: str | None = None
     canonical_traceability_expected: bool = False
-
-
-@dataclass(frozen=True)
-class _V3RunMonitoringRequest:
-    """Arguments for run_dir logger + heartbeat (B8.4 PLR0913)."""
-
-    base_path: Path
-    job_id: str
-    job_dir: Path
-    job: Job
-    aisle: Aisle
-    aisle_id: str
-
-
-@dataclass
-class _V3WorkerRuntimeHandles:
-    """Run directory logger, execution log writer, and heartbeat thread (B8.4 PLR0915)."""
-
-    run_dir: Path
-    log: Any
-    exec_log: ExecutionLogWriter
-    stop_heartbeat: threading.Event
-    heartbeat_thread: threading.Thread
-    cancel_event_emitted: dict[str, bool]
 
 
 class V3JobExecutor:
@@ -335,7 +313,6 @@ class V3JobExecutor:
             clock=clock,
         )
         _ = recompute_consolidated_uc
-        self._heartbeat_interval_sec = 10
         self._stage_recorder: FinalizationStageRecorder | None = None
         if finalization_stage_store is not None:
             projection = FinalizationProjectionService(
@@ -401,6 +378,7 @@ class V3JobExecutor:
             state_service=self._state,
             clock=clock,
         )
+        self._monitoring_service = V3JobMonitoringService(state_service=self._state)
 
     def execute(self, base_path: Path, job_id: str) -> bool:
         """
@@ -410,7 +388,12 @@ class V3JobExecutor:
         preparation = self._preparation_service.prepare(job_id)
         if preparation.stop:
             return preparation.return_value
-        assert preparation.prepared is not None
+        if preparation.prepared is None:
+            logger.error(
+                "V3 preparation returned continue without prepared job: job_id=%s",
+                job_id,
+            )
+            return True
         return self._v3_run_job_body(base_path, job_id, preparation.prepared)
 
     def _v3_resolve_pipeline_inputs_or_abort(
@@ -1183,62 +1166,6 @@ class V3JobExecutor:
         )
         return True
 
-    def _v3_begin_run_monitoring(self, req: _V3RunMonitoringRequest) -> _V3WorkerRuntimeHandles:
-        """Create run_dir logger, execution log, and cooperative heartbeat thread."""
-        run_dir = req.base_path / req.job_id / RUN_ID
-        log = setup_logger(str(req.job_dir), req.job_id, RUN_ID, console=False)
-        exec_log = ExecutionLogWriter(run_dir)
-        exec_log.structured_event(
-            job_id=req.job_id,
-            inventory_id=req.aisle.inventory_id,
-            aisle_id=req.aisle_id,
-            attempt=req.job.attempt_count,
-            stage="WorkerLaunch",
-            substep="startup_confirmation",
-            event="job.spawn_succeeded",
-            details={"execution_id": req.job.execution_id},
-        )
-        logger.info(
-            "v3 execution log initialized: job_id=%s run_dir=%s",
-            req.job_id,
-            str(run_dir),
-        )
-
-        stop_heartbeat = threading.Event()
-        cancel_event_emitted: dict[str, bool] = {
-            "requested": False,
-            "detected": False,
-            "cancelled": False,
-        }
-
-        def heartbeat_loop() -> None:
-            while not stop_heartbeat.wait(self._heartbeat_interval_sec):
-                current_job = self._state.heartbeat(req.job_id)
-                if current_job is None:
-                    continue
-                exec_log.structured_event(
-                    job_id=req.job_id,
-                    inventory_id=req.aisle.inventory_id,
-                    aisle_id=req.aisle_id,
-                    attempt=current_job.attempt_count,
-                    stage=current_job.current_stage or "Pipeline",
-                    substep=current_job.current_substep,
-                    event="job.heartbeat",
-                )
-
-        heartbeat_thread = threading.Thread(
-            target=heartbeat_loop, name=f"job-heartbeat-{req.job_id}", daemon=True
-        )
-        heartbeat_thread.start()
-        return _V3WorkerRuntimeHandles(
-            run_dir=run_dir,
-            log=log,
-            exec_log=exec_log,
-            stop_heartbeat=stop_heartbeat,
-            heartbeat_thread=heartbeat_thread,
-            cancel_event_emitted=cancel_event_emitted,
-        )
-
     def _v3_run_job_body(self, base_path: Path, job_id: str, prep: V3PreparedJob) -> bool:
         """Dirs, pipeline input, hybrid run, persist, artifacts, success — matches pre-refactor order."""
         job = prep.job
@@ -1274,121 +1201,118 @@ class V3JobExecutor:
             return True
         analysis_context, job_input, video_path = resolved_in
 
-        rt = self._v3_begin_run_monitoring(
-            _V3RunMonitoringRequest(
-                base_path=base_path,
-                job_id=job_id,
-                job_dir=job_dir,
-                job=job,
-                aisle=aisle,
-                aisle_id=aisle_id,
-            )
+        monitoring_req = V3JobMonitoringRequest(
+            base_path=base_path,
+            job_id=job_id,
+            job_dir=job_dir,
+            job=job,
+            aisle=aisle,
+            aisle_id=aisle_id,
         )
-
-        def execution_observer(
-            stage: str, substep: str | None, event: str, details: dict[str, Any] | None
-        ) -> None:
-            self._state.update_runtime_status(
-                job_id,
-                stage=stage,
-                substep=substep,
-            )
-
-        def cancellation_checkpoint(stage: str, substep: str | None, reason: str) -> None:
-            self._state.raise_if_cancellation_requested(
-                job_id,
-                exec_log=rt.exec_log,
-                inventory_id=aisle.inventory_id,
-                aisle_id=aisle_id,
-                stage=stage,
-                substep=substep,
-                reason=reason,
-                cancel_event_emitted=rt.cancel_event_emitted,
-            )
-
-        try:
-            hybrid_out = self._v3_hybrid_run_and_load_report(
-                _V3HybridRunParams(
-                    base_path=base_path,
-                    job_id=job_id,
-                    job=job,
-                    aisle=aisle,
-                    aisle_id=aisle_id,
-                    run_dir=rt.run_dir,
-                    settings=settings,
-                    log=rt.log,
-                    pipeline_video_path=video_path or "",
-                    job_input=job_input,
-                    analysis_context=analysis_context,
-                    execution_observer=execution_observer,
-                    cancellation_checkpoint=cancellation_checkpoint,
+        with self._monitoring_service.session(monitoring_req) as rt:
+            def execution_observer(
+                stage: str, substep: str | None, event: str, details: dict[str, Any] | None
+            ) -> None:
+                self._state.update_runtime_status(
+                    job_id,
+                    stage=stage,
+                    substep=substep,
                 )
-            )
-            if hybrid_out is None:
-                return True
-            report, result, report_path = hybrid_out
 
-            # Finalization order (intentional):
-            # 1) PersistAisleResult — domain rows (positions, product_records, evidences, …).
-            #    Does not set aisles.operational_job_id (that happens in mark_success for production).
-            # 2) Durable artifact upload — execution log + reports to ArtifactStore.
-            # 3) mark_success — job SUCCEEDED + result_json including durable_artifacts metadata;
-            #    for production inventories, sets aisles.operational_job_id = job_id (review slice).
-            #
-            # If step (2) fails after step (1), the job and aisle are marked FAILED with a clear error.
-            # Domain data from (1) may already be committed (partial finalization). There is no automatic
-            # compensation; operators should treat FAILED as "processing did not fully complete" and use
-            # a new or explicitly reset job if work must be redone. Re-running the same job id without
-            # reset is out of band for this executor (claim path expects terminal FAILED to stay terminal).
-            if self._v3_persist_durables_and_mark_success(
-                _V3FinalizeAfterPipelineParams(
-                    job_id=job_id,
-                    aisle=aisle,
-                    aisle_id=aisle_id,
-                    run_dir=rt.run_dir,
+            def cancellation_checkpoint(stage: str, substep: str | None, reason: str) -> None:
+                self._state.raise_if_cancellation_requested(
+                    job_id,
                     exec_log=rt.exec_log,
-                    result=result,
-                    report_path=report_path,
-                    report=report,
-                    job=job,
-                    cancellation_checkpoint=cancellation_checkpoint,
+                    inventory_id=aisle.inventory_id,
+                    aisle_id=aisle_id,
+                    stage=stage,
+                    substep=substep,
+                    reason=reason,
                     cancel_event_emitted=rt.cancel_event_emitted,
-                    input_type=getattr(job_input, "input_type", None),
-                    canonical_traceability_expected=(
-                        getattr(job_input, "input_type", "") == "photos"
-                        and job.job_type == "process_aisle"
-                    ),
                 )
-            ):
+
+            try:
+                hybrid_out = self._v3_hybrid_run_and_load_report(
+                    _V3HybridRunParams(
+                        base_path=base_path,
+                        job_id=job_id,
+                        job=job,
+                        aisle=aisle,
+                        aisle_id=aisle_id,
+                        run_dir=rt.run_dir,
+                        settings=settings,
+                        log=rt.log,
+                        pipeline_video_path=video_path or "",
+                        job_input=job_input,
+                        analysis_context=analysis_context,
+                        execution_observer=execution_observer,
+                        cancellation_checkpoint=cancellation_checkpoint,
+                    )
+                )
+                if hybrid_out is None:
+                    return True
+                report, result, report_path = hybrid_out
+
+                # Finalization order (intentional):
+                # 1) PersistAisleResult — domain rows (positions, product_records, evidences, …).
+                #    Does not set aisles.operational_job_id (that happens in mark_success for production).
+                # 2) Durable artifact upload — execution log + reports to ArtifactStore.
+                # 3) mark_success — job SUCCEEDED + result_json including durable_artifacts metadata;
+                #    for production inventories, sets aisles.operational_job_id = job_id (review slice).
+                #
+                # If step (2) fails after step (1), the job and aisle are marked FAILED with a clear error.
+                # Domain data from (1) may already be committed (partial finalization). There is no automatic
+                # compensation; operators should treat FAILED as "processing did not fully complete" and use
+                # a new or explicitly reset job if work must be redone. Re-running the same job id without
+                # reset is out of band for this executor (claim path expects terminal FAILED to stay terminal).
+                if self._v3_persist_durables_and_mark_success(
+                    _V3FinalizeAfterPipelineParams(
+                        job_id=job_id,
+                        aisle=aisle,
+                        aisle_id=aisle_id,
+                        run_dir=rt.run_dir,
+                        exec_log=rt.exec_log,
+                        result=result,
+                        report_path=report_path,
+                        report=report,
+                        job=job,
+                        cancellation_checkpoint=cancellation_checkpoint,
+                        cancel_event_emitted=rt.cancel_event_emitted,
+                        input_type=getattr(job_input, "input_type", None),
+                        canonical_traceability_expected=(
+                            getattr(job_input, "input_type", "") == "photos"
+                            and job.job_type == "process_aisle"
+                        ),
+                    )
+                ):
+                    return True
+            except PipelineCancellationRequestedError as e:
+                logger.info("v3 job %s cancellation detected cooperatively: %s", job_id, e)
+                self._state.cancel_job_and_aisle(
+                    job_id,
+                    aisle,
+                    str(e),
+                    exec_log=rt.exec_log,
+                    cancel_event_emitted=rt.cancel_event_emitted,
+                )
                 return True
-        except PipelineCancellationRequestedError as e:
-            logger.info("v3 job %s cancellation detected cooperatively: %s", job_id, e)
-            self._state.cancel_job_and_aisle(
-                job_id,
-                aisle,
-                str(e),
-                exec_log=rt.exec_log,
-                cancel_event_emitted=rt.cancel_event_emitted,
-            )
-            return True
-        except Exception as e:
-            logger.exception("v3 job %s failed: %s", job_id, e)
-            if rt.run_dir.is_dir():
-                try:
-                    err_log = ExecutionLogWriter(rt.run_dir)
-                    err_log.error("Pipeline", f"Job failed: {e}", payload={"error": str(e)[:500]})
-                except Exception:
-                    pass
-            self._state.fail_job_and_aisle(job_id, aisle, str(e))
-            logger.info(
-                "v3 mark failed: job_id=%s inventory_id=%s aisle_id=%s error=%s",
-                job_id,
-                aisle.inventory_id,
-                aisle_id,
-                str(e),
-            )
-        finally:
-            rt.stop_heartbeat.set()
-            rt.heartbeat_thread.join(timeout=1.0)
+            except Exception as e:
+                logger.exception("v3 job %s failed: %s", job_id, e)
+                if rt.run_dir.is_dir():
+                    try:
+                        err_log = ExecutionLogWriter(rt.run_dir)
+                        err_log.error(
+                            "Pipeline", f"Job failed: {e}", payload={"error": str(e)[:500]}
+                        )
+                    except Exception:
+                        pass
+                self._state.fail_job_and_aisle(job_id, aisle, str(e))
+                logger.info(
+                    "v3 mark failed: job_id=%s inventory_id=%s aisle_id=%s error=%s",
+                    job_id,
+                    aisle.inventory_id,
+                    aisle_id,
+                    str(e),
+                )
 
         return True
