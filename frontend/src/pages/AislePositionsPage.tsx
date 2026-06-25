@@ -59,7 +59,7 @@ import {
   AisleResultsHeader,
   AisleResultsTableSection,
 } from '../features/results/components';
-import { buildResultsTableColumns } from '../features/results/components/ResultsTable';
+import { buildResultsTableColumns } from '../features/results/components/resultsTableColumns';
 import { mergeConsolidatedDetail } from '../features/results/adapters/aislePositionsFormatters';
 import {
   summarizeLikelyMergeCandidates,

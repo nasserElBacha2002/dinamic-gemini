@@ -3,37 +3,35 @@ import { Button, Link } from '@mui/material';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { DataTable, type DataTableColumn, type DataTableSortDirection, EmptyState } from '../../../components/ui';
+import {
+  TableSection,
+  sortDataTableRows,
+  type DataTableColumn,
+} from '../../../components/ui';
+import { useTableState } from '../../../hooks';
 import type { CaptureSessionResponse } from '../../../types/captureSession';
 import { formatDate } from '../../../utils/formatDate';
 import { pathToIngestionSessionDetail } from '../../../constants/appRoutes';
 
 interface ImportSessionListProps {
+  title?: string;
   sessions: CaptureSessionResponse[];
   loading: boolean;
   onOpen: (session: CaptureSessionResponse) => void;
-  sortDir: DataTableSortDirection;
-  setSortDir: (dir: DataTableSortDirection) => void;
 }
 
 export default function ImportSessionList({
+  title,
   sessions,
   loading,
   onOpen,
-  sortDir,
-  setSortDir,
 }: ImportSessionListProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const sortedRows = useMemo(() => {
-    const copy = [...sessions];
-    copy.sort((a, b) => {
-      const t1 = new Date(a.created_at).getTime();
-      const t2 = new Date(b.created_at).getTime();
-      return sortDir === 'asc' ? t1 - t2 : t2 - t1;
-    });
-    return copy;
-  }, [sessions, sortDir]);
+  const { sortBy, sortDir, setSort } = useTableState({
+    initialSortBy: 'created_at',
+    initialSortDir: 'desc',
+  });
 
   const columns = useMemo<DataTableColumn<CaptureSessionResponse>[]>(
     () => [
@@ -57,7 +55,14 @@ export default function ImportSessionList({
       },
       { id: 'aisle_id', label: t('ingestion_sessions.list.column_aisle_id'), sortable: false, cell: (session) => session.aisle_id },
       { id: 'status', label: t('ingestion_sessions.list.column_status'), sortable: false, cell: (session) => session.status },
-      { id: 'created_at', label: t('ingestion_sessions.list.column_created'), sortable: true, cell: (session) => formatDate(session.created_at) },
+      {
+        id: 'created_at',
+        label: t('ingestion_sessions.list.column_created'),
+        sortable: true,
+        sortType: 'date',
+        sortAccessor: (session) => session.created_at,
+        cell: (session) => formatDate(session.created_at),
+      },
       {
         id: 'open',
         label: t('ingestion_sessions.list.column_actions'),
@@ -72,25 +77,30 @@ export default function ImportSessionList({
     [navigate, onOpen, t]
   );
 
-  if (!loading && sortedRows.length === 0) {
-    return (
-      <EmptyState
-        title={t('ingestion_sessions.empty.title')}
-        message={t('ingestion_sessions.empty.message')}
-      />
-    );
-  }
+  /** TableDataMode: client-bulk — bounded session list for the selected inventory/aisle filters. */
+  const sortedRows = useMemo(
+    () => sortDataTableRows(sessions, columns, sortBy, sortDir),
+    [sessions, columns, sortBy, sortDir]
+  );
 
   return (
-    <DataTable<CaptureSessionResponse>
-      rows={sortedRows}
-      rowKey={(row) => row.id}
-      columns={columns}
-      loading={loading}
-      sort={{
-        sortBy: 'created_at',
-        sortDir,
-        onSortChange: (_sortBy, dir) => setSortDir(dir),
+    <TableSection<CaptureSessionResponse>
+      testId="import-session-list-section"
+      title={title}
+      table={{
+        rows: sortedRows,
+        rowKey: (row) => row.id,
+        columns,
+        loading,
+        emptyState: {
+          title: t('ingestion_sessions.empty.title'),
+          message: t('ingestion_sessions.empty.message'),
+        },
+        sort: {
+          sortBy,
+          sortDir,
+          onSortChange: setSort,
+        },
       }}
     />
   );

@@ -1,18 +1,17 @@
 import type { ChangeEvent, RefObject } from 'react';
-import { useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Button, Tooltip } from '@mui/material';
 import {
-  DataTable,
   FilterToolbar,
-  SectionCard,
   StatusBadge,
   TableSearchField,
+  TableSection,
   type DataTableColumn,
-  type DataTableSortDirection,
   sortDataTableRows,
 } from '../../../components/ui';
+import { useTableState } from '../../../hooks';
 import { pathToAisleObservability } from '../../../constants/appRoutes';
 import { pathToAislePositions } from '../../../utils/resultRoutes';
 import { computeProcessAisleMenuState, type AisleInventoryTableRow, type ProcessAisleMenuContext } from '../adapters';
@@ -55,14 +54,27 @@ export default function InventoryAislesSection({
 }: InventoryAislesSectionProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [aisleSortBy, setAisleSortBy] = useState('');
-  const [aisleSortDir, setAisleSortDir] = useState<DataTableSortDirection>('asc');
+  const {
+    page,
+    pageSize,
+    setPage,
+    setPageSize,
+    sortBy: aisleSortBy,
+    sortDir: aisleSortDir,
+    setSort: handleAisleSortChange,
+  } = useTableState({
+    initialSortBy: '',
+    initialSortDir: 'asc',
+  });
 
-  const handleAisleSortChange = useCallback((sortBy: string, sortDir: DataTableSortDirection) => {
-    setAisleSortBy(sortBy);
-    setAisleSortDir(sortDir);
-  }, []);
+  useEffect(() => {
+    setPage(1);
+  }, [aisleTableSearch, setPage]);
 
+  /**
+   * TableDataMode: client-bulk — parent fetches aisles in one chunk (`page_size: 200` via `useAislesList`);
+   * search and sort run on the loaded rows until server pagination is added.
+   */
   const menuCtx: ProcessAisleMenuContext = useMemo(
     () => ({
       aislesDataLoaded,
@@ -236,53 +248,70 @@ export default function InventoryAislesSection({
     [filteredTableRows, columns, aisleSortBy, aisleSortDir]
   );
 
+  const paginatedAisleRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return aisleRowsForDisplay.slice(start, start + pageSize);
+  }, [aisleRowsForDisplay, page, pageSize]);
+
   return (
-    <SectionCard
+    <TableSection<AisleInventoryTableRow>
+      testId="inventory-aisles-section"
       title={t('aisle.list_title')}
-      subtitle={t('aisle.list_subtitle')}
-      actions={
+      description={t('aisle.list_subtitle')}
+      variant="elevation"
+      elevation={1}
+      headerActions={
         <Button variant="outlined" size="small" onClick={onRefreshAisles} disabled={aislesLoading}>
           {t('common.refresh')}
         </Button>
       }
-      variant="elevation"
-      elevation={1}
-    >
-      <input
-        type="file"
-        ref={fileInputRef}
-        accept="image/*,video/*"
-        multiple
-        style={{ display: 'none' }}
-        onChange={onFileInputChange}
-      />
-      <FilterToolbar
-        onReset={() => {
-          setAisleSortBy('');
-          onAisleTableSearch('');
-        }}
-        resetDisabled={!aisleTableSearch.trim() && !aisleSortBy.trim()}
-      >
-        <TableSearchField
-          label={t('table.search_label')}
-          placeholder={t('aisle.search_aisles_placeholder')}
-          value={aisleTableSearch}
-          onChange={onAisleTableSearch}
-          data-testid="inventory-aisles-search"
+      headerSlot={
+        <input
+          type="file"
+          ref={fileInputRef}
+          accept="image/*,video/*"
+          multiple
+          style={{ display: 'none' }}
+          onChange={onFileInputChange}
         />
-      </FilterToolbar>
-      <DataTable<AisleInventoryTableRow>
-        rows={aisleRowsForDisplay}
-        rowKey={(row) => row.presentation.id}
-        columns={columns}
-        loading={aislesLoading}
-        sort={{
+      }
+      toolbar={
+        <FilterToolbar
+          onReset={() => {
+            handleAisleSortChange('', 'asc');
+            onAisleTableSearch('');
+            setPage(1);
+          }}
+          resetDisabled={!aisleTableSearch.trim() && !aisleSortBy.trim()}
+        >
+          <TableSearchField
+            label={t('table.search_label')}
+            placeholder={t('aisle.search_aisles_placeholder')}
+            value={aisleTableSearch}
+            onChange={onAisleTableSearch}
+            data-testid="inventory-aisles-search"
+          />
+        </FilterToolbar>
+      }
+      table={{
+        rows: paginatedAisleRows,
+        rowKey: (row) => row.presentation.id,
+        columns,
+        loading: aislesLoading,
+        sort: {
           sortBy: aisleSortBy,
           sortDir: aisleSortDir,
           onSortChange: handleAisleSortChange,
-        }}
-        onRowClick={(row) => navigate(pathToAislePositions(inventoryId, row.presentation.id))}
-        emptyState={
+        },
+        pagination: {
+          page,
+          pageSize,
+          totalItems: aisleRowsForDisplay.length,
+          onPageChange: setPage,
+          onPageSizeChange: setPageSize,
+        },
+        onRowClick: (row) => navigate(pathToAislePositions(inventoryId, row.presentation.id)),
+        emptyState:
           aisleTableSearch.trim() &&
           !aislesLoading &&
           tableRows.length > 0 &&
@@ -296,9 +325,8 @@ export default function InventoryAislesSection({
                     {t('aisle.create')}
                   </Button>
                 ),
-              }
-        }
-      />
-    </SectionCard>
+              },
+      }}
+    />
   );
 }

@@ -50,7 +50,7 @@ describe('ClientsList page', () => {
     });
 
     renderPage();
-    expect(screen.getByRole('heading', { name: /listado de clientes/i })).toBeInTheDocument();
+    expect(screen.getByTestId('clients-list-section')).toBeInTheDocument();
     expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
   });
 
@@ -156,5 +156,47 @@ describe('ClientsList page', () => {
     expect(screen.getByText('Cliente Norte')).toBeInTheDocument();
     expect(screen.getByText(/activo/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /ver detalle/i })).toHaveAttribute('href', '/clientes/client-1');
+  });
+
+  it('reset restores default client sort state', () => {
+    useClientsMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'client-1',
+            name: 'Alpha',
+            status: 'active',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-02T00:00:00Z',
+          },
+          {
+            id: 'client-2',
+            name: 'Zeta',
+            status: 'active',
+            created_at: '2024-01-03T00:00:00Z',
+            updated_at: '2024-01-04T00:00:00Z',
+          },
+        ],
+        page: 1,
+        page_size: 25,
+        total_items: 2,
+        total_pages: 1,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage();
+    const resetButton = screen.getByRole('button', { name: /limpiar filtros/i });
+    expect(resetButton).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /^cliente$/i }));
+    expect(resetButton).not.toBeDisabled();
+
+    fireEvent.click(resetButton);
+    expect(resetButton).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /^cliente$/i })?.closest('.Mui-active')).toBeNull();
   });
 });

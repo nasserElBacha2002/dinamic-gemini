@@ -211,6 +211,52 @@ describe('ClientDetail page', () => {
     expect(supplierLink).toHaveAttribute('href', pathToClientSupplier('client-1', 'supplier-1'));
   });
 
+  it('paginates suppliers table when list exceeds page size', () => {
+    useClientMock.mockReturnValue({
+      data: {
+        id: 'client-1',
+        name: 'Cliente Norte',
+        status: 'active',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-02T00:00:00Z',
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    const suppliers = Array.from({ length: 30 }, (_, i) => ({
+      id: `supplier-${i + 1}`,
+      client_id: 'client-1',
+      name: `Proveedor ${String(i + 1).padStart(2, '0')}`,
+      status: 'active',
+      created_at: '2024-01-03T00:00:00Z',
+      updated_at: '2024-01-04T00:00:00Z',
+    }));
+    useClientSuppliersMock.mockReturnValue({
+      data: {
+        items: suppliers,
+        page: 1,
+        page_size: 25,
+        total_items: 30,
+        total_pages: 2,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderPage('/clientes/client-1');
+    expect(screen.getByText('Proveedor 01')).toBeInTheDocument();
+    expect(screen.getByText('Proveedor 25')).toBeInTheDocument();
+    expect(screen.queryByText('Proveedor 26')).not.toBeInTheDocument();
+    expect(screen.getByText(/filas por página/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /siguiente|next page/i }));
+    expect(screen.getByText('Proveedor 26')).toBeInTheDocument();
+    expect(screen.queryByText('Proveedor 01')).not.toBeInTheDocument();
+  });
+
   it('shows client inventories section, row link, and create inventory actions', () => {
     useClientMock.mockReturnValue({
       data: {
