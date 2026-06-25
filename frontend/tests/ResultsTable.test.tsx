@@ -3,9 +3,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material';
 import theme from '../src/theme';
-import ResultsTable, {
-  buildResultsTableColumns,
-} from '../src/features/results/components/ResultsTable';
+import ResultsTable from '../src/features/results/components/ResultsTable';
+import { buildResultsTableColumns } from '../src/features/results/components/resultsTableColumns';
 import { getReviewStatusLabel } from '../src/features/results/utils/reviewStatusDisplay';
 import type { ResultSummary } from '../src/features/results/types';
 import i18n from '../src/i18n';

@@ -1,5 +1,5 @@
 import type { ChangeEvent, RefObject } from 'react';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Button, Tooltip } from '@mui/material';
@@ -54,10 +54,22 @@ export default function InventoryAislesSection({
 }: InventoryAislesSectionProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { sortBy: aisleSortBy, sortDir: aisleSortDir, setSortWithoutPageReset: handleAisleSortChange } = useTableState({
+  const {
+    page,
+    pageSize,
+    setPage,
+    setPageSize,
+    sortBy: aisleSortBy,
+    sortDir: aisleSortDir,
+    setSortWithoutPageReset: handleAisleSortChange,
+  } = useTableState({
     initialSortBy: '',
     initialSortDir: 'asc',
   });
+
+  useEffect(() => {
+    setPage(1);
+  }, [aisleTableSearch, setPage]);
 
   /**
    * TableDataMode: client-bulk — parent fetches aisles in one chunk (`page_size: 200` via `useAislesList`);
@@ -236,6 +248,11 @@ export default function InventoryAislesSection({
     [filteredTableRows, columns, aisleSortBy, aisleSortDir]
   );
 
+  const paginatedAisleRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return aisleRowsForDisplay.slice(start, start + pageSize);
+  }, [aisleRowsForDisplay, page, pageSize]);
+
   return (
     <TableSection<AisleInventoryTableRow>
       testId="inventory-aisles-section"
@@ -263,6 +280,7 @@ export default function InventoryAislesSection({
           onReset={() => {
             handleAisleSortChange('', 'asc');
             onAisleTableSearch('');
+            setPage(1);
           }}
           resetDisabled={!aisleTableSearch.trim() && !aisleSortBy.trim()}
         >
@@ -276,7 +294,7 @@ export default function InventoryAislesSection({
         </FilterToolbar>
       }
       table={{
-        rows: aisleRowsForDisplay,
+        rows: paginatedAisleRows,
         rowKey: (row) => row.presentation.id,
         columns,
         loading: aislesLoading,
@@ -284,6 +302,13 @@ export default function InventoryAislesSection({
           sortBy: aisleSortBy,
           sortDir: aisleSortDir,
           onSortChange: handleAisleSortChange,
+        },
+        pagination: {
+          page,
+          pageSize,
+          totalItems: aisleRowsForDisplay.length,
+          onPageChange: setPage,
+          onPageSizeChange: setPageSize,
         },
         onRowClick: (row) => navigate(pathToAislePositions(inventoryId, row.presentation.id)),
         emptyState:

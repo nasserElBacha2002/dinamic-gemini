@@ -1,16 +1,9 @@
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Box,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Typography,
-} from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import type { CodeScanSummaryItem } from '../../../api/types/codeScans';
+import { DataTable, type DataTableColumn } from '../../../components/ui';
+import { useTableState } from '../../../hooks';
 import { formatDate } from '../../../utils/formatDate';
 import { formatCodeScanCodeType } from '../formatters';
 import CodeScanMatchStatusChip from './CodeScanMatchStatusChip';
@@ -22,6 +15,70 @@ export interface CodeScanSummaryTableProps {
 
 export default function CodeScanSummaryTable({ items }: CodeScanSummaryTableProps) {
   const { t } = useTranslation();
+  const { page, pageSize, setPage, setPageSize } = useTableState();
+
+  const columns = useMemo((): DataTableColumn<CodeScanSummaryItem>[] => [
+    {
+      id: 'type',
+      label: t('aisleCodeScans.tables.type'),
+      cell: (row) => formatCodeScanCodeType(t, row.code_type),
+    },
+    {
+      id: 'value',
+      label: t('aisleCodeScans.tables.value'),
+      cell: (row) => (
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5, maxWidth: 280 }}>
+          <Typography
+            variant="body2"
+            component="span"
+            sx={{ wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}
+          >
+            {row.code_value}
+          </Typography>
+          <CopyCodeValueButton value={row.code_value} />
+        </Box>
+      ),
+    },
+    {
+      id: 'occurrences',
+      label: t('aisleCodeScans.tables.occurrences'),
+      align: 'right',
+      cell: (row) => row.occurrences,
+    },
+    {
+      id: 'assets',
+      label: t('aisleCodeScans.tables.assets'),
+      cell: (row) => (
+        <Box component="span" sx={{ wordBreak: 'break-all' }}>
+          {row.asset_ids.join(', ')}
+        </Box>
+      ),
+    },
+    {
+      id: 'first_seen',
+      label: t('aisleCodeScans.tables.firstSeenAt'),
+      cell: (row) => formatDate(row.first_seen_at),
+    },
+    {
+      id: 'match_status',
+      label: t('aisleCodeScans.matching.status'),
+      cell: (row) => <CodeScanMatchStatusChip status={row.match_status} />,
+    },
+    {
+      id: 'linked_result',
+      label: t('aisleCodeScans.matching.linkedResult'),
+      cell: (row) => (
+        <Box component="span" sx={{ wordBreak: 'break-all' }}>
+          {row.matched_position_ids?.length ? row.matched_position_ids.join(', ') : '—'}
+        </Box>
+      ),
+    },
+  ], [t]);
+
+  const paginatedItems = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, page, pageSize]);
 
   if (!items.length) return null;
 
@@ -30,51 +87,19 @@ export default function CodeScanSummaryTable({ items }: CodeScanSummaryTableProp
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
         {t('aisleCodeScans.tables.summarySection')}
       </Typography>
-      <TableContainer component={Paper} variant="outlined">
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>{t('aisleCodeScans.tables.type')}</TableCell>
-              <TableCell>{t('aisleCodeScans.tables.value')}</TableCell>
-              <TableCell align="right">{t('aisleCodeScans.tables.occurrences')}</TableCell>
-              <TableCell>{t('aisleCodeScans.tables.assets')}</TableCell>
-              <TableCell>{t('aisleCodeScans.tables.firstSeenAt')}</TableCell>
-              <TableCell>{t('aisleCodeScans.matching.status')}</TableCell>
-              <TableCell>{t('aisleCodeScans.matching.linkedResult')}</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {items.map((row) => (
-              <TableRow key={`${row.normalized_code_value}-${row.code_type}`}>
-                <TableCell>{formatCodeScanCodeType(t, row.code_type)}</TableCell>
-                <TableCell sx={{ maxWidth: 280 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
-                    <Typography
-                      variant="body2"
-                      component="span"
-                      sx={{ wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}
-                    >
-                      {row.code_value}
-                    </Typography>
-                    <CopyCodeValueButton value={row.code_value} />
-                  </Box>
-                </TableCell>
-                <TableCell align="right">{row.occurrences}</TableCell>
-                <TableCell sx={{ wordBreak: 'break-all' }}>{row.asset_ids.join(', ')}</TableCell>
-                <TableCell>{formatDate(row.first_seen_at)}</TableCell>
-                <TableCell>
-                  <CodeScanMatchStatusChip status={row.match_status} />
-                </TableCell>
-                <TableCell sx={{ wordBreak: 'break-all' }}>
-                  {row.matched_position_ids?.length
-                    ? row.matched_position_ids.join(', ')
-                    : '—'}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+      <DataTable
+        rows={paginatedItems}
+        rowKey={(row) => `${row.normalized_code_value}-${row.code_type}`}
+        columns={columns}
+        stickyHeader={false}
+        pagination={{
+          page,
+          pageSize,
+          totalItems: items.length,
+          onPageChange: setPage,
+          onPageSizeChange: setPageSize,
+        }}
+      />
     </Box>
   );
 }

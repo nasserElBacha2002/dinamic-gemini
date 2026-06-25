@@ -17,7 +17,6 @@ import {
   useAppSnackbar,
   sortDataTableRows,
   type DataTableColumn,
-  type DataTableSortDirection,
 } from '../components/ui';
 import { ROUTE_CLIENTS, pathToClientSupplier, pathToInventory } from '../constants/appRoutes';
 import {
@@ -26,6 +25,7 @@ import {
   useCreateClientSupplier,
   useCreateInventory,
   useInventoriesList,
+  useTableState,
 } from '../hooks';
 import { formatDate } from '../utils/formatDate';
 import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
@@ -47,10 +47,28 @@ export default function ClientDetail() {
   const [createSupplierOpen, setCreateSupplierOpen] = useState(false);
   const [createInventoryOpen, setCreateInventoryOpen] = useState(false);
   const [labelGeneratorOpen, setLabelGeneratorOpen] = useState(false);
-  const [clientInvSortBy, setClientInvSortBy] = useState('');
-  const [clientInvSortDir, setClientInvSortDir] = useState<DataTableSortDirection>('asc');
-  const [supplierSortBy, setSupplierSortBy] = useState('');
-  const [supplierSortDir, setSupplierSortDir] = useState<DataTableSortDirection>('asc');
+
+  /** TableDataMode: client-bulk — suppliers list for one client. */
+  const {
+    page: supplierPage,
+    pageSize: supplierPageSize,
+    setPage: setSupplierPage,
+    setPageSize: setSupplierPageSize,
+    sortBy: supplierSortBy,
+    sortDir: supplierSortDir,
+    setSort: setSupplierSort,
+  } = useTableState();
+
+  /** TableDataMode: client-bulk — inventories filtered client-side from bulk fetch (page_size: 200). */
+  const {
+    page: clientInvPage,
+    pageSize: clientInvPageSize,
+    setPage: setClientInvPage,
+    setPageSize: setClientInvPageSize,
+    sortBy: clientInvSortBy,
+    sortDir: clientInvSortDir,
+    setSort: setClientInvSort,
+  } = useTableState();
 
   const invalidClientId = safeClientId === '';
 
@@ -191,6 +209,16 @@ export default function ClientDetail() {
     [supplierItems, supplierColumns, supplierSortBy, supplierSortDir]
   );
 
+  const paginatedSuppliers = useMemo(() => {
+    const start = (supplierPage - 1) * supplierPageSize;
+    return sortedSuppliers.slice(start, start + supplierPageSize);
+  }, [sortedSuppliers, supplierPage, supplierPageSize]);
+
+  const paginatedClientInventories = useMemo(() => {
+    const start = (clientInvPage - 1) * clientInvPageSize;
+    return sortedClientInventories.slice(start, start + clientInvPageSize);
+  }, [sortedClientInventories, clientInvPage, clientInvPageSize]);
+
   return (
     <>
       <PageHeader
@@ -294,17 +322,21 @@ export default function ClientDetail() {
             />
           ) : (
             <DataTable<ClientSupplier>
-              rows={sortedSuppliers}
+              rows={paginatedSuppliers}
               rowKey={(supplier) => supplier.id}
               columns={supplierColumns}
               loading={false}
               sort={{
                 sortBy: supplierSortBy,
                 sortDir: supplierSortDir,
-                onSortChange: (sb, sd) => {
-                  setSupplierSortBy(sb);
-                  setSupplierSortDir(sd);
-                },
+                onSortChange: setSupplierSort,
+              }}
+              pagination={{
+                page: supplierPage,
+                pageSize: supplierPageSize,
+                totalItems: sortedSuppliers.length,
+                onPageChange: setSupplierPage,
+                onPageSizeChange: setSupplierPageSize,
               }}
             />
           )}
@@ -342,17 +374,21 @@ export default function ClientDetail() {
             />
           ) : (
             <DataTable<InventoryListItem>
-              rows={sortedClientInventories}
+              rows={paginatedClientInventories}
               rowKey={(inv) => inv.id}
               columns={inventoryColumns}
               loading={false}
               sort={{
                 sortBy: clientInvSortBy,
                 sortDir: clientInvSortDir,
-                onSortChange: (sb, sd) => {
-                  setClientInvSortBy(sb);
-                  setClientInvSortDir(sd);
-                },
+                onSortChange: setClientInvSort,
+              }}
+              pagination={{
+                page: clientInvPage,
+                pageSize: clientInvPageSize,
+                totalItems: sortedClientInventories.length,
+                onPageChange: setClientInvPage,
+                onPageSizeChange: setClientInvPageSize,
               }}
             />
           )}

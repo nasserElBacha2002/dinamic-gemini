@@ -1,13 +1,14 @@
+import { useMemo } from 'react';
 import { Box, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import type { ResultSummary } from '../types';
 import type { ResultsFilterKind } from '../selectors';
-import type { DataTableSortModel } from '../../../components/ui';
-import { FilterToolbar, SectionCard, TableSearchField } from '../../../components/ui';
+import { FilterToolbar, TableSearchField, TableSection } from '../../../components/ui';
 import ResultsQuickFilters from './ResultsQuickFilters';
 import ResultsFilteredEmptyState from './ResultsFilteredEmptyState';
-import ResultsTable from './ResultsTable';
+import { buildResultsTableColumns } from './resultsTableColumns';
 import AisleResultsMergeFeedback from './AisleResultsMergeFeedback';
+import type { DataTableSortModel } from '../../../components/ui';
 
 export interface AisleResultsTableSectionProps {
   countedTotal: number;
@@ -69,6 +70,16 @@ export default function AisleResultsTableSection({
 }: AisleResultsTableSectionProps) {
   const { t } = useTranslation();
 
+  const columns = useMemo(
+    () =>
+      buildResultsTableColumns({
+        t,
+        dash: t('common.em_dash'),
+        onOpenReview,
+      }),
+    [t, onOpenReview]
+  );
+
   return (
     <>
       <Box sx={{ mb: 3, mt: 1 }}>
@@ -119,22 +130,23 @@ export default function AisleResultsTableSection({
       {sortedForTableLength === 0 ? (
         <ResultsFilteredEmptyState onClearFilter={onClearFilterOnly} />
       ) : (
-        <SectionCard title={t('positions.title_results')}>
-          <Box sx={{ overflow: 'auto' }}>
-            <ResultsTable
-              results={tableRows}
-              onOpenReview={onOpenReview}
-              sort={columnSort}
-              pagination={{
-                page,
-                pageSize,
-                totalItems,
-                onPageChange,
-                onPageSizeChange,
-              }}
-            />
-          </Box>
-        </SectionCard>
+        <TableSection
+          title={t('positions.title_results')}
+          testId="aisle-results-table-section"
+          table={{
+            rows: tableRows,
+            rowKey: (r) => r.id,
+            columns,
+            sort: columnSort,
+            pagination: {
+              page,
+              pageSize,
+              totalItems,
+              onPageChange,
+              onPageSizeChange,
+            },
+          }}
+        />
       )}
     </>
   );

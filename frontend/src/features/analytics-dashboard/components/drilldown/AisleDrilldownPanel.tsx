@@ -4,12 +4,6 @@ import {
   Alert,
   Box,
   Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Typography,
 } from '@mui/material';
 import type { AnalyticsCostSummaryResponse } from '../../../../api/types';
@@ -18,6 +12,7 @@ import { useAisleJobsList } from '../../../../hooks';
 import { formatDate } from '../../../../utils/formatDate';
 import { getJobStatusLabel } from '../../../../utils/jobStatus';
 import type { useAnalyticsDashboard } from '../../../analytics/hooks';
+import { DataTable, LoadingBlock, type DataTableColumn } from '../../../../components/ui';
 import { DrilldownScopeWarnings } from './DrilldownScopeWarnings';
 import {
   buildAisleDrilldownKpis,
@@ -27,10 +22,10 @@ import {
   lookupAisleCost,
   mapJobsForDrilldownTable,
   processingModeLabel,
+  type DrilldownJobRow,
 } from '../../adapters/analyticsDrilldownViewModel';
 import { DrilldownActionBar } from './DrilldownActionBar';
 import { DrilldownKpiGrid } from './DrilldownKpiGrid';
-import { LoadingBlock } from '../../../../components/ui';
 
 type AnalyticsBundle = ReturnType<typeof useAnalyticsDashboard>;
 
@@ -75,6 +70,45 @@ export function AisleDrilldownPanel({
     () => mapJobsForDrilldownTable(jobsQuery.data?.jobs ?? [], t),
     [jobsQuery.data?.jobs, t]
   );
+
+  const jobColumns = useMemo((): DataTableColumn<DrilldownJobRow>[] => [
+    {
+      id: 'id',
+      label: t('analyticsDashboard.drilldown.jobColumn'),
+      cell: (job) => job.id.slice(0, 8),
+    },
+    {
+      id: 'provider',
+      label: t('observability.metrics.colProvider'),
+      cell: (job) => job.provider,
+    },
+    {
+      id: 'model',
+      label: t('observability.metrics.colModel'),
+      cell: (job) => job.model,
+    },
+    {
+      id: 'status',
+      label: t('analyticsDashboard.drilldown.statusColumn'),
+      cell: (job) => getJobStatusLabel(job.status),
+    },
+    {
+      id: 'started',
+      label: t('analyticsDashboard.drilldown.startedColumn'),
+      cell: (job) => (job.startedAt === '—' ? '—' : formatDate(job.startedAt)),
+    },
+    {
+      id: 'finished',
+      label: t('analyticsDashboard.drilldown.finishedColumn'),
+      cell: (job) => (job.finishedAt === '—' ? '—' : formatDate(job.finishedAt)),
+    },
+    {
+      id: 'duration',
+      label: t('analyticsDashboard.drilldown.durationColumn'),
+      align: 'right',
+      cell: (job) => job.duration,
+    },
+  ], [t]);
 
   if (!aisle && !costRow) {
     return (
@@ -158,36 +192,14 @@ export function AisleDrilldownPanel({
           {t('analyticsDashboard.drilldown.noJobs')}
         </Typography>
       ) : (
-        <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
-          <TableContainer sx={{ overflowX: 'auto' }}>
-          <Table size="small" data-testid="analytics-drilldown-jobs-table">
-            <TableHead>
-              <TableRow>
-                <TableCell>{t('analyticsDashboard.drilldown.jobColumn')}</TableCell>
-                <TableCell>{t('observability.metrics.colProvider')}</TableCell>
-                <TableCell>{t('observability.metrics.colModel')}</TableCell>
-                <TableCell>{t('analyticsDashboard.drilldown.statusColumn')}</TableCell>
-                <TableCell>{t('analyticsDashboard.drilldown.startedColumn')}</TableCell>
-                <TableCell>{t('analyticsDashboard.drilldown.finishedColumn')}</TableCell>
-                <TableCell align="right">{t('analyticsDashboard.drilldown.durationColumn')}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {jobRows.map((job) => (
-                <TableRow key={job.id}>
-                  <TableCell>{job.id.slice(0, 8)}</TableCell>
-                  <TableCell>{job.provider}</TableCell>
-                  <TableCell>{job.model}</TableCell>
-                  <TableCell>{getJobStatusLabel(job.status)}</TableCell>
-                  <TableCell>{job.startedAt === '—' ? '—' : formatDate(job.startedAt)}</TableCell>
-                  <TableCell>{job.finishedAt === '—' ? '—' : formatDate(job.finishedAt)}</TableCell>
-                  <TableCell align="right">{job.duration}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          </TableContainer>
-        </Paper>
+        <DataTable
+          testId="analytics-drilldown-jobs-table"
+          rows={jobRows}
+          rowKey={(job) => job.id}
+          columns={jobColumns}
+          stickyHeader={false}
+          rowHover={false}
+        />
       )}
     </Box>
   );

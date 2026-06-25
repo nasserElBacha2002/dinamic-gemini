@@ -101,6 +101,8 @@ export interface DataTableProps<T> {
   rowHover?: boolean;
   /** Optional row tap target (e.g. navigate); use stopPropagation on nested interactive cells to avoid double handling. */
   onRowClick?: (row: T) => void;
+  /** Applied to the underlying `<Table>` for stable test selectors. */
+  testId?: string;
 }
 
 function resolveClickElement(target: EventTarget | null): Element | null {
@@ -160,6 +162,7 @@ export default function DataTable<T>({
   stickyHeader = true,
   rowHover = true,
   onRowClick,
+  testId,
 }: DataTableProps<T>) {
   const { t } = useTranslation();
   const colCount = columns.length;
@@ -181,7 +184,7 @@ export default function DataTable<T>({
         overflowX: 'auto',
       }}
     >
-      <Table size={size} stickyHeader={stickyHeader} aria-busy={loading}>
+      <Table size={size} stickyHeader={stickyHeader} aria-busy={loading} data-testid={testId}>
         <TableHead>
           <TableRow>
             {columns.map((col) => (

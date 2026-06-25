@@ -3,13 +3,6 @@ import { useTranslation } from 'react-i18next';
 import {
   Box,
   Button,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Typography,
 } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
@@ -18,6 +11,8 @@ import { pathToAislePositions, pathToInventory, pathToInventoryAnalyticsCompareM
 import { useInventoryMetrics } from '../../../../hooks';
 import { formatDate } from '../../../../utils/formatDate';
 import type { useAnalyticsDashboard } from '../../../analytics/hooks';
+import { DataTable, type DataTableColumn } from '../../../../components/ui';
+import { useTableState } from '../../../../hooks';
 import { DrilldownScopeWarnings } from './DrilldownScopeWarnings';
 import { HorizontalBarChart } from '../charts/HorizontalBarChart';
 import { buildCostByAisleChartData } from '../../adapters/analyticsChartDatasets';
@@ -30,6 +25,7 @@ import {
   getCompareEligibilityForInventory,
   lookupInventoryCost,
   processingModeLabel,
+  type AisleContributionRow,
 } from '../../adapters/analyticsDrilldownViewModel';
 import { formatCostCell } from '../../adapters/analyticsCostViewModel';
 import { DrilldownActionBar } from './DrilldownActionBar';
@@ -57,6 +53,7 @@ export function InventoryDrilldownPanel({
   onOpenAisleDrilldown,
 }: InventoryDrilldownPanelProps) {
   const { t } = useTranslation();
+  const { page, pageSize, setPage, setPageSize } = useTableState();
   const performance = findInventoryPerformanceRow(analytics.inventoryPerformance?.items, inventoryId);
   const costRow = lookupInventoryCost(costSummary, inventoryId);
   const aisleCount = (analytics.aisleIssues?.items ?? []).filter((r) => r.inventory_id === inventoryId).length;
@@ -90,6 +87,77 @@ export function InventoryDrilldownPanel({
   }, [costSummary, inventoryId]);
 
   const emptyChart = t('analyticsDashboard.visual.emptyChart');
+
+  const aisleColumns = useMemo((): DataTableColumn<AisleContributionRow>[] => [
+    {
+      id: 'aisle',
+      label: t('common.aisle'),
+      cell: (row) => row.aisleCode,
+    },
+    {
+      id: 'needs_review',
+      label: t('analyticsDashboard.drilldown.reviewRequired'),
+      align: 'right',
+      cell: (row) => row.needsReviewCount,
+    },
+    {
+      id: 'total_cost',
+      label: t('analyticsDashboard.costs.totalCost'),
+      align: 'right',
+      cell: (row) => formatCostCell(row.totalCost, 'cost', t),
+    },
+    {
+      id: 'cost_per_unit',
+      label: t('analyticsDashboard.costs.costPerUnit'),
+      align: 'right',
+      cell: (row) => formatCostCell(row.costPerUnit, 'costPerUnit', t),
+    },
+    {
+      id: 'actions',
+      label: t('common.actions'),
+      cell: (row) => {
+        const rowEligibility = getCompareEligibilityForInventory(
+          inventoryProcessingModeById,
+          row.inventoryId
+        );
+        return (
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+            <Button
+              size="small"
+              component={RouterLink}
+              to={pathToAislePositions(row.inventoryId, row.aisleId)}
+            >
+              {t('analyticsDashboard.drilldown.openAislePositions')}
+            </Button>
+            <Button
+              size="small"
+              onClick={() => onOpenAisleDrilldown(row.inventoryId, row.aisleId)}
+              data-testid={`drilldown-aisle-open-${row.aisleId}`}
+            >
+              {t('analyticsDashboard.drilldown.openAnalytics')}
+            </Button>
+            <Button
+              size="small"
+              disabled={!rowEligibility.allowed}
+              component={rowEligibility.allowed ? RouterLink : 'button'}
+              to={
+                rowEligibility.allowed
+                  ? pathToInventoryAnalyticsCompareMany(row.inventoryId, { aisleId: row.aisleId })
+                  : undefined
+              }
+            >
+              {t('analyticsDashboard.drilldown.compareRuns')}
+            </Button>
+          </Box>
+        );
+      },
+    },
+  ], [inventoryProcessingModeById, onOpenAisleDrilldown, t]);
+
+  const paginatedContributionRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return contributionRows.slice(start, start + pageSize);
+  }, [contributionRows, page, pageSize]);
 
   if (!performance && !costRow) {
     return (
@@ -139,68 +207,20 @@ export function InventoryDrilldownPanel({
           {emptyChart}
         </Typography>
       ) : (
-        <Paper variant="outlined" sx={{ mb: 2, overflow: 'hidden' }}>
-          <TableContainer sx={{ overflowX: 'auto' }}>
-          <Table size="small" data-testid="analytics-drilldown-inventory-aisles">
-            <TableHead>
-              <TableRow>
-                <TableCell>{t('common.aisle')}</TableCell>
-                <TableCell align="right">{t('analyticsDashboard.drilldown.reviewRequired')}</TableCell>
-                <TableCell align="right">{t('analyticsDashboard.costs.totalCost')}</TableCell>
-                <TableCell align="right">{t('analyticsDashboard.costs.costPerUnit')}</TableCell>
-                <TableCell>{t('common.actions')}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {contributionRows.map((row) => {
-                const rowEligibility = getCompareEligibilityForInventory(inventoryProcessingModeById, row.inventoryId);
-                return (
-                  <TableRow key={row.aisleId}>
-                    <TableCell>{row.aisleCode}</TableCell>
-                    <TableCell align="right">{row.needsReviewCount}</TableCell>
-                    <TableCell align="right">
-                      {formatCostCell(row.totalCost, 'cost', t)}
-                    </TableCell>
-                    <TableCell align="right">
-                      {formatCostCell(row.costPerUnit, 'costPerUnit', t)}
-                    </TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        <Button
-                          size="small"
-                          component={RouterLink}
-                          to={pathToAislePositions(row.inventoryId, row.aisleId)}
-                        >
-                          {t('analyticsDashboard.drilldown.openAislePositions')}
-                        </Button>
-                        <Button
-                          size="small"
-                          onClick={() => onOpenAisleDrilldown(row.inventoryId, row.aisleId)}
-                          data-testid={`drilldown-aisle-open-${row.aisleId}`}
-                        >
-                          {t('analyticsDashboard.drilldown.openAnalytics')}
-                        </Button>
-                        <Button
-                          size="small"
-                          disabled={!rowEligibility.allowed}
-                          component={rowEligibility.allowed ? RouterLink : 'button'}
-                          to={
-                            rowEligibility.allowed
-                              ? pathToInventoryAnalyticsCompareMany(row.inventoryId, { aisleId: row.aisleId })
-                              : undefined
-                          }
-                        >
-                          {t('analyticsDashboard.drilldown.compareRuns')}
-                        </Button>
-                      </Box>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-          </TableContainer>
-        </Paper>
+        <DataTable
+          testId="analytics-drilldown-inventory-aisles"
+          rows={paginatedContributionRows}
+          rowKey={(row) => row.aisleId}
+          columns={aisleColumns}
+          stickyHeader={false}
+          pagination={{
+            page,
+            pageSize,
+            totalItems: contributionRows.length,
+            onPageChange: setPage,
+            onPageSizeChange: setPageSize,
+          }}
+        />
       )}
 
       <Typography variant="subtitle2" sx={{ mb: 1 }}>
