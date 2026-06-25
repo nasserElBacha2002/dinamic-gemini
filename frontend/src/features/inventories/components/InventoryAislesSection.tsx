@@ -61,7 +61,7 @@ export default function InventoryAislesSection({
     setPageSize,
     sortBy: aisleSortBy,
     sortDir: aisleSortDir,
-    setSortWithoutPageReset: handleAisleSortChange,
+    setSort: handleAisleSortChange,
   } = useTableState({
     initialSortBy: '',
     initialSortDir: 'asc',

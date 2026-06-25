@@ -45,4 +45,28 @@ describe('CodeScanSummaryTable pagination', () => {
     fireEvent.click(screen.getByRole('button', { name: /siguiente|next page/i }));
     expect(screen.getByText('CODE-26')).toBeInTheDocument();
   });
+
+  it('resets to page 1 when items dataset shrinks after navigating to page 2', () => {
+    const fullItems = Array.from({ length: 30 }, (_, i) => makeItem(i + 1));
+    const shortItems = Array.from({ length: 5 }, (_, i) => makeItem(i + 1));
+    const { rerender } = render(
+      <ThemeProvider theme={theme}>
+        <CodeScanSummaryTable items={fullItems} />
+      </ThemeProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /siguiente|next page/i }));
+    expect(screen.getByText('CODE-26')).toBeInTheDocument();
+    expect(screen.queryByText('CODE-1')).not.toBeInTheDocument();
+
+    rerender(
+      <ThemeProvider theme={theme}>
+        <CodeScanSummaryTable items={shortItems} />
+      </ThemeProvider>
+    );
+
+    expect(screen.getByText('CODE-1')).toBeInTheDocument();
+    expect(screen.getByText('CODE-5')).toBeInTheDocument();
+    expect(screen.queryByText('CODE-26')).not.toBeInTheDocument();
+  });
 });

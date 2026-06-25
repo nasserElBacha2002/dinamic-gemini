@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Box, Typography } from '@mui/material';
 import type { CodeScanDetection } from '../../../api/types/codeScans';
@@ -29,6 +29,10 @@ export default function CodeScanDetectionsTable({
 }: CodeScanDetectionsTableProps) {
   const { t } = useTranslation();
   const { page, pageSize, setPage, setPageSize } = useTableState();
+
+  useEffect(() => {
+    setPage(1);
+  }, [detections.length, setPage]);
 
   const columns = useMemo((): DataTableColumn<CodeScanDetection>[] => [
     {

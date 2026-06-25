@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Box, Typography } from '@mui/material';
 import type { CodeScanSummaryItem } from '../../../api/types/codeScans';
@@ -16,6 +16,10 @@ export interface CodeScanSummaryTableProps {
 export default function CodeScanSummaryTable({ items }: CodeScanSummaryTableProps) {
   const { t } = useTranslation();
   const { page, pageSize, setPage, setPageSize } = useTableState();
+
+  useEffect(() => {
+    setPage(1);
+  }, [items.length, setPage]);
 
   const columns = useMemo((): DataTableColumn<CodeScanSummaryItem>[] => [
     {

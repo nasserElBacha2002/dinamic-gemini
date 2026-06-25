@@ -117,4 +117,23 @@ describe('InventoryAislesSection pagination', () => {
     expect(screen.getByText('A-01')).toBeInTheDocument();
     expect(screen.queryByText('A-26')).not.toBeInTheDocument();
   });
+
+  it('resets to page 1 when a sortable column header is clicked', () => {
+    const rows = Array.from({ length: 30 }, (_, i) =>
+      makeRow(`aisle-${i + 1}`, `A-${String(i + 1).padStart(2, '0')}`)
+    );
+    render(
+      <WithProviders>
+        <InventoryAislesSection {...baseProps} tableRows={rows} filteredTableRows={rows} />
+      </WithProviders>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /siguiente|next page/i }));
+    expect(screen.getByText('A-26')).toBeInTheDocument();
+    expect(screen.queryByText('A-01')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /aisle\.code_label/i }));
+    expect(screen.getByText('A-01')).toBeInTheDocument();
+    expect(screen.queryByText('A-26')).not.toBeInTheDocument();
+  });
 });
