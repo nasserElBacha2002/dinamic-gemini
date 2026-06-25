@@ -26,7 +26,7 @@ export interface UseTableStateReturn<
   setPageSize: (pageSize: number) => void;
   setSort: (sortBy: string, sortDir: DataTableSortDirection) => void;
   /** Updates sort without resetting page (e.g. hybrid client-side column sort). */
-  setSortState: (sortBy: string, sortDir: DataTableSortDirection) => void;
+  setSortWithoutPageReset: (sortBy: string, sortDir: DataTableSortDirection) => void;
   setFilter: <K extends keyof TFilters>(key: K, value: TFilters[K]) => void;
   resetFilters: () => void;
   resetTableState: () => void;
@@ -73,7 +73,7 @@ export function useTableState<
     setPageState(1);
   }, []);
 
-  const setSortState = useCallback((nextSortBy: string, nextSortDir: DataTableSortDirection) => {
+  const setSortWithoutPageReset = useCallback((nextSortBy: string, nextSortDir: DataTableSortDirection) => {
     setSortBy(nextSortBy);
     setSortDir(nextSortDir);
   }, []);
@@ -105,7 +105,7 @@ export function useTableState<
     setPage,
     setPageSize,
     setSort,
-    setSortState,
+    setSortWithoutPageReset,
     setFilter,
     resetFilters,
     resetTableState,

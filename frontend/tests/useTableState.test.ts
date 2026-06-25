@@ -104,10 +104,10 @@ describe('useTableState', () => {
     expect(result.current.filters).toEqual({ status: 'draft' });
   });
 
-  it('setSortState updates sort without resetting page', () => {
+  it('setSortWithoutPageReset updates sort without resetting page', () => {
     const { result } = renderHook(() => useTableState({ initialPage: 3 }));
     act(() => {
-      result.current.setSortState('name', 'desc');
+      result.current.setSortWithoutPageReset('name', 'desc');
     });
     expect(result.current.sortBy).toBe('name');
     expect(result.current.sortDir).toBe('desc');

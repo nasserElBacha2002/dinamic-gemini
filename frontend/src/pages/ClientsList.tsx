@@ -41,7 +41,7 @@ export default function ClientsList() {
     sortDir: clientListSortDir,
     setPage,
     setPageSize,
-    setSortState,
+    setSortWithoutPageReset,
   } = useTableState({
     initialPage: 1,
     initialPageSize: DEFAULT_LIST_PAGE_SIZE,
@@ -172,7 +172,7 @@ export default function ClientsList() {
             <FilterToolbar
               onReset={() => {
                 setClientSearch('');
-                setSortState('', clientListSortDir);
+                setSortWithoutPageReset('', 'asc');
               }}
               resetDisabled={!clientSearch.trim() && !clientListSortBy.trim()}
             >
@@ -199,7 +199,7 @@ export default function ClientsList() {
           sort: {
             sortBy: clientListSortBy,
             sortDir: clientListSortDir,
-            onSortChange: setSortState,
+            onSortChange: setSortWithoutPageReset,
           },
           emptyState:
             clientSearch.trim() && clientItems.length > 0 && displayedClients.length === 0

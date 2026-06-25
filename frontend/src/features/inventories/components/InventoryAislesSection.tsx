@@ -54,7 +54,7 @@ export default function InventoryAislesSection({
 }: InventoryAislesSectionProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { sortBy: aisleSortBy, sortDir: aisleSortDir, setSortState: handleAisleSortChange } = useTableState({
+  const { sortBy: aisleSortBy, sortDir: aisleSortDir, setSortWithoutPageReset: handleAisleSortChange } = useTableState({
     initialSortBy: '',
     initialSortDir: 'asc',
   });
