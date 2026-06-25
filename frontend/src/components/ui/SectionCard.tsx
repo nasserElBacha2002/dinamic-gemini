@@ -15,6 +15,8 @@ export interface SectionCardProps {
   children: ReactNode;
   variant?: 'outlined' | 'elevation';
   elevation?: number;
+  /** Optional stable selector for tests. */
+  testId?: string;
 }
 
 export default function SectionCard({
@@ -24,6 +26,7 @@ export default function SectionCard({
   children,
   variant = 'outlined',
   elevation = 1,
+  testId,
 }: SectionCardProps) {
   const hasHeader = Boolean(title) || Boolean(subtitle) || Boolean(actions);
 
@@ -31,6 +34,7 @@ export default function SectionCard({
     <Card
       variant={variant}
       elevation={variant === 'elevation' ? elevation : undefined}
+      data-testid={testId}
       sx={{ mb: 0, minWidth: 0, maxWidth: '100%' }}
     >
       {hasHeader ? (

@@ -5,7 +5,7 @@
  * **Dialogs:** `BaseDialog` (generic) → `ConfirmDialog` composes it; `WizardModal` is a separate stepper shell.
  * **Status:** `StatusBadge` is the **default for new tables/lists** when status maps to redesign semantics (§8.4).
  *   `StatusChip` stays appropriate where **mapper helpers already emit MUI chip colors** (e.g. review status in results).
- * **Tables (Sprint 2.4):** `DataTable` — server sort/pagination, loading skeleton, empty fallback; compose with `SectionCard` + `FilterToolbar`.
+ * **Tables (Sprint 2.4):** `DataTable` — server sort/pagination, loading skeleton, empty fallback; compose with `TableSection` or `SectionCard` + `FilterToolbar`.
  * **KPI bands (F7.1):** `KpiCardBand` — layout presets around `KpiCard` (flex strip vs responsive grids); no domain data.
  * **Drawers (F7.3):** `DrawerHeader` — sticky title row + close for right-anchor drawers; no domain state.
  * **Metrics:** Prefer `KpiCard` + `KpiCardBand` for KPI bands; page shells stay in routes/features (`PageHeader`, `SectionCard`, etc.).
@@ -64,6 +64,8 @@ export type {
   DataTableSortType,
 } from './DataTable';
 export { sortDataTableRows } from './dataTableSort';
+export { default as TableSection } from './TableSection';
+export type { TableSectionProps } from './TableSection';
 
 export { default as PhotoUploadProgressDialog } from './PhotoUploadProgressDialog';
 export type { PhotoUploadProgressDialogProps } from './PhotoUploadProgressDialog';

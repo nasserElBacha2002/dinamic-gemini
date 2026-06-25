@@ -8,22 +8,22 @@ import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
 import {
-  DataTable,
   ErrorAlert,
   FilterToolbar,
-  SectionCard,
   StatusBadge,
   TableSearchField,
+  TableSection,
   useAppSnackbar,
   type DataTableColumn,
-  type DataTableSortDirection,
 } from '../components/ui';
 import { PageHeader } from '../components/shell';
 import CreateInventoryDialog from '../components/CreateInventoryDialog';
-import { useDebouncedSearchInput, useInventoriesList, useCreateInventory } from '../hooks';
+import { useDebouncedSearchInput, useInventoriesList, useCreateInventory, useTableState } from '../hooks';
 import { DEFAULT_LIST_PAGE_SIZE, TABLE_SERVER_SEARCH_DEBOUNCE_MS } from '../constants/dataTable';
 import { pathToInventory } from '../constants/appRoutes';
 import { INVENTORY_LIST_EMPTY_MESSAGE_KEY, INVENTORY_LIST_EMPTY_TITLE_KEY } from '../constants/uiCopy';
+
+const INVENTORY_LIST_INITIAL_SORT = { sortBy: 'created_at', sortDir: 'desc' as const };
 
 export default function InventoriesList() {
   const { t } = useTranslation();
@@ -31,10 +31,21 @@ export default function InventoriesList() {
   const { showSnackbar } = useAppSnackbar();
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
-  const [sortBy, setSortBy] = useState('created_at');
-  const [sortDir, setSortDir] = useState<DataTableSortDirection>('desc');
+  const {
+    page,
+    pageSize,
+    sortBy,
+    sortDir,
+    setPage,
+    setPageSize,
+    setSort,
+    resetTableState,
+  } = useTableState({
+    initialPage: 1,
+    initialPageSize: DEFAULT_LIST_PAGE_SIZE,
+    initialSortBy: INVENTORY_LIST_INITIAL_SORT.sortBy,
+    initialSortDir: INVENTORY_LIST_INITIAL_SORT.sortDir,
+  });
   const {
     input: searchInput,
     setInput: setSearchInput,
@@ -150,6 +161,11 @@ export default function InventoriesList() {
     [navigate, t]
   );
 
+  const listErrorProps =
+    errorMessage != null
+      ? { error, context: 'inventory' as const, onRetry: () => refetch() }
+      : null;
+
   return (
     <>
       <PageHeader
@@ -167,36 +183,42 @@ export default function InventoriesList() {
         }
       />
 
-      {errorMessage && <ErrorAlert error={error} context="inventory" onRetry={() => refetch()} />}
-
-      {!errorMessage ? (
-      <SectionCard title={t('inventory.all_inventories')} subtitle={t('inventory.all_inventories_subtitle')}>
-        <FilterToolbar
-          onReset={() => {
-            setSearchInput('');
-            setPage(1);
-            setSortBy('created_at');
-            setSortDir('desc');
-          }}
-          resetDisabled={
-            searchInput === '' && page === 1 && sortBy === 'created_at' && sortDir === 'desc'
-          }
-        >
-          <TableSearchField
-            value={searchInput}
-            onChange={(value) => {
-              setSearchInput(value);
-              setPage(1);
+      <TableSection<InventoryListItem>
+        testId="inventories-list-section"
+        title={t('inventory.all_inventories')}
+        description={t('inventory.all_inventories_subtitle')}
+        error={listErrorProps}
+        hideSectionOnError
+        toolbar={
+          <FilterToolbar
+            onReset={() => {
+              setSearchInput('');
+              resetTableState();
             }}
-            data-testid="inventories-list-search"
-          />
-        </FilterToolbar>
-        <DataTable<InventoryListItem>
-          rows={inventories}
-          rowKey={(inv) => inv.id}
-          columns={columns}
-          loading={isLoading}
-          emptyState={
+            resetDisabled={
+              searchInput === '' &&
+              page === 1 &&
+              pageSize === DEFAULT_LIST_PAGE_SIZE &&
+              sortBy === INVENTORY_LIST_INITIAL_SORT.sortBy &&
+              sortDir === INVENTORY_LIST_INITIAL_SORT.sortDir
+            }
+          >
+            <TableSearchField
+              value={searchInput}
+              onChange={(value) => {
+                setSearchInput(value);
+                setPage(1);
+              }}
+              data-testid="inventories-list-search"
+            />
+          </FilterToolbar>
+        }
+        table={{
+          rows: inventories,
+          rowKey: (inv) => inv.id,
+          columns,
+          loading: isLoading,
+          emptyState:
             searchApplied.trim() !== '' && !isLoading && (data?.total_items ?? 0) === 0
               ? { message: t('table.empty_no_match') }
               : {
@@ -213,32 +235,23 @@ export default function InventoriesList() {
                       {t('inventory.create')}
                     </Button>
                   ),
-                }
-          }
-          sort={{
+                },
+          sort: {
             sortBy,
             sortDir,
-            onSortChange: (sb, sd) => {
-              setSortBy(sb);
-              setSortDir(sd);
-              setPage(1);
-            },
-          }}
-          pagination={
-            data
-              ? {
-                  page,
-                  pageSize,
-                  totalItems: data.total_items,
-                  onPageChange: setPage,
-                  /** Page reset to 1 on size change is handled inside `DataTable`. */
-                  onPageSizeChange: setPageSize,
-                }
-              : undefined
-          }
-        />
-      </SectionCard>
-      ) : null}
+            onSortChange: setSort,
+          },
+          pagination: data
+            ? {
+                page,
+                pageSize,
+                totalItems: data.total_items,
+                onPageChange: setPage,
+                onPageSizeChange: setPageSize,
+              }
+            : undefined,
+        }}
+      />
 
       {createError && (
         <ErrorAlert

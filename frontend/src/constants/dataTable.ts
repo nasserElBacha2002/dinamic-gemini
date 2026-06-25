@@ -5,7 +5,21 @@
  * Other hooks may use larger `page_size` on purpose (e.g. inventory detail aisle grid fetching one chunk,
  * results overview loading a full aisle slice for client-side filters) — that is intentional until those views
  * move to server pagination.
+ *
+ * ## Table data strategies
+ *
+ * Pick one mode per screen; compose with `useTableState`, `TableSection`, and `DataTable`.
+ *
+ * 1. **`server`** — API owns pagination, sorting, and search/filtering. Parent passes query params to a list hook.
+ *    Reference: `pages/InventoriesList.tsx`.
+ * 2. **`client-bulk`** — API returns a bounded dataset; frontend filters, sorts, and paginates locally
+ *    (`sortDataTableRows`, `rowMatchesSearchQuery`). Reference: aisle/results tables.
+ * 3. **`hybrid`** — Mixed server/client behavior; avoid unless there is a clear product reason.
+ *    Reference: `pages/ClientsList.tsx` (server pagination + client search on current page).
  */
+
+/** Operational table strategy — documents intended data flow for a screen. */
+export type TableDataMode = 'server' | 'client-bulk' | 'hybrid';
 
 export const DEFAULT_LIST_PAGE_SIZE = 25;
 

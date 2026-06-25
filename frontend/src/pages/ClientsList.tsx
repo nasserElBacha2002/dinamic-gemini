@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink } from 'react-router-dom';
@@ -6,20 +6,17 @@ import type { Client } from '../api/types';
 import CreateClientDialog from '../components/CreateClientDialog';
 import { PageHeader } from '../components/shell';
 import {
-  DataTable,
-  ErrorAlert,
   FilterToolbar,
-  SectionCard,
   StatusBadge,
   TableSearchField,
+  TableSection,
   sortDataTableRows,
   useAppSnackbar,
   type DataTableColumn,
-  type DataTableSortDirection,
 } from '../components/ui';
 import { pathToClient } from '../constants/appRoutes';
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
-import { useClients, useCreateClient } from '../hooks';
+import { useClients, useCreateClient, useTableState } from '../hooks';
 import { formatDate } from '../utils/formatDate';
 import { rowMatchesSearchQuery } from '../utils/tableSearch';
 
@@ -36,12 +33,26 @@ export default function ClientsList() {
   const { showSnackbar } = useAppSnackbar();
   const createClientMutation = useCreateClient();
   const [createOpen, setCreateOpen] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
   const [clientSearch, setClientSearch] = useState('');
-  const [clientListSortBy, setClientListSortBy] = useState('');
-  const [clientListSortDir, setClientListSortDir] = useState<DataTableSortDirection>('asc');
+  const {
+    page,
+    pageSize,
+    sortBy: clientListSortBy,
+    sortDir: clientListSortDir,
+    setPage,
+    setPageSize,
+    setSortState,
+  } = useTableState({
+    initialPage: 1,
+    initialPageSize: DEFAULT_LIST_PAGE_SIZE,
+    initialSortBy: '',
+    initialSortDir: 'asc',
+  });
 
+  /**
+   * TableDataMode: hybrid — server `page` / `page_size` from the API; search and column sort
+   * apply only to rows on the current page. Pagination is hidden while search is active.
+   */
   const listQuery = useMemo(
     () => ({ page, page_size: pageSize }),
     [page, pageSize]
@@ -52,7 +63,7 @@ export default function ClientsList() {
 
   useEffect(() => {
     setPage(1);
-  }, [clientSearch]);
+  }, [clientSearch, setPage]);
 
   const displayedClients = useMemo(
     () => clientItems.filter((c) => rowMatchesSearchQuery(clientSearch, [c.name, c.id])),
@@ -130,10 +141,14 @@ export default function ClientsList() {
     [displayedClients, columns, clientListSortBy, clientListSortDir]
   );
 
-  const handleClientListSortChange = useCallback((sortBy: string, sortDir: DataTableSortDirection) => {
-    setClientListSortBy(sortBy);
-    setClientListSortDir(sortDir);
-  }, []);
+  const listErrorProps = clientsQuery.isError
+    ? {
+        error: clientsQuery.error,
+        message: t('errors.load_clients'),
+        onRetry: () => clientsQuery.refetch(),
+        retryLabel: t('common.retry'),
+      }
+    : null;
 
   return (
     <>
@@ -146,79 +161,75 @@ export default function ClientsList() {
         }
       />
 
-      {clientsQuery.isError ? (
-        <ErrorAlert
-          error={clientsQuery.error}
-          message={t('errors.load_clients')}
-          onRetry={() => clientsQuery.refetch()}
-          retryLabel={t('common.retry')}
-        />
-      ) : null}
-
-      {!clientsQuery.isError ? (
-        <SectionCard title={t('clients.page.title')} subtitle={t('clients.page.subtitle')}>
-          <FilterToolbar
-            onReset={() => {
-              setClientSearch('');
-              setClientListSortBy('');
-            }}
-            resetDisabled={!clientSearch.trim() && !clientListSortBy.trim()}
-          >
-            <TableSearchField
-              label={t('clients.list.search_placeholder')}
-              placeholder={t('clients.list.search_placeholder')}
-              value={clientSearch}
-              onChange={setClientSearch}
-              data-testid="clients-list-search"
-            />
-          </FilterToolbar>
-          {clientSearch.trim() ? (
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-              {t('clients.list.search_hint_page')}
-            </Typography>
-          ) : null}
-          <DataTable<Client>
-            rows={clientsRowsSorted}
-            rowKey={(client) => client.id}
-            columns={columns}
-            loading={clientsQuery.isLoading}
-            sort={{
-              sortBy: clientListSortBy,
-              sortDir: clientListSortDir,
-              onSortChange: handleClientListSortChange,
-            }}
-            emptyState={
-              clientSearch.trim() && clientItems.length > 0 && displayedClients.length === 0
+      <TableSection<Client>
+        testId="clients-list-section"
+        title={t('clients.page.title')}
+        description={t('clients.page.subtitle')}
+        error={listErrorProps}
+        hideSectionOnError
+        toolbar={
+          <>
+            <FilterToolbar
+              onReset={() => {
+                setClientSearch('');
+                setSortState('', clientListSortDir);
+              }}
+              resetDisabled={!clientSearch.trim() && !clientListSortBy.trim()}
+            >
+              <TableSearchField
+                label={t('clients.list.search_placeholder')}
+                placeholder={t('clients.list.search_placeholder')}
+                value={clientSearch}
+                onChange={setClientSearch}
+                data-testid="clients-list-search"
+              />
+            </FilterToolbar>
+            {clientSearch.trim() ? (
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                {t('clients.list.search_hint_page')}
+              </Typography>
+            ) : null}
+          </>
+        }
+        table={{
+          rows: clientsRowsSorted,
+          rowKey: (client) => client.id,
+          columns,
+          loading: clientsQuery.isLoading,
+          sort: {
+            sortBy: clientListSortBy,
+            sortDir: clientListSortDir,
+            onSortChange: setSortState,
+          },
+          emptyState:
+            clientSearch.trim() && clientItems.length > 0 && displayedClients.length === 0
+              ? {
+                  title: t('clients.list.search_no_results_title'),
+                  message: t('table.empty_no_match'),
+                }
+              : {
+                  title: t('clients.list.empty_title'),
+                  message: t('clients.list.empty_description'),
+                  action: (
+                    <Button variant="contained" onClick={() => setCreateOpen(true)}>
+                      {t('clients.actions.create')}
+                    </Button>
+                  ),
+                },
+          pagination:
+            clientSearch.trim()
+              ? undefined
+              : clientsQuery.data
                 ? {
-                    title: t('clients.list.search_no_results_title'),
-                    message: t('table.empty_no_match'),
+                    page,
+                    pageSize,
+                    totalItems: clientsQuery.data.total_items,
+                    onPageChange: setPage,
+                    onPageSizeChange: setPageSize,
                   }
-                : {
-                    title: t('clients.list.empty_title'),
-                    message: t('clients.list.empty_description'),
-                    action: (
-                      <Button variant="contained" onClick={() => setCreateOpen(true)}>
-                        {t('clients.actions.create')}
-                      </Button>
-                    ),
-                  }
-            }
-            pagination={
-              clientSearch.trim()
-                ? undefined
-                : clientsQuery.data
-                  ? {
-                      page,
-                      pageSize,
-                      totalItems: clientsQuery.data.total_items,
-                      onPageChange: setPage,
-                      onPageSizeChange: setPageSize,
-                    }
-                  : undefined
-            }
-          />
-        </SectionCard>
-      ) : null}
+                : undefined,
+        }}
+      />
 
       <CreateClientDialog
         open={createOpen}

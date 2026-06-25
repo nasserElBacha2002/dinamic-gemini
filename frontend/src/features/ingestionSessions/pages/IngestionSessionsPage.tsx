@@ -12,7 +12,6 @@ import {
   useCreateCaptureSession,
   useInventoryOptions,
 } from '../hooks/useCaptureSessions';
-import type { DataTableSortDirection } from '../../../components/ui';
 import { buildSessionsListParams } from '../utils/ingestionSessionsListParams';
 
 export default function IngestionSessionsPage() {
@@ -22,7 +21,6 @@ export default function IngestionSessionsPage() {
   const inventoryOptions = inventoriesQuery.data?.items ?? [];
   const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
   const [selectedAisleId, setSelectedAisleId] = useState<string>('');
-  const [sortDir, setSortDir] = useState<DataTableSortDirection>('desc');
 
   const activeInventoryId = selectedInventoryId || inventoryOptions[0]?.id || '';
   const aislesQuery = useAisleOptions(activeInventoryId, { enabled: Boolean(activeInventoryId) });
@@ -110,17 +108,14 @@ export default function IngestionSessionsPage() {
         </Stack>
       </SectionCard>
 
-      <SectionCard title={t('ingestion_sessions.list.title')}>
-        <ImportSessionList
-          sessions={sessionsQuery.data?.items ?? []}
-          loading={sessionsQuery.isLoading}
-          sortDir={sortDir}
-          setSortDir={setSortDir}
-          onOpen={(session) =>
-            navigate(pathToIngestionSessionDetail(session.id, session.inventory_id))
-          }
-        />
-      </SectionCard>
+      <ImportSessionList
+        title={t('ingestion_sessions.list.title')}
+        sessions={sessionsQuery.data?.items ?? []}
+        loading={sessionsQuery.isLoading}
+        onOpen={(session) =>
+          navigate(pathToIngestionSessionDetail(session.id, session.inventory_id))
+        }
+      />
     </Stack>
   );
 }

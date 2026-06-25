@@ -50,7 +50,7 @@ describe('ClientsList page', () => {
     });
 
     renderPage();
-    expect(screen.getByRole('heading', { name: /listado de clientes/i })).toBeInTheDocument();
+    expect(screen.getByTestId('clients-list-section')).toBeInTheDocument();
     expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
   });
 
