@@ -27,7 +27,6 @@ import {
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import {
   ROUTE_HOME,
-  pathToInventory,
   pathToInventoryAnalyticsCompareMany,
 } from '../constants/appRoutes';
 import {
@@ -518,10 +517,7 @@ export default function AislePositionsPage() {
 
   const breadcrumbs = [
     { label: t('aisle.breadcrumb_inventories'), to: ROUTE_HOME },
-    ...(inventory
-      ? [{ label: inventory.name, to: pathToInventory(inventoryId) }]
-      : []),
-    { label: t('positions.breadcrumb_results') },
+    { label: aisle?.code ?? t('common.aisle') },
   ];
 
   const positionsLoadNotFound =
