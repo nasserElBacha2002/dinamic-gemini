@@ -39,4 +39,16 @@ describe('AisleResultsHeader code scan menu', () => {
     fireEvent.click(screen.getByTestId('aisle-code-scan-menu-open'));
     expect(onOpenCodeScan).toHaveBeenCalledTimes(1);
   });
+
+  it('opens observability from Más acciones menu', () => {
+    const onOpenObservability = vi.fn();
+    render(
+      <MemoryRouter>
+        <AisleResultsHeader {...baseProps} onOpenObservability={onOpenObservability} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByTestId('aisle-results-more-actions'));
+    fireEvent.click(screen.getByTestId('aisle-observability-menu-open'));
+    expect(onOpenObservability).toHaveBeenCalledTimes(1);
+  });
 });

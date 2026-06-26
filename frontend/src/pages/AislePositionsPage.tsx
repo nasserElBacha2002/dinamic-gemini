@@ -27,6 +27,7 @@ import {
 import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
 import {
   ROUTE_HOME,
+  pathToAisleObservability,
   pathToInventoryAnalyticsCompareMany,
 } from '../constants/appRoutes';
 import {
@@ -538,6 +539,18 @@ export default function AislePositionsPage() {
         title={aisle?.code ?? t('common.aisle')}
         subtitle={inventory?.name ?? (inventoryQuery.isLoading ? t('common.loading') : t('common.em_dash'))}
         onOpenCodeScan={() => setCodeScanDrawerOpen(true)}
+        onOpenObservability={
+          inventoryId && aisleId
+            ? () =>
+                navigate(
+                  pathToAisleObservability(
+                    inventoryId,
+                    aisleId,
+                    pickedRunJobId ?? visibleJobId
+                  )
+                )
+            : undefined
+        }
         assetsAction={
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
             <AisleSourceAssetsManageModule
