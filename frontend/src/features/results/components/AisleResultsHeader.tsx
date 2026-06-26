@@ -26,6 +26,7 @@ export interface AisleResultsHeaderProps {
   refreshDisabled: boolean;
   onRefresh: () => void;
   onOpenCodeScan?: () => void;
+  onOpenObservability?: () => void;
 }
 
 export default function AisleResultsHeader({
@@ -50,6 +51,7 @@ export default function AisleResultsHeader({
   refreshDisabled,
   onRefresh,
   onOpenCodeScan,
+  onOpenObservability,
 }: AisleResultsHeaderProps) {
   const { t } = useTranslation();
   const [moreActionsAnchorEl, setMoreActionsAnchorEl] = useState<null | HTMLElement>(null);
@@ -158,6 +160,17 @@ export default function AisleResultsHeader({
                     }}
                   >
                     {t('aisleCodeScans.actions.open')}
+                  </MenuItem>
+                ) : null}
+                {onOpenObservability ? (
+                  <MenuItem
+                    data-testid="aisle-observability-menu-open"
+                    onClick={() => {
+                      handleCloseMoreActions();
+                      onOpenObservability();
+                    }}
+                  >
+                    {t('aisle.view_observability')}
                   </MenuItem>
                 ) : null}
                 <MenuItem

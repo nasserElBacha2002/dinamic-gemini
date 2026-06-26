@@ -870,6 +870,50 @@ describe('AislePositionsPage (Aisle Results)', () => {
       });
     });
 
+    it('navigates to aisle observability for the selected run from Más acciones menu', async () => {
+      resultSummariesState.resultJobId = 'job-op';
+      aisleJobsListState.data = {
+        operational_job_id: 'job-op',
+        jobs: [
+          {
+            id: 'job-op',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+      const router = createMemoryRouter(
+        [
+          {
+            path: '/inventories/:inventoryId/aisles/:aisleId/positions',
+            element: <AislePositionsPage />,
+          },
+          {
+            path: '/inventories/:inventoryId/aisles/:aisleId/observability',
+            element: <div data-testid="observability-route-marker">observability</div>,
+          },
+        ],
+        { initialEntries: ['/inventories/inv-1/aisles/aisle-1/positions'] }
+      );
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <AppSnackbarProvider>
+            <RouterProvider router={router} />
+          </AppSnackbarProvider>
+        </QueryClientProvider>
+      );
+
+      openAisleResultsMoreActionsMenu();
+      fireEvent.click(screen.getByTestId('aisle-observability-menu-open'));
+
+      await waitFor(() => {
+        expect(router.state.location.pathname).toBe('/inventories/inv-1/aisles/aisle-1/observability');
+        expect(new URLSearchParams(router.state.location.search).get('jobId')).toBe('job-op');
+      });
+    });
+
     it('submits promotion and refetches results', async () => {
       resultSummariesState.results = mockResults;
       resultSummariesState.positions = mockPositions;
