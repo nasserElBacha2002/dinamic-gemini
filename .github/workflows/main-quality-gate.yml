@@ -14,7 +14,7 @@
 # Blocking intent:
 # - Backend quality must pass.
 # - Frontend quality must pass.
-# - Security light remains non-blocking.
+# - Security audits (pip-audit + npm audit high) must pass.
 #
 # GitHub Free note:
 # If branch protection / required status checks are unavailable for this private
@@ -108,9 +108,8 @@ jobs:
         run: npm run build
 
   security-main-light:
-    name: Main security light — pip-audit + npm audit high
+    name: Main security — pip-audit + npm audit high
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -120,16 +119,16 @@ jobs:
           cache: pip
           cache-dependency-path: backend/pyproject.toml
 
-      - name: Install backend
+      - name: Install backend runtime and pip-audit
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install pip-audit
+          pip install -e .
 
       - name: pip-audit
         working-directory: backend
-        continue-on-error: true
-        run: pip-audit
+        run: pip-audit --skip-editable
 
       - uses: actions/setup-node@v4
         with:
@@ -141,7 +140,6 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: npm audit high
+      - name: npm audit --audit-level=high
         working-directory: frontend
-        continue-on-error: true
         run: npm audit --audit-level=high
