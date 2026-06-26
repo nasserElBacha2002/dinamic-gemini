@@ -1,17 +1,10 @@
-import { useMemo } from 'react';
 import { Box, Button, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import {
-  ROUTE_CLIENTS,
-  ROUTE_HOME,
-  pathToClient,
-  pathToInventoryAnalyticsCompare,
-} from '../../../constants/appRoutes';
+import { ROUTE_HOME, pathToInventoryAnalyticsCompare } from '../../../constants/appRoutes';
 import type { Inventory } from '../../../api/types';
 import { PageHeader, type PageHeaderBreadcrumb } from '../../../components/shell';
 import { StatusBadge } from '../../../components/ui';
-import { useClient } from '../../../hooks';
 import type { InventoryHeaderViewModel } from '../adapters';
 import InventoryExportMenu from './InventoryExportMenu';
 
@@ -30,19 +23,10 @@ export default function InventoryDetailHeader({
 }: InventoryDetailHeaderProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const clientId = (inventory.client_id ?? '').trim();
-  const clientQuery = useClient(clientId || undefined, { enabled: Boolean(clientId) });
 
-  const breadcrumbs = useMemo((): PageHeaderBreadcrumb[] => {
-    const crumbs: PageHeaderBreadcrumb[] = [{ label: t('aisle.breadcrumb_inventories'), to: ROUTE_HOME }];
-    if (clientId) {
-      crumbs.push({ label: t('clients.breadcrumb_list'), to: ROUTE_CLIENTS });
-      if (clientQuery.data?.name) {
-        crumbs.push({ label: clientQuery.data.name, to: pathToClient(clientId) });
-      }
-    }
-    return crumbs;
-  }, [clientId, clientQuery.data?.name, t]);
+  const breadcrumbs: PageHeaderBreadcrumb[] = [
+    { label: t('aisle.breadcrumb_inventories'), to: ROUTE_HOME },
+  ];
 
   return (
     <PageHeader

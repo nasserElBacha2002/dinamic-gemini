@@ -3,7 +3,7 @@
  */
 
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, MemoryRouter, Route, Routes, RouterProvider } from 'react-router-dom';
 import AislePositionsPage from '../src/pages/AislePositionsPage';
@@ -297,7 +297,10 @@ describe('AislePositionsPage (Aisle Results)', () => {
   it('shows aisle title, inventory context, and workload KPIs', () => {
     renderPage();
     expect(screen.getByRole('heading', { name: 'A-01' })).toBeTruthy();
-    expect(screen.getAllByText('Test Inventory')).toHaveLength(2);
+    expect(screen.getByText('Test Inventory')).toBeInTheDocument();
+    const breadcrumb = screen.getByLabelText('breadcrumb');
+    expect(within(breadcrumb).getByRole('link', { name: /inventarios|inventories/i })).toBeInTheDocument();
+    expect(within(breadcrumb).getByText('A-01')).toBeInTheDocument();
     expect(screen.getByText(/total contabilizado|counted total/i)).toBeTruthy();
     expect(screen.getByText(/ítems contados:\s*1|counted items:\s*1/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /fusionar sku repetidos|merge repeated labels/i })).toBeTruthy();
