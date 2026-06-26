@@ -328,6 +328,8 @@ export default function QuickReviewDrawer({
                     />
                   ) : null}
 
+                  <ResultEvidenceViewer result={result} inventoryId={inventoryId} aisleId={aisleId} />
+
                   <Box sx={{ pt: 0 }}>
                     <ResultReviewActions
                       result={result}
@@ -341,8 +343,6 @@ export default function QuickReviewDrawer({
                       onDeleteClick={handleDeleteClick}
                     />
                   </Box>
-
-                  <ResultEvidenceViewer result={result} inventoryId={inventoryId} aisleId={aisleId} />
 
                   <PositionCodeScanEvidenceSection
                     inventoryId={inventoryId}

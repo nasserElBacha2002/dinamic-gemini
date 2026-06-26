@@ -83,6 +83,7 @@ export default function ResultReviewActions({
             fullWidth
             onClick={onConfirm}
             disabled={actionLoading}
+            data-testid="result-review-confirm"
             sx={{ 
               py: 2, 
               fontWeight: 800, 
