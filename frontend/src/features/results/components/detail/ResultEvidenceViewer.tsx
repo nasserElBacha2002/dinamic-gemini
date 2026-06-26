@@ -1,12 +1,21 @@
 /**
- * Sprint 4.3 — Evidence viewer: main image anchor, zoom, fullscreen, multi-image selection (label chips).
+ * Sprint 4.3 — Evidence viewer: inline primary preview + generic fullscreen dialog.
  * Phase 4.8: When structural evidenceView exists, use backend imageUrl (no legacy asset loader).
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import { Box, Button, Typography, Divider } from '@mui/material';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  IconButton,
+  Stack,
+  Typography,
+} from '@mui/material';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import { useTranslation } from 'react-i18next';
-import { ImageAssetCard, ImagePreviewDialog } from '../../../../components/ui';
+import { ImagePreviewDialog } from '../../../../components/ui';
 import type { ResultDetail } from '../../types';
 import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
 import {
@@ -125,6 +134,28 @@ function buildFrames(result: ResultDetail): EvidenceFrame[] {
   }));
 }
 
+function legacySpecForFrame(
+  frame: EvidenceFrame | null,
+  inventoryId: string,
+  aisleId: string,
+  jobId: string | null
+) {
+  if (!frame?.useLegacyLoader) return null;
+  return { inventoryId, aisleId, assetId: frame.key, jobId };
+}
+
+function frameAltText(frame: EvidenceFrame, t: (key: string, opts?: Record<string, string>) => string): string {
+  return frame.fileName
+    ? t('results.evidence_viewer.alt_file', { fileName: frame.fileName })
+    : t('results.evidence_viewer.alt_image');
+}
+
+function frameDialogTitle(frame: EvidenceFrame, t: (key: string) => string): string {
+  return frame.fileName
+    ? `${frame.label} · ${frame.fileName}`
+    : frame.label || t('results.evidence_viewer.title_fallback');
+}
+
 export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: ResultEvidenceViewerProps) {
   const { t } = useTranslation();
   const evidenceIsDisplayable = isEvidenceDisplayable(
@@ -137,28 +168,129 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
     () => (evidenceIsDisplayable ? buildFrames(result) : []),
     [result, evidenceIsDisplayable]
   );
-  const [previewTarget, setPreviewTarget] = useState<EvidenceFrame | null>(null);
+  const primaryFrame = frames[0] ?? null;
+  const additionalFrames = frames.slice(1);
+
+  const [previewFrame, setPreviewFrame] = useState<EvidenceFrame | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [directImageLoadError, setDirectImageLoadError] = useState(false);
+
+  const primaryDirectUrl =
+    primaryFrame && !primaryFrame.useLegacyLoader ? primaryFrame.imageUrl : null;
+
+  useEffect(() => {
+    setDirectImageLoadError(false);
+  }, [primaryDirectUrl]);
+
+  const jobId = jobIdFromResult(result);
+
+  const primaryLegacySpec = useMemo(
+    () => legacySpecForFrame(primaryFrame, inventoryId, aisleId, jobId),
+    [primaryFrame, inventoryId, aisleId, jobId]
+  );
+  const primaryLoadState = useEvidenceImageLoad(primaryLegacySpec);
+
+  const secondaryLegacySpec = useMemo(() => {
+    if (!previewFrame?.useLegacyLoader || previewFrame.key === primaryFrame?.key) {
+      return null;
+    }
+    return legacySpecForFrame(previewFrame, inventoryId, aisleId, jobId);
+  }, [previewFrame, primaryFrame, inventoryId, aisleId, jobId]);
+  const secondaryLoadState = useEvidenceImageLoad(secondaryLegacySpec);
+
+  const resolveFrameSrc = useCallback(
+    (frame: EvidenceFrame | null): string | null => {
+      if (!frame) return null;
+      if (!frame.useLegacyLoader) return frame.imageUrl;
+      if (frame.key === primaryFrame?.key) {
+        return primaryLoadState.status === 'loaded' ? primaryLoadState.imageSrc : null;
+      }
+      if (previewFrame?.key === frame.key && secondaryLoadState.status === 'loaded') {
+        return secondaryLoadState.imageSrc;
+      }
+      return null;
+    },
+    [primaryFrame, primaryLoadState, previewFrame, secondaryLoadState]
+  );
+
+  const resolveFrameLoading = useCallback(
+    (frame: EvidenceFrame | null): boolean => {
+      if (!frame?.useLegacyLoader) return false;
+      if (frame.key === primaryFrame?.key) return primaryLoadState.status === 'loading';
+      if (previewFrame?.key === frame.key) return secondaryLoadState.status === 'loading';
+      return false;
+    },
+    [primaryFrame, primaryLoadState, previewFrame, secondaryLoadState]
+  );
+
+  const resolveFrameError = useCallback(
+    (frame: EvidenceFrame | null): string | null => {
+      if (!frame?.useLegacyLoader) return null;
+      if (frame.key === primaryFrame?.key && primaryLoadState.status === 'error') {
+        return primaryLoadState.message;
+      }
+      if (previewFrame?.key === frame.key && secondaryLoadState.status === 'error') {
+        return secondaryLoadState.message;
+      }
+      return null;
+    },
+    [primaryFrame, primaryLoadState, previewFrame, secondaryLoadState]
+  );
+
+  const resolveDirectImageError = useCallback(
+    (frame: EvidenceFrame | null): boolean => {
+      if (!frame || frame.useLegacyLoader) return false;
+      return frame.key === primaryFrame?.key && directImageLoadError;
+    },
+    [primaryFrame, directImageLoadError]
+  );
+
+  const canOpenFrameFullscreen = useCallback(
+    (frame: EvidenceFrame | null): boolean => {
+      if (!frame) return false;
+      const src = resolveFrameSrc(frame);
+      if (!src) return false;
+      if (resolveFrameError(frame)) return false;
+      if (resolveDirectImageError(frame)) return false;
+      return true;
+    },
+    [resolveFrameSrc, resolveFrameError, resolveDirectImageError]
+  );
+
+  const openFullscreen = useCallback(
+    (frame: EvidenceFrame) => {
+      if (!canOpenFrameFullscreen(frame)) return;
+      setPreviewFrame(frame);
+      setPreviewOpen(true);
+    },
+    [canOpenFrameFullscreen]
+  );
+
+  const closeFullscreen = useCallback(() => {
+    setPreviewOpen(false);
+    setPreviewFrame(null);
+  }, []);
 
   useEffect(() => {
     if (!evidenceIsDisplayable) {
-      setPreviewTarget(null);
+      closeFullscreen();
     }
-  }, [evidenceIsDisplayable]);
+  }, [evidenceIsDisplayable, closeFullscreen]);
 
-  const jobId = jobIdFromResult(result);
-  const legacyImageSpec =
-    previewTarget?.useLegacyLoader === true
-      ? { inventoryId, aisleId, assetId: previewTarget.key, jobId }
-      : null;
-
-  const loadState = useEvidenceImageLoad(legacyImageSpec);
-
-  const previewSrc =
-    previewTarget?.useLegacyLoader === false
-      ? previewTarget.imageUrl
-      : loadState.status === 'loaded'
-        ? loadState.imageSrc
-        : null;
+  const primarySrc = resolveFrameSrc(primaryFrame);
+  const primaryLoading = resolveFrameLoading(primaryFrame);
+  const primaryLegacyError = resolveFrameError(primaryFrame);
+  const primaryDirectLoadFailed = resolveDirectImageError(primaryFrame);
+  const primaryError = primaryLegacyError
+    ?? (primaryDirectLoadFailed ? t('results.evidence_viewer.image_load_error') : null);
+  const primaryImageRenderable = Boolean(primarySrc) && !primaryLegacyError && !primaryDirectLoadFailed;
+  const dialogFrame = previewFrame ?? primaryFrame;
+  const dialogSrc = resolveFrameSrc(dialogFrame);
+  const dialogLoading = resolveFrameLoading(dialogFrame);
+  const dialogLegacyError = resolveFrameError(dialogFrame);
+  const dialogDirectLoadFailed = resolveDirectImageError(dialogFrame);
+  const dialogError = dialogLegacyError
+    ?? (dialogDirectLoadFailed ? t('results.evidence_viewer.image_load_error') : null);
 
   const hasRecordOnly =
     evidenceIsDisplayable && result.evidence.length > 0 && frames.length === 0;
@@ -206,9 +338,10 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
         </Box>
       )}
 
-      {frames.length > 0 && (
+      {primaryFrame ? (
         <>
           <Box
+            data-testid="result-evidence-inline-preview"
             sx={{
               border: '1px solid',
               borderColor: 'divider',
@@ -217,46 +350,139 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
               bgcolor: 'background.default',
             }}
           >
-            {frames.map((f, i) => (
-              <Box key={f.key}>
-                {i > 0 && <Divider />}
-                <ImageAssetCard
-                  title={f.fileName || f.label}
-                  subtitle={f.fileName ? f.label : t('results.evidence_viewer.subtitle_fallback')}
-                  actions={
-                    <Button variant="outlined" size="small" onClick={() => setPreviewTarget(f)}>
-                      {t('results.evidence_viewer.preview')}
-                    </Button>
-                  }
-                />
-              </Box>
-            ))}
+            <Box
+              sx={{
+                position: 'relative',
+                bgcolor: 'grey.900',
+                minHeight: 180,
+                maxHeight: 320,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {primaryLoading ? (
+                <CircularProgress size={28} sx={{ color: 'grey.400' }} />
+              ) : null}
+              {primaryError ? (
+                <Typography variant="body2" color="error.light" sx={{ px: 2, textAlign: 'center' }}>
+                  {primaryError}
+                </Typography>
+              ) : null}
+              {primaryImageRenderable ? (
+                <>
+                  <Box
+                    component="button"
+                    type="button"
+                    onClick={() => openFullscreen(primaryFrame)}
+                    aria-label={t('results.evidence_viewer.expand_image')}
+                    sx={{
+                      border: 0,
+                      p: 0,
+                      m: 0,
+                      width: '100%',
+                      maxHeight: 320,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      bgcolor: 'transparent',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Box
+                      component="img"
+                      src={primarySrc ?? undefined}
+                      alt={frameAltText(primaryFrame, t)}
+                      onLoad={() => setDirectImageLoadError(false)}
+                      onError={() => {
+                        if (!primaryFrame.useLegacyLoader) {
+                          setDirectImageLoadError(true);
+                        }
+                      }}
+                      sx={{
+                        display: 'block',
+                        maxWidth: '100%',
+                        maxHeight: 320,
+                        width: 'auto',
+                        height: 'auto',
+                        objectFit: 'contain',
+                      }}
+                    />
+                  </Box>
+                  <IconButton
+                    size="small"
+                    onClick={() => openFullscreen(primaryFrame)}
+                    aria-label={t('results.evidence_viewer.open_fullscreen')}
+                    sx={{
+                      position: 'absolute',
+                      top: 8,
+                      right: 8,
+                      bgcolor: 'rgba(0,0,0,0.45)',
+                      color: 'common.white',
+                      '&:hover': { bgcolor: 'rgba(0,0,0,0.6)' },
+                    }}
+                  >
+                    <FullscreenIcon fontSize="small" />
+                  </IconButton>
+                </>
+              ) : null}
+            </Box>
+
+            <Box sx={{ px: 2, py: 1.5 }}>
+              <Typography variant="body2" fontWeight={600} noWrap title={primaryFrame.fileName ?? undefined}>
+                {primaryFrame.fileName || t('results.evidence_viewer.subtitle_fallback')}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.25 }}>
+                {primaryFrame.label}
+              </Typography>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => openFullscreen(primaryFrame)}
+                disabled={!canOpenFrameFullscreen(primaryFrame) && !primaryLoading}
+                data-testid="result-evidence-open-fullscreen"
+                sx={{ mt: 1.25, textTransform: 'none' }}
+              >
+                {t('results.evidence_viewer.open_fullscreen')}
+              </Button>
+            </Box>
           </Box>
 
+          {additionalFrames.length > 0 ? (
+            <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mt: 1.5 }}>
+              {additionalFrames.map((frame) => (
+                <Chip
+                  key={frame.key}
+                  size="small"
+                  variant="outlined"
+                  label={frame.fileName ? `${frame.label} · ${frame.fileName}` : frame.label}
+                  onClick={() => openFullscreen(frame)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openFullscreen(frame);
+                    }
+                  }}
+                  clickable
+                  component="button"
+                  sx={{ maxWidth: '100%' }}
+                />
+              ))}
+            </Stack>
+          ) : null}
+
           <ImagePreviewDialog
-            open={Boolean(previewTarget)}
-            onClose={() => setPreviewTarget(null)}
-            title={
-              previewTarget?.fileName
-                ? `${previewTarget.label} · ${previewTarget.fileName}`
-                : previewTarget?.label ?? t('results.evidence_viewer.title_fallback')
-            }
-            src={previewSrc}
-            alt={
-              previewTarget?.fileName
-                ? t('results.evidence_viewer.alt_file', { fileName: previewTarget.fileName })
-                : t('results.evidence_viewer.alt_image')
-            }
-            loading={previewTarget?.useLegacyLoader === true && loadState.status === 'loading'}
-            error={
-              previewTarget?.useLegacyLoader === true && loadState.status === 'error'
-                ? loadState.message
-                : null
-            }
-            caption={previewTarget?.fileName ?? previewTarget?.label}
+            open={previewOpen}
+            onClose={closeFullscreen}
+            title={dialogFrame ? frameDialogTitle(dialogFrame, t) : t('results.evidence_viewer.title_fallback')}
+            src={dialogSrc}
+            alt={dialogFrame ? frameAltText(dialogFrame, t) : t('results.evidence_viewer.alt_image')}
+            loading={dialogLoading}
+            error={dialogError}
+            caption={dialogFrame?.fileName ?? dialogFrame?.label}
           />
         </>
-      )}
+      ) : null}
     </Box>
   );
 }

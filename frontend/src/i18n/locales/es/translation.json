@@ -1754,13 +1754,16 @@
       "generic": "Evidencia",
       "heading": "Evidencia",
       "no_images": "No hay imágenes disponibles.",
+      "open_fullscreen": "Ver en pantalla completa",
+      "expand_image": "Ampliar imagen de evidencia",
       "preview": "Vista previa",
       "primary": "Principal",
       "record_only": "Hay registros de evidencia, pero no se encontró un recurso visual para previsualizar.",
       "subtitle_fallback": "Sin nombre de archivo",
       "supporting": "Soporte {{n}}",
       "title_fallback": "Vista previa",
-      "url_unavailable": "La imagen de evidencia no está disponible."
+      "url_unavailable": "La imagen de evidencia no está disponible.",
+      "image_load_error": "No se pudo cargar la imagen de evidencia."
     },
     "exit_fullscreen": "Exit fullscreen",
     "filtered_empty_message": "Filtered empty message",

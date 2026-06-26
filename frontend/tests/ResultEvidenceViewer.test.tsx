@@ -16,18 +16,6 @@ vi.mock('../src/features/results/hooks/useEvidenceImageLoad', () => ({
 }));
 
 vi.mock('../src/components/ui', () => ({
-  ImageAssetCard: ({
-    title,
-    actions,
-  }: {
-    title: string;
-    actions?: React.ReactNode;
-  }) => (
-    <div data-testid="image-asset-card">
-      <span>{title}</span>
-      {actions}
-    </div>
-  ),
   ImagePreviewDialog: ({
     open,
     title,
@@ -81,7 +69,8 @@ function renderViewer(result: ResultDetail) {
 const INVALID_MSG = /could not be validated|no se pudo validar la evidencia/i;
 const MISSING_MSG = /no evidence image was returned|no devolvió una imagen de evidencia/i;
 const UNVALIDATED_MSG = /traceability could not be confirmed|no se pudo confirmar la trazabilidad/i;
-const RECORD_ONLY_MSG = /record only|registros de evidencia/i;
+const RECORD_ONLY_MSG = /evidence records exist|registros de evidencia/i;
+const IMAGE_LOAD_ERROR_MSG = /could not be loaded|no se pudo cargar la imagen de evidencia/i;
 
 describe('ResultEvidenceViewer', () => {
   beforeEach(() => {
@@ -89,7 +78,7 @@ describe('ResultEvidenceViewer', () => {
     mockUseEvidenceImageLoad.mockReturnValue({ status: 'idle' });
   });
 
-  it('VALID + structural evidenceView renders preview using backend imageUrl', () => {
+  it('VALID + structural evidenceView renders inline preview using backend imageUrl', () => {
     renderViewer(
       baseResult({
         evidenceView: {
@@ -101,7 +90,11 @@ describe('ResultEvidenceViewer', () => {
       })
     );
 
-    expect(screen.getAllByTestId('image-asset-card').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('result-evidence-inline-preview')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /photo\.jpg|vista previa/i })).toHaveAttribute(
+      'src',
+      'https://cdn.example/evidence.jpg'
+    );
     expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
     expect(screen.queryByText(INVALID_MSG)).not.toBeInTheDocument();
   });
@@ -125,11 +118,11 @@ describe('ResultEvidenceViewer', () => {
 
     expect(screen.getByText(INVALID_MSG)).toBeInTheDocument();
     expect(screen.queryByText(RECORD_ONLY_MSG)).not.toBeInTheDocument();
-    expect(screen.queryByTestId('image-asset-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('result-evidence-inline-preview')).not.toBeInTheDocument();
     expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
   });
 
-  it('MISSING shows missing message and no preview cards', () => {
+  it('MISSING shows missing message and no inline preview', () => {
     renderViewer(
       baseResult({
         traceabilityStatus: 'MISSING',
@@ -139,10 +132,10 @@ describe('ResultEvidenceViewer', () => {
     );
 
     expect(screen.getByText(MISSING_MSG)).toBeInTheDocument();
-    expect(screen.queryByTestId('image-asset-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('result-evidence-inline-preview')).not.toBeInTheDocument();
   });
 
-  it('UNVALIDATED shows unvalidated message and no preview cards', () => {
+  it('UNVALIDATED shows unvalidated message and no inline preview', () => {
     renderViewer(
       baseResult({
         traceabilityStatus: 'UNVALIDATED',
@@ -151,7 +144,7 @@ describe('ResultEvidenceViewer', () => {
     );
 
     expect(screen.getByText(UNVALIDATED_MSG)).toBeInTheDocument();
-    expect(screen.queryByTestId('image-asset-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('result-evidence-inline-preview')).not.toBeInTheDocument();
   });
 
   it('VALID + hasValidEvidence false blocks preview', () => {
@@ -170,7 +163,7 @@ describe('ResultEvidenceViewer', () => {
       })
     );
 
-    expect(screen.queryByTestId('image-asset-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('result-evidence-inline-preview')).not.toBeInTheDocument();
     expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
   });
 
@@ -197,11 +190,11 @@ describe('ResultEvidenceViewer', () => {
       })
     );
 
-    expect(screen.queryByTestId('image-asset-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('result-evidence-inline-preview')).not.toBeInTheDocument();
     expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
   });
 
-  it('Phase 4.8: evidenceView.displayable=true with imageUrl shows preview cards', () => {
+  it('Phase 4.8: evidenceView.displayable=true with imageUrl shows inline preview', () => {
     renderViewer(
       baseResult({
         traceabilityStatus: 'INVALID',
@@ -215,7 +208,7 @@ describe('ResultEvidenceViewer', () => {
       })
     );
 
-    expect(screen.getAllByTestId('image-asset-card').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('result-evidence-inline-preview')).toBeInTheDocument();
     expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
   });
 
@@ -242,7 +235,7 @@ describe('ResultEvidenceViewer', () => {
     );
 
     expect(screen.getByText(/evidence image is unavailable|imagen de evidencia no está disponible/i)).toBeInTheDocument();
-    expect(screen.queryByTestId('image-asset-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('result-evidence-inline-preview')).not.toBeInTheDocument();
   });
 
   it('Phase 4.8: displayable false with imageUrl does not render image or call legacy loader', () => {
@@ -258,8 +251,86 @@ describe('ResultEvidenceViewer', () => {
       })
     );
 
-    expect(screen.queryByTestId('image-asset-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('result-evidence-inline-preview')).not.toBeInTheDocument();
     expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(null);
+  });
+
+  it('opens generic fullscreen preview from inline image and fullscreen action', () => {
+    renderViewer(
+      baseResult({
+        evidenceView: {
+          displayable: true,
+          traceabilityStatus: 'valid',
+          sourceKind: 'structural_result_evidence',
+          imageUrl: 'https://cdn.example/evidence.jpg',
+        },
+      })
+    );
+
+    fireEvent.click(screen.getByTestId('result-evidence-open-fullscreen'));
+    expect(screen.getByTestId('image-preview-dialog')).toBeInTheDocument();
+  });
+
+  it('shows fallback when direct structural image URL fails to load', () => {
+    renderViewer(
+      baseResult({
+        evidenceView: {
+          displayable: true,
+          traceabilityStatus: 'valid',
+          sourceKind: 'structural_result_evidence',
+          imageUrl: 'https://cdn.example/broken.jpg',
+        },
+      })
+    );
+
+    const img = screen.getByRole('img', { name: /photo\.jpg|evidence preview/i });
+    fireEvent.error(img);
+
+    expect(screen.getByText(IMAGE_LOAD_ERROR_MSG)).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /photo\.jpg|evidence preview/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId('result-evidence-open-fullscreen')).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId('result-evidence-open-fullscreen'));
+    expect(screen.queryByTestId('image-preview-dialog')).not.toBeInTheDocument();
+  });
+
+  it('clears direct image load error when structural image URL changes', () => {
+    const { rerender } = renderViewer(
+      baseResult({
+        evidenceView: {
+          displayable: true,
+          traceabilityStatus: 'valid',
+          sourceKind: 'structural_result_evidence',
+          imageUrl: 'https://cdn.example/broken.jpg',
+        },
+      })
+    );
+
+    fireEvent.error(screen.getByRole('img', { name: /photo\.jpg|evidence preview/i }));
+    expect(screen.getByText(IMAGE_LOAD_ERROR_MSG)).toBeInTheDocument();
+
+    rerender(
+      <ThemeProvider theme={theme}>
+        <ResultEvidenceViewer
+          result={baseResult({
+            evidenceView: {
+              displayable: true,
+              traceabilityStatus: 'valid',
+              sourceKind: 'structural_result_evidence',
+              imageUrl: 'https://cdn.example/fixed.jpg',
+            },
+          })}
+          inventoryId="inv-1"
+          aisleId="aisle-1"
+        />
+      </ThemeProvider>
+    );
+
+    expect(screen.queryByText(IMAGE_LOAD_ERROR_MSG)).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /photo\.jpg|evidence preview/i })).toHaveAttribute(
+      'src',
+      'https://cdn.example/fixed.jpg'
+    );
   });
 
   it('clears preview dialog when transitioning VALID to INVALID', () => {
@@ -274,7 +345,7 @@ describe('ResultEvidenceViewer', () => {
       })
     );
 
-    fireEvent.click(screen.getAllByRole('button', { name: /preview|vista previa/i })[0]!);
+    fireEvent.click(screen.getByTestId('result-evidence-open-fullscreen'));
     expect(screen.getByTestId('image-preview-dialog')).toBeInTheDocument();
 
     rerender(
@@ -312,7 +383,7 @@ describe('ResultEvidenceViewer', () => {
       })
     );
 
-    fireEvent.click(screen.getAllByRole('button', { name: /preview|vista previa/i })[0]!);
+    fireEvent.click(screen.getByTestId('result-evidence-open-fullscreen'));
     expect(screen.getByTestId('image-preview-dialog')).toBeInTheDocument();
 
     rerender(

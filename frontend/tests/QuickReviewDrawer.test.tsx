@@ -363,12 +363,13 @@ describe('QuickReviewDrawer', () => {
     expect(screen.getByText(/IMG_1024.JPG/)).toBeInTheDocument();
   });
 
-  it('shows Preview when structural evidenceView is displayable', async () => {
+  it('shows inline evidence preview and fullscreen action when structural evidenceView is displayable', async () => {
     const { useResultDetail } = await import('../src/features/results');
     vi.mocked(useResultDetail).mockReturnValue(
       stubUseResultDetail({
         result: mockResultDetail({
           sourceImageId: 'asset-uuid-123',
+          sourceFileName: 'asset.jpg',
           evidenceView: {
             displayable: true,
             traceabilityStatus: 'valid',
@@ -381,9 +382,39 @@ describe('QuickReviewDrawer', () => {
 
     renderDrawer(baseContext);
     await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    expect(screen.getByTestId('result-evidence-inline-preview')).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /preview|vista previa|view full image|ver imagen/i })
+      screen.getByTestId('result-evidence-open-fullscreen')
     ).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /asset\.jpg|vista previa/i })).toHaveAttribute(
+      'src',
+      'https://cdn.example/asset-uuid-123.jpg'
+    );
+  });
+
+  it('renders evidence preview before confirm action in drawer layout', async () => {
+    const { useResultDetail } = await import('../src/features/results');
+    vi.mocked(useResultDetail).mockReturnValue(
+      stubUseResultDetail({
+        result: mockResultDetail({
+          sourceFileName: 'IMG_1024.JPG',
+          evidenceView: {
+            displayable: true,
+            traceabilityStatus: 'valid',
+            sourceKind: 'structural_result_evidence',
+            imageUrl: 'https://cdn.example/IMG_1024.JPG',
+          },
+        }),
+      })
+    );
+
+    renderDrawer(baseContext);
+    await screen.findByRole('heading', { level: 1, name: 'SKU001' });
+    const evidenceMarker = screen.getByTestId('result-evidence-inline-preview');
+    const confirmButton = screen.getByTestId('result-review-confirm');
+    expect(
+      evidenceMarker.compareDocumentPosition(confirmButton) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
   });
 
   it('shows no-evidence state when no source image', async () => {
