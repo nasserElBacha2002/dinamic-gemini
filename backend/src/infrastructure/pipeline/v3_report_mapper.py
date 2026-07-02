@@ -82,6 +82,7 @@ def _summary_merge_optional_string_projections(entity: dict[str, Any], out: dict
         "resolved_manifest_entry_id",
         "traceability_status",
         "traceability_warning",
+        "detection_outcome",
     ):
         val = entity.get(src_key)
         if val is not None:

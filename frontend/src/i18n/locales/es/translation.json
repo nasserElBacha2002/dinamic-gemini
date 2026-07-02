@@ -1763,7 +1763,9 @@
       "supporting": "Soporte {{n}}",
       "title_fallback": "Vista previa",
       "url_unavailable": "La imagen de evidencia no está disponible.",
-      "image_load_error": "No se pudo cargar la imagen de evidencia."
+      "image_load_error": "No se pudo cargar la imagen de evidencia.",
+      "scan_image": "Imagen del escaneo",
+      "review_context_warning": "La trazabilidad del producto no está confirmada. Se muestra la imagen del escaneo para que puedas revisar si corresponde a un pallet sin etiqueta u otra carga."
     },
     "exit_fullscreen": "Exit fullscreen",
     "filtered_empty_message": "Filtered empty message",

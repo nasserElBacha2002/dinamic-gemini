@@ -8,6 +8,9 @@ from typing import Any
 
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import ResultEvidenceRepository
+from src.application.use_cases.pipeline.persist_aisle_result import (
+    hybrid_report_has_persistible_detections,
+)
 from src.domain.execution_image_manifest import (
     ExecutionImageManifest,
     ExecutionImageManifestError,
@@ -103,7 +106,6 @@ class TraceabilityArtifactService:
         canonical_traceability_expected: bool = False,
     ) -> Path:
         """Build traceability_manifest.json from persisted structural evidence."""
-        del hybrid_report  # structural rows are authoritative; hybrid_report not used when rows exist
         required = self.is_required_for_run(
             input_type=input_type,
             canonical_traceability_expected=canonical_traceability_expected,
@@ -116,12 +118,26 @@ class TraceabilityArtifactService:
                 job_id=job_id,
             )
         )
+        zero_detection_outcome = False
         if required and not rows:
-            raise TraceabilityEvidenceMissingError(
-                f"Structural result_evidence rows missing for required traceability artifact "
-                f"(job_id={job_id})"
+            if hybrid_report is None or hybrid_report_has_persistible_detections(
+                hybrid_report,
+                aisle_id=aisle_id,
+                job_id=job_id,
+                inventory_id=inventory_id,
+                input_type=input_type,
+            ):
+                raise TraceabilityEvidenceMissingError(
+                    f"Structural result_evidence rows missing for required traceability artifact "
+                    f"(job_id={job_id})"
+                )
+            zero_detection_outcome = True
+            logger.info(
+                "traceability_artifact zero_detection_outcome job_id=%s "
+                "(no persistible products; empty structural evidence allowed)",
+                job_id,
             )
-        if not required and not rows:
+        elif not required and not rows:
             logger.info(
                 "traceability_artifact skipped empty evidence job_id=%s (not required)",
                 job_id,
@@ -131,6 +147,11 @@ class TraceabilityArtifactService:
             prompt_composition,
             manifest_required=required,
         )
+        combined_warnings = list(artifact_warnings)
+        if zero_detection_outcome:
+            combined_warnings.append(
+                "No identifiable products were persisted for this run; result_evidence is empty."
+            )
 
         manifest_body = build_traceability_manifest(
             TraceabilityManifestBuildInput(
@@ -145,7 +166,7 @@ class TraceabilityArtifactService:
                 result_evidence_rows=rows,
                 execution_manifest=execution_manifest,
                 manifest_required=required,
-                artifact_warnings=artifact_warnings,
+                artifact_warnings=tuple(combined_warnings),
             )
         )
         if not traceability_manifest_is_json_safe(manifest_body):

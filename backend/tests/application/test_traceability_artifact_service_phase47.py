@@ -150,10 +150,70 @@ def test_missing_structural_rows_raises_for_required_photo_job(tmp_path: Path) -
             model_name="gemini-2.0",
             prompt_composition=_composition(),
             run_metadata={},
-            hybrid_report={"entities": [{"entity_uid": "e1"}]},
+            hybrid_report={
+                "entities": [
+                    {
+                        "entity_uid": "e1",
+                        "entity_type": "PALLET",
+                        "internal_code": "SKU-A",
+                        "final_quantity": 1,
+                        "confidence": 0.9,
+                        "count_status": "COUNTED",
+                        "evidence_path": "evidence/crop.jpg",
+                    }
+                ]
+            },
             input_type="photos",
             canonical_traceability_expected=True,
         )
+
+
+def test_photo_empty_entities_without_persist_raises_missing_evidence(tmp_path: Path) -> None:
+    svc = TraceabilityArtifactService(
+        result_evidence_repo=MemoryResultEvidenceRepository(),
+        clock=FixedClock(datetime(2026, 6, 18, tzinfo=timezone.utc)),
+    )
+    with pytest.raises(TraceabilityEvidenceMissingError):
+        svc.generate_and_write(
+            job_id="job-1",
+            inventory_id="inv-1",
+            aisle_id="aisle-1",
+            run_id="run",
+            run_dir=tmp_path / "run",
+            provider="gemini",
+            model_name="gemini-2.0",
+            prompt_composition=_composition(),
+            run_metadata={},
+            hybrid_report={"entities": []},
+            input_type="photos",
+            canonical_traceability_expected=True,
+        )
+
+
+def test_non_photo_zero_detection_writes_empty_traceability_manifest(tmp_path: Path) -> None:
+    svc = TraceabilityArtifactService(
+        result_evidence_repo=MemoryResultEvidenceRepository(),
+        clock=FixedClock(datetime(2026, 6, 18, tzinfo=timezone.utc)),
+    )
+    path = svc.generate_and_write(
+        job_id="job-1",
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        run_id="run",
+        run_dir=tmp_path / "run",
+        provider="gemini",
+        model_name="gemini-2.0",
+        prompt_composition=None,
+        run_metadata={},
+        hybrid_report={"entities": []},
+        input_type="video",
+        canonical_traceability_expected=False,
+    )
+    import json
+
+    body = json.loads(path.read_text(encoding="utf-8"))
+    assert body["result_evidence"] == []
+    assert body["summary"]["total_evidence_rows"] == 0
 
 
 def test_missing_manifest_raises_for_required_photo_job(tmp_path: Path) -> None:

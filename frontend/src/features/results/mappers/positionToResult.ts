@@ -62,6 +62,12 @@ export function mapResultEvidenceViewResponse(
     sourceKind: api.source_kind,
     provider: api.provider ?? null,
     modelName: api.model_name ?? null,
+    reviewContextDisplayable: api.review_context_displayable === true,
+    reviewContextImageUrl: api.review_context_image_url ?? null,
+    reviewContextWarning:
+      api.review_context_warning != null && String(api.review_context_warning).trim() !== ''
+        ? String(api.review_context_warning).trim()
+        : null,
   };
 }
 

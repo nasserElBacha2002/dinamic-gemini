@@ -1205,7 +1205,9 @@
       "supporting": "Supporting {{n}}",
       "title_fallback": "Image preview",
       "url_unavailable": "Evidence image is unavailable.",
-      "image_load_error": "The evidence image could not be loaded."
+      "image_load_error": "The evidence image could not be loaded.",
+      "scan_image": "Scan image",
+      "review_context_warning": "Product traceability is not confirmed. The scan image is shown so you can verify an unlabeled pallet or similar load."
     },
     "exit_fullscreen": "Exit fullscreen",
     "filtered_empty_message": "Filtered empty message",

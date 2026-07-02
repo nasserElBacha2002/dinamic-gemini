@@ -22,6 +22,11 @@ from src.domain.result_evidence.display import (
     detect_source_asset_mismatch,
     resolve_source_asset_id,
 )
+from src.domain.result_evidence.review_context import (
+    REVIEW_CONTEXT_TRACEABILITY_UNCONFIRMED_WARNING,
+    position_qualifies_for_review_context,
+    resolve_review_context_asset_id,
+)
 from src.domain.result_evidence.entities import ResultEvidenceRecord, ResultEvidenceRole
 from src.domain.traceability import TraceabilityStatus, normalize_traceability_status
 
@@ -59,6 +64,9 @@ class ResultEvidenceViewModel:
     source_kind: str
     provider: str | None
     model_name: str | None
+    review_context_displayable: bool = False
+    review_context_image_url: str | None = None
+    review_context_warning: str | None = None
 
 
 @dataclass(frozen=True)
@@ -258,6 +266,56 @@ class ResultEvidenceQueryService:
             model_name=record.model_name,
         )
 
+    def _apply_review_context(
+        self,
+        view: ResultEvidenceViewModel,
+        *,
+        position: Position,
+        record: ResultEvidenceRecord | None,
+        job_rows: list[ResultEvidenceRecord],
+        inventory_id: str,
+        aisle_id: str,
+        assets_by_id: dict[str, object],
+    ) -> ResultEvidenceViewModel:
+        if view.displayable or not position_qualifies_for_review_context(position):
+            return view
+        asset_id = resolve_review_context_asset_id(
+            position,
+            record,
+            job_rows,
+            assets_by_id,
+        )
+        if not asset_id:
+            return view
+        image_url, access_status = self._resolve_image_url(
+            asset=assets_by_id.get(asset_id),
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            asset_id=asset_id,
+        )
+        if access_status != "available" or not image_url:
+            return view
+        return ResultEvidenceViewModel(
+            displayable=view.displayable,
+            traceability_status=view.traceability_status,
+            traceability_warning=view.traceability_warning,
+            role=view.role,
+            source_image_id=view.source_image_id,
+            source_asset_id=view.source_asset_id or asset_id,
+            resolved_manifest_entry_id=view.resolved_manifest_entry_id,
+            raw_manifest_entry_id=view.raw_manifest_entry_id,
+            raw_source_image_id=view.raw_source_image_id,
+            image_url=view.image_url,
+            thumbnail_url=view.thumbnail_url,
+            image_access_status=view.image_access_status,
+            source_kind=view.source_kind,
+            provider=view.provider,
+            model_name=view.model_name,
+            review_context_displayable=True,
+            review_context_image_url=image_url,
+            review_context_warning=REVIEW_CONTEXT_TRACEABILITY_UNCONFIRMED_WARNING,
+        )
+
     def get_position_evidence_view(
         self,
         *,
@@ -282,12 +340,21 @@ class ResultEvidenceQueryService:
         )
         matched = self._match_row(rows, position=position)
         assets_by_id = self._assets_by_id(aisle_id)
-        return self.build_evidence_view(
+        view = self.build_evidence_view(
             matched,
             inventory_id=inventory_id,
             aisle_id=aisle_id,
             assets_by_id=assets_by_id,
             job_id=job_id,
+        )
+        return self._apply_review_context(
+            view,
+            position=position,
+            record=matched,
+            job_rows=rows,
+            inventory_id=inventory_id,
+            aisle_id=aisle_id,
+            assets_by_id=assets_by_id,
         )
 
     def _artifact_read_model(self, job_id: str) -> TraceabilityArtifactReadModel | None:

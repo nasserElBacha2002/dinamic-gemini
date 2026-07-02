@@ -36,6 +36,8 @@ TABLES_FOR_REPORT: tuple[tuple[str, str], ...] = (
     ("dbo", "raw_labels"),
     ("dbo", "normalized_labels"),
     ("dbo", "source_assets"),
+    ("dbo", "aisle_code_scan_detections"),
+    ("dbo", "aisle_code_scan_runs"),
     ("dbo", "inventory_jobs"),
     ("dbo", "aisles"),
     ("dbo", "inventories"),
@@ -138,6 +140,7 @@ def run_delete_pipeline(cur: Any) -> None:
         "review_actions",
         "product_records",
         "evidences",
+        "aisle_code_scan_detections",
         "positions",
         "final_count_records",
         "raw_labels",
@@ -163,6 +166,8 @@ def run_delete_pipeline(cur: Any) -> None:
     )
     if cur.fetchone():
         delete_inventory_jobs(cur)
+
+    exec_if_table(cur, "dbo", "aisle_code_scan_runs", "DELETE FROM dbo.aisle_code_scan_runs;")
 
     for tbl in ("aisles", "inventories"):
         exec_if_table(cur, "dbo", tbl, f"DELETE FROM dbo.[{tbl}];")

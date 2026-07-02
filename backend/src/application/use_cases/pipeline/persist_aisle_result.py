@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from src.application.dto.mapped_aisle_result import MappedAisleResult
 from src.application.ports.clock import Clock
@@ -37,6 +38,8 @@ from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
 )
 from src.domain.jobs.finalization_evidence import EvidenceLevel, FinalizationStage
+from src.domain.result_evidence.manifest_primary import primary_manifest_entry
+from src.domain.traceability import TraceabilityStatus
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +56,7 @@ class PersistAisleResultCommand:
     provider: str | None = None
     model_name: str | None = None
     prompt_composition: dict | None = None
+    input_type: str | None = None
 
 
 class PersistAisleResultUseCase:
@@ -102,7 +106,13 @@ class PersistAisleResultUseCase:
 
         now = self._clock.now()
         inventory_id = self._inventory_id_for_aisle(command.aisle_id)
-        mapped = self._map_hybrid(command, inventory_id, now)
+        report = prepare_hybrid_report_for_photo_persist(
+            command.report,
+            job_id=job_id,
+            input_type=command.input_type,
+            prompt_composition=command.prompt_composition,
+        )
+        mapped = self._map_hybrid(command, inventory_id, now, report=report)
         self._raise_if_mapped_lengths_mismatch(command, mapped)
 
         base_repos = JobResultRepositories(
@@ -166,11 +176,16 @@ class PersistAisleResultUseCase:
         return aisle.inventory_id
 
     def _map_hybrid(
-        self, command: PersistAisleResultCommand, inventory_id: str, now: datetime
+        self,
+        command: PersistAisleResultCommand,
+        inventory_id: str,
+        now: datetime,
+        *,
+        report: dict[str, Any],
     ) -> MappedAisleResult:
         return self._hybrid_mapper(
             aisle_id=command.aisle_id,
-            report=command.report,
+            report=report,
             run_dir=command.run_dir,
             run_id=command.run_id,
             job_id=command.job_id,
@@ -222,7 +237,11 @@ class PersistAisleResultUseCase:
             mapped.result_evidence_records,
         ):
             final_quantity = product.detected_quantity
-            if not should_persist_detected_position(product.sku, final_quantity):
+            summary = position.detected_summary_json if isinstance(position.detected_summary_json, dict) else {}
+            entity_type = summary.get("entity_type") if isinstance(summary.get("entity_type"), str) else None
+            if not should_persist_detected_position(
+                product.sku, final_quantity, entity_type=entity_type
+            ):
                 skipped_unknown_zero += 1
                 continue
             repos.position_repo.save(position)
@@ -275,8 +294,114 @@ class PersistAisleResultUseCase:
         )
 
 
-def should_persist_detected_position(sku: str | None, final_quantity: int | None) -> bool:
+def should_persist_detected_position(
+    sku: str | None,
+    final_quantity: int | None,
+    *,
+    entity_type: str | None = None,
+) -> bool:
+    """Persist physical inventory positions even when SKU/qty are unknown (operator review)."""
+    et = (entity_type or "").strip().upper()
+    if et in PHYSICAL_INVENTORY_ENTITY_TYPES:
+        return True
     sku_norm = (sku or "").strip()
     is_unknown_sku = sku_norm == "" or sku_norm.upper() == "UNKNOWN"
     qty_norm = 0 if final_quantity is None else final_quantity
     return not (is_unknown_sku and qty_norm == 0)
+
+
+PHYSICAL_INVENTORY_ENTITY_TYPES = frozenset({"PALLET", "EMPTY_PALLET", "LOOSE_BOXES"})
+
+UNLABELED_SCAN_REVIEW_DISPLAY_LABEL = "Sin etiqueta legible — revisar"
+
+
+def prepare_hybrid_report_for_photo_persist(
+    report: dict[str, Any] | None,
+    *,
+    job_id: str,
+    input_type: str | None,
+    prompt_composition: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Ensure photo jobs yield at least one review row when the model returns no entities."""
+    base: dict[str, Any] = dict(report) if isinstance(report, dict) else {}
+    entities = base.get("entities")
+    if not isinstance(entities, list):
+        entities = []
+    if entities:
+        if base.get("total_entities_detected") is None:
+            base["total_entities_detected"] = len(entities)
+        return base
+    if (input_type or "").strip().lower() != "photos":
+        return base
+    placeholder = {
+        "entity_uid": f"{job_id}_no_readable_label",
+        "entity_type": "PALLET",
+        "model_entity_id": "UNLABELED_1",
+        "internal_code": None,
+        "product_label_quantity": None,
+        "final_quantity": None,
+        "confidence": 0.0,
+        "count_status": "NEEDS_REVIEW",
+        "review_display_label": UNLABELED_SCAN_REVIEW_DISPLAY_LABEL,
+        "detection_outcome": "no_readable_label",
+    }
+    _enrich_unlabeled_placeholder_with_primary_manifest(placeholder, prompt_composition)
+    return {
+        **base,
+        "entities": [placeholder],
+        "total_entities_detected": 1,
+    }
+
+
+def _enrich_unlabeled_placeholder_with_primary_manifest(
+    entity: dict[str, Any],
+    prompt_composition: dict[str, Any] | None,
+) -> None:
+    """Attach job primary scan image ids so operators can review the source photo."""
+    entry = primary_manifest_entry(prompt_composition)
+    if entry is None:
+        return
+    entity["manifest_entry_id"] = entry.manifest_entry_id
+    entity["resolved_manifest_entry_id"] = entry.manifest_entry_id
+    entity["source_image_id"] = entry.source_image_id
+    entity.setdefault("traceability_status", TraceabilityStatus.MISSING.value)
+
+
+def hybrid_report_has_persistible_detections(
+    report: dict[str, Any] | None,
+    *,
+    aisle_id: str,
+    job_id: str,
+    inventory_id: str,
+    input_type: str | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """True when at least one hybrid_report entity would be persisted (mirrors skip rules)."""
+    prepared = prepare_hybrid_report_for_photo_persist(
+        report, job_id=job_id, input_type=input_type
+    )
+    if not isinstance(prepared, dict):
+        return False
+    entities = prepared.get("entities")
+    if not isinstance(entities, list) or not entities:
+        return False
+
+    from src.infrastructure.pipeline.v3_report_mapper import map_hybrid_report_to_domain
+
+    mapped = map_hybrid_report_to_domain(
+        aisle_id,
+        prepared,
+        Path("."),
+        "run",
+        job_id,
+        now or datetime.now(timezone.utc),
+        inventory_id=inventory_id,
+    )
+    for position, product in zip(mapped.positions, mapped.product_records):
+        summary = position.detected_summary_json if isinstance(position.detected_summary_json, dict) else {}
+        entity_type = summary.get("entity_type") if isinstance(summary.get("entity_type"), str) else None
+        if should_persist_detected_position(
+            product.sku, product.detected_quantity, entity_type=entity_type
+        ):
+            return True
+    return False

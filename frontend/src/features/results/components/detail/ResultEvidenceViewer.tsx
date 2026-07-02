@@ -20,6 +20,8 @@ import type { ResultDetail } from '../../types';
 import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
 import {
   isEvidenceDisplayable,
+  isReviewContextDisplayable,
+  resolveReviewContextImageUrl,
   resolveStructuralEvidenceImageUrl,
 } from '../../utils/evidenceEligibility';
 import { evidenceUnavailableMessage } from '../../utils/evidenceUnavailableMessage';
@@ -164,10 +166,25 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
     result.sourceImageId,
     result.evidenceView
   );
-  const frames = useMemo(
-    () => (evidenceIsDisplayable ? buildFrames(result) : []),
-    [result, evidenceIsDisplayable]
-  );
+  const reviewContextDisplayable = isReviewContextDisplayable(result.evidenceView);
+  const reviewContextUrl = resolveReviewContextImageUrl(result.evidenceView);
+  const frames = useMemo(() => {
+    if (evidenceIsDisplayable) {
+      return buildFrames(result);
+    }
+    if (reviewContextDisplayable && reviewContextUrl) {
+      return [
+        {
+          key: 'review-context-primary',
+          label: t('results.evidence_viewer.scan_image'),
+          fileName: result.sourceFileName,
+          imageUrl: reviewContextUrl,
+          useLegacyLoader: false,
+        },
+      ];
+    }
+    return [];
+  }, [result, evidenceIsDisplayable, reviewContextDisplayable, reviewContextUrl, t]);
   const primaryFrame = frames[0] ?? null;
   const additionalFrames = frames.slice(1);
 
@@ -272,10 +289,10 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
   }, []);
 
   useEffect(() => {
-    if (!evidenceIsDisplayable) {
+    if (!evidenceIsDisplayable && !reviewContextDisplayable) {
       closeFullscreen();
     }
-  }, [evidenceIsDisplayable, closeFullscreen]);
+  }, [evidenceIsDisplayable, reviewContextDisplayable, closeFullscreen]);
 
   const primarySrc = resolveFrameSrc(primaryFrame);
   const primaryLoading = resolveFrameLoading(primaryFrame);
@@ -305,7 +322,7 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
         {t('results.evidence_viewer.heading')}
       </Typography>
 
-      {!evidenceIsDisplayable && (
+      {!evidenceIsDisplayable && !reviewContextDisplayable && (
         <Box
           sx={{
             py: 4,
@@ -320,6 +337,14 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
         >
           <Typography color="text.secondary">
             {evidenceUnavailableMessage(result.traceabilityStatus, t)}
+          </Typography>
+        </Box>
+      )}
+
+      {!evidenceIsDisplayable && reviewContextDisplayable && (
+        <Box sx={{ mb: 1.5 }}>
+          <Typography variant="body2" color="warning.main">
+            {t('results.evidence_viewer.review_context_warning')}
           </Typography>
         </Box>
       )}

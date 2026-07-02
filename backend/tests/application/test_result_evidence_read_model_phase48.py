@@ -334,6 +334,48 @@ def test_summary_unvalidated_unknown_bucket() -> None:
     assert summary["unvalidated_unknown"] == 1
 
 
+def test_unlabeled_position_exposes_review_context_image() -> None:
+    pos = _position(
+        detected_summary_json={
+            "entity_uid": "job-1_no_readable_label",
+            "detection_outcome": "no_readable_label",
+        }
+    )
+    row = _row(
+        traceability_status=TraceabilityStatus.MISSING.value,
+        has_valid_evidence=False,
+        source_asset_id="asset-1",
+        source_image_id="asset-1",
+    )
+    view = _service([row]).get_position_evidence_view(
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        position=pos,
+        job_id="job-1",
+    )
+    assert view.displayable is False
+    assert view.review_context_displayable is True
+    assert view.review_context_image_url is not None
+    assert view.image_url is None
+
+
+def test_unlabeled_position_review_context_falls_back_to_single_aisle_asset() -> None:
+    pos = _position(
+        detected_summary_json={
+            "entity_uid": "job-1_no_readable_label",
+            "detection_outcome": "no_readable_label",
+        }
+    )
+    view = _service([]).get_position_evidence_view(
+        inventory_id="inv-1",
+        aisle_id="aisle-1",
+        position=pos,
+        job_id="job-1",
+    )
+    assert view.review_context_displayable is True
+    assert view.review_context_image_url is not None
+
+
 def test_summary_artifact_required_unpublished() -> None:
     store = MemoryArtifactManifestStore()
     store.mark_pending(

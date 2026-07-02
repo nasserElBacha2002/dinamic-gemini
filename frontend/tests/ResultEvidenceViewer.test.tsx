@@ -147,6 +147,31 @@ describe('ResultEvidenceViewer', () => {
     expect(screen.queryByTestId('result-evidence-inline-preview')).not.toBeInTheDocument();
   });
 
+  it('UNVALIDATED + review_context shows scan image for operator review', () => {
+    renderViewer(
+      baseResult({
+        traceabilityStatus: 'UNVALIDATED',
+        hasValidEvidence: false,
+        evidenceView: {
+          displayable: false,
+          traceabilityStatus: 'unvalidated',
+          sourceKind: 'structural_result_evidence',
+          reviewContextDisplayable: true,
+          reviewContextImageUrl: 'https://cdn.example/scan.jpg',
+        },
+      })
+    );
+
+    expect(
+      screen.getByText(
+        /trazabilidad del producto no está confirmada|product traceability is not confirmed/i
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByRole('img')).toHaveAttribute('src', 'https://cdn.example/scan.jpg');
+    expect(screen.queryByText(UNVALIDATED_MSG)).not.toBeInTheDocument();
+    expect(screen.getByTestId('result-evidence-inline-preview')).toBeInTheDocument();
+  });
+
   it('VALID + hasValidEvidence false blocks preview', () => {
     renderViewer(
       baseResult({
