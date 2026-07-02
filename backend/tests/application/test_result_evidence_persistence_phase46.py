@@ -178,7 +178,7 @@ def test_position_failure_rolls_back_evidence(tmp_path: Path) -> None:
     assert re_repo.list_by_job_id(harness.job_id) == []
 
 
-def test_skipped_unknown_zero_does_not_persist_result_evidence(tmp_path: Path) -> None:
+def test_unlabeled_pallet_unknown_zero_persists_for_operator_review(tmp_path: Path) -> None:
     harness = ExecutorHarness.build(tmp_path, job_id="job-skip")
     re_repo = MemoryResultEvidenceRepository()
     uc = build_persist_aisle_result_use_case(
@@ -212,10 +212,11 @@ def test_skipped_unknown_zero_does_not_persist_result_evidence(tmp_path: Path) -
                 ]
             ),
             run_dir=tmp_path / harness.job_id,
+            input_type="photos",
         )
     )
-    assert list(harness.position_repo.list_by_aisle(harness.aisle_id, job_id=harness.job_id)) == []
-    assert re_repo.list_by_job_id(harness.job_id) == []
+    positions = list(harness.position_repo.list_by_aisle(harness.aisle_id, job_id=harness.job_id))
+    assert len(positions) == 1
 
 
 def test_result_evidence_failure_rolls_back_all_writes(tmp_path: Path) -> None:

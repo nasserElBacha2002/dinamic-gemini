@@ -56,3 +56,23 @@ export function resolveStructuralEvidenceImageUrl(
   const url = evidenceView.imageUrl != null ? String(evidenceView.imageUrl).trim() : '';
   return url.length > 0 ? url : null;
 }
+
+/** Operator review preview when entity traceability is unconfirmed (e.g. no readable label). */
+export function isReviewContextDisplayable(
+  evidenceView?: ResultEvidenceView | null
+): boolean {
+  return evidenceView?.reviewContextDisplayable === true;
+}
+
+export function resolveReviewContextImageUrl(
+  evidenceView?: ResultEvidenceView | null
+): string | null {
+  if (!isReviewContextDisplayable(evidenceView)) {
+    return null;
+  }
+  const url =
+    evidenceView?.reviewContextImageUrl != null
+      ? String(evidenceView.reviewContextImageUrl).trim()
+      : '';
+  return url.length > 0 ? url : null;
+}

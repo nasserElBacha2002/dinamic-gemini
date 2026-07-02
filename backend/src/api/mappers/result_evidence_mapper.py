@@ -34,6 +34,9 @@ def result_evidence_view_to_response(model: ResultEvidenceViewModel) -> ResultEv
         source_kind=model.source_kind,
         provider=model.provider,
         model_name=model.model_name,
+        review_context_displayable=model.review_context_displayable,
+        review_context_image_url=model.review_context_image_url,
+        review_context_warning=model.review_context_warning,
     )
 
 

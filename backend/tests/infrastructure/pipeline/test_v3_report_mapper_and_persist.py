@@ -9,6 +9,7 @@ import pytest
 from src.application.dto.mapped_aisle_result import MappedAisleResult
 from src.application.use_cases.pipeline.persist_aisle_result import (
     PersistAisleResultCommand,
+    prepare_hybrid_report_for_photo_persist,
     should_persist_detected_position,
 )
 from src.domain.positions.entities import PositionStatus
@@ -433,35 +434,39 @@ def test_persist_aisle_result_use_case_saves_positions_products_evidences() -> N
 
 
 @pytest.mark.parametrize(
-    ("sku", "qty", "expected"),
+    ("sku", "qty", "entity_type", "expected"),
     [
-        ("UNKNOWN", 0, False),
-        ("", 0, False),
-        (None, 0, False),
-        ("UNKNOWN", None, False),
-        ("1242879", 0, True),
-        ("UNKNOWN", 3, True),
-        (None, 5, True),
+        ("UNKNOWN", 0, None, False),
+        ("", 0, None, False),
+        (None, 0, None, False),
+        ("UNKNOWN", None, None, False),
+        ("UNKNOWN", 0, "PALLET", True),
+        ("UNKNOWN", 0, "EMPTY_PALLET", True),
+        ("UNKNOWN", 0, "LOOSE_BOXES", True),
+        ("1242879", 0, None, True),
+        ("UNKNOWN", 3, None, True),
+        (None, 5, None, True),
     ],
 )
-def test_should_persist_detected_position_business_rule(sku, qty, expected):
-    assert should_persist_detected_position(sku, qty) is expected
+def test_should_persist_detected_position_business_rule(sku, qty, entity_type, expected):
+    assert should_persist_detected_position(sku, qty, entity_type=entity_type) is expected
 
 
 @pytest.mark.parametrize(
-    ("internal_code", "final_quantity", "expected_saves"),
+    ("internal_code", "final_quantity", "entity_type", "expected_saves"),
     [
-        ("UNKNOWN", 0, 0),
-        ("", 0, 0),
-        (None, 0, 0),
-        ("UNKNOWN", None, 0),
-        ("1242879", 0, 1),
-        ("UNKNOWN", 3, 1),
-        (None, 5, 1),
+        ("UNKNOWN", 0, None, 0),
+        ("", 0, None, 0),
+        (None, 0, None, 0),
+        ("UNKNOWN", None, None, 0),
+        ("UNKNOWN", 0, "PALLET", 1),
+        ("1242879", 0, None, 1),
+        ("UNKNOWN", 3, None, 1),
+        (None, 5, None, 1),
     ],
 )
 def test_persist_aisle_result_use_case_applies_unknown_zero_filter(
-    internal_code, final_quantity, expected_saves
+    internal_code, final_quantity, entity_type, expected_saves
 ) -> None:
     position_repo = _mock_bundle_repo(MagicMock())
     product_repo = _mock_bundle_repo(MagicMock())
@@ -487,17 +492,18 @@ def test_persist_aisle_result_use_case_applies_unknown_zero_filter(
         final_count_repo=final_repo,
         clock=clock,
     )
-    report = {
-        "entities": [
-            {
-                "entity_uid": "e-filter",
-                "internal_code": internal_code,
-                "final_quantity": final_quantity,
-                "confidence": 0.9,
-                "count_status": "COUNTED",
-            }
-        ]
+    entity: dict = {
+        "entity_uid": "e-filter",
+        "internal_code": internal_code,
+        "final_quantity": final_quantity,
+        "confidence": 0.9,
+        "count_status": "COUNTED",
     }
+    if entity_type is not None:
+        entity["entity_type"] = entity_type
+    else:
+        entity["entity_type"] = "PRODUCT"
+    report = {"entities": [entity]}
 
     use_case.execute(
         PersistAisleResultCommand(
@@ -584,3 +590,106 @@ def test_persist_aisle_result_raises_on_mapped_length_mismatch() -> None:
                 run_id="run",
             )
         )
+
+
+def test_prepare_hybrid_report_for_photo_persist_inserts_placeholder_when_empty() -> None:
+    report = {"entities": [], "summary": {"total_entities": 0}}
+    prepared = prepare_hybrid_report_for_photo_persist(
+        report,
+        job_id="job-1",
+        input_type="photos",
+    )
+    assert len(prepared["entities"]) == 1
+    entity = prepared["entities"][0]
+    assert entity["entity_type"] == "PALLET"
+    assert entity["internal_code"] is None
+    assert entity["final_quantity"] is None
+    assert entity["review_display_label"] == "Sin etiqueta legible — revisar"
+
+
+def test_prepare_hybrid_report_enriches_placeholder_with_primary_manifest() -> None:
+    from src.domain.execution_image_manifest import (
+        ExecutionImageEntry,
+        ExecutionImageManifest,
+        ExecutionImageRole,
+        manifest_composition_projection,
+    )
+
+    manifest = ExecutionImageManifest(
+        job_id="job-1",
+        entries=(
+            ExecutionImageEntry(
+                manifest_entry_id="IMG_001",
+                source_asset_id="asset-1",
+                source_image_id="asset-1",
+                role=ExecutionImageRole.PRIMARY_EVIDENCE,
+                payload_ordinal=1,
+                storage_reference="photos/a.jpg",
+            ),
+        ),
+        excluded_entries=(),
+    )
+    prepared = prepare_hybrid_report_for_photo_persist(
+        {"entities": []},
+        job_id="job-1",
+        input_type="photos",
+        prompt_composition=manifest_composition_projection(manifest),
+    )
+    entity = prepared["entities"][0]
+    assert entity["source_image_id"] == "asset-1"
+    assert entity["manifest_entry_id"] == "IMG_001"
+    assert entity["traceability_status"] == "missing"
+
+
+def test_prepare_hybrid_report_for_photo_persist_noop_for_video() -> None:
+    report = {"entities": []}
+    prepared = prepare_hybrid_report_for_photo_persist(
+        report,
+        job_id="job-1",
+        input_type="video",
+    )
+    assert prepared["entities"] == []
+
+
+def test_persist_photo_empty_entities_creates_unlabeled_review_position() -> None:
+    position_repo = MagicMock()
+    product_repo = MagicMock()
+    evidence_repo = MagicMock()
+    aisle_repo = MagicMock()
+    mock_aisle = MagicMock()
+    mock_aisle.inventory_id = "inv-photo-empty"
+    aisle_repo.get_by_id.return_value = mock_aisle
+    raw_repo = MagicMock()
+    norm_repo = MagicMock()
+    final_repo = MagicMock()
+    clock = MagicMock()
+    clock.now.return_value = datetime.now(timezone.utc)
+
+    use_case = build_persist_aisle_result_use_case(
+        position_repo=position_repo,
+        product_record_repo=product_repo,
+        evidence_repo=evidence_repo,
+        aisle_repo=aisle_repo,
+        raw_label_repo=raw_repo,
+        normalized_label_repo=norm_repo,
+        final_count_repo=final_repo,
+        clock=clock,
+    )
+
+    use_case.execute(
+        PersistAisleResultCommand(
+            aisle_id="aisle-1",
+            job_id="job-photo-empty",
+            report={"entities": [], "summary": {"total_entities": 0}},
+            run_dir=Path("/out/job-photo-empty/run"),
+            run_id="run",
+            input_type="photos",
+        )
+    )
+
+    assert position_repo.save.call_count == 1
+    saved_position = position_repo.save.call_args[0][0]
+    assert saved_position.detected_summary_json.get("entity_type") == "PALLET"
+    assert saved_position.detected_summary_json.get("review_display_label") == (
+        "Sin etiqueta legible — revisar"
+    )

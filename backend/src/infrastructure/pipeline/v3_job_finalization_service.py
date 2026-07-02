@@ -171,6 +171,7 @@ class V3JobFinalizationService:
                     provider=(req.job.provider_name or "").strip() or None,
                     model_name=(req.job.model_name or "").strip() or None,
                     prompt_composition=_prompt_composition_from_run_metadata(req.pipeline_result.run_metadata),
+                    input_type=req.input_type,
                 )
             )
         except PipelineCancellationRequestedError:

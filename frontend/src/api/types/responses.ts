@@ -1056,6 +1056,9 @@ export interface ResultEvidenceViewResponse {
   source_kind: EvidenceSourceKindLiteral | string;
   provider?: string | null;
   model_name?: string | null;
+  review_context_displayable?: boolean;
+  review_context_image_url?: string | null;
+  review_context_warning?: string | null;
 }
 
 export interface TraceabilityArtifactMetadataResponse {

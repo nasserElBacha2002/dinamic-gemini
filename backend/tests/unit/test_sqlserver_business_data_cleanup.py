@@ -61,6 +61,8 @@ def test_run_delete_pipeline_issues_capture_null_and_deletes() -> None:
     executed = "\n".join(str(c.args[0]) for c in cur.execute.call_args_list if c.args)
     assert "capture_session_item_id" in executed
     assert "DELETE FROM dbo.[capture_sessions]" in executed
+    assert "DELETE FROM dbo.[aisle_code_scan_detections]" in executed
+    assert "DELETE FROM dbo.aisle_code_scan_runs" in executed
 
 
 def test_integration_cleanup_rolls_back_on_validate_failure(monkeypatch: pytest.MonkeyPatch) -> None:

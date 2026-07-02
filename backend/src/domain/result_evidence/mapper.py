@@ -162,8 +162,19 @@ def map_entity_to_result_evidence(
 
     role = _resolve_role(entity, manifest)
 
+    detection_outcome = (
+        str(entity.get("detection_outcome")).strip()
+        if entity.get("detection_outcome") is not None
+        else ""
+    )
     source_asset_id: str | None = None
-    if status == TraceabilityStatus.VALID.value and sid:
+    if detection_outcome == "no_readable_label":
+        primary = manifest.primary_entries() if manifest is not None else ()
+        if primary:
+            source_asset_id = primary[0].source_asset_id
+            if not sid:
+                sid = primary[0].source_image_id
+    elif status == TraceabilityStatus.VALID.value and sid:
         source_asset_id, _ = _manifest_entry_for_source(manifest, str(sid))
     elif role == ResultEvidenceRole.REFERENCE_IMAGE:
         _, ref_asset, _ = _manifest_entry_for_mid(
@@ -181,7 +192,7 @@ def map_entity_to_result_evidence(
     )
 
     stable_sid = str(sid).strip() if sid and str(sid).strip() else None
-    if status != TraceabilityStatus.VALID.value:
+    if status != TraceabilityStatus.VALID.value and detection_outcome != "no_readable_label":
         stable_sid = None
 
     return ResultEvidenceRecord(

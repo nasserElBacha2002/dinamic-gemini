@@ -57,6 +57,9 @@ export interface ResultEvidenceView {
   sourceKind: EvidenceSourceKind | string;
   provider?: string | null;
   modelName?: string | null;
+  reviewContextDisplayable?: boolean;
+  reviewContextImageUrl?: string | null;
+  reviewContextWarning?: string | null;
 }
 
 /** Review status for the visible result (maps from position status + needs_review). */

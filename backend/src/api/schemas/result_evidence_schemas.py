@@ -49,6 +49,9 @@ class ResultEvidenceViewResponse(BaseModel):
     source_kind: EvidenceSourceKindLiteral | str
     provider: str | None = None
     model_name: str | None = None
+    review_context_displayable: bool = False
+    review_context_image_url: str | None = None
+    review_context_warning: str | None = None
 
 
 class TraceabilityArtifactMetadataResponse(BaseModel):
