@@ -123,8 +123,9 @@ export default function AnalyticsDashboardPage() {
 
   const inventoriesQuery = useInventoriesList({ page: 1, page_size: 200, sort_by: 'name', sort_dir: 'asc' });
   const inventories = useMemo(() => inventoriesQuery.data?.items ?? [], [inventoriesQuery.data?.items]);
-  const aislesQuery = useAislesList(appliedFilters.inventoryId || undefined, {
-    enabled: Boolean(appliedFilters.inventoryId),
+  const draftInventoryId = draftFilters.inventoryId || undefined;
+  const aislesQuery = useAislesList(draftInventoryId, {
+    enabled: Boolean(draftInventoryId),
   });
   const aisles = aislesQuery.data?.items ?? [];
 
