@@ -22,12 +22,12 @@ from src.domain.result_evidence.display import (
     detect_source_asset_mismatch,
     resolve_source_asset_id,
 )
+from src.domain.result_evidence.entities import ResultEvidenceRecord, ResultEvidenceRole
 from src.domain.result_evidence.review_context import (
     REVIEW_CONTEXT_TRACEABILITY_UNCONFIRMED_WARNING,
     position_qualifies_for_review_context,
     resolve_review_context_asset_id,
 )
-from src.domain.result_evidence.entities import ResultEvidenceRecord, ResultEvidenceRole
 from src.domain.traceability import TraceabilityStatus, normalize_traceability_status
 
 logger = logging.getLogger(__name__)
