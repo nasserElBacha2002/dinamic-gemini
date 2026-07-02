@@ -7,6 +7,7 @@ import AnalyticsDashboardPage from '../src/features/analytics-dashboard/Analytic
 
 const mockUseAnalyticsDashboardData = vi.fn();
 const mockUseInventoriesList = vi.fn();
+const mockUseAislesList = vi.fn();
 const mockNavigate = vi.fn();
 
 vi.mock('../src/features/analytics-dashboard/hooks/useAnalyticsDashboardData', () => ({
@@ -18,10 +19,7 @@ vi.mock('../src/hooks/useInventories', () => ({
 }));
 
 vi.mock('../src/hooks/useAisles', () => ({
-  useAislesList: () => ({
-    data: { items: [{ id: 'a-1', code: 'A-01' }] },
-    isLoading: false,
-  }),
+  useAislesList: (...args: unknown[]) => mockUseAislesList(...args),
   useAisleJobsList: () => ({
     data: {
       jobs: [
@@ -248,6 +246,10 @@ function renderPage() {
 }
 
 function setupMocks() {
+  mockUseAislesList.mockReturnValue({
+    data: { items: [{ id: 'a-1', code: 'A-01' }] },
+    isLoading: false,
+  });
   mockUseInventoriesList.mockReturnValue({
     data: {
       items: [
@@ -473,6 +475,29 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getByTestId('analytics-compare-tab')).toBeInTheDocument();
     expect(screen.getByText(/Seleccioná un inventario/i)).toBeInTheDocument();
     expect(screen.queryByTestId('compare-many-workspace-embedded')).not.toBeInTheDocument();
+  });
+
+  it('loads aisle options when draft inventory is selected before apply', () => {
+    mockUseAislesList.mockImplementation((inventoryId: string | undefined) => ({
+      data:
+        inventoryId === 'inv-test'
+          ? { items: [{ id: 'a-1', code: 'A-01' }, { id: 'a-2', code: 'A-02' }] }
+          : { items: [] },
+      isLoading: false,
+    }));
+    renderPage();
+    expect(mockUseAislesList).toHaveBeenCalledWith(undefined, expect.objectContaining({ enabled: false }));
+
+    const inventorySelect = screen.getByLabelText(/inventario/i);
+    fireEvent.mouseDown(inventorySelect);
+    fireEvent.click(screen.getByRole('option', { name: 'Test DC' }));
+
+    expect(mockUseAislesList).toHaveBeenCalledWith('inv-test', expect.objectContaining({ enabled: true }));
+
+    const aisleSelect = screen.getByLabelText(/pasillo/i);
+    fireEvent.mouseDown(aisleSelect);
+    expect(screen.getByRole('option', { name: 'A-01' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'A-02' })).toBeInTheDocument();
   });
 
   it('costs tab renders charts and hides tables by default', () => {
