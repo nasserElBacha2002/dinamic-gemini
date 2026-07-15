@@ -60,19 +60,19 @@ export function areAnalyticsFiltersEqual(
   );
 }
 
-export function parseAnalyticsFiltersFromSearchParams(
-  params: URLSearchParams,
-  defaults: AnalyticsDashboardFilters
+export function normalizeAnalyticsFilters(
+  filters: AnalyticsDashboardFilters,
+  defaults: AnalyticsDashboardFilters = createDefaultAnalyticsFilters()
 ): AnalyticsDashboardFilters {
-  let dateFrom = parseDateParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.dateFrom), defaults.dateFrom);
-  let dateTo = parseDateParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.dateTo), defaults.dateTo);
+  let dateFrom = parseDateParam(filters.dateFrom, defaults.dateFrom);
+  let dateTo = parseDateParam(filters.dateTo, defaults.dateTo);
   if (dateFrom > dateTo) {
     dateFrom = defaults.dateFrom;
     dateTo = defaults.dateTo;
   }
 
-  const inventoryId = trimParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.inventoryId));
-  let aisleId = trimParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.aisleId));
+  const inventoryId = trimParam(filters.inventoryId);
+  let aisleId = trimParam(filters.aisleId);
   if (!inventoryId) {
     aisleId = '';
   }
@@ -82,11 +82,30 @@ export function parseAnalyticsFiltersFromSearchParams(
     dateTo,
     inventoryId,
     aisleId,
-    clientId: trimParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.clientId)),
-    clientSupplierId: trimParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.clientSupplierId)),
-    providerName: trimParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.providerName)),
-    modelName: trimParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.modelName)),
+    clientId: trimParam(filters.clientId),
+    clientSupplierId: trimParam(filters.clientSupplierId),
+    providerName: trimParam(filters.providerName),
+    modelName: trimParam(filters.modelName),
   };
+}
+
+export function parseAnalyticsFiltersFromSearchParams(
+  params: URLSearchParams,
+  defaults: AnalyticsDashboardFilters
+): AnalyticsDashboardFilters {
+  return normalizeAnalyticsFilters(
+    {
+      dateFrom: parseDateParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.dateFrom), defaults.dateFrom),
+      dateTo: parseDateParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.dateTo), defaults.dateTo),
+      inventoryId: trimParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.inventoryId)),
+      aisleId: trimParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.aisleId)),
+      clientId: trimParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.clientId)),
+      clientSupplierId: trimParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.clientSupplierId)),
+      providerName: trimParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.providerName)),
+      modelName: trimParam(params.get(ANALYTICS_FILTER_QUERY_KEYS.modelName)),
+    },
+    defaults
+  );
 }
 
 function setFilterParam(next: URLSearchParams, key: string, value: string): void {
@@ -98,29 +117,37 @@ function setFilterParam(next: URLSearchParams, key: string, value: string): void
   next.set(key, trimmed);
 }
 
+/**
+ * Serialize filters into the query string.
+ * Dates are always written when present (shareable / stable across calendar days).
+ * Empty strings are omitted; unknown params on `params` are preserved.
+ */
 export function writeAnalyticsFiltersToSearchParams(
   params: URLSearchParams,
   filters: AnalyticsDashboardFilters,
   defaults: AnalyticsDashboardFilters
 ): URLSearchParams {
   const next = new URLSearchParams(params);
+  const normalized = normalizeAnalyticsFilters(filters, defaults);
+
   for (const key of Object.values(ANALYTICS_FILTER_QUERY_KEYS)) {
     next.delete(key);
   }
 
-  if (filters.dateFrom !== defaults.dateFrom) {
-    next.set(ANALYTICS_FILTER_QUERY_KEYS.dateFrom, filters.dateFrom);
+  // Visible dates must always be shareable — do not omit when equal to session defaults.
+  if (normalized.dateFrom) {
+    next.set(ANALYTICS_FILTER_QUERY_KEYS.dateFrom, normalized.dateFrom);
   }
-  if (filters.dateTo !== defaults.dateTo) {
-    next.set(ANALYTICS_FILTER_QUERY_KEYS.dateTo, filters.dateTo);
+  if (normalized.dateTo) {
+    next.set(ANALYTICS_FILTER_QUERY_KEYS.dateTo, normalized.dateTo);
   }
 
-  setFilterParam(next, ANALYTICS_FILTER_QUERY_KEYS.inventoryId, filters.inventoryId);
-  setFilterParam(next, ANALYTICS_FILTER_QUERY_KEYS.aisleId, filters.aisleId);
-  setFilterParam(next, ANALYTICS_FILTER_QUERY_KEYS.clientId, filters.clientId);
-  setFilterParam(next, ANALYTICS_FILTER_QUERY_KEYS.clientSupplierId, filters.clientSupplierId);
-  setFilterParam(next, ANALYTICS_FILTER_QUERY_KEYS.providerName, filters.providerName);
-  setFilterParam(next, ANALYTICS_FILTER_QUERY_KEYS.modelName, filters.modelName);
+  setFilterParam(next, ANALYTICS_FILTER_QUERY_KEYS.inventoryId, normalized.inventoryId);
+  setFilterParam(next, ANALYTICS_FILTER_QUERY_KEYS.aisleId, normalized.aisleId);
+  setFilterParam(next, ANALYTICS_FILTER_QUERY_KEYS.clientId, normalized.clientId);
+  setFilterParam(next, ANALYTICS_FILTER_QUERY_KEYS.clientSupplierId, normalized.clientSupplierId);
+  setFilterParam(next, ANALYTICS_FILTER_QUERY_KEYS.providerName, normalized.providerName);
+  setFilterParam(next, ANALYTICS_FILTER_QUERY_KEYS.modelName, normalized.modelName);
 
   return next;
 }
@@ -142,3 +169,8 @@ export function analyticsSearchParamsEqual(a: URLSearchParams, b: URLSearchParam
     return key === otherKey && value === otherValue;
   });
 }
+
+/** Spec aliases — same contract as `*FromSearchParams` / `*ToSearchParams`. */
+export const parseAnalyticsFilters = parseAnalyticsFiltersFromSearchParams;
+export const writeAnalyticsFilters = writeAnalyticsFiltersToSearchParams;
+export const getDefaultAnalyticsFilters = createDefaultAnalyticsFilters;

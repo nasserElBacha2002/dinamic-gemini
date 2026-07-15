@@ -24,6 +24,8 @@ export interface AnalyticsFilterBarProps {
   aisles: readonly { id: string; code: string }[];
   inventoriesLoadFailed: boolean;
   isRefreshing: boolean;
+  /** True when URL filters match applied — disables Actualizar until something changes. */
+  applyDisabled?: boolean;
 }
 
 export function AnalyticsFilterBar({
@@ -35,6 +37,7 @@ export function AnalyticsFilterBar({
   aisles,
   inventoriesLoadFailed,
   isRefreshing,
+  applyDisabled = false,
 }: AnalyticsFilterBarProps) {
   const { t } = useTranslation();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -46,7 +49,13 @@ export function AnalyticsFilterBar({
       <FilterToolbar
         onReset={onReset}
         endActions={
-          <Button size="small" variant="contained" onClick={onApply} disabled={isRefreshing} data-testid="analytics-apply-filters">
+          <Button
+            size="small"
+            variant="contained"
+            onClick={onApply}
+            disabled={isRefreshing || applyDisabled}
+            data-testid="analytics-apply-filters"
+          >
             {t('analyticsDashboard.actions.refresh')}
           </Button>
         }

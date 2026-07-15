@@ -297,10 +297,10 @@ describe('AislePositionsPage (Aisle Results)', () => {
   it('shows aisle title, inventory context, and workload KPIs', () => {
     renderPage();
     expect(screen.getByRole('heading', { name: 'A-01' })).toBeTruthy();
-    expect(screen.getByText('Test Inventory')).toBeInTheDocument();
     const breadcrumb = screen.getByLabelText('breadcrumb');
-    expect(within(breadcrumb).getByRole('link', { name: /inventarios|inventories/i })).toBeInTheDocument();
-    expect(within(breadcrumb).getByText('A-01')).toBeInTheDocument();
+    const inventoryCrumb = within(breadcrumb).getByRole('link', { name: 'Test Inventory' });
+    expect(inventoryCrumb).toHaveAttribute('href', '/inventories/inv-1');
+    expect(within(breadcrumb).queryByText('A-01')).not.toBeInTheDocument();
     expect(screen.getByText(/total contabilizado|counted total/i)).toBeTruthy();
     expect(screen.getByText(/ítems contados:\s*1|counted items:\s*1/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /fusionar sku repetidos|merge repeated labels/i })).toBeTruthy();
@@ -942,6 +942,267 @@ describe('AislePositionsPage (Aisle Results)', () => {
 
       await waitFor(() => {
         expect(promoteMutateAsync).toHaveBeenCalledWith('job-bench');
+      });
+    });
+  });
+
+  describe('URL filter persistence', () => {
+    function renderPageWithRouter(path: string) {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const router = createMemoryRouter(
+        [
+          {
+            path: '/inventories/:inventoryId/aisles/:aisleId/positions',
+            element: <AislePositionsPage />,
+          },
+        ],
+        { initialEntries: [path] }
+      );
+      render(
+        <QueryClientProvider client={queryClient}>
+          <AppSnackbarProvider>
+            <RouterProvider router={router} />
+          </AppSnackbarProvider>
+        </QueryClientProvider>
+      );
+      return router;
+    }
+
+    it('initializes controls and filtering from the query string', async () => {
+      resultSummariesState.results = [
+        { ...mockResults[0], id: 'pos-1', sku: 'SKU-AAA', needsReview: true, reviewStatus: 'NEEDS_REVIEW' },
+        { ...mockResults[0], id: 'pos-2', sku: 'SKU-BBB', needsReview: false, reviewStatus: 'DETECTED' },
+        { ...mockResults[0], id: 'pos-3', sku: 'OTHER', needsReview: true, reviewStatus: 'NEEDS_REVIEW' },
+      ];
+      aisleJobsListState.data = {
+        operational_job_id: 'job-10',
+        jobs: [
+          {
+            id: 'job-10',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+      renderPageWithRouter(
+        '/inventories/inv-1/aisles/aisle-1/positions?jobId=job-10&filter=needs_review&q=SKU&page=1&pageSize=50&sortBy=sku&sortDir=asc'
+      );
+
+      const search = screen.getByTestId('aisle-positions-sku-search').querySelector('input');
+      expect(search?.value).toBe('SKU');
+
+      const needsReview = screen.getByRole('button', { name: /requiere revisión/i });
+      expect(needsReview.getAttribute('aria-pressed')).toBe('true');
+
+      await waitFor(() => {
+        expect(screen.getByText('SKU-AAA')).toBeTruthy();
+      });
+      expect(screen.queryByText('SKU-BBB')).toBeNull();
+      expect(screen.queryByText('OTHER')).toBeNull();
+    });
+
+    it('updates URL when changing quick filter and preserves jobId', async () => {
+      aisleJobsListState.data = {
+        operational_job_id: 'job-10',
+        jobs: [
+          {
+            id: 'job-10',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+      const router = renderPageWithRouter(
+        '/inventories/inv-1/aisles/aisle-1/positions?jobId=job-10&q=KEEP&page=3'
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /requiere revisión/i }));
+
+      await waitFor(() => {
+        const q = new URLSearchParams(router.state.location.search);
+        expect(q.get('jobId')).toBe('job-10');
+        expect(q.get('filter')).toBe('needs_review');
+        expect(q.get('q')).toBe('KEEP');
+        expect(q.get('page')).toBeNull();
+      });
+    });
+
+    it('debounces search into q with replace', async () => {
+      vi.useFakeTimers();
+      try {
+        aisleJobsListState.data = {
+          operational_job_id: 'job-10',
+          jobs: [
+            {
+              id: 'job-10',
+              status: 'succeeded',
+              created_at: '2024-01-01T00:00:00Z',
+              updated_at: '2024-01-01T00:00:00Z',
+            },
+          ],
+        };
+        const router = renderPageWithRouter(
+          '/inventories/inv-1/aisles/aisle-1/positions?jobId=job-10'
+        );
+
+        const input = screen.getByTestId('aisle-positions-sku-search').querySelector('input')!;
+        fireEvent.change(input, { target: { value: 'AB' } });
+        expect(new URLSearchParams(router.state.location.search).get('q')).toBeNull();
+
+        fireEvent.change(input, { target: { value: 'ABC' } });
+        await vi.advanceTimersByTimeAsync(320);
+
+        expect(new URLSearchParams(router.state.location.search).get('q')).toBe('ABC');
+        expect(new URLSearchParams(router.state.location.search).get('jobId')).toBe('job-10');
+
+        fireEvent.change(input, { target: { value: '' } });
+        expect(new URLSearchParams(router.state.location.search).get('q')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('reset clears filter params and keeps jobId', async () => {
+      aisleJobsListState.data = {
+        operational_job_id: 'job-10',
+        jobs: [
+          {
+            id: 'job-10',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+      const router = renderPageWithRouter(
+        '/inventories/inv-1/aisles/aisle-1/positions?jobId=job-10&filter=qty_zero&q=X&page=2&pageSize=50&tableSort=priority'
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /^limpiar filtros$/i }));
+
+      await waitFor(() => {
+        const q = new URLSearchParams(router.state.location.search);
+        expect(q.get('jobId')).toBe('job-10');
+        expect(q.get('filter')).toBeNull();
+        expect(q.get('q')).toBeNull();
+        expect(q.get('page')).toBeNull();
+        expect(q.get('pageSize')).toBeNull();
+        expect(q.get('tableSort')).toBeNull();
+      });
+    });
+
+    it('normalizes invalid filter with replace and preserves jobId', async () => {
+      aisleJobsListState.data = {
+        operational_job_id: 'job-10',
+        jobs: [
+          {
+            id: 'job-10',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+      const router = renderPageWithRouter(
+        '/inventories/inv-1/aisles/aisle-1/positions?jobId=job-10&filter=needs-review&page=abc'
+      );
+
+      await waitFor(() => {
+        const q = new URLSearchParams(router.state.location.search);
+        expect(q.get('jobId')).toBe('job-10');
+        expect(q.get('filter')).toBeNull();
+        expect(q.get('page')).toBeNull();
+      });
+    });
+
+    it('jobId canonization preserves active filters', async () => {
+      aisleJobsListState.data = {
+        operational_job_id: 'job-op',
+        jobs: [
+          {
+            id: 'job-op',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+      const router = renderPageWithRouter(
+        '/inventories/inv-1/aisles/aisle-1/positions?jobId=unknown-job&filter=qty_zero&q=KEEP'
+      );
+
+      await waitFor(() => {
+        const q = new URLSearchParams(router.state.location.search);
+        expect(q.get('jobId')).toBe('job-op');
+        expect(q.get('filter')).toBe('qty_zero');
+        expect(q.get('q')).toBe('KEEP');
+      });
+    });
+
+    it('writes pageSize and tableSort to the URL', async () => {
+      aisleJobsListState.data = {
+        operational_job_id: 'job-10',
+        jobs: [
+          {
+            id: 'job-10',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+      resultSummariesState.results = Array.from({ length: 30 }, (_, i) => ({
+        ...mockResults[0],
+        id: `pos-${i}`,
+        sku: `SKU-${i}`,
+      }));
+      const router = renderPageWithRouter(
+        '/inventories/inv-1/aisles/aisle-1/positions?jobId=job-10&pageSize=50'
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /prioridad de revisión|review priority/i }));
+      await waitFor(() => {
+        const q = new URLSearchParams(router.state.location.search);
+        expect(q.get('tableSort')).toBe('priority');
+        expect(q.get('pageSize')).toBe('50');
+        expect(q.get('jobId')).toBe('job-10');
+      });
+    });
+
+    it('back/forward restores filter query params', async () => {
+      aisleJobsListState.data = {
+        operational_job_id: 'job-10',
+        jobs: [
+          {
+            id: 'job-10',
+            status: 'succeeded',
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+      const router = renderPageWithRouter(
+        '/inventories/inv-1/aisles/aisle-1/positions?jobId=job-10'
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /requiere revisión/i }));
+      await waitFor(() => {
+        expect(new URLSearchParams(router.state.location.search).get('filter')).toBe('needs_review');
+      });
+
+      router.navigate(-1);
+      await waitFor(() => {
+        expect(new URLSearchParams(router.state.location.search).get('filter')).toBeNull();
+      });
+
+      router.navigate(1);
+      await waitFor(() => {
+        expect(new URLSearchParams(router.state.location.search).get('filter')).toBe('needs_review');
+        expect(
+          screen.getByRole('button', { name: /requiere revisión/i }).getAttribute('aria-pressed')
+        ).toBe('true');
       });
     });
   });
