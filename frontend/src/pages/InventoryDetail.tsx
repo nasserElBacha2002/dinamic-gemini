@@ -208,7 +208,12 @@ export default function InventoryDetail() {
       />
 
       {/* Table/native-file upload only; drawer uploads use ManagedImageAssetsDrawer dialog. */}
-      <PhotoUploadProgressDialog open={uploadFlow.isUploadingPhotos} />
+      <PhotoUploadProgressDialog
+        open={uploadFlow.isUploadingPhotos}
+        progress={uploadFlow.progress}
+        onCancel={uploadFlow.cancelUpload}
+        onRetryFailed={() => void uploadFlow.retryFailedUploads()}
+      />
 
     </>
   );

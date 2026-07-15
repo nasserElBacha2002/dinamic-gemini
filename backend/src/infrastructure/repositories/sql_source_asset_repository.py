@@ -86,6 +86,8 @@ def _row_to_asset(row) -> SourceAsset:
     else:
         content_type = normalize_db_str(getattr(row, "mime_type", None))
     cap_item = optional_nonempty_db_str(getattr(row, "capture_session_item_id", None))
+    upload_batch = optional_nonempty_db_str(getattr(row, "upload_batch_id", None))
+    upload_client = optional_nonempty_db_str(getattr(row, "upload_client_file_id", None))
     return SourceAsset(
         id=aid,
         aisle_id=normalize_db_str(getattr(row, "aisle_id", None)),
@@ -102,6 +104,8 @@ def _row_to_asset(row) -> SourceAsset:
         file_size_bytes=getattr(row, "file_size_bytes", None),
         etag=optional_nonempty_db_str(getattr(row, "etag", None)),
         capture_session_item_id=cap_item,
+        upload_batch_id=upload_batch,
+        upload_client_file_id=upload_client,
     )
 
 
@@ -124,7 +128,7 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                     storage_provider = ?, storage_bucket = ?, storage_key = ?,
                     content_type = ?, file_size_bytes = ?, etag = ?,
                     mime_type = ?, uploaded_at = ?, metadata_json = ?,
-                    capture_session_item_id = ?
+                    capture_session_item_id = ?, upload_batch_id = ?, upload_client_file_id = ?
                 WHERE id = ?
                 """,
                 (
@@ -142,6 +146,8 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                     uploaded,
                     meta_str,
                     asset.capture_session_item_id,
+                    asset.upload_batch_id,
+                    asset.upload_client_file_id,
                     asset.id,
                 ),
             )
@@ -151,9 +157,10 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                     INSERT INTO source_assets (
                         id, aisle_id, type, original_filename, storage_path,
                         storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                        mime_type, uploaded_at, metadata_json, capture_session_item_id
+                        mime_type, uploaded_at, metadata_json, capture_session_item_id,
+                        upload_batch_id, upload_client_file_id
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         asset.id,
@@ -171,6 +178,8 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                         uploaded,
                         meta_str,
                         asset.capture_session_item_id,
+                        asset.upload_batch_id,
+                        asset.upload_client_file_id,
                     ),
                 )
 
@@ -180,7 +189,8 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 """
                 SELECT id, aisle_id, type, original_filename, storage_path,
                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                       mime_type, uploaded_at, metadata_json, capture_session_item_id
+                       mime_type, uploaded_at, metadata_json, capture_session_item_id,
+                       upload_batch_id, upload_client_file_id
                 FROM source_assets WHERE id = ?
                 """,
                 (asset_id,),
@@ -204,10 +214,39 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 """
                 SELECT id, aisle_id, type, original_filename, storage_path,
                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                       mime_type, uploaded_at, metadata_json, capture_session_item_id
+                       mime_type, uploaded_at, metadata_json, capture_session_item_id,
+                       upload_batch_id, upload_client_file_id
                 FROM source_assets WHERE capture_session_item_id = ?
                 """,
                 (cid,),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return _row_to_asset(row)
+
+    def get_by_upload_idempotency_key(
+        self,
+        aisle_id: str,
+        upload_batch_id: str,
+        upload_client_file_id: str,
+    ) -> SourceAsset | None:
+        aid = (aisle_id or "").strip()
+        batch = (upload_batch_id or "").strip()
+        client = (upload_client_file_id or "").strip()
+        if not aid or not batch or not client:
+            return None
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, aisle_id, type, original_filename, storage_path,
+                       storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                       mime_type, uploaded_at, metadata_json, capture_session_item_id,
+                       upload_batch_id, upload_client_file_id
+                FROM source_assets
+                WHERE aisle_id = ? AND upload_batch_id = ? AND upload_client_file_id = ?
+                """,
+                (aid, batch, client),
             )
             row = cur.fetchone()
         if not row:
@@ -220,7 +259,8 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 """
                 SELECT id, aisle_id, type, original_filename, storage_path,
                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                       mime_type, uploaded_at, metadata_json, capture_session_item_id
+                       mime_type, uploaded_at, metadata_json, capture_session_item_id,
+                       upload_batch_id, upload_client_file_id
                 FROM source_assets WHERE aisle_id = ? ORDER BY uploaded_at ASC
                 """,
                 (aisle_id,),

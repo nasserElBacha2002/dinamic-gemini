@@ -797,11 +797,43 @@ class LimitsAndSchemaSettings(BaseModel):
             "(see raw_fetch_truncated on the list response). Env: V3_POSITIONS_AISLE_RAW_CAP."
         ),
     )
-    max_upload_size_mb: int = Field(
-        default_factory=lambda: int(os.getenv("MAX_UPLOAD_SIZE_MB", "500")),
+    max_files_per_upload_request: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_FILES_PER_UPLOAD_REQUEST", "10")),
+        ge=1,
+        le=50,
+        description=(
+            "Max files per multipart upload request (aisle assets + capture staging). "
+            "Total selection may exceed this via frontend batching. Env: MAX_FILES_PER_UPLOAD_REQUEST."
+        ),
+    )
+    max_upload_file_size_mb: int = Field(
+        default_factory=lambda: int(
+            os.getenv("MAX_UPLOAD_FILE_SIZE_MB") or os.getenv("MAX_UPLOAD_SIZE_MB") or "25"
+        ),
         ge=1,
         le=2048,
-        description="Max upload file size in MB (1 to 2048).",
+        description=(
+            "Max size per uploaded file in MB. Env: MAX_UPLOAD_FILE_SIZE_MB "
+            "(fallback MAX_UPLOAD_SIZE_MB for backward compatibility)."
+        ),
+    )
+    max_upload_request_size_mb: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_UPLOAD_REQUEST_SIZE_MB", "100")),
+        ge=1,
+        le=2048,
+        description=(
+            "Max total decoded bytes per multipart upload request in MB. "
+            "Env: MAX_UPLOAD_REQUEST_SIZE_MB. Align reverse-proxy client_max_body_size."
+        ),
+    )
+    # Backward-compatible alias used by older call sites / deps wiring.
+    max_upload_size_mb: int = Field(
+        default_factory=lambda: int(
+            os.getenv("MAX_UPLOAD_FILE_SIZE_MB") or os.getenv("MAX_UPLOAD_SIZE_MB") or "25"
+        ),
+        ge=1,
+        le=2048,
+        description="Alias of max_upload_file_size_mb (legacy name).",
     )
     db_schema_guard_enabled: bool = Field(
         default_factory=lambda: (

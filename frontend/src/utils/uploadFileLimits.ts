@@ -1,12 +1,17 @@
+import { UPLOAD_LIMITS } from '../features/uploads/bulkUpload.config';
 import i18n from '../i18n';
-import { MAX_FILES_PER_UPLOAD } from '../constants/uploads';
 
 export type UploadFileLimitContext = 'generic' | 'aisle' | 'import';
 
+/** True when a **single HTTP request** would exceed the per-request file cap. */
 export function isTooManyFilesForUpload(fileCount: number): boolean {
-  return fileCount > MAX_FILES_PER_UPLOAD;
+  return fileCount > UPLOAD_LIMITS.maxFilesPerRequest;
 }
 
+/**
+ * Selection size is no longer capped by maxFilesPerRequest — bulk uploader auto-batches.
+ * Kept for API clients that still send one non-batched request.
+ */
 export function tooManyFilesMessage(context: UploadFileLimitContext = 'generic'): string {
   if (context === 'aisle') {
     return i18n.t('aisles.uploads.errors.tooManyImages');
@@ -18,5 +23,7 @@ export function tooManyFilesMessage(context: UploadFileLimitContext = 'generic')
 }
 
 export function maxFilesPerUploadHelperText(): string {
-  return i18n.t('uploads.helper.maxFilesPerUpload');
+  return i18n.t('uploads.helper.maxFilesPerUpload', {
+    count: UPLOAD_LIMITS.maxFilesPerRequest,
+  });
 }

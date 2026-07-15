@@ -1,37 +1,68 @@
 """
 UploadAisleAssets use case — v3.0 Épica 4.
 
-Uploads one or more files (photos/videos) to an aisle, persists SourceAsset records,
-and marks the aisle as assets_uploaded. Rejects unsupported content types.
+Uploads one or more files (photos/videos) to an aisle with per-file atomicity and partial
+success. Persists SourceAsset records and marks the aisle as assets_uploaded when at least
+one file succeeds.
 
-Non-atomic flow: for each file we (1) write to storage, (2) persist SourceAsset,
-then (3) mark aisle assets_uploaded once. If a later step fails, earlier steps
-may have left partial state (e.g. files on disk without DB rows, or DB rows
-without aisle status update). No automatic rollback or compensation in this layer;
-callers should treat upload as best-effort when errors occur.
-
-Materialization is delegated to :class:`src.application.services.aisle_source_asset_materializer.AisleSourceAssetMaterializer`.
+Materialization is delegated to
+:class:`src.application.services.aisle_source_asset_materializer.AisleSourceAssetMaterializer`.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from src.application.dto.uploaded_file import UploadedFile
-from src.application.errors import AisleInactiveError, EmptyUploadError
+from src.application.errors import AisleInactiveError, EmptyUploadError, UnsupportedAssetTypeError
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
 from src.application.ports.services import ArtifactStorage
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_source_asset_materializer import AisleSourceAssetMaterializer
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+from src.application.services.upload_request_limits import (
+    UploadFileTooLargeError,
+    UploadRequestLimitPolicy,
+    assert_file_size,
+)
 from src.domain.assets.entities import SourceAsset
 
 logger = logging.getLogger(__name__)
 
+_CODE_UNSUPPORTED_ASSET_TYPE = "UNSUPPORTED_ASSET_TYPE"
+_CODE_ZERO_BYTE_FILE = "ZERO_BYTE_FILE"
+_CODE_UPLOAD_FILE_TOO_LARGE = "UPLOAD_FILE_TOO_LARGE"
+_CODE_PERSIST_FAILED = "ASSET_PERSIST_FAILED"
+
+_DETAIL_ZERO_BYTE_FILE = "Empty or zero-byte files are not allowed"
+
+
+@dataclass(frozen=True)
+class AisleAssetUploadFileError:
+    filename: str
+    code: str
+    detail: str
+    file_index: int
+    client_file_id: str | None = None
+
+
+@dataclass(frozen=True)
+class AisleAssetUploadBatchResult:
+    upload_batch_id: str | None
+    assets: list[SourceAsset]
+    errors: list[AisleAssetUploadFileError]
+
+
 # Public re-export: existing imports use ``upload_aisle_assets.UploadedFile``.
-__all__ = ["UploadAisleAssetsUseCase", "UploadedFile"]
+__all__ = [
+    "AisleAssetUploadBatchResult",
+    "AisleAssetUploadFileError",
+    "UploadAisleAssetsUseCase",
+    "UploadedFile",
+]
 
 
 class UploadAisleAssetsUseCase:
@@ -42,12 +73,15 @@ class UploadAisleAssetsUseCase:
         artifact_storage: ArtifactStorage,
         clock: Clock,
         status_reconciler: InventoryStatusReconciler,
+        *,
+        upload_policy: UploadRequestLimitPolicy | None = None,
     ) -> None:
         self._aisle_repo = aisle_repo
         self._asset_repo = asset_repo
         self._artifact_storage = artifact_storage
         self._clock = clock
         self._status_reconciler = status_reconciler
+        self._policy = upload_policy or UploadRequestLimitPolicy()
         self._materializer = AisleSourceAssetMaterializer(
             aisle_repo=aisle_repo,
             asset_repo=asset_repo,
@@ -55,12 +89,125 @@ class UploadAisleAssetsUseCase:
             status_reconciler=status_reconciler,
         )
 
+    @staticmethod
+    def _wire_filename(uf: UploadedFile) -> str:
+        return (uf.original_filename or "file").strip() or "file"
+
+    @staticmethod
+    def _resolve_batch_id(files: Sequence[UploadedFile], explicit: str | None) -> str | None:
+        if explicit and explicit.strip():
+            return explicit.strip()
+        for uf in files:
+            if uf.upload_batch_id and uf.upload_batch_id.strip():
+                return uf.upload_batch_id.strip()
+        return None
+
+    def _try_idempotent_existing(
+        self,
+        *,
+        aisle_id: str,
+        uf: UploadedFile,
+        batch_id: str | None,
+    ) -> SourceAsset | None:
+        client_id = (uf.client_file_id or "").strip()
+        resolved_batch = (batch_id or uf.upload_batch_id or "").strip()
+        if not client_id or not resolved_batch:
+            return None
+        return self._asset_repo.get_by_upload_idempotency_key(
+            aisle_id,
+            resolved_batch,
+            client_id,
+        )
+
+    def _ingest_one_file(
+        self,
+        *,
+        aisle_id: str,
+        uf: UploadedFile,
+        now,
+        file_index: int,
+        batch_id: str | None,
+    ) -> tuple[SourceAsset | None, AisleAssetUploadFileError | None]:
+        fname = self._wire_filename(uf)
+        existing = self._try_idempotent_existing(aisle_id=aisle_id, uf=uf, batch_id=batch_id)
+        if existing is not None:
+            return existing, None
+        try:
+            if uf.size_bytes is not None:
+                assert_file_size(uf.size_bytes, self._policy)
+            pos = uf.file_obj.tell()
+            uf.file_obj.seek(0, 2)
+            end = uf.file_obj.tell()
+            uf.file_obj.seek(pos)
+            if end == 0:
+                return None, AisleAssetUploadFileError(
+                    filename=fname,
+                    code=_CODE_ZERO_BYTE_FILE,
+                    detail=_DETAIL_ZERO_BYTE_FILE,
+                    file_index=file_index,
+                    client_file_id=uf.client_file_id,
+                )
+            if isinstance(end, int) and end > 0 and uf.size_bytes is None:
+                assert_file_size(end, self._policy)
+        except UploadFileTooLargeError as exc:
+            return None, AisleAssetUploadFileError(
+                filename=fname,
+                code=_CODE_UPLOAD_FILE_TOO_LARGE,
+                detail=str(exc),
+                file_index=file_index,
+                client_file_id=uf.client_file_id,
+            )
+        delete_key: str | None = None
+        try:
+            asset, delete_key = self._materializer.persist_uploaded_file_as_source_asset(
+                aisle_id=aisle_id,
+                uploaded=uf,
+                now=now,
+                metadata_json=None,
+                upload_batch_id=batch_id or uf.upload_batch_id,
+                upload_client_file_id=uf.client_file_id,
+            )
+            return asset, None
+        except UnsupportedAssetTypeError as exc:
+            return None, AisleAssetUploadFileError(
+                filename=fname,
+                code=_CODE_UNSUPPORTED_ASSET_TYPE,
+                detail=str(exc),
+                file_index=file_index,
+                client_file_id=uf.client_file_id,
+            )
+        except Exception as exc:
+            if delete_key:
+                try:
+                    self._artifact_storage.delete_file(delete_key)
+                except Exception as cleanup_e:
+                    logger.warning(
+                        "Aisle asset upload cleanup delete failed key=%s: %s",
+                        delete_key,
+                        cleanup_e,
+                    )
+            logger.exception(
+                "Aisle asset upload failed aisle_id=%s file_index=%d filename=%s",
+                aisle_id,
+                file_index,
+                fname,
+            )
+            return None, AisleAssetUploadFileError(
+                filename=fname,
+                code=_CODE_PERSIST_FAILED,
+                detail=str(exc) or "Failed to persist aisle source asset",
+                file_index=file_index,
+                client_file_id=uf.client_file_id,
+            )
+
     def execute(
         self,
         inventory_id: str,
         aisle_id: str,
         files: Sequence[UploadedFile],
-    ) -> list[SourceAsset]:
+        *,
+        upload_batch_id: str | None = None,
+    ) -> AisleAssetUploadBatchResult:
         if not files:
             raise EmptyUploadError("At least one file is required")
         aisle = require_aisle_scoped_to_inventory(
@@ -74,46 +221,32 @@ class UploadAisleAssetsUseCase:
                 f"Aisle {aisle_id} is inactive; reactivate before uploading assets."
             )
         now = self._clock.now()
+        batch_id = self._resolve_batch_id(files, upload_batch_id)
         created: list[SourceAsset] = []
-        written_paths: list[str] = []
+        errors: list[AisleAssetUploadFileError] = []
         n_files = len(files)
         logger.info("Uploading %d file(s) to aisle %s", n_files, aisle_id)
-        try:
-            for uf in files:
-                asset, delete_key = self._materializer.persist_uploaded_file_as_source_asset(
-                    aisle_id=aisle_id,
-                    uploaded=uf,
-                    now=now,
-                    metadata_json=None,
-                )
-                written_paths.append(delete_key)
+        for file_index, uf in enumerate(files):
+            asset, err = self._ingest_one_file(
+                aisle_id=aisle_id,
+                uf=uf,
+                now=now,
+                file_index=file_index,
+                batch_id=batch_id,
+            )
+            if err is not None:
+                errors.append(err)
+                continue
+            if asset is not None:
                 created.append(asset)
-            # One aisle mark + reconcile per upload batch (not per file); matches pre-refactor semantics.
+        if created:
             self._materializer.finalize_aisle_after_source_assets_changed(
                 aisle=aisle,
                 inventory_id=inventory_id,
                 now=now,
             )
-            return created
-        except Exception:
-            if created:
-                logger.warning(
-                    "Upload partially applied for aisle %s: %d asset(s) persisted; "
-                    "storage/DB or aisle status may be inconsistent",
-                    aisle_id,
-                    len(created),
-                )
-            for p in reversed(written_paths):
-                try:
-                    self._artifact_storage.delete_file(p)
-                except Exception as cleanup_e:
-                    logger.warning(
-                        "Rollback cleanup failed for aisle asset file %s: %s", p, cleanup_e
-                    )
-            logger.exception(
-                "Aisle asset upload failed aisle_id=%s uploaded_count=%d attempted_count=%d",
-                aisle_id,
-                len(created),
-                n_files,
-            )
-            raise
+        return AisleAssetUploadBatchResult(
+            upload_batch_id=batch_id,
+            assets=created,
+            errors=errors,
+        )

@@ -20,11 +20,7 @@ import { useTranslation } from 'react-i18next';
 import { ErrorAlert, PhotoUploadProgressDialog, useAppSnackbar } from '../../../components/ui';
 import { useBeforeUnloadWarning } from '../../../hooks/useBeforeUnloadWarning';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
-import {
-  isTooManyFilesForUpload,
-  maxFilesPerUploadHelperText,
-  tooManyFilesMessage,
-} from '../../../utils/uploadFileLimits';
+import { maxFilesPerUploadHelperText } from '../../../utils/uploadFileLimits';
 import type { UploadQueueItem } from '../hooks/useUploadCaptureItems';
 import { useUploadCaptureItems } from '../hooks/useUploadCaptureItems';
 
@@ -65,6 +61,9 @@ export default function ImportSessionUpload({
   const [lastSummary, setLastSummary] = useState<{ ok: number; fail: number } | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [progressSnap, setProgressSnap] = useState<
+    import('../../uploads').BulkUploadProgressSnapshot | null
+  >(null);
   const uploadMutation = useUploadCaptureItems();
   const isUploadingPhotos = uploadMutation.isPending;
 
@@ -74,10 +73,6 @@ export default function ImportSessionUpload({
 
   const startUpload = async (files: File[]) => {
     if (!files.length || !canSelect) return;
-    if (isTooManyFilesForUpload(files.length)) {
-      setSelectionError(tooManyFilesMessage('import'));
-      return;
-    }
     setSelectionError(null);
     setUploadError(null);
     setLastSummary(null);
@@ -88,6 +83,7 @@ export default function ImportSessionUpload({
         aisleId,
         files,
         onQueueUpdate: setQueue,
+        onProgress: setProgressSnap,
       });
       setLastSummary({ ok: result.uploadedCount, fail: result.failedCount });
       if (result.failedCount === 0) {
@@ -121,7 +117,7 @@ export default function ImportSessionUpload({
 
   return (
     <Box>
-      <PhotoUploadProgressDialog open={isUploadingPhotos} />
+      <PhotoUploadProgressDialog open={isUploadingPhotos} progress={progressSnap} />
 
       <Paper
         variant="outlined"

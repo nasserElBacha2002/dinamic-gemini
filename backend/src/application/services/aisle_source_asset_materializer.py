@@ -86,6 +86,8 @@ class AisleSourceAssetMaterializer:
         now: datetime,
         metadata_json: dict[str, Any] | None = None,
         capture_session_item_id: str | None = None,
+        upload_batch_id: str | None = None,
+        upload_client_file_id: str | None = None,
     ) -> tuple[SourceAsset, str]:
         """Write bytes to final storage, save ``SourceAsset``, return (entity, rollback_delete_key).
 
@@ -149,8 +151,21 @@ class AisleSourceAssetMaterializer:
             file_size_bytes=file_size_bytes,
             etag=etag,
             capture_session_item_id=capture_session_item_id,
+            upload_batch_id=upload_batch_id or uploaded.upload_batch_id,
+            upload_client_file_id=upload_client_file_id or uploaded.client_file_id,
         )
-        self._asset_repo.save(asset)
+        try:
+            self._asset_repo.save(asset)
+        except Exception:
+            try:
+                self._artifact_storage.delete_file(delete_key)
+            except Exception as cleanup_e:
+                logger.warning(
+                    "Aisle asset materialize rollback delete failed key=%s: %s",
+                    delete_key,
+                    cleanup_e,
+                )
+            raise
         return asset, delete_key
 
     def finalize_aisle_after_source_assets_changed(

@@ -284,6 +284,24 @@ class SqlCaptureSessionItemRepository(CaptureSessionItemRepository):
             )
             return cur.fetchone() is not None
 
+    def list_all_content_hashes_for_session(self, session_id: str) -> set[str]:
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT content_hash
+                FROM capture_session_items
+                WHERE session_id = ? AND content_hash IS NOT NULL AND LTRIM(RTRIM(content_hash)) <> ''
+                """,
+                (session_id,),
+            )
+            rows = cur.fetchall()
+        out: set[str] = set()
+        for row in rows:
+            h = optional_nonempty_db_str(getattr(row, "content_hash", None))
+            if h:
+                out.add(h)
+        return out
+
     def count_items_with_import_status(
         self, session_id: str, import_status: CaptureSessionItemImportStatus
     ) -> int:

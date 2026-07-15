@@ -9,7 +9,7 @@ from io import BytesIO
 
 import pytest
 
-from src.application.errors import AisleNotFoundError, EmptyUploadError, UnsupportedAssetTypeError
+from src.application.errors import AisleNotFoundError, EmptyUploadError
 from src.application.ports.contracts import AisleAssetRollup
 from src.application.ports.repositories import (
     AisleRepository,
@@ -88,6 +88,11 @@ class StubAssetRepo(SourceAssetRepository):
         return False
 
     def get_by_capture_session_item_id(self, capture_session_item_id: str) -> SourceAsset | None:
+        return None
+
+    def get_by_upload_idempotency_key(
+        self, aisle_id: str, upload_batch_id: str, upload_client_file_id: str
+    ) -> SourceAsset | None:
         return None
 
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
@@ -178,7 +183,7 @@ def test_upload_aisle_assets_creates_assets_and_marks_aisle_assets_uploaded() ->
         UploadedFile("photo.jpg", BytesIO(b"fake_jpeg"), "image/jpeg"),
         UploadedFile("clip.mp4", BytesIO(b"fake_mp4"), "video/mp4"),
     ]
-    created = use_case.execute("inv1", "a1", files)
+    created = use_case.execute("inv1", "a1", files).assets
 
     assert len(created) == 2
     assert all(a.aisle_id == "a1" for a in created)
@@ -220,8 +225,8 @@ def test_upload_aisle_assets_raises_when_aisle_not_found() -> None:
         use_case.execute("inv1", "nonexistent", files)
 
 
-def test_upload_aisle_assets_leaves_storage_orphan_when_db_save_fails() -> None:
-    """Storage is written before DB save; on save failure the use case does not compensate deletes."""
+def test_upload_aisle_assets_cleans_storage_when_db_save_fails() -> None:
+    """Storage is written before DB save; on save failure materializer deletes the object."""
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
     inv_repo = StubInventoryRepo([inv])
@@ -241,13 +246,14 @@ def test_upload_aisle_assets_leaves_storage_orphan_when_db_save_fails() -> None:
     )
     files = [UploadedFile("photo.jpg", BytesIO(b"fake_jpeg"), "image/jpeg")]
 
-    with pytest.raises(RuntimeError, match="simulated db failure"):
-        use_case.execute("inv1", "a1", files)
-    assert storage._deleted == []
+    batch = use_case.execute("inv1", "a1", files)
+    assert batch.assets == []
+    assert len(batch.errors) == 1
+    assert storage._deleted == [storage._written[0][0]]
     assert len(storage._written) == 1
 
 
-def test_upload_aisle_assets_failed_save_leaves_canonical_storage_key_without_delete() -> None:
+def test_upload_aisle_assets_failed_save_deletes_canonical_storage_key() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     inv = Inventory("inv1", "Wh", InventoryStatus.DRAFT, now, now)
     inv_repo = StubInventoryRepo([inv])
@@ -267,9 +273,10 @@ def test_upload_aisle_assets_failed_save_leaves_canonical_storage_key_without_de
     )
     files = [UploadedFile("photo.jpg", BytesIO(b"fake_jpeg"), "image/jpeg")]
 
-    with pytest.raises(RuntimeError, match="simulated db failure"):
-        use_case.execute("inv1", "a1", files)
-    assert storage._deleted == []
+    batch = use_case.execute("inv1", "a1", files)
+    assert batch.assets == []
+    assert len(batch.errors) == 1
+    assert storage._deleted == [storage._written[0][0]]
     assert len(storage._written) == 1
 
 
@@ -296,7 +303,7 @@ def test_upload_aisle_assets_raises_when_aisle_belongs_to_other_inventory() -> N
         use_case.execute("other_inv", "a1", files)
 
 
-def test_upload_aisle_assets_raises_when_unsupported_content_type() -> None:
+def test_upload_aisle_assets_returns_error_for_unsupported_content_type() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
     aisle_repo = StubAisleRepo()
@@ -315,8 +322,10 @@ def test_upload_aisle_assets_raises_when_unsupported_content_type() -> None:
     )
     files = [UploadedFile("doc.pdf", BytesIO(b"pdf"), "application/pdf")]
 
-    with pytest.raises(UnsupportedAssetTypeError):
-        use_case.execute("inv1", "a1", files)
+    batch = use_case.execute("inv1", "a1", files)
+    assert batch.assets == []
+    assert len(batch.errors) == 1
+    assert batch.errors[0].code == "UNSUPPORTED_ASSET_TYPE"
 
 
 def test_upload_aisle_assets_raises_when_empty_files() -> None:
@@ -341,7 +350,7 @@ def test_upload_aisle_assets_raises_when_empty_files() -> None:
         use_case.execute("inv1", "a1", [])
 
 
-def test_upload_aisle_assets_rejects_video_extension_labeled_as_image() -> None:
+def test_upload_aisle_assets_returns_error_for_video_extension_labeled_as_image() -> None:
     now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
     aisle = Aisle("a1", "inv1", "A01", AisleStatus.CREATED, now, now)
     aisle_repo = StubAisleRepo()
@@ -360,8 +369,10 @@ def test_upload_aisle_assets_rejects_video_extension_labeled_as_image() -> None:
     )
     files = [UploadedFile("camera_capture.mp4", BytesIO(b"bad"), "image/jpeg")]
 
-    with pytest.raises(UnsupportedAssetTypeError, match="Invalid photo upload"):
-        use_case.execute("inv1", "a1", files)
+    batch = use_case.execute("inv1", "a1", files)
+    assert batch.assets == []
+    assert len(batch.errors) == 1
+    assert "Invalid photo upload" in batch.errors[0].detail
 
 
 def test_list_aisle_assets_returns_assets_for_aisle() -> None:

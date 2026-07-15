@@ -1,10 +1,9 @@
 import { V3_INVENTORIES_BASE } from '../../../constants/v3ApiPaths';
-import { MAX_FILES_PER_UPLOAD } from '../../../constants/uploads';
-import { getStoredToken } from '../../auth/storage';
+import { UPLOAD_LIMITS, CAPTURE_STAGING_MAX_FILES_PER_REQUEST } from '../../uploads/bulkUpload.config';
+import type { BulkUploadServerBatchResult } from '../../uploads/bulkUpload.types';
+import { xhrMultipartUpload } from '../../uploads/xhrMultipartUpload';
 import { ApiError } from '../../../api/types';
 import i18n from '../../../i18n';
-import { isTooManyFilesForUpload, tooManyFilesMessage } from '../../../utils/uploadFileLimits';
-import { messageFromErrorDetail } from '../../../api/http';
 import { buildQueryString } from '../../../api/queryString';
 import { apiRequestJson } from '../../../api/request';
 import type {
@@ -18,6 +17,8 @@ import type {
 } from '../../../types/captureSession';
 
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
+
+export { CAPTURE_STAGING_MAX_FILES_PER_REQUEST };
 
 export interface CaptureSessionsListQuery {
   inventoryId: string;
@@ -150,9 +151,6 @@ export async function previewMaterializedCaptureSessionGroup(
   return apiRequestJson<MaterializedCaptureSessionGroupPreviewResponse>(base, { method: 'POST' });
 }
 
-/** Max files per staging POST (matches backend ``MAX_FILES_PER_UPLOAD``). */
-export const CAPTURE_STAGING_MAX_FILES_PER_REQUEST = MAX_FILES_PER_UPLOAD;
-
 function parseUploadStagingResponse(body: Record<string, unknown>): UploadCaptureSessionItemsResponse {
   const items = Array.isArray(body.items) ? (body.items as UploadCaptureSessionItemsResponse['items']) : [];
   const rawErrors = Array.isArray(body.errors) ? body.errors : [];
@@ -163,12 +161,103 @@ function parseUploadStagingResponse(body: Record<string, unknown>): UploadCaptur
       code: typeof r.code === 'string' ? r.code : 'UNKNOWN',
       detail: typeof r.detail === 'string' ? r.detail : '',
       file_index: typeof r.file_index === 'number' && Number.isFinite(r.file_index) ? r.file_index : 0,
+      client_file_id: typeof r.client_file_id === 'string' ? r.client_file_id : null,
     };
   });
   return { items, errors };
 }
 
-/** Uses ``XMLHttpRequest`` (not ``fetch`` / ``apiRequestJson``) so ``xhr.upload`` can report upload progress; keep separate from generic helpers. */
+export async function uploadCaptureSessionStagingBatch(args: {
+  inventoryId: string;
+  sessionId: string;
+  files: File[];
+  clientFileIds: string[];
+  uploadBatchId: string;
+  aisleId?: string;
+  signal?: AbortSignal;
+  onProgress?: (loaded: number, total: number) => void;
+}): Promise<UploadCaptureSessionItemsResponse> {
+  if (!args.files.length) {
+    throw new ApiError(i18n.t('errors.request_failed'));
+  }
+  if (args.files.length > UPLOAD_LIMITS.maxFilesPerRequest) {
+    throw new ApiError(`At most ${UPLOAD_LIMITS.maxFilesPerRequest} files per request`);
+  }
+  const form = new FormData();
+  form.append('upload_batch_id', args.uploadBatchId);
+  for (const id of args.clientFileIds) {
+    form.append('client_file_ids', id);
+  }
+  for (const f of args.files) {
+    form.append('files', f, f.name);
+  }
+  const resolvedAisleId = (args.aisleId || '').trim();
+  const path = resolvedAisleId
+    ? `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(args.inventoryId)}/aisles/${encodeURIComponent(resolvedAisleId)}/capture-sessions/${encodeURIComponent(args.sessionId)}/items`
+    : `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(args.inventoryId)}/capture-sessions/${encodeURIComponent(args.sessionId)}/items`;
+  const raw = await xhrMultipartUpload<Record<string, unknown>>({
+    url: path,
+    form,
+    signal: args.signal,
+    onProgress: args.onProgress,
+  });
+  return parseUploadStagingResponse(raw);
+}
+
+export function stagingResponseToOutcomes(
+  body: UploadCaptureSessionItemsResponse,
+  clientFileIds: string[]
+): BulkUploadServerBatchResult {
+  const outcomes: BulkUploadServerBatchResult['outcomes'] = [];
+  const errByClient = new Map(
+    body.errors
+      .filter((e) => e.client_file_id)
+      .map((e) => [e.client_file_id as string, e])
+  );
+  const errByIndex = new Map(body.errors.map((e) => [e.file_index, e]));
+  let itemCursor = 0;
+  for (let i = 0; i < clientFileIds.length; i++) {
+    const clientId = clientFileIds[i];
+    const err = errByClient.get(clientId) ?? errByIndex.get(i);
+    if (err) {
+      outcomes.push({
+        clientFileId: clientId,
+        status: 'failed',
+        code: err.code,
+        message: err.detail,
+      });
+      continue;
+    }
+    const item = body.items[itemCursor++];
+    if (!item) {
+      outcomes.push({
+        clientFileId: clientId,
+        status: 'failed',
+        code: 'UNKNOWN',
+        message: 'Missing server item for this file',
+      });
+      continue;
+    }
+    if (item.import_status !== 'imported') {
+      outcomes.push({
+        clientFileId: clientId,
+        status: 'failed',
+        serverId: item.id,
+        code: item.last_error_code ?? item.import_status,
+        message: item.last_error_detail ?? item.import_status,
+      });
+      continue;
+    }
+    outcomes.push({
+      clientFileId: clientId,
+      status: 'completed',
+      serverId: item.id,
+    });
+  }
+  return { outcomes };
+}
+
+/** Uses shared XHR transport; prefers ``uploadCaptureSessionStagingBatch`` from the bulk uploader. */
 export async function uploadCaptureSessionStagingFiles(
   inventoryId: string,
   sessionId: string,
@@ -176,54 +265,18 @@ export async function uploadCaptureSessionStagingFiles(
   aisleId?: string,
   onProgress?: (progressPct: number) => void
 ): Promise<UploadCaptureSessionItemsResponse> {
-  if (!files.length) {
-    throw new ApiError(i18n.t('errors.request_failed'));
-  }
-  if (isTooManyFilesForUpload(files.length)) {
-    throw new ApiError(tooManyFilesMessage('import'));
-  }
-  const token = getStoredToken();
-  const form = new FormData();
-  for (const f of files) {
-    form.append('files', f, f.name);
-  }
-  return new Promise<UploadCaptureSessionItemsResponse>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const resolvedAisleId = (aisleId || '').trim();
-    const path = resolvedAisleId
-      ? `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(resolvedAisleId)}/capture-sessions/${encodeURIComponent(sessionId)}/items`
-      : `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/capture-sessions/${encodeURIComponent(sessionId)}/items`;
-    xhr.open('POST', path);
-    if (token) {
-      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    }
-    xhr.upload.onprogress = (event: ProgressEvent<EventTarget>) => {
-      if (!event.lengthComputable || !onProgress) return;
-      onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
-    };
-    xhr.onerror = () => {
-      reject(new ApiError(i18n.t('errors.request_failed')));
-    };
-    xhr.onload = () => {
-      let body: Record<string, unknown>;
-      try {
-        body = xhr.responseText ? (JSON.parse(xhr.responseText) as Record<string, unknown>) : {};
-      } catch {
-        body = {};
-      }
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress?.(100);
-        resolve(parseUploadStagingResponse(body));
-        return;
-      }
-      reject(
-        new ApiError(messageFromErrorDetail(body.detail, xhr.statusText || i18n.t('errors.request_failed')), xhr.status, {
-          code: typeof body.code === 'string' ? body.code : undefined,
-          detail: body.detail,
-        })
-      );
-    };
-    xhr.send(form);
+  const clientFileIds = files.map((_, i) => `legacy-${i}-${Date.now()}`);
+  return uploadCaptureSessionStagingBatch({
+    inventoryId,
+    sessionId,
+    files,
+    clientFileIds,
+    uploadBatchId: `legacy-batch-${Date.now()}`,
+    aisleId,
+    onProgress: (loaded, total) => {
+      if (!onProgress || total <= 0) return;
+      onProgress(Math.min(100, Math.round((loaded / total) * 100)));
+    },
   });
 }
 

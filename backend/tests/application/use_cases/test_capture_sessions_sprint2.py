@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 
 from src.application.dto.uploaded_file import UploadedFile
+from src.application.services.upload_request_limits import UploadRequestLimitPolicy
 from src.application.errors import (
     CaptureSessionInvalidStateError,
     CaptureSessionNotAcceptingUploadsError,
@@ -399,6 +400,7 @@ def test_staging_upload_rejects_more_than_global_file_limit(tmp_path: Path) -> N
         staging_prefix="capture/staging",
         max_upload_bytes=1024 * 1024,
         time_metadata_extractor=_pillow_time_extractor(),
+        upload_policy=UploadRequestLimitPolicy(max_files_per_request=5),
     )
     five_files = [
         UploadedFile(f"{i}.jpg", BytesIO(bytes([i + 1])), "image/jpeg") for i in range(5)

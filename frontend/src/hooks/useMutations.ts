@@ -3,6 +3,7 @@
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { executeBulkUpload } from '../features/uploads';
 import {
   activateSupplierPromptConfigVersion,
   createSupplierPromptConfigVersion,
@@ -15,7 +16,8 @@ import {
   cancelAisleJob,
   retryAisleJob,
   runAisleMerge,
-  uploadAisleAssets,
+  uploadAisleAssetsBatch,
+  aisleAssetsResponseToOutcomes,
   deleteAisleSourceAsset,
   uploadSupplierReferenceImages,
   submitReviewAction,
@@ -359,7 +361,24 @@ export function useRunAisleMerge(inventoryId: string) {
 export function useUploadAisleAssets(inventoryId: string, aisleId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (files: File[]) => uploadAisleAssets(inventoryId, aisleId, files),
+    mutationFn: async (files: File[]) => {
+      const result = await executeBulkUpload({
+        files,
+        uploadBatch: async ({ uploadBatchId, files: batchFiles, signal, onByteProgress }) => {
+          const body = await uploadAisleAssetsBatch({
+            inventoryId,
+            aisleId,
+            files: batchFiles.map((f) => f.file),
+            clientFileIds: batchFiles.map((f) => f.clientId),
+            uploadBatchId,
+            signal,
+            onProgress: onByteProgress,
+          });
+          return aisleAssetsResponseToOutcomes(body);
+        },
+      });
+      return { assets: result.files.filter((f) => f.status === 'completed').map((f) => ({ id: f.serverId })) };
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
       queryClient.invalidateQueries({
@@ -373,8 +392,24 @@ export function useUploadAisleAssets(inventoryId: string, aisleId: string) {
 export function useUploadAisleAssetsFlex(inventoryId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ aisleId, files }: { aisleId: string; files: File[] }) =>
-      uploadAisleAssets(inventoryId, aisleId, files),
+    mutationFn: async ({ aisleId, files }: { aisleId: string; files: File[] }) => {
+      const result = await executeBulkUpload({
+        files,
+        uploadBatch: async ({ uploadBatchId, files: batchFiles, signal, onByteProgress }) => {
+          const body = await uploadAisleAssetsBatch({
+            inventoryId,
+            aisleId,
+            files: batchFiles.map((f) => f.file),
+            clientFileIds: batchFiles.map((f) => f.clientId),
+            uploadBatchId,
+            signal,
+            onProgress: onByteProgress,
+          });
+          return aisleAssetsResponseToOutcomes(body);
+        },
+      });
+      return { assets: result.files.filter((f) => f.status === 'completed') };
+    },
     onSuccess: (_, { aisleId }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
       queryClient.invalidateQueries({

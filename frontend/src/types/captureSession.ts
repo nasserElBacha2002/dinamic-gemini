@@ -108,6 +108,7 @@ export interface CaptureSessionStagingUploadFileError {
   code: string;
   detail: string;
   file_index: number;
+  client_file_id?: string | null;
 }
 
 export interface UploadCaptureSessionItemsResponse {

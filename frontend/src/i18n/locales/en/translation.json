@@ -196,14 +196,19 @@
   },
   "uploads": {
     "errors": {
-      "tooManyFiles": "You can upload up to 5 files at a time. Split the upload into groups of up to 5 files."
+      "tooManyFiles": "Too many files in a single HTTP request. The app splits large selections into batches automatically; retry if you see this."
     },
     "helper": {
-      "maxFilesPerUpload": "Maximum 5 files per upload."
+      "maxFilesPerUpload": "Up to {{count}} files per request; you can select more and they will be sent in batches."
     },
     "photos": {
       "dialogTitle": "Uploading photos",
       "progress": "Uploading photos... Do not close or refresh the page.",
+      "progressCount": "Uploading {{completed}} of {{total}} photos",
+      "failedCount": "{{count}} files with errors",
+      "batchProgress": "Batches {{completed}} / {{total}}",
+      "cancel": "Cancel",
+      "retryFailed": "Retry failed",
       "success": "Photos uploaded successfully.",
       "error": "Photos could not be uploaded. Please try again.",
       "waitBeforeLeaving": "Wait for the upload to finish before leaving.",
@@ -213,14 +218,14 @@
   "aisles": {
     "uploads": {
       "errors": {
-        "tooManyImages": "You can upload up to 5 images at a time for this aisle. Split the upload into groups of up to 5 files."
+        "tooManyImages": "Too many images in a single request. Select the full set; the app splits it into batches automatically."
       }
     }
   },
   "imports": {
     "uploads": {
       "errors": {
-        "tooManyFiles": "You can import up to 5 files at a time. Split the import into groups of up to 5 files."
+        "tooManyFiles": "Too many files in a single request. Select the full set; the app splits it into batches automatically."
       }
     }
   },

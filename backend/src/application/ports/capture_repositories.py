@@ -94,6 +94,10 @@ class CaptureSessionItemRepository(ABC):
         """True if any item in the session already records this non-empty content hash."""
 
     @abstractmethod
+    def list_all_content_hashes_for_session(self, session_id: str) -> set[str]:
+        """Return all non-empty content hashes already stored for the session (one query)."""
+
+    @abstractmethod
     def count_items_with_import_status(
         self, session_id: str, import_status: CaptureSessionItemImportStatus
     ) -> int:

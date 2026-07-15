@@ -26,10 +26,28 @@ class SourceAssetResponse(BaseModel):
     )
 
 
+class AisleAssetUploadError(BaseModel):
+    filename: str
+    code: str
+    detail: str
+    file_index: int = Field(ge=0, description="Index into the multipart files list for this request.")
+    client_file_id: str | None = None
+
+
+class AisleAssetUploadItemResponse(BaseModel):
+    client_file_id: str | None = None
+    asset_id: str
+    filename: str
+    status: str = "uploaded"
+
+
 class UploadAisleAssetsResponse(BaseModel):
     """Response for POST .../aisles/{aisle_id}/assets."""
 
     assets: list[SourceAssetResponse]
+    batch_id: str | None = None
+    uploaded: list[AisleAssetUploadItemResponse] = Field(default_factory=list)
+    errors: list[AisleAssetUploadError] = Field(default_factory=list)
 
 
 class SourceAssetImageDisplayUrlResponse(BaseModel):

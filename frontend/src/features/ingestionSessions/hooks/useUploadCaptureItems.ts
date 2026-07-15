@@ -1,19 +1,23 @@
 /**
- * Capture staging upload from the browser.
- *
- * **Transport policy:** uploads run as **sequential HTTP POSTs**, each carrying up to
- * At most ``CAPTURE_STAGING_MAX_FILES_PER_REQUEST`` (5) files per HTTP POST. Selections
- * larger than that are rejected in the UI/API client before upload starts.
+ * Capture staging upload via shared bulk uploader.
+ * Selections larger than ``maxFilesPerRequest`` are auto-batched into sequential/concurrent POSTs.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../../../api/queryKeys';
 import { ApiError } from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
-import { isTooManyFilesForUpload, tooManyFilesMessage } from '../../../utils/uploadFileLimits';
-import { uploadCaptureSessionStagingFiles } from '../api/captureSessionsApi';
-import type { UploadCaptureSessionItemsResponse } from '../../../types/captureSession';
+import {
+  executeBulkUpload,
+  type BulkUploadFileResult,
+  type BulkUploadProgressSnapshot,
+} from '../../uploads';
+import {
+  CAPTURE_STAGING_MAX_FILES_PER_REQUEST,
+  uploadCaptureSessionStagingBatch,
+  stagingResponseToOutcomes,
+} from '../api/captureSessionsApi';
 
-export type UploadItemState = 'pending' | 'uploading' | 'uploaded' | 'failed';
+export type UploadItemState = 'pending' | 'uploading' | 'uploaded' | 'failed' | 'cancelled';
 
 export interface UploadQueueItem {
   key: string;
@@ -21,20 +25,42 @@ export interface UploadQueueItem {
   state: UploadItemState;
   progressPct: number;
   error?: string;
+  clientId?: string;
 }
 
 export interface UploadRunResult {
   queue: UploadQueueItem[];
   uploadedCount: number;
   failedCount: number;
+  progress?: BulkUploadProgressSnapshot | null;
 }
 
-/** Maps one staging POST (≤ max files) onto the corresponding slice of the UI queue. Exported for tests. */
+function toQueue(files: BulkUploadFileResult[]): UploadQueueItem[] {
+  return files.map((f) => ({
+    key: f.clientId,
+    clientId: f.clientId,
+    file: f.file,
+    state:
+      f.status === 'completed'
+        ? 'uploaded'
+        : f.status === 'failed'
+          ? 'failed'
+          : f.status === 'cancelled'
+            ? 'cancelled'
+            : f.status === 'uploading' || f.status === 'processing'
+              ? 'uploading'
+              : 'pending',
+    progressPct: f.progress,
+    error: f.errorMessage,
+  }));
+}
+
+/** @deprecated Prefer executeBulkUpload outcomes; kept for unit tests of old mapping helpers. */
 export function applyStagingChunkResult(
   queue: UploadQueueItem[],
   offset: number,
   chunkFiles: File[],
-  result: UploadCaptureSessionItemsResponse
+  result: { items: { import_status: string; last_error_code?: string | null; last_error_detail?: string | null }[]; errors: { file_index: number; code: string; detail: string }[] }
 ): void {
   const errByIdx = new Map(result.errors.map((e) => [e.file_index, e]));
   let itemCursor = 0;
@@ -72,62 +98,62 @@ export function applyStagingChunkResult(
 
 export function useUploadCaptureItems() {
   const queryClient = useQueryClient();
+  const abortRef = { current: null as AbortController | null };
+  const lastFilesRef = { current: null as BulkUploadFileResult[] | null };
+  const lastBatchIdRef = { current: null as string | null };
+
   return useMutation({
     mutationFn: async (vars: {
       inventoryId: string;
       sessionId: string;
       aisleId?: string;
       files: File[];
+      onlyFailed?: boolean;
       onQueueUpdate?: (queue: UploadQueueItem[]) => void;
+      onProgress?: (snap: BulkUploadProgressSnapshot) => void;
+      signal?: AbortSignal;
     }): Promise<UploadRunResult> => {
-      const queue: UploadQueueItem[] = vars.files.map((file) => ({
-        key: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
-        file,
-        state: 'pending',
-        progressPct: 0,
-      }));
+      const controller = vars.signal ? null : new AbortController();
+      const signal = vars.signal ?? controller!.signal;
+      abortRef.current = controller;
 
-      const notify = () => vars.onQueueUpdate?.(queue.map((q) => ({ ...q })));
+      const result = await executeBulkUpload({
+        files: vars.files,
+        signal,
+        onProgress: (snap) => {
+          vars.onProgress?.(snap);
+          vars.onQueueUpdate?.(toQueue(snap.files));
+        },
+        existingFiles: vars.onlyFailed && lastFilesRef.current ? lastFilesRef.current : undefined,
+        onlyClientIds:
+          vars.onlyFailed && lastFilesRef.current
+            ? new Set(lastFilesRef.current.filter((f) => f.status === 'failed').map((f) => f.clientId))
+            : undefined,
+        uploadBatchId: vars.onlyFailed && lastBatchIdRef.current ? lastBatchIdRef.current : undefined,
+        uploadBatch: async ({ uploadBatchId, files: batchFiles, signal: batchSignal, onByteProgress }) => {
+          const body = await uploadCaptureSessionStagingBatch({
+            inventoryId: vars.inventoryId,
+            sessionId: vars.sessionId,
+            aisleId: vars.aisleId,
+            files: batchFiles.map((f) => f.file),
+            clientFileIds: batchFiles.map((f) => f.clientId),
+            uploadBatchId,
+            signal: batchSignal,
+            onProgress: onByteProgress,
+          });
+          return stagingResponseToOutcomes(body, batchFiles.map((f) => f.clientId));
+        },
+      });
 
-      if (isTooManyFilesForUpload(queue.length)) {
-        throw new ApiError(tooManyFilesMessage('import'));
-      }
-
-      for (const entry of queue) {
-        entry.state = 'uploading';
-        entry.progressPct = 0;
-        entry.error = undefined;
-      }
-      notify();
-      const chunkFiles = queue.map((e) => e.file);
-      try {
-        const result = await uploadCaptureSessionStagingFiles(
-          vars.inventoryId,
-          vars.sessionId,
-          chunkFiles,
-          vars.aisleId,
-          (pct) => {
-            for (const entry of queue) {
-              entry.progressPct = pct;
-            }
-            notify();
-          }
-        );
-        applyStagingChunkResult(queue, 0, chunkFiles, result);
-        notify();
-      } catch (error) {
-        const msg = resolveApiErrorMessage(error, 'errors.request_failed');
-        for (const entry of queue) {
-          entry.state = 'failed';
-          entry.progressPct = 100;
-          entry.error = msg;
-        }
-        notify();
-      }
-
-      const uploadedCount = queue.filter((q) => q.state === 'uploaded').length;
-      const failedCount = queue.filter((q) => q.state === 'failed').length;
-      return { queue, uploadedCount, failedCount };
+      lastFilesRef.current = result.files;
+      lastBatchIdRef.current = result.uploadBatchId;
+      const queue = toQueue(result.files);
+      vars.onQueueUpdate?.(queue);
+      return {
+        queue,
+        uploadedCount: result.completedCount,
+        failedCount: result.failedCount,
+      };
     },
     onSuccess: (_result, vars) => {
       queryClient.invalidateQueries({
@@ -135,5 +161,12 @@ export function useUploadCaptureItems() {
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.captureSessions.all });
     },
+    onError: (error) => {
+      if (error instanceof ApiError) {
+        resolveApiErrorMessage(error, 'errors.request_failed');
+      }
+    },
   });
 }
+
+export { CAPTURE_STAGING_MAX_FILES_PER_REQUEST };

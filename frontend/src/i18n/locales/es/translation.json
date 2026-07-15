@@ -204,14 +204,19 @@
   },
   "uploads": {
     "errors": {
-      "tooManyFiles": "Podés subir hasta 5 archivos por vez. Dividí la carga en grupos de hasta 5 archivos."
+      "tooManyFiles": "Demasiados archivos en una sola petición HTTP. El sistema divide la selección en lotes automáticamente; si ves este error, reintentá."
     },
     "helper": {
-      "maxFilesPerUpload": "Máximo 5 archivos por carga."
+      "maxFilesPerUpload": "Hasta {{count}} archivos por petición; podés seleccionar muchas más y se enviarán en lotes."
     },
     "photos": {
       "dialogTitle": "Subiendo fotos",
       "progress": "Subiendo fotos... No cierres ni actualices la página.",
+      "progressCount": "Subiendo {{completed}} de {{total}} fotos",
+      "failedCount": "{{count}} archivos con errores",
+      "batchProgress": "Lotes {{completed}} / {{total}}",
+      "cancel": "Cancelar",
+      "retryFailed": "Reintentar fallidos",
       "success": "Fotos subidas correctamente.",
       "error": "No se pudieron subir las fotos. Intentá nuevamente.",
       "waitBeforeLeaving": "Esperá a que termine la carga antes de salir.",
@@ -221,14 +226,14 @@
   "aisles": {
     "uploads": {
       "errors": {
-        "tooManyImages": "Podés subir hasta 5 imágenes por vez para este pasillo. Dividí la carga en grupos de hasta 5 archivos."
+        "tooManyImages": "Demasiadas imágenes en una sola petición. Seleccioná el lote completo; el sistema lo divide automáticamente."
       }
     }
   },
   "imports": {
     "uploads": {
       "errors": {
-        "tooManyFiles": "Podés importar hasta 5 archivos por vez. Dividí la importación en grupos de hasta 5 archivos."
+        "tooManyFiles": "Demasiados archivos en una sola petición. Seleccioná el lote completo; el sistema lo divide automáticamente."
       }
     }
   },
