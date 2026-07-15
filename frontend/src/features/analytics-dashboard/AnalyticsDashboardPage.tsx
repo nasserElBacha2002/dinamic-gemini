@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigationType, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Typography } from '@mui/material';
 import { PageHeader } from '../../components/shell';
 import { ErrorAlert } from '../../components/ui';
@@ -47,6 +47,7 @@ import {
 export default function AnalyticsDashboardPage() {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigationType = useNavigationType();
   const defaultFilters = useMemo(() => createDefaultAnalyticsFilters(), []);
 
   const urlFilters = useMemo(
@@ -59,9 +60,19 @@ export default function AnalyticsDashboardPage() {
     [searchParams]
   );
 
-  /** Last combination sent to backend; independent of URL until Apply / Reset. */
+  /** Last combination sent to backend; independent of URL until Apply / Reset / browser POP. */
   const [appliedFilters, setAppliedFilters] = useState(() => urlFilters);
   const [drilldown, setDrilldown] = useState<AnalyticsDrilldownState>(null);
+
+  /** Browser back/forward restores applied queries from the URL without requiring Actualizar. */
+  useEffect(() => {
+    if (navigationType !== 'POP') {
+      return;
+    }
+    setAppliedFilters((current) =>
+      areAnalyticsFiltersEqual(current, urlFilters) ? current : urlFilters
+    );
+  }, [navigationType, urlFilters]);
 
   const writeFiltersToParams = useCallback(
     (base: URLSearchParams, filters: AnalyticsDashboardFilters, tab: AnalyticsDashboardTab): URLSearchParams => {

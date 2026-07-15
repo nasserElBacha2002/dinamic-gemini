@@ -144,7 +144,11 @@ describe('AnalyticsDashboardPage URL tabs', () => {
   it('normalizes missing tab to resumen in URL', async () => {
     renderAnalyticsAt('/analitica');
     await waitFor(() => {
-      expect(screen.getByTestId('location-probe')).toHaveTextContent('/analitica?tab=resumen');
+      const url = screen.getByTestId('location-probe').textContent ?? '';
+      expect(url).toContain('tab=resumen');
+      // Visible date defaults are always written so shared URLs stay stable across days.
+      expect(url).toContain('date_from=');
+      expect(url).toContain('date_to=');
     });
     expect(screen.getByRole('tab', { name: 'Resumen' })).toHaveAttribute('aria-selected', 'true');
   });
