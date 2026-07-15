@@ -51,9 +51,9 @@ from src.application.services.operational_execution_config_resolver import (
     OperationalExecutionConfigResolver,
 )
 from src.application.services.result_context_resolver import ResultContextResolver
+from src.application.use_cases.aisles.activate_aisle import ActivateAisleUseCase
 from src.application.use_cases.aisles.cancel_aisle_job import CancelAisleJobUseCase
 from src.application.use_cases.aisles.create_aisle import CreateAisleUseCase
-from src.application.use_cases.aisles.activate_aisle import ActivateAisleUseCase
 from src.application.use_cases.aisles.deactivate_aisle import DeactivateAisleUseCase
 from src.application.use_cases.aisles.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
 from src.application.use_cases.aisles.get_aisle_merge_results import (
