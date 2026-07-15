@@ -39,3 +39,7 @@ class SourceAsset:
     etag: str | None = None
     #: When set, enforces at-most-one SourceAsset per capture session item (G5 group materialize).
     capture_session_item_id: str | None = None
+    #: Client batch id for multipart upload idempotency (paired with upload_client_file_id).
+    upload_batch_id: str | None = None
+    #: Client file id within an upload batch for idempotency.
+    upload_client_file_id: str | None = None

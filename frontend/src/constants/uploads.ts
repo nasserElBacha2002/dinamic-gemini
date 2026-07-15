@@ -1,2 +1,6 @@
-/** Maximum files allowed per single multipart upload request (aisle assets + capture staging). */
-export const MAX_FILES_PER_UPLOAD = 5;
+/** @deprecated Import from ``features/uploads`` — re-exported for compatibility. */
+export {
+  MAX_FILES_PER_UPLOAD,
+  UPLOAD_LIMITS,
+  CAPTURE_STAGING_MAX_FILES_PER_REQUEST,
+} from '../features/uploads/bulkUpload.config';

@@ -114,6 +114,11 @@ class InMemorySourceAssetRepo(SourceAssetRepository):
     def get_by_capture_session_item_id(self, capture_session_item_id: str) -> SourceAsset | None:
         return None
 
+    def get_by_upload_idempotency_key(
+        self, aisle_id: str, upload_batch_id: str, upload_client_file_id: str
+    ) -> SourceAsset | None:
+        return None
+
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         return [a for a in self._store.values() if a.aisle_id == aisle_id]
 

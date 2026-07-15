@@ -1,10 +1,19 @@
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQueryClient } from '@tanstack/react-query';
+import { aisleAssetsResponseToOutcomes, uploadAisleAssetsBatch } from '../../../api/assetsApi';
+import { queryKeys } from '../../../api/queryKeys';
 import { ApiError } from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
-import { isTooManyFilesForUpload, tooManyFilesMessage } from '../../../utils/uploadFileLimits';
 import { useAppSnackbar } from '../../../components/ui';
-import { useBeforeUnloadWarning, useUploadAisleAssetsFlex } from '../../../hooks';
+import { useBeforeUnloadWarning } from '../../../hooks';
+import {
+  executeBulkUpload,
+  type BulkUploadProgressSnapshot,
+  type BulkUploadRunResult,
+} from '../../uploads';
+import { useUploadLimits } from '../../uploads/useUploadLimits';
+import { isAbortError } from '../../uploads/uploadRetryPolicy';
 
 export interface UseAisleAssetUploadFlowOptions {
   inventoryId: string;
@@ -22,13 +31,7 @@ export interface UseAisleAssetUploadFlowOptions {
 }
 
 /**
- * Explicit aisle asset upload flow: pick an aisle, open the native file selector, upload selected files.
- *
- * Internal: `pendingPickAisleIdRef` holds the aisle id between `input.click()` and the `change` event.
- * React state updates from `beginUploadForAisle` are not guaranteed to flush before `change` fires, so
- * the ref is the reliable hand-off; it is not part of the public API and is cleared after each pick.
- *
- * `uploadingAisleIdRef` mirrors `uploadingAisleId` state so callbacks always see the latest active upload.
+ * Aisle asset upload via shared bulk uploader (auto-batching, progress, cancel, retry failed).
  */
 export function useAisleAssetUploadFlow({
   inventoryId,
@@ -39,21 +42,24 @@ export function useAisleAssetUploadFlow({
 }: UseAisleAssetUploadFlowOptions) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
+  const queryClient = useQueryClient();
+  const limits = useUploadLimits();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  /** See module doc — bridges native file input timing only; never exposed to consumers. */
   const pendingPickAisleIdRef = useRef<string | null>(null);
   const uploadingAisleIdRef = useRef<string | null>(null);
+  const lastAisleIdRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const lastResultRef = useRef<BulkUploadRunResult | null>(null);
   const [internalError, setInternalError] = useState<string | null>(null);
   const [uploadingAisleId, setUploadingAisleId] = useState<string | null>(null);
   const [currentTargetAisleId, setCurrentTargetAisleId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<BulkUploadProgressSnapshot | null>(null);
 
   const controlled = controlledSetError !== undefined;
   const uploadError = controlled ? (controlledError ?? null) : internalError;
   const setUploadError = controlled ? controlledSetError! : setInternalError;
 
-  const uploadMutation = useUploadAisleAssetsFlex(inventoryId);
   const isUploadingPhotos = uploadingAisleId !== null;
-
   useBeforeUnloadWarning(isUploadingPhotos);
 
   const setActiveUploadingAisleId = useCallback((aisleId: string | null) => {
@@ -61,39 +67,98 @@ export function useAisleAssetUploadFlow({
     setUploadingAisleId(aisleId);
   }, []);
 
+  const invalidateAisle = useCallback(
+    (aisleId: string) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.inventories.aisleSourceAssets(inventoryId, aisleId),
+      });
+    },
+    [inventoryId, queryClient]
+  );
+
   const uploadFilesForAisle = useCallback(
-    async (aisleId: string, files: File[]) => {
-      if (!inventoryId || !files.length) return;
+    async (aisleId: string, files: File[], opts?: { onlyFailed?: boolean }) => {
+      if (!inventoryId || (!files.length && !opts?.onlyFailed)) return;
       if (uploadingAisleIdRef.current !== null) return;
-      if (isTooManyFilesForUpload(files.length)) {
-        setUploadError(tooManyFilesMessage('aisle'));
-        return;
-      }
       onBeforeUploadAttempt?.();
       setUploadError(null);
+      lastAisleIdRef.current = aisleId;
       setActiveUploadingAisleId(aisleId);
+      const controller = new AbortController();
+      abortRef.current = controller;
       try {
-        const result = await uploadMutation.mutateAsync({ aisleId, files });
-        showSnackbar(t('aisle.assets_uploaded_snackbar', { count: result.assets.length }), 'success');
-        onAfterSuccess?.();
+        const prev = lastResultRef.current;
+        const result = await executeBulkUpload({
+          files,
+          signal: controller.signal,
+          onProgress: setProgress,
+          maxFilesPerBatch: limits.maxFilesPerRequest,
+          maxBytesPerBatch: limits.maxBytesPerRequest,
+          maxFileSizeBytes: limits.maxFileSizeBytes,
+          concurrency: limits.uploadConcurrency,
+          retryAttempts: limits.retryAttempts,
+          retryBaseDelayMs: limits.retryBaseDelayMs,
+          existingFiles: opts?.onlyFailed && prev ? prev.files : undefined,
+          onlyClientIds:
+            opts?.onlyFailed && prev
+              ? new Set(prev.files.filter((f) => f.status === 'failed').map((f) => f.clientId))
+              : undefined,
+          uploadBatchId: opts?.onlyFailed && prev ? prev.uploadBatchId : undefined,
+          uploadBatch: async ({ uploadBatchId, files: batchFiles, signal, onByteProgress }) => {
+            const body = await uploadAisleAssetsBatch({
+              inventoryId,
+              aisleId,
+              files: batchFiles.map((f) => f.file),
+              clientFileIds: batchFiles.map((f) => f.clientId),
+              uploadBatchId,
+              signal,
+              onProgress: onByteProgress,
+            });
+            return aisleAssetsResponseToOutcomes(body);
+          },
+        });
+        lastResultRef.current = result;
+        if (result.completedCount > 0) {
+          invalidateAisle(aisleId);
+          showSnackbar(
+            t('aisle.assets_uploaded_snackbar', { count: result.completedCount }),
+            result.failedCount > 0 ? 'warning' : 'success'
+          );
+          onAfterSuccess?.();
+        } else if (result.failedCount > 0 && result.cancelledCount === 0) {
+          const message = t('uploads.photos.error');
+          setUploadError(message);
+          showSnackbar(message, 'error');
+        }
       } catch (err) {
+        if (isAbortError(err)) {
+          return;
+        }
         const apiErr = err instanceof ApiError ? err : new ApiError(String(err));
         const message = resolveApiErrorMessage(apiErr, 'errors.upload_failed');
         setUploadError(message);
         showSnackbar(message, 'error');
       } finally {
         setActiveUploadingAisleId(null);
+        abortRef.current = null;
       }
     },
     [
       inventoryId,
+      invalidateAisle,
+      limits.maxBytesPerRequest,
+      limits.maxFileSizeBytes,
+      limits.maxFilesPerRequest,
+      limits.retryAttempts,
+      limits.retryBaseDelayMs,
+      limits.uploadConcurrency,
       onAfterSuccess,
       onBeforeUploadAttempt,
       setActiveUploadingAisleId,
       setUploadError,
       showSnackbar,
       t,
-      uploadMutation,
     ]
   );
 
@@ -121,7 +186,6 @@ export function useAisleAssetUploadFlow({
     [uploadFilesForAisle]
   );
 
-  /** Programmatic entry (e.g. drag-and-drop) when the target aisle is already known. */
   const handleFilesSelectedForAisle = useCallback(
     async (aisleId: string, files: File[]) => {
       if (uploadingAisleIdRef.current !== null) return;
@@ -131,6 +195,16 @@ export function useAisleAssetUploadFlow({
     },
     [uploadFilesForAisle]
   );
+
+  const cancelUpload = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  const retryFailedUploads = useCallback(async () => {
+    const aisleId = lastAisleIdRef.current;
+    if (!aisleId || !lastResultRef.current) return;
+    await uploadFilesForAisle(aisleId, [], { onlyFailed: true });
+  }, [uploadFilesForAisle]);
 
   return {
     fileInputRef,
@@ -142,5 +216,8 @@ export function useAisleAssetUploadFlow({
     beginUploadForAisle,
     handleNativeFileInputChange,
     handleFilesSelectedForAisle,
+    progress,
+    cancelUpload,
+    retryFailedUploads,
   };
 }

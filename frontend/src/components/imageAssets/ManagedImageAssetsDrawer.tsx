@@ -3,11 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Box, Button, Divider, Drawer, Typography } from '@mui/material';
 import { useBeforeUnloadWarning } from '../../hooks/useBeforeUnloadWarning';
 import { getVisibleErrorMessage } from '../../utils/apiErrors';
-import {
-  isTooManyFilesForUpload,
-  maxFilesPerUploadHelperText,
-  tooManyFilesMessage,
-} from '../../utils/uploadFileLimits';
+import { maxFilesPerUploadHelperText } from '../../utils/uploadFileLimits';
 import {
   ConfirmDialog,
   DrawerHeader,
@@ -183,10 +179,6 @@ export default function ManagedImageAssetsDrawer({
     const files = event.target.files ? Array.from(event.target.files) : [];
     event.target.value = '';
     if (files.length === 0 || !onUpload || isUploading) return;
-    if (isTooManyFilesForUpload(files.length)) {
-      setLocalUploadError(tooManyFilesMessage('aisle'));
-      return;
-    }
     setLocalUploadError(null);
     try {
       await onUpload(files);

@@ -132,6 +132,7 @@ class CaptureSessionStagingUploadFileError(BaseModel):
     file_index: int = Field(
         ge=0, description="Index into the multipart files list for this request."
     )
+    client_file_id: str | None = None
 
 
 class UploadCaptureSessionItemsResponse(BaseModel):

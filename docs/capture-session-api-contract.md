@@ -94,7 +94,12 @@ Fuente de verdad: rutas en `backend/src/api/routes/v3/capture_sessions.py` + sch
 
 ## Frontend (ingesta — workspace de upload)
 
-- El cliente agrupa archivos en tandas de hasta el máximo por POST (config backend `v3_capture_max_files_per_upload`, por defecto 50) y envía **varias peticiones secuenciales** (una tanda tras otra), no POSTs en paralelo por tanda. Ver comentarios en `frontend/src/features/ingestionSessions/hooks/useUploadCaptureItems.ts` y `captureSessionsApi.ts`.
+- El límite **`MAX_FILES_PER_UPLOAD_REQUEST`** (default **10**) aplica **por petición HTTP**, no sobre el total seleccionado.
+- El cliente (`frontend/src/features/uploads`) fragmenta selecciones grandes en lotes que respetan
+  cantidad máxima y bytes máximados por request (`MAX_UPLOAD_REQUEST_SIZE_MB`, default 100),
+  con concurrencia limitada (`UPLOAD_BATCH_CONCURRENCY` / Vite `VITE_UPLOAD_BATCH_CONCURRENCY`, default 2).
+- Errores parciales: HTTP **201** con `items` + `errors[]` (y `client_file_id` cuando se envía).
+- Correlación: campos multipart `upload_batch_id` y `client_file_ids`.
 
 ## Endpoints
 

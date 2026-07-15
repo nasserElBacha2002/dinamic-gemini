@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from io import BytesIO
 from uuid import uuid4
 
 from src.application.dto.uploaded_file import UploadedFile
@@ -35,6 +33,8 @@ from src.application.services.aisle_source_asset_materializer import (
 from src.application.services.upload_file_count_validation import (
     assert_upload_file_count_within_limit,
 )
+from src.application.services.upload_request_limits import UploadRequestLimitPolicy
+from src.application.services.upload_stream_io import measure_fileobj_size, sha256_fileobj
 from src.domain.capture.entities import (
     CaptureSession,
     CaptureSessionItem,
@@ -58,12 +58,21 @@ _DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT = "Duplicate file content in this capt
 
 
 @dataclass(frozen=True)
+class PreflightUploadResult:
+    """Outcome of validating one staging upload file without buffering its bytes in memory."""
+
+    digest: str
+    size_bytes: int
+
+
+@dataclass(frozen=True)
 class StagingUploadFileError:
     filename: str
     code: str
     detail: str
     #: Zero-based index into the request ``files`` sequence (stable client mapping).
     file_index: int
+    client_file_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -156,6 +165,7 @@ class UploadCaptureSessionStagingItemsUseCase:
         staging_prefix: str,
         max_upload_bytes: int,
         time_metadata_extractor: CaptureStagingTimeMetadataExtractor,
+        upload_policy: UploadRequestLimitPolicy | None = None,
     ) -> None:
         self._session_repo = session_repo
         self._item_repo = item_repo
@@ -164,6 +174,9 @@ class UploadCaptureSessionStagingItemsUseCase:
         self._staging_prefix = _normalize_prefix(staging_prefix)
         self._max_upload_bytes = max(1, int(max_upload_bytes))
         self._time_extractor = time_metadata_extractor
+        self._policy = upload_policy or UploadRequestLimitPolicy(
+            max_file_size_bytes=self._max_upload_bytes
+        )
 
     def _require_session_for_staging_upload(
         self, session_id: str, inventory_id: str, aisle_id: str | None
@@ -184,39 +197,51 @@ class UploadCaptureSessionStagingItemsUseCase:
         return session
 
     @staticmethod
-    def _error_unsupported_type(fname: str, file_index: int, detail: str) -> StagingUploadFileError:
+    def _error_unsupported_type(
+        fname: str, file_index: int, detail: str, client_file_id: str | None = None
+    ) -> StagingUploadFileError:
         return StagingUploadFileError(
             filename=fname,
             code=_CODE_UNSUPPORTED_ASSET_TYPE,
             detail=detail,
             file_index=file_index,
+            client_file_id=client_file_id,
         )
 
     @staticmethod
-    def _error_zero_byte(fname: str, file_index: int) -> StagingUploadFileError:
+    def _error_zero_byte(
+        fname: str, file_index: int, client_file_id: str | None = None
+    ) -> StagingUploadFileError:
         return StagingUploadFileError(
             filename=fname,
             code=_CODE_ZERO_BYTE_FILE,
             detail=_DETAIL_ZERO_BYTE_FILE,
             file_index=file_index,
+            client_file_id=client_file_id,
         )
 
     @staticmethod
-    def _error_too_large(fname: str, file_index: int) -> StagingUploadFileError:
+    def _error_too_large(
+        fname: str, file_index: int, client_file_id: str | None = None
+    ) -> StagingUploadFileError:
         return StagingUploadFileError(
             filename=fname,
             code=_CODE_CAPTURE_SESSION_STAGING_FILE_TOO_LARGE,
             detail=_DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE,
             file_index=file_index,
+            client_file_id=client_file_id,
         )
 
     @staticmethod
-    def _error_duplicate_content(fname: str, file_index: int) -> StagingUploadFileError:
+    def _error_duplicate_content(
+        fname: str, file_index: int, client_file_id: str | None = None
+    ) -> StagingUploadFileError:
         return StagingUploadFileError(
             filename=fname,
             code=_CODE_CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT,
             detail=_DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT,
             file_index=file_index,
+            client_file_id=client_file_id,
         )
 
     def _preflight_one_upload_file(
@@ -225,25 +250,29 @@ class UploadCaptureSessionStagingItemsUseCase:
         fname: str,
         file_index: int,
         *,
-        session_id: str,
+        session_hashes: set[str],
         batch_digests: set[str],
-    ) -> tuple[bytes | None, StagingUploadFileError | None]:
-        """Return (raw_bytes, None) when OK; (None, error) on validation failure."""
+    ) -> tuple[PreflightUploadResult | None, StagingUploadFileError | None]:
+        """Return (result, None) when OK; (None, error) on validation failure.
+
+        Streams the file (chunked hash + seek-based size) instead of buffering it fully in
+        memory; ``uf.file_obj`` is left seekable and untouched on return (position restored).
+        """
         try:
             validate_staging_media_upload_file(uf)
         except UnsupportedAssetTypeError as exc:
-            return None, self._error_unsupported_type(fname, file_index, str(exc))
-        raw = uf.file_obj.read()
-        if not raw:
-            return None, self._error_zero_byte(fname, file_index)
-        if len(raw) > self._max_upload_bytes:
-            return None, self._error_too_large(fname, file_index)
-        digest = hashlib.sha256(raw).hexdigest()
-        if digest in batch_digests or self._item_repo.has_item_with_content_hash(
-            session_id, digest
-        ):
-            return None, self._error_duplicate_content(fname, file_index)
-        return raw, None
+            return None, self._error_unsupported_type(
+                fname, file_index, str(exc), uf.client_file_id
+            )
+        size = measure_fileobj_size(uf.file_obj)
+        if size == 0:
+            return None, self._error_zero_byte(fname, file_index, uf.client_file_id)
+        if size > self._max_upload_bytes:
+            return None, self._error_too_large(fname, file_index, uf.client_file_id)
+        digest = sha256_fileobj(uf.file_obj)
+        if digest in batch_digests or digest in session_hashes:
+            return None, self._error_duplicate_content(fname, file_index, uf.client_file_id)
+        return PreflightUploadResult(digest=digest, size_bytes=size), None
 
     def _persist_staging_row_after_storage_failure(
         self, p: _PersistStagingFailureParams
@@ -287,7 +316,9 @@ class UploadCaptureSessionStagingItemsUseCase:
                     cleanup_e,
                 )
             acc.batch_digests.discard(b.digest)
-            acc.errors.append(self._error_duplicate_content(b.fname, b.file_index))
+            acc.errors.append(
+                self._error_duplicate_content(b.fname, b.file_index, b.uf.client_file_id)
+            )
             return
         try:
             self._artifact_storage.delete_file(b.rel_key)
@@ -320,7 +351,13 @@ class UploadCaptureSessionStagingItemsUseCase:
             b.item_id,
         )
 
-    def _ingest_one_staging_file(self, u: _StagingIngestUnit, acc: _StagingBatchAccum) -> None:
+    def _ingest_one_staging_file(
+        self,
+        u: _StagingIngestUnit,
+        acc: _StagingBatchAccum,
+        *,
+        session_hashes: set[str],
+    ) -> None:
         session = u.session
         session_id = u.session_id
         inventory_id = u.inventory_id
@@ -328,22 +365,22 @@ class UploadCaptureSessionStagingItemsUseCase:
         file_index = u.file_index
         uf = u.uf
         fname = _wire_filename(uf)
-        raw, err = self._preflight_one_upload_file(
+        preflight, err = self._preflight_one_upload_file(
             uf,
             fname,
             file_index,
-            session_id=session_id,
+            session_hashes=session_hashes,
             batch_digests=acc.batch_digests,
         )
         if err is not None:
             acc.errors.append(err)
             return
-        if raw is None:
+        if preflight is None:
             return
-        digest = hashlib.sha256(raw).hexdigest()
+        digest = preflight.digest
         acc.batch_digests.add(digest)
         extracted = self._time_extractor.extract(
-            raw_bytes=raw,
+            file_obj=uf.file_obj,
             media_content_type=uf.content_type or "application/octet-stream",
             ingest_clock=now,
             source_mtime_utc=uf.last_modified_at,
@@ -351,10 +388,10 @@ class UploadCaptureSessionStagingItemsUseCase:
         item_id = str(uuid4())
         safe = _safe_filename(uf.original_filename)
         rel_key = f"{self._staging_prefix}/{inventory_id}/{session_id}/{item_id}_{safe}"
-        bio = BytesIO(raw)
         try:
+            uf.file_obj.seek(0)
             self._artifact_storage.save_file(
-                rel_key, bio, uf.content_type or "application/octet-stream"
+                rel_key, uf.file_obj, uf.content_type or "application/octet-stream"
             )
         except Exception:
             logger.exception(
@@ -425,8 +462,11 @@ class UploadCaptureSessionStagingItemsUseCase:
     ) -> StagingUploadBatchResult:
         if not files:
             raise EmptyUploadError("At least one file is required")
-        assert_upload_file_count_within_limit(len(files))
+        assert_upload_file_count_within_limit(
+            len(files), max_files=self._policy.max_files_per_request
+        )
         session = self._require_session_for_staging_upload(session_id, inventory_id, aisle_id)
+        session_hashes = self._item_repo.list_all_content_hashes_for_session(session_id)
         now = self._clock.now()
         acc = _StagingBatchAccum([], [], set(), False)
         for file_index, uf in enumerate(files):
@@ -440,6 +480,7 @@ class UploadCaptureSessionStagingItemsUseCase:
                     uf=uf,
                 ),
                 acc,
+                session_hashes=session_hashes,
             )
         if acc.session_dirty:
             self._session_repo.save(session)

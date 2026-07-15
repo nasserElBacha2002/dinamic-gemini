@@ -16,6 +16,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from io import BytesIO
+from typing import BinaryIO
 
 from PIL import Image, UnidentifiedImageError
 
@@ -53,26 +54,62 @@ def _parse_exif_datetime_string(raw: str) -> datetime | None:
         return None
 
 
-def _try_exif_datetime(raw_bytes: bytes) -> datetime | None:
+def _extract_exif_datetime_from_image(img: Image.Image) -> datetime | None:
     try:
-        img = Image.open(BytesIO(raw_bytes))
-        try:
-            exif = img.getexif()
-        except Exception:
-            return None
-        if exif is None:
-            return None
-        for tag in _EXIF_DATETIME_TAGS:
-            val = exif.get(tag)
-            if val is None:
-                continue
-            parsed = _parse_exif_datetime_string(str(val))
-            if parsed is not None:
-                return parsed
+        exif = img.getexif()
+    except Exception:
+        return None
+    if exif is None:
+        return None
+    for tag in _EXIF_DATETIME_TAGS:
+        val = exif.get(tag)
+        if val is None:
+            continue
+        parsed = _parse_exif_datetime_string(str(val))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _try_exif_datetime(
+    *, raw_bytes: bytes | None = None, file_obj: BinaryIO | None = None
+) -> datetime | None:
+    """Probe EXIF from either an in-memory buffer or a seekable stream.
+
+    ``file_obj`` is seeked to 0 before opening and restored to position 0 afterward.
+    Pillow ``Image`` instances (and temporary ``BytesIO`` buffers) are always closed via
+    context managers; the caller's stream is never closed here.
+    """
+    try:
+        if file_obj is not None:
+            file_obj.seek(0)
+            try:
+                with Image.open(file_obj) as img:
+                    return _extract_exif_datetime_from_image(img)
+            finally:
+                try:
+                    file_obj.seek(0)
+                except Exception:
+                    pass
+        if raw_bytes is not None:
+            with BytesIO(raw_bytes) as buffer:
+                with Image.open(buffer) as img:
+                    return _extract_exif_datetime_from_image(img)
+        return None
     except (UnidentifiedImageError, OSError, ValueError) as e:
         logger.debug("capture time EXIF: skip (%s)", e)
+        if file_obj is not None:
+            try:
+                file_obj.seek(0)
+            except Exception:
+                pass
     except Exception:
         logger.warning("capture time EXIF: unexpected error", exc_info=True)
+        if file_obj is not None:
+            try:
+                file_obj.seek(0)
+            except Exception:
+                pass
     return None
 
 
@@ -93,14 +130,17 @@ class PillowCaptureStagingTimeMetadataExtractor(CaptureStagingTimeMetadataExtrac
     def extract(
         self,
         *,
-        raw_bytes: bytes,
+        raw_bytes: bytes | None = None,
+        file_obj: BinaryIO | None = None,
         media_content_type: str,
         ingest_clock: datetime,
         source_mtime_utc: datetime | None = None,
     ) -> ExtractedCaptureStagingTime:
         _ = media_content_type  # Port / future MIME-aware paths; Sprint 3 Pillow probes bytes only.
+        if raw_bytes is None and file_obj is None:
+            raise ValueError("extract() requires either raw_bytes or file_obj")
         ingest = _ensure_utc(ingest_clock)
-        exif_dt = _try_exif_datetime(raw_bytes)
+        exif_dt = _try_exif_datetime(raw_bytes=raw_bytes, file_obj=file_obj)
         if exif_dt is not None:
             return ExtractedCaptureStagingTime(
                 effective_capture_time=_ensure_utc(exif_dt),

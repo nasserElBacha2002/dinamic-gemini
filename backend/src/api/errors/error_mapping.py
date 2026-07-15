@@ -215,6 +215,8 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
     HTTP_DETAIL_TOO_MANY_FILES_PER_UPLOAD,
     HTTP_DETAIL_UNEXPECTED_ERROR,
+    HTTP_DETAIL_UPLOAD_FILE_TOO_LARGE,
+    HTTP_DETAIL_UPLOAD_REQUEST_TOO_LARGE,
 )
 from src.api.errors.structured_api_http import (
     ACTIVE_JOB_EXISTS,
@@ -279,6 +281,8 @@ from src.api.errors.structured_api_http import (
     SUPPLIER_PROMPT_CONFIG_NOT_FOUND,
     SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
     UNSUPPORTED_ASSET_TYPE,
+    UPLOAD_FILE_TOO_LARGE,
+    UPLOAD_REQUEST_TOO_LARGE,
     UPLOAD_TOO_MANY_FILES_PER_REQUEST,
     ZERO_BYTE_FILE,
     StructuredApiHttpError,
@@ -359,6 +363,10 @@ from src.application.errors import (
     UnknownProcessingProviderError,
     UnsupportedAssetTypeError,
     ZeroByteFileError,
+)
+from src.application.services.upload_request_limits import (
+    UploadFileTooLargeError,
+    UploadRequestTooLargeError,
 )
 
 logger = logging.getLogger(__name__)
@@ -747,6 +755,16 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         400,
         error_code=UPLOAD_TOO_MANY_FILES_PER_REQUEST,
         detail=HTTP_DETAIL_TOO_MANY_FILES_PER_UPLOAD,
+    ),
+    UploadFileTooLargeError: _structured_fixed(
+        422,
+        error_code=UPLOAD_FILE_TOO_LARGE,
+        detail=HTTP_DETAIL_UPLOAD_FILE_TOO_LARGE,
+    ),
+    UploadRequestTooLargeError: _structured_fixed(
+        422,
+        error_code=UPLOAD_REQUEST_TOO_LARGE,
+        detail=HTTP_DETAIL_UPLOAD_REQUEST_TOO_LARGE,
     ),
     CaptureSessionStagingFileTooLargeError: _structured_fixed(
         422,

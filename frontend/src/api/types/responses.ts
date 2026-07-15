@@ -815,9 +815,27 @@ export interface SourceAssetSummary {
   file_size_bytes?: number | null;
 }
 
-/** Response for POST .../aisles/{aisle_id}/assets. */
+/** Response for POST .../aisles/{aisle_id}/assets (partial success supported). */
+export interface AisleAssetUploadErrorItem {
+  filename: string;
+  code: string;
+  detail: string;
+  file_index: number;
+  client_file_id?: string | null;
+}
+
+export interface AisleAssetUploadItem {
+  client_file_id?: string | null;
+  asset_id: string;
+  filename: string;
+  status: string;
+}
+
 export interface UploadAisleAssetsResponse {
   assets: SourceAssetSummary[];
+  batch_id?: string | null;
+  uploaded?: AisleAssetUploadItem[];
+  errors?: AisleAssetUploadErrorItem[];
 }
 
 // ─── Position / result ─────────────────────────────────────────────────────

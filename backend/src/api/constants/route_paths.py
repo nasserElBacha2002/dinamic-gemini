@@ -13,6 +13,7 @@ API_V3_ANALYTICS_ROUTER_PREFIX = f"{API_V3_PREFIX}/analytics"
 API_V3_REVIEW_QUEUE_ROUTER_PREFIX = f"{API_V3_PREFIX}/review-queue"
 API_V3_ADMIN_ROUTER_PREFIX = f"{API_V3_PREFIX}/admin"
 API_V3_OBSERVABILITY_ROUTER_PREFIX = f"{API_V3_PREFIX}/observability"
+API_V3_CONFIG_ROUTER_PREFIX = f"{API_V3_PREFIX}/config"
 
 # Session auth routes (mounted separately from v3 business routers).
 API_AUTH_ROUTER_PREFIX = "/auth"

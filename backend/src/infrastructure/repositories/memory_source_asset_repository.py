@@ -38,6 +38,26 @@ class MemorySourceAssetRepository(SourceAssetRepository):
                 return a
         return None
 
+    def get_by_upload_idempotency_key(
+        self,
+        aisle_id: str,
+        upload_batch_id: str,
+        upload_client_file_id: str,
+    ) -> SourceAsset | None:
+        aid = (aisle_id or "").strip()
+        batch = (upload_batch_id or "").strip()
+        client = (upload_client_file_id or "").strip()
+        if not aid or not batch or not client:
+            return None
+        for a in self._store.values():
+            if (
+                a.aisle_id == aid
+                and (a.upload_batch_id or "").strip() == batch
+                and (a.upload_client_file_id or "").strip() == client
+            ):
+                return a
+        return None
+
     def list_by_aisle(self, aisle_id: str) -> Sequence[SourceAsset]:
         assets = [a for a in self._store.values() if a.aisle_id == aisle_id]
         return sorted(assets, key=lambda a: a.uploaded_at)

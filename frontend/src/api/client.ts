@@ -52,12 +52,14 @@ export {
 } from './jobsApi';
 export type { EvidenceImageLoadSpec, FetchEvidenceImageResult } from './assetsApi';
 export {
+  aisleAssetsResponseToOutcomes,
   deleteAisleSourceAsset,
   fetchEvidenceImageDisplay,
   getReferenceImageDisplayUrl,
   getReferenceImageFileUrl,
   listAisleAssets,
   uploadAisleAssets,
+  uploadAisleAssetsBatch,
 } from './assetsApi';
 export type { AnalyticsQueryParams } from './analyticsApi';
 export {

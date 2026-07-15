@@ -650,12 +650,16 @@ def get_upload_aisle_assets_use_case(
     clock: Clock = Depends(get_clock),
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
 ) -> UploadAisleAssetsUseCase:
+    from src.application.services.upload_request_limits import UploadRequestLimitPolicy
+    from src.config import load_settings
+
     return UploadAisleAssetsUseCase(
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
         artifact_storage=artifact_storage,
         clock=clock,
         status_reconciler=status_reconciler,
+        upload_policy=UploadRequestLimitPolicy.from_settings(load_settings()),
     )
 
 
@@ -1435,21 +1439,23 @@ def get_upload_capture_session_staging_items_use_case(
     clock: Clock = Depends(get_clock),
     time_metadata_extractor=Depends(get_capture_staging_time_metadata_extractor),
 ):
+    from src.application.services.upload_request_limits import UploadRequestLimitPolicy
     from src.application.use_cases.capture_sessions.upload_capture_session_staging_items import (
         UploadCaptureSessionStagingItemsUseCase,
     )
     from src.config import load_settings
 
     s = load_settings()
-    max_bytes = int(s.max_upload_size_mb) * 1024 * 1024
+    policy = UploadRequestLimitPolicy.from_settings(s)
     return UploadCaptureSessionStagingItemsUseCase(
         session_repo=session_repo,
         item_repo=item_repo,
         artifact_storage=artifact_storage,
         clock=clock,
         staging_prefix=s.v3_capture_staging_storage_prefix,
-        max_upload_bytes=max_bytes,
+        max_upload_bytes=policy.max_file_size_bytes,
         time_metadata_extractor=time_metadata_extractor,
+        upload_policy=policy,
     )
 
 

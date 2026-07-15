@@ -1,77 +1,55 @@
 import '@testing-library/jest-dom/vitest';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import ImportSessionUpload from '../src/features/ingestionSessions/components/ImportSessionUpload';
-import { MAX_FILES_PER_UPLOAD } from '../src/constants/uploads';
 
-const mutateAsyncMock = vi.fn();
-
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => key,
-  }),
-}));
-
-vi.mock('../src/components/ui/useAppSnackbar', () => ({
-  useAppSnackbar: () => ({
-    showSnackbar: vi.fn(),
-    closeSnackbar: vi.fn(),
-  }),
-}));
+const uploadMock = vi.fn();
 
 vi.mock('../src/features/ingestionSessions/hooks/useUploadCaptureItems', () => ({
   useUploadCaptureItems: () => ({
-    mutateAsync: mutateAsyncMock,
     isPending: false,
+    isUploading: false,
     isError: false,
+    upload: uploadMock,
+    retryFailed: vi.fn(),
+    cancelUpload: vi.fn(),
+    mutateAsync: uploadMock,
   }),
 }));
 
-function makeFiles(count: number): File[] {
-  return Array.from({ length: count }, (_, i) => new File(['x'], `f${i}.jpg`, { type: 'image/jpeg' }));
+vi.mock('../src/components/ui', async () => {
+  const actual = await vi.importActual<typeof import('../src/components/ui')>('../src/components/ui');
+  return {
+    ...actual,
+    PhotoUploadProgressDialog: () => null,
+    useAppSnackbar: () => ({ showSnackbar: vi.fn() }),
+  };
+});
+
+function makeFiles(n: number): File[] {
+  return Array.from({ length: n }, (_, i) => new File([`x${i}`], `f${i}.jpg`, { type: 'image/jpeg' }));
 }
 
 describe('ImportSessionUpload file limits', () => {
   beforeEach(() => {
-    mutateAsyncMock.mockReset();
+    uploadMock.mockReset();
   });
 
-  it('blocks selecting more than MAX_FILES_PER_UPLOAD files', async () => {
+  it('allows selecting more than per-request max (auto-batch upstream)', async () => {
+    uploadMock.mockResolvedValue({ uploadedCount: 12, failedCount: 0, cancelledCount: 0 });
     render(<ImportSessionUpload inventoryId="inv-1" sessionId="sess-1" />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    const files = makeFiles(MAX_FILES_PER_UPLOAD + 1);
-    fireEvent.change(input, { target: { files } });
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument();
-    });
-    expect(mutateAsyncMock).not.toHaveBeenCalled();
-  });
-
-  it('blocks dropping more than MAX_FILES_PER_UPLOAD files', async () => {
-    render(<ImportSessionUpload inventoryId="inv-1" sessionId="sess-1" />);
-    const dropZone = screen.getByText('ingestion_sessions.upload.title').closest('.MuiPaper-root');
-    expect(dropZone).toBeTruthy();
-    const files = makeFiles(MAX_FILES_PER_UPLOAD + 1);
-    const dataTransfer = {
-      files: Object.assign(files, {
-        item: (index: number) => files[index] ?? null,
-      }),
-      types: ['Files'],
-    };
-    fireEvent.drop(dropZone!, { dataTransfer });
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument();
-    });
-    expect(mutateAsyncMock).not.toHaveBeenCalled();
+    expect(input).toBeTruthy();
+    fireEvent.change(input, { target: { files: makeFiles(12) } });
+    await waitFor(() => expect(uploadMock).toHaveBeenCalledTimes(1));
+    expect(uploadMock.mock.calls[0][0].files).toHaveLength(12);
   });
 
   it('allows selecting MAX_FILES_PER_UPLOAD files', async () => {
-    mutateAsyncMock.mockResolvedValue({ uploadedCount: MAX_FILES_PER_UPLOAD, failedCount: 0 });
+    uploadMock.mockResolvedValue({ uploadedCount: 10, failedCount: 0, cancelledCount: 0 });
     render(<ImportSessionUpload inventoryId="inv-1" sessionId="sess-1" />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    fireEvent.change(input, { target: { files: makeFiles(MAX_FILES_PER_UPLOAD) } });
-    await waitFor(() => {
-      expect(mutateAsyncMock).toHaveBeenCalled();
-    });
+    fireEvent.change(input, { target: { files: makeFiles(10) } });
+    await waitFor(() => expect(uploadMock).toHaveBeenCalled());
   });
 });

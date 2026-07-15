@@ -48,6 +48,8 @@ HTTP_DETAIL_JOB_NOT_FOUND = "Job not found"
 HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED = "Only format=csv is supported"
 HTTP_DETAIL_AT_LEAST_ONE_FILE_REQUIRED = "At least one file is required"
 HTTP_DETAIL_TOO_MANY_FILES_PER_UPLOAD = "Too many files per upload request"
+HTTP_DETAIL_UPLOAD_FILE_TOO_LARGE = "File exceeds maximum upload size"
+HTTP_DETAIL_UPLOAD_REQUEST_TOO_LARGE = "Upload request exceeds maximum total size"
 HTTP_DETAIL_ASSET_NOT_FOUND = "Asset not found"
 HTTP_DETAIL_AISLE_SOURCE_ASSETS_ACTIVE_JOB_BLOCKS_MUTATION = "Cannot modify aisle source assets while a job is queued, starting, running, or cancel requested for this aisle"
 # Structured Category B — 409 ``detail`` (aisle/process cannot proceed with current persisted state).
@@ -75,6 +77,18 @@ HTTP_DETAIL_JOB_NOT_IN_AISLE_INVENTORY = "Job not found or does not belong to th
 
 # Inventory upload validation (v3 inventories routes).
 HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED = "Empty or zero-byte files are not allowed"
+
+# Multipart upload idempotency token validation (client_file_ids / upload_batch_id).
+HTTP_DETAIL_CLIENT_FILE_IDS_MISMATCH = (
+    "client_file_ids count must match the number of uploaded files"
+)
+HTTP_DETAIL_CLIENT_FILE_ID_INVALID = (
+    "Each client_file_id must be a valid UUID string (max 64 characters)"
+)
+HTTP_DETAIL_UPLOAD_BATCH_ID_INVALID = "upload_batch_id must be a valid UUID string (max 64 characters)"
+
+# Aisle source asset persistence (v3 aisle assets upload).
+HTTP_DETAIL_ASSET_PERSIST_FAILED = "Failed to persist aisle source asset"
 
 # Analytics query validation (v3 analytics routes).
 HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO = (

@@ -80,6 +80,16 @@ class MemoryCaptureSessionItemRepository(CaptureSessionItemRepository):
             for i in self._store.values()
         )
 
+    def list_all_content_hashes_for_session(self, session_id: str) -> set[str]:
+        out: set[str] = set()
+        for i in self._store.values():
+            if i.session_id != session_id:
+                continue
+            h = (i.content_hash or "").strip()
+            if h:
+                out.add(h)
+        return out
+
     def count_items_with_import_status(
         self, session_id: str, import_status: CaptureSessionItemImportStatus
     ) -> int:

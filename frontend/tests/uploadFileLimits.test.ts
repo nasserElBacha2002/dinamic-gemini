@@ -2,19 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   isTooManyFilesForUpload,
   maxFilesPerUploadHelperText,
-  tooManyFilesMessage,
 } from '../src/utils/uploadFileLimits';
-import { MAX_FILES_PER_UPLOAD } from '../src/constants/uploads';
+import { UPLOAD_LIMITS } from '../src/features/uploads/bulkUpload.config';
 
 describe('uploadFileLimits', () => {
-  it('flags more than MAX_FILES_PER_UPLOAD', () => {
-    expect(isTooManyFilesForUpload(MAX_FILES_PER_UPLOAD)).toBe(false);
-    expect(isTooManyFilesForUpload(MAX_FILES_PER_UPLOAD + 1)).toBe(true);
+  it('flags more than maxFilesPerRequest (per HTTP request only)', () => {
+    expect(isTooManyFilesForUpload(UPLOAD_LIMITS.maxFilesPerRequest)).toBe(false);
+    expect(isTooManyFilesForUpload(UPLOAD_LIMITS.maxFilesPerRequest + 1)).toBe(true);
   });
 
-  it('returns Spanish aisle message', () => {
-    expect(tooManyFilesMessage('aisle')).toContain('5');
-    expect(tooManyFilesMessage('import')).toContain('5');
-    expect(maxFilesPerUploadHelperText()).toContain('5');
+  it('helper text includes configured count', () => {
+    expect(maxFilesPerUploadHelperText()).toContain(String(UPLOAD_LIMITS.maxFilesPerRequest));
   });
 });

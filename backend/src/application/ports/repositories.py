@@ -123,6 +123,16 @@ class SourceAssetRepository(ABC):
         """Return the asset linked to this capture item id, if any (G5 idempotency)."""
         ...
 
+    @abstractmethod
+    def get_by_upload_idempotency_key(
+        self,
+        aisle_id: str,
+        upload_batch_id: str,
+        upload_client_file_id: str,
+    ) -> SourceAsset | None:
+        """Return the asset for this aisle + client batch/file id pair, if any."""
+        ...
+
 
 class PositionRepository(ABC):
     @abstractmethod

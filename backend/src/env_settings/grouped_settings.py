@@ -797,11 +797,72 @@ class LimitsAndSchemaSettings(BaseModel):
             "(see raw_fetch_truncated on the list response). Env: V3_POSITIONS_AISLE_RAW_CAP."
         ),
     )
-    max_upload_size_mb: int = Field(
-        default_factory=lambda: int(os.getenv("MAX_UPLOAD_SIZE_MB", "500")),
+    max_files_per_upload_request: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_FILES_PER_UPLOAD_REQUEST", "10")),
+        ge=1,
+        le=50,
+        description=(
+            "Max files per multipart upload request (aisle assets + capture staging). "
+            "Total selection may exceed this via frontend batching. Env: MAX_FILES_PER_UPLOAD_REQUEST."
+        ),
+    )
+    max_upload_file_size_mb: int = Field(
+        default_factory=lambda: int(
+            os.getenv("MAX_UPLOAD_FILE_SIZE_MB") or os.getenv("MAX_UPLOAD_SIZE_MB") or "500"
+        ),
         ge=1,
         le=2048,
-        description="Max upload file size in MB (1 to 2048).",
+        description=(
+            "Max size per uploaded file in MB. Env: MAX_UPLOAD_FILE_SIZE_MB "
+            "(fallback MAX_UPLOAD_SIZE_MB for backward compatibility). Default 500 (historical)."
+        ),
+    )
+    max_upload_request_size_mb: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_UPLOAD_REQUEST_SIZE_MB", "1024")),
+        ge=1,
+        le=2048,
+        description=(
+            "Max total decoded bytes per multipart upload request in MB. Must be >= "
+            "max_upload_file_size_mb. Env: MAX_UPLOAD_REQUEST_SIZE_MB. Default 1024 (historical). "
+            "Align reverse-proxy client_max_body_size."
+        ),
+    )
+    # Backward-compatible alias used by older call sites / deps wiring.
+    max_upload_size_mb: int = Field(
+        default_factory=lambda: int(
+            os.getenv("MAX_UPLOAD_FILE_SIZE_MB") or os.getenv("MAX_UPLOAD_SIZE_MB") or "500"
+        ),
+        ge=1,
+        le=2048,
+        description="Alias of max_upload_file_size_mb (legacy name).",
+    )
+    upload_batch_concurrency: int = Field(
+        default_factory=lambda: int(os.getenv("UPLOAD_BATCH_CONCURRENCY", "2")),
+        ge=1,
+        le=20,
+        description=(
+            "Advisory concurrent-request hint for upload clients (server does not enforce). "
+            "Env: UPLOAD_BATCH_CONCURRENCY."
+        ),
+    )
+    upload_retry_attempts: int = Field(
+        default_factory=lambda: int(os.getenv("UPLOAD_RETRY_ATTEMPTS", "3")),
+        ge=0,
+        le=10,
+        description=(
+            "Advisory hint for upload clients: number of **additional** retries after the "
+            "initial attempt (server does not enforce). 0 = one request total; 3 = up to four "
+            "requests. Env: UPLOAD_RETRY_ATTEMPTS."
+        ),
+    )
+    upload_retry_base_delay_ms: int = Field(
+        default_factory=lambda: int(os.getenv("UPLOAD_RETRY_BASE_DELAY_MS", "1000")),
+        ge=0,
+        le=60_000,
+        description=(
+            "Advisory base backoff delay (ms) hint for upload client retries (server does not "
+            "enforce). Env: UPLOAD_RETRY_BASE_DELAY_MS."
+        ),
     )
     db_schema_guard_enabled: bool = Field(
         default_factory=lambda: (
@@ -932,6 +993,21 @@ class LimitsAndSchemaSettings(BaseModel):
         le=1.0,
         description="Confidence when time falls back to ingest clock (Sprint 3). Env: V3_CAPTURE_TIME_CONFIDENCE_FALLBACK.",
     )
+
+    @model_validator(mode="after")
+    def validate_upload_size_relationship(self) -> Self:
+        """Per-request total must be able to fit at least one max-size file."""
+        if self.max_upload_file_size_mb <= 0 or self.max_upload_request_size_mb <= 0:
+            raise ValueError(
+                "max_upload_file_size_mb and max_upload_request_size_mb must both be > 0"
+            )
+        if self.max_upload_request_size_mb < self.max_upload_file_size_mb:
+            raise ValueError(
+                "max_upload_request_size_mb must be >= max_upload_file_size_mb "
+                f"(got max_upload_request_size_mb={self.max_upload_request_size_mb}MB, "
+                f"max_upload_file_size_mb={self.max_upload_file_size_mb}MB)"
+            )
+        return self
 
 
 class PhotosInputSettings(BaseModel):

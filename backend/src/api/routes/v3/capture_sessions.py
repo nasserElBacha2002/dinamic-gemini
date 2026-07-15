@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from io import BytesIO
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 
 from src.api.dependencies import (
     get_assign_capture_session_group_to_existing_aisle_use_case,
@@ -46,13 +45,12 @@ from src.api.schemas.capture_schemas import (
     materialized_capture_session_group_preview_to_response,
 )
 from src.api.schemas.listing_schemas import compute_total_pages
+from src.api.services.multipart_aisle_uploads import read_spooled_multipart_upload_files
 from src.application.dto.uploaded_file import UploadedFile
 from src.application.services.capture_session_status_filter import (
     parse_capture_session_status_filter,
 )
-from src.application.services.upload_file_count_validation import (
-    assert_upload_file_count_within_limit,
-)
+from src.application.services.upload_stream_io import close_uploaded_files
 from src.application.use_cases.capture_sessions.assign_capture_session_group_to_existing_aisle import (
     AssignCaptureSessionGroupToExistingAisleUseCase,
 )
@@ -136,25 +134,25 @@ def _staging_upload_batch_response(
                 code=e.code,
                 detail=e.detail,
                 file_index=e.file_index,
+                client_file_id=e.client_file_id,
             )
             for e in batch.errors
         ],
     )
 
 
-async def _upload_files_to_staging_dtos(files: list[UploadFile]) -> list[UploadedFile]:
-    assert_upload_file_count_within_limit(len(files))
-    uploaded: list[UploadedFile] = []
-    for u in files:
-        content = await u.read()
-        uploaded.append(
-            UploadedFile(
-                original_filename=u.filename or "file",
-                file_obj=BytesIO(content),
-                content_type=u.content_type or "application/octet-stream",
-            )
-        )
-    return uploaded
+async def _upload_files_to_staging_dtos(
+    files: list[UploadFile],
+    *,
+    upload_batch_id: str | None = None,
+    client_file_ids: list[str] | None = None,
+) -> list[UploadedFile]:
+    return await read_spooled_multipart_upload_files(
+        files,
+        upload_batch_id=upload_batch_id,
+        client_file_ids=client_file_ids,
+        require_usable=False,
+    )
 
 
 @router.post(
@@ -585,12 +583,19 @@ async def upload_capture_session_staging_items_inventory_scope(
     inventory_id: str,
     session_id: str,
     files: list[UploadFile] = File(...),
+    upload_batch_id: str | None = Form(default=None),
+    client_file_ids: list[str] | None = Form(default=None),
     use_case: UploadCaptureSessionStagingItemsUseCase = Depends(
         get_upload_capture_session_staging_items_use_case
     ),
 ) -> UploadCaptureSessionItemsResponse:
+    uploaded: list[UploadedFile] = []
     try:
-        uploaded = await _upload_files_to_staging_dtos(files)
+        uploaded = await _upload_files_to_staging_dtos(
+            files,
+            upload_batch_id=upload_batch_id,
+            client_file_ids=client_file_ids,
+        )
     except Exception as e:
         reraise_if_mapped(e)
         raise
@@ -601,10 +606,12 @@ async def upload_capture_session_staging_items_inventory_scope(
             session_id=session_id,
             files=uploaded,
         )
+        return _staging_upload_batch_response(batch)
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return _staging_upload_batch_response(batch)
+    finally:
+        close_uploaded_files(uploaded)
 
 
 @router.post(
@@ -617,18 +624,20 @@ async def upload_capture_session_staging_items(
     aisle_id: str,
     session_id: str,
     files: list[UploadFile] = File(...),
+    upload_batch_id: str | None = Form(default=None),
+    client_file_ids: list[str] | None = Form(default=None),
     use_case: UploadCaptureSessionStagingItemsUseCase = Depends(
         get_upload_capture_session_staging_items_use_case
     ),
 ) -> UploadCaptureSessionItemsResponse:
-    """Stage files for a capture session.
-
-    Same buffering pattern as ``upload_aisle_assets``: each ``UploadFile`` is read fully into
-    memory before invoking the use case (``BytesIO`` per file). Low-risk for typical capture
-    batch sizes; very large files still hit ``max_upload_size_mb`` in the use case.
-    """
+    """Stage files for a capture session (spooled ingest with per-request size limits)."""
+    uploaded: list[UploadedFile] = []
     try:
-        uploaded = await _upload_files_to_staging_dtos(files)
+        uploaded = await _upload_files_to_staging_dtos(
+            files,
+            upload_batch_id=upload_batch_id,
+            client_file_ids=client_file_ids,
+        )
     except Exception as e:
         reraise_if_mapped(e)
         raise
@@ -639,7 +648,9 @@ async def upload_capture_session_staging_items(
             session_id=session_id,
             files=uploaded,
         )
+        return _staging_upload_batch_response(batch)
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return _staging_upload_batch_response(batch)
+    finally:
+        close_uploaded_files(uploaded)
