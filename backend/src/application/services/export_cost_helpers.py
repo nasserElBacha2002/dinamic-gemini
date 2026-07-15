@@ -1,4 +1,8 @@
-"""Null-safe cost extraction for export summaries (no invented pricing)."""
+"""Null-safe cost extraction for a single job (not aisle/inventory accumulated totals).
+
+For aisle or inventory cost strings that must sum all billable runs, use
+``billable_job_cost_aggregation`` instead of this helper alone.
+"""
 
 from __future__ import annotations
 

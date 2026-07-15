@@ -240,7 +240,29 @@ class JobRepository(ABC):
     def list_jobs_for_target(
         self, target_type: str, target_id: str, *, limit: int = 50
     ) -> Sequence[Job]:
-        """Jobs for one target, newest first (``updated_at DESC``, ``created_at DESC``)."""
+        """Jobs for one target, newest first (``updated_at DESC``, ``created_at DESC``).
+
+        The default ``limit=50`` is for UI/history browsing only. Never use this method
+        (or its limit) for financial cost aggregation.
+        """
+
+    @abstractmethod
+    def list_jobs_for_targets(
+        self,
+        target_type: str,
+        target_ids: Sequence[str],
+        *,
+        job_type: str | None = None,
+    ) -> Sequence[Job]:
+        """Return **all** jobs for the given targets (batch / financial reads).
+
+        Implementations must:
+        - Deduplicate ``target_ids`` (order-preserving) before querying.
+        - Return every matching job (no per-target history cap, no ``TOP``/``ROW_NUMBER`` truncations).
+        - Avoid N+1 (no fan-out to ``list_jobs_for_target``).
+        - For SQL Server, batch ``IN`` lists to stay under parameter limits without truncating jobs.
+        - Deduplicate result rows by ``job.id`` when merging batches.
+        """
 
     def list_all_jobs(self) -> Sequence[Job]:
         """Bulk read for analytics. Default empty; SQL/memory implementations scan ``inventory_jobs``."""

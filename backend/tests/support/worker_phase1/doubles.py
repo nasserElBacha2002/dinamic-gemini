@@ -351,6 +351,16 @@ class PartialFailingJobRepository(JobRepository):
         return self._inner.list_jobs_for_target(target_type, target_id, limit=limit)
 
 
+
+    def list_jobs_for_targets(
+        self,
+        target_type: str,
+        target_ids: Sequence[str],
+        *,
+        job_type: str | None = None,
+    ) -> Sequence[Job]:
+        return self._inner.list_jobs_for_targets(target_type, target_ids, job_type=job_type)
+
 @dataclass(frozen=True)
 class AisleSaveAttemptSnapshot:
     committed: bool

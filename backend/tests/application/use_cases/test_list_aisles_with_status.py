@@ -98,6 +98,16 @@ class StubJobRepo(JobRepository):
         return [j] if j is not None else []
 
 
+
+    def list_jobs_for_targets(
+        self,
+        target_type: str,
+        target_ids: Sequence[str],
+        *,
+        job_type: str | None = None,
+    ) -> Sequence[Job]:
+        return []
+
 class StubPositionRepo(PositionRepository):
     def __init__(self, positions: list[Position] | None = None) -> None:
         self._positions = positions or []

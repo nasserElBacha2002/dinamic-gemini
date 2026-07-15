@@ -12,8 +12,11 @@ from src.application.ports.repositories import (
     PositionRepository,
     ProductRecordRepository,
 )
+from src.application.services.billable_job_cost_aggregation import (
+    export_cost_strings_by_aisle_id,
+    export_inventory_total_cost_string,
+)
 from src.application.services.csv_inventory_exporter import CsvInventoryExporter
-from src.application.services.export_cost_helpers import job_total_cost_string
 from src.application.services.export_csv_column_mapper import (
     BUSINESS_AISLES_SUMMARY_CSV_FIELDS,
     BUSINESS_INVENTORY_SUMMARY_CSV_FIELDS,
@@ -34,28 +37,15 @@ from src.application.services.export_operational_csv_builder import ExportOperat
 from src.application.services.export_summary_builder import ExportSummaryBuilder
 from src.application.services.export_zip_packager import ExportZipPackager
 from src.application.services.result_context_resolver import ResultContextResolver
-from src.domain.jobs.entities import Job
-
-
-def _job_for_bundle(
-    job_repo: JobRepository | None,
-    bundle: ExportAisleOperationalBundle,
-) -> Job | None:
-    if job_repo is None or not bundle.job_id_for_slice:
-        return None
-    return job_repo.get_by_id(bundle.job_id_for_slice)
 
 
 def _aisle_costs_from_data(
     data: ExportInventoryOperationalData,
     job_repo: JobRepository | None,
 ) -> dict[str, str]:
-    if job_repo is None:
-        return {}
-    return {
-        bundle.aisle.id: job_total_cost_string(_job_for_bundle(job_repo, bundle))
-        for bundle in data.aisle_bundles
-    }
+    """Accumulated billable cost per aisle (all countable runs), not operational-only."""
+    aisle_ids = [bundle.aisle.id for bundle in data.aisle_bundles]
+    return export_cost_strings_by_aisle_id(job_repo, aisle_ids)
 
 
 def build_inventory_summary_csv_from_data(
@@ -68,13 +58,13 @@ def build_inventory_summary_csv_from_data(
     """Build inventory summary CSV.
 
     Quantity rollups come from ``data`` (typically active aisles only). Job costs
-    come from ``cost_data`` when provided (typically all aisles, including inactive).
+    come from ``cost_data`` when provided (typically all aisles, including inactive):
+    sum of every billable ``process_aisle`` job per aisle, not only the operational job.
     """
     rollups = summary.build_rollups(data)
     cost_source = cost_data if cost_data is not None else data
-    inv_cost = ExportSummaryBuilder.sum_aisle_job_costs(
-        [_job_for_bundle(job_repo, b) for b in cost_source.aisle_bundles]
-    )
+    aisle_ids = [b.aisle.id for b in cost_source.aisle_bundles]
+    inv_cost = export_inventory_total_cost_string(job_repo, aisle_ids)
     row = summary.inventory_summary_row(data, rollups, inventory_total_cost=inv_cost)
     return CsvInventoryExporter.to_csv([row], fieldnames=BUSINESS_INVENTORY_SUMMARY_CSV_FIELDS)
 

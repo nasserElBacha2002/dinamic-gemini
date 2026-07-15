@@ -6,13 +6,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.application.services.aisle_results_export_source import ui_aligned_rollup_service
-from src.application.services.export_cost_helpers import job_total_cost_string
 from src.application.services.export_inventory_collector import ExportInventoryOperationalData
 from src.application.services.export_quantity_rollup import (
     ExportQuantityRollupService,
     InventoryExportRollupTotals,
 )
-from src.domain.jobs.entities import Job
 
 
 class ExportSummaryBuilder:
@@ -83,18 +81,3 @@ class ExportSummaryBuilder:
     def max_updated_at_for_bundle(bundle_rows: tuple) -> str:
         times = [rb.internal_row.get("updated_at", "") for rb in bundle_rows]
         return max((t for t in times if t), default="")
-
-    @staticmethod
-    def sum_aisle_job_costs(jobs: list[Job | None]) -> str:
-        parts: list[str] = []
-        for job in jobs:
-            cost = job_total_cost_string(job)
-            if cost:
-                parts.append(cost)
-        if not parts:
-            return ""
-        try:
-            total = sum(float(p) for p in parts)
-            return f"{total:.8f}".rstrip("0").rstrip(".")
-        except ValueError:
-            return ""

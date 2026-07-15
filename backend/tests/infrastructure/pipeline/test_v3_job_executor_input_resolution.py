@@ -84,6 +84,16 @@ class _NoopJobRepo(JobRepository):
         return []
 
 
+
+    def list_jobs_for_targets(
+        self,
+        target_type: str,
+        target_ids: Sequence[str],
+        *,
+        job_type: str | None = None,
+    ) -> Sequence[Job]:
+        return []
+
 class _NoopAisleRepo(AisleRepository):
     def save(self, aisle):  # type: ignore[no-untyped-def]
         return None

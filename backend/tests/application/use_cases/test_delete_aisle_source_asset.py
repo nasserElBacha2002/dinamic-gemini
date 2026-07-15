@@ -162,6 +162,22 @@ class InMemoryJobRepo(JobRepository):
             if j.target_type == target_type and j.target_id == target_id
         ]
 
+    def list_jobs_for_targets(
+        self,
+        target_type: str,
+        target_ids: Sequence[str],
+        *,
+        job_type: str | None = None,
+    ) -> Sequence[Job]:
+        id_set = frozenset(dict.fromkeys(target_ids))
+        return [
+            j
+            for j in self._store.values()
+            if j.target_type == target_type
+            and j.target_id in id_set
+            and (job_type is None or j.job_type == job_type)
+        ]
+
 
 def _asset(
     asset_id: str,

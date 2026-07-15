@@ -32,7 +32,7 @@ from src.application.use_cases.positions.list_aisle_positions import (
     ListAislePositionsUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
-from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.domain.traceability import TraceabilityStatus
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
@@ -729,3 +729,572 @@ def test_summary_not_found() -> None:
     )
     with pytest.raises(InventoryNotFoundError):
         uc.execute_inventory_summary_csv("missing")
+
+
+def _llm_cost_result(total: str) -> dict:
+    return {
+        "llm_cost_snapshot": {
+            "provider": "gemini",
+            "model": "gemini-2.0",
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "cached_input_tokens": 0,
+                "cache_write_tokens": 0,
+                "thinking_tokens": 0,
+                "tool_request_count": 0,
+                "image_input_count": 0,
+                "audio_input_tokens": 0,
+                "video_input_tokens": 0,
+            },
+            "pricing_snapshot": {"billing_currency": "USD"},
+            "computed_cost": {"total_cost": total, "currency": "USD"},
+            "capture_status": "exact",
+            "capture_notes": [],
+        }
+    }
+
+
+def _save_process_job(
+    job_repo: MemoryJobRepository,
+    *,
+    job_id: str,
+    aisle_id: str,
+    cost: str | None,
+    status=None,
+    sec: int = 0,
+) -> None:
+    from src.domain.jobs.entities import Job, JobStatus
+
+    st = status if status is not None else JobStatus.SUCCEEDED
+    created = NOW.replace(second=sec % 60)
+    job_repo.save(
+        Job(
+            id=job_id,
+            target_type="aisle",
+            target_id=aisle_id,
+            job_type="process_aisle",
+            status=st,
+            payload_json={},
+            created_at=created,
+            updated_at=created,
+            finished_at=created,
+            result_json=_llm_cost_result(cost) if cost is not None else None,
+        )
+    )
+
+
+def test_export_aisle_cost_sums_all_runs_count_stays_operational() -> None:
+    """Cases 2+9: cost = Σ runs; counted qty = operational slice only."""
+    from src.domain.jobs.entities import JobStatus
+
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    aisle = Aisle(
+        "a1",
+        "inv-1",
+        "A1",
+        AisleStatus.COMPLETED,
+        NOW,
+        NOW,
+        operational_job_id="j3",
+    )
+    pos = Position(
+        id="p1",
+        aisle_id="a1",
+        job_id="j3",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={"internal_code": "SKU", "final_quantity": 102},
+    )
+    inv_repo, aisle_repo, pos_repo, prod_repo, job_repo = _repos_with_positions(
+        inv=inv, aisles=[aisle], positions=[pos]
+    )
+    _save_process_job(job_repo, job_id="j1", aisle_id="a1", cost="10", sec=1)
+    _save_process_job(job_repo, job_id="j2", aisle_id="a1", cost="15", sec=2)
+    _save_process_job(job_repo, job_id="j3", aisle_id="a1", cost="12", sec=3)
+    _save_process_job(
+        job_repo, job_id="j-queued", aisle_id="a1", cost="100", status=JobStatus.QUEUED, sec=4
+    )
+
+    uc = ExportInventorySummaryCsvUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        ResultContextResolver(job_repo),
+        job_repo=job_repo,
+    )
+    _, inv_rows = _parse_csv(uc.execute_inventory_summary_csv("inv-1")[0])
+    _, aisle_rows = _parse_csv(uc.execute_aisles_summary_csv("inv-1")[0])
+    assert aisle_rows[0]["Costo del pasillo"] == "37"
+    assert aisle_rows[0]["Total contabilizado"] == "102"
+    assert inv_rows[0]["Costo total del inventario"] == "37"
+    assert inv_rows[0]["Total contabilizado"] == "102"
+
+
+def test_export_equal_run_costs_not_sum_distinct() -> None:
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    aisle = Aisle("a1", "inv-1", "A1", AisleStatus.COMPLETED, NOW, NOW, operational_job_id="j2")
+    pos = Position(
+        id="p1",
+        aisle_id="a1",
+        job_id="j2",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={"internal_code": "SKU", "final_quantity": 5},
+    )
+    inv_repo, aisle_repo, pos_repo, prod_repo, job_repo = _repos_with_positions(
+        inv=inv, aisles=[aisle], positions=[pos]
+    )
+    _save_process_job(job_repo, job_id="j1", aisle_id="a1", cost="10", sec=1)
+    _save_process_job(job_repo, job_id="j2", aisle_id="a1", cost="10", sec=2)
+    uc = ExportInventorySummaryCsvUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        ResultContextResolver(job_repo),
+        job_repo=job_repo,
+    )
+    _, aisle_rows = _parse_csv(uc.execute_aisles_summary_csv("inv-1")[0])
+    assert aisle_rows[0]["Costo del pasillo"] == "20"
+
+
+def test_export_inactive_aisle_cost_included_qty_excluded_from_inventory() -> None:
+    """Case 6: inactive aisle qty omitted from inventory rollup; cost still accumulated."""
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    active = Aisle(
+        "a-active",
+        "inv-1",
+        "ACT",
+        AisleStatus.COMPLETED,
+        NOW,
+        NOW,
+        operational_job_id="ja",
+        is_active=True,
+    )
+    inactive = Aisle(
+        "a-inactive",
+        "inv-1",
+        "INA",
+        AisleStatus.COMPLETED,
+        NOW,
+        NOW,
+        operational_job_id="ji2",
+        is_active=False,
+    )
+    positions = [
+        Position(
+            id="p-a",
+            aisle_id="a-active",
+            job_id="ja",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "A", "final_quantity": 50},
+        ),
+        Position(
+            id="p-i",
+            aisle_id="a-inactive",
+            job_id="ji2",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "I", "final_quantity": 100},
+        ),
+    ]
+    inv_repo, aisle_repo, pos_repo, prod_repo, job_repo = _repos_with_positions(
+        inv=inv, aisles=[active, inactive], positions=positions
+    )
+    _save_process_job(job_repo, job_id="ja", aisle_id="a-active", cost="5", sec=1)
+    _save_process_job(job_repo, job_id="ji1", aisle_id="a-inactive", cost="10", sec=1)
+    _save_process_job(job_repo, job_id="ji2", aisle_id="a-inactive", cost="20", sec=2)
+
+    uc = ExportInventorySummaryCsvUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        ResultContextResolver(job_repo),
+        job_repo=job_repo,
+    )
+    _, inv_rows = _parse_csv(uc.execute_inventory_summary_csv("inv-1")[0])
+    _, aisle_rows = _parse_csv(uc.execute_aisles_summary_csv("inv-1")[0])
+    by_code = {r["Pasillo"]: r for r in aisle_rows}
+    assert by_code["INA"]["Costo del pasillo"] == "30"
+    assert by_code["INA"]["Total contabilizado"] == "100"
+    assert by_code["ACT"]["Costo del pasillo"] == "5"
+    assert inv_rows[0]["Total contabilizado"] == "50"
+    assert inv_rows[0]["Costo total del inventario"] == "35"
+
+
+def test_export_multi_aisle_and_zip_cost_consistency() -> None:
+    """Cases 8+9: inventory total = Σ aisle accumulated costs; ZIP matches."""
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    a1 = Aisle("a1", "inv-1", "A1", AisleStatus.COMPLETED, NOW, NOW, operational_job_id="a1j2")
+    a2 = Aisle("a2", "inv-1", "A2", AisleStatus.COMPLETED, NOW, NOW, operational_job_id="a2j1")
+    positions = [
+        Position(
+            id="p1",
+            aisle_id="a1",
+            job_id="a1j2",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "A", "final_quantity": 2},
+        ),
+        Position(
+            id="p2",
+            aisle_id="a2",
+            job_id="a2j1",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "B", "final_quantity": 4},
+        ),
+    ]
+    inv_repo, aisle_repo, pos_repo, prod_repo, job_repo = _repos_with_positions(
+        inv=inv, aisles=[a1, a2], positions=positions
+    )
+    _save_process_job(job_repo, job_id="a1j1", aisle_id="a1", cost="10", sec=1)
+    _save_process_job(job_repo, job_id="a1j2", aisle_id="a1", cost="10", sec=2)
+    _save_process_job(job_repo, job_id="a2j1", aisle_id="a2", cost="30", sec=1)
+
+    summary_uc = ExportInventorySummaryCsvUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        ResultContextResolver(job_repo),
+        job_repo=job_repo,
+    )
+    _, inv_rows = _parse_csv(summary_uc.execute_inventory_summary_csv("inv-1")[0])
+    assert inv_rows[0]["Costo total del inventario"] == "50"
+
+    zip_uc = ExportInventoryPackageZipUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        ResultContextResolver(job_repo),
+        job_repo=job_repo,
+    )
+    zip_bytes, _ = zip_uc.execute_zip("inv-1")
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        _, zip_inv = _parse_csv(zf.read("inventory_summary.csv").decode("utf-8-sig"))
+        _, zip_aisles = _parse_csv(zf.read("aisles_summary.csv").decode("utf-8-sig"))
+    assert zip_inv[0]["Costo total del inventario"] == "50"
+    assert zip_inv[0]["Total contabilizado"] == "6"
+    costs = {r["Pasillo"]: r["Costo del pasillo"] for r in zip_aisles}
+    assert costs == {"A1": "20", "A2": "30"}
+
+
+def test_export_501_runs_sums_all_costs() -> None:
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.PROCESSING, NOW, NOW)
+    aisle = Aisle(
+        "a1", "inv-1", "A1", AisleStatus.COMPLETED, NOW, NOW, operational_job_id="j-500"
+    )
+    pos = Position(
+        id="p1",
+        aisle_id="a1",
+        job_id="j-500",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={"internal_code": "SKU", "final_quantity": 7},
+    )
+    inv_repo, aisle_repo, pos_repo, prod_repo, job_repo = _repos_with_positions(
+        inv=inv, aisles=[aisle], positions=[pos]
+    )
+    for i in range(501):
+        _save_process_job(job_repo, job_id=f"j-{i}", aisle_id="a1", cost="1", sec=i % 60)
+    uc = ExportInventorySummaryCsvUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        ResultContextResolver(job_repo),
+        job_repo=job_repo,
+    )
+    _, inv_rows = _parse_csv(uc.execute_inventory_summary_csv("inv-1")[0])
+    _, aisle_rows = _parse_csv(uc.execute_aisles_summary_csv("inv-1")[0])
+    assert aisle_rows[0]["Costo del pasillo"] == "501"
+    assert inv_rows[0]["Costo total del inventario"] == "501"
+    assert aisle_rows[0]["Total contabilizado"] == "7"
+    assert inv_rows[0]["Total contabilizado"] == "7"
+
+
+def test_export_real_test_aisle_accumulates_all_run_costs() -> None:
+    """Real domain: test inventory (InventoryProcessingMode.TEST), same aisle/job model."""
+    inv = Inventory(
+        "inv-test",
+        "Test Warehouse",
+        InventoryStatus.PROCESSING,
+        NOW,
+        NOW,
+        processing_mode=InventoryProcessingMode.TEST,
+    )
+    aisle = Aisle(
+        "a-test",
+        "inv-test",
+        "T1",
+        AisleStatus.COMPLETED,
+        NOW,
+        NOW,
+        operational_job_id="tj2",
+    )
+    pos = Position(
+        id="pt",
+        aisle_id="a-test",
+        job_id="tj2",
+        status=PositionStatus.DETECTED,
+        confidence=0.9,
+        needs_review=False,
+        primary_evidence_id=None,
+        created_at=NOW,
+        updated_at=NOW,
+        detected_summary_json={"internal_code": "T", "final_quantity": 11},
+    )
+    inv_repo, aisle_repo, pos_repo, prod_repo, job_repo = _repos_with_positions(
+        inv=inv, aisles=[aisle], positions=[pos]
+    )
+    _save_process_job(job_repo, job_id="tj1", aisle_id="a-test", cost="5", sec=1)
+    _save_process_job(job_repo, job_id="tj2", aisle_id="a-test", cost="8", sec=2)
+    uc = ExportInventorySummaryCsvUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        ResultContextResolver(job_repo),
+        job_repo=job_repo,
+    )
+    _, inv_rows = _parse_csv(uc.execute_inventory_summary_csv("inv-test")[0])
+    _, aisle_rows = _parse_csv(uc.execute_aisles_summary_csv("inv-test")[0])
+    assert aisle_rows[0]["Costo del pasillo"] == "13"
+    assert inv_rows[0]["Costo total del inventario"] == "13"
+    assert aisle_rows[0]["Total contabilizado"] == "11"
+    assert inv_rows[0]["Total contabilizado"] == "11"
+
+    zip_uc = ExportInventoryPackageZipUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        ResultContextResolver(job_repo),
+        job_repo=job_repo,
+    )
+    zip_bytes, _ = zip_uc.execute_zip("inv-test")
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        _, zip_inv = _parse_csv(zf.read("inventory_summary.csv").decode("utf-8-sig"))
+    assert zip_inv[0]["Costo total del inventario"] == "13"
+    assert zip_inv[0]["Total contabilizado"] == "11"
+
+
+def test_export_analytics_consistency_mixed_inventory() -> None:
+    """CSV = ZIP = analytics (wide window) = SSOT sum; qty = operational only."""
+    from datetime import timedelta
+    from decimal import Decimal
+
+    from src.application.dto.analytics_cost_dto import AnalyticsCostSummaryFilters
+    from src.application.services.analytics_cost_counted_quantity import (
+        AnalyticsCostCountedQuantityService,
+    )
+    from src.application.services.analytics_cost_summary_service import AnalyticsCostSummaryService
+    from src.application.services.billable_job_cost_aggregation import (
+        export_inventory_total_cost_string,
+        sum_billable_costs_by_aisle_id,
+    )
+    from src.domain.jobs.entities import JobStatus
+
+    prod = Inventory(
+        "inv-1",
+        "Prod",
+        InventoryStatus.PROCESSING,
+        NOW,
+        NOW,
+        processing_mode=InventoryProcessingMode.PRODUCTION,
+    )
+    test_inv = Inventory(
+        "inv-test",
+        "Test",
+        InventoryStatus.PROCESSING,
+        NOW,
+        NOW,
+        processing_mode=InventoryProcessingMode.TEST,
+    )
+    a_active = Aisle(
+        "a-active",
+        "inv-1",
+        "ACT",
+        AisleStatus.COMPLETED,
+        NOW,
+        NOW,
+        operational_job_id="aa2",
+        is_active=True,
+    )
+    a_inactive = Aisle(
+        "a-inactive",
+        "inv-1",
+        "INA",
+        AisleStatus.COMPLETED,
+        NOW,
+        NOW,
+        operational_job_id="ai2",
+        is_active=False,
+    )
+    a_test = Aisle(
+        "a-test",
+        "inv-test",
+        "TST",
+        AisleStatus.COMPLETED,
+        NOW,
+        NOW,
+        operational_job_id="at2",
+    )
+    positions = [
+        Position(
+            id="pa",
+            aisle_id="a-active",
+            job_id="aa2",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "A", "final_quantity": 50},
+        ),
+        Position(
+            id="pi",
+            aisle_id="a-inactive",
+            job_id="ai2",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "I", "final_quantity": 100},
+        ),
+        Position(
+            id="pt",
+            aisle_id="a-test",
+            job_id="at2",
+            status=PositionStatus.DETECTED,
+            confidence=0.9,
+            needs_review=False,
+            primary_evidence_id=None,
+            created_at=NOW,
+            updated_at=NOW,
+            detected_summary_json={"internal_code": "T", "final_quantity": 9},
+        ),
+    ]
+    inv_repo = MemoryInventoryRepository()
+    aisle_repo = MemoryAisleRepository()
+    pos_repo = MemoryPositionRepository()
+    prod_repo = MemoryProductRecordRepository()
+    job_repo = MemoryJobRepository()
+    inv_repo.save(prod)
+    inv_repo.save(test_inv)
+    for a in (a_active, a_inactive, a_test):
+        aisle_repo.save(a)
+    for p in positions:
+        pos_repo.save(p)
+
+    _save_process_job(job_repo, job_id="aa1", aisle_id="a-active", cost="10", sec=1)
+    _save_process_job(job_repo, job_id="aa2", aisle_id="a-active", cost="10", sec=2)
+    _save_process_job(job_repo, job_id="ai1", aisle_id="a-inactive", cost="10", sec=1)
+    _save_process_job(job_repo, job_id="ai2", aisle_id="a-inactive", cost="20", sec=2)
+    _save_process_job(job_repo, job_id="at1", aisle_id="a-test", cost="5", sec=1)
+    _save_process_job(job_repo, job_id="at2", aisle_id="a-test", cost="8", sec=2)
+    _save_process_job(
+        job_repo, job_id="aa-q", aisle_id="a-active", cost="99", status=JobStatus.QUEUED, sec=3
+    )
+    _save_process_job(job_repo, job_id="aa-nosnap", aisle_id="a-active", cost=None, sec=4)
+    _save_process_job(job_repo, job_id="aa-zero", aisle_id="a-active", cost="0", sec=5)
+
+    summary_uc = ExportInventorySummaryCsvUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        ResultContextResolver(job_repo),
+        job_repo=job_repo,
+    )
+    _, inv_rows = _parse_csv(summary_uc.execute_inventory_summary_csv("inv-1")[0])
+    _, aisle_rows = _parse_csv(summary_uc.execute_aisles_summary_csv("inv-1")[0])
+    zip_uc = ExportInventoryPackageZipUseCase(
+        inv_repo,
+        aisle_repo,
+        pos_repo,
+        prod_repo,
+        ResultContextResolver(job_repo),
+        job_repo=job_repo,
+    )
+    zip_bytes, _ = zip_uc.execute_zip("inv-1")
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        _, zip_inv = _parse_csv(zf.read("inventory_summary.csv").decode("utf-8-sig"))
+
+    # active 20 + zero 0 + inactive 30 = 50; qty operational active only = 50
+    assert inv_rows[0]["Costo total del inventario"] == "50"
+    assert zip_inv[0]["Costo total del inventario"] == "50"
+    assert inv_rows[0]["Total contabilizado"] == "50"
+    by_code = {r["Pasillo"]: r for r in aisle_rows}
+    assert by_code["INA"]["Costo del pasillo"] == "30"
+    assert by_code["INA"]["Total contabilizado"] == "100"
+
+    ssot = export_inventory_total_cost_string(job_repo, ["a-active", "a-inactive"])
+    assert ssot == "50"
+
+    qty_svc = AnalyticsCostCountedQuantityService(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        position_repo=pos_repo,
+        product_record_repo=prod_repo,
+        job_repo=job_repo,
+        result_context_resolver=ResultContextResolver(job_repo=job_repo, position_repo=pos_repo),
+    )
+    analytics = AnalyticsCostSummaryService(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        inventory_repo=inv_repo,
+        counted_quantity_service=qty_svc,
+    )
+    result = analytics.build(
+        AnalyticsCostSummaryFilters(
+            finished_from=NOW - timedelta(days=1),
+            finished_to=NOW + timedelta(days=1),
+            inventory_id="inv-1",
+        )
+    )
+    assert result.totals.total_cost == Decimal("50")
+    assert result.totals.total_counted_quantity == 50
+
+    # Test inventory costs integrate separately; not double-counted into prod inventory export.
+    _, test_inv_rows = _parse_csv(summary_uc.execute_inventory_summary_csv("inv-test")[0])
+    assert test_inv_rows[0]["Costo total del inventario"] == "13"
+    assert test_inv_rows[0]["Total contabilizado"] == "9"
+    assert sum_billable_costs_by_aisle_id(job_repo.list_all_jobs()).get("a-test") == Decimal("13")

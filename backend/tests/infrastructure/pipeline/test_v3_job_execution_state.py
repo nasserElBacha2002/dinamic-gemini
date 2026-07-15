@@ -50,6 +50,16 @@ class _MemJobRepo(JobRepository):
         return []
 
 
+
+    def list_jobs_for_targets(
+        self,
+        target_type: str,
+        target_ids: Sequence[str],
+        *,
+        job_type: str | None = None,
+    ) -> Sequence[Job]:
+        return []
+
 class _MemAisleRepo(AisleRepository):
     def __init__(self) -> None:
         self._store: dict[str, Aisle] = {}

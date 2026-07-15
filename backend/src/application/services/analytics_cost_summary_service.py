@@ -39,6 +39,10 @@ from src.application.services.analytics_cost_warnings import (
     PROVIDER_MODEL_UNIT_COST_NOT_AVAILABLE,
 )
 from src.application.services.analytics_query_service import validate_analytics_filters_scope
+from src.application.services.billable_job_cost_aggregation import (
+    BILLABLE_TERMINAL_STATUSES,
+    billable_cost_for_job,
+)
 from src.application.services.observability_metrics_service import (
     AISLE_TARGET,
     METRICS_JOB_LIMIT,
@@ -53,12 +57,11 @@ from src.application.services.observability_metrics_service import (
 from src.application.use_cases.shared.benchmark_compare_support import (
     job_execution_duration_seconds,
 )
-from src.domain.jobs.entities import Job, JobStatus
+from src.domain.jobs.entities import Job
 
 logger = logging.getLogger(__name__)
 
-_TERMINAL = frozenset({JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELED})
-_AGGREGATABLE_CAPTURE_STATUSES = frozenset({"exact", "estimated", "partial"})
+_TERMINAL = BILLABLE_TERMINAL_STATUSES
 
 
 @dataclass
@@ -74,12 +77,6 @@ class _Bucket:
     cost_sum: Decimal = field(default_factory=lambda: Decimal("0"))
     has_cost: bool = False
     execution_seconds: list[float] = field(default_factory=list)
-
-
-def _aggregatable_cost(parsed: ParsedCostSnapshot) -> Decimal | None:
-    if parsed.capture_status not in _AGGREGATABLE_CAPTURE_STATUSES:
-        return None
-    return parsed.cost_amount
 
 
 def _cost_per_unit(total_cost: Decimal | None, quantity: int | None) -> Decimal | None:
@@ -185,16 +182,16 @@ class AnalyticsCostSummaryService:
             _collect_parser_warnings(parsed, warnings)
             duration = job_execution_duration_seconds(job)
 
-            self._accumulate(totals_bucket, parsed, duration)
+            self._accumulate(totals_bucket, job, parsed, duration)
             prov, model = _provider_model_for_job(
                 job, _h4_snapshot(job.result_json if isinstance(job.result_json, dict) else None)
             )
-            self._accumulate(by_pm[(prov, model)], parsed, duration)
+            self._accumulate(by_pm[(prov, model)], job, parsed, duration)
             if inventory_id:
-                self._accumulate(by_inv[inventory_id], parsed, duration)
+                self._accumulate(by_inv[inventory_id], job, parsed, duration)
             if aisle_id:
-                self._accumulate(by_aisle[aisle_id], parsed, duration)
-            self._accumulate(by_capture[parsed.capture_status], parsed, duration)
+                self._accumulate(by_aisle[aisle_id], job, parsed, duration)
+            self._accumulate(by_capture[parsed.capture_status], job, parsed, duration)
 
         if totals_bucket.jobs_with_cost < totals_bucket.jobs_total:
             warnings.add(COST_SNAPSHOT_MISSING_FOR_SOME_JOBS)
@@ -341,6 +338,7 @@ class AnalyticsCostSummaryService:
     def _accumulate(
         self,
         bucket: _Bucket,
+        job: Job,
         parsed: ParsedCostSnapshot,
         duration: float | None,
     ) -> None:
@@ -359,7 +357,8 @@ class AnalyticsCostSummaryService:
         if duration is not None:
             bucket.execution_seconds.append(duration)
 
-        amount = _aggregatable_cost(parsed)
+        # Money totals use the shared billable policy (not a local re-definition).
+        amount = billable_cost_for_job(job)
         if amount is not None:
             bucket.jobs_with_cost += 1
             bucket.cost_sum += amount

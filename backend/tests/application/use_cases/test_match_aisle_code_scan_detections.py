@@ -128,6 +128,16 @@ class StubJobRepo(JobRepository):
             if j.target_type == target_type and j.target_id == target_id
         ]
 
+
+    def list_jobs_for_targets(
+        self,
+        target_type: str,
+        target_ids: Sequence[str],
+        *,
+        job_type: str | None = None,
+    ) -> Sequence[Job]:
+        return []
+
     def list_all_jobs(self) -> Sequence[Job]:
         return list(self._jobs.values())
 
