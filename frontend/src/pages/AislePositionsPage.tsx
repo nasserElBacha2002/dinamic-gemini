@@ -24,10 +24,11 @@ import {
   useErrorSnackbar,
   type DataTableSortDirection,
 } from '../components/ui';
-import { DEFAULT_LIST_PAGE_SIZE } from '../constants/dataTable';
+import { TABLE_SERVER_SEARCH_DEBOUNCE_MS } from '../constants/dataTable';
 import {
   ROUTE_HOME,
   pathToAisleObservability,
+  pathToInventory,
   pathToInventoryAnalyticsCompareMany,
 } from '../constants/appRoutes';
 import {
@@ -44,8 +45,17 @@ import {
   filterResults,
   sortResultsByPriority,
   getInitialFilterFromReturnState,
-  type ResultsFilterKind,
 } from '../features/results';
+import {
+  aisleResultsSearchParamsEqual,
+  areAisleResultsFiltersEqual,
+  createDefaultAisleResultsFilters,
+  isAisleResultsSortColumn,
+  mergeAisleResultsFilterPatch,
+  parseAisleResultsFilters,
+  writeAisleResultsFilters,
+  type AisleResultsUrlFilters,
+} from '../features/results/utils/aisleResultsUrlFilters';
 import QuickReviewDrawer from '../features/reviewQueue/components/QuickReviewDrawer';
 import type { OpenReviewDrawerPayload, QuickReviewContext } from '../features/reviewQueue/quickReviewContext';
 import {
@@ -88,12 +98,18 @@ export default function AislePositionsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { showSnackbar } = useAppSnackbar();
   const { showErrorSnackbar } = useErrorSnackbar();
-  const [filter, setFilter] = useState<ResultsFilterKind>(() =>
-    getInitialFilterFromReturnState(location.state)
+  const filterDefaults = useMemo(() => createDefaultAisleResultsFilters(), []);
+  const urlFilters = useMemo(
+    () => parseAisleResultsFilters(searchParams, filterDefaults),
+    [searchParams, filterDefaults]
   );
-  const [skuSearch, setSkuSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_LIST_PAGE_SIZE);
+  const filter = urlFilters.filter;
+  const page = urlFilters.page;
+  const pageSize = urlFilters.pageSize;
+  const tableSort = urlFilters.tableSort;
+  const resultsColumnSortBy = urlFilters.sortBy ?? '';
+  const resultsColumnSortDir = urlFilters.sortDir;
+  const [searchDraft, setSearchDraft] = useState(() => urlFilters.q);
   const [quickContext, setQuickContext] = useState<QuickReviewContext | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [lastMergeResponse, setLastMergeResponse] = useState<RunMergeResponse | null>(null);
@@ -102,18 +118,76 @@ export default function AislePositionsPage() {
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [codeScanDrawerOpen, setCodeScanDrawerOpen] = useState(false);
   const [promoteJobId, setPromoteJobId] = useState('');
-  /** `photo` keeps API order; `priority` applies client-side review ranking on top of loaded rows. */
-  const [tableSort, setTableSort] = useState<'photo' | 'priority'>('photo');
-  const [resultsColumnSortBy, setResultsColumnSortBy] = useState('');
-  const [resultsColumnSortDir, setResultsColumnSortDir] =
-    useState<DataTableSortDirection>('asc');
   const consumedAisleRedirectKey = useRef<string | null>(null);
   const routeIdentityRef = useRef<string>('');
+  const legacyFilterHydratedRef = useRef(false);
   const queryClient = useQueryClient();
   const mergeMutation = useRunAisleMerge(inventoryId ?? '');
   const promoteMutation = usePromoteAisleOperationalJob(inventoryId ?? '', aisleId ?? '');
 
   const jobIdParam = searchParams.get('jobId')?.trim() || null;
+
+  const updateFilters = useCallback(
+    (
+      patch: Partial<AisleResultsUrlFilters>,
+      options?: {
+        resetPage?: boolean;
+        historyMode?: 'push' | 'replace';
+        clampPageTo?: number;
+      }
+    ) => {
+      setSearchParams(
+        (prev) => {
+          const current = parseAisleResultsFilters(prev, filterDefaults);
+          const merged = mergeAisleResultsFilterPatch(current, patch, {
+            resetPage: options?.resetPage,
+            clampPageTo: options?.clampPageTo,
+          });
+          const next = writeAisleResultsFilters(prev, merged, filterDefaults);
+          if (aisleResultsSearchParamsEqual(prev, next)) return prev;
+          return next;
+        },
+        { replace: options?.historyMode === 'replace' }
+      );
+    },
+    [filterDefaults, setSearchParams]
+  );
+
+  /** Sync search input when URL changes (back/forward / shared link). */
+  useEffect(() => {
+    setSearchDraft(urlFilters.q);
+  }, [urlFilters.q]);
+
+  /** Debounce search draft → URL (`replace`). Empty clears immediately. */
+  useEffect(() => {
+    const trimmed = searchDraft.trim();
+    if (trimmed === urlFilters.q) return;
+    if (trimmed === '') {
+      updateFilters({ q: '' }, { resetPage: true, historyMode: 'replace' });
+      return;
+    }
+    const id = window.setTimeout(() => {
+      updateFilters({ q: trimmed }, { resetPage: true, historyMode: 'replace' });
+    }, TABLE_SERVER_SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(id);
+  }, [searchDraft, urlFilters.q, updateFilters]);
+
+  /** Legacy `location.state.filter` when URL has no explicit filter key. */
+  useEffect(() => {
+    if (legacyFilterHydratedRef.current) return;
+    legacyFilterHydratedRef.current = true;
+    if (searchParams.has('filter')) return;
+    const fromState = getInitialFilterFromReturnState(location.state);
+    if (fromState === 'all') return;
+    updateFilters({ filter: fromState }, { historyMode: 'replace' });
+  }, [location.state, searchParams, updateFilters]);
+
+  /** Canonize invalid / default-equivalent filter params with replace (preserve jobId). */
+  useEffect(() => {
+    const canonical = writeAisleResultsFilters(searchParams, urlFilters, filterDefaults);
+    if (aisleResultsSearchParamsEqual(searchParams, canonical)) return;
+    setSearchParams(canonical, { replace: true });
+  }, [searchParams, urlFilters, filterDefaults, setSearchParams]);
 
   const inventoryQuery = useInventoryDetail(inventoryId);
   const aislesQuery = useAislesList(inventoryId, {
@@ -280,14 +354,14 @@ export default function AislePositionsPage() {
   const filteredByKind = useMemo(() => filterResults(results, filter), [results, filter]);
 
   const filteredBySku = useMemo(() => {
-    const q = skuSearch.trim().toLowerCase();
+    const q = urlFilters.q.trim().toLowerCase();
     if (!q) return filteredByKind;
     return filteredByKind.filter((r) => {
       const sku = (r.sku ?? '').trim().toLowerCase();
       const posCode = (r.positionCode ?? '').trim().toLowerCase();
       return sku.includes(q) || posCode.includes(q);
     });
-  }, [filteredByKind, skuSearch]);
+  }, [filteredByKind, urlFilters.q]);
 
   const sortedForTable = useMemo(
     () => (tableSort === 'priority' ? sortResultsByPriority(filteredBySku) : filteredBySku),
@@ -329,23 +403,29 @@ export default function AislePositionsPage() {
 
   const handleResultsColumnSortChange = useCallback(
     (sortBy: string, sortDir: DataTableSortDirection) => {
-      setResultsColumnSortBy(sortBy);
-      setResultsColumnSortDir(sortDir);
-      setPage(1);
+      if (!isAisleResultsSortColumn(sortBy)) return;
+      updateFilters(
+        { sortBy, sortDir },
+        { resetPage: true, historyMode: 'push' }
+      );
     },
-    []
+    [updateFilters]
   );
 
   const handleResetFilters = useCallback(() => {
-    setFilter('all');
-    setSkuSearch('');
-    setResultsColumnSortBy('');
-    setPage(1);
-  }, []);
+    setSearchDraft('');
+    updateFilters(createDefaultAisleResultsFilters(), { historyMode: 'push' });
+  }, [updateFilters]);
 
+  const prevTableSortRunRef = useRef<{ tableSort: string; run: string | null } | null>(null);
   useEffect(() => {
-    setResultsColumnSortBy('');
-  }, [tableSort, pickedRunJobId]);
+    const prev = prevTableSortRunRef.current;
+    prevTableSortRunRef.current = { tableSort, run: pickedRunJobId };
+    if (prev == null) return;
+    if (prev.tableSort === tableSort && prev.run === pickedRunJobId) return;
+    if (!urlFilters.sortBy) return;
+    updateFilters({ sortBy: null }, { historyMode: 'replace' });
+  }, [tableSort, pickedRunJobId, urlFilters.sortBy, updateFilters]);
 
   const positionById = useMemo(() => {
     const m = new Map<string, (typeof positions)[number]>();
@@ -429,7 +509,19 @@ export default function AislePositionsPage() {
     t,
   ]);
 
-  const handleClearFilterOnly = useCallback(() => setFilter('all'), []);
+  const handleClearFilterOnly = useCallback(() => {
+    updateFilters({ filter: 'all' }, { resetPage: true, historyMode: 'push' });
+  }, [updateFilters]);
+
+  const filtersAtDefault =
+    areAisleResultsFiltersEqual(urlFilters, filterDefaults) && searchDraft.trim() === '';
+
+  /** Clamp out-of-range page once results are available. */
+  useEffect(() => {
+    if (resultsLoading) return;
+    if (page <= maxPage) return;
+    updateFilters({ page: maxPage }, { historyMode: 'replace' });
+  }, [resultsLoading, page, maxPage, updateFilters]);
 
   const errorMessage =
     isError && error
@@ -516,10 +608,11 @@ export default function AislePositionsPage() {
     );
   }
 
-  const breadcrumbs = [
-    { label: t('aisle.breadcrumb_inventories'), to: ROUTE_HOME },
-    { label: aisle?.code ?? t('common.aisle') },
-  ];
+  const inventoryLabel =
+    inventory?.name?.trim() ||
+    (inventoryQuery.isLoading ? t('common.loading') : t('common.em_dash'));
+  const aisleLabel = aisle?.code ?? t('common.aisle');
+  const breadcrumbs = [{ label: inventoryLabel, to: pathToInventory(inventoryId) }];
 
   const positionsLoadNotFound =
     isError && error instanceof ApiError && error.status === 404 && Boolean(jobIdParam);
@@ -536,8 +629,8 @@ export default function AislePositionsPage() {
       />
       <AisleResultsHeader
         breadcrumbs={breadcrumbs}
-        title={aisle?.code ?? t('common.aisle')}
-        subtitle={inventory?.name ?? (inventoryQuery.isLoading ? t('common.loading') : t('common.em_dash'))}
+        title={aisleLabel}
+        subtitle=""
         onOpenCodeScan={() => setCodeScanDrawerOpen(true)}
         onOpenObservability={
           inventoryId && aisleId
@@ -691,23 +784,19 @@ export default function AislePositionsPage() {
 
           <FilterToolbar
             onReset={handleResetFilters}
-            resetDisabled={filter === 'all' && !skuSearch.trim() && !resultsColumnSortBy.trim()}
+            resetDisabled={filtersAtDefault}
           >
             <TableSearchField
               label={t('positions.search_label')}
               placeholder={t('positions.filter_sku_placeholder')}
-              value={skuSearch}
-              onChange={(v) => {
-                setSkuSearch(v);
-                setPage(1);
-              }}
+              value={searchDraft}
+              onChange={setSearchDraft}
               data-testid="aisle-positions-sku-search"
             />
             <ResultsQuickFilters
               value={filter}
               onChange={(v) => {
-                setFilter(v);
-                setPage(1);
+                updateFilters({ filter: v }, { resetPage: true, historyMode: 'push' });
               }}
               counts={{
                 all: kpi.total,
@@ -729,18 +818,16 @@ export default function AislePositionsPage() {
           countedResultRows={kpi.countableResults}
           mergeFeedback={mergeFeedback}
           onResetFilters={handleResetFilters}
-          resetDisabled={filter === 'all' && !skuSearch.trim() && !resultsColumnSortBy.trim()}
-          skuSearch={skuSearch}
-          onSkuSearchChange={(v) => {
-            setSkuSearch(v);
-            setPage(1);
-          }}
+          resetDisabled={filtersAtDefault}
+          skuSearch={searchDraft}
+          onSkuSearchChange={setSearchDraft}
           tableSort={tableSort}
-          onTableSortChange={(value) => setTableSort(value)}
+          onTableSortChange={(value) => {
+            updateFilters({ tableSort: value }, { resetPage: true, historyMode: 'push' });
+          }}
           filter={filter}
           onFilterChange={(v) => {
-            setFilter(v);
-            setPage(1);
+            updateFilters({ filter: v }, { resetPage: true, historyMode: 'push' });
           }}
           counts={{
             all: kpi.total,
@@ -757,8 +844,12 @@ export default function AislePositionsPage() {
           page={effectivePage}
           pageSize={pageSize}
           totalItems={rowsOrderedForTable.length}
-          onPageChange={setPage}
-          onPageSizeChange={setPageSize}
+          onPageChange={(nextPage) => {
+            updateFilters({ page: nextPage }, { historyMode: 'push' });
+          }}
+          onPageSizeChange={(nextSize) => {
+            updateFilters({ pageSize: nextSize }, { resetPage: true, historyMode: 'push' });
+          }}
           columnSort={{
             sortBy: resultsColumnSortBy,
             sortDir: resultsColumnSortDir,

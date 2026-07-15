@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigationType, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Typography } from '@mui/material';
 import { PageHeader } from '../../components/shell';
 import { ErrorAlert } from '../../components/ui';
@@ -18,8 +18,8 @@ import {
 import {
   analyticsSearchParamsEqual,
   areAnalyticsFiltersEqual,
-  clearAnalyticsFilterSearchParams,
   createDefaultAnalyticsFilters,
+  normalizeAnalyticsFilters,
   parseAnalyticsFiltersFromSearchParams,
   writeAnalyticsFiltersToSearchParams,
 } from '../../constants/analyticsFilters';
@@ -47,6 +47,7 @@ import {
 export default function AnalyticsDashboardPage() {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigationType = useNavigationType();
   const defaultFilters = useMemo(() => createDefaultAnalyticsFilters(), []);
 
   const urlFilters = useMemo(
@@ -59,14 +60,19 @@ export default function AnalyticsDashboardPage() {
     [searchParams]
   );
 
-  const [draftFilters, setDraftFilters] = useState(urlFilters);
-  const [appliedFilters, setAppliedFilters] = useState(urlFilters);
+  /** Last combination sent to backend; independent of URL until Apply / Reset / browser POP. */
+  const [appliedFilters, setAppliedFilters] = useState(() => urlFilters);
   const [drilldown, setDrilldown] = useState<AnalyticsDrilldownState>(null);
 
+  /** Browser back/forward restores applied queries from the URL without requiring Actualizar. */
   useEffect(() => {
-    setAppliedFilters((current) => (areAnalyticsFiltersEqual(current, urlFilters) ? current : urlFilters));
-    setDraftFilters((current) => (areAnalyticsFiltersEqual(current, urlFilters) ? current : urlFilters));
-  }, [urlFilters]);
+    if (navigationType !== 'POP') {
+      return;
+    }
+    setAppliedFilters((current) =>
+      areAnalyticsFiltersEqual(current, urlFilters) ? current : urlFilters
+    );
+  }, [navigationType, urlFilters]);
 
   const writeFiltersToParams = useCallback(
     (base: URLSearchParams, filters: AnalyticsDashboardFilters, tab: AnalyticsDashboardTab): URLSearchParams => {
@@ -77,6 +83,7 @@ export default function AnalyticsDashboardPage() {
     [defaultFilters]
   );
 
+  /** Canonize tab + always-visible dates / empty cleanup with replace. */
   useEffect(() => {
     const canonicalTab = analyticsTabToUrl(activeTab);
     const canonical = writeFiltersToParams(new URLSearchParams(searchParams), urlFilters, activeTab);
@@ -91,18 +98,44 @@ export default function AnalyticsDashboardPage() {
 
   const pushFiltersToUrl = useCallback(
     (filters: AnalyticsDashboardFilters, tab: AnalyticsDashboardTab, replace: boolean) => {
-      setSearchParams((prev) => writeFiltersToParams(new URLSearchParams(prev), filters, tab), { replace });
+      setSearchParams(
+        (prev) => {
+          const next = writeFiltersToParams(new URLSearchParams(prev), filters, tab);
+          if (analyticsSearchParamsEqual(prev, next)) return prev;
+          return next;
+        },
+        { replace }
+      );
     },
     [setSearchParams, writeFiltersToParams]
+  );
+
+  /** URL is the source of truth for visible filter controls. */
+  const handleFiltersChange = useCallback(
+    (nextFilters: AnalyticsDashboardFilters) => {
+      const normalized = normalizeAnalyticsFilters(nextFilters, defaultFilters);
+      pushFiltersToUrl(normalized, activeTab, true);
+    },
+    [activeTab, defaultFilters, pushFiltersToUrl]
   );
 
   const handleTabChange = useCallback(
     (tab: AnalyticsDashboardTab) => {
       setDrilldown(null);
-      pushFiltersToUrl(appliedFilters, tab, false);
+      pushFiltersToUrl(urlFilters, tab, false);
     },
-    [appliedFilters, pushFiltersToUrl]
+    [pushFiltersToUrl, urlFilters]
   );
+
+  const handleApply = useCallback(() => {
+    setAppliedFilters(urlFilters);
+  }, [urlFilters]);
+
+  const handleReset = useCallback(() => {
+    const next = createDefaultAnalyticsFilters();
+    setAppliedFilters(next);
+    pushFiltersToUrl(next, activeTab, false);
+  }, [activeTab, pushFiltersToUrl]);
 
   const filterParams = useMemo(() => buildFilterParams(appliedFilters), [appliedFilters]);
 
@@ -123,11 +156,30 @@ export default function AnalyticsDashboardPage() {
 
   const inventoriesQuery = useInventoriesList({ page: 1, page_size: 200, sort_by: 'name', sort_dir: 'asc' });
   const inventories = useMemo(() => inventoriesQuery.data?.items ?? [], [inventoriesQuery.data?.items]);
-  const draftInventoryId = draftFilters.inventoryId || undefined;
-  const aislesQuery = useAislesList(draftInventoryId, {
-    enabled: Boolean(draftInventoryId),
+  const urlInventoryId = urlFilters.inventoryId || undefined;
+  const aislesQuery = useAislesList(urlInventoryId, {
+    enabled: Boolean(urlInventoryId),
   });
-  const aisles = aislesQuery.data?.items ?? [];
+  const aisleItems = useMemo(() => aislesQuery.data?.items ?? [], [aislesQuery.data?.items]);
+
+  /** Drop incompatible aisle from the URL only (replace); do not touch appliedFilters. */
+  useEffect(() => {
+    if (!urlFilters.inventoryId) return;
+    if (aislesQuery.isLoading || aislesQuery.isFetched === false) return;
+    const aisleId = urlFilters.aisleId.trim();
+    if (!aisleId) return;
+    if (aisleItems.some((a) => a.id === aisleId)) return;
+
+    const next = { ...urlFilters, aisleId: '' };
+    pushFiltersToUrl(next, activeTab, true);
+  }, [
+    activeTab,
+    aisleItems,
+    aislesQuery.isFetched,
+    aislesQuery.isLoading,
+    pushFiltersToUrl,
+    urlFilters,
+  ]);
 
   const inventoryProcessingModeById = useMemo(() => {
     const map = new Map<string, string | undefined>();
@@ -181,29 +233,15 @@ export default function AnalyticsDashboardPage() {
       />
 
       <AnalyticsFilterBar
-        filters={draftFilters}
-        onChange={setDraftFilters}
-        onApply={() => {
-          setAppliedFilters(draftFilters);
-          pushFiltersToUrl(draftFilters, activeTab, false);
-        }}
-        onReset={() => {
-          const next = createDefaultAnalyticsFilters();
-          setDraftFilters(next);
-          setAppliedFilters(next);
-          setSearchParams(
-            (prev) => {
-              const cleared = clearAnalyticsFilterSearchParams(prev);
-              cleared.set(ANALYTICS_TAB_QUERY_KEY, analyticsTabToUrl(activeTab));
-              return cleared;
-            },
-            { replace: false }
-          );
-        }}
+        filters={urlFilters}
+        onChange={handleFiltersChange}
+        onApply={handleApply}
+        onReset={handleReset}
         inventories={inventories}
-        aisles={aisles}
+        aisles={aisleItems}
         inventoriesLoadFailed={inventoriesQuery.isError}
         isRefreshing={isAnalyticsLoading || isObservabilityLoading || isCostSummaryLoading}
+        applyDisabled={areAnalyticsFiltersEqual(urlFilters, appliedFilters)}
       />
 
       {hasMixedLoadedData ? (

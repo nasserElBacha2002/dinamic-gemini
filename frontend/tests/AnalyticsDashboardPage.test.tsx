@@ -1,9 +1,10 @@
 import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom';
 import AnalyticsDashboardPage from '../src/features/analytics-dashboard/AnalyticsDashboardPage';
+import { createDefaultAnalyticsFilters } from '../src/constants/analyticsFilters';
 
 const mockUseAnalyticsDashboardData = vi.fn();
 const mockUseInventoriesList = vi.fn();
@@ -234,15 +235,29 @@ const observabilityData = {
   },
 };
 
-function renderPage() {
+function renderPage(initialEntry = '/analitica') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <AnalyticsDashboardPage />
       </MemoryRouter>
     </QueryClientProvider>
   );
+}
+
+function renderPageWithRouter(initialEntry = '/analitica') {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const router = createMemoryRouter(
+    [{ path: '*', element: <AnalyticsDashboardPage /> }],
+    { initialEntries: [initialEntry] }
+  );
+  render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  );
+  return router;
 }
 
 function setupMocks() {
@@ -351,7 +366,10 @@ describe('AnalyticsDashboardPage', () => {
     expect(screen.getAllByTestId(/analytics-overview-aisle-/).length).toBeLessThanOrEqual(3);
     expect(screen.getByTestId('analytics-chart-processing-trend')).toBeInTheDocument();
     expect(screen.getByTestId('analytics-summary-quality-donut')).toBeInTheDocument();
-    expect(screen.getByTestId('analytics-summary-panel-cost-cta')).toHaveAttribute('href', '/analitica?tab=costos');
+    const costCtaHref = screen.getByTestId('analytics-summary-panel-cost-cta').getAttribute('href') ?? '';
+    expect(costCtaHref).toContain('tab=costos');
+    expect(costCtaHref).toContain('date_from=');
+    expect(costCtaHref).toContain('date_to=');
     expect(screen.getByTestId('overview-aisle-drilldown-a-1')).toBeInTheDocument();
   });
 
@@ -694,5 +712,263 @@ describe('AnalyticsDashboardPage', () => {
     renderPage();
     fireEvent.click(screen.getByTestId('analytics-apply-filters'));
     expect(refetchAll).not.toHaveBeenCalled();
+  });
+
+  it('disables Actualizar when draft matches applied filters', () => {
+    setupMocks();
+    renderPage();
+    expect(screen.getByTestId('analytics-apply-filters')).toBeDisabled();
+  });
+
+  it('enables Actualizar after draft filter change', () => {
+    setupMocks();
+    renderPage();
+    const from = screen.getByLabelText(/desde/i);
+    fireEvent.change(from, { target: { value: '2026-01-01' } });
+    expect(screen.getByTestId('analytics-apply-filters')).not.toBeDisabled();
+  });
+
+  it('restores tab and filter controls from URL on first load', () => {
+    setupMocks();
+    renderPage(
+      '/analitica?tab=tiempos&date_from=2026-06-15&date_to=2026-07-15&inventory_id=inv-test&aisle_id=a-1'
+    );
+    expect(screen.getByTestId('analytics-time-tab')).toBeInTheDocument();
+    expect((screen.getByLabelText(/^desde$/i) as HTMLInputElement).value).toBe('2026-06-15');
+    expect((screen.getByLabelText(/^hasta$/i) as HTMLInputElement).value).toBe('2026-07-15');
+    expect(screen.getByLabelText(/^inventario$/i)).toHaveTextContent(/Test DC/i);
+    expect(mockUseAnalyticsDashboardData).toHaveBeenCalled();
+    const firstCallParams = mockUseAnalyticsDashboardData.mock.calls[0]?.[0] as {
+      analytics?: Record<string, unknown>;
+    };
+    expect(firstCallParams.analytics).toEqual(
+      expect.objectContaining({
+        date_from: '2026-06-15',
+        date_to: '2026-07-15',
+        inventory_id: 'inv-test',
+        aisle_id: 'a-1',
+      })
+    );
+  });
+
+  describe('URL write on filter interaction', () => {
+    it('writes date_from immediately without pressing Actualizar', async () => {
+      setupMocks();
+      const router = renderPageWithRouter('/analitica?tab=proveedores');
+
+      fireEvent.change(screen.getByLabelText(/^desde$/i), { target: { value: '2026-05-01' } });
+
+      await waitFor(() => {
+        const q = new URLSearchParams(router.state.location.search);
+        expect(q.get('tab')).toBe('proveedores');
+        expect(q.get('date_from')).toBe('2026-05-01');
+      });
+      expect(screen.getByTestId('analytics-apply-filters')).not.toBeDisabled();
+    });
+
+    it('writes date_to immediately without pressing Actualizar', async () => {
+      setupMocks();
+      const router = renderPageWithRouter('/analitica?tab=proveedores');
+
+      fireEvent.change(screen.getByLabelText(/^hasta$/i), { target: { value: '2026-07-15' } });
+
+      await waitFor(() => {
+        expect(new URLSearchParams(router.state.location.search).get('date_to')).toBe('2026-07-15');
+      });
+    });
+
+    it('writes inventory_id immediately and preserves tab', async () => {
+      setupMocks();
+      const router = renderPageWithRouter('/analitica?tab=proveedores');
+
+      fireEvent.mouseDown(screen.getByLabelText(/^inventario$/i));
+      fireEvent.click(screen.getByRole('option', { name: 'Test DC' }));
+
+      await waitFor(() => {
+        const q = new URLSearchParams(router.state.location.search);
+        expect(q.get('tab')).toBe('proveedores');
+        expect(q.get('inventory_id')).toBe('inv-test');
+      });
+      expect(screen.getByTestId('analytics-apply-filters')).not.toBeDisabled();
+    });
+
+    it('writes aisle_id after inventory without Actualizar', async () => {
+      mockUseAislesList.mockImplementation((inventoryId: string | undefined) => ({
+        data:
+          inventoryId === 'inv-test'
+            ? { items: [{ id: 'a-1', code: 'A-01' }, { id: 'a-2', code: 'A-02' }] }
+            : { items: [] },
+        isLoading: false,
+        isFetched: true,
+      }));
+      mockUseInventoriesList.mockReturnValue({
+        data: {
+          items: [
+            { id: 'inv-test', name: 'Test DC', processing_mode: 'test' },
+            { id: 'inv-prod', name: 'Prod DC', processing_mode: 'production' },
+          ],
+        },
+        isError: false,
+      });
+      mockUseAnalyticsDashboardData.mockReturnValue({
+        analytics: analyticsLoaded,
+        observability: { data: observabilityData, isLoading: false, isError: false, error: null, refetch: vi.fn() },
+        costSummary: { data: costSummaryData, isLoading: false, isError: false, error: null, refetch: vi.fn() },
+        isLoading: false,
+        isAnalyticsLoading: false,
+        isObservabilityLoading: false,
+        isCostSummaryLoading: false,
+        analyticsError: null,
+        observabilityError: null,
+        costSummaryError: null,
+        hasPartialFailure: false,
+        hasMixedLoadedData: false,
+        refetchAll: vi.fn(),
+      });
+
+      const router = renderPageWithRouter('/analitica?tab=proveedores');
+      fireEvent.mouseDown(screen.getByLabelText(/^inventario$/i));
+      fireEvent.click(screen.getByRole('option', { name: 'Test DC' }));
+      await waitFor(() => {
+        expect(new URLSearchParams(router.state.location.search).get('inventory_id')).toBe('inv-test');
+      });
+
+      fireEvent.mouseDown(screen.getByLabelText(/^pasillo$/i));
+      fireEvent.click(screen.getByRole('option', { name: 'A-01' }));
+
+      await waitFor(() => {
+        const q = new URLSearchParams(router.state.location.search);
+        expect(q.get('inventory_id')).toBe('inv-test');
+        expect(q.get('aisle_id')).toBe('a-1');
+        expect(q.get('tab')).toBe('proveedores');
+      });
+    });
+
+    it('writes all advanced filters into the query', async () => {
+      setupMocks();
+      const router = renderPageWithRouter('/analitica?tab=proveedores');
+
+      fireEvent.click(screen.getByRole('button', { name: /más filtros/i }));
+      fireEvent.change(screen.getByLabelText(/^desde$/i), { target: { value: '2026-06-15' } });
+      fireEvent.change(screen.getByLabelText(/^hasta$/i), { target: { value: '2026-07-15' } });
+      fireEvent.mouseDown(screen.getByLabelText(/^inventario$/i));
+      fireEvent.click(screen.getByRole('option', { name: 'Test DC' }));
+      fireEvent.change(screen.getByLabelText(/^cliente \(id\)$/i), { target: { value: 'c-9' } });
+      fireEvent.change(screen.getByLabelText(/^proveedor del cliente \(id\)$/i), {
+        target: { value: 's-9' },
+      });
+      const advancedInputs = screen.getAllByRole('textbox');
+      // client, supplier, provider, model — last two are LLM provider / model
+      fireEvent.change(advancedInputs[advancedInputs.length - 2]!, { target: { value: 'gemini' } });
+      fireEvent.change(advancedInputs[advancedInputs.length - 1]!, { target: { value: 'flash' } });
+
+      await waitFor(() => {
+        const q = new URLSearchParams(router.state.location.search);
+        expect(q.get('tab')).toBe('proveedores');
+        expect(q.get('date_from')).toBe('2026-06-15');
+        expect(q.get('date_to')).toBe('2026-07-15');
+        expect(q.get('inventory_id')).toBe('inv-test');
+        expect(q.get('client_id')).toBe('c-9');
+        expect(q.get('client_supplier_id')).toBe('s-9');
+        expect(q.get('provider_name')).toBe('gemini');
+        expect(q.get('model_name')).toBe('flash');
+      });
+    });
+
+    it('Actualizar applies URL filters without rewriting the query', async () => {
+      setupMocks();
+      const router = renderPageWithRouter('/analitica?tab=proveedores');
+
+      fireEvent.mouseDown(screen.getByLabelText(/^inventario$/i));
+      fireEvent.click(screen.getByRole('option', { name: 'Test DC' }));
+
+      await waitFor(() => {
+        expect(new URLSearchParams(router.state.location.search).get('inventory_id')).toBe('inv-test');
+      });
+      const searchBefore = router.state.location.search;
+
+      fireEvent.click(screen.getByTestId('analytics-apply-filters'));
+
+      expect(router.state.location.search).toBe(searchBefore);
+      await waitFor(() => {
+        const last = mockUseAnalyticsDashboardData.mock.calls.at(-1)?.[0] as {
+          analytics?: { inventory_id?: string };
+        };
+        expect(last.analytics?.inventory_id).toBe('inv-test');
+      });
+      expect(screen.getByTestId('analytics-apply-filters')).toBeDisabled();
+    });
+
+    it('canonizes default visible dates into the URL on load', async () => {
+      setupMocks();
+      const defaults = createDefaultAnalyticsFilters();
+      const router = renderPageWithRouter('/analitica?tab=proveedores');
+
+      await waitFor(() => {
+        const q = new URLSearchParams(router.state.location.search);
+        expect(q.get('tab')).toBe('proveedores');
+        expect(q.get('date_from')).toBe(defaults.dateFrom);
+        expect(q.get('date_to')).toBe(defaults.dateTo);
+      });
+    });
+
+    it('reset clears selection params, keeps tab, and applies immediately', async () => {
+      setupMocks();
+      const router = renderPageWithRouter(
+        '/analitica?tab=proveedores&date_from=2026-06-15&date_to=2026-07-15&inventory_id=inv-test&provider_name=openai'
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /^limpiar filtros$/i }));
+
+      await waitFor(() => {
+        const q = new URLSearchParams(router.state.location.search);
+        expect(q.get('tab')).toBe('proveedores');
+        expect(q.get('inventory_id')).toBeNull();
+        expect(q.get('provider_name')).toBeNull();
+        expect(q.get('date_from')).toBeTruthy();
+        expect(q.get('date_to')).toBeTruthy();
+      });
+      expect(screen.getByTestId('analytics-apply-filters')).toBeDisabled();
+    });
+
+    it('drops incompatible aisle_id from URL with replace', async () => {
+      mockUseAislesList.mockImplementation((inventoryId: string | undefined) => ({
+        data: inventoryId === 'inv-test' ? { items: [{ id: 'a-1', code: 'A-01' }] } : { items: [] },
+        isLoading: false,
+        isFetched: true,
+      }));
+      mockUseInventoriesList.mockReturnValue({
+        data: {
+          items: [{ id: 'inv-test', name: 'Test DC', processing_mode: 'test' }],
+        },
+        isError: false,
+      });
+      mockUseAnalyticsDashboardData.mockReturnValue({
+        analytics: analyticsLoaded,
+        observability: { data: observabilityData, isLoading: false, isError: false, error: null, refetch: vi.fn() },
+        costSummary: { data: costSummaryData, isLoading: false, isError: false, error: null, refetch: vi.fn() },
+        isLoading: false,
+        isAnalyticsLoading: false,
+        isObservabilityLoading: false,
+        isCostSummaryLoading: false,
+        analyticsError: null,
+        observabilityError: null,
+        costSummaryError: null,
+        hasPartialFailure: false,
+        hasMixedLoadedData: false,
+        refetchAll: vi.fn(),
+      });
+
+      const router = renderPageWithRouter(
+        '/analitica?tab=proveedores&inventory_id=inv-test&aisle_id=aisle-de-inv-b'
+      );
+
+      await waitFor(() => {
+        const q = new URLSearchParams(router.state.location.search);
+        expect(q.get('tab')).toBe('proveedores');
+        expect(q.get('inventory_id')).toBe('inv-test');
+        expect(q.get('aisle_id')).toBeNull();
+      });
+    });
   });
 });

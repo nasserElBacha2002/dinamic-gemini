@@ -38,7 +38,10 @@ export default function PositionDetailPage() {
 
     redirected.current = true;
 
-    const q = jobIdFromQuery ? `?jobId=${encodeURIComponent(jobIdFromQuery)}` : '';
+    const search = location.search?.trim() || '';
+    const q =
+      search ||
+      (jobIdFromQuery ? `?jobId=${encodeURIComponent(jobIdFromQuery)}` : '');
     navigate(`${pathToAislePositions(inventoryId, aisleId)}${q}`, {
       replace: true,
       state: {
@@ -62,6 +65,7 @@ export default function PositionDetailPage() {
     navState,
     navigate,
     jobIdFromQuery,
+    location.search,
   ]);
 
   if (!inventoryId || !aisleId || !positionId) {
