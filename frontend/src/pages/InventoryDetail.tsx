@@ -5,16 +5,19 @@ import { Alert, Box, Button, Typography } from '@mui/material';
 import { ApiError } from '../api/types';
 import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { rowMatchesSearchQuery } from '../utils/tableSearch';
+import { isAisleActive } from '../utils/aisleActive';
 import { ErrorAlert, LoadingBlock, PhotoUploadProgressDialog, useAppSnackbar } from '../components/ui';
 import CreateAisleDialog from '../components/CreateAisleDialog';
-import { useInventoryDetail, useAislesList, useCreateAisle } from '../hooks';
+import { useInventoryDetail, useAislesList, useCreateAisle, useUpdateInventory } from '../hooks';
 import { ROUTE_HOME } from '../constants/appRoutes';
 import { toAisleInventoryTableRows, toInventoryHeaderViewModel } from '../features/inventories/adapters';
 import { useAisleAssetUploadFlow } from '../features/inventories/hooks/useAisleAssetUploadFlow';
 import { useAisleProcessingFlow } from '../features/inventories/hooks/useAisleProcessingFlow';
 import AisleProcessingDialog from '../features/inventories/components/AisleProcessingDialog';
+import EditInventoryNameDialog from '../features/inventories/components/EditInventoryNameDialog';
 import InventoryAislesSection from '../features/inventories/components/InventoryAislesSection';
 import InventoryDetailHeader from '../features/inventories/components/InventoryDetailHeader';
+import type { AisleActiveFilter } from '../features/inventories/components/InventoryAislesSection';
 
 export default function InventoryDetail() {
   const { t } = useTranslation();
@@ -22,7 +25,9 @@ export default function InventoryDetail() {
   const navigate = useNavigate();
   const { showSnackbar } = useAppSnackbar();
   const [createAisleOpen, setCreateAisleOpen] = useState(false);
+  const [editNameOpen, setEditNameOpen] = useState(false);
   const [aisleTableSearch, setAisleTableSearch] = useState('');
+  const [aisleActiveFilter, setAisleActiveFilter] = useState<AisleActiveFilter>('active');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [processError, setProcessError] = useState<string | null>(null);
 
@@ -54,13 +59,18 @@ export default function InventoryDetail() {
   const filteredTableRows = useMemo(() => {
     const matchingIds = new Set(
       aisles
-        .filter((a) => rowMatchesSearchQuery(aisleTableSearch, [a.code, a.status, a.id]))
+        .filter((a) => {
+          if (aisleActiveFilter === 'active' && !isAisleActive(a)) return false;
+          if (aisleActiveFilter === 'inactive' && isAisleActive(a)) return false;
+          return rowMatchesSearchQuery(aisleTableSearch, [a.code, a.status, a.id]);
+        })
         .map((a) => a.id)
     );
     return tableRows.filter((row) => matchingIds.has(row.presentation.id));
-  }, [aisles, aisleTableSearch, tableRows]);
+  }, [aisles, aisleActiveFilter, aisleTableSearch, tableRows]);
 
   const createAisleMutation = useCreateAisle(inventoryId ?? '');
+  const updateInventoryMutation = useUpdateInventory(inventoryId ?? '');
 
   const inventoryLoading = inventoryQuery.isLoading;
   const inventoryError =
@@ -100,6 +110,7 @@ export default function InventoryDetail() {
             inventoryId={inventoryId ?? ''}
             headerVm={headerVm}
             onOpenCreateAisle={() => setCreateAisleOpen(true)}
+            onEditName={() => setEditNameOpen(true)}
           />
           <Box sx={{ display: 'grid', gap: 2 }}>
             {!inventory.client_id ? (
@@ -136,6 +147,8 @@ export default function InventoryDetail() {
               aislesLoading={aislesLoading}
               aisleTableSearch={aisleTableSearch}
               onAisleTableSearch={setAisleTableSearch}
+              aisleActiveFilter={aisleActiveFilter}
+              onAisleActiveFilterChange={setAisleActiveFilter}
               onRefreshAisles={() => void aislesQuery.refetch()}
               fileInputRef={uploadFlow.fileInputRef}
               onFileInputChange={uploadFlow.handleNativeFileInputChange}
@@ -184,6 +197,14 @@ export default function InventoryDetail() {
         onSuccess={handleCreateAisleSuccess}
         existingAisleCodes={aisles.map((a) => a.code)}
         createAisleFn={createAisleMutation.mutateAsync}
+      />
+
+      <EditInventoryNameDialog
+        open={editNameOpen}
+        currentName={inventory?.name ?? ''}
+        onClose={() => setEditNameOpen(false)}
+        onSuccess={() => showSnackbar(t('inventory.name_updated_snackbar'), 'success')}
+        updateInventoryFn={updateInventoryMutation.mutateAsync}
       />
 
       {/* Table/native-file upload only; drawer uploads use ManagedImageAssetsDrawer dialog. */}

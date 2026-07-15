@@ -20,6 +20,10 @@ import {
   uploadSupplierReferenceImages,
   submitReviewAction,
   promoteAisleOperationalJob,
+  updateInventory,
+  updateAisle,
+  deactivateAisle,
+  activateAisle,
 } from '../api/client';
 import type {
   CreateClientRequest,
@@ -29,13 +33,19 @@ import type {
   CreateAisleRequest,
   ReviewActionRequest,
   UploadSupplierReferenceImagesRequest,
+  UpdateInventoryRequest,
+  UpdateAisleRequest,
 } from '../api/types';
 import { queryKeys } from '../api/queryKeys';
 import {
   applySubmitReviewActionCacheEffects,
   type ReviewMutationStrategy,
 } from './reviewActionCachePatch';
-import { patchCreateAisleIntoAislesLists, patchPromoteOperationalJobInAisleJobs } from './mutationCachePatch';
+import {
+  patchAisleInAislesLists,
+  patchCreateAisleIntoAislesLists,
+  patchPromoteOperationalJobInAisleJobs,
+} from './mutationCachePatch';
 import { recordMutationInvalidationsObs } from '../dev/cacheMutationObservability';
 
 export function useCreateInventory() {
@@ -44,6 +54,19 @@ export function useCreateInventory() {
     mutationFn: (body: CreateInventoryRequest) => createInventory(body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.inventories.list() });
+    },
+  });
+}
+
+export function useUpdateInventory(inventoryId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UpdateInventoryRequest) => updateInventory(inventoryId, body),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(queryKeys.inventories.detail(inventoryId), updated);
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.list() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all });
     },
   });
 }
@@ -188,6 +211,56 @@ export function useCreateAisle(inventoryId: string) {
         flow: 'useCreateAisle',
         labels: [...(patched ? [] : ['inventories.aisles(invalidate)']), 'inventories.detail'],
       });
+    },
+  });
+}
+
+function invalidateAisleLifecycleCaches(queryClient: ReturnType<typeof useQueryClient>, inventoryId: string) {
+  queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+}
+
+export function useUpdateAisle(inventoryId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ aisleId, body }: { aisleId: string; body: UpdateAisleRequest }) =>
+      updateAisle(inventoryId, aisleId, body),
+    onSuccess: (updatedAisle) => {
+      const patched = patchAisleInAislesLists(queryClient, inventoryId, updatedAisle);
+      if (!patched) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+    },
+  });
+}
+
+export function useDeactivateAisle(inventoryId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (aisleId: string) => deactivateAisle(inventoryId, aisleId),
+    onSuccess: (updatedAisle) => {
+      const patched = patchAisleInAislesLists(queryClient, inventoryId, updatedAisle);
+      if (!patched) {
+        invalidateAisleLifecycleCaches(queryClient, inventoryId);
+      } else {
+        queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+      }
+    },
+  });
+}
+
+export function useActivateAisle(inventoryId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (aisleId: string) => activateAisle(inventoryId, aisleId),
+    onSuccess: (updatedAisle) => {
+      const patched = patchAisleInAislesLists(queryClient, inventoryId, updatedAisle);
+      if (!patched) {
+        invalidateAisleLifecycleCaches(queryClient, inventoryId);
+      } else {
+        queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+      }
     },
   });
 }

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from src.application.errors import InventoryNotFoundError, OpenCaptureSessionExistsError
+from src.application.errors import (
+    AisleInactiveError,
+    InventoryNotFoundError,
+    OpenCaptureSessionExistsError,
+)
 from src.application.ports.capture_repositories import CaptureSessionRepository
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, InventoryRepository
@@ -33,12 +37,16 @@ class CreateCaptureSessionUseCase:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
         resolved_aisle_id = (aisle_id or "").strip() or None
         if resolved_aisle_id is not None:
-            require_aisle_scoped_to_inventory(
+            aisle = require_aisle_scoped_to_inventory(
                 self._aisle_repo,
                 inventory_id=inventory_id,
                 aisle_id=resolved_aisle_id,
                 detail_style="strict",
             )
+            if not aisle.is_active:
+                raise AisleInactiveError(
+                    f"Aisle {resolved_aisle_id} is inactive; reactivate before creating a capture session."
+                )
             open_count = self._session_repo.count_open_sessions_for_aisle(
                 inventory_id, resolved_aisle_id
             )

@@ -29,7 +29,8 @@ const V3_STRUCTURED_CODE_TO_KEY: Record<string, string> = {
   ASSET_NOT_FOUND: 'errors.not_found',
   JOB_NOT_FOUND: 'errors.not_found',
   JOB_NOT_IN_AISLE_SCOPE: 'errors.not_found',
-  ACTIVE_JOB_EXISTS: 'errors.generic',
+  ACTIVE_JOB_EXISTS: 'errors.aisle_deactivate_active_job',
+  AISLE_INACTIVE: 'errors.aisle_inactive',
   AISLE_SOURCE_ASSET_MUTATION_BLOCKED: 'errors.aisle_source_assets_locked',
   JOB_PROMOTION_NOT_ALLOWED: 'errors.promotion_failed',
   BENCHMARK_COMPARE_JOBS_MUST_DIFFER: 'errors.load_compare',
@@ -71,6 +72,7 @@ const DETAIL_TO_KEY: [RegExp, string][] = [
     'ingestion_sessions.detail.grouping_preview_disabled_materialize',
   ],
   [/^this feature is only available for test inventories\.?$/i, 'errors.benchmark_requires_test_inventory'],
+  [/already exists in this inventory/i, 'errors.aisle_duplicate_code'],
 ];
 
 export function backendDetailToTranslationKey(detail: string): string | null {

@@ -16,16 +16,20 @@ export {
   getInventories,
   getInventory,
   getInventoryMetrics,
+  updateInventory,
 } from './inventoriesApi';
 export type { AislesListQuery } from './aislesApi';
 export {
+  activateAisle,
   createAisle,
+  deactivateAisle,
   exportAisleOperationalCsv,
   exportAisleResultsCsv,
   getAisles,
   getAisleMergeResults,
   runAisleMerge,
   startAisleProcessing,
+  updateAisle,
 } from './aislesApi';
 export type { AislePositionsListQuery } from './jobsApi';
 export {

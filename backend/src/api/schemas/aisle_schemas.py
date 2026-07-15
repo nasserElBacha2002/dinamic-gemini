@@ -31,6 +31,20 @@ class CreateAisleRequest(BaseModel):
         return normalized
 
 
+class UpdateAisleRequest(BaseModel):
+    """PATCH /api/v3/inventories/{inventory_id}/aisles/{aisle_id} body."""
+
+    code: str = Field(..., min_length=1, max_length=64)
+
+    @field_validator("code")
+    @classmethod
+    def strip_code(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("code must not be empty")
+        return normalized
+
+
 class AisleJobSummary(BaseModel):
     """Latest job summary for an aisle (optional in list response). Aligned with JobSummary for list/status contract."""
 
@@ -71,6 +85,7 @@ class AisleResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    is_active: bool = True
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     operational_job_id: Optional[str] = Field(

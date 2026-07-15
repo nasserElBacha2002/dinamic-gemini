@@ -7,6 +7,7 @@ import type { StatusBadgeSemantic } from '../../../components/ui/StatusBadge';
 import i18n from '../../../i18n';
 import { formatDate } from '../../../utils/formatDate';
 import { getAisleStatusLabel, aisleStatusToBadgeSemantic } from '../../../utils/aisleStatus';
+import { isAisleActive } from '../../../utils/aisleActive';
 import { jobStatusToBadgeSemantic } from '../../../utils/jobStatus';
 import { deriveAisleEffectiveDisplayState } from '../../../utils/deriveJobDisplayState';
 import { getJobProcessingStatusLabel } from '../../../utils/jobFinalizationLabels';
@@ -33,6 +34,8 @@ export interface LatestRunSnapshotViewModel {
 export interface AisleInventoryRowPresentation {
   id: string;
   code: string;
+  /** Soft-active; missing API field treated as active. */
+  isActive: boolean;
   /** Aisle `client_supplier_id` when present (supplier-linked prompt context). */
   clientSupplierId: string | null;
   aisleStatusLabel: string;
@@ -102,6 +105,7 @@ export function toAisleInventoryRowPresentation(aisle: Aisle, emptyLabel: string
   return {
     id: aisle.id,
     code: aisle.code,
+    isActive: isAisleActive(aisle),
     clientSupplierId: aisle.client_supplier_id ?? null,
     aisleStatusLabel,
     aisleStatusSemantic,

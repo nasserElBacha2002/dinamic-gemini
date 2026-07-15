@@ -53,6 +53,8 @@ from src.application.services.operational_execution_config_resolver import (
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.use_cases.aisles.cancel_aisle_job import CancelAisleJobUseCase
 from src.application.use_cases.aisles.create_aisle import CreateAisleUseCase
+from src.application.use_cases.aisles.activate_aisle import ActivateAisleUseCase
+from src.application.use_cases.aisles.deactivate_aisle import DeactivateAisleUseCase
 from src.application.use_cases.aisles.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
 from src.application.use_cases.aisles.get_aisle_merge_results import (
     GetAisleMergeResultsUseCase,
@@ -73,6 +75,7 @@ from src.application.use_cases.aisles.resolve_aisle_job_for_inventory_read impor
 from src.application.use_cases.aisles.retry_aisle_job import RetryAisleJobUseCase
 from src.application.use_cases.aisles.run_aisle_merge import RunAisleMergeUseCase
 from src.application.use_cases.aisles.start_aisle_processing import StartAisleProcessingUseCase
+from src.application.use_cases.aisles.update_aisle_code import UpdateAisleCodeUseCase
 from src.application.use_cases.aisles.upload_aisle_assets import UploadAisleAssetsUseCase
 from src.application.use_cases.analytics.compare_aisle_runs import CompareAisleRunsUseCase
 from src.application.use_cases.analytics.compare_many_aisle_runs import CompareManyAisleRunsUseCase
@@ -111,6 +114,7 @@ from src.application.use_cases.inventories.list_inventories import ListInventori
 from src.application.use_cases.inventories.list_inventory_list_items import (
     ListInventoryListItemsUseCase,
 )
+from src.application.use_cases.inventories.update_inventory_name import UpdateInventoryNameUseCase
 from src.application.use_cases.positions.confirm_position import ConfirmPositionUseCase
 from src.application.use_cases.positions.delete_position import DeletePositionUseCase
 from src.application.use_cases.positions.get_position_code_scan_evidence import (
@@ -272,6 +276,13 @@ def get_create_inventory_use_case(
         operational_resolver=operational_resolver,
         settings_loader=_load_settings,
     )
+
+
+def get_update_inventory_name_use_case(
+    repo: InventoryRepository = Depends(get_inventory_repo),
+    clock: Clock = Depends(get_clock),
+) -> UpdateInventoryNameUseCase:
+    return UpdateInventoryNameUseCase(inventory_repo=repo, clock=clock)
 
 
 def get_create_client_use_case(
@@ -502,6 +513,34 @@ def get_create_aisle_use_case(
         clock=clock,
         status_reconciler=status_reconciler,
     )
+
+
+def get_update_aisle_code_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    clock: Clock = Depends(get_clock),
+) -> UpdateAisleCodeUseCase:
+    return UpdateAisleCodeUseCase(aisle_repo=aisle_repo, clock=clock)
+
+
+def get_deactivate_aisle_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    clock: Clock = Depends(get_clock),
+    stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
+) -> DeactivateAisleUseCase:
+    return DeactivateAisleUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        clock=clock,
+        stale_reconciler=stale_reconciler,
+    )
+
+
+def get_activate_aisle_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    clock: Clock = Depends(get_clock),
+) -> ActivateAisleUseCase:
+    return ActivateAisleUseCase(aisle_repo=aisle_repo, clock=clock)
 
 
 def get_list_aisles_by_inventory_use_case(

@@ -16,6 +16,7 @@ import { Box, Button, Typography } from '@mui/material';
 import { PageHeader } from '../../../components/shell';
 import { useAisleBenchmarkCompareMany, useAisleJobsList, useAislesList, useInventoryDetail } from '../../../hooks';
 import { getVisibleErrorMessage } from '../../../utils/apiErrors';
+import { filterActiveAisles } from '../../../utils/aisleActive';
 import { ROUTE_HOME, pathToInventory, pathToInventoryAnalyticsCompareMany } from '../../../constants/appRoutes';
 import { formatSignedDurationHuman } from '../../../utils/benchmarkExecutionTime';
 import { MAX_COMPARE_JOBS } from '../constants/compareManyRuns';
@@ -114,7 +115,7 @@ export function CompareManyRunsWorkspace({
 
   // Expanding one block enriches the full compare-many payload (all comparisons), then each block renders its own slice.
   const effectiveData = enrichedCompareManyQuery.data ?? compareQuery.data;
-  const aisles = aislesQuery.data?.items ?? [];
+  const aisles = filterActiveAisles(aislesQuery.data?.items ?? []);
   const jobs = useMemo(() => jobsQuery.data?.jobs ?? [], [jobsQuery.data?.jobs]);
   const sortedJobsForPicker = useMemo(() => sortJobsForCompareManyPicker(jobs), [jobs]);
   const aisleSelectValue = draftAisleId && aisles.some((aisle) => aisle.id === draftAisleId) ? draftAisleId : '';

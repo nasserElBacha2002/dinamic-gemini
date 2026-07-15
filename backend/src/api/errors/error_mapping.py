@@ -159,6 +159,7 @@ from typing import Any, Callable, cast
 from fastapi import HTTPException
 
 from src.api.constants.error_wire import (
+    HTTP_DETAIL_AISLE_INACTIVE,
     HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_CODE_SCAN,
     HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
     HTTP_DETAIL_AISLE_NOT_FOUND_FOR_ASSIGNMENT,
@@ -219,6 +220,7 @@ from src.api.errors.structured_api_http import (
     ACTIVE_JOB_EXISTS,
     AISLE_HAS_NO_SOURCE_ASSETS_FOR_CODE_SCAN,
     AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
+    AISLE_INACTIVE,
     AISLE_NOT_FOUND,
     AISLE_NOT_FOUND_FOR_ASSIGNMENT,
     AISLE_SOURCE_ASSET_MUTATION_BLOCKED,
@@ -284,6 +286,7 @@ from src.api.errors.structured_api_http import (
 from src.api.services.v3_stored_artifact_access import StoredArtifactAccessError
 from src.application.errors import (
     ActiveJobExistsError,
+    AisleInactiveError,
     AisleNotFoundError,
     AisleNotFoundForAssignmentError,
     AisleSourceAssetMutationBlockedError,
@@ -543,6 +546,11 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         409,
         error_code=ACTIVE_JOB_EXISTS,
         detail=lambda e: _normalized_active_job_exists_detail(cast(ActiveJobExistsError, e)),
+    ),
+    AisleInactiveError: _structured_fixed(
+        409,
+        error_code=AISLE_INACTIVE,
+        detail=HTTP_DETAIL_AISLE_INACTIVE,
     ),
     NoSourceAssetsForAisleProcessingError: _structured_fixed(
         409,

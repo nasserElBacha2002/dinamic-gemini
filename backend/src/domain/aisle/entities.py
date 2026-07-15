@@ -38,6 +38,16 @@ class Aisle:
     error_code: str | None = None
     error_message: str | None = None
     retryable: bool | None = None
+    #: Soft-deactivate flag; inactive aisles keep history but block new processing/uploads.
+    is_active: bool = True
+
+    def deactivate(self, now: datetime) -> None:
+        self.is_active = False
+        self.updated_at = now
+
+    def activate(self, now: datetime) -> None:
+        self.is_active = True
+        self.updated_at = now
 
     def mark_assets_uploaded(self, now: datetime) -> None:
         self.status = AisleStatus.ASSETS_UPLOADED

@@ -78,6 +78,46 @@ export function patchCreateAisleIntoAislesLists(
 }
 
 /**
+ * Replace one aisle row in the default inventory-detail aisles list cache (code / is_active updates).
+ */
+export function patchAisleInAislesLists(
+  queryClient: QueryClient,
+  inventoryId: string,
+  updatedAisle: Aisle
+): boolean {
+  const queries = queryClient.getQueryCache().findAll({
+    queryKey: queryKeys.inventories.aisles(inventoryId),
+  });
+
+  let patched = false;
+  for (const query of queries) {
+    const key = query.queryKey;
+    if (!isDefaultAislesListQueryKey(key, inventoryId)) continue;
+    const old = query.state.data as AislesListLike | undefined;
+    if (!old || !Array.isArray(old.items)) continue;
+    const idx = old.items.findIndex((a) => a.id === updatedAisle.id);
+    if (idx < 0) continue;
+
+    const items = [...old.items];
+    items[idx] = { ...items[idx], ...updatedAisle };
+    queryClient.setQueryData<AislesListLike>(key, {
+      ...old,
+      items,
+    });
+    patched = true;
+  }
+
+  recordNonReviewPatchObs({
+    flow: 'update_aisle',
+    inventoryId,
+    aisleId: updatedAisle.id,
+    patched,
+    note: patched ? 'default_aisles_table_row_replaced' : 'skipped_no_eligible_cache',
+  });
+  return patched;
+}
+
+/**
  * Conservative Phase 6 patch: update only operational pointer metadata on cached aisle jobs lists.
  * Job status, timing, and other run fields remain server-authoritative.
  */

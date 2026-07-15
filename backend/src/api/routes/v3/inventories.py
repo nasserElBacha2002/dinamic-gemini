@@ -18,12 +18,14 @@ from src.api.dependencies import (
     get_get_inventory_metrics_use_case,
     get_get_inventory_use_case,
     get_list_inventory_list_items_use_case,
+    get_update_inventory_name_use_case,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.inventory_schemas import (
     CreateInventoryRequest,
     InventoryMetricsResponse,
     InventoryResponse,
+    UpdateInventoryRequest,
 )
 from src.api.schemas.listing_schemas import PaginatedInventoryListResponse, compute_total_pages
 from src.api.schemas.processing_schemas import (
@@ -56,6 +58,10 @@ from src.application.use_cases.inventories.get_inventory_metrics import GetInven
 from src.application.use_cases.inventories.list_inventory_list_items import (
     ListInventoryListItemsUseCase,
 )
+from src.application.use_cases.inventories.update_inventory_name import (
+    UpdateInventoryNameCommand,
+    UpdateInventoryNameUseCase,
+)
 from src.config import load_settings
 from src.domain.inventory.entities import InventoryProcessingMode
 
@@ -83,6 +89,25 @@ def create_inventory(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except ClientNotFoundError as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.patch("/{inventory_id}", response_model=InventoryResponse)
+def update_inventory(
+    inventory_id: str,
+    payload: UpdateInventoryRequest,
+    use_case: UpdateInventoryNameUseCase = Depends(get_update_inventory_name_use_case),
+) -> InventoryResponse:
+    """Rename an inventory (v3.0). Returns 404 if not found."""
+    try:
+        inventory = use_case.execute(
+            UpdateInventoryNameCommand(inventory_id=inventory_id, name=payload.name)
+        )
+        return inventory_to_response(inventory)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except InventoryNotFoundError as e:
         reraise_if_mapped(e)
         raise
 

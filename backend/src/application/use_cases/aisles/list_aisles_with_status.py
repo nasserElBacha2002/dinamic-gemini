@@ -117,6 +117,8 @@ class ListAislesWithStatusUseCase:
         if q.status is not None and str(q.status).strip():
             st = str(q.status).strip()
             aisles = [a for a in aisles if a.status.value == st]
+        if q.is_active is not None:
+            aisles = [a for a in aisles if a.is_active is q.is_active]
 
         if not aisles:
             return [], 0

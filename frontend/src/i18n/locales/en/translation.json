@@ -171,7 +171,27 @@
     "status": {
       "created": "Created",
       "in_review": "In review"
-    }
+    },
+    "edit_name": "Edit name",
+    "edit_name_title": "Edit aisle name",
+    "edit_name_subtitle": "The aisle display name is its code.",
+    "name_updated_snackbar": "Aisle name updated.",
+    "deactivate": "Deactivate",
+    "deactivate_title": "Deactivate this aisle?",
+    "deactivate_body": "The aisle will no longer be available for new operations, uploads, or selections. Historical information will not be deleted.",
+    "deactivate_confirm": "Deactivate",
+    "deactivate_success_snackbar": "Aisle deactivated.",
+    "reactivate": "Reactivate",
+    "reactivate_title": "Reactivate aisle",
+    "reactivate_body": "The aisle will become active again and new operations will be allowed.",
+    "reactivate_confirm": "Reactivate",
+    "reactivate_success_snackbar": "Aisle reactivated.",
+    "inactive_badge": "Inactive",
+    "filter_active_label": "Active status",
+    "filter_active_only": "Active",
+    "filter_inactive_only": "Inactive",
+    "filter_active_all": "All",
+    "operations_disabled_inactive": "Inactive aisle: new operations unavailable."
   },
   "uploads": {
     "errors": {
@@ -838,7 +858,8 @@
       "validation_code_required": "Enter an aisle code.",
       "validation_duplicate": "An aisle with this code already exists.",
       "validation_inventory_missing": "The inventory is missing.",
-      "validation_supplier_required": "Select a supplier to create the aisle."
+      "validation_supplier_required": "Select a supplier to create the aisle.",
+      "edit_save": "Save"
     },
     "inventory": {
       "create_inventory_action": "Create inventory",
@@ -849,7 +870,7 @@
       "processing_mode_test": "Test",
       "processing_mode_test_help": "Test mode for experiments without affecting production.",
       "step_labels": "Inventory details",
-      "validation_name_max": "The name cannot exceed 255 characters.",
+      "validation_name_max": "Name cannot exceed 255 characters.",
       "validation_name_required": "Enter an inventory name.",
       "validation_client_required": "Select a client to create the inventory.",
       "validation_client_required_create_first": "There are no clients. Create a client first, then try again.",
@@ -858,7 +879,9 @@
       "client_helper": "Select the client this inventory belongs to.",
       "client_label": "Client",
       "client_load_error": "Clients could not be loaded. Retry or check your connection.",
-      "client_placeholder": "Select a client"
+      "client_placeholder": "Select a client",
+      "edit_name_title": "Edit inventory name",
+      "edit_save": "Save"
     }
   },
   "errors": {
@@ -909,7 +932,10 @@
     "upload_aisle_source_assets": "Upload aisle source assets",
     "upload_failed": "Upload failed",
     "upload_reference_images": "Upload reference images",
-    "validation_generic": "Validation error"
+    "validation_generic": "Validation error",
+    "aisle_inactive": "This aisle is inactive. Reactivate it to run new operations.",
+    "aisle_deactivate_active_job": "Cannot deactivate the aisle while a job is active. Cancel it or wait for it to finish.",
+    "aisle_duplicate_code": "An aisle with that code already exists in this inventory."
   },
   "execution_log": {
     "all_attempts": "All attempts",
@@ -978,7 +1004,12 @@
     "processing_mode_test": "Processing mode test",
     "export_menu": "Export",
     "export_summary": "Inventory summary",
-    "export_package_zip": "Full inventory (.zip)"
+    "export_package_zip": "Full inventory (.zip)",
+    "edit_name": "Edit name",
+    "edit_name_title": "Edit inventory name",
+    "edit_name_subtitle": "Update the inventory display name.",
+    "name_updated_snackbar": "Inventory name updated.",
+    "more_actions": "More actions"
   },
   "jobs": {
     "attempt_number": "Attempt number",

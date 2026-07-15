@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { useClientSuppliers } from '../../../hooks/useClients';
 import { useInventoryDetail } from '../../../hooks/useInventories';
 import { getVisibleErrorMessage } from '../../../utils/apiErrors';
+import { filterActiveAisles } from '../../../utils/aisleActive';
 import { formatDate } from '../../../utils/formatDate';
 import type {
   CaptureSessionGroupSummaryResponse,
@@ -182,7 +183,7 @@ export default function ImportSessionGroupingPanel({
     previewActionError,
   ]);
 
-  const aisleItems = aislesQuery.data?.items ?? [];
+  const aisleItems = filterActiveAisles(aislesQuery.data?.items ?? []);
   const assignBlockedNoAisles = assignGroupId != null && aisleItems.length === 0;
 
   const runCompute = () => {

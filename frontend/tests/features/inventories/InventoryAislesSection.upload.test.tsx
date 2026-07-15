@@ -27,6 +27,7 @@ function makeRow(id: string, code: string): AisleInventoryTableRow {
     presentation: {
       id,
       code,
+      isActive: true,
       clientSupplierId: null,
       aisleStatusLabel: 'Draft',
       aisleStatusSemantic: 'neutral',
