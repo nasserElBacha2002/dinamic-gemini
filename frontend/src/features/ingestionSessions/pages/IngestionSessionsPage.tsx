@@ -13,6 +13,7 @@ import {
   useInventoryOptions,
 } from '../hooks/useCaptureSessions';
 import { buildSessionsListParams } from '../utils/ingestionSessionsListParams';
+import { filterActiveAisles } from '../../../utils/aisleActive';
 
 export default function IngestionSessionsPage() {
   const { t } = useTranslation();
@@ -24,7 +25,7 @@ export default function IngestionSessionsPage() {
 
   const activeInventoryId = selectedInventoryId || inventoryOptions[0]?.id || '';
   const aislesQuery = useAisleOptions(activeInventoryId, { enabled: Boolean(activeInventoryId) });
-  const aisleOptions = aislesQuery.data?.items ?? [];
+  const aisleOptions = filterActiveAisles(aislesQuery.data?.items ?? []);
 
   const sessionsQuery = useCaptureSessionsList(
     buildSessionsListParams(activeInventoryId, selectedAisleId),

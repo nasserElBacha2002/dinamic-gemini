@@ -61,6 +61,7 @@ def _row_to_aisle(row) -> Aisle:
         error_code=getattr(row, "error_code", None),
         error_message=getattr(row, "error_message", None),
         retryable=getattr(row, "retryable", None),
+        is_active=bool(getattr(row, "is_active", True)),
     )
 
 
@@ -73,6 +74,7 @@ class SqlAisleRepository(AisleRepository):
             raise ValueError("Aisle created_at and updated_at are required")
         created = _ensure_utc(aisle.created_at)
         updated = _ensure_utc(aisle.updated_at)
+        is_active_bit = 1 if aisle.is_active else 0
         with self._client.cursor() as cur:
             cur.execute(
                 """
@@ -80,7 +82,8 @@ class SqlAisleRepository(AisleRepository):
                 SET inventory_id = ?, code = ?, status = ?, updated_at = ?,
                     operational_job_id = ?,
                     client_supplier_id = ?,
-                    error_code = ?, error_message = ?, retryable = ?
+                    error_code = ?, error_message = ?, retryable = ?,
+                    is_active = ?
                 WHERE id = ?
                 """,
                 (
@@ -93,6 +96,7 @@ class SqlAisleRepository(AisleRepository):
                     aisle.error_code,
                     aisle.error_message,
                     aisle.retryable,
+                    is_active_bit,
                     aisle.id,
                 ),
             )
@@ -101,9 +105,10 @@ class SqlAisleRepository(AisleRepository):
                     """
                     INSERT INTO aisles (
                         id, inventory_id, code, status, created_at, updated_at,
-                        operational_job_id, client_supplier_id, error_code, error_message, retryable
+                        operational_job_id, client_supplier_id, error_code, error_message, retryable,
+                        is_active
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         aisle.id,
@@ -117,6 +122,7 @@ class SqlAisleRepository(AisleRepository):
                         aisle.error_code,
                         aisle.error_message,
                         aisle.retryable,
+                        is_active_bit,
                     ),
                 )
 
@@ -125,7 +131,8 @@ class SqlAisleRepository(AisleRepository):
             cur.execute(
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
-                       operational_job_id, client_supplier_id, error_code, error_message, retryable
+                       operational_job_id, client_supplier_id, error_code, error_message, retryable,
+                       is_active
                 FROM aisles WHERE id = ?
                 """,
                 (aisle_id,),
@@ -140,7 +147,8 @@ class SqlAisleRepository(AisleRepository):
             cur.execute(
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
-                       operational_job_id, client_supplier_id, error_code, error_message, retryable
+                       operational_job_id, client_supplier_id, error_code, error_message, retryable,
+                       is_active
                 FROM aisles WHERE inventory_id = ? ORDER BY created_at DESC
                 """,
                 (inventory_id,),
@@ -153,7 +161,8 @@ class SqlAisleRepository(AisleRepository):
             cur.execute(
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
-                       operational_job_id, client_supplier_id, error_code, error_message, retryable
+                       operational_job_id, client_supplier_id, error_code, error_message, retryable,
+                       is_active
                 FROM aisles WHERE inventory_id = ? AND code = ?
                 """,
                 (inventory_id, code.strip()),

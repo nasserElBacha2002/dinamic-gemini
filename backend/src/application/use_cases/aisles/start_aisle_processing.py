@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from src.application.errors import (
     ActiveJobExistsError,
+    AisleInactiveError,
     InventoryNotFoundError,
     NoSourceAssetsForAisleProcessingError,
 )
@@ -142,6 +143,10 @@ class StartAisleProcessingUseCase:
             aisle_id=command.aisle_id,
             detail_style="strict",
         )
+        if not aisle.is_active:
+            raise AisleInactiveError(
+                f"Aisle {command.aisle_id} is inactive; reactivate before processing."
+            )
 
         aisle_assets = self._asset_repo.list_by_aisle(command.aisle_id)
         if not aisle_assets:

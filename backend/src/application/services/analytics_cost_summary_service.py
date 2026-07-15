@@ -292,6 +292,8 @@ class AnalyticsCostSummaryService:
         )
 
     def _filter_jobs(self, jobs: list[Job], filters: AnalyticsCostSummaryFilters) -> list[Job]:
+        # Historical cost scope: include ALL aisles (active and inactive) so soft-deactivated
+        # aisles remain in LLM/job cost history. Do not filter by is_active here.
         allowed_aisle: set[str] | None = None
         if filters.aisle_id:
             allowed_aisle = {filters.aisle_id}

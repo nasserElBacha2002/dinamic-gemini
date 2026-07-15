@@ -65,7 +65,7 @@ export type ReviewActionCacheObsEvent = {
 
 export type NonReviewPatchObsEvent = {
   kind: 'non_review_patch';
-  flow: 'create_aisle' | 'promote_operational_job';
+  flow: 'create_aisle' | 'promote_operational_job' | 'update_aisle';
   inventoryId: string;
   aisleId?: string;
   patched: boolean;

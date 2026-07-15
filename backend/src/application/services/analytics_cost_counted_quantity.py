@@ -53,11 +53,20 @@ def resolve_aisle_ids_for_quantity(
     aisle_repo: AisleRepository,
     job_aisle_ids: set[str],
 ) -> set[str]:
+    """Resolve aisle ids for operational counted-quantity (active aisles only)."""
     if aisle_id:
+        aisle = aisle_repo.get_by_id(aisle_id)
+        if aisle is None or not aisle.is_active:
+            return set()
         return {aisle_id}
     if inventory_id:
-        return {a.id for a in aisle_repo.list_by_inventory(inventory_id)}
-    return set(job_aisle_ids)
+        return {a.id for a in aisle_repo.list_by_inventory(inventory_id) if a.is_active}
+    active: set[str] = set()
+    for aid in job_aisle_ids:
+        aisle = aisle_repo.get_by_id(aid)
+        if aisle is not None and aisle.is_active:
+            active.add(aid)
+    return active
 
 
 class AnalyticsCostCountedQuantityService:

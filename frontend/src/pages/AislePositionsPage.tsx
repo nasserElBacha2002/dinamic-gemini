@@ -13,10 +13,12 @@ import { exportAisleOperationalCsv, getAisleMergeResults, type AislePositionsLis
 import { queryKeys } from '../api/queryKeys';
 import { canonicalizeOptionalId } from '../api/queryParamCanonicalization';
 import { recordExplicitRefreshObs, summarizeQueryKey } from '../dev/cacheMutationObservability';
-import { getVisibleErrorMessage } from '../utils/apiErrors';
+import { getVisibleErrorMessage, resolveApiErrorMessage } from '../utils/apiErrors';
+import { isAisleActive } from '../utils/aisleActive';
 import type { RunMergeResponse } from '../api/types';
 import { ApiError } from '../api/types';
 import {
+  ConfirmDialog,
   FilterToolbar,
   TableSearchField,
   sortDataTableRows,
@@ -38,7 +40,11 @@ import {
   useRunAisleMerge,
   useAisleJobsList,
   usePromoteAisleOperationalJob,
+  useUpdateAisle,
+  useDeactivateAisle,
+  useActivateAisle,
 } from '../hooks';
+import EditAisleCodeDialog from '../features/inventories/components/EditAisleCodeDialog';
 import {
   useResultSummaries,
   computeResultsKpi,
@@ -117,6 +123,10 @@ export default function AislePositionsPage() {
   const [lastMergeContextKey, setLastMergeContextKey] = useState<string | null>(null);
   const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
   const [codeScanDrawerOpen, setCodeScanDrawerOpen] = useState(false);
+  const [editCodeOpen, setEditCodeOpen] = useState(false);
+  const [deactivateConfirmOpen, setDeactivateConfirmOpen] = useState(false);
+  const [reactivateConfirmOpen, setReactivateConfirmOpen] = useState(false);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [promoteJobId, setPromoteJobId] = useState('');
   const consumedAisleRedirectKey = useRef<string | null>(null);
   const routeIdentityRef = useRef<string>('');
@@ -124,6 +134,9 @@ export default function AislePositionsPage() {
   const queryClient = useQueryClient();
   const mergeMutation = useRunAisleMerge(inventoryId ?? '');
   const promoteMutation = usePromoteAisleOperationalJob(inventoryId ?? '', aisleId ?? '');
+  const updateAisleMutation = useUpdateAisle(inventoryId ?? '');
+  const deactivateAisleMutation = useDeactivateAisle(inventoryId ?? '');
+  const activateAisleMutation = useActivateAisle(inventoryId ?? '');
 
   const jobIdParam = searchParams.get('jobId')?.trim() || null;
 
@@ -234,6 +247,14 @@ export default function AislePositionsPage() {
   }, [aisleJobsQuery.isFetched, pickedRunJobId]);
   const aisle = useMemo(
     () => aislesQuery.data?.items?.find((a) => a.id === aisleId) ?? null,
+    [aislesQuery.data?.items, aisleId]
+  );
+  const aisleIsActive = isAisleActive(aisle);
+  const otherAisleCodes = useMemo(
+    () =>
+      (aislesQuery.data?.items ?? [])
+        .filter((a) => a.id !== aisleId)
+        .map((a) => a.code),
     [aislesQuery.data?.items, aisleId]
   );
 
@@ -534,9 +555,13 @@ export default function AislePositionsPage() {
     [mergeResultsQuery.data?.results]
   );
   const mergeButtonVisible = Boolean(inventoryId && aisleId && hasResults);
-  const mergeButtonDisabled = mergeMutation.isPending || mergeCandidates.groupCount === 0;
-  const mergeDisabledReason =
-    mergeCandidates.groupCount === 0 ? t('positions.merge_no_skus') : '';
+  const mergeButtonDisabled =
+    mergeMutation.isPending || mergeCandidates.groupCount === 0 || !aisleIsActive;
+  const mergeDisabledReason = !aisleIsActive
+    ? t('aisle.operations_disabled_inactive')
+    : mergeCandidates.groupCount === 0
+      ? t('positions.merge_no_skus')
+      : '';
   const mergeFeedback = useMemo(() => {
     if (lastMergeResponse != null && mergeFeedbackIsCurrentContext) {
       if (lastMergeResponse.product_records_updated > 0) {
@@ -631,7 +656,12 @@ export default function AislePositionsPage() {
         breadcrumbs={breadcrumbs}
         title={aisleLabel}
         subtitle=""
+        showInactiveBadge={!aisleIsActive}
         onOpenCodeScan={() => setCodeScanDrawerOpen(true)}
+        codeScanDisabled={!aisleIsActive}
+        onEditName={() => setEditCodeOpen(true)}
+        onDeactivate={aisleIsActive ? () => { setLifecycleError(null); setDeactivateConfirmOpen(true); } : undefined}
+        onReactivate={!aisleIsActive ? () => { setLifecycleError(null); setReactivateConfirmOpen(true); } : undefined}
         onOpenObservability={
           inventoryId && aisleId
             ? () =>
@@ -652,18 +682,28 @@ export default function AislePositionsPage() {
               inventoryLabel={inventory?.name ?? t('common.em_dash')}
               jobIdForPreview={pickedRunJobId}
               inventoryReady={Boolean(inventoryQuery.data)}
+              readOnly={!aisleIsActive}
             >
               {({ openSourceAssets }) => (
-                <Tooltip title={t('aisle_source_assets.action_tooltip')}>
-                  <Button
-                    data-testid="aisle-source-assets-manage-open"
-                    size="small"
-                    variant="outlined"
-                    startIcon={<PhotoLibraryOutlinedIcon fontSize="small" />}
-                    onClick={openSourceAssets}
-                  >
-                    {t('aisle_source_assets.action_label')}
-                  </Button>
+                <Tooltip
+                  title={
+                    !aisleIsActive
+                      ? t('aisle.operations_disabled_inactive')
+                      : t('aisle_source_assets.action_tooltip')
+                  }
+                >
+                  <span>
+                    <Button
+                      data-testid="aisle-source-assets-manage-open"
+                      size="small"
+                      variant="outlined"
+                      startIcon={<PhotoLibraryOutlinedIcon fontSize="small" />}
+                      onClick={openSourceAssets}
+                      disabled={!aisleIsActive}
+                    >
+                      {t('aisle_source_assets.action_label')}
+                    </Button>
+                  </span>
                 </Tooltip>
               )}
             </AisleSourceAssetsManageModule>
@@ -708,7 +748,7 @@ export default function AislePositionsPage() {
           params.set('baseline', visibleJobId!);
           navigate(`${pathToInventoryAnalyticsCompareMany(inventoryId!)}?${params.toString()}`);
         }}
-        showPromoteRun={Boolean(isTestInventory && canPromoteCurrentRun)}
+        showPromoteRun={Boolean(isTestInventory && canPromoteCurrentRun && aisleIsActive)}
         onPromoteRun={() => {
           setPromoteJobId(visibleJobId ?? '');
           setPromoteDialogOpen(true);
@@ -736,6 +776,12 @@ export default function AislePositionsPage() {
           void aisleJobsQuery.refetch();
         }}
       />
+
+      {!aisleIsActive ? (
+        <Alert severity="info" sx={{ mb: 2 }} data-testid="aisle-inactive-historical-note">
+          {t('aisle.inactive_historical_note')}
+        </Alert>
+      ) : null}
 
       <AisleResultsJobSelector
         visible={Boolean(isTestInventory && (aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource)))}
@@ -886,6 +932,76 @@ export default function AislePositionsPage() {
         context={quickContext}
         onClose={() => setQuickContext(null)}
         onOpenCodeScan={() => setCodeScanDrawerOpen(true)}
+      />
+
+      <EditAisleCodeDialog
+        open={editCodeOpen}
+        currentCode={aisle?.code ?? ''}
+        existingCodes={otherAisleCodes}
+        onClose={() => setEditCodeOpen(false)}
+        onSuccess={() => showSnackbar(t('aisle.name_updated_snackbar'), 'success')}
+        updateAisleFn={(body) => updateAisleMutation.mutateAsync({ aisleId: aisleId!, body })}
+      />
+
+      <ConfirmDialog
+        open={deactivateConfirmOpen}
+        onClose={() => {
+          if (deactivateAisleMutation.isPending) return;
+          setDeactivateConfirmOpen(false);
+          setLifecycleError(null);
+        }}
+        title={t('aisle.deactivate_title')}
+        description={
+          <>
+            <strong>{aisle?.code}</strong>
+            <br />
+            {t('aisle.deactivate_body')}
+          </>
+        }
+        confirmLabel={t('aisle.deactivate_confirm')}
+        confirmColor="warning"
+        loading={deactivateAisleMutation.isPending}
+        errorMessage={lifecycleError}
+        onConfirm={() => {
+          void (async () => {
+            setLifecycleError(null);
+            try {
+              await deactivateAisleMutation.mutateAsync(aisleId!);
+              setDeactivateConfirmOpen(false);
+              showSnackbar(t('aisle.deactivate_success_snackbar'), 'success');
+            } catch (e) {
+              setLifecycleError(
+                resolveApiErrorMessage(e, 'errors.aisle_deactivate_active_job')
+              );
+            }
+          })();
+        }}
+      />
+
+      <ConfirmDialog
+        open={reactivateConfirmOpen}
+        onClose={() => {
+          if (activateAisleMutation.isPending) return;
+          setReactivateConfirmOpen(false);
+          setLifecycleError(null);
+        }}
+        title={t('aisle.reactivate_title')}
+        description={t('aisle.reactivate_body')}
+        confirmLabel={t('aisle.reactivate_confirm')}
+        loading={activateAisleMutation.isPending}
+        errorMessage={lifecycleError}
+        onConfirm={() => {
+          void (async () => {
+            setLifecycleError(null);
+            try {
+              await activateAisleMutation.mutateAsync(aisleId!);
+              setReactivateConfirmOpen(false);
+              showSnackbar(t('aisle.reactivate_success_snackbar'), 'success');
+            } catch (e) {
+              setLifecycleError(resolveApiErrorMessage(e, 'errors.request_failed'));
+            }
+          })();
+        }}
       />
     </>
   );

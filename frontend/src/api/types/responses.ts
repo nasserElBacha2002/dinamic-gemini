@@ -193,6 +193,11 @@ export interface Aisle {
   client_supplier_id?: string | null;
   code: string;
   status: AisleStatus | string;
+  /**
+   * Soft-active flag from API. Treat missing as active for backward compatibility
+   * (older payloads / cached rows without the field).
+   */
+  is_active?: boolean;
   created_at: string;
   updated_at: string;
   error_code?: string | null;

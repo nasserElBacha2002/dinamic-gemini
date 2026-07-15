@@ -525,6 +525,7 @@ def aisle_to_response(
         status=a.status.value,
         created_at=a.created_at,
         updated_at=a.updated_at,
+        is_active=a.is_active,
         error_code=a.error_code,
         error_message=a.error_message,
         operational_job_id=a.operational_job_id,

@@ -91,7 +91,14 @@ class ExportInventoryCollector:
         explicit_job_id_by_aisle: dict[str, str | None] | None = None,
         include_deleted_rows: bool = False,
         consolidate_by_sku: bool = AISLE_RESULTS_UI_CONSOLIDATE_BY_SKU,
+        operational_only: bool = True,
     ) -> ExportInventoryOperationalData:
+        """Assemble inventory export data.
+
+        ``operational_only=True`` (default for inventory-level exports) includes only
+        active aisles for quantity rollups / consolidated rows. Pass ``False`` when
+        historical aisle rows or all-aisle job costs are required.
+        """
         inv = self._inventory_repo.get_by_id(inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
@@ -103,6 +110,8 @@ class ExportInventoryCollector:
                 client_name = client.name
 
         aisles = list(self._aisle_repo.list_by_inventory(inventory_id))
+        if operational_only:
+            aisles = [a for a in aisles if a.is_active]
         sorted_aisles = sorted(
             aisles,
             key=lambda a: (natural_sort_key_parts(a.code), a.created_at, a.id),

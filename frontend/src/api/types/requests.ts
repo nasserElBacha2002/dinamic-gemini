@@ -23,6 +23,16 @@ export interface CreateAisleRequest {
   client_supplier_id: string;
 }
 
+/** PATCH /api/v3/inventories/{inventory_id} body. */
+export interface UpdateInventoryRequest {
+  name: string;
+}
+
+/** PATCH /api/v3/inventories/{inventory_id}/aisles/{aisle_id} body. */
+export interface UpdateAisleRequest {
+  code: string;
+}
+
 export interface CreateClientRequest {
   name: string;
   status?: ClientStatus;

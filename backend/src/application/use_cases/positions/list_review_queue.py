@@ -196,6 +196,9 @@ class ListReviewQueueUseCase:
             ):
                 continue
             for aisle in self._aisle_repo.list_by_inventory(inv.id):
+                # Review queue is operational: inactive aisles are excluded.
+                if not aisle.is_active:
+                    continue
                 if q.aisle_id is not None and str(q.aisle_id).strip() and aisle.id != q.aisle_id:
                     continue
                 scope.append((inv, aisle))

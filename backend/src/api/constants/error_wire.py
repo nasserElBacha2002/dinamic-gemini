@@ -57,6 +57,9 @@ HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING = (
 HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_CODE_SCAN = (
     "This aisle has no source assets; upload media before scanning codes."
 )
+HTTP_DETAIL_AISLE_INACTIVE = (
+    "This aisle is inactive; reactivate it before performing this operation."
+)
 HTTP_DETAIL_CODE_SCAN_DISABLED = "Aisle code scan is disabled"
 HTTP_DETAIL_CODE_SCAN_MAX_ASSETS_EXCEEDED = "Too many source assets for one code scan run"
 HTTP_DETAIL_CODE_SCAN_SCANNER_UNAVAILABLE = "Code scan engine is unavailable"

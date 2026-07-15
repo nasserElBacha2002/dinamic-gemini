@@ -3,11 +3,14 @@ import { Box, Button, Menu, MenuItem, Tooltip } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { useTranslation } from 'react-i18next';
 import { PageHeader, type PageHeaderBreadcrumb } from '../../../components/shell';
+import { StatusBadge } from '../../../components/ui';
 
 export interface AisleResultsHeaderProps {
   breadcrumbs: PageHeaderBreadcrumb[];
   title: string;
-  subtitle: string;
+  subtitle: ReactNode;
+  /** When false, show inactive badge next to title area via subtitle composition — or pass showInactiveBadge. */
+  showInactiveBadge?: boolean;
   assetsAction?: ReactNode;
   mergeButtonVisible: boolean;
   mergeDisabledReason: string;
@@ -26,13 +29,18 @@ export interface AisleResultsHeaderProps {
   refreshDisabled: boolean;
   onRefresh: () => void;
   onOpenCodeScan?: () => void;
+  codeScanDisabled?: boolean;
   onOpenObservability?: () => void;
+  onEditName?: () => void;
+  onDeactivate?: () => void;
+  onReactivate?: () => void;
 }
 
 export default function AisleResultsHeader({
   breadcrumbs,
   title,
   subtitle,
+  showInactiveBadge = false,
   assetsAction,
   mergeButtonVisible,
   mergeDisabledReason,
@@ -51,7 +59,11 @@ export default function AisleResultsHeader({
   refreshDisabled,
   onRefresh,
   onOpenCodeScan,
+  codeScanDisabled = false,
   onOpenObservability,
+  onEditName,
+  onDeactivate,
+  onReactivate,
 }: AisleResultsHeaderProps) {
   const { t } = useTranslation();
   const [moreActionsAnchorEl, setMoreActionsAnchorEl] = useState<null | HTMLElement>(null);
@@ -65,10 +77,21 @@ export default function AisleResultsHeader({
     setMoreActionsAnchorEl(null);
   };
 
+  const titleNode = (
+    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+      <span>{title}</span>
+      {showInactiveBadge ? (
+        <span data-testid="aisle-inactive-badge">
+          <StatusBadge label={t('aisle.inactive_badge')} semantic="neutral" />
+        </span>
+      ) : null}
+    </Box>
+  );
+
   return (
     <PageHeader
       breadcrumbs={breadcrumbs}
-      title={title}
+      title={titleNode}
       subtitle={subtitle}
       actions={
         <Box
@@ -120,6 +143,39 @@ export default function AisleResultsHeader({
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                 transformOrigin={{ vertical: 'top', horizontal: 'right' }}
               >
+                {onEditName ? (
+                  <MenuItem
+                    data-testid="aisle-edit-name"
+                    onClick={() => {
+                      handleCloseMoreActions();
+                      onEditName();
+                    }}
+                  >
+                    {t('aisle.edit_name')}
+                  </MenuItem>
+                ) : null}
+                {onDeactivate ? (
+                  <MenuItem
+                    data-testid="aisle-deactivate"
+                    onClick={() => {
+                      handleCloseMoreActions();
+                      onDeactivate();
+                    }}
+                  >
+                    {t('aisle.deactivate')}
+                  </MenuItem>
+                ) : null}
+                {onReactivate ? (
+                  <MenuItem
+                    data-testid="aisle-reactivate"
+                    onClick={() => {
+                      handleCloseMoreActions();
+                      onReactivate();
+                    }}
+                  >
+                    {t('aisle.reactivate')}
+                  </MenuItem>
+                ) : null}
                 {showCompareRuns ? (
                   <MenuItem
                     onClick={() => {
@@ -158,6 +214,7 @@ export default function AisleResultsHeader({
                       handleCloseMoreActions();
                       onOpenCodeScan();
                     }}
+                    disabled={codeScanDisabled}
                   >
                     {t('aisleCodeScans.actions.open')}
                   </MenuItem>

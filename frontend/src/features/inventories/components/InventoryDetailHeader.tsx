@@ -1,4 +1,6 @@
-import { Box, Button, Typography } from '@mui/material';
+import { useState, type MouseEvent } from 'react';
+import { Box, Button, Menu, MenuItem, Typography } from '@mui/material';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { ROUTE_HOME, pathToInventoryAnalyticsCompare } from '../../../constants/appRoutes';
@@ -13,6 +15,7 @@ export interface InventoryDetailHeaderProps {
   inventoryId: string;
   headerVm: InventoryHeaderViewModel;
   onOpenCreateAisle: () => void;
+  onEditName?: () => void;
 }
 
 export default function InventoryDetailHeader({
@@ -20,9 +23,12 @@ export default function InventoryDetailHeader({
   inventoryId,
   headerVm,
   onOpenCreateAisle,
+  onEditName,
 }: InventoryDetailHeaderProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [moreActionsAnchorEl, setMoreActionsAnchorEl] = useState<null | HTMLElement>(null);
+  const moreActionsOpen = Boolean(moreActionsAnchorEl);
 
   const breadcrumbs: PageHeaderBreadcrumb[] = [
     { label: t('aisle.breadcrumb_inventories'), to: ROUTE_HOME },
@@ -61,6 +67,40 @@ export default function InventoryDetailHeader({
             </Button>
           ) : null}
           <InventoryExportMenu inventoryId={inventoryId} />
+          {onEditName ? (
+            <>
+              <Button
+                variant="outlined"
+                size="small"
+                data-testid="inventory-more-actions"
+                endIcon={<KeyboardArrowDownIcon fontSize="small" />}
+                onClick={(e: MouseEvent<HTMLButtonElement>) => setMoreActionsAnchorEl(e.currentTarget)}
+                aria-controls={moreActionsOpen ? 'inventory-more-actions-menu' : undefined}
+                aria-haspopup="menu"
+                aria-expanded={moreActionsOpen ? 'true' : undefined}
+              >
+                {t('inventory.more_actions')}
+              </Button>
+              <Menu
+                id="inventory-more-actions-menu"
+                anchorEl={moreActionsAnchorEl}
+                open={moreActionsOpen}
+                onClose={() => setMoreActionsAnchorEl(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+              >
+                <MenuItem
+                  data-testid="inventory-edit-name"
+                  onClick={() => {
+                    setMoreActionsAnchorEl(null);
+                    onEditName();
+                  }}
+                >
+                  {t('inventory.edit_name')}
+                </MenuItem>
+              </Menu>
+            </>
+          ) : null}
           <Button variant="contained" size="small" onClick={onOpenCreateAisle}>
             {t('aisle.create')}
           </Button>

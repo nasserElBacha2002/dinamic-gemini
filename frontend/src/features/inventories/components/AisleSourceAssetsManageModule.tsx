@@ -39,6 +39,8 @@ export interface AisleSourceAssetsManageModuleProps {
   jobIdForPreview?: string | null;
   /** Gate lazy fetch until inventory context is ready. */
   inventoryReady: boolean;
+  /** When true, open drawer in view-only mode (no upload/delete). */
+  readOnly?: boolean;
   children: (ctx: { openSourceAssets: () => void }) => ReactNode;
 }
 
@@ -48,6 +50,7 @@ export default function AisleSourceAssetsManageModule({
   inventoryLabel,
   jobIdForPreview,
   inventoryReady,
+  readOnly = false,
   children,
 }: AisleSourceAssetsManageModuleProps) {
   const { t } = useTranslation();
@@ -146,6 +149,7 @@ export default function AisleSourceAssetsManageModule({
         onRetry={() => void assetsQuery.refetch()}
         onFetchPreview={onFetchPreview}
         showUpload
+        readOnly={readOnly}
         onUpload={(files) => uploadMutation.mutateAsync(files)}
         isUploading={uploadMutation.isPending}
         uploadError={

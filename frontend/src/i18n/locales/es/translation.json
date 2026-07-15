@@ -179,7 +179,28 @@
     "status": {
       "created": "Creado",
       "in_review": "En revisión"
-    }
+    },
+    "edit_name": "Editar nombre",
+    "edit_name_title": "Editar nombre del pasillo",
+    "edit_name_subtitle": "El nombre visible del pasillo es su código.",
+    "name_updated_snackbar": "Nombre del pasillo actualizado.",
+    "deactivate": "Desactivar",
+    "deactivate_title": "¿Desactivar este pasillo?",
+    "deactivate_body": "Sus datos históricos y costos se conservarán, pero sus cantidades dejarán de incluirse en el resumen y en las exportaciones consolidadas del inventario.",
+    "deactivate_confirm": "Desactivar",
+    "deactivate_success_snackbar": "Pasillo desactivado.",
+    "reactivate": "Reactivar",
+    "reactivate_title": "Reactivar pasillo",
+    "reactivate_body": "El pasillo volverá a estar activo. Sus cantidades se incluirán de nuevo en el resumen operativo del inventario; los costos históricos no se duplican.",
+    "reactivate_confirm": "Reactivar",
+    "reactivate_success_snackbar": "Pasillo reactivado.",
+    "inactive_badge": "Inactivo",
+    "inactive_historical_note": "Este pasillo está inactivo. Sus resultados se conservan como históricos y no se incluyen en los totales operativos del inventario.",
+    "filter_active_label": "Estado activo",
+    "filter_active_only": "Activos",
+    "filter_inactive_only": "Inactivos",
+    "filter_active_all": "Todos",
+    "operations_disabled_inactive": "Pasillo inactivo: operaciones nuevas no disponibles."
   },
   "uploads": {
     "errors": {
@@ -1005,7 +1026,8 @@
       "validation_code_required": "Ingresá el código del pasillo.",
       "validation_duplicate": "Ya existe un pasillo con ese código.",
       "validation_inventory_missing": "Falta el inventario asociado.",
-      "validation_supplier_required": "Seleccioná un proveedor para crear el pasillo."
+      "validation_supplier_required": "Seleccioná un proveedor para crear el pasillo.",
+      "edit_save": "Guardar"
     },
     "inventory": {
       "client_empty": "No hay clientes disponibles. Creá un cliente antes de crear un inventario.",
@@ -1025,7 +1047,9 @@
       "validation_name_required": "Ingresá un nombre para el inventario.",
       "validation_client_required": "Seleccioná un cliente para crear el inventario.",
       "validation_client_required_create_first": "No hay clientes. Creá un cliente primero y volvé a intentar.",
-      "wizard_title": "Crear inventario"
+      "wizard_title": "Crear inventario",
+      "edit_name_title": "Editar nombre del inventario",
+      "edit_save": "Guardar"
     }
   },
   "errors": {
@@ -1077,7 +1101,10 @@
     "upload_aisle_source_assets": "Falló la subida de activos del pasillo",
     "upload_failed": "La subida falló",
     "upload_reference_images": "Falló la subida de imágenes de referencia",
-    "validation_generic": "Error de validación"
+    "validation_generic": "Error de validación",
+    "aisle_inactive": "Este pasillo está inactivo. Reactivalo para realizar operaciones nuevas.",
+    "aisle_deactivate_active_job": "No se puede desactivar el pasillo mientras hay un trabajo activo. Cancelá o esperá a que termine.",
+    "aisle_duplicate_code": "Ya existe un pasillo con ese código en este inventario."
   },
   "execution_log": {
     "all_attempts": "Todos los intentos",
@@ -1157,7 +1184,12 @@
     "aisle_supplier_view_link": "Ver proveedor",
     "export_menu": "Exportar",
     "export_summary": "Resumen del inventario",
-    "export_package_zip": "Inventario completo (.zip)"
+    "export_package_zip": "Inventario completo (.zip)",
+    "edit_name": "Editar nombre",
+    "edit_name_title": "Editar nombre del inventario",
+    "edit_name_subtitle": "Actualizá el nombre visible del inventario.",
+    "name_updated_snackbar": "Nombre del inventario actualizado.",
+    "more_actions": "Más acciones"
   },
   "clients": {
     "breadcrumb_list": "Clientes",

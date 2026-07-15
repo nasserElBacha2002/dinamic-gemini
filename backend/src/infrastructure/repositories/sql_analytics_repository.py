@@ -84,13 +84,22 @@ def _append_inventory_aisle_filters(
     conditions: list[str],
     params: list[Any],
     filters: AnalyticsFilters,
+    *,
+    active_only: bool = False,
 ) -> None:
+    """Append inventory/aisle scope predicates.
+
+    ``active_only=True`` for position/quantity KPIs (operational aisles).
+    Leave ``False`` (default) for job-processing / historical cost metrics.
+    """
     if filters.inventory_id:
         conditions.append("i.id = ?")
         params.append(filters.inventory_id.strip())
     if filters.aisle_id:
         conditions.append("a.id = ?")
         params.append(filters.aisle_id.strip())
+    if active_only:
+        conditions.append("a.is_active = 1")
 
 
 def _append_ra_time_filters(
@@ -183,13 +192,13 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         pos_where, pos_params = _build_scope_sql("p")
         conditions = [pos_where, _operational_result_slice_predicate()]
         params: list[Any] = list(pos_params)
-        _append_inventory_aisle_filters(conditions, params, filters)
+        _append_inventory_aisle_filters(conditions, params, filters, active_only=True)
         # Position-state metrics: entity scope only (inventory/aisle), not position.updated_at.
         where_pos = " AND ".join(conditions)
 
         cond_ra = ["p.status <> 'deleted'", _operational_result_slice_predicate()]
         ra_params: list[Any] = []
-        _append_inventory_aisle_filters(cond_ra, ra_params, filters)
+        _append_inventory_aisle_filters(cond_ra, ra_params, filters, active_only=True)
         _append_ra_time_filters(cond_ra, ra_params, filters, "ra.created_at")
         where_ra = " AND ".join(cond_ra)
 
@@ -386,7 +395,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
 
         cond_ra = ["p.status <> 'deleted'", _operational_result_slice_predicate()]
         ra_params: list[Any] = []
-        _append_inventory_aisle_filters(cond_ra, ra_params, filters)
+        _append_inventory_aisle_filters(cond_ra, ra_params, filters, active_only=True)
         _append_ra_time_filters(cond_ra, ra_params, filters, "ra.created_at")
         where_ra = " AND ".join(cond_ra)
 
@@ -511,7 +520,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         pos_where, _ = _build_scope_sql("p")
         conditions = [pos_where, _operational_result_slice_predicate()]
         params: list[Any] = []
-        _append_inventory_aisle_filters(conditions, params, filters)
+        _append_inventory_aisle_filters(conditions, params, filters, active_only=True)
         where_scope = " AND ".join(conditions)
         tr_inv = _traceability_invalid_expr("p")
         processed_expr = (
@@ -614,6 +623,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
             "p.status <> 'deleted'",
             _operational_result_slice_predicate(),
             "i.id = ?",
+            "a.is_active = 1",
         ]
         prm: list[Any] = [inventory_id]
         _append_ra_time_filters(cond, prm, filters, "ra.created_at")
@@ -692,7 +702,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         pos_where, _ = _build_scope_sql("p")
         conditions = [pos_where, _operational_result_slice_predicate()]
         params: list[Any] = []
-        _append_inventory_aisle_filters(conditions, params, filters)
+        _append_inventory_aisle_filters(conditions, params, filters, active_only=True)
         where_scope = " AND ".join(conditions)
         tr_inv = _traceability_invalid_expr("p")
         low_thr = float(LOW_CONFIDENCE_THRESHOLD)
@@ -784,7 +794,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
         pos_where, _ = _build_scope_sql("p")
         conditions = [pos_where, _operational_result_slice_predicate()]
         params: list[Any] = []
-        _append_inventory_aisle_filters(conditions, params, filters)
+        _append_inventory_aisle_filters(conditions, params, filters, active_only=True)
         where_scope = " AND ".join(conditions)
         sql = f"""
             SELECT bucket, COUNT(*) AS cnt
@@ -849,7 +859,7 @@ class SqlAnalyticsRepository(AnalyticsRepository):
     ) -> ManualInterventionBreakdownDTO:
         cond = ["p.status <> 'deleted'", _operational_result_slice_predicate()]
         params: list[Any] = []
-        _append_inventory_aisle_filters(cond, params, filters)
+        _append_inventory_aisle_filters(cond, params, filters, active_only=True)
         _append_ra_time_filters(cond, params, filters, "ra.created_at")
         where_sql = " AND ".join(cond)
         sql = f"""

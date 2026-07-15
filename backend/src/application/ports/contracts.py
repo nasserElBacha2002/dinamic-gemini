@@ -115,6 +115,8 @@ class AisleTableQuery:
     search: str | None = None
     """Case-insensitive substring on aisle code."""
     status: str | None = None
+    is_active: bool | None = None
+    """None = all; True/False filter soft-active flag."""
     sort_by: str = "code"
     """code | status | last_activity_at | pending_review_positions_count | positions_count | assets_count"""
     sort_dir: str = "asc"

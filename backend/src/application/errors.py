@@ -12,6 +12,10 @@ class AisleNotFoundError(Exception):
     """Raised when the aisle does not exist or does not belong to the given inventory."""
 
 
+class AisleInactiveError(Exception):
+    """Raised when an operation requires an active aisle but the aisle is soft-deactivated."""
+
+
 class ActiveJobExistsError(Exception):
     """Raised when the aisle already has a job in QUEUED or RUNNING state."""
 

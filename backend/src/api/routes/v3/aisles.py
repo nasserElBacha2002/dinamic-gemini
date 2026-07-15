@@ -16,12 +16,14 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED,
 )
 from src.api.dependencies import (
+    get_activate_aisle_use_case,
     get_artifact_publication_outbox_store,
     get_artifact_storage,
     get_cancel_aisle_job_use_case,
     get_compare_aisle_runs_use_case,
     get_compare_many_aisle_runs_use_case,
     get_create_aisle_use_case,
+    get_deactivate_aisle_use_case,
     get_export_aisle_benchmark_compare_csv_use_case,
     get_export_aisle_benchmark_run_csv_use_case,
     get_export_aisle_business_csv_use_case,
@@ -39,10 +41,11 @@ from src.api.dependencies import (
     get_run_aisle_merge_use_case,
     get_run_auditability_service,
     get_start_aisle_processing_use_case,
+    get_update_aisle_code_use_case,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.mappers.result_evidence_mapper import job_traceability_to_response
-from src.api.schemas.aisle_schemas import AisleResponse, CreateAisleRequest
+from src.api.schemas.aisle_schemas import AisleResponse, CreateAisleRequest, UpdateAisleRequest
 from src.api.schemas.benchmark_schemas import (
     AisleBenchmarkCompareManyRequest,
     AisleBenchmarkCompareManyResponse,
@@ -100,11 +103,19 @@ from src.application.services.finalization_assessment_service import Finalizatio
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
 from src.application.services.run_auditability_service import RunAuditabilityService
+from src.application.use_cases.aisles.activate_aisle import (
+    ActivateAisleCommand,
+    ActivateAisleUseCase,
+)
 from src.application.use_cases.aisles.cancel_aisle_job import (
     CancelAisleJobCommand,
     CancelAisleJobUseCase,
 )
 from src.application.use_cases.aisles.create_aisle import CreateAisleCommand, CreateAisleUseCase
+from src.application.use_cases.aisles.deactivate_aisle import (
+    DeactivateAisleCommand,
+    DeactivateAisleUseCase,
+)
 from src.application.use_cases.aisles.get_aisle_merge_results import (
     GetAisleMergeResultsCommand,
     GetAisleMergeResultsUseCase,
@@ -135,6 +146,10 @@ from src.application.use_cases.aisles.run_aisle_merge import (
 from src.application.use_cases.aisles.start_aisle_processing import (
     StartAisleProcessingCommand,
     StartAisleProcessingUseCase,
+)
+from src.application.use_cases.aisles.update_aisle_code import (
+    UpdateAisleCodeCommand,
+    UpdateAisleCodeUseCase,
 )
 from src.application.use_cases.analytics.compare_aisle_runs import (
     CompareAisleRunsCommand,
@@ -277,12 +292,82 @@ def create_aisle(
         raise
 
 
+@router.patch(
+    "/{inventory_id}/aisles/{aisle_id}",
+    response_model=AisleResponse,
+)
+def update_aisle_code(
+    inventory_id: str,
+    aisle_id: str,
+    payload: UpdateAisleRequest,
+    use_case: UpdateAisleCodeUseCase = Depends(get_update_aisle_code_use_case),
+) -> AisleResponse:
+    """Rename an aisle code within an inventory. Returns 404 if missing, 409 if code duplicate."""
+    try:
+        aisle = use_case.execute(
+            UpdateAisleCodeCommand(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                code=payload.code,
+            )
+        )
+        return aisle_to_response(aisle)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except (AisleNotFoundError, DuplicateAisleCodeError) as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/deactivate",
+    response_model=AisleResponse,
+)
+def deactivate_aisle(
+    inventory_id: str,
+    aisle_id: str,
+    use_case: DeactivateAisleUseCase = Depends(get_deactivate_aisle_use_case),
+) -> AisleResponse:
+    """Soft-deactivate an aisle. Blocked while an active process job exists (409)."""
+    try:
+        aisle = use_case.execute(
+            DeactivateAisleCommand(inventory_id=inventory_id, aisle_id=aisle_id)
+        )
+        return aisle_to_response(aisle)
+    except (AisleNotFoundError, ActiveJobExistsError) as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.post(
+    "/{inventory_id}/aisles/{aisle_id}/activate",
+    response_model=AisleResponse,
+)
+def activate_aisle(
+    inventory_id: str,
+    aisle_id: str,
+    use_case: ActivateAisleUseCase = Depends(get_activate_aisle_use_case),
+) -> AisleResponse:
+    """Re-activate a soft-deactivated aisle."""
+    try:
+        aisle = use_case.execute(
+            ActivateAisleCommand(inventory_id=inventory_id, aisle_id=aisle_id)
+        )
+        return aisle_to_response(aisle)
+    except AisleNotFoundError as e:
+        reraise_if_mapped(e)
+        raise
+
+
 @router.get("/{inventory_id}/aisles", response_model=PaginatedAisleListResponse)
 def list_aisles(
     inventory_id: str,
     use_case: ListAislesWithStatusUseCase = Depends(get_list_aisles_with_status_use_case),
     search: str | None = Query(None, description="Case-insensitive substring on aisle code."),
     status: str | None = Query(None, description="Exact aisle status (wire value)."),
+    is_active: bool | None = Query(
+        None, description="Filter by soft-active flag; omit to return all."
+    ),
     sort_by: str = Query(
         "code",
         description=(
@@ -303,6 +388,7 @@ def list_aisles(
         q = build_aisle_table_query_from_route_params(
             search=search,
             status=status,
+            is_active=is_active,
             sort_by=sort_by,
             sort_dir=sort_dir,
             page=page,

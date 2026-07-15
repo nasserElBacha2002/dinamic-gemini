@@ -9,6 +9,10 @@ describe('errorTranslations mappings', () => {
   it('maps stable v3 structured codes', () => {
     expect(v3StructuredErrorCodeToTranslationKey('INVENTORY_NOT_FOUND')).toBe('errors.not_found');
     expect(v3StructuredErrorCodeToTranslationKey('INTERNAL_SERVER_ERROR')).toBe('errors.unexpected');
+    expect(v3StructuredErrorCodeToTranslationKey('ACTIVE_JOB_EXISTS')).toBe(
+      'errors.aisle_deactivate_active_job'
+    );
+    expect(v3StructuredErrorCodeToTranslationKey('AISLE_INACTIVE')).toBe('errors.aisle_inactive');
   });
 
   it('returns null for unknown v3 structured code', () => {
@@ -26,6 +30,9 @@ describe('errorTranslations mappings', () => {
   it('maps known backend details', () => {
     expect(backendDetailToTranslationKey('Unauthorized')).toBe('errors.auth.unauthorized');
     expect(backendDetailToTranslationKey('Forbidden')).toBe('errors.forbidden');
+    expect(
+      backendDetailToTranslationKey("An aisle with code 'A-01' already exists in this inventory")
+    ).toBe('errors.aisle_duplicate_code');
   });
 
   it('returns null for unknown backend detail', () => {

@@ -29,6 +29,20 @@ class CreateInventoryRequest(BaseModel):
         return normalized
 
 
+class UpdateInventoryRequest(BaseModel):
+    """PATCH /api/v3/inventories/{inventory_id} body."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("name must not be empty")
+        return normalized
+
+
 class PrimaryExecutionConfigResponse(BaseModel):
     """Operational primary config snapshot (production inventories)."""
 

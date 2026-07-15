@@ -160,6 +160,7 @@ export default function AnalyticsDashboardPage() {
   const aislesQuery = useAislesList(urlInventoryId, {
     enabled: Boolean(urlInventoryId),
   });
+  /** All aisles (incl. inactive) — analytics filters are historical, not new-ops selectors. */
   const aisleItems = useMemo(() => aislesQuery.data?.items ?? [], [aislesQuery.data?.items]);
 
   /** Drop incompatible aisle from the URL only (replace); do not touch appliedFilters. */

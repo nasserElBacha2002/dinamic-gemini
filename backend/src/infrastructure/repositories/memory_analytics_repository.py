@@ -87,10 +87,33 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             for pid in positions
         }
 
+    def _scoped_aisle_ids(
+        self, filters: AnalyticsFilters, *, active_only: bool = False
+    ) -> set[str]:
+        """Aisle ids in filter scope. ``active_only`` for position KPIs; False for jobs/costs."""
+        out: set[str] = set()
+        for inv in self._inventory_repo.list_all():
+            if filters.inventory_id and inv.id != filters.inventory_id:
+                continue
+            for aisle in self._aisle_repo.list_by_inventory(inv.id):
+                if filters.aisle_id and aisle.id != filters.aisle_id:
+                    continue
+                if active_only and not aisle.is_active:
+                    continue
+                out.add(aisle.id)
+        return out
+
     def _collect(
-        self, filters: AnalyticsFilters
+        self,
+        filters: AnalyticsFilters,
+        *,
+        active_aisles_only: bool = True,
     ) -> tuple[dict[str, Position], dict[str, str], dict[str, str], list]:
-        """Positions in scope, aisle->inventory, position_id->aisle_id, all review actions."""
+        """Positions in scope, aisle->inventory, position_id->aisle_id, all review actions.
+
+        Default ``active_aisles_only=True`` matches operational position/quantity KPIs.
+        Job-processing metrics should use ``_scoped_aisle_ids(..., active_only=False)`` separately.
+        """
         aisle_to_inventory: dict[str, str] = {}
         position_to_aisle: dict[str, str] = {}
         positions: dict[str, Position] = {}
@@ -100,6 +123,8 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 continue
             for aisle in self._aisle_repo.list_by_inventory(inv.id):
                 if filters.aisle_id and aisle.id != filters.aisle_id:
+                    continue
+                if active_aisles_only and not aisle.is_active:
                     continue
                 aisle_to_inventory[aisle.id] = inv.id
                 # Analytics aggregate across all job runs for an aisle (default unset job filter).
@@ -127,7 +152,9 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
 
     def get_summary(self, filters: AnalyticsFilters) -> AnalyticsSummaryDTO:
         notes: list[str] = []
-        positions, aisle_to_inv, pos_to_aisle, actions = self._collect(filters)
+        positions, _aisle_to_inv, _pos_to_aisle, actions = self._collect(
+            filters, active_aisles_only=True
+        )
         active = {pid: p for pid, p in positions.items() if active_position(p)}
         primary_by_position = self._primary_by_position(active)
         review_outcomes = compute_review_outcome_counts(actions, filters.date_from, filters.date_to)
@@ -139,9 +166,8 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
         total_positions = len(active)
         processed_positions = sum(1 for p in active.values() if processed_position(p))
 
-        allowed_aisles = set(aisle_to_inv.keys())
-        if filters.aisle_id:
-            allowed_aisles &= {filters.aisle_id}
+        # Job metrics keep historical aisles (including inactive).
+        allowed_aisles = self._scoped_aisle_ids(filters, active_only=False)
         jobs_list = list(self._job_repo.list_all_jobs())
         proc = compute_processing_success_rate(
             jobs_list, filters.date_from, filters.date_to, allowed_aisles
@@ -238,10 +264,7 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
 
         proc_series: list[TrendPointDTO] = []
         jobs_list = list(self._job_repo.list_all_jobs())
-        _, aisle_to_inv, _, _ = self._collect(filters)
-        allowed_aisles = set(aisle_to_inv.keys())
-        if filters.aisle_id:
-            allowed_aisles &= {filters.aisle_id}
+        allowed_aisles = self._scoped_aisle_ids(filters, active_only=False)
         from src.application.services.analytics_aggregation_core import _ts_in_range
 
         by_day_job: dict[str, list] = defaultdict(lambda: [0, 0])
@@ -291,10 +314,11 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 inventory_id=inv.id,
                 aisle_id=None,
             )
-            positions, _, _, actions = self._collect(inv_filter)
+            positions, _, _, actions = self._collect(inv_filter, active_aisles_only=True)
             active_list = [p for p in positions.values() if active_position(p)]
             primary_by_position = self._primary_by_position(positions)
-            aisles = self._aisle_repo.list_by_inventory(inv.id)
+            # Aisle listing/job metrics: all aisles (historical). Position KPIs: active only.
+            aisles = list(self._aisle_repo.list_by_inventory(inv.id))
             if filters.aisle_id:
                 aisles = [a for a in aisles if a.id == filters.aisle_id]
             total_aisles = len(aisles)
@@ -382,6 +406,8 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 continue
             for aisle in self._aisle_repo.list_by_inventory(inv.id):
                 if filters.aisle_id and aisle.id != filters.aisle_id:
+                    continue
+                if not aisle.is_active:
                     continue
                 meta[aisle.id] = (aisle.code, inv.id, inv.name)
                 by_aisle.setdefault(aisle.id, [])

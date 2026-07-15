@@ -244,6 +244,7 @@ BEGIN
         error_code VARCHAR(64) NULL,
         error_message NVARCHAR(512) NULL,
         retryable BIT NULL,
+        is_active BIT NOT NULL DEFAULT 1,
         CONSTRAINT FK_aisles_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
         CONSTRAINT UQ_aisles_inventory_code UNIQUE (inventory_id, code)
     );

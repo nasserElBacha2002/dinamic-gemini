@@ -2,9 +2,10 @@
 Inventory metrics calculator — v3.0 Épica 9.
 
 Implements MetricsCalculator per Documento técnico §9.6. Computes metrics from
-persisted positions (all positions in the inventory's aisles). Terminal states
-(reviewed, corrected, deleted) count toward total_reviewed; success_rate and
-rates use total_reviewed as denominator; when total_reviewed is 0, rates are 0.
+persisted positions on **active** aisles only (inactive aisles are historical).
+Terminal states (reviewed, corrected, deleted) count toward total_reviewed;
+success_rate and rates use total_reviewed as denominator; when total_reviewed is
+0, rates are 0.
 
 Returned dict includes all keys required by §9.6 / InventoryMetricsResponse.
 Rates are rounded to 2 decimal places and may not sum to 100 due to rounding.
@@ -15,6 +16,7 @@ from __future__ import annotations
 from src.application.ports.contracts import InventoryMetricsResult
 from src.application.ports.repositories import AisleRepository, PositionRepository
 from src.application.ports.services import MetricsCalculator
+from src.application.services.inventory_aggregation_scope import scope_from_aisles
 from src.domain.positions.entities import PositionStatus
 
 # Terminal statuses: positions that have been through manual review (Documento técnico §9.6).
@@ -35,8 +37,9 @@ class InventoryMetricsService(MetricsCalculator):
         self._position_repo = position_repo
 
     def calculate_inventory_metrics(self, inventory_id: str) -> InventoryMetricsResult:
-        aisles = self._aisle_repo.list_by_inventory(inventory_id)
-        aisle_ids = [a.id for a in aisles]
+        # Position metrics are operational: only active aisles contribute.
+        scope = scope_from_aisles(self._aisle_repo.list_by_inventory(inventory_id))
+        aisle_ids = list(scope.active_aisle_ids)
         positions = self._position_repo.list_by_aisles(aisle_ids)
 
         total_positions = len(positions)

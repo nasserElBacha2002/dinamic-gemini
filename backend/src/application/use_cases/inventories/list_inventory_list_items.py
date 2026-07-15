@@ -5,6 +5,10 @@ List inventories with per-row aggregates for the **screen-ready** inventories ta
 
 **Aggregates:** See Sprint 1.2 docstring (pending_review_count, last_activity_at, aisles_count).
 
+``aisles_count`` is the **total number of aisles created** for the inventory (active and
+inactive). It is not filtered to vigentes/active-only so listing integrity stays stable with
+historical soft-deactivated aisles. ``pending_review_count`` uses active aisles only.
+
 **Performance:** Still computes aggregates per inventory row candidate (after name/status filters).
 For aggregate-based sorts, all matching inventories are materialized then sorted in memory.
 """
@@ -20,6 +24,7 @@ from src.application.ports.repositories import (
     InventoryRepository,
     PositionRepository,
 )
+from src.application.services.inventory_aggregation_scope import scope_from_aisles
 from src.domain.inventory.entities import Inventory
 
 
@@ -63,9 +68,10 @@ class ListInventoryListItemsUseCase:
         self._position_repo = position_repo
 
     def _build_item(self, inv: Inventory) -> InventoryListItem:
-        aisles = self._aisle_repo.list_by_inventory(inv.id)
-        aisle_ids = [a.id for a in aisles]
-        positions = self._position_repo.list_by_aisles(aisle_ids) if aisle_ids else []
+        aisles = list(self._aisle_repo.list_by_inventory(inv.id))
+        scope = scope_from_aisles(aisles)
+        active_ids = list(scope.active_aisle_ids)
+        positions = self._position_repo.list_by_aisles(active_ids) if active_ids else []
         pending = sum(1 for p in positions if p.needs_review)
         times: list[datetime] = [inv.updated_at, inv.created_at]
         for a in aisles:
@@ -77,6 +83,7 @@ class ListInventoryListItemsUseCase:
         last_activity = _max_dt(*times) if times else inv.updated_at
         return InventoryListItem(
             inventory=inv,
+            # Total aisles including inactive (listing integrity); not "active only".
             aisles_count=len(aisles),
             pending_review_count=pending,
             last_activity_at=last_activity,

@@ -25,7 +25,7 @@ export interface PageHeaderProps {
    * must show the **entity or section name** (e.g. inventory name while topbar says “Inventory”).
    * Omit when the topbar already fully identifies the screen and you only need breadcrumbs/actions — then set `a11yTitle`.
    */
-  title?: string;
+  title?: ReactNode;
   /** Required when `title` is omitted: screen reader `h1` (visually hidden) so each route keeps a sensible heading. */
   a11yTitle?: string;
   subtitle?: ReactNode;

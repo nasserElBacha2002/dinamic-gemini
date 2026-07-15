@@ -4,6 +4,7 @@ import type {
   Inventory,
   InventoryMetrics,
   PaginatedInventoryListResponse,
+  UpdateInventoryRequest,
 } from './types';
 import { buildQueryString } from './queryString';
 import { apiDownloadBlob, apiRequestJson } from './request';
@@ -71,6 +72,16 @@ export async function exportInventoryPackageZip(inventoryId: string): Promise<vo
 export async function createInventory(body: CreateInventoryRequest): Promise<Inventory> {
   return apiRequestJson<Inventory>(`${API_BASE}${V3_INVENTORIES_BASE}/`, {
     method: 'POST',
+    body,
+  });
+}
+
+export async function updateInventory(
+  inventoryId: string,
+  body: UpdateInventoryRequest
+): Promise<Inventory> {
+  return apiRequestJson<Inventory>(`${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}`, {
+    method: 'PATCH',
     body,
   });
 }

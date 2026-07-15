@@ -19,7 +19,7 @@ import logging
 from collections.abc import Sequence
 
 from src.application.dto.uploaded_file import UploadedFile
-from src.application.errors import EmptyUploadError
+from src.application.errors import AisleInactiveError, EmptyUploadError
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
 from src.application.ports.services import ArtifactStorage
@@ -69,6 +69,10 @@ class UploadAisleAssetsUseCase:
             aisle_id=aisle_id,
             detail_style="strict",
         )
+        if not aisle.is_active:
+            raise AisleInactiveError(
+                f"Aisle {aisle_id} is inactive; reactivate before uploading assets."
+            )
         now = self._clock.now()
         created: list[SourceAsset] = []
         written_paths: list[str] = []

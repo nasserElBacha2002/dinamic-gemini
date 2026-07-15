@@ -6,6 +6,7 @@ import type {
   ProcessAisleResponse,
   MergeResultsResponse,
   RunMergeResponse,
+  UpdateAisleRequest,
 } from './types';
 import { buildQueryString } from './queryString';
 import { apiDownloadBlob, apiRequestJson } from './request';
@@ -15,6 +16,8 @@ const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? '';
 export interface AislesListQuery {
   search?: string | null;
   status?: string | null;
+  /** Soft-active filter; omit or null = no filter. */
+  is_active?: boolean | null;
   sort_by?: string;
   sort_dir?: string;
   page?: number;
@@ -26,6 +29,7 @@ function buildAislesListQueryString(q?: AislesListQuery): string {
   return buildQueryString([
     ['search', q?.search],
     ['status', q?.status],
+    ['is_active', q?.is_active],
     ['sort_by', q?.sort_by],
     ['sort_dir', q?.sort_dir],
     ['page', q?.page, { min: 1 }],
@@ -50,6 +54,34 @@ export async function createAisle(
     method: 'POST',
     body,
   });
+}
+
+export async function updateAisle(
+  inventoryId: string,
+  aisleId: string,
+  body: UpdateAisleRequest
+): Promise<Aisle> {
+  return apiRequestJson<Aisle>(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}`,
+    {
+      method: 'PATCH',
+      body,
+    }
+  );
+}
+
+export async function deactivateAisle(inventoryId: string, aisleId: string): Promise<Aisle> {
+  return apiRequestJson<Aisle>(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/deactivate`,
+    { method: 'POST' }
+  );
+}
+
+export async function activateAisle(inventoryId: string, aisleId: string): Promise<Aisle> {
+  return apiRequestJson<Aisle>(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/activate`,
+    { method: 'POST' }
+  );
 }
 
 export async function startAisleProcessing(
