@@ -777,6 +777,12 @@ export default function AislePositionsPage() {
         }}
       />
 
+      {!aisleIsActive ? (
+        <Alert severity="info" sx={{ mb: 2 }} data-testid="aisle-inactive-historical-note">
+          {t('aisle.inactive_historical_note')}
+        </Alert>
+      ) : null}
+
       <AisleResultsJobSelector
         visible={Boolean(isTestInventory && (aisleJobsQuery.isLoading || jobs.length > 0 || Boolean(resultContextSource)))}
         isJobsLoading={aisleJobsQuery.isLoading}

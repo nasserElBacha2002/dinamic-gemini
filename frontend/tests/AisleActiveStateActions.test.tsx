@@ -67,3 +67,17 @@ describe('AisleActiveStateActions', () => {
     expect(onReactivate).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('aisle inactive copy', () => {
+  it('exposes Spanish deactivate body about quantities vs costs', async () => {
+    const i18n = (await import('../src/i18n')).default;
+    await i18n.loadLanguages('es');
+    const body = i18n.t('aisle.deactivate_body', { lng: 'es' });
+    expect(body).toMatch(/cantidades/i);
+    expect(body).toMatch(/costos/i);
+    expect(body).toMatch(/resumen|exportaciones/i);
+    const note = i18n.t('aisle.inactive_historical_note', { lng: 'es' });
+    expect(note).toMatch(/históric/i);
+    expect(note).toMatch(/totales operativos/i);
+  });
+});

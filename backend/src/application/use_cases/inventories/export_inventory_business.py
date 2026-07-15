@@ -63,10 +63,17 @@ def build_inventory_summary_csv_from_data(
     *,
     summary: ExportSummaryBuilder,
     job_repo: JobRepository | None,
+    cost_data: ExportInventoryOperationalData | None = None,
 ) -> str:
+    """Build inventory summary CSV.
+
+    Quantity rollups come from ``data`` (typically active aisles only). Job costs
+    come from ``cost_data`` when provided (typically all aisles, including inactive).
+    """
     rollups = summary.build_rollups(data)
+    cost_source = cost_data if cost_data is not None else data
     inv_cost = ExportSummaryBuilder.sum_aisle_job_costs(
-        [_job_for_bundle(job_repo, b) for b in data.aisle_bundles]
+        [_job_for_bundle(job_repo, b) for b in cost_source.aisle_bundles]
     )
     row = summary.inventory_summary_row(data, rollups, inventory_total_cost=inv_cost)
     return CsvInventoryExporter.to_csv([row], fieldnames=BUSINESS_INVENTORY_SUMMARY_CSV_FIELDS)
@@ -128,19 +135,32 @@ class ExportInventorySummaryCsvUseCase:
         self._job_repo = job_repo
 
     def execute_inventory_summary_csv(self, inventory_id: str) -> tuple[str, str]:
-        data = self._collector.collect_inventory(inventory_id, include_deleted_rows=True)
-        body = build_inventory_summary_csv_from_data(
-            data, summary=self._summary, job_repo=self._job_repo
+        ops_data = self._collector.collect_inventory(
+            inventory_id, include_deleted_rows=True, operational_only=True
         )
-        filename = inventory_summary_csv_filename(data.inventory.name, data.inventory.id)
+        all_data = self._collector.collect_inventory(
+            inventory_id, include_deleted_rows=True, operational_only=False
+        )
+        body = build_inventory_summary_csv_from_data(
+            ops_data,
+            summary=self._summary,
+            job_repo=self._job_repo,
+            cost_data=all_data,
+        )
+        filename = inventory_summary_csv_filename(ops_data.inventory.name, ops_data.inventory.id)
         return body, filename
 
     def execute_aisles_summary_csv(self, inventory_id: str) -> tuple[str, str]:
-        data = self._collector.collect_inventory(inventory_id, include_deleted_rows=True)
-        body = build_aisles_summary_csv_from_data(
-            data, summary=self._summary, job_repo=self._job_repo
+        # Include inactive aisles with historical qty + cost at aisle grain.
+        all_data = self._collector.collect_inventory(
+            inventory_id, include_deleted_rows=True, operational_only=False
         )
-        filename = inventory_aisles_summary_csv_filename(data.inventory.name, data.inventory.id)
+        body = build_aisles_summary_csv_from_data(
+            all_data, summary=self._summary, job_repo=self._job_repo
+        )
+        filename = inventory_aisles_summary_csv_filename(
+            all_data.inventory.name, all_data.inventory.id
+        )
         return body, filename
 
 
@@ -175,18 +195,27 @@ class ExportInventoryPackageZipUseCase:
         inv = self._inventory_repo.get_by_id(inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
-        data = self._collector.collect_inventory(inventory_id, include_deleted_rows=True)
+        # Consolidated inventory qty: active aisles only; costs + per-aisle files: all aisles.
+        ops_data = self._collector.collect_inventory(
+            inventory_id, include_deleted_rows=True, operational_only=True
+        )
+        all_data = self._collector.collect_inventory(
+            inventory_id, include_deleted_rows=True, operational_only=False
+        )
 
         entries: dict[str, str] = {
             "inventory_summary.csv": build_inventory_summary_csv_from_data(
-                data, summary=self._summary, job_repo=self._job_repo
+                ops_data,
+                summary=self._summary,
+                job_repo=self._job_repo,
+                cost_data=all_data,
             ),
             "aisles_summary.csv": build_aisles_summary_csv_from_data(
-                data, summary=self._summary, job_repo=self._job_repo
+                all_data, summary=self._summary, job_repo=self._job_repo
             ),
         }
-        for bundle in data.aisle_bundles:
-            csv_body = build_business_aisle_operational_csv_from_bundle(data, bundle)
+        for bundle in all_data.aisle_bundles:
+            csv_body = build_business_aisle_operational_csv_from_bundle(all_data, bundle)
             aisle_part = sanitize_filename_part(bundle.aisle.code, fallback=bundle.aisle.id)
             entries[f"aisles/aisle_{aisle_part}_operational.csv"] = csv_body
 

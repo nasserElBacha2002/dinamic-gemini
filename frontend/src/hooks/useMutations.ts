@@ -216,8 +216,12 @@ export function useCreateAisle(inventoryId: string) {
 }
 
 function invalidateAisleLifecycleCaches(queryClient: ReturnType<typeof useQueryClient>, inventoryId: string) {
+  // Aggregates (metrics, list pending counts, analytics qty) change when is_active flips.
   queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
   queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.inventories.list() });
+  queryClient.invalidateQueries({ queryKey: queryKeys.inventories.metrics(inventoryId) });
+  queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all });
 }
 
 export function useUpdateAisle(inventoryId: string) {
@@ -240,12 +244,8 @@ export function useDeactivateAisle(inventoryId: string) {
   return useMutation({
     mutationFn: (aisleId: string) => deactivateAisle(inventoryId, aisleId),
     onSuccess: (updatedAisle) => {
-      const patched = patchAisleInAislesLists(queryClient, inventoryId, updatedAisle);
-      if (!patched) {
-        invalidateAisleLifecycleCaches(queryClient, inventoryId);
-      } else {
-        queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
-      }
+      patchAisleInAislesLists(queryClient, inventoryId, updatedAisle);
+      invalidateAisleLifecycleCaches(queryClient, inventoryId);
     },
   });
 }
@@ -255,12 +255,8 @@ export function useActivateAisle(inventoryId: string) {
   return useMutation({
     mutationFn: (aisleId: string) => activateAisle(inventoryId, aisleId),
     onSuccess: (updatedAisle) => {
-      const patched = patchAisleInAislesLists(queryClient, inventoryId, updatedAisle);
-      if (!patched) {
-        invalidateAisleLifecycleCaches(queryClient, inventoryId);
-      } else {
-        queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
-      }
+      patchAisleInAislesLists(queryClient, inventoryId, updatedAisle);
+      invalidateAisleLifecycleCaches(queryClient, inventoryId);
     },
   });
 }

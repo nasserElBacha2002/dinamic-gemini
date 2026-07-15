@@ -364,7 +364,7 @@ class _CountingCollector(ExportInventoryCollector):
         return super().collect_inventory(inventory_id, **kwargs)
 
 
-def test_package_zip_collects_inventory_once() -> None:
+def test_package_zip_dual_collects_ops_and_all_aisles() -> None:
     inv_repo = MemoryInventoryRepository()
     aisle_repo = MemoryAisleRepository()
     pos_repo = MemoryPositionRepository()
@@ -403,7 +403,8 @@ def test_package_zip_collects_inventory_once() -> None:
     )
     uc._collector = collector
     uc.execute_zip("inv-1")
-    assert collector.collect_inventory_calls == 1
+    # Dual collect: operational qty (active) + historical costs / per-aisle files (all).
+    assert collector.collect_inventory_calls == 2
 
 
 def test_zip_aisle_csv_matches_standalone_business_export() -> None:

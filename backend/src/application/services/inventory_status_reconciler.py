@@ -11,6 +11,7 @@ from datetime import datetime
 
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, InventoryRepository
+from src.application.services.inventory_aggregation_scope import scope_from_aisles
 from src.domain.inventory.derive_status_from_aisles import derive_inventory_status_from_aisles
 from src.domain.inventory.entities import Inventory, InventoryStatus
 
@@ -27,12 +28,16 @@ class InventoryStatusReconciler:
         self._clock = clock
 
     def reconcile(self, inventory_id: str) -> bool:
-        """Recompute status from aisles and persist if it changed. Returns True if persisted."""
+        """Recompute status from active aisles and persist if it changed. Returns True if persisted.
+
+        Inactive aisles are ignored so a soft-deactivated failed/pending aisle cannot keep the
+        inventory stuck. With no active aisles, ``derive_inventory_status_from_aisles`` yields DRAFT.
+        """
         inv = self._inventory_repo.get_by_id(inventory_id)
         if inv is None:
             return False
-        aisles = list(self._aisle_repo.list_by_inventory(inventory_id))
-        new_status = derive_inventory_status_from_aisles(aisles)
+        scope = scope_from_aisles(self._aisle_repo.list_by_inventory(inventory_id))
+        new_status = derive_inventory_status_from_aisles(scope.operational_aisles)
         if new_status == inv.status:
             return False
         now = self._clock.now()

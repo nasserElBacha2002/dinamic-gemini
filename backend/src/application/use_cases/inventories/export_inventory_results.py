@@ -105,7 +105,8 @@ class ExportInventoryResultsUseCase:
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {inventory_id}")
 
-        aisles = list(self._aisle_repo.list_by_inventory(inventory_id))
+        # Inventory-level results export is operational: active aisles only.
+        aisles = [a for a in self._aisle_repo.list_by_inventory(inventory_id) if a.is_active]
         sorted_aisles = sorted(
             aisles,
             key=lambda a: (natural_sort_key_parts(a.code), a.created_at, a.id),
