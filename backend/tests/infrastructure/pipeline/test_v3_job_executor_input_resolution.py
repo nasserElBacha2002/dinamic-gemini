@@ -120,6 +120,9 @@ class _NoopRepo(
     def get_by_capture_session_item_id(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         return None
 
+    def get_by_upload_idempotency_key(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        return None
+
     def list_by_aisle(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         return []
 

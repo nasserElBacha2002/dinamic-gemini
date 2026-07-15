@@ -1,10 +1,8 @@
 import type { BulkUploadBatchPlan, BulkUploadFileResult, CreateUploadBatchesOptions } from './bulkUpload.types';
+import { newUploadUuid } from './uploadIds';
 
 function newClientId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `cf-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return newUploadUuid();
 }
 
 /**

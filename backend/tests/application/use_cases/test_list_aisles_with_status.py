@@ -198,6 +198,11 @@ class StubSourceAssetRepo(SourceAssetRepository):
     def get_by_capture_session_item_id(self, capture_session_item_id: str) -> SourceAsset | None:
         return None
 
+    def get_by_upload_idempotency_key(
+        self, aisle_id: str, upload_batch_id: str, upload_client_file_id: str
+    ) -> SourceAsset | None:
+        return None
+
     def summarize_assets_for_aisles(self, aisle_ids: Sequence[str]) -> dict[str, AisleAssetRollup]:
         return {aid: self._rollup[aid] for aid in aisle_ids if aid in self._rollup}
 

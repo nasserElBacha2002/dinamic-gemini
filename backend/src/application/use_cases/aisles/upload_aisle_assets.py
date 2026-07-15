@@ -16,7 +16,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from src.application.dto.uploaded_file import UploadedFile
-from src.application.errors import AisleInactiveError, EmptyUploadError, UnsupportedAssetTypeError
+from src.application.errors import (
+    AisleInactiveError,
+    DuplicateUploadIdempotencyKeyError,
+    EmptyUploadError,
+    UnsupportedAssetTypeError,
+)
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
 from src.application.ports.services import ArtifactStorage
@@ -38,6 +43,9 @@ _CODE_UPLOAD_FILE_TOO_LARGE = "UPLOAD_FILE_TOO_LARGE"
 _CODE_PERSIST_FAILED = "ASSET_PERSIST_FAILED"
 
 _DETAIL_ZERO_BYTE_FILE = "Empty or zero-byte files are not allowed"
+_DETAIL_UPLOAD_FILE_TOO_LARGE = "File exceeds maximum upload size"
+_DETAIL_UNSUPPORTED_ASSET_TYPE = "Unsupported asset type"
+_DETAIL_ASSET_PERSIST_FAILED = "Failed to persist aisle source asset"
 
 
 @dataclass(frozen=True)
@@ -150,10 +158,17 @@ class UploadAisleAssetsUseCase:
             if isinstance(end, int) and end > 0 and uf.size_bytes is None:
                 assert_file_size(end, self._policy)
         except UploadFileTooLargeError as exc:
+            logger.info(
+                "Aisle asset upload file too large aisle_id=%s file_index=%d filename=%s: %s",
+                aisle_id,
+                file_index,
+                fname,
+                exc,
+            )
             return None, AisleAssetUploadFileError(
                 filename=fname,
                 code=_CODE_UPLOAD_FILE_TOO_LARGE,
-                detail=str(exc),
+                detail=_DETAIL_UPLOAD_FILE_TOO_LARGE,
                 file_index=file_index,
                 client_file_id=uf.client_file_id,
             )
@@ -169,14 +184,51 @@ class UploadAisleAssetsUseCase:
             )
             return asset, None
         except UnsupportedAssetTypeError as exc:
+            logger.info(
+                "Aisle asset unsupported type aisle_id=%s file_index=%d filename=%s: %s",
+                aisle_id,
+                file_index,
+                fname,
+                exc,
+            )
             return None, AisleAssetUploadFileError(
                 filename=fname,
                 code=_CODE_UNSUPPORTED_ASSET_TYPE,
-                detail=str(exc),
+                detail=_DETAIL_UNSUPPORTED_ASSET_TYPE,
                 file_index=file_index,
                 client_file_id=uf.client_file_id,
             )
-        except Exception as exc:
+        except DuplicateUploadIdempotencyKeyError as exc:
+            # Concurrent request for the same (aisle, batch, client_file_id) already won the
+            # insert race. persist_uploaded_file_as_source_asset() already deleted the blob we
+            # just wrote (its own except-block runs on *any* asset_repo.save() failure, including
+            # this one) before re-raising, so there is nothing left to clean up here — just
+            # resolve and return the winner's row as this file's success result.
+            logger.info(
+                "Duplicate upload idempotency key for aisle_id=%s file_index=%d filename=%s: %s",
+                aisle_id,
+                file_index,
+                fname,
+                exc,
+            )
+            existing = self._try_idempotent_existing(aisle_id=aisle_id, uf=uf, batch_id=batch_id)
+            if existing is not None:
+                return existing, None
+            logger.error(
+                "Duplicate upload idempotency key but no existing row found aisle_id=%s "
+                "file_index=%d filename=%s",
+                aisle_id,
+                file_index,
+                fname,
+            )
+            return None, AisleAssetUploadFileError(
+                filename=fname,
+                code=_CODE_PERSIST_FAILED,
+                detail=_DETAIL_ASSET_PERSIST_FAILED,
+                file_index=file_index,
+                client_file_id=uf.client_file_id,
+            )
+        except Exception:
             if delete_key:
                 try:
                     self._artifact_storage.delete_file(delete_key)
@@ -195,7 +247,7 @@ class UploadAisleAssetsUseCase:
             return None, AisleAssetUploadFileError(
                 filename=fname,
                 code=_CODE_PERSIST_FAILED,
-                detail=str(exc) or "Failed to persist aisle source asset",
+                detail=_DETAIL_ASSET_PERSIST_FAILED,
                 file_index=file_index,
                 client_file_id=uf.client_file_id,
             )
@@ -240,11 +292,22 @@ class UploadAisleAssetsUseCase:
             if asset is not None:
                 created.append(asset)
         if created:
-            self._materializer.finalize_aisle_after_source_assets_changed(
-                aisle=aisle,
-                inventory_id=inventory_id,
-                now=now,
-            )
+            try:
+                self._materializer.finalize_aisle_after_source_assets_changed(
+                    aisle=aisle,
+                    inventory_id=inventory_id,
+                    now=now,
+                )
+            except Exception:
+                # Assets are already persisted; a reconciliation failure (e.g. status rollup)
+                # must not turn a partially-successful upload into a hard error for the client.
+                logger.exception(
+                    "Aisle finalize-after-upload failed aisle_id=%s inventory_id=%s "
+                    "(uploaded %d asset(s) will still be reported as successful)",
+                    aisle_id,
+                    inventory_id,
+                    len(created),
+                )
         return AisleAssetUploadBatchResult(
             upload_batch_id=batch_id,
             assets=created,

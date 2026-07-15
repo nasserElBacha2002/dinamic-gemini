@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from io import BytesIO
 from uuid import uuid4
 
 from src.application.dto.uploaded_file import UploadedFile
@@ -36,6 +34,7 @@ from src.application.services.upload_file_count_validation import (
     assert_upload_file_count_within_limit,
 )
 from src.application.services.upload_request_limits import UploadRequestLimitPolicy
+from src.application.services.upload_stream_io import measure_fileobj_size, sha256_fileobj
 from src.domain.capture.entities import (
     CaptureSession,
     CaptureSessionItem,
@@ -56,6 +55,14 @@ _CODE_CAPTURE_SESSION_DUPLICATE_ITEM_CONTENT = "CAPTURE_SESSION_DUPLICATE_ITEM_C
 _DETAIL_ZERO_BYTE_FILE = "Empty or zero-byte files are not allowed"
 _DETAIL_CAPTURE_SESSION_FILE_TOO_LARGE = "File exceeds maximum upload size for staging uploads"
 _DETAIL_CAPTURE_SESSION_DUPLICATE_CONTENT = "Duplicate file content in this capture session"
+
+
+@dataclass(frozen=True)
+class PreflightUploadResult:
+    """Outcome of validating one staging upload file without buffering its bytes in memory."""
+
+    digest: str
+    size_bytes: int
 
 
 @dataclass(frozen=True)
@@ -245,28 +252,27 @@ class UploadCaptureSessionStagingItemsUseCase:
         *,
         session_hashes: set[str],
         batch_digests: set[str],
-    ) -> tuple[bytes | None, str | None, StagingUploadFileError | None]:
-        """Return (raw_bytes, digest, None) when OK; (None, None, error) on validation failure."""
+    ) -> tuple[PreflightUploadResult | None, StagingUploadFileError | None]:
+        """Return (result, None) when OK; (None, error) on validation failure.
+
+        Streams the file (chunked hash + seek-based size) instead of buffering it fully in
+        memory; ``uf.file_obj`` is left seekable and untouched on return (position restored).
+        """
         try:
             validate_staging_media_upload_file(uf)
         except UnsupportedAssetTypeError as exc:
-            return None, None, self._error_unsupported_type(
+            return None, self._error_unsupported_type(
                 fname, file_index, str(exc), uf.client_file_id
             )
-        pos = uf.file_obj.tell()
-        uf.file_obj.seek(0)
-        raw = uf.file_obj.read()
-        uf.file_obj.seek(pos)
-        if not raw:
-            return None, None, self._error_zero_byte(fname, file_index, uf.client_file_id)
-        if len(raw) > self._max_upload_bytes:
-            return None, None, self._error_too_large(fname, file_index, uf.client_file_id)
-        digest = hashlib.sha256(raw).hexdigest()
+        size = measure_fileobj_size(uf.file_obj)
+        if size == 0:
+            return None, self._error_zero_byte(fname, file_index, uf.client_file_id)
+        if size > self._max_upload_bytes:
+            return None, self._error_too_large(fname, file_index, uf.client_file_id)
+        digest = sha256_fileobj(uf.file_obj)
         if digest in batch_digests or digest in session_hashes:
-            return None, None, self._error_duplicate_content(
-                fname, file_index, uf.client_file_id
-            )
-        return raw, digest, None
+            return None, self._error_duplicate_content(fname, file_index, uf.client_file_id)
+        return PreflightUploadResult(digest=digest, size_bytes=size), None
 
     def _persist_staging_row_after_storage_failure(
         self, p: _PersistStagingFailureParams
@@ -359,7 +365,7 @@ class UploadCaptureSessionStagingItemsUseCase:
         file_index = u.file_index
         uf = u.uf
         fname = _wire_filename(uf)
-        raw, digest, err = self._preflight_one_upload_file(
+        preflight, err = self._preflight_one_upload_file(
             uf,
             fname,
             file_index,
@@ -369,11 +375,12 @@ class UploadCaptureSessionStagingItemsUseCase:
         if err is not None:
             acc.errors.append(err)
             return
-        if raw is None or digest is None:
+        if preflight is None:
             return
+        digest = preflight.digest
         acc.batch_digests.add(digest)
         extracted = self._time_extractor.extract(
-            raw_bytes=raw,
+            file_obj=uf.file_obj,
             media_content_type=uf.content_type or "application/octet-stream",
             ingest_clock=now,
             source_mtime_utc=uf.last_modified_at,
@@ -381,10 +388,10 @@ class UploadCaptureSessionStagingItemsUseCase:
         item_id = str(uuid4())
         safe = _safe_filename(uf.original_filename)
         rel_key = f"{self._staging_prefix}/{inventory_id}/{session_id}/{item_id}_{safe}"
-        bio = BytesIO(raw)
         try:
+            uf.file_obj.seek(0)
             self._artifact_storage.save_file(
-                rel_key, bio, uf.content_type or "application/octet-stream"
+                rel_key, uf.file_obj, uf.content_type or "application/octet-stream"
             )
         except Exception:
             logger.exception(

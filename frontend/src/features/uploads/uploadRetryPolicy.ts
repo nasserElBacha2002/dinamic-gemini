@@ -20,6 +20,17 @@ export function mapHttpStatusToUploadErrorCode(status: number): UploadErrorCode 
   return 'UNKNOWN';
 }
 
+export function isAbortError(error: unknown): boolean {
+  if (error == null || typeof error !== 'object') return false;
+  const name = (error as { name?: string }).name;
+  if (name === 'AbortError') return true;
+  try {
+    return typeof DOMException !== 'undefined' && error instanceof DOMException && name === 'AbortError';
+  } catch {
+    return false;
+  }
+}
+
 /** Exponential backoff with full jitter. */
 export function retryDelayMs(attempt: number, baseDelayMs: number): number {
   const exp = Math.max(0, attempt - 1);
@@ -31,7 +42,7 @@ export async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (ms <= 0) return;
   await new Promise<void>((resolve, reject) => {
     if (signal?.aborted) {
-      reject(new DOMException('Aborted', 'AbortError'));
+      reject(abortError());
       return;
     }
     const timer = setTimeout(() => {
@@ -40,8 +51,17 @@ export async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     }, ms);
     const onAbort = () => {
       clearTimeout(timer);
-      reject(new DOMException('Aborted', 'AbortError'));
+      reject(abortError());
     };
     signal?.addEventListener('abort', onAbort, { once: true });
   });
+}
+
+function abortError(): Error {
+  if (typeof DOMException !== 'undefined') {
+    return new DOMException('Aborted', 'AbortError');
+  }
+  const err = new Error('Aborted');
+  err.name = 'AbortError';
+  return err;
 }

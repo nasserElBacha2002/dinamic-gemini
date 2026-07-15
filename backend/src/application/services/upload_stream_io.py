@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import BinaryIO
+
+from src.application.dto.uploaded_file import UploadedFile
 
 _DEFAULT_CHUNK = 1024 * 1024
 
@@ -73,6 +76,12 @@ def close_quietly(file_obj: object) -> None:
             closer()
         except Exception:
             pass
+
+
+def close_uploaded_files(files: Sequence[UploadedFile]) -> None:
+    """Best-effort close of every ``file_obj`` in ``files`` (route-level cleanup, always run)."""
+    for uf in files:
+        close_quietly(uf.file_obj)
 
 
 def unlink_quietly(path: Path | None) -> None:

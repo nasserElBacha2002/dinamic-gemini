@@ -2088,9 +2088,11 @@
       "summary_ok": "{{ok}} archivo(s) subidos correctamente.",
       "summary_mixed": "{{ok}} archivo(s) subidos correctamente, {{fail}} fallidos.",
       "summary_all_failed": "Ningún archivo se subió correctamente ({{fail}} fallidos).",
+      "summary_cancelled": "{{ok}} archivo(s) subidos, {{cancelled}} cancelado(s).",
       "status": {
         "uploaded": "Subido",
         "failed": "Fallido",
+        "cancelled": "Cancelado",
         "uploading": "Subiendo",
         "pending": "Pendiente"
       }

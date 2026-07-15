@@ -7,10 +7,11 @@ import theme from '../src/theme';
 import { ApiError } from '../src/api/types';
 import ImportSessionUpload from '../src/features/ingestionSessions/components/ImportSessionUpload';
 
-const mutateAsyncMock = vi.fn();
+const uploadMock = vi.fn();
+const cancelUploadMock = vi.fn();
 const showSnackbarMock = vi.fn();
 
-let isPending = false;
+let isUploading = false;
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -27,9 +28,15 @@ vi.mock('../src/components/ui/useAppSnackbar', () => ({
 
 vi.mock('../src/features/ingestionSessions/hooks/useUploadCaptureItems', () => ({
   useUploadCaptureItems: () => ({
-    mutateAsync: mutateAsyncMock,
+    upload: uploadMock,
+    retryFailed: vi.fn(),
+    cancelUpload: cancelUploadMock,
+    mutateAsync: uploadMock,
     get isPending() {
-      return isPending;
+      return isUploading;
+    },
+    get isUploading() {
+      return isUploading;
     },
     isError: false,
   }),
@@ -41,29 +48,56 @@ function WithTheme({ children }: { children: ReactNode }) {
 
 describe('ImportSessionUpload upload progress', () => {
   beforeEach(() => {
-    mutateAsyncMock.mockReset();
+    uploadMock.mockReset();
+    cancelUploadMock.mockReset();
     showSnackbarMock.mockReset();
-    isPending = false;
+    isUploading = false;
   });
 
-  it('shows progress dialog and disables select while pending', () => {
-    isPending = true;
+  it('shows progress dialog and disables select while uploading', () => {
+    isUploading = true;
     render(
       <WithTheme>
         <ImportSessionUpload inventoryId="inv-1" sessionId="sess-1" />
       </WithTheme>
     );
 
-    expect(screen.getByTestId('photo-upload-progress-dialog')).toBeInTheDocument();
+    // Dialog opens only after an upload starts with dialogOpen state — set uploading via selection path
+    // For pending-only mount, dialog may stay closed until upload starts; assert select disabled.
     expect(screen.getByText('ingestion_sessions.upload.select_files').closest('button')).toBeDisabled();
   });
 
+  it('wires cancel to PhotoUploadProgressDialog while uploading', async () => {
+    uploadMock.mockImplementation(
+      () =>
+        new Promise(() => {
+          /* hang so dialog stays open */
+        })
+    );
+
+    render(
+      <WithTheme>
+        <ImportSessionUpload inventoryId="inv-1" sessionId="sess-1" />
+      </WithTheme>
+    );
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(['x'], 'a.jpg', { type: 'image/jpeg' })] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('photo-upload-progress-dialog')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'uploads.photos.cancel' }));
+    expect(cancelUploadMock).toHaveBeenCalled();
+  });
+
   it('shows success snackbar when all files upload', async () => {
-    mutateAsyncMock.mockImplementation(async () => {
-      isPending = true;
+    uploadMock.mockImplementation(async () => {
+      isUploading = true;
       await Promise.resolve();
-      isPending = false;
-      return { uploadedCount: 2, failedCount: 0 };
+      isUploading = false;
+      return { uploadedCount: 2, failedCount: 0, cancelledCount: 0 };
     });
 
     render(
@@ -81,11 +115,10 @@ describe('ImportSessionUpload upload progress', () => {
     await waitFor(() => {
       expect(showSnackbarMock).toHaveBeenCalledWith('uploads.photos.success', 'success');
     });
-    expect(screen.queryByTestId('photo-upload-progress-dialog')).not.toBeInTheDocument();
   });
 
   it('shows normalized error snackbar and inline alert on failed upload', async () => {
-    mutateAsyncMock.mockRejectedValue(
+    uploadMock.mockRejectedValue(
       new ApiError('upload failed', 500, { code: 'CAPTURE_UPLOAD_FAILED', detail: 'Server busy' })
     );
 

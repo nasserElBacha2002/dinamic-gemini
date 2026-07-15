@@ -8,9 +8,9 @@ from fastapi.testclient import TestClient
 from src.api.constants.error_wire import HTTP_DETAIL_TOO_MANY_FILES_PER_UPLOAD
 from src.api.errors.structured_api_http import UPLOAD_TOO_MANY_FILES_PER_REQUEST
 from src.api.server import app
+from src.application.constants.upload_limits import MAX_FILES_PER_UPLOAD_REQUEST
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
-from src.application.constants.upload_limits import MAX_FILES_PER_UPLOAD_REQUEST
 from tests.support.api_v3_test_helpers import create_test_inventory, create_test_supplier
 
 

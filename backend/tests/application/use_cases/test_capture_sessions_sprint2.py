@@ -8,9 +8,9 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from PIL import Image
 
 from src.application.dto.uploaded_file import UploadedFile
-from src.application.services.upload_request_limits import UploadRequestLimitPolicy
 from src.application.errors import (
     CaptureSessionInvalidStateError,
     CaptureSessionNotAcceptingUploadsError,
@@ -20,6 +20,7 @@ from src.application.errors import (
     TooManyFilesPerUploadError,
 )
 from src.application.ports.clock import Clock
+from src.application.services.upload_request_limits import UploadRequestLimitPolicy
 from src.application.use_cases.capture_sessions.cancel_capture_session import (
     CancelCaptureSessionUseCase,
 )
@@ -70,6 +71,29 @@ class _FixedClock(Clock):
 
     def now(self) -> datetime:
         return self._t
+
+
+class _ChunkedOnlyFileObj:
+    """Wraps a real file's bytes but raises if anything calls ``.read()`` unbounded
+    (no size, or a negative size). Regression guard for the capture staging upload path,
+    which must avoid buffering the whole file in memory (preflight, EXIF probe, storage
+    write must all use chunked/seek-based access)."""
+
+    def __init__(self, data: bytes) -> None:
+        self._buf = BytesIO(data)
+
+    def read(self, size: int | None = -1) -> bytes:
+        if size is None or size < 0:
+            raise AssertionError(
+                "Unbounded read() detected in capture staging path; must use chunked reads"
+            )
+        return self._buf.read(size)
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        return self._buf.seek(offset, whence)
+
+    def tell(self) -> int:
+        return self._buf.tell()
 
 
 def _seed_inv_aisle() -> tuple[MemoryInventoryRepository, MemoryAisleRepository, str, str]:
@@ -422,6 +446,46 @@ def test_staging_upload_rejects_more_than_global_file_limit(tmp_path: Path) -> N
                 for i in range(6)
             ],
         )
+
+
+def test_staging_upload_never_calls_unbounded_read_on_file_obj(tmp_path: Path) -> None:
+    """Regression guard: preflight (size/hash), EXIF probe, and storage write must all use
+    chunked/seek-based access to ``uf.file_obj`` — never a full ``.read()`` slurp."""
+    inv_repo, aisle_repo, inv_id, aisle_id = _seed_inv_aisle()
+    session_repo = MemoryCaptureSessionRepository()
+    item_repo = MemoryCaptureSessionItemRepository()
+    clock = _FixedClock(datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc))
+    s = CreateCaptureSessionUseCase(
+        inventory_repo=inv_repo,
+        aisle_repo=aisle_repo,
+        session_repo=session_repo,
+        clock=clock,
+        max_open_sessions_per_aisle=3,
+    ).execute(inv_id, aisle_id)
+    upload_uc = UploadCaptureSessionStagingItemsUseCase(
+        session_repo=session_repo,
+        item_repo=item_repo,
+        artifact_storage=V3ArtifactStorageAdapter(tmp_path),
+        clock=clock,
+        staging_prefix="capture/staging",
+        max_upload_bytes=1024 * 1024,
+        time_metadata_extractor=_pillow_time_extractor(),
+    )
+    img = Image.new("RGB", (4, 4), color=(10, 20, 30))
+    bio = BytesIO()
+    img.save(bio, format="JPEG", quality=80)
+    guarded = _ChunkedOnlyFileObj(bio.getvalue())
+
+    batch = upload_uc.execute(
+        inventory_id=inv_id,
+        aisle_id=aisle_id,
+        session_id=s.id,
+        files=[UploadedFile("guarded.jpg", guarded, "image/jpeg")],
+    )
+
+    assert len(batch.items) == 1
+    assert batch.errors == ()
+    assert batch.items[0].import_status.value == "imported"
 
 
 def test_upload_creates_item_no_source_asset(tmp_path: Path) -> None:

@@ -10,6 +10,9 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
+import pyodbc
+
+from src.application.errors import DuplicateUploadIdempotencyKeyError
 from src.application.ports.repositories import SourceAssetRepository
 from src.application.ports.rollup_contracts import AisleAssetRollup
 from src.database.sqlserver import SqlServerClient
@@ -18,6 +21,13 @@ from src.infrastructure.repositories.db_row_text import normalize_db_str, option
 from src.infrastructure.storage.sql_storage_fields import resolved_storage_key_for_row
 
 logger = logging.getLogger(__name__)
+
+
+def _is_upload_idempotency_key_duplicate(exc: pyodbc.IntegrityError) -> bool:
+    msg = str(exc).lower()
+    return "uq_source_assets_aisle_upload_batch_client" in msg or (
+        "source_assets" in msg and "duplicate" in msg
+    )
 
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:
@@ -152,36 +162,45 @@ class SqlSourceAssetRepository(SourceAssetRepository):
                 ),
             )
             if cur.rowcount == 0:
-                cur.execute(
-                    """
-                    INSERT INTO source_assets (
-                        id, aisle_id, type, original_filename, storage_path,
-                        storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
-                        mime_type, uploaded_at, metadata_json, capture_session_item_id,
-                        upload_batch_id, upload_client_file_id
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO source_assets (
+                            id, aisle_id, type, original_filename, storage_path,
+                            storage_provider, storage_bucket, storage_key, content_type, file_size_bytes, etag,
+                            mime_type, uploaded_at, metadata_json, capture_session_item_id,
+                            upload_batch_id, upload_client_file_id
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            asset.id,
+                            asset.aisle_id,
+                            asset.type.value,
+                            asset.original_filename,
+                            asset.storage_path,
+                            asset.storage_provider,
+                            asset.storage_bucket,
+                            asset.storage_key,
+                            asset.content_type,
+                            asset.file_size_bytes,
+                            asset.etag,
+                            asset.mime_type,
+                            uploaded,
+                            meta_str,
+                            asset.capture_session_item_id,
+                            asset.upload_batch_id,
+                            asset.upload_client_file_id,
+                        ),
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        asset.id,
-                        asset.aisle_id,
-                        asset.type.value,
-                        asset.original_filename,
-                        asset.storage_path,
-                        asset.storage_provider,
-                        asset.storage_bucket,
-                        asset.storage_key,
-                        asset.content_type,
-                        asset.file_size_bytes,
-                        asset.etag,
-                        asset.mime_type,
-                        uploaded,
-                        meta_str,
-                        asset.capture_session_item_id,
-                        asset.upload_batch_id,
-                        asset.upload_client_file_id,
-                    ),
-                )
+                except pyodbc.IntegrityError as exc:
+                    if _is_upload_idempotency_key_duplicate(exc):
+                        raise DuplicateUploadIdempotencyKeyError(
+                            "Duplicate upload idempotency key for this aisle "
+                            f"(aisle_id={asset.aisle_id}, upload_batch_id={asset.upload_batch_id}, "
+                            f"upload_client_file_id={asset.upload_client_file_id})"
+                        ) from exc
+                    raise
 
     def get_by_id(self, asset_id: str) -> SourceAsset | None:
         with self._client.cursor() as cur:

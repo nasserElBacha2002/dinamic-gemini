@@ -2,6 +2,7 @@
  * Capture staging upload via shared bulk uploader.
  * Selections larger than ``maxFilesPerRequest`` are auto-batched into sequential/concurrent POSTs.
  */
+import { useCallback, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../../../api/queryKeys';
 import { ApiError } from '../../../api/types';
@@ -10,7 +11,9 @@ import {
   executeBulkUpload,
   type BulkUploadFileResult,
   type BulkUploadProgressSnapshot,
+  type BulkUploadRunResult,
 } from '../../uploads';
+import { useUploadLimits } from '../../uploads/useUploadLimits';
 import {
   CAPTURE_STAGING_MAX_FILES_PER_REQUEST,
   uploadCaptureSessionStagingBatch,
@@ -32,6 +35,8 @@ export interface UploadRunResult {
   queue: UploadQueueItem[];
   uploadedCount: number;
   failedCount: number;
+  cancelledCount: number;
+  uploadBatchId: string;
   progress?: BulkUploadProgressSnapshot | null;
 }
 
@@ -55,12 +60,19 @@ function toQueue(files: BulkUploadFileResult[]): UploadQueueItem[] {
   }));
 }
 
-/** @deprecated Prefer executeBulkUpload outcomes; kept for unit tests of old mapping helpers. */
+/** Apply a single staging batch response onto a queue slice (legacy/unit-helper). */
 export function applyStagingChunkResult(
   queue: UploadQueueItem[],
   offset: number,
   chunkFiles: File[],
-  result: { items: { import_status: string; last_error_code?: string | null; last_error_detail?: string | null }[]; errors: { file_index: number; code: string; detail: string }[] }
+  result: {
+    items: {
+      import_status: string;
+      last_error_code?: string | null;
+      last_error_detail?: string | null;
+    }[];
+    errors: { file_index: number; code: string; detail: string }[];
+  }
 ): void {
   const errByIdx = new Map(result.errors.map((e) => [e.file_index, e]));
   let itemCursor = 0;
@@ -98,11 +110,14 @@ export function applyStagingChunkResult(
 
 export function useUploadCaptureItems() {
   const queryClient = useQueryClient();
-  const abortRef = { current: null as AbortController | null };
-  const lastFilesRef = { current: null as BulkUploadFileResult[] | null };
-  const lastBatchIdRef = { current: null as string | null };
+  const limits = useUploadLimits();
+  const abortRef = useRef<AbortController | null>(null);
+  const lastFilesRef = useRef<BulkUploadFileResult[] | null>(null);
+  const lastBatchIdRef = useRef<string | null>(null);
+  const [progress, setProgress] = useState<BulkUploadProgressSnapshot | null>(null);
+  const [files, setFiles] = useState<BulkUploadFileResult[]>([]);
 
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: async (vars: {
       inventoryId: string;
       sessionId: string;
@@ -111,26 +126,40 @@ export function useUploadCaptureItems() {
       onlyFailed?: boolean;
       onQueueUpdate?: (queue: UploadQueueItem[]) => void;
       onProgress?: (snap: BulkUploadProgressSnapshot) => void;
-      signal?: AbortSignal;
     }): Promise<UploadRunResult> => {
-      const controller = vars.signal ? null : new AbortController();
-      const signal = vars.signal ?? controller!.signal;
+      const controller = new AbortController();
       abortRef.current = controller;
 
       const result = await executeBulkUpload({
         files: vars.files,
-        signal,
+        signal: controller.signal,
+        maxFilesPerBatch: limits.maxFilesPerRequest,
+        maxBytesPerBatch: limits.maxBytesPerRequest,
+        maxFileSizeBytes: limits.maxFileSizeBytes,
+        concurrency: limits.uploadConcurrency,
+        retryAttempts: limits.retryAttempts,
+        retryBaseDelayMs: limits.retryBaseDelayMs,
         onProgress: (snap) => {
+          setProgress(snap);
+          setFiles(snap.files);
           vars.onProgress?.(snap);
           vars.onQueueUpdate?.(toQueue(snap.files));
         },
         existingFiles: vars.onlyFailed && lastFilesRef.current ? lastFilesRef.current : undefined,
         onlyClientIds:
           vars.onlyFailed && lastFilesRef.current
-            ? new Set(lastFilesRef.current.filter((f) => f.status === 'failed').map((f) => f.clientId))
+            ? new Set(
+                lastFilesRef.current.filter((f) => f.status === 'failed').map((f) => f.clientId)
+              )
             : undefined,
-        uploadBatchId: vars.onlyFailed && lastBatchIdRef.current ? lastBatchIdRef.current : undefined,
-        uploadBatch: async ({ uploadBatchId, files: batchFiles, signal: batchSignal, onByteProgress }) => {
+        uploadBatchId:
+          vars.onlyFailed && lastBatchIdRef.current ? lastBatchIdRef.current : undefined,
+        uploadBatch: async ({
+          uploadBatchId,
+          files: batchFiles,
+          signal: batchSignal,
+          onByteProgress,
+        }) => {
           const body = await uploadCaptureSessionStagingBatch({
             inventoryId: vars.inventoryId,
             sessionId: vars.sessionId,
@@ -141,18 +170,24 @@ export function useUploadCaptureItems() {
             signal: batchSignal,
             onProgress: onByteProgress,
           });
-          return stagingResponseToOutcomes(body, batchFiles.map((f) => f.clientId));
+          return stagingResponseToOutcomes(
+            body,
+            batchFiles.map((f) => f.clientId)
+          );
         },
       });
 
       lastFilesRef.current = result.files;
       lastBatchIdRef.current = result.uploadBatchId;
+      setFiles(result.files);
       const queue = toQueue(result.files);
       vars.onQueueUpdate?.(queue);
       return {
         queue,
         uploadedCount: result.completedCount,
         failedCount: result.failedCount,
+        cancelledCount: result.cancelledCount,
+        uploadBatchId: result.uploadBatchId,
       };
     },
     onSuccess: (_result, vars) => {
@@ -166,7 +201,57 @@ export function useUploadCaptureItems() {
         resolveApiErrorMessage(error, 'errors.request_failed');
       }
     },
+    onSettled: () => {
+      abortRef.current = null;
+    },
   });
+
+  const cancelUpload = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  const upload = useCallback(
+    async (vars: {
+      inventoryId: string;
+      sessionId: string;
+      aisleId?: string;
+      files: File[];
+      onQueueUpdate?: (queue: UploadQueueItem[]) => void;
+      onProgress?: (snap: BulkUploadProgressSnapshot) => void;
+    }) => mutation.mutateAsync({ ...vars, onlyFailed: false }),
+    [mutation]
+  );
+
+  const retryFailed = useCallback(
+    async (vars: {
+      inventoryId: string;
+      sessionId: string;
+      aisleId?: string;
+      onQueueUpdate?: (queue: UploadQueueItem[]) => void;
+      onProgress?: (snap: BulkUploadProgressSnapshot) => void;
+    }) => mutation.mutateAsync({ ...vars, files: [], onlyFailed: true }),
+    [mutation]
+  );
+
+  return {
+    isPending: mutation.isPending,
+    isError: mutation.isError,
+    error: mutation.error,
+    mutateAsync: mutation.mutateAsync,
+    upload,
+    retryFailed,
+    cancelUpload,
+    isUploading: mutation.isPending,
+    progress,
+    files,
+    phase: progress?.phase ?? null,
+    lastResult: lastFilesRef.current
+      ? ({
+          uploadBatchId: lastBatchIdRef.current ?? '',
+          files: lastFilesRef.current,
+        } as Pick<BulkUploadRunResult, 'uploadBatchId' | 'files'>)
+      : null,
+  };
 }
 
 export { CAPTURE_STAGING_MAX_FILES_PER_REQUEST };

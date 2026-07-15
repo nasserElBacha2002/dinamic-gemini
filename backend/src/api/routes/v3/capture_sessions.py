@@ -50,6 +50,7 @@ from src.application.dto.uploaded_file import UploadedFile
 from src.application.services.capture_session_status_filter import (
     parse_capture_session_status_filter,
 )
+from src.application.services.upload_stream_io import close_uploaded_files
 from src.application.use_cases.capture_sessions.assign_capture_session_group_to_existing_aisle import (
     AssignCaptureSessionGroupToExistingAisleUseCase,
 )
@@ -588,6 +589,7 @@ async def upload_capture_session_staging_items_inventory_scope(
         get_upload_capture_session_staging_items_use_case
     ),
 ) -> UploadCaptureSessionItemsResponse:
+    uploaded: list[UploadedFile] = []
     try:
         uploaded = await _upload_files_to_staging_dtos(
             files,
@@ -604,10 +606,12 @@ async def upload_capture_session_staging_items_inventory_scope(
             session_id=session_id,
             files=uploaded,
         )
+        return _staging_upload_batch_response(batch)
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return _staging_upload_batch_response(batch)
+    finally:
+        close_uploaded_files(uploaded)
 
 
 @router.post(
@@ -627,6 +631,7 @@ async def upload_capture_session_staging_items(
     ),
 ) -> UploadCaptureSessionItemsResponse:
     """Stage files for a capture session (spooled ingest with per-request size limits)."""
+    uploaded: list[UploadedFile] = []
     try:
         uploaded = await _upload_files_to_staging_dtos(
             files,
@@ -643,7 +648,9 @@ async def upload_capture_session_staging_items(
             session_id=session_id,
             files=uploaded,
         )
+        return _staging_upload_batch_response(batch)
     except Exception as e:
         reraise_if_mapped(e)
         raise
-    return _staging_upload_batch_response(batch)
+    finally:
+        close_uploaded_files(uploaded)

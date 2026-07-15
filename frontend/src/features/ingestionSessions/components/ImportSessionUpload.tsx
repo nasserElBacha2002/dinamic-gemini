@@ -2,6 +2,7 @@ import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import ErrorOutlineOutlinedIcon from '@mui/icons-material/ErrorOutlineOutlined';
 import CheckCircleOutlineOutlinedIcon from '@mui/icons-material/CheckCircleOutlineOutlined';
 import HourglassTopOutlinedIcon from '@mui/icons-material/HourglassTopOutlined';
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import {
   Alert,
   Box,
@@ -35,6 +36,7 @@ interface ImportSessionUploadProps {
 function statusIcon(row: UploadQueueItem) {
   if (row.state === 'uploaded') return <CheckCircleOutlineOutlinedIcon color="success" fontSize="small" />;
   if (row.state === 'failed') return <ErrorOutlineOutlinedIcon color="error" fontSize="small" />;
+  if (row.state === 'cancelled') return <CancelOutlinedIcon color="disabled" fontSize="small" />;
   if (row.state === 'uploading') return <HourglassTopOutlinedIcon color="info" fontSize="small" />;
   return <CloudUploadOutlinedIcon color="disabled" fontSize="small" />;
 }
@@ -42,6 +44,7 @@ function statusIcon(row: UploadQueueItem) {
 function statusLabel(row: UploadQueueItem, t: TFunction): string {
   if (row.state === 'uploaded') return t('ingestion_sessions.upload.status.uploaded');
   if (row.state === 'failed') return t('ingestion_sessions.upload.status.failed');
+  if (row.state === 'cancelled') return t('ingestion_sessions.upload.status.cancelled');
   if (row.state === 'uploading') return t('ingestion_sessions.upload.status.uploading');
   return t('ingestion_sessions.upload.status.pending');
 }
@@ -58,26 +61,54 @@ export default function ImportSessionUpload({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [queue, setQueue] = useState<UploadQueueItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
-  const [lastSummary, setLastSummary] = useState<{ ok: number; fail: number } | null>(null);
+  const [lastSummary, setLastSummary] = useState<{ ok: number; fail: number; cancelled: number } | null>(
+    null
+  );
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [progressSnap, setProgressSnap] = useState<
     import('../../uploads').BulkUploadProgressSnapshot | null
   >(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const uploadMutation = useUploadCaptureItems();
-  const isUploadingPhotos = uploadMutation.isPending;
+  const isUploadingPhotos = uploadMutation.isUploading;
 
   useBeforeUnloadWarning(isUploadingPhotos);
 
   const canSelect = !disabled && !isUploadingPhotos;
+
+  const applyResult = (result: {
+    uploadedCount: number;
+    failedCount: number;
+    cancelledCount: number;
+  }) => {
+    setLastSummary({
+      ok: result.uploadedCount,
+      fail: result.failedCount,
+      cancelled: result.cancelledCount,
+    });
+    if (result.cancelledCount > 0 && result.failedCount === 0) {
+      setUploadError(null);
+      return;
+    }
+    if (result.failedCount === 0) {
+      showSnackbar(t('uploads.photos.success'), 'success');
+      setDialogOpen(false);
+    } else if (result.uploadedCount === 0 && result.cancelledCount === 0) {
+      const message = t('uploads.photos.error');
+      setUploadError(message);
+      showSnackbar(message, 'error');
+    }
+  };
 
   const startUpload = async (files: File[]) => {
     if (!files.length || !canSelect) return;
     setSelectionError(null);
     setUploadError(null);
     setLastSummary(null);
+    setDialogOpen(true);
     try {
-      const result = await uploadMutation.mutateAsync({
+      const result = await uploadMutation.upload({
         inventoryId,
         sessionId,
         aisleId,
@@ -85,14 +116,28 @@ export default function ImportSessionUpload({
         onQueueUpdate: setQueue,
         onProgress: setProgressSnap,
       });
-      setLastSummary({ ok: result.uploadedCount, fail: result.failedCount });
-      if (result.failedCount === 0) {
-        showSnackbar(t('uploads.photos.success'), 'success');
-      } else if (result.uploadedCount === 0) {
-        const message = t('uploads.photos.error');
-        setUploadError(message);
-        showSnackbar(message, 'error');
-      }
+      applyResult(result);
+      onCompleted?.();
+    } catch (err) {
+      const message = resolveApiErrorMessage(err, 'uploads.photos.error');
+      setUploadError(message);
+      showSnackbar(message, 'error');
+      setDialogOpen(false);
+    }
+  };
+
+  const handleRetryFailed = async () => {
+    setUploadError(null);
+    setDialogOpen(true);
+    try {
+      const result = await uploadMutation.retryFailed({
+        inventoryId,
+        sessionId,
+        aisleId,
+        onQueueUpdate: setQueue,
+        onProgress: setProgressSnap,
+      });
+      applyResult(result);
       onCompleted?.();
     } catch (err) {
       const message = resolveApiErrorMessage(err, 'uploads.photos.error');
@@ -104,20 +149,42 @@ export default function ImportSessionUpload({
   const summaryNode =
     lastSummary != null ? (
       <Alert
-        severity={lastSummary.fail === 0 ? 'success' : lastSummary.ok === 0 ? 'error' : 'warning'}
+        severity={
+          lastSummary.fail === 0
+            ? lastSummary.cancelled > 0
+              ? 'info'
+              : 'success'
+            : lastSummary.ok === 0
+              ? 'error'
+              : 'warning'
+        }
         sx={{ mt: 2 }}
       >
         {lastSummary.fail === 0
-          ? t('ingestion_sessions.upload.summary_ok', { ok: lastSummary.ok })
+          ? lastSummary.cancelled > 0
+            ? t('ingestion_sessions.upload.summary_cancelled', {
+                ok: lastSummary.ok,
+                cancelled: lastSummary.cancelled,
+                defaultValue: '{{ok}} subido(s), {{cancelled}} cancelado(s).',
+              })
+            : t('ingestion_sessions.upload.summary_ok', { ok: lastSummary.ok })
           : lastSummary.ok === 0
             ? t('ingestion_sessions.upload.summary_all_failed', { fail: lastSummary.fail })
-            : t('ingestion_sessions.upload.summary_mixed', { ok: lastSummary.ok, fail: lastSummary.fail })}
+            : t('ingestion_sessions.upload.summary_mixed', {
+                ok: lastSummary.ok,
+                fail: lastSummary.fail,
+              })}
       </Alert>
     ) : null;
 
   return (
     <Box>
-      <PhotoUploadProgressDialog open={isUploadingPhotos} progress={progressSnap} />
+      <PhotoUploadProgressDialog
+        open={dialogOpen}
+        progress={progressSnap}
+        onCancel={uploadMutation.cancelUpload}
+        onRetryFailed={() => void handleRetryFailed()}
+      />
 
       <Paper
         variant="outlined"
@@ -204,7 +271,9 @@ export default function ImportSessionUpload({
                     <Typography variant="caption" color="text.secondary">
                       {statusLabel(row, t)}
                     </Typography>
-                    {row.state === 'uploading' ? <LinearProgress variant="determinate" value={row.progressPct} /> : null}
+                    {row.state === 'uploading' ? (
+                      <LinearProgress variant="determinate" value={row.progressPct} />
+                    ) : null}
                     {row.error ? (
                       <Typography variant="caption" color="error.main" display="block">
                         {row.error}

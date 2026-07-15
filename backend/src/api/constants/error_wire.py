@@ -78,6 +78,18 @@ HTTP_DETAIL_JOB_NOT_IN_AISLE_INVENTORY = "Job not found or does not belong to th
 # Inventory upload validation (v3 inventories routes).
 HTTP_DETAIL_EMPTY_OR_ZERO_BYTE_FILES_NOT_ALLOWED = "Empty or zero-byte files are not allowed"
 
+# Multipart upload idempotency token validation (client_file_ids / upload_batch_id).
+HTTP_DETAIL_CLIENT_FILE_IDS_MISMATCH = (
+    "client_file_ids count must match the number of uploaded files"
+)
+HTTP_DETAIL_CLIENT_FILE_ID_INVALID = (
+    "Each client_file_id must be a valid UUID string (max 64 characters)"
+)
+HTTP_DETAIL_UPLOAD_BATCH_ID_INVALID = "upload_batch_id must be a valid UUID string (max 64 characters)"
+
+# Aisle source asset persistence (v3 aisle assets upload).
+HTTP_DETAIL_ASSET_PERSIST_FAILED = "Failed to persist aisle source asset"
+
 # Analytics query validation (v3 analytics routes).
 HTTP_DETAIL_ANALYTICS_DATE_FROM_MUST_BE_ON_OR_BEFORE_DATE_TO = (
     "date_from must be on or before date_to"

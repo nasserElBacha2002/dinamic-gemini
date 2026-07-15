@@ -12,6 +12,8 @@ import {
   type BulkUploadProgressSnapshot,
   type BulkUploadRunResult,
 } from '../../uploads';
+import { useUploadLimits } from '../../uploads/useUploadLimits';
+import { isAbortError } from '../../uploads/uploadRetryPolicy';
 
 export interface UseAisleAssetUploadFlowOptions {
   inventoryId: string;
@@ -41,6 +43,7 @@ export function useAisleAssetUploadFlow({
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
   const queryClient = useQueryClient();
+  const limits = useUploadLimits();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPickAisleIdRef = useRef<string | null>(null);
   const uploadingAisleIdRef = useRef<string | null>(null);
@@ -90,6 +93,12 @@ export function useAisleAssetUploadFlow({
           files,
           signal: controller.signal,
           onProgress: setProgress,
+          maxFilesPerBatch: limits.maxFilesPerRequest,
+          maxBytesPerBatch: limits.maxBytesPerRequest,
+          maxFileSizeBytes: limits.maxFileSizeBytes,
+          concurrency: limits.uploadConcurrency,
+          retryAttempts: limits.retryAttempts,
+          retryBaseDelayMs: limits.retryBaseDelayMs,
           existingFiles: opts?.onlyFailed && prev ? prev.files : undefined,
           onlyClientIds:
             opts?.onlyFailed && prev
@@ -123,7 +132,7 @@ export function useAisleAssetUploadFlow({
           showSnackbar(message, 'error');
         }
       } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') {
+        if (isAbortError(err)) {
           return;
         }
         const apiErr = err instanceof ApiError ? err : new ApiError(String(err));
@@ -138,6 +147,12 @@ export function useAisleAssetUploadFlow({
     [
       inventoryId,
       invalidateAisle,
+      limits.maxBytesPerRequest,
+      limits.maxFileSizeBytes,
+      limits.maxFilesPerRequest,
+      limits.retryAttempts,
+      limits.retryBaseDelayMs,
+      limits.uploadConcurrency,
       onAfterSuccess,
       onBeforeUploadAttempt,
       setActiveUploadingAisleId,

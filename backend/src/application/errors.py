@@ -68,6 +68,15 @@ class UnsupportedAssetTypeError(Exception):
     """Raised when an uploaded file has a content type that is not image/* or video/*."""
 
 
+class DuplicateUploadIdempotencyKeyError(Exception):
+    """Raised on a concurrent-insert race for the same (aisle_id, upload_batch_id, client_file_id).
+
+    The unique index ``UQ_source_assets_aisle_upload_batch_client`` is the source of truth;
+    callers should treat this as "another request already persisted this file" and fetch the
+    existing row via ``get_by_upload_idempotency_key`` instead of failing the upload.
+    """
+
+
 class EmptyUploadError(Exception):
     """Raised when no files are provided for an aisle asset upload."""
 

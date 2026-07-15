@@ -10,9 +10,10 @@ may select across auto-batched multipart uploads.
 from __future__ import annotations
 
 # Defaults aligned with env defaults in grouped_settings / frontend bulkUpload.config.
+# Historical per-file cap was 500 MB (via MAX_UPLOAD_SIZE_MB); request cap defaults higher.
 MAX_FILES_PER_UPLOAD_REQUEST = 10
-MAX_UPLOAD_FILE_SIZE_MB = 25
-MAX_UPLOAD_REQUEST_SIZE_MB = 100
+MAX_UPLOAD_FILE_SIZE_MB = 500
+MAX_UPLOAD_REQUEST_SIZE_MB = 1024
 
 # Backward-compatible alias used by older imports/tests.
 MAX_FILES_PER_UPLOAD = MAX_FILES_PER_UPLOAD_REQUEST

@@ -36,12 +36,14 @@ from src.api.services.v3_stored_artifact_access import (
     resolve_source_asset_file_response,
     resolve_source_asset_image_display,
 )
+from src.application.dto.uploaded_file import UploadedFile
 from src.application.errors import AisleNotFoundError
 from src.application.services.result_context_resolver import ResultContextResolver
 from src.application.services.source_asset_heic import (
     select_source_asset_by_id,
     source_asset_is_heic,
 )
+from src.application.services.upload_stream_io import close_uploaded_files
 from src.application.use_cases.aisles.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
 from src.application.use_cases.aisles.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.aisles.upload_aisle_assets import UploadAisleAssetsUseCase
@@ -119,6 +121,7 @@ async def upload_aisle_assets(
     use_case: UploadAisleAssetsUseCase = Depends(get_upload_aisle_assets_use_case),
 ) -> UploadAisleAssetsResponse:
     """Upload one or more assets (photos/videos) to an aisle. Aisle transitions to assets_uploaded."""
+    uploaded: list[UploadedFile] = []
     try:
         uploaded = await read_uploaded_files_for_aisle_asset_upload(
             files,
@@ -163,6 +166,8 @@ async def upload_aisle_assets(
     except Exception as e:
         reraise_if_mapped(e)
         raise
+    finally:
+        close_uploaded_files(uploaded)
 
 
 @router.get("/{inventory_id}/aisles/{aisle_id}/assets", response_model=list[SourceAssetResponse])

@@ -1518,9 +1518,11 @@
       "summary_ok": "{{ok}} file(s) uploaded successfully.",
       "summary_mixed": "{{ok}} file(s) uploaded successfully, {{fail}} failed.",
       "summary_all_failed": "No files uploaded successfully ({{fail}} failed).",
+      "summary_cancelled": "{{ok}} file(s) uploaded, {{cancelled}} cancelled.",
       "status": {
         "uploaded": "Uploaded",
         "failed": "Failed",
+        "cancelled": "Cancelled",
         "uploading": "Uploading",
         "pending": "Pending"
       }

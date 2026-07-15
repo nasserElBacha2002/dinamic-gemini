@@ -1439,10 +1439,10 @@ def get_upload_capture_session_staging_items_use_case(
     clock: Clock = Depends(get_clock),
     time_metadata_extractor=Depends(get_capture_staging_time_metadata_extractor),
 ):
+    from src.application.services.upload_request_limits import UploadRequestLimitPolicy
     from src.application.use_cases.capture_sessions.upload_capture_session_staging_items import (
         UploadCaptureSessionStagingItemsUseCase,
     )
-    from src.application.services.upload_request_limits import UploadRequestLimitPolicy
     from src.config import load_settings
 
     s = load_settings()
