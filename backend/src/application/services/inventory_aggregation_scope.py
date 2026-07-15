@@ -10,6 +10,7 @@ export) use all aisles — soft-deactivated rows stay in cost history.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from src.application.ports.repositories import AisleRepository
@@ -55,7 +56,7 @@ class InventoryAggregationScopeResolver:
         )
 
 
-def scope_from_aisles(aisles: list[Aisle] | tuple[Aisle, ...]) -> InventoryAggregationScope:
+def scope_from_aisles(aisles: Sequence[Aisle]) -> InventoryAggregationScope:
     """Build scope from an already-loaded aisle list (avoids a second repository round-trip)."""
     aisle_tuple = tuple(aisles)
     return InventoryAggregationScope(
