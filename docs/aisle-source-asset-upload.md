@@ -26,6 +26,11 @@ El frontend (`features/uploads`) permite seleccionar **más** de 10 fotos y las 
 automáticamente, y puede leer estos límites en runtime vía `GET /api/v3/config/upload-limits`
 en lugar de hardcodearlos.
 
+Los defaults **500 / 1024** son de compatibilidad histórica. Para una carga típica de fotos
+ver configuración recomendada en [`docs/deployment/UPLOAD-PROXY-LIMITS.md`](../deployment/UPLOAD-PROXY-LIMITS.md)
+(p. ej. 50 MB / archivo, 250 MB / request). `retry_attempts` en el endpoint = reintentos
+**adicionales** tras el primer intento.
+
 ## Respuesta parcial (HTTP 201)
 
 ```json

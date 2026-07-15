@@ -76,25 +76,40 @@ def _try_exif_datetime(
 ) -> datetime | None:
     """Probe EXIF from either an in-memory buffer or a seekable stream.
 
-    ``file_obj`` is rewound to the start before opening and restored to position 0 afterward
-    (Pillow only reads; callers pass the same handle straight to storage next).
+    ``file_obj`` is seeked to 0 before opening and restored to position 0 afterward.
+    Pillow ``Image`` instances (and temporary ``BytesIO`` buffers) are always closed via
+    context managers; the caller's stream is never closed here.
     """
     try:
         if file_obj is not None:
             file_obj.seek(0)
             try:
-                img = Image.open(file_obj)
-                return _extract_exif_datetime_from_image(img)
+                with Image.open(file_obj) as img:
+                    return _extract_exif_datetime_from_image(img)
             finally:
-                file_obj.seek(0)
+                try:
+                    file_obj.seek(0)
+                except Exception:
+                    pass
         if raw_bytes is not None:
-            img = Image.open(BytesIO(raw_bytes))
-            return _extract_exif_datetime_from_image(img)
+            with BytesIO(raw_bytes) as buffer:
+                with Image.open(buffer) as img:
+                    return _extract_exif_datetime_from_image(img)
         return None
     except (UnidentifiedImageError, OSError, ValueError) as e:
         logger.debug("capture time EXIF: skip (%s)", e)
+        if file_obj is not None:
+            try:
+                file_obj.seek(0)
+            except Exception:
+                pass
     except Exception:
         logger.warning("capture time EXIF: unexpected error", exc_info=True)
+        if file_obj is not None:
+            try:
+                file_obj.seek(0)
+            except Exception:
+                pass
     return None
 
 

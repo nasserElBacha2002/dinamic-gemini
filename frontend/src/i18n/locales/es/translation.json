@@ -2082,7 +2082,7 @@
     },
     "upload": {
       "title": "Subir medios importados",
-      "subtitle": "Arrastrá y soltá archivos aquí o seleccioná múltiples archivos desde tu dispositivo. Máximo 5 archivos por carga.",
+      "subtitle": "Arrastrá y soltá todas las fotos o seleccioná múltiples archivos. El sistema las subirá automáticamente en lotes.",
       "select_files": "Seleccionar archivos",
       "error_summary": "La carga terminó con errores. Revisá los estados por archivo abajo.",
       "summary_ok": "{{ok}} archivo(s) subidos correctamente.",

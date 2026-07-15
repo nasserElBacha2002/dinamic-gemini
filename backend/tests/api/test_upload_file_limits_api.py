@@ -2,24 +2,30 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
 from src.api.constants.error_wire import HTTP_DETAIL_TOO_MANY_FILES_PER_UPLOAD
+from src.api.dependencies import get_artifact_storage
 from src.api.errors.structured_api_http import UPLOAD_TOO_MANY_FILES_PER_REQUEST
 from src.api.server import app
 from src.application.constants.upload_limits import MAX_FILES_PER_UPLOAD_REQUEST
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
+from src.infrastructure.storage.v3_artifact_storage_adapter import V3ArtifactStorageAdapter
 from tests.support.api_v3_test_helpers import create_test_inventory, create_test_supplier
 
 
 @pytest.fixture
-def client_v3() -> TestClient:
+def client_v3(tmp_path: Path) -> TestClient:
     def _fake_admin() -> AuthUser:
         return AuthUser(id="admin", username="admin", role="administrator")
 
+    store = V3ArtifactStorageAdapter(tmp_path / "artifacts")
     app.dependency_overrides[get_current_admin] = _fake_admin
+    app.dependency_overrides[get_artifact_storage] = lambda: store
     try:
         yield TestClient(app)
     finally:

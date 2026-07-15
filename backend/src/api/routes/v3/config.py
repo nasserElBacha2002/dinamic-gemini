@@ -23,6 +23,9 @@ def get_upload_limits() -> UploadLimitsResponse:
 
     Lets clients (e.g. frontend bulk upload) size batches without hardcoding limits that
     already live in :class:`src.env_settings.grouped_settings.LimitsAndSchemaSettings`.
+
+    ``retry_attempts`` is the number of **additional** retries after the first attempt
+    (matching ``UPLOAD_RETRY_ATTEMPTS``).
     """
     settings = load_settings()
     policy = UploadRequestLimitPolicy.from_settings(settings)

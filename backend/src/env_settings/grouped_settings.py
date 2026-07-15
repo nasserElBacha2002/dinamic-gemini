@@ -850,8 +850,9 @@ class LimitsAndSchemaSettings(BaseModel):
         ge=0,
         le=10,
         description=(
-            "Advisory retry-attempt hint for upload clients (server does not enforce). "
-            "Env: UPLOAD_RETRY_ATTEMPTS."
+            "Advisory hint for upload clients: number of **additional** retries after the "
+            "initial attempt (server does not enforce). 0 = one request total; 3 = up to four "
+            "requests. Env: UPLOAD_RETRY_ATTEMPTS."
         ),
     )
     upload_retry_base_delay_ms: int = Field(

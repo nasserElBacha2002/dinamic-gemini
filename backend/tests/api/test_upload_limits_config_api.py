@@ -34,5 +34,17 @@ def test_get_upload_limits_returns_settings_derived_values(client_v3: TestClient
     assert body["max_file_size_bytes"] == settings.max_upload_file_size_mb * 1024 * 1024
     assert body["max_request_size_bytes"] == settings.max_upload_request_size_mb * 1024 * 1024
     assert body["upload_batch_concurrency"] == settings.upload_batch_concurrency
+    # retry_attempts mirrors UPLOAD_RETRY_ATTEMPTS = additional retries after first attempt
     assert body["retry_attempts"] == settings.upload_retry_attempts
+    assert body["retry_attempts"] >= 0
     assert body["retry_base_delay_ms"] == settings.upload_retry_base_delay_ms
+
+    schema = resp.json()  # OpenAPI field presence
+    assert set(schema.keys()) == {
+        "max_files_per_request",
+        "max_file_size_bytes",
+        "max_request_size_bytes",
+        "upload_batch_concurrency",
+        "retry_attempts",
+        "retry_base_delay_ms",
+    }

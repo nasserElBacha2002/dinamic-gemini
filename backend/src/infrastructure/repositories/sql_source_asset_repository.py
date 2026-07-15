@@ -24,10 +24,12 @@ logger = logging.getLogger(__name__)
 
 
 def _is_upload_idempotency_key_duplicate(exc: pyodbc.IntegrityError) -> bool:
-    msg = str(exc).lower()
-    return "uq_source_assets_aisle_upload_batch_client" in msg or (
-        "source_assets" in msg and "duplicate" in msg
-    )
+    """True only for UNIQUE constraint ``UQ_source_assets_aisle_upload_batch_client``.
+
+    Intentionally does **not** treat generic ``source_assets`` + ``duplicate`` messages as
+    idempotency races — those can be PK, other unique indexes, or unrelated constraints.
+    """
+    return "uq_source_assets_aisle_upload_batch_client" in str(exc).lower()
 
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:

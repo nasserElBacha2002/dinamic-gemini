@@ -79,6 +79,10 @@ export interface ExecuteBulkUploadOptions {
   maxBytesPerBatch?: number;
   maxFileSizeBytes?: number;
   concurrency?: number;
+  /**
+   * Additional retries after the initial attempt.
+   * ``0`` → one request; ``3`` → up to four requests total.
+   */
   retryAttempts?: number;
   retryBaseDelayMs?: number;
 }
@@ -88,7 +92,9 @@ export async function executeBulkUpload(options: ExecuteBulkUploadOptions): Prom
   const maxBytesPerBatch = options.maxBytesPerBatch ?? UPLOAD_LIMITS.maxBytesPerRequest;
   const maxFileSizeBytes = options.maxFileSizeBytes ?? UPLOAD_LIMITS.maxFileSizeBytes;
   const concurrency = Math.max(1, options.concurrency ?? UPLOAD_LIMITS.uploadConcurrency);
-  const retryAttempts = Math.max(1, options.retryAttempts ?? UPLOAD_LIMITS.retryAttempts);
+  // Additional retries after the initial attempt (0 → one request total).
+  const retryAttempts = Math.max(0, options.retryAttempts ?? UPLOAD_LIMITS.retryAttempts);
+  const maxAttempts = retryAttempts + 1;
   const retryBaseDelayMs = Math.max(0, options.retryBaseDelayMs ?? UPLOAD_LIMITS.retryBaseDelayMs);
 
   const uploadBatchId = options.uploadBatchId ?? newBatchId();
@@ -173,7 +179,7 @@ export async function executeBulkUpload(options: ExecuteBulkUploadOptions): Prom
           batchFiles: batch.files,
           uploader: options.uploadBatch,
           signal: options.signal,
-          retryAttempts,
+          maxAttempts,
           retryBaseDelayMs,
           onProgress: (loaded, total) => {
             const frac = total > 0 ? Math.min(1, loaded / total) : 0;
@@ -239,7 +245,8 @@ async function uploadOneBatch(args: {
   batchFiles: BulkUploadFileResult[];
   uploader: BulkBatchUploader;
   signal?: AbortSignal;
-  retryAttempts: number;
+  /** Total HTTP attempts = additionalRetries + 1. */
+  maxAttempts: number;
   retryBaseDelayMs: number;
   onProgress: (loaded: number, total: number) => void;
 }): Promise<void> {
@@ -248,10 +255,9 @@ async function uploadOneBatch(args: {
     f.progress = 0;
   }
 
-  let attempt = 0;
-  while (attempt < args.retryAttempts) {
+  const maxAttempts = Math.max(1, args.maxAttempts);
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     if (args.signal?.aborted) return;
-    attempt += 1;
     for (const f of args.batchFiles) {
       f.attempts = attempt;
     }
@@ -294,7 +300,7 @@ async function uploadOneBatch(args: {
       const status = err instanceof ApiError ? err.status ?? 0 : 0;
       const retryable =
         isTransientHttpStatus(status) || isRetryableUploadErrorCode(mapped.code);
-      if (!retryable || attempt >= args.retryAttempts) {
+      if (!retryable || attempt >= maxAttempts) {
         for (const f of args.batchFiles) {
           if (f.status === 'completed') continue;
           f.status = 'failed';

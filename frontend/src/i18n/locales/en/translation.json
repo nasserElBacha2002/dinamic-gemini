@@ -1512,7 +1512,7 @@
     },
     "upload": {
       "title": "Upload imported media",
-      "subtitle": "Drag and drop files here or select multiple files from your device. Maximum 5 files per upload.",
+      "subtitle": "Drag and drop all your photos or select multiple files. The system will upload them automatically in batches.",
       "select_files": "Select files",
       "error_summary": "Upload completed with errors. Review file-level statuses below.",
       "summary_ok": "{{ok}} file(s) uploaded successfully.",

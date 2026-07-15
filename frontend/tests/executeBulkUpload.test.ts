@@ -199,11 +199,95 @@ describe('executeBulkUpload — cancel, backoff, concurrent progress', () => {
       concurrency: 1,
       maxFilesPerBatch: 2,
       maxBytesPerBatch: 100e6,
-      retryAttempts: 1,
+      retryAttempts: 0,
       onProgress: (s) => progressPcts.push(s.progressPct),
     });
     expect(result.failedCount).toBe(1);
     expect(result.completedCount).toBe(1);
     expect(progressPcts.at(-1)).toBe(100);
+  });
+});
+
+describe('executeBulkUpload — retryAttempts additional semantics', () => {
+  it('retryAttempts 0 performs exactly one request', async () => {
+    let attempts = 0;
+    const uploadBatch: BulkBatchUploader = async () => {
+      attempts += 1;
+      throw new ApiError('temp', 503, { code: 'NETWORK_ERROR' });
+    };
+    await executeBulkUpload({
+      files: [makeFile('a.jpg', 100)],
+      uploadBatch,
+      concurrency: 1,
+      maxFilesPerBatch: 1,
+      maxBytesPerBatch: 100e6,
+      retryAttempts: 0,
+      retryBaseDelayMs: 1,
+    });
+    expect(attempts).toBe(1);
+  });
+
+  it('retryAttempts 1 performs at most two requests', async () => {
+    let attempts = 0;
+    const uploadBatch: BulkBatchUploader = async () => {
+      attempts += 1;
+      throw new ApiError('temp', 503, { code: 'NETWORK_ERROR' });
+    };
+    await executeBulkUpload({
+      files: [makeFile('a.jpg', 100)],
+      uploadBatch,
+      concurrency: 1,
+      maxFilesPerBatch: 1,
+      maxBytesPerBatch: 100e6,
+      retryAttempts: 1,
+      retryBaseDelayMs: 1,
+    });
+    expect(attempts).toBe(2);
+  });
+
+  it('retryAttempts 3 performs at most four requests', async () => {
+    let attempts = 0;
+    const uploadBatch: BulkBatchUploader = async () => {
+      attempts += 1;
+      throw new ApiError('temp', 503, { code: 'NETWORK_ERROR' });
+    };
+    await executeBulkUpload({
+      files: [makeFile('a.jpg', 100)],
+      uploadBatch,
+      concurrency: 1,
+      maxFilesPerBatch: 1,
+      maxBytesPerBatch: 100e6,
+      retryAttempts: 3,
+      retryBaseDelayMs: 1,
+    });
+    expect(attempts).toBe(4);
+  });
+
+  it('stops after success before exhausting retries', async () => {
+    let attempts = 0;
+    const uploadBatch: BulkBatchUploader = async ({ files }) => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new ApiError('temp', 503, { code: 'NETWORK_ERROR' });
+      }
+      return {
+        outcomes: files.map((f) => ({
+          clientFileId: f.clientId,
+          status: 'completed' as const,
+          serverId: f.clientId,
+        })),
+      };
+    };
+    const result = await executeBulkUpload({
+      files: [makeFile('a.jpg', 100)],
+      uploadBatch,
+      concurrency: 1,
+      maxFilesPerBatch: 1,
+      maxBytesPerBatch: 100e6,
+      retryAttempts: 3,
+      retryBaseDelayMs: 1,
+    });
+    expect(attempts).toBe(2);
+    expect(result.completedCount).toBe(1);
   });
 });

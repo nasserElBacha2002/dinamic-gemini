@@ -10,6 +10,7 @@ export interface UploadLimitsDto {
   max_file_size_bytes: number;
   max_request_size_bytes: number;
   upload_batch_concurrency: number;
+  /** Additional retries after the initial attempt (0 = one request total). */
   retry_attempts: number;
   retry_base_delay_ms: number;
 }
@@ -19,6 +20,7 @@ export interface ResolvedUploadLimits {
   maxFileSizeBytes: number;
   maxBytesPerRequest: number;
   uploadConcurrency: number;
+  /** Additional retries after the initial attempt (0 = one request total). */
   retryAttempts: number;
   retryBaseDelayMs: number;
   source: 'backend' | 'fallback';

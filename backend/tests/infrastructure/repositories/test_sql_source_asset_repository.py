@@ -127,6 +127,45 @@ def test_save_raises_duplicate_upload_idempotency_key_error_on_unique_index_viol
     assert cur.execute.call_count == 2
 
 
+def test_save_reraises_other_source_assets_unique_violations() -> None:
+    """A different UNIQUE constraint on source_assets must stay a raw IntegrityError."""
+    client = MagicMock()
+    cur = MagicMock()
+    cur.rowcount = 0
+    cur.execute.side_effect = [
+        None,
+        pyodbc.IntegrityError(
+            "23000",
+            "[23000] Violation of UNIQUE KEY constraint 'UQ_source_assets_capture_session_item_id'. "
+            "Cannot insert duplicate key in object 'dbo.source_assets'.",
+        ),
+    ]
+    client.cursor.return_value.__enter__.return_value = cur
+    repo = SqlSourceAssetRepository(client)
+
+    with pytest.raises(pyodbc.IntegrityError):
+        repo.save(_asset())
+
+
+def test_save_reraises_generic_source_assets_duplicate_without_index_name() -> None:
+    """``source_assets`` + ``duplicate`` alone must not be treated as upload-idempotency."""
+    client = MagicMock()
+    cur = MagicMock()
+    cur.rowcount = 0
+    cur.execute.side_effect = [
+        None,
+        pyodbc.IntegrityError(
+            "23000",
+            "Cannot insert duplicate key in object 'dbo.source_assets'. The duplicate key value is (x).",
+        ),
+    ]
+    client.cursor.return_value.__enter__.return_value = cur
+    repo = SqlSourceAssetRepository(client)
+
+    with pytest.raises(pyodbc.IntegrityError):
+        repo.save(_asset())
+
+
 def test_save_reraises_unrelated_integrity_error_unchanged() -> None:
     """An IntegrityError not matching the idempotency unique index must propagate as-is."""
     client = MagicMock()

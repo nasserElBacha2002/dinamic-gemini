@@ -94,12 +94,7 @@ export default function PhotoUploadProgressDialog({
                 </Typography>
               </>
             ) : (
-              <>
-                <Typography variant="body1">{t('uploads.photos.progress')}</Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                  {t('uploads.photos.waitBeforeLeaving')}
-                </Typography>
-              </>
+              <Typography variant="body1">{t('uploads.photos.progress')}</Typography>
             )}
             {!done ? (
               <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
