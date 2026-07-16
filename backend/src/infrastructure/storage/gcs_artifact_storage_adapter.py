@@ -202,7 +202,8 @@ class GcsArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
         blob, object_key = self._blob(key)
         end = start + length - 1
         try:
-            return blob.download_as_bytes(start=start, end=end)
+            data = blob.download_as_bytes(start=start, end=end)
+            return bytes(data)
         except Exception as exc:
             logger.exception(
                 "GCS read_range failed bucket=%s key=%s start=%s length=%s",

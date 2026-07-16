@@ -886,7 +886,10 @@ def get_job_hybrid_report(
     job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user)
     try:
         raw = load_hybrid_report_json_for_api(job, artifact_store=artifact_storage)
-        return sanitize_observability_value(raw, user=current_user)
+        sanitized = sanitize_observability_value(raw, user=current_user)
+        if not isinstance(sanitized, dict):
+            raise HTTPException(status_code=500, detail="Hybrid report sanitization failed")
+        return sanitized
     except StoredArtifactAccessError as e:
         logger.warning(
             "hybrid_report_http_error job_id=%s reason=%s detail=%s",
@@ -916,7 +919,10 @@ def get_job_run_auditability(
     view = audit_svc.build(job_id)
     if view is None:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND)
-    return sanitize_observability_value(view.to_jsonable(), user=current_user)
+    sanitized = sanitize_observability_value(view.to_jsonable(), user=current_user)
+    if not isinstance(sanitized, dict):
+        raise HTTPException(status_code=500, detail="Auditability sanitization failed")
+    return sanitized
 
 
 def _artifact_to_response(view: JobArtifactView) -> JobArtifactResponse:
