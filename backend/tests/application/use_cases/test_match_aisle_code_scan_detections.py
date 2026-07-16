@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
-
 from collections.abc import Sequence
 from datetime import datetime, timezone
 
@@ -32,6 +30,7 @@ from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 from src.infrastructure.repositories.memory_code_scan_repository import MemoryCodeScanRepository
 from tests.application.use_cases.test_run_aisle_code_scan import FixedClock, StubAisleRepo
+from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 
 
 class StubPositionRepo(PositionRepository):

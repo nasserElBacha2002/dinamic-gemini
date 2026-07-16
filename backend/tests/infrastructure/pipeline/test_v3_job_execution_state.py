@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
-
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +18,7 @@ from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
 from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.execution_log import ExecutionLogWriter
+from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 
 
 class _FixedClock(Clock):

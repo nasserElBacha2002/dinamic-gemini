@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
-
 from collections.abc import Sequence
 from datetime import datetime, timezone
 
@@ -32,6 +30,7 @@ from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 
 
 class StubInventoryRepo(InventoryRepository):

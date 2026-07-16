@@ -202,7 +202,9 @@ def test_aggregate_totals_and_provider_grouping(cost_setup) -> None:
 
 def test_multi_run_cost_matches_billable_aggregator_not_last_only(cost_setup) -> None:
     """Case 10: analytics cost = SSOT sum of billable runs; count stays operational."""
-    from src.application.services.billable_job_cost_aggregation import sum_billable_costs_by_aisle_id
+    from src.application.services.billable_job_cost_aggregation import (
+        sum_billable_costs_by_aisle_id,
+    )
 
     job_repo = cost_setup["job_repo"]
     aisle = cost_setup["aisle"]
