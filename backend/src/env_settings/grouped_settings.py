@@ -1302,7 +1302,11 @@ class ObservabilitySettings(BaseModel):
         default_factory=lambda: int(os.getenv("OBSERVABILITY_SIGNED_URL_TTL_SECONDS", "300")),
         ge=30,
         le=3600,
-        description="TTL for Observability signed download URLs. Env: OBSERVABILITY_SIGNED_URL_TTL_SECONDS.",
+        description=(
+            "Reserved TTL for Observability signed URLs. Artifact downloads are proxied "
+            "through the API (no browser redirect to GCS/S3) to avoid CORS on fetch. "
+            "Env: OBSERVABILITY_SIGNED_URL_TTL_SECONDS."
+        ),
     )
     observability_text_preview_max_bytes: int = Field(
         default_factory=lambda: int(os.getenv("OBSERVABILITY_TEXT_PREVIEW_MAX_BYTES", "65536")),

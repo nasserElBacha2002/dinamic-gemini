@@ -342,7 +342,7 @@ export default function JobObservabilityDiagnosticsPanel({
                         aisleId,
                         jobId,
                         a.id,
-                        a.original_filename || `${a.kind}.bin`
+                        a.original_filename || a.kind
                       ).catch((e) => {
                         const err = e instanceof ApiError ? e : new ApiError(String(e));
                         showSnackbar(resolveApiErrorMessage(err, 'errors.download_job_log'), 'error');

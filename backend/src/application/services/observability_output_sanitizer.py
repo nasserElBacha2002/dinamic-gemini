@@ -4,15 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.config import load_settings
-from src.auth.schemas import AuthUser
 from src.application.services.observability_access import (
     CAP_VIEW_FULL_PROMPT,
     CAP_VIEW_STACK_TRACES,
     principal_has_capability,
 )
+from src.auth.schemas import AuthUser
+from src.config import load_settings
 from src.pipeline.secret_redaction import redact_secrets_in_text, redact_secrets_in_value
-
 
 _PROMPT_KEYS = frozenset(
     {

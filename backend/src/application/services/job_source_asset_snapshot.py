@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Sequence
 from uuid import uuid4
 
 from src.application.ports.job_source_asset_repository import (

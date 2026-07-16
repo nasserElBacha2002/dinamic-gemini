@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Any, Sequence
+from typing import Any
 
 from src.application.ports.job_source_asset_repository import JobSourceAssetLink
 from src.database.sqlserver import SqlServerClient

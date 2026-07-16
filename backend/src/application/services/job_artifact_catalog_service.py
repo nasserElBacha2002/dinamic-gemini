@@ -60,7 +60,63 @@ _KIND_MIME: dict[str, str] = {
     ARTIFACT_KIND_TRACEABILITY_MANIFEST: "application/json",
 }
 
+_KIND_FILENAME: dict[str, str] = {
+    ARTIFACT_KIND_EXECUTION_LOG: "execution_log.jsonl",
+    ARTIFACT_KIND_HYBRID_REPORT_JSON: "hybrid_report.json",
+    ARTIFACT_KIND_HYBRID_REPORT_CSV: "hybrid_report.csv",
+    ARTIFACT_KIND_TRACEABILITY_MANIFEST: "traceability_manifest.json",
+}
+
+_MIME_TO_EXT: dict[str, str] = {
+    "application/json": "json",
+    "application/x-ndjson": "jsonl",
+    "application/ndjson": "jsonl",
+    "text/csv": "csv",
+    "text/plain": "txt",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/heic": "heic",
+    "video/mp4": "mp4",
+    "video/quicktime": "mov",
+    "application/zip": "zip",
+    "application/pdf": "pdf",
+}
+
 _ARTIFACT_NS = UUID("a7e2c4b1-9f33-4d8e-8c1a-0b6f5e4d3c2a")
+
+
+def _basename_with_extension(name: str | None) -> str | None:
+    raw = (name or "").strip().replace("\\", "/").split("/")[-1]
+    if not raw or raw in {".", ".."}:
+        return None
+    if "." not in raw or raw.startswith("."):
+        return None
+    return raw
+
+
+def resolve_artifact_download_filename(
+    *,
+    kind: str,
+    original_filename: str | None = None,
+    mime_type: str | None = None,
+    storage_key: str | None = None,
+) -> str:
+    """Prefer original name, then storage-key basename, then kind/mime defaults."""
+    for candidate in (original_filename, storage_key):
+        base = _basename_with_extension(candidate)
+        if base:
+            return base
+    mapped = _KIND_FILENAME.get(kind)
+    if mapped:
+        return mapped
+    mime = (mime_type or "").strip().lower().split(";", 1)[0].strip()
+    ext = _MIME_TO_EXT.get(mime)
+    safe_kind = "".join(c for c in (kind or "artifact") if c.isalnum() or c in ("-", "_")) or "artifact"
+    if ext:
+        return f"{safe_kind}.{ext}"
+    return f"{safe_kind}.bin"
 
 
 @dataclass(frozen=True)
@@ -257,7 +313,11 @@ class JobArtifactCatalogService:
                         kind=kind,
                         stage="finalization",
                         display_name=kind.replace("_", " ").title(),
-                        original_filename=None,
+                        original_filename=resolve_artifact_download_filename(
+                            kind=kind,
+                            mime_type=mime,
+                            storage_key=entry.storage_key,
+                        ),
                         mime_type=mime,
                         size_bytes=entry.size_bytes,
                         checksum=entry.source_sha256 or entry.content_hash,
@@ -322,7 +382,11 @@ class JobArtifactCatalogService:
                     kind=kind,
                     stage="finalization",
                     display_name=kind.replace("_", " ").title(),
-                    original_filename=None,
+                    original_filename=resolve_artifact_download_filename(
+                        kind=kind,
+                        mime_type=mime_s,
+                        storage_key=key_s,
+                    ),
                     mime_type=mime_s,
                     size_bytes=size_i,
                     checksum=checksum,
@@ -377,7 +441,11 @@ class JobArtifactCatalogService:
                     kind=kind,
                     stage=link.stage or "input",
                     display_name=f"{link.asset_role}:{link.source_asset_id}",
-                    original_filename=None,
+                    original_filename=resolve_artifact_download_filename(
+                        kind=kind,
+                        mime_type=link.mime_type,
+                        storage_key=link.storage_key,
+                    ),
                     mime_type=link.mime_type,
                     size_bytes=link.size_bytes,
                     checksum=link.checksum,

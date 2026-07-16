@@ -118,12 +118,17 @@ from src.application.services.execution_log_enrichment import (
     execution_log_attachment_filename,
     format_execution_log_plaintext,
 )
-from src.application.services.execution_log_pagination import paginate_execution_log_events
+from src.application.services.execution_log_incremental import (
+    InvalidCursorError,
+    open_execution_log_tempfile,
+    paginate_jsonl_stream,
+)
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.application.services.job_artifact_catalog_service import (
     JobArtifactCatalogService,
     JobArtifactView,
     assert_job_owned_storage_key,
+    resolve_artifact_download_filename,
 )
 from src.application.services.job_errors_service import collect_job_errors, paginate_job_errors
 from src.application.services.job_retry_chain_service import JobRetryChainService
@@ -136,7 +141,6 @@ from src.application.services.observability_access import (
     CAP_CANCEL_RETRY,
     CAP_DOWNLOAD_ARTIFACTS,
     CAP_VIEW_ARTIFACT_PREVIEW,
-    CAP_VIEW_FULL_PROMPT,
     CAP_VIEW_STACK_TRACES,
     CAP_VIEW_SUMMARY,
     CAP_VIEW_TECHNICAL_LOGS,
@@ -147,11 +151,6 @@ from src.application.services.observability_access import (
 from src.application.services.observability_output_sanitizer import (
     sanitize_execution_log_events,
     sanitize_observability_value,
-)
-from src.application.services.execution_log_incremental import (
-    InvalidCursorError,
-    open_execution_log_tempfile,
-    paginate_jsonl_stream,
 )
 from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
 from src.application.services.run_auditability_service import RunAuditabilityService
@@ -222,9 +221,8 @@ from src.application.use_cases.inventories.export_inventory_business import (
 from src.application.use_cases.inventories.export_inventory_results import (
     ExportAisleResultsCsvUseCase,
 )
-from src.auth.dependencies import get_current_admin, require_observability_capability
-from src.auth.errors import AuthHttpError
-from src.auth.schemas import AuthError, AuthUser
+from src.auth.dependencies import require_observability_capability
+from src.auth.schemas import AuthUser
 from src.config import load_settings
 from src.domain.jobs.entities import Job
 from src.infrastructure.artifacts.stored_artifact_reader import read_execution_log_events_for_job
@@ -1030,21 +1028,9 @@ def download_job_artifact(
             )
             raise HTTPException(status_code=404, detail="Artifact not found") from None
     settings = load_settings()
-    try:
-        # Prefer short-lived signed URL when the store supports it (S3/GCS).
-        url = artifact_storage.generate_signed_url(
-            key, int(settings.observability_signed_url_ttl_seconds)
-        )
-        if url and str(url).startswith("http"):
-            from fastapi.responses import RedirectResponse
-
-            return RedirectResponse(
-                url=str(url),
-                status_code=307,
-                headers={"Cache-Control": "no-store"},
-            )
-    except Exception:
-        logger.debug("signed_url_unavailable job_id=%s artifact_id=%s", job.id, artifact_id)
+    # Always proxy through the API. A 307 to a GCS/S3 signed URL breaks browser
+    # ``fetch`` downloads (CORS). Authenticated same-origin streaming works with
+    # ``apiDownloadBlob``.
     import os
     import tempfile
     from pathlib import Path
@@ -1066,8 +1052,13 @@ def download_job_artifact(
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(status_code=413, detail="Artifact exceeds download size limit")
     filename = _safe_download_filename(
-        view.original_filename or f"{view.kind}",
-        fallback=f"{view.kind}.bin",
+        resolve_artifact_download_filename(
+            kind=view.kind,
+            original_filename=view.original_filename,
+            mime_type=view.mime_type,
+            storage_key=view.storage_key,
+        ),
+        fallback=resolve_artifact_download_filename(kind=view.kind, mime_type=view.mime_type),
     )
 
     def _iter_chunks():

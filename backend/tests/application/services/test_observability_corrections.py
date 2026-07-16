@@ -35,7 +35,7 @@ from src.application.services.observability_access import (
     principal_has_capability,
     validate_principal_tenant_binding,
 )
-from src.application.ports.job_source_asset_repository import JobSourceAssetLink
+from src.application.services.observability_output_sanitizer import sanitize_observability_value
 from src.auth.schemas import AuthUser
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
@@ -45,8 +45,7 @@ from src.infrastructure.persistence.memory_job_source_asset_repository import (
 )
 from src.infrastructure.repositories.memory_inventory_repository import MemoryInventoryRepository
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
-from src.pipeline.secret_redaction import redact_secrets_in_text, redact_secrets_in_value
-from src.application.services.observability_output_sanitizer import sanitize_observability_value
+from src.pipeline.secret_redaction import redact_secrets_in_text
 
 UTC = timezone.utc
 
@@ -224,6 +223,37 @@ def test_job_source_assets_snapshot_not_aisle_wide() -> None:
     assert page.inputs_legacy_unverified is False
     assert len([i for i in page.items if i.category.value == "INPUT"]) == 20
     assert all(i.source_asset_id != "new" for i in page.items)
+
+
+def test_resolve_artifact_download_filename_prefers_known_kind_and_storage_key() -> None:
+    from src.application.services.job_artifact_catalog_service import (
+        resolve_artifact_download_filename,
+    )
+    from src.domain.jobs.artifact_policy import ARTIFACT_KIND_EXECUTION_LOG
+
+    assert (
+        resolve_artifact_download_filename(kind=ARTIFACT_KIND_EXECUTION_LOG)
+        == "execution_log.jsonl"
+    )
+    assert (
+        resolve_artifact_download_filename(
+            kind="source_image",
+            mime_type="image/jpeg",
+            storage_key="uploads/aisle/photo_001.JPG",
+        )
+        == "photo_001.JPG"
+    )
+    assert (
+        resolve_artifact_download_filename(
+            kind="hybrid_report_json",
+            original_filename="report.json",
+        )
+        == "report.json"
+    )
+    assert (
+        resolve_artifact_download_filename(kind="custom_debug", mime_type="application/json")
+        == "custom_debug.json"
+    )
 
 
 def test_legacy_job_without_snapshot_marked() -> None:

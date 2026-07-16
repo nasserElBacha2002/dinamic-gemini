@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Sequence
+from collections.abc import Sequence
 
 from src.application.ports.job_source_asset_repository import JobSourceAssetLink
 

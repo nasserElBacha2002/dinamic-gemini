@@ -85,8 +85,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    # Let the browser read Location on asset 307 → presigned S3 (fetch redirect: manual).
-    expose_headers=["Location"],
+    # Location: asset 307 → signed URL (fetch redirect: manual).
+    # Content-Disposition: blob downloads via fetch (apiDownloadBlob) need the filename.
+    expose_headers=["Location", "Content-Disposition"],
 )
 
 # Behind HTTPS-terminating ALB, redirects must use https; middleware trusts X-Forwarded-Proto from listed hosts.
