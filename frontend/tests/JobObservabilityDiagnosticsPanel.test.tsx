@@ -11,22 +11,22 @@ import type {
   JobTimelinePage,
 } from '../src/api/types';
 
-const getJobRetryChain = vi.fn<[], Promise<JobRetryChain>>();
-const getJobArtifacts = vi.fn<[], Promise<JobArtifactPage>>();
-const getJobTimeline = vi.fn<[], Promise<JobTimelinePage>>();
-const getExecutionLogPage = vi.fn();
-const getJobErrors = vi.fn<[], Promise<JobErrorPage>>();
-const getJobHybridReport = vi.fn();
-const getJobArtifactPreview = vi.fn<[], Promise<ArtifactPreview>>();
+const getJobRetryChain = vi.fn<(...args: unknown[]) => Promise<JobRetryChain>>();
+const getJobArtifacts = vi.fn<(...args: unknown[]) => Promise<JobArtifactPage>>();
+const getJobTimeline = vi.fn<(...args: unknown[]) => Promise<JobTimelinePage>>();
+const getExecutionLogPage = vi.fn<(...args: unknown[]) => Promise<unknown>>();
+const getJobErrors = vi.fn<(...args: unknown[]) => Promise<JobErrorPage>>();
+const getJobHybridReport = vi.fn<(...args: unknown[]) => Promise<unknown>>();
+const getJobArtifactPreview = vi.fn<(...args: unknown[]) => Promise<ArtifactPreview>>();
 
 vi.mock('../src/api/jobsApi', () => ({
-  getJobRetryChain: (...args: unknown[]) => getJobRetryChain(...(args as [])),
-  getJobArtifacts: (...args: unknown[]) => getJobArtifacts(...(args as [])),
-  getJobTimeline: (...args: unknown[]) => getJobTimeline(...(args as [])),
-  getExecutionLogPage: (...args: unknown[]) => getExecutionLogPage(...(args as [])),
-  getJobErrors: (...args: unknown[]) => getJobErrors(...(args as [])),
-  getJobHybridReport: (...args: unknown[]) => getJobHybridReport(...(args as [])),
-  getJobArtifactPreview: (...args: unknown[]) => getJobArtifactPreview(...(args as [])),
+  getJobRetryChain: (...args: unknown[]) => getJobRetryChain(...args),
+  getJobArtifacts: (...args: unknown[]) => getJobArtifacts(...args),
+  getJobTimeline: (...args: unknown[]) => getJobTimeline(...args),
+  getExecutionLogPage: (...args: unknown[]) => getExecutionLogPage(...args),
+  getJobErrors: (...args: unknown[]) => getJobErrors(...args),
+  getJobHybridReport: (...args: unknown[]) => getJobHybridReport(...args),
+  getJobArtifactPreview: (...args: unknown[]) => getJobArtifactPreview(...args),
   downloadJobArtifact: vi.fn(),
 }));
 

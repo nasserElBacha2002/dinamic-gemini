@@ -15,7 +15,6 @@ from __future__ import annotations
 # include_router wiring and tests keep working. This module documents the
 # Observability surface and re-exports the capability/sanitization helpers used
 # by those handlers for a stable import path.
-
 from src.application.services.observability_access import (  # noqa: F401
     CAP_DOWNLOAD_ARTIFACTS,
     CAP_VIEW_ARTIFACT_PREVIEW,
