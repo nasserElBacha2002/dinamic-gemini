@@ -141,15 +141,22 @@ class SqlJobImageCoverageRepository:
 
     def get_counters(self, *, job_id: str, aisle_id: str) -> JobImageCoverageCounters:
         link_params = _result_link_params(job_id, aisle_id)
+        # SQL Server forbids aggregates over expressions that contain subqueries
+        # (e.g. SUM(CASE WHEN EXISTS(...))). Compute has_result in a CTE first.
         sql = f"""
 {_CANONICAL_PHOTOS_CTE}
+, flagged AS (
+    SELECT
+        CASE WHEN ({_HAS_RESULT_EXISTS}) THEN 1 ELSE 0 END AS has_result
+    FROM canonical c
+)
 SELECT
     COUNT(*) AS total_images,
-    SUM(CASE WHEN ({_HAS_RESULT_EXISTS}) THEN 1 ELSE 0 END) AS with_result,
-    SUM(CASE WHEN ({_HAS_RESULT_EXISTS}) THEN 0 ELSE 1 END) AS without_result
-FROM canonical c
+    COALESCE(SUM(has_result), 0) AS with_result,
+    COALESCE(SUM(CASE WHEN has_result = 0 THEN 1 ELSE 0 END), 0) AS without_result
+FROM flagged
 """  # nosec B608 — static fragments only; values bound as ?
-        params: list[Any] = [job_id, *link_params, *link_params]
+        params: list[Any] = [job_id, *link_params]
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(sql, params)
             row = cur.fetchone()
