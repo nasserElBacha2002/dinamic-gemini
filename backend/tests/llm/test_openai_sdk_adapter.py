@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from src.llm.errors import LLMProviderError
 from src.llm.openai_sdk_adapter import OpenAiSdkAdapter, _extract_json_text
@@ -18,6 +19,7 @@ def _settings_openai() -> MagicMock:
     s.openai_model = "gpt-4o"
     s.openai_request_timeout_sec = 60.0
     s.openai_vision_max_image_side = 2048
+    s.openai_image_jpeg_quality = 88
     s.hybrid_prompt = "global_v21"
     return s
 
@@ -84,9 +86,8 @@ def test_openai_sdk_adapter_includes_context_images_and_instruction() -> None:
     mock_completion.choices = [MagicMock(message=MagicMock(content=ok_json))]
     mock_completion.usage = None
 
-    pil = MagicMock()
-    pil.mode = "RGB"
-    pil.size = (10, 10)
+    # Real PIL image required: normalize_pil_image rejects MagicMock stand-ins.
+    pil = Image.new("RGB", (10, 10), color=(12, 34, 56))
 
     req = LLMRequest(
         job_id="j1",

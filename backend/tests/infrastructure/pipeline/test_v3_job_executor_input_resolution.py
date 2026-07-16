@@ -23,9 +23,11 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.inventory.entities import Inventory, InventoryStatus
+from src.domain.jobs.entities import Job
 from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
 from src.infrastructure.repositories.sql_source_asset_repository import _row_to_asset
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
+from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
 
 
@@ -82,6 +84,22 @@ class _NoopJobRepo(JobRepository):
 
     def list_jobs_for_target(self, target_type: str, target_id: str, *, limit: int = 50):
         return []
+
+
+
+    def list_jobs_for_targets(
+        self,
+        target_type: str,
+        target_ids: Sequence[str],
+        *,
+        job_type: str | None = None,
+    ) -> Sequence[Job]:
+        store = getattr(self, "_store", None) or getattr(self, "_jobs", None)
+        if store is None:
+            return []
+        return list_jobs_for_targets_from_store(
+            store, target_type, target_ids, job_type=job_type
+        )
 
 
 class _NoopAisleRepo(AisleRepository):

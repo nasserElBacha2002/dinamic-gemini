@@ -30,6 +30,9 @@ from src.infrastructure.repositories.db_row_text import normalize_db_str
 
 logger = logging.getLogger(__name__)
 
+# Max target_ids per SQL ``IN`` clause (parameter-limit safety only — never caps jobs/runs).
+TARGET_ID_BATCH_SIZE = 500
+
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
@@ -350,6 +353,7 @@ class SqlJobRepository(JobRepository):
         self, target_type: str, target_id: str, *, limit: int = 50
     ) -> Sequence[Job]:
         # TOP n: n clamped 1..500 in Python (not request text concatenation).
+        # UI/history only — never use for billable cost aggregation.
         n = max(1, min(int(limit), 500))
         with self._client.cursor() as cur:
             cur.execute(
@@ -363,6 +367,50 @@ class SqlJobRepository(JobRepository):
             )
             rows = cur.fetchall()
         return [_row_to_job(row) for row in rows]
+
+    def list_jobs_for_targets(
+        self,
+        target_type: str,
+        target_ids: Sequence[str],
+        *,
+        job_type: str | None = None,
+    ) -> Sequence[Job]:
+        """All matching jobs for targets — no per-aisle history truncation.
+
+        Batches ``target_id IN (...)`` lists to stay under SQL Server parameter limits.
+        Does not cap the number of jobs returned per target.
+        """
+        if not target_ids:
+            return []
+        unique_ids = list(dict.fromkeys(target_ids))
+        out: list[Job] = []
+        seen: set[str] = set()
+        for start in range(0, len(unique_ids), TARGET_ID_BATCH_SIZE):
+            batch = unique_ids[start : start + TARGET_ID_BATCH_SIZE]
+            placeholders = ",".join("?" * len(batch))
+            params: list[Any] = [target_type, *batch]
+            job_type_sql = ""
+            if job_type is not None:
+                job_type_sql = "AND job_type = ?"
+                params.append(job_type)
+            query = f"""
+                SELECT {_JOB_SELECT_FIELDS}
+                FROM inventory_jobs
+                WHERE target_type = ?
+                  AND target_id IN ({placeholders})
+                  {job_type_sql}
+                ORDER BY target_id, updated_at DESC, created_at DESC
+            """  # nosec B608
+            with self._client.cursor() as cur:
+                cur.execute(query, params)
+                rows = cur.fetchall()
+            for row in rows:
+                job = _row_to_job(row)
+                if job.id in seen:
+                    continue
+                seen.add(job.id)
+                out.append(job)
+        return out
 
     def list_all_jobs(self) -> Sequence[Job]:
         with self._client.cursor() as cur:

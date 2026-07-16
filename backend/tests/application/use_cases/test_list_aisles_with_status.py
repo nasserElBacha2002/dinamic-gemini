@@ -30,6 +30,7 @@ from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position, PositionStatus
 from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_position_repository import MemoryPositionRepository
+from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 
 
 class StubInventoryRepo(InventoryRepository):
@@ -96,6 +97,22 @@ class StubJobRepo(JobRepository):
             return []
         j = self._latest.get(target_id)
         return [j] if j is not None else []
+
+
+
+    def list_jobs_for_targets(
+        self,
+        target_type: str,
+        target_ids: Sequence[str],
+        *,
+        job_type: str | None = None,
+    ) -> Sequence[Job]:
+        store = getattr(self, "_store", None) or getattr(self, "_jobs", None)
+        if store is None:
+            return []
+        return list_jobs_for_targets_from_store(
+            store, target_type, target_ids, job_type=job_type
+        )
 
 
 class StubPositionRepo(PositionRepository):

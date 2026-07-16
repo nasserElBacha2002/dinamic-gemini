@@ -10,6 +10,7 @@ from src.llm.provider_error_taxonomy import (
     PROVIDER_AUTH_FAILED,
     PROVIDER_CONTENT_BLOCKED,
     PROVIDER_INCOMPATIBLE_WITH_JOB,
+    PROVIDER_INVALID_REQUEST,
     PROVIDER_INVALID_RESPONSE,
     PROVIDER_JSON_PARSE_FAILED,
     PROVIDER_MODEL_NOT_FOUND,
@@ -43,6 +44,9 @@ from src.llm.provider_error_taxonomy import (
         ("QUOTA_EXCEEDED", PROVIDER_QUOTA_EXCEEDED),
         ("CONTENT_BLOCKED", PROVIDER_CONTENT_BLOCKED),
         ("SAFETY_BLOCKED", PROVIDER_CONTENT_BLOCKED),
+        ("PROVIDER_IMAGE_DIMENSION_EXCEEDED", PROVIDER_INVALID_REQUEST),
+        ("PROVIDER_IMAGE_NORMALIZATION_FAILED", PROVIDER_INVALID_REQUEST),
+        ("PROVIDER_INVALID_MULTIMODAL_REQUEST", PROVIDER_INVALID_REQUEST),
     ],
 )
 def test_legacy_code_maps_to_canonical(legacy: str, canonical: str) -> None:
@@ -110,6 +114,7 @@ def test_provider_error_retryable_respects_capability_set() -> None:
         (PROVIDER_QUOTA_EXCEEDED, True),
         (PROVIDER_AUTH_FAILED, False),
         (PROVIDER_INCOMPATIBLE_WITH_JOB, False),
+        (PROVIDER_INVALID_REQUEST, False),
         (PROVIDER_MODEL_NOT_FOUND, False),
     ],
 )

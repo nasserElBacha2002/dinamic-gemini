@@ -200,6 +200,30 @@ def test_aggregate_totals_and_provider_grouping(cost_setup) -> None:
         assert row.cost_per_counted_unit is None
 
 
+def test_multi_run_cost_matches_billable_aggregator_not_last_only(cost_setup) -> None:
+    """Case 10: analytics cost = SSOT sum of billable runs; count stays operational."""
+    from src.application.services.billable_job_cost_aggregation import (
+        sum_billable_costs_by_aisle_id,
+    )
+
+    job_repo = cost_setup["job_repo"]
+    aisle = cost_setup["aisle"]
+    jobs = [
+        cost_setup["job_factory"]("r1", total="10.00000000"),
+        cost_setup["job_factory"]("r2", total="15.00000000"),
+        cost_setup["job_factory"]("r3", total="12.00000000"),
+    ]
+    for j in jobs:
+        job_repo.save(j)
+
+    result = cost_setup["svc"].build(_filters(inventory_id=cost_setup["inv"].id))
+    expected = sum_billable_costs_by_aisle_id(jobs)[aisle.id]
+    assert result.totals.total_cost == expected == Decimal("37.00000000")
+    assert result.totals.total_counted_quantity == 3  # operational qty, not sum of runs
+    aisle_row = next(r for r in result.by_aisle if r.aisle_id == aisle.id)
+    assert aisle_row.total_cost == Decimal("37.00000000")
+
+
 def test_unavailable_numeric_cost_not_summed(cost_setup) -> None:
     job_repo = cost_setup["job_repo"]
     job_repo.save(cost_setup["job_factory"]("job-1", total="99.00000000", status="unavailable"))

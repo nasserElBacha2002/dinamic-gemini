@@ -46,6 +46,35 @@ class MemoryJobRepository(JobRepository):
         n = max(1, int(limit))
         return candidates[:n]
 
+    def list_jobs_for_targets(
+        self,
+        target_type: str,
+        target_ids: Sequence[str],
+        *,
+        job_type: str | None = None,
+    ) -> Sequence[Job]:
+        """All matching jobs for targets (no per-target history cap)."""
+        if not target_ids:
+            return []
+        unique_ids = list(dict.fromkeys(target_ids))
+        id_set = frozenset(unique_ids)
+        candidates = [
+            j
+            for j in self._store.values()
+            if j.target_type == target_type
+            and j.target_id in id_set
+            and (job_type is None or j.job_type == job_type)
+        ]
+        candidates.sort(key=lambda j: (j.target_id, j.updated_at, j.created_at), reverse=True)
+        out: list[Job] = []
+        seen: set[str] = set()
+        for job in candidates:
+            if job.id in seen:
+                continue
+            seen.add(job.id)
+            out.append(job)
+        return out
+
     def list_all_jobs(self) -> Sequence[Job]:
         return list(self._store.values())
 

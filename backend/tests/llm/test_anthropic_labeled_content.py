@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import numpy as np
+from PIL import Image
 
 from src.llm.anthropic_sdk_adapter import _anthropic_build_message_content
 from src.llm.types import LLMRequest
@@ -16,9 +17,7 @@ from src.llm.vision_multimodal_payload import (
 
 
 def test_anthropic_build_message_content_labels_and_multimodal_order() -> None:
-    pil = MagicMock()
-    pil.mode = "RGB"
-    pil.size = (8, 8)
+    pil = Image.new("RGB", (8, 8), (1, 2, 3))
     frames_nd = [np.zeros((8, 8, 3), dtype=np.uint8)]
     request = LLMRequest(
         job_id="j1",

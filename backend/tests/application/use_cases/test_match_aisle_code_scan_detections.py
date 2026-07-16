@@ -30,6 +30,7 @@ from src.domain.positions.entities import Position, PositionStatus
 from src.domain.products.entities import ProductRecord
 from src.infrastructure.repositories.memory_code_scan_repository import MemoryCodeScanRepository
 from tests.application.use_cases.test_run_aisle_code_scan import FixedClock, StubAisleRepo
+from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 
 
 class StubPositionRepo(PositionRepository):
@@ -127,6 +128,22 @@ class StubJobRepo(JobRepository):
             for j in self._jobs.values()
             if j.target_type == target_type and j.target_id == target_id
         ]
+
+
+    def list_jobs_for_targets(
+        self,
+        target_type: str,
+        target_ids: Sequence[str],
+        *,
+        job_type: str | None = None,
+    ) -> Sequence[Job]:
+        store = getattr(self, "_store", None) or getattr(self, "_jobs", None)
+        if store is None:
+            return []
+        return list_jobs_for_targets_from_store(
+            store, target_type, target_ids, job_type=job_type
+        )
+
 
     def list_all_jobs(self) -> Sequence[Job]:
         return list(self._jobs.values())

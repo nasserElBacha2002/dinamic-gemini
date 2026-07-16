@@ -18,6 +18,7 @@ from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
 from src.pipeline.errors import PipelineCancellationRequestedError
 from src.pipeline.execution_log import ExecutionLogWriter
+from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 
 
 class _FixedClock(Clock):
@@ -48,6 +49,22 @@ class _MemJobRepo(JobRepository):
         self, target_type: str, target_id: str, *, limit: int = 50
     ) -> Sequence[Job]:
         return []
+
+
+
+    def list_jobs_for_targets(
+        self,
+        target_type: str,
+        target_ids: Sequence[str],
+        *,
+        job_type: str | None = None,
+    ) -> Sequence[Job]:
+        store = getattr(self, "_store", None) or getattr(self, "_jobs", None)
+        if store is None:
+            return []
+        return list_jobs_for_targets_from_store(
+            store, target_type, target_ids, job_type=job_type
+        )
 
 
 class _MemAisleRepo(AisleRepository):
