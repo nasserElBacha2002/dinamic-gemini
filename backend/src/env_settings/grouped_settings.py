@@ -1193,6 +1193,20 @@ class AuthSettings(BaseModel):
             "the primary admin. Env: AUTH_JAIRO_PASSWORD_HASH."
         ),
     )
+    auth_admin_client_id: str = Field(
+        default_factory=lambda: (os.getenv("AUTH_ADMIN_CLIENT_ID", "") or "").strip(),
+        description=(
+            "Optional client/company scope for the primary admin JWT. When set, Observability "
+            "reads are restricted to inventories with that client_id. Empty = platform-unbound. "
+            "Env: AUTH_ADMIN_CLIENT_ID."
+        ),
+    )
+    auth_jairo_client_id: str = Field(
+        default_factory=lambda: (os.getenv("AUTH_JAIRO_CLIENT_ID", "") or "").strip(),
+        description=(
+            "Optional client/company scope for the Jairo operator JWT. Env: AUTH_JAIRO_CLIENT_ID."
+        ),
+    )
     auth_token_secret: str = Field(
         default_factory=lambda: (os.getenv("AUTH_TOKEN_SECRET", "") or "").strip(),
         description="Secret key used to sign auth tokens. Env: AUTH_TOKEN_SECRET.",
@@ -1246,6 +1260,79 @@ class EvidenceSettings(BaseModel):
         ge=1,
         le=100,
         description="Calidad JPEG para evidencia. Env: EVIDENCE_JPEG_QUALITY.",
+    )
+
+
+class ObservabilitySettings(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    observability_execution_log_retention_days: int = Field(
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_EXECUTION_LOG_RETENTION_DAYS", "90")),
+        ge=1,
+        le=3650,
+        description="Retention days for execution log objects. Env: OBSERVABILITY_EXECUTION_LOG_RETENTION_DAYS.",
+    )
+    observability_input_artifact_retention_days: int = Field(
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_INPUT_ARTIFACT_RETENTION_DAYS", "90")),
+        ge=1,
+        le=3650,
+        description="Retention days for INPUT artifacts. Env: OBSERVABILITY_INPUT_ARTIFACT_RETENTION_DAYS.",
+    )
+    observability_intermediate_artifact_retention_days: int = Field(
+        default_factory=lambda: int(
+            os.getenv("OBSERVABILITY_INTERMEDIATE_ARTIFACT_RETENTION_DAYS", "30")
+        ),
+        ge=1,
+        le=3650,
+        description="Retention days for INTERMEDIATE artifacts. Env: OBSERVABILITY_INTERMEDIATE_ARTIFACT_RETENTION_DAYS.",
+    )
+    observability_output_artifact_retention_days: int = Field(
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_OUTPUT_ARTIFACT_RETENTION_DAYS", "180")),
+        ge=1,
+        le=3650,
+        description="Retention days for OUTPUT artifacts. Env: OBSERVABILITY_OUTPUT_ARTIFACT_RETENTION_DAYS.",
+    )
+    observability_debug_artifact_retention_days: int = Field(
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_DEBUG_ARTIFACT_RETENTION_DAYS", "14")),
+        ge=1,
+        le=3650,
+        description="Retention days for DEBUG artifacts. Env: OBSERVABILITY_DEBUG_ARTIFACT_RETENTION_DAYS.",
+    )
+    observability_signed_url_ttl_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_SIGNED_URL_TTL_SECONDS", "300")),
+        ge=30,
+        le=3600,
+        description="TTL for Observability signed download URLs. Env: OBSERVABILITY_SIGNED_URL_TTL_SECONDS.",
+    )
+    observability_text_preview_max_bytes: int = Field(
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_TEXT_PREVIEW_MAX_BYTES", "65536")),
+        ge=1024,
+        le=5_000_000,
+        description="Max bytes for text artifact preview. Env: OBSERVABILITY_TEXT_PREVIEW_MAX_BYTES.",
+    )
+    observability_json_preview_max_bytes: int = Field(
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_JSON_PREVIEW_MAX_BYTES", "131072")),
+        ge=1024,
+        le=5_000_000,
+        description="Max bytes for JSON artifact preview. Env: OBSERVABILITY_JSON_PREVIEW_MAX_BYTES.",
+    )
+    observability_image_preview_max_bytes: int = Field(
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_IMAGE_PREVIEW_MAX_BYTES", "2097152")),
+        ge=1024,
+        le=20_000_000,
+        description="Max bytes for image artifact preview. Env: OBSERVABILITY_IMAGE_PREVIEW_MAX_BYTES.",
+    )
+    observability_log_page_size: int = Field(
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_LOG_PAGE_SIZE", "100")),
+        ge=1,
+        le=500,
+        description="Default execution-log page size. Env: OBSERVABILITY_LOG_PAGE_SIZE.",
+    )
+    observability_log_max_page_size: int = Field(
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_LOG_MAX_PAGE_SIZE", "500")),
+        ge=1,
+        le=1000,
+        description="Max execution-log page size. Env: OBSERVABILITY_LOG_MAX_PAGE_SIZE.",
     )
 
 

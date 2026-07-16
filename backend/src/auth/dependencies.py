@@ -78,8 +78,14 @@ def get_current_admin(
             status_code=status.HTTP_401_UNAUTHORIZED,
             error=AuthError(code="UNAUTHORIZED", message="Authentication required."),
         )
+    raw_client = payload.get("client_id")
+    client_id = (
+        raw_client.strip()
+        if isinstance(raw_client, str) and raw_client.strip()
+        else None
+    )
 
-    return AuthUser(id=principal_id, username=username, role=role)
+    return AuthUser(id=principal_id, username=username, role=role, client_id=client_id)
 
 
 def require_ai_config_inspection_user(

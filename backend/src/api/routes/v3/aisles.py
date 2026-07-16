@@ -31,6 +31,9 @@ from src.api.dependencies import (
     get_finalization_assessment_service,
     get_get_aisle_merge_results_use_case,
     get_get_aisle_processing_status_use_case,
+    get_inventory_repo,
+    get_job_artifact_catalog_service,
+    get_job_retry_chain_service,
     get_job_stale_reconciler,
     get_list_aisle_jobs_use_case,
     get_list_aisles_with_status_use_case,
@@ -59,6 +62,21 @@ from src.api.schemas.merge_schemas import (
     MergeResultsResponse,
     RunMergeResponse,
 )
+from src.api.schemas.observability_job_schemas import (
+    ArtifactPreviewResponse,
+    CursorPageMeta,
+    ExecutionLogFiltersMeta,
+    ExecutionLogPageResponse,
+    JobArtifactPageResponse,
+    JobArtifactResponse,
+    JobArtifactSourceResponse,
+    JobErrorPageResponse,
+    JobErrorResponse,
+    JobRetryChainResponse,
+    JobTimelineEventResponse,
+    JobTimelinePageResponse,
+    RetryChainAttemptResponse,
+)
 from src.api.schemas.processing_schemas import (
     AisleExecutionLogResponse,
     AisleJobsListResponse,
@@ -86,6 +104,7 @@ from src.application.errors import (
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
 )
+from src.application.ports.repositories import InventoryRepository
 from src.application.services.aisle_aggregated_execution_log import (
     AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT,
     aggregate_aisle_execution_log_payload,
@@ -99,8 +118,27 @@ from src.application.services.execution_log_enrichment import (
     execution_log_attachment_filename,
     format_execution_log_plaintext,
 )
+from src.application.services.execution_log_pagination import paginate_execution_log_events
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
+from src.application.services.job_artifact_catalog_service import (
+    JobArtifactCatalogService,
+    JobArtifactView,
+    assert_job_owned_storage_key,
+)
+from src.application.services.job_errors_service import collect_job_errors, paginate_job_errors
+from src.application.services.job_retry_chain_service import JobRetryChainService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
+from src.application.services.job_timeline_service import (
+    derive_timeline_events,
+    paginate_timeline,
+)
+from src.application.services.observability_access import (
+    CAP_VIEW_FULL_PROMPT,
+    CAP_VIEW_STACK_TRACES,
+    ObservabilityAccessContext,
+    assert_inventory_client_scope,
+    principal_has_capability,
+)
 from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
 from src.application.services.run_auditability_service import RunAuditabilityService
 from src.application.use_cases.aisles.activate_aisle import (
@@ -170,8 +208,12 @@ from src.application.use_cases.inventories.export_inventory_business import (
 from src.application.use_cases.inventories.export_inventory_results import (
     ExportAisleResultsCsvUseCase,
 )
+from src.auth.dependencies import get_current_admin
+from src.auth.schemas import AuthUser
+from src.config import load_settings
 from src.domain.jobs.entities import Job
 from src.infrastructure.artifacts.stored_artifact_reader import read_execution_log_events_for_job
+from src.pipeline.secret_redaction import redact_secrets_in_text, redact_secrets_in_value
 
 from .shared import aisle_to_response, job_to_detail, job_to_summary, status_response_from_result
 
@@ -238,8 +280,10 @@ def _load_job_for_inventory_job_route(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
+    *,
+    access_user: AuthUser | None = None,
 ) -> Job:
-    """Resolve job id in inventory/aisle scope.
+    """Resolve job id in inventory/aisle scope (optional company scope via ``access_user``).
 
     Intentionally **not** delegated to :func:`reraise_if_mapped`: HTTP ``detail`` strings here
     are fixed phrases (``Job not found``, ``Job not found or does not belong to this aisle``)
@@ -249,7 +293,12 @@ def _load_job_for_inventory_job_route(
     see **Known dual-shape (same exception class)** in :mod:`src.api.errors.error_mapping`.
     """
     try:
-        return resolve_uc.execute(inventory_id, aisle_id, job_id)
+        return resolve_uc.execute(
+            inventory_id, aisle_id, job_id, access_user=access_user
+        )
+    except InventoryNotFoundError:
+        # Prefer 404 without revealing cross-company inventory existence.
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND) from None
     except JobNotFoundError:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND) from None
     except JobDoesNotBelongToAisleError:
@@ -548,6 +597,8 @@ def cancel_aisle_job(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     use_case: CancelAisleJobUseCase = Depends(get_cancel_aisle_job_use_case),
 ) -> JobSummary:
     """Request cancellation of an active v3 process_aisle job.
@@ -557,6 +608,14 @@ def cancel_aisle_job(
     - RUNNING jobs are marked CANCEL_REQUESTED; the executor will observe this and
       transition to CANCELED at the next safe checkpoint.
     """
+    try:
+        assert_inventory_client_scope(
+            inventory_repo,
+            inventory_id=inventory_id,
+            access=ObservabilityAccessContext.from_user(current_user),
+        )
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_IN_AISLE_INVENTORY) from None
     try:
         job = use_case.execute(
             CancelAisleJobCommand(
@@ -582,8 +641,18 @@ def retry_aisle_job(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     use_case: RetryAisleJobUseCase = Depends(get_retry_aisle_job_use_case),
 ) -> JobSummary:
+    try:
+        assert_inventory_client_scope(
+            inventory_repo,
+            inventory_id=inventory_id,
+            access=ObservabilityAccessContext.from_user(current_user),
+        )
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_IN_AISLE_INVENTORY) from None
     try:
         job = use_case.execute(
             RetryAisleJobCommand(
@@ -607,6 +676,7 @@ def get_aisle_job_detail(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
@@ -614,7 +684,7 @@ def get_aisle_job_detail(
     assessment_service: FinalizationAssessmentService = Depends(get_finalization_assessment_service),
     artifact_publication_outbox=Depends(get_artifact_publication_outbox_store),
 ) -> JobDetailResponse:
-    job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
+    job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user)
     reconciled = stale_reconciler.reconcile(job)
     if reconciled is None:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND)
@@ -634,13 +704,14 @@ def get_job_traceability(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
     evidence_query: ResultEvidenceQueryService = Depends(get_result_evidence_query_service),
 ) -> JobTraceabilityResponse:
     """Structural result_evidence read model and durable traceability artifact metadata."""
-    _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
+    _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user)
     model = evidence_query.get_job_traceability(
         inventory_id=inventory_id,
         aisle_id=aisle_id,
@@ -657,13 +728,14 @@ def get_job_execution_log(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
     artifact_storage=Depends(get_artifact_storage),
 ) -> ExecutionLogResponse:
     """Structured execution log for this job row; JSONL may cite other ``payload.job_id`` values (envelope + derived fields)."""
-    job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
+    job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user)
     try:
         raw_events = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
     except StoredArtifactAccessError as e:
@@ -692,13 +764,14 @@ def get_job_execution_log_txt(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
     artifact_storage=Depends(get_artifact_storage),
 ) -> Response:
     """Plain-text execution log for download (same artifact as JSON execution-log)."""
-    job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
+    job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user)
     try:
         raw_events = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
     except StoredArtifactAccessError as e:
@@ -732,13 +805,14 @@ def get_job_hybrid_report(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
     artifact_storage=Depends(get_artifact_storage),
 ) -> dict[str, Any]:
     """Return pipeline hybrid_report.json (dict) from durable artifact metadata or legacy disk."""
-    job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
+    job = _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user)
     try:
         return load_hybrid_report_json_for_api(job, artifact_store=artifact_storage)
     except StoredArtifactAccessError as e:
@@ -759,17 +833,514 @@ def get_job_run_auditability(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
     audit_svc: RunAuditabilityService = Depends(get_run_auditability_service),
 ) -> dict[str, Any]:
     """Aggregated run observability (Phase H): job row, joins, ``result_json``, hybrid_report, execution_log."""
-    _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id)
+    _load_job_for_inventory_job_route(resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user)
     view = audit_svc.build(job_id)
     if view is None:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND)
     return view.to_jsonable()
+
+
+def _artifact_to_response(view: JobArtifactView) -> JobArtifactResponse:
+    return JobArtifactResponse(
+        id=view.id,
+        job_id=view.job_id,
+        category=view.category.value,
+        kind=view.kind,
+        stage=view.stage,
+        display_name=view.display_name,
+        original_filename=view.original_filename,
+        mime_type=view.mime_type,
+        size_bytes=view.size_bytes,
+        checksum=view.checksum,
+        width=view.width,
+        height=view.height,
+        status=view.status.value,
+        is_current=view.is_current,
+        is_previewable=view.is_previewable,
+        is_downloadable=view.is_downloadable,
+        created_at=view.created_at,
+        published_at=view.published_at,
+        expires_at=view.expires_at,
+        source=JobArtifactSourceResponse(
+            type=view.source_type,
+            source_asset_id=view.source_asset_id,
+        ),
+    )
+
+
+def _safe_download_filename(name: str | None, *, fallback: str) -> str:
+    raw = (name or fallback).strip() or fallback
+    cleaned = "".join(c for c in raw if c.isalnum() or c in ("-", "_", ".", " "))
+    cleaned = cleaned.replace('"', "").replace("\n", "").replace("\r", "")[:180]
+    return cleaned or fallback
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/artifacts",
+    response_model=JobArtifactPageResponse,
+)
+def list_job_artifacts(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
+    category: str | None = Query(None),
+    kind: str | None = Query(None),
+    status: str | None = Query(None),
+    is_current: bool | None = Query(None),
+    cursor: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
+    catalog: JobArtifactCatalogService = Depends(get_job_artifact_catalog_service),
+) -> JobArtifactPageResponse:
+    job = _load_job_for_inventory_job_route(
+        resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user
+    )
+    page = catalog.list_for_job(
+        job,
+        aisle_id=aisle_id,
+        category=category,
+        kind=kind,
+        status=status,
+        cursor=cursor,
+        limit=limit,
+        is_current=is_current,
+    )
+    return JobArtifactPageResponse(
+        items=[_artifact_to_response(i) for i in page.items],
+        page=CursorPageMeta(next_cursor=page.next_cursor, has_more=page.has_more),
+    )
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/artifacts/{artifact_id}",
+    response_model=JobArtifactResponse,
+)
+def get_job_artifact_metadata(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    artifact_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
+    catalog: JobArtifactCatalogService = Depends(get_job_artifact_catalog_service),
+) -> JobArtifactResponse:
+    job = _load_job_for_inventory_job_route(
+        resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user
+    )
+    view = catalog.get_for_job(job, aisle_id=aisle_id, artifact_id=artifact_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    return _artifact_to_response(view)
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/artifacts/{artifact_id}/download",
+)
+def download_job_artifact(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    artifact_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
+    catalog: JobArtifactCatalogService = Depends(get_job_artifact_catalog_service),
+    artifact_storage=Depends(get_artifact_storage),
+) -> Response:
+    job = _load_job_for_inventory_job_route(
+        resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user
+    )
+    view = catalog.get_for_job(job, aisle_id=aisle_id, artifact_id=artifact_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    if not view.is_downloadable or view.status.value != "AVAILABLE":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Artifact is not downloadable (status={view.status.value})",
+        )
+    key = (view.storage_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=404, detail="Artifact storage key missing")
+    if view.source_type == "generated":
+        try:
+            assert_job_owned_storage_key(job_id=job.id, storage_key=key)
+        except ValueError:
+            logger.warning(
+                "artifact_storage_key_namespace_violation job_id=%s artifact_id=%s",
+                job.id,
+                artifact_id,
+            )
+            raise HTTPException(status_code=404, detail="Artifact not found") from None
+    settings = load_settings()
+    try:
+        # Prefer short-lived signed URL when the store supports it (S3/GCS).
+        url = artifact_storage.generate_signed_url(
+            key, int(settings.observability_signed_url_ttl_seconds)
+        )
+        if url and str(url).startswith("http"):
+            from fastapi.responses import RedirectResponse
+
+            return RedirectResponse(
+                url=str(url),
+                status_code=307,
+                headers={"Cache-Control": "no-store"},
+            )
+    except Exception:
+        logger.debug("signed_url_unavailable job_id=%s artifact_id=%s", job.id, artifact_id)
+    try:
+        dl = artifact_storage.get_object(key)
+    except Exception as exc:
+        logger.warning("artifact_download_failed job_id=%s artifact_id=%s err=%s", job.id, artifact_id, exc)
+        raise HTTPException(status_code=404, detail="Artifact content not available") from None
+    filename = _safe_download_filename(
+        view.original_filename or f"{view.kind}",
+        fallback=f"{view.kind}.bin",
+    )
+    return Response(
+        content=dl.content,
+        media_type=view.mime_type or dl.content_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/artifacts/{artifact_id}/preview",
+    response_model=ArtifactPreviewResponse,
+)
+def preview_job_artifact(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    artifact_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
+    catalog: JobArtifactCatalogService = Depends(get_job_artifact_catalog_service),
+    artifact_storage=Depends(get_artifact_storage),
+) -> ArtifactPreviewResponse:
+    job = _load_job_for_inventory_job_route(
+        resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user
+    )
+    view = catalog.get_for_job(job, aisle_id=aisle_id, artifact_id=artifact_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    if view.status.value != "AVAILABLE" or not view.is_previewable:
+        return ArtifactPreviewResponse(
+            artifact_id=view.id,
+            kind=view.kind,
+            mime_type=view.mime_type,
+            truncated=False,
+            preview_kind="metadata",
+            content=None,
+            size_bytes=view.size_bytes,
+            status=view.status.value,
+        )
+    key = (view.storage_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=404, detail="Artifact storage key missing")
+    if view.source_type == "generated":
+        try:
+            assert_job_owned_storage_key(job_id=job.id, storage_key=key)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="Artifact not found") from exc
+    settings = load_settings()
+    mime = (view.mime_type or "").lower()
+    max_bytes = settings.observability_text_preview_max_bytes
+    preview_kind: str = "text"
+    if "json" in mime or mime.endswith("+json"):
+        max_bytes = settings.observability_json_preview_max_bytes
+        preview_kind = "json"
+    elif mime.startswith("image/"):
+        return ArtifactPreviewResponse(
+            artifact_id=view.id,
+            kind=view.kind,
+            mime_type=view.mime_type,
+            truncated=False,
+            preview_kind="metadata",
+            content=None,
+            size_bytes=view.size_bytes,
+            status=view.status.value,
+        )
+    try:
+        dl = artifact_storage.get_object(key)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Artifact content not available") from exc
+    raw = dl.content
+    truncated = len(raw) > max_bytes
+    chunk = raw[:max_bytes]
+    try:
+        text = chunk.decode("utf-8")
+    except UnicodeDecodeError:
+        text = chunk.decode("utf-8", errors="replace")
+    text = redact_secrets_in_text(text)
+    return ArtifactPreviewResponse(
+        artifact_id=view.id,
+        kind=view.kind,
+        mime_type=view.mime_type,
+        truncated=truncated,
+        preview_kind=preview_kind,  # type: ignore[arg-type]
+        content=text,
+        size_bytes=view.size_bytes or len(raw),
+        status=view.status.value,
+    )
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/retry-chain",
+    response_model=JobRetryChainResponse,
+)
+def get_job_retry_chain(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
+    chain_svc: JobRetryChainService = Depends(get_job_retry_chain_service),
+) -> JobRetryChainResponse:
+    job = _load_job_for_inventory_job_route(
+        resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user
+    )
+    view = chain_svc.build(job, aisle_id=aisle_id)
+    return JobRetryChainResponse(
+        root_job_id=view.root_job_id,
+        selected_job_id=view.selected_job_id,
+        current_job_id=view.current_job_id,
+        attempts=[
+            RetryChainAttemptResponse(
+                job_id=a.job_id,
+                attempt_number=a.attempt_number,
+                status=a.status,
+                started_at=a.started_at,
+                finished_at=a.finished_at,
+                failure_code=a.failure_code,
+                failure_message=redact_secrets_in_text(a.failure_message),
+                execution_id=a.execution_id,
+                provider_name=a.provider_name,
+                model_name=a.model_name,
+                is_selected=a.is_selected,
+                is_current=a.is_current,
+                is_successful=a.is_successful,
+            )
+            for a in view.attempts
+        ],
+    )
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/execution-log/page",
+    response_model=ExecutionLogPageResponse,
+)
+def get_job_execution_log_page(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
+    cursor: str | None = Query(None),
+    limit: int | None = Query(None, ge=1, le=1000),
+    level: str | None = Query(None),
+    stage: str | None = Query(None),
+    search: str | None = Query(None),
+    sort_order: str = Query("asc"),
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
+    artifact_storage=Depends(get_artifact_storage),
+) -> ExecutionLogPageResponse:
+    """Paginated execution-log events (preserves legacy full ``/execution-log`` contract)."""
+    job = _load_job_for_inventory_job_route(
+        resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user
+    )
+    settings = load_settings()
+    page_size = limit if limit is not None else settings.observability_log_page_size
+    try:
+        raw_events = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
+    except StoredArtifactAccessError as e:
+        reraise_if_mapped(e, cause=e)
+        raise
+    enriched = build_enriched_execution_log(
+        inventory_id=inventory_id,
+        aisle_id=aisle_id,
+        requested_job_id=job_id,
+        raw_events=raw_events,
+    )
+    events = enriched.get("events") or []
+    if not principal_has_capability(current_user, CAP_VIEW_FULL_PROMPT):
+        for ev in events:
+            if isinstance(ev, dict) and isinstance(ev.get("payload"), dict):
+                payload = dict(ev["payload"])
+                if "prompt_text" in payload:
+                    payload["prompt_text"] = "[REDACTED_BY_ROLE]"
+                ev["payload"] = redact_secrets_in_value(payload)
+    else:
+        for ev in events:
+            if isinstance(ev, dict):
+                ev["payload"] = redact_secrets_in_value(ev.get("payload"))
+                if isinstance(ev.get("message"), str):
+                    ev["message"] = redact_secrets_in_text(ev["message"])
+    page = paginate_execution_log_events(
+        events if isinstance(events, list) else [],
+        cursor=cursor,
+        limit=int(page_size),
+        max_limit=settings.observability_log_max_page_size,
+        level=level,
+        stage=stage,
+        search=search,
+        sort_order=sort_order,
+    )
+    return ExecutionLogPageResponse(
+        inventory_id=inventory_id,
+        aisle_id=aisle_id,
+        requested_job_id=job_id,
+        items=page.items,
+        page=CursorPageMeta(next_cursor=page.next_cursor, has_more=page.has_more),
+        filters=ExecutionLogFiltersMeta(
+            available_levels=page.available_levels,
+            available_stages=page.available_stages,
+            available_event_types=[],
+        ),
+    )
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/timeline",
+    response_model=JobTimelinePageResponse,
+)
+def get_job_timeline(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
+    cursor: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    stage: str | None = Query(None),
+    event_type: str | None = Query(None),
+    level: str | None = Query(None),
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
+    artifact_storage=Depends(get_artifact_storage),
+) -> JobTimelinePageResponse:
+    job = _load_job_for_inventory_job_route(
+        resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user
+    )
+    try:
+        raw_events = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
+    except StoredArtifactAccessError as e:
+        # Empty timeline is preferable to hard-fail when log is missing.
+        if getattr(e, "status_code", 404) == 404:
+            raw_events = []
+        else:
+            reraise_if_mapped(e, cause=e)
+            raise
+    events = derive_timeline_events(
+        job_id=job.id,
+        execution_id=job.execution_id,
+        raw_events=raw_events,
+    )
+    page = paginate_timeline(
+        events,
+        cursor=cursor,
+        limit=limit,
+        stage=stage,
+        event_type=event_type,
+        level=level,
+    )
+    return JobTimelinePageResponse(
+        items=[
+            JobTimelineEventResponse(
+                id=e.id,
+                job_id=e.job_id,
+                execution_id=e.execution_id,
+                event_type=e.event_type,
+                stage=e.stage,
+                level=e.level,
+                timestamp=e.timestamp,
+                sequence=e.sequence,
+                previous_status=e.previous_status,
+                new_status=e.new_status,
+                message=redact_secrets_in_text(e.message),
+                duration_ms=e.duration_ms,
+                provider=e.provider,
+                provider_request_id=e.provider_request_id,
+                error_code=e.error_code,
+                metadata=redact_secrets_in_value(e.metadata) if e.metadata else {},
+            )
+            for e in page.items
+        ],
+        page=CursorPageMeta(next_cursor=page.next_cursor, has_more=page.has_more),
+    )
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/jobs/{job_id}/errors",
+    response_model=JobErrorPageResponse,
+)
+def get_job_errors(
+    inventory_id: str,
+    aisle_id: str,
+    job_id: str,
+    current_user: AuthUser = Depends(get_current_admin),
+    cursor: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
+        get_resolve_aisle_job_for_inventory_read_use_case
+    ),
+    artifact_storage=Depends(get_artifact_storage),
+) -> JobErrorPageResponse:
+    job = _load_job_for_inventory_job_route(
+        resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user
+    )
+    include_stack = principal_has_capability(current_user, CAP_VIEW_STACK_TRACES)
+    try:
+        raw_events = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
+    except StoredArtifactAccessError:
+        raw_events = []
+    items = collect_job_errors(
+        job, raw_events=raw_events, include_stack_hint=include_stack
+    )
+    page = paginate_job_errors(items, cursor=cursor, limit=limit)
+    return JobErrorPageResponse(
+        items=[
+            JobErrorResponse(
+                error_id=e.error_id,
+                job_id=e.job_id,
+                stage=e.stage,
+                error_category=e.error_category,
+                error_code=e.error_code,
+                provider=e.provider,
+                provider_code=e.provider_code,
+                provider_request_id=e.provider_request_id,
+                http_status=e.http_status,
+                message=e.message,
+                sanitized_detail=e.sanitized_detail,
+                retryable=e.retryable,
+                attempt_number=e.attempt_number,
+                occurred_at=e.occurred_at,
+                stack_trace_available=e.stack_trace_available,
+            )
+            for e in page.items
+        ],
+        page=CursorPageMeta(next_cursor=page.next_cursor, has_more=page.has_more),
+    )
 
 
 @router.post(

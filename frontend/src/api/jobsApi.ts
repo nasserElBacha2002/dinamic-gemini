@@ -3,8 +3,13 @@ import { buildQueryString } from './queryString';
 import type {
   AisleExecutionLogResponse,
   AisleJobsListResponse,
+  ExecutionLogPage,
   ExecutionLogResponse,
+  JobArtifactPage,
+  JobErrorPage,
+  JobRetryChain,
   JobSummary,
+  JobTimelinePage,
   PositionDetailResponse,
   PositionListResponse,
   PromoteOperationalJobResponse,
@@ -53,6 +58,140 @@ export async function getJobAuditability(
 ): Promise<RunAuditabilityView> {
   return apiRequestJson<RunAuditabilityView>(
     `${API_BASE}${getJobAuditabilityPath(inventoryId, aisleId, jobId)}`
+  );
+}
+
+function jobScopedPath(inventoryId: string, aisleId: string, jobId: string, suffix: string): string {
+  const inv = encodeURIComponent(inventoryId);
+  const aisle = encodeURIComponent(aisleId);
+  const job = encodeURIComponent(jobId);
+  return `${API_BASE}${V3_INVENTORIES_BASE}/${inv}/aisles/${aisle}/jobs/${job}${suffix}`;
+}
+
+export async function getJobArtifacts(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string,
+  query?: {
+    category?: string;
+    kind?: string;
+    status?: string;
+    cursor?: string;
+    limit?: number;
+  }
+): Promise<JobArtifactPage> {
+  const qs = buildQueryString([
+    ['category', query?.category],
+    ['kind', query?.kind],
+    ['status', query?.status],
+    ['cursor', query?.cursor],
+    ['limit', query?.limit, { min: 1 }],
+  ]);
+  return apiRequestJson<JobArtifactPage>(
+    `${jobScopedPath(inventoryId, aisleId, jobId, '/artifacts')}${qs}`
+  );
+}
+
+export function getJobArtifactDownloadUrl(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string,
+  artifactId: string
+): string {
+  return jobScopedPath(
+    inventoryId,
+    aisleId,
+    jobId,
+    `/artifacts/${encodeURIComponent(artifactId)}/download`
+  );
+}
+
+export async function downloadJobArtifact(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string,
+  artifactId: string,
+  fallbackFilename: string
+): Promise<void> {
+  return apiDownloadBlob(getJobArtifactDownloadUrl(inventoryId, aisleId, jobId, artifactId), {
+    fallbackFilename,
+  });
+}
+
+export async function getJobRetryChain(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string
+): Promise<JobRetryChain> {
+  return apiRequestJson<JobRetryChain>(jobScopedPath(inventoryId, aisleId, jobId, '/retry-chain'));
+}
+
+export async function getExecutionLogPage(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string,
+  query?: {
+    cursor?: string;
+    limit?: number;
+    level?: string;
+    stage?: string;
+    search?: string;
+    sort_order?: 'asc' | 'desc';
+  }
+): Promise<ExecutionLogPage> {
+  const qs = buildQueryString([
+    ['cursor', query?.cursor],
+    ['limit', query?.limit, { min: 1 }],
+    ['level', query?.level],
+    ['stage', query?.stage],
+    ['search', query?.search],
+    ['sort_order', query?.sort_order],
+  ]);
+  return apiRequestJson<ExecutionLogPage>(
+    `${jobScopedPath(inventoryId, aisleId, jobId, '/execution-log/page')}${qs}`
+  );
+}
+
+export async function getJobTimeline(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string,
+  query?: { cursor?: string; limit?: number; stage?: string; event_type?: string; level?: string }
+): Promise<JobTimelinePage> {
+  const qs = buildQueryString([
+    ['cursor', query?.cursor],
+    ['limit', query?.limit, { min: 1 }],
+    ['stage', query?.stage],
+    ['event_type', query?.event_type],
+    ['level', query?.level],
+  ]);
+  return apiRequestJson<JobTimelinePage>(
+    `${jobScopedPath(inventoryId, aisleId, jobId, '/timeline')}${qs}`
+  );
+}
+
+export async function getJobErrors(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string,
+  query?: { cursor?: string; limit?: number }
+): Promise<JobErrorPage> {
+  const qs = buildQueryString([
+    ['cursor', query?.cursor],
+    ['limit', query?.limit, { min: 1 }],
+  ]);
+  return apiRequestJson<JobErrorPage>(
+    `${jobScopedPath(inventoryId, aisleId, jobId, '/errors')}${qs}`
+  );
+}
+
+export async function getJobHybridReport(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string
+): Promise<Record<string, unknown>> {
+  return apiRequestJson<Record<string, unknown>>(
+    jobScopedPath(inventoryId, aisleId, jobId, '/hybrid-report')
   );
 }
 

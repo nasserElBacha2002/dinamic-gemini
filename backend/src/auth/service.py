@@ -139,7 +139,12 @@ def authenticate_admin(command: LoginRequest, context: AuthContext) -> Optional[
         if submitted_user == s.admin_username and verify_password(
             submitted_pw, s.admin_password_hash
         ):
-            return AuthUser(id="admin", username=s.admin_username, role="administrator")
+            return AuthUser(
+                id="admin",
+                username=s.admin_username,
+                role="administrator",
+                client_id=(s.admin_client_id or "").strip() or None,
+            )
 
     # Jairo is an add-on only: requires a fully configured primary admin (Policy A).
     if (
@@ -149,7 +154,10 @@ def authenticate_admin(command: LoginRequest, context: AuthContext) -> Optional[
         and verify_password(submitted_pw, s.jairo_password_hash)
     ):
         return AuthUser(
-            id=_JAIRO_PRINCIPAL_ID, username=_JAIRO_LOGIN_USERNAME, role="administrator"
+            id=_JAIRO_PRINCIPAL_ID,
+            username=_JAIRO_LOGIN_USERNAME,
+            role="administrator",
+            client_id=(s.jairo_client_id or "").strip() or None,
         )
 
     return None
@@ -160,9 +168,17 @@ def _auth_user_from_principal_id(principal_id: str, context: AuthContext) -> Aut
     s = context.settings
     if principal_id == _JAIRO_PRINCIPAL_ID:
         return AuthUser(
-            id=_JAIRO_PRINCIPAL_ID, username=_JAIRO_LOGIN_USERNAME, role="administrator"
+            id=_JAIRO_PRINCIPAL_ID,
+            username=_JAIRO_LOGIN_USERNAME,
+            role="administrator",
+            client_id=(s.jairo_client_id or "").strip() or None,
         )
-    return AuthUser(id="admin", username=s.admin_username, role="administrator")
+    return AuthUser(
+        id="admin",
+        username=s.admin_username,
+        role="administrator",
+        client_id=(s.admin_client_id or "").strip() or None,
+    )
 
 
 def build_login_response(user: AuthUser, context: AuthContext) -> LoginResponse:
@@ -182,6 +198,7 @@ def build_login_response(user: AuthUser, context: AuthContext) -> LoginResponse:
         username=user.username,
         role=user.role,
         principal_id=user.id,
+        client_id=user.client_id,
         secret=s.token_secret,
         expires_minutes=s.token_expires_minutes,
     )
