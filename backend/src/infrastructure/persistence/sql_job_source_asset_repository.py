@@ -18,6 +18,16 @@ class SqlJobSourceAssetRepository:
 
     def replace_for_job(self, job_id: str, links: Sequence[JobSourceAssetLink]) -> None:
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                "SELECT provider_request_id FROM job_source_assets WHERE job_id = ?",
+                (job_id,),
+            )
+            existing_rows = cur.fetchall()
+            if existing_rows and any(
+                (row.provider_request_id if hasattr(row, "provider_request_id") else row[0])
+                for row in existing_rows
+            ):
+                raise ValueError("SNAPSHOT_IMMUTABLE")
             cur.execute("DELETE FROM job_source_assets WHERE job_id = ?", (job_id,))
             for link in links:
                 cur.execute(
@@ -25,8 +35,9 @@ class SqlJobSourceAssetRepository:
                     INSERT INTO job_source_assets (
                         id, job_id, source_asset_id, asset_role, position_order,
                         checksum, storage_key, mime_type, size_bytes, width, height,
-                        stage, provider_request_id, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        stage, provider_request_id, created_at, original_filename,
+                        transformation, source_parent_id, artifact_id, snapshot_version
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         link.id,
@@ -43,6 +54,11 @@ class SqlJobSourceAssetRepository:
                         link.stage,
                         link.provider_request_id,
                         link.created_at,
+                        link.original_filename,
+                        link.transformation,
+                        link.source_parent_id,
+                        link.artifact_id,
+                        int(link.snapshot_version),
                     ),
                 )
 
@@ -52,7 +68,8 @@ class SqlJobSourceAssetRepository:
                 """
                 SELECT id, job_id, source_asset_id, asset_role, position_order,
                        checksum, storage_key, mime_type, size_bytes, width, height,
-                       stage, provider_request_id, created_at
+                       stage, provider_request_id, created_at, original_filename,
+                       transformation, source_parent_id, artifact_id, snapshot_version
                 FROM job_source_assets
                 WHERE job_id = ?
                 ORDER BY position_order ASC, asset_role ASC, id ASC
@@ -74,6 +91,7 @@ def _row_to_link(row: Any) -> JobSourceAssetLink:
         created = datetime.now(timezone.utc)
     elif created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
+    snapshot_version = _g("snapshot_version", 18)
     return JobSourceAssetLink(
         id=str(_g("id", 0)),
         job_id=str(_g("job_id", 1)),
@@ -93,4 +111,15 @@ def _row_to_link(row: Any) -> JobSourceAssetLink:
             else None
         ),
         created_at=created,
+        original_filename=(
+            str(_g("original_filename", 14)) if _g("original_filename", 14) is not None else None
+        ),
+        transformation=(
+            str(_g("transformation", 15)) if _g("transformation", 15) is not None else None
+        ),
+        source_parent_id=(
+            str(_g("source_parent_id", 16)) if _g("source_parent_id", 16) is not None else None
+        ),
+        artifact_id=(str(_g("artifact_id", 17)) if _g("artifact_id", 17) is not None else None),
+        snapshot_version=int(snapshot_version) if snapshot_version is not None else 1,
     )

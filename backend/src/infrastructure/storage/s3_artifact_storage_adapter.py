@@ -6,13 +6,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, cast
 
 from src.application.ports.services import ArtifactStorage
 from src.infrastructure.storage.artifact_store import (
     ArtifactDownload,
     ArtifactStore,
     StoredArtifact,
+    StoredObjectMetadata,
 )
 
 logger = logging.getLogger(__name__)
@@ -169,6 +170,65 @@ class S3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             raise RuntimeError(
                 f"S3 head_object failed for key={object_key!r} bucket={self._bucket!r}"
             ) from exc
+
+    def read_range(
+        self,
+        key: str,
+        *,
+        start: int,
+        length: int,
+        bucket: str | None = None,
+    ) -> bytes:
+        if bucket and bucket != self._bucket:
+            raise RuntimeError(
+                f"S3 bucket mismatch for read_range: record_bucket={bucket!r} configured_bucket={self._bucket!r}"
+            )
+        if start < 0:
+            raise ValueError("start must be >= 0")
+        if length < 0:
+            raise ValueError("length must be >= 0")
+        if length == 0:
+            return b""
+        object_key = self._client_key(key)
+        end = start + length - 1
+        try:
+            result = self._client.get_object(
+                Bucket=self._bucket, Key=object_key, Range=f"bytes={start}-{end}"
+            )
+            return cast(bytes, result["Body"].read())
+        except Exception as exc:
+            logger.exception(
+                "S3 read_range failed bucket=%s key=%s start=%s length=%s",
+                self._bucket,
+                object_key,
+                start,
+                length,
+            )
+            raise RuntimeError(
+                f"S3 ranged read failed for key={object_key!r} bucket={self._bucket!r}"
+            ) from exc
+
+    def get_object_metadata(self, key: str, *, bucket: str | None = None) -> StoredObjectMetadata:
+        if bucket and bucket != self._bucket:
+            raise RuntimeError(
+                f"S3 bucket mismatch for head_object: record_bucket={bucket!r} configured_bucket={self._bucket!r}"
+            )
+        object_key = self._client_key(key)
+        try:
+            head = self._client.head_object(Bucket=self._bucket, Key=object_key)
+        except Exception as exc:
+            logger.exception("S3 head_object failed bucket=%s key=%s", self._bucket, object_key)
+            raise RuntimeError(
+                f"S3 head_object failed for key={object_key!r} bucket={self._bucket!r}"
+            ) from exc
+        etag = (head.get("ETag") or "").strip('"') or None
+        updated_at = head.get("LastModified") or None
+        return StoredObjectMetadata(
+            file_size_bytes=int(head.get("ContentLength") or 0),
+            etag=etag,
+            content_type=head.get("ContentType") or None,
+            updated_at=updated_at,
+        )
 
     def download_to_path(self, key: str, target_path: Path, *, bucket: str | None = None) -> None:
         if bucket and bucket != self._bucket:

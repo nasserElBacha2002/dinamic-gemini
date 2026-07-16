@@ -38,4 +38,9 @@ describe('errorTranslations mappings', () => {
   it('returns null for unknown backend detail', () => {
     expect(backendDetailToTranslationKey('some internal detail')).toBeNull();
   });
+
+  it('maps observability pagination error details', () => {
+    expect(backendDetailToTranslationKey('INVALID_CURSOR')).toBe('errors.invalid_cursor');
+    expect(backendDetailToTranslationKey('LOG_CHANGED')).toBe('errors.log_changed');
+  });
 });

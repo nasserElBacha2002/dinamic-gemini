@@ -806,6 +806,7 @@ export interface JobArtifactPage {
   items: JobArtifact[];
   page: { next_cursor?: string | null; has_more: boolean };
   inputs_legacy_unverified?: boolean;
+  input_snapshot_failed?: boolean;
 }
 
 export interface ArtifactPreview {
@@ -817,6 +818,16 @@ export interface ArtifactPreview {
   content?: string | null;
   size_bytes?: number | null;
   status: string;
+  /** Set when `preview_kind` is `json`: whether `content` parsed as valid JSON. */
+  valid_json?: boolean | null;
+  /** Set when the preview content was cut short (distinct from `truncated` size cap). */
+  partial?: boolean | null;
+}
+
+/** Edge in the retry chain graph — present when the chain forks into multiple children. */
+export interface JobRetryChainEdge {
+  from_job_id: string;
+  to_job_id: string;
 }
 
 export interface RetryChainAttempt {
@@ -842,6 +853,8 @@ export interface JobRetryChain {
   integrity?: string;
   warnings?: string[];
   attempts: RetryChainAttempt[];
+  /** Retry graph edges (parent → child); present when the chain forks (integrity FORKED). */
+  edges?: JobRetryChainEdge[];
 }
 
 export interface ExecutionLogPage {
@@ -882,6 +895,9 @@ export interface JobTimelineEvent {
 export interface JobTimelinePage {
   items: JobTimelineEvent[];
   page: { next_cursor?: string | null; has_more: boolean };
+  pagination_mode?: string;
+  truncated?: boolean;
+  bytes_scanned?: number | null;
 }
 
 export interface JobErrorItem {
@@ -905,6 +921,9 @@ export interface JobErrorItem {
 export interface JobErrorPage {
   items: JobErrorItem[];
   page: { next_cursor?: string | null; has_more: boolean };
+  pagination_mode?: string;
+  truncated?: boolean;
+  bytes_scanned?: number | null;
 }
 
 /** Per-job row on GET .../aisles/{aisle_id}/execution-log (aisle aggregate). */

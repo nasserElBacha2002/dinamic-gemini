@@ -45,6 +45,7 @@ class JobArtifactPageResponse(BaseModel):
     items: list[JobArtifactResponse]
     page: CursorPageMeta
     inputs_legacy_unverified: bool = False
+    input_snapshot_failed: bool = False
 
 
 class RetryChainAttemptResponse(BaseModel):
@@ -63,6 +64,11 @@ class RetryChainAttemptResponse(BaseModel):
     is_successful: bool
 
 
+class RetryChainEdgeResponse(BaseModel):
+    from_job_id: str
+    to_job_id: str
+
+
 class JobRetryChainResponse(BaseModel):
     root_job_id: str
     selected_job_id: str
@@ -70,6 +76,7 @@ class JobRetryChainResponse(BaseModel):
     integrity: str = "VALID"
     warnings: list[str] = Field(default_factory=list)
     attempts: list[RetryChainAttemptResponse]
+    edges: list[RetryChainEdgeResponse] = Field(default_factory=list)
 
 
 class ExecutionLogFiltersMeta(BaseModel):
@@ -112,6 +119,9 @@ class JobTimelineEventResponse(BaseModel):
 class JobTimelinePageResponse(BaseModel):
     items: list[JobTimelineEventResponse]
     page: CursorPageMeta
+    pagination_mode: str = "incremental"
+    truncated: bool = False
+    bytes_scanned: int | None = None
 
 
 class JobErrorResponse(BaseModel):
@@ -135,6 +145,9 @@ class JobErrorResponse(BaseModel):
 class JobErrorPageResponse(BaseModel):
     items: list[JobErrorResponse]
     page: CursorPageMeta
+    pagination_mode: str = "incremental"
+    truncated: bool = False
+    bytes_scanned: int | None = None
 
 
 class ArtifactPreviewResponse(BaseModel):
@@ -146,3 +159,5 @@ class ArtifactPreviewResponse(BaseModel):
     content: str | None = None
     size_bytes: int | None = None
     status: str
+    valid_json: bool | None = None
+    partial: bool | None = None

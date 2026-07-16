@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.application.errors import InventoryNotFoundError
+from src.application.errors import InputSnapshotPersistError, InventoryNotFoundError
 from src.application.services.execution_log_incremental import (
     InvalidCursorError,
     encode_incremental_cursor,
@@ -22,7 +22,10 @@ from src.application.services.job_retry_chain_service import (
     JobRetryChainService,
     RetryChainIntegrity,
 )
-from src.application.services.job_source_asset_snapshot import build_job_source_asset_links
+from src.application.services.job_source_asset_snapshot import (
+    build_job_source_asset_links,
+    persist_job_source_asset_snapshot_checked,
+)
 from src.application.services.job_timeline_service import derive_timeline_events
 from src.application.services.observability_access import (
     CAP_DOWNLOAD_ARTIFACTS,
@@ -319,6 +322,29 @@ def test_retry_chain_detects_fork() -> None:
     view = JobRetryChainService(job_repo).build(c1, aisle_id="a1")
     assert view.integrity == RetryChainIntegrity.FORKED
     assert any("fork_at=j1" in w for w in view.warnings)
+    attempt_ids = {a.job_id for a in view.attempts}
+    assert attempt_ids >= {"j1", "j2", "j3"}
+    assert any(e.from_job_id == "j1" and e.to_job_id == "j3" for e in view.edges)
+
+
+def test_artifact_cursor_rejects_invalid_and_filter_mismatch() -> None:
+    from src.application.services.execution_log_incremental import InvalidCursorError
+    from src.application.services.job_artifact_catalog_service import (
+        artifact_filters_fingerprint,
+        decode_artifact_cursor,
+        encode_artifact_cursor,
+    )
+
+    fp = artifact_filters_fingerprint(category=None, kind=None, status=None, is_current=None)
+    cur = encode_artifact_cursor(5, job_id="job-a", filters_fp=fp)
+    assert decode_artifact_cursor(cur, job_id="job-a", filters_fp=fp) == 5
+    with pytest.raises(InvalidCursorError):
+        decode_artifact_cursor("%%%", job_id="job-a", filters_fp=fp)
+    with pytest.raises(InvalidCursorError):
+        decode_artifact_cursor(cur, job_id="other", filters_fp=fp)
+    other_fp = artifact_filters_fingerprint(category="LOG", kind=None, status=None, is_current=None)
+    with pytest.raises(InvalidCursorError):
+        decode_artifact_cursor(cur, job_id="job-a", filters_fp=other_fp)
 
 
 def test_secret_redaction_table() -> None:
@@ -342,3 +368,128 @@ def test_secret_redaction_table() -> None:
     )
     assert nested["authorization"] == "[REDACTED]"
     assert nested["ok"] == 1
+
+
+def _make_asset(idx: int, *, now: datetime, asset_type: SourceAssetType = SourceAssetType.PHOTO) -> SourceAsset:
+    return SourceAsset(
+        id=f"a{idx}",
+        aisle_id="aisle-1",
+        type=asset_type,
+        original_filename=f"IMG_{idx:04d}.jpg",
+        storage_path=f"p{idx}",
+        mime_type="image/jpeg",
+        uploaded_at=now,
+        storage_key=f"uploads/a{idx}.jpg",
+        file_size_bytes=10 + idx,
+    )
+
+
+def test_build_links_carries_original_filename_and_deterministic_ids() -> None:
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+    assets = [_make_asset(i, now=now) for i in range(3)]
+    links = build_job_source_asset_links(job_id="job-1", assets=assets)
+    assert [x.original_filename for x in links] == ["IMG_0000.jpg", "IMG_0001.jpg", "IMG_0002.jpg"]
+    # Deterministic: rebuilding with the same inputs yields identical ids.
+    links_again = build_job_source_asset_links(job_id="job-1", assets=assets)
+    assert [x.id for x in links] == [x.id for x in links_again]
+    # Different job_id must yield different ids (no cross-job collisions).
+    other = build_job_source_asset_links(job_id="job-2", assets=assets)
+    assert {x.id for x in links}.isdisjoint({x.id for x in other})
+
+
+def test_video_asset_role_is_video_not_reference() -> None:
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+    assets = [_make_asset(0, now=now, asset_type=SourceAssetType.VIDEO)]
+    links = build_job_source_asset_links(job_id="job-1", assets=assets)
+    assert links[0].asset_role == "video"
+
+
+def test_reference_role_detected_from_metadata_hint() -> None:
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+    asset = _make_asset(0, now=now)
+    asset.metadata_json = {"role": "reference"}
+    links = build_job_source_asset_links(job_id="job-1", assets=[asset])
+    assert links[0].asset_role == "reference"
+
+
+def test_persist_snapshot_checked_required_raises_typed_error_on_failure() -> None:
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+    assets = [_make_asset(0, now=now)]
+
+    class _BoomRepo:
+        def replace_for_job(self, job_id: str, links) -> None:
+            raise RuntimeError("db unavailable")
+
+        def list_for_job(self, job_id: str):
+            return []
+
+    with pytest.raises(InputSnapshotPersistError) as excinfo:
+        persist_job_source_asset_snapshot_checked(
+            _BoomRepo(),
+            job_id="job-1",
+            assets=assets,
+            required=True,
+        )
+    assert excinfo.value.code == "INPUT_SNAPSHOT_PERSIST_FAILED"
+
+
+def test_persist_snapshot_checked_not_required_returns_warning_result() -> None:
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+    assets = [_make_asset(0, now=now)]
+
+    class _BoomRepo:
+        def replace_for_job(self, job_id: str, links) -> None:
+            raise RuntimeError("db unavailable")
+
+        def list_for_job(self, job_id: str):
+            return []
+
+    result = persist_job_source_asset_snapshot_checked(
+        _BoomRepo(),
+        job_id="job-1",
+        assets=assets,
+        required=False,
+    )
+    assert result.ok is False
+    assert result.links == []
+    assert result.warning is not None and "job-1" in result.warning
+
+
+def test_persist_snapshot_checked_success_returns_ok_with_links() -> None:
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+    assets = [_make_asset(0, now=now)]
+    repo = MemoryJobSourceAssetRepository()
+    result = persist_job_source_asset_snapshot_checked(
+        repo,
+        job_id="job-1",
+        assets=assets,
+        required=True,
+    )
+    assert result.ok is True
+    assert result.warning is None
+    assert len(result.links) == 1
+    assert repo.list_for_job("job-1")[0].original_filename == "IMG_0000.jpg"
+
+
+def test_memory_repo_replace_for_job_immutable_once_provider_request_started() -> None:
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+    repo = MemoryJobSourceAssetRepository()
+    assets = [_make_asset(0, now=now)]
+    links = build_job_source_asset_links(
+        job_id="job-1", assets=assets, provider_request_id="req-1"
+    )
+    repo.replace_for_job("job-1", links)
+    with pytest.raises(ValueError, match="SNAPSHOT_IMMUTABLE"):
+        repo.replace_for_job("job-1", build_job_source_asset_links(job_id="job-1", assets=assets))
+
+
+def test_memory_repo_replace_for_job_allowed_before_provider_request() -> None:
+    now = datetime(2026, 7, 1, tzinfo=UTC)
+    repo = MemoryJobSourceAssetRepository()
+    assets = [_make_asset(0, now=now)]
+    links = build_job_source_asset_links(job_id="job-1", assets=assets)
+    repo.replace_for_job("job-1", links)
+    # No provider_request_id set yet — pre-provider snapshot may still be replaced.
+    more_assets = assets + [_make_asset(1, now=now)]
+    repo.replace_for_job("job-1", build_job_source_asset_links(job_id="job-1", assets=more_assets))
+    assert len(repo.list_for_job("job-1")) == 2

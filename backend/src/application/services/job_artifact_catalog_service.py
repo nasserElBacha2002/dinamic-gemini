@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -12,6 +13,7 @@ from uuid import UUID, uuid5
 
 from src.application.ports.artifact_manifest_store import ArtifactManifestStore
 from src.application.ports.job_source_asset_repository import JobSourceAssetRepository
+from src.application.services.execution_log_incremental import InvalidCursorError
 from src.domain.jobs.artifact_manifest import ArtifactManifestEntry, ArtifactManifestStatus
 from src.domain.jobs.artifact_policy import (
     ARTIFACT_KIND_EXECUTION_LOG,
@@ -191,22 +193,58 @@ def artifact_id_from_parts(
     return str(uuid5(_ARTIFACT_NS, seed))
 
 
-def encode_artifact_cursor(offset: int) -> str:
-    raw = f"o:{offset}".encode()
+def encode_artifact_cursor(
+    offset: int,
+    *,
+    job_id: str,
+    filters_fp: str,
+) -> str:
+    payload = {"v": 1, "job": job_id, "o": int(offset), "f": filters_fp}
+    raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def decode_artifact_cursor(cursor: str | None) -> int:
+def decode_artifact_cursor(
+    cursor: str | None,
+    *,
+    job_id: str,
+    filters_fp: str,
+) -> int:
     if not cursor:
         return 0
     try:
         pad = "=" * (-len(cursor) % 4)
-        raw = base64.urlsafe_b64decode(cursor + pad).decode("utf-8")
-        if raw.startswith("o:"):
-            return max(0, int(raw[2:]))
-    except Exception:
-        return 0
-    return 0
+        raw = base64.urlsafe_b64decode(cursor + pad)
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        raise InvalidCursorError("INVALID_CURSOR") from exc
+    if not isinstance(payload, dict) or payload.get("v") != 1:
+        raise InvalidCursorError("INVALID_CURSOR")
+    if payload.get("job") != job_id or payload.get("f") != filters_fp:
+        raise InvalidCursorError("INVALID_CURSOR")
+    try:
+        return max(0, int(payload["o"]))
+    except Exception as exc:
+        raise InvalidCursorError("INVALID_CURSOR") from exc
+
+
+def artifact_filters_fingerprint(
+    *,
+    category: str | None,
+    kind: str | None,
+    status: str | None,
+    is_current: bool | None,
+) -> str:
+    raw = json.dumps(
+        {
+            "category": (category or "").strip().upper(),
+            "kind": (kind or "").strip(),
+            "status": (status or "").strip().upper(),
+            "is_current": is_current,
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
 class JobArtifactCatalogService:
@@ -248,14 +286,21 @@ class JobArtifactCatalogService:
             items = [i for i in items if i.is_current is is_current]
 
         items.sort(key=lambda a: (a.category.value, a.kind, a.version, a.id))
-        offset = decode_artifact_cursor(cursor)
+        filters_fp = artifact_filters_fingerprint(
+            category=category, kind=kind, status=status, is_current=is_current
+        )
+        offset = decode_artifact_cursor(cursor, job_id=job.id, filters_fp=filters_fp)
         limit = max(1, min(int(limit), 200))
         window = items[offset : offset + limit]
         next_off = offset + len(window)
         has_more = next_off < len(items)
         return JobArtifactPage(
             items=window,
-            next_cursor=encode_artifact_cursor(next_off) if has_more else None,
+            next_cursor=(
+                encode_artifact_cursor(next_off, job_id=job.id, filters_fp=filters_fp)
+                if has_more
+                else None
+            ),
             has_more=has_more,
             inputs_legacy_unverified=legacy,
         )
@@ -443,6 +488,7 @@ class JobArtifactCatalogService:
                     display_name=f"{link.asset_role}:{link.source_asset_id}",
                     original_filename=resolve_artifact_download_filename(
                         kind=kind,
+                        original_filename=link.original_filename,
                         mime_type=link.mime_type,
                         storage_key=link.storage_key,
                     ),

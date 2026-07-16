@@ -1345,10 +1345,49 @@ class ObservabilitySettings(BaseModel):
         description="Max bytes scanned per incremental log page request. Env: OBSERVABILITY_LOG_MAX_SCAN_BYTES.",
     )
     observability_download_max_bytes: int = Field(
-        default_factory=lambda: int(os.getenv("OBSERVABILITY_DOWNLOAD_MAX_BYTES", "0")),
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_DOWNLOAD_MAX_BYTES", "104857600")),
         ge=0,
         le=5_000_000_000,
-        description="Max download size (0 = unlimited). Env: OBSERVABILITY_DOWNLOAD_MAX_BYTES.",
+        description=(
+            "Max artifact download size in bytes. 0 = unlimited (must be set explicitly). "
+            "Default 104857600 (100MB). Env: OBSERVABILITY_DOWNLOAD_MAX_BYTES."
+        ),
+    )
+    observability_input_snapshot_required: bool = Field(
+        default_factory=lambda: os.getenv("OBSERVABILITY_INPUT_SNAPSHOT_REQUIRED", "true").strip().lower()
+        in ("1", "true", "yes", "on"),
+        description=(
+            "When true, a failure to persist the job input snapshot (job_source_assets) fails "
+            "the job with INPUT_SNAPSHOT_PERSIST_FAILED. When false, the failure is recorded as a "
+            "warning on the job result and the run continues. Env: OBSERVABILITY_INPUT_SNAPSHOT_REQUIRED."
+        ),
+    )
+    observability_download_max_concurrent: int = Field(
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_DOWNLOAD_MAX_CONCURRENT", "4")),
+        ge=1,
+        le=64,
+        description=(
+            "Max concurrent artifact/source-asset downloads for Observability batch operations. "
+            "Env: OBSERVABILITY_DOWNLOAD_MAX_CONCURRENT."
+        ),
+    )
+    observability_download_temp_dir: str | None = Field(
+        default_factory=lambda: os.getenv("OBSERVABILITY_DOWNLOAD_TEMP_DIR") or None,
+        description=(
+            "Optional directory for staging Observability artifact downloads. Defaults to the "
+            "system temp directory when unset. Env: OBSERVABILITY_DOWNLOAD_TEMP_DIR."
+        ),
+    )
+    observability_download_temp_max_total_bytes: int = Field(
+        default_factory=lambda: int(
+            os.getenv("OBSERVABILITY_DOWNLOAD_TEMP_MAX_TOTAL_BYTES", "0")
+        ),
+        ge=0,
+        le=50_000_000_000,
+        description=(
+            "Max aggregate bytes staged concurrently in the download temp dir. 0 = unlimited. "
+            "Env: OBSERVABILITY_DOWNLOAD_TEMP_MAX_TOTAL_BYTES."
+        ),
     )
 
 

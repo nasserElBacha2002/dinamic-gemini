@@ -94,8 +94,10 @@ def _event_matches(
     stage: str | None,
     search: str | None,
 ) -> bool:
-    if level and str(ev.get("level") or "").strip().lower() != level:
-        return False
+    if level:
+        allowed = {part.strip().lower() for part in level.split(",") if part.strip()}
+        if str(ev.get("level") or "").strip().lower() not in allowed:
+            return False
     if stage and str(ev.get("stage") or "").strip() != stage:
         return False
     if search:

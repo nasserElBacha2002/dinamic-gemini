@@ -35,6 +35,12 @@ class RetryChainAttemptView:
 
 
 @dataclass(frozen=True)
+class RetryChainEdge:
+    from_job_id: str
+    to_job_id: str
+
+
+@dataclass(frozen=True)
 class RetryChainView:
     root_job_id: str
     selected_job_id: str
@@ -42,6 +48,7 @@ class RetryChainView:
     integrity: RetryChainIntegrity
     attempts: list[RetryChainAttemptView]
     warnings: list[str]
+    edges: list[RetryChainEdge]
 
 
 class JobRetryChainService:
@@ -67,7 +74,7 @@ class JobRetryChainService:
         if root_integrity != RetryChainIntegrity.VALID:
             integrity = root_integrity
 
-        ordered, walk_warnings, walk_integrity = self._walk_forward(root, by_id)
+        ordered, walk_warnings, walk_integrity, edges = self._walk_forward(root, by_id)
         warnings.extend(walk_warnings)
         if walk_integrity != RetryChainIntegrity.VALID and integrity == RetryChainIntegrity.VALID:
             integrity = walk_integrity
@@ -83,6 +90,13 @@ class JobRetryChainService:
                 break
             seen.add(job.id)
             deduped.append(job)
+
+        # Include forked sibling nodes that are not on the primary linear walk.
+        for edge in edges:
+            sibling = by_id.get(edge.to_job_id)
+            if sibling is not None and sibling.id not in seen:
+                seen.add(sibling.id)
+                deduped.append(sibling)
 
         current = deduped[-1]
         for job in reversed(deduped):
@@ -117,6 +131,7 @@ class JobRetryChainService:
             integrity=integrity,
             attempts=attempts,
             warnings=warnings,
+            edges=edges,
         )
 
     def _find_root(
@@ -147,13 +162,15 @@ class JobRetryChainService:
 
     def _walk_forward(
         self, root: Job, by_id: dict[str, Job]
-    ) -> tuple[list[Job], list[str], RetryChainIntegrity]:
+    ) -> tuple[list[Job], list[str], RetryChainIntegrity, list[RetryChainEdge]]:
         children: dict[str, list[Job]] = {}
+        edges: list[RetryChainEdge] = []
         for job in by_id.values():
             parent = (job.retry_of_job_id or "").strip()
             if not parent:
                 continue
             children.setdefault(parent, []).append(job)
+            edges.append(RetryChainEdge(from_job_id=parent, to_job_id=job.id))
         for kids in children.values():
             kids.sort(key=lambda j: (j.created_at, j.id))
 
@@ -172,13 +189,16 @@ class JobRetryChainService:
                 warnings.append(
                     f"fork_at={cursor.id}:children={[j.id for j in next_jobs]}"
                 )
-                # Include all children as siblings in warnings; continue linear path
-                # using earliest child only for the primary chain.
             cursor = next_jobs[0]
             if cursor.id in {j.id for j in chain}:
-                return chain, warnings + [f"cycle_at={cursor.id}"], RetryChainIntegrity.CYCLIC
+                return (
+                    chain,
+                    warnings + [f"cycle_at={cursor.id}"],
+                    RetryChainIntegrity.CYCLIC,
+                    edges,
+                )
             chain.append(cursor)
         if guard >= 100:
             warnings.append("chain_exceeded_max_depth")
             integrity = RetryChainIntegrity.INCOMPLETE
-        return chain, warnings, integrity
+        return chain, warnings, integrity, edges

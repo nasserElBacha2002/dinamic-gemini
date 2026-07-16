@@ -13,6 +13,9 @@ class MemoryJobSourceAssetRepository:
         self._by_job: dict[str, list[JobSourceAssetLink]] = defaultdict(list)
 
     def replace_for_job(self, job_id: str, links: Sequence[JobSourceAssetLink]) -> None:
+        existing = self._by_job.get(job_id, [])
+        if existing and any(e.provider_request_id for e in existing):
+            raise ValueError("SNAPSHOT_IMMUTABLE")
         ordered = sorted(links, key=lambda x: (x.position_order, x.asset_role, x.id))
         self._by_job[job_id] = list(ordered)
 

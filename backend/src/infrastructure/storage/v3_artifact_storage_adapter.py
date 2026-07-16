@@ -8,6 +8,7 @@ operations for future S3-first flows.
 from __future__ import annotations
 
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import BinaryIO
 
@@ -80,6 +81,28 @@ class V3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             raise FileNotFoundError(f"local artifact not found: {key!r}")
         return int(full.stat().st_size)
 
+    def read_range(
+        self,
+        key: str,
+        *,
+        start: int,
+        length: int,
+        bucket: str | None = None,
+    ) -> bytes:
+        _ = bucket  # local provider has no bucket
+        if start < 0:
+            raise ValueError("start must be >= 0")
+        if length < 0:
+            raise ValueError("length must be >= 0")
+        full = self._resolve_safe(key)
+        if not full.is_file():
+            raise FileNotFoundError(f"local artifact not found: {key!r}")
+        if length == 0:
+            return b""
+        with open(full, "rb") as fh:
+            fh.seek(start)
+            return fh.read(length)
+
     def download_to_path(self, key: str, target_path: Path, *, bucket: str | None = None) -> None:
         src = self._resolve_safe(key)
         target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -106,7 +129,8 @@ class V3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
         full = self._resolve_safe(key)
         if not full.is_file():
             raise FileNotFoundError(f"local artifact not found: {key!r}")
-        size = int(full.stat().st_size)
+        stat = full.stat()
+        size = int(stat.st_size)
         sidecar = full.with_suffix(full.suffix + ".sha256")
         sha256 = sidecar.read_text(encoding="utf-8").strip() if sidecar.is_file() else None
         return StoredObjectMetadata(
@@ -115,6 +139,7 @@ class V3ArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             sha256=sha256,
             checksum_value=sha256,
             checksum_algorithm="sha256" if sha256 else None,
+            updated_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
         )
 
     # Backward-compatible application port methods

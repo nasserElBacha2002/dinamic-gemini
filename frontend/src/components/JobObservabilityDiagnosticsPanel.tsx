@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  Alert,
   Box,
   Button,
   Chip,
@@ -51,6 +52,12 @@ export interface JobObservabilityDiagnosticsPanelProps {
   jobId: string;
   active: boolean;
   onSelectAttempt?: (jobId: string) => void;
+  /**
+   * Optional explicit signal that the input snapshot failed to persist for this attempt
+   * (e.g. from job/auditability result data, when the caller already has it). Falls back to
+   * the artifacts page's `inputs_legacy_unverified` flag when not provided.
+   */
+  inputSnapshotFailed?: boolean;
 }
 
 export default function JobObservabilityDiagnosticsPanel({
@@ -59,6 +66,7 @@ export default function JobObservabilityDiagnosticsPanel({
   jobId,
   active,
   onSelectAttempt,
+  inputSnapshotFailed,
 }: JobObservabilityDiagnosticsPanelProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
@@ -70,15 +78,24 @@ export default function JobObservabilityDiagnosticsPanel({
   const [artifactHasMore, setArtifactHasMore] = useState(false);
   const [legacyInputs, setLegacyInputs] = useState(false);
   const [timeline, setTimeline] = useState<PanelState<JobTimelineEvent[]>>(idle());
+  const [timelineCursor, setTimelineCursor] = useState<string | null>(null);
   const [timelineHasMore, setTimelineHasMore] = useState(false);
+  const [timelineMode, setTimelineMode] = useState<string | null>(null);
+  const [timelineTruncated, setTimelineTruncated] = useState(false);
   const [logs, setLogs] = useState<PanelState<ExecutionLogEvent[]>>(idle());
   const [logCursor, setLogCursor] = useState<string | null>(null);
   const [logHasMore, setLogHasMore] = useState(false);
   const [logMode, setLogMode] = useState<string | null>(null);
+  const [logTruncated, setLogTruncated] = useState(false);
   const [errors, setErrors] = useState<PanelState<JobErrorItem[]>>(idle());
+  const [errorCursor, setErrorCursor] = useState<string | null>(null);
   const [errorHasMore, setErrorHasMore] = useState(false);
+  const [errorMode, setErrorMode] = useState<string | null>(null);
+  const [errorTruncated, setErrorTruncated] = useState(false);
   const [hybrid, setHybrid] = useState<PanelState<Record<string, unknown>>>(idle());
   const [preview, setPreview] = useState<ArtifactPreview | null>(null);
+
+  const showInputSnapshotWarning = inputSnapshotFailed === true || legacyInputs;
 
   const resetPanels = useCallback(() => {
     setChain(idle());
@@ -87,13 +104,20 @@ export default function JobObservabilityDiagnosticsPanel({
     setArtifactHasMore(false);
     setLegacyInputs(false);
     setTimeline(idle());
+    setTimelineCursor(null);
     setTimelineHasMore(false);
+    setTimelineMode(null);
+    setTimelineTruncated(false);
     setLogs(idle());
     setLogCursor(null);
     setLogHasMore(false);
     setLogMode(null);
+    setLogTruncated(false);
     setErrors(idle());
+    setErrorCursor(null);
     setErrorHasMore(false);
+    setErrorMode(null);
+    setErrorTruncated(false);
     setHybrid(idle());
     setPreview(null);
   }, []);
@@ -126,7 +150,9 @@ export default function JobObservabilityDiagnosticsPanel({
         setArtifacts({ data: page.items, loading: false, error: null });
         setArtifactCursor(page.page.next_cursor ?? null);
         setArtifactHasMore(Boolean(page.page.has_more));
-        setLegacyInputs(Boolean((page as { inputs_legacy_unverified?: boolean }).inputs_legacy_unverified));
+        setLegacyInputs(
+          Boolean(page.inputs_legacy_unverified) || Boolean(page.input_snapshot_failed)
+        );
       })
       .catch((error) => {
         if (!stillCurrent()) return;
@@ -138,7 +164,10 @@ export default function JobObservabilityDiagnosticsPanel({
       .then((page) => {
         if (!stillCurrent()) return;
         setTimeline({ data: page.items, loading: false, error: null });
+        setTimelineCursor(page.page.next_cursor ?? null);
         setTimelineHasMore(Boolean(page.page.has_more));
+        setTimelineMode(page.pagination_mode ?? null);
+        setTimelineTruncated(Boolean(page.truncated));
       })
       .catch((error) => {
         if (!stillCurrent()) return;
@@ -153,6 +182,7 @@ export default function JobObservabilityDiagnosticsPanel({
         setLogCursor(page.page.next_cursor ?? null);
         setLogHasMore(Boolean(page.page.has_more));
         setLogMode(page.pagination_mode ?? null);
+        setLogTruncated(Boolean(page.truncated));
       })
       .catch((error) => {
         if (!stillCurrent()) return;
@@ -164,7 +194,10 @@ export default function JobObservabilityDiagnosticsPanel({
       .then((page) => {
         if (!stillCurrent()) return;
         setErrors({ data: page.items, loading: false, error: null });
+        setErrorCursor(page.page.next_cursor ?? null);
         setErrorHasMore(Boolean(page.page.has_more));
+        setErrorMode(page.pagination_mode ?? null);
+        setErrorTruncated(Boolean(page.truncated));
       })
       .catch((error) => {
         if (!stillCurrent()) return;
@@ -231,6 +264,52 @@ export default function JobObservabilityDiagnosticsPanel({
     }
   };
 
+  const loadMoreTimeline = async () => {
+    if (!timelineCursor || !jobId) return;
+    const gen = requestGen.current;
+    try {
+      const page = await getJobTimeline(inventoryId, aisleId, jobId, {
+        cursor: timelineCursor,
+        limit: 50,
+      });
+      if (gen !== requestGen.current) return;
+      setTimeline((prev) => ({
+        data: [...(prev.data ?? []), ...page.items],
+        loading: false,
+        error: null,
+      }));
+      setTimelineCursor(page.page.next_cursor ?? null);
+      setTimelineHasMore(Boolean(page.page.has_more));
+      setTimelineTruncated(Boolean(page.truncated));
+    } catch (e) {
+      const err = e instanceof ApiError ? e : new ApiError(String(e));
+      showSnackbar(resolveApiErrorMessage(err, 'errors.load_job_details'), 'error');
+    }
+  };
+
+  const loadMoreErrors = async () => {
+    if (!errorCursor || !jobId) return;
+    const gen = requestGen.current;
+    try {
+      const page = await getJobErrors(inventoryId, aisleId, jobId, {
+        cursor: errorCursor,
+        limit: 50,
+      });
+      if (gen !== requestGen.current) return;
+      setErrors((prev) => ({
+        data: [...(prev.data ?? []), ...page.items],
+        loading: false,
+        error: null,
+      }));
+      setErrorCursor(page.page.next_cursor ?? null);
+      setErrorHasMore(Boolean(page.page.has_more));
+      setErrorTruncated(Boolean(page.truncated));
+    } catch (e) {
+      const err = e instanceof ApiError ? e : new ApiError(String(e));
+      showSnackbar(resolveApiErrorMessage(err, 'errors.load_job_details'), 'error');
+    }
+  };
+
   const openPreview = async (artifactId: string) => {
     try {
       const data = await getJobArtifactPreview(inventoryId, aisleId, jobId, artifactId);
@@ -280,6 +359,11 @@ export default function JobObservabilityDiagnosticsPanel({
             <Typography variant="caption" color="text.secondary">
               {t('jobs.obs_retry_integrity', { value: chain.data.integrity ?? 'VALID' })}
             </Typography>
+            {chain.data.integrity === 'FORKED' ? (
+              <Alert severity="warning" sx={{ py: 0.5 }}>
+                {t('jobs.obs_retry_chain_forked')}
+              </Alert>
+            ) : null}
             <Stack direction="row" flexWrap="wrap" gap={1}>
               {chain.data.attempts.map((a) => (
                 <Chip
@@ -292,6 +376,41 @@ export default function JobObservabilityDiagnosticsPanel({
                 />
               ))}
             </Stack>
+            {chain.data.edges?.length ? (
+              <Box>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  {t('jobs.obs_retry_chain_edges_heading')}
+                </Typography>
+                <Stack spacing={0.25}>
+                  {chain.data.edges.map((edge) => (
+                    <Typography
+                      key={`${edge.from_job_id}-${edge.to_job_id}`}
+                      variant="caption"
+                      component="div"
+                    >
+                      {t('jobs.obs_retry_chain_edge_row', {
+                        from: edge.from_job_id,
+                        to: edge.to_job_id,
+                      })}
+                    </Typography>
+                  ))}
+                </Stack>
+              </Box>
+            ) : null}
+            {chain.data.warnings?.length ? (
+              <Box>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  {t('jobs.obs_retry_chain_warnings_heading')}
+                </Typography>
+                <Stack spacing={0.25}>
+                  {chain.data.warnings.map((w) => (
+                    <Typography key={w} variant="caption" component="div" color="warning.main">
+                      {w}
+                    </Typography>
+                  ))}
+                </Stack>
+              </Box>
+            ) : null}
           </Stack>
         ),
       )}
@@ -302,10 +421,10 @@ export default function JobObservabilityDiagnosticsPanel({
         t('jobs.obs_tab_artifacts'),
         artifacts,
         <>
-          {legacyInputs ? (
-            <Typography variant="caption" color="warning.main" display="block" sx={{ mb: 1 }}>
-              {t('jobs.obs_inputs_legacy_unverified')}
-            </Typography>
+          {showInputSnapshotWarning ? (
+            <Alert severity="warning" sx={{ mb: 1 }}>
+              {t('jobs.obs_input_snapshot_warning')}
+            </Alert>
           ) : null}
           {(artifacts.data ?? []).length === 0 ? (
             <Typography variant="body2" color="text.secondary">
@@ -329,6 +448,11 @@ export default function JobObservabilityDiagnosticsPanel({
                       ({a.category} · {a.kind} · {a.status}
                       {a.is_current ? ` · ${t('jobs.obs_artifact_current')}` : ''})
                     </Typography>
+                    {a.original_filename ? (
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {t('jobs.obs_artifact_original_filename', { name: a.original_filename })}
+                      </Typography>
+                    ) : null}
                   </Typography>
                   <Button size="small" onClick={() => void openPreview(a.id)} disabled={!a.is_previewable}>
                     {t('jobs.obs_preview')}
@@ -365,6 +489,16 @@ export default function JobObservabilityDiagnosticsPanel({
               <Typography variant="caption" display="block">
                 {t('jobs.obs_preview_truncated', { truncated: String(preview.truncated) })}
               </Typography>
+              {preview.valid_json != null ? (
+                <Typography variant="caption" display="block">
+                  {t('jobs.obs_preview_valid_json', { value: String(preview.valid_json) })}
+                </Typography>
+              ) : null}
+              {preview.partial != null ? (
+                <Typography variant="caption" display="block">
+                  {t('jobs.obs_preview_partial', { value: String(preview.partial) })}
+                </Typography>
+              ) : null}
               <Typography
                 component="pre"
                 variant="caption"
@@ -407,24 +541,36 @@ export default function JobObservabilityDiagnosticsPanel({
       {renderPanel(
         t('jobs.obs_tab_timeline'),
         timeline,
-        (timeline.data ?? []).length === 0 ? (
-          <Typography variant="body2" color="text.secondary">
-            {t('jobs.obs_timeline_empty')}
-          </Typography>
-        ) : (
-          <Stack spacing={0.5} sx={{ maxHeight: 240, overflow: 'auto' }}>
-            {(timeline.data ?? []).map((ev) => (
-              <Typography key={ev.id} variant="caption" component="div">
-                [{ev.timestamp ?? '—'}] {ev.event_type} · {ev.stage ?? '—'} · {ev.message ?? ''}
-              </Typography>
-            ))}
-            {timelineHasMore ? (
-              <Typography variant="caption" color="text.secondary">
-                {t('jobs.obs_has_more')}
-              </Typography>
-            ) : null}
-          </Stack>
-        ),
+        <>
+          {timelineMode ? (
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+              {t('jobs.obs_pagination_mode', { mode: timelineMode })}
+            </Typography>
+          ) : null}
+          {timelineTruncated ? (
+            <Alert severity="warning" sx={{ mb: 1 }}>
+              {t('jobs.obs_scan_truncated_warning')}
+            </Alert>
+          ) : null}
+          {(timeline.data ?? []).length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              {t('jobs.obs_timeline_empty')}
+            </Typography>
+          ) : (
+            <Stack spacing={0.5} sx={{ maxHeight: 240, overflow: 'auto' }}>
+              {(timeline.data ?? []).map((ev) => (
+                <Typography key={ev.id} variant="caption" component="div">
+                  [{ev.timestamp ?? '—'}] {ev.event_type} · {ev.stage ?? '—'} · {ev.message ?? ''}
+                </Typography>
+              ))}
+            </Stack>
+          )}
+          {timelineHasMore ? (
+            <Button size="small" sx={{ mt: 1 }} onClick={() => void loadMoreTimeline()}>
+              {t('jobs.obs_load_more_logs')}
+            </Button>
+          ) : null}
+        </>,
       )}
 
       <Divider />
@@ -438,6 +584,11 @@ export default function JobObservabilityDiagnosticsPanel({
             {logMode ? ` · ${logMode}` : ''}
             {logMode === 'legacy_capped' ? ` · ${t('jobs.obs_log_legacy_capped')}` : ''}
           </Typography>
+          {logTruncated ? (
+            <Alert severity="warning" sx={{ mb: 1 }}>
+              {t('jobs.obs_scan_truncated_warning')}
+            </Alert>
+          ) : null}
           <Stack spacing={0.5} sx={{ maxHeight: 220, overflow: 'auto' }}>
             {(logs.data ?? []).map((ev, idx) => (
               <Typography key={`${ev.ts}-${idx}`} variant="caption" component="div">
@@ -458,24 +609,36 @@ export default function JobObservabilityDiagnosticsPanel({
       {renderPanel(
         t('jobs.obs_tab_errors'),
         errors,
-        (errors.data ?? []).length === 0 ? (
-          <Typography variant="body2" color="text.secondary">
-            {t('jobs.obs_errors_empty')}
-          </Typography>
-        ) : (
-          <Stack spacing={0.75}>
-            {(errors.data ?? []).map((e) => (
-              <Typography key={e.error_id} variant="body2">
-                {e.error_code ?? 'ERROR'} · {e.stage ?? '—'} · {e.message ?? e.sanitized_detail ?? ''}
-              </Typography>
-            ))}
-            {errorHasMore ? (
-              <Typography variant="caption" color="text.secondary">
-                {t('jobs.obs_has_more')}
-              </Typography>
-            ) : null}
-          </Stack>
-        ),
+        <>
+          {errorMode ? (
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+              {t('jobs.obs_pagination_mode', { mode: errorMode })}
+            </Typography>
+          ) : null}
+          {errorTruncated ? (
+            <Alert severity="warning" sx={{ mb: 1 }}>
+              {t('jobs.obs_scan_truncated_warning')}
+            </Alert>
+          ) : null}
+          {(errors.data ?? []).length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              {t('jobs.obs_errors_empty')}
+            </Typography>
+          ) : (
+            <Stack spacing={0.75}>
+              {(errors.data ?? []).map((e) => (
+                <Typography key={e.error_id} variant="body2">
+                  {e.error_code ?? 'ERROR'} · {e.stage ?? '—'} · {e.message ?? e.sanitized_detail ?? ''}
+                </Typography>
+              ))}
+            </Stack>
+          )}
+          {errorHasMore ? (
+            <Button size="small" sx={{ mt: 1 }} onClick={() => void loadMoreErrors()}>
+              {t('jobs.obs_load_more_logs')}
+            </Button>
+          ) : null}
+        </>,
       )}
     </Stack>
   );

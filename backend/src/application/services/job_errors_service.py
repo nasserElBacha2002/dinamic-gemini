@@ -80,45 +80,34 @@ def collect_job_errors(
         level = str(ev.get("level") or "").lower()
         if level not in {"error", "critical"}:
             continue
-        payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
+        raw_payload = ev.get("payload")
+        payload: dict[str, Any] = raw_payload if isinstance(raw_payload, dict) else {}
         msg = redact_secrets_in_text(str(ev.get("message") or ""))
         detail_raw = payload.get("detail") or payload.get("error") or payload.get("sanitized_detail")
         detail = redact_secrets_in_text(str(detail_raw)) if detail_raw is not None else msg
         stack_present = bool(payload.get("stack_trace") or payload.get("traceback"))
+        error_code_raw = payload.get("error_code") or payload.get("failure_code")
+        provider_raw = payload.get("provider") or payload.get("provider_name")
+        provider_code_raw = payload.get("provider_code")
+        request_id_raw = payload.get("provider_request_id") or payload.get("request_id")
+        http_status_raw = payload.get("http_status")
+        retryable_raw = payload.get("retryable")
         items.append(
             JobErrorView(
                 error_id=_id(job.id, "ev", idx, ev.get("ts")),
                 job_id=job.id,
                 stage=str(ev.get("stage")) if ev.get("stage") is not None else None,
                 error_category="execution_log",
-                error_code=(
-                    str(payload.get("error_code") or payload.get("failure_code"))
-                    if (payload.get("error_code") or payload.get("failure_code"))
-                    else None
-                ),
-                provider=(
-                    str(payload.get("provider") or payload.get("provider_name"))
-                    if (payload.get("provider") or payload.get("provider_name"))
-                    else job.provider_name
-                ),
-                provider_code=(
-                    str(payload.get("provider_code")) if payload.get("provider_code") else None
-                ),
-                provider_request_id=(
-                    str(payload.get("provider_request_id") or payload.get("request_id"))
-                    if (payload.get("provider_request_id") or payload.get("request_id"))
-                    else None
-                ),
+                error_code=str(error_code_raw) if error_code_raw else None,
+                provider=str(provider_raw) if provider_raw else job.provider_name,
+                provider_code=str(provider_code_raw) if provider_code_raw else None,
+                provider_request_id=str(request_id_raw) if request_id_raw else None,
                 http_status=(
-                    int(payload["http_status"])
-                    if isinstance(payload.get("http_status"), (int, float))
-                    else None
+                    int(http_status_raw) if isinstance(http_status_raw, (int, float)) else None
                 ),
                 message=msg or None,
                 sanitized_detail=detail or None,
-                retryable=(
-                    bool(payload["retryable"]) if isinstance(payload.get("retryable"), bool) else None
-                ),
+                retryable=bool(retryable_raw) if isinstance(retryable_raw, bool) else None,
                 attempt_number=job.attempt_count,
                 occurred_at=str(ev.get("ts")) if ev.get("ts") is not None else None,
                 stack_trace_available=bool(include_stack_hint and stack_present),
