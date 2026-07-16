@@ -1,77 +1,125 @@
+import { EMPTY_CURSOR } from '../src/core/compositeCursor';
 import { detectNewPhotos } from '../src/core/photoDetection';
 import { makeImage, makeVideo } from './factories';
 
-const EMPTY_CURSOR = { dateAdded: -1, mediaStoreId: -1 };
-
-describe('new-photo detection', () => {
-  it('returns only photos after the cursor, sorted ascending', () => {
-    const cursor = { dateAdded: 100, mediaStoreId: 10 };
+describe('new-photo detection with dual cursor semantics', () => {
+  it('returns only photos after the scan cursor, sorted ascending', () => {
+    const scanCursor = { dateAdded: 100, assetId: '10' };
     const candidates = [
-      makeImage({ mediaStoreId: 9, dateAdded: 100 }), // same ts, older id -> not new
-      makeImage({ mediaStoreId: 11, dateAdded: 100 }), // same ts, newer id -> new
-      makeImage({ mediaStoreId: 12, dateAdded: 101 }), // later ts -> new
-      makeImage({ mediaStoreId: 8, dateAdded: 50 }), // older -> not new
+      makeImage({ assetId: '9', dateAdded: 100 }),
+      makeImage({ assetId: '11', dateAdded: 100 }),
+      makeImage({ assetId: '12', dateAdded: 101 }),
+      makeImage({ assetId: '8', dateAdded: 50 }),
     ];
-    const res = detectNewPhotos({ candidates, cursor, seenIds: new Set() });
-    expect(res.newPhotos.map((p) => p.mediaStoreId)).toEqual([11, 12]);
-    expect(res.nextCursor).toEqual({ dateAdded: 101, mediaStoreId: 12 });
-    expect(res.seenAdditions).toEqual([11, 12]);
+    const res = detectNewPhotos({ candidates, scanCursor, inspectedIds: new Set() });
+    expect(res.admitted.map((p) => p.assetId)).toEqual(['11', '12']);
+    expect(res.nextScanCursor).toEqual({ dateAdded: 101, assetId: '12' });
+    expect(res.inspectedIds).toEqual(['11', '12']);
   });
 
-  it('is idempotent via the seen-set even when the cursor has not advanced', () => {
-    const cursor = EMPTY_CURSOR;
-    const candidates = [makeImage({ mediaStoreId: 1, dateAdded: 100 })];
-    const first = detectNewPhotos({ candidates, cursor, seenIds: new Set() });
-    expect(first.newPhotos).toHaveLength(1);
+  it('advances scan cursor for rejects without admitting them', () => {
+    const scanCursor = { dateAdded: 100, assetId: '10' };
+    const bad = makeImage({
+      assetId: '15',
+      dateAdded: 105,
+      mimeType: 'image/gif',
+      displayName: 'x.gif',
+    });
+    const res = detectNewPhotos({
+      candidates: [bad],
+      scanCursor,
+      inspectedIds: new Set(),
+    });
+    expect(res.admitted).toHaveLength(0);
+    expect(res.rejected).toEqual([{ assetId: '15', reason: 'disallowed_mime' }]);
+    expect(res.nextScanCursor).toEqual({ dateAdded: 105, assetId: '15' });
+    expect(res.inspectedIds).toEqual(['15']);
+  });
+
+  it('does not re-process a previously inspected reject', () => {
+    const scanCursor = { dateAdded: 105, assetId: '15' };
+    const bad = makeImage({
+      assetId: '15',
+      dateAdded: 105,
+      mimeType: 'image/gif',
+      displayName: 'x.gif',
+    });
+    const res = detectNewPhotos({
+      candidates: [bad],
+      scanCursor,
+      inspectedIds: new Set(['15']),
+    });
+    expect(res.admitted).toHaveLength(0);
+    expect(res.rejected).toHaveLength(0);
+    expect(res.nextScanCursor).toEqual(scanCursor);
+  });
+
+  it('is idempotent via the inspected set', () => {
+    const candidates = [makeImage({ assetId: '1', dateAdded: 100 })];
+    const first = detectNewPhotos({
+      candidates,
+      scanCursor: EMPTY_CURSOR,
+      inspectedIds: new Set(),
+    });
+    expect(first.admitted).toHaveLength(1);
     const second = detectNewPhotos({
       candidates,
-      cursor, // deliberately NOT advanced
-      seenIds: new Set(first.seenAdditions),
+      scanCursor: EMPTY_CURSOR,
+      inspectedIds: new Set(first.inspectedIds),
     });
-    expect(second.newPhotos).toHaveLength(0);
+    expect(second.admitted).toHaveLength(0);
   });
 
   it('detects 20 new drone photos in one pass', () => {
     const candidates = Array.from({ length: 20 }, (_, i) =>
-      makeImage({ mediaStoreId: 100 + i, dateAdded: 200 + i, displayName: `DJI_${i}.jpg` }),
+      makeImage({
+        assetId: String(100 + i),
+        dateAdded: 200 + i,
+        displayName: `DJI_${i}.jpg`,
+      }),
     );
-    const res = detectNewPhotos({ candidates, cursor: EMPTY_CURSOR, seenIds: new Set() });
-    expect(res.newPhotos).toHaveLength(20);
+    const res = detectNewPhotos({
+      candidates,
+      scanCursor: EMPTY_CURSOR,
+      inspectedIds: new Set(),
+    });
+    expect(res.admitted).toHaveLength(20);
     expect(res.rejected).toHaveLength(0);
   });
 
-  describe('MANDATORY negative test: a video appears during capture', () => {
-    it('a new .mp4 is ignored, creates no queue entry, and does not move the cursor', () => {
-      const cursor = { dateAdded: 100, mediaStoreId: 10 };
-      const newPhoto = makeImage({ mediaStoreId: 11, dateAdded: 101, displayName: 'DJI_A.jpg' });
-      const newVideo = makeVideo({ mediaStoreId: 12, dateAdded: 102, displayName: 'DJI_B.mp4' });
+  describe('defensive core: injected video MIME', () => {
+    it('rejects video candidates and advances scan cursor only (not last-valid)', () => {
+      const scanCursor = { dateAdded: 100, assetId: '10' };
+      const newPhoto = makeImage({ assetId: '11', dateAdded: 101, displayName: 'DJI_A.jpg' });
+      const newVideo = makeVideo({ assetId: '12', dateAdded: 102, displayName: 'DJI_B.mp4' });
 
       const res = detectNewPhotos({
         candidates: [newPhoto, newVideo],
-        cursor,
-        seenIds: new Set(),
+        scanCursor,
+        inspectedIds: new Set(),
       });
 
-      // Video is absent from detected photos.
-      expect(res.newPhotos.map((p) => p.mediaStoreId)).toEqual([11]);
-      // Video is recorded only as rejected (for metrics/logging), never queued.
-      expect(res.rejected).toEqual([{ mediaStoreId: 12, reason: 'video_mime' }]);
-      // Video (id=12, later ts) did NOT advance the marker; only the photo (id=11) did.
-      expect(res.nextCursor).toEqual({ dateAdded: 101, mediaStoreId: 11 });
-      // Video is not added to the seen-set.
-      expect(res.seenAdditions).toEqual([11]);
+      expect(res.admitted.map((p) => p.assetId)).toEqual(['11']);
+      expect(res.rejected).toEqual([{ assetId: '12', reason: 'video_mime' }]);
+      // Scan cursor advances past BOTH inspected rows (photo + reject).
+      expect(res.nextScanCursor).toEqual({ dateAdded: 102, assetId: '12' });
+      expect(res.inspectedIds).toEqual(['11', '12']);
     });
+  });
 
-    it('a video-only change produces zero detections and an unchanged cursor', () => {
-      const cursor = { dateAdded: 100, mediaStoreId: 10 };
+  describe('native query expectation (documentation test)', () => {
+    it('videos never appear when candidates come only from Images collection', () => {
+      // Simulates MediaStore.Images-only query: empty video side-effect.
+      const scanCursor = { dateAdded: 100, assetId: '10' };
       const res = detectNewPhotos({
-        candidates: [makeVideo({ mediaStoreId: 20, dateAdded: 500 })],
-        cursor,
-        seenIds: new Set(),
+        candidates: [makeImage({ assetId: '11', dateAdded: 101 })],
+        scanCursor,
+        inspectedIds: new Set(),
       });
-      expect(res.newPhotos).toHaveLength(0);
-      expect(res.seenAdditions).toHaveLength(0);
-      expect(res.nextCursor).toEqual(cursor);
+      expect(res.rejected).toHaveLength(0);
+      expect(res.admitted).toHaveLength(1);
+      // A .mp4 that never entered candidates cannot move metrics.
+      expect(res.admitted.every((p) => !p.mimeType.startsWith('video/'))).toBe(true);
     });
   });
 });

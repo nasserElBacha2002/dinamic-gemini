@@ -15,6 +15,9 @@ const config: ExpoConfig = {
   version: '0.0.1',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
+  splash: {
+    backgroundColor: '#0d1b2a',
+  },
   android: {
     package: 'com.dinamic.inventory.capture',
     permissions: [
@@ -36,8 +39,7 @@ const config: ExpoConfig = {
     ],
   },
   plugins: [
-    'expo-secure-store',
-    'expo-sqlite',
+    // Fase 0 spike: only media-library is required. SQLite/SecureStore plugins are added in Fase 1.
     [
       'expo-media-library',
       {

@@ -1,17 +1,12 @@
 /**
- * Local-only photo lifecycle states (app side, not backend `SourceAsset` states).
- * These never leave the device and must not be sent to or created in the backend.
+ * Local spike photo lifecycle (Fase 0 only — not the full upload queue).
  */
-export type PhotoStatus =
-  | 'detected'
+export type SpikePhotoStatus =
   | 'waiting_stability'
-  | 'ready'
-  | 'queued'
-  | 'uploading'
-  | 'confirmed'
-  | 'retryable_error'
-  | 'permanent_error'
-  | 'excluded';
+  | 'stable'
+  | 'unstable'
+  | 'undecodable'
+  | 'rejected';
 
 /** Local-only capture session lifecycle (app side). */
 export type CaptureSessionStatus =

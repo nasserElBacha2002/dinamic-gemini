@@ -5,26 +5,59 @@
  * no video/duration field: the mobile flow never reads `MediaStore.Video`.
  */
 export interface GalleryImage {
-  /** MediaStore `_ID` — stable within the device MediaStore. */
-  readonly mediaStoreId: number;
-  /** content:// URI to open/read the image. */
+  /**
+   * Stable identity from the media library (Expo `Asset.id` / MediaStore row key).
+   * Always a non-empty string — never a silent numeric fallback.
+   */
+  readonly assetId: string;
+  /**
+   * Numeric MediaStore `_ID` when `assetId` is a validated decimal integer.
+   * Absent when the library id is non-numeric; never coerced to `0`.
+   */
+  readonly mediaStoreNumericId?: number;
+  /** content:// or file:// URI to open/read the image. */
   readonly uri: string;
   /** MediaStore `DISPLAY_NAME` (file name). */
   readonly displayName: string;
   /** MediaStore `MIME_TYPE` (e.g. image/jpeg). May be empty on some OEMs. */
   readonly mimeType: string;
-  /** MediaStore `SIZE` in bytes. */
+  /** Size in bytes (0 when unknown / not yet hydrated). */
   readonly size: number;
-  /** MediaStore `WIDTH` in pixels (0 when unknown). */
+  /** Width in pixels (0 when unknown). */
   readonly width: number;
-  /** MediaStore `HEIGHT` in pixels (0 when unknown). */
+  /** Height in pixels (0 when unknown). */
   readonly height: number;
-  /** MediaStore `DATE_ADDED` in epoch seconds. */
+  /** Creation / DATE_ADDED in epoch seconds. */
   readonly dateAdded: number;
-  /** MediaStore `DATE_MODIFIED` in epoch seconds. */
+  /** Modification time in epoch seconds. */
   readonly dateModified: number;
-  /** MediaStore `BUCKET_ID` (album/folder identifier), when available. */
+  /** Album/folder identifier, when available. */
   readonly bucketId: number | null;
-  /** MediaStore `RELATIVE_PATH` (scoped storage), when available. */
+  /** Relative path / album id, when available. */
   readonly relativePath: string | null;
+}
+
+/**
+ * Parse a library asset id into a numeric MediaStore id when it is a strict decimal integer.
+ * Returns undefined for empty/non-numeric values — callers must NOT substitute 0.
+ */
+export function parseMediaStoreNumericId(assetId: string): number | undefined {
+  const raw = assetId.trim();
+  if (!/^\d+$/.test(raw)) {
+    return undefined;
+  }
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n) || n < 0) {
+    return undefined;
+  }
+  return n;
+}
+
+/** Require a non-empty asset id; throw on invalid integration data. */
+export function requireAssetId(raw: string | null | undefined): string {
+  const id = (raw ?? '').trim();
+  if (!id) {
+    throw new Error('Invalid media asset id: empty');
+  }
+  return id;
 }

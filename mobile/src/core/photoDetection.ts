@@ -1,12 +1,13 @@
 /**
- * New-photo detection (Fase 0, §12).
+ * New-photo classification against a scan cursor (Fase 0 correction).
  *
- * Given a batch of MediaStore.Images rows, the session cursor and the set of already-seen
- * MediaStore ids, return only the admissible NEW photos plus the advanced cursor.
+ * Separates two cursor responsibilities:
+ * - `nextScanCursor`: advances past EVERY newly inspected MediaStore row (admitted OR rejected)
+ *   so the same reject is not re-classified on every scan.
+ * - `lastValidPhotoCursor` is NOT updated here — only after stability succeeds in the app layer.
  *
- * A photo is "new" when it is after the cursor (composite comparison) AND its MediaStore id
- * has not been seen in this session. The seen-set makes repeated scans idempotent even if
- * the cursor has not advanced yet (e.g. same-second writes processed across two polls).
+ * Defensive video rejection still lives here for unit tests that inject video MIME candidates.
+ * In production, MediaStore.Images queries should never surface videos.
  */
 import type { GalleryImage } from '../domain/entities/galleryImage';
 import { admitImage, type ImageRejectionReason } from './imageFilter';
@@ -19,54 +20,68 @@ import {
 } from './compositeCursor';
 
 export interface RejectedPhoto {
-  readonly mediaStoreId: number;
+  readonly assetId: string;
   readonly reason: ImageRejectionReason;
 }
 
 export interface DetectionResult {
-  /** Admissible new photos, sorted by (dateAdded, mediaStoreId) ascending. */
-  readonly newPhotos: readonly GalleryImage[];
-  /** Rejected candidates (e.g. a video that appeared in the album). */
+  /** Admissible new photos pending stability, sorted ascending by cursor. */
+  readonly admitted: readonly GalleryImage[];
+  /** Rejected candidates (defensive video MIME, disallowed format, etc.). */
   readonly rejected: readonly RejectedPhoto[];
-  /** Cursor advanced past every ADMITTED new photo (rejects never move it). */
-  readonly nextCursor: CompositeCursor;
-  /** MediaStore ids to add to the session seen-set (admitted photos only). */
-  readonly seenAdditions: readonly number[];
+  /**
+   * Scan cursor advanced past every newly inspected row (admitted + rejected).
+   * Does not equal last-valid-photo cursor.
+   */
+  readonly nextScanCursor: CompositeCursor;
+  /** Asset ids to add to the session inspected set (admitted + rejected). */
+  readonly inspectedIds: readonly string[];
 }
 
 export interface DetectionInput {
   readonly candidates: readonly GalleryImage[];
-  readonly cursor: CompositeCursor;
-  readonly seenIds: ReadonlySet<number>;
+  /** Last MediaStore row already inspected (scan cursor). */
+  readonly scanCursor: CompositeCursor;
+  /** Asset ids already inspected this session. */
+  readonly inspectedIds: ReadonlySet<string>;
 }
 
 export function detectNewPhotos(input: DetectionInput): DetectionResult {
-  const { candidates, cursor, seenIds } = input;
+  const { candidates, scanCursor, inspectedIds } = input;
 
-  const newPhotos: GalleryImage[] = [];
+  const admitted: GalleryImage[] = [];
   const rejected: RejectedPhoto[] = [];
-  const seenAdditions: number[] = [];
+  const newlyInspected: Pick<GalleryImage, 'dateAdded' | 'assetId'>[] = [];
+  const inspectedAdditions: string[] = [];
 
   for (const img of candidates) {
-    const isNew = isAfterCursor(img, cursor) && !seenIds.has(img.mediaStoreId);
-    if (!isNew) {
+    if (inspectedIds.has(img.assetId)) {
       continue;
     }
+    if (!isAfterCursor(img, scanCursor)) {
+      continue;
+    }
+
+    newlyInspected.push(img);
+    inspectedAdditions.push(img.assetId);
+
     const admission = admitImage(img);
     if (!admission.admitted) {
-      // Rejected candidates (e.g. a new .mp4) never enter the queue and never move the cursor.
-      rejected.push({ mediaStoreId: img.mediaStoreId, reason: admission.reason });
+      rejected.push({ assetId: img.assetId, reason: admission.reason });
       continue;
     }
-    newPhotos.push(img);
-    seenAdditions.push(img.mediaStoreId);
+    admitted.push(img);
   }
 
-  newPhotos.sort((a, b) => compareCursor(cursorOf(a), cursorOf(b)));
+  admitted.sort((a, b) => compareCursor(cursorOf(a), cursorOf(b)));
 
-  // Only admitted photos advance the cursor. This guarantees a rejected video cannot
-  // move the "last valid photo" marker forward.
-  const nextCursor = maxCursor(newPhotos, cursor);
+  // Rejects AND admits advance the scan cursor so we never re-walk the same rows.
+  const nextScanCursor = maxCursor(newlyInspected, scanCursor);
 
-  return { newPhotos, rejected, nextCursor, seenAdditions };
+  return {
+    admitted,
+    rejected,
+    nextScanCursor,
+    inspectedIds: inspectedAdditions,
+  };
 }

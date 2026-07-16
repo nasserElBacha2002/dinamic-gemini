@@ -1,0 +1,12 @@
+{
+  "name": "capture-foreground-service",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "description": "Local Expo module: Android Foreground Service for capture sessions (photos-only spike).",
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

@@ -3,7 +3,10 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ESNext", "DOM"],
+    "lib": [
+      "ESNext",
+      "DOM"
+    ],
     "jsx": "react-native",
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -15,12 +18,31 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@core/*": ["src/core/*"],
-      "@domain/*": ["src/domain/*"],
-      "@native/*": ["src/native/*"],
-      "@shared/*": ["src/shared/*"]
+      "@core/*": [
+        "src/core/*"
+      ],
+      "@domain/*": [
+        "src/domain/*"
+      ],
+      "@native/*": [
+        "src/native/*"
+      ],
+      "@shared/*": [
+        "src/shared/*"
+      ]
     }
   },
-  "include": ["src", "app", "App.tsx", "index.ts", "app.config.ts", "plugins"],
-  "exclude": ["node_modules"]
+  "include": [
+    "src",
+    "App.tsx",
+    "index.ts",
+    "app.config.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "android",
+    "modules",
+    "tests"
+  ],
+  "extends": "expo/tsconfig.base"
 }

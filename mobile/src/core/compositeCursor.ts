@@ -1,17 +1,37 @@
 /**
- * Composite gallery cursor: (dateAdded, mediaStoreId).
+ * Composite gallery cursor: (dateAdded, assetId).
  *
- * Timestamps alone are not unique (a drone can write several photos within the same
- * second) and are subject to clock/timezone changes; MediaStore `_ID` is monotonic within
- * a device but can be reused after DB resets. Combining both gives a stable ordering key
- * for "everything after the session marker".
+ * Timestamps alone are not unique; asset ids alone are not a total order across time.
+ * Combining both gives a stable ordering key. assetId is compared lexicographically when
+ * dates tie (documented, deterministic). Numeric MediaStore ids are NOT required.
  */
 import type { CaptureMarker } from '../domain/entities/captureMarker';
 import type { GalleryImage } from '../domain/entities/galleryImage';
+import { parseMediaStoreNumericId } from '../domain/entities/galleryImage';
 
 export interface CompositeCursor {
   readonly dateAdded: number;
-  readonly mediaStoreId: number;
+  /** Stable library asset id (string). Empty string only for the sentinel empty-gallery cursor. */
+  readonly assetId: string;
+}
+
+/**
+ * Compare asset ids: numeric MediaStore ids use integer order; otherwise lexicographic.
+ * Documented so same-second ties stay deterministic on Android.
+ */
+export function compareAssetId(a: string, b: string): number {
+  const an = parseMediaStoreNumericId(a);
+  const bn = parseMediaStoreNumericId(b);
+  if (an !== undefined && bn !== undefined) {
+    return an - bn;
+  }
+  if (a < b) {
+    return -1;
+  }
+  if (a > b) {
+    return 1;
+  }
+  return 0;
 }
 
 /** Total order over the composite cursor. Returns <0, 0, >0. */
@@ -19,40 +39,53 @@ export function compareCursor(a: CompositeCursor, b: CompositeCursor): number {
   if (a.dateAdded !== b.dateAdded) {
     return a.dateAdded - b.dateAdded;
   }
-  return a.mediaStoreId - b.mediaStoreId;
+  return compareAssetId(a.assetId, b.assetId);
 }
 
-export function cursorOf(image: GalleryImage): CompositeCursor {
-  return { dateAdded: image.dateAdded, mediaStoreId: image.mediaStoreId };
+export function cursorOf(image: Pick<GalleryImage, 'dateAdded' | 'assetId'>): CompositeCursor {
+  return { dateAdded: image.dateAdded, assetId: image.assetId };
 }
 
 /**
- * Build the ordering cursor from a session marker. An empty gallery at session start
- * yields the lowest possible cursor so that every later photo is considered "after".
+ * Empty-gallery / session-start sentinel. Every real MediaStore row is strictly after this.
+ */
+export const EMPTY_CURSOR: CompositeCursor = { dateAdded: -1, assetId: '' };
+
+/**
+ * Build the ordering cursor from a session marker.
  */
 export function cursorFromMarker(marker: CaptureMarker): CompositeCursor {
-  if (marker.mediaStoreId === null || marker.dateAdded === null) {
-    return { dateAdded: -1, mediaStoreId: -1 };
+  if (marker.assetId === null || marker.dateAdded === null) {
+    return EMPTY_CURSOR;
   }
-  return { dateAdded: marker.dateAdded, mediaStoreId: marker.mediaStoreId };
+  return { dateAdded: marker.dateAdded, assetId: marker.assetId };
 }
 
 /**
- * True when `image` was added strictly after `cursor`:
- *   dateAdded > cursor.dateAdded
- *   OR (dateAdded == cursor.dateAdded AND mediaStoreId > cursor.mediaStoreId)
+ * True when `image` was added strictly after `cursor`.
  */
-export function isAfterCursor(image: GalleryImage, cursor: CompositeCursor): boolean {
+export function isAfterCursor(
+  image: Pick<GalleryImage, 'dateAdded' | 'assetId'>,
+  cursor: CompositeCursor,
+): boolean {
   return compareCursor(cursorOf(image), cursor) > 0;
 }
 
-/** Pick the maximum cursor among a set of images (or the provided fallback when empty). */
+/** True when image is at or before cursor (used as stop condition when scanning newest-first). */
+export function isAtOrBeforeCursor(
+  image: Pick<GalleryImage, 'dateAdded' | 'assetId'>,
+  cursor: CompositeCursor,
+): boolean {
+  return compareCursor(cursorOf(image), cursor) <= 0;
+}
+
+/** Pick the maximum cursor among a set (or the provided fallback when empty). */
 export function maxCursor(
-  images: readonly GalleryImage[],
+  items: readonly Pick<GalleryImage, 'dateAdded' | 'assetId'>[],
   fallback: CompositeCursor,
 ): CompositeCursor {
   let best = fallback;
-  for (const img of images) {
+  for (const img of items) {
     const c = cursorOf(img);
     if (compareCursor(c, best) > 0) {
       best = c;

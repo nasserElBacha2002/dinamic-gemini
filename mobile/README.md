@@ -4,214 +4,143 @@ Cliente móvil **solo fotografías** para acelerar la carga de imágenes de inve
 con dron. Usa **exclusivamente el backend existente** (`/auth` + `/api/v3`). No crea backend,
 base de datos, worker ni flujo de procesamiento paralelo.
 
-> Estado actual: **Fase 0 — Spike técnico Android** (viabilidad). Las fases 1–7 aún no están
-> implementadas. Ver [Fases](#fases-de-implementación).
+> Estado: **Fase 0 — Spike técnico Android (corrección post-review)**.  
+> **Fase 0 = parcialmente validada** hasta completar la prueba física documentada (§ Dispositivo).
 
 ---
 
-## 1. Alcance de la Fase 0 (esta entrega)
+## Alcance: solo fotografías
 
-Objetivo: validar la viabilidad de la parte más riesgosa (galería Android + detección + solo
-fotos + segundo plano) **antes** de construir la app completa.
-
-Implementado y verificable en este repo:
-
-| Requisito Fase 0 | Dónde | Verificación |
-|------------------|-------|--------------|
-| Consulta MediaStore **Images** | `src/native/mediaStore.ts` | `mediaType: [photo]` siempre; nunca `video`/`all` |
-| Marcador compuesto `(date_added, _id)` | `src/core/compositeCursor.ts`, `src/domain/entities/captureMarker.ts` | tests unitarios |
-| Detección de fotos nuevas | `src/core/photoDetection.ts` | tests unitarios (incl. 20 fotos) |
-| Filtro de videos / solo imágenes | `src/core/imageFilter.ts`, `src/shared/constants/imageFormats.ts` | test negativo obligatorio |
-| Validación de estabilidad | `src/core/stability.ts`, `src/native/stabilityProber.ts` | tests unitarios |
-| Foreground Service (contrato) | `src/native/foregroundService.ts` | ver [Limitaciones](#limitaciones-conocidas) |
-| Pantalla de prueba en dispositivo | `App.tsx` | plan de prueba manual |
-
-**No** incluido en Fase 0 (fases posteriores): login/API client, cola de uploads, SQLite,
-polling de jobs, UI completa.
+- Consulta únicamente `MediaStore.Images` / `MediaType.photo`.
+- Permisos: `READ_MEDIA_IMAGES` (+ parcial Android 14). **No** `READ_MEDIA_VIDEO`.
+- Allowlist: `image/jpeg|jpg|png|webp|heic|heif`.
+- Un `.mp4` en la galería **no** entra a la query de imágenes → no UI, no métricas, no cursores.
+- Defensa adicional en core: si se inyecta un candidato `video/*`, se rechaza y avanza solo el `scanCursor`.
 
 ---
 
-## 2. Restricción transversal: solo fotografías
+## Implementado en core (puro / testeable en CI)
 
-La app trabaja **exclusivamente con imágenes estáticas**. No lee, muestra, selecciona, sube ni
-procesa video; no consulta `MediaStore.Video`; no pide `READ_MEDIA_VIDEO`; no envía `video/*`.
+| Pieza | Archivo |
+|-------|---------|
+| Cursor compuesto `(dateAdded, assetId)` | `src/core/compositeCursor.ts` |
+| Detección + avance de `scanCursor` (admite y rechaza) | `src/core/photoDetection.ts` |
+| Filtro MIME / video defensivo | `src/core/imageFilter.ts` |
+| Estabilidad (reducer) | `src/core/stability.ts` |
+| Coordinador de scans serializados | `src/core/scanCoordinator.ts` |
+| Deduplicación por `assetId` | `src/core/dedupe.ts` |
+| Paginación incremental newest-first | `src/core/incrementalScan.ts` |
+| Logging con redacción | `src/core/logging.ts` |
 
-Allowlist inicial (`src/shared/constants/imageFormats.ts`):
+### Cursores separados
 
-```
-image/jpeg  image/jpg  image/png  image/webp  image/heic  image/heif
-```
+- **`scanCursor`**: último registro de MediaStore **inspeccionado** (admitido o rechazado). Evita reprocesar.
+- **`lastValidPhotoCursor`**: última fotografía **estable y decodificable**. Solo avanza tras estabilidad OK.
 
-Excluidos: GIF, BMP, TIFF, SVG, `application/octet-stream`, sin MIME, y todo `video/*`.
+### Identidad de asset
 
-**Garantía comprobada por test**: si aparece un `.mp4` durante la captura, no se detecta, no se
-encola, no se envía, y **no mueve el marcador** de la última foto válida
-(`tests/photoDetection.test.ts` → "MANDATORY negative test").
+- `assetId: string` = id original de la librería (obligatorio, no vacío).
+- `mediaStoreNumericId?: number` solo si el id es un entero decimal válido.
+- **Prohibido** usar `0` como fallback silencioso.
 
----
+### Algoritmo incremental
 
-## 3. Contratos del backend confirmados (leídos del código)
-
-Verificados en `backend/` para que la implementación de fases 1–6 no invente contratos:
-
-- Upload assets (multipart): `POST /api/v3/inventories/{inventory_id}/aisles/{aisle_id}/assets`
-  - Campos: `files` (repetido), `upload_batch_id` (Form), `client_file_ids` (Form, repetido)
-  - Respuesta `201 UploadAisleAssetsResponse`: `assets[]`, `batch_id`, `uploaded[]`
-    (`{client_file_id, asset_id, filename, status}`), `errors[]`
-    (`{filename, code, detail, file_index, client_file_id}`)
-  - Idempotencia: índice único `(aisle_id, upload_batch_id, client_file_id)`
-  - Fuente: `backend/src/api/routes/v3/assets.py`, `application/use_cases/aisles/upload_aisle_assets.py`
-- Límites: `GET /api/v3/config/upload-limits` →
-  `max_files_per_request`, `max_file_size_bytes`, `max_request_size_bytes`,
-  `upload_batch_concurrency`, `retry_attempts`, `retry_base_delay_ms`
-  (`backend/src/api/schemas/upload_limits_schemas.py`)
-- Procesamiento: `POST .../process` (202 `{job_id}`), estado `GET .../status`, `GET .../jobs`
-- Auth: `POST /auth/login`, `GET /auth/me`, `POST /auth/refresh`, `POST /auth/logout` (Bearer)
-
-> Hallazgo de auditoría (relevante a "solo fotos"): el endpoint de assets **hoy acepta también
-> `video/*`** (lo persiste como `SourceAssetType.VIDEO`). La app móvil impide que un video entre
-> a su flujo desde el cliente. Un modo `photos_only` en backend queda como cambio menor opcional
-> (no bloquea el MVP).
+Expo MediaLibrary con `sortBy: [[creationTime, false]]` → **newest first**.  
+Se pagina hasta encontrar una fila `<= scanCursor`; solo esas candidatas nuevas se hidratan (`getAssetInfoAsync` + size).
 
 ---
 
-## 4. Arquitectura
+## Integrado en app (dispositivo)
 
-```
-mobile/
-  App.tsx                     # pantalla de spike (prueba en dispositivo)
-  app.config.ts               # permisos SOLO imágenes; FGS; plugins
-  src/
-    core/                     # LÓGICA PURA (sin RN/Expo) — testeable en CI liviano
-      compositeCursor.ts
-      photoDetection.ts
-      imageFilter.ts
-      stability.ts
-      logging.ts
-    domain/                   # tipos/en“ums” de dominio (puros)
-      entities/ enums/
-    native/                   # adaptadores de dispositivo (Expo/RN)
-      mediaStore.ts           # MediaStore.Images (expo-media-library)
-      stabilityProber.ts      # muestreo de archivo + decode
-      foregroundService.ts    # contrato de FGS
-    shared/constants/
-      imageFormats.ts         # allowlist de imágenes
-  tests/                      # unit tests de core
-```
+| Pieza | Archivo |
+|-------|---------|
+| Query incremental + listener | `src/native/mediaStore.ts` |
+| Prober de estabilidad | `src/native/stabilityProber.ts` |
+| Foreground Service (contrato + binding) | `src/native/foregroundService.ts` |
+| Servicio Android real | `modules/capture-foreground-service/` |
+| UI del spike | `App.tsx` |
 
-Separación clave: **la corrección** (cursor, detección, filtro, estabilidad) vive en `src/core`
-como TypeScript puro sin dependencias nativas, por lo que se puede typecheckear y testear sin el
-toolchain de Android. Los adaptadores nativos consumen ese core.
+### Flujo de sesión
 
----
+1. **Marcar inicio** → permisos → marcador → reset cursores → FGS start → listener.
+2. Eventos / **Escanear** → coordinador serial → detección → `waiting_stability` → prober → `stable|unstable|undecodable`.
+3. **Finalizar captura** → abort estabilidad → quita listener → FGS stop → resumen.
 
-## 5. Validación en este entorno
+### Foreground Service
 
-Lógica pura (sin dispositivo ni Android SDK):
+Módulo local Expo (`capture-foreground-service`):
+
+- `Service` con `foregroundServiceType="dataSync"`.
+- Canal de notificación `dinamic_capture_fgs`.
+- Métodos: `startService` / `updateNotification` / `stopService`.
+- Requiere **Development Build** (`expo prebuild` + `installDebug`). No funciona en Expo Go.
+
+Tras cambiar el módulo nativo:
 
 ```bash
 cd mobile
-npm install
-npm run typecheck:core   # tsc sobre src/core + tests
-npm run test:core        # jest sobre tests/ (24 tests)
+npx expo prebuild -p android --clean
+cd android && ./gradlew installDebug
 ```
-
-Resultado de esta entrega: **typecheck OK**, **24/24 tests OK** (incluye 20 fotos, empate de
-timestamp, filtro MIME, exclusión de video, estabilidad, idempotencia de detección, redacción de
-logs).
-
-> El typecheck/lint/build **completo** de React Native (App.tsx, `src/native/*`, `app.config.ts`)
-> y la generación de APK/AAB requieren el toolchain de Expo + Android SDK, que **no** están
-> disponibles en este entorno de auditoría. Ver instrucciones abajo para ejecutarlo en una
-> máquina con Android SDK.
 
 ---
 
-## 6. Build de desarrollo (máquina con Android SDK)
-
-Requiere Node 18+, JDK 17, Android SDK, un dispositivo/emulador y `EAS`/Expo instalado.
+## Validado mediante build / CI liviano
 
 ```bash
 cd mobile
-cp .env.example .env         # setear DINAMIC_API_BASE_URL
-npm install
-npx expo prebuild -p android --clean   # genera android/ (Development Build)
-npx expo run:android                    # instala el dev client en el dispositivo
-# o build de artefactos:
-#   eas build -p android --profile development   # APK dev client
-#   eas build -p android --profile preview       # APK
-#   eas build -p android --profile production     # AAB
+export XDG_STATE_HOME="$HOME/.watchman-xdg-state"   # si Watchman falla por ~/.local/state root-owned
+npm ci
+npm run verify          # typecheck:core + lint + test:core
+npx expo-doctor         # cuando el toolchain Expo esté instalado
+npx expo prebuild -p android --clean
+cd android && ./gradlew assembleDebug
 ```
 
-Se usa **Expo Development Build (prebuild)**, no Expo Go, porque el flujo requiere MediaStore
-avanzado, Foreground Service y (fases siguientes) uploads persistentes.
+---
+
+## Validado en dispositivo (obligatorio para cerrar Fase 0)
+
+Plantilla: `docs/DEVICE_EVIDENCE.md`.
+
+Checklist:
+
+1. Abrir app · permiso solo fotos.
+2. Marcar inicio · notificación FGS visible.
+3. 20 fotos · pantalla bloqueada en parte del vuelo.
+4. Agregar un `.mp4` · **no aparece** · métricas de fotos sin cambio por el video.
+5. Sin duplicados · estables = 20 (si todas estabilizan).
+6. Finalizar · notificación desaparece.
+
+Mientras no exista evidencia firmada en `docs/DEVICE_EVIDENCE.md`, la Fase 0 permanece **parcialmente validada**.
 
 ---
 
-## 7. Plan de prueba manual en dispositivo (evidencia Fase 0)
+## Limitaciones reales
 
-Ejecutar en un Android real (idealmente Android 13 y 14):
-
-1. **Permisos solo fotos**: al abrir, el sistema pide acceso a *fotos* (no debe aparecer video).
-2. **Marcador**: tocar "Marcar inicio" → congela la última foto existente.
-3. **20 fotos**: tomar/copiar 20 fotos al DCIM del dron; **bloquear la pantalla** entre disparos.
-4. **Video**: agregar un `.mp4` a la misma carpeta.
-5. **Escanear** (o esperar el listener): deben detectarse **20** fotos; "Ignoradas (no imagen)"
-   debe contar el video; el video **no** aparece en la lista.
-6. **Marcador intacto**: el marcador/último cursor válido corresponde a la última **foto**, no al
-   video.
-
-Registrar: versión de Android, fabricante, tiempo de detección, y si la pantalla bloqueada
-afectó la detección (ver Limitaciones).
+- **Doze / OEM**: el SO puede pausar trabajo con batería restringida; FGS mitiga pero no garantiza detección eterna.
+- **Cierre forzado / reinicio**: el spike no recupera sesión (Fase 1+ con SQLite).
+- **Acceso parcial (Android 14)**: solo el subconjunto concedido es visible.
+- **Watchman en macOS**: si `~/.local/state` es root-owned, usar `XDG_STATE_HOME`.
 
 ---
 
-## 8. Decisión tecnológica: Expo Dev Build vs React Native CLI
+## Decisión tecnológica
 
-**Recomendación: Expo Development Build (prebuild).**
-
-| Criterio | Expo Managed | **Expo Dev Build** | RN CLI |
-|----------|--------------|--------------------|--------|
-| MediaStore.Images (expo-media-library, solo `photo`) | Limitado | **Sí** | Sí |
-| Permisos granulares 13/14 (sin video) | Parcial | **Sí (config plugin)** | Sí |
-| Foreground Service `dataSync` | No | **Sí (config plugin + Service nativo)** | Sí |
-| WorkManager / uploads persistentes (fases 5–7) | No | **Sí (módulo nativo)** | Sí |
-| Velocidad de desarrollo / OTA | Alta | **Alta** | Media |
-| Mantenimiento | Bajo | **Medio** | Alto |
-
-Expo Dev Build cubre todos los requisitos de Fase 0 con un config plugin para el Foreground
-Service. Solo se migraría a **RN CLI** si un requisito nativo (p. ej. un comportamiento de FGS/OEM
-específico) resultara inviable en Dev Build durante las pruebas físicas; la arquitectura funcional
-(este `src/`) no cambiaría.
+**Expo Development Build** permanece la recomendación tras cablear un FGS nativo real vía módulo local.  
+Migrar a RN CLI solo si el rebuild nativo del módulo falla de forma irrecuperable en los Android objetivo.
 
 ---
 
-## 9. Limitaciones conocidas
+## Scripts
 
-- **Foreground Service**: Expo no trae FGS gestionado. Se requiere un config plugin + un `Service`
-  Android mínimo (tipo `dataSync`) en el Development Build. `foregroundService.ts` define el
-  contrato; el binding nativo se agrega en la Fase 4/7. Sin él, `isAvailable=false` y la detección
-  en segundo plano no está garantizada (la app lo informa explícitamente, no lo simula).
-- **Segundo plano / Doze / OEM**: Android puede pausar trabajo con pantalla bloqueada o batería
-  restringida; no se promete detección permanente. Se valida en pruebas físicas (Fase 7).
-- **Android 14 acceso parcial**: si el usuario concede solo un subconjunto de fotos, la detección
-  se limita a ese subconjunto; la UI debe explicarlo (Fase 3/4).
-- **MIME desde MediaStore**: algunos OEM no rellenan `MIME_TYPE`; se infiere por extensión y se
-  confirma con decode en el prober de estabilidad.
-- **Build/APK**: no verificable en el entorno de auditoría (sin Android SDK).
+| Script | Qué hace |
+|--------|----------|
+| `npm run typecheck:core` | tsc sobre lógica pura |
+| `npm run lint` | ESLint local |
+| `npm run test:core` | Jest puro |
+| `npm run verify` | typecheck:core + lint + test:core |
+| `npm run prebuild:android` | genera `android/` |
+| `npm start` | Metro dev client |
 
----
-
-## 10. Fases de implementación
-
-- **Fase 0 — Spike (esta entrega):** MediaStore Images, marcador, detección, filtro video,
-  estabilidad, contrato FGS, tests, decisión Dev Build.
-- Fase 1 — Base: navegación, cliente HTTP, SQLite, SecureStore, logging.
-- Fase 2 — Auth: login/me/refresh/logout, manejo de 401.
-- Fase 3 — Inventarios y pasillos.
-- Fase 4 — Sesión de captura + FGS nativo.
-- Fase 5 — Cola de uploads (idempotencia, micro-lotes, offline, respuestas parciales).
-- Fase 6 — Procesamiento (process + polling + actividad + segundo pasillo).
-- Fase 7 — Hardening (Android 13/14, Doze, OEM, kill, reinicio, observabilidad, E2E).
-
-No avanzar a fases siguientes hasta validar la prueba física de Fase 0 (§7) en dispositivo real.
+No avanzar a Fase 1 hasta cerrar la evidencia de dispositivo.

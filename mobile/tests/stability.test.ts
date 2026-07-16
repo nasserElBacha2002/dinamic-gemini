@@ -29,8 +29,7 @@ describe('file stability reducer', () => {
     const growing = Array.from({ length: DEFAULT_STABILITY_CONFIG.maxChecks }, (_, i) =>
       s(1000 * (i + 1), i + 1),
     );
-    const res = evaluateStability(growing);
-    expect(res.phase).toBe('unstable');
+    expect(evaluateStability(growing).phase).toBe('unstable');
   });
 
   it('does not settle on a zero-byte or inaccessible file even if unchanged', () => {
@@ -42,5 +41,14 @@ describe('file stability reducer', () => {
     const settled = evaluateStability([s(10, 1), s(10, 1)]);
     expect(settled.phase).toBe('settled');
     expect(recordSample(settled, s(999, 2))).toBe(settled);
+  });
+
+  it('supports retry after unstable by starting a fresh state', () => {
+    const unstable = evaluateStability(
+      Array.from({ length: DEFAULT_STABILITY_CONFIG.maxChecks }, (_, i) => s(i + 1, i + 1)),
+    );
+    expect(unstable.phase).toBe('unstable');
+    const retried = evaluateStability([s(5000, 9), s(5000, 9)]);
+    expect(retried.phase).toBe('settled');
   });
 });
