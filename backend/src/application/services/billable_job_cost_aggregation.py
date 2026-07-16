@@ -24,9 +24,6 @@ logger = logging.getLogger(__name__)
 PROCESS_AISLE_JOB_TYPE = "process_aisle"
 AISLE_TARGET_TYPE = "aisle"
 
-# Max target_ids per SQL ``IN`` clause (parameter-limit safety only — never caps jobs/runs).
-TARGET_ID_BATCH_SIZE = 500
-
 # Finalized statuses that may carry billable LLM usage (aligned with cancel/terminal domain).
 #
 # Status policy (explicit):

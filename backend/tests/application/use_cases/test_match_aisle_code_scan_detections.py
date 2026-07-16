@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
+
 from collections.abc import Sequence
 from datetime import datetime, timezone
 
@@ -136,7 +138,13 @@ class StubJobRepo(JobRepository):
         *,
         job_type: str | None = None,
     ) -> Sequence[Job]:
-        return []
+        store = getattr(self, "_store", None) or getattr(self, "_jobs", None)
+        if store is None:
+            return []
+        return list_jobs_for_targets_from_store(
+            store, target_type, target_ids, job_type=job_type
+        )
+
 
     def list_all_jobs(self) -> Sequence[Job]:
         return list(self._jobs.values())

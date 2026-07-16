@@ -32,6 +32,10 @@ from src.domain.prompt_image_projection import (
     COMPOSITION_KEY_PROMPT_IMAGE_PROJECTION,
     PromptImageProjection,
 )
+from src.llm.multimodal_image_normalization import (
+    ProviderImagePolicy,
+    provider_image_policy_for,
+)
 from src.llm.prompt_composer.prompt_traceability import (
     LLM_IDENTITY_METADATA_KEY,
     LLM_METADATA_KEY_PROMPT_COMPOSITION,
@@ -122,11 +126,27 @@ class _HybridLlmVisualBundle(NamedTuple):
     consumed_count: int
 
 
+def _image_policy_for_provider(settings: Any, provider_key: str | None) -> ProviderImagePolicy:
+    key = (provider_key or "").strip().lower()
+    if key in {"claude", "anthropic"}:
+        max_dim = int(getattr(settings, "anthropic_vision_max_image_side", 1800))
+        quality = int(getattr(settings, "anthropic_image_jpeg_quality", 88))
+    elif key in {"openai", "gpt"}:
+        max_dim = int(getattr(settings, "openai_vision_max_image_side", 2048))
+        quality = int(getattr(settings, "openai_image_jpeg_quality", 88))
+    else:
+        # Gemini / default: use photo job normalize side when available, else Claude-safe 1800.
+        max_dim = int(getattr(settings, "photo_resize_max_side", 1280) or 1280)
+        quality = int(getattr(settings, "photo_jpeg_quality", 85) or 85)
+    return provider_image_policy_for(key or "default", max_dimension=max_dim, jpeg_quality=quality)
+
+
 def _prepare_hybrid_llm_visual_bundle(
     *,
     supports_visual_reference_context: bool,
     analysis_context: AnalysisContext | None,
     job_id: str,
+    image_policy: ProviderImagePolicy | None = None,
 ) -> _HybridLlmVisualBundle:
     """
     Resolve optional context instruction and visual-reference attachments for one analysis call.
@@ -150,6 +170,7 @@ def _prepare_hybrid_llm_visual_bundle(
             prepare_visual_reference_inputs(
                 analysis_context,
                 job_id=job_id,
+                image_policy=image_policy,
             )
         )
         if loaded:
@@ -159,6 +180,7 @@ def _prepare_hybrid_llm_visual_bundle(
         _, visual_reference_attachments, _ = prepare_visual_reference_inputs(
             analysis_context,
             job_id=job_id,
+            image_policy=image_policy,
         )
     return _HybridLlmVisualBundle(
         context_instruction=context_instruction,
@@ -270,10 +292,12 @@ class HybridGlobalAnalysisStrategy:
 
         analysis_context: AnalysisContext | None = resolve_analysis_context_for_run(run_ctx)
         visual_references_available = bool(analysis_context and analysis_context.visual_references)
+        image_policy = _image_policy_for_provider(settings, resolved_key)
         vb = _prepare_hybrid_llm_visual_bundle(
             supports_visual_reference_context=self.get_capabilities().supports_visual_reference_context,
             analysis_context=analysis_context,
             job_id=job_id,
+            image_policy=image_policy,
         )
         context_instruction = vb.context_instruction
         context_images = vb.context_images

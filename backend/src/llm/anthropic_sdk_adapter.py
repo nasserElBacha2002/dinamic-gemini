@@ -27,7 +27,6 @@ repeated ``PROVIDER_OVERLOADED`` (product decision).
 from __future__ import annotations
 
 import base64
-import io
 import json
 import logging
 import random
@@ -271,6 +270,14 @@ def classify_anthropic_messages_api_error(exc: BaseException) -> tuple[str, dict
         code = "NOT_CONFIGURED"
     elif "timeout" in msg_l or "timed out" in msg_l:
         code = "TIMEOUT"
+    elif (
+        "max allowed size for many-image" in msg_l
+        or "image dimensions exceed" in msg_l
+        or ("dimension" in msg_l and "exceed" in msg_l)
+    ):
+        code = "PROVIDER_IMAGE_DIMENSION_EXCEEDED"
+    elif status_code == 400 and ("image" in msg_l or "multimodal" in msg_l):
+        code = "PROVIDER_INVALID_MULTIMODAL_REQUEST"
 
     return code, details
 
@@ -308,6 +315,28 @@ def _anthropic_load_frames_nd(request: LLMRequest) -> list[np.ndarray]:
     return frames_nd
 
 
+def _raise_from_image_normalization(exc: BaseException, *, phase: str) -> NoReturn:
+    from src.llm.multimodal_image_normalization import ProviderImageNormalizationError
+
+    if isinstance(exc, ProviderImageNormalizationError):
+        raise LLMProviderError(
+            code=exc.code,
+            message=str(exc),
+            details={
+                "provider": "claude",
+                "phase": phase,
+                "source_id": exc.source_id,
+                "role": exc.role,
+                "retryable_class": False,
+            },
+        ) from exc
+    raise LLMProviderError(
+        code="PROVIDER_IMAGE_NORMALIZATION_FAILED",
+        message=str(exc),
+        details={"provider": "claude", "phase": phase, "retryable_class": False},
+    ) from exc
+
+
 def _anthropic_build_message_content(
     request: LLMRequest,
     settings: Any,
@@ -316,6 +345,14 @@ def _anthropic_build_message_content(
     *,
     effective_model: str,
 ) -> list[dict[str, Any]]:
+    from src.llm.anthropic_final_image_validation import normalize_and_validate_anthropic_content
+    from src.llm.multimodal_image_normalization import (
+        MultimodalNormalizationContext,
+        ProviderImageNormalizationError,
+        log_multimodal_request_ready,
+        provider_image_policy_for,
+    )
+
     meta = request.metadata or {}
     prompt_parity_mode = bool(meta.get(LLM_METADATA_KEY_PROMPT_PARITY_MODE))
     use_request_prompt = (
@@ -364,22 +401,88 @@ def _anthropic_build_message_content(
             request_metadata=meta,
         )
     meta[LLM_METADATA_KEY_MULTIMODAL_ORDER] = multimodal_order
-    content = materialize_anthropic_content_parts(
-        parts,
-        image_to_jpeg_bytes=_image_to_jpeg_bytes,
-        bgr_to_jpeg_bytes=_bgr_to_jpeg_bytes,
-        max_side=max_side,
-        jpeg_block_factory=_anthropic_jpeg_content_block,
+    jpeg_quality = int(getattr(settings, "anthropic_image_jpeg_quality", 88))
+    policy = provider_image_policy_for(
+        "claude", max_dimension=max_side, jpeg_quality=jpeg_quality
     )
+    norm_ctx = MultimodalNormalizationContext()
+
+    def _img_bytes(obj: Any, side: int) -> bytes:
+        return _image_to_jpeg_bytes(
+            obj, side, jpeg_quality=jpeg_quality, ctx=norm_ctx, role="visual_reference"
+        )
+
+    def _bgr_bytes(obj: Any, side: int) -> bytes:
+        return _bgr_to_jpeg_bytes(
+            obj, side, jpeg_quality=jpeg_quality, ctx=norm_ctx, role="primary_evidence"
+        )
+
+    try:
+        content = materialize_anthropic_content_parts(
+            parts,
+            image_to_jpeg_bytes=_img_bytes,
+            bgr_to_jpeg_bytes=_bgr_bytes,
+            max_side=max_side,
+            jpeg_block_factory=_anthropic_jpeg_content_block,
+        )
+        content, validated_blocks, block_meta = normalize_and_validate_anthropic_content(
+            content,
+            policy=policy,
+            multimodal_order=multimodal_order,
+            ctx=norm_ctx,
+        )
+    except ProviderImageNormalizationError as exc:
+        _raise_from_image_normalization(exc, phase="final_image_validation")
+    finally:
+        norm_ctx.clear()
 
     image_blocks = sum(1 for b in content if b.get("type") == "image")
+    primary_count = sum(1 for v in validated_blocks if v.role == "primary_evidence")
+    reference_count = sum(1 for v in validated_blocks if v.role == "visual_reference")
+    if not validated_blocks:
+        largest_width = 0
+        largest_height = 0
+        all_validated = True
+    else:
+        largest_width = max(v.width for v in validated_blocks)
+        largest_height = max(v.height for v in validated_blocks)
+        all_validated = all(
+            max(v.width, v.height) <= policy.max_dimension for v in validated_blocks
+        )
+    log_multimodal_request_ready(
+        provider="claude",
+        primary_count=primary_count or len(frames_nd),
+        reference_count=reference_count or len(ctx_imgs),
+        policy=policy,
+        largest_width=largest_width,
+        largest_height=largest_height,
+        all_validated=all_validated,
+        total_image_count=len(validated_blocks),
+    )
+    for bm in block_meta:
+        logger.info(
+            "anthropic_content_image_mapping",
+            extra={
+                "event": "anthropic_content_image_mapping",
+                "content_index": bm.content_index,
+                "block_type": "image",
+                "role": bm.role,
+                "source_id": bm.source_id,
+                "manifest_entry_id": bm.manifest_entry_id,
+                "reference_id": bm.reference_id,
+            },
+        )
     logger.info(
         "Claude phase=api_request_ready model=%s provider_family=anthropic "
-        "context_images=%d primary_frames=%d total_image_attachments=%d text_blocks=1",
+        "context_images=%d primary_frames=%d total_image_attachments=%d text_blocks=1 "
+        "largest_final_width=%d largest_final_height=%d all_images_validated=%s",
         effective_model,
         len(ctx_imgs),
         len(frames_nd),
         image_blocks,
+        largest_width,
+        largest_height,
+        all_validated,
     )
     return content
 
@@ -514,47 +617,102 @@ def _parsed_v21_from_json_text(
     return cast(dict[str, Any], data)
 
 
-def _bgr_to_jpeg_bytes(arr: np.ndarray, max_side: int) -> bytes:
-    if arr is None or arr.size == 0:
-        raise ValueError("empty frame")
-    work = arr
-    h, w = work.shape[:2]
-    m = max(h, w)
-    if max_side > 0 and m > max_side:
-        scale = max_side / m
-        work = cv2.resize(
-            work,
-            (max(1, int(w * scale)), max(1, int(h * scale))),
-            interpolation=cv2.INTER_AREA,
-        )
-    ok, buf = cv2.imencode(".jpg", work, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
-    if not ok or buf is None:
-        raise ValueError("jpeg encode failed")
-    return buf.tobytes()
+def _bgr_to_jpeg_bytes(
+    arr: np.ndarray,
+    max_side: int,
+    *,
+    jpeg_quality: int = 88,
+    ctx: Any | None = None,
+    role: str = "primary_evidence",
+    source_id: str | None = None,
+) -> bytes:
+    from src.llm.multimodal_image_normalization import (
+        MultimodalNormalizationContext,
+        ProviderImageNormalizationError,
+        normalize_bgr_ndarray,
+        provider_image_policy_for,
+    )
+
+    policy = provider_image_policy_for(
+        "claude", max_dimension=max_side if max_side > 0 else 1800, jpeg_quality=jpeg_quality
+    )
+    local_ctx = ctx if isinstance(ctx, MultimodalNormalizationContext) else None
+    try:
+        return normalize_bgr_ndarray(
+            arr, source_id=source_id, role=role, policy=policy, ctx=local_ctx
+        ).data
+    except ProviderImageNormalizationError as exc:
+        _raise_from_image_normalization(exc, phase="image_normalization")
 
 
-def _pil_to_jpeg_bytes(img: Any, max_side: int) -> bytes:
-    from PIL import Image
+def _pil_to_jpeg_bytes(
+    img: Any,
+    max_side: int,
+    *,
+    jpeg_quality: int = 88,
+    ctx: Any | None = None,
+    role: str = "visual_reference",
+    source_id: str | None = None,
+) -> bytes:
+    from src.llm.multimodal_image_normalization import (
+        MultimodalNormalizationContext,
+        ProviderImageNormalizationError,
+        normalize_pil_image,
+        provider_image_policy_for,
+    )
 
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-    w, h = img.size
-    m = max(w, h)
-    if max_side > 0 and m > max_side:
-        scale = max_side / m
-        img = img.resize(
-            (max(1, int(w * scale)), max(1, int(h * scale))),
-            Image.Resampling.LANCZOS,
-        )
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=85)
-    return buf.getvalue()
+    policy = provider_image_policy_for(
+        "claude", max_dimension=max_side if max_side > 0 else 1800, jpeg_quality=jpeg_quality
+    )
+    local_ctx = ctx if isinstance(ctx, MultimodalNormalizationContext) else None
+    try:
+        return normalize_pil_image(
+            img, source_id=source_id, role=role, policy=policy, ctx=local_ctx
+        ).data
+    except ProviderImageNormalizationError as exc:
+        _raise_from_image_normalization(exc, phase="image_normalization")
 
 
-def _image_to_jpeg_bytes(obj: Any, max_side: int) -> bytes:
+def _image_to_jpeg_bytes(
+    obj: Any,
+    max_side: int,
+    *,
+    jpeg_quality: int = 88,
+    ctx: Any | None = None,
+    role: str = "visual_reference",
+    source_id: str | None = None,
+) -> bytes:
+    from src.llm.multimodal_image_normalization import (
+        MultimodalNormalizationContext,
+        ProviderImageNormalizationError,
+        normalize_multimodal_image,
+        provider_image_policy_for,
+    )
+
     if isinstance(obj, np.ndarray):
-        return _bgr_to_jpeg_bytes(obj, max_side)
-    return _pil_to_jpeg_bytes(obj, max_side)
+        return _bgr_to_jpeg_bytes(
+            obj, max_side, jpeg_quality=jpeg_quality, ctx=ctx, role=role, source_id=source_id
+        )
+    if isinstance(obj, (bytes, bytearray)):
+        policy = provider_image_policy_for(
+            "claude",
+            max_dimension=max_side if max_side > 0 else 1800,
+            jpeg_quality=jpeg_quality,
+        )
+        local_ctx = ctx if isinstance(ctx, MultimodalNormalizationContext) else None
+        try:
+            return normalize_multimodal_image(
+                bytes(obj),
+                source_id=source_id,
+                role=role,
+                policy=policy,
+                ctx=local_ctx,
+            ).data
+        except ProviderImageNormalizationError as exc:
+            _raise_from_image_normalization(exc, phase="image_normalization")
+    return _pil_to_jpeg_bytes(
+        obj, max_side, jpeg_quality=jpeg_quality, ctx=ctx, role=role, source_id=source_id
+    )
 
 
 def _anthropic_message_usage_dict(message: Any) -> dict[str, Any]:
@@ -629,7 +787,7 @@ class AnthropicSdkAdapter:
             effective_model = "claude-sonnet-4-20250514"
 
         timeout = float(getattr(settings, "anthropic_request_timeout_sec", 120.0))
-        max_side = int(getattr(settings, "anthropic_vision_max_image_side", 2048))
+        max_side = int(getattr(settings, "anthropic_vision_max_image_side", 1800))
         max_tokens = int(getattr(settings, "anthropic_max_output_tokens", 16384))
         max_attempts = int(getattr(settings, "anthropic_max_retries", 4))
         base_delay = float(getattr(settings, "anthropic_retry_base_delay_sec", 1.0))

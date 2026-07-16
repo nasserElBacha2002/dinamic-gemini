@@ -401,6 +401,9 @@ def _append_serialized_image_pair(
         kind="reference" if entry.role.value == "reference_image" else "primary_evidence",
         manifest_entry_id=entry.manifest_entry_id,
         source_image_id=entry.source_image_id,
+        reference_id=(
+            entry.source_image_id if entry.role.value == "reference_image" else None
+        ),
         provider_image_position=entry.provider_image_position,
     )
     return content_index + 1
@@ -427,14 +430,21 @@ def build_openai_vision_from_serialized(
     idx += 1
     for entry in payload.entries:
         label = manifest_entry_label(entry)
-        is_primary = entry.role.value == "primary_evidence"
+        resource = entry.encoded_resource
+        is_ndarray = False
+        try:
+            import numpy as np
+
+            is_ndarray = isinstance(resource, np.ndarray)
+        except ImportError:
+            is_ndarray = False
         idx = _append_serialized_image_pair(
             image_entry=entry,
             label_text=label,
             content_out=content,
             order=order,
             content_index=idx,
-            is_primary_ndarray=is_primary,
+            is_primary_ndarray=is_ndarray,
         )
     return content, order
 

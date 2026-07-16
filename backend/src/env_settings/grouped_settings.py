@@ -23,6 +23,20 @@ from src.env_settings.sqlserver_resolution import default_sqlserver_connection_s
 
 ArtifactStorageProvider = Literal["local", "s3", "gcs"]
 
+# Claude many-image requests reject any side > 2000px. Prefer CLAUDE_MULTI_IMAGE_MAX_DIMENSION;
+# when only legacy ANTHROPIC_VISION_MAX_IMAGE_SIDE is set (often 2048), clamp to 1800.
+_CLAUDE_MULTI_IMAGE_SAFE_DEFAULT = 1800
+
+
+def _resolve_claude_multi_image_max_dimension() -> int:
+    claude = (os.getenv("CLAUDE_MULTI_IMAGE_MAX_DIMENSION") or "").strip()
+    if claude:
+        return int(claude)
+    legacy = (os.getenv("ANTHROPIC_VISION_MAX_IMAGE_SIDE") or "").strip()
+    if legacy:
+        return min(int(legacy), _CLAUDE_MULTI_IMAGE_SAFE_DEFAULT)
+    return _CLAUDE_MULTI_IMAGE_SAFE_DEFAULT
+
 
 class LlmProviderSettings(BaseModel):
     model_config = {"extra": "forbid"}
@@ -109,10 +123,27 @@ class LlmProviderSettings(BaseModel):
         description="HTTP timeout (seconds) for Anthropic API calls. Env: ANTHROPIC_REQUEST_TIMEOUT_SEC.",
     )
     anthropic_vision_max_image_side: int = Field(
-        default_factory=lambda: int(os.getenv("ANTHROPIC_VISION_MAX_IMAGE_SIDE", "2048")),
+        default_factory=lambda: _resolve_claude_multi_image_max_dimension(),
         ge=512,
         le=4096,
-        description="Max longest side (px) for images sent to Claude vision. Env: ANTHROPIC_VISION_MAX_IMAGE_SIDE.",
+        description=(
+            "Max longest side (px) for images sent to Claude vision (multi-image safe default 1800). "
+            "Env: CLAUDE_MULTI_IMAGE_MAX_DIMENSION (preferred). Legacy ANTHROPIC_VISION_MAX_IMAGE_SIDE "
+            "is clamped to 1800 when CLAUDE_MULTI_IMAGE_MAX_DIMENSION is unset (Claude many-image "
+            "hard limit is 2000px)."
+        ),
+    )
+    anthropic_image_jpeg_quality: int = Field(
+        default_factory=lambda: int(os.getenv("CLAUDE_IMAGE_JPEG_QUALITY", "88")),
+        ge=1,
+        le=100,
+        description="JPEG quality for Claude multimodal image encoding. Env: CLAUDE_IMAGE_JPEG_QUALITY.",
+    )
+    openai_image_jpeg_quality: int = Field(
+        default_factory=lambda: int(os.getenv("OPENAI_IMAGE_JPEG_QUALITY", "88")),
+        ge=1,
+        le=100,
+        description="JPEG quality for OpenAI multimodal image encoding. Env: OPENAI_IMAGE_JPEG_QUALITY.",
     )
     anthropic_max_output_tokens: int = Field(
         default_factory=lambda: int(os.getenv("ANTHROPIC_MAX_OUTPUT_TOKENS", "16384")),

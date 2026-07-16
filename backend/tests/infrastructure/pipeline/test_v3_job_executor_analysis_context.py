@@ -31,6 +31,7 @@ from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
+from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
 
 
@@ -72,7 +73,13 @@ class InMemoryJobRepo(JobRepository):
         *,
         job_type: str | None = None,
     ) -> Sequence[Job]:
-        return []
+        store = getattr(self, "_store", None) or getattr(self, "_jobs", None)
+        if store is None:
+            return []
+        return list_jobs_for_targets_from_store(
+            store, target_type, target_ids, job_type=job_type
+        )
+
 
 class InMemoryAisleRepo(AisleRepository):
     def __init__(self) -> None:

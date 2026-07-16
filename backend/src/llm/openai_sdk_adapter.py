@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import io
 import json
 import logging
 import time
@@ -135,49 +134,76 @@ def _extract_json_text(raw: str) -> str:
     return t
 
 
-def _bgr_to_jpeg_data_url(arr: np.ndarray, max_side: int) -> str:
-    if arr is None or arr.size == 0:
-        raise ValueError("empty frame")
-    work = arr
-    h, w = work.shape[:2]
-    m = max(h, w)
-    if max_side > 0 and m > max_side:
-        scale = max_side / m
-        work = cv2.resize(
-            work,
-            (max(1, int(w * scale)), max(1, int(h * scale))),
-            interpolation=cv2.INTER_AREA,
-        )
-    ok, buf = cv2.imencode(".jpg", work, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
-    if not ok or buf is None:
-        raise ValueError("jpeg encode failed")
-    b64 = base64.standard_b64encode(buf.tobytes()).decode("ascii")
+def _bgr_to_jpeg_data_url(
+    arr: np.ndarray, max_side: int, *, jpeg_quality: int = 88
+) -> str:
+    from src.llm.errors import LLMProviderError
+    from src.llm.multimodal_image_normalization import (
+        ProviderImageNormalizationError,
+        normalize_bgr_ndarray,
+        provider_image_policy_for,
+    )
+
+    policy = provider_image_policy_for(
+        "openai", max_dimension=max_side if max_side > 0 else 2048, jpeg_quality=jpeg_quality
+    )
+    try:
+        data = normalize_bgr_ndarray(
+            arr, source_id=None, role="primary_evidence", policy=policy
+        ).data
+    except ProviderImageNormalizationError as exc:
+        raise LLMProviderError(
+            code=exc.code,
+            message=str(exc),
+            details={
+                "provider": "openai",
+                "phase": "image_normalization",
+                "source_id": exc.source_id,
+                "role": exc.role,
+                "retryable_class": False,
+            },
+        ) from exc
+    b64 = base64.standard_b64encode(data).decode("ascii")
     return f"data:image/jpeg;base64,{b64}"
 
 
-def _pil_to_jpeg_data_url(img: Any, max_side: int) -> str:
-    from PIL import Image
+def _pil_to_jpeg_data_url(
+    img: Any, max_side: int, *, jpeg_quality: int = 88
+) -> str:
+    from src.llm.errors import LLMProviderError
+    from src.llm.multimodal_image_normalization import (
+        ProviderImageNormalizationError,
+        normalize_pil_image,
+        provider_image_policy_for,
+    )
 
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-    w, h = img.size
-    m = max(w, h)
-    if max_side > 0 and m > max_side:
-        scale = max_side / m
-        img = img.resize(
-            (max(1, int(w * scale)), max(1, int(h * scale))),
-            Image.Resampling.LANCZOS,
-        )
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=85)
-    b64 = base64.standard_b64encode(buf.getvalue()).decode("ascii")
+    policy = provider_image_policy_for(
+        "openai", max_dimension=max_side if max_side > 0 else 2048, jpeg_quality=jpeg_quality
+    )
+    try:
+        data = normalize_pil_image(
+            img, source_id=None, role="visual_reference", policy=policy
+        ).data
+    except ProviderImageNormalizationError as exc:
+        raise LLMProviderError(
+            code=exc.code,
+            message=str(exc),
+            details={
+                "provider": "openai",
+                "phase": "image_normalization",
+                "source_id": exc.source_id,
+                "role": exc.role,
+                "retryable_class": False,
+            },
+        ) from exc
+    b64 = base64.standard_b64encode(data).decode("ascii")
     return f"data:image/jpeg;base64,{b64}"
 
 
-def _image_to_data_url(obj: Any, max_side: int) -> str:
+def _image_to_data_url(obj: Any, max_side: int, *, jpeg_quality: int = 88) -> str:
     if isinstance(obj, np.ndarray):
-        return _bgr_to_jpeg_data_url(obj, max_side)
-    return _pil_to_jpeg_data_url(obj, max_side)
+        return _bgr_to_jpeg_data_url(obj, max_side, jpeg_quality=jpeg_quality)
+    return _pil_to_jpeg_data_url(obj, max_side, jpeg_quality=jpeg_quality)
 
 
 def _openai_completion_usage_dict(completion: Any) -> dict[str, Any]:
@@ -304,10 +330,18 @@ def _openai_build_user_content(
             request_metadata=meta,
         )
     meta[LLM_METADATA_KEY_MULTIMODAL_ORDER] = multimodal_order
+    jpeg_quality = int(getattr(settings, "openai_image_jpeg_quality", 88))
+
+    def _img_url(obj: Any, side: int) -> str:
+        return _image_to_data_url(obj, side, jpeg_quality=jpeg_quality)
+
+    def _bgr_url(obj: Any, side: int) -> str:
+        return _bgr_to_jpeg_data_url(obj, side, jpeg_quality=jpeg_quality)
+
     content = materialize_openai_content_parts(
         parts,
-        image_to_data_url=_image_to_data_url,
-        bgr_to_data_url=_bgr_to_jpeg_data_url,
+        image_to_data_url=_img_url,
+        bgr_to_data_url=_bgr_url,
         max_side=max_side,
     )
     return content

@@ -1,7 +1,8 @@
 """
 Shared visual-reference attachment preparation for global analysis (provider-neutral).
 
-Extracted from the hybrid analysis strategy so any executor can reuse the same attachment model.
+Loads original images with EXIF orientation preserved. Provider-specific resize / JPEG
+normalization happens once in the LLM adapter (not here) to avoid double re-compression.
 """
 
 from __future__ import annotations
@@ -9,8 +10,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Any
-
-import cv2
 
 from src.pipeline.contracts.analysis_context import AnalysisContext
 
@@ -41,25 +40,49 @@ def build_primary_evidence_attachments(
 
 
 def load_pil_from_path(path: Path) -> Any:  # PIL.Image.Image | None
-    """Load image from path as PIL RGB; return None if missing or unreadable."""
+    """Load image from path as PIL RGB with EXIF transpose; return None if unreadable.
+
+    Prefer Pillow over OpenCV so EXIF orientation metadata is available before measuring size.
+    """
     try:
-        from PIL import Image
+        from PIL import Image, ImageOps
     except ImportError:
         raise ImportError(
             "Pillow required for visual reference loading. Install with: pip install pillow"
         )
-    img = cv2.imread(str(path))
-    if img is None:
+    try:
+        with Image.open(path) as opened:
+            transposed = ImageOps.exif_transpose(opened)
+            work = transposed if transposed is not None else opened
+            img = work.convert("RGB")
+            img.load()
+            return img
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Visual reference load failed via Pillow: %s (%s)",
+            path,
+            exc,
+        )
         return None
-    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    return Image.fromarray(rgb)
 
 
 def prepare_visual_reference_inputs(
     analysis_context: AnalysisContext | None,
     *,
     job_id: str,
+    image_policy: Any | None = None,
 ) -> tuple[list[Any], list[dict[str, Any]], list[str]]:
+    """Load visual references for LLM context (original bytes / PIL, EXIF-aware).
+
+    ``image_policy`` is accepted for call-site compatibility but sizing/JPEG conversion
+    is deferred to the provider adapter (single normalize + final base64 validation).
+
+    Policy for corrupt / missing references (domain-aligned with missing-file skips):
+    - Log a warning, mark ``resolved=False``, omit from ``loaded_images``.
+    - Do **not** attach unreadable bytes.
+    - Primary evidence failures remain blocking at the adapter encode path.
+    """
+    del image_policy  # sizing is provider-adapter responsibility
     if not analysis_context or not analysis_context.visual_references:
         return [], [], []
 

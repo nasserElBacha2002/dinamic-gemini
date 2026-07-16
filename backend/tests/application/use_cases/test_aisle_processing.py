@@ -39,6 +39,7 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
+from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
 
@@ -182,7 +183,13 @@ class StubJobRepo(JobRepository):
         *,
         job_type: str | None = None,
     ) -> Sequence[Job]:
-        return []
+        store = getattr(self, "_store", None) or getattr(self, "_jobs", None)
+        if store is None:
+            return []
+        return list_jobs_for_targets_from_store(
+            store, target_type, target_ids, job_type=job_type
+        )
+
 
 class StubWorkerLaunchService(WorkerLaunchService):
     def __init__(self) -> None:

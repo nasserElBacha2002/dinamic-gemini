@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.application.ports.repositories import JobRepository
-from src.application.services.billable_job_cost_aggregation import TARGET_ID_BATCH_SIZE
 from src.application.services.job_stale_reconciler import (
     STALE_FAILURE_CODE,
     STALE_FAILURE_MESSAGE,
@@ -30,6 +29,9 @@ from src.domain.jobs.finalization import (
 from src.infrastructure.repositories.db_row_text import normalize_db_str
 
 logger = logging.getLogger(__name__)
+
+# Max target_ids per SQL ``IN`` clause (parameter-limit safety only — never caps jobs/runs).
+TARGET_ID_BATCH_SIZE = 500
 
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:
