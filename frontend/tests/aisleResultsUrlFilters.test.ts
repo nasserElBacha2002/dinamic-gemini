@@ -132,7 +132,9 @@ describe('aisleResultsUrlFilters', () => {
     };
     const written = writeAisleResultsFilters(new URLSearchParams('jobId=keep'), original, defaults);
     const round = parseAisleResultsFilters(written, defaults);
-    expect(round).toEqual(original);
+    // resultStatus is intentionally omitted from the URL (images view always uses without_result).
+    expect(round).toEqual({ ...original, resultStatus: defaults.resultStatus });
+    expect(written.get('resultStatus')).toBeNull();
     expect(written.get('jobId')).toBe('keep');
   });
 
@@ -208,18 +210,18 @@ describe('aisleResultsUrlFilters', () => {
       ).toBe('positions');
     });
 
-    it('write omits default resultStatus/resultsView and serializes non-defaults', () => {
+    it('write omits resultStatus always and serializes non-default resultsView', () => {
       const defaults = createDefaultAisleResultsFilters();
       const written = writeAisleResultsFilters(new URLSearchParams(), defaults, defaults);
       expect(written.get('resultStatus')).toBeNull();
       expect(written.get('resultsView')).toBeNull();
 
       const nonDefault = writeAisleResultsFilters(
-        new URLSearchParams(),
+        new URLSearchParams('resultStatus=all'),
         { ...defaults, resultStatus: 'without-result', resultsView: 'images' },
         defaults
       );
-      expect(nonDefault.get('resultStatus')).toBe('without-result');
+      expect(nonDefault.get('resultStatus')).toBeNull();
       expect(nonDefault.get('resultsView')).toBe('images');
     });
 

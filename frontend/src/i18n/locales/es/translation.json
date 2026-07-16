@@ -1925,31 +1925,20 @@
     "imageCoverage": {
       "viewToggle": {
         "positions": "Posiciones",
-        "images": "Imágenes"
+        "unmatched": "Imágenes sin contar",
+        "unmatchedWithCount": "Imágenes sin contar ({{count}})",
+        "aria": "Vista de resultados"
       },
-      "counters": {
-        "total": "Total de imágenes",
-        "withResult": "Con resultado",
-        "withoutResult": "Sin resultado"
-      },
-      "statusFilter": {
-        "all": "Todas",
-        "withResult": "Con resultado",
-        "withoutResult": "Sin resultado"
+      "queue": {
+        "heading": "Imágenes sin contar: {{count}}",
+        "description": "Estas imágenes no generaron resultados y requieren revisión manual.",
+        "empty": "No quedan imágenes sin contar.",
+        "backToPositions": "Volver a posiciones"
       },
       "card": {
         "noFilename": "Sin nombre de archivo",
-        "resultsCount": "{{count}} resultado",
-        "resultsCount_other": "{{count}} resultados",
-        "resultCounts": "Auto {{automatic}} · Manual {{manual}}",
         "withoutResultBadge": "Sin resultado",
-        "withResultBadge": "Con resultado",
         "addResultAction": "Agregar resultado",
-        "automaticBadge": "Automático",
-        "manualBadge": "Carga manual",
-        "skuLabel": "SKU",
-        "qtyLabel": "Cant.",
-        "positionCodeLabel": "Posición",
         "processingStatus": {
           "pending": "Pendiente",
           "processing": "Procesando",
@@ -1958,7 +1947,6 @@
           "failed": "Procesamiento fallido"
         }
       },
-      "empty": "No se encontraron imágenes para esta corrida.",
       "loading": "Cargando imágenes…",
       "drawer": {
         "title": "Agregar resultado manual",
@@ -1975,6 +1963,7 @@
         "cancel": "Cancelar",
         "saving": "Guardando…",
         "successSnackbar": "Resultado manual agregado",
+        "successSnackbarLast": "Resultado agregado correctamente. Ya no quedan imágenes sin contar.",
         "imageLoading": "Cargando imagen…",
         "errorSkuRequired": "El SKU es obligatorio",
         "errorQuantityRequired": "La cantidad es obligatoria",

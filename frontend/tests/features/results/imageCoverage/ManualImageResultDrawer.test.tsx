@@ -9,6 +9,7 @@ import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import ManualImageResultDrawer from '../../../../src/features/results/components/imageCoverage/ManualImageResultDrawer';
 import { ApiError } from '../../../../src/api/types';
 import type { JobImageResultItem } from '../../../../src/api/types';
+import { useEvidenceImageLoad } from '../../../../src/features/results/hooks/useEvidenceImageLoad';
 
 const mutateAsyncMock = vi.hoisted(() => vi.fn());
 const showSnackbarMock = vi.hoisted(() => vi.fn());
@@ -25,6 +26,10 @@ vi.mock('../../../../src/hooks', async (importOriginal) => {
   };
 });
 
+vi.mock('../../../../src/features/results/hooks/useEvidenceImageLoad', () => ({
+  useEvidenceImageLoad: vi.fn(() => ({ status: 'idle' as const })),
+}));
+
 vi.mock('../../../../src/components/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../src/components/ui')>();
   return {
@@ -33,12 +38,17 @@ vi.mock('../../../../src/components/ui', async (importOriginal) => {
       showSnackbar: showSnackbarMock,
       closeSnackbar: vi.fn(),
     }),
+    ImagePreviewDialog: ({
+      open,
+      title,
+    }: {
+      open: boolean;
+      title?: string;
+    }) => (open ? <div data-testid="image-preview-dialog" aria-label={title} /> : null),
   };
 });
 
-vi.mock('../../../../src/features/results/hooks/useEvidenceImageLoad', () => ({
-  useEvidenceImageLoad: vi.fn(() => ({ status: 'idle' as const })),
-}));
+const mockUseEvidenceImageLoad = vi.mocked(useEvidenceImageLoad);
 
 const baseItem: JobImageResultItem = {
   job_source_asset_id: 'jsa-1',
@@ -86,9 +96,56 @@ describe('ManualImageResultDrawer', () => {
     mutateAsyncMock.mockReset();
     showSnackbarMock.mockClear();
     isPendingRef.value = false;
+    mockUseEvidenceImageLoad.mockReset();
+    mockUseEvidenceImageLoad.mockReturnValue({ status: 'idle' });
   });
 
-  it('shows field labels and the image viewer when open', () => {
+  it('reuses ResultEvidenceViewer with manual-result variant and wide drawer', () => {
+    mockUseEvidenceImageLoad.mockReturnValue({
+      status: 'loaded',
+      imageSrc: 'blob:http://localhost/img',
+    });
+    renderDrawer();
+
+    expect(screen.getByTestId('result-evidence-viewer')).toHaveAttribute('data-mode', 'asset');
+    expect(screen.getByTestId('result-evidence-inline-preview')).toHaveAttribute(
+      'data-variant',
+      'manual-result'
+    );
+    const img = screen.getByTestId('evidence-preview-image');
+    expect(img).toHaveStyle({ objectFit: 'contain', width: '100%' });
+    expect(screen.queryByTestId('job-image-thumbnail')).not.toBeInTheDocument();
+    expect(screen.getByTestId('result-evidence-open-fullscreen')).toBeInTheDocument();
+  });
+
+  it('loads evidence only while the drawer is open', () => {
+    const { rerender } = renderDrawer({ open: true });
+    expect(mockUseEvidenceImageLoad).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inventoryId: 'inv-1',
+        aisleId: 'aisle-1',
+        assetId: 'asset-1',
+        jobId: 'job-1',
+      })
+    );
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    rerender(
+      <QueryClientProvider client={client}>
+        <ManualImageResultDrawer
+          open={false}
+          item={baseItem}
+          inventoryId="inv-1"
+          aisleId="aisle-1"
+          jobId="job-1"
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+    expect(mockUseEvidenceImageLoad).toHaveBeenLastCalledWith(null);
+  });
+
+  it('shows field labels and the evidence viewer when open', () => {
     renderDrawer();
     expect(screen.getByLabelText(/sku/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/cantidad|quantity/i)).toBeInTheDocument();

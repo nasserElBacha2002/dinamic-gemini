@@ -1,21 +1,15 @@
 /**
- * One compact row of the job image coverage view: order, filename, status, counts, badges, actions.
- * "Agregar resultado" is only offered when the image has no result at all (`!has_result`).
+ * Compact unmatched-image row: order, filename, status, add-result action.
+ * This view only lists images without results — no thumbnails, counts, or origin badges.
  */
 
 import { useTranslation } from 'react-i18next';
 import { Box, Button, Card, Chip, Stack, Typography } from '@mui/material';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import StatusBadge from '../../../../components/ui/StatusBadge';
 import type { JobImageResultItem } from '../../../../api/types';
-import {
-  jobImageProcessingStatusLabel,
-  jobImageProcessingStatusSemantic,
-} from '../../utils/jobImageProcessingStatus';
+import { isFailedProcessingStatus } from '../../utils/jobImageProcessingStatus';
 
 export interface JobImageResultCardProps {
-  inventoryId: string;
-  aisleId: string;
   item: JobImageResultItem;
   onAddResult: (item: JobImageResultItem) => void;
   addResultDisabled?: boolean;
@@ -28,14 +22,17 @@ export default function JobImageResultCard({
 }: JobImageResultCardProps) {
   const { t } = useTranslation();
   const filename = item.original_filename?.trim() || t('results.imageCoverage.card.noFilename');
-  const canAddResult = !item.has_result;
   const orderLabel = `#${item.position_order + 1}`;
+  const failed = isFailedProcessingStatus(item.processing_status);
+  const statusLabel = failed
+    ? t('results.imageCoverage.card.processingStatus.failed')
+    : t('results.imageCoverage.card.withoutResultBadge');
 
   return (
     <Card
       variant="outlined"
       data-testid="job-image-result-card"
-      data-has-result={item.has_result ? 'true' : 'false'}
+      data-has-result="false"
       sx={{ px: 2, py: 1.25 }}
     >
       <Stack
@@ -61,74 +58,30 @@ export default function JobImageResultCard({
           >
             {orderLabel}
           </Typography>
-          <Typography variant="subtitle2" fontWeight={600} noWrap title={filename} sx={{ maxWidth: 280 }}>
+          <Typography variant="subtitle2" fontWeight={600} noWrap title={filename} sx={{ maxWidth: 360 }}>
             {filename}
           </Typography>
-          <StatusBadge
-            label={jobImageProcessingStatusLabel(item.processing_status)}
-            semantic={jobImageProcessingStatusSemantic(item.processing_status)}
+          <Chip
+            size="small"
+            variant="outlined"
+            color={failed ? 'error' : 'warning'}
+            label={statusLabel}
+            data-testid={failed ? 'job-image-failed-badge' : 'job-image-without-result-badge'}
           />
-          {item.has_result ? (
-            <Chip
-              size="small"
-              variant="outlined"
-              color="success"
-              label={`${t('results.imageCoverage.card.withResultBadge')} (${item.result_count})`}
-              data-testid="job-image-with-result-badge"
-            />
-          ) : (
-            <Chip
-              size="small"
-              variant="outlined"
-              color="warning"
-              label={t('results.imageCoverage.card.withoutResultBadge')}
-              data-testid="job-image-without-result-badge"
-            />
-          )}
-          {item.result_count > 0 ? (
-            <Chip
-              size="small"
-              variant="outlined"
-              label={t('results.imageCoverage.card.resultCounts', {
-                automatic: item.automatic_result_count,
-                manual: item.manual_result_count,
-              })}
-              data-testid="job-image-result-counts"
-            />
-          ) : null}
-          {item.automatic_result_count > 0 ? (
-            <Chip
-              size="small"
-              variant="outlined"
-              label={t('results.imageCoverage.card.automaticBadge')}
-              data-testid="job-image-result-creation-source-automatic"
-            />
-          ) : null}
-          {item.has_manual_result ? (
-            <Chip
-              size="small"
-              variant="outlined"
-              color="info"
-              label={t('results.imageCoverage.card.manualBadge')}
-              data-testid="job-image-result-creation-source-manual"
-            />
-          ) : null}
         </Stack>
 
-        {canAddResult ? (
-          <Box sx={{ flexShrink: 0 }}>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<AddCircleOutlineIcon fontSize="small" />}
-              onClick={() => onAddResult(item)}
-              disabled={addResultDisabled}
-              data-testid="job-image-add-manual-result"
-            >
-              {t('results.imageCoverage.card.addResultAction')}
-            </Button>
-          </Box>
-        ) : null}
+        <Box sx={{ flexShrink: 0 }}>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<AddCircleOutlineIcon fontSize="small" />}
+            onClick={() => onAddResult(item)}
+            disabled={addResultDisabled}
+            data-testid="job-image-add-manual-result"
+          >
+            {t('results.imageCoverage.card.addResultAction')}
+          </Button>
+        </Box>
       </Stack>
     </Card>
   );

@@ -1,10 +1,9 @@
 /**
  * Manual coverage for one image without a result — operator-entered SKU/qty (Job image coverage).
- * Validation + double-submit guard mirror `QuickReviewDrawer`'s review action pattern.
- * Large evidence image loads lazily via `useEvidenceImageLoad` only while the drawer is open.
+ * Evidence uses the same ResultEvidenceViewer as QuickReviewDrawer (asset mode, large layout).
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
@@ -16,12 +15,12 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { DrawerHeader, ImageViewer, useAppSnackbar } from '../../../../components/ui';
+import { DrawerHeader, useAppSnackbar } from '../../../../components/ui';
 import { ApiError } from '../../../../api/types';
 import type { JobImageResultItem, PositionSummary } from '../../../../api/types';
 import { useCreateManualImageResult } from '../../../../hooks';
-import { useEvidenceImageLoad } from '../../hooks/useEvidenceImageLoad';
 import { getVisibleErrorMessage } from '../../../../utils/apiErrors';
+import { ResultEvidenceViewer } from '../detail';
 
 export interface ManualImageResultDrawerProps {
   open: boolean;
@@ -30,7 +29,7 @@ export interface ManualImageResultDrawerProps {
   aisleId: string;
   jobId: string;
   onClose: () => void;
-  onSuccess?: (position: PositionSummary) => void;
+  onSuccess?: (position: PositionSummary) => string | void;
   /** Called on 409 so the caller can refresh the image list. */
   onConflict?: () => void;
 }
@@ -69,20 +68,6 @@ export default function ManualImageResultDrawer({
   const submitInFlightRef = useRef(false);
 
   const mutation = useCreateManualImageResult(inventoryId, aisleId, item?.source_asset_id ?? '');
-
-  const imageSpec = useMemo(
-    () =>
-      open && item
-        ? {
-            inventoryId,
-            aisleId,
-            assetId: item.source_asset_id,
-            jobId: item.job_id || jobId,
-          }
-        : null,
-    [open, item, inventoryId, aisleId, jobId]
-  );
-  const loadState = useEvidenceImageLoad(imageSpec);
 
   useEffect(() => {
     if (!open) return;
@@ -139,8 +124,13 @@ export default function ManualImageResultDrawer({
         description: description.trim() || undefined,
         position_code: positionCode.trim() || undefined,
       });
-      showSnackbar(t('results.imageCoverage.drawer.successSnackbar'), 'success');
-      onSuccess?.(result.position);
+      const customMessage = onSuccess?.(result.position);
+      showSnackbar(
+        typeof customMessage === 'string' && customMessage.trim()
+          ? customMessage
+          : t('results.imageCoverage.drawer.successSnackbar'),
+        'success'
+      );
       onClose();
     } catch (e) {
       const message = isImageAlreadyHasResults(e)
@@ -156,11 +146,6 @@ export default function ManualImageResultDrawer({
     }
   };
 
-  const filename = item?.original_filename?.trim() || t('results.imageCoverage.card.noFilename');
-  const imageSrc = loadState.status === 'loaded' ? loadState.imageSrc : null;
-  const imageLoading = loadState.status === 'loading';
-  const imageError = loadState.status === 'error' ? loadState.message : null;
-
   return (
     <Drawer
       anchor="right"
@@ -168,7 +153,12 @@ export default function ManualImageResultDrawer({
       onClose={handleClose}
       PaperProps={{
         sx: {
-          width: { xs: '100%', sm: 'min(480px, 96vw)' },
+          width: {
+            xs: '100%',
+            sm: '90vw',
+            md: 760,
+            lg: 900,
+          },
           maxWidth: '100vw',
           display: 'flex',
           flexDirection: 'column',
@@ -196,22 +186,16 @@ export default function ManualImageResultDrawer({
       <Box sx={{ flex: 1, overflow: 'auto', px: 2.5, py: 2.5 }}>
         {item ? (
           <Stack spacing={2.5}>
-            <Box data-testid="manual-image-result-viewer">
-              <ImageViewer
-                src={imageSrc}
-                alt={filename}
-                title={filename}
-                loading={imageLoading}
-                error={imageError}
-                caption={filename}
-                minHeight={200}
-                maxHeight={280}
+            <Box data-testid="manual-image-result-viewer" sx={{ width: '100%' }}>
+              <ResultEvidenceViewer
+                inventoryId={inventoryId}
+                aisleId={aisleId}
+                assetId={item.source_asset_id}
+                jobId={item.job_id || jobId}
+                filename={item.original_filename}
+                variant="manual-result"
+                enabled={open}
               />
-              {imageLoading ? (
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                  {t('results.imageCoverage.drawer.imageLoading')}
-                </Typography>
-              ) : null}
             </Box>
 
             {submitError ? (

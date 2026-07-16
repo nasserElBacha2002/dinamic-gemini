@@ -1,19 +1,11 @@
 /**
  * Sprint 4.3 — Evidence viewer: inline primary preview + generic fullscreen dialog.
  * Phase 4.8: When structural evidenceView exists, use backend imageUrl (no legacy asset loader).
+ * Supports result-detail mode and asset mode (manual image coverage drawer).
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Box,
-  Button,
-  Chip,
-  CircularProgress,
-  IconButton,
-  Stack,
-  Typography,
-} from '@mui/material';
-import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import { Box, Chip, Stack, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { ImagePreviewDialog } from '../../../../components/ui';
 import type { ResultDetail } from '../../types';
@@ -26,12 +18,33 @@ import {
 } from '../../utils/evidenceEligibility';
 import { evidenceUnavailableMessage } from '../../utils/evidenceUnavailableMessage';
 import i18n from '../../../../i18n';
+import EvidencePreviewStage, {
+  type EvidenceViewerVariant,
+} from './EvidencePreviewStage';
 
-export interface ResultEvidenceViewerProps {
+export interface ResultEvidenceViewerResultProps {
   result: ResultDetail;
   inventoryId: string;
   aisleId: string;
+  variant?: EvidenceViewerVariant;
+  /** When false, skip authenticated image load (e.g. parent drawer closed). Default true. */
+  enabled?: boolean;
 }
+
+export interface ResultEvidenceViewerAssetProps {
+  result?: undefined;
+  inventoryId: string;
+  aisleId: string;
+  assetId: string;
+  jobId?: string | null;
+  filename?: string | null;
+  variant?: EvidenceViewerVariant;
+  enabled?: boolean;
+}
+
+export type ResultEvidenceViewerProps =
+  | ResultEvidenceViewerResultProps
+  | ResultEvidenceViewerAssetProps;
 
 interface EvidenceFrame {
   key: string;
@@ -140,9 +153,10 @@ function legacySpecForFrame(
   frame: EvidenceFrame | null,
   inventoryId: string,
   aisleId: string,
-  jobId: string | null
+  jobId: string | null,
+  enabled: boolean
 ) {
-  if (!frame?.useLegacyLoader) return null;
+  if (!enabled || !frame?.useLegacyLoader) return null;
   return { inventoryId, aisleId, assetId: frame.key, jobId };
 }
 
@@ -158,7 +172,128 @@ function frameDialogTitle(frame: EvidenceFrame, t: (key: string) => string): str
     : frame.label || t('results.evidence_viewer.title_fallback');
 }
 
-export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: ResultEvidenceViewerProps) {
+function isAssetProps(props: ResultEvidenceViewerProps): props is ResultEvidenceViewerAssetProps {
+  return props.result == null && typeof (props as ResultEvidenceViewerAssetProps).assetId === 'string';
+}
+
+export default function ResultEvidenceViewer(props: ResultEvidenceViewerProps) {
+  const inventoryId = props.inventoryId;
+  const aisleId = props.aisleId;
+  const variant: EvidenceViewerVariant =
+    props.variant ?? (isAssetProps(props) ? 'manual-result' : 'review');
+  const enabled = props.enabled !== false;
+
+  if (isAssetProps(props)) {
+    return (
+      <AssetModeEvidenceViewer
+        inventoryId={inventoryId}
+        aisleId={aisleId}
+        assetId={props.assetId}
+        jobId={props.jobId ?? null}
+        filename={props.filename ?? null}
+        variant={variant}
+        enabled={enabled}
+      />
+    );
+  }
+
+  return (
+    <ResultModeEvidenceViewer
+      result={props.result}
+      inventoryId={inventoryId}
+      aisleId={aisleId}
+      variant={variant}
+      enabled={enabled}
+    />
+  );
+}
+
+function AssetModeEvidenceViewer({
+  inventoryId,
+  aisleId,
+  assetId,
+  jobId,
+  filename,
+  variant,
+  enabled,
+}: {
+  inventoryId: string;
+  aisleId: string;
+  assetId: string;
+  jobId: string | null;
+  filename: string | null;
+  variant: EvidenceViewerVariant;
+  enabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const loadSpec = useMemo(
+    () =>
+      enabled && assetId.trim()
+        ? { inventoryId, aisleId, assetId: assetId.trim(), jobId }
+        : null,
+    [enabled, inventoryId, aisleId, assetId, jobId]
+  );
+  const loadState = useEvidenceImageLoad(loadSpec);
+
+  const src = loadState.status === 'loaded' ? loadState.imageSrc : null;
+  const loading = loadState.status === 'loading';
+  const error = loadState.status === 'error' ? loadState.message : null;
+  const canOpen = Boolean(src) && !error;
+  const alt = filename
+    ? t('results.evidence_viewer.alt_file', { fileName: filename })
+    : t('results.evidence_viewer.alt_image');
+
+  return (
+    <Box data-testid="result-evidence-viewer" data-mode="asset">
+      <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }}>
+        {t('results.evidence_viewer.heading')}
+      </Typography>
+      <EvidencePreviewStage
+        src={src}
+        alt={alt}
+        loading={loading}
+        error={error}
+        fileName={filename}
+        label={t('results.evidence_viewer.primary')}
+        variant={variant}
+        canOpenFullscreen={canOpen}
+        onOpenFullscreen={() => {
+          if (canOpen) setPreviewOpen(true);
+        }}
+      />
+      <ImagePreviewDialog
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        title={
+          filename
+            ? `${t('results.evidence_viewer.primary')} · ${filename}`
+            : t('results.evidence_viewer.title_fallback')
+        }
+        src={src}
+        alt={alt}
+        loading={loading}
+        error={error}
+        caption={filename}
+      />
+    </Box>
+  );
+}
+
+function ResultModeEvidenceViewer({
+  result,
+  inventoryId,
+  aisleId,
+  variant,
+  enabled,
+}: {
+  result: ResultDetail;
+  inventoryId: string;
+  aisleId: string;
+  variant: EvidenceViewerVariant;
+  enabled: boolean;
+}) {
   const { t } = useTranslation();
   const evidenceIsDisplayable = isEvidenceDisplayable(
     result.traceabilityStatus,
@@ -202,17 +337,17 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
   const jobId = jobIdFromResult(result);
 
   const primaryLegacySpec = useMemo(
-    () => legacySpecForFrame(primaryFrame, inventoryId, aisleId, jobId),
-    [primaryFrame, inventoryId, aisleId, jobId]
+    () => legacySpecForFrame(primaryFrame, inventoryId, aisleId, jobId, enabled),
+    [primaryFrame, inventoryId, aisleId, jobId, enabled]
   );
   const primaryLoadState = useEvidenceImageLoad(primaryLegacySpec);
 
   const secondaryLegacySpec = useMemo(() => {
-    if (!previewFrame?.useLegacyLoader || previewFrame.key === primaryFrame?.key) {
+    if (!enabled || !previewFrame?.useLegacyLoader || previewFrame.key === primaryFrame?.key) {
       return null;
     }
-    return legacySpecForFrame(previewFrame, inventoryId, aisleId, jobId);
-  }, [previewFrame, primaryFrame, inventoryId, aisleId, jobId]);
+    return legacySpecForFrame(previewFrame, inventoryId, aisleId, jobId, enabled);
+  }, [previewFrame, primaryFrame, inventoryId, aisleId, jobId, enabled]);
   const secondaryLoadState = useEvidenceImageLoad(secondaryLegacySpec);
 
   const resolveFrameSrc = useCallback(
@@ -298,16 +433,17 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
   const primaryLoading = resolveFrameLoading(primaryFrame);
   const primaryLegacyError = resolveFrameError(primaryFrame);
   const primaryDirectLoadFailed = resolveDirectImageError(primaryFrame);
-  const primaryError = primaryLegacyError
-    ?? (primaryDirectLoadFailed ? t('results.evidence_viewer.image_load_error') : null);
-  const primaryImageRenderable = Boolean(primarySrc) && !primaryLegacyError && !primaryDirectLoadFailed;
+  const primaryError =
+    primaryLegacyError ??
+    (primaryDirectLoadFailed ? t('results.evidence_viewer.image_load_error') : null);
   const dialogFrame = previewFrame ?? primaryFrame;
   const dialogSrc = resolveFrameSrc(dialogFrame);
   const dialogLoading = resolveFrameLoading(dialogFrame);
   const dialogLegacyError = resolveFrameError(dialogFrame);
   const dialogDirectLoadFailed = resolveDirectImageError(dialogFrame);
-  const dialogError = dialogLegacyError
-    ?? (dialogDirectLoadFailed ? t('results.evidence_viewer.image_load_error') : null);
+  const dialogError =
+    dialogLegacyError ??
+    (dialogDirectLoadFailed ? t('results.evidence_viewer.image_load_error') : null);
 
   const hasRecordOnly =
     evidenceIsDisplayable && result.evidence.length > 0 && frames.length === 0;
@@ -317,7 +453,7 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
     resolveStructuralEvidenceImageUrl(result.evidenceView) == null;
 
   return (
-    <Box>
+    <Box data-testid="result-evidence-viewer" data-mode="result">
       <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1.5 }}>
         {t('results.evidence_viewer.heading')}
       </Typography>
@@ -365,113 +501,23 @@ export default function ResultEvidenceViewer({ result, inventoryId, aisleId }: R
 
       {primaryFrame ? (
         <>
-          <Box
-            data-testid="result-evidence-inline-preview"
-            sx={{
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: 2,
-              overflow: 'hidden',
-              bgcolor: 'background.default',
+          <EvidencePreviewStage
+            src={primarySrc}
+            alt={frameAltText(primaryFrame, t)}
+            loading={primaryLoading}
+            error={primaryError}
+            fileName={primaryFrame.fileName}
+            label={primaryFrame.label}
+            variant={variant}
+            canOpenFullscreen={canOpenFrameFullscreen(primaryFrame)}
+            onOpenFullscreen={() => openFullscreen(primaryFrame)}
+            onImageLoad={() => setDirectImageLoadError(false)}
+            onImageError={() => {
+              if (!primaryFrame.useLegacyLoader) {
+                setDirectImageLoadError(true);
+              }
             }}
-          >
-            <Box
-              sx={{
-                position: 'relative',
-                bgcolor: 'grey.900',
-                minHeight: 180,
-                maxHeight: 320,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {primaryLoading ? (
-                <CircularProgress size={28} sx={{ color: 'grey.400' }} />
-              ) : null}
-              {primaryError ? (
-                <Typography variant="body2" color="error.light" sx={{ px: 2, textAlign: 'center' }}>
-                  {primaryError}
-                </Typography>
-              ) : null}
-              {primaryImageRenderable ? (
-                <>
-                  <Box
-                    component="button"
-                    type="button"
-                    onClick={() => openFullscreen(primaryFrame)}
-                    aria-label={t('results.evidence_viewer.expand_image')}
-                    sx={{
-                      border: 0,
-                      p: 0,
-                      m: 0,
-                      width: '100%',
-                      maxHeight: 320,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      bgcolor: 'transparent',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <Box
-                      component="img"
-                      src={primarySrc ?? undefined}
-                      alt={frameAltText(primaryFrame, t)}
-                      onLoad={() => setDirectImageLoadError(false)}
-                      onError={() => {
-                        if (!primaryFrame.useLegacyLoader) {
-                          setDirectImageLoadError(true);
-                        }
-                      }}
-                      sx={{
-                        display: 'block',
-                        maxWidth: '100%',
-                        maxHeight: 320,
-                        width: 'auto',
-                        height: 'auto',
-                        objectFit: 'contain',
-                      }}
-                    />
-                  </Box>
-                  <IconButton
-                    size="small"
-                    onClick={() => openFullscreen(primaryFrame)}
-                    aria-label={t('results.evidence_viewer.open_fullscreen')}
-                    sx={{
-                      position: 'absolute',
-                      top: 8,
-                      right: 8,
-                      bgcolor: 'rgba(0,0,0,0.45)',
-                      color: 'common.white',
-                      '&:hover': { bgcolor: 'rgba(0,0,0,0.6)' },
-                    }}
-                  >
-                    <FullscreenIcon fontSize="small" />
-                  </IconButton>
-                </>
-              ) : null}
-            </Box>
-
-            <Box sx={{ px: 2, py: 1.5 }}>
-              <Typography variant="body2" fontWeight={600} noWrap title={primaryFrame.fileName ?? undefined}>
-                {primaryFrame.fileName || t('results.evidence_viewer.subtitle_fallback')}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.25 }}>
-                {primaryFrame.label}
-              </Typography>
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => openFullscreen(primaryFrame)}
-                disabled={!canOpenFrameFullscreen(primaryFrame) && !primaryLoading}
-                data-testid="result-evidence-open-fullscreen"
-                sx={{ mt: 1.25, textTransform: 'none' }}
-              >
-                {t('results.evidence_viewer.open_fullscreen')}
-              </Button>
-            </Box>
-          </Box>
+          />
 
           {additionalFrames.length > 0 ? (
             <Stack direction="row" flexWrap="wrap" gap={1} sx={{ mt: 1.5 }}>

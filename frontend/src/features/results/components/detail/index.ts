@@ -7,6 +7,8 @@ export { default as ResultDetailHeader } from './ResultDetailHeader';
 export { default as ResultSummaryCard } from './ResultSummaryCard';
 export { default as ResultEvidencePanel } from './ResultEvidencePanel';
 export { default as ResultEvidenceViewer } from './ResultEvidenceViewer';
+export { default as EvidencePreviewStage } from './EvidencePreviewStage';
+export type { EvidenceViewerVariant } from './EvidencePreviewStage';
 export { default as ResultEvidenceDetails } from './ResultEvidenceDetails';
 export { default as ResultReviewActions } from './ResultReviewActions';
 export { default as ResultReviewHistory } from './ResultReviewHistory';

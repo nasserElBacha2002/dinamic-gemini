@@ -1367,31 +1367,20 @@
     "imageCoverage": {
       "viewToggle": {
         "positions": "Positions",
-        "images": "Images"
+        "unmatched": "Uncounted images",
+        "unmatchedWithCount": "Uncounted images ({{count}})",
+        "aria": "Results view"
       },
-      "counters": {
-        "total": "Total images",
-        "withResult": "With result",
-        "withoutResult": "Without result"
-      },
-      "statusFilter": {
-        "all": "All",
-        "withResult": "With result",
-        "withoutResult": "Without result"
+      "queue": {
+        "heading": "Uncounted images: {{count}}",
+        "description": "These images did not produce results and need manual review.",
+        "empty": "There are no uncounted images left.",
+        "backToPositions": "Back to positions"
       },
       "card": {
         "noFilename": "No file name",
-        "resultsCount": "{{count}} result",
-        "resultsCount_other": "{{count}} results",
-        "resultCounts": "Auto {{automatic}} · Manual {{manual}}",
         "withoutResultBadge": "Without result",
-        "withResultBadge": "With result",
         "addResultAction": "Add result",
-        "automaticBadge": "Automatic",
-        "manualBadge": "Manual upload",
-        "skuLabel": "SKU",
-        "qtyLabel": "Qty",
-        "positionCodeLabel": "Position",
         "processingStatus": {
           "pending": "Pending",
           "processing": "Processing",
@@ -1400,7 +1389,6 @@
           "failed": "Processing failed"
         }
       },
-      "empty": "No images found for this run.",
       "loading": "Loading images…",
       "drawer": {
         "title": "Add manual result",
@@ -1417,6 +1405,7 @@
         "cancel": "Cancel",
         "saving": "Saving…",
         "successSnackbar": "Manual result added",
+        "successSnackbarLast": "Result added successfully. There are no uncounted images left.",
         "imageLoading": "Loading image…",
         "errorSkuRequired": "SKU is required",
         "errorQuantityRequired": "Quantity is required",

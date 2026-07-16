@@ -289,12 +289,10 @@ export function writeAisleResultsFilters(
       next.set(AISLE_RESULTS_FILTER_QUERY_KEYS.sortDir, normalized.sortDir);
     }
   }
-  if (normalized.resultStatus !== defaults.resultStatus) {
-    next.set(AISLE_RESULTS_FILTER_QUERY_KEYS.resultStatus, normalized.resultStatus);
-  }
   if (normalized.resultsView !== defaults.resultsView) {
     next.set(AISLE_RESULTS_FILTER_QUERY_KEYS.resultsView, normalized.resultsView);
   }
+  // resultStatus is ignored for URL writes: images view always uses without_result server-side.
 
   return next;
 }
