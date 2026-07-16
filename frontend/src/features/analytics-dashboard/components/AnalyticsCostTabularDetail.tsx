@@ -156,6 +156,22 @@ export function AnalyticsCostTabularDetail({ costSummary }: AnalyticsCostTabular
           rowKey={(row) => `${row.provider_name ?? ''}-${row.model_name ?? ''}-${row.jobs_total}`}
           columns={providerColumns}
           stickyHeader={false}
+          mobile={{
+            mode: 'key-value',
+            title: (row) => row.provider_name ?? t('observability.metrics.unknownId'),
+            subtitle: (row) => row.model_name ?? t('observability.metrics.unknownId'),
+            ariaLabel: (row) => `${row.provider_name ?? ''} ${row.model_name ?? ''}`,
+            fields: [
+              { id: 'jobs_total', label: t('observability.metrics.colRuns'), value: (row) => row.jobs_total },
+              { id: 'jobs_with_cost', label: t('analyticsDashboard.costs.jobsWithCost'), value: (row) => row.jobs_with_cost },
+              { id: 'total_cost', label: t('analyticsDashboard.costs.totalCost'), value: (row) => formatCostCell(row.total_cost, 'cost', t) },
+              {
+                id: 'cost_per_unit',
+                label: t('analyticsDashboard.costs.costPerUnit'),
+                value: (row) => formatProviderUnitCost(row.cost_per_counted_unit, t).display,
+              },
+            ],
+          }}
         />
       </AnalyticsSectionCard>
 
@@ -166,6 +182,16 @@ export function AnalyticsCostTabularDetail({ costSummary }: AnalyticsCostTabular
           rowKey={(row) => row.inventory_id}
           columns={inventoryColumns}
           stickyHeader={false}
+          mobile={{
+            mode: 'key-value',
+            title: (row) => row.inventory_name ?? row.inventory_id,
+            ariaLabel: (row) => row.inventory_name ?? row.inventory_id,
+            fields: [
+              { id: 'total_cost', label: t('analyticsDashboard.costs.totalCost'), value: (row) => formatCostCell(row.total_cost, 'cost', t) },
+              { id: 'total_quantity', label: t('analyticsDashboard.costs.totalQuantity'), value: (row) => formatCostCell(row.total_counted_quantity, 'quantity', t) },
+              { id: 'cost_per_unit', label: t('analyticsDashboard.costs.costPerUnit'), value: (row) => formatCostCell(row.cost_per_counted_unit, 'costPerUnit', t) },
+            ],
+          }}
         />
       </AnalyticsSectionCard>
 
@@ -176,6 +202,16 @@ export function AnalyticsCostTabularDetail({ costSummary }: AnalyticsCostTabular
           rowKey={(row) => row.aisle_id}
           columns={aisleColumns}
           stickyHeader={false}
+          mobile={{
+            mode: 'key-value',
+            title: (row) => row.aisle_code ?? row.aisle_id,
+            subtitle: (row) => row.inventory_name ?? row.inventory_id,
+            ariaLabel: (row) => row.aisle_code ?? row.aisle_id,
+            fields: [
+              { id: 'total_cost', label: t('analyticsDashboard.costs.totalCost'), value: (row) => formatCostCell(row.total_cost, 'cost', t) },
+              { id: 'cost_per_unit', label: t('analyticsDashboard.costs.costPerUnit'), value: (row) => formatCostCell(row.cost_per_counted_unit, 'costPerUnit', t) },
+            ],
+          }}
         />
       </AnalyticsSectionCard>
 
@@ -186,6 +222,15 @@ export function AnalyticsCostTabularDetail({ costSummary }: AnalyticsCostTabular
           rowKey={(row) => row.capture_status}
           columns={captureColumns}
           stickyHeader={false}
+          mobile={{
+            mode: 'key-value',
+            title: (row) => captureStatusLabel(row.capture_status, t),
+            ariaLabel: (row) => captureStatusLabel(row.capture_status, t),
+            fields: [
+              { id: 'jobs_total', label: t('observability.metrics.colRuns'), value: (row) => row.jobs_total },
+              { id: 'total_cost', label: t('analyticsDashboard.costs.totalCost'), value: (row) => formatCostCell(row.total_cost, 'cost', t) },
+            ],
+          }}
         />
       </AnalyticsSectionCard>
     </Box>

@@ -13,8 +13,10 @@ import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
 import CleaningServicesOutlinedIcon from '@mui/icons-material/CleaningServicesOutlined';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
+import { DRAWER_WIDTH_PX } from '../components/shell/layoutConstants';
 
-export const DRAWER_WIDTH = 260;
+/** @deprecated Prefer `DRAWER_WIDTH_PX` from layoutConstants — kept for existing imports. */
+export const DRAWER_WIDTH = DRAWER_WIDTH_PX;
 
 export interface PrimaryNavItem {
   /** i18n key under default namespace */

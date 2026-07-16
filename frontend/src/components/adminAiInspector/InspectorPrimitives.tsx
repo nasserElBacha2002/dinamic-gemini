@@ -10,10 +10,6 @@ import {
   ListItem,
   ListItemText,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableRow,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -81,16 +77,18 @@ export function CopyableMonospaceBlock({
 
 export function KeyValueSummary({ rows }: { rows: { label: string; value: ReactNode }[] }) {
   return (
-    <Table size="small">
-      <TableBody>
-        {rows.map((row) => (
-          <TableRow key={row.label}>
-            <TableCell sx={{ fontWeight: 600, width: 220, verticalAlign: 'top' }}>{row.label}</TableCell>
-            <TableCell sx={{ verticalAlign: 'top' }}>{row.value}</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <Box component="dl" sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '220px minmax(0, 1fr)' }, gap: 1, m: 0 }}>
+      {rows.map((row) => (
+        <Box component="div" key={row.label} sx={{ display: 'contents' }}>
+          <Typography component="dt" variant="body2" sx={{ fontWeight: 600 }}>
+            {row.label}
+          </Typography>
+          <Box component="dd" sx={{ m: 0, minWidth: 0, overflowWrap: 'anywhere' }}>
+            {row.value}
+          </Box>
+        </Box>
+      ))}
+    </Box>
   );
 }
 

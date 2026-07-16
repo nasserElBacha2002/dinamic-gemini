@@ -48,7 +48,7 @@ export function AnalyticsFilterBar({
     <Box sx={{ mb: 2 }}>
       <FilterToolbar
         onReset={onReset}
-        endActions={
+        actions={
           <Button
             size="small"
             variant="contained"
@@ -59,61 +59,67 @@ export function AnalyticsFilterBar({
             {t('analyticsDashboard.actions.refresh')}
           </Button>
         }
-      >
-        <TextField
-          size="small"
-          label={t('common.from')}
-          type="date"
-          value={filters.dateFrom}
-          onChange={(e) => patch({ dateFrom: e.target.value })}
-          InputLabelProps={{ shrink: true }}
-          sx={{ minWidth: 150 }}
-        />
-        <TextField
-          size="small"
-          label={t('common.to')}
-          type="date"
-          value={filters.dateTo}
-          onChange={(e) => patch({ dateTo: e.target.value })}
-          InputLabelProps={{ shrink: true }}
-          sx={{ minWidth: 150 }}
-        />
-        <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel id="analytics-inv-label">{t('common.inventory')}</InputLabel>
-          <Select
-            labelId="analytics-inv-label"
-            label={t('common.inventory')}
-            value={filters.inventoryId}
-            onChange={(e) => patch({ inventoryId: e.target.value, aisleId: '' })}
-          >
-            <MenuItem value="">{t('analytics.scope_inventory_all')}</MenuItem>
-            {inventories.map((inv) => (
-              <MenuItem key={inv.id} value={inv.id}>
-                {inv.name}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-        <FormControl size="small" sx={{ minWidth: 180 }} disabled={!filters.inventoryId}>
-          <InputLabel id="analytics-aisle-label">{t('common.aisle')}</InputLabel>
-          <Select
-            labelId="analytics-aisle-label"
-            label={t('common.aisle')}
-            value={filters.aisleId && aisles.some((a) => a.id === filters.aisleId) ? filters.aisleId : ''}
-            onChange={(e) => patch({ aisleId: e.target.value })}
-          >
-            <MenuItem value="">{t('analytics.all_aisles_option')}</MenuItem>
-            {aisles.map((a) => (
-              <MenuItem key={a.id} value={a.id}>
-                {a.code}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-        <Button size="small" variant="text" onClick={() => setMoreOpen((v) => !v)}>
-          {t('analyticsDashboard.filters.more')}
-        </Button>
-      </FilterToolbar>
+        primary={
+          <TextField
+            size="small"
+            label={t('common.from')}
+            type="date"
+            value={filters.dateFrom}
+            onChange={(e) => patch({ dateFrom: e.target.value })}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 150 }}
+          />
+        }
+        filters={
+          <>
+            <TextField
+              size="small"
+              label={t('common.to')}
+              type="date"
+              value={filters.dateTo}
+              onChange={(e) => patch({ dateTo: e.target.value })}
+              InputLabelProps={{ shrink: true }}
+              sx={{ minWidth: 150 }}
+            />
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel id="analytics-inv-label">{t('common.inventory')}</InputLabel>
+              <Select
+                labelId="analytics-inv-label"
+                label={t('common.inventory')}
+                value={filters.inventoryId}
+                onChange={(e) => patch({ inventoryId: e.target.value, aisleId: '' })}
+              >
+                <MenuItem value="">{t('analytics.scope_inventory_all')}</MenuItem>
+                {inventories.map((inv) => (
+                  <MenuItem key={inv.id} value={inv.id}>
+                    {inv.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 180 }} disabled={!filters.inventoryId}>
+              <InputLabel id="analytics-aisle-label">{t('common.aisle')}</InputLabel>
+              <Select
+                labelId="analytics-aisle-label"
+                label={t('common.aisle')}
+                value={filters.aisleId && aisles.some((a) => a.id === filters.aisleId) ? filters.aisleId : ''}
+                onChange={(e) => patch({ aisleId: e.target.value })}
+              >
+                <MenuItem value="">{t('analytics.all_aisles_option')}</MenuItem>
+                {aisles.map((a) => (
+                  <MenuItem key={a.id} value={a.id}>
+                    {a.code}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Button size="small" variant="text" onClick={() => setMoreOpen((v) => !v)}>
+              {t('analyticsDashboard.filters.more')}
+            </Button>
+          </>
+        }
+        activeFilterCount={Object.values(filters).filter(Boolean).length}
+      />
 
       <Collapse in={moreOpen}>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 1, mb: 1 }}>

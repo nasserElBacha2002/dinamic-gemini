@@ -65,7 +65,11 @@ export default function AisleRunSelector({
   }
 
   return (
-    <FormControl size="small" sx={{ minWidth: 280, maxWidth: 480 }} disabled={disabled}>
+    <FormControl
+      size="small"
+      sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: 0, sm: 200 }, maxWidth: { xs: '100%', sm: 480 }, flex: { sm: '1 1 280px' } }}
+      disabled={disabled}
+    >
       <InputLabel id="aisle-run-select-label">{t('results.browse_run')}</InputLabel>
       <Select
         labelId="aisle-run-select-label"

@@ -9,6 +9,7 @@ import {
   TableSearchField,
   TableSection,
   type DataTableColumn,
+  type RowActionMenuItem,
   sortDataTableRows,
 } from '../../../components/ui';
 import { useTableState } from '../../../hooks';
@@ -37,6 +38,62 @@ export interface InventoryAislesSectionProps {
   processingAisleId: string | null;
   uploadingAisleId: string | null;
   onOpenCreateAisle: () => void;
+}
+
+function buildAisleRowActions(params: {
+  row: AisleInventoryTableRow;
+  inventoryId: string;
+  menuCtx: ProcessAisleMenuContext;
+  uploadingAisleId: string | null;
+  processingAisleId: string | null;
+  t: (key: string, opts?: Record<string, string>) => string;
+  navigate: (to: string) => void;
+  onRequestUpload: (aisleId: string) => void;
+  onRequestProcess: (aisleId: string, aisleCode: string, clientSupplierId: string | null) => void;
+}): RowActionMenuItem[] {
+  const {
+    row,
+    inventoryId,
+    menuCtx,
+    uploadingAisleId,
+    processingAisleId,
+    t,
+    navigate,
+    onRequestUpload,
+    onRequestProcess,
+  } = params;
+  const p = row.presentation;
+  const inactive = !p.isActive;
+  const processState = computeProcessAisleMenuState(row.action.processMenuAisle, menuCtx);
+  const uploadDisabled = Boolean(uploadingAisleId) || inactive;
+  const processDisabled = processState.disabled || inactive;
+
+  return [
+    {
+      id: 'upload',
+      label: uploadingAisleId === p.id ? t('uploads.photos.uploadingButton') : t('aisle.upload_assets'),
+      disabled: uploadDisabled,
+      disabledReason: inactive ? t('aisle.operations_disabled_inactive') : undefined,
+      onClick: () => onRequestUpload(p.id),
+    },
+    {
+      id: 'observability',
+      label: t('aisle.action_observability_view'),
+      onClick: () =>
+        navigate(pathToAisleObservability(inventoryId, p.id, row.action.observabilityInitialRunId)),
+    },
+    {
+      id: 'process',
+      label: processingAisleId === p.id ? t('common.starting') : t('aisle.process_start'),
+      disabled: processDisabled,
+      disabledReason: inactive
+        ? t('aisle.operations_disabled_inactive')
+        : processState.disabled && processState.disabledReasonKey
+          ? t(processState.disabledReasonKey)
+          : undefined,
+      onClick: () => void onRequestProcess(p.id, p.code, p.clientSupplierId ?? null),
+    },
+  ];
 }
 
 export default function InventoryAislesSection({
@@ -77,10 +134,6 @@ export default function InventoryAislesSection({
     setPage(1);
   }, [aisleTableSearch, aisleActiveFilter, setPage]);
 
-  /**
-   * TableDataMode: client-bulk — parent fetches aisles in one chunk (`page_size: 200` via `useAislesList`);
-   * search and sort run on the loaded rows until server pagination is added.
-   */
   const menuCtx: ProcessAisleMenuContext = useMemo(
     () => ({
       aislesDataLoaded,
@@ -285,6 +338,7 @@ export default function InventoryAislesSection({
 
   const hasActiveFilter = aisleActiveFilter !== 'active';
   const filtersDirty = Boolean(aisleTableSearch.trim()) || Boolean(aisleSortBy.trim()) || hasActiveFilter;
+  const activeFilterCount = aisleActiveFilter !== 'active' ? 1 : 0;
 
   return (
     <TableSection<AisleInventoryTableRow>
@@ -310,6 +364,33 @@ export default function InventoryAislesSection({
       }
       toolbar={
         <FilterToolbar
+          primary={
+            <TableSearchField
+              label={t('table.search_label')}
+              placeholder={t('aisle.search_aisles_placeholder')}
+              value={aisleTableSearch}
+              onChange={onAisleTableSearch}
+              data-testid="inventory-aisles-search"
+            />
+          }
+          filters={
+            onAisleActiveFilterChange ? (
+              <FormControl size="small" fullWidth sx={{ minWidth: 0, maxWidth: { xs: '100%', md: 220 } }}>
+                <InputLabel id="aisle-active-filter-label">{t('aisle.filter_active_label')}</InputLabel>
+                <Select
+                  labelId="aisle-active-filter-label"
+                  label={t('aisle.filter_active_label')}
+                  value={aisleActiveFilter}
+                  onChange={(e) => onAisleActiveFilterChange(e.target.value as AisleActiveFilter)}
+                  data-testid="inventory-aisles-active-filter"
+                >
+                  <MenuItem value="active">{t('aisle.filter_active_only')}</MenuItem>
+                  <MenuItem value="inactive">{t('aisle.filter_inactive_only')}</MenuItem>
+                  <MenuItem value="all">{t('aisle.filter_active_all')}</MenuItem>
+                </Select>
+              </FormControl>
+            ) : null
+          }
           onReset={() => {
             handleAisleSortChange('', 'asc');
             onAisleTableSearch('');
@@ -317,31 +398,8 @@ export default function InventoryAislesSection({
             setPage(1);
           }}
           resetDisabled={!filtersDirty}
-        >
-          <TableSearchField
-            label={t('table.search_label')}
-            placeholder={t('aisle.search_aisles_placeholder')}
-            value={aisleTableSearch}
-            onChange={onAisleTableSearch}
-            data-testid="inventory-aisles-search"
-          />
-          {onAisleActiveFilterChange ? (
-            <FormControl size="small" sx={{ minWidth: 160 }}>
-              <InputLabel id="aisle-active-filter-label">{t('aisle.filter_active_label')}</InputLabel>
-              <Select
-                labelId="aisle-active-filter-label"
-                label={t('aisle.filter_active_label')}
-                value={aisleActiveFilter}
-                onChange={(e) => onAisleActiveFilterChange(e.target.value as AisleActiveFilter)}
-                data-testid="inventory-aisles-active-filter"
-              >
-                <MenuItem value="active">{t('aisle.filter_active_only')}</MenuItem>
-                <MenuItem value="inactive">{t('aisle.filter_inactive_only')}</MenuItem>
-                <MenuItem value="all">{t('aisle.filter_active_all')}</MenuItem>
-              </Select>
-            </FormControl>
-          ) : null}
-        </FilterToolbar>
+          activeFilterCount={activeFilterCount}
+        />
       }
       table={{
         rows: paginatedAisleRows,
@@ -361,6 +419,49 @@ export default function InventoryAislesSection({
           onPageSizeChange: setPageSize,
         },
         onRowClick: (row) => navigate(pathToAislePositions(inventoryId, row.presentation.id)),
+        mobile: {
+          mode: 'card',
+          title: (row) => row.presentation.code,
+          status: (row) => (
+            <StatusBadge
+              label={row.presentation.aisleStatusLabel}
+              semantic={row.presentation.aisleStatusSemantic}
+            />
+          ),
+          ariaLabel: (row) => row.presentation.code,
+          fields: [
+            {
+              id: 'active',
+              label: t('aisle.filter_active_label'),
+              value: (row) =>
+                row.presentation.isActive ? t('aisle.filter_active_only') : t('aisle.inactive_badge'),
+              hidden: (row) => row.presentation.isActive,
+              fullWidth: true,
+            },
+            {
+              id: 'assets',
+              label: t('aisle.column_assets'),
+              value: (row) => row.presentation.assetsCountDisplay,
+            },
+            {
+              id: 'last_updated',
+              label: t('common.last_updated'),
+              value: (row) => row.presentation.lastUpdatedDisplay,
+            },
+          ],
+          actions: (row) =>
+            buildAisleRowActions({
+              row,
+              inventoryId,
+              menuCtx,
+              uploadingAisleId,
+              processingAisleId,
+              t,
+              navigate,
+              onRequestUpload,
+              onRequestProcess,
+            }),
+        },
         emptyState:
           (aisleTableSearch.trim() || aisleActiveFilter !== 'all') &&
           !aislesLoading &&

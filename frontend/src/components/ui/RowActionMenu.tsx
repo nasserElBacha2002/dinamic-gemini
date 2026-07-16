@@ -5,6 +5,7 @@
 import { useId, useState, type MouseEvent, type ReactNode } from 'react';
 import { Box, IconButton, ListItemIcon, ListItemText, Menu, MenuItem } from '@mui/material';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import { TOUCH_TARGET_MIN_PX } from '../shell/layoutConstants';
 
 export interface RowActionMenuItem {
   id: string;
@@ -20,14 +21,14 @@ export interface RowActionMenuItem {
 }
 
 export interface RowActionMenuProps {
-  items: RowActionMenuItem[];
+  items: readonly RowActionMenuItem[];
   /** Accessible label for the trigger (e.g. "Actions for row SKU-123"). */
   ariaLabel: string;
   /** Optional icon button size. */
   size?: 'small' | 'medium' | 'large';
 }
 
-export default function RowActionMenu({ items, ariaLabel, size = 'small' }: RowActionMenuProps) {
+export default function RowActionMenu({ items, ariaLabel, size = 'medium' }: RowActionMenuProps) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const open = Boolean(anchor);
   const menuId = useId();
@@ -57,6 +58,7 @@ export default function RowActionMenu({ items, ariaLabel, size = 'small' }: RowA
         aria-haspopup="true"
         aria-expanded={open ? 'true' : undefined}
         onClick={handleOpen}
+        sx={{ minWidth: TOUCH_TARGET_MIN_PX, minHeight: TOUCH_TARGET_MIN_PX }}
       >
         <MoreVertIcon fontSize="small" />
       </IconButton>

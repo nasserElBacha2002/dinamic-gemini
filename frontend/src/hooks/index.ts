@@ -1,3 +1,5 @@
+export { useAppBreakpoint } from './useAppBreakpoint';
+export type { AppBreakpoint } from './useAppBreakpoint';
 export { useDebouncedSearchInput } from './useDebouncedSearchInput';
 export { useTableState } from './useTableState';
 export type { UseTableStateOptions, UseTableStateReturn } from './useTableState';

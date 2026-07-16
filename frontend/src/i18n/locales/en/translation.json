@@ -135,6 +135,7 @@
     "upload_assets_row_a11y": "Upload assets for aisle {{code}}",
     "observability_row_a11y": "Open observability for aisle {{code}}",
     "process_row_a11y": "Process aisle {{code}}",
+    "row_actions_a11y": "Actions for aisle {{code}}",
     "merge_repeated_labels": "Merge repeated labels",
     "operational_updated_snackbar": "Operational updated snackbar",
     "process_aisle": "Process aisle",
@@ -647,6 +648,8 @@
     "execution_id": "Execution id",
     "exporting": "Exporting",
     "filters_section_a11y": "Filters section a11y",
+    "filters_button": "Filters",
+    "filters_active_count": "Filters ({{count}})",
     "from": "From",
     "hide": "Hide",
     "hide_password": "Hide password",
@@ -659,6 +662,7 @@
     "logout": "Logout",
     "merging": "Merging…",
     "model": "Model",
+    "more_actions": "More actions",
     "no": "No",
     "open_account_menu": "Open account menu",
     "operational": "Operational",
@@ -1642,13 +1646,15 @@
     "brand": "Dinamic",
     "operations": "Operations",
     "default_title": "Dashboard",
-    "default_subtitle": "Inventory operations platform"
+    "default_subtitle": "Inventory operations platform",
+    "open_navigation": "Open navigation"
   },
   "table": {
     "clear_search_aria": "Clear search aria",
     "empty_no_match": "Empty no match",
     "search_label": "Search label",
-    "search_placeholder": "Search placeholder"
+    "search_placeholder": "Search placeholder",
+    "scroll_hint": "Scroll horizontally to see more columns"
   },
   "traceability": {
     "invalid": "ID not in analyzed images",

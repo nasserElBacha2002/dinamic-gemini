@@ -131,6 +131,50 @@ export default function CodeScanDetectionsTable({
         rowKey={(row) => row.id}
         columns={columns}
         stickyHeader={false}
+        mobile={{
+          mode: 'card',
+          title: (row) => row.code_value,
+          status: (row) => <CodeScanMatchStatusChip status={row.match_status} />,
+          ariaLabel: (row) => row.code_value,
+          fields: [
+            {
+              id: 'type',
+              label: t('aisleCodeScans.tables.type'),
+              value: (row) => formatCodeScanCodeType(t, row.code_type),
+            },
+            {
+              id: 'status',
+              label: t('aisleCodeScans.tables.status'),
+              value: (row) => formatCodeScanDetectionStatus(t, row.detection_status),
+            },
+            {
+              id: 'match_type',
+              label: t('aisleCodeScans.matching.matchType'),
+              value: (row) => formatCodeScanMatchType(t, row.match_type),
+            },
+            {
+              id: 'linked_result',
+              label: t('aisleCodeScans.matching.linkedResult'),
+              value: (row) => row.matched_position_id ?? t('common.em_dash'),
+              fullWidth: true,
+            },
+            {
+              id: 'date',
+              label: t('aisleCodeScans.tables.date'),
+              value: (row) => formatDate(row.created_at),
+            },
+          ],
+          primaryAction: (row) => (
+            <Box data-datatable-skip-row-click>
+              <CodeScanAssetPreviewButton
+                inventoryId={inventoryId}
+                aisleId={aisleId}
+                assetId={row.asset_id}
+                jobIdForPreview={jobIdForPreview}
+              />
+            </Box>
+          ),
+        }}
         pagination={{
           page,
           pageSize,

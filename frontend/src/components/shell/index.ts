@@ -6,8 +6,16 @@
  */
 
 export { default as PageHeader } from './PageHeader';
-export type { PageHeaderProps, PageHeaderBreadcrumb } from './PageHeader';
+export type { PageHeaderProps, PageHeaderBreadcrumb, PageHeaderOverflowAction } from './PageHeader';
 export { default as AppMain } from './AppMain';
 export type { AppMainProps } from './AppMain';
 export { default as UserMenu } from './UserMenu';
-export { MAIN_CONTENT_MAX_WIDTH_PX, DETAIL_COLUMN_MAX_WIDTH_PX } from './layoutConstants';
+export {
+  MAIN_CONTENT_MAX_WIDTH_PX,
+  DETAIL_COLUMN_MAX_WIDTH_PX,
+  DRAWER_WIDTH_PX,
+  TOUCH_TARGET_MIN_PX,
+  SAFE_AREA,
+  VIEWPORT_MIN_HEIGHT,
+  SHELL_PERMANENT_NAV_BREAKPOINT,
+} from './layoutConstants';

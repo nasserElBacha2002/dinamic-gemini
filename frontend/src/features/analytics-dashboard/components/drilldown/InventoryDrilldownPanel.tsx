@@ -11,7 +11,8 @@ import { pathToAislePositions, pathToInventory, pathToInventoryAnalyticsCompareM
 import { useInventoryMetrics } from '../../../../hooks';
 import { formatDate } from '../../../../utils/formatDate';
 import type { useAnalyticsDashboard } from '../../../analytics/hooks';
-import { DataTable, type DataTableColumn } from '../../../../components/ui';
+import { compareEligibilityTooltipKey } from '../../types';
+import { DataTable, type DataTableColumn, type RowActionMenuItem } from '../../../../components/ui';
 import { useTableState } from '../../../../hooks';
 import { DrilldownScopeWarnings } from './DrilldownScopeWarnings';
 import { HorizontalBarChart } from '../charts/HorizontalBarChart';
@@ -159,6 +160,33 @@ export function InventoryDrilldownPanel({
     return contributionRows.slice(start, start + pageSize);
   }, [contributionRows, page, pageSize]);
 
+  const buildAisleActions = (row: AisleContributionRow): RowActionMenuItem[] => {
+    const rowEligibility = getCompareEligibilityForInventory(inventoryProcessingModeById, row.inventoryId);
+    return [
+      {
+        id: 'open-positions',
+        label: t('analyticsDashboard.drilldown.openAislePositions'),
+        onClick: () => {
+          window.location.assign(pathToAislePositions(row.inventoryId, row.aisleId));
+        },
+      },
+      {
+        id: 'open-analytics',
+        label: t('analyticsDashboard.drilldown.openAnalytics'),
+        onClick: () => onOpenAisleDrilldown(row.inventoryId, row.aisleId),
+      },
+      {
+        id: 'compare',
+        label: t('analyticsDashboard.drilldown.compareRuns'),
+        disabled: !rowEligibility.allowed,
+        disabledReason: rowEligibility.allowed ? undefined : t(compareEligibilityTooltipKey(rowEligibility.reason)),
+        onClick: () => {
+          window.location.assign(pathToInventoryAnalyticsCompareMany(row.inventoryId, { aisleId: row.aisleId }));
+        },
+      },
+    ];
+  };
+
   if (!performance && !costRow) {
     return (
       <Typography variant="body2" color="text.secondary" data-testid="analytics-drilldown-inventory-empty">
@@ -213,6 +241,30 @@ export function InventoryDrilldownPanel({
           rowKey={(row) => row.aisleId}
           columns={aisleColumns}
           stickyHeader={false}
+          mobile={{
+            mode: 'card',
+            title: (row) => row.aisleCode,
+            ariaLabel: (row) => row.aisleCode,
+            fields: [
+              {
+                id: 'needs_review',
+                label: t('analyticsDashboard.drilldown.reviewRequired'),
+                value: (row) => row.needsReviewCount,
+              },
+              {
+                id: 'total_cost',
+                label: t('analyticsDashboard.costs.totalCost'),
+                value: (row) => formatCostCell(row.totalCost, 'cost', t),
+              },
+              {
+                id: 'cost_per_unit',
+                label: t('analyticsDashboard.costs.costPerUnit'),
+                value: (row) => formatCostCell(row.costPerUnit, 'costPerUnit', t),
+                fullWidth: true,
+              },
+            ],
+            actions: buildAisleActions,
+          }}
           pagination={{
             page,
             pageSize,

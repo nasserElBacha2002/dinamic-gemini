@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import type { Client } from '../api/types';
 import CreateClientDialog from '../components/CreateClientDialog';
 import { PageHeader } from '../components/shell';
@@ -30,6 +30,7 @@ function clientStatusSemantic(status: string): 'success' | 'neutral' {
 
 export default function ClientsList() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { showSnackbar } = useAppSnackbar();
   const createClientMutation = useCreateClient();
   const [createOpen, setCreateOpen] = useState(false);
@@ -154,7 +155,7 @@ export default function ClientsList() {
     <>
       <PageHeader
         a11yTitle={t('clients.page.a11y')}
-        actions={
+        primaryActions={
           <Button variant="contained" onClick={() => setCreateOpen(true)}>
             {t('clients.actions.create')}
           </Button>
@@ -170,20 +171,21 @@ export default function ClientsList() {
         toolbar={
           <>
             <FilterToolbar
+              primary={
+                <TableSearchField
+                  label={t('clients.list.search_placeholder')}
+                  placeholder={t('clients.list.search_placeholder')}
+                  value={clientSearch}
+                  onChange={setClientSearch}
+                  data-testid="clients-list-search"
+                />
+              }
               onReset={() => {
                 setClientSearch('');
                 setSortWithoutPageReset('', 'asc');
               }}
               resetDisabled={!clientSearch.trim() && !clientListSortBy.trim()}
-            >
-              <TableSearchField
-                label={t('clients.list.search_placeholder')}
-                placeholder={t('clients.list.search_placeholder')}
-                value={clientSearch}
-                onChange={setClientSearch}
-                data-testid="clients-list-search"
-              />
-            </FilterToolbar>
+            />
             {clientSearch.trim() ? (
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
                 {t('clients.list.search_hint_page')}
@@ -196,6 +198,36 @@ export default function ClientsList() {
           rowKey: (client) => client.id,
           columns,
           loading: clientsQuery.isLoading,
+          onRowClick: (client) => navigate(pathToClient(client.id)),
+          mobile: {
+            mode: 'card',
+            title: (client) => client.name,
+            status: (client) => (
+              <StatusBadge
+                label={clientStatusLabel(client.status, t)}
+                semantic={clientStatusSemantic(client.status)}
+              />
+            ),
+            ariaLabel: (client) => client.name,
+            fields: [
+              {
+                id: 'id',
+                label: 'ID',
+                value: (client) => client.id,
+                fullWidth: true,
+              },
+              {
+                id: 'created_at',
+                label: t('clients.fields.created_at'),
+                value: (client) => formatDate(client.created_at),
+              },
+              {
+                id: 'updated_at',
+                label: t('clients.fields.updated_at'),
+                value: (client) => formatDate(client.updated_at),
+              },
+            ],
+          },
           sort: {
             sortBy: clientListSortBy,
             sortDir: clientListSortDir,

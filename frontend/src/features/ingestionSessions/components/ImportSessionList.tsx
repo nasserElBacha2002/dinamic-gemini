@@ -92,6 +92,35 @@ export default function ImportSessionList({
         rowKey: (row) => row.id,
         columns,
         loading,
+        onRowClick: onOpen,
+        mobile: {
+          mode: 'card',
+          title: (session) => session.id,
+          subtitle: (session) => session.aisle_id,
+          ariaLabel: (session) => session.id,
+          fields: [
+            {
+              id: 'status',
+              label: t('ingestion_sessions.list.column_status'),
+              value: (session) => session.status,
+            },
+            {
+              id: 'created_at',
+              label: t('ingestion_sessions.list.column_created'),
+              value: (session) => formatDate(session.created_at),
+            },
+          ],
+          primaryAction: (session) => (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<OpenInNewOutlinedIcon />}
+              onClick={() => onOpen(session)}
+            >
+              {t('ingestion_sessions.actions.open')}
+            </Button>
+          ),
+        },
         emptyState: {
           title: t('ingestion_sessions.empty.title'),
           message: t('ingestion_sessions.empty.message'),

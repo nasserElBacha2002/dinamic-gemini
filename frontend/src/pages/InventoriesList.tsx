@@ -170,7 +170,7 @@ export default function InventoriesList() {
     <>
       <PageHeader
         a11yTitle={t('inventory.page_a11y')}
-        actions={
+        primaryActions={
           <Button
             variant="contained"
             onClick={() => {
@@ -191,6 +191,16 @@ export default function InventoriesList() {
         hideSectionOnError
         toolbar={
           <FilterToolbar
+            primary={
+              <TableSearchField
+                value={searchInput}
+                onChange={(value) => {
+                  setSearchInput(value);
+                  setPage(1);
+                }}
+                data-testid="inventories-list-search"
+              />
+            }
             onReset={() => {
               setSearchInput('');
               resetTableState();
@@ -202,22 +212,58 @@ export default function InventoriesList() {
               sortBy === INVENTORY_LIST_INITIAL_SORT.sortBy &&
               sortDir === INVENTORY_LIST_INITIAL_SORT.sortDir
             }
-          >
-            <TableSearchField
-              value={searchInput}
-              onChange={(value) => {
-                setSearchInput(value);
-                setPage(1);
-              }}
-              data-testid="inventories-list-search"
-            />
-          </FilterToolbar>
+          />
         }
         table={{
           rows: inventories,
           rowKey: (inv) => inv.id,
           columns,
           loading: isLoading,
+          onRowClick: (inv) => navigate(pathToInventory(inv.id)),
+          mobile: {
+            mode: 'card',
+            title: (inv) => inv.name,
+            status: (inv) => (
+              <StatusBadge
+                label={formatInventoryStatusLabel(String(inv.status))}
+                semantic={inventoryStatusToBadgeSemantic(String(inv.status))}
+              />
+            ),
+            ariaLabel: (inv) => inv.name,
+            fields: [
+              {
+                id: 'processing_mode',
+                label: t('dialogs.inventory.processing_mode_label'),
+                value: (inv) => {
+                  const isTest = inv.processing_mode === 'test';
+                  return (
+                    <StatusBadge
+                      label={isTest ? t('inventory.processing_mode_test') : t('inventory.processing_mode_production')}
+                      semantic={isTest ? 'warning' : 'neutral'}
+                    />
+                  );
+                },
+                fullWidth: true,
+              },
+              {
+                id: 'aisles_count',
+                label: t('inventory.column_aisles'),
+                value: (inv) => (typeof inv.aisles_count === 'number' ? inv.aisles_count : t('common.em_dash')),
+              },
+              {
+                id: 'pending_review_count',
+                label: t('inventory.column_pending_review'),
+                value: (inv) =>
+                  typeof inv.pending_review_count === 'number' ? inv.pending_review_count : t('common.em_dash'),
+              },
+              {
+                id: 'created_at',
+                label: t('common.created'),
+                value: (inv) => formatDate(inv.created_at ?? undefined),
+                fullWidth: true,
+              },
+            ],
+          },
           emptyState:
             searchApplied.trim() !== '' && !isLoading && (data?.total_items ?? 0) === 0
               ? { message: t('table.empty_no_match') }

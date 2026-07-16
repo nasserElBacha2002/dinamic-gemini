@@ -135,6 +135,7 @@
     "upload_assets_row_a11y": "Subir activos para el pasillo {{code}}",
     "observability_row_a11y": "Abrir observabilidad del pasillo {{code}}",
     "process_row_a11y": "Procesar pasillo {{code}}",
+    "row_actions_a11y": "Acciones del pasillo {{code}}",
     "merge_repeated_labels": "Fusionar SKU repetidos",
     "operational_updated_snackbar": "Operational updated snackbar",
     "process_aisle": "Procesar pasillo",
@@ -435,6 +436,7 @@
     "column_avg_processing": "Proc. prom.",
     "column_inv_tr": "TR inválida",
     "column_invalid_tr": "Trazabilidad inválida",
+    "column_invalid_traceability": "Trazabilidad inválida",
     "column_inventory": "Inventario",
     "column_job_success": "Éxito de ejecución",
     "column_manual_correction": "Corrección manual",
@@ -461,6 +463,7 @@
     "inventory_performance_subtitle": "Vista comparativa por inventario.",
     "inventory_performance_title": "Rendimiento por inventario",
     "kpi_auto_accept_desc": "Porcentaje de resultados revisados que no requirieron corrección.",
+    "kpi_auto_acceptance": "Autoaceptación",
     "kpi_auto_accept_title": "Tasa de autoaceptación",
     "kpi_avg_processing_desc": "Duración promedio de procesamiento por posición.",
     "kpi_avg_processing_title": "Tiempo de procesamiento",
@@ -469,6 +472,7 @@
     "kpi_invalid_tr_desc": "Fracción de posiciones con trazabilidad inválida.",
     "kpi_invalid_tr_title": "Tasa de trazabilidad inválida",
     "kpi_manual_correction_desc": "Resultados revisados que requirieron corrección de operador.",
+    "kpi_manual_correction": "Corrección manual",
     "kpi_manual_correction_title": "Tasa de corrección manual",
     "kpi_processing_success_desc": "Ejecuciones finalizadas correctamente.",
     "kpi_processing_success_title": "Éxito de procesamiento",
@@ -814,6 +818,8 @@
     "execution_id": "ID de ejecución",
     "exporting": "Exportando",
     "filters_section_a11y": "Sección de filtros",
+    "filters_button": "Filtros",
+    "filters_active_count": "Filtros ({{count}})",
     "from": "Desde",
     "hide": "Ocultar",
     "hide_password": "Ocultar contraseña",
@@ -826,6 +832,7 @@
     "logout": "Cerrar sesión",
     "merging": "Fusionando…",
     "model": "Modelo",
+    "more_actions": "Más acciones",
     "no": "No",
     "open_account_menu": "Abrir menú de cuenta",
     "operational": "Operativo",
@@ -1826,6 +1833,7 @@
       "full_source": "Fuente completa",
       "generic": "Evidencia",
       "heading": "Evidencia",
+      "loading": "Cargando evidencia...",
       "no_images": "No hay imágenes disponibles.",
       "open_fullscreen": "Ver en pantalla completa",
       "expand_image": "Ampliar imagen de evidencia",
@@ -2032,6 +2040,10 @@
     "summary_sku_set": "SKU establecido",
     "summary_status": "Estado"
   },
+  "inventories": {
+    "processing_mode_production": "Producción",
+    "processing_mode_test": "Test"
+  },
   "nav": {
     "inventories": "Inventarios",
     "ingestion_sessions": "Sesiones de importación",
@@ -2212,13 +2224,15 @@
     "brand": "Dinamic",
     "operations": "Operaciones",
     "default_title": "Panel",
-    "default_subtitle": "Plataforma operativa de inventario"
+    "default_subtitle": "Plataforma operativa de inventario",
+    "open_navigation": "Abrir navegación"
   },
   "table": {
     "clear_search_aria": "Limpiar búsqueda",
     "empty_no_match": "No hay resultados para la búsqueda actual.",
     "search_label": "Buscar",
-    "search_placeholder": "Buscar..."
+    "search_placeholder": "Buscar...",
+    "scroll_hint": "Desplazá horizontalmente para ver más columnas"
   },
   "traceability": {
     "invalid": "ID no coincide con imágenes analizadas",
