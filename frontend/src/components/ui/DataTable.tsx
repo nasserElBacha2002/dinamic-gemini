@@ -1,5 +1,5 @@
 /**
- * DataTable — Sprint 2.4 operational table shell (Re diseño 3.3 §8.6, §10).
+ * DataTable — Sprint 2.4 operational table shell (Re diseño 3.3 §8.6, §10) + mobile cards.
  *
  * - **Server-driven sort/pagination:** parent owns query state and passes `sort` / `pagination`; this component
  *   only renders controls and fires callbacks (no hidden client-side sort of `rows`).
@@ -9,6 +9,8 @@
  * - **Empty rows:** if `emptyState` is omitted and the table is not loading, a **default** empty message is shown
  *   so the region is never a silent blank shell.
  * - **Density:** defaults to `size="small"` and sticky header for scan-heavy operational lists.
+ * - **Mobile:** when `renderMobileItem` is provided and viewport is compact (`!md`), rows render as cards
+ *   using the **same** `rows` / loading / empty / pagination — no duplicate data fetching.
  * - **Composition:** wrap with `SectionCard`, place `FilterToolbar` above, use `RowActionMenu` / `StatusBadge` in `cell`.
  *
  * **Status in cells:** prefer `StatusBadge` when domain maps to redesign semantics; use `StatusChip` when the row
@@ -25,6 +27,7 @@ import {
   Box,
   Paper,
   Skeleton,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -34,9 +37,11 @@ import {
   TablePagination,
   TableRow,
   TableSortLabel,
+  Typography,
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { DATATABLE_DEFAULT_EMPTY_MESSAGE_KEY, TABLE_PAGE_SIZE_OPTIONS } from '../../constants/dataTable';
+import { useAppBreakpoint } from '../../hooks/useAppBreakpoint';
 import EmptyState from './EmptyState';
 
 export type DataTableSortDirection = 'asc' | 'desc';
@@ -103,6 +108,16 @@ export interface DataTableProps<T> {
   onRowClick?: (row: T) => void;
   /** Applied to the underlying `<Table>` for stable test selectors. */
   testId?: string;
+  /**
+   * Compact viewport card renderer. Same `rows` / pagination / loading as the desktop table.
+   * When omitted, compact viewports keep the horizontal-scrolling table.
+   */
+  renderMobileItem?: (row: T) => ReactNode;
+  /**
+   * When true (default), show a small “scroll for more columns” hint above the table on compact
+   * viewports when there is no `renderMobileItem`.
+   */
+  showHorizontalScrollHint?: boolean;
 }
 
 function resolveClickElement(target: EventTarget | null): Element | null {
@@ -149,6 +164,31 @@ function SkeletonBody({ columns, rows }: { columns: number; rows: number }) {
   );
 }
 
+function PaginationBar({ pagination }: { pagination: DataTablePaginationModel }) {
+  const { t } = useTranslation();
+  return (
+    <Box sx={{ overflowX: 'auto', width: '100%', minWidth: 0 }}>
+      <TablePagination
+        component="div"
+        count={pagination.totalItems}
+        page={Math.max(0, pagination.page - 1)}
+        onPageChange={(_, nextZeroBased) => {
+          pagination.onPageChange(nextZeroBased + 1);
+        }}
+        rowsPerPage={pagination.pageSize}
+        onRowsPerPageChange={(e) => {
+          const next = Number(e.target.value);
+          if (next === pagination.pageSize) return;
+          pagination.onPageSizeChange?.(next);
+          pagination.onPageChange(1);
+        }}
+        rowsPerPageOptions={[...TABLE_PAGE_SIZE_OPTIONS]}
+        labelRowsPerPage={t('common.rows_per_page')}
+      />
+    </Box>
+  );
+}
+
 export default function DataTable<T>({
   rows,
   rowKey,
@@ -163,8 +203,12 @@ export default function DataTable<T>({
   rowHover = true,
   onRowClick,
   testId,
+  renderMobileItem,
+  showHorizontalScrollHint = true,
 }: DataTableProps<T>) {
   const { t } = useTranslation();
+  const { isCompact } = useAppBreakpoint();
+  const useMobileCards = Boolean(renderMobileItem) && isCompact;
   const colCount = columns.length;
   const emptyDisplay =
     !loading && rows.length === 0
@@ -172,115 +216,146 @@ export default function DataTable<T>({
       : null;
   const showEmpty = Boolean(emptyDisplay);
 
-  return (
-    <TableContainer
-      component={Paper}
-      variant="outlined"
-      sx={{
-        borderRadius: 1,
-        width: '100%',
-        maxWidth: '100%',
-        minWidth: 0,
-        overflowX: 'auto',
-      }}
-    >
-      <Table size={size} stickyHeader={stickyHeader} aria-busy={loading} data-testid={testId}>
-        <TableHead>
-          <TableRow>
-            {columns.map((col) => (
-              <TableCell
-                key={col.id}
-                align={col.align ?? 'left'}
-                sx={col.width != null ? { width: col.width } : undefined}
-              >
-                {col.sortable && sort ? (
-                  <TableSortLabel
-                    active={sort.sortBy === col.id}
-                    direction={sort.sortBy === col.id ? sort.sortDir : 'asc'}
-                    onClick={() => {
-                      const active = sort.sortBy === col.id;
-                      const nextDir: DataTableSortDirection =
-                        active && sort.sortDir === 'asc' ? 'desc' : 'asc';
-                      sort.onSortChange(col.id, nextDir);
-                    }}
-                  >
-                    {col.label}
-                  </TableSortLabel>
-                ) : (
-                  col.label
-                )}
-              </TableCell>
+  if (useMobileCards) {
+    return (
+      <Box
+        data-testid={testId}
+        sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }}
+        aria-busy={loading}
+      >
+        {loading ? (
+          <Stack spacing={1.5}>
+            {Array.from({ length: skeletonRows }).map((_, i) => (
+              <Skeleton key={`msk-${i}`} variant="rounded" height={96} />
             ))}
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {loading ? (
-            <SkeletonBody columns={colCount} rows={skeletonRows} />
-          ) : showEmpty && emptyDisplay ? (
-            <TableRow>
-              <TableCell colSpan={colCount} sx={{ border: 0, p: 0, verticalAlign: 'top' }}>
-                <Box sx={{ p: 2 }}>
-                  <EmptyState
-                    title={emptyDisplay.title}
-                    message={emptyDisplay.message}
-                    action={emptyDisplay.action}
-                    padding={3}
-                  />
-                </Box>
-              </TableCell>
-            </TableRow>
-          ) : (
-            rows.map((row) => (
-              <TableRow
-                key={rowKey(row)}
-                hover={rowHover}
-                onClick={
-                  onRowClick
-                    ? (e: MouseEvent<HTMLTableRowElement>) => {
-                        if (clickTargetShouldSkipRowNavigation(e.target)) return;
-                        onRowClick(row);
-                      }
-                    : undefined
-                }
-                sx={onRowClick ? { cursor: 'pointer' } : undefined}
-              >
-                {columns.map((col) => (
-                  <TableCell key={col.id} align={col.align ?? 'left'} size={size}>
-                    {col.cell(row)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))
-          )}
-        </TableBody>
+          </Stack>
+        ) : showEmpty && emptyDisplay ? (
+          <Paper variant="outlined" sx={{ borderRadius: 1 }}>
+            <Box sx={{ p: 2 }}>
+              <EmptyState
+                title={emptyDisplay.title}
+                message={emptyDisplay.message}
+                action={emptyDisplay.action}
+                padding={3}
+              />
+            </Box>
+          </Paper>
+        ) : (
+          <Stack spacing={1.5} component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+            {rows.map((row) => (
+              <Box component="li" key={rowKey(row)} sx={{ minWidth: 0 }}>
+                {renderMobileItem!(row)}
+              </Box>
+            ))}
+          </Stack>
+        )}
         {pagination && !showEmpty && !loading ? (
-          <TableFooter>
-            <TableRow>
-              <TableCell colSpan={colCount} sx={{ borderBottom: 'none', p: 0 }}>
-                <Box sx={{ overflowX: 'auto', width: '100%', minWidth: 0 }}>
-                  <TablePagination
-                  component="div"
-                  count={pagination.totalItems}
-                  page={Math.max(0, pagination.page - 1)}
-                  onPageChange={(_, nextZeroBased) => {
-                    pagination.onPageChange(nextZeroBased + 1);
-                  }}
-                  rowsPerPage={pagination.pageSize}
-                  onRowsPerPageChange={(e) => {
-                    const next = Number(e.target.value);
-                    if (next === pagination.pageSize) return;
-                    pagination.onPageSizeChange?.(next);
-                    pagination.onPageChange(1);
-                  }}
-                  rowsPerPageOptions={[...TABLE_PAGE_SIZE_OPTIONS]}
-                  labelRowsPerPage={t('common.rows_per_page')}
-                />
-                </Box>
-              </TableCell>
-            </TableRow>
-          </TableFooter>
+          <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 1 }}>
+            <PaginationBar pagination={pagination} />
+          </Paper>
         ) : null}
-      </Table>
-    </TableContainer>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }}>
+      {showHorizontalScrollHint && isCompact && !loading && !showEmpty ? (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+          {t('table.scroll_hint')}
+        </Typography>
+      ) : null}
+      <TableContainer
+        component={Paper}
+        variant="outlined"
+        sx={{
+          borderRadius: 1,
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
+          overflowX: 'auto',
+        }}
+      >
+        <Table size={size} stickyHeader={stickyHeader} aria-busy={loading} data-testid={testId}>
+          <TableHead>
+            <TableRow>
+              {columns.map((col) => (
+                <TableCell
+                  key={col.id}
+                  align={col.align ?? 'left'}
+                  sx={col.width != null ? { width: col.width } : undefined}
+                >
+                  {col.sortable && sort ? (
+                    <TableSortLabel
+                      active={sort.sortBy === col.id}
+                      direction={sort.sortBy === col.id ? sort.sortDir : 'asc'}
+                      onClick={() => {
+                        const active = sort.sortBy === col.id;
+                        const nextDir: DataTableSortDirection =
+                          active && sort.sortDir === 'asc' ? 'desc' : 'asc';
+                        sort.onSortChange(col.id, nextDir);
+                      }}
+                    >
+                      {col.label}
+                    </TableSortLabel>
+                  ) : (
+                    col.label
+                  )}
+                </TableCell>
+              ))}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {loading ? (
+              <SkeletonBody columns={colCount} rows={skeletonRows} />
+            ) : showEmpty && emptyDisplay ? (
+              <TableRow>
+                <TableCell colSpan={colCount} sx={{ border: 0, p: 0, verticalAlign: 'top' }}>
+                  <Box sx={{ p: 2 }}>
+                    <EmptyState
+                      title={emptyDisplay.title}
+                      message={emptyDisplay.message}
+                      action={emptyDisplay.action}
+                      padding={3}
+                    />
+                  </Box>
+                </TableCell>
+              </TableRow>
+            ) : (
+              rows.map((row) => (
+                <TableRow
+                  key={rowKey(row)}
+                  hover={rowHover}
+                  onClick={
+                    onRowClick
+                      ? (e: MouseEvent<HTMLTableRowElement>) => {
+                          if (clickTargetShouldSkipRowNavigation(e.target)) return;
+                          onRowClick(row);
+                        }
+                      : undefined
+                  }
+                  sx={onRowClick ? { cursor: 'pointer' } : undefined}
+                >
+                  {columns.map((col) => (
+                    <TableCell key={col.id} align={col.align ?? 'left'} size={size}>
+                      {col.cell(row)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+          {pagination && !showEmpty && !loading ? (
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={colCount} sx={{ borderBottom: 'none', p: 0 }}>
+                  <PaginationBar pagination={pagination} />
+                </TableCell>
+              </TableRow>
+            </TableFooter>
+          ) : null}
+        </Table>
+      </TableContainer>
+    </Box>
   );
 }

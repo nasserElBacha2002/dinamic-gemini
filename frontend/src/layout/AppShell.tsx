@@ -1,5 +1,5 @@
 /**
- * Authenticated shell — Re diseño 3.3 §4.1–4.3.
+ * Authenticated shell — Re diseño 3.3 §4.1–4.3 + mobile temporary nav.
  *
  * **Topbar vs page header (Sprint 2.1 convention):**
  * - The topbar always shows the **screen-type** title/subtitle for the current route (§4.3). It uses
@@ -12,12 +12,15 @@
  *   same heading. Entity/detail routes keep a visible `PageHeader` title (and breadcrumbs when applicable).
  * - Narrow/detail columns (e.g. result review) may constrain width inside `AppMain` via
  *   `DETAIL_COLUMN_MAX_WIDTH_PX` — see `components/shell/layoutConstants.ts`.
+ *
+ * **Responsive nav:** permanent drawer at `md+`; temporary (closed by default) below `md` with hamburger.
  */
 import { Link as RouterLink, Outlet, useLocation } from 'react-router-dom';
 import {
   AppBar,
   Box,
   Drawer,
+  IconButton,
   List,
   ListItemButton,
   ListItemIcon,
@@ -25,8 +28,9 @@ import {
   Toolbar,
   Typography,
 } from '@mui/material';
+import MenuIcon from '@mui/icons-material/Menu';
 import { useTranslation } from 'react-i18next';
-import { useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { ROUTE_HOME, ROUTE_INVENTORIES_ROOT } from '../constants/appRoutes';
 import { useAuth } from '../features/auth';
 import {
@@ -39,6 +43,12 @@ import {
 import { topBarCopy } from './shellTopBarCopy.ts';
 import UserMenu from '../components/shell/UserMenu';
 import AppMain from '../components/shell/AppMain';
+import {
+  SAFE_AREA,
+  TOUCH_TARGET_MIN_PX,
+  VIEWPORT_MIN_HEIGHT,
+} from '../components/shell/layoutConstants';
+import { useAppBreakpoint } from '../hooks/useAppBreakpoint';
 
 function pathMatchesNav(to: string, pathname: string): boolean {
   if (to === ROUTE_HOME) {
@@ -52,12 +62,15 @@ function pathMatchesNav(to: string, pathname: string): boolean {
 }
 
 /**
- * Authenticated app shell — Re diseño 3.3 §4.1: persistent left sidebar, topbar, central main region.
+ * Authenticated app shell — persistent left sidebar on desktop; temporary drawer on compact viewports.
  */
 export default function AppShell() {
   const { pathname } = useLocation();
   const { t } = useTranslation();
   const { user } = useAuth();
+  const { isDesktopShell } = useAppBreakpoint();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const navDrawerId = useId();
   const { titleKey, subtitleKey } = topBarCopy(pathname);
   const navItems = useMemo((): PrimaryNavItem[] => {
     if (user?.username === 'admin') {
@@ -66,29 +79,47 @@ export default function AppShell() {
     return PRIMARY_NAV_ITEMS;
   }, [user?.username]);
 
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (isDesktopShell) {
+      setMobileNavOpen(false);
+    }
+  }, [isDesktopShell]);
+
+  const closeMobileNav = () => setMobileNavOpen(false);
+  const drawerOpen = isDesktopShell || mobileNavOpen;
+
   return (
     <Box
       sx={{
         display: 'flex',
-        minHeight: '100vh',
+        minHeight: VIEWPORT_MIN_HEIGHT,
         maxWidth: '100%',
         minWidth: 0,
         bgcolor: 'background.default',
-        overflowX: 'hidden',
+        overflowX: 'clip',
         overflowY: 'hidden',
       }}
     >
       <Drawer
-        variant="permanent"
+        variant={isDesktopShell ? 'permanent' : 'temporary'}
+        open={drawerOpen}
+        onClose={closeMobileNav}
+        ModalProps={{ keepMounted: true }}
         sx={{
-          width: DRAWER_WIDTH,
+          width: isDesktopShell ? DRAWER_WIDTH : undefined,
           flexShrink: 0,
           '& .MuiDrawer-paper': {
-            width: DRAWER_WIDTH,
+            width: isDesktopShell ? DRAWER_WIDTH : `min(${DRAWER_WIDTH}px, 100vw)`,
             boxSizing: 'border-box',
             borderRight: 1,
             borderColor: 'divider',
             bgcolor: 'background.paper',
+            pt: SAFE_AREA.top,
+            pb: SAFE_AREA.bottom,
           },
         }}
       >
@@ -100,11 +131,18 @@ export default function AppShell() {
             {t('shell.operations')}
           </Typography>
         </Toolbar>
-        <List dense sx={{ px: 1 }}>
+        <List dense sx={{ px: 1 }} id={navDrawerId}>
           {navItems.map((item: PrimaryNavItem) => {
             const selected = pathMatchesNav(item.to, pathname);
             return (
-              <ListItemButton key={item.to} component={RouterLink} to={item.to} selected={selected}>
+              <ListItemButton
+                key={item.to}
+                component={RouterLink}
+                to={item.to}
+                selected={selected}
+                onClick={isDesktopShell ? undefined : closeMobileNav}
+                sx={{ minHeight: TOUCH_TARGET_MIN_PX }}
+              >
                 <ListItemIcon sx={{ minWidth: 36, color: selected ? 'primary.main' : 'text.secondary' }}>
                   {item.icon}
                 </ListItemIcon>
@@ -126,7 +164,7 @@ export default function AppShell() {
           flexDirection: 'column',
           minWidth: 0,
           maxWidth: '100%',
-          overflowX: 'hidden',
+          overflowX: 'clip',
         }}
       >
         <AppBar
@@ -139,11 +177,35 @@ export default function AppShell() {
             bgcolor: 'background.paper',
             maxWidth: '100%',
             minWidth: 0,
+            pt: SAFE_AREA.top,
+            pl: SAFE_AREA.left,
+            pr: SAFE_AREA.right,
           }}
         >
-          <Toolbar sx={{ gap: 2, minHeight: { xs: 56, sm: 64 } }}>
+          <Toolbar sx={{ gap: 1.5, minHeight: { xs: 56, sm: 64 }, px: { xs: 1, sm: 2 } }}>
+            {!isDesktopShell ? (
+              <IconButton
+                color="inherit"
+                edge="start"
+                aria-label={t('shell.open_navigation')}
+                aria-controls={navDrawerId}
+                aria-expanded={mobileNavOpen ? 'true' : 'false'}
+                onClick={() => setMobileNavOpen(true)}
+                sx={{
+                  minWidth: TOUCH_TARGET_MIN_PX,
+                  minHeight: TOUCH_TARGET_MIN_PX,
+                }}
+              >
+                <MenuIcon />
+              </IconButton>
+            ) : null}
             <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="h6" component="p" noWrap sx={{ fontSize: { xs: '1rem', sm: '1.15rem' }, fontWeight: 600 }}>
+              <Typography
+                variant="h6"
+                component="p"
+                noWrap
+                sx={{ fontSize: { xs: '1rem', sm: '1.15rem' }, fontWeight: 600 }}
+              >
                 {t(titleKey)}
               </Typography>
               {subtitleKey ? (
@@ -156,14 +218,14 @@ export default function AppShell() {
           </Toolbar>
         </AppBar>
 
-        {/* Vertical scroll lives here only; horizontal overflow is clipped at shell + global level. */}
         <Box
           sx={{
             flex: 1,
             minWidth: 0,
             maxWidth: '100%',
-            overflowX: 'hidden',
+            overflowX: 'clip',
             overflowY: 'auto',
+            pb: SAFE_AREA.bottom,
           }}
         >
           <AppMain>

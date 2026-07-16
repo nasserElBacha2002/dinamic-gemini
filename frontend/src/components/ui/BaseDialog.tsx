@@ -24,6 +24,8 @@ import {
   type DialogProps,
 } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material/styles';
+import { useAppBreakpoint } from '../../hooks/useAppBreakpoint';
+import { SAFE_AREA } from '../shell/layoutConstants';
 
 export interface BaseDialogProps {
   open: boolean;
@@ -53,6 +55,11 @@ export interface BaseDialogProps {
   contentDividers?: boolean;
   /** Applied to `DialogActions` when `actions` is set (e.g. confirm dialogs need extra padding). */
   actionsSx?: SxProps<Theme>;
+  /**
+   * When true (default), dialogs go fullscreen on compact viewports (`!md`).
+   * Set false for tiny confirms that should stay as a centered sheet.
+   */
+  fullScreenOnMobile?: boolean;
 }
 
 function isNonEmptyDescription(value: ReactNode): boolean {
@@ -76,10 +83,12 @@ export default function BaseDialog({
   error,
   contentDividers = false,
   actionsSx,
+  fullScreenOnMobile = true,
 }: BaseDialogProps) {
   const { t } = useTranslation();
   const titleId = useId();
   const descriptionId = useId();
+  const { isCompact } = useAppBreakpoint();
 
   const descriptionContent = description ?? subtitle;
   const hasDescription = isNonEmptyDescription(descriptionContent);
@@ -99,6 +108,7 @@ export default function BaseDialog({
       onClose={disableClose ? undefined : onClose}
       maxWidth={maxWidth}
       fullWidth={fullWidth}
+      fullScreen={fullScreenOnMobile && isCompact}
       aria-labelledby={titleId}
       aria-describedby={hasDescription ? descriptionId : undefined}
     >
@@ -136,7 +146,18 @@ export default function BaseDialog({
         {errorBlock}
         {children}
       </DialogContent>
-      {actions ? <DialogActions sx={actionsSx}>{actions}</DialogActions> : null}
+      {actions ? (
+        <DialogActions
+          sx={{
+            pb: `calc(8px + ${SAFE_AREA.bottom})`,
+            ...(typeof actionsSx === 'object' && actionsSx !== null && !Array.isArray(actionsSx)
+              ? actionsSx
+              : {}),
+          }}
+        >
+          {actions}
+        </DialogActions>
+      ) : null}
     </Dialog>
   );
 }

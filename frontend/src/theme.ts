@@ -110,18 +110,19 @@ const theme = createTheme(
       styleOverrides: {
         html: {
           maxWidth: '100%',
-          overflowX: 'hidden',
+          // Prefer overflow-x: clip (no scroll chaining) over hidden; do not use this to hide layout bugs.
+          overflowX: 'clip',
         },
         body: {
           maxWidth: '100%',
-          overflowX: 'hidden',
+          overflowX: 'clip',
           WebkitFontSmoothing: 'antialiased',
           MozOsxFontSmoothing: 'grayscale',
         },
         '#root': {
           maxWidth: '100%',
-          overflowX: 'hidden',
-          minHeight: '100%',
+          overflowX: 'clip',
+          minHeight: '100dvh',
         },
       },
     },
@@ -134,6 +135,14 @@ const theme = createTheme(
           borderRadius: theme.shape.borderRadius,
           paddingLeft: theme.spacing(2),
           paddingRight: theme.spacing(2),
+          minHeight: 40,
+          [theme.breakpoints.down('md')]: {
+            minHeight: 44,
+          },
+          '&:focus-visible': {
+            outline: `2px solid ${theme.palette.primary.main}`,
+            outlineOffset: 2,
+          },
         }),
         containedPrimary: {
           '&:hover': {
@@ -157,9 +166,38 @@ const theme = createTheme(
     MuiIconButton: {
       styleOverrides: {
         root: ({ theme }) => ({
+          [theme.breakpoints.down('md')]: {
+            minWidth: 44,
+            minHeight: 44,
+          },
           '&:focus-visible': {
             outline: `2px solid ${theme.palette.primary.main}`,
             outlineOffset: 2,
+          },
+        }),
+      },
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          borderRadius: theme.shape.borderRadius,
+          // Prevent iOS Safari auto-zoom on focus (requires ≥16px on small screens).
+          [theme.breakpoints.down('md')]: {
+            fontSize: '16px',
+          },
+        }),
+        input: ({ theme }) => ({
+          [theme.breakpoints.down('md')]: {
+            fontSize: '16px',
+          },
+        }),
+      },
+    },
+    MuiInputBase: {
+      styleOverrides: {
+        input: ({ theme }) => ({
+          [theme.breakpoints.down('md')]: {
+            fontSize: '16px',
           },
         }),
       },
@@ -217,13 +255,6 @@ const theme = createTheme(
         size: 'medium',
       },
     },
-    MuiOutlinedInput: {
-      styleOverrides: {
-        root: ({ theme }) => ({
-          borderRadius: theme.shape.borderRadius,
-        }),
-      },
-    },
     MuiBreadcrumbs: {
       styleOverrides: {
         separator: ({ theme }) => ({
@@ -262,6 +293,9 @@ const theme = createTheme(
           color: theme.palette.text.secondary,
           backgroundColor: theme.palette.action.hover,
         }),
+        root: {
+          overflowWrap: 'anywhere',
+        },
       },
     },
     MuiMenu: {
@@ -270,6 +304,26 @@ const theme = createTheme(
           borderRadius: theme.shape.borderRadius,
           border: `1px solid ${theme.palette.divider}`,
           boxShadow: theme.shadows[2],
+          maxWidth: 'min(100vw - 16px, 420px)',
+        }),
+      },
+    },
+    MuiDialog: {
+      styleOverrides: {
+        paper: ({ theme }) => ({
+          [theme.breakpoints.down('md')]: {
+            margin: theme.spacing(1),
+            maxHeight: `calc(100dvh - ${theme.spacing(2)})`,
+          },
+        }),
+      },
+    },
+    MuiDialogActions: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          paddingBottom: `calc(${theme.spacing(1)} + env(safe-area-inset-bottom, 0px))`,
+          flexWrap: 'wrap',
+          gap: theme.spacing(1),
         }),
       },
     },

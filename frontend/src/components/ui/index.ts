@@ -67,6 +67,9 @@ export { sortDataTableRows } from './dataTableSort';
 export { default as TableSection } from './TableSection';
 export type { TableSectionProps } from './TableSection';
 
+export { default as DataTableMobileCard } from './DataTableMobileCard';
+export type { DataTableMobileCardProps } from './DataTableMobileCard';
+
 export { default as PhotoUploadProgressDialog } from './PhotoUploadProgressDialog';
 export type { PhotoUploadProgressDialogProps } from './PhotoUploadProgressDialog';
 

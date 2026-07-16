@@ -135,6 +135,7 @@
     "upload_assets_row_a11y": "Subir activos para el pasillo {{code}}",
     "observability_row_a11y": "Abrir observabilidad del pasillo {{code}}",
     "process_row_a11y": "Procesar pasillo {{code}}",
+    "row_actions_a11y": "Acciones del pasillo {{code}}",
     "merge_repeated_labels": "Fusionar SKU repetidos",
     "operational_updated_snackbar": "Operational updated snackbar",
     "process_aisle": "Procesar pasillo",
@@ -814,6 +815,8 @@
     "execution_id": "ID de ejecución",
     "exporting": "Exportando",
     "filters_section_a11y": "Sección de filtros",
+    "filters_button": "Filtros",
+    "filters_active_count": "Filtros ({{count}})",
     "from": "Desde",
     "hide": "Ocultar",
     "hide_password": "Ocultar contraseña",
@@ -826,6 +829,7 @@
     "logout": "Cerrar sesión",
     "merging": "Fusionando…",
     "model": "Modelo",
+    "more_actions": "Más acciones",
     "no": "No",
     "open_account_menu": "Abrir menú de cuenta",
     "operational": "Operativo",
@@ -2212,13 +2216,15 @@
     "brand": "Dinamic",
     "operations": "Operaciones",
     "default_title": "Panel",
-    "default_subtitle": "Plataforma operativa de inventario"
+    "default_subtitle": "Plataforma operativa de inventario",
+    "open_navigation": "Abrir navegación"
   },
   "table": {
     "clear_search_aria": "Limpiar búsqueda",
     "empty_no_match": "No hay resultados para la búsqueda actual.",
     "search_label": "Buscar",
-    "search_placeholder": "Buscar..."
+    "search_placeholder": "Buscar...",
+    "scroll_hint": "Desplazá horizontalmente para ver más columnas"
   },
   "traceability": {
     "invalid": "ID no coincide con imágenes analizadas",

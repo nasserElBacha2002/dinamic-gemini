@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Link } from '@mui/material';
+import { Button, Link, Stack, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import type { Inventory, InventoryListItem } from '../api/types';
 import { ApiError } from '../api/types';
@@ -8,6 +8,7 @@ import { resolveApiErrorMessage } from '../utils/apiErrors';
 import { formatDate } from '../utils/formatDate';
 import { formatInventoryStatusLabel, inventoryStatusToBadgeSemantic } from '../utils/inventoryRowStatus';
 import {
+  DataTableMobileCard,
   ErrorAlert,
   FilterToolbar,
   StatusBadge,
@@ -170,7 +171,7 @@ export default function InventoriesList() {
     <>
       <PageHeader
         a11yTitle={t('inventory.page_a11y')}
-        actions={
+        primaryActions={
           <Button
             variant="contained"
             onClick={() => {
@@ -218,6 +219,45 @@ export default function InventoriesList() {
           rowKey: (inv) => inv.id,
           columns,
           loading: isLoading,
+          onRowClick: (inv) => navigate(pathToInventory(inv.id)),
+          renderMobileItem: (inv) => {
+            const isTest = inv.processing_mode === 'test';
+            return (
+              <DataTableMobileCard
+                ariaLabel={inv.name}
+                onClick={() => navigate(pathToInventory(inv.id))}
+              >
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
+                    {inv.name}
+                  </Typography>
+                  <StatusBadge
+                    label={formatInventoryStatusLabel(String(inv.status))}
+                    semantic={inventoryStatusToBadgeSemantic(String(inv.status))}
+                  />
+                </Stack>
+                <Stack direction="row" flexWrap="wrap" gap={1} useFlexGap>
+                  <StatusBadge
+                    label={isTest ? t('inventory.processing_mode_test') : t('inventory.processing_mode_production')}
+                    semantic={isTest ? 'warning' : 'neutral'}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    {t('inventory.column_aisles')}:{' '}
+                    {typeof inv.aisles_count === 'number' ? inv.aisles_count : t('common.em_dash')}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {t('inventory.column_pending_review')}:{' '}
+                    {typeof inv.pending_review_count === 'number'
+                      ? inv.pending_review_count
+                      : t('common.em_dash')}
+                  </Typography>
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  {t('common.created')}: {formatDate(inv.created_at ?? undefined)}
+                </Typography>
+              </DataTableMobileCard>
+            );
+          },
           emptyState:
             searchApplied.trim() !== '' && !isLoading && (data?.total_items ?? 0) === 0
               ? { message: t('table.empty_no_match') }

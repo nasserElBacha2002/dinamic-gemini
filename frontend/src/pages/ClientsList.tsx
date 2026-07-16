@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Typography } from '@mui/material';
+import { Button, Stack, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import type { Client } from '../api/types';
 import CreateClientDialog from '../components/CreateClientDialog';
 import { PageHeader } from '../components/shell';
 import {
+  DataTableMobileCard,
   FilterToolbar,
   StatusBadge,
   TableSearchField,
@@ -30,6 +31,7 @@ function clientStatusSemantic(status: string): 'success' | 'neutral' {
 
 export default function ClientsList() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { showSnackbar } = useAppSnackbar();
   const createClientMutation = useCreateClient();
   const [createOpen, setCreateOpen] = useState(false);
@@ -154,7 +156,7 @@ export default function ClientsList() {
     <>
       <PageHeader
         a11yTitle={t('clients.page.a11y')}
-        actions={
+        primaryActions={
           <Button variant="contained" onClick={() => setCreateOpen(true)}>
             {t('clients.actions.create')}
           </Button>
@@ -196,6 +198,29 @@ export default function ClientsList() {
           rowKey: (client) => client.id,
           columns,
           loading: clientsQuery.isLoading,
+          onRowClick: (client) => navigate(pathToClient(client.id)),
+          renderMobileItem: (client) => (
+            <DataTableMobileCard
+              ariaLabel={client.name}
+              onClick={() => navigate(pathToClient(client.id))}
+            >
+              <Stack direction="row" justifyContent="space-between" gap={1} alignItems="flex-start">
+                <Typography variant="subtitle2" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
+                  {client.name}
+                </Typography>
+                <StatusBadge
+                  label={clientStatusLabel(client.status, t)}
+                  semantic={clientStatusSemantic(client.status)}
+                />
+              </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                {client.id}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {formatDate(client.created_at)}
+              </Typography>
+            </DataTableMobileCard>
+          ),
           sort: {
             sortBy: clientListSortBy,
             sortDir: clientListSortDir,

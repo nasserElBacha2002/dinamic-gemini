@@ -1,8 +1,8 @@
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Box, Typography } from '@mui/material';
+import { Box, Stack, Typography } from '@mui/material';
 import type { CodeScanDetection } from '../../../api/types/codeScans';
-import { DataTable, type DataTableColumn } from '../../../components/ui';
+import { DataTable, DataTableMobileCard, type DataTableColumn } from '../../../components/ui';
 import { useTableState } from '../../../hooks';
 import { formatDate } from '../../../utils/formatDate';
 import {
@@ -131,6 +131,35 @@ export default function CodeScanDetectionsTable({
         rowKey={(row) => row.id}
         columns={columns}
         stickyHeader={false}
+        renderMobileItem={(row) => (
+          <DataTableMobileCard ariaLabel={row.code_value}>
+            <Stack direction="row" justifyContent="space-between" gap={1} alignItems="flex-start">
+              <Typography variant="subtitle2" fontWeight={700} sx={{ wordBreak: 'break-all' }}>
+                {row.code_value}
+              </Typography>
+              <CodeScanMatchStatusChip status={row.match_status} />
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              {formatCodeScanCodeType(t, row.code_type)} ·{' '}
+              {formatCodeScanDetectionStatus(t, row.detection_status)}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
+              {formatCodeScanMatchType(t, row.match_type)}
+              {row.matched_position_id ? ` · ${row.matched_position_id}` : ''}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {formatDate(row.created_at)}
+            </Typography>
+            <Box data-datatable-skip-row-click>
+              <CodeScanAssetPreviewButton
+                inventoryId={inventoryId}
+                aisleId={aisleId}
+                assetId={row.asset_id}
+                jobIdForPreview={jobIdForPreview}
+              />
+            </Box>
+          </DataTableMobileCard>
+        )}
         pagination={{
           page,
           pageSize,

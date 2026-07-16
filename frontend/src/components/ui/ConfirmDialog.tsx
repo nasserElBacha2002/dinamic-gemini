@@ -59,6 +59,7 @@ export default function ConfirmDialog({
       disableClose={loading}
       maxWidth={maxWidth}
       fullWidth
+      fullScreenOnMobile={false}
       actionsSx={{ px: 3, pb: 2 }}
       actions={
         <>

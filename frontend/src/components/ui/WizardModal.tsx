@@ -8,6 +8,8 @@
 import { useId, type ReactNode } from 'react';
 import { Box, Dialog, DialogActions, DialogContent, DialogTitle, Step, StepLabel, Stepper, Typography } from '@mui/material';
 import type { DialogProps } from '@mui/material';
+import { useAppBreakpoint } from '../../hooks/useAppBreakpoint';
+import { SAFE_AREA } from '../shell/layoutConstants';
 
 export interface WizardModalProps {
   open: boolean;
@@ -37,6 +39,7 @@ export default function WizardModal({
   fullWidth = true,
 }: WizardModalProps) {
   const titleId = useId();
+  const { isCompact } = useAppBreakpoint();
 
   return (
     <Dialog
@@ -44,11 +47,17 @@ export default function WizardModal({
       onClose={onClose}
       maxWidth={maxWidth}
       fullWidth={fullWidth}
+      fullScreen={isCompact}
       aria-labelledby={titleId}
     >
       <DialogTitle id={titleId}>{title}</DialogTitle>
       <DialogContent>
-        <Stepper activeStep={activeStep} sx={{ mb: 3, pt: 1 }}>
+        <Stepper
+          activeStep={activeStep}
+          alternativeLabel={isCompact}
+          orientation={isCompact ? 'vertical' : 'horizontal'}
+          sx={{ mb: 3, pt: 1 }}
+        >
           {stepLabels.map((label) => (
             <Step key={label}>
               <StepLabel>
@@ -61,7 +70,9 @@ export default function WizardModal({
           {children}
         </Box>
       </DialogContent>
-      <DialogActions>{actions}</DialogActions>
+      <DialogActions sx={{ pb: `calc(8px + ${SAFE_AREA.bottom})`, flexWrap: 'wrap', gap: 1 }}>
+        {actions}
+      </DialogActions>
     </Dialog>
   );
 }
