@@ -23,15 +23,15 @@ from src.api.dependencies import (
     get_source_asset_repo,
 )
 from src.api.server import app
+from src.application.errors import ImageAlreadyHasResultsError
 from src.application.ports.clock import Clock
 from src.application.ports.job_source_asset_repository import JobSourceAssetLink
+from src.application.ports.manual_image_result_unit_of_work import ManualImageResultRepositories
 from src.application.services.job_image_result_resolution import (
     index_positions_by_source_asset,
     is_photos_job_snapshot,
     unique_photo_coverage_images,
 )
-from src.application.errors import ImageAlreadyHasResultsError, ManualResultAlreadyExistsError
-from src.application.ports.manual_image_result_unit_of_work import ManualImageResultRepositories
 from src.application.use_cases.positions.create_manual_image_result import (
     CreateManualImageResultCommand,
     CreateManualImageResultUseCase,
@@ -63,14 +63,14 @@ from src.domain.traceability import TraceabilityStatus
 from src.infrastructure.persistence.memory_job_image_coverage_repository import (
     MemoryJobImageCoverageRepository,
 )
-from src.infrastructure.persistence.memory_manual_image_result_unit_of_work import (
-    build_memory_manual_image_result_uow_factory,
-)
 from src.infrastructure.persistence.memory_job_source_asset_repository import (
     MemoryJobSourceAssetRepository,
 )
 from src.infrastructure.persistence.memory_manual_image_coverage_repository import (
     MemoryManualImageCoverageRepository,
+)
+from src.infrastructure.persistence.memory_manual_image_result_unit_of_work import (
+    build_memory_manual_image_result_uow_factory,
 )
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_evidence_repository import MemoryEvidenceRepository
@@ -315,6 +315,7 @@ def _create_uc(world: dict) -> CreateManualImageResultUseCase:
         manual_coverage_repo=world["coverage_repo"],
         result_evidence_repo=world["re_repo"],
         review_repo=world["review_repo"],
+        image_coverage_repo=_coverage_repo(world),
     )
     uow_factory = build_memory_manual_image_result_uow_factory(
         repos,
@@ -326,8 +327,6 @@ def _create_uc(world: dict) -> CreateManualImageResultUseCase:
         job_repo=world["job_repo"],
         job_source_asset_repo=world["jsa_repo"],
         source_asset_repo=world["asset_repo"],
-        position_repo=world["position_repo"],
-        result_evidence_repo=world["re_repo"],
         clock=_FixedClock(world["now"]),
         unit_of_work_factory=uow_factory,
     )

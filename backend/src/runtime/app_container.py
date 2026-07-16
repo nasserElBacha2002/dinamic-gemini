@@ -730,23 +730,24 @@ class AppContainer:
             build_sql_manual_image_result_uow_factory,
         )
 
-        lifecycle = AisleReviewLifecycleSync(
-            aisle_repo=self.get_aisle_repo(),
-            position_repo=self.get_position_repo(),
-            clock=self.get_clock(),
-            status_reconciler=InventoryStatusReconciler(
-                inventory_repo=self.get_inventory_repo(),
-                aisle_repo=self.get_aisle_repo(),
-                clock=self.get_clock(),
-            ),
-        )
         resolution = self._get_repository_backend_resolution()
         if resolution.mode == RepositoryBackendMode.SQL:
+            # SQL UoW builds its own transactional lifecycle on the same connection.
             self._manual_image_result_uow_factory = build_sql_manual_image_result_uow_factory(
                 self._get_v3_sql_client(),
-                lifecycle,
+                self.get_clock(),
             )
         else:
+            lifecycle = AisleReviewLifecycleSync(
+                aisle_repo=self.get_aisle_repo(),
+                position_repo=self.get_position_repo(),
+                clock=self.get_clock(),
+                status_reconciler=InventoryStatusReconciler(
+                    inventory_repo=self.get_inventory_repo(),
+                    aisle_repo=self.get_aisle_repo(),
+                    clock=self.get_clock(),
+                ),
+            )
             repos = ManualImageResultRepositories(
                 position_repo=self.get_position_repo(),
                 product_record_repo=self.get_product_record_repo(),
@@ -754,6 +755,7 @@ class AppContainer:
                 manual_coverage_repo=self.get_manual_image_coverage_repo(),
                 result_evidence_repo=self.get_result_evidence_repo(),
                 review_repo=self.get_review_action_repo(),
+                image_coverage_repo=self.get_job_image_coverage_repo(),
             )
             self._manual_image_result_uow_factory = build_memory_manual_image_result_uow_factory(
                 repos,

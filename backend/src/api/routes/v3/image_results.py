@@ -24,6 +24,7 @@ from src.api.schemas.listing_schemas import compute_total_pages
 from src.application.errors import (
     AssetNotInJobSnapshotError,
     ImageAlreadyHasResultsError,
+    ImageResultLockTimeoutError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
@@ -174,6 +175,7 @@ def create_manual_image_result(
         SourceAssetNotFoundForAisleError,
         ManualResultAlreadyExistsError,
         ImageAlreadyHasResultsError,
+        ImageResultLockTimeoutError,
     ) as exc:
         reraise_if_mapped(exc)
         raise

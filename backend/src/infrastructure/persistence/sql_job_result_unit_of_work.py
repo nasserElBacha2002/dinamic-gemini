@@ -13,6 +13,7 @@ from src.application.ports.job_result_unit_of_work import (
 )
 from src.database.sqlserver import SqlServerClient
 from src.infrastructure.database.sql_transaction import SqlServerTransaction, TransactionState
+from src.infrastructure.persistence.image_result_applock import acquire_image_result_applock
 from src.infrastructure.persistence.job_result_bundle_validation import (
     assert_sql_job_result_bundle,
 )
@@ -86,6 +87,15 @@ class SqlJobResultUnitOfWork:
         self._committed = False
         self._rolled_back = True
         logger.warning("SqlJobResultUnitOfWork rolled back")
+
+    def acquire_image_result_lock(self, *, job_id: str, source_asset_id: str) -> None:
+        if self._tx is None:
+            raise RuntimeError("SqlJobResultUnitOfWork is not active")
+        acquire_image_result_applock(
+            self._tx.connection,
+            job_id=job_id,
+            source_asset_id=source_asset_id,
+        )
 
     def __enter__(self) -> SqlJobResultUnitOfWork:
         self._tx = self._client.begin_transaction()

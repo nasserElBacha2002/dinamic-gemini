@@ -50,3 +50,11 @@ class JobImageCoverageRepository(Protocol):
         aisle_id: str,
         source_asset_ids: tuple[str, ...],
     ) -> dict[str, list[Position]]: ...
+
+    def has_results_for_asset(
+        self,
+        *,
+        job_id: str,
+        aisle_id: str,
+        source_asset_id: str,
+    ) -> bool: ...

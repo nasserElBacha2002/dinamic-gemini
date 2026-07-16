@@ -1008,11 +1008,10 @@ export default function AislePositionsPage() {
         onClose={() => setManualResultItem(null)}
         onSuccess={() => {
           setManualResultItem(null);
-          const remaining = Math.max(0, withoutResultCount - 1);
-          if (remaining === 0) {
-            updateFilters({ resultsView: 'positions' }, { historyMode: 'replace' });
-            return t('results.imageCoverage.drawer.successSnackbarLast');
-          }
+          // Do not decide tab switch via count-1; the counters effect normalizes to positions.
+          void unmatchedCountersQuery.refetch();
+          void imageResultsQuery.refetch();
+          void refetch();
         }}
         onConflict={() => {
           void unmatchedCountersQuery.refetch();

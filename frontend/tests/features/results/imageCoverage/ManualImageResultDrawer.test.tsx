@@ -97,7 +97,10 @@ describe('ManualImageResultDrawer', () => {
     showSnackbarMock.mockClear();
     isPendingRef.value = false;
     mockUseEvidenceImageLoad.mockReset();
-    mockUseEvidenceImageLoad.mockReturnValue({ status: 'idle' });
+    mockUseEvidenceImageLoad.mockReturnValue({
+      status: 'loaded',
+      imageSrc: 'blob:http://localhost/img',
+    });
   });
 
   it('reuses ResultEvidenceViewer with manual-result variant and wide drawer', () => {
@@ -177,6 +180,35 @@ describe('ManualImageResultDrawer', () => {
     expect(mutateAsyncMock).not.toHaveBeenCalled();
   });
 
+  it('disables save while evidence is not loaded and when evidence fails', async () => {
+    mockUseEvidenceImageLoad.mockReturnValue({ status: 'loading' });
+    const { rerender } = renderDrawer();
+    expect(screen.getByTestId('manual-image-result-save')).toBeDisabled();
+
+    mockUseEvidenceImageLoad.mockReturnValue({
+      status: 'error',
+      kind: 'network',
+      message: 'fail',
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    rerender(
+      <QueryClientProvider client={client}>
+        <ManualImageResultDrawer
+          open
+          item={baseItem}
+          inventoryId="inv-1"
+          aisleId="aisle-1"
+          jobId="job-1"
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('manual-image-result-evidence-error')).toBeInTheDocument()
+    );
+    expect(screen.getByTestId('manual-image-result-save')).toBeDisabled();
+  });
+
   it('submits with trimmed values and calls onSuccess on success', async () => {
     mutateAsyncMock.mockResolvedValueOnce({
       position: { id: 'pos-new', sku: 'SKU-1' },
@@ -185,6 +217,9 @@ describe('ManualImageResultDrawer', () => {
     const onClose = vi.fn();
     renderDrawer({ onSuccess, onClose });
 
+    await waitFor(() =>
+      expect(screen.getByTestId('manual-image-result-save')).not.toBeDisabled()
+    );
     fireEvent.change(screen.getByTestId('manual-image-result-sku'), {
       target: { value: '  SKU-1  ' },
     });
@@ -214,6 +249,9 @@ describe('ManualImageResultDrawer', () => {
     const onClose = vi.fn();
     renderDrawer({ onConflict, onClose });
 
+    await waitFor(() =>
+      expect(screen.getByTestId('manual-image-result-save')).not.toBeDisabled()
+    );
     fireEvent.change(screen.getByTestId('manual-image-result-sku'), {
       target: { value: 'SKU-2' },
     });
@@ -241,6 +279,9 @@ describe('ManualImageResultDrawer', () => {
     mutateAsyncMock.mockImplementationOnce(() => pending);
     renderDrawer();
 
+    await waitFor(() =>
+      expect(screen.getByTestId('manual-image-result-save')).not.toBeDisabled()
+    );
     fireEvent.change(screen.getByTestId('manual-image-result-sku'), {
       target: { value: 'SKU-1' },
     });

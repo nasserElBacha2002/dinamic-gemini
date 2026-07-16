@@ -93,6 +93,32 @@ if command -v pgrep >/dev/null 2>&1; then
       echo "${STILL_API_PIDS}" | xargs kill -9 2>/dev/null || true
     fi
   fi
+  # Only kill spawn_main / resource_tracker reparented to PID 1 (true orphans).
+  # Active --reload workers have the reloader as parent; killing them leaves the
+  # listener up but requests hang forever as "(pending)".
+  ORPHAN_SPAWN_PIDS=""
+  for pid in $(pgrep -f "multiprocessing.spawn import spawn_main" || true); do
+    ppid="$(ps -o ppid= -p "${pid}" 2>/dev/null | tr -d ' ')"
+    if [[ "${ppid}" == "1" ]]; then
+      ORPHAN_SPAWN_PIDS="${ORPHAN_SPAWN_PIDS} ${pid}"
+    fi
+  done
+  if [[ -n "${ORPHAN_SPAWN_PIDS}" ]]; then
+    echo "[dev] Matando workers uvicorn huérfanos (spawn_main ppid=1) que retienen SQL..."
+    # shellcheck disable=SC2086
+    kill -9 ${ORPHAN_SPAWN_PIDS} 2>/dev/null || true
+  fi
+  ORPHAN_TRACKER_PIDS=""
+  for pid in $(pgrep -f "multiprocessing.resource_tracker import main" || true); do
+    ppid="$(ps -o ppid= -p "${pid}" 2>/dev/null | tr -d ' ')"
+    if [[ "${ppid}" == "1" ]]; then
+      ORPHAN_TRACKER_PIDS="${ORPHAN_TRACKER_PIDS} ${pid}"
+    fi
+  done
+  if [[ -n "${ORPHAN_TRACKER_PIDS}" ]]; then
+    # shellcheck disable=SC2086
+    kill -9 ${ORPHAN_TRACKER_PIDS} 2>/dev/null || true
+  fi
 fi
 
 echo "[dev] Arrancando backend en http://127.0.0.1:${PORT} ..."
@@ -102,6 +128,20 @@ BE_PID=$!
 cleanup() {
   echo "[dev] Cerrando procesos..."
   kill "$BE_PID" 2>/dev/null || true
+  # Force-kill leftover reloaders/workers so they cannot leave SQL locks open.
+  if command -v pgrep >/dev/null 2>&1; then
+    sleep 0.2
+    STILL_API="$(pgrep -f "uvicorn src.api.server:app --reload --port ${PORT}" || true)"
+    if [[ -n "${STILL_API}" ]]; then
+      echo "${STILL_API}" | xargs kill -9 2>/dev/null || true
+    fi
+    for pid in $(pgrep -f "multiprocessing.spawn import spawn_main" || true); do
+      ppid="$(ps -o ppid= -p "${pid}" 2>/dev/null | tr -d ' ')"
+      if [[ "${ppid}" == "1" ]]; then
+        kill -9 "${pid}" 2>/dev/null || true
+      fi
+    done
+  fi
   exit 0
 }
 trap cleanup INT TERM EXIT

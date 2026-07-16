@@ -1407,6 +1407,7 @@
         "successSnackbar": "Manual result added",
         "successSnackbarLast": "Result added successfully. There are no uncounted images left.",
         "imageLoading": "Loading image…",
+        "imageLoadFailed": "Could not load the image. Saving is blocked until evidence is visible.",
         "errorSkuRequired": "SKU is required",
         "errorQuantityRequired": "Quantity is required",
         "errorQuantityInvalid": "Quantity must be a whole number greater than 0"

@@ -21,6 +21,7 @@ from src.application.ports.clock import Clock
 from src.application.ports.hybrid_report_to_domain_mapper import HybridReportToDomainMapper
 from src.application.ports.job_result_unit_of_work import (
     JobResultRepositories,
+    JobResultUnitOfWork,
     JobResultUnitOfWorkFactory,
 )
 from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
@@ -141,7 +142,7 @@ class PersistAisleResultUseCase:
                     job_id,
                     before.positions,
                 )
-                self._insert_mapped(active, command, mapped)
+                self._insert_mapped(uow, command, mapped)
                 self._recompute_job_scoped(active, command, inventory_id, job_id)
                 writer = uow.finalization_evidence
                 if writer is not None:
@@ -223,13 +224,15 @@ class PersistAisleResultUseCase:
 
     def _insert_mapped(
         self,
-        repos: JobResultRepositories,
+        uow: JobResultUnitOfWork,
         command: PersistAisleResultCommand,
         mapped: MappedAisleResult,
     ) -> None:
+        repos = uow.repositories
         persisted_positions = 0
         skipped_unknown_zero = 0
         persisted_result_evidence_records: list = []
+        job_id = (command.job_id or "").strip()
         for position, product, evidence, result_evidence in zip(
             mapped.positions,
             mapped.product_records,
@@ -244,6 +247,16 @@ class PersistAisleResultUseCase:
             ):
                 skipped_unknown_zero += 1
                 continue
+
+            source_asset_id = ""
+            if isinstance(summary, dict):
+                raw_asset = summary.get("source_asset_id") or summary.get("source_image_id")
+                if isinstance(raw_asset, str):
+                    source_asset_id = raw_asset.strip()
+            if source_asset_id and job_id:
+                # Same canonical applock as manual create — serializes concurrent writers.
+                uow.acquire_image_result_lock(job_id=job_id, source_asset_id=source_asset_id)
+
             repos.position_repo.save(position)
             repos.product_record_repo.save(product)
             repos.evidence_repo.save(evidence)

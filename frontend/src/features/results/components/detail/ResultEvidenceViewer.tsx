@@ -40,6 +40,8 @@ export interface ResultEvidenceViewerAssetProps {
   filename?: string | null;
   variant?: EvidenceViewerVariant;
   enabled?: boolean;
+  /** Notifies parent when authenticated asset load settles (manual drawer save gating). */
+  onAssetLoadStateChange?: (state: 'idle' | 'loading' | 'loaded' | 'error') => void;
 }
 
 export type ResultEvidenceViewerProps =
@@ -193,6 +195,7 @@ export default function ResultEvidenceViewer(props: ResultEvidenceViewerProps) {
         filename={props.filename ?? null}
         variant={variant}
         enabled={enabled}
+        onAssetLoadStateChange={props.onAssetLoadStateChange}
       />
     );
   }
@@ -216,6 +219,7 @@ function AssetModeEvidenceViewer({
   filename,
   variant,
   enabled,
+  onAssetLoadStateChange,
 }: {
   inventoryId: string;
   aisleId: string;
@@ -224,6 +228,7 @@ function AssetModeEvidenceViewer({
   filename: string | null;
   variant: EvidenceViewerVariant;
   enabled: boolean;
+  onAssetLoadStateChange?: (state: 'idle' | 'loading' | 'loaded' | 'error') => void;
 }) {
   const { t } = useTranslation();
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -236,6 +241,10 @@ function AssetModeEvidenceViewer({
     [enabled, inventoryId, aisleId, assetId, jobId]
   );
   const loadState = useEvidenceImageLoad(loadSpec);
+
+  useEffect(() => {
+    onAssetLoadStateChange?.(loadState.status);
+  }, [loadState.status, onAssetLoadStateChange]);
 
   const src = loadState.status === 'loaded' ? loadState.imageSrc : null;
   const loading = loadState.status === 'loading';

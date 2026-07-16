@@ -267,3 +267,70 @@ OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
             result_evidence=evidence_rows,
             positions=positions,
         )
+
+    def has_results_for_asset(
+        self,
+        *,
+        job_id: str,
+        aisle_id: str,
+        source_asset_id: str,
+    ) -> bool:
+        """Indexed EXISTS check — does not load Position collections."""
+        asset_id = (source_asset_id or "").strip()
+        if not asset_id:
+            return False
+        sql = """
+SELECT CASE
+    WHEN EXISTS (
+        SELECT 1
+        FROM result_evidence re
+        INNER JOIN positions p ON p.id = re.position_id
+        WHERE re.job_id = ?
+          AND p.job_id = ?
+          AND p.aisle_id = ?
+          AND (
+              LTRIM(RTRIM(ISNULL(re.source_asset_id, N''))) = ?
+              OR LTRIM(RTRIM(ISNULL(re.source_image_id, N''))) = ?
+          )
+    )
+    OR EXISTS (
+        SELECT 1
+        FROM positions p
+        WHERE p.job_id = ?
+          AND p.aisle_id = ?
+          AND (
+              LTRIM(RTRIM(ISNULL(JSON_VALUE(p.detected_summary_json, N'$.source_asset_id'), N''))) = ?
+              OR LTRIM(RTRIM(ISNULL(JSON_VALUE(p.detected_summary_json, N'$.source_image_id'), N''))) = ?
+          )
+    )
+    OR EXISTS (
+        SELECT 1
+        FROM position_manual_image_coverage mic
+        WHERE mic.job_id = ?
+          AND mic.aisle_id = ?
+          AND LTRIM(RTRIM(mic.source_asset_id)) = ?
+    )
+    THEN 1
+    ELSE 0
+END AS has_result
+"""
+        params = (
+            job_id,
+            job_id,
+            aisle_id,
+            asset_id,
+            asset_id,
+            job_id,
+            aisle_id,
+            asset_id,
+            asset_id,
+            job_id,
+            aisle_id,
+            asset_id,
+        )
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(sql, params)
+            row = cur.fetchone()
+        if not row:
+            return False
+        return bool(int(getattr(row, "has_result", row[0] if row else 0) or 0))

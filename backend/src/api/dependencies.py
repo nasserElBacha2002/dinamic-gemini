@@ -1254,8 +1254,6 @@ def get_create_manual_image_result_use_case(
     job_repo: JobRepository = Depends(get_job_repo),
     job_source_asset_repo=Depends(get_job_source_asset_repo),
     source_asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
-    position_repo: PositionRepository = Depends(get_position_repo),
-    result_evidence_repo=Depends(get_result_evidence_repo),
     clock: Clock = Depends(get_clock),
     unit_of_work_factory=Depends(get_manual_image_result_uow_factory),
 ):
@@ -1269,8 +1267,6 @@ def get_create_manual_image_result_use_case(
         job_repo=job_repo,
         job_source_asset_repo=job_source_asset_repo,
         source_asset_repo=source_asset_repo,
-        position_repo=position_repo,
-        result_evidence_repo=result_evidence_repo,
         clock=clock,
         unit_of_work_factory=unit_of_work_factory,
     )

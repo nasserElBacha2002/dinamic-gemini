@@ -29,7 +29,7 @@ export interface ManualImageResultDrawerProps {
   aisleId: string;
   jobId: string;
   onClose: () => void;
-  onSuccess?: (position: PositionSummary) => string | void;
+  onSuccess?: (position: PositionSummary) => void;
   /** Called on 409 so the caller can refresh the image list. */
   onConflict?: () => void;
 }
@@ -43,6 +43,14 @@ function isImageAlreadyHasResults(error: unknown): boolean {
     error instanceof ApiError &&
     error.status === 409 &&
     error.data?.code === 'IMAGE_ALREADY_HAS_RESULTS'
+  );
+}
+
+function isManualAlreadyExists(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    error.data?.code === 'MANUAL_RESULT_ALREADY_EXISTS'
   );
 }
 
@@ -65,9 +73,15 @@ export default function ManualImageResultDrawer({
   const [skuError, setSkuError] = useState('');
   const [quantityError, setQuantityError] = useState('');
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [evidenceState, setEvidenceState] = useState<'idle' | 'loading' | 'loaded' | 'error'>(
+    'idle'
+  );
   const submitInFlightRef = useRef(false);
 
   const mutation = useCreateManualImageResult(inventoryId, aisleId, item?.source_asset_id ?? '');
+  const evidenceReady = evidenceState === 'loaded';
+  const evidenceFailed = evidenceState === 'error';
+  const saveDisabled = mutation.isPending || !evidenceReady;
 
   useEffect(() => {
     if (!open) return;
@@ -78,6 +92,7 @@ export default function ManualImageResultDrawer({
     setSkuError('');
     setQuantityError('');
     setSubmitError(null);
+    setEvidenceState('idle');
   }, [open, item?.job_source_asset_id]);
 
   const validate = (): boolean => {
@@ -112,6 +127,7 @@ export default function ManualImageResultDrawer({
   const handleSubmit = async () => {
     if (!item) return;
     if (submitInFlightRef.current || mutation.isPending) return;
+    if (!evidenceReady) return;
     if (!validate()) return;
 
     submitInFlightRef.current = true;
@@ -124,18 +140,15 @@ export default function ManualImageResultDrawer({
         description: description.trim() || undefined,
         position_code: positionCode.trim() || undefined,
       });
-      const customMessage = onSuccess?.(result.position);
-      showSnackbar(
-        typeof customMessage === 'string' && customMessage.trim()
-          ? customMessage
-          : t('results.imageCoverage.drawer.successSnackbar'),
-        'success'
-      );
+      showSnackbar(t('results.imageCoverage.drawer.successSnackbar'), 'success');
+      onSuccess?.(result.position);
       onClose();
     } catch (e) {
       const message = isImageAlreadyHasResults(e)
         ? t('results.imageCoverage.errors.already_has_results')
-        : getVisibleErrorMessage(e, 'results');
+        : isManualAlreadyExists(e)
+          ? t('results.imageCoverage.errors.already_exists')
+          : getVisibleErrorMessage(e, 'results');
       setSubmitError(message);
       if (isConflictError(e)) {
         showSnackbar(message, 'error');
@@ -195,8 +208,15 @@ export default function ManualImageResultDrawer({
                 filename={item.original_filename}
                 variant="manual-result"
                 enabled={open}
+                onAssetLoadStateChange={setEvidenceState}
               />
             </Box>
+
+            {evidenceFailed ? (
+              <Alert severity="error" data-testid="manual-image-result-evidence-error">
+                {t('results.imageCoverage.drawer.imageLoadFailed')}
+              </Alert>
+            ) : null}
 
             {submitError ? (
               <Alert severity="error" onClose={() => setSubmitError(null)}>
@@ -265,7 +285,7 @@ export default function ManualImageResultDrawer({
               <Button
                 variant="contained"
                 onClick={() => void handleSubmit()}
-                disabled={mutation.isPending}
+                disabled={saveDisabled}
                 data-testid="manual-image-result-save"
               >
                 {mutation.isPending ? (

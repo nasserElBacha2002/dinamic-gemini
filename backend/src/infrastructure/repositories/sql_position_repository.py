@@ -336,3 +336,25 @@ class SqlPositionRepository(PositionRepository):
             )
             rows = cur.fetchall()
         return [_row_to_position(row) for row in rows]
+
+    def aisle_has_needs_review(self, aisle_id: str) -> bool:
+        """EXISTS-style check used by transactional lifecycle sync."""
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                """
+                SELECT CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM positions
+                        WHERE aisle_id = ? AND needs_review = 1
+                    )
+                    THEN 1
+                    ELSE 0
+                END AS has_pending
+                """,
+                (aisle_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            return False
+        return bool(int(getattr(row, "has_pending", row[0] if row else 0) or 0))

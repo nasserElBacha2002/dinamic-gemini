@@ -86,3 +86,8 @@ class MemoryPositionRepository(PositionRepository):
     def list_by_aisles(self, aisle_ids: Sequence[str]) -> Sequence[Position]:
         aid_set = set(aisle_ids)
         return [p for p in self._store.values() if p.aisle_id in aid_set]
+
+    def aisle_has_needs_review(self, aisle_id: str) -> bool:
+        return any(
+            p.aisle_id == aisle_id and p.needs_review for p in self._store.values()
+        )

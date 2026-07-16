@@ -132,3 +132,24 @@ class MemoryJobImageCoverageRepository:
         return self._coverage_index(
             job_id=job_id, aisle_id=aisle_id, coverage_asset_ids=coverage
         )
+
+    def has_results_for_asset(
+        self,
+        *,
+        job_id: str,
+        aisle_id: str,
+        source_asset_id: str,
+    ) -> bool:
+        asset_id = (source_asset_id or "").strip()
+        if not asset_id:
+            return False
+        by_asset = self._coverage_index(
+            job_id=job_id,
+            aisle_id=aisle_id,
+            coverage_asset_ids=frozenset({asset_id}),
+        )
+        if by_asset.get(asset_id):
+            return True
+        # Manual coverage link alone also counts (memory path parity with SQL OR branch).
+        # Memory coverage repo does not own manual links; callers also check manual_coverage_repo.
+        return False

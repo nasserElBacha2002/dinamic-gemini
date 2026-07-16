@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,24 +20,19 @@ from src.application.errors import (
     SourceAssetNotFoundForAisleError,
 )
 from src.application.ports.clock import Clock
-from src.application.ports.contracts import PositionListQuery
 from src.application.ports.job_source_asset_repository import JobSourceAssetRepository
 from src.application.ports.manual_image_coverage_repository import ManualImageCoverageLink
 from src.application.ports.manual_image_result_unit_of_work import (
-    ManualImageResultRepositories,
     ManualImageResultUnitOfWork,
 )
 from src.application.ports.repositories import (
     AisleRepository,
     InventoryRepository,
     JobRepository,
-    PositionRepository,
-    ResultEvidenceRepository,
     SourceAssetRepository,
 )
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.job_image_result_resolution import (
-    count_linked_positions_for_asset,
     is_photos_job_snapshot,
     unique_photo_coverage_images,
 )
@@ -58,6 +55,8 @@ from src.domain.result_evidence.entities import (
 )
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
 from src.domain.traceability import TraceabilityStatus
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -87,8 +86,6 @@ class CreateManualImageResultUseCase:
         job_repo: JobRepository,
         job_source_asset_repo: JobSourceAssetRepository,
         source_asset_repo: SourceAssetRepository,
-        position_repo: PositionRepository,
-        result_evidence_repo: ResultEvidenceRepository,
         clock: Clock,
         unit_of_work_factory: Callable[[], ManualImageResultUnitOfWork],
     ) -> None:
@@ -97,12 +94,14 @@ class CreateManualImageResultUseCase:
         self._job_repo = job_repo
         self._job_source_asset_repo = job_source_asset_repo
         self._source_asset_repo = source_asset_repo
-        self._position_repo = position_repo
-        self._result_evidence_repo = result_evidence_repo
         self._clock = clock
         self._unit_of_work_factory = unit_of_work_factory
 
     def execute(self, command: CreateManualImageResultCommand) -> CreateManualImageResultOutcome:
+        total_started = time.perf_counter()
+        timing: dict[str, float] = {}
+
+        started = time.perf_counter()
         inv = self._inventory_repo.get_by_id(command.inventory_id)
         if inv is None:
             raise InventoryNotFoundError(f"Inventory not found: {command.inventory_id}")
@@ -164,8 +163,12 @@ class CreateManualImageResultUseCase:
                 raise ManualResultNotAllowedForAssetTypeError(
                     "Manual results are not allowed for video assets."
                 )
+        timing["scope_validation_ms"] = (time.perf_counter() - started) * 1000.0
 
         snap = photo_by_asset[asset_id]
+        if not (snap.job_source_asset_id or "").strip():
+            raise ValueError("job_source_asset_id is required for manual coverage")
+
         now = self._clock.now()
         position_id = str(uuid.uuid4())
         product_id = str(uuid.uuid4())
@@ -300,71 +303,81 @@ class CreateManualImageResultUseCase:
             job_id=job_id,
         )
 
-        with self._unit_of_work_factory() as uow:
-            if hasattr(uow, "bind_lifecycle_scope"):
-                uow.bind_lifecycle_scope(
-                    inventory_id=command.inventory_id,
+        outcome_status = "success"
+        try:
+            with self._unit_of_work_factory() as uow:
+                if hasattr(uow, "bind_lifecycle_scope"):
+                    uow.bind_lifecycle_scope(
+                        inventory_id=command.inventory_id,
+                        aisle_id=command.aisle_id,
+                    )
+                repos = uow.repositories
+
+                uow.acquire_image_result_lock(job_id=job_id, source_asset_id=asset_id)
+
+                started = time.perf_counter()
+                existing_manual = repos.manual_coverage_repo.get_by_job_and_asset(job_id, asset_id)
+                if existing_manual is not None:
+                    raise ManualResultAlreadyExistsError(
+                        "La imagen ya tiene un resultado manual asociado."
+                    )
+                if repos.image_coverage_repo.has_results_for_asset(
+                    job_id=job_id,
                     aisle_id=command.aisle_id,
-                )
-            repos = uow.repositories
-            self._assert_no_existing_results(
-                repos=repos,
-                job_id=job_id,
-                aisle_id=command.aisle_id,
-                source_asset_id=asset_id,
-                coverage_asset_ids=frozenset(photo_by_asset.keys()),
-            )
-            repos.position_repo.save(position)
-            repos.product_record_repo.save(product)
-            repos.evidence_repo.save(evidence)
-            try:
+                    source_asset_id=asset_id,
+                ):
+                    raise ImageAlreadyHasResultsError(
+                        "La imagen ya tiene uno o más resultados asociados."
+                    )
+                timing["existing_result_check_ms"] = (time.perf_counter() - started) * 1000.0
+
+                started = time.perf_counter()
+                repos.position_repo.save(position)
+                timing["position_insert_ms"] = (time.perf_counter() - started) * 1000.0
+
+                started = time.perf_counter()
+                repos.product_record_repo.save(product)
+                timing["product_insert_ms"] = (time.perf_counter() - started) * 1000.0
+
+                started = time.perf_counter()
+                repos.evidence_repo.save(evidence)
+                timing["evidence_insert_ms"] = (time.perf_counter() - started) * 1000.0
+
+                started = time.perf_counter()
                 repos.manual_coverage_repo.save(coverage)
-            except ManualResultAlreadyExistsError:
-                raise
-            repos.result_evidence_repo.save_many([result_evidence])
-            repos.review_repo.save(review)
-            uow.commit()
+                timing["manual_coverage_insert_ms"] = (time.perf_counter() - started) * 1000.0
+
+                started = time.perf_counter()
+                repos.result_evidence_repo.save_many([result_evidence])
+                timing["result_evidence_insert_ms"] = (time.perf_counter() - started) * 1000.0
+
+                started = time.perf_counter()
+                repos.review_repo.save(review)
+                timing["review_action_insert_ms"] = (time.perf_counter() - started) * 1000.0
+
+                uow.commit()
+                if getattr(uow, "timing_ms", None):
+                    timing.update(uow.timing_ms)
+        except (ManualResultAlreadyExistsError, ImageAlreadyHasResultsError):
+            outcome_status = "conflict"
+            raise
+        except Exception:
+            outcome_status = "error"
+            raise
+        finally:
+            timing["total_ms"] = (time.perf_counter() - total_started) * 1000.0
+            logger.info(
+                "manual_image_result_timing inventory_id=%s aisle_id=%s job_id=%s "
+                "source_asset_id=%s status=%s timing=%s",
+                command.inventory_id,
+                command.aisle_id,
+                job_id,
+                asset_id,
+                outcome_status,
+                {k: round(v, 2) for k, v in timing.items()},
+            )
 
         return CreateManualImageResultOutcome(position=position, product=product)
-
-    def _assert_no_existing_results(
-        self,
-        *,
-        repos: ManualImageResultRepositories,
-        job_id: str,
-        aisle_id: str,
-        source_asset_id: str,
-        coverage_asset_ids: frozenset[str],
-    ) -> None:
-        existing_manual = repos.manual_coverage_repo.get_by_job_and_asset(job_id, source_asset_id)
-        if existing_manual is not None:
-            raise ManualResultAlreadyExistsError(
-                "La imagen ya tiene un resultado manual asociado."
-            )
-
-        evidence_rows = list(repos.result_evidence_repo.list_by_job_id(job_id))
-        positions = list(
-            repos.position_repo.list_by_aisle_query(
-                aisle_id,
-                PositionListQuery(
-                    page=1,
-                    page_size=1_000_000,
-                    sort_by="created_at",
-                    sort_dir="asc",
-                    job_id=job_id,
-                ),
-            )
-        )
-        result_count = count_linked_positions_for_asset(
-            source_asset_id=source_asset_id,
-            coverage_asset_ids=coverage_asset_ids,
-            result_evidence=evidence_rows,
-            positions=positions,
-        )
-        if result_count > 0:
-            raise ImageAlreadyHasResultsError(
-                "La imagen ya tiene uno o más resultados asociados."
-            )
 
 
 __all__ = [

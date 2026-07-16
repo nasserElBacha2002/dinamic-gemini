@@ -1965,6 +1965,7 @@
         "successSnackbar": "Resultado manual agregado",
         "successSnackbarLast": "Resultado agregado correctamente. Ya no quedan imágenes sin contar.",
         "imageLoading": "Cargando imagen…",
+        "imageLoadFailed": "No se pudo cargar la imagen. No es posible guardar sin evidencia visible.",
         "errorSkuRequired": "El SKU es obligatorio",
         "errorQuantityRequired": "La cantidad es obligatoria",
         "errorQuantityInvalid": "La cantidad debe ser un número entero mayor que 0"

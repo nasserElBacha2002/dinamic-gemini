@@ -379,6 +379,10 @@ class ImageAlreadyHasResultsError(Exception):
     """Raised when manual coverage is requested but the image already has one or more results."""
 
 
+class ImageResultLockTimeoutError(Exception):
+    """Raised when the shared image-result applock cannot be acquired within the timeout."""
+
+
 class PhotosJobRequiredError(Exception):
     """Raised when image-coverage / manual-result APIs are used on a non-photos job."""
 

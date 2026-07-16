@@ -503,11 +503,20 @@ BEGIN
         inventory_id VARCHAR(36) NOT NULL,
         created_by_user_id VARCHAR(128) NULL,
         created_at DATETIME2 NOT NULL,
-        job_source_asset_id VARCHAR(36) NULL,
+        job_source_asset_id VARCHAR(36) NOT NULL,
         CONSTRAINT PK_position_manual_image_coverage PRIMARY KEY (id),
+        -- (job_id, source_asset_id) keeps one manual result per job photo asset (operator key).
+        -- job_source_asset_id uniquely ties the row to the snapshot primary link.
         CONSTRAINT UQ_manual_coverage_job_asset UNIQUE (job_id, source_asset_id),
-        CONSTRAINT FK_manual_coverage_position FOREIGN KEY (position_id) REFERENCES positions(id)
+        CONSTRAINT FK_manual_coverage_position FOREIGN KEY (position_id) REFERENCES positions(id),
+        CONSTRAINT FK_manual_coverage_job FOREIGN KEY (job_id) REFERENCES inventory_jobs(id),
+        CONSTRAINT FK_manual_coverage_aisle FOREIGN KEY (aisle_id) REFERENCES aisles(id),
+        CONSTRAINT FK_manual_coverage_inventory FOREIGN KEY (inventory_id) REFERENCES inventories(id),
+        CONSTRAINT FK_manual_coverage_job_source_asset
+            FOREIGN KEY (job_source_asset_id) REFERENCES job_source_assets(id)
     );
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_manual_coverage_job_source_asset
+        ON position_manual_image_coverage(job_source_asset_id);
 END;
 GO
 

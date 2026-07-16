@@ -82,10 +82,16 @@ class MemoryManualImageResultUnitOfWork:
     _snapshots: dict[str, Any] | None = field(default=None, init=False)
     _committed: bool = field(default=False, init=False)
     _rolled_back: bool = field(default=False, init=False)
+    timing_ms: dict[str, float] = field(default_factory=dict, init=False)
 
     def bind_lifecycle_scope(self, *, inventory_id: str, aisle_id: str) -> None:
         self._inventory_id = inventory_id
         self._aisle_id = aisle_id
+
+    def acquire_image_result_lock(self, *, job_id: str, source_asset_id: str) -> None:
+        # Memory mode is single-process; lock is a no-op for unit tests.
+        _ = (job_id, source_asset_id)
+        self.timing_ms["lock_acquisition_ms"] = 0.0
 
     def commit(self) -> None:
         if self._rolled_back:
@@ -123,6 +129,7 @@ class MemoryManualImageResultUnitOfWork:
         }
         self._committed = False
         self._rolled_back = False
+        self.timing_ms = {}
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -136,8 +143,8 @@ class MemoryManualImageResultUnitOfWork:
 
 
 def build_memory_manual_image_result_uow_factory(
-  repositories: ManualImageResultRepositories,
-  lifecycle_sync: AisleReviewLifecycleSync,
+    repositories: ManualImageResultRepositories,
+    lifecycle_sync: AisleReviewLifecycleSync,
 ) -> Callable[[], MemoryManualImageResultUnitOfWork]:
     def factory() -> MemoryManualImageResultUnitOfWork:
         return MemoryManualImageResultUnitOfWork(
