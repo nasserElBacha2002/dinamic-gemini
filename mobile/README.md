@@ -58,8 +58,8 @@ Se pagina hasta encontrar una fila `<= scanCursor`; solo esas candidatas nuevas 
 | Prober de estabilidad | `src/native/stabilityProber.ts` |
 | Foreground Service (contrato + binding) | `src/native/foregroundService.ts` |
 | Servicio Android real | `modules/capture-foreground-service/` |
-| Config/env | `src/app/config/env.ts` |
-| Bootstrap de servicios | `src/app/bootstrap/createAppServices.ts` |
+| Config/env | `src/runtime/config/env.ts` |
+| Bootstrap de servicios | `src/runtime/bootstrap/createAppServices.ts` |
 | Cliente HTTP + refresh mutex | `src/services/api/apiClient.ts` |
 | SecureStore tokens | `src/services/secureStorage/tokenStorage.ts` |
 | Auth | `src/features/auth/authService.ts` |
@@ -93,9 +93,34 @@ Tras cambiar el módulo nativo:
 
 ```bash
 cd mobile
-npx expo prebuild -p android --clean
-cd android && ./gradlew installDebug
+npm run android
 ```
+
+Eso es el flujo normal: **un solo comando** (`expo run:android`) hace prebuild si hace falta,
+compila, instala en el dispositivo/emulador conectado y arranca Metro.
+
+Si solo necesitás Metro (app ya instalada):
+
+```bash
+cd mobile
+npm start
+```
+
+### Si aparece `EMFILE: too many open files`
+
+En esta máquina `~/.local/state` suele estar owned por `root`, y Watchman no puede
+crear su estado → Metro cae a FSEvents y explota. Los scripts `npm start` / `npm run android`
+ya exportan `XDG_STATE_HOME=$HOME/.watchman-state` vía `scripts/with-metro-env.sh`.
+
+Si igual falla fuera de npm:
+
+```bash
+export XDG_STATE_HOME="$HOME/.watchman-state"
+mkdir -p "$XDG_STATE_HOME"
+ulimit -n 65536
+cd mobile && npm run android
+```
+
 
 ---
 
@@ -103,7 +128,7 @@ cd android && ./gradlew installDebug
 
 Las variables viven en `mobile/.env` (ver `.env.example`) y se inyectan en **build time**
 a través de `app.config.ts` → `extra`, y se leen en **runtime** con `expo-constants`
-(`src/app/config/env.ts`). En React Native `process.env` NO recibe el `.env`, por eso la
+(`src/runtime/config/env.ts`). En React Native `process.env` NO recibe el `.env`, por eso la
 app usa `Constants.expoConfig.extra` como fuente principal.
 
 Reglas prácticas:
@@ -194,15 +219,24 @@ Migrar a RN CLI solo si el rebuild nativo del módulo falla de forma irrecuperab
 
 ## Scripts
 
+## Scripts
+
 | Script | Qué hace |
 |--------|----------|
+| `npm run android` | **Comando diario:** build + install + Metro en el dispositivo |
+| `npm start` | Solo Metro (si la app ya está instalada) |
 | `npm run typecheck` | tsc app completa |
 | `npm run typecheck:core` | tsc sobre lógica pura |
 | `npm run lint` | ESLint local |
 | `npm run test:core` | Jest puro |
-| `npm test` | Jest Fase 1 |
+| `npm test` | Jest Fase 1+2 |
 | `npm run verify` | typecheck + typecheck:core + lint + test:core + test |
-| `npm run prebuild:android` | genera `android/` |
-| `npm start` | Metro dev client |
+| `npm run prebuild:android` | genera `android/` (solo si hace falta regenerar nativo) |
 
-No avanzar a uploads/procesamiento hasta cerrar la evidencia de dispositivo de Fase 1.
+## Fase 2
+
+Ver `docs/PHASE_2_IMPLEMENTATION.md` y `docs/PHASE_2_BACKEND_CONTRACTS.md`.
+
+Flujo: captura → carga progresiva (cola SQLite) → revisión de uploads → `POST .../process` → polling de job → otro pasillo en paralelo.
+
+No avanzar a hardening productivo general hasta cerrar evidencia E2E de dispositivo/staging.

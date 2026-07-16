@@ -1,6 +1,7 @@
 import {
   canTransitionPhoto,
   canTransitionSession,
+  isCaptureExclusiveSession,
   isOpenCaptureSession,
 } from '../src/core/captureState';
 
@@ -18,14 +19,21 @@ describe('capture state transitions', () => {
     expect(canTransitionSession('active', 'finishing')).toBe(true);
     expect(canTransitionSession('finishing', 'review')).toBe(true);
     expect(canTransitionSession('review', 'completed')).toBe(true);
+    expect(canTransitionSession('review', 'uploading')).toBe(true);
     expect(canTransitionSession('completed', 'active')).toBe(false);
   });
 
   it('classifies open sessions', () => {
     expect(isOpenCaptureSession('preparing')).toBe(true);
     expect(isOpenCaptureSession('review')).toBe(true);
+    expect(isOpenCaptureSession('uploading')).toBe(true);
     expect(isOpenCaptureSession('completed')).toBe(false);
     expect(isOpenCaptureSession('cancelled')).toBe(false);
   });
-});
 
+  it('classifies exclusive capture sessions for second-aisle rule', () => {
+    expect(isCaptureExclusiveSession('review')).toBe(true);
+    expect(isCaptureExclusiveSession('uploading')).toBe(false);
+    expect(isCaptureExclusiveSession('processing')).toBe(false);
+  });
+});

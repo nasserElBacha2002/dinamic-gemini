@@ -10,6 +10,7 @@ web-build/
 **/.gradle/
 **/build/
 *.orig.*
+**/local.properties
 
 # Env
 .env

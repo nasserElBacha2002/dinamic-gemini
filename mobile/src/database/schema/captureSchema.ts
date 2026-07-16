@@ -1,6 +1,7 @@
 import type { CompositeCursor } from '../../core/compositeCursor';
 import type { GalleryImage } from '../../domain/entities/galleryImage';
 import type { CapturePhotoStatus, CaptureSessionStatus } from '../../domain/enums/photoStatus';
+import type { PhotoUploadStatus, UploadBatchStatus, ProcessingJobLocalStatus } from '../../domain/enums/uploadStatus';
 
 export interface CaptureSessionRow {
   readonly id: string;
@@ -21,6 +22,16 @@ export interface CaptureSessionRow {
   readonly scan_cursor_asset_id: string;
   readonly last_valid_cursor_date_added: number;
   readonly last_valid_cursor_asset_id: string;
+  readonly upload_batch_id: string | null;
+  readonly upload_status: string;
+  readonly processing_status: string;
+  readonly backend_job_id: string | null;
+  readonly upload_started_at: string | null;
+  readonly upload_completed_at: string | null;
+  readonly processing_started_at: string | null;
+  readonly processing_finished_at: string | null;
+  readonly last_upload_error: string | null;
+  readonly last_processing_error: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -49,8 +60,54 @@ export interface CapturePhotoRow {
   readonly detected_at: string | null;
   readonly stable_at: string | null;
   readonly excluded_at: string | null;
+  readonly client_file_id: string | null;
+  readonly backend_asset_id: string | null;
+  readonly upload_status: PhotoUploadStatus;
+  readonly upload_progress: number;
+  readonly upload_attempts: number;
+  readonly upload_batch_id: string | null;
+  readonly last_upload_error_code: string | null;
+  readonly last_upload_error_message: string | null;
+  readonly last_upload_attempt_at: string | null;
+  readonly next_retry_at: string | null;
+  readonly uploaded_at: string | null;
+  readonly remote_deleted_at: string | null;
+  readonly local_transform_uri: string | null;
+  readonly original_size: number | null;
+  readonly upload_size: number | null;
   readonly created_at: string;
   readonly updated_at: string;
+}
+
+export interface UploadBatchRow {
+  readonly id: string;
+  readonly capture_session_id: string;
+  readonly inventory_id: string;
+  readonly aisle_id: string;
+  readonly status: UploadBatchStatus;
+  readonly created_at: string;
+  readonly started_at: string | null;
+  readonly completed_at: string | null;
+  readonly attempt_count: number;
+  readonly last_error: string | null;
+}
+
+export interface ProcessingJobRow {
+  readonly id: string;
+  readonly capture_session_id: string;
+  readonly inventory_id: string;
+  readonly aisle_id: string;
+  readonly backend_job_id: string;
+  readonly status: ProcessingJobLocalStatus;
+  readonly remote_status: string | null;
+  readonly created_at: string;
+  readonly started_at: string | null;
+  readonly finished_at: string | null;
+  readonly last_polled_at: string | null;
+  readonly next_poll_at: string | null;
+  readonly attempt_count: number;
+  readonly error_code: string | null;
+  readonly error_message: string | null;
 }
 
 export function cursorFromSession(row: CaptureSessionRow, kind: 'scan' | 'lastValid'): CompositeCursor {
@@ -75,4 +132,3 @@ export function imageFromPhotoRow(row: CapturePhotoRow): GalleryImage {
     relativePath: row.relative_path,
   };
 }
-

@@ -1,4 +1,4 @@
-import { resolveAppConfig, validateAppConfig } from '../src/app/config/resolveAppConfig';
+import { resolveAppConfig, validateAppConfig } from '../src/runtime/config/resolveAppConfig';
 
 describe('resolveAppConfig', () => {
   const OLD_ENV = process.env;

@@ -43,6 +43,16 @@ function session(overrides: Partial<CaptureSessionRow> = {}): CaptureSessionRow 
     scan_cursor_asset_id: EMPTY_CURSOR.assetId,
     last_valid_cursor_date_added: EMPTY_CURSOR.dateAdded,
     last_valid_cursor_asset_id: EMPTY_CURSOR.assetId,
+    upload_batch_id: 'batch-1',
+    upload_status: 'idle',
+    processing_status: 'idle',
+    backend_job_id: null,
+    upload_started_at: null,
+    upload_completed_at: null,
+    processing_started_at: null,
+    processing_finished_at: null,
+    last_upload_error: null,
+    last_processing_error: null,
     created_at: now,
     updated_at: now,
     ...overrides,
@@ -75,6 +85,21 @@ function photo(status: CapturePhotoStatus): CapturePhotoRow {
     detected_at: now,
     stable_at: null,
     excluded_at: null,
+    client_file_id: null,
+    backend_asset_id: null,
+    upload_status: 'not_queued',
+    upload_progress: 0,
+    upload_attempts: 0,
+    upload_batch_id: null,
+    last_upload_error_code: null,
+    last_upload_error_message: null,
+    last_upload_attempt_at: null,
+    next_retry_at: null,
+    uploaded_at: null,
+    remote_deleted_at: null,
+    local_transform_uri: null,
+    original_size: null,
+    upload_size: null,
     created_at: now,
     updated_at: now,
   };
@@ -98,6 +123,7 @@ class FakeRepo {
       aisle_id: input.aisleId,
       aisle_name: input.aisleName,
       status: 'preparing',
+      upload_batch_id: input.uploadBatchId,
     });
     this.sessions.set(row.id, row);
     return { session: row, created: true };
@@ -105,12 +131,18 @@ class FakeRepo {
 
   async listOpenSessions() {
     return Array.from(this.sessions.values())
-      .filter((s) => ['preparing', 'active', 'paused', 'finishing', 'review', 'failed'].includes(s.status))
+      .filter((s) => ['preparing', 'active', 'paused', 'finishing', 'review', 'uploading', 'upload_review', 'ready_to_process', 'processing', 'failed', 'failed_processing'].includes(s.status))
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  }
+
+  async listExclusiveCaptureSessions() {
+    return Array.from(this.sessions.values())
+      .filter((s) => ['preparing', 'active', 'paused', 'finishing', 'review'].includes(s.status))
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   }
 
   async findCurrentOpenSession() {
-    const [first] = await this.listOpenSessions();
+    const [first] = await this.listExclusiveCaptureSessions();
     return first ?? null;
   }
 

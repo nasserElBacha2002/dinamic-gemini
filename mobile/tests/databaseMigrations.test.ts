@@ -31,10 +31,18 @@ describe('SQLite migrations', () => {
   });
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2]);
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
     expect(v2?.sql).toContain('last_stability_attempt_at');
+  });
+
+  it('adds v3/v4 upload and processing fields without rewriting v1', () => {
+    const v3 = MIGRATIONS.find((m) => m.version === 3);
+    const v4 = MIGRATIONS.find((m) => m.version === 4);
+    expect(v3?.sql).toContain('ALTER TABLE capture_sessions ADD COLUMN upload_batch_id');
+    expect(v4?.sql).toContain('ALTER TABLE capture_photos ADD COLUMN client_file_id');
+    expect(v4?.sql).toContain('CREATE TABLE IF NOT EXISTS processing_jobs');
   });
 });
 

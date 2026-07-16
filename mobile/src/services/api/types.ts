@@ -62,3 +62,76 @@ export interface AisleDto {
   readonly last_activity_at?: string | null;
 }
 
+/** GET /api/v3/config/upload-limits */
+export interface UploadLimitsDto {
+  readonly max_files_per_request: number;
+  readonly max_file_size_bytes: number;
+  readonly max_request_size_bytes: number;
+  readonly upload_batch_concurrency: number;
+  readonly retry_attempts: number;
+  readonly retry_base_delay_ms: number;
+}
+
+export interface SourceAssetDto {
+  readonly id: string;
+  readonly aisle_id: string;
+  readonly type: string;
+  readonly original_filename: string;
+  readonly storage_path: string;
+  readonly mime_type: string;
+  readonly uploaded_at: string;
+  readonly file_size_bytes?: number | null;
+}
+
+export interface UploadAisleAssetUploadedDto {
+  readonly client_file_id: string | null;
+  readonly asset_id: string;
+  readonly filename: string;
+  readonly status: string;
+}
+
+export interface UploadAisleAssetErrorDto {
+  readonly filename: string;
+  readonly code: string;
+  readonly detail: string;
+  readonly file_index: number;
+  readonly client_file_id: string | null;
+}
+
+export interface UploadAisleAssetsResponseDto {
+  readonly assets: readonly SourceAssetDto[];
+  readonly batch_id: string | null;
+  readonly uploaded: readonly UploadAisleAssetUploadedDto[];
+  readonly errors: readonly UploadAisleAssetErrorDto[];
+}
+
+export interface ProcessAisleResponseDto {
+  readonly job_id: string;
+}
+
+export interface JobSummaryDto {
+  readonly id: string;
+  readonly status: string;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly started_at?: string | null;
+  readonly finished_at?: string | null;
+  readonly error_message?: string | null;
+  readonly failure_code?: string | null;
+  readonly failure_message?: string | null;
+  readonly current_stage?: string | null;
+  readonly attempt_count?: number | null;
+  readonly is_operational?: boolean;
+}
+
+export interface AisleStatusResponseDto {
+  readonly aisle: AisleDto;
+  readonly latest_job: JobSummaryDto | null;
+  readonly operational_job_id: string | null;
+  readonly recent_jobs: readonly JobSummaryDto[];
+}
+
+export interface AisleJobsResponseDto {
+  readonly operational_job_id: string | null;
+  readonly jobs: readonly JobSummaryDto[];
+}

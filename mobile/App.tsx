@@ -12,15 +12,15 @@ import {
   View,
 } from 'react-native';
 
-import type { AppServices } from './src/app/bootstrap/createAppServices';
-import { createAppServices } from './src/app/bootstrap/createAppServices';
+import type { AppServices } from './src/runtime/bootstrap/createAppServices';
+import { createAppServices } from './src/runtime/bootstrap/createAppServices';
 import type { CaptureContext, CaptureSnapshot } from './src/features/capture/captureService';
 import type { AuthSession } from './src/features/auth/authService';
 import type { AisleDto, InventoryListItemDto } from './src/services/api/types';
 import { getPhotoPermission, requestPhotoPermission } from './src/native/mediaStore';
 import type { CapturePhotoRow } from './src/database/schema/captureSchema';
 
-type Screen = 'login' | 'inventories' | 'aisles' | 'activity' | 'capture' | 'review';
+type Screen = 'login' | 'inventories' | 'aisles' | 'activity' | 'capture' | 'review' | 'uploads' | 'processing';
 
 export default function App(): JSX.Element {
   const [services, setServices] = useState<AppServices | null>(null);
@@ -32,19 +32,28 @@ export default function App(): JSX.Element {
   const [selectedInventory, setSelectedInventory] = useState<InventoryListItemDto | null>(null);
   const [selectedAisle, setSelectedAisle] = useState<AisleDto | null>(null);
   const [capture, setCapture] = useState<CaptureSnapshot | null>(null);
+  const [uploadSessionId, setUploadSessionId] = useState<string | null>(null);
+  const [connectivity, setConnectivity] = useState<'online' | 'offline' | 'unknown'>('unknown');
 
   useEffect(() => {
     let mounted = true;
     let unsubscribeCapture: (() => void) | undefined;
+    let unsubscribeConnectivity: (() => void) | undefined;
     let createdServices: AppServices | undefined;
     void createAppServices(() => {
       setAuth(null);
       setScreen('login');
+      void createdServices?.uploadQueue.pause('auth');
     }).then(async (created) => {
       if (!mounted) return;
       createdServices = created;
       setServices(created);
       setConfigError(created.configError);
+      unsubscribeConnectivity = created.connectivity.subscribe((state) => {
+        if (mounted) {
+          setConnectivity(state);
+        }
+      });
       const restored = created.configError ? null : await created.auth.restore();
       if (!mounted) return;
       setAuth(restored);
@@ -65,7 +74,8 @@ export default function App(): JSX.Element {
     return () => {
       mounted = false;
       unsubscribeCapture?.();
-      createdServices?.capture.dispose();
+      unsubscribeConnectivity?.();
+      void createdServices?.dispose();
     };
   }, []);
 
@@ -101,6 +111,7 @@ export default function App(): JSX.Element {
       }
     >
       {error ? <ErrorText text={error} /> : null}
+      {connectivity === 'offline' ? <ErrorText text="Sin conexión — la captura local continúa; uploads pausados." /> : null}
       {screen === 'inventories' ? (
         <InventoriesScreen
           services={services}
@@ -123,8 +134,17 @@ export default function App(): JSX.Element {
       ) : null}
       {screen === 'activity' ? (
         <ActivityScreen
+          services={services}
           capture={capture}
-          onOpen={() => setScreen(capture?.session?.status === 'review' ? 'review' : 'capture')}
+          onOpenCapture={() => setScreen(capture?.session?.status === 'review' ? 'review' : 'capture')}
+          onOpenUploads={(sessionId) => {
+            setUploadSessionId(sessionId);
+            setScreen('uploads');
+          }}
+          onOpenProcessing={(sessionId) => {
+            setUploadSessionId(sessionId);
+            setScreen('processing');
+          }}
           onCancel={() => void services.capture.cancel()}
         />
       ) : null}
@@ -143,7 +163,29 @@ export default function App(): JSX.Element {
           services={services}
           snapshot={capture}
           onBack={() => setScreen('capture')}
-          onDone={() => setScreen('activity')}
+          onDone={(sessionId) => {
+            setUploadSessionId(sessionId);
+            void services.uploadQueue.enqueueSession(sessionId);
+            setScreen('uploads');
+          }}
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'uploads' && uploadSessionId ? (
+        <UploadsScreen
+          services={services}
+          sessionId={uploadSessionId}
+          onBack={() => setScreen('activity')}
+          onProcess={() => setScreen('processing')}
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'processing' && uploadSessionId ? (
+        <ProcessingScreen
+          services={services}
+          sessionId={uploadSessionId}
+          onBack={() => setScreen('activity')}
+          onAnotherAisle={() => setScreen('inventories')}
           onError={setError}
         />
       ) : null}
@@ -308,7 +350,7 @@ function CaptureScreen({ services, inventory, aisle, snapshot, onReview, onError
   );
 }
 
-function ReviewScreen({ services, snapshot, onBack, onDone, onError }: { services: AppServices; snapshot: CaptureSnapshot | null; onBack: () => void; onDone: () => void; onError: (message: string | null) => void }) {
+function ReviewScreen({ services, snapshot, onBack, onDone, onError }: { services: AppServices; snapshot: CaptureSnapshot | null; onBack: () => void; onDone: (sessionId: string) => void; onError: (message: string | null) => void }) {
   const counts = countPhotos(snapshot?.photos ?? []);
   const canConfirm = counts.waiting === 0 && counts.errors === 0;
   const context = snapshot?.context;
@@ -319,25 +361,231 @@ function ReviewScreen({ services, snapshot, onBack, onDone, onError }: { service
       <Text style={styles.row}>Estables: {counts.stable} · Excluidas: {counts.excluded} · Errores: {counts.errors}</Text>
       {!canConfirm ? <ErrorText text="Resolvé errores o esperá validaciones antes de confirmar." /> : null}
       <Button label="Reintentar errores" disabled={counts.errors === 0} onPress={() => void services.capture.retryErrors()} />
-      <Button label="Confirmar sesión" disabled={!canConfirm} onPress={() => void services.capture.completeReview().then(onDone).catch((e) => onError(messageOf(e)))} />
+      <Button
+        label="Confirmar y cargar"
+        disabled={!canConfirm}
+        onPress={() => void services.capture.completeReview().then(onDone).catch((e) => onError(messageOf(e)))}
+      />
       <PhotoGrid photos={snapshot?.photos ?? []} onExclude={(id) => void services.capture.exclude(id)} onReinclude={(id) => void services.capture.reincorporate(id)} />
     </ScrollView>
   );
 }
 
-function ActivityScreen({ capture, onOpen, onCancel }: { capture: CaptureSnapshot | null; onOpen: () => void; onCancel: () => void }) {
-  if (!capture?.session) {
-    return <Text style={styles.muted}>No hay sesiones pendientes.</Text>;
-  }
-  const counts = countPhotos(capture.photos);
+function UploadsScreen({
+  services,
+  sessionId,
+  onBack,
+  onProcess,
+  onError,
+}: {
+  services: AppServices;
+  sessionId: string;
+  onBack: () => void;
+  onProcess: () => void;
+  onError: (message: string | null) => void;
+}) {
+  const [progress, setProgress] = useState<Awaited<ReturnType<AppServices['uploadQueue']['getSessionProgress']>>>(null);
+  const [photos, setPhotos] = useState<CapturePhotoRow[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [ready, setReady] = useState(false);
+  const refresh = useCallback(() => {
+    void services.uploadQueue.getSessionProgress(sessionId).then(setProgress);
+    void services.capture.loadSession(sessionId, false).then(() => {
+      // photos come via capture subscribe if loaded; also pull via progress refresh cycle
+    });
+    void services.uploadQueue.refreshSessionReadiness(sessionId).then((r) => setReady(r === 'ready'));
+  }, [services, sessionId]);
+  useEffect(() => {
+    refresh();
+    const unsub = services.uploadQueue.subscribe(() => refresh());
+    const t = setInterval(refresh, 2000);
+    return () => {
+      unsub();
+      clearInterval(t);
+    };
+  }, [refresh, services]);
+  useEffect(() => {
+    const snap = services.capture.subscribe((s) => {
+      if (s.session?.id === sessionId) {
+        setPhotos(s.photos);
+      }
+    });
+    void services.capture.loadSession(sessionId, false);
+    return snap;
+  }, [services, sessionId]);
+
   return (
-    <Card>
-      <Text style={styles.cardTitle}>{capture.session.inventory_name} · {capture.session.aisle_name}</Text>
-      <Text style={styles.row}>Estado: {capture.session.status}</Text>
-      <Text style={styles.row}>Fotos: {counts.total} · Estables: {counts.stable} · Errores: {counts.errors}</Text>
-      <Button label="Abrir" onPress={onOpen} />
-      <Button label="Cancelar sesión local" onPress={() => Alert.alert('Cancelar', 'No se borran fotos del teléfono.', [{ text: 'No' }, { text: 'Cancelar', style: 'destructive', onPress: onCancel }])} />
-    </Card>
+    <ScrollView>
+      <SmallButton label="← Sesiones" onPress={onBack} />
+      <Text style={styles.h2}>Cargas · {progress?.inventoryName ?? ''} / {progress?.aisleName ?? ''}</Text>
+      <Text style={styles.row}>
+        Estables: {progress?.totalStable ?? 0} · Cargadas: {progress?.uploaded ?? 0} · Pendientes: {progress?.pending ?? 0}
+        {' · '}Subiendo: {progress?.uploading ?? 0} · Reintento: {progress?.retryable ?? 0} · Error: {progress?.permanent ?? 0}
+      </Text>
+      <View style={styles.nav}>
+        <SmallButton label="Reintentar todo" onPress={() => void services.uploadQueue.retrySession(sessionId).then(refresh)} />
+        <SmallButton label="Actualizar" onPress={refresh} />
+      </View>
+      <Button
+        label={busy ? 'Validando...' : 'Procesar pasillo'}
+        disabled={!ready || busy}
+        onPress={() => {
+          setBusy(true);
+          void services.processing.startProcess(sessionId).then(async (res) => {
+            if (!res.ok) {
+              onError(res.reason);
+              return;
+            }
+            if (res.jobId) {
+              await services.jobMonitor.watch(res.jobId);
+            }
+            onProcess();
+          }).catch((e) => onError(messageOf(e))).finally(() => setBusy(false));
+        }}
+      />
+      {!ready ? <Text style={styles.muted}>El procesamiento se habilita cuando no queden uploads pendientes ni errores recuperables.</Text> : null}
+      <View style={styles.grid}>
+        {photos.filter((p) => p.status === 'stable' || p.upload_status !== 'not_queued').map((photo) => (
+          <View key={photo.id} style={styles.photoCard}>
+            <Image source={{ uri: photo.uri }} style={styles.thumb} />
+            <Text style={styles.photoText}>{photo.display_name}</Text>
+            <Text style={styles.photoText}>upload: {photo.upload_status}</Text>
+            {photo.last_upload_error_message ? <Text style={styles.photoText}>{photo.last_upload_error_message}</Text> : null}
+            {photo.upload_status === 'retryable_error' || photo.upload_status === 'permanent_error' ? (
+              <SmallButton label="Reintentar" onPress={() => void services.uploadQueue.retryPhoto(photo.id).then(refresh)} />
+            ) : null}
+            {photo.upload_status === 'uploaded' ? (
+              <SmallButton
+                label="Excluir remoto"
+                onPress={() =>
+                  void services.uploadQueue.excludeUploaded(sessionId, photo.id).then((r) => {
+                    if (!r.ok) {
+                      onError(r.reason);
+                    }
+                    refresh();
+                  })
+                }
+              />
+            ) : (
+              <SmallButton label="Excluir cola" onPress={() => void services.uploadQueue.cancelPhoto(photo.id).then(refresh)} />
+            )}
+          </View>
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
+function ProcessingScreen({
+  services,
+  sessionId,
+  onBack,
+  onAnotherAisle,
+  onError,
+}: {
+  services: AppServices;
+  sessionId: string;
+  onBack: () => void;
+  onAnotherAisle: () => void;
+  onError: (message: string | null) => void;
+}) {
+  const [jobLabel, setJobLabel] = useState('—');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const unsub = services.jobMonitor.subscribe((snap) => {
+      const job = snap.jobs.find((j) => j.capture_session_id === sessionId);
+      if (job) {
+        setJobLabel(`${job.remote_status ?? job.status} (${job.backend_job_id.slice(0, 8)}…)`);
+      }
+    });
+    return unsub;
+  }, [services, sessionId]);
+  return (
+    <ScrollView>
+      <SmallButton label="← Sesiones" onPress={onBack} />
+      <Text style={styles.h2}>Procesamiento</Text>
+      <Text style={styles.row}>Job: {jobLabel}</Text>
+      <Button
+        label={busy ? 'Iniciando...' : 'Iniciar / reanudar proceso'}
+        disabled={busy}
+        onPress={() => {
+          setBusy(true);
+          void services.processing.startProcess(sessionId).then(async (res) => {
+            if (!res.ok) {
+              onError(res.reason);
+              return;
+            }
+            if (res.jobId) {
+              await services.jobMonitor.watch(res.jobId);
+            }
+          }).catch((e) => onError(messageOf(e))).finally(() => setBusy(false));
+        }}
+      />
+      <Button label="Capturar otro pasillo" onPress={onAnotherAisle} />
+      <Text style={styles.muted}>Podés capturar otro pasillo mientras este se procesa. No se mezclan fotos ni batch IDs.</Text>
+    </ScrollView>
+  );
+}
+
+function ActivityScreen({
+  services,
+  capture,
+  onOpenCapture,
+  onOpenUploads,
+  onOpenProcessing,
+  onCancel,
+}: {
+  services: AppServices;
+  capture: CaptureSnapshot | null;
+  onOpenCapture: () => void;
+  onOpenUploads: (sessionId: string) => void;
+  onOpenProcessing: (sessionId: string) => void;
+  onCancel: () => void;
+}) {
+  const [sessions, setSessions] = useState<import('./src/database/schema/captureSchema').CaptureSessionRow[]>([]);
+  const load = useCallback(() => {
+    void services.capture.listActivitySessions().then(setSessions);
+  }, [services]);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  if (sessions.length === 0 && !capture?.session) {
+    return (
+      <View>
+        <Text style={styles.muted}>No hay sesiones pendientes.</Text>
+        <Text style={styles.muted}>Podés capturar otro pasillo desde Inventarios mientras otros se procesan.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}>
+      <Text style={styles.h2}>Actividad</Text>
+      {sessions.map((session) => {
+        const isExclusive = ['preparing', 'active', 'paused', 'finishing', 'review'].includes(session.status);
+        return (
+          <Card key={session.id}>
+            <Text style={styles.cardTitle}>{session.inventory_name} · {session.aisle_name}</Text>
+            <Text style={styles.row}>Estado: {session.status}</Text>
+            <Text style={styles.row}>Upload: {session.upload_status} · Process: {session.processing_status}</Text>
+            <Text style={styles.row}>Job: {session.backend_job_id?.slice(0, 8) ?? '—'}…</Text>
+            {isExclusive ? <Button label="Abrir captura" onPress={onOpenCapture} /> : null}
+            {['uploading', 'upload_review', 'ready_to_process', 'review'].includes(session.status) ? (
+              <Button label="Abrir cargas" onPress={() => onOpenUploads(session.id)} />
+            ) : null}
+            {['processing', 'ready_to_process', 'failed_processing', 'completed'].includes(session.status) ? (
+              <Button label="Ver procesamiento" onPress={() => onOpenProcessing(session.id)} />
+            ) : null}
+            {isExclusive && capture?.session?.id === session.id ? (
+              <Button label="Cancelar sesión local" onPress={() => Alert.alert('Cancelar', 'No se borran fotos del teléfono.', [{ text: 'No' }, { text: 'Cancelar', style: 'destructive', onPress: onCancel }])} />
+            ) : null}
+          </Card>
+        );
+      })}
+    </ScrollView>
   );
 }
 

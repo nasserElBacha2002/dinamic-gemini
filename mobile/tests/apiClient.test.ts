@@ -1,5 +1,5 @@
 import { ApiClient } from '../src/services/api/apiClient';
-import type { AppConfig } from '../src/app/config/resolveAppConfig';
+import type { AppConfig } from '../src/runtime/config/resolveAppConfig';
 import { createLogger } from '../src/core/logging';
 import type { AuthTokens, TokenStorage } from '../src/services/secureStorage/tokenStorage';
 

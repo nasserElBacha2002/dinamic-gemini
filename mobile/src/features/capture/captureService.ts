@@ -61,6 +61,8 @@ export interface CaptureServiceAdapters {
   readonly stabilityProber?: CaptureStabilityProber;
   readonly validationTimeoutMs?: number;
   readonly createId?: () => string;
+  /** Called after a photo becomes stable (progressive upload hook). */
+  readonly onPhotoStable?: (sessionId: string, photoId: string) => void | Promise<void>;
 }
 
 type Listener = (snapshot: CaptureSnapshot) => void;
@@ -103,6 +105,7 @@ export class CaptureService {
   private readonly stabilityProber: CaptureStabilityProber;
   private readonly validationTimeoutMs: number;
   private readonly createId: () => string;
+  private readonly onPhotoStable: CaptureServiceAdapters['onPhotoStable'];
 
   constructor(
     private readonly repo: CaptureRepository,
@@ -114,6 +117,7 @@ export class CaptureService {
     this.stabilityProber = adapters.stabilityProber ?? defaultStabilityProber;
     this.validationTimeoutMs = adapters.validationTimeoutMs ?? VALIDATION_TIMEOUT_MS;
     this.createId = adapters.createId ?? createId;
+    this.onPhotoStable = adapters.onPhotoStable;
     this.coordinator = createScanCoordinator(() => this.runScanOnce());
   }
 
@@ -124,7 +128,7 @@ export class CaptureService {
   }
 
   async restoreLatestOpen(): Promise<CaptureSessionRow | null> {
-    const sessions = await this.repo.listOpenSessions();
+    const sessions = await this.repo.listExclusiveCaptureSessions();
     if (sessions.length === 0) {
       this.clearCurrentSession();
       return null;
@@ -146,6 +150,10 @@ export class CaptureService {
     await this.loadSession(latest.id, false);
     this.logger.info('recovery', { sessionId: latest.id, status: latest.status });
     return this.session;
+  }
+
+  async listActivitySessions(): Promise<CaptureSessionRow[]> {
+    return this.repo.listActivitySessions();
   }
 
   async loadSession(sessionId: string, startListener: boolean): Promise<void> {
@@ -187,6 +195,7 @@ export class CaptureService {
       aisleId: input.aisleId,
       aisleName: input.aisleName,
       marker,
+      uploadBatchId: this.createId(),
     });
     if (!result.created) {
       this.warning = 'Ya existe una sesión local abierta. Abrila, reanudala o cancelala antes de iniciar otra.';
@@ -254,7 +263,11 @@ export class CaptureService {
     this.logger.info('session_finish', { sessionId });
   }
 
-  async completeReview(): Promise<void> {
+  /**
+   * Confirms local review and hands the session to the upload pipeline.
+   * Does not mark the session completed until processing succeeds.
+   */
+  async completeReview(): Promise<string> {
     const sessionId = this.requireSessionId();
     await this.reloadPhotos(sessionId);
     if (this.photos.some((p) => p.status === 'detected' || p.status === 'waiting_stability')) {
@@ -263,8 +276,9 @@ export class CaptureService {
     if (this.photos.some((p) => p.status === 'unstable' || p.status === 'undecodable')) {
       throw new Error('Resolvé o excluí los errores antes de confirmar.');
     }
-    await this.repo.updateSessionStatus(sessionId, 'completed', true);
+    await this.repo.updateSessionStatus(sessionId, 'uploading');
     this.clearCurrentSession();
+    return sessionId;
   }
 
   async cancel(): Promise<void> {
@@ -427,6 +441,14 @@ export class CaptureService {
         await this.repo.updateLastValidCursor(sessionId, cursor);
       }
       this.logger.info('photo_detected', { sessionId, assetId: image.assetId, status: 'stable' });
+      const photoRow = await this.repo.getPhoto(sessionId, image.assetId);
+      if (photoRow && this.onPhotoStable) {
+        try {
+          await this.onPhotoStable(sessionId, photoRow.id);
+        } catch (e) {
+          this.logger.warn('error', { where: 'on_photo_stable', message: String(e) });
+        }
+      }
     } else {
       this.logger.warn('file_unstable', { sessionId, assetId: image.assetId, reason: failureReason });
     }
@@ -607,6 +629,13 @@ function sleep(ms: number): Promise<void> {
 }
 
 function createId(): string {
-  return `cap_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 

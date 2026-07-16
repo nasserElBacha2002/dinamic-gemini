@@ -1,6 +1,7 @@
 import type { CompositeCursor } from '../../core/compositeCursor';
 import { EMPTY_CURSOR } from '../../core/compositeCursor';
 import {
+  CAPTURE_EXCLUSIVE_SESSION_STATUSES,
   OPEN_CAPTURE_SESSION_STATUSES,
   canTransitionPhoto,
   canTransitionSession,
@@ -8,6 +9,7 @@ import {
 import type { CaptureMarker } from '../../domain/entities/captureMarker';
 import type { GalleryImage } from '../../domain/entities/galleryImage';
 import type { CapturePhotoStatus, CaptureSessionStatus } from '../../domain/enums/photoStatus';
+import type { PhotoUploadStatus } from '../../domain/enums/uploadStatus';
 import type { SQLiteDatabase } from '../database';
 import type { CapturePhotoRow, CaptureSessionRow } from '../schema/captureSchema';
 
@@ -18,6 +20,7 @@ export interface CreateCaptureSessionInput {
   readonly aisleId: string;
   readonly aisleName: string;
   readonly marker: CaptureMarker;
+  readonly uploadBatchId: string;
 }
 
 export interface CreateCaptureSessionResult {
@@ -44,7 +47,7 @@ export class CaptureRepository {
   async createSessionExclusive(input: CreateCaptureSessionInput): Promise<CreateCaptureSessionResult> {
     await this.db.execAsync('BEGIN IMMEDIATE;');
     try {
-      const existing = await this.findCurrentOpenSession();
+      const existing = await this.findExclusiveCaptureSession();
       if (existing) {
         await this.db.execAsync('COMMIT;');
         return { session: existing, created: false };
@@ -71,8 +74,10 @@ export class CaptureRepository {
         id, inventory_id, inventory_name, aisle_id, aisle_name, status, started_at, finished_at,
         initial_asset_id, initial_date_added, initial_date_modified, initial_display_name,
         initial_size, initial_bucket_id, scan_cursor_date_added, scan_cursor_asset_id,
-        last_valid_cursor_date_added, last_valid_cursor_asset_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        last_valid_cursor_date_added, last_valid_cursor_asset_id,
+        upload_batch_id, upload_status, processing_status,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', 'idle', ?, ?);`,
       input.id,
       input.inventoryId,
       input.inventoryName,
@@ -91,6 +96,7 @@ export class CaptureRepository {
       cursor.assetId,
       cursor.dateAdded,
       cursor.assetId,
+      input.uploadBatchId,
       now,
       now,
     );
@@ -105,7 +111,7 @@ export class CaptureRepository {
     return this.db.getFirstAsync<CaptureSessionRow>('SELECT * FROM capture_sessions WHERE id = ?;', id);
   }
 
-  async listOpenSessions(): Promise<CaptureSessionRow[]> {
+  async listActivitySessions(): Promise<CaptureSessionRow[]> {
     const placeholders = OPEN_CAPTURE_SESSION_STATUSES.map(() => '?').join(', ');
     return this.db.getAllAsync<CaptureSessionRow>(
       `SELECT * FROM capture_sessions WHERE status IN (${placeholders}) ORDER BY updated_at DESC;`,
@@ -113,9 +119,26 @@ export class CaptureRepository {
     );
   }
 
-  async findCurrentOpenSession(): Promise<CaptureSessionRow | null> {
-    const [session] = await this.listOpenSessions();
+  /** @deprecated Prefer listActivitySessions / findExclusiveCaptureSession. */
+  async listOpenSessions(): Promise<CaptureSessionRow[]> {
+    return this.listActivitySessions();
+  }
+
+  async listExclusiveCaptureSessions(): Promise<CaptureSessionRow[]> {
+    const placeholders = CAPTURE_EXCLUSIVE_SESSION_STATUSES.map(() => '?').join(', ');
+    return this.db.getAllAsync<CaptureSessionRow>(
+      `SELECT * FROM capture_sessions WHERE status IN (${placeholders}) ORDER BY updated_at DESC;`,
+      ...CAPTURE_EXCLUSIVE_SESSION_STATUSES,
+    );
+  }
+
+  async findExclusiveCaptureSession(): Promise<CaptureSessionRow | null> {
+    const [session] = await this.listExclusiveCaptureSessions();
     return session ?? null;
+  }
+
+  async findCurrentOpenSession(): Promise<CaptureSessionRow | null> {
+    return this.findExclusiveCaptureSession();
   }
 
   async findOpenSessionForAisle(inventoryId: string, aisleId: string): Promise<CaptureSessionRow | null> {
@@ -145,18 +168,65 @@ export class CaptureRepository {
     );
   }
 
+  async updateSessionUploadMeta(
+    id: string,
+    patch: {
+      readonly uploadStatus?: string;
+      readonly processingStatus?: string;
+      readonly backendJobId?: string | null;
+      readonly lastUploadError?: string | null;
+      readonly lastProcessingError?: string | null;
+      readonly uploadStartedAt?: string | null;
+      readonly uploadCompletedAt?: string | null;
+      readonly processingStartedAt?: string | null;
+      readonly processingFinishedAt?: string | null;
+    },
+  ): Promise<void> {
+    const current = await this.getSession(id);
+    if (!current) {
+      throw new Error(`Capture session not found: ${id}`);
+    }
+    await this.db.runAsync(
+      `UPDATE capture_sessions SET
+        upload_status = COALESCE(?, upload_status),
+        processing_status = COALESCE(?, processing_status),
+        backend_job_id = CASE WHEN ? THEN ? ELSE backend_job_id END,
+        last_upload_error = CASE WHEN ? THEN ? ELSE last_upload_error END,
+        last_processing_error = CASE WHEN ? THEN ? ELSE last_processing_error END,
+        upload_started_at = COALESCE(?, upload_started_at),
+        upload_completed_at = COALESCE(?, upload_completed_at),
+        processing_started_at = COALESCE(?, processing_started_at),
+        processing_finished_at = COALESCE(?, processing_finished_at),
+        updated_at = ?
+       WHERE id = ?;`,
+      patch.uploadStatus ?? null,
+      patch.processingStatus ?? null,
+      patch.backendJobId !== undefined ? 1 : 0,
+      patch.backendJobId ?? null,
+      patch.lastUploadError !== undefined ? 1 : 0,
+      patch.lastUploadError ?? null,
+      patch.lastProcessingError !== undefined ? 1 : 0,
+      patch.lastProcessingError ?? null,
+      patch.uploadStartedAt ?? null,
+      patch.uploadCompletedAt ?? null,
+      patch.processingStartedAt ?? null,
+      patch.processingFinishedAt ?? null,
+      new Date().toISOString(),
+      id,
+    );
+  }
+
   async repairMultipleOpenSessions(keepSessionId: string, reason: string): Promise<void> {
     const now = new Date().toISOString();
-    const placeholders = OPEN_CAPTURE_SESSION_STATUSES.map(() => '?').join(', ');
+    const placeholders = CAPTURE_EXCLUSIVE_SESSION_STATUSES.map(() => '?').join(', ');
     await this.db.runAsync(
       `UPDATE capture_sessions
        SET status = 'failed', updated_at = ?
        WHERE id <> ? AND status IN (${placeholders});`,
       now,
       keepSessionId,
-      ...OPEN_CAPTURE_SESSION_STATUSES,
+      ...CAPTURE_EXCLUSIVE_SESSION_STATUSES,
     );
-    // Keep reason in logs/documentation for now; session table has no failure_reason column in v1.
     void reason;
   }
 
@@ -187,8 +257,8 @@ export class CaptureRepository {
         id, capture_session_id, asset_id, media_store_numeric_id, uri, display_name, mime_type,
         size, width, height, date_added, date_modified, bucket_id, relative_path, status,
         rejection_reason, stability_checks, stability_error, detected_at, stable_at, excluded_at,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        upload_status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_queued', ?, ?)
       ON CONFLICT(capture_session_id, asset_id) DO UPDATE SET
         uri = excluded.uri,
         display_name = excluded.display_name,
@@ -252,6 +322,104 @@ export class CaptureRepository {
       now,
       sessionId,
       assetId,
+    );
+  }
+
+  async ensureClientFileId(sessionId: string, assetId: string, clientFileId: string, uploadBatchId: string): Promise<string> {
+    const current = await this.getPhoto(sessionId, assetId);
+    if (!current) {
+      throw new Error(`Capture photo not found: ${assetId}`);
+    }
+    if (current.client_file_id) {
+      return current.client_file_id;
+    }
+    await this.db.runAsync(
+      `UPDATE capture_photos
+       SET client_file_id = ?, upload_batch_id = COALESCE(upload_batch_id, ?), updated_at = ?
+       WHERE capture_session_id = ? AND asset_id = ? AND client_file_id IS NULL;`,
+      clientFileId,
+      uploadBatchId,
+      new Date().toISOString(),
+      sessionId,
+      assetId,
+    );
+    const updated = await this.getPhoto(sessionId, assetId);
+    return updated?.client_file_id ?? clientFileId;
+  }
+
+  async setPhotoUploadStatus(
+    photoId: string,
+    status: PhotoUploadStatus,
+    patch: {
+      readonly progress?: number;
+      readonly backendAssetId?: string | null;
+      readonly errorCode?: string | null;
+      readonly errorMessage?: string | null;
+      readonly nextRetryAt?: string | null;
+      readonly incrementAttempts?: boolean;
+      readonly uploadedAt?: string | null;
+      readonly remoteDeletedAt?: string | null;
+      readonly localTransformUri?: string | null;
+      readonly originalSize?: number | null;
+      readonly uploadSize?: number | null;
+    } = {},
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `UPDATE capture_photos SET
+        upload_status = ?,
+        upload_progress = COALESCE(?, upload_progress),
+        backend_asset_id = COALESCE(?, backend_asset_id),
+        last_upload_error_code = ?,
+        last_upload_error_message = ?,
+        last_upload_attempt_at = CASE WHEN ? THEN ? ELSE last_upload_attempt_at END,
+        upload_attempts = CASE WHEN ? THEN upload_attempts + 1 ELSE upload_attempts END,
+        next_retry_at = ?,
+        uploaded_at = COALESCE(?, uploaded_at),
+        remote_deleted_at = COALESCE(?, remote_deleted_at),
+        local_transform_uri = COALESCE(?, local_transform_uri),
+        original_size = COALESCE(?, original_size),
+        upload_size = COALESCE(?, upload_size),
+        updated_at = ?
+       WHERE id = ?;`,
+      status,
+      patch.progress ?? null,
+      patch.backendAssetId ?? null,
+      patch.errorCode ?? null,
+      patch.errorMessage ?? null,
+      patch.incrementAttempts ? 1 : 0,
+      now,
+      patch.incrementAttempts ? 1 : 0,
+      patch.nextRetryAt ?? null,
+      patch.uploadedAt ?? null,
+      patch.remoteDeletedAt ?? null,
+      patch.localTransformUri ?? null,
+      patch.originalSize ?? null,
+      patch.uploadSize ?? null,
+      now,
+      photoId,
+    );
+  }
+
+  async listPhotosForUpload(sessionId: string): Promise<CapturePhotoRow[]> {
+    return this.db.getAllAsync<CapturePhotoRow>(
+      `SELECT * FROM capture_photos
+       WHERE capture_session_id = ?
+         AND status = 'stable'
+         AND upload_status IN ('queued', 'preparing', 'uploading', 'retryable_error')
+       ORDER BY date_added ASC, asset_id ASC;`,
+      sessionId,
+    );
+  }
+
+  async listStableNotQueued(sessionId: string): Promise<CapturePhotoRow[]> {
+    return this.db.getAllAsync<CapturePhotoRow>(
+      `SELECT * FROM capture_photos
+       WHERE capture_session_id = ?
+         AND status = 'stable'
+         AND upload_status = 'not_queued'
+       ORDER BY date_added ASC, asset_id ASC;`,
+      sessionId,
     );
   }
 
@@ -322,6 +490,10 @@ export class CaptureRepository {
     );
   }
 
+  async getPhotoById(photoId: string): Promise<CapturePhotoRow | null> {
+    return this.db.getFirstAsync<CapturePhotoRow>('SELECT * FROM capture_photos WHERE id = ?;', photoId);
+  }
+
   async listPhotos(sessionId: string): Promise<CapturePhotoRow[]> {
     return this.db.getAllAsync<CapturePhotoRow>(
       'SELECT * FROM capture_photos WHERE capture_session_id = ? ORDER BY date_added ASC, asset_id ASC;',
@@ -337,4 +509,3 @@ export class CaptureRepository {
     return new Set(rows.map((r) => r.asset_id));
   }
 }
-

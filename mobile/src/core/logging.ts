@@ -19,9 +19,16 @@ export type LogEvent =
   | 'upload_started'
   | 'upload_confirmed'
   | 'upload_retry'
+  | 'upload_paused'
+  | 'upload_resumed'
+  | 'photo_enqueued'
+  | 'upload_limits_refreshed'
+  | 'upload_limits_fallback'
+  | 'upload_enqueue_missing_batch'
   | 'error'
   | 'job_started'
   | 'job_status_changed'
+  | 'job_poll_error'
   | 'recovery';
 
 export interface LogRecord {
