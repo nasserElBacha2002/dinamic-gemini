@@ -50,7 +50,7 @@ def test_cross_company_inventory_scope_denied() -> None:
     inv_repo = MemoryInventoryRepository()
     inv_repo.save(_inv("client-a", "inv-a"))
     access = ObservabilityAccessContext.from_user(
-        AuthUser(id="u", username="op", role="administrator", client_id="client-b")
+        AuthUser(id="u", username="op", role="company_admin", client_id="client-b")
     )
     with pytest.raises(InventoryNotFoundError):
         assert_inventory_client_scope(inv_repo, inventory_id="inv-a", access=access)
@@ -60,7 +60,7 @@ def test_same_company_inventory_scope_ok() -> None:
     inv_repo = MemoryInventoryRepository()
     inv_repo.save(_inv("client-a", "inv-a"))
     access = ObservabilityAccessContext.from_user(
-        AuthUser(id="u", username="op", role="administrator", client_id="client-a")
+        AuthUser(id="u", username="op", role="company_admin", client_id="client-a")
     )
     got = assert_inventory_client_scope(inv_repo, inventory_id="inv-a", access=access)
     assert got.client_id == "client-a"
@@ -95,9 +95,9 @@ def test_resolve_job_enforces_client_scope() -> None:
     )
     job_repo.save(job)
     uc = ResolveAisleJobForInventoryReadUseCase(job_repo, aisle_repo, inv_repo)
-    ok_user = AuthUser(id="u", username="a", role="administrator", client_id="client-a")
+    ok_user = AuthUser(id="u", username="a", role="company_admin", client_id="client-a")
     assert uc.execute("inv-a", "aisle-1", "job-1", access_user=ok_user).id == "job-1"
-    bad_user = AuthUser(id="u", username="b", role="administrator", client_id="client-b")
+    bad_user = AuthUser(id="u", username="b", role="company_admin", client_id="client-b")
     with pytest.raises(InventoryNotFoundError):
         uc.execute("inv-a", "aisle-1", "job-1", access_user=bad_user)
 
@@ -166,13 +166,11 @@ def test_artifact_catalog_from_durable_result_json() -> None:
             }
         },
     )
-    svc = JobArtifactCatalogService(manifest_store=None, source_asset_repo=None)
+    svc = JobArtifactCatalogService(manifest_store=None, job_source_asset_repo=None)
     page = svc.list_for_job(job, aisle_id="aisle-1")
     assert len(page.items) == 1
     assert page.items[0].kind == "hybrid_report_json"
     assert page.items[0].category.value == "OUTPUT"
-    assert "storage_key" not in page.items[0].__dataclass_fields__ or True
-    # storage_key is internal-only on the view; API mapper must not expose it.
     assert page.items[0].storage_key == "jobs/job-1/run/hybrid_report.json"
 
 

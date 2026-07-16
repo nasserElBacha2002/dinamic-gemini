@@ -133,11 +133,25 @@ from src.application.services.job_timeline_service import (
     paginate_timeline,
 )
 from src.application.services.observability_access import (
+    CAP_CANCEL_RETRY,
+    CAP_DOWNLOAD_ARTIFACTS,
+    CAP_VIEW_ARTIFACT_PREVIEW,
     CAP_VIEW_FULL_PROMPT,
     CAP_VIEW_STACK_TRACES,
+    CAP_VIEW_SUMMARY,
+    CAP_VIEW_TECHNICAL_LOGS,
     ObservabilityAccessContext,
     assert_inventory_client_scope,
     principal_has_capability,
+)
+from src.application.services.observability_output_sanitizer import (
+    sanitize_execution_log_events,
+    sanitize_observability_value,
+)
+from src.application.services.execution_log_incremental import (
+    InvalidCursorError,
+    open_execution_log_tempfile,
+    paginate_jsonl_stream,
 )
 from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
 from src.application.services.run_auditability_service import RunAuditabilityService
@@ -208,8 +222,9 @@ from src.application.use_cases.inventories.export_inventory_business import (
 from src.application.use_cases.inventories.export_inventory_results import (
     ExportAisleResultsCsvUseCase,
 )
-from src.auth.dependencies import get_current_admin
-from src.auth.schemas import AuthUser
+from src.auth.dependencies import get_current_admin, require_observability_capability
+from src.auth.errors import AuthHttpError
+from src.auth.schemas import AuthError, AuthUser
 from src.config import load_settings
 from src.domain.jobs.entities import Job
 from src.infrastructure.artifacts.stored_artifact_reader import read_execution_log_events_for_job
@@ -549,15 +564,29 @@ def list_aisle_jobs(
 def get_aisle_aggregated_execution_log(
     inventory_id: str,
     aisle_id: str,
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_TECHNICAL_LOGS)),
     list_jobs_uc: ListAisleJobsUseCase = Depends(get_list_aisle_jobs_use_case),
     artifact_storage=Depends(get_artifact_storage),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> AisleExecutionLogResponse:
     """Merge execution logs from all jobs listed for this aisle (up to limit); per-job read failures are non-fatal."""
+    try:
+        assert_inventory_client_scope(
+            inventory_repo,
+            inventory_id=inventory_id,
+            access=ObservabilityAccessContext.from_user(current_user),
+        )
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND) from None
     body = _build_aisle_aggregated_execution_log_body(
         inventory_id=inventory_id,
         aisle_id=aisle_id,
         list_jobs_uc=list_jobs_uc,
         artifact_storage=artifact_storage,
+    )
+    events = body.get("events") or []
+    body["events"] = sanitize_execution_log_events(
+        events if isinstance(events, list) else [], user=current_user
     )
     return AisleExecutionLogResponse.model_validate(body)
 
@@ -569,17 +598,28 @@ def get_aisle_aggregated_execution_log(
 def get_aisle_aggregated_execution_log_txt(
     inventory_id: str,
     aisle_id: str,
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_TECHNICAL_LOGS)),
     list_jobs_uc: ListAisleJobsUseCase = Depends(get_list_aisle_jobs_use_case),
     artifact_storage=Depends(get_artifact_storage),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> Response:
     """Plain-text merged execution log for all aisle jobs (UTF-8 download)."""
+    try:
+        assert_inventory_client_scope(
+            inventory_repo,
+            inventory_id=inventory_id,
+            access=ObservabilityAccessContext.from_user(current_user),
+        )
+    except InventoryNotFoundError:
+        raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND) from None
     body = _build_aisle_aggregated_execution_log_body(
         inventory_id=inventory_id,
         aisle_id=aisle_id,
         list_jobs_uc=list_jobs_uc,
         artifact_storage=artifact_storage,
     )
-    text = format_execution_log_plaintext(body["events"])
+    events = sanitize_execution_log_events(body.get("events") or [], user=current_user)
+    text = format_execution_log_plaintext(events)
     filename = aisle_execution_log_attachment_filename(inventory_id, aisle_id)
     return Response(
         content=text.encode("utf-8"),
@@ -597,7 +637,7 @@ def cancel_aisle_job(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_CANCEL_RETRY)),
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     use_case: CancelAisleJobUseCase = Depends(get_cancel_aisle_job_use_case),
 ) -> JobSummary:
@@ -641,7 +681,7 @@ def retry_aisle_job(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_CANCEL_RETRY)),
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     use_case: RetryAisleJobUseCase = Depends(get_retry_aisle_job_use_case),
 ) -> JobSummary:
@@ -676,7 +716,7 @@ def get_aisle_job_detail(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_SUMMARY)),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
@@ -704,7 +744,7 @@ def get_job_traceability(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_SUMMARY)),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
@@ -728,7 +768,7 @@ def get_job_execution_log(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_TECHNICAL_LOGS)),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
@@ -753,6 +793,9 @@ def get_job_execution_log(
         requested_job_id=job_id,
         raw_events=raw_events,
     )
+    payload["events"] = sanitize_execution_log_events(
+        payload.get("events") or [], user=current_user
+    )
     return ExecutionLogResponse.model_validate(payload)
 
 
@@ -764,7 +807,7 @@ def get_job_execution_log_txt(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_TECHNICAL_LOGS)),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
@@ -789,7 +832,8 @@ def get_job_execution_log_txt(
         requested_job_id=job_id,
         raw_events=raw_events,
     )
-    text = format_execution_log_plaintext(body["events"])
+    events = sanitize_execution_log_events(body.get("events") or [], user=current_user)
+    text = format_execution_log_plaintext(events)
     filename = execution_log_attachment_filename(inventory_id, aisle_id, job_id)
     return Response(
         content=text.encode("utf-8"),
@@ -805,7 +849,7 @@ def get_job_hybrid_report(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_SUMMARY)),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
@@ -833,7 +877,7 @@ def get_job_run_auditability(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_TECHNICAL_LOGS)),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
@@ -890,7 +934,7 @@ def list_job_artifacts(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_SUMMARY)),
     category: str | None = Query(None),
     kind: str | None = Query(None),
     status: str | None = Query(None),
@@ -918,6 +962,7 @@ def list_job_artifacts(
     return JobArtifactPageResponse(
         items=[_artifact_to_response(i) for i in page.items],
         page=CursorPageMeta(next_cursor=page.next_cursor, has_more=page.has_more),
+        inputs_legacy_unverified=page.inputs_legacy_unverified,
     )
 
 
@@ -930,7 +975,7 @@ def get_job_artifact_metadata(
     aisle_id: str,
     job_id: str,
     artifact_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_SUMMARY)),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
@@ -953,7 +998,7 @@ def download_job_artifact(
     aisle_id: str,
     job_id: str,
     artifact_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_DOWNLOAD_ARTIFACTS)),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
@@ -1000,21 +1045,49 @@ def download_job_artifact(
             )
     except Exception:
         logger.debug("signed_url_unavailable job_id=%s artifact_id=%s", job.id, artifact_id)
+    import os
+    import tempfile
+    from pathlib import Path
+
+    from fastapi.responses import StreamingResponse
+
+    fd, tmp_name = tempfile.mkstemp(prefix="artifact_dl_", suffix=".bin")
+    os.close(fd)
+    tmp_path = Path(tmp_name)
     try:
-        dl = artifact_storage.get_object(key)
+        artifact_storage.download_to_path(key, tmp_path)
     except Exception as exc:
+        tmp_path.unlink(missing_ok=True)
         logger.warning("artifact_download_failed job_id=%s artifact_id=%s err=%s", job.id, artifact_id, exc)
         raise HTTPException(status_code=404, detail="Artifact content not available") from None
+    max_bytes = int(getattr(settings, "observability_download_max_bytes", 0) or 0)
+    size = tmp_path.stat().st_size
+    if max_bytes > 0 and size > max_bytes:
+        tmp_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=413, detail="Artifact exceeds download size limit")
     filename = _safe_download_filename(
         view.original_filename or f"{view.kind}",
         fallback=f"{view.kind}.bin",
     )
-    return Response(
-        content=dl.content,
-        media_type=view.mime_type or dl.content_type or "application/octet-stream",
+
+    def _iter_chunks():
+        try:
+            with open(tmp_path, "rb") as fh:
+                while True:
+                    chunk = fh.read(64 * 1024)
+                    if not chunk:
+                        break
+                    yield chunk
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    return StreamingResponse(
+        _iter_chunks(),
+        media_type=view.mime_type or "application/octet-stream",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store",
+            "Content-Length": str(size),
         },
     )
 
@@ -1028,7 +1101,7 @@ def preview_job_artifact(
     aisle_id: str,
     job_id: str,
     artifact_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_ARTIFACT_PREVIEW)),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
@@ -1090,6 +1163,7 @@ def preview_job_artifact(
     except UnicodeDecodeError:
         text = chunk.decode("utf-8", errors="replace")
     text = redact_secrets_in_text(text)
+    text = str(sanitize_observability_value(text, user=current_user))
     return ArtifactPreviewResponse(
         artifact_id=view.id,
         kind=view.kind,
@@ -1110,7 +1184,7 @@ def get_job_retry_chain(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_SUMMARY)),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(
         get_resolve_aisle_job_for_inventory_read_use_case
     ),
@@ -1124,6 +1198,8 @@ def get_job_retry_chain(
         root_job_id=view.root_job_id,
         selected_job_id=view.selected_job_id,
         current_job_id=view.current_job_id,
+        integrity=view.integrity.value,
+        warnings=list(view.warnings),
         attempts=[
             RetryChainAttemptResponse(
                 job_id=a.job_id,
@@ -1132,7 +1208,7 @@ def get_job_retry_chain(
                 started_at=a.started_at,
                 finished_at=a.finished_at,
                 failure_code=a.failure_code,
-                failure_message=redact_secrets_in_text(a.failure_message),
+                failure_message=redact_secrets_in_text(a.failure_message) or None,
                 execution_id=a.execution_id,
                 provider_name=a.provider_name,
                 model_name=a.model_name,
@@ -1153,7 +1229,7 @@ def get_job_execution_log_page(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_TECHNICAL_LOGS)),
     cursor: str | None = Query(None),
     limit: int | None = Query(None, ge=1, le=1000),
     level: str | None = Query(None),
@@ -1165,58 +1241,57 @@ def get_job_execution_log_page(
     ),
     artifact_storage=Depends(get_artifact_storage),
 ) -> ExecutionLogPageResponse:
-    """Paginated execution-log events (preserves legacy full ``/execution-log`` contract)."""
+    """Paginated execution-log events via incremental JSONL byte-offset cursor."""
     job = _load_job_for_inventory_job_route(
         resolve_uc, inventory_id, aisle_id, job_id, access_user=current_user
     )
     settings = load_settings()
     page_size = limit if limit is not None else settings.observability_log_page_size
+    max_scan = int(getattr(settings, "observability_log_max_scan_bytes", 8_000_000) or 8_000_000)
+    tmp_path = None
+    is_temp = False
     try:
-        raw_events = read_execution_log_events_for_job(job, artifact_store=artifact_storage)
+        tmp_path, is_temp = open_execution_log_tempfile(job, artifact_store=artifact_storage)
+        with open(tmp_path, "rb") as stream:
+            try:
+                page = paginate_jsonl_stream(
+                    stream,
+                    cursor=cursor,
+                    limit=int(page_size),
+                    max_limit=settings.observability_log_max_page_size,
+                    max_scan_bytes=max_scan,
+                    level=level,
+                    stage=stage,
+                    search=search,
+                    sort_order=sort_order,
+                )
+            except InvalidCursorError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail="INVALID_CURSOR",
+                ) from exc
     except StoredArtifactAccessError as e:
         reraise_if_mapped(e, cause=e)
         raise
-    enriched = build_enriched_execution_log(
-        inventory_id=inventory_id,
-        aisle_id=aisle_id,
-        requested_job_id=job_id,
-        raw_events=raw_events,
-    )
-    events = enriched.get("events") or []
-    if not principal_has_capability(current_user, CAP_VIEW_FULL_PROMPT):
-        for ev in events:
-            if isinstance(ev, dict) and isinstance(ev.get("payload"), dict):
-                payload = dict(ev["payload"])
-                if "prompt_text" in payload:
-                    payload["prompt_text"] = "[REDACTED_BY_ROLE]"
-                ev["payload"] = redact_secrets_in_value(payload)
-    else:
-        for ev in events:
-            if isinstance(ev, dict):
-                ev["payload"] = redact_secrets_in_value(ev.get("payload"))
-                if isinstance(ev.get("message"), str):
-                    ev["message"] = redact_secrets_in_text(ev["message"])
-    page = paginate_execution_log_events(
-        events if isinstance(events, list) else [],
-        cursor=cursor,
-        limit=int(page_size),
-        max_limit=settings.observability_log_max_page_size,
-        level=level,
-        stage=stage,
-        search=search,
-        sort_order=sort_order,
-    )
+    finally:
+        if is_temp and tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+
+    items = sanitize_execution_log_events(page.items, user=current_user)
     return ExecutionLogPageResponse(
         inventory_id=inventory_id,
         aisle_id=aisle_id,
         requested_job_id=job_id,
-        items=page.items,
+        items=items,
         page=CursorPageMeta(next_cursor=page.next_cursor, has_more=page.has_more),
         filters=ExecutionLogFiltersMeta(
             available_levels=page.available_levels,
             available_stages=page.available_stages,
             available_event_types=[],
         ),
+        pagination_mode=page.mode,
+        truncated=page.truncated,
+        bytes_scanned=page.bytes_scanned,
     )
 
 
@@ -1228,7 +1303,7 @@ def get_job_timeline(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_SUMMARY)),
     cursor: str | None = Query(None),
     limit: int = Query(100, ge=1, le=500),
     stage: str | None = Query(None),
@@ -1298,7 +1373,7 @@ def get_job_errors(
     inventory_id: str,
     aisle_id: str,
     job_id: str,
-    current_user: AuthUser = Depends(get_current_admin),
+    current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_SUMMARY)),
     cursor: str | None = Query(None),
     limit: int = Query(100, ge=1, le=500),
     resolve_uc: ResolveAisleJobForInventoryReadUseCase = Depends(

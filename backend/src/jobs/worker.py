@@ -75,6 +75,7 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             get_job_repo,
             get_job_result_uow_factory,
             get_job_scoped_recompute_factory,
+            get_job_source_asset_repo,
             get_normalized_label_repo,
             get_operational_result_promotion_service,
             get_position_repo,
@@ -143,6 +144,7 @@ def _try_v3_process_aisle(base_path: Path, job_id: str, *, execution_id: str | N
             artifact_manifest_store=get_artifact_manifest_store(),
             artifact_publication_outbox_store=get_artifact_publication_outbox_store(),
             artifact_staging_store=get_artifact_staging_store(),
+            job_source_asset_repo=get_job_source_asset_repo(),
         )
         append_worker_bootstrap_event(
             job_id=job_id,

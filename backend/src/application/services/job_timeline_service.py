@@ -1,4 +1,9 @@
-"""Derive a structured Observability timeline from execution-log events (no new table required)."""
+"""Derive a structured Observability timeline from execution-log events.
+
+Terminal transitions (JOB_SUCCEEDED / JOB_FAILED / JOB_CANCELLED) are emitted only
+when the event carries an explicit ``event_type`` (or equivalent structured field).
+Generic messages like \"completed\" / \"fail\" never invent terminal job states.
+"""
 
 from __future__ import annotations
 
@@ -29,6 +34,7 @@ class TimelineEventView:
     provider: str | None
     provider_request_id: str | None
     error_code: str | None
+    idempotency_key: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -39,7 +45,39 @@ class TimelinePage:
     has_more: bool
 
 
-_STAGE_EVENT_MAP: dict[str, str] = {
+_TRUSTED_EVENT_TYPES = frozenset(
+    {
+        "JOB_CREATED",
+        "JOB_QUEUED",
+        "JOB_DEQUEUED",
+        "WORKER_STARTED",
+        "SOURCE_ASSETS_RESOLVED",
+        "SOURCE_ASSET_READ_STARTED",
+        "SOURCE_ASSET_READ_COMPLETED",
+        "PREPROCESSING_STARTED",
+        "IMAGE_RESIZED",
+        "IMAGE_COMPRESSED",
+        "PROVIDER_REQUEST_STARTED",
+        "PROVIDER_REQUEST_COMPLETED",
+        "PROVIDER_REQUEST_FAILED",
+        "RESPONSE_PARSING_STARTED",
+        "RESPONSE_PARSING_COMPLETED",
+        "RESPONSE_VALIDATION_FAILED",
+        "RESULT_PERSIST_STARTED",
+        "RESULT_PERSIST_COMPLETED",
+        "ARTIFACT_PUBLICATION_STARTED",
+        "ARTIFACT_PUBLICATION_COMPLETED",
+        "ARTIFACT_PUBLICATION_FAILED",
+        "JOB_RETRY_CREATED",
+        "JOB_CANCEL_REQUESTED",
+        "JOB_CANCELLED",
+        "JOB_FAILED",
+        "JOB_SUCCEEDED",
+        "PIPELINE_EVENT",
+    }
+)
+
+_STAGE_HINTS: dict[str, str] = {
     "queued": "JOB_QUEUED",
     "dequeue": "JOB_DEQUEUED",
     "worker": "WORKER_STARTED",
@@ -54,36 +92,30 @@ _STAGE_EVENT_MAP: dict[str, str] = {
     "persistence": "RESULT_PERSIST_STARTED",
     "artifact": "ARTIFACT_PUBLICATION_STARTED",
     "finalization": "ARTIFACT_PUBLICATION_STARTED",
-    "cancel": "JOB_CANCEL_REQUESTED",
 }
 
 
 def _infer_event_type(ev: dict[str, Any]) -> str:
     explicit = ev.get("event_type") or ev.get("type")
     if isinstance(explicit, str) and explicit.strip():
-        return explicit.strip().upper()
+        et = explicit.strip().upper()
+        if et in _TRUSTED_EVENT_TYPES:
+            return et
+        return "PIPELINE_EVENT"
+    payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
+    if isinstance(payload, dict):
+        p_et = payload.get("event_type")
+        if isinstance(p_et, str) and p_et.strip().upper() in _TRUSTED_EVENT_TYPES:
+            return p_et.strip().upper()
     stage = str(ev.get("stage") or "").strip().lower()
-    level = str(ev.get("level") or "").strip().lower()
-    msg = str(ev.get("message") or "").strip().lower()
-    if level in {"error", "critical"} or "fail" in msg:
-        if "provider" in stage or "llm" in stage:
-            return "PROVIDER_REQUEST_FAILED"
-        return "JOB_FAILED"
-    if "succeed" in msg or "completed" in msg:
-        if "provider" in stage:
-            return "PROVIDER_REQUEST_COMPLETED"
-        return "JOB_SUCCEEDED"
-    if "retry" in msg:
-        return "JOB_RETRY_CREATED"
-    if "cancel" in msg or stage == "cancel":
-        return "JOB_CANCELLED" if "cancel" in msg and "request" not in msg else "JOB_CANCEL_REQUESTED"
-    if stage in _STAGE_EVENT_MAP:
-        return _STAGE_EVENT_MAP[stage]
+    if stage in _STAGE_HINTS:
+        # Stage hints never map to terminal JOB_* outcomes.
+        return _STAGE_HINTS[stage]
     return "PIPELINE_EVENT"
 
 
 def _event_id(job_id: str, sequence: int, ev: dict[str, Any]) -> str:
-    raw = f"{job_id}|{sequence}|{ev.get('ts')}|{ev.get('stage')}|{ev.get('message')}"
+    raw = f"{job_id}|{sequence}|{ev.get('ts')}|{ev.get('stage')}|{ev.get('event_type')}|{ev.get('message')}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
 
@@ -102,6 +134,9 @@ def derive_timeline_events(
         req_id = None
         err_code = None
         duration = None
+        prev_status = None
+        new_status = None
+        idem = None
         if isinstance(payload, dict):
             provider = payload.get("provider") or payload.get("provider_name")
             req_id = payload.get("provider_request_id") or payload.get("request_id")
@@ -109,6 +144,9 @@ def derive_timeline_events(
             dur = payload.get("duration_ms")
             if isinstance(dur, (int, float)):
                 duration = int(dur)
+            prev_status = payload.get("previous_status")
+            new_status = payload.get("new_status")
+            idem = payload.get("idempotency_key")
         out.append(
             TimelineEventView(
                 id=_event_id(job_id, idx, ev),
@@ -123,13 +161,14 @@ def derive_timeline_events(
                 level=str(ev.get("level") or "info"),
                 timestamp=str(ev.get("ts")) if ev.get("ts") is not None else None,
                 sequence=idx,
-                previous_status=None,
-                new_status=None,
+                previous_status=str(prev_status) if prev_status else None,
+                new_status=str(new_status) if new_status else None,
                 message=str(ev.get("message")) if ev.get("message") is not None else None,
                 duration_ms=duration,
                 provider=str(provider) if provider else None,
                 provider_request_id=str(req_id) if req_id else None,
                 error_code=str(err_code) if err_code else None,
+                idempotency_key=str(idem) if idem else None,
                 metadata={
                     k: v
                     for k, v in (payload or {}).items()
@@ -139,6 +178,8 @@ def derive_timeline_events(
                         "authorization",
                         "headers",
                         "api_key",
+                        "stack_trace",
+                        "traceback",
                     }
                 },
             )

@@ -1,4 +1,4 @@
-"""Unified read model for Observability job artifacts (manifest + aisle source assets)."""
+"""Unified read model for Observability job artifacts (manifest + job input snapshot)."""
 
 from __future__ import annotations
 
@@ -11,8 +11,7 @@ from typing import Any
 from uuid import UUID, uuid5
 
 from src.application.ports.artifact_manifest_store import ArtifactManifestStore
-from src.application.ports.repositories import SourceAssetRepository
-from src.domain.assets.entities import SourceAssetType
+from src.application.ports.job_source_asset_repository import JobSourceAssetRepository
 from src.domain.jobs.artifact_manifest import ArtifactManifestEntry, ArtifactManifestStatus
 from src.domain.jobs.artifact_policy import (
     ARTIFACT_KIND_EXECUTION_LOG,
@@ -40,6 +39,8 @@ class ArtifactAvailabilityStatus(str, Enum):
     EXPIRED = "EXPIRED"
     DELETED = "DELETED"
     CORRUPTED = "CORRUPTED"
+    UNKNOWN = "UNKNOWN"
+    LEGACY_UNVERIFIED = "LEGACY_UNVERIFIED"
 
 
 _KIND_CATEGORY: dict[str, ArtifactCategory] = {
@@ -59,7 +60,6 @@ _KIND_MIME: dict[str, str] = {
     ARTIFACT_KIND_TRACEABILITY_MANIFEST: "application/json",
 }
 
-# Stable namespace for synthetic artifact ids derived from (job_id, kind) or source assets.
 _ARTIFACT_NS = UUID("a7e2c4b1-9f33-4d8e-8c1a-0b6f5e4d3c2a")
 
 
@@ -86,6 +86,8 @@ class JobArtifactView:
     expires_at: datetime | None
     source_type: str
     source_asset_id: str | None
+    version: int = 1
+    replaced_by_id: str | None = None
     # Internal only — never serialize to API responses.
     storage_key: str | None = None
 
@@ -95,6 +97,7 @@ class JobArtifactPage:
     items: list[JobArtifactView]
     next_cursor: str | None
     has_more: bool
+    inputs_legacy_unverified: bool = False
 
 
 def _manifest_status(entry: ArtifactManifestEntry) -> ArtifactAvailabilityStatus:
@@ -106,11 +109,29 @@ def _manifest_status(entry: ArtifactManifestEntry) -> ArtifactAvailabilityStatus
         return ArtifactAvailabilityStatus.PUBLISH_FAILED
     if entry.status == ArtifactManifestStatus.PENDING:
         return ArtifactAvailabilityStatus.PENDING
+    if entry.status == ArtifactManifestStatus.UNKNOWN:
+        return ArtifactAvailabilityStatus.UNKNOWN
     return ArtifactAvailabilityStatus.MISSING
 
 
-def _artifact_id(*, job_id: str, kind: str, source_asset_id: str | None = None) -> str:
-    seed = f"{job_id}:{kind}:{source_asset_id or ''}"
+def artifact_id_from_parts(
+    *,
+    job_id: str,
+    kind: str,
+    storage_key: str | None = None,
+    checksum: str | None = None,
+    version: int = 1,
+    source_asset_id: str | None = None,
+    link_id: str | None = None,
+) -> str:
+    """Stable id that distinguishes versions of the same kind."""
+    if link_id:
+        return str(uuid5(_ARTIFACT_NS, f"link:{link_id}"))
+    seed = (
+        f"{job_id}|{kind}|v{int(version)}|"
+        f"{(storage_key or '').strip()}|{(checksum or '').strip()}|"
+        f"{source_asset_id or ''}"
+    )
     return str(uuid5(_ARTIFACT_NS, seed))
 
 
@@ -139,10 +160,10 @@ class JobArtifactCatalogService:
         self,
         *,
         manifest_store: ArtifactManifestStore | None,
-        source_asset_repo: SourceAssetRepository | None,
+        job_source_asset_repo: JobSourceAssetRepository | None,
     ) -> None:
         self._manifest = manifest_store
-        self._assets = source_asset_repo
+        self._job_assets = job_source_asset_repo
 
     def list_for_job(
         self,
@@ -156,7 +177,8 @@ class JobArtifactCatalogService:
         limit: int = 50,
         is_current: bool | None = None,
     ) -> JobArtifactPage:
-        items = self._collect(job, aisle_id=aisle_id)
+        _ = aisle_id  # kept for route compatibility; inputs come from job snapshot.
+        items, legacy = self._collect(job)
         if category:
             cat = category.strip().upper()
             items = [i for i in items if i.category.value == cat]
@@ -169,7 +191,7 @@ class JobArtifactCatalogService:
         if is_current is not None:
             items = [i for i in items if i.is_current is is_current]
 
-        items.sort(key=lambda a: (a.category.value, a.kind, a.id))
+        items.sort(key=lambda a: (a.category.value, a.kind, a.version, a.id))
         offset = decode_artifact_cursor(cursor)
         limit = max(1, min(int(limit), 200))
         window = items[offset : offset + limit]
@@ -179,168 +201,203 @@ class JobArtifactCatalogService:
             items=window,
             next_cursor=encode_artifact_cursor(next_off) if has_more else None,
             has_more=has_more,
+            inputs_legacy_unverified=legacy,
         )
 
     def get_for_job(self, job: Job, *, aisle_id: str, artifact_id: str) -> JobArtifactView | None:
-        for item in self._collect(job, aisle_id=aisle_id):
+        items, _ = self._collect(job)
+        for item in items:
             if item.id == artifact_id:
                 return item
         return None
 
-    def _collect(self, job: Job, *, aisle_id: str) -> list[JobArtifactView]:
+    def _collect(self, job: Job) -> tuple[list[JobArtifactView], bool]:
         out: list[JobArtifactView] = []
         out.extend(self._from_manifest(job))
         out.extend(self._from_durable_result_json(job))
-        out.extend(self._from_source_assets(job, aisle_id=aisle_id))
-        # De-dupe by id (manifest wins over result_json duplicates).
+        inputs, legacy = self._from_job_source_assets(job)
+        out.extend(inputs)
+        # De-dupe by id only (do not collapse distinct versions of same kind).
         by_id: dict[str, JobArtifactView] = {}
         for item in out:
-            prev = by_id.get(item.id)
-            if prev is None or (
-                prev.status != ArtifactAvailabilityStatus.AVAILABLE
-                and item.status == ArtifactAvailabilityStatus.AVAILABLE
-            ):
-                by_id[item.id] = item
-        return list(by_id.values())
+            by_id.setdefault(item.id, item)
+        return list(by_id.values()), legacy
 
     def _from_manifest(self, job: Job) -> list[JobArtifactView]:
         if self._manifest is None:
             return []
         items: list[JobArtifactView] = []
+        # Group by kind to mark current = highest version published.
+        by_kind: dict[str, list[ArtifactManifestEntry]] = {}
         for entry in self._manifest.list_entries(job.id):
-            category = _KIND_CATEGORY.get(entry.artifact_kind, ArtifactCategory.DEBUG)
-            status = _manifest_status(entry)
-            mime = _KIND_MIME.get(entry.artifact_kind)
-            previewable = status == ArtifactAvailabilityStatus.AVAILABLE and (
-                (mime or "").startswith("image/")
-                or (mime or "") in {"application/json", "application/x-ndjson", "text/csv", "text/plain"}
-            )
-            items.append(
-                JobArtifactView(
-                    id=_artifact_id(job_id=job.id, kind=entry.artifact_kind),
-                    job_id=job.id,
-                    category=category,
-                    kind=entry.artifact_kind,
-                    stage="finalization",
-                    display_name=entry.artifact_kind.replace("_", " ").title(),
-                    original_filename=None,
-                    mime_type=mime,
-                    size_bytes=entry.size_bytes,
-                    checksum=entry.source_sha256 or entry.content_hash,
-                    width=None,
-                    height=None,
-                    status=status,
-                    is_current=True,
-                    is_previewable=previewable,
-                    is_downloadable=status == ArtifactAvailabilityStatus.AVAILABLE,
-                    created_at=entry.created_at,
-                    published_at=entry.published_at,
-                    expires_at=None,
-                    source_type="generated",
-                    source_asset_id=None,
-                    storage_key=entry.storage_key,
+            by_kind.setdefault(entry.artifact_kind, []).append(entry)
+        for kind, entries in by_kind.items():
+            entries_sorted = sorted(entries, key=lambda e: int(e.version or 1))
+            current_version = max(int(e.version or 1) for e in entries_sorted)
+            for entry in entries_sorted:
+                version = int(entry.version or 1)
+                status = _manifest_status(entry)
+                mime = _KIND_MIME.get(entry.artifact_kind)
+                previewable = status == ArtifactAvailabilityStatus.AVAILABLE and (
+                    (mime or "").startswith("image/")
+                    or (mime or "")
+                    in {"application/json", "application/x-ndjson", "text/csv", "text/plain"}
                 )
-            )
+                items.append(
+                    JobArtifactView(
+                        id=artifact_id_from_parts(
+                            job_id=job.id,
+                            kind=entry.artifact_kind,
+                            storage_key=entry.storage_key,
+                            checksum=entry.source_sha256 or entry.content_hash,
+                            version=version,
+                        ),
+                        job_id=job.id,
+                        category=_KIND_CATEGORY.get(kind, ArtifactCategory.DEBUG),
+                        kind=kind,
+                        stage="finalization",
+                        display_name=kind.replace("_", " ").title(),
+                        original_filename=None,
+                        mime_type=mime,
+                        size_bytes=entry.size_bytes,
+                        checksum=entry.source_sha256 or entry.content_hash,
+                        width=None,
+                        height=None,
+                        status=status,
+                        is_current=version == current_version
+                        and status == ArtifactAvailabilityStatus.AVAILABLE,
+                        is_previewable=previewable,
+                        is_downloadable=status == ArtifactAvailabilityStatus.AVAILABLE
+                        and bool((entry.storage_key or "").strip()),
+                        created_at=entry.created_at,
+                        published_at=entry.published_at,
+                        expires_at=None,
+                        source_type="generated",
+                        source_asset_id=None,
+                        version=version,
+                        storage_key=entry.storage_key,
+                    )
+                )
         return items
 
     def _from_durable_result_json(self, job: Job) -> list[JobArtifactView]:
-        """Fallback when manifest is empty but result_json.durable_artifacts exists."""
         result = job.result_json or {}
         durable = result.get("durable_artifacts")
         if not isinstance(durable, dict):
             return []
+        # Skip kinds already present from manifest.
+        existing_kinds: set[str] = set()
+        if self._manifest is not None:
+            existing_kinds = {e.artifact_kind for e in self._manifest.list_entries(job.id)}
         items: list[JobArtifactView] = []
         for kind, meta in durable.items():
             if not isinstance(kind, str) or not isinstance(meta, dict):
                 continue
+            if kind in existing_kinds:
+                continue
             key = meta.get("storage_key") or meta.get("key")
             if not isinstance(key, str) or not key.strip():
-                continue
-            # Skip if already represented via manifest id.
-            category = _KIND_CATEGORY.get(kind, ArtifactCategory.DEBUG)
-            mime = _KIND_MIME.get(kind) or meta.get("content_type")
-            if isinstance(mime, str):
-                mime_s = mime
+                status = ArtifactAvailabilityStatus.MISSING
+                key_s = None
             else:
-                mime_s = None
+                key_s = key.strip()
+                status = ArtifactAvailabilityStatus.AVAILABLE
+            checksum = str(meta.get("checksum")) if meta.get("checksum") else None
+            version = int(meta.get("version") or 1)
+            mime = _KIND_MIME.get(kind) or meta.get("content_type")
+            mime_s = mime if isinstance(mime, str) else None
             size = meta.get("size_bytes")
             size_i = int(size) if isinstance(size, (int, float)) else None
             items.append(
                 JobArtifactView(
-                    id=_artifact_id(job_id=job.id, kind=kind),
+                    id=artifact_id_from_parts(
+                        job_id=job.id,
+                        kind=kind,
+                        storage_key=key_s,
+                        checksum=checksum,
+                        version=version,
+                    ),
                     job_id=job.id,
-                    category=category,
+                    category=_KIND_CATEGORY.get(kind, ArtifactCategory.DEBUG),
                     kind=kind,
                     stage="finalization",
                     display_name=kind.replace("_", " ").title(),
                     original_filename=None,
                     mime_type=mime_s,
                     size_bytes=size_i,
-                    checksum=str(meta.get("checksum")) if meta.get("checksum") else None,
+                    checksum=checksum,
                     width=None,
                     height=None,
-                    status=ArtifactAvailabilityStatus.AVAILABLE,
-                    is_current=True,
-                    is_previewable=True,
-                    is_downloadable=True,
+                    status=status,
+                    is_current=status == ArtifactAvailabilityStatus.AVAILABLE,
+                    is_previewable=status == ArtifactAvailabilityStatus.AVAILABLE,
+                    is_downloadable=status == ArtifactAvailabilityStatus.AVAILABLE and bool(key_s),
                     created_at=job.finished_at or job.updated_at,
                     published_at=job.artifacts_published_at,
                     expires_at=None,
                     source_type="generated",
                     source_asset_id=None,
-                    storage_key=key.strip(),
+                    version=version,
+                    storage_key=key_s,
                 )
             )
         return items
 
-    def _from_source_assets(self, job: Job, *, aisle_id: str) -> list[JobArtifactView]:
-        if self._assets is None:
-            return []
-        try:
-            assets = list(self._assets.list_by_aisle(aisle_id))
-        except Exception:
-            return []
+    def _from_job_source_assets(self, job: Job) -> tuple[list[JobArtifactView], bool]:
+        if self._job_assets is None:
+            # No snapshot store — do not invent aisle-wide assets.
+            return [], True
+        links = self._job_assets.list_for_job(job.id)
+        if not links:
+            return [], True
         items: list[JobArtifactView] = []
-        for asset in assets:
-            kind = (
-                "source_video"
-                if asset.type == SourceAssetType.VIDEO
-                else "source_image"
+        for link in links:
+            kind = "source_video" if link.asset_role == "video" else (
+                "reference_image" if link.asset_role == "reference" else "source_image"
             )
-            mime = asset.mime_type or asset.content_type
-            fname = asset.original_filename
-            size = asset.file_size_bytes
-            created = asset.uploaded_at
-            storage_key = asset.storage_key
+            has_key = bool((link.storage_key or "").strip())
+            status = (
+                ArtifactAvailabilityStatus.AVAILABLE
+                if has_key
+                else ArtifactAvailabilityStatus.MISSING
+            )
             items.append(
                 JobArtifactView(
-                    id=_artifact_id(
-                        job_id=job.id, kind=kind, source_asset_id=str(asset.id)
+                    id=artifact_id_from_parts(
+                        job_id=job.id,
+                        kind=kind,
+                        storage_key=link.storage_key,
+                        checksum=link.checksum,
+                        version=1,
+                        source_asset_id=link.source_asset_id,
+                        link_id=link.id,
                     ),
                     job_id=job.id,
                     category=ArtifactCategory.INPUT,
                     kind=kind,
-                    stage="input",
-                    display_name=str(fname or asset.id),
-                    original_filename=str(fname) if fname else None,
-                    mime_type=str(mime) if mime else None,
-                    size_bytes=int(size) if isinstance(size, (int, float)) else None,
-                    checksum=None,
-                    width=None,
-                    height=None,
-                    status=ArtifactAvailabilityStatus.AVAILABLE,
+                    stage=link.stage or "input",
+                    display_name=f"{link.asset_role}:{link.source_asset_id}",
+                    original_filename=None,
+                    mime_type=link.mime_type,
+                    size_bytes=link.size_bytes,
+                    checksum=link.checksum,
+                    width=link.width,
+                    height=link.height,
+                    status=status,
                     is_current=True,
-                    is_previewable=bool(mime and str(mime).startswith("image/")),
-                    is_downloadable=True,
-                    created_at=created if isinstance(created, datetime) else None,
+                    is_previewable=bool(link.mime_type and link.mime_type.startswith("image/"))
+                    and status == ArtifactAvailabilityStatus.AVAILABLE,
+                    is_downloadable=status == ArtifactAvailabilityStatus.AVAILABLE,
+                    created_at=link.created_at,
                     published_at=None,
                     expires_at=None,
-                    source_type="source_asset",
-                    source_asset_id=str(asset.id),
-                    storage_key=str(storage_key) if storage_key else None,
+                    source_type="job_source_asset",
+                    source_asset_id=link.source_asset_id,
+                    version=1,
+                    storage_key=link.storage_key,
                 )
             )
-        return items
+        return items, False
 
 
 def assert_job_owned_storage_key(*, job_id: str, storage_key: str) -> None:

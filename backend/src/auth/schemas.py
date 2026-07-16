@@ -23,13 +23,18 @@ class AuthUser(BaseModel):
         description="Stable principal id for sessions (e.g. 'admin', 'jairo'); distinct from JWT sub.",
     )
     username: str = Field(..., description="Administrator username.")
-    role: str = Field(default="administrator", description="Role claim (administrator|company_admin|operator).")
+    role: str = Field(
+        default="platform_admin",
+        description=(
+            "Role claim: platform_admin | company_admin | operator. "
+            "Legacy JWT role 'administrator' is accepted as platform_admin."
+        ),
+    )
     client_id: str | None = Field(
         default=None,
         description=(
-            "Optional company/client scope. When set, Observability and inventory reads are "
-            "restricted to inventories with matching client_id. When null, principal is treated "
-            "as platform-unbound (current single-tenant admin behavior)."
+            "Company/client scope. Required for company_admin and operator. "
+            "Only platform_admin may omit client_id (global scope)."
         ),
     )
 

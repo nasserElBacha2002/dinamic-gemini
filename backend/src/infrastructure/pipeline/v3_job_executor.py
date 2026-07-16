@@ -161,11 +161,13 @@ class V3JobExecutor:
         artifact_publication_max_attempts: int = 5,
         artifact_publication_lease_seconds: int = 120,
         artifact_publication_backoff_seconds: tuple[int, ...] = DEFAULT_BACKOFF_SECONDS,
+        job_source_asset_repo=None,
     ) -> None:
         self._job_repo = job_repo
         self._aisle_repo = aisle_repo
         self._inventory_repo = inventory_repo
         self._source_asset_repo = source_asset_repo
+        self._job_source_asset_repo = job_source_asset_repo
         self._artifact_store = artifact_store
         self._clock = clock
         inventory_status_reconciler = InventoryStatusReconciler(
@@ -480,6 +482,23 @@ class V3JobExecutor:
         if resolved_in is None:
             return True
         analysis_context, job_input, video_path = resolved_in
+
+        try:
+            from src.application.services.job_source_asset_snapshot import (
+                persist_job_source_asset_snapshot,
+            )
+
+            persist_job_source_asset_snapshot(
+                self._job_source_asset_repo,
+                job_id=job_id,
+                assets=assets,
+                stage="SOURCE_ASSETS_RESOLVED",
+            )
+        except Exception:
+            logger.exception(
+                "job_source_asset_snapshot_failed job_id=%s (continuing)",
+                job_id,
+            )
 
         monitoring_req = V3JobMonitoringRequest(
             base_path=base_path,

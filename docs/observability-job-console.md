@@ -1,32 +1,25 @@
 # Observability — job artifacts, retry chain, logs, timeline
 
-## Preserved contracts
+## Roles and scope
 
-- Existing job detail, full `execution-log`, `execution-log.txt`, `hybrid-report`, `traceability`, `auditability`, cancel, and retry routes remain unchanged.
-- Retry continues to create a new `job_id` linked by `retry_of_job_id`.
-- Platform admins with `client_id=null` keep single-tenant access; company-scoped JWTs (`AUTH_ADMIN_CLIENT_ID` / `AUTH_JAIRO_CLIENT_ID`) enforce inventory `client_id` match (404 on mismatch).
+- `platform_admin` (legacy JWT role `administrator` accepted as alias): may omit `client_id` (global).
+- `company_admin` / `operator`: **require** `client_id` (fail closed on request).
+- Env principals: unbound → `platform_admin`; `AUTH_*_CLIENT_ID` set → `company_admin`.
 
-## New endpoints (inventory-scoped)
+## Capabilities (backend enforced)
 
-| Method | Path | Notes |
-|--------|------|--------|
-| GET | `.../jobs/{job_id}/artifacts` | Catalog (no `storage_key`) |
-| GET | `.../jobs/{job_id}/artifacts/{artifact_id}` | Metadata |
-| GET | `.../jobs/{job_id}/artifacts/{artifact_id}/download` | Authz + namespace check |
-| GET | `.../jobs/{job_id}/artifacts/{artifact_id}/preview` | Truncated text/JSON |
-| GET | `.../jobs/{job_id}/retry-chain` | Linear retry attempts |
-| GET | `.../jobs/{job_id}/execution-log/page` | Cursor pagination (legacy full log kept) |
-| GET | `.../jobs/{job_id}/timeline` | Derived structured events from JSONL |
-| GET | `.../jobs/{job_id}/errors` | Structured errors |
+Applied via `require_observability_capability(...)` on Observability + legacy log/auditability/cancel/retry/recovery routes.
 
-## Config
+## Inputs
 
-See `.env.example` (`OBSERVABILITY_*`, `AUTH_*_CLIENT_ID`).
+`job_source_assets` snapshot (migration `0045`) written when pipeline inputs resolve. Legacy jobs without snapshot → `inputs_legacy_unverified` (no aisle-wide asset invention).
 
-## Residual gaps (not in this slice)
+## Log pagination
 
-- Dedicated timeline DB table + idempotent pipeline emitters for all event types
-- Retention cleanup job / reconciliation admin command
-- Full operator vs company-admin UI permission matrix beyond JWT role + prompt redaction
-- Incremental JSONL offset index for multi-GB logs
-- Full E2E cases A–F automation
+`GET .../execution-log/page` uses incremental JSONL byte-offset cursors (`pagination_mode=incremental`). Invalid / filter-mismatched cursor → `400 INVALID_CURSOR`. Desc order uses capped fallback (`legacy_capped`).
+
+## Residual
+
+- Physical move of handlers from `aisles.py` → `job_observability.py` (module stub present).
+- Structured timeline emission at every pipeline frontier (derived events no longer invent terminal states from free text).
+- Full HTTP matrix + FE vitest race tests + container PR gate evidence.

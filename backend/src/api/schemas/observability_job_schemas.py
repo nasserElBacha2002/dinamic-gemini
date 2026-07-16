@@ -44,6 +44,7 @@ class JobArtifactResponse(BaseModel):
 class JobArtifactPageResponse(BaseModel):
     items: list[JobArtifactResponse]
     page: CursorPageMeta
+    inputs_legacy_unverified: bool = False
 
 
 class RetryChainAttemptResponse(BaseModel):
@@ -66,6 +67,8 @@ class JobRetryChainResponse(BaseModel):
     root_job_id: str
     selected_job_id: str
     current_job_id: str
+    integrity: str = "VALID"
+    warnings: list[str] = Field(default_factory=list)
     attempts: list[RetryChainAttemptResponse]
 
 
@@ -82,6 +85,9 @@ class ExecutionLogPageResponse(BaseModel):
     items: list[dict[str, Any]]
     page: CursorPageMeta
     filters: ExecutionLogFiltersMeta
+    pagination_mode: str = "incremental"
+    truncated: bool = False
+    bytes_scanned: int | None = None
 
 
 class JobTimelineEventResponse(BaseModel):

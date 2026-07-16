@@ -805,6 +805,18 @@ export interface JobArtifact {
 export interface JobArtifactPage {
   items: JobArtifact[];
   page: { next_cursor?: string | null; has_more: boolean };
+  inputs_legacy_unverified?: boolean;
+}
+
+export interface ArtifactPreview {
+  artifact_id: string;
+  kind: string;
+  mime_type?: string | null;
+  truncated: boolean;
+  preview_kind: 'text' | 'json' | 'metadata' | string;
+  content?: string | null;
+  size_bytes?: number | null;
+  status: string;
 }
 
 export interface RetryChainAttempt {
@@ -827,6 +839,8 @@ export interface JobRetryChain {
   root_job_id: string;
   selected_job_id: string;
   current_job_id: string;
+  integrity?: string;
+  warnings?: string[];
   attempts: RetryChainAttempt[];
 }
 
@@ -841,6 +855,9 @@ export interface ExecutionLogPage {
     available_stages: string[];
     available_event_types: string[];
   };
+  pagination_mode?: string;
+  truncated?: boolean;
+  bytes_scanned?: number | null;
 }
 
 export interface JobTimelineEvent {

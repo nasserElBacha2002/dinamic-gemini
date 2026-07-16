@@ -235,6 +235,7 @@ class AppContainer:
         self._stored_artifact_reader: StoredArtifactReader | None = None
         self._finalization_stage_store: FinalizationStageStore | None = None
         self._artifact_manifest_store: ArtifactManifestStore | None = None
+        self._job_source_asset_repo = None
         self._artifact_publication_outbox_store: ArtifactPublicationOutboxStore | None = None
         self._finalization_recovery_store = None
         self._repository_backend_resolution: RepositoryBackendResolution | None = None
@@ -647,6 +648,23 @@ class AppContainer:
         else:
             self._artifact_manifest_store = MemoryArtifactManifestStore()
         return self._artifact_manifest_store
+
+    def get_job_source_asset_repo(self):
+        if self._job_source_asset_repo is not None:
+            return self._job_source_asset_repo
+        from src.infrastructure.persistence.memory_job_source_asset_repository import (
+            MemoryJobSourceAssetRepository,
+        )
+        from src.infrastructure.persistence.sql_job_source_asset_repository import (
+            SqlJobSourceAssetRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._job_source_asset_repo = SqlJobSourceAssetRepository(self._get_v3_sql_client())
+        else:
+            self._job_source_asset_repo = MemoryJobSourceAssetRepository()
+        return self._job_source_asset_repo
 
     def get_artifact_publication_outbox_store(self) -> ArtifactPublicationOutboxStore:
         if self._artifact_publication_outbox_store is not None:

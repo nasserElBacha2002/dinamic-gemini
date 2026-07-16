@@ -1189,15 +1189,19 @@ def get_resolve_aisle_job_for_inventory_read_use_case(
     )
 
 
+def get_job_source_asset_repo():
+    return get_app_container().get_job_source_asset_repo()
+
+
 def get_job_artifact_catalog_service(
     manifest_store=Depends(get_artifact_manifest_store),
-    source_asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    job_source_asset_repo=Depends(get_job_source_asset_repo),
 ):
     from src.application.services.job_artifact_catalog_service import JobArtifactCatalogService
 
     return JobArtifactCatalogService(
         manifest_store=manifest_store,
-        source_asset_repo=source_asset_repo,
+        job_source_asset_repo=job_source_asset_repo,
     )
 
 

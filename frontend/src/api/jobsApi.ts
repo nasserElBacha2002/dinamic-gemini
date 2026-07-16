@@ -6,6 +6,7 @@ import type {
   ExecutionLogPage,
   ExecutionLogResponse,
   JobArtifactPage,
+  ArtifactPreview,
   JobErrorPage,
   JobRetryChain,
   JobSummary,
@@ -103,6 +104,22 @@ export function getJobArtifactDownloadUrl(
     aisleId,
     jobId,
     `/artifacts/${encodeURIComponent(artifactId)}/download`
+  );
+}
+
+export async function getJobArtifactPreview(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string,
+  artifactId: string
+): Promise<ArtifactPreview> {
+  return apiRequestJson<ArtifactPreview>(
+    jobScopedPath(
+      inventoryId,
+      aisleId,
+      jobId,
+      `/artifacts/${encodeURIComponent(artifactId)}/preview`
+    )
   );
 }
 

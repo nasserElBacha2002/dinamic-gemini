@@ -1334,6 +1334,18 @@ class ObservabilitySettings(BaseModel):
         le=1000,
         description="Max execution-log page size. Env: OBSERVABILITY_LOG_MAX_PAGE_SIZE.",
     )
+    observability_log_max_scan_bytes: int = Field(
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_LOG_MAX_SCAN_BYTES", "8000000")),
+        ge=64_000,
+        le=200_000_000,
+        description="Max bytes scanned per incremental log page request. Env: OBSERVABILITY_LOG_MAX_SCAN_BYTES.",
+    )
+    observability_download_max_bytes: int = Field(
+        default_factory=lambda: int(os.getenv("OBSERVABILITY_DOWNLOAD_MAX_BYTES", "0")),
+        ge=0,
+        le=5_000_000_000,
+        description="Max download size (0 = unlimited). Env: OBSERVABILITY_DOWNLOAD_MAX_BYTES.",
+    )
 
 
 class ConsolidationSettings(BaseModel):

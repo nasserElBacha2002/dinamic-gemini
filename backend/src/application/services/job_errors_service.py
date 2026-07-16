@@ -78,7 +78,7 @@ def collect_job_errors(
         if not isinstance(ev, dict):
             continue
         level = str(ev.get("level") or "").lower()
-        if level not in {"error", "critical", "warning"}:
+        if level not in {"error", "critical"}:
             continue
         payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
         msg = redact_secrets_in_text(str(ev.get("message") or ""))
