@@ -14,7 +14,7 @@ import {
 
 import type { AppServices } from './src/app/bootstrap/createAppServices';
 import { createAppServices } from './src/app/bootstrap/createAppServices';
-import type { CaptureSnapshot } from './src/features/capture/captureService';
+import type { CaptureContext, CaptureSnapshot } from './src/features/capture/captureService';
 import type { AuthSession } from './src/features/auth/authService';
 import type { AisleDto, InventoryListItemDto } from './src/services/api/types';
 import { getPhotoPermission, requestPhotoPermission } from './src/native/mediaStore';
@@ -35,29 +35,37 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     let mounted = true;
+    let unsubscribeCapture: (() => void) | undefined;
+    let createdServices: AppServices | undefined;
     void createAppServices(() => {
       setAuth(null);
       setScreen('login');
     }).then(async (created) => {
       if (!mounted) return;
+      createdServices = created;
       setServices(created);
       setConfigError(created.configError);
       const restored = created.configError ? null : await created.auth.restore();
       if (!mounted) return;
       setAuth(restored);
       const open = await created.capture.restoreLatestOpen();
-      const unsubscribe = created.capture.subscribe(setCapture);
+      unsubscribeCapture = created.capture.subscribe((snapshot) => {
+        if (mounted) {
+          setCapture(snapshot);
+        }
+      });
       if (restored) {
         setScreen(open ? (open.status === 'review' ? 'review' : 'activity') : 'inventories');
       }
       setLoading(false);
-      return unsubscribe;
     }).catch((e) => {
       setError(messageOf(e));
       setLoading(false);
     });
     return () => {
       mounted = false;
+      unsubscribeCapture?.();
+      createdServices?.capture.dispose();
     };
   }, []);
 
@@ -88,7 +96,7 @@ export default function App(): JSX.Element {
         <View style={styles.nav}>
           <SmallButton label="Inventarios" onPress={() => setScreen('inventories')} />
           <SmallButton label="Sesiones" onPress={() => setScreen('activity')} />
-          <SmallButton label="Salir" onPress={() => void services.auth.logout().then(() => setAuth(null))} />
+          <SmallButton label="Salir" onPress={() => void services.auth.logout().finally(() => setAuth(null))} />
         </View>
       }
     >
@@ -120,7 +128,7 @@ export default function App(): JSX.Element {
           onCancel={() => void services.capture.cancel()}
         />
       ) : null}
-      {screen === 'capture' && selectedInventory && selectedAisle ? (
+      {screen === 'capture' && (capture?.context || (selectedInventory && selectedAisle)) ? (
         <CaptureScreen
           services={services}
           inventory={selectedInventory}
@@ -245,9 +253,13 @@ function AislesScreen({ services, inventory, onSelect, onBack }: { services: App
   );
 }
 
-function CaptureScreen({ services, inventory, aisle, snapshot, onReview, onError }: { services: AppServices; inventory: InventoryListItemDto; aisle: AisleDto; snapshot: CaptureSnapshot | null; onReview: () => void; onError: (message: string | null) => void }) {
+function CaptureScreen({ services, inventory, aisle, snapshot, onReview, onError }: { services: AppServices; inventory: InventoryListItemDto | null; aisle: AisleDto | null; snapshot: CaptureSnapshot | null; onReview: () => void; onError: (message: string | null) => void }) {
   const [permission, setPermission] = useState('desconocido');
+  const context = captureContextFrom(snapshot, inventory, aisle);
   const start = async () => {
+    if (!inventory || !aisle) {
+      throw new Error('Seleccioná inventario y pasillo para iniciar una captura nueva.');
+    }
     const p = await requestPhotoPermission();
     setPermission(p.granted ? (p.limited ? 'parcial' : 'completo') : 'denegado');
     await services.capture.start({
@@ -264,20 +276,31 @@ function CaptureScreen({ services, inventory, aisle, snapshot, onReview, onError
   const counts = countPhotos(snapshot?.photos ?? []);
   return (
     <ScrollView>
-      <Text style={styles.h2}>Captura · {inventory.name} / {aisle.code}</Text>
+      <Text style={styles.h2}>Captura · {context?.inventoryName ?? 'Inventario'} / {context?.aisleName ?? 'Pasillo'}</Text>
+      {snapshot?.warning ? <ErrorText text={snapshot.warning} /> : null}
       <Text style={styles.row}>Permiso fotos: {permission}</Text>
       <Text style={styles.row}>Sesión: {snapshot?.session?.status ?? 'sin iniciar'}</Text>
       <Text style={styles.row}>FGS activo: {snapshot?.fgsActive ? 'sí' : 'no'}</Text>
       <Text style={styles.row}>Scan: {snapshot?.scanInProgress ? 'activo' : 'idle'} {snapshot?.pendingScan ? '· pendiente' : ''}</Text>
       <Text style={styles.row}>Detectadas: {counts.total} · Validando: {counts.waiting} · Estables: {counts.stable} · Error: {counts.errors} · Excluidas: {counts.excluded}</Text>
+      <Text style={styles.row}>Validaciones activas: {snapshot?.activeValidations ?? 0}</Text>
       <Text style={styles.row}>Scan cursor: {snapshot?.scanCursor.assetId || '∅'} @ {snapshot?.scanCursor.dateAdded ?? -1}</Text>
       <Text style={styles.row}>Última válida: {snapshot?.lastValidCursor.assetId || '∅'} @ {snapshot?.lastValidCursor.dateAdded ?? -1}</Text>
       <Text style={styles.row}>Último scan: {snapshot?.metrics.durationMs ?? 0}ms · leídos {snapshot?.metrics.assetsRead ?? 0} · hidratados {snapshot?.metrics.assetsHydrated ?? 0}</Text>
-      <Button label="Comenzar captura" disabled={snapshot?.session?.status === 'active'} onPress={() => void start().catch((e) => onError(messageOf(e)))} />
+      <Button label="Comenzar captura" disabled={!inventory || !aisle || Boolean(snapshot?.session)} onPress={() => void start().catch((e) => onError(messageOf(e)))} />
       <View style={styles.nav}>
         <SmallButton label="Escanear" disabled={snapshot?.session?.status !== 'active'} onPress={() => void services.capture.requestScan()} />
         <SmallButton label="Pausar" disabled={snapshot?.session?.status !== 'active'} onPress={() => void services.capture.pause()} />
-        <SmallButton label="Reanudar" disabled={snapshot?.session?.status !== 'paused'} onPress={() => void services.capture.resume()} />
+        <SmallButton
+          label="Reanudar"
+          disabled={snapshot?.session?.status !== 'paused'}
+          onPress={() => void requestPhotoPermission()
+            .then((p) => {
+              setPermission(p.granted ? (p.limited ? 'parcial' : 'completo') : 'denegado');
+              return services.capture.resume(p);
+            })
+            .catch((e) => onError(messageOf(e)))}
+        />
       </View>
       <Button label="Finalizar captura" disabled={snapshot?.session?.status !== 'active' && snapshot?.session?.status !== 'paused'} onPress={() => void services.capture.finish().then(onReview).catch((e) => onError(messageOf(e)))} />
       <PhotoGrid photos={snapshot?.photos ?? []} onExclude={(id) => void services.capture.exclude(id)} onReinclude={(id) => void services.capture.reincorporate(id)} />
@@ -288,10 +311,11 @@ function CaptureScreen({ services, inventory, aisle, snapshot, onReview, onError
 function ReviewScreen({ services, snapshot, onBack, onDone, onError }: { services: AppServices; snapshot: CaptureSnapshot | null; onBack: () => void; onDone: () => void; onError: (message: string | null) => void }) {
   const counts = countPhotos(snapshot?.photos ?? []);
   const canConfirm = counts.waiting === 0 && counts.errors === 0;
+  const context = snapshot?.context;
   return (
     <ScrollView>
       <SmallButton label="← Captura" onPress={onBack} />
-      <Text style={styles.h2}>Revisión</Text>
+      <Text style={styles.h2}>Revisión · {context?.inventoryName ?? 'Inventario'} / {context?.aisleName ?? 'Pasillo'}</Text>
       <Text style={styles.row}>Estables: {counts.stable} · Excluidas: {counts.excluded} · Errores: {counts.errors}</Text>
       {!canConfirm ? <ErrorText text="Resolvé errores o esperá validaciones antes de confirmar." /> : null}
       <Button label="Reintentar errores" disabled={counts.errors === 0} onPress={() => void services.capture.retryErrors()} />
@@ -381,6 +405,25 @@ function countPhotos(photos: CapturePhotoRow[]) {
     stable: photos.filter((p) => p.status === 'stable').length,
     errors: photos.filter((p) => p.status === 'unstable' || p.status === 'undecodable').length,
     excluded: photos.filter((p) => p.status === 'excluded').length,
+  };
+}
+
+function captureContextFrom(
+  snapshot: CaptureSnapshot | null,
+  inventory: InventoryListItemDto | null,
+  aisle: AisleDto | null,
+): CaptureContext | null {
+  if (snapshot?.context) {
+    return snapshot.context;
+  }
+  if (!inventory || !aisle) {
+    return null;
+  }
+  return {
+    inventoryId: inventory.id,
+    inventoryName: inventory.name,
+    aisleId: aisle.id,
+    aisleName: aisle.code,
   };
 }
 

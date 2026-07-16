@@ -24,7 +24,23 @@ export class InventoryService {
   }
 
   canSelect(inventory: InventoryListItemDto): boolean {
-    return !['closed', 'archived', 'cancelled'].includes(inventory.status.toLowerCase());
+    return canSelectInventory(inventory).ok;
   }
+}
+
+export interface SelectionDecision {
+  readonly ok: boolean;
+  readonly reason: string | null;
+}
+
+export function canSelectInventory(inventory: InventoryListItemDto): SelectionDecision {
+  const status = inventory.status.toLowerCase();
+  if (status === 'draft' || status === 'failed') {
+    return { ok: true, reason: null };
+  }
+  if (status === 'processing' || status === 'in_review' || status === 'completed') {
+    return { ok: false, reason: `Inventario no disponible para captura local (estado ${inventory.status}).` };
+  }
+  return { ok: false, reason: `Estado de inventario desconocido: ${inventory.status}.` };
 }
 

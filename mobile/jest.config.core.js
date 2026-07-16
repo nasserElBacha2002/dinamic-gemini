@@ -8,7 +8,17 @@ module.exports = {
   testEnvironment: 'node',
   rootDir: '.',
   roots: ['<rootDir>/tests', '<rootDir>/src/core'],
-  testMatch: ['**/*.test.ts'],
+  testMatch: [
+    '<rootDir>/tests/compositeCursor.test.ts',
+    '<rootDir>/tests/imageFilter.test.ts',
+    '<rootDir>/tests/stability.test.ts',
+    '<rootDir>/tests/photoDetection.test.ts',
+    '<rootDir>/tests/incrementalScan.test.ts',
+    '<rootDir>/tests/scanCoordinator.test.ts',
+    '<rootDir>/tests/detectionStability.integration.test.ts',
+    '<rootDir>/tests/logging.test.ts',
+    '<rootDir>/tests/captureState.test.ts',
+  ],
   moduleNameMapper: {
     '^@core/(.*)$': '<rootDir>/src/core/$1',
     '^@domain/(.*)$': '<rootDir>/src/domain/$1',

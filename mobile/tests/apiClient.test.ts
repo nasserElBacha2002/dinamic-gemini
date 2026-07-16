@@ -74,5 +74,75 @@ describe('ApiClient refresh mutex', () => {
     expect(refreshCalls).toBe(1);
     expect(storage.access).toBe('new');
   });
+
+  it('clears tokens and notifies once when refresh is definitively invalid', async () => {
+    const storage = new MemoryTokenStorage();
+    const onAuthExpired = jest.fn();
+    jest.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/auth/refresh')) {
+        return new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'revoked' } }), { status: 401 });
+      }
+      return new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'expired' } }), { status: 401 });
+    });
+    const client = new ApiClient({
+      config,
+      tokenStorage: storage,
+      logger: createLogger(() => undefined),
+      onAuthExpired,
+    });
+
+    await expect(client.get('/api/v3/inventories/')).rejects.toThrow('HTTP 401');
+    await expect(client.get('/api/v3/inventories/')).rejects.toThrow('La sesión venció.');
+
+    expect(storage.access).toBeNull();
+    expect(storage.refresh).toBeNull();
+    expect(onAuthExpired).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not clear tokens for temporary refresh failures', async () => {
+    const storage = new MemoryTokenStorage();
+    const onAuthExpired = jest.fn();
+    jest.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/auth/refresh')) {
+        return new Response(JSON.stringify({ detail: 'temporary' }), { status: 500 });
+      }
+      return new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'expired' } }), { status: 401 });
+    });
+    const client = new ApiClient({
+      config,
+      tokenStorage: storage,
+      logger: createLogger(() => undefined),
+      onAuthExpired,
+    });
+
+    await expect(client.get('/api/v3/inventories/')).rejects.toThrow('temporary');
+
+    expect(storage.access).toBe('old');
+    expect(storage.refresh).toBe('refresh');
+    expect(onAuthExpired).not.toHaveBeenCalled();
+  });
+
+  it('clears tokens when no refresh token exists', async () => {
+    const storage = new MemoryTokenStorage();
+    storage.refresh = null;
+    const onAuthExpired = jest.fn();
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'expired' } }), { status: 401 }),
+    );
+    const client = new ApiClient({
+      config,
+      tokenStorage: storage,
+      logger: createLogger(() => undefined),
+      onAuthExpired,
+    });
+
+    await expect(client.get('/api/v3/inventories/')).rejects.toThrow('La sesión venció.');
+
+    expect(storage.access).toBeNull();
+    expect(storage.refresh).toBeNull();
+    expect(onAuthExpired).toHaveBeenCalledTimes(1);
+  });
 });
 

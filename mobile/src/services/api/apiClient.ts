@@ -32,6 +32,7 @@ type RequestOptions = {
 
 export class ApiClient {
   private refreshPromise: Promise<void> | null = null;
+  private authExpiredNotified = false;
 
   constructor(private readonly options: ApiClientOptions) {}
 
@@ -99,16 +100,25 @@ export class ApiClient {
         const refreshToken = await this.options.tokenStorage.getRefreshToken();
         if (!refreshToken) {
           await this.options.tokenStorage.clear();
-          this.options.onAuthExpired?.();
+          this.notifyAuthExpired();
           throw new ApiError('La sesión venció.', 401, 'NO_REFRESH_TOKEN');
         }
         this.options.logger.info('auth_refresh', { reason: '401' });
-        const response = await this.fetchRaw('/auth/refresh', {
-          method: 'POST',
-          auth: false,
-          body: { refresh_token: refreshToken },
-        });
-        const payload = await parseResponse<LoginResponseDto>(response);
+        let payload: LoginResponseDto;
+        try {
+          const response = await this.fetchRaw('/auth/refresh', {
+            method: 'POST',
+            auth: false,
+            body: { refresh_token: refreshToken },
+          });
+          payload = await parseResponse<LoginResponseDto>(response);
+        } catch (e) {
+          if (isDefinitiveRefreshFailure(e)) {
+            await this.options.tokenStorage.clear();
+            this.notifyAuthExpired();
+          }
+          throw e;
+        }
         const tokens: AuthTokens = {
           accessToken: payload.access_token,
           refreshToken: payload.refresh_token,
@@ -122,6 +132,21 @@ export class ApiClient {
     }
     return this.refreshPromise;
   }
+
+  private notifyAuthExpired(): void {
+    if (this.authExpiredNotified) {
+      return;
+    }
+    this.authExpiredNotified = true;
+    this.options.onAuthExpired?.();
+  }
+}
+
+function isDefinitiveRefreshFailure(error: unknown): boolean {
+  if (!(error instanceof ApiError)) {
+    return false;
+  }
+  return error.status === 400 || error.status === 401 || error.status === 403 || error.status === 422;
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {

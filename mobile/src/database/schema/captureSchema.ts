@@ -43,7 +43,9 @@ export interface CapturePhotoRow {
   readonly status: CapturePhotoStatus;
   readonly rejection_reason: string | null;
   readonly stability_checks: number;
+  readonly stability_attempts: number;
   readonly stability_error: string | null;
+  readonly last_stability_attempt_at: string | null;
   readonly detected_at: string | null;
   readonly stable_at: string | null;
   readonly excluded_at: string | null;

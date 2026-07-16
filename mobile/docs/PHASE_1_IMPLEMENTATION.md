@@ -64,6 +64,7 @@ Restricciones:
 - `UNIQUE(capture_session_id, asset_id)`
 - índices por sesión, estado, asset y `date_added`
 - cursores separados: `scan_cursor_*` y `last_valid_cursor_*`
+- migración v2 agrega `stability_attempts` y `last_stability_attempt_at`
 - no se guardan bytes de imágenes
 
 ## Flujo de captura
@@ -71,13 +72,43 @@ Restricciones:
 1. Login y selección de inventario/pasillo contra backend existente.
 2. Permiso solo fotografías.
 3. Marcador inicial desde la última foto visible.
-4. Sesión SQLite `active`.
+4. Sesión SQLite `preparing`; si FGS inicia correctamente pasa a `active`.
 5. FGS real y listener de galería.
 6. Scan incremental newest-first hasta `scanCursor`.
 7. Persistencia como `detected` y luego `waiting_stability`.
 8. Prober de estabilidad + decode.
 9. Estado final local: `stable`, `unstable`, `undecodable`, `rejected` o `excluded`.
-10. Finalización mueve a `review`; confirmación mueve a `completed`.
+10. Finalización desconecta listener, espera validaciones o las marca recuperables, detiene FGS y mueve a `review`; confirmación mueve a `completed` y limpia la sesión activa.
+
+```mermaid
+flowchart TD
+  start["Comenzar captura"] --> preparing["SQLite: preparing"]
+  preparing --> fgs["Iniciar FGS"]
+  fgs --> active["active + listener"]
+  active --> scan["scan incremental serializado"]
+  scan --> waiting["foto: waiting_stability"]
+  waiting --> stable["stable"]
+  waiting --> recoverable["unstable / undecodable"]
+  active --> paused["paused"]
+  paused --> active
+  active --> finishing["finishing"]
+  paused --> finishing
+  finishing --> waitValidations["esperar validaciones activas"]
+  waitValidations --> review["review"]
+  review --> completed["completed + limpiar sesión"]
+  active --> interrupted["app cerrada"]
+  interrupted --> pausedRecovered["restore como paused"]
+```
+
+## Correcciones post-review de Fase 1
+
+- `loadAppConfig()` lee `Constants.expoConfig.extra`; `process.env` queda solo como fallback de tests.
+- `CaptureService` recibe adapters inyectables para MediaStore y estabilidad, lo que permite tests con fakes.
+- Una sesión `active` recuperada se convierte a `paused` y requiere reanudación explícita.
+- Solo se permite una sesión local abierta; múltiples sesiones antiguas se reparan manteniendo la más reciente.
+- Validaciones activas se registran por `sessionId + assetId`, se deduplican y se esperan al finalizar.
+- Resultados de estabilidad usan `sessionId` capturado y actualización condicional; no sobrescriben `excluded`.
+- Refresh token definitivo (`400/401/403/422`) limpia tokens y dispara `onAuthExpired`; fallos temporales no borran tokens.
 
 ## Validaciones ejecutadas
 

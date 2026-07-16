@@ -114,6 +114,19 @@ Reglas prácticas:
 - **Dispositivo físico**: usar la IP LAN del host (ej. `http://192.168.1.50:8000`).
   `127.0.0.1`/`localhost` apunta al teléfono, no a tu Mac, y produce
   "Falta configurar DINAMIC_API_BASE_URL" o errores de red.
+- **API key móvil**: si `DINAMIC_API_KEY` se empaqueta en la app, no es secreta.
+  Puede extraerse del APK y no debe otorgar privilegios críticos ni reemplazar la
+  autenticación del usuario. Si el backend depende de una API key global secreta,
+  ese diseño no es seguro para clientes móviles.
+
+## Recuperación local
+
+- La sesión SQLite es la fuente de verdad para inventario/pasillo al recuperar.
+- Una sesión que estaba `active` al cerrar la app se restaura como `paused` y requiere
+  reanudación explícita para reiniciar FGS, listener y scan incremental.
+- El dispositivo permite una sola sesión local abierta. Si se detectan múltiples sesiones
+  antiguas, se conserva la más recientemente actualizada y las demás pasan a `failed`
+  con política de reparación documentada; no se eliminan fotografías.
 
 ---
 

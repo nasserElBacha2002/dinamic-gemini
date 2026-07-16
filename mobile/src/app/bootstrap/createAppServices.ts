@@ -7,6 +7,8 @@ import { AisleService } from '../../features/aisles/aisleService';
 import { CaptureService } from '../../features/capture/captureService';
 import { InventoryService } from '../../features/inventories/inventoryService';
 import { createForegroundService } from '../../native/foregroundService';
+import { queryMostRecentPhoto, queryNewPhotosSince, subscribeToGalleryChanges } from '../../native/mediaStore';
+import { probeStability } from '../../native/stabilityProber';
 import { ApiClient } from '../../services/api/apiClient';
 import { secureTokenStorage } from '../../services/secureStorage/tokenStorage';
 
@@ -31,7 +33,16 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   });
   const db = await getDatabase();
   const captureRepo = new CaptureRepository(db);
-  const capture = new CaptureService(captureRepo, createForegroundService(), logger);
+  const capture = new CaptureService(captureRepo, createForegroundService(), logger, {
+    mediaStore: {
+      queryMostRecentPhoto,
+      queryNewPhotosSince,
+      subscribeToGalleryChanges,
+    },
+    stabilityProber: {
+      probe: (uri) => probeStability(uri),
+    },
+  });
   return {
     configError,
     api,

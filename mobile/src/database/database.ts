@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
-import { MIGRATIONS } from './migrations/migrations';
+import { MIGRATIONS, validateMigrations } from './migrations/migrations';
 
 export type SQLiteDatabase = Awaited<ReturnType<typeof SQLite.openDatabaseAsync>>;
 
@@ -17,6 +17,7 @@ export async function getDatabase(): Promise<SQLiteDatabase> {
 }
 
 export async function migrate(db: SQLiteDatabase): Promise<void> {
+  validateMigrations();
   await db.execAsync('PRAGMA foreign_keys = ON;');
   await db.execAsync('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL, applied_at TEXT NOT NULL);');
   const rows = await db.getAllAsync<{ version: number }>('SELECT version FROM schema_migrations;');

@@ -27,8 +27,8 @@ export interface StabilityProbeOptions {
 }
 
 export type StabilityOutcome =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly reason: 'unstable' | 'undecodable' };
+  | { readonly ok: true; readonly checks: number }
+  | { readonly ok: false; readonly reason: 'unstable' | 'undecodable' | 'missing'; readonly checks: number };
 
 const _defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -79,14 +79,16 @@ export async function probeStability(
       break;
     }
     if (state.phase === 'unstable') {
-      return { ok: false, reason: 'unstable' };
+      return { ok: false, reason: 'unstable', checks: state.checks };
     }
     await sleep(intervalMs);
   }
 
   if (state.phase !== 'settled') {
-    return { ok: false, reason: 'unstable' };
+    return { ok: false, reason: 'unstable', checks: state.checks };
   }
   const decodable = await canDecode(uri);
-  return decodable ? { ok: true } : { ok: false, reason: 'undecodable' };
+  return decodable
+    ? { ok: true, checks: state.checks }
+    : { ok: false, reason: 'undecodable', checks: state.checks };
 }

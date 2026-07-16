@@ -50,6 +50,8 @@ export class AuthService {
       if (refresh) {
         await this.api.post<void>('/auth/logout', { refresh_token: refresh });
       }
+    } catch (e) {
+      this.logger.warn('auth_refresh', { where: 'logout_remote', message: String(e) });
     } finally {
       await this.tokenStorage.clear();
     }

@@ -27,7 +27,26 @@ export class AisleService {
   }
 
   canSelect(aisle: AisleDto): boolean {
-    return aisle.is_active && !['processing'].includes(aisle.status.toLowerCase());
+    return canSelectAisle(aisle).ok;
   }
+}
+
+export interface SelectionDecision {
+  readonly ok: boolean;
+  readonly reason: string | null;
+}
+
+export function canSelectAisle(aisle: AisleDto): SelectionDecision {
+  if (!aisle.is_active) {
+    return { ok: false, reason: 'Pasillo inactivo.' };
+  }
+  const status = aisle.status.toLowerCase();
+  if (status === 'created' || status === 'assets_uploaded' || status === 'failed') {
+    return { ok: true, reason: null };
+  }
+  if (status === 'queued' || status === 'processing' || status === 'processed' || status === 'in_review' || status === 'completed') {
+    return { ok: false, reason: `Pasillo no disponible para captura local (estado ${aisle.status}).` };
+  }
+  return { ok: false, reason: `Estado de pasillo desconocido: ${aisle.status}.` };
 }
 

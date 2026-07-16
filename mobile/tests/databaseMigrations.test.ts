@@ -1,6 +1,22 @@
-import { MIGRATIONS } from '../src/database/migrations/migrations';
+import { MIGRATIONS, validateMigrations } from '../src/database/migrations/migrations';
 
 describe('SQLite migrations', () => {
+  it('keeps migration versions unique and strictly ordered', () => {
+    expect(() => validateMigrations()).not.toThrow();
+    expect(() =>
+      validateMigrations([
+        { version: 1, name: 'a', sql: 'SELECT 1;' },
+        { version: 1, name: 'b', sql: 'SELECT 2;' },
+      ]),
+    ).toThrow('Duplicate migration version');
+    expect(() =>
+      validateMigrations([
+        { version: 2, name: 'b', sql: 'SELECT 2;' },
+        { version: 1, name: 'a', sql: 'SELECT 1;' },
+      ]),
+    ).toThrow('Migrations must be strictly ordered');
+  });
+
   it('creates capture_sessions and capture_photos with required constraints and indexes', () => {
     const sql = MIGRATIONS.map((m) => m.sql).join('\n');
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS capture_sessions');
@@ -12,6 +28,13 @@ describe('SQLite migrations', () => {
     expect(sql).toContain('idx_capture_photos_date_added');
     expect(sql).toContain('scan_cursor_date_added');
     expect(sql).toContain('last_valid_cursor_date_added');
+  });
+
+  it('adds v2 stability metrics without editing migration 1 destructively', () => {
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2]);
+    const v2 = MIGRATIONS.find((m) => m.version === 2);
+    expect(v2?.sql).toContain('stability_attempts');
+    expect(v2?.sql).toContain('last_stability_attempt_at');
   });
 });
 

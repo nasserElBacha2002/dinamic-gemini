@@ -17,10 +17,12 @@
     "typecheck": "tsc --noEmit",
     "typecheck:core": "tsc --noEmit -p tsconfig.core.json",
     "lint": "eslint . --ext .ts,.tsx --max-warnings 0",
-    "test": "jest --config jest.config.core.js",
+    "test": "npm run test:core && npm run test:services && npm run test:integration",
     "test:core": "jest --config jest.config.core.js",
+    "test:services": "jest --config jest.config.services.js",
+    "test:integration": "jest --config jest.config.integration.js",
     "doctor": "expo-doctor",
-    "verify": "npm run typecheck && npm run typecheck:core && npm run lint && npm run test:core && npm test",
+    "verify": "npm run typecheck && npm run lint && npm test",
     "ios": "expo run:ios"
   },
   "dependencies": {
@@ -46,6 +48,7 @@
     "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.2",
+    "expo-doctor": "^1.20.1",
     "jest": "^29.7.0",
     "ts-jest": "^29.2.0",
     "typescript": "~5.3.3"

@@ -66,5 +66,31 @@ CREATE INDEX IF NOT EXISTS idx_capture_photos_date_added ON capture_photos(date_
 CREATE INDEX IF NOT EXISTS idx_capture_sessions_status ON capture_sessions(status);
 `,
   },
+  {
+    version: 2,
+    name: 'capture_stability_metrics',
+    sql: `
+ALTER TABLE capture_photos ADD COLUMN stability_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE capture_photos ADD COLUMN last_stability_attempt_at TEXT;
+`,
+  },
 ];
+
+export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {
+  const seen = new Set<number>();
+  let previous = 0;
+  for (const migration of migrations) {
+    if (seen.has(migration.version)) {
+      throw new Error(`Duplicate migration version: ${migration.version}`);
+    }
+    if (migration.version <= previous) {
+      throw new Error(`Migrations must be strictly ordered: ${migration.version} after ${previous}`);
+    }
+    if (!migration.name.trim()) {
+      throw new Error(`Migration ${migration.version} has an empty name`);
+    }
+    seen.add(migration.version);
+    previous = migration.version;
+  }
+}
 
