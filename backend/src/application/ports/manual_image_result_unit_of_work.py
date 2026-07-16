@@ -29,6 +29,7 @@ class ManualImageResultRepositories:
 
 class ManualImageResultUnitOfWork(Protocol):
     repositories: ManualImageResultRepositories
+    timing_ms: dict[str, float]
 
     def bind_lifecycle_scope(self, *, inventory_id: str, aisle_id: str) -> None: ...
 

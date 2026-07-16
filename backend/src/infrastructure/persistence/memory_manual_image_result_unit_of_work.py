@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from src.application.ports.manual_image_result_unit_of_work import (
     ManualImageResultRepositories,
@@ -55,7 +55,7 @@ def _snapshot_coverage(repo: Any) -> dict[tuple[str, str], Any] | None:
     by_key = getattr(repo, "_by_key", None)
     if by_key is None:
         return None
-    return copy.deepcopy(by_key)
+    return cast(dict[tuple[str, str], Any], copy.deepcopy(by_key))
 
 
 def _restore_coverage(repo: Any, snapshot: dict[tuple[str, str], Any] | None) -> None:

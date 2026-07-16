@@ -356,7 +356,7 @@ class CreateManualImageResultUseCase:
                 timing["review_action_insert_ms"] = (time.perf_counter() - started) * 1000.0
 
                 uow.commit()
-                if getattr(uow, "timing_ms", None):
+                if uow.timing_ms:
                     timing.update(uow.timing_ms)
         except (ManualResultAlreadyExistsError, ImageAlreadyHasResultsError):
             outcome_status = "conflict"
