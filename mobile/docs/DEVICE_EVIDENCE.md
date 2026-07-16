@@ -1,21 +1,33 @@
-# Evidencia de dispositivo — Fase 0
+# Evidencia de dispositivo — Fase 1
 
-Completar después de la prueba física. Sin este archivo firmado, la Fase 0 queda
+Completar después de la prueba física. Sin este archivo firmado, la Fase 1 queda
 **parcialmente validada**.
 
 ## Dispositivo
 
 | Campo | Valor |
 |-------|-------|
-| Fabricante | |
-| Modelo | |
-| Versión Android | |
-| Fecha de prueba | |
-| Operador | |
+| Fabricante | Samsung |
+| Modelo | SM-G985F |
+| Versión Android | 13 |
+| Fecha de prueba | 2026-07-16 |
+| Operador | Instalación automatizada desde Cursor |
+
+## Evidencia ya registrada
+
+- [x] `npm ci`
+- [x] `npm run verify`
+- [x] `npx expo prebuild -p android --clean`
+- [x] `./gradlew assembleDebug`
+- [x] `./gradlew installDebug` en dispositivo conectado
+- [ ] `npx expo-doctor` sin advertencias críticas Android (queda warning Xcode local / iOS)
 
 ## Escenario ejecutado
 
 - [ ] Permiso solo fotografías (sin prompt de video)
+- [ ] Login contra backend actual
+- [ ] Listado de inventarios
+- [ ] Listado de pasillos
 - [ ] Marcar inicio
 - [ ] Foreground Service / notificación visible
 - [ ] 20 fotografías capturadas/copiadas
@@ -26,6 +38,8 @@ Completar después de la prueba física. Sin este archivo firmado, la Fase 0 que
 - [ ] 0 duplicados
 - [ ] Estabilidad aplicada (ninguna confirmada sin estabilizar)
 - [ ] Finalizar captura
+- [ ] Revisión y exclusión/reincorporación
+- [ ] Cerrar/reabrir app y recuperar sesión
 - [ ] Notificación FGS desaparece
 
 ## Métricas

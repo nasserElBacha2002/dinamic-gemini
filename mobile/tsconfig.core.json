@@ -13,6 +13,14 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/core", "src/domain", "src/shared/constants", "tests"],
+  "include": [
+    "src/core",
+    "src/domain",
+    "src/shared/constants",
+    "src/app/config/resolveAppConfig.ts",
+    "src/services/api",
+    "src/database/migrations",
+    "tests"
+  ],
   "exclude": ["node_modules"]
 }

@@ -1,12 +1,15 @@
-/**
- * Local spike photo lifecycle (Fase 0 only — not the full upload queue).
- */
-export type SpikePhotoStatus =
+/** Local photo lifecycle for capture/review (app side only). */
+export type CapturePhotoStatus =
+  | 'detected'
   | 'waiting_stability'
   | 'stable'
   | 'unstable'
   | 'undecodable'
-  | 'rejected';
+  | 'rejected'
+  | 'excluded';
+
+/** @deprecated Use CapturePhotoStatus. */
+export type SpikePhotoStatus = CapturePhotoStatus;
 
 /** Local-only capture session lifecycle (app side). */
 export type CaptureSessionStatus =
@@ -14,9 +17,7 @@ export type CaptureSessionStatus =
   | 'active'
   | 'paused'
   | 'finishing'
-  | 'waiting_uploads'
-  | 'ready_to_process'
-  | 'processing'
+  | 'review'
   | 'completed'
   | 'failed'
   | 'cancelled';

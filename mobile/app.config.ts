@@ -1,7 +1,7 @@
 import type { ExpoConfig } from 'expo/config';
 
 /**
- * Expo config for the Dinamic Inventory Android capture client (Fase 0 spike).
+ * Expo config for the Dinamic Inventory Android capture client (Fase 1).
  *
  * PHOTOS-ONLY: Android manifest declares only image media permissions. We intentionally
  * do NOT declare READ_MEDIA_VIDEO. On Android 13+ the OS shows a photos-only prompt.
@@ -39,7 +39,7 @@ const config: ExpoConfig = {
     ],
   },
   plugins: [
-    // Fase 0 spike: only media-library is required. SQLite/SecureStore plugins are added in Fase 1.
+    'expo-secure-store',
     [
       'expo-media-library',
       {
@@ -53,6 +53,8 @@ const config: ExpoConfig = {
   extra: {
     // Backend base URL is injected per-environment; see .env.example.
     apiBaseUrl: process.env.DINAMIC_API_BASE_URL ?? '',
+    apiKey: process.env.DINAMIC_API_KEY ?? '',
+    environment: process.env.DINAMIC_ENVIRONMENT ?? 'development',
   },
 };
 
