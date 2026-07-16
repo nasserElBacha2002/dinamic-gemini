@@ -11,6 +11,7 @@ from typing import Protocol
 class ManualImageCoverageLink:
     id: str
     job_id: str
+    job_source_asset_id: str
     source_asset_id: str
     position_id: str
     aisle_id: str

@@ -36,16 +36,24 @@ vi.mock('../../../../src/components/ui', async (importOriginal) => {
   };
 });
 
+vi.mock('../../../../src/features/results/hooks/useEvidenceImageLoad', () => ({
+  useEvidenceImageLoad: vi.fn(() => ({ status: 'idle' as const })),
+}));
+
 const baseItem: JobImageResultItem = {
-  image_id: 'img-1',
+  job_source_asset_id: 'jsa-1',
   source_asset_id: 'asset-1',
   job_id: 'job-1',
   image_url: '/api/v3/inventories/inv-1/aisles/aisle-1/assets/asset-1/file?job_id=job-1',
   original_filename: 'IMG_0001.JPG',
   created_at: '2024-01-01T00:00:00Z',
+  position_order: 0,
   processing_status: 'processed_without_result',
   has_result: false,
   result_count: 0,
+  automatic_result_count: 0,
+  manual_result_count: 0,
+  has_manual_result: false,
   results: [],
 };
 
@@ -80,6 +88,13 @@ describe('ManualImageResultDrawer', () => {
     isPendingRef.value = false;
   });
 
+  it('shows field labels and the image viewer when open', () => {
+    renderDrawer();
+    expect(screen.getByLabelText(/sku/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/cantidad|quantity/i)).toBeInTheDocument();
+    expect(screen.getByTestId('manual-image-result-viewer')).toBeInTheDocument();
+  });
+
   it('shows validation errors and does not submit when SKU and quantity are empty', async () => {
     renderDrawer();
     fireEvent.click(screen.getByTestId('manual-image-result-save'));
@@ -89,18 +104,18 @@ describe('ManualImageResultDrawer', () => {
     expect(mutateAsyncMock).not.toHaveBeenCalled();
   });
 
-  it('rejects a non-integer / negative quantity', async () => {
+  it('rejects zero, negative, and non-integer quantity', async () => {
     renderDrawer();
     fireEvent.change(screen.getByTestId('manual-image-result-sku'), {
       target: { value: 'SKU-1' },
     });
     fireEvent.change(screen.getByTestId('manual-image-result-quantity'), {
-      target: { value: '-3' },
+      target: { value: '0' },
     });
     fireEvent.click(screen.getByTestId('manual-image-result-save'));
 
     expect(
-      await screen.findByText(/cantidad.*entero|quantity must be a whole number/i)
+      await screen.findByText(/cantidad.*mayor que 0|quantity must be a whole number greater than 0/i)
     ).toBeInTheDocument();
     expect(mutateAsyncMock).not.toHaveBeenCalled();
   });
@@ -134,9 +149,9 @@ describe('ManualImageResultDrawer', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('shows inline error and triggers onConflict on 409 MANUAL_RESULT_ALREADY_EXISTS', async () => {
+  it('shows refresh message and triggers onConflict on 409 IMAGE_ALREADY_HAS_RESULTS', async () => {
     mutateAsyncMock.mockRejectedValueOnce(
-      new ApiError('conflict', 409, { code: 'MANUAL_RESULT_ALREADY_EXISTS' })
+      new ApiError('conflict', 409, { code: 'IMAGE_ALREADY_HAS_RESULTS' })
     );
     const onConflict = vi.fn();
     const onClose = vi.fn();
@@ -151,10 +166,10 @@ describe('ManualImageResultDrawer', () => {
     fireEvent.click(screen.getByTestId('manual-image-result-save'));
 
     expect(
-      await screen.findByText(/ya tiene un resultado manual|already has a manual result/i)
+      await screen.findByText(/ya tiene resultados|already has results/i)
     ).toBeInTheDocument();
+    expect(screen.getByText(/actualizá la lista|refresh the list/i)).toBeInTheDocument();
     expect(onConflict).toHaveBeenCalledTimes(1);
-    // Drawer stays open on conflict so the operator can see the inline error.
     expect(onClose).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(showSnackbarMock).toHaveBeenCalledWith(expect.any(String), 'error')

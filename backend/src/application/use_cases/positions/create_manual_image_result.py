@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from src.application.errors import (
     AssetNotInJobSnapshotError,
+    ImageAlreadyHasResultsError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
@@ -16,32 +18,36 @@ from src.application.errors import (
     SourceAssetNotFoundForAisleError,
 )
 from src.application.ports.clock import Clock
+from src.application.ports.contracts import PositionListQuery
 from src.application.ports.job_source_asset_repository import JobSourceAssetRepository
-from src.application.ports.manual_image_coverage_repository import (
-    ManualImageCoverageLink,
-    ManualImageCoverageRepository,
+from src.application.ports.manual_image_coverage_repository import ManualImageCoverageLink
+from src.application.ports.manual_image_result_unit_of_work import (
+    ManualImageResultRepositories,
+    ManualImageResultUnitOfWork,
 )
 from src.application.ports.repositories import (
     AisleRepository,
-    EvidenceRepository,
     InventoryRepository,
     JobRepository,
     PositionRepository,
-    ProductRecordRepository,
     ResultEvidenceRepository,
-    ReviewActionRepository,
     SourceAssetRepository,
 )
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
-from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.job_image_result_resolution import (
+    count_linked_positions_for_asset,
     is_photos_job_snapshot,
     unique_photo_coverage_images,
+)
+from src.application.services.manual_image_result_input import (
+    build_manual_product_record_fields,
+    validate_manual_image_result_input,
 )
 from src.domain.evidence.entities import Evidence, EvidenceType
 from src.domain.positions.entities import (
     Position,
     PositionCreationSource,
+    PositionReviewResolution,
     PositionStatus,
 )
 from src.domain.products.entities import ProductRecord
@@ -82,13 +88,9 @@ class CreateManualImageResultUseCase:
         job_source_asset_repo: JobSourceAssetRepository,
         source_asset_repo: SourceAssetRepository,
         position_repo: PositionRepository,
-        product_record_repo: ProductRecordRepository,
-        evidence_repo: EvidenceRepository,
         result_evidence_repo: ResultEvidenceRepository,
-        review_repo: ReviewActionRepository,
-        manual_coverage_repo: ManualImageCoverageRepository,
         clock: Clock,
-        aisle_review_sync: AisleReviewLifecycleSync,
+        unit_of_work_factory: Callable[[], ManualImageResultUnitOfWork],
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
@@ -96,13 +98,9 @@ class CreateManualImageResultUseCase:
         self._job_source_asset_repo = job_source_asset_repo
         self._source_asset_repo = source_asset_repo
         self._position_repo = position_repo
-        self._product_record_repo = product_record_repo
-        self._evidence_repo = evidence_repo
         self._result_evidence_repo = result_evidence_repo
-        self._review_repo = review_repo
-        self._manual_coverage_repo = manual_coverage_repo
         self._clock = clock
-        self._aisle_review_sync = aisle_review_sync
+        self._unit_of_work_factory = unit_of_work_factory
 
     def execute(self, command: CreateManualImageResultCommand) -> CreateManualImageResultOutcome:
         inv = self._inventory_repo.get_by_id(command.inventory_id)
@@ -126,21 +124,12 @@ class CreateManualImageResultUseCase:
                 f"Job {job_id} does not belong to aisle {command.aisle_id}"
             )
 
-        sku = (command.sku or "").strip()
-        if not sku:
-            raise ValueError("sku is required")
-        if command.quantity < 0:
-            raise ValueError("quantity must be non-negative")
-
-        description: str | None = None
-        if command.description is not None:
-            clean = command.description.strip()
-            description = clean or None
-
-        position_code: str | None = None
-        if command.position_code is not None:
-            clean_code = command.position_code.strip()
-            position_code = clean_code or None
+        validated = validate_manual_image_result_input(
+            sku=command.sku,
+            quantity=command.quantity,
+            description=command.description,
+            position_code=command.position_code,
+        )
 
         asset_id = (command.source_asset_id or "").strip()
         if not asset_id:
@@ -155,7 +144,6 @@ class CreateManualImageResultUseCase:
         photo_images = unique_photo_coverage_images(links)
         photo_by_asset = {img.source_asset_id: img for img in photo_images}
         if asset_id not in photo_by_asset:
-            # Distinguish "not in snapshot" vs "in snapshot but not a coverage photo"
             in_snapshot = any((link.source_asset_id or "").strip() == asset_id for link in links)
             if not in_snapshot:
                 raise AssetNotInJobSnapshotError(
@@ -165,7 +153,6 @@ class CreateManualImageResultUseCase:
                 "Manual results are only allowed for primary photo assets in the job snapshot."
             )
 
-        # Prefer live asset type check when the row still exists (Option B: may be gone).
         live = self._source_asset_repo.get_by_id(asset_id)
         if live is not None:
             if live.aisle_id != command.aisle_id:
@@ -178,12 +165,6 @@ class CreateManualImageResultUseCase:
                     "Manual results are not allowed for video assets."
                 )
 
-        existing = self._manual_coverage_repo.get_by_job_and_asset(job_id, asset_id)
-        if existing is not None:
-            raise ManualResultAlreadyExistsError(
-                "La imagen ya tiene un resultado manual asociado."
-            )
-
         snap = photo_by_asset[asset_id]
         now = self._clock.now()
         position_id = str(uuid.uuid4())
@@ -192,22 +173,23 @@ class CreateManualImageResultUseCase:
         result_evidence_id = str(uuid.uuid4())
         coverage_id = str(uuid.uuid4())
         entity_uid = f"{job_id}_manual_{asset_id}"
+        product_fields = build_manual_product_record_fields(validated.quantity)
 
         summary: dict = {
             "entity_uid": entity_uid,
             "entity_type": "PALLET",
-            "internal_code": sku,
+            "internal_code": validated.sku,
             "source_image_id": asset_id,
             "source_asset_id": asset_id,
             "source_image_original_filename": snap.original_filename,
             "source_image_sequence": snap.position_order + 1,
             "creation_source": PositionCreationSource.MANUAL.value,
-            "qty_source": "manual_review",
-            "qty_parse_status": "valid_positive" if command.quantity > 0 else "zero",
+            "qty_source": product_fields["qty_source"],
+            "qty_parse_status": product_fields["qty_parse_status"],
         }
-        if position_code:
-            summary["position_barcode"] = position_code
-            summary["pallet_id"] = position_code
+        if validated.position_code:
+            summary["position_barcode"] = validated.position_code
+            summary["pallet_id"] = validated.position_code
 
         storage_path = snap.storage_key or f"manual://{asset_id}"
         if live is not None:
@@ -216,33 +198,33 @@ class CreateManualImageResultUseCase:
         position = Position(
             id=position_id,
             aisle_id=command.aisle_id,
-            status=PositionStatus.CORRECTED,
+            status=PositionStatus.REVIEWED,
             confidence=1.0,
             needs_review=False,
             primary_evidence_id=evidence_id,
             created_at=now,
             updated_at=now,
-            review_resolution=None,
+            review_resolution=PositionReviewResolution.MANUAL_CREATED,
             detected_summary_json=summary,
             corrected_summary_json=None,
-            corrected_position_code=position_code,
+            corrected_position_code=validated.position_code,
             job_id=job_id,
             creation_source=PositionCreationSource.MANUAL,
         )
         product = ProductRecord(
             id=product_id,
             position_id=position_id,
-            sku=sku,
-            description=description,
-            detected_quantity=command.quantity,
-            corrected_quantity=command.quantity,
+            sku=validated.sku,
+            description=validated.description,
+            detected_quantity=validated.quantity,
+            corrected_quantity=validated.quantity,
             confidence=1.0,
             created_at=now,
             updated_at=now,
-            qty_source="manual_review",
+            qty_source=str(product_fields["qty_source"]),
             qty_inference_reason=None,
-            raw_qty=command.quantity,
-            qty_parse_status="valid_positive" if command.quantity > 0 else "zero",
+            raw_qty=validated.quantity,
+            qty_parse_status=str(product_fields["qty_parse_status"]),
         )
         evidence = Evidence(
             id=evidence_id,
@@ -285,6 +267,7 @@ class CreateManualImageResultUseCase:
         coverage = ManualImageCoverageLink(
             id=coverage_id,
             job_id=job_id,
+            job_source_asset_id=snap.job_source_asset_id,
             source_asset_id=asset_id,
             position_id=position_id,
             aisle_id=command.aisle_id,
@@ -302,13 +285,14 @@ class CreateManualImageResultUseCase:
                 "aisle_id": command.aisle_id,
                 "job_id": job_id,
                 "source_asset_id": asset_id,
-                "image_id": snap.image_id,
+                "job_source_asset_id": snap.job_source_asset_id,
                 "position_id": position_id,
-                "sku": sku,
-                "quantity": command.quantity,
-                "description": description,
-                "position_code": position_code,
+                "sku": validated.sku,
+                "quantity": validated.quantity,
+                "description": validated.description,
+                "position_code": validated.position_code,
                 "creation_source": PositionCreationSource.MANUAL.value,
+                "review_resolution": PositionReviewResolution.MANUAL_CREATED.value,
             },
             created_at=now,
             user_id=command.user_id,
@@ -316,20 +300,71 @@ class CreateManualImageResultUseCase:
             job_id=job_id,
         )
 
-        # Persist order: position → product → evidence → coverage (unique) → result_evidence → review.
-        # Coverage unique constraint is the concurrency gate.
-        self._position_repo.save(position)
-        self._product_record_repo.save(product)
-        self._evidence_repo.save(evidence)
-        try:
-            self._manual_coverage_repo.save(coverage)
-        except ManualResultAlreadyExistsError:
-            raise
-        self._result_evidence_repo.save_many([result_evidence])
-        self._review_repo.save(review)
-        self._aisle_review_sync.after_review_mutation(command.inventory_id, command.aisle_id)
+        with self._unit_of_work_factory() as uow:
+            if hasattr(uow, "bind_lifecycle_scope"):
+                uow.bind_lifecycle_scope(
+                    inventory_id=command.inventory_id,
+                    aisle_id=command.aisle_id,
+                )
+            repos = uow.repositories
+            self._assert_no_existing_results(
+                repos=repos,
+                job_id=job_id,
+                aisle_id=command.aisle_id,
+                source_asset_id=asset_id,
+                coverage_asset_ids=frozenset(photo_by_asset.keys()),
+            )
+            repos.position_repo.save(position)
+            repos.product_record_repo.save(product)
+            repos.evidence_repo.save(evidence)
+            try:
+                repos.manual_coverage_repo.save(coverage)
+            except ManualResultAlreadyExistsError:
+                raise
+            repos.result_evidence_repo.save_many([result_evidence])
+            repos.review_repo.save(review)
+            uow.commit()
 
         return CreateManualImageResultOutcome(position=position, product=product)
+
+    def _assert_no_existing_results(
+        self,
+        *,
+        repos: ManualImageResultRepositories,
+        job_id: str,
+        aisle_id: str,
+        source_asset_id: str,
+        coverage_asset_ids: frozenset[str],
+    ) -> None:
+        existing_manual = repos.manual_coverage_repo.get_by_job_and_asset(job_id, source_asset_id)
+        if existing_manual is not None:
+            raise ManualResultAlreadyExistsError(
+                "La imagen ya tiene un resultado manual asociado."
+            )
+
+        evidence_rows = list(repos.result_evidence_repo.list_by_job_id(job_id))
+        positions = list(
+            repos.position_repo.list_by_aisle_query(
+                aisle_id,
+                PositionListQuery(
+                    page=1,
+                    page_size=1_000_000,
+                    sort_by="created_at",
+                    sort_dir="asc",
+                    job_id=job_id,
+                ),
+            )
+        )
+        result_count = count_linked_positions_for_asset(
+            source_asset_id=source_asset_id,
+            coverage_asset_ids=coverage_asset_ids,
+            result_evidence=evidence_rows,
+            positions=positions,
+        )
+        if result_count > 0:
+            raise ImageAlreadyHasResultsError(
+                "La imagen ya tiene uno o más resultados asociados."
+            )
 
 
 __all__ = [

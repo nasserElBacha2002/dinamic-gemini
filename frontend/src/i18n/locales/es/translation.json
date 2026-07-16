@@ -1941,6 +1941,7 @@
         "noFilename": "Sin nombre de archivo",
         "resultsCount": "{{count}} resultado",
         "resultsCount_other": "{{count}} resultados",
+        "resultCounts": "Auto {{automatic}} · Manual {{manual}}",
         "withoutResultBadge": "Sin resultado",
         "withResultBadge": "Con resultado",
         "addResultAction": "Agregar resultado",
@@ -1954,8 +1955,7 @@
           "processing": "Procesando",
           "processed_with_result": "Procesada",
           "processed_without_result": "Procesada · sin resultado",
-          "failed": "Procesamiento fallido",
-          "manual_result": "Resultado manual"
+          "failed": "Procesamiento fallido"
         }
       },
       "empty": "No se encontraron imágenes para esta corrida.",
@@ -1975,12 +1975,14 @@
         "cancel": "Cancelar",
         "saving": "Guardando…",
         "successSnackbar": "Resultado manual agregado",
+        "imageLoading": "Cargando imagen…",
         "errorSkuRequired": "El SKU es obligatorio",
         "errorQuantityRequired": "La cantidad es obligatoria",
-        "errorQuantityInvalid": "La cantidad debe ser un número entero ≥ 0"
+        "errorQuantityInvalid": "La cantidad debe ser un número entero mayor que 0"
       },
       "errors": {
         "already_exists": "Esta imagen ya tiene un resultado manual asociado.",
+        "already_has_results": "Esta imagen ya tiene resultados. Actualizá la lista para ver la cobertura más reciente.",
         "not_allowed_for_asset_type": "Los resultados manuales solo están permitidos para fotos principales.",
         "asset_not_in_job": "Este recurso no forma parte de esta corrida.",
         "photos_job_required": "La cobertura de imágenes solo está disponible para corridas de fotos."

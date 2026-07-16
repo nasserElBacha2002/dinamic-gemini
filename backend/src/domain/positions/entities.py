@@ -38,6 +38,7 @@ class PositionReviewResolution(str, Enum):
     POSITION_CODE_CORRECTED = "position_code_corrected"
     UNKNOWN = "unknown"
     IMAGE_MISMATCH = "image_mismatch"
+    MANUAL_CREATED = "manual_created"
     DELETED = "deleted"
 
 

@@ -30,6 +30,8 @@ from src.application.services.job_image_result_resolution import (
     is_photos_job_snapshot,
     unique_photo_coverage_images,
 )
+from src.application.errors import ImageAlreadyHasResultsError, ManualResultAlreadyExistsError
+from src.application.ports.manual_image_result_unit_of_work import ManualImageResultRepositories
 from src.application.use_cases.positions.create_manual_image_result import (
     CreateManualImageResultCommand,
     CreateManualImageResultUseCase,
@@ -44,7 +46,12 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
-from src.domain.positions.entities import Position, PositionCreationSource, PositionStatus
+from src.domain.positions.entities import (
+    Position,
+    PositionCreationSource,
+    PositionReviewResolution,
+    PositionStatus,
+)
 from src.domain.products.entities import ProductRecord
 from src.domain.result_evidence.entities import (
     RESULT_EVIDENCE_KIND_ENTITY_TRACEABILITY,
@@ -53,6 +60,12 @@ from src.domain.result_evidence.entities import (
 )
 from src.domain.reviews.entities import ReviewActionType
 from src.domain.traceability import TraceabilityStatus
+from src.infrastructure.persistence.memory_job_image_coverage_repository import (
+    MemoryJobImageCoverageRepository,
+)
+from src.infrastructure.persistence.memory_manual_image_result_unit_of_work import (
+    build_memory_manual_image_result_uow_factory,
+)
 from src.infrastructure.persistence.memory_job_source_asset_repository import (
     MemoryJobSourceAssetRepository,
 )
@@ -275,20 +288,38 @@ def _add_position_with_evidence(
     )
 
 
+def _coverage_repo(world: dict) -> MemoryJobImageCoverageRepository:
+    return MemoryJobImageCoverageRepository(
+        job_source_asset_repo=world["jsa_repo"],
+        position_repo=world["position_repo"],
+        result_evidence_repo=world["re_repo"],
+    )
+
+
 def _list_uc(world: dict) -> ListJobImageResultsUseCase:
     return ListJobImageResultsUseCase(
         inventory_repo=world["inv_repo"],
         aisle_repo=world["aisle_repo"],
         job_repo=world["job_repo"],
         job_source_asset_repo=world["jsa_repo"],
-        position_repo=world["position_repo"],
+        coverage_repo=_coverage_repo(world),
         product_record_repo=world["product_repo"],
-        result_evidence_repo=world["re_repo"],
-        manual_coverage_repo=world["coverage_repo"],
     )
 
 
 def _create_uc(world: dict) -> CreateManualImageResultUseCase:
+    repos = ManualImageResultRepositories(
+        position_repo=world["position_repo"],
+        product_record_repo=world["product_repo"],
+        evidence_repo=world["evidence_repo"],
+        manual_coverage_repo=world["coverage_repo"],
+        result_evidence_repo=world["re_repo"],
+        review_repo=world["review_repo"],
+    )
+    uow_factory = build_memory_manual_image_result_uow_factory(
+        repos,
+        _NoopLifecycle(),  # type: ignore[arg-type]
+    )
     return CreateManualImageResultUseCase(
         inventory_repo=world["inv_repo"],
         aisle_repo=world["aisle_repo"],
@@ -296,13 +327,9 @@ def _create_uc(world: dict) -> CreateManualImageResultUseCase:
         job_source_asset_repo=world["jsa_repo"],
         source_asset_repo=world["asset_repo"],
         position_repo=world["position_repo"],
-        product_record_repo=world["product_repo"],
-        evidence_repo=world["evidence_repo"],
         result_evidence_repo=world["re_repo"],
-        review_repo=world["review_repo"],
-        manual_coverage_repo=world["coverage_repo"],
         clock=_FixedClock(world["now"]),
-        aisle_review_sync=_NoopLifecycle(),  # type: ignore[arg-type]
+        unit_of_work_factory=uow_factory,
     )
 
 
@@ -548,6 +575,8 @@ def test_create_manual_success_audit_and_409_duplicate() -> None:
         )
     )
     assert out.position.creation_source == PositionCreationSource.MANUAL
+    assert out.position.status == PositionStatus.REVIEWED
+    assert out.position.review_resolution == PositionReviewResolution.MANUAL_CREATED
     assert out.product.sku == "MANUAL-SKU"
     assert out.product.corrected_quantity == 4
     reviews = world["review_repo"].list_by_position(out.position.id)
@@ -575,31 +604,21 @@ def test_create_manual_success_audit_and_409_duplicate() -> None:
     assert "manual" in str(excinfo.value).lower() or "resultado" in str(excinfo.value).lower()
 
 
-def test_manual_coexists_with_automatic() -> None:
+def test_manual_rejected_when_automatic_exists() -> None:
     world = _seed_world()
     _add_position_with_evidence(world, position_id="pos-auto", asset_id="asset-a", sku="AUTO", qty=1)
-    out = _create_uc(world).execute(
-        CreateManualImageResultCommand(
-            inventory_id="inv-img",
-            aisle_id="aisle-img",
-            source_asset_id="asset-a",
-            job_id="job-img-1",
-            sku="MAN",
-            quantity=2,
-            user_id="admin",
+    with pytest.raises(ImageAlreadyHasResultsError):
+        _create_uc(world).execute(
+            CreateManualImageResultCommand(
+                inventory_id="inv-img",
+                aisle_id="aisle-img",
+                source_asset_id="asset-a",
+                job_id="job-img-1",
+                sku="MAN",
+                quantity=2,
+                user_id="admin",
+            )
         )
-    )
-    listed = _list_uc(world).execute(
-        ListJobImageResultsCommand(
-            inventory_id="inv-img", aisle_id="aisle-img", job_id="job-img-1"
-        )
-    )
-    row = next(r for r in listed.items if r.source_asset_id == "asset-a")
-    assert row.result_count == 2
-    sources = {p.creation_source for p in row.positions}
-    assert PositionCreationSource.AUTOMATIC in sources
-    assert PositionCreationSource.MANUAL in sources
-    assert out.position.id in {p.id for p in row.positions}
 
 
 def test_api_image_results_and_manual_create() -> None:
@@ -630,6 +649,7 @@ def test_api_image_results_and_manual_create() -> None:
         body = r.json()
         assert body["counters"]["total_images"] == 3
         assert body["counters"]["without_result"] == 2
+        assert "job_source_asset_id" in body["items"][0]
         assert "creation_source" in body["items"][0]["results"][0] or any(
             item["has_result"] for item in body["items"]
         )

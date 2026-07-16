@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query
 
 from src.api.dependencies import (
     get_create_manual_image_result_use_case,
@@ -23,6 +23,7 @@ from src.api.schemas.image_result_schemas import (
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.application.errors import (
     AssetNotInJobSnapshotError,
+    ImageAlreadyHasResultsError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
@@ -103,17 +104,21 @@ def list_job_image_results(
         ]
         items.append(
             JobImageResultItemResponse(
-                image_id=row.image_id,
+                job_source_asset_id=row.job_source_asset_id,
                 source_asset_id=row.source_asset_id,
                 job_id=row.job_id,
                 image_url=_asset_file_image_url(
                     inventory_id, aisle_id, row.source_asset_id, row.job_id
                 ),
                 original_filename=row.original_filename,
-                created_at=row.created_at,  # type: ignore[arg-type]
+                created_at=row.created_at,
+                position_order=row.position_order,
                 processing_status=row.processing_status,
                 has_result=row.has_result,
                 result_count=row.result_count,
+                automatic_result_count=row.automatic_result_count,
+                manual_result_count=row.manual_result_count,
+                has_manual_result=row.has_manual_result,
                 results=summaries,
             )
         )
@@ -142,11 +147,9 @@ def create_manual_image_result(
     aisle_id: str,
     source_asset_id: str,
     body: CreateManualImageResultRequest,
-    request: Request,
     use_case: CreateManualImageResultUseCase = Depends(get_create_manual_image_result_use_case),
     user: AuthUser = Depends(get_current_admin),
 ) -> CreateManualImageResultResponse:
-    _ = request  # reserved for future audit context
     try:
         outcome = use_case.execute(
             CreateManualImageResultCommand(
@@ -170,6 +173,7 @@ def create_manual_image_result(
         ManualResultNotAllowedForAssetTypeError,
         SourceAssetNotFoundForAisleError,
         ManualResultAlreadyExistsError,
+        ImageAlreadyHasResultsError,
     ) as exc:
         reraise_if_mapped(exc)
         raise

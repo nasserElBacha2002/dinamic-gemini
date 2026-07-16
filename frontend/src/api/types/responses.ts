@@ -1163,15 +1163,20 @@ export interface JobImageResultCounters {
 
 /** One row of GET .../jobs/{job_id}/image-results: photo LEFT JOIN positions (0..n results per image). */
 export interface JobImageResultItem {
-  image_id: string;
+  job_source_asset_id: string;
   source_asset_id: string;
   job_id: string;
   image_url: string;
   original_filename?: string | null;
   created_at: string;
+  /** 0-based order within the job snapshot; UI displays as #N (1-based). */
+  position_order: number;
   processing_status?: string | null;
   has_result: boolean;
   result_count: number;
+  automatic_result_count: number;
+  manual_result_count: number;
+  has_manual_result: boolean;
   results: PositionSummary[];
 }
 

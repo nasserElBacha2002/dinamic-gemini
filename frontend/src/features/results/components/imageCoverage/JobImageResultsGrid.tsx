@@ -60,7 +60,7 @@ export default function JobImageResultsGrid({
       <Stack spacing={1.5} data-testid="job-image-results-list">
         {items.map((item) => (
           <JobImageResultCard
-            key={item.image_id}
+            key={item.job_source_asset_id}
             inventoryId={inventoryId}
             aisleId={aisleId}
             item={item}

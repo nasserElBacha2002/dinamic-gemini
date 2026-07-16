@@ -34,14 +34,13 @@ class ImageProcessingPresentationStatus(str, Enum):
     PROCESSED_WITH_RESULT = "processed_with_result"
     PROCESSED_WITHOUT_RESULT = "processed_without_result"
     FAILED = "failed"
-    MANUAL_RESULT = "manual_result"
 
 
 @dataclass(frozen=True)
 class JobPhotoCoverageImage:
     """One unique photo from the job snapshot (deduped by source_asset_id)."""
 
-    image_id: str
+    job_source_asset_id: str
     source_asset_id: str
     job_id: str
     original_filename: str | None
@@ -49,6 +48,13 @@ class JobPhotoCoverageImage:
     position_order: int
     mime_type: str | None
     storage_key: str | None
+
+
+@dataclass(frozen=True)
+class ImageResultOriginCounts:
+    automatic_result_count: int
+    manual_result_count: int
+    has_manual_result: bool
 
 
 def job_has_video_snapshot(links: Sequence[JobSourceAssetLink]) -> bool:
@@ -88,7 +94,7 @@ def unique_photo_coverage_images(links: Sequence[JobSourceAssetLink]) -> list[Jo
     for link in sorted(by_asset.values(), key=lambda x: (x.position_order, x.source_asset_id)):
         out.append(
             JobPhotoCoverageImage(
-                image_id=link.id,
+                job_source_asset_id=link.id,
                 source_asset_id=link.source_asset_id,
                 job_id=link.job_id,
                 original_filename=link.original_filename,
@@ -136,19 +142,37 @@ def index_positions_by_source_asset(
     }
 
 
+def count_linked_positions_for_asset(
+    *,
+    source_asset_id: str,
+    coverage_asset_ids: frozenset[str],
+    result_evidence: Sequence[ResultEvidenceRecord],
+    positions: Sequence[Position],
+) -> int:
+    indexed = index_positions_by_source_asset(
+        coverage_asset_ids=coverage_asset_ids,
+        result_evidence=result_evidence,
+        positions=positions,
+    )
+    return len(indexed.get(source_asset_id, ()))
+
+
+def resolve_result_origin_counts(positions: Sequence[Position]) -> ImageResultOriginCounts:
+    manual = sum(1 for p in positions if p.creation_source == PositionCreationSource.MANUAL)
+    automatic = len(positions) - manual
+    return ImageResultOriginCounts(
+        automatic_result_count=automatic,
+        manual_result_count=manual,
+        has_manual_result=manual > 0,
+    )
+
+
 def resolve_image_processing_status(
     *,
     job: Job,
     result_count: int,
-    has_manual_result: bool,
 ) -> ImageProcessingPresentationStatus:
-    """Derive presentation status from job lifecycle + linked results.
-
-    Sources:
-    - JobStatus → pending / processing / failed
-    - ``has_manual_result`` → ``manual_result`` (when job is not mid-flight / failed)
-    - else result_count → processed_with_result / processed_without_result
-    """
+    """Derive presentation status from job lifecycle + linked results."""
     status = job.status
     if status in (JobStatus.QUEUED, JobStatus.STARTING):
         return ImageProcessingPresentationStatus.PENDING
@@ -156,8 +180,6 @@ def resolve_image_processing_status(
         return ImageProcessingPresentationStatus.PROCESSING
     if status == JobStatus.FAILED:
         return ImageProcessingPresentationStatus.FAILED
-    if has_manual_result:
-        return ImageProcessingPresentationStatus.MANUAL_RESULT
     if result_count > 0:
         return ImageProcessingPresentationStatus.PROCESSED_WITH_RESULT
     return ImageProcessingPresentationStatus.PROCESSED_WITHOUT_RESULT

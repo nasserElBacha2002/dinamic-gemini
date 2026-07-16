@@ -13,6 +13,7 @@ def _row_to_link(row: Any) -> ManualImageCoverageLink:
     return ManualImageCoverageLink(
         id=str(row.id),
         job_id=str(row.job_id),
+        job_source_asset_id=str(getattr(row, "job_source_asset_id", "") or ""),
         source_asset_id=str(row.source_asset_id),
         position_id=str(row.position_id),
         aisle_id=str(row.aisle_id),
@@ -33,7 +34,7 @@ class SqlManualImageCoverageRepository:
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
-                SELECT id, job_id, source_asset_id, position_id, aisle_id, inventory_id,
+                SELECT id, job_id, job_source_asset_id, source_asset_id, position_id, aisle_id, inventory_id,
                        created_by_user_id, created_at
                 FROM position_manual_image_coverage
                 WHERE job_id = ? AND source_asset_id = ?
@@ -51,13 +52,14 @@ class SqlManualImageCoverageRepository:
                 cur.execute(
                     """
                     INSERT INTO position_manual_image_coverage (
-                        id, job_id, source_asset_id, position_id, aisle_id, inventory_id,
+                        id, job_id, job_source_asset_id, source_asset_id, position_id, aisle_id, inventory_id,
                         created_by_user_id, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         link.id,
                         link.job_id,
+                        link.job_source_asset_id,
                         link.source_asset_id,
                         link.position_id,
                         link.aisle_id,
@@ -79,7 +81,7 @@ class SqlManualImageCoverageRepository:
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
-                SELECT id, job_id, source_asset_id, position_id, aisle_id, inventory_id,
+                SELECT id, job_id, job_source_asset_id, source_asset_id, position_id, aisle_id, inventory_id,
                        created_by_user_id, created_at
                 FROM position_manual_image_coverage
                 WHERE job_id = ?

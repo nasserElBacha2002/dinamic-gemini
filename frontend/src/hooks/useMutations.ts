@@ -492,7 +492,7 @@ export function useSubmitReviewAction(
   });
 }
 
-/** Operator manual coverage for an image without an automatic result. 409 when one already exists. */
+/** Operator manual coverage for an image without a result. 409 when the image already has results. */
 export function useCreateManualImageResult(
   inventoryId: string,
   aisleId: string,
@@ -502,13 +502,34 @@ export function useCreateManualImageResult(
   return useMutation({
     mutationFn: (body: CreateManualImageResultRequest) =>
       createManualImageResult(inventoryId, aisleId, sourceAssetId, body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, aisleId, 'jobs'],
-      });
+    onSuccess: (_data, variables) => {
+      const jobId = (variables.job_id ?? '').trim();
+      if (jobId) {
+        queryClient.invalidateQueries({
+          queryKey: [
+            ...queryKeys.inventories.all,
+            'aisles',
+            inventoryId,
+            aisleId,
+            'jobs',
+            jobId,
+            'image-results',
+          ],
+        });
+      } else {
+        queryClient.invalidateQueries({
+          queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, aisleId, 'jobs'],
+        });
+      }
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
       });
+      // Aisle / inventory summary surfaces (coverage counters, metrics).
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.aisles(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.inventories.metrics(inventoryId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all });
+      // No dedicated review-queue queryKeys in this codebase (product removed).
     },
   });
 }

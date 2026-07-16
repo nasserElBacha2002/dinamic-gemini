@@ -503,6 +503,7 @@ BEGIN
         inventory_id VARCHAR(36) NOT NULL,
         created_by_user_id VARCHAR(128) NULL,
         created_at DATETIME2 NOT NULL,
+        job_source_asset_id VARCHAR(36) NULL,
         CONSTRAINT PK_position_manual_image_coverage PRIMARY KEY (id),
         CONSTRAINT UQ_manual_coverage_job_asset UNIQUE (job_id, source_asset_id),
         CONSTRAINT FK_manual_coverage_position FOREIGN KEY (position_id) REFERENCES positions(id)

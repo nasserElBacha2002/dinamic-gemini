@@ -1,7 +1,7 @@
 /**
  * Presentation mapping for job image coverage `processing_status` (see backend
  * `ImageProcessingPresentationStatus`): pending | processing | processed_with_result |
- * processed_without_result | failed | manual_result.
+ * processed_without_result | failed. Manual coverage uses `has_manual_result` on the card.
  */
 
 import type { StatusBadgeSemantic } from '../../../components/ui/StatusBadge';
@@ -12,8 +12,7 @@ export type JobImageProcessingStatus =
   | 'processing'
   | 'processed_with_result'
   | 'processed_without_result'
-  | 'failed'
-  | 'manual_result';
+  | 'failed';
 
 export function jobImageProcessingStatusLabel(status: string | null | undefined): string {
   const s = (status ?? '').trim().toLowerCase();
@@ -28,7 +27,6 @@ export function jobImageProcessingStatusSemantic(
   const s = (status ?? '').trim().toLowerCase();
   switch (s) {
     case 'processed_with_result':
-    case 'manual_result':
       return 'success';
     case 'processed_without_result':
       return 'warning';

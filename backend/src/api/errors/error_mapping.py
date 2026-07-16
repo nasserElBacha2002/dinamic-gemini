@@ -269,6 +269,7 @@ from src.api.errors.structured_api_http import (
     JOB_NOT_FOUND,
     JOB_NOT_IN_AISLE_SCOPE,
     JOB_PROMOTION_NOT_ALLOWED,
+    IMAGE_ALREADY_HAS_RESULTS,
     MANUAL_RESULT_ALREADY_EXISTS,
     MANUAL_RESULT_NOT_ALLOWED_FOR_ASSET_TYPE,
     ASSET_NOT_IN_JOB_SNAPSHOT,
@@ -344,6 +345,7 @@ from src.application.errors import (
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
     JobPromotionNotAllowedError,
+    ImageAlreadyHasResultsError,
     ManualResultAlreadyExistsError,
     ManualResultNotAllowedForAssetTypeError,
     MergeJobScopeAmbiguousError,
@@ -562,6 +564,11 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         409,
         error_code=MANUAL_RESULT_ALREADY_EXISTS,
         detail="La imagen ya tiene un resultado manual asociado.",
+    ),
+    ImageAlreadyHasResultsError: _structured_fixed(
+        409,
+        error_code=IMAGE_ALREADY_HAS_RESULTS,
+        detail="La imagen ya tiene uno o más resultados asociados.",
     ),
     JobNotFoundError: _structured_detail(
         404,

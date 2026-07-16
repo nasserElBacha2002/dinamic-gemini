@@ -237,6 +237,8 @@ class AppContainer:
         self._artifact_manifest_store: ArtifactManifestStore | None = None
         self._job_source_asset_repo = None
         self._manual_image_coverage_repo = None
+        self._job_image_coverage_repo = None
+        self._manual_image_result_uow_factory = None
         self._artifact_publication_outbox_store: ArtifactPublicationOutboxStore | None = None
         self._finalization_recovery_store = None
         self._repository_backend_resolution: RepositoryBackendResolution | None = None
@@ -313,6 +315,8 @@ class AppContainer:
         self._review_action_repo = None
         self._job_source_asset_repo = None
         self._manual_image_coverage_repo = None
+        self._job_image_coverage_repo = None
+        self._manual_image_result_uow_factory = None
         self._metrics_calculator = None
         self._raw_label_repo = None
         self._normalized_label_repo = None
@@ -687,6 +691,75 @@ class AppContainer:
         else:
             self._manual_image_coverage_repo = MemoryManualImageCoverageRepository()
         return self._manual_image_coverage_repo
+
+    def get_job_image_coverage_repo(self):
+        if self._job_image_coverage_repo is not None:
+            return self._job_image_coverage_repo
+        from src.infrastructure.persistence.memory_job_image_coverage_repository import (
+            MemoryJobImageCoverageRepository,
+        )
+        from src.infrastructure.persistence.sql_job_image_coverage_repository import (
+            SqlJobImageCoverageRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._job_image_coverage_repo = SqlJobImageCoverageRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._job_image_coverage_repo = MemoryJobImageCoverageRepository(
+                job_source_asset_repo=self.get_job_source_asset_repo(),
+                position_repo=self.get_position_repo(),
+                result_evidence_repo=self.get_result_evidence_repo(),
+            )
+        return self._job_image_coverage_repo
+
+    def get_manual_image_result_uow_factory(self):
+        if self._manual_image_result_uow_factory is not None:
+            return self._manual_image_result_uow_factory
+        from src.application.ports.manual_image_result_unit_of_work import (
+            ManualImageResultRepositories,
+        )
+        from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
+        from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+        from src.infrastructure.persistence.memory_manual_image_result_unit_of_work import (
+            build_memory_manual_image_result_uow_factory,
+        )
+        from src.infrastructure.persistence.sql_manual_image_result_unit_of_work import (
+            build_sql_manual_image_result_uow_factory,
+        )
+
+        lifecycle = AisleReviewLifecycleSync(
+            aisle_repo=self.get_aisle_repo(),
+            position_repo=self.get_position_repo(),
+            clock=self.get_clock(),
+            status_reconciler=InventoryStatusReconciler(
+                inventory_repo=self.get_inventory_repo(),
+                aisle_repo=self.get_aisle_repo(),
+                clock=self.get_clock(),
+            ),
+        )
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._manual_image_result_uow_factory = build_sql_manual_image_result_uow_factory(
+                self._get_v3_sql_client(),
+                lifecycle,
+            )
+        else:
+            repos = ManualImageResultRepositories(
+                position_repo=self.get_position_repo(),
+                product_record_repo=self.get_product_record_repo(),
+                evidence_repo=self.get_evidence_repo(),
+                manual_coverage_repo=self.get_manual_image_coverage_repo(),
+                result_evidence_repo=self.get_result_evidence_repo(),
+                review_repo=self.get_review_action_repo(),
+            )
+            self._manual_image_result_uow_factory = build_memory_manual_image_result_uow_factory(
+                repos,
+                lifecycle,
+            )
+        return self._manual_image_result_uow_factory
 
     def get_artifact_publication_outbox_store(self) -> ArtifactPublicationOutboxStore:
         if self._artifact_publication_outbox_store is not None:

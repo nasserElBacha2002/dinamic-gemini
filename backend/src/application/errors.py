@@ -375,6 +375,10 @@ class ManualResultAlreadyExistsError(Exception):
     """Raised when a manual coverage result already exists for (job_id, source_asset_id)."""
 
 
+class ImageAlreadyHasResultsError(Exception):
+    """Raised when manual coverage is requested but the image already has one or more results."""
+
+
 class PhotosJobRequiredError(Exception):
     """Raised when image-coverage / manual-result APIs are used on a non-photos job."""
 

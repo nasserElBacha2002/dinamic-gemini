@@ -1,8 +1,9 @@
-"""List job image coverage — photos from job_source_assets LEFT JOIN positions."""
+"""List job image coverage — photos from job_source_assets with SQL pagination."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 from src.application.errors import (
@@ -11,27 +12,23 @@ from src.application.errors import (
     JobNotFoundError,
     PhotosJobRequiredError,
 )
-from src.application.ports.contracts import PositionListQuery
+from src.application.ports.job_image_coverage_repository import JobImageCoverageRepository
 from src.application.ports.job_source_asset_repository import JobSourceAssetRepository
-from src.application.ports.manual_image_coverage_repository import ManualImageCoverageRepository
 from src.application.ports.repositories import (
     AisleRepository,
     InventoryRepository,
     JobRepository,
-    PositionRepository,
     ProductRecordRepository,
-    ResultEvidenceRepository,
 )
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.display_primary_product import select_display_primary_product
 from src.application.services.job_image_result_resolution import (
-    index_positions_by_source_asset,
     is_photos_job_snapshot,
     resolve_image_processing_status,
-    unique_photo_coverage_images,
+    resolve_result_origin_counts,
 )
 from src.domain.jobs.entities import Job
-from src.domain.positions.entities import Position, PositionCreationSource
+from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
 
 ResultStatusFilter = Literal["all", "with_result", "without_result"]
@@ -49,14 +46,18 @@ class ListJobImageResultsCommand:
 
 @dataclass(frozen=True)
 class JobImageResultRow:
-    image_id: str
+    job_source_asset_id: str
     source_asset_id: str
     job_id: str
     original_filename: str | None
-    created_at: object
+    created_at: datetime
+    position_order: int
     processing_status: str
     has_result: bool
     result_count: int
+    automatic_result_count: int
+    manual_result_count: int
+    has_manual_result: bool
     positions: tuple[Position, ...]
     primary_products: tuple[ProductRecord | None, ...]
 
@@ -85,22 +86,15 @@ class ListJobImageResultsUseCase:
         aisle_repo: AisleRepository,
         job_repo: JobRepository,
         job_source_asset_repo: JobSourceAssetRepository,
-        position_repo: PositionRepository,
+        coverage_repo: JobImageCoverageRepository,
         product_record_repo: ProductRecordRepository,
-        result_evidence_repo: ResultEvidenceRepository,
-        manual_coverage_repo: ManualImageCoverageRepository,
-        *,
-        positions_raw_cap: int = 10_000,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
         self._job_repo = job_repo
         self._job_source_asset_repo = job_source_asset_repo
-        self._position_repo = position_repo
+        self._coverage_repo = coverage_repo
         self._product_record_repo = product_record_repo
-        self._result_evidence_repo = result_evidence_repo
-        self._manual_coverage_repo = manual_coverage_repo
-        self._raw_cap = max(1, int(positions_raw_cap))
 
     def execute(self, command: ListJobImageResultsCommand) -> ListJobImageResultsResult:
         inv = self._inventory_repo.get_by_id(command.inventory_id)
@@ -126,51 +120,37 @@ class ListJobImageResultsUseCase:
                 "Image coverage is only supported for photos jobs."
             )
 
-        images = unique_photo_coverage_images(links)
-        asset_ids = frozenset(img.source_asset_id for img in images)
+        status_filter = (command.result_status or "all").strip().lower()
+        if status_filter not in ("all", "with_result", "without_result"):
+            status_filter = "all"
 
-        positions = list(
-            self._position_repo.list_by_aisle_query(
-                command.aisle_id,
-                PositionListQuery(
-                    page=1,
-                    page_size=self._raw_cap,
-                    sort_by="created_at",
-                    sort_dir="asc",
-                    job_id=command.job_id,
-                ),
-            )
+        page = max(1, command.page)
+        page_size = max(1, min(command.page_size, 200))
+
+        counters = self._coverage_repo.get_counters(
+            job_id=command.job_id,
+            aisle_id=command.aisle_id,
         )
-        evidence_rows = list(self._result_evidence_repo.list_by_job_id(command.job_id))
-        by_asset = index_positions_by_source_asset(
-            coverage_asset_ids=asset_ids,
-            result_evidence=evidence_rows,
-            positions=positions,
+        snapshot_page, total_filtered = self._coverage_repo.list_snapshot_page(
+            job_id=command.job_id,
+            aisle_id=command.aisle_id,
+            result_status=status_filter,  # type: ignore[arg-type]
+            page=page,
+            page_size=page_size,
         )
-        manual_links = {
-            link.source_asset_id: link
-            for link in self._manual_coverage_repo.list_by_job(command.job_id)
-        }
+        asset_ids = tuple(row.source_asset_id for row in snapshot_page)
+        linked_by_asset = self._coverage_repo.load_positions_for_assets(
+            job_id=command.job_id,
+            aisle_id=command.aisle_id,
+            source_asset_ids=asset_ids,
+        )
 
         built: list[JobImageResultRow] = []
-        with_result = 0
-        without_result = 0
-        for img in images:
-            linked = tuple(by_asset.get(img.source_asset_id, ()))
+        for snap in snapshot_page:
+            linked = tuple(linked_by_asset.get(snap.source_asset_id, ()))
             result_count = len(linked)
-            has_result = result_count > 0
-            if has_result:
-                with_result += 1
-            else:
-                without_result += 1
-            has_manual = img.source_asset_id in manual_links or any(
-                p.creation_source == PositionCreationSource.MANUAL for p in linked
-            )
-            status = resolve_image_processing_status(
-                job=job,
-                result_count=result_count,
-                has_manual_result=has_manual,
-            )
+            origin = resolve_result_origin_counts(linked)
+            status = resolve_image_processing_status(job=job, result_count=result_count)
             primaries: list[ProductRecord | None] = []
             if linked:
                 batch = self._product_record_repo.list_by_position_ids([p.id for p in linked])
@@ -181,42 +161,32 @@ class ListJobImageResultsUseCase:
                     primaries.append(select_display_primary_product(by_pos.get(p.id, ())))
             built.append(
                 JobImageResultRow(
-                    image_id=img.image_id,
-                    source_asset_id=img.source_asset_id,
-                    job_id=img.job_id,
-                    original_filename=img.original_filename,
-                    created_at=img.created_at,
+                    job_source_asset_id=snap.job_source_asset_id,
+                    source_asset_id=snap.source_asset_id,
+                    job_id=snap.job_id,
+                    original_filename=snap.original_filename,
+                    created_at=snap.created_at,
+                    position_order=snap.position_order,
                     processing_status=status.value,
-                    has_result=has_result,
+                    has_result=result_count > 0,
                     result_count=result_count,
+                    automatic_result_count=origin.automatic_result_count,
+                    manual_result_count=origin.manual_result_count,
+                    has_manual_result=origin.has_manual_result,
                     positions=linked,
                     primary_products=tuple(primaries),
                 )
             )
 
-        status_filter = (command.result_status or "all").strip().lower()
-        if status_filter == "with_result":
-            filtered = [row for row in built if row.has_result]
-        elif status_filter == "without_result":
-            filtered = [row for row in built if not row.has_result]
-        else:
-            filtered = built
-
-        page = max(1, command.page)
-        page_size = max(1, min(command.page_size, 200))
-        total = len(filtered)
-        start = (page - 1) * page_size
-        page_rows = filtered[start : start + page_size]
-
         return ListJobImageResultsResult(
-            items=tuple(page_rows),
-            total_items=total,
+            items=tuple(built),
+            total_items=total_filtered,
             page=page,
             page_size=page_size,
             counters=JobImageResultCounters(
-                total_images=len(built),
-                with_result=with_result,
-                without_result=without_result,
+                total_images=counters.total_images,
+                with_result=counters.with_result,
+                without_result=counters.without_result,
             ),
             job=job,
         )

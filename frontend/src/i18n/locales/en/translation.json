@@ -1383,6 +1383,7 @@
         "noFilename": "No file name",
         "resultsCount": "{{count}} result",
         "resultsCount_other": "{{count}} results",
+        "resultCounts": "Auto {{automatic}} · Manual {{manual}}",
         "withoutResultBadge": "Without result",
         "withResultBadge": "With result",
         "addResultAction": "Add result",
@@ -1396,8 +1397,7 @@
           "processing": "Processing",
           "processed_with_result": "Processed",
           "processed_without_result": "Processed · no result",
-          "failed": "Processing failed",
-          "manual_result": "Manual result"
+          "failed": "Processing failed"
         }
       },
       "empty": "No images found for this run.",
@@ -1417,12 +1417,14 @@
         "cancel": "Cancel",
         "saving": "Saving…",
         "successSnackbar": "Manual result added",
+        "imageLoading": "Loading image…",
         "errorSkuRequired": "SKU is required",
         "errorQuantityRequired": "Quantity is required",
-        "errorQuantityInvalid": "Quantity must be a whole number ≥ 0"
+        "errorQuantityInvalid": "Quantity must be a whole number greater than 0"
       },
       "errors": {
         "already_exists": "This image already has a manual result.",
+        "already_has_results": "This image already has results. Refresh the list to see the latest coverage.",
         "not_allowed_for_asset_type": "Manual results are only allowed for primary photo assets.",
         "asset_not_in_job": "This asset is not part of this job snapshot.",
         "photos_job_required": "Image coverage is only available for photo jobs."
