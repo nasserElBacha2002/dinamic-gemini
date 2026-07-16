@@ -25,6 +25,7 @@ from src.env_settings.grouped_settings import (
     EvidenceSettings,
     LimitsAndSchemaSettings,
     LlmProviderSettings,
+    ObservabilitySettings,
     PathsOutputSettings,
     PhotosInputSettings,
     PipelineVisionSettings,
@@ -86,6 +87,7 @@ class AppSettings(
     AuthSettings,
     EvidenceSettings,
     ConsolidationSettings,
+    ObservabilitySettings,
 ):
     """Top-level application settings — composed groups (field validators live on group mixins)."""
 

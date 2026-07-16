@@ -124,6 +124,13 @@ def _revoke_all_for_user(user_id: str) -> None:
             rec.revoked_at = _now_utc()
 
 
+def _role_for_env_principal(*, client_id: str | None) -> str:
+    """Env-backed principals: scoped client → company_admin; unbound → platform_admin."""
+    if (client_id or "").strip():
+        return "company_admin"
+    return "platform_admin"
+
+
 def authenticate_admin(command: LoginRequest, context: AuthContext) -> Optional[AuthUser]:
     """
     Validate administrator credentials and build the AuthUser principal.
@@ -139,7 +146,13 @@ def authenticate_admin(command: LoginRequest, context: AuthContext) -> Optional[
         if submitted_user == s.admin_username and verify_password(
             submitted_pw, s.admin_password_hash
         ):
-            return AuthUser(id="admin", username=s.admin_username, role="administrator")
+            client_id = (s.admin_client_id or "").strip() or None
+            return AuthUser(
+                id="admin",
+                username=s.admin_username,
+                role=_role_for_env_principal(client_id=client_id),
+                client_id=client_id,
+            )
 
     # Jairo is an add-on only: requires a fully configured primary admin (Policy A).
     if (
@@ -148,8 +161,12 @@ def authenticate_admin(command: LoginRequest, context: AuthContext) -> Optional[
         and submitted_user == _JAIRO_LOGIN_USERNAME
         and verify_password(submitted_pw, s.jairo_password_hash)
     ):
+        client_id = (s.jairo_client_id or "").strip() or None
         return AuthUser(
-            id=_JAIRO_PRINCIPAL_ID, username=_JAIRO_LOGIN_USERNAME, role="administrator"
+            id=_JAIRO_PRINCIPAL_ID,
+            username=_JAIRO_LOGIN_USERNAME,
+            role=_role_for_env_principal(client_id=client_id),
+            client_id=client_id,
         )
 
     return None
@@ -159,10 +176,20 @@ def _auth_user_from_principal_id(principal_id: str, context: AuthContext) -> Aut
     """Rebuild AuthUser for refresh/logout flows from stored principal id."""
     s = context.settings
     if principal_id == _JAIRO_PRINCIPAL_ID:
+        client_id = (s.jairo_client_id or "").strip() or None
         return AuthUser(
-            id=_JAIRO_PRINCIPAL_ID, username=_JAIRO_LOGIN_USERNAME, role="administrator"
+            id=_JAIRO_PRINCIPAL_ID,
+            username=_JAIRO_LOGIN_USERNAME,
+            role=_role_for_env_principal(client_id=client_id),
+            client_id=client_id,
         )
-    return AuthUser(id="admin", username=s.admin_username, role="administrator")
+    client_id = (s.admin_client_id or "").strip() or None
+    return AuthUser(
+        id="admin",
+        username=s.admin_username,
+        role=_role_for_env_principal(client_id=client_id),
+        client_id=client_id,
+    )
 
 
 def build_login_response(user: AuthUser, context: AuthContext) -> LoginResponse:
@@ -182,6 +209,7 @@ def build_login_response(user: AuthUser, context: AuthContext) -> LoginResponse:
         username=user.username,
         role=user.role,
         principal_id=user.id,
+        client_id=user.client_id,
         secret=s.token_secret,
         expires_minutes=s.token_expires_minutes,
     )
@@ -235,6 +263,7 @@ def refresh_session(refresh_token: str, context: AuthContext) -> LoginResponse:
         username=user.username,
         role=user.role,
         principal_id=user.id,
+        client_id=user.client_id,
         secret=s.token_secret,
         expires_minutes=s.token_expires_minutes,
     )

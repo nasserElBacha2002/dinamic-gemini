@@ -45,6 +45,7 @@ def create_access_token(
     username: str,
     role: str,
     principal_id: str = "admin",
+    client_id: str | None = None,
     secret: str,
     expires_minutes: int,
     now: datetime | None = None,
@@ -60,6 +61,7 @@ def create_access_token(
       ``\"admin\"`` (primary) or ``\"jairo\"`` (temporary env user).
     - **username** — Visible login name from env (primary) or fixed ``\"Jairo\"``.
     - **role** — Role claim (v3 minimal auth: shared ``administrator`` for both principals).
+    - **client_id** — Optional company/client scope for Observability isolation.
     - **jti** — Unique token id so successive issuances are not byte-identical in the same second.
     - **iat**, **exp** — UTC epoch seconds.
 
@@ -90,6 +92,9 @@ def create_access_token(
         "iat": iat,
         "exp": exp,
     }
+    scoped = (client_id or "").strip() or None
+    if scoped:
+        payload["client_id"] = scoped
     token = jwt.encode(payload, secret, algorithm=_JWT_ALG)
     if not isinstance(token, str):
         # PyJWT may return bytes in older versions; normalize.

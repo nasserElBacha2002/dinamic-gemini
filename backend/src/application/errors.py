@@ -355,3 +355,17 @@ class CaptureSessionGroupNotMaterializedForPreviewError(Exception):
 
 class CaptureSessionGroupIntegrityError(Exception):
     """G7 — defensive invariant violation (session/group/item linkage or preview/materialize scope)."""
+
+
+class InputSnapshotPersistError(Exception):
+    """Raised when persisting the job input snapshot fails and Observability requires it.
+
+    ``code`` is a stable machine-readable identifier for API/log correlation
+    (see ``OBSERVABILITY_INPUT_SNAPSHOT_REQUIRED``).
+    """
+
+    code = "INPUT_SNAPSHOT_PERSIST_FAILED"
+
+    def __init__(self, message: str, *, cause: Exception | None = None) -> None:
+        super().__init__(message)
+        self.cause = cause

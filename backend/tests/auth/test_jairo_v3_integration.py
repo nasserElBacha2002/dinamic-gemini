@@ -42,7 +42,12 @@ def test_jairo_auth_me_returns_expected_principal() -> None:
     client = TestClient(app)
     me = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
-    assert me.json() == {"id": "jairo", "username": "Jairo", "role": "administrator"}
+    assert me.json() == {
+        "id": "jairo",
+        "username": "Jairo",
+        "role": "platform_admin",
+        "client_id": None,
+    }
 
 
 def test_jairo_token_can_access_standard_v3_route() -> None:

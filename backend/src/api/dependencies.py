@@ -1180,8 +1180,58 @@ def get_list_aisle_jobs_use_case(
 def get_resolve_aisle_job_for_inventory_read_use_case(
     job_repo: JobRepository = Depends(get_job_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> ResolveAisleJobForInventoryReadUseCase:
-    return ResolveAisleJobForInventoryReadUseCase(job_repo=job_repo, aisle_repo=aisle_repo)
+    return ResolveAisleJobForInventoryReadUseCase(
+        job_repo=job_repo,
+        aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
+    )
+
+
+def get_observability_inventory_guard(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+):
+    """Company-scope check without injecting ``Depends(get_*_repo)`` into route signatures."""
+    from src.application.services.observability_access import (
+        ObservabilityAccessContext,
+        assert_inventory_client_scope,
+    )
+    from src.auth.schemas import AuthUser
+    from src.domain.inventory.entities import Inventory
+
+    def _guard(inventory_id: str, user: AuthUser) -> Inventory:
+        return assert_inventory_client_scope(
+            inventory_repo,
+            inventory_id=inventory_id,
+            access=ObservabilityAccessContext.from_user(user),
+        )
+
+    return _guard
+
+
+def get_job_source_asset_repo():
+    return get_app_container().get_job_source_asset_repo()
+
+
+def get_job_artifact_catalog_service(
+    manifest_store=Depends(get_artifact_manifest_store),
+    job_source_asset_repo=Depends(get_job_source_asset_repo),
+):
+    from src.application.services.job_artifact_catalog_service import JobArtifactCatalogService
+
+    return JobArtifactCatalogService(
+        manifest_store=manifest_store,
+        job_source_asset_repo=job_source_asset_repo,
+    )
+
+
+def get_job_retry_chain_service(
+    job_repo: JobRepository = Depends(get_job_repo),
+):
+    from src.application.services.job_retry_chain_service import JobRetryChainService
+
+    return JobRetryChainService(job_repo=job_repo)
 
 
 def get_run_auditability_service(

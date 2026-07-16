@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO
 
@@ -72,6 +73,8 @@ class StoredObjectMetadata:
     sha256: str | None = None
     checksum_value: str | None = None
     checksum_algorithm: str | None = None
+    content_type: str | None = None
+    updated_at: datetime | None = None
 
 
 class ArtifactStore(ABC):
@@ -102,5 +105,38 @@ class ArtifactStore(ABC):
     def generate_signed_url(self, key: str, expires_in_sec: int) -> str: ...
 
     def get_object_metadata(self, key: str, *, bucket: str | None = None) -> StoredObjectMetadata:
+        """Return lightweight object metadata (size, etag, content_type, ...) without the body.
+
+        Base implementation only fills ``file_size_bytes`` via :meth:`object_size_bytes` (a
+        head/stat-style call). Adapters should override to enrich with provider-native metadata
+        (e.g. S3 ``head_object``, GCS ``blob.reload()``) so Observability previews/pagination can
+        avoid a full body fetch.
+        """
         size = self.object_size_bytes(key, bucket=bucket)
         return StoredObjectMetadata(file_size_bytes=size)
+
+    def read_range(
+        self,
+        key: str,
+        *,
+        start: int,
+        length: int,
+        bucket: str | None = None,
+    ) -> bytes:
+        """Read up to ``length`` bytes starting at ``start`` (0-based). May return fewer at EOF.
+
+        Default implementation is a compatibility fallback: it downloads the full object via
+        :meth:`get_object` and slices it in memory, which is correct but suboptimal for large
+        objects. Adapters SHOULD override this with a provider-native ranged read (e.g. local
+        file ``seek``/``read``, S3 ``Range`` header, GCS ``download_as_bytes(start=..., end=...)``)
+        so Observability range pagination and limited previews avoid reading whole objects.
+        """
+        _ = bucket
+        if start < 0:
+            raise ValueError("start must be >= 0")
+        if length < 0:
+            raise ValueError("length must be >= 0")
+        if length == 0:
+            return b""
+        content = self.get_object(key).content
+        return content[start : start + length]

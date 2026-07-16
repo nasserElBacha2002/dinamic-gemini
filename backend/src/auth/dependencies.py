@@ -10,6 +10,11 @@ from __future__ import annotations
 import jwt
 from fastapi import Depends, Request, status
 
+from src.application.services.observability_access import (
+    ObservabilityAuthError,
+    principal_has_capability,
+    validate_principal_tenant_binding,
+)
 from src.auth.errors import AuthHttpError
 from src.auth.schemas import AuthError, AuthUser
 from src.auth.security import decode_access_token
@@ -30,7 +35,8 @@ def get_current_admin(
     Resolve the current authenticated admin from the request.
 
     Extracts Authorization: Bearer <token>, validates the token, and returns the
-    authenticated admin principal.
+    authenticated admin principal. Non-platform principals without ``client_id``
+    are rejected (fail closed).
     """
     auth = (request.headers.get("Authorization") or "").strip()
     if not auth.lower().startswith("bearer "):
@@ -78,8 +84,39 @@ def get_current_admin(
             status_code=status.HTTP_401_UNAUTHORIZED,
             error=AuthError(code="UNAUTHORIZED", message="Authentication required."),
         )
+    raw_client = payload.get("client_id")
+    client_id = (
+        raw_client.strip()
+        if isinstance(raw_client, str) and raw_client.strip()
+        else None
+    )
 
-    return AuthUser(id=principal_id, username=username, role=role)
+    user = AuthUser(id=principal_id, username=username, role=role, client_id=client_id)
+    try:
+        validate_principal_tenant_binding(user)
+    except ObservabilityAuthError as exc:
+        raise AuthHttpError(
+            status_code=status.HTTP_403_FORBIDDEN,
+            error=AuthError(code=exc.code, message=exc.message),
+        ) from exc
+    return user
+
+
+def require_observability_capability(capability: str):
+    """FastAPI dependency factory: require an Observability capability (403 if missing)."""
+
+    def _dep(user: AuthUser = Depends(get_current_admin)) -> AuthUser:
+        if not principal_has_capability(user, capability):
+            raise AuthHttpError(
+                status_code=status.HTTP_403_FORBIDDEN,
+                error=AuthError(
+                    code="FORBIDDEN_CAPABILITY",
+                    message=f"Missing capability: {capability}",
+                ),
+            )
+        return user
+
+    return _dep
 
 
 def require_ai_config_inspection_user(

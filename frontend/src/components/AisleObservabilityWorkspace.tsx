@@ -28,6 +28,7 @@ import { resolveDisplayFinishedAt } from '../utils/jobDisplayTimestamps';
 import { deriveEffectiveJobDisplayState, shouldPollJobDetail } from '../utils/deriveJobDisplayState';
 import { getJobProcessingStatusLabel } from '../utils/jobFinalizationLabels';
 import AdminFinalizationRecoveryPanel from './AdminFinalizationRecoveryPanel';
+import JobObservabilityDiagnosticsPanel from './JobObservabilityDiagnosticsPanel';
 import { useAuth } from '../features/auth';
 import { useExecutionLogDownloads } from '../features/executionLogs/hooks/useExecutionLogDownloads';
 import ExecutionLogPanel from './ExecutionLogPanel';
@@ -582,6 +583,7 @@ export default function AisleObservabilityWorkspace({
             <Tab label={t('jobs.obs_tab_attachments')} />
             <Tab label={t('jobs.obs_tab_traceability')} />
             <Tab label={t('jobs.obs_tab_auditability')} />
+            <Tab label={t('jobs.obs_tab_diagnostics')} />
           </Tabs>
 
           {mainTab === 0 ? (
@@ -848,6 +850,25 @@ export default function AisleObservabilityWorkspace({
                 aisleId={aisleId}
                 jobId={selectedJobId}
                 active={active}
+              />
+            ) : (
+              <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                {t('jobs.obs_choose_job_for_log')}
+              </Typography>
+            )
+          ) : null}
+
+          {mainTab === 5 ? (
+            selectedJobId ? (
+              <JobObservabilityDiagnosticsPanel
+                inventoryId={inventoryId}
+                aisleId={aisleId}
+                jobId={selectedJobId}
+                active={active}
+                onSelectAttempt={(id) => {
+                  setSelectedJobId(id);
+                  setLogScope('job');
+                }}
               />
             ) : (
               <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>

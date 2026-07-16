@@ -769,6 +769,163 @@ export interface ExecutionLogResponse {
   events: ExecutionLogEvent[];
 }
 
+export type ArtifactCategory = 'INPUT' | 'INTERMEDIATE' | 'OUTPUT' | 'LOG' | 'DEBUG' | 'EXPORT';
+export type ArtifactAvailabilityStatus =
+  | 'PENDING'
+  | 'AVAILABLE'
+  | 'PUBLISH_FAILED'
+  | 'MISSING'
+  | 'EXPIRED'
+  | 'DELETED'
+  | 'CORRUPTED';
+
+export interface JobArtifact {
+  id: string;
+  job_id: string;
+  category: ArtifactCategory | string;
+  kind: string;
+  stage?: string | null;
+  display_name: string;
+  original_filename?: string | null;
+  mime_type?: string | null;
+  size_bytes?: number | null;
+  checksum?: string | null;
+  width?: number | null;
+  height?: number | null;
+  status: ArtifactAvailabilityStatus | string;
+  is_current: boolean;
+  is_previewable: boolean;
+  is_downloadable: boolean;
+  created_at?: string | null;
+  published_at?: string | null;
+  expires_at?: string | null;
+  source: { type: string; source_asset_id?: string | null };
+}
+
+export interface JobArtifactPage {
+  items: JobArtifact[];
+  page: { next_cursor?: string | null; has_more: boolean };
+  inputs_legacy_unverified?: boolean;
+  input_snapshot_failed?: boolean;
+}
+
+export interface ArtifactPreview {
+  artifact_id: string;
+  kind: string;
+  mime_type?: string | null;
+  truncated: boolean;
+  preview_kind: 'text' | 'json' | 'metadata' | string;
+  content?: string | null;
+  size_bytes?: number | null;
+  status: string;
+  /** Set when `preview_kind` is `json`: whether `content` parsed as valid JSON. */
+  valid_json?: boolean | null;
+  /** Set when the preview content was cut short (distinct from `truncated` size cap). */
+  partial?: boolean | null;
+}
+
+/** Edge in the retry chain graph — present when the chain forks into multiple children. */
+export interface JobRetryChainEdge {
+  from_job_id: string;
+  to_job_id: string;
+}
+
+export interface RetryChainAttempt {
+  job_id: string;
+  attempt_number: number;
+  status: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  failure_code?: string | null;
+  failure_message?: string | null;
+  execution_id?: string | null;
+  provider_name?: string | null;
+  model_name?: string | null;
+  is_selected: boolean;
+  is_current: boolean;
+  is_successful: boolean;
+}
+
+export interface JobRetryChain {
+  root_job_id: string;
+  selected_job_id: string;
+  current_job_id: string;
+  integrity?: string;
+  warnings?: string[];
+  attempts: RetryChainAttempt[];
+  /** Retry graph edges (parent → child); present when the chain forks (integrity FORKED). */
+  edges?: JobRetryChainEdge[];
+}
+
+export interface ExecutionLogPage {
+  inventory_id: string;
+  aisle_id: string;
+  requested_job_id: string;
+  items: ExecutionLogEvent[];
+  page: { next_cursor?: string | null; has_more: boolean };
+  filters: {
+    available_levels: string[];
+    available_stages: string[];
+    available_event_types: string[];
+  };
+  pagination_mode?: string;
+  truncated?: boolean;
+  bytes_scanned?: number | null;
+}
+
+export interface JobTimelineEvent {
+  id: string;
+  job_id: string;
+  execution_id?: string | null;
+  event_type: string;
+  stage?: string | null;
+  level: string;
+  timestamp?: string | null;
+  sequence: number;
+  previous_status?: string | null;
+  new_status?: string | null;
+  message?: string | null;
+  duration_ms?: number | null;
+  provider?: string | null;
+  provider_request_id?: string | null;
+  error_code?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface JobTimelinePage {
+  items: JobTimelineEvent[];
+  page: { next_cursor?: string | null; has_more: boolean };
+  pagination_mode?: string;
+  truncated?: boolean;
+  bytes_scanned?: number | null;
+}
+
+export interface JobErrorItem {
+  error_id: string;
+  job_id: string;
+  stage?: string | null;
+  error_category?: string | null;
+  error_code?: string | null;
+  provider?: string | null;
+  provider_code?: string | null;
+  provider_request_id?: string | null;
+  http_status?: number | null;
+  message?: string | null;
+  sanitized_detail?: string | null;
+  retryable?: boolean | null;
+  attempt_number?: number | null;
+  occurred_at?: string | null;
+  stack_trace_available: boolean;
+}
+
+export interface JobErrorPage {
+  items: JobErrorItem[];
+  page: { next_cursor?: string | null; has_more: boolean };
+  pagination_mode?: string;
+  truncated?: boolean;
+  bytes_scanned?: number | null;
+}
+
 /** Per-job row on GET .../aisles/{aisle_id}/execution-log (aisle aggregate). */
 export interface ExecutionLogJobInfo {
   job_id: string;

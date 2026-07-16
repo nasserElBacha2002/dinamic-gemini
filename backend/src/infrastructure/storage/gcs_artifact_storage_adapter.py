@@ -14,6 +14,7 @@ from src.infrastructure.storage.artifact_store import (
     ArtifactDownload,
     ArtifactStore,
     StoredArtifact,
+    StoredObjectMetadata,
 )
 
 logger = logging.getLogger(__name__)
@@ -178,6 +179,63 @@ class GcsArtifactStorageAdapter(ArtifactStorage, ArtifactStore):
             raise RuntimeError(
                 f"GCS metadata failed for key={object_key!r} bucket={self._bucket!r}"
             ) from exc
+
+    def read_range(
+        self,
+        key: str,
+        *,
+        start: int,
+        length: int,
+        bucket: str | None = None,
+    ) -> bytes:
+        if bucket and bucket != self._bucket:
+            raise RuntimeError(
+                f"GCS bucket mismatch for read_range: record_bucket={bucket!r} "
+                f"configured_bucket={self._bucket!r}"
+            )
+        if start < 0:
+            raise ValueError("start must be >= 0")
+        if length < 0:
+            raise ValueError("length must be >= 0")
+        if length == 0:
+            return b""
+        blob, object_key = self._blob(key)
+        end = start + length - 1
+        try:
+            data = blob.download_as_bytes(start=start, end=end)
+            return bytes(data)
+        except Exception as exc:
+            logger.exception(
+                "GCS read_range failed bucket=%s key=%s start=%s length=%s",
+                self._bucket,
+                object_key,
+                start,
+                length,
+            )
+            raise RuntimeError(
+                f"GCS ranged read failed for key={object_key!r} bucket={self._bucket!r}"
+            ) from exc
+
+    def get_object_metadata(self, key: str, *, bucket: str | None = None) -> StoredObjectMetadata:
+        if bucket and bucket != self._bucket:
+            raise RuntimeError(
+                f"GCS bucket mismatch for metadata: record_bucket={bucket!r} "
+                f"configured_bucket={self._bucket!r}"
+            )
+        blob, object_key = self._blob(key)
+        try:
+            blob.reload()
+        except Exception as exc:
+            logger.exception("GCS blob metadata failed bucket=%s key=%s", self._bucket, object_key)
+            raise RuntimeError(
+                f"GCS metadata failed for key={object_key!r} bucket={self._bucket!r}"
+            ) from exc
+        return StoredObjectMetadata(
+            file_size_bytes=int(blob.size or 0),
+            etag=(blob.etag or "").strip() or None,
+            content_type=blob.content_type or None,
+            updated_at=blob.updated or None,
+        )
 
     def download_to_path(self, key: str, target_path: Path, *, bucket: str | None = None) -> None:
         if bucket and bucket != self._bucket:

@@ -173,6 +173,10 @@ def get_artifact_manifest_store():
     return get_app_container().get_artifact_manifest_store()
 
 
+def get_job_source_asset_repo():
+    return get_app_container().get_job_source_asset_repo()
+
+
 def get_artifact_publication_outbox_store():
     return get_app_container().get_artifact_publication_outbox_store()
 

@@ -73,6 +73,8 @@ const DETAIL_TO_KEY: [RegExp, string][] = [
   ],
   [/^this feature is only available for test inventories\.?$/i, 'errors.benchmark_requires_test_inventory'],
   [/already exists in this inventory/i, 'errors.aisle_duplicate_code'],
+  [/^invalid_cursor$/i, 'errors.invalid_cursor'],
+  [/^log_changed$/i, 'errors.log_changed'],
 ];
 
 export function backendDetailToTranslationKey(detail: string): string | null {

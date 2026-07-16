@@ -3,6 +3,8 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 
+import pytest
+
 from src.infrastructure.storage.s3_artifact_storage_adapter import S3ArtifactStorageAdapter
 
 
@@ -27,12 +29,19 @@ class _FakeS3Client:
         }
         return None
 
-    def get_object(self, Bucket: str, Key: str):  # noqa: N803
+    def get_object(self, Bucket: str, Key: str, Range: str | None = None):  # noqa: N803
         obj = self._objects[(Bucket, Key)]
+        body = obj["body"]
+        if Range:
+            # Only the ``bytes=start-end`` form is exercised by the adapter under test.
+            spec = Range.removeprefix("bytes=")
+            start_s, end_s = spec.split("-")
+            start, end = int(start_s), int(end_s)
+            body = body[start : end + 1]
         return {
-            "Body": _FakeBody(obj["body"]),
+            "Body": _FakeBody(body),
             "ContentType": obj["content_type"],
-            "ContentLength": len(obj["body"]),
+            "ContentLength": len(body),
             "ETag": '"etag-1"',
         }
 
@@ -43,8 +52,13 @@ class _FakeS3Client:
     def head_object(self, Bucket: str, Key: str):  # noqa: N803
         if (Bucket, Key) not in self._objects:
             raise RuntimeError("not found")
-        body = self._objects[(Bucket, Key)]["body"]
-        return {"ContentLength": len(body), "ETag": '"etag-1"'}
+        obj = self._objects[(Bucket, Key)]
+        body = obj["body"]
+        return {
+            "ContentLength": len(body),
+            "ETag": '"etag-1"',
+            "ContentType": obj["content_type"],
+        }
 
     def generate_presigned_url(self, op: str, Params: dict, ExpiresIn: int) -> str:  # noqa: N803
         return f"https://example.test/{Params['Bucket']}/{Params['Key']}?ttl={ExpiresIn}"
@@ -140,6 +154,40 @@ def test_s3_adapter_object_size_bytes_matches_uploaded_length() -> None:
     )
     adapter.put_object("uploads/x.bin", BytesIO(b"abcd"), "application/octet-stream")
     assert adapter.object_size_bytes("uploads/x.bin", bucket="bucket-a") == 4
+
+
+def test_s3_adapter_read_range_uses_range_header_and_slices_body() -> None:
+    s3 = _FakeS3Client()
+    adapter = S3ArtifactStorageAdapter(
+        bucket="bucket-a",
+        prefix="v3",
+        s3_client=s3,
+    )
+    adapter.put_object("uploads/x.bin", BytesIO(b"0123456789"), "application/octet-stream")
+
+    assert adapter.read_range("uploads/x.bin", start=2, length=4, bucket="bucket-a") == b"2345"
+    # Length beyond EOF should still return whatever bytes are available.
+    assert adapter.read_range("uploads/x.bin", start=8, length=10, bucket="bucket-a") == b"89"
+    assert adapter.read_range("uploads/x.bin", start=0, length=0, bucket="bucket-a") == b""
+
+
+def test_s3_adapter_read_range_rejects_bucket_mismatch() -> None:
+    s3 = _FakeS3Client()
+    adapter = S3ArtifactStorageAdapter(bucket="bucket-a", prefix="v3", s3_client=s3)
+    adapter.put_object("uploads/x.bin", BytesIO(b"abcd"), "application/octet-stream")
+    with pytest.raises(RuntimeError, match="bucket mismatch"):
+        adapter.read_range("uploads/x.bin", start=0, length=1, bucket="other-bucket")
+
+
+def test_s3_adapter_get_object_metadata_returns_head_fields() -> None:
+    s3 = _FakeS3Client()
+    adapter = S3ArtifactStorageAdapter(bucket="bucket-a", prefix="v3", s3_client=s3)
+    adapter.put_object("uploads/meta.txt", BytesIO(b"hello"), "text/plain")
+
+    meta = adapter.get_object_metadata("uploads/meta.txt", bucket="bucket-a")
+    assert meta.file_size_bytes == 5
+    assert meta.etag == "etag-1"
+    assert meta.content_type == "text/plain"
 
 
 def test_s3_adapter_download_to_path_streams_without_get_object_buffering(tmp_path: Path) -> None:

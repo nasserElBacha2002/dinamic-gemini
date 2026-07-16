@@ -16,14 +16,27 @@ class LoginRequest(BaseModel):
 
 
 class AuthUser(BaseModel):
-    """Minimal authenticated admin principal returned to the frontend."""
+    """Authenticated principal returned to the frontend and used for Observability scope."""
 
     id: str = Field(
         ...,
         description="Stable principal id for sessions (e.g. 'admin', 'jairo'); distinct from JWT sub.",
     )
     username: str = Field(..., description="Administrator username.")
-    role: str = Field(default="administrator", description="Fixed role name for v3.2.1.")
+    role: str = Field(
+        default="platform_admin",
+        description=(
+            "Role claim: platform_admin | company_admin | operator. "
+            "Legacy JWT role 'administrator' is accepted as platform_admin."
+        ),
+    )
+    client_id: str | None = Field(
+        default=None,
+        description=(
+            "Company/client scope. Required for company_admin and operator. "
+            "Only platform_admin may omit client_id (global scope)."
+        ),
+    )
 
 
 class LoginResponse(BaseModel):

@@ -35,7 +35,7 @@ NOW = datetime(2026, 6, 18, tzinfo=timezone.utc)
 
 
 class StubResolve:
-    def execute(self, inventory_id, aisle_id, job_id) -> Job:
+    def execute(self, inventory_id, aisle_id, job_id, *, access_user=None) -> Job:
         return Job(
             id="job-1",
             target_type="aisle",

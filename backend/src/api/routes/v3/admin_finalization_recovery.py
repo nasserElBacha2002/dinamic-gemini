@@ -11,11 +11,12 @@ from src.api.schemas.admin_finalization_recovery_schemas import (
     AdminFinalizationRecoveryRequest,
     AdminFinalizationRecoveryResponse,
 )
+from src.application.services.observability_access import CAP_FINALIZATION_RECOVERY
 from src.application.use_cases.finalization_recovery.recovery_command import RecoveryCommand
 from src.application.use_cases.finalization_recovery.resume_job_finalization import (
     FinalizationRecoveryCoordinator,
 )
-from src.auth.dependencies import get_current_admin
+from src.auth.dependencies import require_observability_capability
 from src.auth.schemas import AuthUser
 from src.domain.jobs.finalization_recovery import RecoveryOperation, RecoveryResult
 from src.runtime.v3_deps import get_finalization_recovery_coordinator
@@ -61,7 +62,7 @@ def _to_response(result: RecoveryResult) -> AdminFinalizationRecoveryResponse:
 def post_admin_finalization_recover(
     job_id: str,
     body: AdminFinalizationRecoveryRequest,
-    admin: AuthUser = Depends(get_current_admin),
+    admin: AuthUser = Depends(require_observability_capability(CAP_FINALIZATION_RECOVERY)),
     coordinator: FinalizationRecoveryCoordinator = Depends(get_finalization_recovery_coordinator),
 ) -> AdminFinalizationRecoveryResponse:
     operation = _OPERATION_MAP.get(body.operation.strip().lower())
