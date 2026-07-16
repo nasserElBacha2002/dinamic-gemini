@@ -44,7 +44,8 @@ def test_auth_login_success():
     assert isinstance(data.get("refresh_expires_in"), int) and data["refresh_expires_in"] > 0
     assert data["user"]["id"] == "admin"
     assert data["user"]["username"] == "admin"
-    assert data["user"]["role"] == "administrator"
+    assert data["user"]["role"] == "platform_admin"
+    assert data["user"].get("client_id") is None
 
 
 def test_auth_refresh_issues_new_tokens_and_rotates_refresh():
@@ -107,7 +108,12 @@ def test_auth_me_success_with_valid_token():
     token = login_r.json()["access_token"]
     me_r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me_r.status_code == 200
-    assert me_r.json() == {"id": "admin", "username": "admin", "role": "administrator"}
+    assert me_r.json() == {
+        "id": "admin",
+        "username": "admin",
+        "role": "platform_admin",
+        "client_id": None,
+    }
 
 
 def test_auth_me_missing_token_unauthorized():
@@ -156,7 +162,8 @@ def test_auth_jairo_login_success_and_refresh(monkeypatch: pytest.MonkeyPatch):
     data = login_r.json()
     assert data["user"]["id"] == "jairo"
     assert data["user"]["username"] == "Jairo"
-    assert data["user"]["role"] == "administrator"
+    assert data["user"]["role"] == "platform_admin"
+    assert data["user"].get("client_id") is None
     refresh_r = client.post("/auth/refresh", json={"refresh_token": data["refresh_token"]})
     assert refresh_r.status_code == 200
     refreshed = refresh_r.json()

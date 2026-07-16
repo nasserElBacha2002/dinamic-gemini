@@ -8,8 +8,10 @@ from typing import Any
 REDACTED = "[REDACTED]"
 
 _SENSITIVE_KEY_RE = re.compile(
-    r"(token|secret|password|passwd|pwd|api[_-]?key|authorization|cookie|connection[_-]?string|"
-    r"access[_-]?token|refresh[_-]?token|bearer|private[_-]?key)",
+    r"(secret|password|passwd|pwd|api[_-]?key|authorization|cookie|connection[_-]?string|"
+    r"access[_-]?token|refresh[_-]?token|bearer|private[_-]?key|"
+    # Bare ``token`` but not usage metrics like ``input_tokens`` / ``output_tokens``.
+    r"(?<![a-z0-9])token(?!s))",
     re.IGNORECASE,
 )
 

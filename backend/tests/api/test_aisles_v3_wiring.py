@@ -1898,7 +1898,8 @@ def test_execution_log_aisle_wrong_inventory_returns_404() -> None:
             "/api/v3/inventories/wrong-inventory-id/aisles/aisle-eli/jobs/job-eli/execution-log",
         )
         assert log_resp.status_code == 404
-        assert log_resp.json()["detail"] == "Aisle not found or does not belong to this inventory"
+        # Missing inventory is mapped to Job not found (no inventory existence leak).
+        assert log_resp.json()["detail"] == "Job not found"
     finally:
         app.dependency_overrides.clear()
 
@@ -2001,7 +2002,7 @@ def test_phase6_inventory_job_read_routes_wrong_inventory_same_404_detail() -> N
     try:
         c = TestClient(app)
         base_wrong_inv = "/api/v3/inventories/wrong-inv-id/aisles/aisle-p6-wi/jobs/job-p6-wi"
-        detail = "Aisle not found or does not belong to this inventory"
+        detail = "Job not found"
         for path in (
             base_wrong_inv,
             f"{base_wrong_inv}/execution-log",

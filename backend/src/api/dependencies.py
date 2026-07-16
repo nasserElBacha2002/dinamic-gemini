@@ -1189,6 +1189,27 @@ def get_resolve_aisle_job_for_inventory_read_use_case(
     )
 
 
+def get_observability_inventory_guard(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+):
+    """Company-scope check without injecting ``Depends(get_*_repo)`` into route signatures."""
+    from src.application.services.observability_access import (
+        ObservabilityAccessContext,
+        assert_inventory_client_scope,
+    )
+    from src.auth.schemas import AuthUser
+    from src.domain.inventory.entities import Inventory
+
+    def _guard(inventory_id: str, user: AuthUser) -> Inventory:
+        return assert_inventory_client_scope(
+            inventory_repo,
+            inventory_id=inventory_id,
+            access=ObservabilityAccessContext.from_user(user),
+        )
+
+    return _guard
+
+
 def get_job_source_asset_repo():
     return get_app_container().get_job_source_asset_repo()
 

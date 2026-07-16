@@ -742,7 +742,14 @@ def test_get_aisle_job_detail_job_not_found_is_category_c_detail_only() -> None:
     """Integration: Phase 6 job-read path stays legacy ``{{\"detail\"}}`` (no ``code``)."""
 
     class _MissingJob:
-        def execute(self, inventory_id: str, aisle_id: str, job_id: str) -> None:
+        def execute(
+            self,
+            inventory_id: str,
+            aisle_id: str,
+            job_id: str,
+            *,
+            access_user=None,
+        ) -> None:
             raise JobNotFoundError("Job not found: internal-id-must-not-leak")
 
     app.dependency_overrides[get_resolve_aisle_job_for_inventory_read_use_case] = lambda: (

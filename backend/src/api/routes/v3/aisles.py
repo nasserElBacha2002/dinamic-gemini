@@ -31,12 +31,12 @@ from src.api.dependencies import (
     get_finalization_assessment_service,
     get_get_aisle_merge_results_use_case,
     get_get_aisle_processing_status_use_case,
-    get_inventory_repo,
     get_job_artifact_catalog_service,
     get_job_retry_chain_service,
     get_job_stale_reconciler,
     get_list_aisle_jobs_use_case,
     get_list_aisles_with_status_use_case,
+    get_observability_inventory_guard,
     get_promote_aisle_operational_job_use_case,
     get_resolve_aisle_job_for_inventory_read_use_case,
     get_result_evidence_query_service,
@@ -105,7 +105,6 @@ from src.application.errors import (
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
 )
-from src.application.ports.repositories import InventoryRepository
 from src.application.services.aisle_aggregated_execution_log import (
     AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT,
     aggregate_aisle_execution_log_payload,
@@ -149,8 +148,6 @@ from src.application.services.observability_access import (
     CAP_VIEW_STACK_TRACES,
     CAP_VIEW_SUMMARY,
     CAP_VIEW_TECHNICAL_LOGS,
-    ObservabilityAccessContext,
-    assert_inventory_client_scope,
     principal_has_capability,
 )
 from src.application.services.observability_download_gate import (
@@ -574,15 +571,11 @@ def get_aisle_aggregated_execution_log(
     current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_TECHNICAL_LOGS)),
     list_jobs_uc: ListAisleJobsUseCase = Depends(get_list_aisle_jobs_use_case),
     artifact_storage=Depends(get_artifact_storage),
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    inventory_scope_guard=Depends(get_observability_inventory_guard),
 ) -> AisleExecutionLogResponse:
     """Merge execution logs from all jobs listed for this aisle (up to limit); per-job read failures are non-fatal."""
     try:
-        assert_inventory_client_scope(
-            inventory_repo,
-            inventory_id=inventory_id,
-            access=ObservabilityAccessContext.from_user(current_user),
-        )
+        inventory_scope_guard(inventory_id, current_user)
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND) from None
     body = _build_aisle_aggregated_execution_log_body(
@@ -608,15 +601,11 @@ def get_aisle_aggregated_execution_log_txt(
     current_user: AuthUser = Depends(require_observability_capability(CAP_VIEW_TECHNICAL_LOGS)),
     list_jobs_uc: ListAisleJobsUseCase = Depends(get_list_aisle_jobs_use_case),
     artifact_storage=Depends(get_artifact_storage),
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    inventory_scope_guard=Depends(get_observability_inventory_guard),
 ) -> Response:
     """Plain-text merged execution log for all aisle jobs (UTF-8 download)."""
     try:
-        assert_inventory_client_scope(
-            inventory_repo,
-            inventory_id=inventory_id,
-            access=ObservabilityAccessContext.from_user(current_user),
-        )
+        inventory_scope_guard(inventory_id, current_user)
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_FOUND) from None
     body = _build_aisle_aggregated_execution_log_body(
@@ -645,7 +634,7 @@ def cancel_aisle_job(
     aisle_id: str,
     job_id: str,
     current_user: AuthUser = Depends(require_observability_capability(CAP_CANCEL_RETRY)),
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    inventory_scope_guard=Depends(get_observability_inventory_guard),
     use_case: CancelAisleJobUseCase = Depends(get_cancel_aisle_job_use_case),
 ) -> JobSummary:
     """Request cancellation of an active v3 process_aisle job.
@@ -656,11 +645,7 @@ def cancel_aisle_job(
       transition to CANCELED at the next safe checkpoint.
     """
     try:
-        assert_inventory_client_scope(
-            inventory_repo,
-            inventory_id=inventory_id,
-            access=ObservabilityAccessContext.from_user(current_user),
-        )
+        inventory_scope_guard(inventory_id, current_user)
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_IN_AISLE_INVENTORY) from None
     try:
@@ -689,15 +674,11 @@ def retry_aisle_job(
     aisle_id: str,
     job_id: str,
     current_user: AuthUser = Depends(require_observability_capability(CAP_CANCEL_RETRY)),
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    inventory_scope_guard=Depends(get_observability_inventory_guard),
     use_case: RetryAisleJobUseCase = Depends(get_retry_aisle_job_use_case),
 ) -> JobSummary:
     try:
-        assert_inventory_client_scope(
-            inventory_repo,
-            inventory_id=inventory_id,
-            access=ObservabilityAccessContext.from_user(current_user),
-        )
+        inventory_scope_guard(inventory_id, current_user)
     except InventoryNotFoundError:
         raise HTTPException(status_code=404, detail=HTTP_DETAIL_JOB_NOT_IN_AISLE_INVENTORY) from None
     try:
