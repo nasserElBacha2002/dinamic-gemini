@@ -236,6 +236,7 @@ class AppContainer:
         self._finalization_stage_store: FinalizationStageStore | None = None
         self._artifact_manifest_store: ArtifactManifestStore | None = None
         self._job_source_asset_repo = None
+        self._manual_image_coverage_repo = None
         self._artifact_publication_outbox_store: ArtifactPublicationOutboxStore | None = None
         self._finalization_recovery_store = None
         self._repository_backend_resolution: RepositoryBackendResolution | None = None
@@ -310,6 +311,8 @@ class AppContainer:
         self._evidence_repo = None
         self._result_evidence_repo = None
         self._review_action_repo = None
+        self._job_source_asset_repo = None
+        self._manual_image_coverage_repo = None
         self._metrics_calculator = None
         self._raw_label_repo = None
         self._normalized_label_repo = None
@@ -665,6 +668,25 @@ class AppContainer:
         else:
             self._job_source_asset_repo = MemoryJobSourceAssetRepository()
         return self._job_source_asset_repo
+
+    def get_manual_image_coverage_repo(self):
+        if self._manual_image_coverage_repo is not None:
+            return self._manual_image_coverage_repo
+        from src.infrastructure.persistence.memory_manual_image_coverage_repository import (
+            MemoryManualImageCoverageRepository,
+        )
+        from src.infrastructure.persistence.sql_manual_image_coverage_repository import (
+            SqlManualImageCoverageRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._manual_image_coverage_repo = SqlManualImageCoverageRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._manual_image_coverage_repo = MemoryManualImageCoverageRepository()
+        return self._manual_image_coverage_repo
 
     def get_artifact_publication_outbox_store(self) -> ArtifactPublicationOutboxStore:
         if self._artifact_publication_outbox_store is not None:

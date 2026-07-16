@@ -11,6 +11,7 @@ import {
   createAisle,
   createClient,
   createClientSupplier,
+  createManualImageResult,
   deleteSupplierReferenceImage,
   startAisleProcessing,
   cancelAisleJob,
@@ -33,6 +34,7 @@ import type {
   CreateSupplierPromptConfigRequest,
   CreateInventoryRequest,
   CreateAisleRequest,
+  CreateManualImageResultRequest,
   ReviewActionRequest,
   UploadSupplierReferenceImagesRequest,
   UpdateInventoryRequest,
@@ -485,6 +487,27 @@ export function useSubmitReviewAction(
         positionId,
         body,
         strategy,
+      });
+    },
+  });
+}
+
+/** Operator manual coverage for an image without an automatic result. 409 when one already exists. */
+export function useCreateManualImageResult(
+  inventoryId: string,
+  aisleId: string,
+  sourceAssetId: string
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateManualImageResultRequest) =>
+      createManualImageResult(inventoryId, aisleId, sourceAssetId, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: [...queryKeys.inventories.all, 'aisles', inventoryId, aisleId, 'jobs'],
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.inventories.positions(inventoryId, aisleId),
       });
     },
   });

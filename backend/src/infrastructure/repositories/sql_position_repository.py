@@ -13,11 +13,32 @@ from typing import Any
 from src.application.ports.contracts import POSITION_LIST_JOB_ID_UNSET, PositionListQuery
 from src.application.ports.repositories import JOB_ID_FILTER_UNSET, PositionRepository
 from src.database.sqlserver import SqlServerClient
-from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
+from src.domain.positions.entities import (
+    Position,
+    PositionCreationSource,
+    PositionReviewResolution,
+    PositionStatus,
+)
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.infrastructure.repositories.db_row_text import normalize_db_str
 
 logger = logging.getLogger(__name__)
+
+
+def _creation_source_from_row(row: Any, position_id: str = "?") -> PositionCreationSource:
+    raw = getattr(row, "creation_source", None)
+    if raw is None or str(raw).strip() == "":
+        return PositionCreationSource.AUTOMATIC
+    try:
+        return PositionCreationSource(str(raw).strip().lower())
+    except ValueError:
+        logger.warning(
+            "Invalid position creation_source %r for position_id=%s",
+            raw,
+            position_id,
+        )
+        return PositionCreationSource.AUTOMATIC
+
 
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:
@@ -105,6 +126,7 @@ def _row_to_position(row: Any) -> Position:
         ),
         corrected_position_code=getattr(row, "corrected_position_code", None),
         job_id=getattr(row, "job_id", None),
+        creation_source=_creation_source_from_row(row, pid),
     )
 
 
@@ -134,7 +156,7 @@ class SqlPositionRepository(PositionRepository):
                 UPDATE positions
                 SET aisle_id = ?, status = ?, review_resolution = ?, confidence = ?, needs_review = ?,
                     primary_evidence_id = ?, updated_at = ?, detected_summary_json = ?, corrected_summary_json = ?,
-                    corrected_position_code = ?, job_id = ?
+                    corrected_position_code = ?, job_id = ?, creation_source = ?
                 WHERE id = ?
                 """,
                 (
@@ -151,14 +173,19 @@ class SqlPositionRepository(PositionRepository):
                     corr_json,
                     position.corrected_position_code,
                     position.job_id,
+                    position.creation_source.value,
                     position.id,
                 ),
             )
             if cur.rowcount == 0:
                 cur.execute(
                     """
-                    INSERT INTO positions (id, aisle_id, status, review_resolution, confidence, needs_review, primary_evidence_id, created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code, job_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO positions (
+                        id, aisle_id, status, review_resolution, confidence, needs_review,
+                        primary_evidence_id, created_at, updated_at, detected_summary_json,
+                        corrected_summary_json, corrected_position_code, job_id, creation_source
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         position.id,
@@ -176,6 +203,7 @@ class SqlPositionRepository(PositionRepository):
                         corr_json,
                         position.corrected_position_code,
                         position.job_id,
+                        position.creation_source.value,
                     ),
                 )
 
@@ -184,7 +212,8 @@ class SqlPositionRepository(PositionRepository):
             cur.execute(
                 """
                 SELECT id, aisle_id, status, review_resolution, confidence, needs_review, primary_evidence_id,
-                       created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code, job_id
+                       created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code,
+                       job_id, creation_source
                 FROM positions WHERE id = ?
                 """,
                 (position_id,),
@@ -245,7 +274,8 @@ class SqlPositionRepository(PositionRepository):
         if join_product_records:
             sql = f"""
                 SELECT DISTINCT p.id, p.aisle_id, p.status, p.confidence, p.needs_review, p.primary_evidence_id,
-                       p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json, p.corrected_position_code, p.job_id
+                       p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json,
+                       p.corrected_position_code, p.job_id, p.creation_source
                 FROM positions p
                 INNER JOIN product_records pr ON pr.position_id = p.id
                 WHERE {where}
@@ -255,7 +285,8 @@ class SqlPositionRepository(PositionRepository):
         else:
             sql = f"""
                 SELECT p.id, p.aisle_id, p.status, p.confidence, p.needs_review, p.primary_evidence_id,
-                       p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json, p.corrected_position_code, p.job_id
+                       p.review_resolution, p.created_at, p.updated_at, p.detected_summary_json, p.corrected_summary_json,
+                       p.corrected_position_code, p.job_id, p.creation_source
                 FROM positions p
                 WHERE {where}
                 {order_clause}
@@ -295,7 +326,8 @@ class SqlPositionRepository(PositionRepository):
             cur.execute(
                 f"""
                 SELECT id, aisle_id, status, confidence, needs_review, primary_evidence_id,
-                       review_resolution, created_at, updated_at, detected_summary_json, corrected_summary_json, corrected_position_code, job_id
+                       review_resolution, created_at, updated_at, detected_summary_json, corrected_summary_json,
+                       corrected_position_code, job_id, creation_source
                 FROM positions
                 WHERE aisle_id IN ({placeholders})
                 ORDER BY created_at ASC, id ASC

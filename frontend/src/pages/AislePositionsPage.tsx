@@ -39,6 +39,7 @@ import {
   useAisleMergeResults,
   useRunAisleMerge,
   useAisleJobsList,
+  useJobImageResults,
   usePromoteAisleOperationalJob,
   useUpdateAisle,
   useDeactivateAisle,
@@ -59,6 +60,7 @@ import {
   isAisleResultsSortColumn,
   mergeAisleResultsFilterPatch,
   parseAisleResultsFilters,
+  resultStatusToApiQuery,
   writeAisleResultsFilters,
   type AisleResultsUrlFilters,
 } from '../features/results/utils/aisleResultsUrlFilters';
@@ -74,7 +76,13 @@ import {
   AisleResultsNoJobsAlert,
   AisleResultsHeader,
   AisleResultsTableSection,
+  JobImageResultsViewToggle,
+  JobImageResultsCounters,
+  JobImageResultsStatusFilter,
+  JobImageResultsGrid,
+  ManualImageResultDrawer,
 } from '../features/results/components';
+import type { JobImageResultItem } from '../api/types';
 import { buildResultsTableColumns } from '../features/results/components/resultsTableColumns';
 import { mergeConsolidatedDetail } from '../features/results/adapters/aislePositionsFormatters';
 import {
@@ -115,8 +123,11 @@ export default function AislePositionsPage() {
   const tableSort = urlFilters.tableSort;
   const resultsColumnSortBy = urlFilters.sortBy ?? '';
   const resultsColumnSortDir = urlFilters.sortDir;
+  const resultsView = urlFilters.resultsView;
+  const resultStatus = urlFilters.resultStatus;
   const [searchDraft, setSearchDraft] = useState(() => urlFilters.q);
   const [quickContext, setQuickContext] = useState<QuickReviewContext | null>(null);
+  const [manualResultItem, setManualResultItem] = useState<JobImageResultItem | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [lastMergeResponse, setLastMergeResponse] = useState<RunMergeResponse | null>(null);
   const [lastMergeSummary, setLastMergeSummary] = useState<MergeResultsSummary | null>(null);
@@ -276,6 +287,23 @@ export default function AislePositionsPage() {
     enabled: Boolean(inventoryId && aisleId && results.length > 0),
     jobId: resultJobId,
   });
+
+  const imageResultsQuery = useJobImageResults(
+    inventoryId,
+    aisleId,
+    pickedRunJobId ?? undefined,
+    {
+      result_status: resultStatusToApiQuery(resultStatus),
+      page,
+      page_size: pageSize,
+    },
+    { enabled: resultsView === 'images' && Boolean(pickedRunJobId) }
+  );
+  const imageResultsItems = imageResultsQuery.data?.items ?? [];
+  const imageResultsCounters = imageResultsQuery.data?.counters ?? null;
+  const imageResultsErrorMessage = imageResultsQuery.isError
+    ? getVisibleErrorMessage(imageResultsQuery.error, 'results')
+    : null;
 
   const handleRunSelectionChange = useCallback(
     (next: string) => {
@@ -802,6 +830,63 @@ export default function AislePositionsPage() {
         }}
       />
 
+      {pickedRunJobId ? (
+        <Box sx={{ mb: 2 }}>
+          <JobImageResultsViewToggle
+            value={resultsView}
+            onChange={(v) => {
+              updateFilters({ resultsView: v }, { historyMode: 'push' });
+            }}
+          />
+        </Box>
+      ) : null}
+
+      {resultsView === 'images' && pickedRunJobId ? (
+        <>
+          {imageResultsCounters ? (
+            <JobImageResultsCounters counters={imageResultsCounters} />
+          ) : null}
+          <Box sx={{ mb: 2 }}>
+            <JobImageResultsStatusFilter
+              value={resultStatus}
+              onChange={(v) => {
+                updateFilters({ resultStatus: v }, { resetPage: true, historyMode: 'push' });
+              }}
+              counts={
+                imageResultsCounters
+                  ? {
+                      all: imageResultsCounters.total_images,
+                      withResult: imageResultsCounters.with_result,
+                      withoutResult: imageResultsCounters.without_result,
+                    }
+                  : undefined
+              }
+            />
+          </Box>
+          <JobImageResultsGrid
+            inventoryId={inventoryId}
+            aisleId={aisleId}
+            items={imageResultsItems}
+            isLoading={imageResultsQuery.isLoading}
+            errorMessage={imageResultsErrorMessage}
+            onRetry={() => void imageResultsQuery.refetch()}
+            onAddResult={(item) => setManualResultItem(item)}
+            addResultPendingAssetId={manualResultItem?.source_asset_id ?? null}
+            page={page}
+            pageSize={pageSize}
+            totalItems={imageResultsQuery.data?.total_items ?? 0}
+            onPageChange={(nextPage) => {
+              updateFilters({ page: nextPage }, { historyMode: 'push' });
+            }}
+            onPageSizeChange={(nextSize) => {
+              updateFilters({ pageSize: nextSize }, { resetPage: true, historyMode: 'push' });
+            }}
+          />
+        </>
+      ) : null}
+
+      {resultsView === 'positions' ? (
+        <>
       {errorMessage ? <ResultsErrorState message={errorMessage} onRetry={() => refetch()} /> : null}
 
       <AisleResultsNoJobsAlert visible={blockPositionsForTestNoJobs} />
@@ -903,6 +988,22 @@ export default function AislePositionsPage() {
           }}
         />
       ) : null}
+        </>
+      ) : null}
+
+      <ManualImageResultDrawer
+        open={Boolean(manualResultItem)}
+        item={manualResultItem}
+        inventoryId={inventoryId}
+        aisleId={aisleId}
+        jobId={pickedRunJobId ?? ''}
+        onClose={() => setManualResultItem(null)}
+        onSuccess={() => {
+          setManualResultItem(null);
+          void imageResultsQuery.refetch();
+        }}
+        onConflict={() => void imageResultsQuery.refetch()}
+      />
 
       {isTestInventory ? (
       <PromoteOperationalDialog

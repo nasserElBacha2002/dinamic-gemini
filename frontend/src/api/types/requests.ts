@@ -76,3 +76,12 @@ export interface AisleBenchmarkCompareManyRequest {
   include_diff_rows?: boolean;
   max_diff_rows?: number;
 }
+
+/** Request body for POST .../assets/{source_asset_id}/manual-result. */
+export interface CreateManualImageResultRequest {
+  job_id: string;
+  sku: string;
+  quantity: number;
+  description?: string | null;
+  position_code?: string | null;
+}

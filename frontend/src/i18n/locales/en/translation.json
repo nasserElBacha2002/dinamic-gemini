@@ -1363,7 +1363,71 @@
     "update_sku_placeholder": "Update sku placeholder",
     "view_full_image": "View full image",
     "zoom_in": "Zoom in",
-    "zoom_out": "Zoom out"
+    "zoom_out": "Zoom out",
+    "imageCoverage": {
+      "viewToggle": {
+        "positions": "Positions",
+        "images": "Images"
+      },
+      "counters": {
+        "total": "Total images",
+        "withResult": "With result",
+        "withoutResult": "Without result"
+      },
+      "statusFilter": {
+        "all": "All",
+        "withResult": "With result",
+        "withoutResult": "Without result"
+      },
+      "card": {
+        "noFilename": "No file name",
+        "resultsCount": "{{count}} result",
+        "resultsCount_other": "{{count}} results",
+        "withoutResultBadge": "Without result",
+        "withResultBadge": "With result",
+        "addResultAction": "Add result",
+        "automaticBadge": "Automatic",
+        "manualBadge": "Manual upload",
+        "skuLabel": "SKU",
+        "qtyLabel": "Qty",
+        "positionCodeLabel": "Position",
+        "processingStatus": {
+          "pending": "Pending",
+          "processing": "Processing",
+          "processed_with_result": "Processed",
+          "processed_without_result": "Processed · no result",
+          "failed": "Processing failed",
+          "manual_result": "Manual result"
+        }
+      },
+      "empty": "No images found for this run.",
+      "loading": "Loading images…",
+      "drawer": {
+        "title": "Add manual result",
+        "subtitle": "Record a result for this image when automatic detection did not produce one.",
+        "skuLabel": "SKU",
+        "skuPlaceholder": "e.g. SKU-00123",
+        "quantityLabel": "Quantity",
+        "quantityPlaceholder": "e.g. 10",
+        "descriptionLabel": "Description (optional)",
+        "descriptionPlaceholder": "Optional product description",
+        "positionCodeLabel": "Position code (optional)",
+        "positionCodePlaceholder": "e.g. P-014",
+        "save": "Save",
+        "cancel": "Cancel",
+        "saving": "Saving…",
+        "successSnackbar": "Manual result added",
+        "errorSkuRequired": "SKU is required",
+        "errorQuantityRequired": "Quantity is required",
+        "errorQuantityInvalid": "Quantity must be a whole number ≥ 0"
+      },
+      "errors": {
+        "already_exists": "This image already has a manual result.",
+        "not_allowed_for_asset_type": "Manual results are only allowed for primary photo assets.",
+        "asset_not_in_job": "This asset is not part of this job snapshot.",
+        "photos_job_required": "Image coverage is only available for photo jobs."
+      }
+    }
   },
   "review": {
     "actions": {

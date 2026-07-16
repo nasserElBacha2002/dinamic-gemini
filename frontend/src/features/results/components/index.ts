@@ -20,3 +20,4 @@ export { default as AisleResultsMergeFeedback } from './AisleResultsMergeFeedbac
 export { default as AisleResultsTableSection } from './AisleResultsTableSection';
 
 export * from './detail';
+export * from './imageCoverage';

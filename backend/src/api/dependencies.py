@@ -1214,6 +1214,74 @@ def get_job_source_asset_repo():
     return get_app_container().get_job_source_asset_repo()
 
 
+def get_manual_image_coverage_repo():
+    return get_app_container().get_manual_image_coverage_repo()
+
+
+def get_list_job_image_results_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    job_source_asset_repo=Depends(get_job_source_asset_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    result_evidence_repo=Depends(get_result_evidence_repo),
+    manual_coverage_repo=Depends(get_manual_image_coverage_repo),
+):
+    from src.application.use_cases.positions.list_job_image_results import (
+        ListJobImageResultsUseCase,
+    )
+    from src.config import load_settings
+
+    return ListJobImageResultsUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        job_source_asset_repo=job_source_asset_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
+        result_evidence_repo=result_evidence_repo,
+        manual_coverage_repo=manual_coverage_repo,
+        positions_raw_cap=load_settings().v3_positions_aisle_raw_cap,
+    )
+
+
+def get_create_manual_image_result_use_case(
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    job_source_asset_repo=Depends(get_job_source_asset_repo),
+    source_asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    position_repo: PositionRepository = Depends(get_position_repo),
+    product_record_repo: ProductRecordRepository = Depends(get_product_record_repo),
+    evidence_repo: EvidenceRepository = Depends(get_evidence_repo),
+    result_evidence_repo=Depends(get_result_evidence_repo),
+    review_repo: ReviewActionRepository = Depends(get_review_action_repo),
+    manual_coverage_repo=Depends(get_manual_image_coverage_repo),
+    clock: Clock = Depends(get_clock),
+    aisle_review_sync: AisleReviewLifecycleSync = Depends(get_aisle_review_lifecycle_sync),
+):
+    from src.application.use_cases.positions.create_manual_image_result import (
+        CreateManualImageResultUseCase,
+    )
+
+    return CreateManualImageResultUseCase(
+        inventory_repo=inventory_repo,
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        job_source_asset_repo=job_source_asset_repo,
+        source_asset_repo=source_asset_repo,
+        position_repo=position_repo,
+        product_record_repo=product_record_repo,
+        evidence_repo=evidence_repo,
+        result_evidence_repo=result_evidence_repo,
+        review_repo=review_repo,
+        manual_coverage_repo=manual_coverage_repo,
+        clock=clock,
+        aisle_review_sync=aisle_review_sync,
+    )
+
+
 def get_job_artifact_catalog_service(
     manifest_store=Depends(get_artifact_manifest_store),
     job_source_asset_repo=Depends(get_job_source_asset_repo),

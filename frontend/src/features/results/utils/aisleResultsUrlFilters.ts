@@ -29,6 +29,8 @@ export const AISLE_RESULTS_FILTER_QUERY_KEYS = {
   tableSort: 'tableSort',
   sortBy: 'sortBy',
   sortDir: 'sortDir',
+  resultStatus: 'resultStatus',
+  resultsView: 'resultsView',
 } as const;
 
 /** Managed by job-run canonization separately; preserved when writing filters. */
@@ -50,6 +52,12 @@ export const AISLE_RESULTS_SORT_COLUMNS = [
 
 export type AisleResultsSortColumn = (typeof AISLE_RESULTS_SORT_COLUMNS)[number];
 
+/** Job image coverage: which images to include, mirrors backend `result_status` query. */
+export type AisleResultsImageResultStatus = 'all' | 'with-result' | 'without-result';
+
+/** Which visible surface is active: consolidated positions table, or per-image coverage view. */
+export type AisleResultsView = 'positions' | 'images';
+
 export type AisleResultsUrlFilters = {
   filter: ResultsFilterKind;
   q: string;
@@ -58,6 +66,8 @@ export type AisleResultsUrlFilters = {
   tableSort: AisleResultsTableSortMode;
   sortBy: AisleResultsSortColumn | null;
   sortDir: DataTableSortDirection;
+  resultStatus: AisleResultsImageResultStatus;
+  resultsView: AisleResultsView;
 };
 
 const VALID_FILTERS: readonly ResultsFilterKind[] = [
@@ -71,9 +81,17 @@ const VALID_FILTERS: readonly ResultsFilterKind[] = [
 
 const VALID_TABLE_SORT: readonly AisleResultsTableSortMode[] = ['photo', 'priority'] as const;
 const VALID_SORT_DIR: readonly DataTableSortDirection[] = ['asc', 'desc'] as const;
+const VALID_RESULT_STATUS: readonly AisleResultsImageResultStatus[] = [
+  'all',
+  'with-result',
+  'without-result',
+] as const;
+const VALID_RESULTS_VIEW: readonly AisleResultsView[] = ['positions', 'images'] as const;
 const PAGE_SIZE_SET = new Set<number>(TABLE_PAGE_SIZE_OPTIONS);
 const SORT_COLUMN_SET = new Set<string>(AISLE_RESULTS_SORT_COLUMNS);
 const FILTER_SET = new Set<string>(VALID_FILTERS);
+const RESULT_STATUS_SET = new Set<string>(VALID_RESULT_STATUS);
+const RESULTS_VIEW_SET = new Set<string>(VALID_RESULTS_VIEW);
 
 export function createDefaultAisleResultsFilters(): AisleResultsUrlFilters {
   return {
@@ -84,6 +102,8 @@ export function createDefaultAisleResultsFilters(): AisleResultsUrlFilters {
     tableSort: 'photo',
     sortBy: null,
     sortDir: 'asc',
+    resultStatus: 'all',
+    resultsView: 'positions',
   };
 }
 
@@ -135,6 +155,24 @@ function parseSortDir(
   return raw as DataTableSortDirection;
 }
 
+function parseResultStatus(
+  value: string | null,
+  fallback: AisleResultsImageResultStatus
+): AisleResultsImageResultStatus {
+  const raw = trimParam(value);
+  if (!raw || !RESULT_STATUS_SET.has(raw)) return fallback;
+  return raw as AisleResultsImageResultStatus;
+}
+
+function parseResultsView(
+  value: string | null,
+  fallback: AisleResultsView
+): AisleResultsView {
+  const raw = trimParam(value);
+  if (!raw || !RESULTS_VIEW_SET.has(raw)) return fallback;
+  return raw as AisleResultsView;
+}
+
 export function normalizeAisleResultsFilters(
   filters: AisleResultsUrlFilters
 ): AisleResultsUrlFilters {
@@ -154,7 +192,13 @@ export function normalizeAisleResultsFilters(
       : (VALID_SORT_DIR as readonly string[]).includes(filters.sortDir)
         ? filters.sortDir
         : defaults.sortDir;
-  return { filter, q, page, pageSize, tableSort, sortBy, sortDir };
+  const resultStatus = RESULT_STATUS_SET.has(filters.resultStatus)
+    ? filters.resultStatus
+    : defaults.resultStatus;
+  const resultsView = RESULTS_VIEW_SET.has(filters.resultsView)
+    ? filters.resultsView
+    : defaults.resultsView;
+  return { filter, q, page, pageSize, tableSort, sortBy, sortDir, resultStatus, resultsView };
 }
 
 export function isAisleResultsSortColumn(value: string): value is AisleResultsSortColumn {
@@ -182,6 +226,14 @@ export function parseAisleResultsFilters(
       params.get(AISLE_RESULTS_FILTER_QUERY_KEYS.sortDir),
       defaults.sortDir
     ),
+    resultStatus: parseResultStatus(
+      params.get(AISLE_RESULTS_FILTER_QUERY_KEYS.resultStatus),
+      defaults.resultStatus
+    ),
+    resultsView: parseResultsView(
+      params.get(AISLE_RESULTS_FILTER_QUERY_KEYS.resultsView),
+      defaults.resultsView
+    ),
   });
 }
 
@@ -198,7 +250,9 @@ export function areAisleResultsFiltersEqual(
     na.pageSize === nb.pageSize &&
     na.tableSort === nb.tableSort &&
     na.sortBy === nb.sortBy &&
-    na.sortDir === nb.sortDir
+    na.sortDir === nb.sortDir &&
+    na.resultStatus === nb.resultStatus &&
+    na.resultsView === nb.resultsView
   );
 }
 
@@ -235,8 +289,23 @@ export function writeAisleResultsFilters(
       next.set(AISLE_RESULTS_FILTER_QUERY_KEYS.sortDir, normalized.sortDir);
     }
   }
+  if (normalized.resultStatus !== defaults.resultStatus) {
+    next.set(AISLE_RESULTS_FILTER_QUERY_KEYS.resultStatus, normalized.resultStatus);
+  }
+  if (normalized.resultsView !== defaults.resultsView) {
+    next.set(AISLE_RESULTS_FILTER_QUERY_KEYS.resultsView, normalized.resultsView);
+  }
 
   return next;
+}
+
+/** Maps the URL `resultStatus` value to the backend `result_status` query literal. */
+export function resultStatusToApiQuery(
+  status: AisleResultsImageResultStatus
+): 'all' | 'with_result' | 'without_result' {
+  if (status === 'with-result') return 'with_result';
+  if (status === 'without-result') return 'without_result';
+  return 'all';
 }
 
 export type AisleResultsFilterUpdateOptions = {
@@ -251,7 +320,11 @@ export function mergeAisleResultsFilterPatch(
   options?: AisleResultsFilterUpdateOptions
 ): AisleResultsUrlFilters {
   let next = normalizeAisleResultsFilters({ ...current, ...patch });
-  if (options?.resetPage) {
+  const resultStatusChanged =
+    patch.resultStatus != null && patch.resultStatus !== current.resultStatus;
+  const resultsViewChanged =
+    patch.resultsView != null && patch.resultsView !== current.resultsView;
+  if (options?.resetPage || resultStatusChanged || resultsViewChanged) {
     next = { ...next, page: 1 };
   }
   const maxPage = options?.clampPageTo;

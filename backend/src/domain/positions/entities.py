@@ -41,6 +41,18 @@ class PositionReviewResolution(str, Enum):
     DELETED = "deleted"
 
 
+class PositionCreationSource(str, Enum):
+    """How the position row was originally created.
+
+    Distinct from review corrections (``ReviewAction``) and quantity provenance (``qty_source``).
+    Automatic pipeline detections and photo placeholders use ``AUTOMATIC``. Operator coverage
+    created from an image via the manual-result API uses ``MANUAL``.
+    """
+
+    AUTOMATIC = "automatic"
+    MANUAL = "manual"
+
+
 @dataclass
 class Position:
     id: str
@@ -59,3 +71,4 @@ class Position:
     corrected_position_code: str | None = None
     #: FK to ``inventory_jobs`` when persisted from a pipeline run; ``None`` = legacy pre-multi-run row.
     job_id: str | None = None
+    creation_source: PositionCreationSource = PositionCreationSource.AUTOMATIC

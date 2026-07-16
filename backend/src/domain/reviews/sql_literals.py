@@ -69,3 +69,6 @@ SQL_EQ_UPDATE_SKU = review_action_sql_eq(ReviewActionType.UPDATE_SKU)
 SQL_EQ_MARK_UNKNOWN = review_action_sql_eq(ReviewActionType.MARK_UNKNOWN)
 SQL_EQ_MARK_IMAGE_MISMATCH = review_action_sql_eq(ReviewActionType.MARK_IMAGE_MISMATCH)
 SQL_EQ_DELETE_POSITION = review_action_sql_eq(ReviewActionType.DELETE_POSITION)
+SQL_EQ_CREATE_MANUAL_RESULT_FROM_IMAGE = review_action_sql_eq(
+    ReviewActionType.CREATE_MANUAL_RESULT_FROM_IMAGE
+)

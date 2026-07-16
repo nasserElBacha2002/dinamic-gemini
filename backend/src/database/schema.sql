@@ -463,6 +463,53 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_positions_aisle_job_id
     CREATE INDEX IX_positions_aisle_job_id ON positions(aisle_id, job_id);
 GO
 
+-- Manual vs automatic creation provenance (mirror 0047).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('positions') AND name = 'creation_source')
+BEGIN
+    ALTER TABLE positions ADD creation_source VARCHAR(16) NOT NULL
+        CONSTRAINT DF_positions_creation_source DEFAULT 'automatic';
+END;
+GO
+IF OBJECT_ID('positions', 'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT 1 FROM sys.check_constraints
+       WHERE name = 'CK_positions_creation_source'
+         AND parent_object_id = OBJECT_ID('positions')
+   )
+BEGIN
+    ALTER TABLE positions
+        ADD CONSTRAINT CK_positions_creation_source
+        CHECK (creation_source IN ('automatic', 'manual'));
+END;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_positions_job_creation_source'
+      AND object_id = OBJECT_ID('positions')
+)
+    CREATE NONCLUSTERED INDEX IX_positions_job_creation_source
+        ON positions(job_id, creation_source)
+        WHERE job_id IS NOT NULL;
+GO
+
+IF OBJECT_ID('position_manual_image_coverage', 'U') IS NULL
+BEGIN
+    CREATE TABLE position_manual_image_coverage (
+        id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        source_asset_id VARCHAR(36) NOT NULL,
+        position_id VARCHAR(36) NOT NULL,
+        aisle_id VARCHAR(36) NOT NULL,
+        inventory_id VARCHAR(36) NOT NULL,
+        created_by_user_id VARCHAR(128) NULL,
+        created_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_position_manual_image_coverage PRIMARY KEY (id),
+        CONSTRAINT UQ_manual_coverage_job_asset UNIQUE (job_id, source_asset_id),
+        CONSTRAINT FK_manual_coverage_position FOREIGN KEY (position_id) REFERENCES positions(id)
+    );
+END;
+GO
+
 -- v3.0 — Product records (Épica 6, Documento técnico §7.5)
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'product_records')
 BEGIN
