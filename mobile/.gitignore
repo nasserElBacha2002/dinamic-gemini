@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Expo / native build outputs
+.expo/
+dist/
+web-build/
+android/
+ios/
+*.orig.*
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Test / coverage
+coverage/
+
+# Logs
+*.log
+
+# OS
+.DS_Store

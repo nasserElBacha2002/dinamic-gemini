@@ -1,0 +1,38 @@
+{
+  "name": "dinamic-inventory-mobile",
+  "version": "0.0.1-spike.0",
+  "private": true,
+  "description": "Dinamic Inventory — Android capture/upload client (Fase 0 spike). Photos-only.",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "prebuild": "expo prebuild -p android --clean",
+    "typecheck": "tsc --noEmit",
+    "typecheck:core": "tsc --noEmit -p tsconfig.core.json",
+    "test": "jest",
+    "test:core": "jest --config jest.config.core.js",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "1.23.1",
+    "@tanstack/react-query": "^5.51.0",
+    "expo": "~51.0.0",
+    "expo-dev-client": "~4.0.0",
+    "expo-file-system": "~17.0.0",
+    "expo-image-manipulator": "~12.0.0",
+    "expo-media-library": "~16.0.0",
+    "expo-secure-store": "~13.0.0",
+    "expo-sqlite": "~14.0.0",
+    "react": "18.2.0",
+    "react-native": "0.74.5"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.14.0",
+    "@types/react": "~18.2.79",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.0",
+    "typescript": "~5.3.3"
+  }
+}

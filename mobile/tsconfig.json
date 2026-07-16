@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ESNext", "DOM"],
+    "jsx": "react-native",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@core/*": ["src/core/*"],
+      "@domain/*": ["src/domain/*"],
+      "@native/*": ["src/native/*"],
+      "@shared/*": ["src/shared/*"]
+    }
+  },
+  "include": ["src", "app", "App.tsx", "index.ts", "app.config.ts", "plugins"],
+  "exclude": ["node_modules"]
+}

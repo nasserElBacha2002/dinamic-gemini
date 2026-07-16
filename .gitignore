@@ -63,6 +63,7 @@ output/
 !package-lock.json
 !tsconfig.json
 !tsconfig.node.json
+!tsconfig.core.json
 !frontend/vercel.json
 !frontend/src/i18n/locales/en/translation.json
 !frontend/src/i18n/locales/es/translation.json
