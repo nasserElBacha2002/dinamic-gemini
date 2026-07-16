@@ -781,6 +781,9 @@ def _position_summary_response_from_view(
         source_image_original_filename=view.traceability.source_image_original_filename,
         position_code=view.position_code,
         job_id=p.job_id,
+        creation_source=p.creation_source.value
+        if hasattr(p, "creation_source") and p.creation_source is not None
+        else "automatic",
     )
 
 

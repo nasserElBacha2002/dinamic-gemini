@@ -6,8 +6,10 @@ import { useQuery } from '@tanstack/react-query';
 import {
   getAisleMergeResults,
   getAislePositions,
+  getJobImageResults,
   getPositionDetail,
   type AislePositionsListQuery,
+  type JobImageResultsQuery,
 } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
 import {
@@ -68,5 +70,34 @@ export function useAisleMergeResults(
     queryKey: queryKeys.inventories.mergeResultsForJob(inventoryId ?? '', aisleId ?? '', jobId),
     queryFn: () => getAisleMergeResults(inventoryId!, aisleId!, { jobId }),
     enabled: Boolean(inventoryId && aisleId) && (options?.enabled !== false),
+  });
+}
+
+/** Job image coverage (photos jobs): per-image rows with 0..n nested results + counters. */
+export function useJobImageResults(
+  inventoryId: string | undefined,
+  aisleId: string | undefined,
+  jobId: string | undefined,
+  query?: JobImageResultsQuery,
+  options?: { enabled?: boolean }
+) {
+  const resultStatus = query?.result_status ?? 'all';
+  const page = query?.page ?? 1;
+  const pageSize = query?.page_size ?? 25;
+  const paramsKey = { result_status: resultStatus, page, page_size: pageSize };
+  return useQuery({
+    queryKey: queryKeys.inventories.jobImageResults(
+      inventoryId ?? '',
+      aisleId ?? '',
+      jobId ?? '',
+      paramsKey
+    ),
+    queryFn: () =>
+      getJobImageResults(inventoryId!, aisleId!, jobId!, {
+        result_status: resultStatus,
+        page,
+        page_size: pageSize,
+      }),
+    enabled: Boolean(inventoryId && aisleId && jobId) && (options?.enabled !== false),
   });
 }

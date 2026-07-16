@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from src.application.ports.repositories import AisleRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.aisle.entities import Aisle, AisleStatus
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +67,9 @@ def _row_to_aisle(row) -> Aisle:
 
 
 class SqlAisleRepository(AisleRepository):
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
 
     def save(self, aisle: Aisle) -> None:
         if aisle.created_at is None or aisle.updated_at is None:
@@ -75,7 +77,7 @@ class SqlAisleRepository(AisleRepository):
         created = _ensure_utc(aisle.created_at)
         updated = _ensure_utc(aisle.updated_at)
         is_active_bit = 1 if aisle.is_active else 0
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 UPDATE aisles
@@ -127,7 +129,7 @@ class SqlAisleRepository(AisleRepository):
                 )
 
     def get_by_id(self, aisle_id: str) -> Aisle | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
@@ -143,7 +145,7 @@ class SqlAisleRepository(AisleRepository):
         return _row_to_aisle(row)
 
     def list_by_inventory(self, inventory_id: str) -> Sequence[Aisle]:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
@@ -157,7 +159,7 @@ class SqlAisleRepository(AisleRepository):
         return [_row_to_aisle(row) for row in rows]
 
     def get_by_inventory_and_code(self, inventory_id: str, code: str) -> Aisle | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,

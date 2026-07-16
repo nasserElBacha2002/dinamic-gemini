@@ -19,6 +19,7 @@ def test_sql_in_settling_matches_enum_subset_order() -> None:
             ReviewActionType.UPDATE_QUANTITY,
             ReviewActionType.UPDATE_SKU,
             ReviewActionType.MARK_UNKNOWN,
+            ReviewActionType.CREATE_MANUAL_RESULT_FROM_IMAGE,
         )
     )
     assert SQL_IN_SETTLING_ACTIONS == expected

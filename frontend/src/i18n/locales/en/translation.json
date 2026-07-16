@@ -1363,7 +1363,63 @@
     "update_sku_placeholder": "Update sku placeholder",
     "view_full_image": "View full image",
     "zoom_in": "Zoom in",
-    "zoom_out": "Zoom out"
+    "zoom_out": "Zoom out",
+    "imageCoverage": {
+      "viewToggle": {
+        "positions": "Positions",
+        "unmatched": "Uncounted images",
+        "unmatchedWithCount": "Uncounted images ({{count}})",
+        "aria": "Results view"
+      },
+      "queue": {
+        "heading": "Uncounted images: {{count}}",
+        "description": "These images did not produce results and need manual review.",
+        "empty": "There are no uncounted images left.",
+        "backToPositions": "Back to positions"
+      },
+      "card": {
+        "noFilename": "No file name",
+        "withoutResultBadge": "Without result",
+        "addResultAction": "Add result",
+        "processingStatus": {
+          "pending": "Pending",
+          "processing": "Processing",
+          "processed_with_result": "Processed",
+          "processed_without_result": "Processed · no result",
+          "failed": "Processing failed"
+        }
+      },
+      "loading": "Loading images…",
+      "drawer": {
+        "title": "Add manual result",
+        "subtitle": "Record a result for this image when automatic detection did not produce one.",
+        "skuLabel": "SKU",
+        "skuPlaceholder": "e.g. SKU-00123",
+        "quantityLabel": "Quantity",
+        "quantityPlaceholder": "e.g. 10",
+        "descriptionLabel": "Description (optional)",
+        "descriptionPlaceholder": "Optional product description",
+        "positionCodeLabel": "Position code (optional)",
+        "positionCodePlaceholder": "e.g. P-014",
+        "save": "Save",
+        "cancel": "Cancel",
+        "saving": "Saving…",
+        "successSnackbar": "Manual result added",
+        "successSnackbarLast": "Result added successfully. There are no uncounted images left.",
+        "imageLoading": "Loading image…",
+        "imageLoadFailed": "Could not load the image. Saving is blocked until evidence is visible.",
+        "errorSkuRequired": "SKU is required",
+        "errorQuantityRequired": "Quantity is required",
+        "errorQuantityInvalid": "Quantity must be a whole number greater than 0"
+      },
+      "errors": {
+        "already_exists": "This image already has a manual result.",
+        "already_has_results": "This image already has results. Refresh the list to see the latest coverage.",
+        "not_allowed_for_asset_type": "Manual results are only allowed for primary photo assets.",
+        "asset_not_in_job": "This asset is not part of this job snapshot.",
+        "photos_job_required": "Image coverage is only available for photo jobs."
+      }
+    }
   },
   "review": {
     "actions": {

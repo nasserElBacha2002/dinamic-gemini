@@ -369,3 +369,27 @@ class InputSnapshotPersistError(Exception):
     def __init__(self, message: str, *, cause: Exception | None = None) -> None:
         super().__init__(message)
         self.cause = cause
+
+
+class ManualResultAlreadyExistsError(Exception):
+    """Raised when a manual coverage result already exists for (job_id, source_asset_id)."""
+
+
+class ImageAlreadyHasResultsError(Exception):
+    """Raised when manual coverage is requested but the image already has one or more results."""
+
+
+class ImageResultLockTimeoutError(Exception):
+    """Raised when the shared image-result applock cannot be acquired within the timeout."""
+
+
+class PhotosJobRequiredError(Exception):
+    """Raised when image-coverage / manual-result APIs are used on a non-photos job."""
+
+
+class AssetNotInJobSnapshotError(Exception):
+    """Raised when a source asset is not part of the job's job_source_assets snapshot."""
+
+
+class ManualResultNotAllowedForAssetTypeError(Exception):
+    """Raised when manual coverage is requested for a non-image / video snapshot asset."""

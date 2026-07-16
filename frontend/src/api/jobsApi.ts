@@ -3,11 +3,14 @@ import { buildQueryString } from './queryString';
 import type {
   AisleExecutionLogResponse,
   AisleJobsListResponse,
+  CreateManualImageResultRequest,
+  CreateManualImageResultResponse,
   ExecutionLogPage,
   ExecutionLogResponse,
   JobArtifactPage,
   ArtifactPreview,
   JobErrorPage,
+  JobImageResultsResponse,
   JobRetryChain,
   JobSummary,
   JobTimelinePage,
@@ -361,6 +364,53 @@ export async function submitReviewAction(
 ): Promise<void> {
   return apiRequestVoid(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/positions/${positionId}/reviews`,
+    {
+      method: 'POST',
+      body,
+    }
+  );
+}
+
+export interface JobImageResultsQuery {
+  result_status?: 'all' | 'with_result' | 'without_result';
+  page?: number;
+  page_size?: number;
+}
+
+/** Wire query for GET .../jobs/{job_id}/image-results — exposed for tests. */
+export function buildJobImageResultsQueryString(q?: JobImageResultsQuery): string {
+  return buildQueryString([
+    ['result_status', q?.result_status],
+    ['page', q?.page, { min: 1 }],
+    ['page_size', q?.page_size, { min: 1 }],
+  ]);
+}
+
+/** GET .../jobs/{job_id}/image-results — image coverage (photos jobs): photo LEFT JOIN positions. */
+export async function getJobImageResults(
+  inventoryId: string,
+  aisleId: string,
+  jobId: string,
+  query?: JobImageResultsQuery
+): Promise<JobImageResultsResponse> {
+  const qs = buildJobImageResultsQueryString(query);
+  return apiRequestJson<JobImageResultsResponse>(
+    `${jobScopedPath(inventoryId, aisleId, jobId, '/image-results')}${qs}`
+  );
+}
+
+/** POST .../assets/{source_asset_id}/manual-result — create an operator manual result for an image. 409 when a manual result already exists for this asset. */
+export async function createManualImageResult(
+  inventoryId: string,
+  aisleId: string,
+  sourceAssetId: string,
+  body: CreateManualImageResultRequest
+): Promise<CreateManualImageResultResponse> {
+  const inv = encodeURIComponent(inventoryId);
+  const aisle = encodeURIComponent(aisleId);
+  const asset = encodeURIComponent(sourceAssetId);
+  return apiRequestJson<CreateManualImageResultResponse>(
+    `${API_BASE}${V3_INVENTORIES_BASE}/${inv}/aisles/${aisle}/assets/${asset}/manual-result`,
     {
       method: 'POST',
       body,

@@ -260,6 +260,13 @@ class PositionSummaryResponse(BaseModel):
         None,
         description="Storage row inventory job id for this position; null = legacy. Exposed for multi-run clients (e.g. review queue detail).",
     )
+    creation_source: Literal["automatic", "manual"] = Field(
+        "automatic",
+        description=(
+            "How the position was originally created: pipeline detection (automatic) "
+            "or operator manual coverage from an image (manual)."
+        ),
+    )
 
 
 class PositionRunContextResponse(BaseModel):

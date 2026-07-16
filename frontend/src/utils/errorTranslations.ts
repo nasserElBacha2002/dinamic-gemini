@@ -50,6 +50,11 @@ const V3_STRUCTURED_CODE_TO_KEY: Record<string, string> = {
   CODE_SCAN_EXPORT_NO_RUN: 'aisleCodeScans.errors.export_no_run',
   CODE_SCAN_EXPORT_UNSUPPORTED_TYPE: 'aisleCodeScans.errors.export_unsupported_type',
   CODE_SCAN_EXPORT_UNSUPPORTED_FORMAT: 'aisleCodeScans.errors.export_unsupported_format',
+  MANUAL_RESULT_ALREADY_EXISTS: 'results.imageCoverage.errors.already_exists',
+  IMAGE_ALREADY_HAS_RESULTS: 'results.imageCoverage.errors.already_has_results',
+  MANUAL_RESULT_NOT_ALLOWED_FOR_ASSET_TYPE: 'results.imageCoverage.errors.not_allowed_for_asset_type',
+  ASSET_NOT_IN_JOB_SNAPSHOT: 'results.imageCoverage.errors.asset_not_in_job',
+  PHOTOS_JOB_REQUIRED: 'results.imageCoverage.errors.photos_job_required',
 };
 
 export function v3StructuredErrorCodeToTranslationKey(code: string): string | null {

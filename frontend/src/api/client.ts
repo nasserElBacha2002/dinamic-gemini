@@ -31,15 +31,17 @@ export {
   startAisleProcessing,
   updateAisle,
 } from './aislesApi';
-export type { AislePositionsListQuery } from './jobsApi';
+export type { AislePositionsListQuery, JobImageResultsQuery } from './jobsApi';
 export {
   cancelAisleJob,
+  createManualImageResult,
   downloadAisleExecutionLogTxt,
   downloadExecutionLogTxt,
   getAisleExecutionLog,
   getAisleExecutionLogTxtUrl,
   getAisleJobDetail,
   getAislePositions,
+  getJobImageResults,
   getPositionDetail,
   getExecutionLog,
   getExecutionLogTxtUrl,

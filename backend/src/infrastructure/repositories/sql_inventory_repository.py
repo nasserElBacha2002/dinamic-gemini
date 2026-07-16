@@ -19,6 +19,7 @@ from src.domain.inventory.entities import (
     InventoryProcessingMode,
     InventoryStatus,
 )
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,9 @@ def _ensure_utc(dt: datetime | None) -> datetime | None:
 
 
 class SqlInventoryRepository(InventoryRepository):
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
 
     def _row_processing_mode(self, raw: object, inventory_id: str) -> InventoryProcessingMode:
         s = (raw or "production") if raw is not None else "production"
@@ -54,7 +56,7 @@ class SqlInventoryRepository(InventoryRepository):
         completed = _ensure_utc(inventory.completed_at)
         created = _ensure_utc(inventory.created_at)
         updated = _ensure_utc(inventory.updated_at)
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 UPDATE inventories
@@ -104,7 +106,7 @@ class SqlInventoryRepository(InventoryRepository):
                 )
 
     def get_by_id(self, inventory_id: str) -> Inventory | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 SELECT id, name, status, created_at, updated_at, completed_at,
@@ -145,7 +147,7 @@ class SqlInventoryRepository(InventoryRepository):
 
     def list_all(self) -> Sequence[Inventory]:
         """Return all inventories; order is created_at DESC (deterministic)."""
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 SELECT id, name, status, created_at, updated_at, completed_at,

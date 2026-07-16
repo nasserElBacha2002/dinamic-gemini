@@ -87,6 +87,23 @@ export const queryKeys = {
     /** Run selector list (`listAisleJobs`); `limit` is part of cache identity. */
     aisleJobsList: (inventoryId: string, aisleId: string, limit: number) =>
       [...queryKeys.inventories.aisleJobs(inventoryId, aisleId), limit] as const,
+    /** GET .../jobs/{jobId}/image-results (photo coverage view); params (result_status/page/page_size) are part of cache identity. */
+    jobImageResults: (
+      inventoryId: string,
+      aisleId: string,
+      jobId: string,
+      params: Record<string, string | number>
+    ) =>
+      [
+        ...queryKeys.inventories.all,
+        'aisles',
+        inventoryId,
+        aisleId,
+        'jobs',
+        jobId,
+        'image-results',
+        params,
+      ] as const,
     benchmarkCompareMany: (
       inventoryId: string,
       aisleId: string,

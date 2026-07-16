@@ -28,6 +28,7 @@ export {
   useAislePositions,
   usePositionDetail,
   useAisleMergeResults,
+  useJobImageResults,
   positionsListQueryKeyPart,
 } from './usePositions';
 export { useObservabilityMetrics } from './useObservabilityMetrics';
@@ -53,4 +54,5 @@ export {
   useDeleteAisleSourceAsset,
   useSubmitReviewAction,
   usePromoteAisleOperationalJob,
+  useCreateManualImageResult,
 } from './useMutations';

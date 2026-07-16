@@ -1921,7 +1921,63 @@
     "update_sku_placeholder": "Actualizar SKU",
     "view_full_image": "Vista completa de la imagen",
     "zoom_in": "Acercar",
-    "zoom_out": "Alejar"
+    "zoom_out": "Alejar",
+    "imageCoverage": {
+      "viewToggle": {
+        "positions": "Posiciones",
+        "unmatched": "Imágenes sin contar",
+        "unmatchedWithCount": "Imágenes sin contar ({{count}})",
+        "aria": "Vista de resultados"
+      },
+      "queue": {
+        "heading": "Imágenes sin contar: {{count}}",
+        "description": "Estas imágenes no generaron resultados y requieren revisión manual.",
+        "empty": "No quedan imágenes sin contar.",
+        "backToPositions": "Volver a posiciones"
+      },
+      "card": {
+        "noFilename": "Sin nombre de archivo",
+        "withoutResultBadge": "Sin resultado",
+        "addResultAction": "Agregar resultado",
+        "processingStatus": {
+          "pending": "Pendiente",
+          "processing": "Procesando",
+          "processed_with_result": "Procesada",
+          "processed_without_result": "Procesada · sin resultado",
+          "failed": "Procesamiento fallido"
+        }
+      },
+      "loading": "Cargando imágenes…",
+      "drawer": {
+        "title": "Agregar resultado manual",
+        "subtitle": "Registrá un resultado para esta imagen cuando la detección automática no generó uno.",
+        "skuLabel": "SKU",
+        "skuPlaceholder": "Ej. SKU-00123",
+        "quantityLabel": "Cantidad",
+        "quantityPlaceholder": "Ej. 10",
+        "descriptionLabel": "Descripción (opcional)",
+        "descriptionPlaceholder": "Descripción opcional del producto",
+        "positionCodeLabel": "Código de posición (opcional)",
+        "positionCodePlaceholder": "Ej. P-014",
+        "save": "Guardar",
+        "cancel": "Cancelar",
+        "saving": "Guardando…",
+        "successSnackbar": "Resultado manual agregado",
+        "successSnackbarLast": "Resultado agregado correctamente. Ya no quedan imágenes sin contar.",
+        "imageLoading": "Cargando imagen…",
+        "imageLoadFailed": "No se pudo cargar la imagen. No es posible guardar sin evidencia visible.",
+        "errorSkuRequired": "El SKU es obligatorio",
+        "errorQuantityRequired": "La cantidad es obligatoria",
+        "errorQuantityInvalid": "La cantidad debe ser un número entero mayor que 0"
+      },
+      "errors": {
+        "already_exists": "Esta imagen ya tiene un resultado manual asociado.",
+        "already_has_results": "Esta imagen ya tiene resultados. Actualizá la lista para ver la cobertura más reciente.",
+        "not_allowed_for_asset_type": "Los resultados manuales solo están permitidos para fotos principales.",
+        "asset_not_in_job": "Este recurso no forma parte de esta corrida.",
+        "photos_job_required": "La cobertura de imágenes solo está disponible para corridas de fotos."
+      }
+    }
   },
   "review": {
     "actions": {

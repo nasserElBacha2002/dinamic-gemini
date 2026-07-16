@@ -1116,6 +1116,8 @@ export interface PositionSummary {
   job_id?: string | null;
   /** Terminal operator review outcome when set (e.g. confirmed, unknown, image_mismatch). */
   review_resolution?: string | null;
+  /** How the position was created: pipeline detection (automatic) or operator manual coverage from an image (manual). Defaults to automatic for legacy rows. */
+  creation_source?: 'automatic' | 'manual';
 }
 
 /**
@@ -1149,6 +1151,47 @@ export interface ReviewQueueItem {
   inventory_id: string;
   inventory_name: string;
   aisle_code: string;
+  position: PositionSummary;
+}
+
+/** GET .../jobs/{job_id}/image-results — per-image coverage counters (photos jobs). */
+export interface JobImageResultCounters {
+  total_images: number;
+  with_result: number;
+  without_result: number;
+}
+
+/** One row of GET .../jobs/{job_id}/image-results: photo LEFT JOIN positions (0..n results per image). */
+export interface JobImageResultItem {
+  job_source_asset_id: string;
+  source_asset_id: string;
+  job_id: string;
+  image_url: string;
+  original_filename?: string | null;
+  created_at: string;
+  /** 0-based order within the job snapshot; UI displays as #N (1-based). */
+  position_order: number;
+  processing_status?: string | null;
+  has_result: boolean;
+  result_count: number;
+  automatic_result_count: number;
+  manual_result_count: number;
+  has_manual_result: boolean;
+  results: PositionSummary[];
+}
+
+/** GET .../aisles/{aisle_id}/jobs/{job_id}/image-results — paginated by image, not by position. */
+export interface JobImageResultsResponse {
+  items: JobImageResultItem[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+  counters: JobImageResultCounters;
+}
+
+/** POST .../assets/{source_asset_id}/manual-result — operator-created coverage for an image without a result. */
+export interface CreateManualImageResultResponse {
   position: PositionSummary;
 }
 

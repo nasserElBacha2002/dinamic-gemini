@@ -4,6 +4,9 @@ Advance aisle lifecycle after manual review mutations (v3).
 Pipeline leaves aisles in ``processed``; when operators clear ``needs_review`` on all
 positions, the aisle becomes ``completed`` so aggregate inventory status can leave
 ``in_review``. Optionally moves ``processed`` → ``in_review`` while work remains.
+
+Uses an EXISTS-style pending check when the position repository supports it, to avoid
+loading every position inside a write transaction.
 """
 
 from __future__ import annotations
@@ -16,6 +19,14 @@ from src.application.services.inventory_status_reconciler import InventoryStatus
 from src.domain.aisle.entities import AisleStatus
 
 logger = logging.getLogger(__name__)
+
+
+def _aisle_has_pending_review(position_repo: PositionRepository, aisle_id: str) -> bool:
+    checker = getattr(position_repo, "aisle_has_needs_review", None)
+    if callable(checker):
+        return bool(checker(aisle_id))
+    positions = list(position_repo.list_by_aisles([aisle_id]))
+    return any(p.needs_review for p in positions)
 
 
 class AisleReviewLifecycleSync:
@@ -43,8 +54,7 @@ class AisleReviewLifecycleSync:
             return
 
         if aisle.status in (AisleStatus.PROCESSED, AisleStatus.IN_REVIEW):
-            positions = list(self._position_repo.list_by_aisles([aisle_id]))
-            pending = any(p.needs_review for p in positions)
+            pending = _aisle_has_pending_review(self._position_repo, aisle_id)
             now = self._clock.now()
             changed = False
             if pending:
@@ -57,4 +67,5 @@ class AisleReviewLifecycleSync:
             if changed:
                 self._aisle_repo.save(aisle)
 
+        # Inventory rollup is aisle-level (not a full position scan).
         self._status_reconciler.reconcile(inventory_id)

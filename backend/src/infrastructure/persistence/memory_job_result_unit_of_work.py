@@ -112,6 +112,9 @@ class MemoryJobResultUnitOfWork:
         self._rolled_back = True
         logger.warning("MemoryJobResultUnitOfWork rolled back to prior snapshot")
 
+    def acquire_image_result_lock(self, *, job_id: str, source_asset_id: str) -> None:
+        _ = (job_id, source_asset_id)
+
     def __enter__(self) -> MemoryJobResultUnitOfWork:
         repos = self.repositories
         self._scope_store = MemoryJobResultScopeStore(repos)

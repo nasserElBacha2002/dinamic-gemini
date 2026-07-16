@@ -13,6 +13,7 @@ from typing import Any
 from src.application.ports.repositories import ReviewActionRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.reviews.entities import ReviewAction, ReviewActionType
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +88,9 @@ def _row_to_review(row: Any) -> ReviewAction:
 
 
 class SqlReviewActionRepository(ReviewActionRepository):
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
 
     def save(self, review: ReviewAction) -> None:
         if review.created_at is None:
@@ -96,7 +98,7 @@ class SqlReviewActionRepository(ReviewActionRepository):
         created = _ensure_utc(review.created_at)
         before_str = json.dumps(review.before_json, ensure_ascii=False)
         after_str = json.dumps(review.after_json, ensure_ascii=False)
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 INSERT INTO review_actions (id, position_id, action_type, before_json, after_json, created_at, user_id, comment, job_id)
@@ -116,7 +118,7 @@ class SqlReviewActionRepository(ReviewActionRepository):
             )
 
     def list_by_position(self, position_id: str) -> Sequence[ReviewAction]:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
                 SELECT id, position_id, action_type, before_json, after_json, created_at, user_id, comment, job_id

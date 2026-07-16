@@ -31,6 +31,7 @@ REVIEW_ACTION_TYPES_SETTLING: tuple[ReviewActionType, ...] = (
     ReviewActionType.UPDATE_QUANTITY,
     ReviewActionType.UPDATE_SKU,
     ReviewActionType.MARK_UNKNOWN,
+    ReviewActionType.CREATE_MANUAL_RESULT_FROM_IMAGE,
 )
 
 REVIEW_ACTION_TYPES_CORRECTION: tuple[ReviewActionType, ...] = (
@@ -54,6 +55,7 @@ REVIEW_ACTION_TYPES_REVIEWED_POSITIONS: tuple[ReviewActionType, ...] = (
     ReviewActionType.UPDATE_SKU,
     ReviewActionType.MARK_UNKNOWN,
     ReviewActionType.MARK_IMAGE_MISMATCH,
+    ReviewActionType.CREATE_MANUAL_RESULT_FROM_IMAGE,
 )
 
 SQL_IN_SETTLING_ACTIONS = review_action_sql_in(REVIEW_ACTION_TYPES_SETTLING)
@@ -69,3 +71,6 @@ SQL_EQ_UPDATE_SKU = review_action_sql_eq(ReviewActionType.UPDATE_SKU)
 SQL_EQ_MARK_UNKNOWN = review_action_sql_eq(ReviewActionType.MARK_UNKNOWN)
 SQL_EQ_MARK_IMAGE_MISMATCH = review_action_sql_eq(ReviewActionType.MARK_IMAGE_MISMATCH)
 SQL_EQ_DELETE_POSITION = review_action_sql_eq(ReviewActionType.DELETE_POSITION)
+SQL_EQ_CREATE_MANUAL_RESULT_FROM_IMAGE = review_action_sql_eq(
+    ReviewActionType.CREATE_MANUAL_RESULT_FROM_IMAGE
+)
