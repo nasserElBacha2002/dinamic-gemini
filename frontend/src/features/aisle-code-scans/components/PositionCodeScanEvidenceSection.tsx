@@ -162,6 +162,36 @@ export default function PositionCodeScanEvidenceSection({
           columns={columns}
           stickyHeader={false}
           rowHover={false}
+          mobile={{
+            mode: 'card',
+            title: (d) => d.code_value,
+            subtitle: (d) => formatCodeScanCodeType(t, d.code_type),
+            ariaLabel: (d) => d.code_value,
+            fields: [
+              {
+                id: 'match',
+                label: t('aisleCodeScans.evidence.match'),
+                value: (d) =>
+                  d.match_type
+                    ? formatCodeScanMatchType(t, d.match_type)
+                    : t('aisleCodeScans.matching.not_evaluated'),
+              },
+              {
+                id: 'detected_at',
+                label: t('aisleCodeScans.evidence.detectedAt'),
+                value: (d) => formatDate(d.created_at),
+              },
+            ],
+            primaryAction: (d) =>
+              d.asset_id ? (
+                <CodeScanAssetPreviewButton
+                  inventoryId={inventoryId}
+                  aisleId={aisleId}
+                  assetId={d.asset_id}
+                  jobIdForPreview={jobIdForPreview}
+                />
+              ) : null,
+          }}
         />
       ) : null}
     </Box>

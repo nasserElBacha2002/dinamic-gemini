@@ -70,4 +70,48 @@ describe('BaseDialog', () => {
     );
     expect(screen.getByRole('button', { name: 'Action one' })).toBeInTheDocument();
   });
+
+  it('accepts object, function, and array actionsSx values', () => {
+    const { rerender } = render(
+      <WithTheme>
+        <BaseDialog open title="T" onClose={() => {}} actions={<Button>Action one</Button>} actionsSx={{ gap: 1 }}>
+          Body
+        </BaseDialog>
+      </WithTheme>
+    );
+
+    expect(screen.getByRole('button', { name: 'Action one' })).toBeInTheDocument();
+
+    rerender(
+      <WithTheme>
+        <BaseDialog
+          open
+          title="T"
+          onClose={() => {}}
+          actions={<Button>Action one</Button>}
+          actionsSx={(theme) => ({ color: theme.palette.primary.main })}
+        >
+          Body
+        </BaseDialog>
+      </WithTheme>
+    );
+
+    expect(screen.getByRole('button', { name: 'Action one' })).toBeInTheDocument();
+
+    rerender(
+      <WithTheme>
+        <BaseDialog
+          open
+          title="T"
+          onClose={() => {}}
+          actions={<Button>Action one</Button>}
+          actionsSx={[{ gap: 1 }, { justifyContent: 'flex-end' }]}
+        >
+          Body
+        </BaseDialog>
+      </WithTheme>
+    );
+
+    expect(screen.getByRole('button', { name: 'Action one' })).toBeInTheDocument();
+  });
 });

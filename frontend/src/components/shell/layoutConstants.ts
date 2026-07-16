@@ -40,8 +40,17 @@ export const SAFE_AREA = {
 /** Dynamic viewport height (avoids iOS 100vh toolbar issues). */
 export const VIEWPORT_MIN_HEIGHT = '100dvh';
 
-/**
- * MUI breakpoint key at which the shell switches from temporary to permanent nav,
- * and DataTable prefers the desktop table over mobile cards (when `renderMobileItem` is set).
- */
+/** Breakpoint where the shell switches from temporary to permanent navigation. */
 export const SHELL_PERMANENT_NAV_BREAKPOINT = 'md' as const;
+
+/** Breakpoint where DataTable switches from mobile strategies to the full desktop table. */
+export const DATA_TABLE_DEFAULT_DESKTOP_BREAKPOINT = 'md' as const;
+
+/** Breakpoint where larger dialogs become fullscreen. */
+export const DIALOG_FULLSCREEN_BREAKPOINT = 'md' as const;
+
+/** Breakpoint where wizard steppers become vertical. */
+export const WIZARD_VERTICAL_BREAKPOINT = 'md' as const;
+
+/** Breakpoint where secondary filters move into a drawer. */
+export const FILTER_DRAWER_BREAKPOINT = 'md' as const;

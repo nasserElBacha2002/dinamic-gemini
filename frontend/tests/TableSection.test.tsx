@@ -16,6 +16,13 @@ const columns: DataTableColumn<Row>[] = [
   { id: 'name', label: 'Name', sortable: true, cell: (r) => r.name },
 ];
 
+const mobile = {
+  mode: 'card' as const,
+  title: (r: Row) => r.name,
+  ariaLabel: (r: Row) => r.name,
+  fields: [{ id: 'name', label: 'Name', value: (r: Row) => r.name }],
+};
+
 describe('TableSection', () => {
   it('renders title, toolbar, and table rows', () => {
     render(
@@ -28,6 +35,7 @@ describe('TableSection', () => {
             rows: [{ id: '1', name: 'Alpha' }],
             rowKey: (r) => r.id,
             columns,
+            mobile,
           }}
         />
       </WithTheme>
@@ -49,6 +57,7 @@ describe('TableSection', () => {
             rows: [{ id: '1', name: 'Alpha' }],
             rowKey: (r) => r.id,
             columns,
+            mobile,
           }}
         />
       </WithTheme>
@@ -69,6 +78,7 @@ describe('TableSection', () => {
             rows: [],
             rowKey: (r) => r.id,
             columns,
+            mobile,
             emptyState: { message: 'No rows' },
           }}
         />
@@ -90,6 +100,7 @@ describe('TableSection', () => {
             rows: [{ id: '1', name: 'Alpha' }],
             rowKey: (r) => r.id,
             columns,
+            mobile,
           }}
         />
       </WithTheme>

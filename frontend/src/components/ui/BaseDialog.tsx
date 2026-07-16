@@ -88,7 +88,7 @@ export default function BaseDialog({
   const { t } = useTranslation();
   const titleId = useId();
   const descriptionId = useId();
-  const { isCompact } = useAppBreakpoint();
+  const { useFullscreenDialog } = useAppBreakpoint();
 
   const descriptionContent = description ?? subtitle;
   const hasDescription = isNonEmptyDescription(descriptionContent);
@@ -108,7 +108,7 @@ export default function BaseDialog({
       onClose={disableClose ? undefined : onClose}
       maxWidth={maxWidth}
       fullWidth={fullWidth}
-      fullScreen={fullScreenOnMobile && isCompact}
+      fullScreen={fullScreenOnMobile && useFullscreenDialog}
       aria-labelledby={titleId}
       aria-describedby={hasDescription ? descriptionId : undefined}
     >
@@ -148,12 +148,12 @@ export default function BaseDialog({
       </DialogContent>
       {actions ? (
         <DialogActions
-          sx={{
-            pb: `calc(8px + ${SAFE_AREA.bottom})`,
-            ...(typeof actionsSx === 'object' && actionsSx !== null && !Array.isArray(actionsSx)
-              ? actionsSx
-              : {}),
-          }}
+          sx={[
+            {
+              pb: `calc(8px + ${SAFE_AREA.bottom})`,
+            },
+            ...(Array.isArray(actionsSx) ? actionsSx : actionsSx ? [actionsSx] : []),
+          ]}
         >
           {actions}
         </DialogActions>

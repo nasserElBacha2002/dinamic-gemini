@@ -326,6 +326,30 @@ export default function ClientDetail() {
               rowKey={(supplier) => supplier.id}
               columns={supplierColumns}
               loading={false}
+              onRowClick={(supplier) => navigate(pathToClientSupplier(safeClientId, supplier.id))}
+              mobile={{
+                mode: 'card',
+                title: (supplier) => supplier.name,
+                status: (supplier) => (
+                  <StatusBadge
+                    label={statusLabel(String(supplier.status), t)}
+                    semantic={statusSemantic(String(supplier.status))}
+                  />
+                ),
+                ariaLabel: (supplier) => supplier.name,
+                fields: [
+                  {
+                    id: 'created_at',
+                    label: t('clients.suppliers.fields.created_at'),
+                    value: (supplier) => formatDate(supplier.created_at),
+                  },
+                  {
+                    id: 'updated_at',
+                    label: t('clients.suppliers.fields.updated_at'),
+                    value: (supplier) => formatDate(supplier.updated_at),
+                  },
+                ],
+              }}
               sort={{
                 sortBy: supplierSortBy,
                 sortDir: supplierSortDir,
@@ -378,6 +402,25 @@ export default function ClientDetail() {
               rowKey={(inv) => inv.id}
               columns={inventoryColumns}
               loading={false}
+              onRowClick={(inv) => navigate(pathToInventory(inv.id))}
+              mobile={{
+                mode: 'card',
+                title: (inv) => inv.name,
+                status: (inv) => (
+                  <StatusBadge
+                    label={formatInventoryStatusLabel(String(inv.status))}
+                    semantic={inventoryStatusToBadgeSemantic(String(inv.status))}
+                  />
+                ),
+                ariaLabel: (inv) => inv.name,
+                fields: [
+                  {
+                    id: 'aisles',
+                    label: t('inventory.column_aisles'),
+                    value: (inv) => inv.aisles_count ?? t('common.em_dash'),
+                  },
+                ],
+              }}
               sort={{
                 sortBy: clientInvSortBy,
                 sortDir: clientInvSortDir,

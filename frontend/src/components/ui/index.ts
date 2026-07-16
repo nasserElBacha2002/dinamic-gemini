@@ -59,6 +59,9 @@ export type {
   DataTableColumn,
   DataTablePaginationModel,
   DataTableProps,
+  DataTableMobileConfig,
+  DataTableMobileField,
+  DataTableMobileMode,
   DataTableSortDirection,
   DataTableSortModel,
   DataTableSortType,
@@ -68,7 +71,7 @@ export { default as TableSection } from './TableSection';
 export type { TableSectionProps } from './TableSection';
 
 export { default as DataTableMobileCard } from './DataTableMobileCard';
-export type { DataTableMobileCardProps } from './DataTableMobileCard';
+export type { DataTableMobileCardField, DataTableMobileCardProps } from './DataTableMobileCard';
 
 export { default as PhotoUploadProgressDialog } from './PhotoUploadProgressDialog';
 export type { PhotoUploadProgressDialogProps } from './PhotoUploadProgressDialog';

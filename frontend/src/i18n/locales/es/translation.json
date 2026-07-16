@@ -436,6 +436,7 @@
     "column_avg_processing": "Proc. prom.",
     "column_inv_tr": "TR inválida",
     "column_invalid_tr": "Trazabilidad inválida",
+    "column_invalid_traceability": "Trazabilidad inválida",
     "column_inventory": "Inventario",
     "column_job_success": "Éxito de ejecución",
     "column_manual_correction": "Corrección manual",
@@ -462,6 +463,7 @@
     "inventory_performance_subtitle": "Vista comparativa por inventario.",
     "inventory_performance_title": "Rendimiento por inventario",
     "kpi_auto_accept_desc": "Porcentaje de resultados revisados que no requirieron corrección.",
+    "kpi_auto_acceptance": "Autoaceptación",
     "kpi_auto_accept_title": "Tasa de autoaceptación",
     "kpi_avg_processing_desc": "Duración promedio de procesamiento por posición.",
     "kpi_avg_processing_title": "Tiempo de procesamiento",
@@ -470,6 +472,7 @@
     "kpi_invalid_tr_desc": "Fracción de posiciones con trazabilidad inválida.",
     "kpi_invalid_tr_title": "Tasa de trazabilidad inválida",
     "kpi_manual_correction_desc": "Resultados revisados que requirieron corrección de operador.",
+    "kpi_manual_correction": "Corrección manual",
     "kpi_manual_correction_title": "Tasa de corrección manual",
     "kpi_processing_success_desc": "Ejecuciones finalizadas correctamente.",
     "kpi_processing_success_title": "Éxito de procesamiento",
@@ -1830,6 +1833,7 @@
       "full_source": "Fuente completa",
       "generic": "Evidencia",
       "heading": "Evidencia",
+      "loading": "Cargando evidencia...",
       "no_images": "No hay imágenes disponibles.",
       "open_fullscreen": "Ver en pantalla completa",
       "expand_image": "Ampliar imagen de evidencia",
@@ -2035,6 +2039,10 @@
     "summary_sku": "SKU",
     "summary_sku_set": "SKU establecido",
     "summary_status": "Estado"
+  },
+  "inventories": {
+    "processing_mode_production": "Producción",
+    "processing_mode_test": "Test"
   },
   "nav": {
     "inventories": "Inventarios",

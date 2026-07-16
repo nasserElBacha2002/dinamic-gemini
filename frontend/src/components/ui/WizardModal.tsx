@@ -39,7 +39,7 @@ export default function WizardModal({
   fullWidth = true,
 }: WizardModalProps) {
   const titleId = useId();
-  const { isCompact } = useAppBreakpoint();
+  const { useFullscreenDialog, useVerticalWizard } = useAppBreakpoint();
 
   return (
     <Dialog
@@ -47,15 +47,15 @@ export default function WizardModal({
       onClose={onClose}
       maxWidth={maxWidth}
       fullWidth={fullWidth}
-      fullScreen={isCompact}
+      fullScreen={useFullscreenDialog}
       aria-labelledby={titleId}
     >
       <DialogTitle id={titleId}>{title}</DialogTitle>
       <DialogContent>
         <Stepper
           activeStep={activeStep}
-          alternativeLabel={isCompact}
-          orientation={isCompact ? 'vertical' : 'horizontal'}
+          alternativeLabel={!useVerticalWizard}
+          orientation={useVerticalWizard ? 'vertical' : 'horizontal'}
           sx={{ mb: 3, pt: 1 }}
         >
           {stepLabels.map((label) => (

@@ -22,11 +22,19 @@ const useAppBreakpointMock = vi.mocked(breakpointHook.useAppBreakpoint);
 
 function renderShell(username: string, desktop: boolean) {
   useAppBreakpointMock.mockReturnValue({
+    isPhone: !desktop,
+    isTablet: false,
+    isDesktop: desktop,
     isMdUp: desktop,
     isSmUp: true,
     isMobileNav: !desktop,
     isCompact: !desktop,
     isDesktopShell: desktop,
+    useTemporaryNavigation: !desktop,
+    useMobileTableCards: !desktop,
+    useFullscreenDialog: !desktop,
+    useMobileFilterDrawer: !desktop,
+    useVerticalWizard: !desktop,
   });
 
   const auth: AuthContextValue = {
@@ -81,11 +89,19 @@ describe('AppShell responsive navigation', () => {
 describe('AppShell admin AI nav', () => {
   beforeEach(() => {
     useAppBreakpointMock.mockReturnValue({
+      isPhone: false,
+      isTablet: false,
+      isDesktop: true,
       isMdUp: true,
       isSmUp: true,
       isMobileNav: false,
       isCompact: false,
       isDesktopShell: true,
+      useTemporaryNavigation: false,
+      useMobileTableCards: false,
+      useFullscreenDialog: false,
+      useMobileFilterDrawer: false,
+      useVerticalWizard: false,
     });
   });
 

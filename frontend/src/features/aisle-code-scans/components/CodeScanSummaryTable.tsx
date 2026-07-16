@@ -96,6 +96,42 @@ export default function CodeScanSummaryTable({ items }: CodeScanSummaryTableProp
         rowKey={(row) => `${row.normalized_code_value}-${row.code_type}`}
         columns={columns}
         stickyHeader={false}
+        mobile={{
+          mode: 'card',
+          title: (row) => row.code_value,
+          status: (row) => <CodeScanMatchStatusChip status={row.match_status} />,
+          ariaLabel: (row) => row.code_value,
+          fields: [
+            {
+              id: 'type',
+              label: t('aisleCodeScans.tables.type'),
+              value: (row) => formatCodeScanCodeType(t, row.code_type),
+            },
+            {
+              id: 'occurrences',
+              label: t('aisleCodeScans.tables.occurrences'),
+              value: (row) => row.occurrences,
+            },
+            {
+              id: 'assets',
+              label: t('aisleCodeScans.tables.assets'),
+              value: (row) => row.asset_ids.join(', '),
+              fullWidth: true,
+            },
+            {
+              id: 'first_seen',
+              label: t('aisleCodeScans.tables.firstSeenAt'),
+              value: (row) => formatDate(row.first_seen_at),
+            },
+            {
+              id: 'linked_result',
+              label: t('aisleCodeScans.matching.linkedResult'),
+              value: (row) =>
+                row.matched_position_ids?.length ? row.matched_position_ids.join(', ') : t('common.em_dash'),
+              fullWidth: true,
+            },
+          ],
+        }}
         pagination={{
           page,
           pageSize,

@@ -1,8 +1,8 @@
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Box, Stack, Typography } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import type { CodeScanDetection } from '../../../api/types/codeScans';
-import { DataTable, DataTableMobileCard, type DataTableColumn } from '../../../components/ui';
+import { DataTable, type DataTableColumn } from '../../../components/ui';
 import { useTableState } from '../../../hooks';
 import { formatDate } from '../../../utils/formatDate';
 import {
@@ -131,25 +131,40 @@ export default function CodeScanDetectionsTable({
         rowKey={(row) => row.id}
         columns={columns}
         stickyHeader={false}
-        renderMobileItem={(row) => (
-          <DataTableMobileCard ariaLabel={row.code_value}>
-            <Stack direction="row" justifyContent="space-between" gap={1} alignItems="flex-start">
-              <Typography variant="subtitle2" fontWeight={700} sx={{ wordBreak: 'break-all' }}>
-                {row.code_value}
-              </Typography>
-              <CodeScanMatchStatusChip status={row.match_status} />
-            </Stack>
-            <Typography variant="body2" color="text.secondary">
-              {formatCodeScanCodeType(t, row.code_type)} ·{' '}
-              {formatCodeScanDetectionStatus(t, row.detection_status)}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
-              {formatCodeScanMatchType(t, row.match_type)}
-              {row.matched_position_id ? ` · ${row.matched_position_id}` : ''}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {formatDate(row.created_at)}
-            </Typography>
+        mobile={{
+          mode: 'card',
+          title: (row) => row.code_value,
+          status: (row) => <CodeScanMatchStatusChip status={row.match_status} />,
+          ariaLabel: (row) => row.code_value,
+          fields: [
+            {
+              id: 'type',
+              label: t('aisleCodeScans.tables.type'),
+              value: (row) => formatCodeScanCodeType(t, row.code_type),
+            },
+            {
+              id: 'status',
+              label: t('aisleCodeScans.tables.status'),
+              value: (row) => formatCodeScanDetectionStatus(t, row.detection_status),
+            },
+            {
+              id: 'match_type',
+              label: t('aisleCodeScans.matching.matchType'),
+              value: (row) => formatCodeScanMatchType(t, row.match_type),
+            },
+            {
+              id: 'linked_result',
+              label: t('aisleCodeScans.matching.linkedResult'),
+              value: (row) => row.matched_position_id ?? t('common.em_dash'),
+              fullWidth: true,
+            },
+            {
+              id: 'date',
+              label: t('aisleCodeScans.tables.date'),
+              value: (row) => formatDate(row.created_at),
+            },
+          ],
+          primaryAction: (row) => (
             <Box data-datatable-skip-row-click>
               <CodeScanAssetPreviewButton
                 inventoryId={inventoryId}
@@ -158,8 +173,8 @@ export default function CodeScanDetectionsTable({
                 jobIdForPreview={jobIdForPreview}
               />
             </Box>
-          </DataTableMobileCard>
-        )}
+          ),
+        }}
         pagination={{
           page,
           pageSize,

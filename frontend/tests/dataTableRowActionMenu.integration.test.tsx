@@ -17,6 +17,13 @@ function WithTheme({ children }: { children: ReactNode }) {
 
 type AisleRow = { id: string; code: string };
 
+const mobile = {
+  mode: 'card' as const,
+  title: (r: AisleRow) => r.code,
+  ariaLabel: (r: AisleRow) => r.code,
+  fields: [{ id: 'code', label: 'Code', value: (r: AisleRow) => r.code }],
+};
+
 describe('DataTable + RowActionMenu', () => {
   it('invokes row action and does not call onRowClick when choosing a menu item', async () => {
     const onRowClick = vi.fn();
@@ -46,6 +53,7 @@ describe('DataTable + RowActionMenu', () => {
           rows={[{ id: 'aisle-1', code: 'A-01' }]}
           rowKey={(r) => r.id}
           columns={columns}
+          mobile={mobile}
           onRowClick={onRowClick}
         />
       </WithTheme>
@@ -98,6 +106,7 @@ describe('DataTable + RowActionMenu', () => {
           rows={[{ id: 'aisle-1', code: 'A-01' }]}
           rowKey={(r) => r.id}
           columns={columns}
+          mobile={mobile}
           onRowClick={onRowClick}
         />
       </WithTheme>

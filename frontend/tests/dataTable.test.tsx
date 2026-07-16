@@ -17,6 +17,13 @@ function WithTheme({ children }: { children: ReactNode }) {
 
 type Row = { id: string; name: string };
 
+const mobile = {
+  mode: 'card' as const,
+  title: (r: Row) => r.name,
+  ariaLabel: (r: Row) => r.name,
+  fields: [{ id: 'name', label: 'Name', value: (r: Row) => r.name }],
+};
+
 describe('DataTable', () => {
   const columns: DataTableColumn<Row>[] = [
     { id: 'name', label: 'Name', sortable: true, cell: (r) => r.name },
@@ -29,6 +36,7 @@ describe('DataTable', () => {
           rows={[{ id: '1', name: 'Alpha' }]}
           rowKey={(r) => r.id}
           columns={columns}
+          mobile={mobile}
         />
       </WithTheme>
     );
@@ -43,6 +51,7 @@ describe('DataTable', () => {
           rows={[{ id: '1', name: 'Alpha' }]}
           rowKey={(r) => r.id}
           columns={columns}
+          mobile={mobile}
           sort={{ sortBy: 'name', sortDir: 'asc', onSortChange }}
         />
       </WithTheme>
@@ -58,6 +67,7 @@ describe('DataTable', () => {
           rows={[]}
           rowKey={(r) => r.id}
           columns={columns}
+          mobile={mobile}
           emptyState={{ title: 'Nothing here', message: 'Add a row to continue.' }}
         />
       </WithTheme>
@@ -73,6 +83,7 @@ describe('DataTable', () => {
           rows={[]}
           rowKey={(r) => r.id}
           columns={columns}
+          mobile={mobile}
           loading
           skeletonRows={3}
         />
@@ -84,7 +95,7 @@ describe('DataTable', () => {
   it('shows default empty message when rows empty and emptyState omitted', () => {
     render(
       <WithTheme>
-        <DataTable<Row> rows={[]} rowKey={(r) => r.id} columns={columns} />
+        <DataTable<Row> rows={[]} rowKey={(r) => r.id} columns={columns} mobile={mobile} />
       </WithTheme>
     );
     expect(screen.getByText(i18n.t(DATATABLE_DEFAULT_EMPTY_MESSAGE_KEY))).toBeInTheDocument();
@@ -102,6 +113,7 @@ describe('DataTable', () => {
           rows={rows}
           rowKey={(r) => r.id}
           columns={columns}
+          mobile={mobile}
           pagination={{
             page: 1,
             pageSize: 10,
@@ -124,6 +136,7 @@ describe('DataTable', () => {
           rows={[{ id: '1', name: 'Alpha' }]}
           rowKey={(r) => r.id}
           columns={columns}
+          mobile={mobile}
           onRowClick={onRowClick}
         />
       </WithTheme>
@@ -147,6 +160,7 @@ describe('DataTable', () => {
           rows={[{ id: '1', name: 'Alpha' }]}
           rowKey={(r) => r.id}
           columns={cols}
+          mobile={mobile}
           onRowClick={onRowClick}
         />
       </WithTheme>
@@ -168,6 +182,7 @@ describe('DataTable', () => {
           rows={rows}
           rowKey={(r) => r.id}
           columns={columns}
+          mobile={mobile}
           pagination={{
             page: 3,
             pageSize: 10,

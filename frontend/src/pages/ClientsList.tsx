@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Stack, Typography } from '@mui/material';
+import { Button, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import type { Client } from '../api/types';
 import CreateClientDialog from '../components/CreateClientDialog';
 import { PageHeader } from '../components/shell';
 import {
-  DataTableMobileCard,
   FilterToolbar,
   StatusBadge,
   TableSearchField,
@@ -172,20 +171,21 @@ export default function ClientsList() {
         toolbar={
           <>
             <FilterToolbar
+              primary={
+                <TableSearchField
+                  label={t('clients.list.search_placeholder')}
+                  placeholder={t('clients.list.search_placeholder')}
+                  value={clientSearch}
+                  onChange={setClientSearch}
+                  data-testid="clients-list-search"
+                />
+              }
               onReset={() => {
                 setClientSearch('');
                 setSortWithoutPageReset('', 'asc');
               }}
               resetDisabled={!clientSearch.trim() && !clientListSortBy.trim()}
-            >
-              <TableSearchField
-                label={t('clients.list.search_placeholder')}
-                placeholder={t('clients.list.search_placeholder')}
-                value={clientSearch}
-                onChange={setClientSearch}
-                data-testid="clients-list-search"
-              />
-            </FilterToolbar>
+            />
             {clientSearch.trim() ? (
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
                 {t('clients.list.search_hint_page')}
@@ -199,28 +199,35 @@ export default function ClientsList() {
           columns,
           loading: clientsQuery.isLoading,
           onRowClick: (client) => navigate(pathToClient(client.id)),
-          renderMobileItem: (client) => (
-            <DataTableMobileCard
-              ariaLabel={client.name}
-              onClick={() => navigate(pathToClient(client.id))}
-            >
-              <Stack direction="row" justifyContent="space-between" gap={1} alignItems="flex-start">
-                <Typography variant="subtitle2" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
-                  {client.name}
-                </Typography>
-                <StatusBadge
-                  label={clientStatusLabel(client.status, t)}
-                  semantic={clientStatusSemantic(client.status)}
-                />
-              </Stack>
-              <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-                {client.id}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {formatDate(client.created_at)}
-              </Typography>
-            </DataTableMobileCard>
-          ),
+          mobile: {
+            mode: 'card',
+            title: (client) => client.name,
+            status: (client) => (
+              <StatusBadge
+                label={clientStatusLabel(client.status, t)}
+                semantic={clientStatusSemantic(client.status)}
+              />
+            ),
+            ariaLabel: (client) => client.name,
+            fields: [
+              {
+                id: 'id',
+                label: 'ID',
+                value: (client) => client.id,
+                fullWidth: true,
+              },
+              {
+                id: 'created_at',
+                label: t('clients.fields.created_at'),
+                value: (client) => formatDate(client.created_at),
+              },
+              {
+                id: 'updated_at',
+                label: t('clients.fields.updated_at'),
+                value: (client) => formatDate(client.updated_at),
+              },
+            ],
+          },
           sort: {
             sortBy: clientListSortBy,
             sortDir: clientListSortDir,

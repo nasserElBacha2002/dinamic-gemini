@@ -199,6 +199,11 @@ export function AisleDrilldownPanel({
           columns={jobColumns}
           stickyHeader={false}
           rowHover={false}
+          mobile={{
+            mode: 'log-view',
+            reason: 'El historial de jobs se lee mejor como tabla cronológica compacta; se conserva scroll interno explícito.',
+            showScrollHint: true,
+          }}
         />
       )}
     </Box>

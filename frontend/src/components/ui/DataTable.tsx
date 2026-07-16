@@ -1,28 +1,11 @@
 /**
- * DataTable — Sprint 2.4 operational table shell (Re diseño 3.3 §8.6, §10) + mobile cards.
+ * DataTable — operational table shell with explicit mobile strategy.
  *
- * - **Server-driven sort/pagination:** parent owns query state and passes `sort` / `pagination`; this component
- *   only renders controls and fires callbacks (no hidden client-side sort of `rows`).
- * - **Page size changes:** when the user picks a new rows-per-page value, this component calls
- *   `onPageSizeChange(newSize)` (if provided) and **always** `onPageChange(1)` so the current page does not
- *   point past the last page. Callers should not rely on duplicating that reset (idempotent if they do).
- * - **Empty rows:** if `emptyState` is omitted and the table is not loading, a **default** empty message is shown
- *   so the region is never a silent blank shell.
- * - **Density:** defaults to `size="small"` and sticky header for scan-heavy operational lists.
- * - **Mobile:** when `renderMobileItem` is provided and viewport is compact (`!md`), rows render as cards
- *   using the **same** `rows` / loading / empty / pagination — no duplicate data fetching.
- * - **Composition:** wrap with `SectionCard`, place `FilterToolbar` above, use `RowActionMenu` / `StatusBadge` in `cell`.
- *
- * **Status in cells:** prefer `StatusBadge` when domain maps to redesign semantics; use `StatusChip` when the row
- * already uses mapper output (e.g. review status color helpers) until a single semantic mapping exists.
- *
- * **Limitations:** No built-in row selection or column resize; add per screen when contracts require them.
- *
- * **Sort metadata (optional):** `sortType`, `sortAccessor`, `sortComparator`, `serverSortKey` on columns are
- * for parents and helpers such as `sortDataTableRows` — this component does not reorder `rows` itself.
+ * Every usage must declare `mobile`. Card structure is owned here; feature code declares
+ * domain fields only. Horizontal scroll is an explicit exception with a reason.
  */
 
-import type { MouseEvent, ReactNode } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import {
   Box,
   Paper,
@@ -39,14 +22,43 @@ import {
   TableSortLabel,
   Typography,
 } from '@mui/material';
+import type { Breakpoint } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next';
 import { DATATABLE_DEFAULT_EMPTY_MESSAGE_KEY, TABLE_PAGE_SIZE_OPTIONS } from '../../constants/dataTable';
 import { useAppBreakpoint } from '../../hooks/useAppBreakpoint';
 import EmptyState from './EmptyState';
+import DataTableMobileCard from './DataTableMobileCard';
+import type { RowActionMenuItem } from './RowActionMenu';
 
 export type DataTableSortDirection = 'asc' | 'desc';
-
 export type DataTableSortType = 'string' | 'number' | 'date' | 'boolean';
+
+export type DataTableMobileMode = 'card' | 'horizontal-scroll' | 'key-value' | 'comparison' | 'log-view';
+
+export interface DataTableMobileField<T> {
+  id: string;
+  label: ReactNode;
+  value: (row: T) => ReactNode;
+  hidden?: (row: T) => boolean;
+  priority?: 'primary' | 'secondary';
+  fullWidth?: boolean;
+}
+
+export interface DataTableMobileConfig<T> {
+  mode: DataTableMobileMode;
+  breakpoint?: Breakpoint;
+  title?: (row: T) => ReactNode;
+  subtitle?: (row: T) => ReactNode;
+  status?: (row: T) => ReactNode;
+  fields?: readonly DataTableMobileField<T>[];
+  actions?: (row: T) => readonly RowActionMenuItem[];
+  primaryAction?: (row: T) => ReactNode;
+  ariaLabel?: (row: T) => string;
+  showScrollHint?: boolean;
+  stickyColumnId?: string;
+  /** Required for horizontal-scroll / log-view exceptions. */
+  reason?: string;
+}
 
 export interface DataTableColumn<T> {
   /** Stable id; for `sortable` columns this is often sent as API `sort_by` when parent wires it that way. */
@@ -54,16 +66,11 @@ export interface DataTableColumn<T> {
   label: string;
   align?: 'left' | 'right' | 'center';
   sortable?: boolean;
-  /** Used by client-side helpers (e.g. `sortDataTableRows`); not applied inside `DataTable`. */
   sortType?: DataTableSortType;
-  /** Raw value for comparisons — never use translated labels or rendered nodes. */
   sortAccessor?: (row: T) => unknown;
-  /** Full row comparison when column order cannot be expressed as a scalar accessor. */
   sortComparator?: (a: T, b: T) => number;
-  /** When API `sort_by` must differ from `id` (server-driven tables). */
   serverSortKey?: string;
   width?: number | string;
-  /** Cell content for one row. */
   cell: (row: T) => ReactNode;
 }
 
@@ -74,15 +81,10 @@ export interface DataTableSortModel {
 }
 
 export interface DataTablePaginationModel {
-  /** 1-based page index (matches v3 list APIs). */
   page: number;
   pageSize: number;
   totalItems: number;
   onPageChange: (page: number) => void;
-  /**
-   * When the user changes rows per page, `DataTable` calls this and then **`onPageChange(1)`** (see file doc).
-   * Optional only for read-only pagination display (unusual); typical callers always provide it.
-   */
   onPageSizeChange?: (pageSize: number) => void;
 }
 
@@ -90,34 +92,17 @@ export interface DataTableProps<T> {
   rows: readonly T[];
   rowKey: (row: T) => string;
   columns: readonly DataTableColumn<T>[];
-  /** When true, header + skeleton body (operational loading; not a page-level spinner). */
+  mobile: DataTableMobileConfig<T>;
   loading?: boolean;
   skeletonRows?: number;
-  /**
-   * Shown when `!loading && rows.length === 0`. If omitted, a built-in minimal message is used
-   * (`DATATABLE_DEFAULT_EMPTY_MESSAGE` from `constants/dataTable`).
-   */
   emptyState?: { title?: string; message: string; action?: ReactNode };
   sort?: DataTableSortModel;
   pagination?: DataTablePaginationModel;
   size?: 'small' | 'medium';
   stickyHeader?: boolean;
-  /** Row hover affordance (§10 row hover). */
   rowHover?: boolean;
-  /** Optional row tap target (e.g. navigate); use stopPropagation on nested interactive cells to avoid double handling. */
   onRowClick?: (row: T) => void;
-  /** Applied to the underlying `<Table>` for stable test selectors. */
   testId?: string;
-  /**
-   * Compact viewport card renderer. Same `rows` / pagination / loading as the desktop table.
-   * When omitted, compact viewports keep the horizontal-scrolling table.
-   */
-  renderMobileItem?: (row: T) => ReactNode;
-  /**
-   * When true (default), show a small “scroll for more columns” hint above the table on compact
-   * viewports when there is no `renderMobileItem`.
-   */
-  showHorizontalScrollHint?: boolean;
 }
 
 function resolveClickElement(target: EventTarget | null): Element | null {
@@ -126,7 +111,7 @@ function resolveClickElement(target: EventTarget | null): Element | null {
   return null;
 }
 
-/** Clicks on nested controls must not trigger row-level navigation (e.g. action menus, links). */
+/** Clicks on nested controls must not trigger row-level navigation. */
 function clickTargetShouldSkipRowNavigation(target: EventTarget | null): boolean {
   const el = resolveClickElement(target);
   if (!el) return false;
@@ -172,9 +157,7 @@ function PaginationBar({ pagination }: { pagination: DataTablePaginationModel })
         component="div"
         count={pagination.totalItems}
         page={Math.max(0, pagination.page - 1)}
-        onPageChange={(_, nextZeroBased) => {
-          pagination.onPageChange(nextZeroBased + 1);
-        }}
+        onPageChange={(_, nextZeroBased) => pagination.onPageChange(nextZeroBased + 1)}
         rowsPerPage={pagination.pageSize}
         onRowsPerPageChange={(e) => {
           const next = Number(e.target.value);
@@ -189,10 +172,76 @@ function PaginationBar({ pagination }: { pagination: DataTablePaginationModel })
   );
 }
 
+function useHorizontalOverflow<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [overflowing, setOverflowing] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+
+    const update = () => {
+      setOverflowing(el.scrollWidth > el.clientWidth + 1);
+    };
+
+    update();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return { ref, overflowing };
+}
+
+function MobileCards<T>({
+  rows,
+  rowKey,
+  mobile,
+  onRowClick,
+}: {
+  rows: readonly T[];
+  rowKey: (row: T) => string;
+  mobile: DataTableMobileConfig<T>;
+  onRowClick?: (row: T) => void;
+}) {
+  return (
+    <Stack spacing={1.5} component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+      {rows.map((row) => {
+        const fields = (mobile.fields ?? [])
+          .filter((field) => !field.hidden?.(row))
+          .map((field) => ({
+            id: field.id,
+            label: field.label,
+            value: field.value(row),
+            priority: field.priority,
+            fullWidth: field.fullWidth,
+          }));
+
+        return (
+          <Box component="li" key={rowKey(row)} sx={{ minWidth: 0 }}>
+            <DataTableMobileCard
+              title={mobile.title?.(row)}
+              subtitle={mobile.subtitle?.(row)}
+              status={mobile.status?.(row)}
+              fields={fields}
+              primaryAction={mobile.primaryAction?.(row)}
+              actions={mobile.actions?.(row)}
+              onOpen={onRowClick ? () => onRowClick(row) : undefined}
+              ariaLabel={mobile.ariaLabel?.(row)}
+            />
+          </Box>
+        );
+      })}
+    </Stack>
+  );
+}
+
 export default function DataTable<T>({
   rows,
   rowKey,
   columns,
+  mobile,
   loading = false,
   skeletonRows = 6,
   emptyState,
@@ -203,51 +252,42 @@ export default function DataTable<T>({
   rowHover = true,
   onRowClick,
   testId,
-  renderMobileItem,
-  showHorizontalScrollHint = true,
 }: DataTableProps<T>) {
   const { t } = useTranslation();
-  const { isCompact } = useAppBreakpoint();
-  const useMobileCards = Boolean(renderMobileItem) && isCompact;
+  const { useMobileTableCards } = useAppBreakpoint();
+  const { ref: overflowRef, overflowing } = useHorizontalOverflow<HTMLDivElement>();
   const colCount = columns.length;
   const emptyDisplay =
     !loading && rows.length === 0
       ? (emptyState ?? { message: t(DATATABLE_DEFAULT_EMPTY_MESSAGE_KEY) })
       : null;
   const showEmpty = Boolean(emptyDisplay);
+  const useCards = useMobileTableCards && (mobile.mode === 'card' || mobile.mode === 'key-value' || mobile.mode === 'comparison');
+  const showScrollHint =
+    useMobileTableCards &&
+    (mobile.mode === 'horizontal-scroll' || mobile.mode === 'log-view') &&
+    mobile.showScrollHint !== false &&
+    overflowing &&
+    !loading &&
+    !showEmpty;
 
-  if (useMobileCards) {
+  if (useCards) {
     return (
-      <Box
-        data-testid={testId}
-        sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }}
-        aria-busy={loading}
-      >
+      <Box data-testid={testId} sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }} aria-busy={loading}>
         {loading ? (
           <Stack spacing={1.5}>
             {Array.from({ length: skeletonRows }).map((_, i) => (
-              <Skeleton key={`msk-${i}`} variant="rounded" height={96} />
+              <Skeleton key={`msk-${i}`} variant="rounded" height={104} />
             ))}
           </Stack>
         ) : showEmpty && emptyDisplay ? (
           <Paper variant="outlined" sx={{ borderRadius: 1 }}>
             <Box sx={{ p: 2 }}>
-              <EmptyState
-                title={emptyDisplay.title}
-                message={emptyDisplay.message}
-                action={emptyDisplay.action}
-                padding={3}
-              />
+              <EmptyState title={emptyDisplay.title} message={emptyDisplay.message} action={emptyDisplay.action} padding={3} />
             </Box>
           </Paper>
         ) : (
-          <Stack spacing={1.5} component="ul" sx={{ listStyle: 'none', m: 0, p: 0 }}>
-            {rows.map((row) => (
-              <Box component="li" key={rowKey(row)} sx={{ minWidth: 0 }}>
-                {renderMobileItem!(row)}
-              </Box>
-            ))}
-          </Stack>
+          <MobileCards rows={rows} rowKey={rowKey} mobile={mobile} onRowClick={onRowClick} />
         )}
         {pagination && !showEmpty && !loading ? (
           <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 1 }}>
@@ -260,12 +300,13 @@ export default function DataTable<T>({
 
   return (
     <Box sx={{ width: '100%', maxWidth: '100%', minWidth: 0 }}>
-      {showHorizontalScrollHint && isCompact && !loading && !showEmpty ? (
+      {showScrollHint ? (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
           {t('table.scroll_hint')}
         </Typography>
       ) : null}
       <TableContainer
+        ref={overflowRef}
         component={Paper}
         variant="outlined"
         sx={{
@@ -280,19 +321,14 @@ export default function DataTable<T>({
           <TableHead>
             <TableRow>
               {columns.map((col) => (
-                <TableCell
-                  key={col.id}
-                  align={col.align ?? 'left'}
-                  sx={col.width != null ? { width: col.width } : undefined}
-                >
+                <TableCell key={col.id} align={col.align ?? 'left'} sx={col.width != null ? { width: col.width } : undefined}>
                   {col.sortable && sort ? (
                     <TableSortLabel
                       active={sort.sortBy === col.id}
                       direction={sort.sortBy === col.id ? sort.sortDir : 'asc'}
                       onClick={() => {
                         const active = sort.sortBy === col.id;
-                        const nextDir: DataTableSortDirection =
-                          active && sort.sortDir === 'asc' ? 'desc' : 'asc';
+                        const nextDir: DataTableSortDirection = active && sort.sortDir === 'asc' ? 'desc' : 'asc';
                         sort.onSortChange(col.id, nextDir);
                       }}
                     >
@@ -312,12 +348,7 @@ export default function DataTable<T>({
               <TableRow>
                 <TableCell colSpan={colCount} sx={{ border: 0, p: 0, verticalAlign: 'top' }}>
                   <Box sx={{ p: 2 }}>
-                    <EmptyState
-                      title={emptyDisplay.title}
-                      message={emptyDisplay.message}
-                      action={emptyDisplay.action}
-                      padding={3}
-                    />
+                    <EmptyState title={emptyDisplay.title} message={emptyDisplay.message} action={emptyDisplay.action} padding={3} />
                   </Box>
                 </TableCell>
               </TableRow>

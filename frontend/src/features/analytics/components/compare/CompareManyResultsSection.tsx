@@ -181,6 +181,20 @@ function CompareManyDiffTable({
       columns={columns}
       size="small"
       rowHover={false}
+      mobile={{
+        mode: 'comparison',
+        title: (r) => r.match_key,
+        subtitle: (r) => r.side,
+        ariaLabel: (r) => `${r.match_key} ${r.side}`,
+        fields: [
+          { id: 'quantity_a', label: labels.colQtyA, value: (r) => r.quantity_a ?? em },
+          { id: 'quantity_b', label: labels.colQtyB, value: (r) => r.quantity_b ?? em },
+          { id: 'sku_a', label: labels.colSkuA, value: (r) => r.sku_a ?? em },
+          { id: 'sku_b', label: labels.colSkuB, value: (r) => r.sku_b ?? em },
+          { id: 'position_code_a', label: labels.colPosA, value: (r) => r.position_code_a ?? em },
+          { id: 'position_code_b', label: labels.colPosB, value: (r) => r.position_code_b ?? em },
+        ],
+      }}
       sort={{
         sortBy,
         sortDir,

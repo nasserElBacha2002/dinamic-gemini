@@ -1,11 +1,8 @@
 /**
- * FilterToolbar — **Sprint 2.3 structural base** for filter zones (Re diseño 3.3 §8.5) + mobile drawer.
+ * FilterToolbar — shared responsive filter zone.
  *
- * This is intentionally **minimal:** a flex row for controls (`children`), optional reset, and optional end actions.
- * Compose with `TableSearchField` for consistent search UX, or pass `TextField`, `Select`, filter chips, etc. as `children`.
- *
- * On compact viewports, when `mobileSecondaryFilters` is provided, secondary filters open in a bottom drawer
- * while `children` (typically search) stay visible.
+ * Desktop: primary + filters + actions inline.
+ * Mobile/tablet: primary remains visible; filters move to a bottom drawer.
  */
 
 import type { ReactNode } from 'react';
@@ -18,37 +15,42 @@ import { SAFE_AREA, TOUCH_TARGET_MIN_PX } from '../shell/layoutConstants';
 import DrawerHeader from './DrawerHeader';
 
 export interface FilterToolbarProps {
-  children: ReactNode;
+  /** Always-visible primary control, usually search. */
+  primary?: ReactNode;
+  /** Secondary filters rendered inline on desktop and inside a drawer on compact viewports. */
+  filters?: ReactNode;
+  /** Right-aligned actions (export, refresh, etc.). */
+  actions?: ReactNode;
   /** Clear filters — common pattern on inventory/results tables. */
   onReset?: () => void;
   resetLabel?: string;
   resetDisabled?: boolean;
-  /** Right-aligned actions (export, refresh, etc.). */
-  endActions?: ReactNode;
-  /**
-   * Secondary filters shown inline on desktop; on compact viewports they open via the Filters button.
-   * When omitted, `children` always render inline (existing behavior).
-   */
-  mobileSecondaryFilters?: ReactNode;
-  /** Count of active secondary filters (shown on the Filters button badge). */
   activeFilterCount?: number;
+  /** Deprecated compatibility slot. Prefer `primary` / `filters`. */
+  children?: ReactNode;
+  /** Deprecated compatibility slot. Prefer `actions`. */
+  endActions?: ReactNode;
 }
 
 export default function FilterToolbar({
-  children,
+  primary,
+  filters,
+  actions,
   onReset,
   resetLabel,
   resetDisabled = false,
-  endActions,
-  mobileSecondaryFilters,
   activeFilterCount = 0,
+  children,
+  endActions,
 }: FilterToolbarProps) {
   const { t } = useTranslation();
-  const { isCompact } = useAppBreakpoint();
+  const { useMobileFilterDrawer } = useAppBreakpoint();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const drawerId = useId();
   const resolvedResetLabel = resetLabel ?? t('common.reset_filters');
-  const useMobileDrawer = Boolean(mobileSecondaryFilters) && isCompact;
+  const resolvedPrimary = primary ?? children;
+  const resolvedActions = actions ?? endActions;
+  const useDrawer = Boolean(filters) && useMobileFilterDrawer;
   const filtersLabel =
     activeFilterCount > 0
       ? t('common.filters_active_count', { count: activeFilterCount })
@@ -76,9 +78,10 @@ export default function FilterToolbar({
       }}
     >
       <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5, flex: 1, minWidth: 0 }}>
-        {children}
-        {!useMobileDrawer && mobileSecondaryFilters ? mobileSecondaryFilters : null}
+        {resolvedPrimary}
+        {!useDrawer ? filters : null}
       </Box>
+
       <Box
         sx={{
           display: 'flex',
@@ -91,7 +94,7 @@ export default function FilterToolbar({
           maxWidth: '100%',
         }}
       >
-        {useMobileDrawer ? (
+        {useDrawer ? (
           <Button
             size="medium"
             variant="outlined"
@@ -109,15 +112,15 @@ export default function FilterToolbar({
             {resolvedResetLabel}
           </Button>
         ) : null}
-        {endActions ? (
+        {resolvedActions ? (
           <>
-            {onReset || useMobileDrawer ? <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} /> : null}
-            {endActions}
+            {onReset || useDrawer ? <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} /> : null}
+            {resolvedActions}
           </>
         ) : null}
       </Box>
 
-      {useMobileDrawer ? (
+      {useDrawer ? (
         <Drawer
           anchor="bottom"
           open={filtersOpen}
@@ -138,16 +141,10 @@ export default function FilterToolbar({
             closeLabel={t('common.close')}
           />
           <Stack spacing={2} sx={{ p: 2, pt: 0, minWidth: 0 }}>
-            {mobileSecondaryFilters}
+            {filters}
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {onReset ? (
-                <Button
-                  variant="text"
-                  onClick={() => {
-                    onReset();
-                  }}
-                  disabled={resetDisabled}
-                >
+                <Button variant="text" onClick={onReset} disabled={resetDisabled}>
                   {resolvedResetLabel}
                 </Button>
               ) : null}
@@ -155,9 +152,6 @@ export default function FilterToolbar({
                 {t('common.close')}
               </Button>
             </Box>
-            <Typography variant="caption" color="text.secondary">
-              {t('common.filters_section_a11y')}
-            </Typography>
           </Stack>
         </Drawer>
       ) : null}

@@ -922,31 +922,35 @@ export default function AislePositionsPage() {
           </Box>
 
           <FilterToolbar
+            primary={
+              <TableSearchField
+                label={t('positions.search_label')}
+                placeholder={t('positions.filter_sku_placeholder')}
+                value={searchDraft}
+                onChange={setSearchDraft}
+                data-testid="aisle-positions-sku-search"
+              />
+            }
+            filters={
+              <ResultsQuickFilters
+                value={filter}
+                onChange={(v) => {
+                  updateFilters({ filter: v }, { resetPage: true, historyMode: 'push' });
+                }}
+                counts={{
+                  all: kpi.total,
+                  needs_review: kpi.needsReview,
+                  low_confidence: kpi.lowConfidence,
+                  qty_zero: kpi.qtyZero,
+                  invalid_traceability: kpi.invalidTraceability,
+                  missing_evidence: missingEvidenceCount,
+                }}
+              />
+            }
             onReset={handleResetFilters}
             resetDisabled={filtersAtDefault}
-          >
-            <TableSearchField
-              label={t('positions.search_label')}
-              placeholder={t('positions.filter_sku_placeholder')}
-              value={searchDraft}
-              onChange={setSearchDraft}
-              data-testid="aisle-positions-sku-search"
-            />
-            <ResultsQuickFilters
-              value={filter}
-              onChange={(v) => {
-                updateFilters({ filter: v }, { resetPage: true, historyMode: 'push' });
-              }}
-              counts={{
-                all: kpi.total,
-                needs_review: kpi.needsReview,
-                low_confidence: kpi.lowConfidence,
-                qty_zero: kpi.qtyZero,
-                invalid_traceability: kpi.invalidTraceability,
-                missing_evidence: missingEvidenceCount,
-              }}
-            />
-          </FilterToolbar>
+            activeFilterCount={filter !== 'all' ? 1 : 0}
+          />
           <ResultsEmptyState message={t('positions.empty_results')} />
         </>
       ) : null}

@@ -21,7 +21,7 @@ export interface RowActionMenuItem {
 }
 
 export interface RowActionMenuProps {
-  items: RowActionMenuItem[];
+  items: readonly RowActionMenuItem[];
   /** Accessible label for the trigger (e.g. "Actions for row SKU-123"). */
   ariaLabel: string;
   /** Optional icon button size. */

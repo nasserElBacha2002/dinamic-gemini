@@ -16,5 +16,10 @@ describe('useAppBreakpoint', () => {
     expect(typeof result.current.isCompact).toBe('boolean');
     expect(result.current.isDesktopShell).toBe(result.current.isMdUp);
     expect(result.current.isMobileNav).toBe(!result.current.isMdUp);
+    expect(result.current.useTemporaryNavigation).toBe(result.current.isMobileNav);
+    expect(result.current.useMobileTableCards).toBe(result.current.isCompact);
+    expect(typeof result.current.useFullscreenDialog).toBe('boolean');
+    expect(typeof result.current.useMobileFilterDrawer).toBe('boolean');
+    expect(typeof result.current.useVerticalWizard).toBe('boolean');
   });
 });

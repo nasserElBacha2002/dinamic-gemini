@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import type { ResultSummary } from '../types';
 import type { ResultsFilterKind } from '../selectors';
 import {
-  DataTableMobileCard,
   FilterToolbar,
   StatusBadge,
   TableSearchField,
@@ -140,10 +139,16 @@ export default function AisleResultsTableSection({
       <AisleResultsMergeFeedback feedback={mergeFeedback} />
 
       <FilterToolbar
-        onReset={onResetFilters}
-        resetDisabled={resetDisabled}
-        activeFilterCount={activeFilterCount}
-        mobileSecondaryFilters={
+        primary={
+          <TableSearchField
+            label={t('positions.search_label')}
+            placeholder={t('positions.filter_sku_placeholder')}
+            value={skuSearch}
+            onChange={onSkuSearchChange}
+            data-testid="aisle-positions-sku-search"
+          />
+        }
+        filters={
           <Stack spacing={2} sx={{ width: '100%', minWidth: 0 }}>
             <Tooltip title={tableSort === 'photo' ? t('positions.order_api') : t('positions.order_client')}>
               <span>
@@ -165,15 +170,10 @@ export default function AisleResultsTableSection({
             <ResultsQuickFilters value={filter} onChange={onFilterChange} counts={counts} />
           </Stack>
         }
-      >
-        <TableSearchField
-          label={t('positions.search_label')}
-          placeholder={t('positions.filter_sku_placeholder')}
-          value={skuSearch}
-          onChange={onSkuSearchChange}
-          data-testid="aisle-positions-sku-search"
-        />
-      </FilterToolbar>
+        onReset={onResetFilters}
+        resetDisabled={resetDisabled}
+        activeFilterCount={activeFilterCount}
+      />
 
       {sortedForTableLength === 0 ? (
         <ResultsFilteredEmptyState onClearFilter={onClearFilterOnly} />
@@ -187,38 +187,50 @@ export default function AisleResultsTableSection({
             columns,
             sort: columnSort,
             onRowClick: (r) => onOpenReview(r.id),
-            renderMobileItem: (r) => {
-              const p = deriveResultPriority(r);
-              const sku = displaySku(r);
-              return (
-                <DataTableMobileCard ariaLabel={sku} onClick={() => onOpenReview(r.id)}>
-                  <Stack direction="row" justifyContent="space-between" gap={1} alignItems="flex-start">
-                    <Typography variant="subtitle2" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
-                      {sku}
-                    </Typography>
-                    <StatusBadge label={p.label} semantic={prioritySemantic(p.tier)} variant="outlined" />
-                  </Stack>
-                  <Stack direction="row" flexWrap="wrap" gap={1} useFlexGap>
-                    <Typography variant="body2" color="text.secondary">
-                      {t('results.table_column.position_code')}:{' '}
-                      {r.positionCode?.trim() ? r.positionCode : t('common.em_dash')}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {t('results.table_column.quantity')}: {displayQty(r)}
-                    </Typography>
-                  </Stack>
-                  <StatusBadge
-                    label={getReviewStatusLabelForDisplay(r.reviewStatus)}
-                    semantic={reviewStatusToBadgeSemanticForDisplay(r.reviewStatus)}
-                    variant="outlined"
-                  />
-                  <StatusBadge
-                    label={r.hasEvidence ? t('results.evidence_present') : t('results.evidence_missing')}
-                    semantic={r.hasEvidence ? 'success' : 'warning'}
-                    variant="outlined"
-                  />
-                </DataTableMobileCard>
-              );
+            mobile: {
+              mode: 'card',
+              title: (r) => displaySku(r),
+              status: (r) => {
+                const p = deriveResultPriority(r);
+                return <StatusBadge label={p.label} semantic={prioritySemantic(p.tier)} variant="outlined" />;
+              },
+              ariaLabel: (r) => displaySku(r),
+              fields: [
+                {
+                  id: 'position_code',
+                  label: t('results.table_column.position_code'),
+                  value: (r) => (r.positionCode?.trim() ? r.positionCode : t('common.em_dash')),
+                },
+                {
+                  id: 'quantity',
+                  label: t('results.table_column.quantity'),
+                  value: displayQty,
+                },
+                {
+                  id: 'review_status',
+                  label: t('results.table_column.review_status'),
+                  value: (r) => (
+                    <StatusBadge
+                      label={getReviewStatusLabelForDisplay(r.reviewStatus)}
+                      semantic={reviewStatusToBadgeSemanticForDisplay(r.reviewStatus)}
+                      variant="outlined"
+                    />
+                  ),
+                  fullWidth: true,
+                },
+                {
+                  id: 'evidence',
+                  label: t('results.table_column.evidence'),
+                  value: (r) => (
+                    <StatusBadge
+                      label={r.hasEvidence ? t('results.evidence_present') : t('results.evidence_missing')}
+                      semantic={r.hasEvidence ? 'success' : 'warning'}
+                      variant="outlined"
+                    />
+                  ),
+                  fullWidth: true,
+                },
+              ],
             },
             pagination: {
               page,

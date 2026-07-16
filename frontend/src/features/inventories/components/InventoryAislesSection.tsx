@@ -2,11 +2,9 @@ import type { ChangeEvent, RefObject } from 'react';
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Box, Button, FormControl, InputLabel, MenuItem, Select, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Button, FormControl, InputLabel, MenuItem, Select, Tooltip } from '@mui/material';
 import {
-  DataTableMobileCard,
   FilterToolbar,
-  RowActionMenu,
   StatusBadge,
   TableSearchField,
   TableSection,
@@ -366,24 +364,25 @@ export default function InventoryAislesSection({
       }
       toolbar={
         <FilterToolbar
-          onReset={() => {
-            handleAisleSortChange('', 'asc');
-            onAisleTableSearch('');
-            onAisleActiveFilterChange?.('active');
-            setPage(1);
-          }}
-          resetDisabled={!filtersDirty}
-          activeFilterCount={activeFilterCount}
-          mobileSecondaryFilters={
+          primary={
+            <TableSearchField
+              label={t('table.search_label')}
+              placeholder={t('aisle.search_aisles_placeholder')}
+              value={aisleTableSearch}
+              onChange={onAisleTableSearch}
+              data-testid="inventory-aisles-search"
+            />
+          }
+          filters={
             onAisleActiveFilterChange ? (
-              <FormControl size="small" fullWidth sx={{ minWidth: 0, maxWidth: '100%' }}>
-                <InputLabel id="aisle-active-filter-label-mobile">{t('aisle.filter_active_label')}</InputLabel>
+              <FormControl size="small" fullWidth sx={{ minWidth: 0, maxWidth: { xs: '100%', md: 220 } }}>
+                <InputLabel id="aisle-active-filter-label">{t('aisle.filter_active_label')}</InputLabel>
                 <Select
-                  labelId="aisle-active-filter-label-mobile"
+                  labelId="aisle-active-filter-label"
                   label={t('aisle.filter_active_label')}
                   value={aisleActiveFilter}
                   onChange={(e) => onAisleActiveFilterChange(e.target.value as AisleActiveFilter)}
-                  data-testid="inventory-aisles-active-filter-mobile"
+                  data-testid="inventory-aisles-active-filter"
                 >
                   <MenuItem value="active">{t('aisle.filter_active_only')}</MenuItem>
                   <MenuItem value="inactive">{t('aisle.filter_inactive_only')}</MenuItem>
@@ -392,38 +391,15 @@ export default function InventoryAislesSection({
               </FormControl>
             ) : null
           }
-        >
-          <TableSearchField
-            label={t('table.search_label')}
-            placeholder={t('aisle.search_aisles_placeholder')}
-            value={aisleTableSearch}
-            onChange={onAisleTableSearch}
-            data-testid="inventory-aisles-search"
-          />
-          {onAisleActiveFilterChange ? (
-            <FormControl
-              size="small"
-              sx={{
-                minWidth: { xs: 0, sm: 160 },
-                width: { xs: '100%', sm: 'auto' },
-                display: { xs: 'none', md: 'inline-flex' },
-              }}
-            >
-              <InputLabel id="aisle-active-filter-label">{t('aisle.filter_active_label')}</InputLabel>
-              <Select
-                labelId="aisle-active-filter-label"
-                label={t('aisle.filter_active_label')}
-                value={aisleActiveFilter}
-                onChange={(e) => onAisleActiveFilterChange(e.target.value as AisleActiveFilter)}
-                data-testid="inventory-aisles-active-filter"
-              >
-                <MenuItem value="active">{t('aisle.filter_active_only')}</MenuItem>
-                <MenuItem value="inactive">{t('aisle.filter_inactive_only')}</MenuItem>
-                <MenuItem value="all">{t('aisle.filter_active_all')}</MenuItem>
-              </Select>
-            </FormControl>
-          ) : null}
-        </FilterToolbar>
+          onReset={() => {
+            handleAisleSortChange('', 'asc');
+            onAisleTableSearch('');
+            onAisleActiveFilterChange?.('active');
+            setPage(1);
+          }}
+          resetDisabled={!filtersDirty}
+          activeFilterCount={activeFilterCount}
+        />
       }
       table={{
         rows: paginatedAisleRows,
@@ -443,52 +419,48 @@ export default function InventoryAislesSection({
           onPageSizeChange: setPageSize,
         },
         onRowClick: (row) => navigate(pathToAislePositions(inventoryId, row.presentation.id)),
-        renderMobileItem: (row) => {
-          const p = row.presentation;
-          return (
-            <DataTableMobileCard
-              ariaLabel={p.code}
-              onClick={() => navigate(pathToAislePositions(inventoryId, p.id))}
-            >
-              <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="subtitle2" fontWeight={700}>
-                    {p.code}
-                  </Typography>
-                  <Stack direction="row" gap={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
-                    <StatusBadge label={p.aisleStatusLabel} semantic={p.aisleStatusSemantic} />
-                    {!p.isActive ? <StatusBadge label={t('aisle.inactive_badge')} semantic="neutral" /> : null}
-                  </Stack>
-                </Box>
-                <Box
-                  data-datatable-skip-row-click
-                  onClick={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                >
-                  <RowActionMenu
-                    ariaLabel={t('aisle.row_actions_a11y', { code: p.code })}
-                    items={buildAisleRowActions({
-                      row,
-                      inventoryId,
-                      menuCtx,
-                      uploadingAisleId,
-                      processingAisleId,
-                      t,
-                      navigate,
-                      onRequestUpload,
-                      onRequestProcess,
-                    })}
-                  />
-                </Box>
-              </Stack>
-              <Typography variant="body2" color="text.secondary">
-                {t('aisle.column_assets')}: {p.assetsCountDisplay}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {t('common.last_updated')}: {p.lastUpdatedDisplay}
-              </Typography>
-            </DataTableMobileCard>
-          );
+        mobile: {
+          mode: 'card',
+          title: (row) => row.presentation.code,
+          status: (row) => (
+            <StatusBadge
+              label={row.presentation.aisleStatusLabel}
+              semantic={row.presentation.aisleStatusSemantic}
+            />
+          ),
+          ariaLabel: (row) => row.presentation.code,
+          fields: [
+            {
+              id: 'active',
+              label: t('aisle.filter_active_label'),
+              value: (row) =>
+                row.presentation.isActive ? t('aisle.filter_active_only') : t('aisle.inactive_badge'),
+              hidden: (row) => row.presentation.isActive,
+              fullWidth: true,
+            },
+            {
+              id: 'assets',
+              label: t('aisle.column_assets'),
+              value: (row) => row.presentation.assetsCountDisplay,
+            },
+            {
+              id: 'last_updated',
+              label: t('common.last_updated'),
+              value: (row) => row.presentation.lastUpdatedDisplay,
+            },
+          ],
+          actions: (row) =>
+            buildAisleRowActions({
+              row,
+              inventoryId,
+              menuCtx,
+              uploadingAisleId,
+              processingAisleId,
+              t,
+              navigate,
+              onRequestUpload,
+              onRequestProcess,
+            }),
         },
         emptyState:
           (aisleTableSearch.trim() || aisleActiveFilter !== 'all') &&
