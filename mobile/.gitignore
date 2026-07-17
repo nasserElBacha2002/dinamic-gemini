@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Expo / native build outputs (project root only — keep modules/*/android source)
+.expo/
+dist/
+web-build/
+/android/
+/ios/
+**/.gradle/
+**/build/
+*.orig.*
+**/local.properties
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Test / coverage
+coverage/
+
+# Logs
+*.log
+
+# OS
+.DS_Store

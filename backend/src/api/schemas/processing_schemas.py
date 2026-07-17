@@ -32,6 +32,14 @@ class ProcessAisleRequest(BaseModel):
             "HYBRID_PROMPT affects documentation and non-pipeline defaults only."
         ),
     )
+    idempotency_key: Optional[str] = Field(
+        None,
+        max_length=128,
+        description=(
+            "Client idempotency key for process start. Replays return the existing job id when the same "
+            "key was used for this aisle (including completed jobs within recent history)."
+        ),
+    )
 
 
 class ProcessingModelOption(BaseModel):

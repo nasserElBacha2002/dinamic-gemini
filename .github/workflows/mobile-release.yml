@@ -1,0 +1,119 @@
+name: Mobile release (manual)
+
+# Builds signed AAB/APK only when secrets are configured.
+# Never auto-publishes to Play Store.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'versionName (e.g. 0.3.1)'
+        required: true
+      version_code:
+        description: 'versionCode (integer, must increase)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: release bundle
+    runs-on: ubuntu-latest
+    environment: mobile-release
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Validate version inputs
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          DINAMIC_API_BASE_URL: ${{ secrets.DINAMIC_API_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$ ]]; then
+            echo "Invalid version_name: $VERSION_NAME"
+            exit 1
+          fi
+          if ! [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]]; then
+            echo "version_code must be a positive integer"
+            exit 1
+          fi
+          if [ -z "${DINAMIC_API_BASE_URL:-}" ]; then
+            echo "DINAMIC_API_BASE_URL secret is required"
+            exit 1
+          fi
+          case "$DINAMIC_API_BASE_URL" in
+            https://*) ;;
+            *) echo "Production release requires HTTPS DINAMIC_API_BASE_URL"; exit 1 ;;
+          esac
+      - run: npm ci
+      - run: npm run verify
+      - name: Prebuild
+        env:
+          DINAMIC_VERSION_NAME: ${{ inputs.version_name }}
+          DINAMIC_VERSION_CODE: ${{ inputs.version_code }}
+          DINAMIC_ENVIRONMENT: production
+          DINAMIC_API_BASE_URL: ${{ secrets.DINAMIC_API_BASE_URL }}
+          DINAMIC_GIT_SHA: ${{ github.sha }}
+        run: npx expo prebuild -p android --non-interactive
+      - name: Decode keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for v in ANDROID_KEYSTORE_BASE64 ANDROID_STORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then
+              echo "Missing secret: $v"
+              exit 1
+            fi
+          done
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/release.keystore
+      - name: Bundle release
+        working-directory: mobile/android
+        env:
+          DINAMIC_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          DINAMIC_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          DINAMIC_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ./gradlew bundleRelease assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$(pwd)/release.keystore" \
+            -Pandroid.injected.signing.store.password="$DINAMIC_STORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$DINAMIC_KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$DINAMIC_KEY_PASSWORD"
+          rm -f release.keystore
+      - name: Verify artifacts and checksums
+        run: |
+          set -euo pipefail
+          AAB=$(find android/app/build/outputs -name '*.aab' | head -n 1)
+          APK=$(find android/app/build/outputs -name '*release*.apk' | head -n 1)
+          if [ -z "$AAB" ] || [ -z "$APK" ]; then
+            echo "Missing AAB or release APK"
+            find android/app/build/outputs -type f || true
+            exit 1
+          fi
+          shasum -a 256 "$AAB" "$APK" > checksums.sha256
+          cat checksums.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mobile-release-${{ inputs.version_name }}-${{ inputs.version_code }}
+          path: |
+            mobile/android/app/build/outputs/**/*.aab
+            mobile/android/app/build/outputs/**/*release*.apk
+            mobile/checksums.sha256
+          if-no-files-found: error

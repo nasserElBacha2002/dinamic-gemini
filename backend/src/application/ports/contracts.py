@@ -69,10 +69,11 @@ class InventoryMetricsResult(TypedDict, total=False):
 # --- Queue (JobQueue.enqueue payload) ---
 
 
-class ProcessAislePayload(TypedDict):
+class ProcessAislePayload(TypedDict, total=False):
     """Payload for process_aisle job type."""
 
     aisle_id: str
+    idempotency_key: str
 
 
 # --- Position list query (PositionRepository) ---

@@ -23,8 +23,7 @@ import ClientSupplierDetail from './pages/ClientSupplierDetail';
 import AdminAiConfigPage from './pages/AdminAiConfigPage';
 import AdminStorageMaintenancePage from './pages/AdminStorageMaintenancePage';
 import RequireUsernameAdmin from './features/auth/RequireUsernameAdmin';
-import IngestionSessionsPage from './features/ingestionSessions/pages/IngestionSessionsPage';
-import IngestionSessionDetailPage from './features/ingestionSessions/pages/IngestionSessionDetailPage';
+import IngestionSessionsLegacyRedirect from './features/ingestionSessions/pages/IngestionSessionsLegacyRedirect';
 
 /** Minimal full-screen loading while auth bootstrap runs. */
 function AuthLoading() {
@@ -77,8 +76,7 @@ function App() {
     ),
     []
   );
-  const ingestionSessionsEl = useMemo(() => <IngestionSessionsPage />, []);
-  const ingestionSessionDetailEl = useMemo(() => <IngestionSessionDetailPage />, []);
+  const ingestionSessionsRedirectEl = useMemo(() => <IngestionSessionsLegacyRedirect />, []);
   const aisleObservabilityEl = useMemo(() => <AisleObservabilityPage />, []);
   if (!initialized) {
     return <AuthLoading />;
@@ -102,8 +100,8 @@ function App() {
         <Route path={ROUTE_PATH.clients} element={clientsEl} />
         <Route path={ROUTE_PATH.clientSupplierDetail} element={clientSupplierDetailEl} />
         <Route path={ROUTE_PATH.clientDetail} element={clientDetailEl} />
-        <Route path={ROUTE_PATH.ingestionSessions} element={ingestionSessionsEl} />
-        <Route path={ROUTE_PATH.ingestionSessionDetail} element={ingestionSessionDetailEl} />
+        <Route path={ROUTE_PATH.ingestionSessions} element={ingestionSessionsRedirectEl} />
+        <Route path={ROUTE_PATH.ingestionSessionDetail} element={ingestionSessionsRedirectEl} />
         <Route path={ROUTE_PATH.adminAiConfig} element={adminAiConfigEl} />
         <Route path={ROUTE_PATH.adminStorageMaintenance} element={adminStorageMaintenanceEl} />
         <Route path={ROUTE_PATH.dashboard} element={<Navigate to={ROUTE_HOME} replace />} />

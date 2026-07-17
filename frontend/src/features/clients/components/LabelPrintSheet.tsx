@@ -1,6 +1,12 @@
 import { useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { QRCodeSVG } from 'qrcode.react';
+import BarcodeBlock from './BarcodeBlock';
+import QrCodeBlock from './QrCodeBlock';
+import {
+  normalizeLabelCode,
+  normalizeLabelQuantity,
+  tryBuildLabelBarcodePayload,
+} from './labelBarcodePayload';
 import {
   buildLabelQrText,
   clampLabelCopies,
@@ -36,14 +42,30 @@ function LabelRow({
   );
 }
 
-function HorizontalLabelCard({ data, headerDate }: { data: Omit<LabelSheetData, 'copies'>; headerDate: string }) {
-  const cardClass = ['label-card', 'label-card--horizontal'].join(' ');
+export interface PrintableLabelProps {
+  data: Omit<LabelSheetData, 'copies'>;
+  headerDate: string;
+  onBarcodeValidityChange?: (valid: boolean) => void;
+}
 
+/** One full A4-landscape warehouse label (preview + print). */
+export function PrintableLabel({ data, headerDate, onBarcodeValidityChange }: PrintableLabelProps) {
   const qrValue = useMemo(() => buildLabelQrText(data), [data]);
   const codeValueClassName = useMemo(() => getLabelCodeMainValueClassName(data.code), [data.code]);
+  const normalizedCode = useMemo(() => normalizeLabelCode(data.code), [data.code]);
+  const normalizedQuantity = useMemo(() => normalizeLabelQuantity(data.quantity), [data.quantity]);
+
+  const barcodePayload = useMemo(
+    () => tryBuildLabelBarcodePayload({ code: data.code, quantity: data.quantity }) ?? '',
+    [data.code, data.quantity]
+  );
 
   return (
-    <article className={cardClass} data-testid="label-card">
+    <article
+      className="label-card label-card--horizontal print-label"
+      data-testid="label-card"
+      data-print-label="true"
+    >
       <header className="label-header">
         <div className="label-brand-mark" aria-hidden="true">
           DI
@@ -62,18 +84,23 @@ function HorizontalLabelCard({ data, headerDate }: { data: Omit<LabelSheetData, 
         <div className="label-primary-section">
           <div className="label-primary-row label-code-section">
             <span className="label-primary-label">CÓDIGO:</span>
-            <span className={codeValueClassName}>{data.code.trim()}</span>
+            <span className={codeValueClassName}>{normalizedCode}</span>
           </div>
 
           <div className="label-primary-row label-quantity-section">
             <span className="label-primary-label">CANT. TOTAL:</span>
-            <span className="label-primary-value label-quantity-value">{data.quantity.trim()}</span>
+            <span className="label-primary-value label-quantity-value">{normalizedQuantity}</span>
           </div>
         </div>
 
-        <div className="label-qr-section" aria-label="QR con datos de etiqueta">
-          <QRCodeSVG value={qrValue} size={128} level="M" includeMargin className="label-qr-code" />
-          <div className="label-qr-caption">Datos de etiqueta</div>
+        <div className="label-codes-column">
+          <QrCodeBlock value={qrValue} />
+          <BarcodeBlock
+            value={barcodePayload}
+            displayCode={normalizedCode}
+            displayQuantity={normalizedQuantity}
+            onValidityChange={onBarcodeValidityChange}
+          />
         </div>
       </section>
 
@@ -93,9 +120,16 @@ export interface LabelPrintSheetProps {
   data: LabelSheetData;
   mode?: LabelPrintSheetMode;
   className?: string;
+  onBarcodeValidityChange?: (valid: boolean) => void;
 }
 
-export default function LabelPrintSheet({ data, mode = 'print', className }: LabelPrintSheetProps) {
+function LabelPrintSheetContent({
+  data,
+  onBarcodeValidityChange,
+}: {
+  data: LabelSheetData;
+  onBarcodeValidityChange?: (valid: boolean) => void;
+}) {
   const copies = clampLabelCopies(data.copies);
   const isSingleLabel = copies === 1;
   const headerDate = formatShortLabelDate();
@@ -136,7 +170,7 @@ export default function LabelPrintSheet({ data, mode = 'print', className }: Lab
     isSingleLabel ? 'single-label' : 'multi-label',
   ].join(' ');
 
-  const sheetContent = (
+  return (
     <div className="label-print-sheet">
       <div
         className={gridClass}
@@ -145,18 +179,50 @@ export default function LabelPrintSheet({ data, mode = 'print', className }: Lab
         data-copies={copies}
         aria-label="label-print-grid"
       >
-        {cards.map((key) => (
-          <HorizontalLabelCard key={key} data={cardData} headerDate={headerDate} />
+        {cards.map((key, index) => (
+          <PrintableLabel
+            key={key}
+            data={cardData}
+            headerDate={headerDate}
+            onBarcodeValidityChange={index === 0 ? onBarcodeValidityChange : undefined}
+          />
         ))}
       </div>
     </div>
   );
+}
 
+/** Live preview of one or more printable labels (scaled on screen). */
+export function LabelPreview({
+  data,
+  className,
+  onBarcodeValidityChange,
+}: {
+  data: LabelSheetData;
+  className?: string;
+  onBarcodeValidityChange?: (valid: boolean) => void;
+}) {
+  return (
+    <div
+      className={['label-preview-root', className ?? ''].filter(Boolean).join(' ')}
+      data-testid="label-preview-sheet"
+    >
+      <div className="label-preview-viewport">
+        <LabelPrintSheetContent data={data} onBarcodeValidityChange={onBarcodeValidityChange} />
+      </div>
+    </div>
+  );
+}
+
+export default function LabelPrintSheet({
+  data,
+  mode = 'print',
+  className,
+  onBarcodeValidityChange,
+}: LabelPrintSheetProps) {
   if (mode === 'preview') {
     return (
-      <div className="label-preview-root" data-testid="label-preview-sheet">
-        <div className="label-preview-viewport">{sheetContent}</div>
-      </div>
+      <LabelPreview data={data} className={className} onBarcodeValidityChange={onBarcodeValidityChange} />
     );
   }
 
@@ -165,7 +231,7 @@ export default function LabelPrintSheet({ data, mode = 'print', className }: Lab
       className={['label-print-root', className ?? ''].filter(Boolean).join(' ')}
       data-testid="label-print-sheet-print"
     >
-      {sheetContent}
+      <LabelPrintSheetContent data={data} />
     </div>
   );
 }

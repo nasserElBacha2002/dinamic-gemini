@@ -1,0 +1,18 @@
+{
+  "ignore_dirs": [
+    "backend",
+    "frontend",
+    "htmlcov",
+    "output",
+    "output_test_artifacts",
+    "venv",
+    ".venv",
+    "data",
+    "audit",
+    "review",
+    "secrets",
+    "deployment",
+    "node_modules",
+    ".git"
+  ]
+}

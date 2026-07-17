@@ -502,6 +502,7 @@ def start_aisle_processing(
             provider_name=None,
             model_name=None,
             prompt_key=None,
+            idempotency_key=None,
         )
         job_id = use_case.execute(
             StartAisleProcessingCommand(
@@ -511,6 +512,7 @@ def start_aisle_processing(
                 requested_provider_name=body.provider_name,
                 requested_model_name=body.model_name,
                 requested_prompt_key=body.prompt_key,
+                idempotency_key=body.idempotency_key,
             )
         )
         return ProcessAisleResponse(job_id=job_id)
