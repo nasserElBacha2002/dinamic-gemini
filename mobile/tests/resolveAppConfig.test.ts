@@ -55,4 +55,34 @@ describe('resolveAppConfig', () => {
     const config = resolveAppConfig({ apiBaseUrl: 'ftp://api.dinamic.example' });
     expect(validateAppConfig(config)).toBe('DINAMIC_API_BASE_URL debe usar http o https.');
   });
+
+  it('rejects cleartext HTTP in production', () => {
+    const config = resolveAppConfig({
+      apiBaseUrl: 'http://api.dinamic.example',
+      environment: 'production',
+    });
+    expect(validateAppConfig(config)).toBe('En producción DINAMIC_API_BASE_URL debe usar HTTPS.');
+  });
+
+  it('allows HTTP in development', () => {
+    const config = resolveAppConfig({
+      apiBaseUrl: 'http://10.0.2.2:8000',
+      environment: 'development',
+    });
+    expect(validateAppConfig(config)).toBeNull();
+  });
+
+  it('includes version metadata and feature flags', () => {
+    const config = resolveAppConfig({
+      apiBaseUrl: 'https://api.example.com',
+      versionName: '0.3.0',
+      versionCode: 30,
+      gitSha: 'abc123',
+      flags: { allowMobileDataUploads: false },
+    });
+    expect(config.versionName).toBe('0.3.0');
+    expect(config.versionCode).toBe(30);
+    expect(config.gitSha).toBe('abc123');
+    expect(config.flags.allowMobileDataUploads).toBe(false);
+  });
 });

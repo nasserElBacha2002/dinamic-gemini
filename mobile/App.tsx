@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Image,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   TextInput,
   Text,
@@ -19,8 +21,19 @@ import type { AuthSession } from './src/features/auth/authService';
 import type { AisleDto, InventoryListItemDto } from './src/services/api/types';
 import { getPhotoPermission, requestPhotoPermission } from './src/native/mediaStore';
 import type { CapturePhotoRow } from './src/database/schema/captureSchema';
+import type { HealthCheckResult } from './src/features/support/healthChecks';
+import { userMessageForCode } from './src/core/errorCatalog';
 
-type Screen = 'login' | 'inventories' | 'aisles' | 'activity' | 'capture' | 'review' | 'uploads' | 'processing';
+type Screen =
+  | 'login'
+  | 'inventories'
+  | 'aisles'
+  | 'activity'
+  | 'capture'
+  | 'review'
+  | 'uploads'
+  | 'processing'
+  | 'diagnostic';
 
 export default function App(): JSX.Element {
   const [services, setServices] = useState<AppServices | null>(null);
@@ -106,12 +119,13 @@ export default function App(): JSX.Element {
         <View style={styles.nav}>
           <SmallButton label="Inventarios" onPress={() => setScreen('inventories')} />
           <SmallButton label="Sesiones" onPress={() => setScreen('activity')} />
+          <SmallButton label="Diagnóstico" onPress={() => setScreen('diagnostic')} />
           <SmallButton label="Salir" onPress={() => void services.auth.logout().finally(() => setAuth(null))} />
         </View>
       }
     >
       {error ? <ErrorText text={error} /> : null}
-      {connectivity === 'offline' ? <ErrorText text="Sin conexión — la captura local continúa; uploads pausados." /> : null}
+      {connectivity === 'offline' ? <ErrorText text={userMessageForCode('NETWORK_OFFLINE')} /> : null}
       {screen === 'inventories' ? (
         <InventoriesScreen
           services={services}
@@ -189,6 +203,7 @@ export default function App(): JSX.Element {
           onError={setError}
         />
       ) : null}
+      {screen === 'diagnostic' ? <DiagnosticScreen services={services} onBack={() => setScreen('activity')} /> : null}
     </Shell>
   );
 }
@@ -301,6 +316,10 @@ function CaptureScreen({ services, inventory, aisle, snapshot, onReview, onError
   const start = async () => {
     if (!inventory || !aisle) {
       throw new Error('Seleccioná inventario y pasillo para iniciar una captura nueva.');
+    }
+    const storage = await services.getStorageStatus();
+    if (storage.lowSpace) {
+      throw new Error(userMessageForCode('CAPTURE_STORAGE_LOW'));
     }
     const p = await requestPhotoPermission();
     setPermission(p.granted ? (p.limited ? 'parcial' : 'completo') : 'denegado');
@@ -591,20 +610,105 @@ function ActivityScreen({
 
 function PhotoGrid({ photos, onExclude, onReinclude }: { photos: CapturePhotoRow[]; onExclude: (assetId: string) => void; onReinclude: (assetId: string) => void }) {
   return (
-    <View style={styles.grid}>
-      {photos.map((photo) => (
-        <View key={photo.asset_id} style={styles.photoCard}>
+    <FlatList
+      data={photos}
+      keyExtractor={(item) => item.asset_id}
+      numColumns={2}
+      columnWrapperStyle={styles.gridRow}
+      initialNumToRender={8}
+      maxToRenderPerBatch={8}
+      windowSize={5}
+      removeClippedSubviews
+      nestedScrollEnabled
+      style={styles.photoList}
+      renderItem={({ item: photo }) => (
+        <View style={styles.photoCard}>
           <Image source={{ uri: photo.uri }} style={styles.thumb} />
-          <Text style={styles.photoText}>{photo.display_name}</Text>
-          <Text style={styles.photoText}>[{photo.status}] {photo.width}x{photo.height}</Text>
+          <Text style={styles.photoText} numberOfLines={1}>
+            {photo.display_name}
+          </Text>
+          <Text style={styles.photoText}>
+            [{photo.status}] {photo.width}x{photo.height}
+          </Text>
           {photo.status === 'excluded' ? (
             <SmallButton label="Reincorporar" onPress={() => onReinclude(photo.asset_id)} />
           ) : (
             <SmallButton label="Excluir" onPress={() => onExclude(photo.asset_id)} />
           )}
         </View>
+      )}
+      ListEmptyComponent={<Text style={styles.muted}>Sin fotografías.</Text>}
+    />
+  );
+}
+
+function DiagnosticScreen({ services, onBack }: { services: AppServices; onBack: () => void }) {
+  const [checks, setChecks] = useState<readonly HealthCheckResult[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [storageHint, setStorageHint] = useState<string | null>(null);
+
+  const run = useCallback(() => {
+    setBusy(true);
+    setError(null);
+    void Promise.all([services.runHealthChecks(), services.getStorageStatus()])
+      .then(([results, storage]) => {
+        setChecks(results);
+        setStorageHint(
+          storage.freeBytes == null
+            ? null
+            : `Libre: ${Math.round(storage.freeBytes / (1024 * 1024))} MB${storage.lowSpace ? ' (bajo)' : ''}`,
+        );
+      })
+      .catch((e) => setError(messageOf(e)))
+      .finally(() => setBusy(false));
+  }, [services]);
+
+  useEffect(() => {
+    run();
+  }, [run]);
+
+  return (
+    <ScrollView>
+      <SmallButton label="← Volver" onPress={onBack} />
+      <Text style={styles.h2}>Diagnóstico</Text>
+      <Text style={styles.row}>
+        v{services.config.versionName} ({services.config.versionCode}) · {services.config.gitSha} ·{' '}
+        {services.config.environment}
+      </Text>
+      {storageHint ? <Text style={styles.notif}>{storageHint}</Text> : null}
+      {error ? <ErrorText text={error} /> : null}
+      {busy ? <ActivityIndicator color="#94d2bd" /> : null}
+      {checks.map((c) => (
+        <Card key={c.id}>
+          <Text style={styles.cardTitle}>
+            [{c.status}] {c.label}
+          </Text>
+          <Text style={styles.row}>{c.detail}</Text>
+        </Card>
       ))}
-    </View>
+      <Button label="Reejecutar checks" disabled={busy} onPress={run} />
+      <Button
+        label="Exportar diagnóstico"
+        disabled={busy}
+        onPress={() => {
+          setBusy(true);
+          void services
+            .exportDiagnostic()
+            .then((bundle) =>
+              Share.share({
+                message: services.diagnosticShareText(bundle),
+                title: 'Dinamic diagnóstico',
+              }),
+            )
+            .catch((e) => setError(messageOf(e)))
+            .finally(() => setBusy(false));
+        }}
+      />
+      <Text style={styles.muted}>
+        El export no incluye tokens, fotos ni API keys. Usalo para soporte operativo.
+      </Text>
+    </ScrollView>
   );
 }
 
@@ -720,6 +824,8 @@ const styles = StyleSheet.create({
   card: { borderColor: '#334155', borderWidth: 1, borderRadius: 12, padding: 12, marginVertical: 8 },
   cardTitle: { color: '#fff', fontWeight: '700', fontSize: 16, marginBottom: 4 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  gridRow: { justifyContent: 'space-between', gap: 8, marginBottom: 8 },
+  photoList: { marginTop: 12, maxHeight: 420 },
   photoCard: { width: '48%', borderColor: '#334155', borderWidth: 1, borderRadius: 10, padding: 8 },
   thumb: { width: '100%', height: 120, borderRadius: 8, backgroundColor: '#1e293b' },
   photoText: { color: '#cbd5e1', fontSize: 11, marginTop: 4 },

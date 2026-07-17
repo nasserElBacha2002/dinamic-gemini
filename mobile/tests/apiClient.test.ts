@@ -28,6 +28,18 @@ describe('ApiClient refresh mutex', () => {
     apiKey: null,
     environment: 'development',
     isDevelopment: true,
+    versionName: '0.3.0',
+    versionCode: 30,
+    gitSha: 'test',
+    buildTime: '',
+    flags: {
+      allowMobileDataUploads: true,
+      heicConvertToJpeg: true,
+      workManagerScheduling: true,
+      advancedReconciliation: true,
+      backgroundJobPolling: true,
+      aisleDeviceLock: false,
+    },
   };
 
   afterEach(() => {

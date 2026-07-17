@@ -1,15 +1,22 @@
 import { buildMicroBatch } from '../../core/uploadBatching';
 import { computeRetryDelayMs } from '../../core/uploadBackoff';
 import { classifyUploadHttpError, isSoftPerFileRetryable } from '../../core/uploadErrors';
+import type { FeatureFlags } from '../../core/featureFlags';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
+import type { BackgroundWorkScheduler } from '../../native/backgroundWork';
 import { ApiError } from '../../services/api/apiClient';
 import type { ConnectivityService } from '../../services/connectivity/connectivity';
 import { createId } from '../../shared/createId';
 import type { AisleAssetsApi } from './aisleAssetsApi';
 import { cleanupTransformUri, preparePhotoForUpload } from './photoPrepare';
 import type { UploadLimitsService } from './uploadLimitsService';
+
+export interface UploadQueueOptions {
+  readonly flags?: FeatureFlags;
+  readonly backgroundWork?: BackgroundWorkScheduler | null;
+}
 
 export interface UploadQueueSnapshot {
   readonly pauseReason: string | null;
@@ -40,6 +47,7 @@ export class UploadQueue {
   private readonly listeners = new Set<UploadQueueListener>();
   private readonly inFlightPhotos = new Set<string>();
   private connectivityUnsub: (() => void) | null = null;
+  private cachedSessions: UploadSessionProgress[] = [];
 
   constructor(
     private readonly repo: CaptureRepository,
@@ -47,6 +55,7 @@ export class UploadQueue {
     private readonly limits: UploadLimitsService,
     private readonly connectivity: ConnectivityService,
     private readonly logger: Logger,
+    private readonly options: UploadQueueOptions = {},
   ) {}
 
   subscribe(listener: UploadQueueListener): () => void {
@@ -59,7 +68,7 @@ export class UploadQueue {
     return {
       pauseReason: this.pauseReason,
       activeRequests: this.activeRequests,
-      sessions: [],
+      sessions: this.cachedSessions,
     };
   }
 
@@ -67,8 +76,8 @@ export class UploadQueue {
     this.connectivityUnsub = this.connectivity.subscribe((state) => {
       if (state === 'offline') {
         void this.pause('offline');
-      } else if (state === 'online' && this.pauseReason === 'offline') {
-        void this.resume();
+      } else if (state === 'online' && (this.pauseReason === 'offline' || this.pauseReason === 'mobile_data')) {
+        void this.applyNetworkPolicyAndMaybeResume();
       }
     });
     await this.limits.ensureLoaded();
@@ -76,8 +85,12 @@ export class UploadQueue {
     for (const session of sessions) {
       if (['active', 'paused', 'finishing', 'review', 'uploading', 'upload_review'].includes(session.status)) {
         await this.enqueueSession(session.id);
+        if (this.options.backgroundWork) {
+          void this.options.backgroundWork.scheduleUploadSession(session.id);
+        }
       }
     }
+    await this.applyNetworkPolicyAndMaybeResume();
     this.scheduleTick(0);
   }
 
@@ -274,8 +287,27 @@ export class UploadQueue {
     }, delayMs);
   }
 
+  private async applyNetworkPolicyAndMaybeResume(): Promise<void> {
+    if (this.connectivity.getState() === 'offline') {
+      await this.pause('offline');
+      return;
+    }
+    const allowCellular = this.options.flags?.allowMobileDataUploads !== false;
+    if (!allowCellular && this.connectivity.isCellular?.()) {
+      await this.pause('mobile_data');
+      return;
+    }
+    if (this.pauseReason === 'offline' || this.pauseReason === 'mobile_data') {
+      await this.resume();
+    }
+  }
+
   private async tick(): Promise<void> {
     if (this.disposed || this.pauseReason) {
+      return;
+    }
+    if (this.options.flags?.allowMobileDataUploads === false && this.connectivity.isCellular?.()) {
+      await this.pause('mobile_data');
       return;
     }
     const limits = await this.limits.ensureLoaded();
@@ -491,9 +523,25 @@ export class UploadQueue {
   }
 
   private emit(): void {
-    const snapshot = this.getSnapshot();
-    for (const listener of this.listeners) {
-      listener(snapshot);
+    void this.refreshCachedSessions().then(() => {
+      const snapshot = this.getSnapshot();
+      for (const listener of this.listeners) {
+        listener(snapshot);
+      }
+    });
+  }
+
+  private async refreshCachedSessions(): Promise<void> {
+    try {
+      const sessions = await this.repo.listActivitySessions();
+      const progress: UploadSessionProgress[] = [];
+      for (const session of sessions) {
+        const photos = await this.repo.listPhotos(session.id);
+        progress.push(summarizeSession(session, photos));
+      }
+      this.cachedSessions = progress;
+    } catch {
+      // keep previous cache
     }
   }
 }

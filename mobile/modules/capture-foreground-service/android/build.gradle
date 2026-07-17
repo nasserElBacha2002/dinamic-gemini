@@ -25,6 +25,7 @@ repositories {
 dependencies {
   implementation project(':expo-modules-core')
   implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:${safeExtGet('kotlinVersion', '1.9.23')}"
+  implementation "androidx.work:work-runtime-ktx:2.9.0"
 }
 
 def safeExtGet(prop, fallback) {

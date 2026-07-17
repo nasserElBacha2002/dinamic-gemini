@@ -1,5 +1,6 @@
 import type { AppConfig } from '../../runtime/config/resolveAppConfig';
 import type { Logger } from '../../core/logging';
+import { timeoutMsFor, type ApiTimeoutKind } from '../../core/apiTimeouts';
 import type { AuthTokens, TokenStorage } from '../secureStorage/tokenStorage';
 import type { LoginResponseDto } from './types';
 
@@ -29,6 +30,7 @@ type RequestOptions = {
   readonly signal?: AbortSignal;
   readonly headers?: Record<string, string>;
   readonly timeoutMs?: number;
+  readonly timeoutKind?: ApiTimeoutKind;
 };
 
 export class ApiClient {
@@ -38,11 +40,16 @@ export class ApiClient {
   constructor(private readonly options: ApiClientOptions) {}
 
   async get<T>(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<T> {
-    return this.request<T>(path, { ...options, method: 'GET' });
+    return this.request<T>(path, { timeoutKind: 'list', ...options, method: 'GET' });
   }
 
   async post<T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<T> {
-    return this.request<T>(path, { ...options, method: 'POST', body });
+    const kind: ApiTimeoutKind = path.includes('/process')
+      ? 'process'
+      : path.includes('/auth') || path.includes('/refresh')
+        ? 'auth'
+        : 'default';
+    return this.request<T>(path, { timeoutKind: kind, ...options, method: 'POST', body });
   }
 
   async delete(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<void> {
@@ -54,7 +61,17 @@ export class ApiClient {
     formData: FormData,
     options: Omit<RequestOptions, 'method' | 'body'> = {},
   ): Promise<T> {
-    return this.requestMultipart<T>(path, formData, options, true);
+    return this.requestMultipart<T>(path, formData, { timeoutKind: 'multipart', ...options }, true);
+  }
+
+  private resolveTimeout(options: RequestOptions): number {
+    if (options.timeoutMs != null) {
+      return options.timeoutMs;
+    }
+    if (options.timeoutKind) {
+      return timeoutMsFor(options.timeoutKind);
+    }
+    return this.options.timeoutMs ?? timeoutMsFor('default');
   }
 
   async request<T>(path: string, options: RequestOptions = {}, retryAuth = true): Promise<T> {
@@ -85,7 +102,7 @@ export class ApiClient {
       throw new ApiError('La aplicación no tiene configurada la URL del backend.', null, 'CONFIG_MISSING');
     }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? this.options.timeoutMs ?? 20_000);
+    const timeout = setTimeout(() => controller.abort(), this.resolveTimeout(options));
     const headers: Record<string, string> = {
       Accept: 'application/json',
       ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
@@ -128,7 +145,7 @@ export class ApiClient {
       throw new ApiError('La aplicación no tiene configurada la URL del backend.', null, 'CONFIG_MISSING');
     }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 120_000);
+    const timeout = setTimeout(() => controller.abort(), this.resolveTimeout(options));
     const headers: Record<string, string> = {
       Accept: 'application/json',
       ...options.headers,

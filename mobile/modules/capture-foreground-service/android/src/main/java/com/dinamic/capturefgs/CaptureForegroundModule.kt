@@ -24,5 +24,19 @@ class CaptureForegroundModule : Module() {
         ?: throw Exception("React context unavailable; cannot stop foreground service")
       CaptureForegroundService.stop(context)
     }
+
+    // Minimal unique-work bridge (Fase 3). Schedules a no-op wake so JS restore can drain
+    // SQLite-backed queues after process death. Full HTTP WorkManager is a follow-up.
+    AsyncFunction("scheduleUniqueWork") { name: String, tag: String ->
+      val context = appContext.reactContext
+        ?: throw Exception("React context unavailable; cannot schedule work")
+      DinamicWorkScheduler.schedule(context, name, tag)
+    }
+
+    AsyncFunction("cancelUniqueWork") { name: String ->
+      val context = appContext.reactContext
+        ?: throw Exception("React context unavailable; cannot cancel work")
+      DinamicWorkScheduler.cancel(context, name)
+    }
   }
 }

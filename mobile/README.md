@@ -4,8 +4,9 @@ Cliente móvil **solo fotografías** para acelerar la carga de imágenes de inve
 con dron. Usa **exclusivamente el backend existente** (`/auth` + `/api/v3`). No crea backend,
 base de datos, worker ni flujo de procesamiento paralelo.
 
-> Estado: **Fase 1 — base funcional y captura local completa**.  
-> **Fase 1 = parcialmente validada**: typecheck/lint/tests/prebuild/build/install pasan; queda pendiente la prueba física completa de 20 fotografías + video + pantalla bloqueada documentada en `docs/DEVICE_EVIDENCE.md`.
+> Estado: **Fase 3 — hardening / observabilidad (parcialmente validada)**.  
+> **Lista solo para rollout limitado**: CI mobile, flags, timeouts HTTPS, diagnóstico, FlatList, cleanup, WorkManager wake bridge.  
+> **No** producción general: falta matriz física firmada, firma release con secretos CI, crash reporting con DSN, ProGuard validado en release real.
 
 ---
 
@@ -152,6 +153,38 @@ Reglas prácticas:
 - El dispositivo permite una sola sesión local abierta. Si se detectan múltiples sesiones
   antiguas, se conserva la más recientemente actualizada y las demás pasan a `failed`
   con política de reparación documentada; no se eliminan fotografías.
+
+---
+
+## Documentación Fase 3
+
+| Doc | Contenido |
+|-----|-----------|
+| `docs/PHASE_3_AUDIT.md` | Auditoría pre-hardening |
+| `docs/PHASE_3_IMPLEMENTATION.md` | Qué se entregó / gaps |
+| `docs/PHASE_3_RUNBOOK.md` | Soporte operativo |
+| `docs/PHASE_3_CHECKLIST.md` | Checklist productivo |
+| `docs/PHASE_3_ROLLOUT.md` | Rollout / rollback |
+| `docs/DEVICE_MATRIX.md` | Matriz de dispositivos |
+| `docs/OEM_BACKGROUND.md` | Doze / OEM |
+| `docs/SIGNING.md` | Firma APK/AAB |
+| `docs/CRASH_REPORTING.md` | Crash reporting (pendiente DSN) |
+| `docs/DEPENDENCY_AUDIT.md` | npm audit |
+
+### Feature flags (build-time)
+
+En `.env` / CI:
+
+- `DINAMIC_FLAG_MOBILE_DATA=0` — no subir por datos móviles
+- `DINAMIC_FLAG_HEIC_JPEG=0` — desactivar conversión HEIC
+- `DINAMIC_FLAG_WORK_MANAGER=0` — desactivar schedule WorkManager
+- `DINAMIC_FLAG_RECONCILE=0` — reconciliación avanzada off
+- `DINAMIC_FLAG_BG_POLL=0` — no schedule job-monitor wake
+- `DINAMIC_FLAG_AISLE_LOCK=1` — reservado (off por defecto)
+
+### Diagnóstico en app
+
+Menú **Diagnóstico**: health checks + **Exportar diagnóstico** (Share sheet, redactado).
 
 ---
 

@@ -1,8 +1,8 @@
 {
   "name": "dinamic-inventory-mobile",
-  "version": "0.0.1-spike.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Dinamic Inventory — Android capture/upload client (Fase 0 spike). Photos-only.",
+  "description": "Dinamic Inventory — Android capture/upload client. Photos-only. Fase 3 hardening.",
   "main": "index.ts",
   "expo": {
     "autolinking": {
@@ -18,9 +18,9 @@
     "typecheck:core": "tsc --noEmit -p tsconfig.core.json",
     "lint": "eslint . --ext .ts,.tsx --max-warnings 0",
     "test": "npm run test:core && npm run test:services && npm run test:integration",
-    "test:core": "jest --config jest.config.core.js",
-    "test:services": "jest --config jest.config.services.js",
-    "test:integration": "jest --config jest.config.integration.js",
+    "test:core": "jest --config jest.config.core.js --watchman=false",
+    "test:services": "jest --config jest.config.services.js --watchman=false",
+    "test:integration": "jest --config jest.config.integration.js --watchman=false",
     "doctor": "expo-doctor",
     "verify": "npm run typecheck && npm run lint && npm test",
     "ios": "expo run:ios"
@@ -31,6 +31,7 @@
     "@tanstack/react-query": "^5.51.0",
     "capture-foreground-service": "file:./modules/capture-foreground-service",
     "expo": "~51.0.0",
+    "expo-build-properties": "^0.12.5",
     "expo-constants": "~16.0.0",
     "expo-dev-client": "~4.0.0",
     "expo-file-system": "~17.0.0",

@@ -3,6 +3,7 @@ import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
 import type { ProcessingJobRow } from '../../database/schema/captureSchema';
+import type { BackgroundWorkScheduler } from '../../native/backgroundWork';
 import type { ApiClient } from '../../services/api/apiClient';
 import type { AisleStatusResponseDto } from '../../services/api/types';
 
@@ -11,6 +12,11 @@ export interface JobMonitorSnapshot {
 }
 
 export type JobListener = (snapshot: JobMonitorSnapshot) => void;
+
+export interface JobMonitorOptions {
+  readonly backgroundPolling?: boolean;
+  readonly backgroundWork?: BackgroundWorkScheduler | null;
+}
 
 export class JobMonitor {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -22,6 +28,7 @@ export class JobMonitor {
     private readonly jobs: ProcessingJobRepository,
     private readonly sessions: CaptureRepository,
     private readonly logger: Logger,
+    private readonly options: JobMonitorOptions = {},
   ) {}
 
   subscribe(listener: JobListener): () => void {
@@ -40,6 +47,9 @@ export class JobMonitor {
   async watch(backendJobId: string): Promise<void> {
     if (this.timers.has(backendJobId)) {
       return;
+    }
+    if (this.options.backgroundPolling !== false && this.options.backgroundWork) {
+      void this.options.backgroundWork.scheduleJobMonitor(backendJobId);
     }
     this.schedule(backendJobId, 0);
   }

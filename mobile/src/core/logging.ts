@@ -1,8 +1,6 @@
 /**
- * Structured, redaction-safe local logging (Fase 0, §30).
- *
- * Emits JSON-serializable events. Never logs tokens, passwords, image bytes, or full signed
- * URLs. A small redaction pass strips obviously sensitive keys before emitting.
+ * Structured, redaction-safe local logging.
+ * Emits JSON-serializable events. Never logs tokens, passwords, image bytes, or full signed URLs.
  */
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -29,7 +27,11 @@ export type LogEvent =
   | 'job_started'
   | 'job_status_changed'
   | 'job_poll_error'
-  | 'recovery';
+  | 'recovery'
+  | 'diagnostic_exported'
+  | 'storage_cleanup'
+  | 'work_scheduled'
+  | 'health_check';
 
 export interface LogRecord {
   readonly ts: string;
@@ -72,18 +74,44 @@ export function redact(fields: Record<string, unknown>): Record<string, unknown>
 
 export type LogSink = (record: LogRecord) => void;
 
-/** Default sink: console. Replace in native layer with SQLite/file sink as needed. */
 const consoleSink: LogSink = (record) => {
   // eslint-disable-next-line no-console
   console.log(JSON.stringify(record));
 };
 
+/** In-memory ring buffer for diagnostic export (max records). */
+export class RingLogBuffer {
+  private readonly records: LogRecord[] = [];
+
+  constructor(private readonly maxRecords = 500) {}
+
+  push(record: LogRecord): void {
+    this.records.push(record);
+    while (this.records.length > this.maxRecords) {
+      this.records.shift();
+    }
+  }
+
+  snapshot(): readonly LogRecord[] {
+    return [...this.records];
+  }
+
+  clear(): void {
+    this.records.length = 0;
+  }
+}
+
+export const sharedLogBuffer = new RingLogBuffer(500);
+
 export function createLogger(
   sink: LogSink = consoleSink,
   now: () => Date = () => new Date(),
+  buffer: RingLogBuffer = sharedLogBuffer,
 ) {
   function emit(level: LogLevel, event: LogEvent, fields: Record<string, unknown> = {}): void {
-    sink({ ts: now().toISOString(), level, event, fields: redact(fields) });
+    const record: LogRecord = { ts: now().toISOString(), level, event, fields: redact(fields) };
+    buffer.push(record);
+    sink(record);
   }
   return {
     debug: (event: LogEvent, fields?: Record<string, unknown>) => emit('debug', event, fields),
