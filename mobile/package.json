@@ -22,7 +22,8 @@
     "test:services": "jest --config jest.config.services.js --watchman=false",
     "test:integration": "jest --config jest.config.integration.js --watchman=false",
     "doctor": "node scripts/expo-doctor-android.js",
-    "verify": "npm run typecheck && npm run lint && npm test"
+    "verify": "npm run typecheck && npm run lint && npm test",
+    "android:release": "cd android && ./gradlew assembleRelease"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "1.23.1",

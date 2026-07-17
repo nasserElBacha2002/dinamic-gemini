@@ -11,7 +11,7 @@
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 
-import { filterNewestFirstPage, type ScanMetrics } from '../core/incrementalScan';
+import { collectNewSinceFloor, type ScanMetrics } from '../core/incrementalScan';
 import type { CompositeCursor } from '../core/compositeCursor';
 import type { GalleryImage } from '../domain/entities/galleryImage';
 import { parseMediaStoreNumericId, requireAssetId } from '../domain/entities/galleryImage';
@@ -63,11 +63,26 @@ function toLightweight(asset: MediaLibrary.Asset): { assetId: string; dateAdded:
   };
 }
 
+async function resolveLocalUri(asset: MediaLibrary.Asset): Promise<string> {
+  try {
+    const info = await MediaLibrary.getAssetInfoAsync(asset);
+    return info.localUri ?? asset.uri;
+  } catch (error) {
+    // expo-media-library probes EXIF GPS via MediaStore.setRequireOriginal on API 29+.
+    // Without ACCESS_MEDIA_LOCATION that throws — we intentionally omit that permission
+    // (photos-only capture; GPS is unused). Fall back to the gallery URI.
+    const message = error instanceof Error ? error.message : String(error);
+    if (/ACCESS_MEDIA_LOCATION/i.test(message)) {
+      return asset.uri;
+    }
+    throw error;
+  }
+}
+
 async function hydrateAsset(asset: MediaLibrary.Asset): Promise<GalleryImage> {
   const assetId = requireAssetId(asset.id);
   const numeric = parseMediaStoreNumericId(assetId);
-  const info = await MediaLibrary.getAssetInfoAsync(asset);
-  const localUri = info.localUri ?? asset.uri;
+  const localUri = await resolveLocalUri(asset);
 
   let size = 0;
   try {
@@ -97,6 +112,14 @@ async function hydrateAsset(asset: MediaLibrary.Asset): Promise<GalleryImage> {
 
 export interface IncrementalScanOptions {
   readonly scanCursor: CompositeCursor;
+  /**
+   * Fixed session lower bound (start marker). When provided, paging is anchored here instead
+   * of the advancing scan cursor so batch/same-second downloads are never skipped.
+   * Falls back to `scanCursor` for backward compatibility.
+   */
+  readonly floorCursor?: CompositeCursor;
+  /** Asset ids already processed this session; skipped to avoid re-hydration. */
+  readonly inspectedAssetIds?: ReadonlySet<string>;
   readonly pageSize?: number;
   readonly now?: () => number;
 }
@@ -107,13 +130,20 @@ export interface IncrementalScanResult {
 }
 
 /**
- * Fetch only photos newer than `scanCursor`, hydrating metadata solely for those candidates.
- * Stops paging once an older-or-equal region is reached (newest-first order).
+ * Fetch photos added since the session floor, hydrating metadata solely for new candidates.
+ *
+ * Paging is anchored to `floorCursor` (the fixed session-start marker) rather than the
+ * advancing scan cursor, and stops only once a strictly-older second is reached. This makes
+ * batch downloads robust: when many photos land in the same DATE_ADDED second (all drone
+ * photos pulled at once), none are skipped by an early tie-based stop. `inspectedAssetIds`
+ * prevents re-hydrating rows already processed this session.
  */
 export async function queryNewPhotosSince(
   options: IncrementalScanOptions,
 ): Promise<IncrementalScanResult> {
   const pageSize = options.pageSize ?? 50;
+  const floorCursor = options.floorCursor ?? options.scanCursor;
+  const inspected = options.inspectedAssetIds ?? new Set<string>();
   const started = (options.now ?? Date.now)();
   let after: string | undefined;
   let assetsRead = 0;
@@ -132,7 +162,7 @@ export async function queryNewPhotosSince(
     pagesQueried += 1;
 
     const light = page.assets.map(toLightweight);
-    const filtered = filterNewestFirstPage(light, options.scanCursor);
+    const filtered = collectNewSinceFloor(light, floorCursor, inspected);
     assetsRead += filtered.examined;
 
     for (const candidate of filtered.newCandidates) {
@@ -141,7 +171,7 @@ export async function queryNewPhotosSince(
       images.push(hydrated);
     }
 
-    if (filtered.reachedCursor || !page.hasNextPage) {
+    if (filtered.reachedFloor || !page.hasNextPage) {
       break;
     }
     after = page.endCursor;

@@ -34,13 +34,25 @@ export async function preparePhotoForUpload(input: {
   if (!isAllowedImageMime(mime)) {
     throw new Error(`MIME no permitido: ${mime || 'unknown'}`);
   }
-  if (input.size <= 0) {
+
+  let size = input.size;
+  if (!(size > 0)) {
+    // Gallery hydration often reports 0 for content:// URIs; re-stat before rejecting.
+    try {
+      const info = await FileSystem.getInfoAsync(input.uri, { size: true });
+      if (info.exists && typeof info.size === 'number' && info.size > 0) {
+        size = info.size;
+      }
+    } catch {
+      // fall through to empty check
+    }
+  }
+  if (!(size > 0)) {
     throw new Error('Archivo vacío');
   }
 
   let uri = input.uri;
   let mimeType = mime === 'image/jpg' ? 'image/jpeg' : mime;
-  let size = input.size;
   let transformUri: string | null = null;
   let convertedFromHeic = false;
   let displayName = input.displayName;
@@ -89,7 +101,7 @@ export async function preparePhotoForUpload(input: {
     size,
     displayName,
     transformUri,
-    originalSize: input.size,
+    originalSize: size,
     convertedFromHeic,
   };
 }

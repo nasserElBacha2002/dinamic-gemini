@@ -163,6 +163,7 @@ export default function App(): JSX.Element {
         onLoggedIn={(session) => {
           setAuth(session);
           setScreen('inventories');
+          void services.uploadQueue.resume();
         }}
       />
     );
