@@ -188,3 +188,32 @@ def test_qr_payload_sku_extraction() -> None:
     )
     assert outcome.match_status == CodeScanMatchStatus.MATCHED
     assert outcome.match_type == CodeScanMatchType.QR_PAYLOAD_SKU_EXACT
+
+
+def test_inventory_pipe_and_di1_payload_lookup() -> None:
+    from src.application.services.code_scan_qr_payload import parse_inventory_code_payload
+
+    assert extract_qr_payload_lookup_values("22294029014|234") == ("22294029014",)
+    assert extract_qr_payload_lookup_values("DI1|C=32535235|Q=909") == ("32535235",)
+    assert parse_inventory_code_payload("22294029014|234") == {
+        "internal_code": "22294029014",
+        "quantity": 234,
+    }
+    assert parse_inventory_code_payload("32535235") == {
+        "internal_code": "32535235",
+        "quantity": None,
+    }
+
+    positions = [_position("p1")]
+    # Match via internal_code extracted from pipe payload
+    products: dict = {"p1": []}
+    lookup = build_position_lookup(positions, products)
+    # Seed lookup with internal code as if present on position summary
+    lookup.setdefault("22294029014", [("p1", CodeScanMatchType.INTERNAL_CODE_EXACT, "internal_code")])
+    outcome = match_detection_value(
+        normalized_code_value="22294029014|234",
+        code_value="22294029014|234",
+        lookup=lookup,
+    )
+    assert outcome.match_status == CodeScanMatchStatus.MATCHED
+    assert outcome.matched_position_id == "p1"

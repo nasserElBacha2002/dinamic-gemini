@@ -1,4 +1,4 @@
-/* Horizontal warehouse label — preview inline; print via body-level .label-print-only-root portal. */
+/* Horizontal warehouse label — drone-readable QR (~80mm) + full-width barcode (~260×50mm). */
 
 .label-print-only-root {
   display: none;
@@ -56,29 +56,43 @@
 
 /* Canonical label canvas: one full A4 landscape page per copy */
 .label-card,
-.print-label {
-  --label-title-size: 16pt;
-  --label-date-size: 24pt;
-  --label-brand-size: 14pt;
-  --label-row-label-size: 15pt;
-  --label-row-value-size: 20pt;
+.print-label,
+.inventory-label {
+  --label-title-size: 11pt;
+  --label-date-size: 18pt;
+  --label-brand-size: 11pt;
+  --label-row-label-size: 9pt;
+  --label-row-value-size: 11pt;
   --label-code-size: 28pt;
-  --label-quantity-label-size: 24pt;
-  --label-quantity-value-size: 58pt;
-  --label-footer-size: 13pt;
+  --label-quantity-label-size: 16pt;
+  --label-quantity-value-size: 52pt;
+  /* Physical print targets (mm). Printable ~287mm; 260mm ≈ 90%+. */
+  --label-qr-size: 80mm;
+  --label-barcode-width: 260mm;
+  --label-barcode-height: 50mm;
+  --label-header-max: 24mm;
+  --label-barcode-band: 60mm;
 
   background: #fff;
   border: 2px solid #222;
   box-sizing: border-box;
   color: #222;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  /* Header | main (code/qty/additional + QR) | barcode */
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 210mm;
   max-height: 210mm;
   overflow: hidden;
-  padding: 8mm 10mm;
+  padding: 4mm 5mm;
+  row-gap: 2mm;
   width: 297mm;
   max-width: 297mm;
+}
+
+.inventory-label--no-additional,
+.inventory-label--with-additional {
+  /* Marker classes only — root grid stays 3 rows (no exclusive additional row). */
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .label-card--horizontal {
@@ -86,12 +100,12 @@
 }
 
 .label-header {
-  align-items: center;
+  align-items: flex-start;
   display: grid;
-  flex: 0 0 auto;
-  gap: 6mm;
-  grid-template-columns: 24mm 1fr 32mm;
-  margin-bottom: 5mm;
+  gap: 3mm;
+  grid-template-columns: 14mm 1fr 26mm;
+  max-height: var(--label-header-max);
+  min-height: 0;
 }
 
 .label-brand-mark {
@@ -101,17 +115,29 @@
   display: flex;
   font-size: var(--label-brand-size);
   font-weight: 800;
-  height: 20mm;
+  height: 12mm;
   justify-content: center;
-  width: 20mm;
+  width: 12mm;
+}
+
+.label-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1mm;
+  min-width: 0;
 }
 
 .label-title {
   font-size: var(--label-title-size);
   font-weight: 800;
   line-height: 1.1;
-  text-align: center;
+  text-align: left;
   text-transform: uppercase;
+}
+
+.label-header-meta {
+  display: grid;
+  gap: 0.5mm;
 }
 
 .label-date-code {
@@ -121,18 +147,16 @@
   text-align: right;
 }
 
-.label-meta {
-  display: grid;
-  flex: 0 0 auto;
-  gap: 2.5mm;
-}
-
 .label-row {
   align-items: baseline;
   display: grid;
-  gap: 6mm;
-  grid-template-columns: 48mm 1fr;
-  margin-bottom: 2.5mm;
+  gap: 2mm;
+  grid-template-columns: 26mm 1fr;
+  margin-bottom: 0;
+}
+
+.label-row--compact {
+  grid-template-columns: 26mm 1fr;
 }
 
 .label-row-label {
@@ -153,35 +177,41 @@
 }
 
 .label-main-content {
-  align-items: center;
+  align-items: stretch;
   display: grid;
-  flex: 1 1 auto;
-  gap: 8mm;
-  grid-template-columns: 1fr minmax(78mm, 86mm);
+  gap: 6mm;
+  grid-template-columns: minmax(0, 1fr) var(--label-qr-size);
   min-height: 0;
 }
 
-.label-primary-section {
-  border-top: 2px dashed #333;
+.label-primary-column {
   display: flex;
   flex-direction: column;
-  gap: 6mm;
-  justify-content: center;
   min-height: 0;
   min-width: 0;
-  padding-top: 5mm;
+}
+
+.label-primary-section {
+  border-top: 1.5px dashed #333;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 5mm;
+  justify-content: flex-start;
+  min-width: 0;
+  padding-top: 2mm;
 }
 
 .label-primary-row {
   align-items: baseline;
   display: grid;
-  gap: 6mm;
-  grid-template-columns: 58mm 1fr;
+  gap: 3mm;
+  grid-template-columns: 38mm 1fr;
   min-width: 0;
 }
 
 .label-primary-label {
-  font-size: 22pt;
+  font-size: 14pt;
   font-weight: 800;
   line-height: 1;
   text-transform: uppercase;
@@ -196,7 +226,7 @@
 
 .label-code-main-value {
   font-family: 'Roboto Mono', 'Consolas', 'Courier New', monospace;
-  font-size: 40pt;
+  font-size: 34pt;
   font-weight: 900;
   letter-spacing: 0.03em;
   line-height: 1.05;
@@ -209,13 +239,13 @@
 }
 
 .label-code-main-value--long {
-  font-size: 30pt;
+  font-size: 26pt;
   letter-spacing: 0.02em;
   line-height: 1.08;
 }
 
 .label-code-main-value--xlong {
-  font-size: 22pt;
+  font-size: 18pt;
   letter-spacing: 0.01em;
   line-height: 1.1;
 }
@@ -226,34 +256,37 @@
   white-space: normal;
 }
 
+.label-qr-column,
 .label-codes-column {
   align-items: center;
   display: flex;
-  flex: 0 0 auto;
   flex-direction: column;
-  gap: 4mm;
-  justify-content: center;
+  justify-content: flex-start;
   min-width: 0;
+  width: var(--label-qr-size);
 }
 
 .label-qr-section,
-.qr-code-block {
+.qr-code-block,
+.inventory-qr-code {
   align-items: center;
   display: flex;
-  flex: 0 0 auto;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
+  width: 100%;
 }
 
+/* Physical QR size ~80mm. SVG module count is high; CSS sets mm size. */
 .qr-code,
-.label-qr-code {
+.label-qr-code,
+.inventory-qr-svg {
   background: #fff;
   flex-shrink: 0;
-  height: 24mm;
-  max-height: 24mm;
-  max-width: 24mm;
+  height: var(--label-qr-size);
+  max-height: var(--label-qr-size);
+  max-width: var(--label-qr-size);
   opacity: 1;
-  width: 24mm;
+  width: var(--label-qr-size);
 }
 
 .qr-code--placeholder {
@@ -261,37 +294,49 @@
   box-sizing: border-box;
 }
 
-.label-qr-caption,
-.barcode-caption {
-  font-size: 8pt;
+.label-qr-caption {
+  font-size: 7pt;
   font-weight: 700;
-  line-height: 1.1;
-  margin-top: 1.5mm;
+  line-height: 1;
+  margin-top: 1mm;
   text-align: center;
   text-transform: uppercase;
 }
 
-.barcode-block {
-  align-items: center;
+/* Bottom barcode band: ≥88% printable width, height ~50mm */
+.label-barcode-section {
+  align-items: stretch;
   display: flex;
   flex-direction: column;
-  gap: 1.5mm;
-  max-width: 76mm;
-  width: 76mm;
+  justify-content: flex-start;
+  max-height: var(--label-barcode-band);
+  min-height: 0;
+  width: 100%;
+}
+
+.barcode-block,
+.inventory-barcode {
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 1mm;
+  max-width: var(--label-barcode-width);
+  width: 100%;
+  margin: 0 auto;
 }
 
 .barcode-wrapper {
   background: #fff;
   box-sizing: border-box;
-  max-width: 76mm;
-  min-height: 20mm;
+  height: var(--label-barcode-height);
+  max-width: var(--label-barcode-width);
+  min-height: var(--label-barcode-height);
   overflow: hidden;
-  width: 76mm;
+  width: 100%;
 }
 
 .barcode-wrapper--placeholder {
   border: 1.5px dashed #999;
-  min-height: 20mm;
 }
 
 .barcode-wrapper--hidden {
@@ -301,13 +346,14 @@
   visibility: hidden;
 }
 
+/* Fill the physical box; viewBox + meet keeps bars proportional (no arbitrary stretch). */
 .barcode-wrapper svg,
 .barcode-svg {
   display: block;
-  height: auto;
-  max-height: 24mm;
-  max-width: 100%;
-  width: auto;
+  height: 100%;
+  max-height: none;
+  max-width: none;
+  width: 100%;
 }
 
 .barcode-human-readable,
@@ -317,12 +363,12 @@
   display: flex;
   flex-wrap: wrap;
   font-family: 'Roboto Mono', 'Consolas', 'Courier New', monospace;
-  font-size: 9pt;
+  font-size: 11pt;
   font-weight: 700;
   gap: 1.5mm;
   justify-content: center;
   letter-spacing: 0.02em;
-  line-height: 1.2;
+  line-height: 1.1;
   text-align: center;
   word-break: break-all;
 }
@@ -338,7 +384,7 @@
   font-weight: 600;
   line-height: 1.25;
   margin: 0;
-  max-width: 76mm;
+  max-width: var(--label-barcode-width);
   text-align: center;
 }
 
@@ -348,34 +394,52 @@
 
 .label-quantity-value {
   color: #222;
-  font-size: 52pt;
+  font-size: var(--label-quantity-value-size);
   overflow: visible;
   text-align: left;
   text-overflow: clip;
   white-space: normal;
 }
 
-.label-footer {
-  border-top: 1.5px solid #333;
-  color: #222;
+/* Optional fields: left column under code/qty, sharing height with the QR. */
+.label-additional-data {
+  border-top: 1px solid #555;
+  box-sizing: border-box;
   display: flex;
-  flex: 0 0 auto;
-  flex-wrap: nowrap;
-  font-size: var(--label-footer-size);
-  font-weight: 700;
-  gap: 8mm;
-  justify-content: space-between;
-  line-height: 1.1;
-  margin-top: auto;
-  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2mm;
+  justify-content: space-evenly;
+  min-width: 0;
   padding-top: 3mm;
+  width: 100%;
 }
 
-.label-footer > div {
+.label-additional-item {
+  align-items: baseline;
+  column-gap: 3mm;
+  display: grid;
+  grid-template-columns: 38mm minmax(0, 1fr);
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  width: 100%;
+}
+
+.label-additional-label {
+  font-size: 10pt;
+  font-weight: 800;
+  line-height: 1.2;
+  text-transform: uppercase;
   white-space: nowrap;
+}
+
+.label-additional-value {
+  font-size: 12pt;
+  font-weight: 700;
+  line-height: 1.2;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-word;
 }
 
 @media print {
@@ -454,7 +518,8 @@
   }
 
   .label-card,
-  .print-label {
+  .print-label,
+  .inventory-label {
     background: #fff !important;
     border: 2px solid #222 !important;
     box-sizing: border-box !important;
@@ -471,7 +536,7 @@
     overflow: hidden !important;
     page-break-after: always !important;
     page-break-inside: avoid !important;
-    padding: 8mm 10mm !important;
+    padding: 4mm 5mm !important;
     width: 297mm !important;
   }
 
@@ -481,76 +546,62 @@
     page-break-after: auto !important;
   }
 
-  .label-header {
-    margin-bottom: 4mm !important;
-  }
-
-  .label-meta {
-    gap: 2mm !important;
-  }
-
-  .label-row {
-    margin-bottom: 2mm !important;
-  }
-
-  .label-footer {
-    margin-top: 3mm !important;
-    padding-top: 2.5mm !important;
-  }
-
-  .label-code-main-value {
-    font-size: 36pt !important;
-  }
-
-  .label-code-main-value--long {
-    font-size: 26pt !important;
-  }
-
-  .label-code-main-value--xlong {
-    font-size: 18pt !important;
-  }
-
-  .label-code-section .label-primary-value {
-    overflow: visible !important;
-    text-overflow: clip !important;
-    white-space: normal !important;
-  }
-
-  .label-quantity-value {
-    font-size: 46pt !important;
-  }
-
   .qr-code,
-  .label-qr-code {
+  .label-qr-code,
+  .inventory-qr-svg {
     background: #fff !important;
     filter: none !important;
-    height: 24mm !important;
-    max-height: 24mm !important;
-    max-width: 24mm !important;
+    height: 80mm !important;
+    max-height: 80mm !important;
+    max-width: 80mm !important;
     opacity: 1 !important;
-    width: 24mm !important;
+    width: 80mm !important;
+  }
+
+  .barcode-block,
+  .inventory-barcode {
+    max-width: 260mm !important;
+    width: 100% !important;
   }
 
   .barcode-wrapper {
     background: #fff !important;
-    max-width: 76mm !important;
+    height: 50mm !important;
+    max-width: 260mm !important;
+    min-height: 50mm !important;
     overflow: hidden !important;
-    width: 76mm !important;
+    width: 100% !important;
   }
 
   .barcode-wrapper svg,
   .barcode-svg {
     filter: none !important;
-    height: auto !important;
-    max-height: 24mm !important;
-    max-width: 100% !important;
+    height: 100% !important;
+    max-height: none !important;
+    max-width: none !important;
     opacity: 1 !important;
-    width: auto !important;
+    width: 100% !important;
   }
 
   .barcode-human-readable,
   .barcode-text {
     color: #000 !important;
     opacity: 1 !important;
+  }
+
+  .label-code-main-value {
+    font-size: 30pt !important;
+  }
+
+  .label-code-main-value--long {
+    font-size: 22pt !important;
+  }
+
+  .label-code-main-value--xlong {
+    font-size: 16pt !important;
+  }
+
+  .label-quantity-value {
+    font-size: 46pt !important;
   }
 }

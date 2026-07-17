@@ -209,7 +209,7 @@ describe('LabelGeneratorDialog', () => {
     );
   });
 
-  it('renders QR and CODE128 DI1 barcode from código + cantidad in preview', async () => {
+  it('renders QR and CODE128 pipe barcode from código + cantidad in preview', async () => {
     renderDialog();
     fillRequiredFields();
     const card = within(getPreviewSheet()).getByTestId('label-card');
@@ -218,9 +218,10 @@ describe('LabelGeneratorDialog', () => {
     await waitFor(() => {
       expect(within(card).getByTestId('barcode-block')).toHaveAttribute(
         'data-barcode-value',
-        'DI1|C=1931038|Q=3'
+        '1931038|3'
       );
     });
+    expect(within(card).getByTestId('qr-code-block')).toHaveAttribute('data-qr-payload', '1931038|3');
     expect(within(card).getByTestId('barcode-display-code')).toHaveTextContent('1931038');
     expect(within(card).getByTestId('barcode-display-quantity')).toHaveTextContent(/CANT\.\s*3/);
     expect(within(card).getByTestId('barcode-block')).toHaveAttribute('data-barcode-format', 'CODE128');
@@ -306,7 +307,7 @@ describe('LabelGeneratorDialog', () => {
     expect(preview.querySelector('.label-print-root')).toBeFalsy();
   });
 
-  it('renders optional footer fields inside label-footer', () => {
+  it('renders optional fields in the left column beside QR (not a footer strip)', () => {
     renderDialog();
     fillRequiredFields();
     fireEvent.change(screen.getByRole('textbox', { name: /^lote$/i }), {
@@ -321,11 +322,22 @@ describe('LabelGeneratorDialog', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /observaciones/i }), {
       target: { value: 'h89' },
     });
-    const lotLine = within(getPreviewSheet()).getByText(/LOTE:/i);
-    expect(lotLine.closest('.label-footer')).toBeTruthy();
-    expect(within(getPreviewSheet()).getByText(/OBS:/i).closest('.label-footer')).toBeTruthy();
-    const footer = getPreviewSheet().querySelector('.label-footer');
-    expect(footer?.childElementCount).toBe(4);
+    const preview = getPreviewSheet();
+    const main = within(preview).getByTestId('label-main-content');
+    const primaryColumn = within(preview).getByTestId('label-primary-column');
+    const additional = within(preview).getByTestId('label-additional-data');
+    const barcode = within(preview).getByTestId('label-barcode-section');
+    expect(primaryColumn.contains(additional)).toBe(true);
+    expect(main.contains(additional)).toBe(true);
+    expect(additional.compareDocumentPosition(barcode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(preview.querySelector('.label-footer')).toBeNull();
+    expect(additional).toHaveTextContent(/LOTE:/i);
+    expect(additional).toHaveTextContent(/VENCIMIENTO:/i);
+    expect(additional).toHaveTextContent(/DESCRIPCIÓN:/i);
+    expect(additional).toHaveTextContent(/OBSERVACIONES:/i);
+    expect(additional).not.toHaveTextContent(/VTO:/i);
+    expect(additional).not.toHaveTextContent(/OBS:/i);
+    expect(additional.querySelectorAll('.label-additional-item')).toHaveLength(4);
   });
 
   it('unmounts print portal when dialog closes', () => {
