@@ -25,22 +25,40 @@ const sampleData: Omit<LabelSheetData, 'copies'> = {
 };
 
 describe('PrintableLabel barcode + QR', () => {
-  it('renders QR and barcode together without removing QR', async () => {
-    render(<PrintableLabel data={sampleData} headerDate="17/07" />);
+  it('renders QR and DI1 barcode with code 32535235 and quantity 909', async () => {
+    render(
+      <PrintableLabel
+        data={{
+          ...sampleData,
+          code: '32535235',
+          quantity: '909',
+        }}
+        headerDate="17/07"
+      />
+    );
     const card = screen.getByTestId('label-card');
     expect(card.querySelector('[data-testid="qr-code-block"]')).toBeTruthy();
     expect(card.querySelector('.label-qr-section svg')).toBeTruthy();
     await waitFor(() => {
-      expect(within(card).getByTestId('barcode-block')).toHaveAttribute('data-barcode-state', 'ready');
+      expect(within(card).getByTestId('barcode-block')).toHaveAttribute(
+        'data-barcode-value',
+        'DI1|C=32535235|Q=909'
+      );
     });
-    expect(within(card).getByTestId('barcode-text')).toHaveTextContent('ABC-123456789');
+    expect(within(card).getByTestId('barcode-display-code')).toHaveTextContent('32535235');
+    expect(within(card).getByTestId('barcode-display-quantity')).toHaveTextContent(/CANT\.\s*909/);
+    expect(card).toHaveClass('print-label');
   });
 
-  it('uses código interno for the barcode value', async () => {
+  it('keeps QR present when barcode encodes code+quantity', async () => {
     render(<PrintableLabel data={sampleData} headerDate="17/07" />);
     await waitFor(() => {
-      expect(screen.getByTestId('barcode-block')).toHaveAttribute('data-barcode-value', 'ABC-123456789');
+      expect(screen.getByTestId('barcode-block')).toHaveAttribute(
+        'data-barcode-value',
+        'DI1|C=ABC-123456789|Q=150'
+      );
     });
+    expect(screen.getByTestId('qr-code-block').querySelector('svg')).toBeTruthy();
   });
 
   it('marks the card as a print-label with A4 landscape classes', () => {
@@ -48,6 +66,25 @@ describe('PrintableLabel barcode + QR', () => {
     const card = screen.getByTestId('label-card');
     expect(card).toHaveClass('print-label');
     expect(card).toHaveClass('label-card--horizontal');
+  });
+
+  it('fits long code + max quantity without empty barcode state', async () => {
+    render(
+      <PrintableLabel
+        data={{
+          ...sampleData,
+          code: 'ABC-123456789012345',
+          quantity: '99999999',
+        }}
+        headerDate="17/07"
+      />
+    );
+    await waitFor(() => {
+      const block = screen.getByTestId('barcode-block');
+      expect(block).toHaveAttribute('data-barcode-state', 'ready');
+      expect(block.getAttribute('data-barcode-value') ?? '').toContain('DI1|C=');
+      expect(block.getAttribute('data-barcode-value') ?? '').toContain('Q=99999999');
+    });
   });
 });
 
@@ -58,12 +95,13 @@ describe('LabelPreview live updates', () => {
         data={{
           ...sampleData,
           code: 'OLD-1',
+          quantity: '10',
           copies: 1,
         }}
       />
     );
     await waitFor(() => {
-      expect(within(screen.getByTestId('label-preview-sheet')).getByTestId('barcode-text')).toHaveTextContent(
+      expect(within(screen.getByTestId('label-preview-sheet')).getByTestId('barcode-display-code')).toHaveTextContent(
         'OLD-1'
       );
     });
@@ -73,12 +111,13 @@ describe('LabelPreview live updates', () => {
         data={{
           ...sampleData,
           code: 'NEW-999',
+          quantity: '10',
           copies: 1,
         }}
       />
     );
     await waitFor(() => {
-      expect(within(screen.getByTestId('label-preview-sheet')).getByTestId('barcode-text')).toHaveTextContent(
+      expect(within(screen.getByTestId('label-preview-sheet')).getByTestId('barcode-display-code')).toHaveTextContent(
         'NEW-999'
       );
     });
@@ -133,8 +172,8 @@ describe('label print CSS contracts', () => {
 
   it('constrains QR and barcode containers', () => {
     expect(labelPrintCss).toMatch(/\.qr-code[\s\S]*?width:\s*24mm/);
-    expect(labelPrintCss).toMatch(/\.barcode-wrapper[\s\S]*?max-width:\s*65mm/);
-    expect(labelPrintCss).toMatch(/max-height:\s*22mm/);
+    expect(labelPrintCss).toMatch(/\.barcode-wrapper[\s\S]*?max-width:\s*76mm/);
+    expect(labelPrintCss).toMatch(/max-height:\s*24mm/);
   });
 
   it('hides non-print UI and .no-print in print media', () => {

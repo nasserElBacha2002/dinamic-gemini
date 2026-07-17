@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
@@ -12,6 +12,11 @@ import {
 import type { ClientSupplier } from '../../../api/types';
 import BaseDialog from '../../../components/ui/BaseDialog';
 import LabelPrintSheet, { LabelPrintPortal } from './LabelPrintSheet';
+import {
+  isValidLabelCode,
+  isValidLabelQuantity,
+  tryBuildLabelBarcodePayload,
+} from './labelBarcodePayload';
 import {
   buildLabelPrintFilename,
   clampLabelCopies,
@@ -77,9 +82,13 @@ export default function LabelGeneratorDialog({
   const [codeError, setCodeError] = useState('');
   const [quantityError, setQuantityError] = useState('');
   const [copiesError, setCopiesError] = useState('');
+  const [barcodeRenderValid, setBarcodeRenderValid] = useState(false);
 
   const trimmedClientName = clientName.trim() || t('clients.common.no_information');
   const copies = clampLabelCopies(Number(copiesInput));
+  const handleBarcodeValidityChange = useCallback((valid: boolean) => {
+    setBarcodeRenderValid(valid);
+  }, []);
 
   const selectedSupplierName = useMemo(() => {
     if (!supplierId) return null;
@@ -114,10 +123,27 @@ export default function LabelGeneratorDialog({
     ]
   );
 
+  const barcodePayload = useMemo(
+    () => tryBuildLabelBarcodePayload({ code, quantity }),
+    [code, quantity]
+  );
+
   const validate = (): boolean => {
     let valid = true;
-    const nextCodeError = code.trim() ? '' : t('clients.labels.validation_code_required');
-    const nextQuantityError = quantity.trim() ? '' : t('clients.labels.validation_quantity_required');
+    let nextCodeError = '';
+    if (!code.trim()) {
+      nextCodeError = t('clients.labels.validation_code_required');
+    } else if (!isValidLabelCode(code)) {
+      nextCodeError = t('clients.labels.validation_code_invalid');
+    }
+
+    let nextQuantityError = '';
+    if (!quantity.trim()) {
+      nextQuantityError = t('clients.labels.validation_quantity_required');
+    } else if (!isValidLabelQuantity(quantity)) {
+      nextQuantityError = t('clients.labels.validation_quantity_invalid');
+    }
+
     let nextCopiesError = '';
     const parsedCopies = Number(copiesInput);
     if (!copiesInput.trim() || !Number.isFinite(parsedCopies)) {
@@ -129,13 +155,19 @@ export default function LabelGeneratorDialog({
     }
     if (nextCodeError) valid = false;
     if (nextQuantityError) valid = false;
+    if (!barcodePayload || !barcodeRenderValid) valid = false;
     setCodeError(nextCodeError);
     setQuantityError(nextQuantityError);
     setCopiesError(nextCopiesError);
     return valid;
   };
 
-  const canPrint = code.trim().length > 0 && quantity.trim().length > 0 && copies >= LABEL_COPIES_MIN;
+  const canPrint =
+    Boolean(barcodePayload) &&
+    barcodeRenderValid &&
+    copies >= LABEL_COPIES_MIN &&
+    isValidLabelCode(code) &&
+    isValidLabelQuantity(quantity);
 
   const handleClear = () => {
     setCountedBy('');
@@ -149,6 +181,7 @@ export default function LabelGeneratorDialog({
     setCodeError('');
     setQuantityError('');
     setCopiesError('');
+    setBarcodeRenderValid(false);
   };
 
   const handleClose = () => {
@@ -318,11 +351,24 @@ export default function LabelGeneratorDialog({
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
             {t('clients.labels.print_a4_hint')}
           </Typography>
-          <LabelPrintSheet data={sheetData} mode="preview" />
+          <LabelPrintSheet
+            data={sheetData}
+            mode="preview"
+            onBarcodeValidityChange={handleBarcodeValidityChange}
+          />
           <FormHelperText sx={{ mt: 1 }}>{t('clients.labels.print_browser_hint')}</FormHelperText>
-          {!code.trim() ? (
+          {!code.trim() || !quantity.trim() ? (
             <FormHelperText sx={{ mt: 0.5 }} data-testid="barcode-preview-hint">
               {t('clients.labels.preview_requires_code_for_barcodes')}
+            </FormHelperText>
+          ) : null}
+          {code.trim() &&
+          quantity.trim() &&
+          !barcodePayload &&
+          isValidLabelCode(code) &&
+          isValidLabelQuantity(quantity) ? (
+            <FormHelperText sx={{ mt: 0.5 }} error data-testid="barcode-payload-error">
+              {t('clients.labels.barcode_too_long')}
             </FormHelperText>
           ) : null}
           {!canPrint ? (

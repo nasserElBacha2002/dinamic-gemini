@@ -3,6 +3,11 @@ import { createPortal } from 'react-dom';
 import BarcodeBlock from './BarcodeBlock';
 import QrCodeBlock from './QrCodeBlock';
 import {
+  normalizeLabelCode,
+  normalizeLabelQuantity,
+  tryBuildLabelBarcodePayload,
+} from './labelBarcodePayload';
+import {
   buildLabelQrText,
   clampLabelCopies,
   formatShortLabelDate,
@@ -40,13 +45,20 @@ function LabelRow({
 export interface PrintableLabelProps {
   data: Omit<LabelSheetData, 'copies'>;
   headerDate: string;
+  onBarcodeValidityChange?: (valid: boolean) => void;
 }
 
 /** One full A4-landscape warehouse label (preview + print). */
-export function PrintableLabel({ data, headerDate }: PrintableLabelProps) {
+export function PrintableLabel({ data, headerDate, onBarcodeValidityChange }: PrintableLabelProps) {
   const qrValue = useMemo(() => buildLabelQrText(data), [data]);
   const codeValueClassName = useMemo(() => getLabelCodeMainValueClassName(data.code), [data.code]);
-  const normalizedCode = useMemo(() => data.code.trim(), [data.code]);
+  const normalizedCode = useMemo(() => normalizeLabelCode(data.code), [data.code]);
+  const normalizedQuantity = useMemo(() => normalizeLabelQuantity(data.quantity), [data.quantity]);
+
+  const barcodePayload = useMemo(
+    () => tryBuildLabelBarcodePayload({ code: data.code, quantity: data.quantity }) ?? '',
+    [data.code, data.quantity]
+  );
 
   return (
     <article
@@ -77,13 +89,18 @@ export function PrintableLabel({ data, headerDate }: PrintableLabelProps) {
 
           <div className="label-primary-row label-quantity-section">
             <span className="label-primary-label">CANT. TOTAL:</span>
-            <span className="label-primary-value label-quantity-value">{data.quantity.trim()}</span>
+            <span className="label-primary-value label-quantity-value">{normalizedQuantity}</span>
           </div>
         </div>
 
         <div className="label-codes-column">
           <QrCodeBlock value={qrValue} />
-          <BarcodeBlock value={normalizedCode} />
+          <BarcodeBlock
+            value={barcodePayload}
+            displayCode={normalizedCode}
+            displayQuantity={normalizedQuantity}
+            onValidityChange={onBarcodeValidityChange}
+          />
         </div>
       </section>
 
@@ -103,9 +120,16 @@ export interface LabelPrintSheetProps {
   data: LabelSheetData;
   mode?: LabelPrintSheetMode;
   className?: string;
+  onBarcodeValidityChange?: (valid: boolean) => void;
 }
 
-function LabelPrintSheetContent({ data }: { data: LabelSheetData }) {
+function LabelPrintSheetContent({
+  data,
+  onBarcodeValidityChange,
+}: {
+  data: LabelSheetData;
+  onBarcodeValidityChange?: (valid: boolean) => void;
+}) {
   const copies = clampLabelCopies(data.copies);
   const isSingleLabel = copies === 1;
   const headerDate = formatShortLabelDate();
@@ -155,8 +179,13 @@ function LabelPrintSheetContent({ data }: { data: LabelSheetData }) {
         data-copies={copies}
         aria-label="label-print-grid"
       >
-        {cards.map((key) => (
-          <PrintableLabel key={key} data={cardData} headerDate={headerDate} />
+        {cards.map((key, index) => (
+          <PrintableLabel
+            key={key}
+            data={cardData}
+            headerDate={headerDate}
+            onBarcodeValidityChange={index === 0 ? onBarcodeValidityChange : undefined}
+          />
         ))}
       </div>
     </div>
@@ -164,22 +193,37 @@ function LabelPrintSheetContent({ data }: { data: LabelSheetData }) {
 }
 
 /** Live preview of one or more printable labels (scaled on screen). */
-export function LabelPreview({ data, className }: { data: LabelSheetData; className?: string }) {
+export function LabelPreview({
+  data,
+  className,
+  onBarcodeValidityChange,
+}: {
+  data: LabelSheetData;
+  className?: string;
+  onBarcodeValidityChange?: (valid: boolean) => void;
+}) {
   return (
     <div
       className={['label-preview-root', className ?? ''].filter(Boolean).join(' ')}
       data-testid="label-preview-sheet"
     >
       <div className="label-preview-viewport">
-        <LabelPrintSheetContent data={data} />
+        <LabelPrintSheetContent data={data} onBarcodeValidityChange={onBarcodeValidityChange} />
       </div>
     </div>
   );
 }
 
-export default function LabelPrintSheet({ data, mode = 'print', className }: LabelPrintSheetProps) {
+export default function LabelPrintSheet({
+  data,
+  mode = 'print',
+  className,
+  onBarcodeValidityChange,
+}: LabelPrintSheetProps) {
   if (mode === 'preview') {
-    return <LabelPreview data={data} className={className} />;
+    return (
+      <LabelPreview data={data} className={className} onBarcodeValidityChange={onBarcodeValidityChange} />
+    );
   }
 
   return (

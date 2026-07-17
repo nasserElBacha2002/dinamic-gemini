@@ -157,7 +157,7 @@
   display: grid;
   flex: 1 1 auto;
   gap: 8mm;
-  grid-template-columns: 1fr minmax(70mm, 78mm);
+  grid-template-columns: 1fr minmax(78mm, 86mm);
   min-height: 0;
 }
 
@@ -276,22 +276,22 @@
   display: flex;
   flex-direction: column;
   gap: 1.5mm;
-  max-width: 65mm;
-  width: 65mm;
+  max-width: 76mm;
+  width: 76mm;
 }
 
 .barcode-wrapper {
   background: #fff;
   box-sizing: border-box;
-  max-width: 65mm;
-  min-height: 18mm;
+  max-width: 76mm;
+  min-height: 20mm;
   overflow: hidden;
-  width: 65mm;
+  width: 76mm;
 }
 
 .barcode-wrapper--placeholder {
   border: 1.5px dashed #999;
-  min-height: 18mm;
+  min-height: 20mm;
 }
 
 .barcode-wrapper--hidden {
@@ -305,20 +305,30 @@
 .barcode-svg {
   display: block;
   height: auto;
-  max-height: 22mm;
+  max-height: 24mm;
   max-width: 100%;
   width: auto;
 }
 
+.barcode-human-readable,
 .barcode-text {
+  align-items: baseline;
   color: #000;
+  display: flex;
+  flex-wrap: wrap;
   font-family: 'Roboto Mono', 'Consolas', 'Courier New', monospace;
-  font-size: 10pt;
+  font-size: 9pt;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  gap: 1.5mm;
+  justify-content: center;
+  letter-spacing: 0.02em;
   line-height: 1.2;
   text-align: center;
   word-break: break-all;
+}
+
+.barcode-human-separator {
+  font-weight: 400;
 }
 
 .barcode-empty-message,
@@ -328,7 +338,7 @@
   font-weight: 600;
   line-height: 1.25;
   margin: 0;
-  max-width: 65mm;
+  max-width: 76mm;
   text-align: center;
 }
 
@@ -523,21 +533,22 @@
 
   .barcode-wrapper {
     background: #fff !important;
-    max-width: 65mm !important;
+    max-width: 76mm !important;
     overflow: hidden !important;
-    width: 65mm !important;
+    width: 76mm !important;
   }
 
   .barcode-wrapper svg,
   .barcode-svg {
     filter: none !important;
     height: auto !important;
-    max-height: 22mm !important;
+    max-height: 24mm !important;
     max-width: 100% !important;
     opacity: 1 !important;
     width: auto !important;
   }
 
+  .barcode-human-readable,
   .barcode-text {
     color: #000 !important;
     opacity: 1 !important;
