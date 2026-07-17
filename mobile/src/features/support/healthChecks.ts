@@ -1,6 +1,6 @@
 import type { AppConfig } from '../../runtime/config/resolveAppConfig';
 import type { Logger } from '../../core/logging';
-import type { ApiClient } from '../../services/api/apiClient';
+import { ApiError, type ApiClient } from '../../services/api/apiClient';
 import type { TokenStorage } from '../../services/secureStorage/tokenStorage';
 import type { ConnectivityService } from '../../services/connectivity/connectivity';
 import { getStorageStatus } from './storageCleanup';
@@ -14,6 +14,10 @@ export interface HealthCheckResult {
   readonly detail: string;
 }
 
+/**
+ * Probe backend reachability without requiring a dedicated /api/v3/health route.
+ * Prefers a lightweight authenticated or public inventory list page=1&page_size=1.
+ */
 export async function runHealthChecks(input: {
   readonly config: AppConfig;
   readonly api: ApiClient;
@@ -42,8 +46,7 @@ export async function runHealthChecks(input: {
 
   try {
     const url = new URL(input.config.apiBaseUrl);
-    const secure =
-      input.config.environment !== 'production' || url.protocol === 'https:';
+    const secure = input.config.environment !== 'production' || url.protocol === 'https:';
     results.push({
       id: 'https',
       label: 'HTTPS / base URL',
@@ -59,19 +62,7 @@ export async function runHealthChecks(input: {
     });
   }
 
-  try {
-    await input.api.get('/api/v3/health', { auth: false, timeoutKind: 'list' });
-    results.push({ id: 'api', label: 'API accesible', status: 'ok', detail: '/api/v3/health' });
-  } catch (e) {
-    // Many backends expose /health without /api/v3 — try soft fail with detail.
-    const msg = e instanceof Error ? e.message : String(e);
-    results.push({
-      id: 'api',
-      label: 'API accesible',
-      status: 'warn',
-      detail: `No respondió /api/v3/health (${msg}). Verificar listados tras login.`,
-    });
-  }
+  results.push(await probeApi(input.api, input.connectivity));
 
   try {
     const access = await input.tokenStorage.getAccessToken();
@@ -143,4 +134,62 @@ export async function runHealthChecks(input: {
   });
 
   return results;
+}
+
+async function probeApi(
+  api: ApiClient,
+  connectivity: ConnectivityService,
+): Promise<HealthCheckResult> {
+  if (connectivity.getState() === 'offline') {
+    return {
+      id: 'api',
+      label: 'API accesible',
+      status: 'warn',
+      detail: 'Sin conexión local — no se pudo probar el backend',
+    };
+  }
+  try {
+    await api.get('/api/v3/inventories/?page=1&page_size=1', { timeoutKind: 'list' });
+    return { id: 'api', label: 'API accesible', status: 'ok', detail: 'GET /api/v3/inventories OK' };
+  } catch (e) {
+    if (e instanceof ApiError) {
+      if (e.status === 401 || e.status === 403) {
+        return {
+          id: 'api',
+          label: 'API accesible',
+          status: 'ok',
+          detail: `Backend alcanzó respuesta HTTP ${e.status} (auth requerida)`,
+        };
+      }
+      if (e.status === 404) {
+        return {
+          id: 'api',
+          label: 'API accesible',
+          status: 'warn',
+          detail: 'Ruta de inventarios no encontrada (404) — verificar versión de API',
+        };
+      }
+      return {
+        id: 'api',
+        label: 'API accesible',
+        status: 'fail',
+        detail: `HTTP ${e.status ?? '?'} · ${e.code ?? 'error'}`,
+      };
+    }
+    const msg = e instanceof Error ? e.message : String(e);
+    const lower = msg.toLowerCase();
+    if (lower.includes('abort') || lower.includes('timeout')) {
+      return { id: 'api', label: 'API accesible', status: 'fail', detail: 'Timeout al contactar el backend' };
+    }
+    if (lower.includes('ssl') || lower.includes('tls') || lower.includes('certificate')) {
+      return { id: 'api', label: 'API accesible', status: 'fail', detail: 'Error TLS/certificado' };
+    }
+    if (lower.includes('dns') || lower.includes('name not resolved')) {
+      return { id: 'api', label: 'API accesible', status: 'fail', detail: 'Error DNS' };
+    }
+    if (lower.includes('network') || lower.includes('failed to fetch')) {
+      return { id: 'api', label: 'API accesible', status: 'fail', detail: 'Red no disponible o backend caído' };
+    }
+    return { id: 'api', label: 'API accesible', status: 'fail', detail: msg.slice(0, 160) };
+  }
 }

@@ -70,6 +70,9 @@ export class JobMonitor {
     this.disposed = true;
     for (const id of [...this.timers.keys()]) {
       this.stop(id);
+      if (this.options.backgroundWork) {
+        void this.options.backgroundWork.cancelJobMonitor(id);
+      }
     }
     this.listeners.clear();
   }
@@ -114,6 +117,9 @@ export class JobMonitor {
       });
       this.logger.info('job_status_changed', { jobId: backendJobId, status: remoteStatus });
       if (terminal) {
+        if (this.options.backgroundWork) {
+          void this.options.backgroundWork.cancelJobMonitor(backendJobId);
+        }
         if (local === 'success') {
           try {
             await this.sessions.updateSessionStatus(job.capture_session_id, 'completed', true);

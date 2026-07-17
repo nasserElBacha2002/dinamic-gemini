@@ -47,7 +47,7 @@
 
 ## Reinicio / force close
 
-1. Reabrir app → Sesiones.
+1. Reabrir app → Inventarios / Pasillos (trabajos pendientes visibles en el pasillo).
 2. Cola y jobs se restauran desde SQLite.
 3. Force stop: no hay recovery hasta abrir app (limitación Android).
 

@@ -159,7 +159,7 @@ export class CaptureService {
   async loadSession(sessionId: string, startListener: boolean): Promise<void> {
     const session = await this.repo.getSession(sessionId);
     if (!session) {
-      throw new Error('No se encontró la sesión local.');
+      throw new Error('No se encontró la captura local.');
     }
     this.session = session;
     this.photos = await this.repo.listPhotos(session.id);
@@ -182,7 +182,7 @@ export class CaptureService {
     }
     const existing = await this.repo.findCurrentOpenSession();
     if (existing) {
-      this.warning = 'Ya existe una sesión local abierta. Abrila, reanudala o cancelala antes de iniciar otra.';
+      this.warning = 'Ya existe una captura local abierta. Continuá, reanudala o cancelala antes de iniciar otra.';
       await this.loadSession(existing.id, false);
       return;
     }
@@ -198,7 +198,7 @@ export class CaptureService {
       uploadBatchId: this.createId(),
     });
     if (!result.created) {
-      this.warning = 'Ya existe una sesión local abierta. Abrila, reanudala o cancelala antes de iniciar otra.';
+      this.warning = 'Ya existe una captura local abierta. Continuá, reanudala o cancelala antes de iniciar otra.';
       await this.loadSession(result.session.id, false);
       return;
     }
@@ -548,7 +548,7 @@ export class CaptureService {
 
   private requireSessionId(): string {
     if (!this.session) {
-      throw new Error('No hay sesión local activa.');
+      throw new Error('No hay captura local activa.');
     }
     return this.session.id;
   }

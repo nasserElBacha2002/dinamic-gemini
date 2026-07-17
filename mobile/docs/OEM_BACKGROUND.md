@@ -1,15 +1,13 @@
 # OEM / background restrictions (Fase 3)
 
-## Comportamiento esperado
+## Estrategia WorkManager (honest)
 
-| Situación | Comportamiento |
-|-----------|----------------|
-| App en foreground + FGS | Captura y notificación activas |
-| Pantalla bloqueada | FGS mantiene sesión si el SO lo permite |
-| Doze / Battery Saver | Uploads diferidos; WorkManager wake + restore al abrir |
-| App standby | Cola en SQLite; drain al reabrir |
-| Force stop | **No** hay work tras force-stop; al abrir se recupera estado |
-| OEM agresivo (Xiaomi/etc.) | Puede matar FGS; documentar desactivar optimización **con consentimiento** |
+No se usa un Worker nativo no-op que aparenta drenar la cola.
+
+- Recuperación de uploads/jobs: **al reabrir la app** (SQLite + JS).
+- Captura activa: **Foreground Service** mientras el proceso vive.
+- Unique work names quedan reservados por si se implementa un worker HTTP nativo real.
+- Flag `workManagerScheduling` default **off**.
 
 ## Ayuda al operador
 

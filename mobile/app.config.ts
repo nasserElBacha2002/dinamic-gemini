@@ -87,7 +87,7 @@ const config: ExpoConfig = {
     flags: {
       allowMobileDataUploads: process.env.DINAMIC_FLAG_MOBILE_DATA !== '0',
       heicConvertToJpeg: process.env.DINAMIC_FLAG_HEIC_JPEG !== '0',
-      workManagerScheduling: process.env.DINAMIC_FLAG_WORK_MANAGER !== '0',
+      workManagerScheduling: process.env.DINAMIC_FLAG_WORK_MANAGER === '1',
       advancedReconciliation: process.env.DINAMIC_FLAG_RECONCILE !== '0',
       backgroundJobPolling: process.env.DINAMIC_FLAG_BG_POLL !== '0',
       aisleDeviceLock: process.env.DINAMIC_FLAG_AISLE_LOCK === '1',

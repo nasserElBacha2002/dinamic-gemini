@@ -1,6 +1,7 @@
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { isAllowedImageMime, normalizeMime } from '../../shared/constants/imageFormats';
+import { ensureUploadTempDirectory } from '../support/storageCleanup';
 
 export interface PreparedUploadFile {
   readonly uri: string;
@@ -18,8 +19,7 @@ export interface PrepareLimits {
 
 /**
  * HEIC/HEIF: convert to JPEG on device before upload.
- * Backend worker can normalize via pillow-heif, but multipart + storage path
- * compatibility is safer with JPEG for the mobile MVP.
+ * Transform outputs live under cacheDirectory/dinamic-upload/ only.
  */
 export async function preparePhotoForUpload(input: {
   readonly uri: string;
@@ -51,8 +51,8 @@ export async function preparePhotoForUpload(input: {
       compress: 0.92,
       format: ImageManipulator.SaveFormat.JPEG,
     });
-    uri = result.uri;
-    transformUri = result.uri;
+    uri = await relocateTransform(result.uri);
+    transformUri = uri;
     mimeType = 'image/jpeg';
     convertedFromHeic = true;
     displayName = displayName.replace(/\.(heic|heif)$/i, '.jpg');
@@ -71,8 +71,8 @@ export async function preparePhotoForUpload(input: {
     if (transformUri && transformUri !== input.uri) {
       await safeDelete(transformUri);
     }
-    uri = result.uri;
-    transformUri = result.uri;
+    uri = await relocateTransform(result.uri);
+    transformUri = uri;
     mimeType = 'image/jpeg';
     displayName = displayName.replace(/\.[^.]+$/, '.jpg');
     const info = await FileSystem.getInfoAsync(uri);
@@ -99,6 +99,25 @@ export async function cleanupTransformUri(uri: string | null | undefined): Promi
     return;
   }
   await safeDelete(uri);
+}
+
+/** Move manipulator output into the app-owned temp directory. */
+async function relocateTransform(sourceUri: string): Promise<string> {
+  const dir = await ensureUploadTempDirectory();
+  if (!dir) {
+    return sourceUri;
+  }
+  const name = `xf-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.jpg`;
+  const dest = `${dir}${name}`;
+  try {
+    await FileSystem.copyAsync({ from: sourceUri, to: dest });
+    if (sourceUri !== dest) {
+      await safeDelete(sourceUri);
+    }
+    return dest;
+  } catch {
+    return sourceUri;
+  }
 }
 
 async function safeDelete(uri: string): Promise<void> {

@@ -5,11 +5,13 @@ on:
     paths:
       - 'mobile/**'
       - '.github/workflows/mobile-validate.yml'
+      - '.github/workflows/mobile-release.yml'
   push:
     branches: [main, develop]
     paths:
       - 'mobile/**'
       - '.github/workflows/mobile-validate.yml'
+      - '.github/workflows/mobile-release.yml'
 
 concurrency:
   group: mobile-validate-${{ github.workflow }}-${{ github.ref }}
@@ -20,7 +22,7 @@ permissions:
 
 jobs:
   validate:
-    name: typecheck + lint + tests
+    name: npm run verify
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,14 +35,10 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm run test:core
-      - run: npm run test:services
-      - run: npm run test:integration
-      - name: expo-doctor
-        run: npx expo-doctor || true
-        continue-on-error: true
+      - run: npm run verify
+      - name: expo-doctor (pinned)
+        run: npx expo-doctor@1.20.1
+        continue-on-error: false
 
   android-debug:
     name: prebuild + assembleDebug
@@ -63,7 +61,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
       - run: npm ci
-      - run: npx expo install expo-build-properties --yes
       - name: Prebuild Android
         run: npx expo prebuild -p android --non-interactive
       - name: Assemble debug
@@ -74,4 +71,4 @@ jobs:
         with:
           name: mobile-debug-apk
           path: mobile/android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
+          if-no-files-found: error

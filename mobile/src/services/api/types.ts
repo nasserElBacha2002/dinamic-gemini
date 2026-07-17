@@ -52,7 +52,7 @@ export interface AisleDto {
   readonly status: string;
   readonly created_at: string;
   readonly updated_at: string;
-  readonly is_active: boolean;
+  readonly is_active?: boolean;
   readonly error_code?: string | null;
   readonly error_message?: string | null;
   readonly latest_job?: AisleJobSummaryDto | null;

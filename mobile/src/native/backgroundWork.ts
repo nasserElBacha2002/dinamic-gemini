@@ -1,13 +1,12 @@
-import { Platform } from 'react-native';
-
 import type { Logger } from '../core/logging';
 
 /**
- * Minimal WorkManager bridge.
- * If the native module is absent (Expo Go / incomplete prebuild), falls back to no-op
- * and relies on JS queue restore on next app open.
+ * Background work policy (honest):
+ * Native WorkManager does not drain the JS upload queue after process death.
+ * Unique work names are documented for a future native worker; current schedule is a no-op
+ * that only logs. Recovery = app reopen → SQLite restore.
  *
- * Unique work names:
+ * Unique work names (reserved):
  * - upload-session-{sessionId}
  * - job-monitor-{jobId}
  * - remote-delete-{assetId}
@@ -18,52 +17,41 @@ export interface BackgroundWorkScheduler {
   scheduleJobMonitor(jobId: string): Promise<void>;
   cancelJobMonitor(jobId: string): Promise<void>;
   scheduleRemoteDelete(assetId: string): Promise<void>;
+  cancelAllTracked(): Promise<void>;
 }
 
-type NativeScheduler = {
-  scheduleUniqueWork?: (name: string, tag: string) => Promise<void>;
-  cancelUniqueWork?: (name: string) => Promise<void>;
-};
+export function uniqueUploadSessionWorkName(sessionId: string): string {
+  return `upload-session-${sessionId}`;
+}
 
-function tryNative(): NativeScheduler | null {
-  if (Platform.OS !== 'android') {
-    return null;
-  }
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { requireOptionalNativeModule } = require('expo-modules-core') as {
-      requireOptionalNativeModule: (name: string) => NativeScheduler | null;
-    };
-    const mod = requireOptionalNativeModule('CaptureForegroundService');
-    if (mod && typeof mod.scheduleUniqueWork === 'function') {
-      return mod;
-    }
-  } catch {
-    return null;
-  }
-  return null;
+export function uniqueJobMonitorWorkName(jobId: string): string {
+  return `job-monitor-${jobId}`;
+}
+
+export function uniqueRemoteDeleteWorkName(assetId: string): string {
+  return `remote-delete-${assetId}`;
 }
 
 export function createBackgroundWorkScheduler(logger: Logger): BackgroundWorkScheduler {
-  const native = tryNative();
+  const tracked = new Set<string>();
   const schedule = async (name: string, tag: string) => {
-    if (native?.scheduleUniqueWork) {
-      await native.scheduleUniqueWork(name, tag);
-      logger.info('work_scheduled', { name, tag, mode: 'native' });
-      return;
-    }
-    logger.info('work_scheduled', { name, tag, mode: 'noop_js_restore' });
+    tracked.add(name);
+    logger.info('work_scheduled', { name, tag, mode: 'noop_js_restore_on_open' });
   };
   const cancel = async (name: string) => {
-    if (native?.cancelUniqueWork) {
-      await native.cancelUniqueWork(name);
-    }
+    tracked.delete(name);
+    logger.info('work_scheduled', { name, tag: 'cancel', mode: 'noop_cancel' });
   };
   return {
-    scheduleUploadSession: (sessionId) => schedule(`upload-session-${sessionId}`, 'upload'),
-    cancelUploadSession: (sessionId) => cancel(`upload-session-${sessionId}`),
-    scheduleJobMonitor: (jobId) => schedule(`job-monitor-${jobId}`, 'job'),
-    cancelJobMonitor: (jobId) => cancel(`job-monitor-${jobId}`),
-    scheduleRemoteDelete: (assetId) => schedule(`remote-delete-${assetId}`, 'delete'),
+    scheduleUploadSession: (sessionId) => schedule(uniqueUploadSessionWorkName(sessionId), 'upload'),
+    cancelUploadSession: (sessionId) => cancel(uniqueUploadSessionWorkName(sessionId)),
+    scheduleJobMonitor: (jobId) => schedule(uniqueJobMonitorWorkName(jobId), 'job'),
+    cancelJobMonitor: (jobId) => cancel(uniqueJobMonitorWorkName(jobId)),
+    scheduleRemoteDelete: (assetId) => schedule(uniqueRemoteDeleteWorkName(assetId), 'delete'),
+    cancelAllTracked: async () => {
+      for (const name of [...tracked]) {
+        await cancel(name);
+      }
+    },
   };
 }

@@ -118,9 +118,12 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     configError,
     logger,
     api,
-    auth: new AuthService(api, secureTokenStorage, logger),
+    auth: new AuthService(api, secureTokenStorage, logger, async () => {
+      await backgroundWork.cancelAllTracked();
+      await uploadQueue.pause('logout');
+    }),
     inventories: new InventoryService(api),
-    aisles: new AisleService(api),
+    aisles: new AisleService(api, logger),
     capture,
     uploadQueue,
     uploadLimits,
@@ -156,6 +159,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       capture.dispose();
       await uploadQueue.dispose();
       jobMonitor.dispose();
+      await backgroundWork.cancelAllTracked();
     },
   };
 }

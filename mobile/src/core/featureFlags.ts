@@ -10,13 +10,13 @@ export interface FeatureFlags {
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   allowMobileDataUploads: true,
   heicConvertToJpeg: true,
-  workManagerScheduling: true,
+  workManagerScheduling: false,
   advancedReconciliation: true,
   backgroundJobPolling: true,
   aisleDeviceLock: false,
 };
 
-export function resolveFeatureFlags(raw: unknown, environment: string): FeatureFlags {
+export function resolveFeatureFlags(raw: unknown, _environment: string): FeatureFlags {
   const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const bool = (key: keyof FeatureFlags, fallback: boolean): boolean => {
     const v = source[key];
@@ -36,7 +36,7 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
     heicConvertToJpeg: bool('heicConvertToJpeg', DEFAULT_FEATURE_FLAGS.heicConvertToJpeg),
     workManagerScheduling: bool(
       'workManagerScheduling',
-      environment === 'production' ? true : DEFAULT_FEATURE_FLAGS.workManagerScheduling,
+      DEFAULT_FEATURE_FLAGS.workManagerScheduling,
     ),
     advancedReconciliation: bool('advancedReconciliation', DEFAULT_FEATURE_FLAGS.advancedReconciliation),
     backgroundJobPolling: bool('backgroundJobPolling', DEFAULT_FEATURE_FLAGS.backgroundJobPolling),

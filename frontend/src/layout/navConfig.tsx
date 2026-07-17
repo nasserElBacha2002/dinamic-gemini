@@ -4,14 +4,12 @@ import {
   ROUTE_ADMIN_STORAGE_MAINTENANCE,
   ROUTE_CLIENTS,
   ROUTE_HOME,
-  ROUTE_INGESTION_SESSIONS,
   pathToAnalytics,
 } from '../constants/appRoutes';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import AnalyticsOutlinedIcon from '@mui/icons-material/AnalyticsOutlined';
 import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
 import CleaningServicesOutlinedIcon from '@mui/icons-material/CleaningServicesOutlined';
-import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
 import { DRAWER_WIDTH_PX } from '../components/shell/layoutConstants';
 
@@ -25,14 +23,9 @@ export interface PrimaryNavItem {
   icon: ReactNode;
 }
 
-/** Primary sidebar — Inventories (home), import sessions, metrics, observability, clients. */
+/** Primary sidebar — Inventories (home), analytics, clients. Photo upload: Inventario → Pasillo. */
 export const PRIMARY_NAV_ITEMS: PrimaryNavItem[] = [
   { labelKey: 'nav.inventories', to: ROUTE_HOME, icon: <Inventory2OutlinedIcon fontSize="small" /> },
-  {
-    labelKey: 'nav.ingestion_sessions',
-    to: ROUTE_INGESTION_SESSIONS,
-    icon: <CloudUploadOutlinedIcon fontSize="small" />,
-  },
   { labelKey: 'nav.analytics', to: pathToAnalytics('summary'), icon: <AnalyticsOutlinedIcon fontSize="small" /> },
   { labelKey: 'nav.clients', to: ROUTE_CLIENTS, icon: <BusinessRoundedIcon fontSize="small" /> },
 ];

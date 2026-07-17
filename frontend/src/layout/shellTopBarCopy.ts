@@ -61,7 +61,8 @@ export function topBarCopy(pathname: string): { titleKey: string; subtitleKey?: 
     return { titleKey: 'routes.client_detail.title', subtitleKey: 'routes.client_detail.subtitle' };
   }
   if (pathname === ROUTE_INGESTION_SESSIONS || pathname.startsWith(`${ROUTE_INGESTION_SESSIONS}/`)) {
-    return { titleKey: 'routes.ingestion_sessions.title', subtitleKey: 'routes.ingestion_sessions.subtitle' };
+    // Legacy URLs redirect to inventories; keep top bar consistent.
+    return { titleKey: 'routes.inventories.title', subtitleKey: 'routes.inventories.subtitle' };
   }
   if (pathname === ROUTE_ADMIN_AI_CONFIG) {
     return { titleKey: 'routes.admin_ai_config.title', subtitleKey: 'routes.admin_ai_config.subtitle' };

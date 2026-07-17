@@ -12,6 +12,7 @@ export class AuthService {
     private readonly api: ApiClient,
     private readonly tokenStorage: TokenStorage,
     private readonly logger: Logger,
+    private readonly onBeforeLogout?: () => Promise<void>,
   ) {}
 
   async login(username: string, password: string): Promise<AuthSession> {
@@ -45,6 +46,11 @@ export class AuthService {
   }
 
   async logout(): Promise<void> {
+    try {
+      await this.onBeforeLogout?.();
+    } catch (e) {
+      this.logger.warn('recovery', { where: 'logout_cleanup', message: String(e) });
+    }
     const refresh = await this.tokenStorage.getRefreshToken();
     try {
       if (refresh) {
