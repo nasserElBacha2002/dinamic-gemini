@@ -235,7 +235,9 @@ Mientras no exista evidencia firmada en `docs/DEVICE_EVIDENCE.md`, la Fase 1 per
 
 - **Doze / OEM**: el SO puede pausar trabajo con batería restringida; FGS mitiga pero no garantiza detección eterna.
 - **Uploads**: no incluidos por alcance; las fotos quedan listas localmente para la siguiente fase.
-- **Conectividad**: login/listados requieren backend; captura local continúa offline una vez iniciada.
+- **Conectividad**: login/listados/upload/process requieren backend; captura local continúa offline una vez iniciada.
+- **WiFi del dron**: al conectar el teléfono al WiFi del dron normalmente **no hay Internet** hacia `DINAMIC_API_BASE_URL`, así que **no vas a poder subir ni procesar** hasta volver a WiFi/datos normales. Además, con `npm run android` (dev) el JS depende de Metro en tu Mac: al cambiar de red Metro se pierde. Para vuelos reales usá un **APK release** (`npm run android:release`) que embebe el bundle y no necesita Metro.
+- **Fotos no detectadas en vuelo**: si la app queda en segundo plano, Android puede pausar JS y se pierden eventos de MediaStore. Al volver a Dinamic Captura tocá **Escanear** (ahora también re-escanea al volver a primer plano y cada ~4 s mientras la captura está activa).
 - **Navegación**: implementada por estado para evitar dependencias nuevas; puede migrarse a React Navigation sin tocar servicios.
 - **Prueba física completa**: pendiente documentar 20 fotos + video + bloqueo de pantalla.
 - **Acceso parcial (Android 14)**: solo el subconjunto concedido es visible.

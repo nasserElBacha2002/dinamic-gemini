@@ -9,12 +9,14 @@ import type { GalleryImage } from '../../domain/entities/galleryImage';
 import type { CapturePhotoStatus } from '../../domain/enums/photoStatus';
 import { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
-import { cursorFromSession, imageFromPhotoRow } from '../../database/schema/captureSchema';
+import { cursorFromInitialMarker, cursorFromSession, imageFromPhotoRow } from '../../database/schema/captureSchema';
 import type { ForegroundService } from '../../native/foregroundService';
 import type { IncrementalScanOptions, IncrementalScanResult, PermissionState } from '../../native/mediaStore';
 import type { StabilityOutcome } from '../../native/stabilityProber';
 
 const VALIDATION_TIMEOUT_MS = 15_000;
+/** Re-scan gallery while capture is active (missed MediaStore events / delayed indexing). */
+const CATCHUP_SCAN_INTERVAL_MS = 4_000;
 
 export interface StartCaptureInput {
   readonly inventoryId: string;
@@ -100,10 +102,13 @@ export class CaptureService {
   private session: CaptureSessionRow | null = null;
   private photos: CapturePhotoRow[] = [];
   private scanCursor: CompositeCursor = EMPTY_CURSOR;
+  /** Fixed session lower bound (start marker); anchors scanning so batches are never skipped. */
+  private floorCursor: CompositeCursor = EMPTY_CURSOR;
   private lastValidCursor: CompositeCursor = EMPTY_CURSOR;
   private inspectedIds = new Set<string>();
   private coordinator: ScanCoordinator;
   private subscription: { remove: () => void } | null = null;
+  private catchUpTimer: ReturnType<typeof setInterval> | null = null;
   private listeners = new Set<Listener>();
   private metrics: ScanMetrics = emptyScanMetrics();
   private fgsActive = false;
@@ -191,6 +196,7 @@ export class CaptureService {
     this.session = session;
     this.photos = await this.repo.listPhotos(session.id);
     this.scanCursor = cursorFromSession(session, 'scan');
+    this.floorCursor = cursorFromInitialMarker(session);
     this.lastValidCursor = cursorFromSession(session, 'lastValid');
     this.inspectedIds = await this.repo.inspectedAssetIds(session.id);
     this.autoScanEnabled = startListener && session.status === 'active';
@@ -273,6 +279,7 @@ export class CaptureService {
     this.session = result.session;
     this.photos = [];
     this.scanCursor = cursorFromMarker(marker);
+    this.floorCursor = this.scanCursor;
     this.lastValidCursor = this.scanCursor;
     this.inspectedIds = new Set(recent?.assetId ? [recent.assetId] : []);
     try {
@@ -438,19 +445,30 @@ export class CaptureService {
     if (!session || (session.status !== 'active' && !(allowFinishing && session.status === 'finishing'))) {
       return;
     }
-    const scanCursor = session.id === this.session?.id ? this.scanCursor : cursorFromSession(session, 'scan');
-    const { images, metrics } = await this.mediaStore.queryNewPhotosSince({ scanCursor });
-    this.metrics = metrics;
+    const isCurrent = session.id === this.session?.id;
+    const scanCursor = isCurrent ? this.scanCursor : cursorFromSession(session, 'scan');
+    // Anchor scanning to the FIXED session start (floor), not the advancing scan cursor:
+    // batch/same-second downloads and out-of-order indexing stay discoverable across scans.
+    const floorCursor = isCurrent ? this.floorCursor : cursorFromInitialMarker(session);
     const inspectedIds = await this.repo.inspectedAssetIds(sessionId);
+    const { images, metrics } = await this.mediaStore.queryNewPhotosSince({
+      scanCursor,
+      floorCursor,
+      inspectedAssetIds: inspectedIds,
+    });
+    this.metrics = metrics;
     const result = detectNewPhotos({
       candidates: images,
-      scanCursor,
+      scanCursor: floorCursor,
       inspectedIds,
     });
     result.inspectedIds.forEach((id) => this.inspectedIds.add(id));
-    await this.repo.updateScanCursor(sessionId, result.nextScanCursor);
-    if (sessionId === this.session?.id) {
-      this.scanCursor = result.nextScanCursor;
+    // Keep the persisted scan cursor monotonic (telemetry only; paging uses the floor).
+    const advancedScanCursor =
+      compareCursor(result.nextScanCursor, scanCursor) > 0 ? result.nextScanCursor : scanCursor;
+    await this.repo.updateScanCursor(sessionId, advancedScanCursor);
+    if (isCurrent) {
+      this.scanCursor = advancedScanCursor;
     }
     for (const rejected of result.rejected) {
       this.logger.info('photo_ignored', { assetId: rejected.assetId, reason: rejected.reason });
@@ -561,6 +579,7 @@ export class CaptureService {
     this.session = session;
     this.photos = await this.repo.listPhotos(sessionId);
     this.scanCursor = cursorFromSession(session, 'scan');
+    this.floorCursor = cursorFromInitialMarker(session);
     this.lastValidCursor = cursorFromSession(session, 'lastValid');
     this.emit();
   }
@@ -572,11 +591,24 @@ export class CaptureService {
         void this.requestScan();
       }
     });
+    // MediaStore events are often missed while the app is backgrounded (drone controller).
+    // Periodic catch-up recovers photos once JS is running again.
+    this.catchUpTimer = setInterval(() => {
+      if (this.autoScanEnabled) {
+        void this.requestScan();
+      }
+    }, CATCHUP_SCAN_INTERVAL_MS);
+    // Avoid keeping Node test process alive if a test leaves capture active.
+    this.catchUpTimer.unref?.();
   }
 
   private detachListener(): void {
     this.subscription?.remove();
     this.subscription = null;
+    if (this.catchUpTimer) {
+      clearInterval(this.catchUpTimer);
+      this.catchUpTimer = null;
+    }
   }
 
   private async startForeground(): Promise<void> {
@@ -658,6 +690,7 @@ export class CaptureService {
     this.session = null;
     this.photos = [];
     this.scanCursor = EMPTY_CURSOR;
+    this.floorCursor = EMPTY_CURSOR;
     this.lastValidCursor = EMPTY_CURSOR;
     this.inspectedIds = new Set();
     this.metrics = emptyScanMetrics();

@@ -6,6 +6,7 @@ import {
   type CaptureStabilityProber,
 } from '../src/features/capture/captureService';
 import { createLogger } from '../src/core/logging';
+import { collectNewSinceFloor } from '../src/core/incrementalScan';
 import { EMPTY_CURSOR, type CompositeCursor } from '../src/core/compositeCursor';
 import type { GalleryImage } from '../src/domain/entities/galleryImage';
 import type { CapturePhotoStatus, CaptureSessionStatus } from '../src/domain/enums/photoStatus';
@@ -326,6 +327,74 @@ describe('CaptureService corrections', () => {
     expect(restored?.session?.status).toBe('paused');
     expect(restored?.context?.inventoryName).toBe('Inventario');
     expect(restored?.warning).toContain('interrumpida');
+  });
+
+  it('detects an entire same-second batch anchored to the session floor in one scan', async () => {
+    const repo = new FakeRepo();
+    // Floor = a photo that existed at session start (id 100 @ second 1000).
+    repo.sessions.set(
+      'session-1',
+      session({ status: 'active', initial_asset_id: '100', initial_date_added: 1000 }),
+    );
+
+    // Gallery as MediaStore returns it (newest-first) when 8 drone photos are pulled at once:
+    // all share second 2000, tie order does NOT match assetId order, and the floor row (100)
+    // shows up in the middle. The legacy early-stop would cut here and miss most of the batch.
+    const gallery = [
+      { assetId: '105', dateAdded: 2000 },
+      { assetId: '108', dateAdded: 2000 },
+      { assetId: '101', dateAdded: 2000 },
+      { assetId: '107', dateAdded: 2000 },
+      { assetId: '100', dateAdded: 1000 },
+      { assetId: '103', dateAdded: 2000 },
+      { assetId: '106', dateAdded: 2000 },
+      { assetId: '102', dateAdded: 2000 },
+      { assetId: '104', dateAdded: 2000 },
+      { assetId: '99', dateAdded: 999 },
+    ];
+
+    const toImage = (c: { assetId: string; dateAdded: number }): GalleryImage => ({
+      ...image,
+      assetId: c.assetId,
+      mediaStoreNumericId: Number(c.assetId),
+      uri: `file://photo-${c.assetId}.jpg`,
+      displayName: `photo-${c.assetId}.jpg`,
+      dateAdded: c.dateAdded,
+    });
+
+    const batchMediaStore: CaptureMediaStore = {
+      queryMostRecentPhoto: jest.fn().mockResolvedValue(null),
+      queryNewPhotosSince: jest.fn(async (opts) => {
+        const floor = opts.floorCursor ?? opts.scanCursor;
+        const inspected = opts.inspectedAssetIds ?? new Set<string>();
+        const res = collectNewSinceFloor(gallery, floor, inspected);
+        const images = res.newCandidates.map(toImage);
+        return {
+          images,
+          metrics: {
+            assetsRead: res.examined,
+            pagesQueried: 1,
+            assetsHydrated: images.length,
+            newCandidates: images.length,
+            durationMs: 1,
+          },
+        };
+      }),
+      subscribeToGalleryChanges: jest.fn().mockReturnValue({ remove: jest.fn() }),
+      fileExists: jest.fn().mockResolvedValue(true),
+    };
+
+    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+      mediaStore: batchMediaStore,
+      stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 2 }) },
+    });
+
+    await service.loadSession('session-1', true);
+    await service.requestScan();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const detected = (await repo.listPhotos('session-1')).map((p) => p.asset_id).sort();
+    expect(detected).toEqual(['101', '102', '103', '104', '105', '106', '107', '108']);
   });
 
   it('keeps a photo excluded when stability resolves after exclusion', async () => {

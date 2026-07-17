@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Text, View } from 'react-native';
+import { Alert, AppState, Text, View } from 'react-native';
 
 import { OtherAisleCaptureActiveError, type CaptureSnapshot } from '../features/capture/captureService';
 import { userMessageForCode } from '../core/errorCatalog';
@@ -86,9 +86,21 @@ export function CaptureScreen({
       setPermission(p.granted ? (p.limited ? 'parcial' : 'completo') : 'denegado'),
     );
   }, []);
+
   const photos = snapshotBelongsToSelectedAisle ? snapshot?.photos ?? [] : [];
   const counts = countPhotos(photos);
   const sessionStatus = snapshotBelongsToSelectedAisle ? snapshot?.session?.status : undefined;
+
+  useEffect(() => {
+    if (sessionStatus !== 'active') return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void services.capture.requestScan();
+      }
+    });
+    return () => sub.remove();
+  }, [sessionStatus, services.capture]);
+
   return (
     <PhotoWorkList
       photos={photos}

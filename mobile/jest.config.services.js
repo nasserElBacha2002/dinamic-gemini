@@ -13,6 +13,7 @@ module.exports = {
     '<rootDir>/tests/processingService.test.ts',
     '<rootDir>/tests/operationalFlow.test.ts',
     '<rootDir>/tests/aisleCreationRules.test.ts',
+    '<rootDir>/tests/mediaStoreAccessMediaLocation.test.ts',
   ],
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }],

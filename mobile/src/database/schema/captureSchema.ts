@@ -1,4 +1,4 @@
-import type { CompositeCursor } from '../../core/compositeCursor';
+import { type CompositeCursor, EMPTY_CURSOR } from '../../core/compositeCursor';
 import type { GalleryImage } from '../../domain/entities/galleryImage';
 import type { CapturePhotoStatus, CaptureSessionStatus } from '../../domain/enums/photoStatus';
 import type { PhotoUploadStatus, UploadBatchStatus, ProcessingJobLocalStatus } from '../../domain/enums/uploadStatus';
@@ -114,6 +114,19 @@ export function cursorFromSession(row: CaptureSessionRow, kind: 'scan' | 'lastVa
   return kind === 'scan'
     ? { dateAdded: row.scan_cursor_date_added, assetId: row.scan_cursor_asset_id }
     : { dateAdded: row.last_valid_cursor_date_added, assetId: row.last_valid_cursor_asset_id };
+}
+
+/**
+ * Fixed lower bound for a session: the newest photo that existed when capture started.
+ * Every photo added afterwards is strictly after this cursor. Unlike the scan cursor,
+ * this NEVER advances, so batch downloads that share a DATE_ADDED second (or index out of
+ * assetId order) stay discoverable on later scans instead of being permanently skipped.
+ */
+export function cursorFromInitialMarker(row: CaptureSessionRow): CompositeCursor {
+  if (row.initial_asset_id === null || row.initial_date_added === null) {
+    return EMPTY_CURSOR;
+  }
+  return { dateAdded: row.initial_date_added, assetId: row.initial_asset_id };
 }
 
 export function imageFromPhotoRow(row: CapturePhotoRow): GalleryImage {

@@ -1,6 +1,12 @@
 import { buildMicroBatch } from '../../core/uploadBatching';
 import { computeRetryDelayMs } from '../../core/uploadBackoff';
 import { classifyUploadHttpError, isSoftPerFileRetryable } from '../../core/uploadErrors';
+import {
+  packingBudgetFromServer,
+  relaxPackingBudgetAfterSuccess,
+  shrinkPackingBudgetAfter413,
+  type PackingBudget,
+} from '../../core/uploadPackingBudget';
 import type { FeatureFlags } from '../../core/featureFlags';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
@@ -12,6 +18,11 @@ import { createId } from '../../shared/createId';
 import type { AisleAssetsApi } from './aisleAssetsApi';
 import { cleanupTransformUri, preparePhotoForUpload } from './photoPrepare';
 import type { UploadLimitsService } from './uploadLimitsService';
+
+/** Multipart timeout is 120s; reclaim anything still "uploading/preparing" past this. */
+const UPLOAD_STALE_MS = 150_000;
+/** How many photos to prepare per tick before packing (keeps UI responsive for 20+ captures). */
+const PREPARE_PER_TICK = 4;
 
 export interface UploadQueueOptions {
   readonly flags?: FeatureFlags;
@@ -48,6 +59,8 @@ export class UploadQueue {
   private readonly inFlightPhotos = new Set<string>();
   private connectivityUnsub: (() => void) | null = null;
   private cachedSessions: UploadSessionProgress[] = [];
+  /** Effective packing budget; null until first limits load, then adapted on 413/success. */
+  private packingBudget: PackingBudget | null = null;
 
   constructor(
     private readonly repo: CaptureRepository,
@@ -81,6 +94,8 @@ export class UploadQueue {
       }
     });
     await this.limits.ensureLoaded();
+    await this.syncPackingBudgetFromServer();
+    await this.reclaimOrphanedInFlight();
     const sessions = await this.repo.listActivitySessions();
     for (const session of sessions) {
       if (['active', 'paused', 'finishing', 'review', 'uploading', 'upload_review'].includes(session.status)) {
@@ -100,15 +115,6 @@ export class UploadQueue {
       await this.enqueuePhoto(sessionId, photo.id);
     }
     const session = await this.repo.getSession(sessionId);
-    if (session && (session.status === 'review' || session.status === 'finishing')) {
-      try {
-        if (session.status === 'review' || session.status === 'finishing') {
-          // finishing already handled; from review move to uploading when queue has work
-        }
-      } catch {
-        // ignore transition races
-      }
-    }
     if (session && session.status === 'review') {
       try {
         await this.repo.updateSessionStatus(sessionId, 'uploading');
@@ -150,11 +156,15 @@ export class UploadQueue {
     this.pauseReason = reason;
     this.logger.info('upload_paused', { reason });
     this.emit();
+    if (reason === 'offline' || reason === 'mobile_data') {
+      this.scheduleTick(5_000);
+    }
   }
 
   async resume(): Promise<void> {
     this.pauseReason = null;
     this.logger.info('upload_resumed', {});
+    await this.reclaimOrphanedInFlight();
     this.scheduleTick(0);
     this.emit();
   }
@@ -175,9 +185,19 @@ export class UploadQueue {
   async retrySession(sessionId: string): Promise<void> {
     const photos = await this.repo.listPhotos(sessionId);
     for (const photo of photos) {
-      if (photo.upload_status === 'retryable_error' || photo.upload_status === 'permanent_error') {
+      if (
+        photo.upload_status === 'retryable_error' ||
+        photo.upload_status === 'permanent_error' ||
+        photo.upload_status === 'preparing' ||
+        photo.upload_status === 'uploading'
+      ) {
         await this.retryPhoto(photo.id);
       }
+    }
+    if (this.pauseReason === 'offline' || this.pauseReason === 'mobile_data' || this.pauseReason === 'auth') {
+      await this.resume();
+    } else {
+      this.scheduleTick(0);
     }
   }
 
@@ -302,15 +322,50 @@ export class UploadQueue {
     }
   }
 
+  private async syncPackingBudgetFromServer(): Promise<PackingBudget> {
+    const limits = await this.limits.ensureLoaded();
+    const server = {
+      maxFilesPerRequest: limits.max_files_per_request,
+      maxRequestSizeBytes: limits.max_request_size_bytes,
+      maxFileSizeBytes: limits.max_file_size_bytes,
+    };
+    if (!this.packingBudget) {
+      this.packingBudget = packingBudgetFromServer(server);
+    } else {
+      // Cap by current server ceiling without wiping learned shrinks upward incorrectly.
+      this.packingBudget = {
+        maxFiles: Math.min(this.packingBudget.maxFiles, Math.max(1, server.maxFilesPerRequest)),
+        maxRequestBytes: Math.min(this.packingBudget.maxRequestBytes, Math.max(1, server.maxRequestSizeBytes)),
+        maxFileBytes: Math.min(
+          this.packingBudget.maxFileBytes,
+          Math.max(1, Math.min(server.maxFileSizeBytes, server.maxRequestSizeBytes)),
+        ),
+      };
+    }
+    return this.packingBudget;
+  }
+
   private async tick(): Promise<void> {
-    if (this.disposed || this.pauseReason) {
+    if (this.disposed) {
+      return;
+    }
+    if (this.pauseReason === 'offline' || this.pauseReason === 'mobile_data') {
+      await this.applyNetworkPolicyAndMaybeResume();
+      if (this.pauseReason) {
+        this.scheduleTick(5_000);
+        return;
+      }
+    } else if (this.pauseReason) {
       return;
     }
     if (this.options.flags?.allowMobileDataUploads === false && this.connectivity.isCellular?.()) {
       await this.pause('mobile_data');
       return;
     }
+
+    await this.reclaimOrphanedInFlight();
     const limits = await this.limits.ensureLoaded();
+    const budget = await this.syncPackingBudgetFromServer();
     const concurrency = Math.min(2, Math.max(1, limits.upload_batch_concurrency || 2));
     if (this.activeRequests >= concurrency) {
       this.scheduleTick(500);
@@ -318,6 +373,8 @@ export class UploadQueue {
     }
 
     const sessions = await this.repo.listActivitySessions();
+    let startedUpload = false;
+
     for (const session of sessions) {
       if (this.activeRequests >= concurrency) {
         break;
@@ -325,92 +382,185 @@ export class UploadQueue {
       if (!session.upload_batch_id) {
         continue;
       }
-      const candidates = (await this.repo.listPhotosForUpload(session.id)).filter((p) => {
-        if (this.inFlightPhotos.has(p.id)) {
-          return false;
+
+      const eligible = (await this.repo.listPhotosForUpload(session.id)).filter((p) => this.isEligible(p));
+      if (eligible.length === 0) {
+        continue;
+      }
+
+      // Phase 1: prepare photos that lack a real upload_size (scalable for 20+).
+      const needPrepare = eligible.filter((p) => !(p.upload_size != null && p.upload_size > 0));
+      for (const photo of needPrepare.slice(0, PREPARE_PER_TICK)) {
+        if (this.inFlightPhotos.has(photo.id)) {
+          continue;
         }
-        if (p.upload_status === 'retryable_error' && p.next_retry_at) {
-          return Date.parse(p.next_retry_at) <= Date.now();
-        }
-        return p.upload_status === 'queued' || p.upload_status === 'retryable_error';
-      });
+        await this.preparePhoto(photo, budget.maxFileBytes);
+      }
+
+      // Phase 2: pack only prepared photos by real size, then upload one micro-batch.
+      const prepared = (await this.repo.listPhotosForUpload(session.id))
+        .filter((p) => this.isEligible(p))
+        .filter((p) => p.upload_size != null && p.upload_size > 0 && !this.inFlightPhotos.has(p.id));
+
       const batch = buildMicroBatch(
-        candidates.map((p) => ({
+        prepared.map((p) => ({
           photoId: p.id,
           clientFileId: p.client_file_id ?? p.id,
-          sizeBytes: p.upload_size ?? p.size,
+          sizeBytes: p.upload_size ?? 0,
           dateAdded: p.date_added,
           assetId: p.asset_id,
         })),
         {
-          maxFilesPerRequest: limits.max_files_per_request,
-          maxFileSizeBytes: limits.max_file_size_bytes,
-          maxRequestSizeBytes: limits.max_request_size_bytes,
+          maxFilesPerRequest: budget.maxFiles,
+          maxFileSizeBytes: budget.maxFileBytes,
+          maxRequestSizeBytes: budget.maxRequestBytes,
+          requirePositiveSize: true,
         },
       );
+
       if (!batch) {
+        // Prepared files may individually exceed the shrunk request budget — re-prepare smaller.
+        const oversized = prepared.filter((p) => (p.upload_size ?? 0) > budget.maxFileBytes);
+        for (const photo of oversized.slice(0, PREPARE_PER_TICK)) {
+          await this.invalidatePreparedSize(photo.id);
+          await this.preparePhoto(photo, budget.maxFileBytes);
+        }
         continue;
       }
-      void this.runBatch(session, batch.photoIds);
+
+      void this.uploadPreparedBatch(session, batch.photoIds, batch.totalBytes);
+      startedUpload = true;
     }
-    this.scheduleTick(1000);
+
+    this.scheduleTick(startedUpload || needMoreWorkSoon(sessions.length) ? 400 : 1000);
   }
 
-  private async runBatch(session: CaptureSessionRow, photoIds: readonly string[]): Promise<void> {
+  private isEligible(photo: CapturePhotoRow): boolean {
+    if (this.inFlightPhotos.has(photo.id)) {
+      return false;
+    }
+    if (photo.upload_status === 'retryable_error') {
+      if (!photo.next_retry_at) {
+        return true;
+      }
+      return Date.parse(photo.next_retry_at) <= Date.now();
+    }
+    return photo.upload_status === 'queued';
+  }
+
+  /**
+   * Prepare one photo, persist real upload_size + transform, leave status as queued.
+   * Packing uses that size; HTTP upload is a separate step.
+   */
+  private async preparePhoto(photo: CapturePhotoRow, maxFileBytes: number): Promise<void> {
+    if (!photo.client_file_id) {
+      return;
+    }
+    this.inFlightPhotos.add(photo.id);
+    try {
+      await this.repo.setPhotoUploadStatus(photo.id, 'preparing', {
+        incrementAttempts: true,
+      });
+      const prepared = await preparePhotoForUpload({
+        uri: photo.uri,
+        mimeType: photo.mime_type,
+        displayName: photo.display_name,
+        size: photo.size,
+        width: photo.width,
+        height: photo.height,
+        limits: { maxFileSizeBytes: maxFileBytes },
+      });
+      await this.repo.setPhotoUploadStatus(photo.id, 'queued', {
+        progress: 0,
+        localTransformUri: prepared.transformUri,
+        originalSize: prepared.originalSize,
+        uploadSize: prepared.size,
+        errorCode: null,
+        errorMessage: null,
+        nextRetryAt: null,
+      });
+    } catch (e) {
+      await this.repo.setPhotoUploadStatus(photo.id, 'permanent_error', {
+        errorCode: 'PREPARE_FAILED',
+        errorMessage: String(e),
+      });
+    } finally {
+      this.inFlightPhotos.delete(photo.id);
+      this.emit();
+    }
+  }
+
+  private async invalidatePreparedSize(photoId: string): Promise<void> {
+    const photo = await this.repo.getPhotoById(photoId);
+    if (!photo) {
+      return;
+    }
+    await cleanupTransformUri(photo.local_transform_uri);
+    await this.repo.setPhotoUploadStatus(photoId, 'queued', {
+      localTransformUri: null,
+      uploadSize: null,
+      errorCode: null,
+      errorMessage: null,
+      nextRetryAt: null,
+    });
+  }
+
+  /** HTTP upload for already-prepared photos (real sizes already packed). */
+  private async uploadPreparedBatch(
+    session: CaptureSessionRow,
+    photoIds: readonly string[],
+    packedBytes: number,
+  ): Promise<void> {
     const limits = await this.limits.ensureLoaded();
+    const budget = this.packingBudget ?? (await this.syncPackingBudgetFromServer());
     this.activeRequests += 1;
     for (const id of photoIds) {
       this.inFlightPhotos.add(id);
     }
     this.emit();
+
+    const preparedFiles: { uri: string; name: string; mimeType: string }[] = [];
+    const clientFileIds: string[] = [];
+    const photoRows: CapturePhotoRow[] = [];
+
     try {
-      const preparedFiles = [];
-      const clientFileIds: string[] = [];
-      const photoRows: CapturePhotoRow[] = [];
       for (const photoId of photoIds) {
         const photo = await this.repo.getPhotoById(photoId);
-        if (!photo || !photo.client_file_id) {
+        if (!photo || !photo.client_file_id || !(photo.upload_size != null && photo.upload_size > 0)) {
           continue;
         }
-        await this.repo.setPhotoUploadStatus(photoId, 'preparing');
-        try {
-          const prepared = await preparePhotoForUpload({
-            uri: photo.uri,
-            mimeType: photo.mime_type,
-            displayName: photo.display_name,
-            size: photo.size,
-            width: photo.width,
-            height: photo.height,
-            limits: { maxFileSizeBytes: limits.max_file_size_bytes },
-          });
-          await this.repo.setPhotoUploadStatus(photoId, 'uploading', {
-            progress: 0,
-            localTransformUri: prepared.transformUri,
-            originalSize: prepared.originalSize,
-            uploadSize: prepared.size,
-            incrementAttempts: true,
-          });
-          preparedFiles.push({
-            uri: prepared.uri,
-            name: prepared.displayName,
-            mimeType: prepared.mimeType,
-          });
-          clientFileIds.push(photo.client_file_id);
-          photoRows.push(photo);
-        } catch (e) {
-          await this.repo.setPhotoUploadStatus(photoId, 'permanent_error', {
-            errorCode: 'PREPARE_FAILED',
-            errorMessage: String(e),
-          });
-        }
+        const uri = photo.local_transform_uri || photo.uri;
+        const mimeType = photo.local_transform_uri
+          ? 'image/jpeg'
+          : photo.mime_type || 'image/jpeg';
+        const name = photo.local_transform_uri
+          ? photo.display_name.replace(/\.(heic|heif)$/i, '.jpg')
+          : photo.display_name;
+        await this.repo.setPhotoUploadStatus(photoId, 'uploading', {
+          progress: 0,
+          incrementAttempts: true,
+        });
+        preparedFiles.push({
+          uri,
+          name,
+          mimeType,
+        });
+        clientFileIds.push(photo.client_file_id);
+        photoRows.push(photo);
       }
+
       if (preparedFiles.length === 0) {
         return;
       }
+
       this.logger.info('upload_started', {
         sessionId: session.id,
         count: preparedFiles.length,
+        packedBytes,
+        maxFiles: budget.maxFiles,
+        maxRequestBytes: budget.maxRequestBytes,
       });
+
       const response = await this.assetsApi.uploadBatch({
         inventoryId: session.inventory_id,
         aisleId: session.aisle_id,
@@ -418,6 +568,7 @@ export class UploadQueue {
         clientFileIds,
         files: preparedFiles,
       });
+
       const byClient = new Map(photoRows.map((p) => [p.client_file_id!, p]));
       for (const ok of response.uploaded ?? []) {
         const photo = ok.client_file_id ? byClient.get(ok.client_file_id) : undefined;
@@ -435,6 +586,7 @@ export class UploadQueue {
         await cleanupTransformUri(photo.local_transform_uri);
         this.logger.info('upload_confirmed', { photoId: photo.id, assetId: ok.asset_id });
       }
+
       for (const err of response.errors ?? []) {
         const photo = err.client_file_id ? byClient.get(err.client_file_id) : undefined;
         if (!photo) {
@@ -460,20 +612,109 @@ export class UploadQueue {
           });
         }
       }
+
+      const accounted = new Set<string>();
+      for (const ok of response.uploaded ?? []) {
+        if (ok.client_file_id) accounted.add(ok.client_file_id);
+      }
+      for (const err of response.errors ?? []) {
+        if (err.client_file_id) accounted.add(err.client_file_id);
+      }
+      for (const photo of photoRows) {
+        const cid = photo.client_file_id;
+        if (!cid || accounted.has(cid)) continue;
+        const delay = computeRetryDelayMs({
+          attempt: photo.upload_attempts,
+          baseDelayMs: limits.retry_base_delay_ms,
+        });
+        await this.repo.setPhotoUploadStatus(photo.id, 'retryable_error', {
+          errorCode: 'UPLOAD_RESPONSE_INCOMPLETE',
+          errorMessage: 'El backend no confirmó ni rechazó este archivo.',
+          nextRetryAt: new Date(Date.now() + delay).toISOString(),
+        });
+      }
+
+      if ((response.uploaded?.length ?? 0) > 0) {
+        this.packingBudget = relaxPackingBudgetAfterSuccess({
+          current: budget,
+          server: {
+            maxFilesPerRequest: limits.max_files_per_request,
+            maxRequestSizeBytes: limits.max_request_size_bytes,
+            maxFileSizeBytes: limits.max_file_size_bytes,
+          },
+        });
+      }
+
       await this.refreshSessionReadiness(session.id);
     } catch (e) {
       const err = e instanceof ApiError ? e : null;
       const klass = classifyUploadHttpError(err?.status ?? null, err?.code ?? null);
+      this.logger.warn('error', {
+        where: 'upload_batch',
+        sessionId: session.id,
+        klass,
+        status: err?.status ?? null,
+        code: err?.code ?? null,
+        message: err?.message ?? String(e),
+        photoCount: photoIds.length,
+        packedBytes,
+      });
+
       if (klass === 'auth') {
-        await this.pause('auth');
-      } else if (klass === 'retryable') {
-        await this.pause('offline');
-        // mark photos retryable
         for (const photoId of photoIds) {
           const photo = await this.repo.getPhotoById(photoId);
-          if (!photo) {
-            continue;
+          if (!photo) continue;
+          if (photo.upload_status === 'preparing' || photo.upload_status === 'uploading') {
+            await this.repo.setPhotoUploadStatus(photoId, 'queued', {
+              errorCode: err?.code ?? 'AUTH_REQUIRED',
+              errorMessage: err?.message ?? String(e),
+              nextRetryAt: null,
+            });
           }
+        }
+        await this.pause('auth');
+      } else if (klass === 'payload_too_large') {
+        await this.limits.refresh();
+        const refreshed = await this.limits.ensureLoaded();
+        this.packingBudget = shrinkPackingBudgetAfter413({
+          current: budget,
+          server: {
+            maxFilesPerRequest: refreshed.max_files_per_request,
+            maxRequestSizeBytes: refreshed.max_request_size_bytes,
+            maxFileSizeBytes: refreshed.max_file_size_bytes,
+          },
+          failedBatchFileCount: photoIds.length,
+          failedBatchBytes: packedBytes,
+        });
+        for (const photoId of photoIds) {
+          const photo = await this.repo.getPhotoById(photoId);
+          if (!photo) continue;
+          await cleanupTransformUri(photo.local_transform_uri);
+          const delay = computeRetryDelayMs({
+            attempt: photo.upload_attempts,
+            baseDelayMs: Math.max(refreshed.retry_base_delay_ms, 2_000),
+          });
+          // Clear prepared size so the next tick re-prepares under the shrunk maxFileBytes.
+          await this.repo.setPhotoUploadStatus(photoId, 'retryable_error', {
+            errorCode: err?.code ?? 'UPLOAD_TOO_LARGE',
+            errorMessage: err?.message ?? String(e),
+            nextRetryAt: new Date(Date.now() + delay).toISOString(),
+            localTransformUri: null,
+            uploadSize: null,
+          });
+        }
+        this.logger.warn('upload_retry', {
+          sessionId: session.id,
+          count: photoIds.length,
+          code: err?.code ?? 'UPLOAD_TOO_LARGE',
+          maxFiles: this.packingBudget.maxFiles,
+          maxRequestBytes: this.packingBudget.maxRequestBytes,
+          maxFileBytes: this.packingBudget.maxFileBytes,
+        });
+      } else if (klass === 'retryable') {
+        for (const photoId of photoIds) {
+          const photo = await this.repo.getPhotoById(photoId);
+          if (!photo) continue;
           const delay = computeRetryDelayMs({
             attempt: photo.upload_attempts,
             baseDelayMs: limits.retry_base_delay_ms,
@@ -484,14 +725,11 @@ export class UploadQueue {
             nextRetryAt: new Date(Date.now() + delay).toISOString(),
           });
         }
-      } else if (klass === 'payload_too_large') {
-        await this.limits.refresh();
-        for (const photoId of photoIds) {
-          await this.repo.setPhotoUploadStatus(photoId, 'queued', {
-            errorCode: err?.code ?? 'UPLOAD_TOO_LARGE',
-            errorMessage: err?.message ?? String(e),
-          });
-        }
+        this.logger.warn('upload_retry', {
+          sessionId: session.id,
+          count: photoIds.length,
+          code: err?.code ?? 'NETWORK_ERROR',
+        });
       } else if (klass === 'not_found' || klass === 'forbidden' || klass === 'validation') {
         for (const photoId of photoIds) {
           await this.repo.setPhotoUploadStatus(photoId, 'permanent_error', {
@@ -519,6 +757,45 @@ export class UploadQueue {
         this.inFlightPhotos.delete(id);
       }
       this.emit();
+      this.scheduleTick(300);
+    }
+  }
+
+  private async reclaimOrphanedInFlight(): Promise<void> {
+    const now = Date.now();
+    const sessions = await this.repo.listActivitySessions();
+    for (const session of sessions) {
+      const photos = await this.repo.listPhotosForUpload(session.id);
+      for (const photo of photos) {
+        if (photo.upload_status !== 'preparing' && photo.upload_status !== 'uploading') {
+          continue;
+        }
+        const startedAt = photo.last_upload_attempt_at
+          ? Date.parse(photo.last_upload_attempt_at)
+          : 0;
+        const stale = startedAt > 0 && now - startedAt > UPLOAD_STALE_MS;
+        const orphan = !this.inFlightPhotos.has(photo.id);
+        if (!orphan && !stale) {
+          continue;
+        }
+        this.inFlightPhotos.delete(photo.id);
+        const delay = computeRetryDelayMs({
+          attempt: photo.upload_attempts,
+          baseDelayMs: 2_000,
+        });
+        await this.repo.setPhotoUploadStatus(photo.id, 'retryable_error', {
+          errorCode: stale ? 'UPLOAD_STALE' : 'UPLOAD_ORPHAN',
+          errorMessage: stale
+            ? 'La carga quedó colgada y se reintentará.'
+            : 'La carga se interrumpió y se reintentará.',
+          nextRetryAt: new Date(now + delay).toISOString(),
+        });
+        this.logger.info('recovery', {
+          reason: stale ? 'stale_upload_reclaimed' : 'orphan_upload_reclaimed',
+          photoId: photo.id,
+          previous: photo.upload_status,
+        });
+      }
     }
   }
 
@@ -544,6 +821,10 @@ export class UploadQueue {
       // keep previous cache
     }
   }
+}
+
+function needMoreWorkSoon(sessionCount: number): boolean {
+  return sessionCount > 0;
 }
 
 function summarizeSession(session: CaptureSessionRow, photos: CapturePhotoRow[]): UploadSessionProgress {
