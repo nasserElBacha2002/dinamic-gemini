@@ -195,7 +195,7 @@ cd mobile
 export XDG_STATE_HOME="$HOME/.watchman-xdg-state"   # si Watchman falla por ~/.local/state root-owned
 npm ci
 npm run verify          # typecheck + lint + test:core + test
-npx expo-doctor         # cuando el toolchain Expo esté instalado
+npx expo-doctor         # o: npm run doctor (Android-only: ignora check Xcode vs SDK 51)
 npx expo prebuild -p android --clean
 cd android && ./gradlew assembleDebug
 cd android && ./gradlew installDebug
@@ -207,7 +207,7 @@ Resultado local Fase 1:
 
 - `npm ci`: pasa (npm reporta vulnerabilidades transitivas existentes).
 - `npm run verify`: pasa (39 tests).
-- `npx expo-doctor`: 16/17; falla solo check de Xcode local incompatible con SDK 51, no bloquea Android.
+- `npm run doctor` / `npx expo-doctor`: dependencias alineadas (`netinfo@11.3.1`). El check de Xcode local vs SDK 51 **no aplica** a este cliente Android-only; `npm run doctor` lo trata como OK. Un upgrade a SDK 55+ (Xcode 26) sería una migración aparte, no necesaria para builds Android.
 - `npx expo prebuild -p android --clean`: pasa.
 - `./gradlew assembleDebug`: pasa.
 - `./gradlew installDebug`: pasa en `SM-G985F`, Android 13.

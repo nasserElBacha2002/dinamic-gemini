@@ -20,7 +20,7 @@ Completar después de la prueba física. Sin este archivo firmado, la Fase 1 que
 - [x] `npx expo prebuild -p android --clean`
 - [x] `./gradlew assembleDebug`
 - [x] `./gradlew installDebug` en dispositivo conectado
-- [ ] `npx expo-doctor` sin advertencias críticas Android (queda warning Xcode local / iOS)
+- [ ] `npm run doctor` OK para Android (el warning crudo de Xcode en `npx expo-doctor` es esperado en macOS con Xcode 26 + SDK 51; no bloquea Android)
 
 ## Escenario ejecutado
 

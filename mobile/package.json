@@ -21,13 +21,12 @@
     "test:core": "jest --config jest.config.core.js --watchman=false",
     "test:services": "jest --config jest.config.services.js --watchman=false",
     "test:integration": "jest --config jest.config.integration.js --watchman=false",
-    "doctor": "expo-doctor",
-    "verify": "npm run typecheck && npm run lint && npm test",
-    "ios": "expo run:ios"
+    "doctor": "node scripts/expo-doctor-android.js",
+    "verify": "npm run typecheck && npm run lint && npm test"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "1.23.1",
-    "@react-native-community/netinfo": "^11.4.1",
+    "@react-native-community/netinfo": "11.3.1",
     "@tanstack/react-query": "^5.51.0",
     "capture-foreground-service": "file:./modules/capture-foreground-service",
     "expo": "~51.0.0",

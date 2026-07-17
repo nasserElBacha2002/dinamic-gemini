@@ -114,7 +114,7 @@ flowchart TD
 
 - `npm ci`: pasa; npm reporta 30 vulnerabilidades transitivas existentes.
 - `npm run verify`: pasa.
-- `npx expo-doctor`: 16/17; falla solo Xcode local incompatible con SDK 51.
+- `npm run doctor`: OK en cliente Android-only (el check crudo de Xcode vs SDK 51 se ignora; ver `scripts/expo-doctor-android.js`).
 - `npx expo prebuild -p android --clean`: pasa.
 - `./gradlew assembleDebug`: pasa.
 - `./gradlew installDebug`: pasa en `SM-G985F`, Android 13.
