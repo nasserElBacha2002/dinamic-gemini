@@ -35,6 +35,44 @@ export interface InventoryListItemDto {
   readonly processing_mode: string;
 }
 
+export interface CreateInventoryRequestDto {
+  readonly name: string;
+  readonly client_id: string;
+  readonly processing_mode?: 'production' | 'test';
+}
+
+export interface InventoryResponseDto {
+  readonly id: string;
+  readonly name: string;
+  readonly status: string;
+  readonly processing_mode: string;
+  readonly client_id: string | null;
+  readonly created_at: string | null;
+  readonly updated_at: string | null;
+}
+
+export interface ClientDto {
+  readonly id: string;
+  readonly name: string;
+  readonly status: string;
+  readonly created_at: string;
+  readonly updated_at: string;
+}
+
+export interface ClientSupplierDto {
+  readonly id: string;
+  readonly client_id: string;
+  readonly name: string;
+  readonly status: string;
+  readonly created_at: string;
+  readonly updated_at: string;
+}
+
+export interface CreateAisleRequestDto {
+  readonly code: string;
+  readonly client_supplier_id?: string | null;
+}
+
 export interface AisleJobSummaryDto {
   readonly id: string;
   readonly status: string;
@@ -134,4 +172,23 @@ export interface AisleStatusResponseDto {
 export interface AisleJobsResponseDto {
   readonly operational_job_id: string | null;
   readonly jobs: readonly JobSummaryDto[];
+}
+
+export interface MergeResultItemDto {
+  readonly id: string;
+  readonly position_id: string | null;
+  readonly sku: string | null;
+  readonly product_name: string | null;
+  readonly merged_quantity: number;
+  readonly normalized_label_ids: readonly string[];
+  readonly review_required: boolean;
+  readonly explanation_summary: string | null;
+  readonly metadata: Record<string, unknown>;
+  readonly created_at: string;
+}
+
+export interface MergeResultsResponseDto {
+  readonly results: readonly MergeResultItemDto[];
+  readonly result_job_id: string | null;
+  readonly result_context_source: string;
 }

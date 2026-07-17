@@ -26,18 +26,18 @@ const SESSION_TRANSITIONS: Readonly<Record<CaptureSessionStatus, readonly Captur
   cancelled: [],
 };
 
-/** Blocks starting a new capture on this device. */
+/** Holds MediaStore listener / FGS — only one of these at a time. Paused/review do not block other aisles. */
 export const CAPTURE_EXCLUSIVE_SESSION_STATUSES: readonly CaptureSessionStatus[] = [
   'preparing',
   'active',
-  'paused',
   'finishing',
-  'review',
 ];
 
 /** @deprecated Prefer CAPTURE_EXCLUSIVE + activity listing. Kept for Fase 1 callers. */
 export const OPEN_CAPTURE_SESSION_STATUSES: readonly CaptureSessionStatus[] = [
   ...CAPTURE_EXCLUSIVE_SESSION_STATUSES,
+  'paused',
+  'review',
   'uploading',
   'upload_review',
   'ready_to_process',
@@ -77,13 +77,13 @@ export function mapRemoteJobStatus(remote: string): 'pending' | 'running' | 'suc
   if (s === 'queued' || s === 'starting') {
     return 'pending';
   }
-  if (s === 'running' || s === 'cancel_requested') {
+  if (s === 'running' || s === 'cancel_requested' || s === 'processing') {
     return 'running';
   }
-  if (s === 'succeeded') {
+  if (s === 'succeeded' || s === 'completed' || s === 'success') {
     return 'success';
   }
-  if (s === 'failed' || s === 'timed_out') {
+  if (s === 'failed' || s === 'timed_out' || s === 'error') {
     return 'failed';
   }
   if (s === 'canceled' || s === 'cancelled') {

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { QRCodeSVG } from 'qrcode.react';
+import BarcodeBlock from './BarcodeBlock';
+import QrCodeBlock from './QrCodeBlock';
 import {
   buildLabelQrText,
   clampLabelCopies,
@@ -36,14 +37,23 @@ function LabelRow({
   );
 }
 
-function HorizontalLabelCard({ data, headerDate }: { data: Omit<LabelSheetData, 'copies'>; headerDate: string }) {
-  const cardClass = ['label-card', 'label-card--horizontal'].join(' ');
+export interface PrintableLabelProps {
+  data: Omit<LabelSheetData, 'copies'>;
+  headerDate: string;
+}
 
+/** One full A4-landscape warehouse label (preview + print). */
+export function PrintableLabel({ data, headerDate }: PrintableLabelProps) {
   const qrValue = useMemo(() => buildLabelQrText(data), [data]);
   const codeValueClassName = useMemo(() => getLabelCodeMainValueClassName(data.code), [data.code]);
+  const normalizedCode = useMemo(() => data.code.trim(), [data.code]);
 
   return (
-    <article className={cardClass} data-testid="label-card">
+    <article
+      className="label-card label-card--horizontal print-label"
+      data-testid="label-card"
+      data-print-label="true"
+    >
       <header className="label-header">
         <div className="label-brand-mark" aria-hidden="true">
           DI
@@ -62,7 +72,7 @@ function HorizontalLabelCard({ data, headerDate }: { data: Omit<LabelSheetData, 
         <div className="label-primary-section">
           <div className="label-primary-row label-code-section">
             <span className="label-primary-label">CÓDIGO:</span>
-            <span className={codeValueClassName}>{data.code.trim()}</span>
+            <span className={codeValueClassName}>{normalizedCode}</span>
           </div>
 
           <div className="label-primary-row label-quantity-section">
@@ -71,9 +81,9 @@ function HorizontalLabelCard({ data, headerDate }: { data: Omit<LabelSheetData, 
           </div>
         </div>
 
-        <div className="label-qr-section" aria-label="QR con datos de etiqueta">
-          <QRCodeSVG value={qrValue} size={128} level="M" includeMargin className="label-qr-code" />
-          <div className="label-qr-caption">Datos de etiqueta</div>
+        <div className="label-codes-column">
+          <QrCodeBlock value={qrValue} />
+          <BarcodeBlock value={normalizedCode} />
         </div>
       </section>
 
@@ -95,7 +105,7 @@ export interface LabelPrintSheetProps {
   className?: string;
 }
 
-export default function LabelPrintSheet({ data, mode = 'print', className }: LabelPrintSheetProps) {
+function LabelPrintSheetContent({ data }: { data: LabelSheetData }) {
   const copies = clampLabelCopies(data.copies);
   const isSingleLabel = copies === 1;
   const headerDate = formatShortLabelDate();
@@ -136,7 +146,7 @@ export default function LabelPrintSheet({ data, mode = 'print', className }: Lab
     isSingleLabel ? 'single-label' : 'multi-label',
   ].join(' ');
 
-  const sheetContent = (
+  return (
     <div className="label-print-sheet">
       <div
         className={gridClass}
@@ -146,18 +156,30 @@ export default function LabelPrintSheet({ data, mode = 'print', className }: Lab
         aria-label="label-print-grid"
       >
         {cards.map((key) => (
-          <HorizontalLabelCard key={key} data={cardData} headerDate={headerDate} />
+          <PrintableLabel key={key} data={cardData} headerDate={headerDate} />
         ))}
       </div>
     </div>
   );
+}
 
-  if (mode === 'preview') {
-    return (
-      <div className="label-preview-root" data-testid="label-preview-sheet">
-        <div className="label-preview-viewport">{sheetContent}</div>
+/** Live preview of one or more printable labels (scaled on screen). */
+export function LabelPreview({ data, className }: { data: LabelSheetData; className?: string }) {
+  return (
+    <div
+      className={['label-preview-root', className ?? ''].filter(Boolean).join(' ')}
+      data-testid="label-preview-sheet"
+    >
+      <div className="label-preview-viewport">
+        <LabelPrintSheetContent data={data} />
       </div>
-    );
+    </div>
+  );
+}
+
+export default function LabelPrintSheet({ data, mode = 'print', className }: LabelPrintSheetProps) {
+  if (mode === 'preview') {
+    return <LabelPreview data={data} className={className} />;
   }
 
   return (
@@ -165,7 +187,7 @@ export default function LabelPrintSheet({ data, mode = 'print', className }: Lab
       className={['label-print-root', className ?? ''].filter(Boolean).join(' ')}
       data-testid="label-print-sheet-print"
     >
-      {sheetContent}
+      <LabelPrintSheetContent data={data} />
     </div>
   );
 }

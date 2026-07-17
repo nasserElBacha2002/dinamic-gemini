@@ -13,7 +13,7 @@
   background: #fff;
   border: 1px dashed rgba(0, 0, 0, 0.24);
   border-radius: 8px;
-  height: 380px;
+  height: 420px;
   overflow: auto;
   padding: 12px;
 }
@@ -30,7 +30,7 @@
   }
 
   .label-preview-root .label-print-sheet {
-    transform: scale(0.42);
+    transform: scale(0.38);
     transform-origin: top left;
     width: 297mm;
   }
@@ -45,7 +45,7 @@
 
 .label-print-grid {
   display: grid;
-  gap: 6mm;
+  gap: 0;
   grid-template-columns: 1fr;
   width: 100%;
 }
@@ -54,17 +54,18 @@
   grid-template-columns: 1fr;
 }
 
-/* Canonical label canvas (same for preview + print) */
-.label-card {
-  --label-title-size: 18pt;
-  --label-date-size: 26pt;
+/* Canonical label canvas: one full A4 landscape page per copy */
+.label-card,
+.print-label {
+  --label-title-size: 16pt;
+  --label-date-size: 24pt;
   --label-brand-size: 14pt;
-  --label-row-label-size: 17pt;
-  --label-row-value-size: 22pt;
-  --label-code-size: 30pt;
-  --label-quantity-label-size: 26pt;
-  --label-quantity-value-size: 70pt;
-  --label-footer-size: 14pt;
+  --label-row-label-size: 15pt;
+  --label-row-value-size: 20pt;
+  --label-code-size: 28pt;
+  --label-quantity-label-size: 24pt;
+  --label-quantity-value-size: 58pt;
+  --label-footer-size: 13pt;
 
   background: #fff;
   border: 2px solid #222;
@@ -72,11 +73,12 @@
   color: #222;
   display: flex;
   flex-direction: column;
-  height: 165mm;
-  max-height: 165mm;
+  height: 210mm;
+  max-height: 210mm;
   overflow: hidden;
-  padding: 7mm 10mm;
-  width: 100%;
+  padding: 8mm 10mm;
+  width: 297mm;
+  max-width: 297mm;
 }
 
 .label-card--horizontal {
@@ -89,7 +91,7 @@
   flex: 0 0 auto;
   gap: 6mm;
   grid-template-columns: 24mm 1fr 32mm;
-  margin-bottom: 6mm;
+  margin-bottom: 5mm;
 }
 
 .label-brand-mark {
@@ -122,7 +124,7 @@
 .label-meta {
   display: grid;
   flex: 0 0 auto;
-  gap: 3mm;
+  gap: 2.5mm;
 }
 
 .label-row {
@@ -130,7 +132,7 @@
   display: grid;
   gap: 6mm;
   grid-template-columns: 48mm 1fr;
-  margin-bottom: 3mm;
+  margin-bottom: 2.5mm;
 }
 
 .label-row-label {
@@ -155,7 +157,7 @@
   display: grid;
   flex: 1 1 auto;
   gap: 8mm;
-  grid-template-columns: 1fr 42mm;
+  grid-template-columns: 1fr minmax(70mm, 78mm);
   min-height: 0;
 }
 
@@ -167,7 +169,7 @@
   justify-content: center;
   min-height: 0;
   min-width: 0;
-  padding-top: 6mm;
+  padding-top: 5mm;
 }
 
 .label-primary-row {
@@ -179,7 +181,7 @@
 }
 
 .label-primary-label {
-  font-size: 24pt;
+  font-size: 22pt;
   font-weight: 800;
   line-height: 1;
   text-transform: uppercase;
@@ -194,7 +196,7 @@
 
 .label-code-main-value {
   font-family: 'Roboto Mono', 'Consolas', 'Courier New', monospace;
-  font-size: 44pt;
+  font-size: 40pt;
   font-weight: 900;
   letter-spacing: 0.03em;
   line-height: 1.05;
@@ -207,13 +209,13 @@
 }
 
 .label-code-main-value--long {
-  font-size: 32pt;
+  font-size: 30pt;
   letter-spacing: 0.02em;
   line-height: 1.08;
 }
 
 .label-code-main-value--xlong {
-  font-size: 24pt;
+  font-size: 22pt;
   letter-spacing: 0.01em;
   line-height: 1.1;
 }
@@ -224,7 +226,18 @@
   white-space: normal;
 }
 
-.label-qr-section {
+.label-codes-column {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 4mm;
+  justify-content: center;
+  min-width: 0;
+}
+
+.label-qr-section,
+.qr-code-block {
   align-items: center;
   display: flex;
   flex: 0 0 auto;
@@ -232,26 +245,100 @@
   justify-content: center;
 }
 
+.qr-code,
 .label-qr-code {
   background: #fff;
-  height: 36mm;
-  max-height: 36mm;
-  max-width: 36mm;
-  width: 36mm;
+  flex-shrink: 0;
+  height: 24mm;
+  max-height: 24mm;
+  max-width: 24mm;
+  opacity: 1;
+  width: 24mm;
 }
 
-.label-qr-caption {
-  font-size: 9pt;
+.qr-code--placeholder {
+  border: 1.5px dashed #999;
+  box-sizing: border-box;
+}
+
+.label-qr-caption,
+.barcode-caption {
+  font-size: 8pt;
   font-weight: 700;
   line-height: 1.1;
-  margin-top: 2mm;
+  margin-top: 1.5mm;
   text-align: center;
   text-transform: uppercase;
 }
 
+.barcode-block {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5mm;
+  max-width: 65mm;
+  width: 65mm;
+}
+
+.barcode-wrapper {
+  background: #fff;
+  box-sizing: border-box;
+  max-width: 65mm;
+  min-height: 18mm;
+  overflow: hidden;
+  width: 65mm;
+}
+
+.barcode-wrapper--placeholder {
+  border: 1.5px dashed #999;
+  min-height: 18mm;
+}
+
+.barcode-wrapper--hidden {
+  height: 0;
+  min-height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.barcode-wrapper svg,
+.barcode-svg {
+  display: block;
+  height: auto;
+  max-height: 22mm;
+  max-width: 100%;
+  width: auto;
+}
+
+.barcode-text {
+  color: #000;
+  font-family: 'Roboto Mono', 'Consolas', 'Courier New', monospace;
+  font-size: 10pt;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-align: center;
+  word-break: break-all;
+}
+
+.barcode-empty-message,
+.barcode-error-message {
+  color: #444;
+  font-size: 9pt;
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0;
+  max-width: 65mm;
+  text-align: center;
+}
+
+.barcode-error-message {
+  color: #b00020;
+}
+
 .label-quantity-value {
   color: #222;
-  font-size: 58pt;
+  font-size: 52pt;
   overflow: visible;
   text-align: left;
   text-overflow: clip;
@@ -283,12 +370,20 @@
 
 @media print {
   @page {
-    margin: 8mm;
+    margin: 0;
     size: A4 landscape;
   }
 
   html,
-  body,
+  body {
+    background: #fff !important;
+    height: 210mm !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    width: 297mm !important;
+  }
+
   #root {
     background: #fff !important;
     height: auto !important;
@@ -298,7 +393,8 @@
     width: auto !important;
   }
 
-  body > *:not(.label-print-only-root) {
+  body > *:not(.label-print-only-root),
+  .no-print {
     display: none !important;
   }
 
@@ -308,8 +404,9 @@
     height: auto !important;
     margin: 0 !important;
     min-height: 0 !important;
+    overflow: visible !important;
     padding: 0 !important;
-    width: 100% !important;
+    width: 297mm !important;
   }
 
   .label-preview-root {
@@ -325,15 +422,16 @@
     min-height: 0 !important;
     padding: 0 !important;
     position: static !important;
-    width: 100% !important;
+    width: 297mm !important;
   }
 
   .label-print-sheet {
     height: auto !important;
     margin: 0 !important;
     min-height: 0 !important;
+    overflow: visible !important;
     padding: 0 !important;
-    width: 100% !important;
+    width: 297mm !important;
   }
 
   .label-print-grid {
@@ -342,62 +440,64 @@
     margin: 0 !important;
     min-height: 0 !important;
     padding: 0 !important;
-    width: 100% !important;
+    width: 297mm !important;
   }
 
-  .label-card {
+  .label-card,
+  .print-label {
     background: #fff !important;
     border: 2px solid #222 !important;
     box-sizing: border-box !important;
+    break-after: page !important;
     break-inside: avoid !important;
     color: #222 !important;
-    height: 165mm !important;
+    filter: none !important;
+    height: 210mm !important;
     margin: 0 !important;
-    max-height: 165mm !important;
+    max-height: 210mm !important;
+    max-width: 297mm !important;
     min-height: 0 !important;
+    opacity: 1 !important;
     overflow: hidden !important;
-    page-break-inside: avoid !important;
-    padding: 7mm 10mm !important;
-    width: 100% !important;
-  }
-
-  .label-card:not(:last-child) {
-    break-after: page !important;
     page-break-after: always !important;
+    page-break-inside: avoid !important;
+    padding: 8mm 10mm !important;
+    width: 297mm !important;
   }
 
-  .label-card:last-child {
+  .label-card:last-child,
+  .print-label:last-child {
     break-after: auto !important;
     page-break-after: auto !important;
   }
 
   .label-header {
-    margin-bottom: 5mm !important;
+    margin-bottom: 4mm !important;
   }
 
   .label-meta {
-    gap: 2.5mm !important;
+    gap: 2mm !important;
   }
 
   .label-row {
-    margin-bottom: 2.5mm !important;
+    margin-bottom: 2mm !important;
   }
 
   .label-footer {
-    margin-top: 4mm !important;
-    padding-top: 3mm !important;
+    margin-top: 3mm !important;
+    padding-top: 2.5mm !important;
   }
 
   .label-code-main-value {
-    font-size: 38pt !important;
+    font-size: 36pt !important;
   }
 
   .label-code-main-value--long {
-    font-size: 28pt !important;
+    font-size: 26pt !important;
   }
 
   .label-code-main-value--xlong {
-    font-size: 20pt !important;
+    font-size: 18pt !important;
   }
 
   .label-code-section .label-primary-value {
@@ -407,6 +507,39 @@
   }
 
   .label-quantity-value {
-    font-size: 48pt !important;
+    font-size: 46pt !important;
+  }
+
+  .qr-code,
+  .label-qr-code {
+    background: #fff !important;
+    filter: none !important;
+    height: 24mm !important;
+    max-height: 24mm !important;
+    max-width: 24mm !important;
+    opacity: 1 !important;
+    width: 24mm !important;
+  }
+
+  .barcode-wrapper {
+    background: #fff !important;
+    max-width: 65mm !important;
+    overflow: hidden !important;
+    width: 65mm !important;
+  }
+
+  .barcode-wrapper svg,
+  .barcode-svg {
+    filter: none !important;
+    height: auto !important;
+    max-height: 22mm !important;
+    max-width: 100% !important;
+    opacity: 1 !important;
+    width: auto !important;
+  }
+
+  .barcode-text {
+    color: #000 !important;
+    opacity: 1 !important;
   }
 }

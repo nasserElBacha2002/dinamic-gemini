@@ -200,6 +200,7 @@ export default function LabelGeneratorDialog({
       }
     >
       <Box
+        className="no-print"
         sx={{
           display: 'grid',
           gap: 3,
@@ -319,6 +320,11 @@ export default function LabelGeneratorDialog({
           </Typography>
           <LabelPrintSheet data={sheetData} mode="preview" />
           <FormHelperText sx={{ mt: 1 }}>{t('clients.labels.print_browser_hint')}</FormHelperText>
+          {!code.trim() ? (
+            <FormHelperText sx={{ mt: 0.5 }} data-testid="barcode-preview-hint">
+              {t('clients.labels.preview_requires_code_for_barcodes')}
+            </FormHelperText>
+          ) : null}
           {!canPrint ? (
             <FormHelperText sx={{ mt: 0.5 }}>{t('clients.labels.preview_requires_fields')}</FormHelperText>
           ) : null}

@@ -1,7 +1,7 @@
 import type { ApiClient } from '../../services/api/apiClient';
-import type { AisleDto, AisleJobSummaryDto, PageDto } from '../../services/api/types';
+import { ApiError } from '../../services/api/apiClient';
+import type { AisleDto, AisleJobSummaryDto, CreateAisleRequestDto, PageDto } from '../../services/api/types';
 import {
-  aisleBlockReasonLabel,
   evaluateAisleSelection,
   normalizeIsActive,
   normalizeStatus,
@@ -15,6 +15,12 @@ export interface AisleQuery {
   readonly search?: string;
   readonly page?: number;
   readonly pageSize?: number;
+}
+
+export interface CreateAisleInput {
+  readonly inventoryId: string;
+  readonly code: string;
+  readonly clientSupplierId?: string | null;
 }
 
 export class AisleService {
@@ -42,27 +48,54 @@ export class AisleService {
     };
   }
 
-  canSelect(aisle: AisleDto, local?: LocalCaptureHint): boolean {
-    return this.evaluate(aisle, local).selectable;
+  /** Always true — aisle selection is never blocked. */
+  canSelect(_aisle?: AisleDto, _local?: LocalCaptureHint): boolean {
+    return true;
   }
 
   evaluate(aisle: AisleDto, local?: LocalCaptureHint): AisleSelectionResult {
-    const result = evaluateAisleSelection(aisle, local);
-    if (!result.selectable && result.reason) {
-      this.logger?.info('aisle_blocked', {
-        aisleId: aisle.id,
-        code: aisle.code,
-        reason: result.reason,
-        status: aisle.status,
-        is_active: aisle.is_active,
-        latestJob: aisle.latest_job?.status ?? null,
-      });
-    }
-    return result;
+    return evaluateAisleSelection(aisle, local);
   }
 
-  blockLabel(result: AisleSelectionResult): string {
-    return aisleBlockReasonLabel(result.reason);
+  async create(input: CreateAisleInput): Promise<AisleDto> {
+    const code = input.code.trim();
+    if (!code) {
+      throw new Error('El código del pasillo es obligatorio.');
+    }
+    if (code.length > 64) {
+      throw new Error('El código del pasillo supera el máximo permitido (64).');
+    }
+    const supplierId = input.clientSupplierId?.trim();
+    const body: CreateAisleRequestDto = supplierId
+      ? { code, client_supplier_id: supplierId }
+      : { code };
+    try {
+      const raw = await this.api.post<unknown>(
+        `/api/v3/inventories/${encodeURIComponent(input.inventoryId)}/aisles`,
+        body,
+      );
+      const created = normalizeAisleDto(raw);
+      try {
+        return await this.getById(input.inventoryId, created.id);
+      } catch {
+        return created;
+      }
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) {
+        throw new Error('No tenés permisos para realizar esta acción.');
+      }
+      if (e instanceof ApiError && e.status === 409) {
+        throw new Error(e.message || 'Ya existe un pasillo con ese código.');
+      }
+      throw e;
+    }
+  }
+
+  async getById(inventoryId: string, aisleId: string): Promise<AisleDto> {
+    const status = await this.api.get<{ aisle: unknown }>(
+      `/api/v3/inventories/${encodeURIComponent(inventoryId)}/aisles/${encodeURIComponent(aisleId)}/status`,
+    );
+    return normalizeAisleDto(status.aisle);
   }
 }
 
@@ -71,13 +104,8 @@ export interface SelectionDecision {
   readonly reason: string | null;
 }
 
-/** @deprecated Prefer evaluateAisleSelection — kept for existing tests. */
-export function canSelectAisle(aisle: AisleDto, local?: LocalCaptureHint): SelectionDecision {
-  const result = evaluateAisleSelection(aisle, local);
-  return {
-    ok: result.selectable,
-    reason: result.selectable ? null : aisleBlockReasonLabel(result.reason) || 'No disponible',
-  };
+export function canSelectAisle(_aisle?: AisleDto, _local?: LocalCaptureHint): SelectionDecision {
+  return { ok: true, reason: null };
 }
 
 export function normalizeAisleDto(raw: unknown): AisleDto {
@@ -115,4 +143,4 @@ export function normalizeAisleDto(raw: unknown): AisleDto {
   };
 }
 
-export { evaluateAisleSelection, aisleBlockReasonLabel } from '../../core/aisleSelection';
+export { evaluateAisleSelection } from '../../core/aisleSelection';

@@ -1,4 +1,4 @@
-import { mapRemoteJobStatus } from '../../core/captureState';
+import { mapProcessingPersistence } from '../../core/processingState';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
@@ -103,44 +103,37 @@ export class JobMonitor {
           ? status.latest_job
           : status.recent_jobs.find((j) => j.id === backendJobId) ?? status.latest_job;
       const remoteStatus = remote?.status ?? 'unknown';
-      const local = mapRemoteJobStatus(remoteStatus);
-      const terminal = local === 'success' || local === 'failed' || local === 'cancelled';
-      const nextDelay = terminal ? null : local === 'running' ? 4000 : 2500;
+      const mapping = mapProcessingPersistence(remoteStatus);
+      const nextDelay = mapping.terminal ? null : mapping.state === 'processing' ? 4000 : 2500;
+      const errorMessage = remote?.error_message ?? remote?.failure_message ?? null;
       await this.jobs.updatePoll({
         id: job.id,
-        status: local === 'unknown' ? 'unknown' : local === 'pending' ? 'pending' : local === 'running' ? 'running' : local,
+        status: mapping.jobStatus,
         remoteStatus,
         nextPollAt: nextDelay ? new Date(Date.now() + nextDelay).toISOString() : null,
         errorCode: remote?.failure_code ?? null,
-        errorMessage: remote?.error_message ?? remote?.failure_message ?? null,
-        finished: terminal,
+        errorMessage,
+        finished: mapping.terminal,
       });
+      await this.sessions.updateSessionUploadMeta(job.capture_session_id, {
+        processingStatus: remoteStatus,
+        backendJobId,
+        lastProcessingError: mapping.terminal && mapping.state !== 'completed' ? errorMessage : null,
+        processingFinishedAt: mapping.terminal ? new Date().toISOString() : null,
+      });
+      try {
+        await this.sessions.updateSessionStatus(
+          job.capture_session_id,
+          mapping.captureStatus,
+          mapping.terminal && mapping.state === 'completed',
+        );
+      } catch {
+        // ignore invalid transition races
+      }
       this.logger.info('job_status_changed', { jobId: backendJobId, status: remoteStatus });
-      if (terminal) {
+      if (mapping.terminal) {
         if (this.options.backgroundWork) {
           void this.options.backgroundWork.cancelJobMonitor(backendJobId);
-        }
-        if (local === 'success') {
-          try {
-            await this.sessions.updateSessionStatus(job.capture_session_id, 'completed', true);
-          } catch {
-            // ignore
-          }
-          await this.sessions.updateSessionUploadMeta(job.capture_session_id, {
-            processingStatus: remoteStatus,
-            processingFinishedAt: new Date().toISOString(),
-          });
-        } else {
-          try {
-            await this.sessions.updateSessionStatus(job.capture_session_id, 'failed_processing');
-          } catch {
-            // ignore
-          }
-          await this.sessions.updateSessionUploadMeta(job.capture_session_id, {
-            processingStatus: remoteStatus,
-            lastProcessingError: remote?.error_message ?? remoteStatus,
-            processingFinishedAt: new Date().toISOString(),
-          });
         }
         this.stop(backendJobId);
       } else {

@@ -85,6 +85,17 @@ const defaultStabilityProber: CaptureStabilityProber = {
   },
 };
 
+export class OtherAisleCaptureActiveError extends Error {
+  constructor(
+    readonly otherSession: CaptureSessionRow,
+  ) {
+    super(
+      `Hay otra captura activa en el pasillo ${otherSession.aisle_name}.`,
+    );
+    this.name = 'OtherAisleCaptureActiveError';
+  }
+}
+
 export class CaptureService {
   private session: CaptureSessionRow | null = null;
   private photos: CapturePhotoRow[] = [];
@@ -156,7 +167,23 @@ export class CaptureService {
     return this.repo.listActivitySessions();
   }
 
-  async loadSession(sessionId: string, startListener: boolean): Promise<void> {
+  /**
+   * Clears in-memory snapshot when navigating to a different aisle so UI does not
+   * show photos/cursors from another capture.
+   */
+  prepareNewCapture(context: CaptureContext): void {
+    const current = this.session;
+    if (
+      current &&
+      (current.inventory_id !== context.inventoryId || current.aisle_id !== context.aisleId)
+    ) {
+      this.clearCurrentSession();
+      this.warning = null;
+      this.emit();
+    }
+  }
+
+  async loadSession(sessionId: string, startListener: boolean): Promise<CaptureSnapshot> {
     const session = await this.repo.getSession(sessionId);
     if (!session) {
       throw new Error('No se encontró la captura local.');
@@ -174,18 +201,57 @@ export class CaptureService {
       this.detachListener();
     }
     this.emit();
+    return this.getSnapshot();
   }
 
-  async start(input: StartCaptureInput): Promise<void> {
+  /** Deterministic point-in-time read; prefer over subscribe-wrapped promises. */
+  async getSessionSnapshot(sessionId: string): Promise<CaptureSnapshot> {
+    const snapshot = await this.loadSession(sessionId, false);
+    if (snapshot.session?.id !== sessionId) {
+      throw new Error('No se pudo cargar la captura solicitada.');
+    }
+    return snapshot;
+  }
+
+  getSnapshot(): CaptureSnapshot {
+    return this.snapshot();
+  }
+
+  async start(input: StartCaptureInput, options: { pauseOtherAisle?: boolean } = {}): Promise<void> {
     if (!input.permission.granted) {
       throw new Error('Se requieren permisos de fotografías.');
     }
-    const existing = await this.repo.findCurrentOpenSession();
-    if (existing) {
-      this.warning = 'Ya existe una captura local abierta. Continuá, reanudala o cancelala antes de iniciar otra.';
-      await this.loadSession(existing.id, false);
+    const exclusive = await this.repo.findExclusiveCaptureSession();
+    if (exclusive && exclusive.aisle_id !== input.aisleId) {
+      if (!options.pauseOtherAisle) {
+        throw new OtherAisleCaptureActiveError(exclusive);
+      }
+      await this.loadSession(exclusive.id, false);
+      if (exclusive.status === 'active' || exclusive.status === 'preparing' || exclusive.status === 'finishing') {
+        await this.pause();
+      } else {
+        this.detachListener();
+        await this.stopForeground();
+      }
+    } else if (exclusive && exclusive.aisle_id === input.aisleId) {
+      await this.loadSession(exclusive.id, exclusive.status === 'active');
+      this.warning = null;
       return;
     }
+
+    const sameAislePaused = (await this.repo.listActivitySessions()).find(
+      (s) =>
+        s.aisle_id === input.aisleId &&
+        s.inventory_id === input.inventoryId &&
+        (s.status === 'paused' || s.status === 'review'),
+    );
+    if (sameAislePaused && !options.pauseOtherAisle) {
+      // Prefer continuing existing local work for this aisle unless caller forces new.
+      await this.loadSession(sameAislePaused.id, false);
+      this.warning = null;
+      return;
+    }
+
     const recent = await this.mediaStore.queryMostRecentPhoto();
     const marker = buildMarker(input, recent);
     const result = await this.repo.createSessionExclusive({
@@ -198,7 +264,9 @@ export class CaptureService {
       uploadBatchId: this.createId(),
     });
     if (!result.created) {
-      this.warning = 'Ya existe una captura local abierta. Continuá, reanudala o cancelala antes de iniciar otra.';
+      if (result.session.aisle_id !== input.aisleId) {
+        throw new OtherAisleCaptureActiveError(result.session);
+      }
       await this.loadSession(result.session.id, false);
       return;
     }
@@ -211,7 +279,11 @@ export class CaptureService {
       await this.startForeground();
       await this.repo.updateSessionStatus(result.session.id, 'active');
       await this.loadSession(result.session.id, true);
-      this.logger.info('session_start', { sessionId: result.session.id, inventoryId: input.inventoryId, aisleId: input.aisleId });
+      this.logger.info('session_start', {
+        sessionId: result.session.id,
+        inventoryId: input.inventoryId,
+        aisleId: input.aisleId,
+      });
     } catch (e) {
       this.detachListener();
       await this.stopForeground();

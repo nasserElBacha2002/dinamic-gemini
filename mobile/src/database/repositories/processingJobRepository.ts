@@ -60,9 +60,18 @@ export class ProcessingJobRepository {
 
   async listForSession(sessionId: string): Promise<ProcessingJobRow[]> {
     return this.db.getAllAsync<ProcessingJobRow>(
-      'SELECT * FROM processing_jobs WHERE capture_session_id = ? ORDER BY created_at DESC;',
+      `SELECT * FROM processing_jobs
+       WHERE capture_session_id = ?
+       ORDER BY COALESCE(finished_at, last_polled_at, started_at, created_at) DESC,
+                created_at DESC,
+                id DESC;`,
       sessionId,
     );
+  }
+
+  async getLatestForSession(sessionId: string): Promise<ProcessingJobRow | null> {
+    const rows = await this.listForSession(sessionId);
+    return rows[0] ?? null;
   }
 
   async updatePoll(input: {

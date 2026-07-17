@@ -1,4 +1,10 @@
-import { CaptureService, type CaptureMediaStore, type CaptureSnapshot, type CaptureStabilityProber } from '../src/features/capture/captureService';
+import {
+  CaptureService,
+  OtherAisleCaptureActiveError,
+  type CaptureMediaStore,
+  type CaptureSnapshot,
+  type CaptureStabilityProber,
+} from '../src/features/capture/captureService';
 import { createLogger } from '../src/core/logging';
 import { EMPTY_CURSOR, type CompositeCursor } from '../src/core/compositeCursor';
 import type { GalleryImage } from '../src/domain/entities/galleryImage';
@@ -112,7 +118,7 @@ class FakeRepo {
 
   async createSessionExclusive(input: CreateCaptureSessionInput): Promise<CreateCaptureSessionResult> {
     this.createCalls += 1;
-    const existing = await this.findCurrentOpenSession();
+    const existing = await this.findExclusiveCaptureSession();
     if (existing) {
       return { session: existing, created: false };
     }
@@ -129,21 +135,43 @@ class FakeRepo {
     return { session: row, created: true };
   }
 
+  async listActivitySessions() {
+    return this.listOpenSessions();
+  }
+
   async listOpenSessions() {
     return Array.from(this.sessions.values())
-      .filter((s) => ['preparing', 'active', 'paused', 'finishing', 'review', 'uploading', 'upload_review', 'ready_to_process', 'processing', 'failed', 'failed_processing'].includes(s.status))
+      .filter((s) =>
+        [
+          'preparing',
+          'active',
+          'paused',
+          'finishing',
+          'review',
+          'uploading',
+          'upload_review',
+          'ready_to_process',
+          'processing',
+          'failed',
+          'failed_processing',
+        ].includes(s.status),
+      )
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   }
 
   async listExclusiveCaptureSessions() {
     return Array.from(this.sessions.values())
-      .filter((s) => ['preparing', 'active', 'paused', 'finishing', 'review'].includes(s.status))
+      .filter((s) => ['preparing', 'active', 'finishing'].includes(s.status))
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   }
 
-  async findCurrentOpenSession() {
+  async findExclusiveCaptureSession() {
     const [first] = await this.listExclusiveCaptureSessions();
     return first ?? null;
+  }
+
+  async findCurrentOpenSession() {
+    return this.findExclusiveCaptureSession();
   }
 
   async repairMultipleOpenSessions(keepId: string) {
@@ -250,12 +278,13 @@ function mediaStore(images: GalleryImage[] = []): CaptureMediaStore {
 }
 
 describe('CaptureService corrections', () => {
-  it('does not create a second session when one is already open', async () => {
+  it('rejects starting another aisle while one exclusive capture is active, unless paused first', async () => {
+    let id = 0;
     const repo = new FakeRepo();
     const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
       mediaStore: mediaStore(),
       stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 2 }) },
-      createId: () => 'session-1',
+      createId: () => `session-${++id}`,
     });
     const input = {
       inventoryId: 'inv-1',
@@ -265,9 +294,18 @@ describe('CaptureService corrections', () => {
       permission: { granted: true, limited: false, canAskAgain: true },
     };
 
-    await Promise.all([service.start(input), service.start({ ...input, aisleId: 'aisle-2', aisleName: 'A2' })]);
+    await service.start(input);
+    await expect(service.start({ ...input, aisleId: 'aisle-2', aisleName: 'A2' })).rejects.toBeInstanceOf(
+      OtherAisleCaptureActiveError,
+    );
+    expect((await repo.listExclusiveCaptureSessions()).length).toBe(1);
 
-    expect((await repo.listOpenSessions()).length).toBe(1);
+    await service.start({ ...input, aisleId: 'aisle-2', aisleName: 'A2' }, { pauseOtherAisle: true });
+    const exclusive = await repo.listExclusiveCaptureSessions();
+    expect(exclusive).toHaveLength(1);
+    expect(exclusive[0]?.aisle_id).toBe('aisle-2');
+    const paused = (await repo.listActivitySessions()).find((s) => s.aisle_id === 'aisle-1');
+    expect(paused?.status).toBe('paused');
   });
 
   it('restores an interrupted active session as paused with persisted context', async () => {

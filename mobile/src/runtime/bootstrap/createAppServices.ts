@@ -6,6 +6,7 @@ import { ProcessingJobRepository } from '../../database/repositories/processingJ
 import { AuthService } from '../../features/auth/authService';
 import { AisleService } from '../../features/aisles/aisleService';
 import { CaptureService } from '../../features/capture/captureService';
+import { ClientService } from '../../features/clients/clientService';
 import { InventoryService } from '../../features/inventories/inventoryService';
 import { JobMonitor } from '../../features/processing/jobMonitor';
 import { ProcessingService } from '../../features/processing/processingService';
@@ -36,6 +37,7 @@ export interface AppServices {
   readonly logger: Logger;
   readonly auth: AuthService;
   readonly inventories: InventoryService;
+  readonly clients: ClientService;
   readonly aisles: AisleService;
   readonly capture: CaptureService;
   readonly api: ApiClient;
@@ -123,6 +125,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       await uploadQueue.pause('logout');
     }),
     inventories: new InventoryService(api),
+    clients: new ClientService(api),
     aisles: new AisleService(api, logger),
     capture,
     uploadQueue,

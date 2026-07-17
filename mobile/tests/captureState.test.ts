@@ -32,7 +32,9 @@ describe('capture state transitions', () => {
   });
 
   it('classifies exclusive capture sessions for second-aisle rule', () => {
-    expect(isCaptureExclusiveSession('review')).toBe(true);
+    expect(isCaptureExclusiveSession('review')).toBe(false);
+    expect(isCaptureExclusiveSession('paused')).toBe(false);
+    expect(isCaptureExclusiveSession('active')).toBe(true);
     expect(isCaptureExclusiveSession('uploading')).toBe(false);
     expect(isCaptureExclusiveSession('processing')).toBe(false);
   });

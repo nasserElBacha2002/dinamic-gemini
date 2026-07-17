@@ -76,6 +76,24 @@ class StartAisleProcessingCommand:
     pipeline_provider_key: str = "gemini"
     model_name: str | None = None
     prompt_key: str = DEFAULT_HYBRID_PROMPT_PROFILE
+    #: Stable client key; replay returns the existing job for this aisle when found.
+    idempotency_key: str | None = None
+
+
+def _find_job_by_idempotency_key(
+    job_repo: JobRepository,
+    *,
+    aisle_id: str,
+    idempotency_key: str | None,
+) -> str | None:
+    key = (idempotency_key or "").strip()
+    if not key:
+        return None
+    for job in job_repo.list_jobs_for_target("aisle", aisle_id, limit=100):
+        payload = job.payload_json or {}
+        if str(payload.get("idempotency_key") or "").strip() == key:
+            return job.id
+    return None
 
 
 def _materialize_execution_keys_for_start(
@@ -159,6 +177,20 @@ class StartAisleProcessingUseCase:
                 f"No source assets for aisle {command.aisle_id}; upload media before processing."
             )
 
+        existing_idempotent = _find_job_by_idempotency_key(
+            self._job_repo,
+            aisle_id=command.aisle_id,
+            idempotency_key=command.idempotency_key,
+        )
+        if existing_idempotent is not None:
+            logger.info(
+                "aisle.process_idempotent_replay inventory_id=%s aisle_id=%s job_id=%s",
+                command.inventory_id,
+                command.aisle_id,
+                existing_idempotent,
+            )
+            return existing_idempotent
+
         _require_no_active_process_job_for_aisle(
             stale_reconciler=self._stale_reconciler,
             job_repo=self._job_repo,
@@ -166,6 +198,8 @@ class StartAisleProcessingUseCase:
         )
 
         payload: ProcessAislePayload = {"aisle_id": command.aisle_id}
+        if command.idempotency_key and str(command.idempotency_key).strip():
+            payload["idempotency_key"] = str(command.idempotency_key).strip()
         job = self._launch_service.create_and_launch_attempt(
             aisle=aisle,
             payload=payload,
