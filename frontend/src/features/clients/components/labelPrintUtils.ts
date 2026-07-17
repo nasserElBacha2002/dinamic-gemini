@@ -71,7 +71,7 @@ export function getLabelCodeMainValueClassName(code: string): string {
   return classes.join(' ');
 }
 
-/** Human-readable multiline text for the single per-label QR (plain scan, not JSON). */
+/** Human-readable multiline text kept for legacy docs/tests — not used as QR payload. */
 export function buildLabelQrText(data: Omit<LabelSheetData, 'copies'>, date: Date = new Date()): string {
   const lines = [
     'ETIQUETA DINAMIC INVENTORY',
@@ -103,6 +103,16 @@ export function buildLabelQrText(data: Omit<LabelSheetData, 'copies'>, date: Dat
 
   return lines.join('\n');
 }
+
+/**
+ * Scannable QR/barcode payload for inventory labels (code|quantity).
+ * Prefer this over `buildLabelQrText` for machine reading / drone photos.
+ */
+export { buildInventoryCodePayload as buildLabelScanPayload } from './inventoryCodePayload';
+export {
+  tryBuildInventoryCodePayload,
+  parseInventoryCodePayload,
+} from './inventoryCodePayload';
 
 /** Suggested PDF filename base: cliente-codigo-cantidad-fecha */
 export function buildLabelPrintFilename(

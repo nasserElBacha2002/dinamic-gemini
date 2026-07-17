@@ -1,14 +1,13 @@
 import { useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import BarcodeBlock from './BarcodeBlock';
-import QrCodeBlock from './QrCodeBlock';
+import InventoryBarcode from './InventoryBarcode';
+import InventoryQrCode from './InventoryQrCode';
 import {
-  normalizeLabelCode,
-  normalizeLabelQuantity,
-  tryBuildLabelBarcodePayload,
-} from './labelBarcodePayload';
+  normalizeInventoryCode,
+  normalizeInventoryQuantity,
+  tryBuildInventoryCodePayload,
+} from './inventoryCodePayload';
 import {
-  buildLabelQrText,
   clampLabelCopies,
   formatShortLabelDate,
   getLabelCodeMainValueClassName,
@@ -42,77 +41,135 @@ function LabelRow({
   );
 }
 
-export interface PrintableLabelProps {
+export interface InventoryLabelProps {
   data: Omit<LabelSheetData, 'copies'>;
   headerDate: string;
   onBarcodeValidityChange?: (valid: boolean) => void;
 }
 
-/** One full A4-landscape warehouse label (preview + print). */
-export function PrintableLabel({ data, headerDate, onBarcodeValidityChange }: PrintableLabelProps) {
-  const qrValue = useMemo(() => buildLabelQrText(data), [data]);
+/**
+ * One full A4-landscape warehouse label optimized for drone-readable QR + barcode.
+ * Both codes encode the same payload: internal_code|quantity.
+ */
+export function InventoryLabel({ data, headerDate, onBarcodeValidityChange }: InventoryLabelProps) {
   const codeValueClassName = useMemo(() => getLabelCodeMainValueClassName(data.code), [data.code]);
-  const normalizedCode = useMemo(() => normalizeLabelCode(data.code), [data.code]);
-  const normalizedQuantity = useMemo(() => normalizeLabelQuantity(data.quantity), [data.quantity]);
+  const normalizedCode = useMemo(() => normalizeInventoryCode(data.code), [data.code]);
+  const normalizedQuantity = useMemo(
+    () => normalizeInventoryQuantity(data.quantity),
+    [data.quantity]
+  );
 
-  const barcodePayload = useMemo(
-    () => tryBuildLabelBarcodePayload({ code: data.code, quantity: data.quantity }) ?? '',
+  const scanPayload = useMemo(
+    () => tryBuildInventoryCodePayload({ code: data.code, quantity: data.quantity }) ?? '',
     [data.code, data.quantity]
   );
 
+  const hasAdditionalData =
+    Boolean(data.lot?.trim()) ||
+    Boolean(data.expiry?.trim()) ||
+    Boolean(data.description?.trim()) ||
+    Boolean(data.observations?.trim());
+
   return (
     <article
-      className="label-card label-card--horizontal print-label"
+      className={[
+        'label-card',
+        'label-card--horizontal',
+        'print-label',
+        'inventory-label',
+        hasAdditionalData ? 'inventory-label--with-additional' : 'inventory-label--no-additional',
+      ].join(' ')}
       data-testid="label-card"
       data-print-label="true"
+      data-scan-payload={scanPayload || undefined}
+      data-has-additional={hasAdditionalData ? 'true' : 'false'}
     >
       <header className="label-header">
         <div className="label-brand-mark" aria-hidden="true">
           DI
         </div>
-        <div className="label-title">{LABEL_PRINT_TITLE}</div>
+        <div className="label-header-main">
+          <div className="label-title">{LABEL_PRINT_TITLE}</div>
+          <div className="label-header-meta">
+            <LabelRow label="CLIENTE:" value={data.clientName} rowClassName="label-row--compact" />
+            <LabelRow label="PROVEEDOR:" value={data.supplierName} rowClassName="label-row--compact" />
+            {data.countedBy?.trim() ? (
+              <LabelRow label="CONTADO POR:" value={data.countedBy} rowClassName="label-row--compact" />
+            ) : null}
+          </div>
+        </div>
         <div className="label-date-code">{headerDate}</div>
       </header>
 
-      <section className="label-meta">
-        <LabelRow label="CLIENTE:" value={data.clientName} />
-        <LabelRow label="PROVEEDOR:" value={data.supplierName} />
-        <LabelRow label="CONTADO POR:" value={data.countedBy} />
-      </section>
+      <section className="label-main-content" data-testid="label-main-content">
+        <div className="label-primary-column" data-testid="label-primary-column">
+          <div className="label-primary-section">
+            <div className="label-primary-row label-code-section">
+              <span className="label-primary-label">CÓDIGO:</span>
+              <span className={codeValueClassName}>{normalizedCode}</span>
+            </div>
 
-      <section className="label-main-content">
-        <div className="label-primary-section">
-          <div className="label-primary-row label-code-section">
-            <span className="label-primary-label">CÓDIGO:</span>
-            <span className={codeValueClassName}>{normalizedCode}</span>
+            <div className="label-primary-row label-quantity-section">
+              <span className="label-primary-label">CANT. TOTAL:</span>
+              <span className="label-primary-value label-quantity-value">{normalizedQuantity}</span>
+            </div>
           </div>
 
-          <div className="label-primary-row label-quantity-section">
-            <span className="label-primary-label">CANT. TOTAL:</span>
-            <span className="label-primary-value label-quantity-value">{normalizedQuantity}</span>
-          </div>
+          {hasAdditionalData ? (
+            <section
+              className="label-additional-data"
+              data-testid="label-additional-data"
+              aria-label="Datos adicionales"
+            >
+              {data.lot?.trim() ? (
+                <div className="label-additional-item label-additional-item--lot">
+                  <span className="label-additional-label">LOTE:</span>
+                  <span className="label-additional-value">{data.lot.trim()}</span>
+                </div>
+              ) : null}
+              {data.expiry?.trim() ? (
+                <div className="label-additional-item label-additional-item--expiry">
+                  <span className="label-additional-label">VENCIMIENTO:</span>
+                  <span className="label-additional-value">{data.expiry.trim()}</span>
+                </div>
+              ) : null}
+              {data.description?.trim() ? (
+                <div className="label-additional-item label-additional-item--description">
+                  <span className="label-additional-label">DESCRIPCIÓN:</span>
+                  <span className="label-additional-value">{data.description.trim()}</span>
+                </div>
+              ) : null}
+              {data.observations?.trim() ? (
+                <div className="label-additional-item label-additional-item--observations">
+                  <span className="label-additional-label">OBSERVACIONES:</span>
+                  <span className="label-additional-value">{data.observations.trim()}</span>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
         </div>
 
-        <div className="label-codes-column">
-          <QrCodeBlock value={qrValue} />
-          <BarcodeBlock
-            value={barcodePayload}
-            displayCode={normalizedCode}
-            displayQuantity={normalizedQuantity}
-            onValidityChange={onBarcodeValidityChange}
-          />
+        <div className="label-qr-column">
+          <InventoryQrCode value={scanPayload} sizePx={480} level="H" />
         </div>
       </section>
 
-      <footer className="label-footer">
-        {data.lot?.trim() ? <div>{`LOTE: ${data.lot.trim()}`}</div> : null}
-        {data.expiry?.trim() ? <div>{`VTO: ${data.expiry.trim()}`}</div> : null}
-        {data.description?.trim() ? <div>{data.description.trim()}</div> : null}
-        {data.observations?.trim() ? <div>{`OBS: ${data.observations.trim()}`}</div> : null}
-      </footer>
+      <section className="label-barcode-section" data-testid="label-barcode-section">
+        <InventoryBarcode
+          value={scanPayload}
+          displayCode={normalizedCode}
+          displayQuantity={normalizedQuantity}
+          onValidityChange={onBarcodeValidityChange}
+          barHeightPx={180}
+        />
+      </section>
     </article>
   );
 }
+
+/** @deprecated Prefer InventoryLabel — same component. */
+export const PrintableLabel = InventoryLabel;
+export type PrintableLabelProps = InventoryLabelProps;
 
 export type LabelPrintSheetMode = 'preview' | 'print';
 
@@ -180,7 +237,7 @@ function LabelPrintSheetContent({
         aria-label="label-print-grid"
       >
         {cards.map((key, index) => (
-          <PrintableLabel
+          <InventoryLabel
             key={key}
             data={cardData}
             headerDate={headerDate}
