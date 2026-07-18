@@ -9,7 +9,8 @@ ENV FORWARDED_TRUSTED_HOSTS=*
 
 # System deps:
 # - unixODBC + Microsoft ODBC Driver 18 for SQL Server (pyodbc).
-# - libzbar0 for sync aisle code scan (pyzbar) in the API container only — not Dockerfile.worker.
+# - libzbar0 for QR/barcode scan (pyzbar): sync aisle code scan API here, and Phase 3 CODE_SCAN
+#   worker path in Dockerfile.worker (both images install libzbar0).
 # - Use Microsoft's Debian 12 repo WITHOUT [arch=amd64] so apt installs the native .deb (amd64 or arm64).
 #   The previous amd64-only apt line broke ARM64 images: libc6:amd64 is not installable on aarch64.
 RUN apt-get update && apt-get install -y --no-install-recommends \

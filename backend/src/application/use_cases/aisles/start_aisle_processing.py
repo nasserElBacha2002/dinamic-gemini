@@ -33,7 +33,7 @@ from src.application.ports.repositories import (
     JobRepository,
     SourceAssetRepository,
 )
-from src.application.services.aisle_identification_execution import phase1_execution_strategy
+from src.application.services.aisle_identification_execution import resolve_execution_strategy
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
@@ -243,9 +243,12 @@ class StartAisleProcessingUseCase:
             inventory_mode=inventory.identification_mode,
             client_mode=client_mode,
         )
-        execution_strategy = phase1_execution_strategy(
+        execution_strategy = resolve_execution_strategy(
             effective_mode=resolution.effective_mode,
             pipeline_enabled=bool(settings.aisle_identification_pipeline_enabled),
+            code_scan_processing_enabled=bool(
+                getattr(settings, "code_scan_processing_enabled", False)
+            ),
         )
 
         logger.info(

@@ -1,12 +1,19 @@
-"""SQL Server ProcessingAttemptRepository (Phase 2)."""
+"""SQL Server ProcessingAttemptRepository (Phase 2 corrections).
+
+See :mod:`src.infrastructure.repositories.sql_job_asset_processing_state_repository` module
+docstring for the ``SqlServerClient`` cursor-only API note.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
+import uuid
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
+
+import pyodbc
 
 from src.application.ports.image_processing_repositories import ProcessingAttemptRepository
 from src.database.sqlserver import SqlServerClient
@@ -18,6 +25,16 @@ from src.infrastructure.repositories.db_row_text import normalize_db_str
 
 logger = logging.getLogger(__name__)
 
+_MAX_CREATE_NEXT_ATTEMPT_RETRIES = 3
+
+_SELECT_FIELDS = (
+    "id, job_id, asset_id, strategy, provider, model, status, attempt_number, "
+    "started_at, finished_at, duration_ms, error_code, error_message, "
+    "raw_result_reference, normalized_result_json, validation_result_json, "
+    "execution_scope, logical_asset_attempt, configuration_snapshot_version, "
+    "parent_batch_attempt_id, batch_execution_id, worker_token, created_at, updated_at"
+)
+
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
@@ -25,6 +42,11 @@ def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt.tzinfo is not None:
         return dt
     return dt.replace(tzinfo=timezone.utc)
+
+
+def _is_attempt_number_unique_violation(exc: pyodbc.IntegrityError) -> bool:
+    """True only for ``UQ_processing_attempts_job_asset_strategy_n`` (concurrent create races)."""
+    return "uq_processing_attempts_job_asset_strategy_n" in str(exc).lower()
 
 
 def _loads(raw: object) -> dict[str, Any] | None:
@@ -75,6 +97,10 @@ def _row_to_attempt(row: object) -> ProcessingAttempt:
         execution_scope=normalize_db_str(getattr(row, "execution_scope", None)),
         logical_asset_attempt=bool(logical) if logical is not None else True,
         configuration_snapshot_version=getattr(row, "configuration_snapshot_version", None),
+        parent_batch_attempt_id=normalize_db_str(getattr(row, "parent_batch_attempt_id", None)),
+        batch_execution_id=normalize_db_str(getattr(row, "batch_execution_id", None)),
+        worker_token=normalize_db_str(getattr(row, "worker_token", None)),
+        updated_at=_ensure_utc(getattr(row, "updated_at", None)),
     )
 
 
@@ -83,7 +109,6 @@ class SqlProcessingAttemptRepository(ProcessingAttemptRepository):
         self._client = client
 
     def save(self, attempt: ProcessingAttempt) -> None:
-        existing = self.get_by_id(attempt.id)
         norm = (
             json.dumps(attempt.normalized_result)
             if attempt.normalized_result is not None
@@ -94,26 +119,23 @@ class SqlProcessingAttemptRepository(ProcessingAttemptRepository):
             if attempt.validation_result is not None
             else None
         )
-        if existing is None:
-            self._client.execute(
+        updated_at = attempt.updated_at or attempt.created_at
+        with self._client.cursor() as cur:
+            cur.execute(
                 """
-                INSERT INTO processing_attempts (
-                    id, job_id, asset_id, strategy, provider, model, status, attempt_number,
-                    started_at, finished_at, duration_ms, error_code, error_message,
-                    raw_result_reference, normalized_result_json, validation_result_json,
-                    execution_scope, logical_asset_attempt, configuration_snapshot_version,
-                    created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                UPDATE processing_attempts SET
+                    status = ?, provider = ?, model = ?, started_at = ?, finished_at = ?,
+                    duration_ms = ?, error_code = ?, error_message = ?,
+                    raw_result_reference = ?, normalized_result_json = ?, validation_result_json = ?,
+                    execution_scope = ?, logical_asset_attempt = ?,
+                    configuration_snapshot_version = ?, parent_batch_attempt_id = ?,
+                    batch_execution_id = ?, worker_token = ?, updated_at = ?
+                WHERE id = ?
                 """,
                 (
-                    attempt.id,
-                    attempt.job_id,
-                    attempt.asset_id,
-                    attempt.strategy,
+                    attempt.status.value,
                     attempt.provider,
                     attempt.model,
-                    attempt.status.value,
-                    attempt.attempt_number,
                     attempt.started_at,
                     attempt.finished_at,
                     attempt.duration_ms,
@@ -125,54 +147,63 @@ class SqlProcessingAttemptRepository(ProcessingAttemptRepository):
                     attempt.execution_scope,
                     1 if attempt.logical_asset_attempt else 0,
                     attempt.configuration_snapshot_version,
-                    attempt.created_at,
+                    attempt.parent_batch_attempt_id,
+                    attempt.batch_execution_id,
+                    attempt.worker_token,
+                    updated_at,
+                    attempt.id,
                 ),
             )
-            return
-        self._client.execute(
-            """
-            UPDATE processing_attempts SET
-                status = ?, provider = ?, model = ?, started_at = ?, finished_at = ?,
-                duration_ms = ?, error_code = ?, error_message = ?,
-                raw_result_reference = ?, normalized_result_json = ?, validation_result_json = ?,
-                execution_scope = ?, logical_asset_attempt = ?,
-                configuration_snapshot_version = ?
-            WHERE id = ?
-            """,
-            (
-                attempt.status.value,
-                attempt.provider,
-                attempt.model,
-                attempt.started_at,
-                attempt.finished_at,
-                attempt.duration_ms,
-                attempt.error_code,
-                attempt.error_message,
-                attempt.raw_result_reference,
-                norm,
-                valid,
-                attempt.execution_scope,
-                1 if attempt.logical_asset_attempt else 0,
-                attempt.configuration_snapshot_version,
-                attempt.id,
-            ),
-        )
+            if cur.rowcount == 0:
+                cur.execute(
+                    """
+                    INSERT INTO processing_attempts (
+                        id, job_id, asset_id, strategy, provider, model, status, attempt_number,
+                        started_at, finished_at, duration_ms, error_code, error_message,
+                        raw_result_reference, normalized_result_json, validation_result_json,
+                        execution_scope, logical_asset_attempt, configuration_snapshot_version,
+                        parent_batch_attempt_id, batch_execution_id, worker_token,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        attempt.id,
+                        attempt.job_id,
+                        attempt.asset_id,
+                        attempt.strategy,
+                        attempt.provider,
+                        attempt.model,
+                        attempt.status.value,
+                        attempt.attempt_number,
+                        attempt.started_at,
+                        attempt.finished_at,
+                        attempt.duration_ms,
+                        attempt.error_code,
+                        attempt.error_message,
+                        attempt.raw_result_reference,
+                        norm,
+                        valid,
+                        attempt.execution_scope,
+                        1 if attempt.logical_asset_attempt else 0,
+                        attempt.configuration_snapshot_version,
+                        attempt.parent_batch_attempt_id,
+                        attempt.batch_execution_id,
+                        attempt.worker_token,
+                        attempt.created_at,
+                        updated_at,
+                    ),
+                )
 
     def get_by_id(self, attempt_id: str) -> ProcessingAttempt | None:
-        rows = self._client.query(
-            """
-            SELECT id, job_id, asset_id, strategy, provider, model, status, attempt_number,
-                   started_at, finished_at, duration_ms, error_code, error_message,
-                   raw_result_reference, normalized_result_json, validation_result_json,
-                   execution_scope, logical_asset_attempt, configuration_snapshot_version,
-                   created_at
-            FROM processing_attempts WHERE id = ?
-            """,
-            (attempt_id,),
-        )
-        if not rows:
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"SELECT {_SELECT_FIELDS} FROM processing_attempts WHERE id = ?",  # nosec B608
+                (attempt_id,),
+            )
+            row = cur.fetchone()
+        if row is None:
             return None
-        return _row_to_attempt(rows[0])
+        return _row_to_attempt(row)
 
     def get_by_unique_key(
         self,
@@ -181,66 +212,178 @@ class SqlProcessingAttemptRepository(ProcessingAttemptRepository):
         strategy: str,
         attempt_number: int,
     ) -> ProcessingAttempt | None:
-        rows = self._client.query(
-            """
-            SELECT id, job_id, asset_id, strategy, provider, model, status, attempt_number,
-                   started_at, finished_at, duration_ms, error_code, error_message,
-                   raw_result_reference, normalized_result_json, validation_result_json,
-                   execution_scope, logical_asset_attempt, configuration_snapshot_version,
-                   created_at
-            FROM processing_attempts
-            WHERE job_id = ? AND asset_id = ? AND strategy = ? AND attempt_number = ?
-            """,
-            (job_id, asset_id, strategy, attempt_number),
-        )
-        if not rows:
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {_SELECT_FIELDS} FROM processing_attempts
+                WHERE job_id = ? AND asset_id = ? AND strategy = ? AND attempt_number = ?
+                """,  # nosec B608
+                (job_id, asset_id, strategy, attempt_number),
+            )
+            row = cur.fetchone()
+        if row is None:
             return None
-        return _row_to_attempt(rows[0])
+        return _row_to_attempt(row)
 
     def list_by_job_and_asset(
         self, job_id: str, asset_id: str
     ) -> Sequence[ProcessingAttempt]:
-        rows = self._client.query(
-            """
-            SELECT id, job_id, asset_id, strategy, provider, model, status, attempt_number,
-                   started_at, finished_at, duration_ms, error_code, error_message,
-                   raw_result_reference, normalized_result_json, validation_result_json,
-                   execution_scope, logical_asset_attempt, configuration_snapshot_version,
-                   created_at
-            FROM processing_attempts
-            WHERE job_id = ? AND asset_id = ?
-            ORDER BY attempt_number ASC, created_at ASC
-            """,
-            (job_id, asset_id),
-        )
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {_SELECT_FIELDS} FROM processing_attempts
+                WHERE job_id = ? AND asset_id = ?
+                ORDER BY attempt_number ASC, created_at ASC
+                """,  # nosec B608
+                (job_id, asset_id),
+            )
+            rows = cur.fetchall()
         return [_row_to_attempt(r) for r in rows]
 
     def list_by_job(self, job_id: str) -> Sequence[ProcessingAttempt]:
-        rows = self._client.query(
-            """
-            SELECT id, job_id, asset_id, strategy, provider, model, status, attempt_number,
-                   started_at, finished_at, duration_ms, error_code, error_message,
-                   raw_result_reference, normalized_result_json, validation_result_json,
-                   execution_scope, logical_asset_attempt, configuration_snapshot_version,
-                   created_at
-            FROM processing_attempts
-            WHERE job_id = ?
-            ORDER BY asset_id ASC, attempt_number ASC, created_at ASC
-            """,
-            (job_id,),
-        )
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {_SELECT_FIELDS} FROM processing_attempts
+                WHERE job_id = ?
+                ORDER BY asset_id ASC, attempt_number ASC, created_at ASC
+                """,  # nosec B608
+                (job_id,),
+            )
+            rows = cur.fetchall()
         return [_row_to_attempt(r) for r in rows]
 
     def next_attempt_number(self, job_id: str, asset_id: str, strategy: str) -> int:
-        rows = self._client.query(
-            """
-            SELECT MAX(attempt_number) AS max_n
-            FROM processing_attempts
-            WHERE job_id = ? AND asset_id = ? AND strategy = ?
-            """,
-            (job_id, asset_id, strategy),
-        )
-        if not rows:
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT MAX(attempt_number) AS max_n
+                FROM processing_attempts
+                WHERE job_id = ? AND asset_id = ? AND strategy = ?
+                """,
+                (job_id, asset_id, strategy),
+            )
+            row = cur.fetchone()
+        if row is None:
             return 1
-        max_n = getattr(rows[0], "max_n", None)
+        max_n = getattr(row, "max_n", None)
         return int(max_n or 0) + 1
+
+    def create_next_attempt(
+        self,
+        *,
+        job_id: str,
+        asset_id: str,
+        strategy: str,
+        status: ProcessingAttemptStatus,
+        now: datetime,
+        provider: str | None = None,
+        model: str | None = None,
+        execution_scope: str | None = None,
+        configuration_snapshot_version: int | None = None,
+        parent_batch_attempt_id: str | None = None,
+        batch_execution_id: str | None = None,
+        worker_token: str | None = None,
+        logical_asset_attempt: bool = True,
+    ) -> ProcessingAttempt:
+        """Serialize read-max + insert via ``UPDLOCK, HOLDLOCK``; retry on unique-index races.
+
+        The ``SELECT`` and ``INSERT`` share one cursor/connection (one transaction, committed
+        on context exit), so the row lock taken by ``UPDLOCK, HOLDLOCK`` is held across both
+        statements. A concurrent unique-index violation (defensive fallback if two callers
+        somehow bypass the lock, e.g. different isolation level) is retried up to
+        ``_MAX_CREATE_NEXT_ATTEMPT_RETRIES`` times.
+        """
+        last_exc: pyodbc.IntegrityError | None = None
+        for _ in range(_MAX_CREATE_NEXT_ATTEMPT_RETRIES):
+            attempt_id = str(uuid.uuid4())
+            try:
+                with self._client.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT MAX(attempt_number) AS max_n
+                        FROM processing_attempts WITH (UPDLOCK, HOLDLOCK)
+                        WHERE job_id = ? AND asset_id = ? AND strategy = ?
+                        """,
+                        (job_id, asset_id, strategy),
+                    )
+                    row = cur.fetchone()
+                    max_n = getattr(row, "max_n", None) if row is not None else None
+                    number = int(max_n or 0) + 1
+                    cur.execute(
+                        """
+                        INSERT INTO processing_attempts (
+                            id, job_id, asset_id, strategy, provider, model, status,
+                            attempt_number, started_at, execution_scope, logical_asset_attempt,
+                            configuration_snapshot_version, parent_batch_attempt_id,
+                            batch_execution_id, worker_token, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            attempt_id,
+                            job_id,
+                            asset_id,
+                            strategy,
+                            provider,
+                            model,
+                            status.value,
+                            number,
+                            now,
+                            execution_scope,
+                            1 if logical_asset_attempt else 0,
+                            configuration_snapshot_version,
+                            parent_batch_attempt_id,
+                            batch_execution_id,
+                            worker_token,
+                            now,
+                            now,
+                        ),
+                    )
+            except pyodbc.IntegrityError as exc:
+                if _is_attempt_number_unique_violation(exc):
+                    last_exc = exc
+                    logger.warning(
+                        "processing_attempts.create_next_attempt_retry job_id=%s asset_id=%s "
+                        "strategy=%s",
+                        job_id,
+                        asset_id,
+                        strategy,
+                    )
+                    continue
+                raise
+            else:
+                return ProcessingAttempt(
+                    id=attempt_id,
+                    job_id=job_id,
+                    asset_id=asset_id,
+                    strategy=strategy,
+                    attempt_number=number,
+                    status=status,
+                    created_at=now,
+                    provider=provider,
+                    model=model,
+                    started_at=now,
+                    execution_scope=execution_scope,
+                    logical_asset_attempt=logical_asset_attempt,
+                    configuration_snapshot_version=configuration_snapshot_version,
+                    parent_batch_attempt_id=parent_batch_attempt_id,
+                    batch_execution_id=batch_execution_id,
+                    worker_token=worker_token,
+                    updated_at=now,
+                )
+        raise RuntimeError(
+            f"create_next_attempt exhausted retries job_id={job_id} asset_id={asset_id} "
+            f"strategy={strategy}"
+        ) from last_exc
+
+    def list_started_by_job(self, job_id: str) -> Sequence[ProcessingAttempt]:
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {_SELECT_FIELDS} FROM processing_attempts
+                WHERE job_id = ? AND status = 'STARTED'
+                """,  # nosec B608
+                (job_id,),
+            )
+            rows = cur.fetchall()
+        return [_row_to_attempt(r) for r in rows]

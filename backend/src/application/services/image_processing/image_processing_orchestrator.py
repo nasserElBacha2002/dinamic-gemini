@@ -65,6 +65,7 @@ class ImageProcessingOrchestrator:
         job_id: str,
         asset_id: str,
         strategy: str,
+        worker_token: str | None = None,
     ) -> JobAssetProcessingState | None:
         state = self._state_repo.get_by_job_and_asset(job_id, asset_id)
         if self.is_terminal(state):
@@ -75,16 +76,16 @@ class ImageProcessingOrchestrator:
                 state.status.value if state else None,
             )
             return None
+        # FAILED_TECHNICAL is terminal within the same job (Phase 2 policy) — never re-acquired
+        # here; only PENDING assets are eligible for (re-)acquisition.
         acquired = self._state_repo.try_acquire(
             job_id,
             asset_id,
-            expected_statuses=(
-                JobAssetProcessingStatus.PENDING,
-                JobAssetProcessingStatus.FAILED_TECHNICAL,
-            ),
+            expected_statuses=(JobAssetProcessingStatus.PENDING,),
             next_status=JobAssetProcessingStatus.PROCESSING,
             strategy=strategy,
             now=self._clock.now(),
+            worker_token=worker_token,
         )
         if acquired is None:
             logger.info(
@@ -148,6 +149,8 @@ class ImageProcessingOrchestrator:
         strategy: str,
     ) -> JobAssetProcessingState:
         now = self._clock.now()
+        expected_version = int(state.version or 1)
+        owner_token = state.worker_token
         status = self._map_result_status(result.status)
         started = state.started_at or now
         duration = int((now - started).total_seconds() * 1000)
@@ -155,13 +158,17 @@ class ImageProcessingOrchestrator:
         state.last_strategy = strategy
         state.finished_at = now
         state.duration_ms = duration
-        state.attempt_count = int(state.attempt_count or 0) + (1 if attempt else 0)
+        # Attempt bookkeeping (attempt rows) is gated by attempts_enabled, but the state's own
+        # attempt_count must always reflect one processing pass regardless of that flag.
+        state.attempt_count = int(state.attempt_count or 0) + 1
         state.error_code = result.error_code
         state.error_message = result.error_message
         state.execution_scope = result.execution_scope.value
         state.updated_at = now
-        state.version = int(state.version or 1) + 1
-        self._state_repo.save(state)
+        state.version = expected_version + 1
+        self._state_repo.save_with_ownership(
+            state, expected_version=expected_version, worker_token=owner_token
+        )
 
         if attempt is not None and self._attempts_enabled:
             attempt.status = self._map_attempt_status(result.status)
@@ -190,11 +197,15 @@ class ImageProcessingOrchestrator:
 
     def mark_cancelled(self, state: JobAssetProcessingState, attempt: ProcessingAttempt | None) -> None:
         now = self._clock.now()
+        expected_version = int(state.version or 1)
+        owner_token = state.worker_token
         state.status = JobAssetProcessingStatus.CANCELLED
         state.finished_at = now
         state.updated_at = now
-        state.version = int(state.version or 1) + 1
-        self._state_repo.save(state)
+        state.version = expected_version + 1
+        self._state_repo.save_with_ownership(
+            state, expected_version=expected_version, worker_token=owner_token
+        )
         if attempt is not None and self._attempts_enabled:
             attempt.status = ProcessingAttemptStatus.CANCELLED
             attempt.finished_at = now

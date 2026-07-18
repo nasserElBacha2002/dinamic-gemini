@@ -13,10 +13,16 @@ from src.domain.jobs.entities import Job
 logger = logging.getLogger(__name__)
 
 STRATEGY_LEGACY_LLM = "LEGACY_LLM"
+STRATEGY_CODE_SCAN = "CODE_SCAN"
 
 
 class ProcessingStrategyResolver:
-    """Central selector — Phase 2 always returns LegacyLlm for all modes."""
+    """Central selector.
+
+    Phase 2 always returns LegacyLlm. Phase 3 returns CODE_SCAN when the job was started as
+    CODE_SCAN (immutable snapshot) or when the code-scan flag is on and the configured
+    identification mode is CODE_SCAN.
+    """
 
     def resolve_strategy_key(
         self,
@@ -24,10 +30,17 @@ class ProcessingStrategyResolver:
         *,
         pipeline_enabled: bool,
         orchestrator_enabled: bool,
+        code_scan_processing_enabled: bool = False,
     ) -> str:
         configured = job.identification_mode
-        selected = STRATEGY_LEGACY_LLM
         actual = job.execution_strategy
+        if actual == AisleIdentificationExecutionStrategy.CODE_SCAN or (
+            code_scan_processing_enabled
+            and configured == AisleIdentificationMode.CODE_SCAN
+        ):
+            selected = STRATEGY_CODE_SCAN
+        else:
+            selected = STRATEGY_LEGACY_LLM
         logger.info(
             "image_processing.strategy_resolved job_id=%s configured_identification_mode=%s "
             "selected_strategy=%s actual_execution_strategy=%s "

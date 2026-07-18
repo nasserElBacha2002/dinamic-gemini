@@ -20,6 +20,17 @@ class MemoryJobRepository(JobRepository):
     def save(self, job: Job) -> None:
         self._store[job.id] = job
 
+    def merge_result_json(self, job_id: str, patch: dict) -> Job | None:
+        """Thread-safe merge of top-level ``result_json`` keys (Phase 2 asset_progress)."""
+        job = self._store.get(job_id)
+        if job is None:
+            return None
+        merged = dict(job.result_json or {})
+        merged.update(patch)
+        job.result_json = merged
+        self._store[job_id] = job
+        return job
+
     def get_by_id(self, job_id: str) -> Job | None:
         return self._store.get(job_id)
 

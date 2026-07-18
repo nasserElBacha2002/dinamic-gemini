@@ -274,6 +274,42 @@ class V3JobExecutionStateService:
         self._aisle_repo.save(aisle)
         self.reconcile_inventory_for_aisle(aisle)
 
+    def finalize_code_scan_success(self, job_id: str, aisle: Aisle) -> None:
+        """Phase 3 lightweight finalize for CODE_SCAN jobs (no LLM pipeline report).
+
+        Positions are already persisted per asset by the code-scan persister. This marks the
+        job SUCCEEDED, promotes the operational result for production inventories, marks the
+        aisle processed, and reconciles inventory — without a durable pipeline report or LLM
+        artifacts. ``result_json`` keys already merged by the worker (e.g. ``asset_progress``)
+        are preserved.
+        """
+        completion_now = self._clock.now()
+        job = self._job_repo.get_by_id(job_id)
+        if job is None:
+            raise RuntimeError(f"Job not found for code_scan finalization: {job_id}")
+        job.status = JobStatus.SUCCEEDED
+        job.updated_at = completion_now
+        job.finished_at = completion_now
+        job.last_heartbeat_at = completion_now
+        job.current_stage = "CodeScan"
+        job.current_substep = "completed"
+        result_json = dict(job.result_json or {})
+        result_json["execution_strategy"] = getattr(
+            job.execution_strategy, "value", str(job.execution_strategy)
+        )
+        job.result_json = result_json
+        job.error_message = None
+        job.failure_code = None
+        job.failure_message = None
+        job.finalization_error_code = None
+        job.finalization_error_metadata = None
+        self._job_repo.save(job)
+
+        self._promote_operational_result(job_id, aisle)
+        aisle.mark_processed(completion_now)
+        self._aisle_repo.save(aisle)
+        self.reconcile_inventory_for_aisle(aisle)
+
     def _terminalize_job_row(
         self,
         job_id: str,

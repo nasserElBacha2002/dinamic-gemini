@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     libxcb1 \
     libgl1 \
+    libzbar0 \
     unixodbc \
     unixodbc-dev \
     && rm -rf /var/lib/apt/lists/* \
@@ -48,6 +49,10 @@ if not (drivers & required):
         "Build verification failed: ODBC Driver 18 for SQL Server not registered. "
         f"Got: {sorted(drivers)}"
     )
+
+# Phase 3 CODE_SCAN: verify pyzbar + libzbar0 are importable/loadable in the worker image.
+from pyzbar.pyzbar import decode as _pyzbar_decode  # noqa: F401
+print("pyzbar OK; libzbar0 loadable for CODE_SCAN worker path")
 PY
 
 COPY . .

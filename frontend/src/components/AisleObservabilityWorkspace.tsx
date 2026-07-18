@@ -95,16 +95,37 @@ function jobMetadataRows(
     { label: i18n.t('jobs.obs_last_heartbeat'), value: formatOptionalDate(job.last_heartbeat_at) },
     { label: i18n.t('jobs.obs_cancel_requested'), value: formatOptionalDate(job.cancel_requested_at) },
     { label: i18n.t('jobs.obs_current_stage'), value: job.current_stage || dash },
+    ...(job.execution_strategy
+      ? [
+          {
+            label: i18n.t('jobs.obs_execution_strategy'),
+            value: i18n.t(
+              `aisle.execution_strategy_${String(job.execution_strategy).toLowerCase()}`,
+              { defaultValue: String(job.execution_strategy) },
+            ),
+          },
+          {
+            label: i18n.t('jobs.obs_execution_scope'),
+            value:
+              String(job.execution_strategy) === 'CODE_SCAN'
+                ? i18n.t('aisle.execution_scope_single_asset')
+                : i18n.t('aisle.execution_scope_aisle_batch'),
+          },
+        ]
+      : []),
     ...(job.asset_progress
       ? [
           {
             label: i18n.t('jobs.obs_asset_progress'),
-            value: i18n.t('jobs.obs_asset_progress_value', {
+            value: i18n.t('jobs.obs_asset_progress_value_v2', {
               total: job.asset_progress.total,
               resolved: job.asset_progress.resolved,
               unrecognized: job.asset_progress.unrecognized,
               failed: job.asset_progress.failed,
               pending: job.asset_progress.pending,
+              processing: job.asset_progress.processing,
+              manual_review: job.asset_progress.manual_review,
+              cancelled: job.asset_progress.cancelled,
             }),
           },
         ]

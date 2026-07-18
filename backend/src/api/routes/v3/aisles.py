@@ -113,6 +113,7 @@ from src.application.services.aisle_aggregated_execution_log import (
 )
 from src.application.services.aisle_identification_configuration_query import (
     AisleIdentificationConfigurationQuery,
+    IdentificationModeConfiguration,
 )
 from src.application.services.aisle_table_query_params import (
     build_aisle_table_query_from_route_params,
@@ -252,12 +253,17 @@ def _aisle_response(
     aisle: Aisle,
     id_query: AisleIdentificationConfigurationQuery,
     latest_job: Job | None = None,
+    *,
+    configuration: IdentificationModeConfiguration | None = None,
     **kwargs: Any,
 ) -> AisleResponse:
+    """``configuration``: pass a pre-resolved value (e.g. from ``id_query.for_aisles``) to avoid
+    a redundant inventory/client lookup per aisle when rendering a list."""
+    resolved = configuration if configuration is not None else id_query.for_aisle(aisle)
     return aisle_to_response(
         aisle,
         latest_job,
-        identification=api_fields_from_configuration(id_query.for_aisle(aisle)),
+        identification=api_fields_from_configuration(resolved),
         **kwargs,
     )
 
@@ -505,12 +511,16 @@ def list_aisles(
         )
         items, total = use_case.execute(inventory_id, q)
         ps = q.page_size
+        # Batch-resolve identification config once for the whole page (one inventory/client
+        # lookup) instead of one per aisle (N+1).
+        configurations = id_query.for_aisles([item.aisle for item in items])
         return PaginatedAisleListResponse(
             items=[
                 _aisle_response(
                     item.aisle,
                     id_query,
                     item.latest_job,
+                    configuration=configurations.get(item.aisle.id),
                     assets_count=item.assets_count,
                     positions_count=item.positions_count,
                     pending_review_positions_count=item.pending_review_positions_count,

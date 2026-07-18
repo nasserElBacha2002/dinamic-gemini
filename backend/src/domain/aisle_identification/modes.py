@@ -37,10 +37,15 @@ class AisleIdentificationModeSource(str, Enum):
 
 
 class AisleIdentificationExecutionStrategy(str, Enum):
-    """Actual execution path used by the worker (Phase 1: always legacy LLM)."""
+    """Actual execution path used by the worker.
+
+    Phase 1/2: always legacy LLM (``LEGACY_LLM`` / ``LEGACY_LLM_TEMPORARY``).
+    Phase 3: ``CODE_SCAN`` for deterministic per-image QR/barcode internal-code reading.
+    """
 
     LEGACY_LLM = "LEGACY_LLM"
     LEGACY_LLM_TEMPORARY = "LEGACY_LLM_TEMPORARY"
+    CODE_SCAN = "CODE_SCAN"
 
 
 def parse_identification_mode(value: str | AisleIdentificationMode) -> AisleIdentificationMode:

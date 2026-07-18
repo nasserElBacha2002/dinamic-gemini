@@ -7,7 +7,7 @@ after the batch from coverage (evidence / positions), not from separate LLM call
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,21 +35,25 @@ class LegacyBatchOutcome:
     pipeline_result: Any = None
     report_path: str | None = None
     cancelled: bool = False
+    #: True when the batch lease could not be acquired (another worker holds it); the legacy
+    #: provider was never invoked in this call.
+    skipped_busy: bool = False
     error_message: str | None = None
     #: asset_id → whether a position/evidence was linked for this job
     assets_with_result: frozenset[str] = frozenset()
 
 
-LegacyBatchRunner = Callable[..., LegacyBatchOutcome]
+LegacyBatchRunner = Callable[[], LegacyBatchOutcome]
 
 
 class LegacyLlmProcessingStrategy:
-    """Encapsulates current hybrid aisle processing without changing prompts/providers."""
+    """Encapsulates current hybrid aisle processing without changing prompts/providers.
+
+    Stateless with respect to the physical runner: ``batch_runner`` is passed per call
+    (never stored on ``self``) so one shared instance is safe across concurrent jobs/workers.
+    """
 
     strategy_key = STRATEGY_KEY
-
-    def __init__(self, batch_runner: LegacyBatchRunner | None = None) -> None:
-        self._batch_runner = batch_runner
 
     def process(self, context: ImageProcessingContext) -> ImageProcessingResult:
         """Single-asset entry (Phase 3+). Phase 2 aisle path uses ``process_aisle_batch``."""
@@ -76,10 +80,8 @@ class LegacyLlmProcessingStrategy:
         *,
         job: Job,
         assets: Sequence[SourceAsset],
-        runner_kwargs: Mapping[str, Any],
+        batch_runner: LegacyBatchRunner,
     ) -> LegacyBatchOutcome:
-        if self._batch_runner is None:
-            raise RuntimeError("LegacyLlmProcessingStrategy requires a batch_runner")
         logger.info(
             "legacy_llm.aisle_batch_start job_id=%s asset_count=%s "
             "identification_mode=%s execution_strategy=%s execution_scope=%s",
@@ -89,7 +91,7 @@ class LegacyLlmProcessingStrategy:
             job.execution_strategy.value,
             ExecutionScope.AISLE_BATCH.value,
         )
-        outcome = self._batch_runner(**dict(runner_kwargs))
+        outcome = batch_runner()
         logger.info(
             "legacy_llm.aisle_batch_done job_id=%s ok=%s cancelled=%s "
             "assets_with_result=%s",

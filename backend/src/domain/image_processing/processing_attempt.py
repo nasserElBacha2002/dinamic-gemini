@@ -39,4 +39,8 @@ class ProcessingAttempt:
     execution_scope: str | None = None
     logical_asset_attempt: bool = True
     configuration_snapshot_version: int | None = None
+    parent_batch_attempt_id: str | None = None
+    batch_execution_id: str | None = None
+    worker_token: str | None = None
+    updated_at: datetime | None = None
     extra: dict[str, Any] = field(default_factory=dict)

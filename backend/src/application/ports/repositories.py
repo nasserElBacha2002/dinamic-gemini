@@ -9,7 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Literal, Union
+from typing import Any, Literal, Union
 
 from src.application.ports.contracts import PositionListQuery
 from src.application.ports.rollup_contracts import AisleAssetRollup
@@ -267,6 +267,22 @@ class JobRepository(ABC):
     def list_all_jobs(self) -> Sequence[Job]:
         """Bulk read for analytics. Default empty; SQL/memory implementations scan ``inventory_jobs``."""
         return []
+
+    def merge_result_json(self, job_id: str, patch: dict[str, Any]) -> Job | None:
+        """Merge top-level keys into ``job.result_json`` without dropping sibling keys.
+
+        Default implementation is a read-modify-write via ``get_by_id`` + ``save``.
+        SQL implementations should override with a row lock / ``JSON_MODIFY`` so concurrent
+        writers of other keys (costs, durable artifacts, etc.) are not wiped.
+        """
+        job = self.get_by_id(job_id)
+        if job is None:
+            return None
+        merged = dict(job.result_json or {})
+        merged.update(patch)
+        job.result_json = merged
+        self.save(job)
+        return job
 
     def list_jobs_for_metrics(
         self,

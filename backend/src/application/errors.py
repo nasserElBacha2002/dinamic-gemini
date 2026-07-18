@@ -401,3 +401,28 @@ class AssetNotInJobSnapshotError(Exception):
 
 class ManualResultNotAllowedForAssetTypeError(Exception):
     """Raised when manual coverage is requested for a non-image / video snapshot asset."""
+
+
+class ImageProcessingRepositoryUnavailableError(Exception):
+    """Raised when Phase 2 image-processing SQL repos are required but unavailable.
+
+    Fail-fast policy: when the app resolves a SQL repository backend, the image-processing
+    bridge must not silently fall back to in-memory lease/state/attempt repositories (that
+    would break cross-worker mutual exclusion). Raised instead of falling back.
+    """
+
+
+class AssetProcessingStateConcurrencyError(Exception):
+    """Raised when an ownership-checked write to job_asset_processing_states affects 0 rows.
+
+    Indicates the caller's ``(expected_version, worker_token)`` no longer matches the
+    persisted row (lost race, expired lease, or already-finalized state).
+    """
+
+
+class JobProcessingLeaseNotAcquiredError(Exception):
+    """Optional: raised by callers that require a lease and treat "not acquired" as fatal.
+
+    ``AisleProcessingOrchestrator.process_with_legacy_batch`` does not raise this by default;
+    it returns ``LegacyBatchOutcome(ok=False, skipped_busy=True)`` instead so callers can decide.
+    """

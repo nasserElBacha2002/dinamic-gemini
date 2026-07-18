@@ -408,9 +408,10 @@ IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jo
         )
     );
 GO
+-- Phase 3 (0053): execution_strategy CHECK includes CODE_SCAN.
 IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_execution_strategy')
     ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_execution_strategy
-    CHECK (execution_strategy IN ('LEGACY_LLM', 'LEGACY_LLM_TEMPORARY'));
+    CHECK (execution_strategy IN ('LEGACY_LLM', 'LEGACY_LLM_TEMPORARY', 'CODE_SCAN'));
 GO
 IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_configuration_snapshot_version')
     ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_configuration_snapshot_version
@@ -1207,6 +1208,8 @@ BEGIN
         updated_at DATETIME2 NOT NULL,
         version INT NOT NULL CONSTRAINT DF_japs_version DEFAULT (1),
         execution_scope VARCHAR(32) NULL,
+        worker_token VARCHAR(128) NULL,
+        lease_expires_at DATETIME2 NULL,
         CONSTRAINT PK_job_asset_processing_states PRIMARY KEY (id),
         CONSTRAINT CK_job_asset_processing_states_status CHECK (
             status IN (
@@ -1215,7 +1218,10 @@ BEGIN
             )
         ),
         CONSTRAINT CK_job_asset_processing_states_version CHECK (version > 0),
-        CONSTRAINT CK_job_asset_processing_states_attempt_count CHECK (attempt_count >= 0)
+        CONSTRAINT CK_job_asset_processing_states_attempt_count CHECK (attempt_count >= 0),
+        CONSTRAINT CK_job_asset_processing_states_worker_token CHECK (
+            worker_token IS NULL OR LEN(worker_token) > 0
+        )
     );
 END
 GO
@@ -1257,7 +1263,11 @@ BEGIN
         execution_scope VARCHAR(32) NULL,
         logical_asset_attempt BIT NOT NULL CONSTRAINT DF_pa_logical DEFAULT (1),
         configuration_snapshot_version INT NULL,
+        parent_batch_attempt_id VARCHAR(36) NULL,
+        batch_execution_id VARCHAR(36) NULL,
+        worker_token VARCHAR(128) NULL,
         created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NULL,
         CONSTRAINT PK_processing_attempts PRIMARY KEY (id),
         CONSTRAINT CK_processing_attempts_status CHECK (
             status IN (
@@ -1284,4 +1294,82 @@ IF NOT EXISTS (
 )
     CREATE NONCLUSTERED INDEX IX_processing_attempts_job_asset
         ON processing_attempts(job_id, asset_id, attempt_number);
+GO
+
+-- Phase 2 corrections — exclusive batch lease + physical batch attempts (mirror 0052).
+IF OBJECT_ID('job_processing_leases', 'U') IS NULL
+BEGIN
+    CREATE TABLE job_processing_leases (
+        id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        strategy VARCHAR(64) NOT NULL,
+        execution_scope VARCHAR(32) NOT NULL,
+        status VARCHAR(16) NOT NULL,
+        worker_token VARCHAR(128) NULL,
+        acquired_at DATETIME2 NULL,
+        heartbeat_at DATETIME2 NULL,
+        lease_expires_at DATETIME2 NULL,
+        released_at DATETIME2 NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        version INT NOT NULL CONSTRAINT DF_jpl_version DEFAULT (1),
+        CONSTRAINT PK_job_processing_leases PRIMARY KEY (id),
+        CONSTRAINT CK_job_processing_leases_status CHECK (
+            status IN ('AVAILABLE', 'ACQUIRED', 'COMPLETED', 'FAILED', 'CANCELLED')
+        ),
+        CONSTRAINT CK_job_processing_leases_version CHECK (version > 0)
+    );
+END
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_job_processing_leases_scope'
+      AND object_id = OBJECT_ID('job_processing_leases')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_job_processing_leases_scope
+        ON job_processing_leases(job_id, strategy, execution_scope);
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_job_processing_leases_expiry'
+      AND object_id = OBJECT_ID('job_processing_leases')
+)
+    CREATE NONCLUSTERED INDEX IX_job_processing_leases_expiry
+        ON job_processing_leases(status, lease_expires_at);
+GO
+
+IF OBJECT_ID('batch_processing_attempts', 'U') IS NULL
+BEGIN
+    CREATE TABLE batch_processing_attempts (
+        id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        strategy VARCHAR(64) NOT NULL,
+        execution_scope VARCHAR(32) NOT NULL,
+        provider VARCHAR(128) NULL,
+        model VARCHAR(256) NULL,
+        prompt_key VARCHAR(128) NULL,
+        prompt_version VARCHAR(64) NULL,
+        status VARCHAR(32) NOT NULL,
+        worker_token VARCHAR(128) NULL,
+        started_at DATETIME2 NULL,
+        finished_at DATETIME2 NULL,
+        duration_ms INT NULL,
+        error_code VARCHAR(64) NULL,
+        error_message NVARCHAR(2048) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_batch_processing_attempts PRIMARY KEY (id),
+        CONSTRAINT CK_batch_processing_attempts_status CHECK (
+            status IN ('STARTED', 'SUCCEEDED', 'FAILED_TECHNICAL', 'CANCELLED')
+        )
+    );
+END
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_batch_processing_attempts_job_scope_status'
+      AND object_id = OBJECT_ID('batch_processing_attempts')
+)
+    CREATE NONCLUSTERED INDEX IX_batch_processing_attempts_job_scope_status
+        ON batch_processing_attempts(job_id, strategy, execution_scope, status);
 GO

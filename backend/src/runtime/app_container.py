@@ -392,6 +392,15 @@ class AppContainer:
             logger.info(log_msg, *log_args)
         return res
 
+    def is_sql_repository_backend(self) -> bool:
+        """True when this container's resolved backend is SQL (not memory-only/fallback).
+
+        Callers that build optional collaborators (e.g. the Phase 2 image-processing bridge)
+        use this to decide whether an in-memory repository fallback would be inconsistent
+        with the rest of the app's persistence (``require_sql``).
+        """
+        return self._get_repository_backend_resolution().mode == RepositoryBackendMode.SQL
+
     def _build_sql_repository_or_memory(
         self,
         *,
@@ -710,6 +719,44 @@ class AppContainer:
         else:
             self._processing_attempt_repo = MemoryProcessingAttemptRepository()
         return self._processing_attempt_repo
+
+    def get_job_processing_lease_repo(self):
+        if getattr(self, "_job_processing_lease_repo", None) is not None:
+            return self._job_processing_lease_repo
+        from src.infrastructure.repositories.memory_job_processing_lease_repository import (
+            MemoryJobProcessingLeaseRepository,
+        )
+        from src.infrastructure.repositories.sql_job_processing_lease_repository import (
+            SqlJobProcessingLeaseRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._job_processing_lease_repo = SqlJobProcessingLeaseRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._job_processing_lease_repo = MemoryJobProcessingLeaseRepository()
+        return self._job_processing_lease_repo
+
+    def get_batch_processing_attempt_repo(self):
+        if getattr(self, "_batch_processing_attempt_repo", None) is not None:
+            return self._batch_processing_attempt_repo
+        from src.infrastructure.repositories.memory_batch_processing_attempt_repository import (
+            MemoryBatchProcessingAttemptRepository,
+        )
+        from src.infrastructure.repositories.sql_batch_processing_attempt_repository import (
+            SqlBatchProcessingAttemptRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._batch_processing_attempt_repo = SqlBatchProcessingAttemptRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._batch_processing_attempt_repo = MemoryBatchProcessingAttemptRepository()
+        return self._batch_processing_attempt_repo
 
     def get_manual_image_coverage_repo(self):
         if self._manual_image_coverage_repo is not None:

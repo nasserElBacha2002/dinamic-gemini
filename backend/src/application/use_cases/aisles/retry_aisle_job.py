@@ -7,7 +7,7 @@ from typing import cast
 from src.application.errors import ActiveJobExistsError
 from src.application.ports.contracts import ProcessAislePayload
 from src.application.ports.repositories import AisleRepository, JobRepository
-from src.application.services.aisle_identification_execution import phase1_execution_strategy
+from src.application.services.aisle_identification_execution import resolve_execution_strategy
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
@@ -110,9 +110,12 @@ class RetryAisleJobUseCase:
         raw_payload["aisle_id"] = resolved_aisle_id
         payload = cast(ProcessAislePayload, raw_payload)
         settings = load_settings()
-        execution_strategy = phase1_execution_strategy(
+        execution_strategy = resolve_execution_strategy(
             effective_mode=original_job.identification_mode,
             pipeline_enabled=bool(settings.aisle_identification_pipeline_enabled),
+            code_scan_processing_enabled=bool(
+                getattr(settings, "code_scan_processing_enabled", False)
+            ),
         )
         retry_job = self._launch_service.create_and_launch_attempt(
             aisle=aisle,

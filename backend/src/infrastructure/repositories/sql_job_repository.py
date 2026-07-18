@@ -355,6 +355,41 @@ class SqlJobRepository(JobRepository):
                     ),
                 )
 
+    def merge_result_json(self, job_id: str, patch: dict[str, Any]) -> Job | None:
+        """Merge top-level ``result_json`` keys under a row lock (Phase 2 asset_progress).
+
+        Uses ``UPDLOCK, ROWLOCK`` so a concurrent full ``save()`` of other fields cannot
+        silently drop the merged keys between read and write of ``result_json``.
+        """
+        if not patch:
+            return self.get_by_id(job_id)
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT result_json
+                FROM inventory_jobs WITH (UPDLOCK, ROWLOCK)
+                WHERE id = ?
+                """,
+                (job_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            current = _parse_json(getattr(row, "result_json", None)) or {}
+            if not isinstance(current, dict):
+                current = {}
+            merged = dict(current)
+            merged.update(patch)
+            cur.execute(
+                """
+                UPDATE inventory_jobs
+                SET result_json = ?, updated_at = SYSUTCDATETIME()
+                WHERE id = ?
+                """,
+                (json.dumps(merged, ensure_ascii=False), job_id),
+            )
+        return self.get_by_id(job_id)
+
     def get_by_id(self, job_id: str) -> Job | None:
         with self._client.cursor() as cur:
             cur.execute(

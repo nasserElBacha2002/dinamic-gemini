@@ -1,4 +1,15 @@
-"""SQL Server JobAssetProcessingStateRepository (Phase 2)."""
+"""SQL Server JobAssetProcessingStateRepository (Phase 2 corrections).
+
+``SqlServerClient`` exposes only ``cursor()`` (pyodbc cursor context manager) — there is no
+``query()``/``execute()`` convenience wrapper. All access here goes through
+``with self._client.cursor() as cur: cur.execute(sql, params)`` and ``cur.fetchone()`` /
+``cur.fetchall()`` (see other ``sql_*_repository.py`` modules and
+:mod:`src.infrastructure.repositories.sql_job_repository` for the established pattern).
+
+Atomic acquire uses ``UPDATE ... OUTPUT inserted.*`` so the returned row always reflects the
+caller's own successful update (never a concurrent winner's row) — see
+``claim_next_queued_job`` in ``sql_job_repository.py`` for the same technique.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +17,7 @@ import logging
 from collections.abc import Sequence
 from datetime import datetime, timezone
 
+from src.application.errors import AssetProcessingStateConcurrencyError
 from src.application.ports.image_processing_repositories import (
     AssetProgressCounts,
     JobAssetProcessingStateRepository,
@@ -26,6 +38,14 @@ def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt.tzinfo is not None:
         return dt
     return dt.replace(tzinfo=timezone.utc)
+
+
+_SELECT_FIELDS = (
+    "id, job_id, asset_id, status, active_result_id, attempt_count, "
+    "last_strategy, started_at, finished_at, duration_ms, "
+    "error_code, error_message, created_at, updated_at, version, execution_scope, "
+    "worker_token, lease_expires_at"
+)
 
 
 def _row_to_state(row: object) -> JobAssetProcessingState:
@@ -57,6 +77,8 @@ def _row_to_state(row: object) -> JobAssetProcessingState:
         updated_at=_ensure_utc(getattr(row, "updated_at")) or datetime.now(timezone.utc),
         version=int(getattr(row, "version", 1) or 1),
         execution_scope=normalize_db_str(getattr(row, "execution_scope", None)),
+        worker_token=normalize_db_str(getattr(row, "worker_token", None)),
+        lease_expires_at=_ensure_utc(getattr(row, "lease_expires_at", None)),
     )
 
 
@@ -65,20 +87,17 @@ class SqlJobAssetProcessingStateRepository(JobAssetProcessingStateRepository):
         self._client = client
 
     def save(self, state: JobAssetProcessingState) -> None:
-        existing = self.get_by_job_and_asset(state.job_id, state.asset_id)
-        if existing is None:
-            self._client.execute(
+        with self._client.cursor() as cur:
+            cur.execute(
                 """
-                INSERT INTO job_asset_processing_states (
-                    id, job_id, asset_id, status, active_result_id, attempt_count,
-                    last_strategy, started_at, finished_at, duration_ms,
-                    error_code, error_message, created_at, updated_at, version, execution_scope
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                UPDATE job_asset_processing_states SET
+                    status = ?, active_result_id = ?, attempt_count = ?, last_strategy = ?,
+                    started_at = ?, finished_at = ?, duration_ms = ?, error_code = ?,
+                    error_message = ?, updated_at = ?, version = ?, execution_scope = ?,
+                    worker_token = ?, lease_expires_at = ?
+                WHERE job_id = ? AND asset_id = ?
                 """,
                 (
-                    state.id,
-                    state.job_id,
-                    state.asset_id,
                     state.status.value,
                     state.active_result_id,
                     state.attempt_count,
@@ -88,68 +107,118 @@ class SqlJobAssetProcessingStateRepository(JobAssetProcessingStateRepository):
                     state.duration_ms,
                     state.error_code,
                     state.error_message,
-                    state.created_at,
                     state.updated_at,
                     state.version,
                     state.execution_scope,
+                    state.worker_token,
+                    state.lease_expires_at,
+                    state.job_id,
+                    state.asset_id,
                 ),
             )
-            return
-        self._client.execute(
-            """
-            UPDATE job_asset_processing_states SET
-                status = ?, active_result_id = ?, attempt_count = ?, last_strategy = ?,
-                started_at = ?, finished_at = ?, duration_ms = ?, error_code = ?,
-                error_message = ?, updated_at = ?, version = ?, execution_scope = ?
-            WHERE job_id = ? AND asset_id = ?
-            """,
-            (
-                state.status.value,
-                state.active_result_id,
-                state.attempt_count,
-                state.last_strategy,
-                state.started_at,
-                state.finished_at,
-                state.duration_ms,
-                state.error_code,
-                state.error_message,
-                state.updated_at,
-                state.version,
-                state.execution_scope,
-                state.job_id,
-                state.asset_id,
-            ),
-        )
+            if cur.rowcount == 0:
+                cur.execute(
+                    """
+                    INSERT INTO job_asset_processing_states (
+                        id, job_id, asset_id, status, active_result_id, attempt_count,
+                        last_strategy, started_at, finished_at, duration_ms,
+                        error_code, error_message, created_at, updated_at, version,
+                        execution_scope, worker_token, lease_expires_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        state.id,
+                        state.job_id,
+                        state.asset_id,
+                        state.status.value,
+                        state.active_result_id,
+                        state.attempt_count,
+                        state.last_strategy,
+                        state.started_at,
+                        state.finished_at,
+                        state.duration_ms,
+                        state.error_code,
+                        state.error_message,
+                        state.created_at,
+                        state.updated_at,
+                        state.version,
+                        state.execution_scope,
+                        state.worker_token,
+                        state.lease_expires_at,
+                    ),
+                )
+
+    def save_with_ownership(
+        self,
+        state: JobAssetProcessingState,
+        *,
+        expected_version: int,
+        worker_token: str | None,
+    ) -> None:
+        params: list[object] = [
+            state.status.value,
+            state.active_result_id,
+            state.attempt_count,
+            state.last_strategy,
+            state.started_at,
+            state.finished_at,
+            state.duration_ms,
+            state.error_code,
+            state.error_message,
+            state.updated_at,
+            state.version,
+            state.execution_scope,
+            state.worker_token,
+            state.lease_expires_at,
+            state.job_id,
+            state.asset_id,
+            expected_version,
+        ]
+        worker_clause = ""
+        if worker_token is not None:
+            worker_clause = " AND worker_token = ?"
+            params.append(worker_token)
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE job_asset_processing_states SET
+                    status = ?, active_result_id = ?, attempt_count = ?, last_strategy = ?,
+                    started_at = ?, finished_at = ?, duration_ms = ?, error_code = ?,
+                    error_message = ?, updated_at = ?, version = ?, execution_scope = ?,
+                    worker_token = ?, lease_expires_at = ?
+                WHERE job_id = ? AND asset_id = ? AND version = ?{worker_clause}
+                """,  # nosec B608
+                tuple(params),
+            )
+            if cur.rowcount == 0:
+                raise AssetProcessingStateConcurrencyError(
+                    f"job_asset_processing_states ownership conflict "
+                    f"job_id={state.job_id} asset_id={state.asset_id} "
+                    f"expected_version={expected_version} worker_token={worker_token}"
+                )
 
     def get_by_job_and_asset(
         self, job_id: str, asset_id: str
     ) -> JobAssetProcessingState | None:
-        rows = self._client.query(
-            """
-            SELECT id, job_id, asset_id, status, active_result_id, attempt_count,
-                   last_strategy, started_at, finished_at, duration_ms,
-                   error_code, error_message, created_at, updated_at, version, execution_scope
-            FROM job_asset_processing_states
-            WHERE job_id = ? AND asset_id = ?
-            """,
-            (job_id, asset_id),
-        )
-        if not rows:
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"SELECT {_SELECT_FIELDS} FROM job_asset_processing_states "  # nosec B608
+                "WHERE job_id = ? AND asset_id = ?",
+                (job_id, asset_id),
+            )
+            row = cur.fetchone()
+        if row is None:
             return None
-        return _row_to_state(rows[0])
+        return _row_to_state(row)
 
     def list_by_job(self, job_id: str) -> Sequence[JobAssetProcessingState]:
-        rows = self._client.query(
-            """
-            SELECT id, job_id, asset_id, status, active_result_id, attempt_count,
-                   last_strategy, started_at, finished_at, duration_ms,
-                   error_code, error_message, created_at, updated_at, version, execution_scope
-            FROM job_asset_processing_states
-            WHERE job_id = ?
-            ORDER BY created_at ASC
-            """,
-            (job_id,),
-        )
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"SELECT {_SELECT_FIELDS} FROM job_asset_processing_states "  # nosec B608
+                "WHERE job_id = ? ORDER BY created_at ASC",
+                (job_id,),
+            )
+            rows = cur.fetchall()
         return [_row_to_state(r) for r in rows]
 
     def try_acquire(
@@ -166,40 +235,45 @@ class SqlJobAssetProcessingStateRepository(JobAssetProcessingStateRepository):
         if not expected_statuses:
             return None
         placeholders = ", ".join("?" for _ in expected_statuses)
-        params: list[object] = [
+        select_fields = ", ".join(f"inserted.{f.strip()}" for f in _SELECT_FIELDS.split(","))
+        params: tuple[object, ...] = (
             next_status.value,
             strategy,
             now,
             now,
+            worker_token,
             job_id,
             asset_id,
             *[s.value for s in expected_statuses],
-        ]
-        # Optimistic acquire: update only when status is still expected.
-        self._client.execute(
-            f"""
-            UPDATE job_asset_processing_states
-            SET status = ?, last_strategy = ?, started_at = ?, updated_at = ?,
-                version = version + 1
-            WHERE job_id = ? AND asset_id = ? AND status IN ({placeholders})
-            """,
-            tuple(params),
         )
-        state = self.get_by_job_and_asset(job_id, asset_id)
-        if state is None or state.status != next_status:
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE job_asset_processing_states
+                SET status = ?, last_strategy = ?, started_at = ?, updated_at = ?,
+                    version = version + 1, worker_token = ?
+                OUTPUT {select_fields}
+                WHERE job_id = ? AND asset_id = ? AND status IN ({placeholders})
+                """,  # nosec B608
+                params,
+            )
+            row = cur.fetchone()
+        if row is None:
             return None
-        return state
+        return _row_to_state(row)
 
     def aggregate_progress(self, job_id: str) -> AssetProgressCounts:
-        rows = self._client.query(
-            """
-            SELECT status, COUNT(1) AS cnt
-            FROM job_asset_processing_states
-            WHERE job_id = ?
-            GROUP BY status
-            """,
-            (job_id,),
-        )
+        with self._client.cursor() as cur:
+            cur.execute(
+                """
+                SELECT status, COUNT(1) AS cnt
+                FROM job_asset_processing_states
+                WHERE job_id = ?
+                GROUP BY status
+                """,
+                (job_id,),
+            )
+            rows = cur.fetchall()
         counts = {
             "PENDING": 0,
             "PROCESSING": 0,
@@ -228,17 +302,43 @@ class SqlJobAssetProcessingStateRepository(JobAssetProcessingStateRepository):
         )
 
     def list_abandoned_processing(
-        self, *, older_than: datetime, limit: int = 100
+        self,
+        *,
+        older_than: datetime,
+        limit: int = 100,
+        job_id: str | None = None,
+        as_of: datetime | None = None,
     ) -> Sequence[JobAssetProcessingState]:
-        rows = self._client.query(
-            """
-            SELECT TOP (?) id, job_id, asset_id, status, active_result_id, attempt_count,
-                   last_strategy, started_at, finished_at, duration_ms,
-                   error_code, error_message, created_at, updated_at, version, execution_scope
-            FROM job_asset_processing_states
-            WHERE status = 'PROCESSING' AND updated_at < ?
-            ORDER BY updated_at ASC
-            """,
-            (limit, older_than),
-        )
+        lease_cutoff = as_of if as_of is not None else older_than
+        with self._client.cursor() as cur:
+            if job_id is not None:
+                cur.execute(
+                    f"""
+                    SELECT TOP (?) {_SELECT_FIELDS}
+                    FROM job_asset_processing_states
+                    WHERE status = 'PROCESSING'
+                      AND job_id = ?
+                      AND (
+                            (lease_expires_at IS NOT NULL AND lease_expires_at < ?)
+                         OR (lease_expires_at IS NULL AND updated_at < ?)
+                      )
+                    ORDER BY updated_at ASC
+                    """,  # nosec B608
+                    (limit, job_id, lease_cutoff, older_than),
+                )
+            else:
+                cur.execute(
+                    f"""
+                    SELECT TOP (?) {_SELECT_FIELDS}
+                    FROM job_asset_processing_states
+                    WHERE status = 'PROCESSING'
+                      AND (
+                            (lease_expires_at IS NOT NULL AND lease_expires_at < ?)
+                         OR (lease_expires_at IS NULL AND updated_at < ?)
+                      )
+                    ORDER BY updated_at ASC
+                    """,  # nosec B608
+                    (limit, lease_cutoff, older_than),
+                )
+            rows = cur.fetchall()
         return [_row_to_state(r) for r in rows]

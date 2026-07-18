@@ -978,8 +978,117 @@ class LimitsAndSchemaSettings(BaseModel):
         ge=1,
         le=32,
         description=(
-            "Phase 2: max concurrent per-asset workers. Default 1 while LegacyLlm remains "
-            "AISLE_BATCH. Env: MAX_IMAGE_PROCESSING_CONCURRENCY."
+            "Phase 3 SINGLE_ASSET concurrency for CODE_SCAN per-image processing (ThreadPool "
+            "max_workers). Not applied to the Phase 2 AISLE_BATCH legacy path: physical LLM "
+            "execution remains one batch call regardless of this value. Must be >= 1. "
+            "Env: MAX_IMAGE_PROCESSING_CONCURRENCY."
+        ),
+    )
+    code_scan_processing_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CODE_SCAN_PROCESSING_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: enable deterministic per-image CODE_SCAN execution strategy for aisle "
+            "jobs whose effective identification mode is CODE_SCAN. Default false (safe): jobs "
+            "stay on the legacy LLM path. Env: CODE_SCAN_PROCESSING_ENABLED."
+        ),
+    )
+    code_scan_max_image_side: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_IMAGE_SIDE", "2048")),
+        ge=256,
+        le=8192,
+        description=(
+            "Phase 3: max longest side (px) for images before code scanning (downscaled if "
+            "larger). Env: CODE_SCAN_MAX_IMAGE_SIDE."
+        ),
+    )
+    code_scan_timeout_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_TIMEOUT_SECONDS", "15")),
+        ge=1,
+        le=300,
+        description=(
+            "Phase 3: wall-clock timeout (seconds) for scanning one image (all variants). "
+            "Env: CODE_SCAN_TIMEOUT_SECONDS."
+        ),
+    )
+    code_scan_enable_rotations: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CODE_SCAN_ENABLE_ROTATIONS", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: when a first (0°) scan finds nothing, retry with rotated variants "
+            "(90/180/270) up to CODE_SCAN_MAX_VARIANTS. Env: CODE_SCAN_ENABLE_ROTATIONS."
+        ),
+    )
+    code_scan_enable_preprocessing: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CODE_SCAN_ENABLE_PREPROCESSING", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: reserved image preprocessing (grayscale/contrast) before scanning. "
+            "Kept simple (off) for the MVP. Env: CODE_SCAN_ENABLE_PREPROCESSING."
+        ),
+    )
+    code_scan_max_variants: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_VARIANTS", "4")),
+        ge=1,
+        le=8,
+        description=(
+            "Phase 3: max scan variants attempted per image (0/90/180/270 when rotations on). "
+            "Env: CODE_SCAN_MAX_VARIANTS."
+        ),
+    )
+    code_scan_quantity_max: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_QUANTITY_MAX", "99999999")),
+        ge=1,
+        le=999_999_999,
+        description=(
+            "Phase 3: max accepted positive-integer quantity parsed from a label payload. "
+            "Values above this mark the asset PENDING_MANUAL_REVIEW. Env: CODE_SCAN_QUANTITY_MAX."
+        ),
+    )
+    code_scan_allow_decimal_quantity: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CODE_SCAN_ALLOW_DECIMAL_QUANTITY", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: whether decimal quantities are accepted. MVP keeps this false (positive "
+            "integers only). Env: CODE_SCAN_ALLOW_DECIMAL_QUANTITY."
+        ),
+    )
+    code_scan_max_technical_attempts: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_TECHNICAL_ATTEMPTS", "2")),
+        ge=1,
+        le=10,
+        description=(
+            "Phase 3: max technical retries for one asset scan on transient scanner errors. "
+            "Env: CODE_SCAN_MAX_TECHNICAL_ATTEMPTS."
+        ),
+    )
+    image_processing_batch_lease_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("IMAGE_PROCESSING_BATCH_LEASE_SECONDS", "900")),
+        ge=30,
+        le=7200,
+        description=(
+            "Phase 2 corrections: JobProcessingLease duration for one AISLE_BATCH physical "
+            "run (job_id, strategy, execution_scope). A concurrent worker that fails to acquire "
+            "the lease skips the provider call entirely. Env: IMAGE_PROCESSING_BATCH_LEASE_SECONDS."
+        ),
+    )
+    image_processing_abandoned_ttl_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("IMAGE_PROCESSING_ABANDONED_TTL_SECONDS", "900")),
+        ge=30,
+        le=7200,
+        description=(
+            "Phase 2 corrections: age (seconds, based on updated_at/lease_expires_at) after "
+            "which a PROCESSING asset state, its owning lease, and any STARTED attempts are "
+            "considered abandoned and recovered back to PENDING/AVAILABLE. "
+            "Env: IMAGE_PROCESSING_ABANDONED_TTL_SECONDS."
         ),
     )
     code_scan_max_assets_per_run: int = Field(

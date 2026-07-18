@@ -170,6 +170,8 @@ class V3JobExecutor:
         self._job_source_asset_repo = job_source_asset_repo
         self._artifact_store = artifact_store
         self._clock = clock
+        self._position_repo = position_repo
+        self._evidence_repo = evidence_repo
         inventory_status_reconciler = InventoryStatusReconciler(
             inventory_repo=inventory_repo,
             aisle_repo=aisle_repo,
@@ -449,6 +451,156 @@ class V3JobExecutor:
         assert analysis_context is not None
         return analysis_context, job_input, video_path
 
+    def _run_code_scan_path(
+        self,
+        *,
+        job: Any,
+        aisle: Aisle,
+        aisle_id: str,
+        assets: list[Any],
+        settings: Settings,
+        exec_log: Any,
+        cancel_event_emitted: dict[str, bool],
+    ) -> bool:
+        """Phase 3 CODE_SCAN execution — deterministic per-image scan, no LLM pipeline."""
+        import uuid as _uuid
+
+        from src.application.errors import ImageProcessingRepositoryUnavailableError
+        from src.domain.jobs.entities import JobStatus
+        from src.infrastructure.pipeline.v3_image_processing_bridge import (
+            build_default_code_scan_orchestrator,
+            build_default_code_scan_persister,
+            build_default_code_scan_strategy,
+            progress_to_public_dict,
+            run_orchestrated_code_scan,
+        )
+        from src.runtime.app_container import get_app_container
+
+        job_id = job.id
+        container = get_app_container()
+        require_sql = container.is_sql_repository_backend()
+        try:
+            state_repo = container.get_job_asset_processing_state_repo()
+            attempt_repo = container.get_processing_attempt_repo()
+            lease_repo = container.get_job_processing_lease_repo()
+            batch_attempt_repo = container.get_batch_processing_attempt_repo()
+        except Exception as repo_exc:
+            logger.error(
+                "code_scan.repo_resolve_failed job_id=%s require_sql=%s",
+                job_id,
+                require_sql,
+                exc_info=True,
+            )
+            if require_sql:
+                self._state.fail_job_and_aisle(
+                    job_id,
+                    aisle,
+                    f"Phase 3 SQL image-processing repositories unavailable: {repo_exc}",
+                    failure_code="IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE",
+                )
+                return True
+            state_repo = attempt_repo = lease_repo = batch_attempt_repo = None
+
+        try:
+            strategy = build_default_code_scan_strategy(settings, self._artifact_store)
+            persister = build_default_code_scan_persister(
+                job_source_asset_repo=container.get_job_source_asset_repo(),
+                source_asset_repo=self._source_asset_repo,
+                clock=self._clock,
+                unit_of_work_factory=container.get_manual_image_result_uow_factory(),
+            )
+            orch = build_default_code_scan_orchestrator(
+                self._clock,
+                attempts_enabled=bool(settings.processing_attempts_enabled),
+                state_repo=state_repo,
+                attempt_repo=attempt_repo,
+                lease_repo=lease_repo,
+                batch_attempt_repo=batch_attempt_repo,
+                result_evidence_repo=self._result_evidence_repo,
+                evidence_repo=self._evidence_repo,
+                position_repo=self._position_repo,
+                code_scan_strategy=strategy,
+                result_persister=persister,
+                code_scan_concurrency=int(settings.max_image_processing_concurrency),
+                require_sql=require_sql,
+                abandoned_processing_ttl_seconds=(
+                    settings.image_processing_abandoned_ttl_seconds
+                ),
+            )
+        except ImageProcessingRepositoryUnavailableError as unavailable:
+            logger.error(
+                "code_scan.repos_unavailable job_id=%s err=%s", job_id, unavailable
+            )
+            self._state.fail_job_and_aisle(
+                job_id,
+                aisle,
+                str(unavailable),
+                failure_code="IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE",
+            )
+            return True
+
+        def _is_cancelled() -> bool:
+            current = self._job_repo.get_by_id(job_id)
+            return current is not None and current.status == JobStatus.CANCEL_REQUESTED
+
+        def _merge_progress(progress) -> None:
+            self._job_repo.merge_result_json(
+                job_id, {"asset_progress": progress_to_public_dict(progress)}
+            )
+
+        outcome = run_orchestrated_code_scan(
+            orchestrator=orch,
+            job=job,
+            aisle=aisle,
+            assets=assets,
+            pipeline_enabled=bool(settings.aisle_identification_pipeline_enabled),
+            orchestrator_enabled=bool(settings.image_processing_orchestrator_enabled),
+            code_scan_processing_enabled=True,
+            is_cancelled=_is_cancelled,
+            worker_token=str(_uuid.uuid4()),
+            merge_progress=_merge_progress,
+        )
+        self._job_repo.merge_result_json(
+            job_id, {"asset_progress": progress_to_public_dict(outcome.progress)}
+        )
+
+        if outcome.cancelled:
+            current = self._job_repo.get_by_id(job_id)
+            if current is not None and current.status == JobStatus.RUNNING:
+                return self._cancellation_coordinator.handle_pipeline_cancellation(
+                    job_id=job_id,
+                    aisle=aisle,
+                    error=PipelineCancellationRequestedError(
+                        outcome.error_message or "cancelled"
+                    ),
+                    exec_log=exec_log,
+                    cancel_event_emitted=cancel_event_emitted,
+                )
+            return True
+
+        if not outcome.ok:
+            current = self._job_repo.get_by_id(job_id)
+            if current is not None and current.status == JobStatus.RUNNING:
+                self._state.fail_job_and_aisle(
+                    job_id,
+                    aisle,
+                    outcome.error_message or "code_scan_failed",
+                    failure_code="CODE_SCAN_FAILED",
+                )
+            return True
+
+        try:
+            self._state.finalize_code_scan_success(job_id, aisle)
+        except Exception as exc:
+            logger.exception("code_scan.finalize_failed job_id=%s", job_id)
+            self._state.fail_job_and_aisle(
+                job_id,
+                aisle,
+                f"code_scan finalization failed: {exc}",
+                failure_code="CODE_SCAN_FINALIZATION_FAILED",
+            )
+        return True
+
     def _v3_run_job_body(self, base_path: Path, job_id: str, prep: V3PreparedJob) -> bool:
         """Dirs, pipeline input, hybrid run, persist, artifacts, success — matches pre-refactor order."""
         job = prep.job
@@ -629,37 +781,99 @@ class V3JobExecutor:
                         error_message=None if finalized else "finalization_failed",
                     )
 
+                from src.domain.aisle_identification.modes import (
+                    AisleIdentificationExecutionStrategy,
+                )
+
+                if (
+                    job.execution_strategy
+                    == AisleIdentificationExecutionStrategy.CODE_SCAN
+                    and bool(settings.code_scan_processing_enabled)
+                ):
+                    return self._run_code_scan_path(
+                        job=job,
+                        aisle=aisle,
+                        aisle_id=aisle_id,
+                        assets=assets,
+                        settings=settings,
+                        exec_log=rt.exec_log,
+                        cancel_event_emitted=rt.cancel_event_emitted,
+                    )
+
                 if bool(settings.image_processing_orchestrator_enabled):
+                    import uuid as _uuid
+
+                    from src.application.errors import ImageProcessingRepositoryUnavailableError
+                    from src.domain.jobs.entities import JobStatus
                     from src.infrastructure.pipeline.v3_image_processing_bridge import (
-                        attach_progress_to_job_result_json,
                         build_default_aisle_processing_orchestrator,
+                        progress_to_public_dict,
                         run_orchestrated_legacy_batch,
                     )
+                    from src.runtime.app_container import get_app_container
 
-                    state_repo = None
-                    attempt_repo = None
+                    container = get_app_container()
+                    require_sql = container.is_sql_repository_backend()
                     try:
-                        from src.runtime.app_container import get_app_container
-
-                        container = get_app_container()
                         state_repo = container.get_job_asset_processing_state_repo()
                         attempt_repo = container.get_processing_attempt_repo()
-                    except Exception:
-                        logger.warning(
-                            "image_orchestrator.repo_resolve_fallback_memory job_id=%s",
+                        lease_repo = container.get_job_processing_lease_repo()
+                        batch_attempt_repo = container.get_batch_processing_attempt_repo()
+                    except Exception as repo_exc:
+                        logger.error(
+                            "image_orchestrator.repo_resolve_failed job_id=%s require_sql=%s",
                             job_id,
+                            require_sql,
                             exc_info=True,
                         )
+                        if require_sql:
+                            self._state.fail_job_and_aisle(
+                                job_id,
+                                aisle,
+                                f"Phase 2 SQL image-processing repositories unavailable: {repo_exc}",
+                                failure_code="IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE",
+                            )
+                            return True
+                        state_repo = None
+                        attempt_repo = None
+                        lease_repo = None
+                        batch_attempt_repo = None
 
-                    orch = build_default_aisle_processing_orchestrator(
-                        self._clock,
-                        attempts_enabled=bool(settings.processing_attempts_enabled),
-                        state_repo=state_repo,
-                        attempt_repo=attempt_repo,
-                    )
-                    cancel_requested = bool(
-                        getattr(job, "cancel_requested_at", None) is not None
-                    )
+                    try:
+                        orch = build_default_aisle_processing_orchestrator(
+                            self._clock,
+                            attempts_enabled=bool(settings.processing_attempts_enabled),
+                            state_repo=state_repo,
+                            attempt_repo=attempt_repo,
+                            lease_repo=lease_repo,
+                            batch_attempt_repo=batch_attempt_repo,
+                            result_evidence_repo=self._result_evidence_repo,
+                            evidence_repo=self._evidence_repo,
+                            position_repo=self._position_repo,
+                            require_sql=require_sql,
+                            lease_duration_seconds=settings.image_processing_batch_lease_seconds,
+                            abandoned_processing_ttl_seconds=(
+                                settings.image_processing_abandoned_ttl_seconds
+                            ),
+                        )
+                    except ImageProcessingRepositoryUnavailableError as unavailable:
+                        logger.error(
+                            "image_orchestrator.repos_unavailable job_id=%s err=%s",
+                            job_id,
+                            unavailable,
+                        )
+                        self._state.fail_job_and_aisle(
+                            job_id,
+                            aisle,
+                            str(unavailable),
+                            failure_code="IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE",
+                        )
+                        return True
+
+                    def _is_cancelled() -> bool:
+                        current = self._job_repo.get_by_id(job_id)
+                        return current is not None and current.status == JobStatus.CANCEL_REQUESTED
+
                     orch_out = run_orchestrated_legacy_batch(
                         orchestrator=orch,
                         job=job,
@@ -669,13 +883,48 @@ class V3JobExecutor:
                             settings.aisle_identification_pipeline_enabled
                         ),
                         orchestrator_enabled=True,
-                        cancel_requested=cancel_requested,
-                        batch_runner=lambda **_kw: _run_legacy_pipeline_and_finalize(),
+                        is_cancelled=_is_cancelled,
+                        worker_token=str(_uuid.uuid4()),
+                        batch_runner=lambda: _run_legacy_pipeline_and_finalize(),
                     )
-                    refreshed = self._job_repo.get_by_id(job_id)
-                    if refreshed is not None:
-                        attach_progress_to_job_result_json(refreshed, orch_out.progress)
-                        self._job_repo.save(refreshed)
+                    # Prefer repository-level merge so concurrent writers of other result_json
+                    # keys (costs, durable artifacts, etc.) are not wiped by a full RMW.
+                    self._job_repo.merge_result_json(
+                        job_id,
+                        {"asset_progress": progress_to_public_dict(orch_out.progress)},
+                    )
+
+                    # Preserve exact legacy semantics: orchestrator must not turn a failed or
+                    # cancelled legacy batch into an implicit success just because bookkeeping ran.
+                    if orch_out.legacy.cancelled:
+                        current = self._job_repo.get_by_id(job_id)
+                        if current is not None and current.status == JobStatus.RUNNING:
+                            return self._cancellation_coordinator.handle_pipeline_cancellation(
+                                job_id=job_id,
+                                aisle=aisle,
+                                error=PipelineCancellationRequestedError(
+                                    orch_out.legacy.error_message or "cancelled"
+                                ),
+                                exec_log=rt.exec_log,
+                                cancel_event_emitted=rt.cancel_event_emitted,
+                            )
+                        return True
+
+                    if not orch_out.legacy.ok:
+                        msg = orch_out.legacy.error_message or "legacy_batch_failed"
+                        code = (
+                            "BATCH_LEASE_NOT_ACQUIRED"
+                            if orch_out.legacy.skipped_busy
+                            else "LEGACY_BATCH_FAILED"
+                        )
+                        current = self._job_repo.get_by_id(job_id)
+                        # finalize_success may already have marked FAILED; only fail if still RUNNING.
+                        if current is not None and current.status == JobStatus.RUNNING:
+                            self._state.fail_job_and_aisle(
+                                job_id, aisle, msg, failure_code=code
+                            )
+                        return True
+
                     return True
 
                 # Flag off: exact pre-Phase-2 legacy path (functional equivalence).

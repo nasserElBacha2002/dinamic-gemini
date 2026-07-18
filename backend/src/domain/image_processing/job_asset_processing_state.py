@@ -35,3 +35,5 @@ class JobAssetProcessingState:
     error_message: str | None = None
     version: int = 1
     execution_scope: str | None = None
+    worker_token: str | None = None
+    lease_expires_at: datetime | None = None
