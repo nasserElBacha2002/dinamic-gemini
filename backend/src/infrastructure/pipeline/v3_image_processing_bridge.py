@@ -10,6 +10,7 @@ that cannot resolve the SQL repos for some reason must fail fast rather than deg
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Callable, Sequence
 
 from src.application.errors import ImageProcessingRepositoryUnavailableError
@@ -87,6 +88,10 @@ def build_default_aisle_processing_orchestrator(
     lease_duration_seconds: int = _DEFAULT_LEASE_DURATION_SECONDS,
     abandoned_processing_ttl_seconds: int = _DEFAULT_ABANDONED_TTL_SECONDS,
     coverage_positions_page_size: int = 2000,
+    code_scan_strategy=None,
+    result_persister=None,
+    code_scan_concurrency: int = 1,
+    reconciler=None,
 ) -> AisleProcessingOrchestrator:
     """Build the Phase 2 orchestrator from injected repos.
 
@@ -163,6 +168,10 @@ def build_default_aisle_processing_orchestrator(
         attempts_enabled=attempts_enabled,
         abandoned_processing_ttl_seconds=abandoned_processing_ttl_seconds,
         lease_duration_seconds=lease_duration_seconds,
+        code_scan_strategy=code_scan_strategy,
+        result_persister=result_persister,
+        code_scan_concurrency=code_scan_concurrency,
+        reconciler=reconciler,
     )
 
 
@@ -178,12 +187,19 @@ class _LazyPyzbarCodeScanner:
 
     def __init__(self) -> None:
         self._delegate = None
+        # L — lazy init is guarded so concurrent SINGLE_ASSET workers (concurrency > 1) do not
+        # race to construct two PyzbarCodeScanner instances / import pyzbar twice.
+        self._lock = threading.Lock()
 
     def _ensure(self):
         if self._delegate is None:
-            from src.infrastructure.code_scanning.pyzbar_code_scanner import PyzbarCodeScanner
+            with self._lock:
+                if self._delegate is None:
+                    from src.infrastructure.code_scanning.pyzbar_code_scanner import (
+                        PyzbarCodeScanner,
+                    )
 
-            self._delegate = PyzbarCodeScanner()
+                    self._delegate = PyzbarCodeScanner()
         return self._delegate
 
     def scan_asset(self, asset, content=None):
@@ -206,27 +222,48 @@ def build_default_code_scan_strategy(settings, artifact_store):
         ArtifactStoreSourceAssetContentReader,
     )
 
+    # J — decimals are unsupported in the MVP. If a stale env still enables them, coerce to
+    # False with a loud error rather than silently truncating (2.7 -> 2) or crashing the worker.
+    allow_decimal = bool(getattr(settings, "code_scan_allow_decimal_quantity", False))
+    if allow_decimal:
+        logger.error(
+            "code_scan.unsupported_config code_scan_allow_decimal_quantity=true is not "
+            "supported; forcing integer-only quantities."
+        )
+        allow_decimal = False
+    # enable_preprocessing is reserved but not implemented; a non-default true is a no-op we
+    # surface as a warning so operators are not misled into thinking preprocessing runs.
+    if bool(getattr(settings, "code_scan_enable_preprocessing", False)):
+        logger.warning(
+            "code_scan.reserved_config code_scan_enable_preprocessing=true has no effect "
+            "(preprocessing is not implemented); treating as false."
+        )
+    max_technical_attempts = int(getattr(settings, "code_scan_max_technical_attempts", 2))
+    if max_technical_attempts != 2:
+        logger.warning(
+            "code_scan.reserved_config code_scan_max_technical_attempts=%s has no effect "
+            "(no transient-retry loop is implemented).",
+            max_technical_attempts,
+        )
+    # I — prefer the honest "variants budget" name; fall back to the legacy timeout setting.
+    variants_budget = int(
+        getattr(settings, "code_scan_variants_budget_seconds", None)
+        or getattr(settings, "code_scan_timeout_seconds", 15)
+    )
+
     parser = EncodedLabelPayloadParser(
         quantity_max=int(getattr(settings, "code_scan_quantity_max", 99999999)),
-        allow_decimal_quantity=bool(
-            getattr(settings, "code_scan_allow_decimal_quantity", False)
-        ),
+        allow_decimal_quantity=allow_decimal,
     )
     config = CodeScanConfig(
         quantity_max=int(getattr(settings, "code_scan_quantity_max", 99999999)),
-        allow_decimal_quantity=bool(
-            getattr(settings, "code_scan_allow_decimal_quantity", False)
-        ),
+        allow_decimal_quantity=allow_decimal,
         max_image_side=int(getattr(settings, "code_scan_max_image_side", 2048)),
-        timeout_seconds=int(getattr(settings, "code_scan_timeout_seconds", 15)),
+        timeout_seconds=variants_budget,
         enable_rotations=bool(getattr(settings, "code_scan_enable_rotations", True)),
-        enable_preprocessing=bool(
-            getattr(settings, "code_scan_enable_preprocessing", False)
-        ),
+        enable_preprocessing=False,
         max_variants=int(getattr(settings, "code_scan_max_variants", 4)),
-        max_technical_attempts=int(
-            getattr(settings, "code_scan_max_technical_attempts", 2)
-        ),
+        max_technical_attempts=max_technical_attempts,
     )
     return CodeScanProcessingStrategy(
         scanner=_LazyPyzbarCodeScanner(),
@@ -268,14 +305,28 @@ def build_default_code_scan_orchestrator(
     code_scan_concurrency: int = 1,
     require_sql: bool = False,
     abandoned_processing_ttl_seconds: int = _DEFAULT_ABANDONED_TTL_SECONDS,
+    manual_coverage_repo=None,
 ) -> AisleProcessingOrchestrator:
     """Build the Phase 3 orchestrator wired for CODE_SCAN SINGLE_ASSET processing.
 
     Reuses :class:`AisleProcessingOrchestrator` (same per-asset bookkeeping) but injects the
-    code-scan strategy + result persister and a concurrency bound. No batch lease is used by
-    the code-scan path, but the lease repo is still required by the shared constructor.
+    code-scan strategy, result persister, reconciler, and a concurrency bound via the shared
+    constructor (no private-attribute mutation). No batch lease is used by the code-scan path,
+    but the lease repo is still required by the shared constructor.
     """
-    orch = build_default_aisle_processing_orchestrator(
+    reconciler = None
+    if state_repo is not None:
+        from src.application.services.image_processing.asset_processing_reconciler import (
+            AssetProcessingReconciler,
+        )
+
+        reconciler = AssetProcessingReconciler(
+            state_repo=state_repo,
+            clock=clock,
+            manual_coverage_repo=manual_coverage_repo,
+            result_evidence_repo=result_evidence_repo,
+        )
+    return build_default_aisle_processing_orchestrator(
         clock,
         attempts_enabled=attempts_enabled,
         state_repo=state_repo,
@@ -287,11 +338,11 @@ def build_default_code_scan_orchestrator(
         position_repo=position_repo,
         require_sql=require_sql,
         abandoned_processing_ttl_seconds=abandoned_processing_ttl_seconds,
+        code_scan_strategy=code_scan_strategy,
+        result_persister=result_persister,
+        code_scan_concurrency=max(1, int(code_scan_concurrency or 1)),
+        reconciler=reconciler,
     )
-    orch._code_scan_strategy = code_scan_strategy
-    orch._result_persister = result_persister
-    orch._code_scan_concurrency = max(1, int(code_scan_concurrency or 1))
-    return orch
 
 
 def run_orchestrated_code_scan(

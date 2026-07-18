@@ -426,3 +426,13 @@ class JobProcessingLeaseNotAcquiredError(Exception):
     ``AisleProcessingOrchestrator.process_with_legacy_batch`` does not raise this by default;
     it returns ``LegacyBatchOutcome(ok=False, skipped_busy=True)`` instead so callers can decide.
     """
+
+
+class CodeScanPipelineMisconfiguredError(Exception):
+    """Raised when the CODE_SCAN path is entered without a required collaborator.
+
+    Phase 3 corrections: ``AisleProcessingOrchestrator.process_with_code_scan`` must never
+    run without both a configured code-scan strategy AND a result persister — otherwise a
+    RESOLVED_INTERNAL scan could never create a position (silent data loss) or the run would
+    crash mid-loop. The executor catches this and fails the job/aisle deterministically.
+    """

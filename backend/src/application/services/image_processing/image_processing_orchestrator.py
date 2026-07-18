@@ -164,6 +164,9 @@ class ImageProcessingOrchestrator:
         state.error_code = result.error_code
         state.error_message = result.error_message
         state.execution_scope = result.execution_scope.value
+        active_result_id = (result.additional_fields or {}).get("active_result_id")
+        if active_result_id:
+            state.active_result_id = active_result_id
         state.updated_at = now
         state.version = expected_version + 1
         self._state_repo.save_with_ownership(

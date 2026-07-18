@@ -981,7 +981,9 @@ class LimitsAndSchemaSettings(BaseModel):
             "Phase 3 SINGLE_ASSET concurrency for CODE_SCAN per-image processing (ThreadPool "
             "max_workers). Not applied to the Phase 2 AISLE_BATCH legacy path: physical LLM "
             "execution remains one batch call regardless of this value. Must be >= 1. "
-            "Env: MAX_IMAGE_PROCESSING_CONCURRENCY."
+            "Production recommendation remains 1 until SQL concurrency tests pass; values > 1 "
+            "require per-UoW connections (ManualImageResultUnitOfWorkFactory creates its own "
+            "connection per `with uow`). Env: MAX_IMAGE_PROCESSING_CONCURRENCY."
         ),
     )
     code_scan_processing_enabled: bool = Field(
@@ -1009,8 +1011,22 @@ class LimitsAndSchemaSettings(BaseModel):
         ge=1,
         le=300,
         description=(
-            "Phase 3: wall-clock timeout (seconds) for scanning one image (all variants). "
+            "DEPRECATED alias of CODE_SCAN_VARIANTS_BUDGET_SECONDS (kept for one release). "
             "Env: CODE_SCAN_TIMEOUT_SECONDS."
+        ),
+    )
+    code_scan_variants_budget_seconds: int = Field(
+        default_factory=lambda: int(
+            os.getenv("CODE_SCAN_VARIANTS_BUDGET_SECONDS")
+            or os.getenv("CODE_SCAN_TIMEOUT_SECONDS", "15")
+        ),
+        ge=1,
+        le=300,
+        description=(
+            "Phase 3: wall-clock budget (seconds) checked BETWEEN scan variants for one image. "
+            "This does NOT interrupt a blocked native pyzbar decode already in progress. Prefer "
+            "this over the deprecated CODE_SCAN_TIMEOUT_SECONDS. "
+            "Env: CODE_SCAN_VARIANTS_BUDGET_SECONDS (alias: CODE_SCAN_TIMEOUT_SECONDS)."
         ),
     )
     code_scan_enable_rotations: bool = Field(

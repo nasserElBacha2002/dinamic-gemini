@@ -140,6 +140,21 @@ class CodeScanProcessingStrategy:
     def metrics(self) -> CodeScanMetrics:
         return self._metrics
 
+    @property
+    def attempt_provider(self) -> str:
+        """Provider label recorded on ProcessingAttempt rows for CODE_SCAN (not the job's LLM provider)."""
+        return "code_scan"
+
+    @property
+    def scanner_version(self) -> str:
+        return self._scanner_version()
+
+    @property
+    def attempt_model(self) -> str:
+        """Model label for CODE_SCAN attempts, e.g. ``pyzbar/0.1.9`` (falls back to ``pyzbar``)."""
+        version = self._scanner_version()
+        return f"pyzbar/{version}" if version else "pyzbar"
+
     def process(
         self, context: ImageProcessingContext, asset: SourceAsset
     ) -> ImageProcessingResult:

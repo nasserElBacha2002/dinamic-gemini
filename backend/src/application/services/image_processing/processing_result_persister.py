@@ -15,6 +15,7 @@ import logging
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 
 from src.application.errors import (
     ImageAlreadyHasResultsError,
@@ -51,11 +52,48 @@ CODE_SCAN_PROVIDER = "code_scan"
 CODE_SCAN_QTY_SOURCE = "label_explicit"
 
 
+class PersistSkipReason(str, Enum):
+    ALREADY_PERSISTED = "ALREADY_PERSISTED"
+    MANUAL_RESULT_EXISTS = "MANUAL_RESULT_EXISTS"
+    ASSET_NOT_IN_SNAPSHOT = "ASSET_NOT_IN_SNAPSHOT"
+    MISSING_CODE_OR_QUANTITY = "MISSING_CODE_OR_QUANTITY"
+    CONCURRENCY_CONFLICT = "CONCURRENCY_CONFLICT"
+    PERSISTENCE_ERROR = "PERSISTENCE_ERROR"
+    NOT_RESOLVED_INTERNAL = "NOT_RESOLVED_INTERNAL"
+    NON_POSITIVE_QUANTITY = "NON_POSITIVE_QUANTITY"
+
+
 @dataclass(frozen=True)
 class PersistOutcome:
+    """Outcome of one persist attempt for a RESOLVED_INTERNAL code-scan result.
+
+    - ``persisted``: a new position was written by this call.
+    - ``reconciled``: a position already exists for ``(job_id, source_asset_id)`` created by a
+      prior code-scan run (or won by a concurrent code-scan worker); the asset is still
+      legitimately RESOLVED and callers must NOT downgrade it. ``persisted=False`` +
+      ``reconciled=False`` means the caller must NOT finalize as RESOLVED.
+    """
+
     persisted: bool
+    reconciled: bool = False
     position_id: str | None = None
-    skipped_reason: str | None = None
+    active_result_id: str | None = None
+    skipped_reason: PersistSkipReason | None = None
+
+
+def _coerce_positive_int_quantity(quantity: object) -> int | None:
+    """Return a positive int quantity, or ``None`` when the value is not a whole number.
+
+    Never truncates a real decimal (2.7 → rejected, not 2). Booleans are rejected (``bool`` is
+    an ``int`` subclass but is never a valid quantity).
+    """
+    if isinstance(quantity, bool):
+        return None
+    if isinstance(quantity, int):
+        return quantity
+    if isinstance(quantity, float) and quantity.is_integer():
+        return int(quantity)
+    return None
 
 
 class ProcessingResultPersister:
@@ -80,13 +118,31 @@ class ProcessingResultPersister:
         aisle_id: str,
     ) -> PersistOutcome:
         if result.status is not ImageResultStatus.RESOLVED_INTERNAL:
-            return PersistOutcome(persisted=False, skipped_reason="NOT_RESOLVED_INTERNAL")
+            return PersistOutcome(
+                persisted=False, skipped_reason=PersistSkipReason.NOT_RESOLVED_INTERNAL
+            )
         code = (result.internal_code or "").strip()
         if not code or result.quantity is None:
-            return PersistOutcome(persisted=False, skipped_reason="MISSING_CODE_OR_QUANTITY")
-        quantity = int(result.quantity)
+            return PersistOutcome(
+                persisted=False, skipped_reason=PersistSkipReason.MISSING_CODE_OR_QUANTITY
+            )
+        quantity = _coerce_positive_int_quantity(result.quantity)
+        if quantity is None:
+            # Non-integer decimal (or otherwise non-whole) quantity is never truncated; the
+            # caller routes this to manual review rather than silently changing the count.
+            logger.warning(
+                "code_scan.persist_reject_non_integer_quantity job_id=%s asset_id=%s quantity=%r",
+                result.job_id,
+                result.asset_id,
+                result.quantity,
+            )
+            return PersistOutcome(
+                persisted=False, skipped_reason=PersistSkipReason.MISSING_CODE_OR_QUANTITY
+            )
         if quantity <= 0:
-            return PersistOutcome(persisted=False, skipped_reason="NON_POSITIVE_QUANTITY")
+            return PersistOutcome(
+                persisted=False, skipped_reason=PersistSkipReason.NON_POSITIVE_QUANTITY
+            )
 
         job_id = result.job_id
         asset_id = result.asset_id
@@ -102,7 +158,9 @@ class ProcessingResultPersister:
                 job_id,
                 asset_id,
             )
-            return PersistOutcome(persisted=False, skipped_reason="ASSET_NOT_IN_SNAPSHOT")
+            return PersistOutcome(
+                persisted=False, skipped_reason=PersistSkipReason.ASSET_NOT_IN_SNAPSHOT
+            )
 
         live = self._source_asset_repo.get_by_id(asset_id)
         now = self._clock.now()
@@ -219,13 +277,39 @@ class ProcessingResultPersister:
                 repos = uow.repositories
                 uow.acquire_image_result_lock(job_id=job_id, source_asset_id=asset_id)
 
-                if repos.manual_coverage_repo.get_by_job_and_asset(job_id, asset_id) is not None:
+                existing = repos.manual_coverage_repo.get_by_job_and_asset(job_id, asset_id)
+                if existing is not None:
+                    # A coverage link created by an operator (created_by_user_id set) means a
+                    # manual result already owns this image — code scan must NOT keep RESOLVED.
+                    # A link with no user id is a prior code-scan position → idempotent reconcile.
+                    if (existing.created_by_user_id or "").strip():
+                        logger.info(
+                            "code_scan.persist_skip_manual_result_exists job_id=%s asset_id=%s "
+                            "position_id=%s",
+                            job_id,
+                            asset_id,
+                            existing.position_id,
+                        )
+                        return PersistOutcome(
+                            persisted=False,
+                            reconciled=False,
+                            position_id=existing.position_id,
+                            skipped_reason=PersistSkipReason.MANUAL_RESULT_EXISTS,
+                        )
                     logger.info(
-                        "code_scan.persist_idempotent_existing_coverage job_id=%s asset_id=%s",
+                        "code_scan.persist_idempotent_existing_coverage job_id=%s asset_id=%s "
+                        "position_id=%s",
                         job_id,
                         asset_id,
+                        existing.position_id,
                     )
-                    return PersistOutcome(persisted=False, skipped_reason="ALREADY_COVERED")
+                    return PersistOutcome(
+                        persisted=False,
+                        reconciled=True,
+                        position_id=existing.position_id,
+                        active_result_id=existing.position_id,
+                        skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
+                    )
                 if repos.image_coverage_repo.has_results_for_asset(
                     job_id=job_id, aisle_id=aisle_id, source_asset_id=asset_id
                 ):
@@ -234,7 +318,11 @@ class ProcessingResultPersister:
                         job_id,
                         asset_id,
                     )
-                    return PersistOutcome(persisted=False, skipped_reason="ALREADY_HAS_RESULT")
+                    return PersistOutcome(
+                        persisted=False,
+                        reconciled=True,
+                        skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
+                    )
 
                 repos.position_repo.save(position)
                 repos.product_record_repo.save(product)
@@ -243,11 +331,32 @@ class ProcessingResultPersister:
                 repos.result_evidence_repo.save_many([result_evidence])
                 uow.commit()
         except (ManualResultAlreadyExistsError, ImageAlreadyHasResultsError):
-            # Lost a race with a concurrent writer for the same (job, asset): treat as idempotent.
+            # Lost a race with a concurrent writer for the same (job, asset). Best-effort
+            # re-read the winner's coverage so we can reconcile (keep RESOLVED) rather than
+            # blindly downgrade a legitimately-covered asset.
+            existing = self._lookup_existing_coverage(job_id, asset_id)
+            if existing is not None:
+                logger.info(
+                    "code_scan.persist_conflict_reconciled job_id=%s asset_id=%s position_id=%s",
+                    job_id,
+                    asset_id,
+                    existing.position_id,
+                )
+                return PersistOutcome(
+                    persisted=False,
+                    reconciled=True,
+                    position_id=existing.position_id,
+                    active_result_id=existing.position_id,
+                    skipped_reason=PersistSkipReason.CONCURRENCY_CONFLICT,
+                )
             logger.info(
-                "code_scan.persist_idempotent_conflict job_id=%s asset_id=%s", job_id, asset_id
+                "code_scan.persist_conflict_unreconciled job_id=%s asset_id=%s", job_id, asset_id
             )
-            return PersistOutcome(persisted=False, skipped_reason="RACE_CONFLICT")
+            return PersistOutcome(
+                persisted=False,
+                reconciled=False,
+                skipped_reason=PersistSkipReason.CONCURRENCY_CONFLICT,
+            )
 
         logger.info(
             "code_scan.persisted_position job_id=%s asset_id=%s position_id=%s quantity=%s",
@@ -256,7 +365,24 @@ class ProcessingResultPersister:
             position_id,
             quantity,
         )
-        return PersistOutcome(persisted=True, position_id=position_id)
+        return PersistOutcome(
+            persisted=True, position_id=position_id, active_result_id=position_id
+        )
+
+    def _lookup_existing_coverage(self, job_id: str, asset_id: str):
+        """Best-effort read of an existing coverage link outside the failed write transaction."""
+        try:
+            with self._uow_factory() as uow:
+                return uow.repositories.manual_coverage_repo.get_by_job_and_asset(
+                    job_id, asset_id
+                )
+        except Exception:
+            logger.warning(
+                "code_scan.persist_conflict_lookup_failed job_id=%s asset_id=%s",
+                job_id,
+                asset_id,
+            )
+            return None
 
 
-__all__ = ["PersistOutcome", "ProcessingResultPersister"]
+__all__ = ["PersistOutcome", "PersistSkipReason", "ProcessingResultPersister"]

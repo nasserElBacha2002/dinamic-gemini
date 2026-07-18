@@ -70,6 +70,56 @@ confidence 1.0), `ProductRecord` (`sku=internal_code`, `detected_quantity`,
 `ResultEvidenceRecord` (`provider="code_scan"`), and a `ManualImageCoverageLink`
 (uniqueness). Re-running the same job/asset is a no-op (reconcile).
 
+Quantity is written as an **int** only: a float that is a whole number (`5.0`) is accepted and
+converted, but a real decimal (`2.7`) is **rejected** (never truncated) and routed to manual
+review. Booleans are rejected.
+
+### PersistOutcome invariants (Phase 3 corrections)
+
+`persist(...)` returns a `PersistOutcome(persisted, reconciled, position_id, active_result_id,
+skipped_reason)`. The per-asset processor **must honor it**:
+
+| `skipped_reason` | meaning | asset finalized as |
+|------------------|---------|--------------------|
+| — (`persisted=True`) | new position written | `RESOLVED_INTERNAL` (`active_result_id` set) |
+| `ALREADY_PERSISTED` (`reconciled=True`) | a prior code-scan position exists | `RESOLVED_INTERNAL` (reconciled) |
+| `CONCURRENCY_CONFLICT` (`reconciled=True`) | lost a race but winner's position found | `RESOLVED_INTERNAL` (reconciled) |
+| `MANUAL_RESULT_EXISTS` | an operator manual result owns the image | `PENDING_MANUAL_REVIEW` (`MANUAL_RESULT_EXISTS`) |
+| `ASSET_NOT_IN_SNAPSHOT` | asset missing from job snapshot | `FAILED_TECHNICAL` (`ASSET_NOT_IN_JOB_SNAPSHOT`) |
+| `MISSING_CODE_OR_QUANTITY` / `NON_POSITIVE_QUANTITY` | incomplete result | `PENDING_MANUAL_REVIEW` (`CODE_SCAN_INCOMPLETE_RESULT`) |
+| `CONCURRENCY_CONFLICT` (unreconciled) / other | no position exists | `FAILED_TECHNICAL` (`CODE_SCAN_PERSISTENCE_FAILED`) |
+
+**Hard invariant:** an asset is NEVER finalized `RESOLVED` when `persisted=False` and
+`reconciled=False`. A missing strategy or persister raises
+`CodeScanPipelineMisconfiguredError` up front and the job is failed
+(`CODE_SCAN_PIPELINE_MISCONFIGURED`) — the path never runs half-wired.
+
+### Reconciliation & recovery
+
+`AssetProcessingReconciler` looks up an already-persisted result (manual coverage link, then
+valid result-evidence) for `(job_id, source_asset_id)`. It runs **before** scanning (skip the
+scan and finalize `RESOLVED` if a complete result already exists) and **before** recovering an
+abandoned `PROCESSING` state to `PENDING` (reconcile straight to `RESOLVED` instead of a
+wasteful rescan). After a successful persist, a lost `finalize` race (`state_conflict`) is
+reconciled rather than downgraded, and the orphaned attempt is closed
+(`RECONCILED_BY_OTHER_WORKER`).
+
+### Job outcome policy
+
+`code_scan_job_outcome_policy.decide(progress, cancelled, infrastructure_error)` maps terminal
+per-asset counters to a single `CodeScanJobOutcome`:
+
+- `CANCELLED` → cancellation coordinator.
+- `FAILED` (infra error, all failed, or any asset left PENDING/PROCESSING) → `fail_job_and_aisle`.
+- `PARTIALLY_COMPLETED` (some failed + some productive) → `finalize_code_scan_success` with
+  `result_json.code_scan_outcome="PARTIALLY_COMPLETED"` and `code_scan_partial=true`. A partial
+  run is still a **completed** job with a mix of asset outcomes.
+- `SUCCEEDED` (incl. all-unrecognized or all-manual-review, and empty aisle) →
+  `finalize_code_scan_success`.
+
+`ok` is true only for `SUCCEEDED`/`PARTIALLY_COMPLETED`; the executor never reports success for
+a `FAILED` outcome.
+
 ### Evidence & privacy
 
 Per-detection evidence carries `scanner_name`, `scanner_version`, `symbology`,
@@ -81,15 +131,16 @@ never logged** or stored in cleartext in evidence.
 | Env | Default | Role |
 |-----|---------|------|
 | `CODE_SCAN_PROCESSING_ENABLED` | false | Master switch for the CODE_SCAN strategy |
-| `MAX_IMAGE_PROCESSING_CONCURRENCY` | 1 | ThreadPool workers for SINGLE_ASSET code scan |
+| `MAX_IMAGE_PROCESSING_CONCURRENCY` | 1 | ThreadPool workers for SINGLE_ASSET code scan. **Keep 1 in production** until SQL concurrency tests pass; values > 1 rely on the `ManualImageResultUnitOfWork` creating its own connection per `with uow` |
 | `CODE_SCAN_MAX_IMAGE_SIDE` | 2048 | Downscale before rotated-variant scanning |
-| `CODE_SCAN_TIMEOUT_SECONDS` | 15 | Wall-clock budget per image |
+| `CODE_SCAN_VARIANTS_BUDGET_SECONDS` | 15 | Wall-clock budget checked **between** scan variants; does NOT interrupt a blocked native decode. (Alias: deprecated `CODE_SCAN_TIMEOUT_SECONDS`.) |
 | `CODE_SCAN_ENABLE_ROTATIONS` | true | Retry 90/180/270 when 0° finds nothing |
-| `CODE_SCAN_ENABLE_PREPROCESSING` | false | Reserved (MVP keeps it off) |
 | `CODE_SCAN_MAX_VARIANTS` | 4 | Max scan variants (0/90/180/270) |
 | `CODE_SCAN_QUANTITY_MAX` | 99999999 | Max accepted positive-integer quantity |
-| `CODE_SCAN_ALLOW_DECIMAL_QUANTITY` | false | MVP rejects decimals |
-| `CODE_SCAN_MAX_TECHNICAL_ATTEMPTS` | 2 | Reserved transient-retry budget |
+
+Not exposed (setting them has no effect; coerced to safe defaults with a warning/error log):
+`CODE_SCAN_ALLOW_DECIMAL_QUANTITY` (decimals unsupported), `CODE_SCAN_ENABLE_PREPROCESSING`
+(preprocessing not implemented), `CODE_SCAN_MAX_TECHNICAL_ATTEMPTS` (no transient-retry loop).
 
 `execution_strategy` is resolved at job start by
 `resolve_execution_strategy(effective_mode, pipeline_enabled, code_scan_processing_enabled)`
@@ -101,6 +152,11 @@ and snapshotted immutably on the job.
   CHECK to include `CODE_SCAN` (drop/recreate, idempotent) and adds the optional
   `job_asset_code_scan_detections` audit table. The sync-API `aisle_code_scan_detections`
   table is left untouched. Mirrored in `schema.sql`.
+- `0054_code_scan_state_execution_scope_check.sql` — additive + idempotent. Defensively
+  ensures `job_asset_processing_states.active_result_id` and `.execution_scope` exist (both
+  from 0051) and adds `CK_job_asset_processing_states_execution_scope` constraining
+  `execution_scope` to `NULL | AISLE_BATCH | SINGLE_ASSET`. The unique manual-coverage index
+  already exists on `manual_image_coverage`. Mirrored in `schema.sql`.
 
 ## Deployment
 
@@ -111,6 +167,16 @@ time (previously API-only). Without it, code scan surfaces `FAILED_TECHNICAL` pe
 
 - **No OCR and no LLM fallback**: if the label has no machine-readable QR/CODE128 the asset
   is `UNRECOGNIZED` (never sent to an LLM).
-- Timeout is enforced between scan variants (wall-clock), not inside a single decode call.
-- `CODE_SCAN_ENABLE_PREPROCESSING` and `CODE_SCAN_MAX_TECHNICAL_ATTEMPTS` are wired as config
-  but the MVP does not add preprocessing filters or transient-retry loops.
+- The variants budget (`CODE_SCAN_VARIANTS_BUDGET_SECONDS`) is a **wall-clock budget checked
+  between scan variants** — it does NOT interrupt a blocked native `pyzbar` decode already in
+  progress (no process-pool hard timeout in this phase).
+- `CODE_SCAN_ENABLE_PREPROCESSING` and `CODE_SCAN_MAX_TECHNICAL_ATTEMPTS` remain as reserved
+  settings but have no effect (no preprocessing filters, no transient-retry loop);
+  `CODE_SCAN_ALLOW_DECIMAL_QUANTITY` is unsupported and coerced to false.
+- SQL-backed concurrent code scan (`MAX_IMAGE_PROCESSING_CONCURRENCY > 1`) is not yet validated
+  under real SQL Server; production stays at 1.
+- **Follow-up (out of scope here):** the API `asset_progress` is derived only from
+  `job.result_json["asset_progress"]` (`_asset_progress_from_job_result` in `api/routes/v3/
+  shared.py`). It has no state repository in that builder path, so it cannot fall back to
+  `JobAssetProcessingStateRepository.aggregate_progress` when the key is missing. Wiring that
+  fallback requires threading a state repo into the response builder and is deferred.

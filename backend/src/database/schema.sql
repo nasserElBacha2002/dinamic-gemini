@@ -1221,6 +1221,9 @@ BEGIN
         CONSTRAINT CK_job_asset_processing_states_attempt_count CHECK (attempt_count >= 0),
         CONSTRAINT CK_job_asset_processing_states_worker_token CHECK (
             worker_token IS NULL OR LEN(worker_token) > 0
+        ),
+        CONSTRAINT CK_job_asset_processing_states_execution_scope CHECK (
+            execution_scope IS NULL OR execution_scope IN ('AISLE_BATCH', 'SINGLE_ASSET')
         )
     );
 END

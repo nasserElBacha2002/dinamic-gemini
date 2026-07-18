@@ -465,7 +465,13 @@ class V3JobExecutor:
         """Phase 3 CODE_SCAN execution — deterministic per-image scan, no LLM pipeline."""
         import uuid as _uuid
 
-        from src.application.errors import ImageProcessingRepositoryUnavailableError
+        from src.application.errors import (
+            CodeScanPipelineMisconfiguredError,
+            ImageProcessingRepositoryUnavailableError,
+        )
+        from src.application.services.image_processing.code_scan_job_outcome_policy import (
+            CodeScanJobOutcome,
+        )
         from src.domain.jobs.entities import JobStatus
         from src.infrastructure.pipeline.v3_image_processing_bridge import (
             build_default_code_scan_orchestrator,
@@ -526,6 +532,7 @@ class V3JobExecutor:
                 abandoned_processing_ttl_seconds=(
                     settings.image_processing_abandoned_ttl_seconds
                 ),
+                manual_coverage_repo=container.get_manual_image_coverage_repo(),
             )
         except ImageProcessingRepositoryUnavailableError as unavailable:
             logger.error(
@@ -548,23 +555,36 @@ class V3JobExecutor:
                 job_id, {"asset_progress": progress_to_public_dict(progress)}
             )
 
-        outcome = run_orchestrated_code_scan(
-            orchestrator=orch,
-            job=job,
-            aisle=aisle,
-            assets=assets,
-            pipeline_enabled=bool(settings.aisle_identification_pipeline_enabled),
-            orchestrator_enabled=bool(settings.image_processing_orchestrator_enabled),
-            code_scan_processing_enabled=True,
-            is_cancelled=_is_cancelled,
-            worker_token=str(_uuid.uuid4()),
-            merge_progress=_merge_progress,
-        )
+        try:
+            outcome = run_orchestrated_code_scan(
+                orchestrator=orch,
+                job=job,
+                aisle=aisle,
+                assets=assets,
+                pipeline_enabled=bool(settings.aisle_identification_pipeline_enabled),
+                orchestrator_enabled=bool(settings.image_processing_orchestrator_enabled),
+                code_scan_processing_enabled=True,
+                is_cancelled=_is_cancelled,
+                worker_token=str(_uuid.uuid4()),
+                merge_progress=_merge_progress,
+            )
+        except CodeScanPipelineMisconfiguredError as misconfig:
+            logger.error("code_scan.misconfigured job_id=%s err=%s", job_id, misconfig)
+            self._state.fail_job_and_aisle(
+                job_id,
+                aisle,
+                str(misconfig),
+                failure_code="CODE_SCAN_PIPELINE_MISCONFIGURED",
+            )
+            return True
+
         self._job_repo.merge_result_json(
             job_id, {"asset_progress": progress_to_public_dict(outcome.progress)}
         )
 
-        if outcome.cancelled:
+        job_outcome = outcome.job_outcome
+
+        if job_outcome is CodeScanJobOutcome.CANCELLED:
             current = self._job_repo.get_by_id(job_id)
             if current is not None and current.status == JobStatus.RUNNING:
                 return self._cancellation_coordinator.handle_pipeline_cancellation(
@@ -578,7 +598,7 @@ class V3JobExecutor:
                 )
             return True
 
-        if not outcome.ok:
+        if job_outcome is CodeScanJobOutcome.FAILED:
             current = self._job_repo.get_by_id(job_id)
             if current is not None and current.status == JobStatus.RUNNING:
                 self._state.fail_job_and_aisle(
@@ -588,6 +608,15 @@ class V3JobExecutor:
                     failure_code="CODE_SCAN_FAILED",
                 )
             return True
+
+        # SUCCEEDED or PARTIALLY_COMPLETED — both are completed jobs. A partial run recorded
+        # a mix of asset outcomes (some FAILED_TECHNICAL, some resolved/unrecognized/manual);
+        # it is still a completed job, annotated in result_json for auditability.
+        self._job_repo.merge_result_json(
+            job_id, {"code_scan_outcome": job_outcome.value}
+        )
+        if job_outcome is CodeScanJobOutcome.PARTIALLY_COMPLETED:
+            self._job_repo.merge_result_json(job_id, {"code_scan_partial": True})
 
         try:
             self._state.finalize_code_scan_success(job_id, aisle)

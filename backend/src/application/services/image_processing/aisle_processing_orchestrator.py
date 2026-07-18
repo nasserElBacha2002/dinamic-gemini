@@ -19,7 +19,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from src.application.errors import AssetProcessingStateConcurrencyError
+from src.application.errors import (
+    AssetProcessingStateConcurrencyError,
+    CodeScanPipelineMisconfiguredError,
+)
 from src.application.ports.clock import Clock
 from src.application.ports.image_processing_repositories import (
     AssetProgressCounts,
@@ -31,6 +34,15 @@ from src.application.ports.image_processing_repositories import (
 from src.application.services.image_processing.asset_result_coverage_resolver import (
     AssetResultCoverageResolver,
     AssetResultCoverageStatus,
+)
+from src.application.services.image_processing.code_scan_asset_processor import (
+    CodeScanAssetProcessor,
+)
+from src.application.services.image_processing.code_scan_job_outcome_policy import (
+    CodeScanJobOutcome,
+)
+from src.application.services.image_processing.code_scan_job_outcome_policy import (
+    decide as decide_code_scan_job_outcome,
 )
 from src.application.services.image_processing.image_processing_orchestrator import (
     ImageProcessingOrchestrator,
@@ -51,7 +63,6 @@ from src.domain.image_processing.batch_processing_attempt import (
 )
 from src.domain.image_processing.contracts import (
     ExecutionScope,
-    ImageProcessingContext,
     ImageProcessingResult,
     ImageResultStatus,
 )
@@ -67,6 +78,9 @@ from src.domain.jobs.entities import Job
 from src.pipeline.errors import PipelineCancellationRequestedError
 
 if TYPE_CHECKING:
+    from src.application.services.image_processing.asset_processing_reconciler import (
+        AssetProcessingReconciler,
+    )
     from src.application.services.image_processing.code_scan_processing_strategy import (
         CodeScanProcessingStrategy,
     )
@@ -75,6 +89,9 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
+
+# K — module-level counter for progress-publish failures (no external metrics dependency).
+asset_progress_publish_failed_total = 0
 
 _COVERAGE_TO_RESULT_STATUS = {
     AssetResultCoverageStatus.RESOLVED: ImageResultStatus.RESOLVED_EXTERNAL,
@@ -98,6 +115,7 @@ class CodeScanAisleOutcome:
     cancelled: bool
     progress: AssetProgressCounts
     strategy_key: str
+    job_outcome: CodeScanJobOutcome = CodeScanJobOutcome.SUCCEEDED
     error_message: str | None = None
 
 
@@ -123,6 +141,7 @@ class AisleProcessingOrchestrator:
         code_scan_strategy: CodeScanProcessingStrategy | None = None,
         result_persister: ProcessingResultPersister | None = None,
         code_scan_concurrency: int = 1,
+        reconciler: AssetProcessingReconciler | None = None,
     ) -> None:
         self._state_repo = state_repo
         self._attempt_repo = attempt_repo
@@ -140,13 +159,18 @@ class AisleProcessingOrchestrator:
         self._code_scan_strategy = code_scan_strategy
         self._result_persister = result_persister
         self._code_scan_concurrency = max(1, int(code_scan_concurrency or 1))
+        self._reconciler = reconciler
 
     # ------------------------------------------------------------------
     # State bootstrap
     # ------------------------------------------------------------------
 
     def ensure_asset_states(
-        self, job: Job, assets: Sequence[SourceAsset]
+        self,
+        job: Job,
+        assets: Sequence[SourceAsset],
+        *,
+        execution_scope: ExecutionScope = ExecutionScope.AISLE_BATCH,
     ) -> list[JobAssetProcessingState]:
         now = self._clock.now()
         out: list[JobAssetProcessingState] = []
@@ -162,7 +186,7 @@ class AisleProcessingOrchestrator:
                 status=JobAssetProcessingStatus.PENDING,
                 created_at=now,
                 updated_at=now,
-                execution_scope=ExecutionScope.AISLE_BATCH.value,
+                execution_scope=execution_scope.value,
             )
             self._state_repo.save(state)
             out.append(state)
@@ -195,6 +219,19 @@ class AisleProcessingOrchestrator:
             as_of=now,
         ):
             age_s = int((now - (state.updated_at or state.started_at or now)).total_seconds())
+            # E — if a complete result already exists (position persisted, state never
+            # finalized), reconcile straight to RESOLVED instead of resetting to PENDING for
+            # a wasteful (and potentially downgrading) rescan.
+            if self._reconciler is not None and self._reconciler.reconcile_state_if_complete(
+                state
+            ):
+                recovered.append(state.asset_id)
+                logger.info(
+                    "aisle_orchestrator.recovery_reconciled_to_resolved job_id=%s asset_id=%s",
+                    job_id,
+                    state.asset_id,
+                )
+                continue
             expected_version = int(state.version or 1)
             owner_token = state.worker_token
             state.status = JobAssetProcessingStatus.PENDING
@@ -512,8 +549,14 @@ class AisleProcessingOrchestrator:
         by ``code_scan_concurrency`` (default 1). Asset-level ownership (``worker_token`` +
         optimistic version) still guards against two workers finalizing the same asset.
         """
-        if self._code_scan_strategy is None:
-            raise ValueError("process_with_code_scan requires a configured code_scan_strategy")
+        # C — the code-scan path must never run without both collaborators: a missing strategy
+        # or persister would silently drop RESOLVED_INTERNAL positions (data loss).
+        if self._code_scan_strategy is None or self._result_persister is None:
+            raise CodeScanPipelineMisconfiguredError(
+                "process_with_code_scan requires both a code_scan_strategy and a result_persister "
+                f"(strategy={'set' if self._code_scan_strategy else 'missing'}, "
+                f"persister={'set' if self._result_persister else 'missing'})"
+            )
 
         strategy_key = self._resolver.resolve_strategy_key(
             job,
@@ -522,13 +565,24 @@ class AisleProcessingOrchestrator:
             code_scan_processing_enabled=code_scan_processing_enabled,
         )
 
-        self.ensure_asset_states(job, assets)
+        self.ensure_asset_states(job, assets, execution_scope=ExecutionScope.SINGLE_ASSET)
         now = self._clock.now()
         recovered = self.recover_abandoned_processing(job.id)
         self._close_started_attempts_for_assets(job.id, recovered, now)
 
         if is_cancelled():
             return self._code_scan_cancel(job, strategy_key)
+
+        processor = CodeScanAssetProcessor(
+            state_repo=self._state_repo,
+            attempt_repo=self._attempt_repo,
+            image_orchestrator=self._image_orch,
+            code_scan_strategy=self._code_scan_strategy,
+            result_persister=self._result_persister,
+            clock=self._clock,
+            attempts_enabled=self._attempts_enabled,
+            reconciler=self._reconciler,
+        )
 
         lock = threading.Lock()
         errors: list[str] = []
@@ -544,122 +598,28 @@ class AisleProcessingOrchestrator:
                 try:
                     merge_progress(self._state_repo.aggregate_progress(job.id))
                 except Exception:
-                    logger.warning(
-                        "aisle_orchestrator.code_scan_progress_merge_failed job_id=%s", job.id
+                    global asset_progress_publish_failed_total
+                    asset_progress_publish_failed_total += 1
+                    logger.exception(
+                        "aisle_orchestrator.code_scan_progress_merge_failed job_id=%s "
+                        "publish_failed_total=%s",
+                        job.id,
+                        asset_progress_publish_failed_total,
                     )
 
         def _process_one(asset: SourceAsset) -> None:
             if is_cancelled():
                 return
-            state = self._state_repo.get_by_job_and_asset(job.id, asset.id)
-            if state is None or self._image_orch.is_terminal(state):
-                return
-            acquired = self._image_orch.acquire_for_processing(
-                job_id=job.id,
-                asset_id=asset.id,
-                strategy=strategy_key,
+            outcome = processor.process_asset(
+                job=job,
+                aisle=aisle,
+                asset=asset,
+                strategy_key=strategy_key,
                 worker_token=worker_token,
             )
-            if acquired is None:
-                return
-            attempt = None
-            attempt_number = int(acquired.attempt_count or 0) + 1
-            if self._attempts_enabled:
-                attempt = self._attempt_repo.create_next_attempt(
-                    job_id=job.id,
-                    asset_id=asset.id,
-                    strategy=strategy_key,
-                    status=ProcessingAttemptStatus.STARTED,
-                    now=self._clock.now(),
-                    provider=job.provider_name,
-                    model=job.model_name,
-                    execution_scope=ExecutionScope.SINGLE_ASSET.value,
-                    configuration_snapshot_version=job.configuration_snapshot_version,
-                    parent_batch_attempt_id=None,
-                    batch_execution_id=None,
-                    worker_token=worker_token,
-                    logical_asset_attempt=False,
-                )
-                attempt_number = attempt.attempt_number
-
-            context = ImageProcessingContext(
-                job_id=job.id,
-                asset_id=asset.id,
-                aisle_id=aisle.id,
-                inventory_id=aisle.inventory_id,
-                client_id=None,
-                identification_mode=job.identification_mode,
-                execution_strategy=job.execution_strategy,
-                configuration_snapshot_version=job.configuration_snapshot_version,
-                provider_name=job.provider_name,
-                model_name=job.model_name,
-                prompt_key=job.prompt_key,
-                prompt_version=job.prompt_version,
-                attempt_number=attempt_number,
-                execution_scope=ExecutionScope.SINGLE_ASSET,
-                asset_reference=asset.storage_key,
-            )
-
-            try:
-                result = self._code_scan_strategy.process(context, asset)
-            except Exception as exc:  # defensive: strategy must not crash the run
-                logger.exception(
-                    "aisle_orchestrator.code_scan_strategy_exception job_id=%s asset_id=%s",
-                    job.id,
-                    asset.id,
-                )
-                result = ImageProcessingResult(
-                    job_id=job.id,
-                    asset_id=asset.id,
-                    status=ImageResultStatus.FAILED_TECHNICAL,
-                    processing_mode=job.identification_mode.value,
-                    resolved_by=strategy_key,
-                    error_code="CODE_SCAN_STRATEGY_EXCEPTION",
-                    error_message=str(exc),
-                    execution_scope=ExecutionScope.SINGLE_ASSET,
-                    logical_asset_attempt=False,
-                )
-
-            if (
-                result.status is ImageResultStatus.RESOLVED_INTERNAL
-                and self._result_persister is not None
-            ):
-                try:
-                    self._result_persister.persist(
-                        result=result,
-                        inventory_id=aisle.inventory_id,
-                        aisle_id=aisle.id,
-                    )
-                except Exception as exc:
-                    logger.exception(
-                        "aisle_orchestrator.code_scan_persist_failed job_id=%s asset_id=%s",
-                        job.id,
-                        asset.id,
-                    )
-                    with lock:
-                        errors.append(f"persist_failed:{asset.id}")
-                    result = ImageProcessingResult(
-                        job_id=job.id,
-                        asset_id=asset.id,
-                        status=ImageResultStatus.FAILED_TECHNICAL,
-                        processing_mode=job.identification_mode.value,
-                        resolved_by=strategy_key,
-                        error_code="CODE_SCAN_PERSIST_FAILED",
-                        error_message=str(exc),
-                        execution_scope=ExecutionScope.SINGLE_ASSET,
-                        logical_asset_attempt=False,
-                    )
-
-            try:
-                self._image_orch.finalize_from_result(
-                    state=acquired, attempt=attempt, result=result, strategy=strategy_key
-                )
-            except AssetProcessingStateConcurrencyError:
-                logger.warning(
-                    "aisle_orchestrator.code_scan_finalize_lost_race job_id=%s asset_id=%s",
-                    job.id,
-                    asset.id,
-                )
+            if outcome.error:
+                with lock:
+                    errors.append(outcome.error)
             _maybe_merge_progress()
 
         eligible = [
@@ -685,11 +645,15 @@ class AisleProcessingOrchestrator:
 
         _maybe_merge_progress(force=True)
         progress = self._state_repo.aggregate_progress(job.id)
+        job_outcome = decide_code_scan_job_outcome(
+            progress=progress, cancelled=cancelled, infrastructure_error=None
+        )
         logger.info(
-            "aisle_orchestrator.code_scan_complete job_id=%s strategy=%s "
+            "aisle_orchestrator.code_scan_complete job_id=%s strategy=%s job_outcome=%s "
             "total=%s resolved=%s unrecognized=%s failed=%s manual_review=%s cancelled=%s",
             job.id,
             strategy_key,
+            job_outcome.value,
             progress.total,
             progress.resolved,
             progress.unrecognized,
@@ -698,10 +662,11 @@ class AisleProcessingOrchestrator:
             cancelled,
         )
         return CodeScanAisleOutcome(
-            ok=not cancelled,
+            ok=job_outcome in (CodeScanJobOutcome.SUCCEEDED, CodeScanJobOutcome.PARTIALLY_COMPLETED),
             cancelled=cancelled,
             progress=progress,
             strategy_key=strategy_key,
+            job_outcome=job_outcome,
             error_message="; ".join(errors) if errors else None,
         )
 
@@ -709,7 +674,11 @@ class AisleProcessingOrchestrator:
         self._cancel_pending(job.id)
         progress = self._state_repo.aggregate_progress(job.id)
         return CodeScanAisleOutcome(
-            ok=False, cancelled=True, progress=progress, strategy_key=strategy_key
+            ok=False,
+            cancelled=True,
+            progress=progress,
+            strategy_key=strategy_key,
+            job_outcome=CodeScanJobOutcome.CANCELLED,
         )
 
     # ------------------------------------------------------------------

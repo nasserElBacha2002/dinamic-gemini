@@ -18,6 +18,7 @@ from src.application.services.image_processing.legacy_llm_processing_strategy im
 )
 from src.application.services.image_processing.processing_result_persister import (
     PersistOutcome,
+    PersistSkipReason,
 )
 from src.application.services.image_processing.processing_strategy_resolver import (
     ProcessingStrategyResolver,
@@ -34,6 +35,9 @@ from src.domain.image_processing.contracts import (
     ExecutionScope,
     ImageProcessingResult,
     ImageResultStatus,
+)
+from src.domain.image_processing.job_asset_processing_state import (
+    JobAssetProcessingStatus,
 )
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.repositories.memory_batch_processing_attempt_repository import (
@@ -95,6 +99,18 @@ class FakePersister:
     def persist(self, *, result, inventory_id, aisle_id) -> PersistOutcome:
         self.persisted.append(result.asset_id)
         return PersistOutcome(persisted=True, position_id=f"pos-{result.asset_id}")
+
+
+class FakeOutcomePersister:
+    """Persister that returns a caller-supplied fixed outcome (to test honoring)."""
+
+    def __init__(self, outcome: PersistOutcome) -> None:
+        self._outcome = outcome
+        self.calls: list[str] = []
+
+    def persist(self, *, result, inventory_id, aisle_id) -> PersistOutcome:
+        self.calls.append(result.asset_id)
+        return self._outcome
 
 
 def _job() -> Job:
@@ -226,6 +242,136 @@ def test_cancel_before_processing_marks_cancelled() -> None:
     assert outcome.cancelled is True
     assert outcome.ok is False
     assert persister.persisted == []
+
+
+def test_persist_not_honored_becomes_failed_not_resolved() -> None:
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    strategy = FakeCodeScanStrategy({"s1": ImageResultStatus.RESOLVED_INTERNAL})
+    persister = FakeOutcomePersister(
+        PersistOutcome(
+            persisted=False,
+            reconciled=False,
+            skipped_reason=PersistSkipReason.CONCURRENCY_CONFLICT,
+        )
+    )
+    orch, state_repo = _build(strategy, persister)
+
+    outcome = orch.process_with_code_scan(
+        job=_job(),
+        aisle=_aisle(now),
+        assets=[_asset("s1", now)],
+        pipeline_enabled=True,
+        orchestrator_enabled=True,
+        is_cancelled=lambda: False,
+        worker_token="w1",
+    )
+
+    assert persister.calls == ["s1"]
+    assert outcome.progress.resolved == 0
+    assert outcome.progress.failed == 1
+    state = state_repo.get_by_job_and_asset("job1", "s1")
+    assert state.status is JobAssetProcessingStatus.FAILED_TECHNICAL
+
+
+def test_persist_manual_result_exists_becomes_manual_review() -> None:
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    strategy = FakeCodeScanStrategy({"s1": ImageResultStatus.RESOLVED_INTERNAL})
+    persister = FakeOutcomePersister(
+        PersistOutcome(
+            persisted=False,
+            reconciled=False,
+            position_id="pos-existing",
+            skipped_reason=PersistSkipReason.MANUAL_RESULT_EXISTS,
+        )
+    )
+    orch, state_repo = _build(strategy, persister)
+
+    outcome = orch.process_with_code_scan(
+        job=_job(),
+        aisle=_aisle(now),
+        assets=[_asset("s1", now)],
+        pipeline_enabled=True,
+        orchestrator_enabled=True,
+        is_cancelled=lambda: False,
+        worker_token="w1",
+    )
+
+    assert outcome.progress.resolved == 0
+    assert outcome.progress.manual_review == 1
+    state = state_repo.get_by_job_and_asset("job1", "s1")
+    assert state.status is JobAssetProcessingStatus.PENDING_MANUAL_REVIEW
+
+
+def test_persist_reconciled_keeps_resolved() -> None:
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    strategy = FakeCodeScanStrategy({"s1": ImageResultStatus.RESOLVED_INTERNAL})
+    persister = FakeOutcomePersister(
+        PersistOutcome(
+            persisted=False,
+            reconciled=True,
+            position_id="pos-existing",
+            active_result_id="pos-existing",
+            skipped_reason=PersistSkipReason.ALREADY_PERSISTED,
+        )
+    )
+    orch, state_repo = _build(strategy, persister)
+
+    outcome = orch.process_with_code_scan(
+        job=_job(),
+        aisle=_aisle(now),
+        assets=[_asset("s1", now)],
+        pipeline_enabled=True,
+        orchestrator_enabled=True,
+        is_cancelled=lambda: False,
+        worker_token="w1",
+    )
+
+    assert outcome.progress.resolved == 1
+    state = state_repo.get_by_job_and_asset("job1", "s1")
+    assert state.status is JobAssetProcessingStatus.RESOLVED
+    assert state.active_result_id == "pos-existing"
+
+
+def test_missing_persister_raises_misconfigured() -> None:
+    import pytest
+
+    from src.application.errors import CodeScanPipelineMisconfiguredError
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    strategy = FakeCodeScanStrategy({"s1": ImageResultStatus.RESOLVED_INTERNAL})
+    orch, _ = _build(strategy, None)
+
+    with pytest.raises(CodeScanPipelineMisconfiguredError):
+        orch.process_with_code_scan(
+            job=_job(),
+            aisle=_aisle(now),
+            assets=[_asset("s1", now)],
+            pipeline_enabled=True,
+            orchestrator_enabled=True,
+            is_cancelled=lambda: False,
+            worker_token="w1",
+        )
+
+
+def test_concurrency_two_memory_processes_all() -> None:
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    ids = ["s1", "s2", "s3", "s4"]
+    strategy = FakeCodeScanStrategy({i: ImageResultStatus.RESOLVED_INTERNAL for i in ids})
+    persister = FakePersister()
+    orch, state_repo = _build(strategy, persister, concurrency=2)
+
+    outcome = orch.process_with_code_scan(
+        job=_job(),
+        aisle=_aisle(now),
+        assets=[_asset(i, now) for i in ids],
+        pipeline_enabled=True,
+        orchestrator_enabled=True,
+        is_cancelled=lambda: False,
+        worker_token="w1",
+    )
+
+    assert outcome.progress.resolved == 4
+    assert sorted(persister.persisted) == ids
 
 
 def test_concurrency_one_processes_all() -> None:
