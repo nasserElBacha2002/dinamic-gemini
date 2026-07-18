@@ -29,6 +29,7 @@ from src.api.dependencies import (
     get_list_clients_use_case,
     get_list_supplier_prompt_configs_use_case,
     get_list_supplier_reference_images_use_case,
+    get_update_client_use_case,
     get_upload_supplier_reference_images_use_case,
 )
 from src.api.errors import reraise_if_mapped
@@ -37,6 +38,13 @@ from src.api.schemas.client_schemas import (
     ClientResponse,
     CreateClientRequest,
     PaginatedClientListResponse,
+    UpdateClientRequest,
+)
+from src.api.services.identification_mode_response import client_identification_fields
+from src.application.services.optional_unset import UNSET
+from src.application.use_cases.clients.update_client import (
+    UpdateClientCommand,
+    UpdateClientUseCase,
 )
 from src.api.schemas.client_supplier_schemas import (
     ClientSupplierResponse,
@@ -112,12 +120,16 @@ router = APIRouter(
 
 
 def _to_response(client: Client) -> ClientResponse:
+    id_fields = client_identification_fields(client)
     return ClientResponse(
         id=client.id,
         name=client.name,
         status=client.status.value,
         created_at=client.created_at,
         updated_at=client.updated_at,
+        identification_mode=id_fields.identification_mode,
+        effective_identification_mode=id_fields.effective_identification_mode,
+        identification_mode_source=id_fields.identification_mode_source,
     )
 
 
@@ -246,6 +258,30 @@ def get_client(
 ) -> ClientResponse:
     try:
         client = use_case.execute(client_id)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+    return _to_response(client)
+
+
+@router.patch("/{client_id}", response_model=ClientResponse)
+def update_client(
+    client_id: str,
+    payload: UpdateClientRequest,
+    use_case: UpdateClientUseCase = Depends(get_update_client_use_case),
+) -> ClientResponse:
+    try:
+        client = use_case.execute(
+            UpdateClientCommand(
+                client_id=client_id,
+                name=payload.name,
+                identification_mode=(
+                    payload.identification_mode
+                    if "identification_mode" in payload.model_fields_set
+                    else UNSET
+                ),
+            )
+        )
     except Exception as e:
         reraise_if_mapped(e)
         raise

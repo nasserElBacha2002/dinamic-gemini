@@ -11,6 +11,7 @@ from fastapi.responses import Response
 
 from src.api.constants.error_wire import HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED
 from src.api.dependencies import (
+    get_client_repo,
     get_create_inventory_use_case,
     get_export_inventory_package_zip_use_case,
     get_export_inventory_results_use_case,
@@ -35,6 +36,7 @@ from src.api.schemas.processing_schemas import (
     ProcessingProviderOptionsResponse,
 )
 from src.application.errors import ClientNotFoundError, InventoryNotFoundError
+from src.application.ports.repositories import ClientRepository
 from src.application.services.inventory_table_query_params import (
     build_inventory_table_query_from_route_params,
 )
@@ -62,10 +64,22 @@ from src.application.use_cases.inventories.update_inventory_name import (
     UpdateInventoryNameCommand,
     UpdateInventoryNameUseCase,
 )
+from src.application.services.optional_unset import UNSET
 from src.config import load_settings
-from src.domain.inventory.entities import InventoryProcessingMode
+from src.domain.inventory.entities import Inventory, InventoryProcessingMode
 
 from .shared import inventory_list_item_to_response, inventory_to_response
+
+
+def _inventory_to_response_with_client(
+    inventory: Inventory,
+    client_repo: ClientRepository,
+) -> InventoryResponse:
+    client = (
+        client_repo.get_by_id(inventory.client_id) if inventory.client_id else None
+    )
+    return inventory_to_response(inventory, client=client)
+
 
 router = APIRouter()
 
@@ -98,13 +112,22 @@ def update_inventory(
     inventory_id: str,
     payload: UpdateInventoryRequest,
     use_case: UpdateInventoryNameUseCase = Depends(get_update_inventory_name_use_case),
+    client_repo: ClientRepository = Depends(get_client_repo),
 ) -> InventoryResponse:
     """Rename an inventory (v3.0). Returns 404 if not found."""
     try:
         inventory = use_case.execute(
-            UpdateInventoryNameCommand(inventory_id=inventory_id, name=payload.name)
+            UpdateInventoryNameCommand(
+                inventory_id=inventory_id,
+                name=payload.name,
+                identification_mode=(
+                    payload.identification_mode
+                    if "identification_mode" in payload.model_fields_set
+                    else UNSET
+                ),
+            )
         )
-        return inventory_to_response(inventory)
+        return _inventory_to_response_with_client(inventory, client_repo)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except InventoryNotFoundError as e:
@@ -272,11 +295,12 @@ def export_inventory_results(
 def get_inventory(
     inventory_id: str,
     use_case: GetInventoryUseCase = Depends(get_get_inventory_use_case),
+    client_repo: ClientRepository = Depends(get_client_repo),
 ) -> InventoryResponse:
     """Get a single inventory by id (v3.0). Returns 404 if not found."""
     try:
         inventory = use_case.execute(inventory_id)
-        return inventory_to_response(inventory)
+        return _inventory_to_response_with_client(inventory, client_repo)
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)
         raise

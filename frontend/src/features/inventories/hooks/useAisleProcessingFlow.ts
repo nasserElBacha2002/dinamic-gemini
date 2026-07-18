@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ApiError } from '../../../api/types';
+import { ApiError, type AisleIdentificationMode } from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import { useAppSnackbar } from '../../../components/ui';
 import { useProcessingProviderOptions, useStartAisleProcessing } from '../../../hooks';
@@ -23,6 +23,9 @@ export interface AisleProcessingDialogTarget {
   aisleId: string;
   aisleCode: string;
   clientSupplierId: string | null;
+  effectiveIdentificationMode?: AisleIdentificationMode | string | null;
+  identificationModeSource?: string | null;
+  configuredIdentificationMode?: AisleIdentificationMode | string | null;
 }
 
 export function useAisleProcessingFlow({
@@ -45,6 +48,9 @@ export function useAisleProcessingFlow({
   const [dialogTarget, setDialogTarget] = useState<AisleProcessingDialogTarget | null>(null);
   const [providerKey, setProviderKey] = useState('');
   const [modelKey, setModelKey] = useState('');
+  const [identificationMode, setIdentificationMode] = useState<AisleIdentificationMode | string>(
+    'LEGACY_LLM'
+  );
   const [selectionInitialized, setSelectionInitialized] = useState(false);
 
   const optionsMode: ProcessingProviderOptionsMode = isProductionInventory
@@ -107,12 +113,33 @@ export function useAisleProcessingFlow({
   );
 
   const openDialogForAisle = useCallback(
-    (aisleId: string, aisleCode: string, clientSupplierId: string | null) => {
+    (
+      aisleId: string,
+      aisleCode: string,
+      clientSupplierId: string | null,
+      identification?: {
+        effectiveMode?: AisleIdentificationMode | string | null;
+        source?: string | null;
+        configured?: AisleIdentificationMode | string | null;
+      }
+    ) => {
       setProcessError(null);
       setProviderKey('');
       setModelKey('');
       setSelectionInitialized(false);
-      setDialogTarget({ aisleId, aisleCode, clientSupplierId });
+      const effective =
+        identification?.effectiveMode ||
+        identification?.configured ||
+        'LEGACY_LLM';
+      setIdentificationMode(String(effective));
+      setDialogTarget({
+        aisleId,
+        aisleCode,
+        clientSupplierId,
+        effectiveIdentificationMode: identification?.effectiveMode ?? effective,
+        identificationModeSource: identification?.source ?? null,
+        configuredIdentificationMode: identification?.configured ?? null,
+      });
     },
     [setProcessError]
   );
@@ -131,8 +158,17 @@ export function useAisleProcessingFlow({
   );
 
   const requestProcess = useCallback(
-    async (aisleId: string, aisleCode: string, clientSupplierId: string | null = null) => {
-      openDialogForAisle(aisleId, aisleCode, clientSupplierId);
+    async (
+      aisleId: string,
+      aisleCode: string,
+      clientSupplierId: string | null = null,
+      identification?: {
+        effectiveMode?: AisleIdentificationMode | string | null;
+        source?: string | null;
+        configured?: AisleIdentificationMode | string | null;
+      }
+    ) => {
+      openDialogForAisle(aisleId, aisleCode, clientSupplierId, identification);
     },
     [openDialogForAisle]
   );
@@ -155,6 +191,10 @@ export function useAisleProcessingFlow({
         providerName: providerKey.trim() === '' ? null : providerKey.trim().toLowerCase(),
         modelName: modelKey.trim() === '' ? null : modelKey.trim(),
         promptKey: null,
+        identificationMode:
+          identificationMode && String(identificationMode).trim() !== ''
+            ? String(identificationMode).trim().toUpperCase()
+            : null,
       });
       showSnackbar(t('aisle.processing_started_snackbar'), 'success');
       setDialogTarget(null);
@@ -168,6 +208,7 @@ export function useAisleProcessingFlow({
     }
   }, [
     dialogTarget,
+    identificationMode,
     modelKey,
     onAfterSuccess,
     onBeforeProcessMutation,
@@ -192,6 +233,8 @@ export function useAisleProcessingFlow({
     setProviderKey: handleProviderKeyChange,
     modelKey,
     setModelKey,
+    identificationMode,
+    setIdentificationMode,
     providerOptsQuery,
     providerConfig,
     processMutation,

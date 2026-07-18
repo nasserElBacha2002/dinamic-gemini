@@ -153,9 +153,14 @@ export default function InventoryDetail() {
               fileInputRef={uploadFlow.fileInputRef}
               onFileInputChange={uploadFlow.handleNativeFileInputChange}
               onRequestUpload={uploadFlow.beginUploadForAisle}
-              onRequestProcess={(id, code, clientSupplierId) =>
-                void processFlow.requestProcess(id, code, clientSupplierId)
-              }
+              onRequestProcess={(id, code, clientSupplierId) => {
+                const aisle = aisles.find((a) => a.id === id);
+                void processFlow.requestProcess(id, code, clientSupplierId, {
+                  effectiveMode: aisle?.effective_identification_mode ?? null,
+                  source: aisle?.identification_mode_source ?? null,
+                  configured: aisle?.identification_mode ?? null,
+                });
+              }}
               aislesDataLoaded={Boolean(aislesQuery.data)}
               processingAisleId={processFlow.processingAisleId}
               uploadingAisleId={uploadFlow.uploadingAisleId}
@@ -173,6 +178,10 @@ export default function InventoryDetail() {
         onProviderKeyChange={processFlow.setProviderKey}
         modelKey={processFlow.modelKey}
         onModelKeyChange={processFlow.setModelKey}
+        identificationMode={processFlow.identificationMode}
+        onIdentificationModeChange={processFlow.setIdentificationMode}
+        inheritedEffectiveMode={processFlow.dialogTarget?.effectiveIdentificationMode}
+        identificationModeSource={processFlow.dialogTarget?.identificationModeSource}
         providerOptsQuery={processFlow.providerOptsQuery}
         providerConfig={processFlow.providerConfig}
         productionMode={processFlow.isProductionInventory}

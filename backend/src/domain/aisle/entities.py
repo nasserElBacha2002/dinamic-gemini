@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
+from src.domain.aisle_identification.modes import AisleIdentificationMode
+
 
 class AisleStatus(str, Enum):
     CREATED = "created"
@@ -40,6 +42,8 @@ class Aisle:
     retryable: bool | None = None
     #: Soft-deactivate flag; inactive aisles keep history but block new processing/uploads.
     is_active: bool = True
+    #: Optional identification override; null inherits inventory/client/system.
+    identification_mode: AisleIdentificationMode | None = None
 
     def deactivate(self, now: datetime) -> None:
         self.is_active = False

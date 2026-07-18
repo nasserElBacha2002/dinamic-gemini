@@ -33,6 +33,10 @@ class UpdateInventoryRequest(BaseModel):
     """PATCH /api/v3/inventories/{inventory_id} body."""
 
     name: str = Field(..., min_length=1, max_length=255)
+    identification_mode: Literal["CODE_SCAN", "INTERNAL_OCR", "LEGACY_LLM"] | None = Field(
+        None,
+        description="Optional aisle identification override; send null to clear and inherit.",
+    )
 
     @field_validator("name")
     @classmethod
@@ -63,6 +67,9 @@ class InventoryResponse(BaseModel):
     primary_execution_config: Optional[PrimaryExecutionConfigResponse] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    identification_mode: Optional[str] = None
+    effective_identification_mode: str = "LEGACY_LLM"
+    identification_mode_source: str = "SYSTEM_DEFAULT"
 
 
 class InventoryListItemResponse(BaseModel):

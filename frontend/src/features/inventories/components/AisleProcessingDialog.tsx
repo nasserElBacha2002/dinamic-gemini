@@ -2,7 +2,7 @@ import { Alert, Button, CircularProgress, FormControl, InputLabel, MenuItem, Sel
 import { useTranslation } from 'react-i18next';
 import BaseDialog from '../../../components/ui/BaseDialog';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
-import type { ProcessingProviderOptionsResponse } from '../../../api/types';
+import type { AisleIdentificationMode, ProcessingProviderOptionsResponse } from '../../../api/types';
 
 /** Narrow query surface for the dialog — avoids coupling to full react-query generics. */
 export interface ProcessingProviderOptionsQueryLike {
@@ -21,6 +21,11 @@ export interface AisleProcessingDialogProps {
   onProviderKeyChange: (v: string) => void;
   modelKey: string;
   onModelKeyChange: (v: string) => void;
+  identificationMode: AisleIdentificationMode | string;
+  onIdentificationModeChange: (v: AisleIdentificationMode | string) => void;
+  /** Effective mode from backend inheritance (may differ when user has not overridden). */
+  inheritedEffectiveMode?: AisleIdentificationMode | string | null;
+  identificationModeSource?: string | null;
   providerOptsQuery: ProcessingProviderOptionsQueryLike;
   providerConfig:
     | ProcessingProviderOptionsResponse['providers'][number]
@@ -36,6 +41,12 @@ export interface AisleProcessingDialogProps {
   confirmBusyLabel: boolean;
 }
 
+const IDENTIFICATION_OPTIONS: AisleIdentificationMode[] = [
+  'CODE_SCAN',
+  'INTERNAL_OCR',
+  'LEGACY_LLM',
+];
+
 export default function AisleProcessingDialog({
   open,
   aisleCode,
@@ -44,6 +55,10 @@ export default function AisleProcessingDialog({
   onProviderKeyChange,
   modelKey,
   onModelKeyChange,
+  identificationMode,
+  onIdentificationModeChange,
+  inheritedEffectiveMode,
+  identificationModeSource,
   providerOptsQuery,
   providerConfig,
   productionMode = false,
@@ -72,6 +87,18 @@ export default function AisleProcessingDialog({
     productionMode && productionOptionsLoading
       ? '__loading__'
       : modelKey || (productionMode && productionProvidersReady ? providerConfig?.default_model ?? '' : '');
+
+  const showPhase1Warning =
+    identificationMode === 'CODE_SCAN' || identificationMode === 'INTERNAL_OCR';
+  const sourceLabel = identificationModeSource
+    ? t(`aisle.identification_source_${String(identificationModeSource).toLowerCase()}`, {
+        defaultValue: String(identificationModeSource),
+      })
+    : null;
+  const inherited =
+    Boolean(identificationModeSource) &&
+    identificationModeSource !== 'REQUEST' &&
+    identificationModeSource !== 'AISLE';
 
   return (
     <BaseDialog
@@ -111,6 +138,41 @@ export default function AisleProcessingDialog({
             {t('aisle.process_no_production_providers')}
           </Alert>
         ) : null}
+
+        <FormControl fullWidth size="small" data-testid="process-identification-mode">
+          <InputLabel id="process-identification-label">{t('aisle.identification_mode_label')}</InputLabel>
+          <Select
+            labelId="process-identification-label"
+            label={t('aisle.identification_mode_label')}
+            value={identificationMode || 'LEGACY_LLM'}
+            onChange={(e) => onIdentificationModeChange(String(e.target.value))}
+          >
+            {IDENTIFICATION_OPTIONS.map((mode) => (
+              <MenuItem key={mode} value={mode}>
+                {t(`aisle.identification_mode_${mode.toLowerCase()}`)}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <Typography variant="body2" color="text.secondary" data-testid="process-identification-help">
+          {t(`aisle.identification_mode_${String(identificationMode || 'LEGACY_LLM').toLowerCase()}_help`)}
+        </Typography>
+        {sourceLabel ? (
+          <Typography variant="caption" color="text.secondary" data-testid="process-identification-source">
+            {inherited
+              ? t('aisle.identification_inherited', {
+                  mode: inheritedEffectiveMode || identificationMode,
+                  source: sourceLabel,
+                })
+              : t('aisle.identification_source_label', { source: sourceLabel })}
+          </Typography>
+        ) : null}
+        {showPhase1Warning ? (
+          <Alert severity="info" variant="outlined" data-testid="process-identification-phase1-warning">
+            {t('aisle.identification_phase1_warning')}
+          </Alert>
+        ) : null}
+
         {!deferProviderModelSelects ? (
           <>
             <FormControl

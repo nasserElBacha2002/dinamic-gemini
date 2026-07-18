@@ -87,7 +87,12 @@ export async function activateAisle(inventoryId: string, aisleId: string): Promi
 export async function startAisleProcessing(
   inventoryId: string,
   aisleId: string,
-  options?: { providerName?: string | null; modelName?: string | null; promptKey?: string | null }
+  options?: {
+    providerName?: string | null;
+    modelName?: string | null;
+    promptKey?: string | null;
+    identificationMode?: string | null;
+  }
 ): Promise<ProcessAisleResponse> {
   const body: Record<string, string> = {};
   const prov = options?.providerName;
@@ -101,6 +106,10 @@ export async function startAisleProcessing(
   const pk = options?.promptKey;
   if (pk != null && String(pk).trim() !== '') {
     body.prompt_key = String(pk).trim();
+  }
+  const idMode = options?.identificationMode;
+  if (idMode != null && String(idMode).trim() !== '') {
+    body.identification_mode = String(idMode).trim().toUpperCase();
   }
   return apiRequestJson<ProcessAisleResponse>(
     `${API_BASE}${V3_INVENTORIES_BASE}/${inventoryId}/aisles/${aisleId}/process`,

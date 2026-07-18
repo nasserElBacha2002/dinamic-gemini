@@ -86,6 +86,7 @@ from src.application.use_cases.analytics.export_aisle_benchmark import (
 from src.application.use_cases.clients.create_client import CreateClientUseCase
 from src.application.use_cases.clients.get_client import GetClientUseCase
 from src.application.use_cases.clients.list_clients import ListClientsUseCase
+from src.application.use_cases.clients.update_client import UpdateClientUseCase
 from src.application.use_cases.code_scans.export_aisle_code_scans import ExportAisleCodeScansUseCase
 from src.application.use_cases.code_scans.get_aisle_code_scan_review_signals import (
     GetAisleCodeScanReviewSignalsUseCase,
@@ -290,6 +291,13 @@ def get_create_client_use_case(
     clock: Clock = Depends(get_clock),
 ) -> CreateClientUseCase:
     return CreateClientUseCase(client_repo=repo, clock=clock)
+
+
+def get_update_client_use_case(
+    repo: ClientRepository = Depends(get_client_repo),
+    clock: Clock = Depends(get_clock),
+) -> UpdateClientUseCase:
+    return UpdateClientUseCase(client_repo=repo, clock=clock)
 
 
 def get_create_client_supplier_use_case(
@@ -594,6 +602,7 @@ def get_start_aisle_processing_use_case(
     job_repo: JobRepository = Depends(get_job_repo),
     launch_service: AisleJobLaunchService = Depends(get_aisle_job_launch_service),
     stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
+    client_repo: ClientRepository = Depends(get_client_repo),
 ) -> StartAisleProcessingUseCase:
     return StartAisleProcessingUseCase(
         inventory_repo=inventory_repo,
@@ -602,6 +611,7 @@ def get_start_aisle_processing_use_case(
         job_repo=job_repo,
         launch_service=launch_service,
         stale_reconciler=stale_reconciler,
+        client_repo=client_repo,
     )
 
 

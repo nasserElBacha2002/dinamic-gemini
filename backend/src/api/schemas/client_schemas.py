@@ -23,6 +23,20 @@ class ClientResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    #: Configured local default; null means inherit system default.
+    identification_mode: str | None = None
+    effective_identification_mode: str = "LEGACY_LLM"
+    identification_mode_source: str = "SYSTEM_DEFAULT"
+
+
+class UpdateClientRequest(BaseModel):
+    """PATCH /api/v3/clients/{client_id} — partial update."""
+
+    name: str | None = Field(None, min_length=1, max_length=255)
+    identification_mode: Literal["CODE_SCAN", "INTERNAL_OCR", "LEGACY_LLM"] | None = Field(
+        None,
+        description="Set client default identification mode; send null to clear (inherit system default).",
+    )
 
 
 class PaginatedClientListResponse(PageMeta):

@@ -8,6 +8,9 @@ import type {
   ClientSupplierStatus,
   InventoryStatus,
   InventoryProcessingMode,
+  AisleIdentificationMode,
+  AisleIdentificationModeSource,
+  AisleIdentificationExecutionStrategy,
   AisleStatus,
   JobStatus,
   FinalizationStatus,
@@ -26,6 +29,9 @@ export interface Client {
   status: ClientStatus | string;
   created_at: string;
   updated_at: string;
+  identification_mode?: AisleIdentificationMode | string | null;
+  effective_identification_mode?: AisleIdentificationMode | string;
+  identification_mode_source?: AisleIdentificationModeSource | string;
 }
 
 export interface ClientsListResponse {
@@ -115,6 +121,9 @@ export interface Inventory {
   primary_execution_config?: PrimaryExecutionConfig | null;
   created_at?: string | null;
   updated_at?: string | null;
+  identification_mode?: AisleIdentificationMode | string | null;
+  effective_identification_mode?: AisleIdentificationMode | string;
+  identification_mode_source?: AisleIdentificationModeSource | string;
 }
 
 /** GET /api/v3/inventories — one row with aggregates for list/table screens. */
@@ -208,6 +217,9 @@ export interface Aisle {
   positions_count?: number;
   pending_review_positions_count?: number;
   last_activity_at?: string | null;
+  identification_mode?: AisleIdentificationMode | string | null;
+  effective_identification_mode?: AisleIdentificationMode | string;
+  identification_mode_source?: AisleIdentificationModeSource | string;
 }
 
 /**
@@ -230,6 +242,10 @@ export interface AisleStatusResponse {
 
 export interface ProcessAisleResponse {
   job_id: string;
+  identification_mode?: AisleIdentificationMode | string | null;
+  identification_mode_source?: AisleIdentificationModeSource | string | null;
+  execution_strategy?: AisleIdentificationExecutionStrategy | string | null;
+  configuration_snapshot_version?: number | null;
 }
 
 /** GET /api/v3/inventories/processing-provider-options (Phase 5). */
@@ -401,6 +417,10 @@ export interface JobSummary {
   prompt_key?: string | null;
   /** Tracked prompt line (e.g. prompt_key@v2.1); empty if unknown. */
   prompt_version?: string | null;
+  identification_mode?: AisleIdentificationMode | string | null;
+  identification_mode_source?: AisleIdentificationModeSource | string | null;
+  execution_strategy?: AisleIdentificationExecutionStrategy | string | null;
+  configuration_snapshot_version?: number | null;
   finalization_status?: FinalizationStatus | string | null;
   current_finalization_step?: FinalizationStep | string | null;
   last_completed_finalization_step?: string | null;

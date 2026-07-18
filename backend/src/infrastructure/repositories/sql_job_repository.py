@@ -20,6 +20,12 @@ from src.application.services.job_stale_reconciler import (
     STALE_RECONCILE_STATUSES,
 )
 from src.database.sqlserver import SqlServerClient
+from src.domain.aisle_identification.modes import (
+    CONFIGURATION_SNAPSHOT_VERSION,
+    AisleIdentificationExecutionStrategy,
+    coerce_identification_mode,
+    coerce_identification_mode_source,
+)
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.jobs.finalization import (
     CurrentFinalizationStep,
@@ -91,6 +97,16 @@ def _last_completed_step_from_row(row: Any) -> LastCompletedFinalizationStep:
         return LastCompletedFinalizationStep.NONE
 
 
+def _execution_strategy_from_row(row: Any) -> AisleIdentificationExecutionStrategy:
+    raw = getattr(row, "execution_strategy", None)
+    if raw is None or (isinstance(raw, str) and not str(raw).strip()):
+        return AisleIdentificationExecutionStrategy.LEGACY_LLM
+    try:
+        return AisleIdentificationExecutionStrategy(str(raw).strip().upper())
+    except ValueError:
+        return AisleIdentificationExecutionStrategy.LEGACY_LLM
+
+
 def _parse_json(raw: object) -> dict[str, Any]:
     if raw is None:
         return {}
@@ -133,6 +149,8 @@ _JOB_SELECT_FIELDS = (
     "current_stage, current_substep, current_step_started_at, "
     "attempt_count, retry_of_job_id, failure_code, failure_message, execution_id, "
     "provider_name, model_name, prompt_key, engine_params_json, prompt_version, "
+    "identification_mode, identification_mode_source, configuration_snapshot_version, "
+    "execution_strategy, "
     "finalization_status, current_finalization_step, last_completed_finalization_step, "
     "finalization_error_code, finalization_error_metadata, finalization_started_at, "
     "finalization_completed_at, domain_persisted_at, artifacts_published_at"
@@ -177,6 +195,17 @@ def _row_to_job(row: Any) -> Job:
         prompt_key=getattr(row, "prompt_key", None),
         engine_params_json=_parse_optional_json(getattr(row, "engine_params_json", None)),
         prompt_version=getattr(row, "prompt_version", None),
+        identification_mode=coerce_identification_mode(
+            getattr(row, "identification_mode", None)
+        ),
+        identification_mode_source=coerce_identification_mode_source(
+            getattr(row, "identification_mode_source", None)
+        ),
+        configuration_snapshot_version=int(
+            getattr(row, "configuration_snapshot_version", None)
+            or CONFIGURATION_SNAPSHOT_VERSION
+        ),
+        execution_strategy=_execution_strategy_from_row(row),
         finalization_status=_finalization_status_from_row(row),
         current_finalization_step=_current_finalization_step_from_row(row),
         last_completed_finalization_step=_last_completed_step_from_row(row),
@@ -223,6 +252,8 @@ class SqlJobRepository(JobRepository):
                     attempt_count = ?, retry_of_job_id = ?, failure_code = ?, failure_message = ?, execution_id = ?,
                     provider_name = ?, model_name = ?, prompt_key = ?, engine_params_json = ?,
                     prompt_version = ?,
+                    identification_mode = ?, identification_mode_source = ?,
+                    configuration_snapshot_version = ?, execution_strategy = ?,
                     finalization_status = ?, current_finalization_step = ?,
                     last_completed_finalization_step = ?, finalization_error_code = ?,
                     finalization_error_metadata = ?, finalization_started_at = ?,
@@ -255,6 +286,10 @@ class SqlJobRepository(JobRepository):
                     job.prompt_key,
                     engine_str,
                     job.prompt_version,
+                    job.identification_mode.value,
+                    job.identification_mode_source.value,
+                    int(job.configuration_snapshot_version or CONFIGURATION_SNAPSHOT_VERSION),
+                    job.execution_strategy.value,
                     job.finalization_status.value,
                     job.current_finalization_step.value if job.current_finalization_step else None,
                     job.last_completed_finalization_step.value,
@@ -276,11 +311,13 @@ class SqlJobRepository(JobRepository):
                         current_stage, current_substep, current_step_started_at,
                         attempt_count, retry_of_job_id, failure_code, failure_message, execution_id,
                         provider_name, model_name, prompt_key, engine_params_json, prompt_version,
+                        identification_mode, identification_mode_source,
+                        configuration_snapshot_version, execution_strategy,
                         finalization_status, current_finalization_step, last_completed_finalization_step,
                         finalization_error_code, finalization_error_metadata, finalization_started_at,
                         finalization_completed_at, domain_persisted_at, artifacts_published_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job.id,
@@ -310,6 +347,10 @@ class SqlJobRepository(JobRepository):
                         job.prompt_key,
                         engine_str,
                         job.prompt_version,
+                        job.identification_mode.value,
+                        job.identification_mode_source.value,
+                        int(job.configuration_snapshot_version or CONFIGURATION_SNAPSHOT_VERSION),
+                        job.execution_strategy.value,
                         job.finalization_status.value,
                         job.current_finalization_step.value if job.current_finalization_step else None,
                         job.last_completed_finalization_step.value,

@@ -47,6 +47,11 @@ from src.api.schemas.processing_schemas import (
     JobSummary,
 )
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
+from src.api.services.identification_mode_response import (
+    IdentificationModeApiFields,
+    aisle_identification_fields,
+    inventory_identification_fields,
+)
 from src.application.errors import (
     AisleNotFoundError,
     InventoryNotFoundError,
@@ -83,6 +88,7 @@ from src.application.use_cases.positions.update_product_quantity import UpdatePr
 from src.application.use_cases.positions.update_product_sku import UpdateProductSkuUseCase
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
+from src.domain.client.entities import Client
 from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
 from src.domain.jobs.entities import Job
@@ -444,7 +450,12 @@ def handle_delete_position(
         )
 
 
-def inventory_to_response(inv: Inventory) -> InventoryResponse:
+def inventory_to_response(
+    inv: Inventory,
+    *,
+    client: Client | None = None,
+    identification: IdentificationModeApiFields | None = None,
+) -> InventoryResponse:
     pec = primary_execution_config_for_inventory(inv)
     primary_execution_config = (
         PrimaryExecutionConfigResponse(
@@ -456,6 +467,7 @@ def inventory_to_response(inv: Inventory) -> InventoryResponse:
         if pec is not None
         else None
     )
+    id_fields = identification or inventory_identification_fields(inv, client=client)
     return InventoryResponse(
         id=inv.id,
         name=inv.name,
@@ -465,6 +477,9 @@ def inventory_to_response(inv: Inventory) -> InventoryResponse:
         primary_execution_config=primary_execution_config,
         created_at=inv.created_at,
         updated_at=inv.updated_at,
+        identification_mode=id_fields.identification_mode,
+        effective_identification_mode=id_fields.effective_identification_mode,
+        identification_mode_source=id_fields.identification_mode_source,
     )
 
 
@@ -492,6 +507,9 @@ def aisle_to_response(
     positions_count: int = 0,
     pending_review_positions_count: int = 0,
     last_activity_at: datetime | None = None,
+    inventory: Inventory | None = None,
+    client: Client | None = None,
+    identification: IdentificationModeApiFields | None = None,
 ) -> AisleResponse:
     latest = None
     if latest_job is not None:
@@ -518,6 +536,9 @@ def aisle_to_response(
             model_name=latest_job.model_name,
             prompt_key=latest_job.prompt_key,
         )
+    id_fields = identification or aisle_identification_fields(
+        a, inventory=inventory, client=client
+    )
     return AisleResponse(
         id=a.id,
         inventory_id=a.inventory_id,
@@ -535,6 +556,9 @@ def aisle_to_response(
         positions_count=positions_count,
         pending_review_positions_count=pending_review_positions_count,
         last_activity_at=last_activity_at,
+        identification_mode=id_fields.identification_mode,
+        effective_identification_mode=id_fields.effective_identification_mode,
+        identification_mode_source=id_fields.identification_mode_source,
     )
 
 
@@ -587,6 +611,10 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
         model_name=j.model_name,
         prompt_key=j.prompt_key,
         prompt_version=j.prompt_version,
+        identification_mode=j.identification_mode.value,
+        identification_mode_source=j.identification_mode_source.value,
+        execution_strategy=j.execution_strategy.value,
+        configuration_snapshot_version=j.configuration_snapshot_version,
         finalization_status=j.finalization_status.value,
         current_finalization_step=(
             j.current_finalization_step.value if j.current_finalization_step else None

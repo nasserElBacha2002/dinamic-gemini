@@ -273,11 +273,13 @@ export function useStartAisleProcessing(inventoryId: string) {
       providerName?: string | null;
       modelName?: string | null;
       promptKey?: string | null;
+      identificationMode?: string | null;
     }) =>
       startAisleProcessing(inventoryId, vars.aisleId, {
         providerName: vars.providerName,
         modelName: vars.modelName,
         promptKey: vars.promptKey,
+        identificationMode: vars.identificationMode,
       }),
     onSuccess: (_, vars) => {
       const { aisleId } = vars;

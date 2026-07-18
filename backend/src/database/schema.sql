@@ -146,6 +146,11 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventorie
     ALTER TABLE inventories ADD primary_prompt_key NVARCHAR(150) NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'primary_prompt_version')
     ALTER TABLE inventories ADD primary_prompt_version NVARCHAR(50) NULL;
+
+-- Phase 1 aisle identification override on inventories (mirror 0049).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'identification_mode')
+    ALTER TABLE inventories ADD identification_mode VARCHAR(32) NULL;
+GO
 GO
 
 -- Align processing_mode with migrations/versions/0013_inventory_processing_mode.sql (backfill, NOT NULL, default).
@@ -205,6 +210,11 @@ IF NOT EXISTS (
 GO
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_clients_name' AND object_id = OBJECT_ID('clients'))
     CREATE INDEX IX_clients_name ON clients(name);
+GO
+
+-- Phase 1 aisle identification — clients.default_identification_mode (mirror 0049).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('clients') AND name = 'default_identification_mode')
+    ALTER TABLE clients ADD default_identification_mode VARCHAR(32) NULL;
 GO
 
 -- Phase A2 — Client suppliers foundation (mirror migrations/versions/0025_client_suppliers_foundation.sql).
@@ -338,6 +348,36 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'prompt_version')
     ALTER TABLE inventory_jobs ADD prompt_version NVARCHAR(256) NULL;
 GO
+
+-- Phase 1 aisle identification snapshot (mirror migrations/versions/0049_aisle_identification_mode.sql).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'identification_mode')
+    ALTER TABLE inventory_jobs ADD identification_mode VARCHAR(32) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'identification_mode_source')
+    ALTER TABLE inventory_jobs ADD identification_mode_source VARCHAR(32) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'configuration_snapshot_version')
+    ALTER TABLE inventory_jobs ADD configuration_snapshot_version INT NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'execution_strategy')
+    ALTER TABLE inventory_jobs ADD execution_strategy VARCHAR(64) NULL;
+GO
+UPDATE inventory_jobs SET identification_mode = 'LEGACY_LLM' WHERE identification_mode IS NULL;
+UPDATE inventory_jobs SET identification_mode_source = 'LEGACY_MIGRATION' WHERE identification_mode_source IS NULL;
+UPDATE inventory_jobs SET configuration_snapshot_version = 1 WHERE configuration_snapshot_version IS NULL;
+UPDATE inventory_jobs SET execution_strategy = 'LEGACY_LLM' WHERE execution_strategy IS NULL;
+GO
+IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'identification_mode' AND is_nullable = 1)
+    ALTER TABLE inventory_jobs ALTER COLUMN identification_mode VARCHAR(32) NOT NULL;
+IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'identification_mode_source' AND is_nullable = 1)
+    ALTER TABLE inventory_jobs ALTER COLUMN identification_mode_source VARCHAR(32) NOT NULL;
+GO
+IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE parent_object_id = OBJECT_ID('inventory_jobs') AND name = 'DF_inventory_jobs_identification_mode')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT DF_inventory_jobs_identification_mode DEFAULT ('LEGACY_LLM') FOR identification_mode;
+IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE parent_object_id = OBJECT_ID('inventory_jobs') AND name = 'DF_inventory_jobs_identification_mode_source')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT DF_inventory_jobs_identification_mode_source DEFAULT ('LEGACY_MIGRATION') FOR identification_mode_source;
+IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE parent_object_id = OBJECT_ID('inventory_jobs') AND name = 'DF_inventory_jobs_configuration_snapshot_version')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT DF_inventory_jobs_configuration_snapshot_version DEFAULT (1) FOR configuration_snapshot_version;
+IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE parent_object_id = OBJECT_ID('inventory_jobs') AND name = 'DF_inventory_jobs_execution_strategy')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT DF_inventory_jobs_execution_strategy DEFAULT ('LEGACY_LLM') FOR execution_strategy;
+GO
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_inventory_jobs_provider_model_prompt' AND object_id = OBJECT_ID('inventory_jobs'))
     CREATE INDEX IX_inventory_jobs_provider_model_prompt ON inventory_jobs(provider_name, model_name, prompt_key);
 GO
@@ -368,6 +408,11 @@ END;
 GO
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_aisles_client_supplier_id' AND object_id = OBJECT_ID('aisles'))
     CREATE INDEX IX_aisles_client_supplier_id ON aisles(client_supplier_id);
+
+-- Phase 1 aisle identification override on aisles (mirror 0049).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('aisles') AND name = 'identification_mode')
+    ALTER TABLE aisles ADD identification_mode VARCHAR(32) NULL;
+GO
 GO
 
 -- v3.0 — Source assets (Épica 4, Documento técnico §7.3)

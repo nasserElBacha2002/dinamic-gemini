@@ -45,6 +45,8 @@ from src.api.dependencies import (
     get_run_auditability_service,
     get_start_aisle_processing_use_case,
     get_update_aisle_code_use_case,
+    get_inventory_repo,
+    get_client_repo,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.mappers.result_evidence_mapper import job_traceability_to_response
@@ -105,10 +107,12 @@ from src.application.errors import (
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
 )
+from src.application.ports.repositories import ClientRepository, InventoryRepository
 from src.application.services.aisle_aggregated_execution_log import (
     AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT,
     aggregate_aisle_execution_log_payload,
 )
+from src.application.services.optional_unset import UNSET
 from src.application.services.aisle_table_query_params import (
     build_aisle_table_query_from_route_params,
 )
@@ -377,6 +381,11 @@ def update_aisle_code(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
                 code=payload.code,
+                identification_mode=(
+                    payload.identification_mode
+                    if "identification_mode" in payload.model_fields_set
+                    else UNSET
+                ),
             )
         )
         return aisle_to_response(aisle)
@@ -431,6 +440,8 @@ def activate_aisle(
 def list_aisles(
     inventory_id: str,
     use_case: ListAislesWithStatusUseCase = Depends(get_list_aisles_with_status_use_case),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    client_repo: ClientRepository = Depends(get_client_repo),
     search: str | None = Query(None, description="Case-insensitive substring on aisle code."),
     status: str | None = Query(None, description="Exact aisle status (wire value)."),
     is_active: bool | None = Query(
@@ -463,6 +474,10 @@ def list_aisles(
             page_size=page_size,
         )
         items, total = use_case.execute(inventory_id, q)
+        inventory = inventory_repo.get_by_id(inventory_id)
+        client = None
+        if inventory is not None and inventory.client_id:
+            client = client_repo.get_by_id(inventory.client_id)
         ps = q.page_size
         return PaginatedAisleListResponse(
             items=[
@@ -473,6 +488,8 @@ def list_aisles(
                     positions_count=item.positions_count,
                     pending_review_positions_count=item.pending_review_positions_count,
                     last_activity_at=item.last_activity_at,
+                    inventory=inventory,
+                    client=client,
                 )
                 for item in items
             ],
@@ -503,8 +520,9 @@ def start_aisle_processing(
             model_name=None,
             prompt_key=None,
             idempotency_key=None,
+            identification_mode=None,
         )
-        job_id = use_case.execute(
+        result = use_case.execute(
             StartAisleProcessingCommand(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
@@ -512,10 +530,17 @@ def start_aisle_processing(
                 requested_provider_name=body.provider_name,
                 requested_model_name=body.model_name,
                 requested_prompt_key=body.prompt_key,
+                requested_identification_mode=body.identification_mode,
                 idempotency_key=body.idempotency_key,
             )
         )
-        return ProcessAisleResponse(job_id=job_id)
+        return ProcessAisleResponse(
+            job_id=result.job_id,
+            identification_mode=result.identification_mode,
+            identification_mode_source=result.identification_mode_source,
+            execution_strategy=result.execution_strategy,
+            configuration_snapshot_version=result.configuration_snapshot_version,
+        )
     except Exception as e:
         reraise_if_mapped(e)
         raise

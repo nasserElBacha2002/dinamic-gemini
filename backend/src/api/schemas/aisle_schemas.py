@@ -1,7 +1,7 @@
 """v3.0 Aisle API schemas (request/response)."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -35,6 +35,10 @@ class UpdateAisleRequest(BaseModel):
     """PATCH /api/v3/inventories/{inventory_id}/aisles/{aisle_id} body."""
 
     code: str = Field(..., min_length=1, max_length=64)
+    identification_mode: Literal["CODE_SCAN", "INTERNAL_OCR", "LEGACY_LLM"] | None = Field(
+        None,
+        description="Optional aisle identification override; send null to clear and inherit.",
+    )
 
     @field_validator("code")
     @classmethod
@@ -97,3 +101,6 @@ class AisleResponse(BaseModel):
     positions_count: int = 0
     pending_review_positions_count: int = 0
     last_activity_at: Optional[datetime] = None
+    identification_mode: Optional[str] = None
+    effective_identification_mode: str = "LEGACY_LLM"
+    identification_mode_source: str = "SYSTEM_DEFAULT"

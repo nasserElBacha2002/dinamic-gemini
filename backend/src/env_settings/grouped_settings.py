@@ -934,6 +934,20 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
         description="Enable aisle QR/barcode code scan API. Env: CODE_SCAN_ENABLED.",
     )
+    aisle_identification_pipeline_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 1+ aisle identification pipeline flag. When false, processing stays on the "
+            "legacy LLM path unchanged. When true (Phase 1), modes are resolved and snapshotted "
+            "but all modes still execute LEGACY_LLM_TEMPORARY. "
+            "Env: AISLE_IDENTIFICATION_PIPELINE_ENABLED (default false)."
+        ),
+    )
     code_scan_max_assets_per_run: int = Field(
         default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_ASSETS_PER_RUN", "50")),
         ge=1,

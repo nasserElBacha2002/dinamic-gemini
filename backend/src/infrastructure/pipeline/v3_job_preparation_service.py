@@ -90,12 +90,18 @@ class V3JobPreparationService:
             return V3PreparationResult.halt(False)
 
         logger.info(
-            "v3 dispatch accepted: job_id=%s job_type=%s target_type=%s target_id=%s status=%s",
+            "v3 dispatch accepted: job_id=%s job_type=%s target_type=%s target_id=%s status=%s "
+            "configured_identification_mode=%s identification_mode_source=%s "
+            "configuration_snapshot_version=%s actual_execution_strategy=%s",
             job_id,
             job.job_type,
             job.target_type,
             job.target_id,
             job.status.value,
+            job.identification_mode.value,
+            job.identification_mode_source.value,
+            job.configuration_snapshot_version,
+            job.execution_strategy.value,
         )
         if self._should_skip_for_terminal_job_status(job, job_id):
             return V3PreparationResult.halt(True)
