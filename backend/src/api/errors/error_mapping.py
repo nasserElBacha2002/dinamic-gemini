@@ -341,11 +341,13 @@ from src.application.errors import (
     EmptyUploadError,
     ImageAlreadyHasResultsError,
     ImageResultLockTimeoutError,
+    InvalidPersistedIdentificationModeError,
     InvalidProcessingModelError,
     InvalidProcessingPromptKeyError,
     InventoryClientRequiredForAisleError,
     InventoryClientRequiredForSupplierError,
     InventoryNotFoundError,
+    IdempotentJobInconsistencyError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
     JobPromotionNotAllowedError,
@@ -497,6 +499,8 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
     InventoryNotFoundError: _structured_fixed(
         404, error_code=INVENTORY_NOT_FOUND, detail=HTTP_DETAIL_INVENTORY_NOT_FOUND
     ),
+    InvalidPersistedIdentificationModeError: _plain_http(500),
+    IdempotentJobInconsistencyError: _plain_http(500),
     ClientNotFoundError: _structured_fixed(
         404, error_code=CLIENT_NOT_FOUND, detail=HTTP_DETAIL_CLIENT_NOT_FOUND
     ),

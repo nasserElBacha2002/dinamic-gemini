@@ -69,7 +69,9 @@ def test_save_insert_placeholder_count_matches_parameters_for_starting_job() -> 
     assert len(client.cursor_instance.executions) == 2
     insert_sql, insert_params = client.cursor_instance.executions[1]
     assert "INSERT INTO inventory_jobs" in insert_sql
-    assert insert_sql.count("?") == len(insert_params) == 36
+    # 36 base columns + 4 Phase 1 aisle identification snapshot columns (identification_mode,
+    # identification_mode_source, configuration_snapshot_version, execution_strategy).
+    assert insert_sql.count("?") == len(insert_params) == 40
 
 
 def test_save_update_placeholder_count_matches_parameters() -> None:
@@ -81,4 +83,5 @@ def test_save_update_placeholder_count_matches_parameters() -> None:
     assert len(client.cursor_instance.executions) == 1
     update_sql, update_params = client.cursor_instance.executions[0]
     assert "UPDATE inventory_jobs" in update_sql
-    assert update_sql.count("?") == len(update_params) == 35
+    # 35 base columns + 4 Phase 1 aisle identification snapshot columns (id excluded from SET).
+    assert update_sql.count("?") == len(update_params) == 39

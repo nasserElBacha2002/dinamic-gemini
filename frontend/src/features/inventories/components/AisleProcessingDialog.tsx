@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import BaseDialog from '../../../components/ui/BaseDialog';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import type { AisleIdentificationMode, ProcessingProviderOptionsResponse } from '../../../api/types';
+import { INHERITED_IDENTIFICATION_MODE } from '../hooks/useAisleProcessingFlow';
 
 /** Narrow query surface for the dialog — avoids coupling to full react-query generics. */
 export interface ProcessingProviderOptionsQueryLike {
@@ -21,9 +22,10 @@ export interface AisleProcessingDialogProps {
   onProviderKeyChange: (v: string) => void;
   modelKey: string;
   onModelKeyChange: (v: string) => void;
+  /** Select value: inherited sentinel or an explicit mode. */
   identificationMode: AisleIdentificationMode | string;
   onIdentificationModeChange: (v: AisleIdentificationMode | string) => void;
-  /** Effective mode from backend inheritance (may differ when user has not overridden). */
+  /** Effective mode from backend inheritance. */
   inheritedEffectiveMode?: AisleIdentificationMode | string | null;
   identificationModeSource?: string | null;
   providerOptsQuery: ProcessingProviderOptionsQueryLike;
@@ -88,17 +90,22 @@ export default function AisleProcessingDialog({
       ? '__loading__'
       : modelKey || (productionMode && productionProvidersReady ? providerConfig?.default_model ?? '' : '');
 
+  const usingInherited = identificationMode === INHERITED_IDENTIFICATION_MODE;
+  const effectiveDisplayMode = String(inheritedEffectiveMode || 'LEGACY_LLM');
+  const selectedExplicitMode = usingInherited ? effectiveDisplayMode : String(identificationMode);
   const showPhase1Warning =
-    identificationMode === 'CODE_SCAN' || identificationMode === 'INTERNAL_OCR';
+    selectedExplicitMode === 'CODE_SCAN' || selectedExplicitMode === 'INTERNAL_OCR';
+
   const sourceLabel = identificationModeSource
     ? t(`aisle.identification_source_${String(identificationModeSource).toLowerCase()}`, {
         defaultValue: String(identificationModeSource),
       })
-    : null;
-  const inherited =
-    Boolean(identificationModeSource) &&
-    identificationModeSource !== 'REQUEST' &&
-    identificationModeSource !== 'AISLE';
+    : t('aisle.identification_source_system_default');
+
+  const inheritedOptionLabel = t('aisle.identification_use_inherited', {
+    mode: effectiveDisplayMode,
+    source: sourceLabel,
+  });
 
   return (
     <BaseDialog
@@ -144,9 +151,12 @@ export default function AisleProcessingDialog({
           <Select
             labelId="process-identification-label"
             label={t('aisle.identification_mode_label')}
-            value={identificationMode || 'LEGACY_LLM'}
+            value={identificationMode || INHERITED_IDENTIFICATION_MODE}
             onChange={(e) => onIdentificationModeChange(String(e.target.value))}
           >
+            <MenuItem value={INHERITED_IDENTIFICATION_MODE} data-testid="process-identification-inherited-option">
+              {inheritedOptionLabel}
+            </MenuItem>
             {IDENTIFICATION_OPTIONS.map((mode) => (
               <MenuItem key={mode} value={mode}>
                 {t(`aisle.identification_mode_${mode.toLowerCase()}`)}
@@ -155,18 +165,25 @@ export default function AisleProcessingDialog({
           </Select>
         </FormControl>
         <Typography variant="body2" color="text.secondary" data-testid="process-identification-help">
-          {t(`aisle.identification_mode_${String(identificationMode || 'LEGACY_LLM').toLowerCase()}_help`)}
+          {usingInherited
+            ? t('aisle.identification_will_use_inherited', {
+                mode: effectiveDisplayMode,
+                source: sourceLabel,
+              })
+            : t('aisle.identification_override_only_this_run')}
         </Typography>
-        {sourceLabel ? (
+        {!usingInherited ? (
           <Typography variant="caption" color="text.secondary" data-testid="process-identification-source">
-            {inherited
-              ? t('aisle.identification_inherited', {
-                  mode: inheritedEffectiveMode || identificationMode,
-                  source: sourceLabel,
-                })
-              : t('aisle.identification_source_label', { source: sourceLabel })}
+            {t('aisle.identification_source_request_label')}
           </Typography>
-        ) : null}
+        ) : (
+          <Typography variant="caption" color="text.secondary" data-testid="process-identification-source">
+            {t('aisle.identification_inherited_reference', {
+              mode: effectiveDisplayMode,
+              source: sourceLabel,
+            })}
+          </Typography>
+        )}
         {showPhase1Warning ? (
           <Alert severity="info" variant="outlined" data-testid="process-identification-phase1-warning">
             {t('aisle.identification_phase1_warning')}

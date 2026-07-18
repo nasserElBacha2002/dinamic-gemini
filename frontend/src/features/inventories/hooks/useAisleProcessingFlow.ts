@@ -10,6 +10,9 @@ import {
   type ProcessingProviderOptionsMode,
 } from '../utils/processingProviderSelection';
 
+/** Select value meaning "use inherited config" — maps to omitting identification_mode. */
+export const INHERITED_IDENTIFICATION_MODE = '__INHERITED__';
+
 export interface UseAisleProcessingFlowOptions {
   inventoryId: string;
   isProductionInventory: boolean;
@@ -48,9 +51,10 @@ export function useAisleProcessingFlow({
   const [dialogTarget, setDialogTarget] = useState<AisleProcessingDialogTarget | null>(null);
   const [providerKey, setProviderKey] = useState('');
   const [modelKey, setModelKey] = useState('');
-  const [identificationMode, setIdentificationMode] = useState<AisleIdentificationMode | string>(
-    'LEGACY_LLM'
-  );
+  /** null = use inherited hierarchy; non-null = explicit REQUEST override. */
+  const [requestedIdentificationModeOverride, setRequestedIdentificationModeOverride] = useState<
+    AisleIdentificationMode | null
+  >(null);
   const [selectionInitialized, setSelectionInitialized] = useState(false);
 
   const optionsMode: ProcessingProviderOptionsMode = isProductionInventory
@@ -112,6 +116,17 @@ export function useAisleProcessingFlow({
     [providerOptsQuery.data?.providers, effectiveProvider]
   );
 
+  const identificationModeSelectValue =
+    requestedIdentificationModeOverride ?? INHERITED_IDENTIFICATION_MODE;
+
+  const setIdentificationMode = useCallback((value: string) => {
+    if (value === INHERITED_IDENTIFICATION_MODE || value === '') {
+      setRequestedIdentificationModeOverride(null);
+      return;
+    }
+    setRequestedIdentificationModeOverride(String(value).trim().toUpperCase() as AisleIdentificationMode);
+  }, []);
+
   const openDialogForAisle = useCallback(
     (
       aisleId: string,
@@ -127,11 +142,11 @@ export function useAisleProcessingFlow({
       setProviderKey('');
       setModelKey('');
       setSelectionInitialized(false);
+      setRequestedIdentificationModeOverride(null);
       const effective =
         identification?.effectiveMode ||
         identification?.configured ||
         'LEGACY_LLM';
-      setIdentificationMode(String(effective));
       setDialogTarget({
         aisleId,
         aisleCode,
@@ -147,6 +162,7 @@ export function useAisleProcessingFlow({
   const closeDialog = useCallback(() => {
     setDialogTarget(null);
     setSelectionInitialized(false);
+    setRequestedIdentificationModeOverride(null);
   }, []);
 
   const handleProviderKeyChange = useCallback(
@@ -191,14 +207,14 @@ export function useAisleProcessingFlow({
         providerName: providerKey.trim() === '' ? null : providerKey.trim().toLowerCase(),
         modelName: modelKey.trim() === '' ? null : modelKey.trim(),
         promptKey: null,
-        identificationMode:
-          identificationMode && String(identificationMode).trim() !== ''
-            ? String(identificationMode).trim().toUpperCase()
-            : null,
+        ...(requestedIdentificationModeOverride !== null
+          ? { identificationMode: requestedIdentificationModeOverride }
+          : {}),
       });
       showSnackbar(t('aisle.processing_started_snackbar'), 'success');
       setDialogTarget(null);
       setSelectionInitialized(false);
+      setRequestedIdentificationModeOverride(null);
       onAfterSuccess?.();
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
@@ -208,7 +224,6 @@ export function useAisleProcessingFlow({
     }
   }, [
     dialogTarget,
-    identificationMode,
     modelKey,
     onAfterSuccess,
     onBeforeProcessMutation,
@@ -216,6 +231,7 @@ export function useAisleProcessingFlow({
     productionOptionsLoading,
     productionProvidersUnavailable,
     providerKey,
+    requestedIdentificationModeOverride,
     setProcessError,
     showSnackbar,
     t,
@@ -233,8 +249,9 @@ export function useAisleProcessingFlow({
     setProviderKey: handleProviderKeyChange,
     modelKey,
     setModelKey,
-    identificationMode,
+    identificationMode: identificationModeSelectValue,
     setIdentificationMode,
+    requestedIdentificationModeOverride,
     providerOptsQuery,
     providerConfig,
     processMutation,

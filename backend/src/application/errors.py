@@ -7,6 +7,10 @@ Import from here instead of defining in a single use case module.
 
 from __future__ import annotations
 
+from src.domain.aisle_identification.modes import (
+    InvalidPersistedIdentificationModeError as InvalidPersistedIdentificationModeError,
+)
+
 
 class AisleNotFoundError(Exception):
     """Raised when the aisle does not exist or does not belong to the given inventory."""
@@ -30,6 +34,10 @@ class ClientNotFoundError(Exception):
 
 class InvalidClientNameError(Exception):
     """Raised when client name is missing or invalid."""
+
+
+class IdempotentJobInconsistencyError(Exception):
+    """Raised when an idempotency key matched a job id that cannot be loaded."""
 
 
 class ClientSupplierNotFoundError(Exception):

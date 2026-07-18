@@ -151,6 +151,14 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventorie
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'identification_mode')
     ALTER TABLE inventories ADD identification_mode VARCHAR(32) NULL;
 GO
+IF NOT EXISTS (
+    SELECT * FROM sys.check_constraints WHERE name = 'CK_inventories_identification_mode'
+)
+    ALTER TABLE inventories ADD CONSTRAINT CK_inventories_identification_mode
+    CHECK (
+        identification_mode IS NULL
+        OR identification_mode IN ('CODE_SCAN', 'INTERNAL_OCR', 'LEGACY_LLM')
+    );
 GO
 
 -- Align processing_mode with migrations/versions/0013_inventory_processing_mode.sql (backfill, NOT NULL, default).
@@ -212,9 +220,18 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_clients_name' AND obje
     CREATE INDEX IX_clients_name ON clients(name);
 GO
 
--- Phase 1 aisle identification — clients.default_identification_mode (mirror 0049).
+-- Phase 1 aisle identification — clients.default_identification_mode (mirror 0049/0050).
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('clients') AND name = 'default_identification_mode')
     ALTER TABLE clients ADD default_identification_mode VARCHAR(32) NULL;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.check_constraints WHERE name = 'CK_clients_default_identification_mode'
+)
+    ALTER TABLE clients ADD CONSTRAINT CK_clients_default_identification_mode
+    CHECK (
+        default_identification_mode IS NULL
+        OR default_identification_mode IN ('CODE_SCAN', 'INTERNAL_OCR', 'LEGACY_LLM')
+    );
 GO
 
 -- Phase A2 — Client suppliers foundation (mirror migrations/versions/0025_client_suppliers_foundation.sql).
@@ -378,6 +395,27 @@ IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE parent_object_id = OB
 IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE parent_object_id = OBJECT_ID('inventory_jobs') AND name = 'DF_inventory_jobs_execution_strategy')
     ALTER TABLE inventory_jobs ADD CONSTRAINT DF_inventory_jobs_execution_strategy DEFAULT ('LEGACY_LLM') FOR execution_strategy;
 GO
+-- Phase 1 corrections — CHECK constraints (mirror 0050).
+IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_identification_mode')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_identification_mode
+    CHECK (identification_mode IN ('CODE_SCAN', 'INTERNAL_OCR', 'LEGACY_LLM'));
+GO
+IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_identification_mode_source')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_identification_mode_source
+    CHECK (
+        identification_mode_source IN (
+            'REQUEST', 'AISLE', 'INVENTORY', 'CLIENT', 'SYSTEM_DEFAULT', 'LEGACY_MIGRATION'
+        )
+    );
+GO
+IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_execution_strategy')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_execution_strategy
+    CHECK (execution_strategy IN ('LEGACY_LLM', 'LEGACY_LLM_TEMPORARY'));
+GO
+IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_configuration_snapshot_version')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_configuration_snapshot_version
+    CHECK (configuration_snapshot_version > 0);
+GO
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_inventory_jobs_provider_model_prompt' AND object_id = OBJECT_ID('inventory_jobs'))
     CREATE INDEX IX_inventory_jobs_provider_model_prompt ON inventory_jobs(provider_name, model_name, prompt_key);
 GO
@@ -409,10 +447,18 @@ GO
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_aisles_client_supplier_id' AND object_id = OBJECT_ID('aisles'))
     CREATE INDEX IX_aisles_client_supplier_id ON aisles(client_supplier_id);
 
--- Phase 1 aisle identification override on aisles (mirror 0049).
+-- Phase 1 aisle identification override on aisles (mirror 0049/0050).
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('aisles') AND name = 'identification_mode')
     ALTER TABLE aisles ADD identification_mode VARCHAR(32) NULL;
 GO
+IF NOT EXISTS (
+    SELECT * FROM sys.check_constraints WHERE name = 'CK_aisles_identification_mode'
+)
+    ALTER TABLE aisles ADD CONSTRAINT CK_aisles_identification_mode
+    CHECK (
+        identification_mode IS NULL
+        OR identification_mode IN ('CODE_SCAN', 'INTERNAL_OCR', 'LEGACY_LLM')
+    );
 GO
 
 -- v3.0 — Source assets (Épica 4, Documento técnico §7.3)

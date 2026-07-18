@@ -7,10 +7,7 @@ from datetime import datetime, timezone
 
 from src.application.ports.repositories import ClientRepository
 from src.database.sqlserver import SqlServerClient, now_utc
-from src.domain.aisle_identification.modes import (
-    AisleIdentificationMode,
-    parse_identification_mode,
-)
+from src.domain.aisle_identification.modes import optional_config_identification_mode
 from src.domain.client.entities import Client, ClientStatus
 
 
@@ -20,18 +17,6 @@ def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt.tzinfo is not None:
         return dt
     return dt.replace(tzinfo=timezone.utc)
-
-
-def _optional_mode(raw: object) -> AisleIdentificationMode | None:
-    if raw is None:
-        return None
-    text = str(raw).strip()
-    if not text:
-        return None
-    try:
-        return parse_identification_mode(text)
-    except ValueError:
-        return None
 
 
 def _client_from_row(row) -> Client:
@@ -46,7 +31,7 @@ def _client_from_row(row) -> Client:
         status=status,
         created_at=_ensure_utc(row.created_at) or now_utc(),
         updated_at=_ensure_utc(row.updated_at) or now_utc(),
-        default_identification_mode=_optional_mode(
+        default_identification_mode=optional_config_identification_mode(
             getattr(row, "default_identification_mode", None)
         ),
     )

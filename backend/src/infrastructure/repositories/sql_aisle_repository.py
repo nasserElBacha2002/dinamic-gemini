@@ -14,10 +14,7 @@ from datetime import datetime, timezone
 from src.application.ports.repositories import AisleRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.aisle.entities import Aisle, AisleStatus
-from src.domain.aisle_identification.modes import (
-    AisleIdentificationMode,
-    parse_identification_mode,
-)
+from src.domain.aisle_identification.modes import optional_config_identification_mode
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
 logger = logging.getLogger(__name__)
@@ -44,19 +41,6 @@ def _status_from_row(row, aisle_id: str = "?") -> AisleStatus:
         return AisleStatus.CREATED
 
 
-def _optional_identification_mode(raw: object) -> AisleIdentificationMode | None:
-    if raw is None:
-        return None
-    text = str(raw).strip()
-    if not text:
-        return None
-    try:
-        return parse_identification_mode(text)
-    except ValueError:
-        logger.warning("Invalid aisle identification_mode from DB: %r", raw)
-        return None
-
-
 def _row_to_aisle(row) -> Aisle:
     aid = getattr(row, "id", "")
     created = _ensure_utc(getattr(row, "created_at", None))
@@ -80,7 +64,7 @@ def _row_to_aisle(row) -> Aisle:
         error_message=getattr(row, "error_message", None),
         retryable=getattr(row, "retryable", None),
         is_active=bool(getattr(row, "is_active", True)),
-        identification_mode=_optional_identification_mode(
+        identification_mode=optional_config_identification_mode(
             getattr(row, "identification_mode", None)
         ),
     )

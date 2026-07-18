@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+from typing import TypeAlias
 
-class _UnsetType:
+from src.domain.aisle_identification.modes import AisleIdentificationMode
+
+
+class UnsetType:
+    """Sentinel: field omitted from a partial update."""
+
     __slots__ = ()
 
     def __repr__(self) -> str:
         return "UNSET"
 
 
-UNSET = _UnsetType()
-Unset = _UnsetType  # type alias for annotations
+UNSET = UnsetType()
+
+# ``str`` allowed so API routes can pass Literal wire values before domain parse.
+OptionalModeUpdate: TypeAlias = AisleIdentificationMode | str | None | UnsetType

@@ -14,10 +14,7 @@ from datetime import datetime, timezone
 
 from src.application.ports.repositories import InventoryRepository
 from src.database.sqlserver import SqlServerClient, now_utc
-from src.domain.aisle_identification.modes import (
-    AisleIdentificationMode,
-    parse_identification_mode,
-)
+from src.domain.aisle_identification.modes import optional_config_identification_mode
 from src.domain.inventory.entities import (
     Inventory,
     InventoryProcessingMode,
@@ -35,20 +32,6 @@ def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt.tzinfo is not None:
         return dt
     return dt.replace(tzinfo=timezone.utc)
-
-
-def _optional_identification_mode(raw: object) -> AisleIdentificationMode | None:
-    if raw is None:
-        return None
-    text = str(raw).strip()
-    if not text:
-        return None
-    try:
-        return parse_identification_mode(text)
-    except ValueError:
-        logger.warning("Invalid inventory identification_mode from DB: %r", raw)
-        return None
-
 
 class SqlInventoryRepository(InventoryRepository):
     def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
@@ -165,7 +148,7 @@ class SqlInventoryRepository(InventoryRepository):
             primary_prompt_key=getattr(row, "primary_prompt_key", None),
             primary_prompt_version=getattr(row, "primary_prompt_version", None),
             client_id=getattr(row, "client_id", None),
-            identification_mode=_optional_identification_mode(
+            identification_mode=optional_config_identification_mode(
                 getattr(row, "identification_mode", None)
             ),
         )
@@ -211,7 +194,7 @@ class SqlInventoryRepository(InventoryRepository):
                     primary_prompt_key=getattr(row, "primary_prompt_key", None),
                     primary_prompt_version=getattr(row, "primary_prompt_version", None),
                     client_id=getattr(row, "client_id", None),
-                    identification_mode=_optional_identification_mode(
+                    identification_mode=optional_config_identification_mode(
                         getattr(row, "identification_mode", None)
                     ),
                 )

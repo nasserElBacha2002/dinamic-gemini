@@ -17,7 +17,7 @@ from src.domain.aisle_identification.modes import (
     AisleIdentificationExecutionStrategy,
     AisleIdentificationMode,
     AisleIdentificationModeSource,
-    coerce_identification_mode,
+    historical_job_identification_mode,
 )
 from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.client.entities import Client, ClientStatus
@@ -194,4 +194,4 @@ def test_historical_job_null_fields_coerce() -> None:
         updated_at=now,
     )
     assert job.identification_mode == AisleIdentificationMode.LEGACY_LLM
-    assert coerce_identification_mode(None) == AisleIdentificationMode.LEGACY_LLM
+    assert historical_job_identification_mode(None) == AisleIdentificationMode.LEGACY_LLM

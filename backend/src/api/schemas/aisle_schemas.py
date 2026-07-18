@@ -1,10 +1,16 @@
 """v3.0 Aisle API schemas (request/response)."""
 
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.api.schemas.identification_mode_literals import (
+    IdentificationModeLiteral,
+    IdentificationModeSourceLiteral,
+)
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 
 
@@ -32,21 +38,29 @@ class CreateAisleRequest(BaseModel):
 
 
 class UpdateAisleRequest(BaseModel):
-    """PATCH /api/v3/inventories/{inventory_id}/aisles/{aisle_id} body."""
+    """PATCH /api/v3/inventories/{inventory_id}/aisles/{aisle_id} — truly partial update."""
 
-    code: str = Field(..., min_length=1, max_length=64)
-    identification_mode: Literal["CODE_SCAN", "INTERNAL_OCR", "LEGACY_LLM"] | None = Field(
+    code: str | None = Field(None, min_length=1, max_length=64)
+    identification_mode: IdentificationModeLiteral | None = Field(
         None,
         description="Optional aisle identification override; send null to clear and inherit.",
     )
 
     @field_validator("code")
     @classmethod
-    def strip_code(cls, value: str) -> str:
+    def strip_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         normalized = value.strip()
         if not normalized:
             raise ValueError("code must not be empty")
         return normalized
+
+    @model_validator(mode="after")
+    def require_at_least_one_field(self) -> UpdateAisleRequest:
+        if not self.model_fields_set:
+            raise ValueError("At least one field must be provided")
+        return self
 
 
 class AisleJobSummary(BaseModel):
@@ -101,6 +115,6 @@ class AisleResponse(BaseModel):
     positions_count: int = 0
     pending_review_positions_count: int = 0
     last_activity_at: Optional[datetime] = None
-    identification_mode: Optional[str] = None
-    effective_identification_mode: str = "LEGACY_LLM"
-    identification_mode_source: str = "SYSTEM_DEFAULT"
+    identification_mode: IdentificationModeLiteral | None = None
+    effective_identification_mode: IdentificationModeLiteral
+    identification_mode_source: IdentificationModeSourceLiteral

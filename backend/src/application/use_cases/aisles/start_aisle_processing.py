@@ -43,7 +43,7 @@ from src.application.services.process_aisle_execution_resolution import (
 from src.config import load_settings
 from src.domain.aisle_identification.modes import CONFIGURATION_SNAPSHOT_VERSION
 from src.domain.aisle_identification.resolver import resolve_aisle_identification_mode
-from src.domain.jobs.entities import JobStatus
+from src.domain.jobs.entities import Job, JobStatus
 from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 
 logger = logging.getLogger(__name__)
@@ -103,14 +103,14 @@ def _find_job_by_idempotency_key(
     *,
     aisle_id: str,
     idempotency_key: str | None,
-) -> str | None:
+) -> Job | None:
     key = (idempotency_key or "").strip()
     if not key:
         return None
     for job in job_repo.list_jobs_for_target("aisle", aisle_id, limit=100):
         payload = job.payload_json or {}
         if str(payload.get("idempotency_key") or "").strip() == key:
-            return job.id
+            return job
     return None
 
 
@@ -206,27 +206,18 @@ class StartAisleProcessingUseCase:
             idempotency_key=command.idempotency_key,
         )
         if existing_idempotent is not None:
-            existing = self._job_repo.get_by_id(existing_idempotent)
             logger.info(
                 "aisle.process_idempotent_replay inventory_id=%s aisle_id=%s job_id=%s",
                 command.inventory_id,
                 command.aisle_id,
-                existing_idempotent,
+                existing_idempotent.id,
             )
-            if existing is not None:
-                return StartAisleProcessingResult(
-                    job_id=existing.id,
-                    identification_mode=existing.identification_mode.value,
-                    identification_mode_source=existing.identification_mode_source.value,
-                    execution_strategy=existing.execution_strategy.value,
-                    configuration_snapshot_version=existing.configuration_snapshot_version,
-                )
             return StartAisleProcessingResult(
-                job_id=existing_idempotent,
-                identification_mode="LEGACY_LLM",
-                identification_mode_source="SYSTEM_DEFAULT",
-                execution_strategy="LEGACY_LLM",
-                configuration_snapshot_version=CONFIGURATION_SNAPSHOT_VERSION,
+                job_id=existing_idempotent.id,
+                identification_mode=existing_idempotent.identification_mode.value,
+                identification_mode_source=existing_idempotent.identification_mode_source.value,
+                execution_strategy=existing_idempotent.execution_strategy.value,
+                configuration_snapshot_version=existing_idempotent.configuration_snapshot_version,
             )
 
         _require_no_active_process_job_for_aisle(

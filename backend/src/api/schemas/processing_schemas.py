@@ -7,19 +7,12 @@ from pydantic import BaseModel, Field
 
 from src.api.schemas.aisle_schemas import AisleResponse
 from src.api.schemas.benchmark_schemas import LlmCostSnapshotResponse
+from src.api.schemas.identification_mode_literals import (
+    ExecutionStrategyLiteral,
+    IdentificationModeLiteral,
+    IdentificationModeSourceLiteral,
+)
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
-
-
-_IdentificationModeLiteral = Literal["CODE_SCAN", "INTERNAL_OCR", "LEGACY_LLM"]
-_IdentificationSourceLiteral = Literal[
-    "REQUEST",
-    "AISLE",
-    "INVENTORY",
-    "CLIENT",
-    "SYSTEM_DEFAULT",
-    "LEGACY_MIGRATION",
-]
-_ExecutionStrategyLiteral = Literal["LEGACY_LLM", "LEGACY_LLM_TEMPORARY"]
 
 
 class ProcessAisleRequest(BaseModel):
@@ -52,7 +45,7 @@ class ProcessAisleRequest(BaseModel):
             "key was used for this aisle (including completed jobs within recent history)."
         ),
     )
-    identification_mode: Optional[Literal["CODE_SCAN", "INTERNAL_OCR", "LEGACY_LLM"]] = Field(
+    identification_mode: IdentificationModeLiteral | None = Field(
         None,
         description=(
             "Optional job-only override for aisle identification mode. Does not permanently change "
@@ -122,10 +115,10 @@ class ProcessAisleResponse(BaseModel):
     """Response for POST .../aisles/{aisle_id}/process."""
 
     job_id: str
-    identification_mode: Optional[str] = None
-    identification_mode_source: Optional[str] = None
-    execution_strategy: Optional[str] = None
-    configuration_snapshot_version: Optional[int] = None
+    identification_mode: IdentificationModeLiteral
+    identification_mode_source: IdentificationModeSourceLiteral
+    execution_strategy: ExecutionStrategyLiteral
+    configuration_snapshot_version: int
 
 
 class JobSummary(BaseModel):
@@ -153,10 +146,10 @@ class JobSummary(BaseModel):
     model_name: Optional[str] = None
     prompt_key: Optional[str] = None
     prompt_version: Optional[str] = None
-    identification_mode: Optional[_IdentificationModeLiteral] = None
-    identification_mode_source: Optional[_IdentificationSourceLiteral] = None
-    execution_strategy: Optional[_ExecutionStrategyLiteral] = None
-    configuration_snapshot_version: Optional[int] = None
+    identification_mode: IdentificationModeLiteral
+    identification_mode_source: IdentificationModeSourceLiteral
+    execution_strategy: ExecutionStrategyLiteral
+    configuration_snapshot_version: int
     finalization_status: Optional[str] = None
     current_finalization_step: Optional[str] = None
     last_completed_finalization_step: Optional[str] = None

@@ -17,6 +17,7 @@ from src.api.constants.error_wire import (
 )
 from src.api.dependencies import (
     get_activate_aisle_use_case,
+    get_aisle_identification_configuration_query,
     get_artifact_publication_outbox_store,
     get_artifact_storage,
     get_cancel_aisle_job_use_case,
@@ -45,8 +46,6 @@ from src.api.dependencies import (
     get_run_auditability_service,
     get_start_aisle_processing_use_case,
     get_update_aisle_code_use_case,
-    get_inventory_repo,
-    get_client_repo,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.mappers.result_evidence_mapper import job_traceability_to_response
@@ -91,6 +90,7 @@ from src.api.schemas.processing_schemas import (
     ProcessAisleResponse,
 )
 from src.api.schemas.result_evidence_schemas import JobTraceabilityResponse
+from src.api.services.identification_mode_response import api_fields_from_configuration
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     load_hybrid_report_json_for_api,
@@ -107,12 +107,13 @@ from src.application.errors import (
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
 )
-from src.application.ports.repositories import ClientRepository, InventoryRepository
 from src.application.services.aisle_aggregated_execution_log import (
     AGGREGATE_AISLE_EXECUTION_LOG_JOBS_LIMIT,
     aggregate_aisle_execution_log_payload,
 )
-from src.application.services.optional_unset import UNSET
+from src.application.services.aisle_identification_configuration_query import (
+    AisleIdentificationConfigurationQuery,
+)
 from src.application.services.aisle_table_query_params import (
     build_aisle_table_query_from_route_params,
 )
@@ -162,6 +163,7 @@ from src.application.services.observability_output_sanitizer import (
     sanitize_execution_log_events,
     sanitize_observability_value,
 )
+from src.application.services.optional_unset import UNSET
 from src.application.services.result_evidence_query_service import ResultEvidenceQueryService
 from src.application.services.run_auditability_service import RunAuditabilityService
 from src.application.use_cases.aisles.activate_aisle import (
@@ -234,6 +236,7 @@ from src.application.use_cases.inventories.export_inventory_results import (
 from src.auth.dependencies import require_observability_capability
 from src.auth.schemas import AuthUser
 from src.config import load_settings
+from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import Job
 from src.infrastructure.artifacts.stored_artifact_reader import read_execution_log_events_for_job
 from src.pipeline.secret_redaction import redact_secrets_in_text
@@ -243,6 +246,20 @@ from .shared import aisle_to_response, job_to_detail, job_to_summary, status_res
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _aisle_response(
+    aisle: Aisle,
+    id_query: AisleIdentificationConfigurationQuery,
+    latest_job: Job | None = None,
+    **kwargs: Any,
+) -> AisleResponse:
+    return aisle_to_response(
+        aisle,
+        latest_job,
+        identification=api_fields_from_configuration(id_query.for_aisle(aisle)),
+        **kwargs,
+    )
 
 
 def _build_aisle_aggregated_execution_log_body(
@@ -341,6 +358,9 @@ def create_aisle(
     inventory_id: str,
     payload: CreateAisleRequest,
     use_case: CreateAisleUseCase = Depends(get_create_aisle_use_case),
+    id_query: AisleIdentificationConfigurationQuery = Depends(
+        get_aisle_identification_configuration_query
+    ),
 ) -> AisleResponse:
     """Create an aisle in an inventory (v3.0). Returns 404 if inventory not found, 409 if code duplicate."""
     try:
@@ -351,7 +371,7 @@ def create_aisle(
                 client_supplier_id=payload.client_supplier_id,
             )
         )
-        return aisle_to_response(aisle)
+        return _aisle_response(aisle, id_query)
     except (
         InventoryNotFoundError,
         DuplicateAisleCodeError,
@@ -373,14 +393,17 @@ def update_aisle_code(
     aisle_id: str,
     payload: UpdateAisleRequest,
     use_case: UpdateAisleCodeUseCase = Depends(get_update_aisle_code_use_case),
+    id_query: AisleIdentificationConfigurationQuery = Depends(
+        get_aisle_identification_configuration_query
+    ),
 ) -> AisleResponse:
-    """Rename an aisle code within an inventory. Returns 404 if missing, 409 if code duplicate."""
+    """Update aisle code and/or identification mode. Returns 404 if missing, 409 if code duplicate."""
     try:
         aisle = use_case.execute(
             UpdateAisleCodeCommand(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
-                code=payload.code,
+                code=payload.code if "code" in payload.model_fields_set else None,
                 identification_mode=(
                     payload.identification_mode
                     if "identification_mode" in payload.model_fields_set
@@ -388,7 +411,7 @@ def update_aisle_code(
                 ),
             )
         )
-        return aisle_to_response(aisle)
+        return _aisle_response(aisle, id_query)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except (AisleNotFoundError, DuplicateAisleCodeError) as e:
@@ -404,13 +427,16 @@ def deactivate_aisle(
     inventory_id: str,
     aisle_id: str,
     use_case: DeactivateAisleUseCase = Depends(get_deactivate_aisle_use_case),
+    id_query: AisleIdentificationConfigurationQuery = Depends(
+        get_aisle_identification_configuration_query
+    ),
 ) -> AisleResponse:
     """Soft-deactivate an aisle. Blocked while an active process job exists (409)."""
     try:
         aisle = use_case.execute(
             DeactivateAisleCommand(inventory_id=inventory_id, aisle_id=aisle_id)
         )
-        return aisle_to_response(aisle)
+        return _aisle_response(aisle, id_query)
     except (AisleNotFoundError, ActiveJobExistsError) as e:
         reraise_if_mapped(e)
         raise
@@ -424,13 +450,16 @@ def activate_aisle(
     inventory_id: str,
     aisle_id: str,
     use_case: ActivateAisleUseCase = Depends(get_activate_aisle_use_case),
+    id_query: AisleIdentificationConfigurationQuery = Depends(
+        get_aisle_identification_configuration_query
+    ),
 ) -> AisleResponse:
     """Re-activate a soft-deactivated aisle."""
     try:
         aisle = use_case.execute(
             ActivateAisleCommand(inventory_id=inventory_id, aisle_id=aisle_id)
         )
-        return aisle_to_response(aisle)
+        return _aisle_response(aisle, id_query)
     except AisleNotFoundError as e:
         reraise_if_mapped(e)
         raise
@@ -440,8 +469,9 @@ def activate_aisle(
 def list_aisles(
     inventory_id: str,
     use_case: ListAislesWithStatusUseCase = Depends(get_list_aisles_with_status_use_case),
-    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
-    client_repo: ClientRepository = Depends(get_client_repo),
+    id_query: AisleIdentificationConfigurationQuery = Depends(
+        get_aisle_identification_configuration_query
+    ),
     search: str | None = Query(None, description="Case-insensitive substring on aisle code."),
     status: str | None = Query(None, description="Exact aisle status (wire value)."),
     is_active: bool | None = Query(
@@ -474,22 +504,17 @@ def list_aisles(
             page_size=page_size,
         )
         items, total = use_case.execute(inventory_id, q)
-        inventory = inventory_repo.get_by_id(inventory_id)
-        client = None
-        if inventory is not None and inventory.client_id:
-            client = client_repo.get_by_id(inventory.client_id)
         ps = q.page_size
         return PaginatedAisleListResponse(
             items=[
-                aisle_to_response(
+                _aisle_response(
                     item.aisle,
+                    id_query,
                     item.latest_job,
                     assets_count=item.assets_count,
                     positions_count=item.positions_count,
                     pending_review_positions_count=item.pending_review_positions_count,
                     last_activity_at=item.last_activity_at,
-                    inventory=inventory,
-                    client=client,
                 )
                 for item in items
             ],
@@ -551,10 +576,16 @@ def get_aisle_status(
     inventory_id: str,
     aisle_id: str,
     use_case: GetAisleProcessingStatusUseCase = Depends(get_get_aisle_processing_status_use_case),
+    id_query: AisleIdentificationConfigurationQuery = Depends(
+        get_aisle_identification_configuration_query
+    ),
 ) -> AisleStatusResponse:
     try:
         result = use_case.execute(inventory_id, aisle_id)
-        return status_response_from_result(result)
+        return status_response_from_result(
+            result,
+            identification=api_fields_from_configuration(id_query.for_aisle(result.aisle)),
+        )
     except AisleNotFoundError as e:
         reraise_if_mapped(e)
         raise

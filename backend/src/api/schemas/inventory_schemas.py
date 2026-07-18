@@ -1,9 +1,16 @@
 """v3.0 Inventory API schemas (request/response)."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from src.api.schemas.identification_mode_literals import (
+    IdentificationModeLiteral,
+    IdentificationModeSourceLiteral,
+)
 
 
 class CreateInventoryRequest(BaseModel):
@@ -30,21 +37,29 @@ class CreateInventoryRequest(BaseModel):
 
 
 class UpdateInventoryRequest(BaseModel):
-    """PATCH /api/v3/inventories/{inventory_id} body."""
+    """PATCH /api/v3/inventories/{inventory_id} — truly partial update."""
 
-    name: str = Field(..., min_length=1, max_length=255)
-    identification_mode: Literal["CODE_SCAN", "INTERNAL_OCR", "LEGACY_LLM"] | None = Field(
+    name: str | None = Field(None, min_length=1, max_length=255)
+    identification_mode: IdentificationModeLiteral | None = Field(
         None,
         description="Optional aisle identification override; send null to clear and inherit.",
     )
 
     @field_validator("name")
     @classmethod
-    def strip_name(cls, value: str) -> str:
+    def strip_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         normalized = value.strip()
         if not normalized:
             raise ValueError("name must not be empty")
         return normalized
+
+    @model_validator(mode="after")
+    def require_at_least_one_field(self) -> UpdateInventoryRequest:
+        if not self.model_fields_set:
+            raise ValueError("At least one field must be provided")
+        return self
 
 
 class PrimaryExecutionConfigResponse(BaseModel):
@@ -67,9 +82,9 @@ class InventoryResponse(BaseModel):
     primary_execution_config: Optional[PrimaryExecutionConfigResponse] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    identification_mode: Optional[str] = None
-    effective_identification_mode: str = "LEGACY_LLM"
-    identification_mode_source: str = "SYSTEM_DEFAULT"
+    identification_mode: IdentificationModeLiteral | None = None
+    effective_identification_mode: IdentificationModeLiteral
+    identification_mode_source: IdentificationModeSourceLiteral
 
 
 class InventoryListItemResponse(BaseModel):

@@ -41,6 +41,9 @@ from src.application.ports.repositories import (
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
+from src.application.services.aisle_identification_configuration_query import (
+    AisleIdentificationConfigurationQuery,
+)
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.analytics_query_service import AnalyticsQueryService
@@ -520,6 +523,18 @@ def get_create_aisle_use_case(
         client_supplier_repo=client_supplier_repo,
         clock=clock,
         status_reconciler=status_reconciler,
+    )
+
+
+def get_aisle_identification_configuration_query(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    client_repo: ClientRepository = Depends(get_client_repo),
+) -> AisleIdentificationConfigurationQuery:
+    return AisleIdentificationConfigurationQuery(
+        aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
+        client_repo=client_repo,
     )
 
 

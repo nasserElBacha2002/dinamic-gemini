@@ -562,13 +562,21 @@ def aisle_to_response(
     )
 
 
-def status_response_from_result(result: AisleProcessingStatusResult) -> AisleStatusResponse:
+def status_response_from_result(
+    result: AisleProcessingStatusResult,
+    *,
+    identification: IdentificationModeApiFields | None = None,
+) -> AisleStatusResponse:
     job_summary = None
     if result.latest_job is not None:
         job_summary = job_to_summary(result.latest_job)
     recent = [job_to_summary(j) for j in result.recent_jobs]
     return AisleStatusResponse(
-        aisle=aisle_to_response(result.aisle, result.latest_job),
+        aisle=aisle_to_response(
+            result.aisle,
+            result.latest_job,
+            identification=identification,
+        ),
         latest_job=job_summary,
         operational_job_id=result.aisle.operational_job_id,
         recent_jobs=recent,
