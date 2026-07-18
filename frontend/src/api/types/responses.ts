@@ -435,6 +435,19 @@ export interface JobSummary {
   is_operational?: boolean;
   /** Present when ``result_json`` includes a validated LLM cost snapshot (list jobs; additive). */
   llm_cost_snapshot?: LlmCostSnapshot | null;
+  /** Phase 2 additive per-asset progress when orchestrator ran. */
+  asset_progress?: AssetProgress | null;
+}
+
+export interface AssetProgress {
+  total: number;
+  pending: number;
+  processing: number;
+  resolved: number;
+  unrecognized: number;
+  failed: number;
+  manual_review: number;
+  cancelled: number;
 }
 
 /** GET .../aisles/{aisle_id}/jobs — newest first (multi-run browsing). */

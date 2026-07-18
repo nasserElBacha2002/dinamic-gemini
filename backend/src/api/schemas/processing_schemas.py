@@ -121,6 +121,19 @@ class ProcessAisleResponse(BaseModel):
     configuration_snapshot_version: int
 
 
+class AssetProgressResponse(BaseModel):
+    """Derived counts from job_asset_processing_states (Phase 2)."""
+
+    total: int = 0
+    pending: int = 0
+    processing: int = 0
+    resolved: int = 0
+    unrecognized: int = 0
+    failed: int = 0
+    manual_review: int = 0
+    cancelled: int = 0
+
+
 class JobSummary(BaseModel):
     """Summary of latest job for an aisle."""
 
@@ -158,6 +171,8 @@ class JobSummary(BaseModel):
     is_operational: bool = False
     #: Optional LLM cost snapshot from ``result_json`` (sanitized; additive for run pickers).
     llm_cost_snapshot: Optional[LlmCostSnapshotResponse] = None
+    #: Phase 2 additive per-asset progress (absent for legacy jobs / orchestrator off).
+    asset_progress: Optional[AssetProgressResponse] = None
 
 
 class FinalizationStageAssessmentItem(BaseModel):

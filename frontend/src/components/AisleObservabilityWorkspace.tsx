@@ -95,6 +95,20 @@ function jobMetadataRows(
     { label: i18n.t('jobs.obs_last_heartbeat'), value: formatOptionalDate(job.last_heartbeat_at) },
     { label: i18n.t('jobs.obs_cancel_requested'), value: formatOptionalDate(job.cancel_requested_at) },
     { label: i18n.t('jobs.obs_current_stage'), value: job.current_stage || dash },
+    ...(job.asset_progress
+      ? [
+          {
+            label: i18n.t('jobs.obs_asset_progress'),
+            value: i18n.t('jobs.obs_asset_progress_value', {
+              total: job.asset_progress.total,
+              resolved: job.asset_progress.resolved,
+              unrecognized: job.asset_progress.unrecognized,
+              failed: job.asset_progress.failed,
+              pending: job.asset_progress.pending,
+            }),
+          },
+        ]
+      : []),
     { label: i18n.t('jobs.obs_current_step'), value: job.current_substep || dash },
     { label: i18n.t('jobs.obs_step_started'), value: formatOptionalDate(job.current_step_started_at) },
     { label: i18n.t('common.execution_id'), value: job.execution_id || dash },

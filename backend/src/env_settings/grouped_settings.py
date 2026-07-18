@@ -948,6 +948,40 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: AISLE_IDENTIFICATION_PIPELINE_ENABLED (default false)."
         ),
     )
+    image_processing_orchestrator_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("IMAGE_PROCESSING_ORCHESTRATOR_ENABLED", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 2: enable AisleProcessingOrchestrator around process_aisle jobs. "
+            "When false, the worker uses the exact pre-Phase-2 legacy path. "
+            "Env: IMAGE_PROCESSING_ORCHESTRATOR_ENABLED (default false)."
+        ),
+    )
+    processing_attempts_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_ATTEMPTS_ENABLED", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 2: persist ProcessingAttempt rows when the image orchestrator runs. "
+            "Env: PROCESSING_ATTEMPTS_ENABLED (default false)."
+        ),
+    )
+    max_image_processing_concurrency: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_IMAGE_PROCESSING_CONCURRENCY", "1")),
+        ge=1,
+        le=32,
+        description=(
+            "Phase 2: max concurrent per-asset workers. Default 1 while LegacyLlm remains "
+            "AISLE_BATCH. Env: MAX_IMAGE_PROCESSING_CONCURRENCY."
+        ),
+    )
     code_scan_max_assets_per_run: int = Field(
         default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_ASSETS_PER_RUN", "50")),
         ge=1,

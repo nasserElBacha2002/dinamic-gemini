@@ -1056,6 +1056,8 @@
     "obs_cancel_requested": "Obs cancel requested",
     "obs_choose_job_for_log": "Obs choose job for log",
     "obs_current_stage": "Obs current stage",
+    "obs_asset_progress": "Asset progress",
+    "obs_asset_progress_value": "{{total}} images · {{resolved}} resolved · {{unrecognized}} unrecognized · {{failed}} failed · {{pending}} pending",
     "obs_current_step": "Obs current step",
     "obs_empty_aisle": "Obs empty aisle",
     "obs_empty_job": "Obs empty job",

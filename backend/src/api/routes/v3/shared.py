@@ -41,6 +41,7 @@ from src.api.schemas.processing_schemas import (
     AisleStatusResponse,
     ArtifactPublicationBlock,
     ArtifactPublicationItemResponse,
+    AssetProgressResponse,
     FinalizationAssessmentBlock,
     FinalizationStageAssessmentItem,
     JobDetailResponse,
@@ -595,6 +596,20 @@ def _llm_cost_snapshot_from_job_result(
         return None
 
 
+def _asset_progress_from_job_result(
+    result_json: dict[str, Any] | None,
+) -> AssetProgressResponse | None:
+    if not result_json or not isinstance(result_json, dict):
+        return None
+    raw = result_json.get("asset_progress")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return AssetProgressResponse.model_validate(raw)
+    except Exception:
+        return None
+
+
 def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
     return JobSummary(
         id=j.id,
@@ -631,6 +646,7 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
         finalization_error_code=j.finalization_error_code,
         is_operational=is_operational,
         llm_cost_snapshot=_llm_cost_snapshot_from_job_result(j.result_json),
+        asset_progress=_asset_progress_from_job_result(j.result_json),
     )
 
 

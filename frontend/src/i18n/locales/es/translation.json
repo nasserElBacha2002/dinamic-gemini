@@ -1477,6 +1477,8 @@
     "obs_cancel_requested": "Cancelación solicitada",
     "obs_choose_job_for_log": "Elegí una ejecución para ver su log.",
     "obs_current_stage": "Etapa actual",
+    "obs_asset_progress": "Progreso por imagen",
+    "obs_asset_progress_value": "{{total}} imágenes · {{resolved}} resueltas · {{unrecognized}} no reconocidas · {{failed}} fallidas · {{pending}} pendientes",
     "obs_current_step": "Paso actual",
     "obs_empty_aisle": "No hay eventos para este pasillo.",
     "obs_empty_job": "No hay eventos para esta ejecución.",

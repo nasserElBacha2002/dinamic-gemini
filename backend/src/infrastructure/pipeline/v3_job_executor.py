@@ -227,6 +227,7 @@ class V3JobExecutor:
             job_scoped_recompute_factory=job_scoped_recompute_factory,
             job_result_uow_factory=job_result_uow_factory,
         )
+        self._result_evidence_repo = result_evidence_repo
         self._traceability_artifact_service = TraceabilityArtifactService(
             result_evidence_repo=result_evidence_repo,
             clock=clock,
@@ -564,6 +565,120 @@ class V3JobExecutor:
             )
 
             try:
+                def _run_legacy_pipeline_and_finalize() -> Any:
+                    from src.application.services.image_processing.legacy_llm_processing_strategy import (
+                        LegacyBatchOutcome,
+                    )
+                    from src.infrastructure.pipeline.v3_image_processing_bridge import (
+                        assets_with_result_from_evidence,
+                    )
+
+                    pipeline_out = self._pipeline_execution_service.run(
+                        V3PipelineExecutionRequest(
+                            base_path=base_path,
+                            job_id=job_id,
+                            job=job,
+                            aisle=aisle,
+                            aisle_id=aisle_id,
+                            run_dir=rt.run_dir,
+                            settings=settings,
+                            log=rt.log,
+                            pipeline_video_path=video_path or "",
+                            job_input=job_input,
+                            analysis_context=analysis_context,
+                            execution_observer=execution_observer,
+                            cancellation_checkpoint=cancellation_checkpoint,
+                        )
+                    )
+                    if pipeline_out is None:
+                        return LegacyBatchOutcome(
+                            ok=False, error_message="pipeline_execution_returned_none"
+                        )
+                    report = pipeline_out.report
+                    result = pipeline_out.pipeline_result
+                    report_path = pipeline_out.report_path
+                    finalized = self._finalization_service.finalize_success(
+                        V3JobFinalizationRequest(
+                            job_id=job_id,
+                            aisle=aisle,
+                            aisle_id=aisle_id,
+                            run_dir=rt.run_dir,
+                            exec_log=rt.exec_log,
+                            pipeline_result=result,
+                            report_path=report_path,
+                            report=report,
+                            job=job,
+                            cancellation_checkpoint=cancellation_checkpoint,
+                            cancel_event_emitted=rt.cancel_event_emitted,
+                            input_type=getattr(job_input, "input_type", None),
+                            canonical_traceability_expected=(
+                                getattr(job_input, "input_type", "") == "photos"
+                                and job.job_type == "process_aisle"
+                            ),
+                        )
+                    )
+                    with_result = assets_with_result_from_evidence(
+                        self._result_evidence_repo, job_id
+                    )
+                    return LegacyBatchOutcome(
+                        ok=bool(finalized),
+                        report=report if isinstance(report, dict) else None,
+                        pipeline_result=result,
+                        report_path=str(report_path) if report_path is not None else None,
+                        assets_with_result=with_result,
+                        error_message=None if finalized else "finalization_failed",
+                    )
+
+                if bool(settings.image_processing_orchestrator_enabled):
+                    from src.infrastructure.pipeline.v3_image_processing_bridge import (
+                        attach_progress_to_job_result_json,
+                        build_default_aisle_processing_orchestrator,
+                        run_orchestrated_legacy_batch,
+                    )
+
+                    state_repo = None
+                    attempt_repo = None
+                    try:
+                        from src.runtime.app_container import get_app_container
+
+                        container = get_app_container()
+                        state_repo = container.get_job_asset_processing_state_repo()
+                        attempt_repo = container.get_processing_attempt_repo()
+                    except Exception:
+                        logger.warning(
+                            "image_orchestrator.repo_resolve_fallback_memory job_id=%s",
+                            job_id,
+                            exc_info=True,
+                        )
+
+                    orch = build_default_aisle_processing_orchestrator(
+                        self._clock,
+                        attempts_enabled=bool(settings.processing_attempts_enabled),
+                        state_repo=state_repo,
+                        attempt_repo=attempt_repo,
+                    )
+                    cancel_requested = bool(
+                        getattr(job, "cancel_requested_at", None) is not None
+                    )
+                    orch_out = run_orchestrated_legacy_batch(
+                        orchestrator=orch,
+                        job=job,
+                        aisle=aisle,
+                        assets=assets,
+                        pipeline_enabled=bool(
+                            settings.aisle_identification_pipeline_enabled
+                        ),
+                        orchestrator_enabled=True,
+                        cancel_requested=cancel_requested,
+                        batch_runner=lambda **_kw: _run_legacy_pipeline_and_finalize(),
+                    )
+                    refreshed = self._job_repo.get_by_id(job_id)
+                    if refreshed is not None:
+                        attach_progress_to_job_result_json(refreshed, orch_out.progress)
+                        self._job_repo.save(refreshed)
+                    return True
+
+                # Flag off: exact pre-Phase-2 legacy path (functional equivalence).
                 pipeline_out = self._pipeline_execution_service.run(
                     V3PipelineExecutionRequest(
                         base_path=base_path,

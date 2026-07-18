@@ -673,6 +673,44 @@ class AppContainer:
             self._job_source_asset_repo = MemoryJobSourceAssetRepository()
         return self._job_source_asset_repo
 
+    def get_job_asset_processing_state_repo(self):
+        if getattr(self, "_job_asset_processing_state_repo", None) is not None:
+            return self._job_asset_processing_state_repo
+        from src.infrastructure.repositories.memory_job_asset_processing_state_repository import (
+            MemoryJobAssetProcessingStateRepository,
+        )
+        from src.infrastructure.repositories.sql_job_asset_processing_state_repository import (
+            SqlJobAssetProcessingStateRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._job_asset_processing_state_repo = SqlJobAssetProcessingStateRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._job_asset_processing_state_repo = MemoryJobAssetProcessingStateRepository()
+        return self._job_asset_processing_state_repo
+
+    def get_processing_attempt_repo(self):
+        if getattr(self, "_processing_attempt_repo", None) is not None:
+            return self._processing_attempt_repo
+        from src.infrastructure.repositories.memory_processing_attempt_repository import (
+            MemoryProcessingAttemptRepository,
+        )
+        from src.infrastructure.repositories.sql_processing_attempt_repository import (
+            SqlProcessingAttemptRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._processing_attempt_repo = SqlProcessingAttemptRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._processing_attempt_repo = MemoryProcessingAttemptRepository()
+        return self._processing_attempt_repo
+
     def get_manual_image_coverage_repo(self):
         if self._manual_image_coverage_repo is not None:
             return self._manual_image_coverage_repo
