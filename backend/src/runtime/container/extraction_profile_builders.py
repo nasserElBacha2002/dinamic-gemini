@@ -127,10 +127,12 @@ def build_replace_supplier_reference_annotations_use_case(
     client_supplier_repo: ClientSupplierRepository,
     reference_repo: SupplierReferenceImageRepository,
     annotation_repo: SupplierReferenceAnnotationRepository,
+    profile_repo: SupplierExtractionProfileRepository | None = None,
 ) -> ReplaceSupplierReferenceAnnotationsUseCase:
     return ReplaceSupplierReferenceAnnotationsUseCase(
         client_repo=client_repo,
         client_supplier_repo=client_supplier_repo,
         reference_repo=reference_repo,
         annotation_repo=annotation_repo,
+        profile_repo=profile_repo,
     )

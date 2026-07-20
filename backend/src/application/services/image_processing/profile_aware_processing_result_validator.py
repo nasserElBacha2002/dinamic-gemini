@@ -33,6 +33,10 @@ class FieldCandidate:
     source_key: str
     value: str
     evidence_score: float = 1.0
+    # When the matching InternalCodeSourceRule.requires_label is True, only
+    # candidates with labeled=True are eligible.
+    labeled: bool = True
+    barcode_format: str | None = None
 
 
 @dataclass
@@ -135,12 +139,18 @@ class ProfileAwareProcessingResultValidator:
         self, candidates: list[FieldCandidate]
     ) -> tuple[str | None, str | None, list[str]]:
         if not candidates:
-            return None, None, []
+            return None, None, [ExtractionValidationErrorCode.MISSING_INTERNAL_CODE.value]
         forbidden = {s.upper() for s in self._config.forbidden_internal_code_sources}
+        configured_keys = {
+            s.field_key.upper() for s in self._config.internal_code_sources
+        }
         by_source: dict[str, list[FieldCandidate]] = {}
         for c in candidates:
             key = c.source_key.strip().upper()
             if key in forbidden:
+                continue
+            # Unconfigured sources are ignored (no permissive fallback).
+            if key not in configured_keys:
                 continue
             by_source.setdefault(key, []).append(c)
 
@@ -152,6 +162,8 @@ class ProfileAwareProcessingResultValidator:
         for source in ordered:
             key = source.field_key.upper()
             opts = by_source.get(key) or []
+            if source.requires_label:
+                opts = [o for o in opts if o.labeled]
             if not opts:
                 continue
             # Ambiguity: two comparable candidates for same source.
@@ -163,19 +175,31 @@ class ProfileAwareProcessingResultValidator:
                     return None, None, [ExtractionValidationErrorCode.AMBIGUOUS_INTERNAL_CODE.value]
             chosen = max(opts, key=lambda o: o.evidence_score)
             code = self._normalize_code(chosen.value)
+            if source.pattern:
+                # Literal/substring policy only — custom regex is rejected at parse time.
+                if source.pattern not in code:
+                    continue
             err = self._validate_code_value(code, source_key=key)
             if err:
                 return None, None, [err]
             return code, key, []
-        # Fallback: first candidate if no structured sources matched
-        if candidates:
-            c = max(candidates, key=lambda o: o.evidence_score)
-            code = self._normalize_code(c.value)
-            err = self._validate_code_value(code, source_key=c.source_key.upper())
-            if err:
-                return None, None, [err]
-            return code or None, c.source_key.upper(), []
-        return None, None, []
+
+        # Explicit legacy fallback only when the configuration opts in (system default).
+        if getattr(self._config, "allow_unconfigured_code_source_fallback", False):
+            eligible = [
+                c
+                for c in candidates
+                if c.source_key.strip().upper() not in forbidden
+            ]
+            if eligible:
+                c = max(eligible, key=lambda o: o.evidence_score)
+                code = self._normalize_code(c.value)
+                err = self._validate_code_value(code, source_key=c.source_key.upper())
+                if err:
+                    return None, None, [err]
+                return code or None, c.source_key.upper(), []
+
+        return None, None, [ExtractionValidationErrorCode.MISSING_INTERNAL_CODE.value]
 
     def _resolve_quantity(
         self, candidates: list[FieldCandidate]
@@ -226,9 +250,7 @@ class ProfileAwareProcessingResultValidator:
                 return ExtractionValidationErrorCode.INVALID_INTERNAL_CODE.value
             if ch == " " and not rules.allow_spaces:
                 return ExtractionValidationErrorCode.INVALID_INTERNAL_CODE.value
-        if rules.regex:
-            if re.fullmatch(rules.regex, code) is None:
-                return ExtractionValidationErrorCode.INVALID_INTERNAL_CODE.value
+        # Custom regex is withdrawn for this phase (ReDoS safety). Ignore if present.
         if source_key == "EAN":
             ean = self._config.validation_rules.ean
             n = len(code)
@@ -247,19 +269,28 @@ class ProfileAwareProcessingResultValidator:
         return None
 
     def _parse_quantity(self, raw: str) -> int | None:
+        """Parse quantity as a positive integer domain value (no float truncation).
+
+        Accepted: ``12``, ``12.0``, ``12,0`` (comma as decimal separator for .0 only).
+        Rejected: ``12.5``, ``12,5``, non-numeric text.
+        """
         text = (raw or "").strip().replace(",", ".")
         if not text:
             return None
-        try:
-            if self._config.validation_rules.quantity_integer_only or not self._config.quantity_rules.allow_decimals:
-                if "." in text:
-                    return None
-                value = int(text)
-            else:
-                value = int(float(text))
-        except ValueError:
-            return None
-        return value
+        # Integer-only domain for this phase (decimals withdrawn).
+        if re.fullmatch(r"-?\d+", text):
+            try:
+                return int(text)
+            except ValueError:
+                return None
+        # Exact integer represented with trailing .0 / .00
+        m = re.fullmatch(r"(-?\d+)\.0+", text)
+        if m:
+            try:
+                return int(m.group(1))
+            except ValueError:
+                return None
+        return None
 
 
 def configuration_to_ocr_client_field_rules(config: ExtractionProfileConfiguration):

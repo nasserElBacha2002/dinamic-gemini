@@ -60,7 +60,9 @@ class SingleAssetProcessingStrategy(Protocol):
     attempt_provider: str
     attempt_model: str
 
-    def process(self, context: ImageProcessingContext) -> ImageProcessingResult: ...
+    def process(
+        self, context: ImageProcessingContext, asset: SourceAsset
+    ) -> ImageProcessingResult: ...
 
 
 class ExternalFallbackProcessor(Protocol):
@@ -216,6 +218,9 @@ class SingleAssetStrategyProcessor:
             attempt_number=attempt_number,
             execution_scope=ExecutionScope.SINGLE_ASSET,
             asset_reference=asset.storage_key,
+            supplier_extraction_profile=self._supplier_extraction_profile(job),
+            profile_aware_validation_enabled=self._profile_aware_enabled(job),
+            reference_template_annotations_enabled=self._annotations_enabled(job),
         )
 
         error: str | None = None
@@ -522,6 +527,28 @@ class SingleAssetStrategyProcessor:
             execution_scope=ExecutionScope.SINGLE_ASSET,
             logical_asset_attempt=False,
         )
+
+    def _identification_execution(self, job: Job) -> dict:
+        params = job.engine_params_json if isinstance(job.engine_params_json, dict) else {}
+        ident = params.get("identification_execution")
+        return ident if isinstance(ident, dict) else {}
+
+    def _supplier_extraction_profile(self, job: Job) -> dict | None:
+        snap = self._identification_execution(job).get("supplier_extraction_profile")
+        return snap if isinstance(snap, dict) else None
+
+    def _profile_aware_enabled(self, job: Job) -> bool:
+        flags = self._identification_execution(job).get("feature_flag_state")
+        if isinstance(flags, dict) and "profile_aware_validation_enabled" in flags:
+            return bool(flags.get("profile_aware_validation_enabled"))
+        # Legacy jobs without explicit flag: do not invent profile-aware on.
+        return False
+
+    def _annotations_enabled(self, job: Job) -> bool:
+        flags = self._identification_execution(job).get("feature_flag_state")
+        if isinstance(flags, dict):
+            return bool(flags.get("reference_template_annotations_enabled"))
+        return False
 
     def _pending_manual_review(
         self,

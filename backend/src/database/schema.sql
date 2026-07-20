@@ -1554,6 +1554,34 @@ IF NOT EXISTS (
         ON supplier_reference_annotations(template_image_id, priority);
 GO
 
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_supplier_reference_annotations_profile'
+      AND object_id = OBJECT_ID('supplier_reference_annotations')
+)
+    CREATE NONCLUSTERED INDEX IX_supplier_reference_annotations_profile
+        ON supplier_reference_annotations(profile_id, template_image_id)
+        WHERE profile_id IS NOT NULL;
+GO
+
+-- Soft integrity: PERSISTED external requests require position or active result.
+IF OBJECT_ID('external_image_analysis_requests', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.check_constraints
+        WHERE name = 'CK_external_image_analysis_requests_persisted_result'
+          AND parent_object_id = OBJECT_ID('external_image_analysis_requests')
+   )
+BEGIN
+    ALTER TABLE external_image_analysis_requests WITH NOCHECK
+    ADD CONSTRAINT CK_external_image_analysis_requests_persisted_result
+    CHECK (
+        status <> 'PERSISTED'
+        OR position_id IS NOT NULL
+        OR active_result_id IS NOT NULL
+    );
+END
+GO
+
 -- Optional template family metadata on existing reference images (additive).
 IF COL_LENGTH('supplier_reference_images', 'template_family') IS NULL
     ALTER TABLE supplier_reference_images ADD template_family VARCHAR(128) NULL;

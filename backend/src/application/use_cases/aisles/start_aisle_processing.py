@@ -280,7 +280,14 @@ class StartAisleProcessingUseCase:
         profile_aware = bool(
             getattr(settings, "profile_aware_validation_enabled", False)
         )
+        annotations_enabled = bool(
+            getattr(settings, "reference_template_annotations_enabled", False)
+        )
         if profiles_enabled or profile_aware:
+            from src.application.services.image_processing.extraction_profile_configuration import (
+                ExtractionProfileConfigurationError,
+                parse_extraction_configuration,
+            )
             from src.application.services.image_processing.profile_aware_processing_result_validator import (
                 configuration_to_ocr_client_field_rules,
             )
@@ -297,20 +304,16 @@ class StartAisleProcessingUseCase:
                 supplier_id=str(supplier_id).strip() if supplier_id else None,
             ) or None
             if profile_aware and isinstance(supplier_extraction_profile, dict):
-                from src.application.services.image_processing.extraction_profile_configuration import (
-                    parse_extraction_configuration,
-                )
-
                 try:
                     cfg = parse_extraction_configuration(
                         supplier_extraction_profile.get("configuration")
                     )
                     client_rules = configuration_to_ocr_client_field_rules(cfg)
-                except Exception:
-                    logger.warning(
-                        "extraction_profile.to_ocr_rules_failed using_legacy_client_rules",
-                        exc_info=True,
-                    )
+                except ExtractionProfileConfigurationError as exc:
+                    raise ValueError(
+                        f"PROFILE_SNAPSHOT_INVALID: cannot start job with invalid "
+                        f"extraction profile: {exc.message}"
+                    ) from exc
         ocr_config = None
         if (
             resolution.effective_mode.value == "INTERNAL_OCR"
@@ -409,6 +412,11 @@ class StartAisleProcessingUseCase:
                 configuration_snapshot_version=CONFIGURATION_SNAPSHOT_VERSION,
                 external_fallback=external_fallback,
                 supplier_extraction_profile=supplier_extraction_profile,
+                client_extraction_profiles_enabled=profiles_enabled,
+                profile_aware_validation_enabled=profile_aware,
+                reference_template_annotations_enabled=annotations_enabled,
+                profile_snapshotted=bool(supplier_extraction_profile),
+                profile_validation_executed=False,
             ),
             "client_id": client_id,
             "supplier_id": str(supplier_id).strip() if supplier_id else None,

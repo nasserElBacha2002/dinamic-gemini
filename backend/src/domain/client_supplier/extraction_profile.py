@@ -144,6 +144,8 @@ class ExtractionProfileConfiguration:
     custom_payload_pattern: str | None = None
     required_fields: tuple[str, ...] = ("internal_code", "quantity")
     aliases: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Only the system default may enable this; custom profiles must stay False.
+    allow_unconfigured_code_source_fallback: bool = False
 
     def to_public_dict(self) -> dict[str, Any]:
         return {
@@ -209,6 +211,9 @@ class ExtractionProfileConfiguration:
             "custom_payload_pattern": self.custom_payload_pattern,
             "required_fields": list(self.required_fields),
             "aliases": {k: list(v) for k, v in self.aliases.items()},
+            "allow_unconfigured_code_source_fallback": (
+                self.allow_unconfigured_code_source_fallback
+            ),
         }
 
 
@@ -223,6 +228,8 @@ def default_extraction_configuration() -> ExtractionProfileConfiguration:
         quantity_rules=QuantityExtractionRules(
             aliases=("CANTIDAD", "CANT.", "QTY", "QUANTITY", "UNIDADES"),
             required=True,
+            data_type=FieldDataType.INTEGER,
+            allow_decimals=False,
             minimum=1,
             default_value=None,
         ),
@@ -240,6 +247,7 @@ def default_extraction_configuration() -> ExtractionProfileConfiguration:
             "quantity": ("CANTIDAD", "CANT.", "QTY", "QUANTITY", "UNIDADES"),
         },
         required_fields=("internal_code", "quantity"),
+        allow_unconfigured_code_source_fallback=True,
     )
 
 

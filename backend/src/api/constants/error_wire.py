@@ -205,3 +205,6 @@ HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_ACTIVATION_FAILED = (
 HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_ROW_VERSION_CONFLICT = (
     "Supplier extraction profile was modified concurrently; refresh and retry"
 )
+HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_VERSION_CONFLICT = (
+    "Supplier extraction profile version conflict; refresh and retry"
+)

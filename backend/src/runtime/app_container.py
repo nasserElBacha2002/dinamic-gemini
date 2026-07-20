@@ -1260,4 +1260,5 @@ class AppContainer:
             client_supplier_repo=self.get_client_supplier_repo(),
             reference_repo=self.get_supplier_reference_image_repo(),
             annotation_repo=self.get_supplier_reference_annotation_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
         )

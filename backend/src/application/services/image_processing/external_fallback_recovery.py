@@ -24,7 +24,7 @@ from src.domain.jobs.entities import Job
 class ExternalFallbackRecoveryDecision:
     """How recovery should treat an existing durable request row."""
 
-    action: str  # SKIP_PERSISTED | REUSE_NORMALIZED | CONTINUE
+    action: str  # SKIP_PERSISTED | REUSE_NORMALIZED | RECONCILE_PERSISTED | CONTINUE
     request: ExternalImageAnalysisRequest
 
 
@@ -32,10 +32,15 @@ class ExternalFallbackRecoveryService:
     """Decide recovery without repeating provider cost when a durable response exists."""
 
     def decide(self, request: ExternalImageAnalysisRequest) -> ExternalFallbackRecoveryDecision:
-        if request.status is ExternalRequestStatus.PERSISTED and request.position_id:
-            return ExternalFallbackRecoveryDecision(action="SKIP_PERSISTED", request=request)
         if request.status is ExternalRequestStatus.PERSISTED:
-            return ExternalFallbackRecoveryDecision(action="SKIP_PERSISTED", request=request)
+            # PERSISTED requires an active position or result — never silent skip.
+            if request.position_id or request.active_result_id:
+                return ExternalFallbackRecoveryDecision(
+                    action="SKIP_PERSISTED", request=request
+                )
+            return ExternalFallbackRecoveryDecision(
+                action="RECONCILE_PERSISTED", request=request
+            )
         if (
             request.status
             in (

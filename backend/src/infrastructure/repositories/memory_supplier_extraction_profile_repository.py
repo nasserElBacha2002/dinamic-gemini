@@ -70,6 +70,51 @@ class MemorySupplierExtractionProfileRepository(SupplierExtractionProfileReposit
         ]
         return (max(versions) if versions else 0) + 1
 
+    def create_next_version(
+        self,
+        *,
+        client_id: str,
+        supplier_id: str,
+        profile_key: str,
+        configuration: object,
+        visual_notes: str | None,
+        created_by: str | None,
+        created_at: object,
+        profile_id: str | None = None,
+    ) -> SupplierExtractionProfile:
+        from uuid import uuid4
+
+        from src.application.errors import SupplierExtractionProfileVersionConflictError
+
+        version = self.next_version(client_id, supplier_id)
+        # Detect race: another insert claimed same version between next_version and save.
+        for row in self._rows.values():
+            if (
+                row.client_id == client_id
+                and row.supplier_id == supplier_id
+                and row.version == version
+            ):
+                raise SupplierExtractionProfileVersionConflictError(
+                    "version_conflict"
+                )
+        now = created_at if isinstance(created_at, datetime) else datetime.now(timezone.utc)
+        created = SupplierExtractionProfile(
+            id=profile_id or str(uuid4()),
+            client_id=client_id,
+            supplier_id=supplier_id,
+            profile_key=profile_key,
+            version=version,
+            status=ExtractionProfileStatus.DRAFT,
+            configuration=configuration,  # type: ignore[arg-type]
+            visual_notes=visual_notes,
+            created_by=created_by,
+            created_at=now,
+            updated_at=now,
+            row_version=1,
+        )
+        self.save(created)
+        return deepcopy(created)
+
     def activate_version(
         self,
         *,

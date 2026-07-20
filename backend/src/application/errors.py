@@ -177,6 +177,10 @@ class SupplierExtractionProfileRowVersionConflictError(Exception):
     """Raised when optimistic row_version does not match on activation."""
 
 
+class SupplierExtractionProfileVersionConflictError(Exception):
+    """Raised when concurrent create/clone hits unique (client, supplier, version)."""
+
+
 class PositionNotFoundError(Exception):
     """Raised when the position does not exist or does not belong to the given aisle."""
 

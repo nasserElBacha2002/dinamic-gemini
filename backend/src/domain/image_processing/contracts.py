@@ -44,6 +44,10 @@ class ImageProcessingContext:
     attempt_number: int
     execution_scope: ExecutionScope = ExecutionScope.SINGLE_ASSET
     asset_reference: str | None = None
+    # Phase 6 — immutable profile snapshot + feature flags from job engine_params.
+    supplier_extraction_profile: dict[str, Any] | None = None
+    profile_aware_validation_enabled: bool = False
+    reference_template_annotations_enabled: bool = False
 
 
 @dataclass
@@ -80,4 +84,6 @@ class ProcessingStrategy(Protocol):
     @property
     def strategy_key(self) -> str: ...
 
-    def process(self, context: ImageProcessingContext) -> ImageProcessingResult: ...
+    def process(
+        self, context: ImageProcessingContext, asset: Any = None
+    ) -> ImageProcessingResult: ...

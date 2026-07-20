@@ -216,6 +216,7 @@ from src.api.constants.error_wire import (
     HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_INVALID_CONFIGURATION,
     HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_NOT_FOUND,
     HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_ROW_VERSION_CONFLICT,
+    HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_VERSION_CONFLICT,
     HTTP_DETAIL_SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
     HTTP_DETAIL_TOO_MANY_FILES_PER_UPLOAD,
     HTTP_DETAIL_UNEXPECTED_ERROR,
@@ -295,6 +296,7 @@ from src.api.errors.structured_api_http import (
     SUPPLIER_EXTRACTION_PROFILE_INVALID_CONFIGURATION,
     SUPPLIER_EXTRACTION_PROFILE_NOT_FOUND,
     SUPPLIER_EXTRACTION_PROFILE_ROW_VERSION_CONFLICT,
+    SUPPLIER_EXTRACTION_PROFILE_VERSION_CONFLICT,
     SUPPLIER_REFERENCE_IMAGE_NOT_FOUND,
     UNSUPPORTED_ASSET_TYPE,
     UPLOAD_FILE_TOO_LARGE,
@@ -382,6 +384,7 @@ from src.application.errors import (
     SupplierExtractionProfileInvalidConfigurationError,
     SupplierExtractionProfileNotFoundError,
     SupplierExtractionProfileRowVersionConflictError,
+    SupplierExtractionProfileVersionConflictError,
     SupplierPromptConfigActivationFailedError,
     SupplierPromptConfigEmptyInstructionsError,
     SupplierPromptConfigInvalidModelError,
@@ -583,6 +586,11 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         409,
         error_code=SUPPLIER_EXTRACTION_PROFILE_ROW_VERSION_CONFLICT,
         detail=HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_ROW_VERSION_CONFLICT,
+    ),
+    SupplierExtractionProfileVersionConflictError: _structured_fixed(
+        409,
+        error_code=SUPPLIER_EXTRACTION_PROFILE_VERSION_CONFLICT,
+        detail=HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_VERSION_CONFLICT,
     ),
     SourceAssetNotFoundForAisleError: _structured_fixed(
         404, error_code=ASSET_NOT_FOUND, detail=HTTP_DETAIL_ASSET_NOT_FOUND

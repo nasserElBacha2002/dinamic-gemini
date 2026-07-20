@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from src.domain.client_supplier.extraction_profile import (
@@ -73,28 +72,23 @@ def _parse_data_type(raw: object, *, field: str) -> FieldDataType:
         ) from exc
 
 
-def _validate_optional_regex(pattern: str | None) -> str | None:
+def _reject_custom_regex(pattern: str | None, *, field: str) -> None:
+    """Custom regex is withdrawn for this phase (ReDoS / worker safety)."""
     if pattern is None:
-        return None
-    text = pattern.strip()
+        return
+    text = str(pattern).strip()
     if not text:
-        return None
-    if len(text) > _MAX_REGEX_LEN:
-        raise ExtractionProfileConfigurationError(
-            "REGEX_TOO_LONG", f"regex exceeds {_MAX_REGEX_LEN} chars"
-        )
-    # Reject nested quantifiers / catastrophic backtracking heuristics (basic).
-    if "(?=" in text or "(?!" in text or "(?<=" in text or "(?<!" in text:
-        raise ExtractionProfileConfigurationError(
-            "REGEX_UNSAFE", "lookaround assertions are not allowed"
-        )
-    try:
-        re.compile(text)
-    except re.error as exc:
-        raise ExtractionProfileConfigurationError(
-            "REGEX_INVALID", f"invalid regex: {exc}"
-        ) from exc
-    return text
+        return
+    raise ExtractionProfileConfigurationError(
+        "REGEX_NOT_SUPPORTED",
+        f"{field}: custom regex is not supported in this phase; remove regex/pattern",
+    )
+
+
+def _validate_optional_regex(pattern: str | None) -> str | None:
+    # Kept for call-site compatibility; always rejects non-empty patterns.
+    _reject_custom_regex(pattern, field="regex")
+    return None
 
 
 def parse_extraction_configuration(
@@ -140,9 +134,8 @@ def parse_extraction_configuration(
             )
         seen_keys.add(key)
         seen_priorities.add(priority)
-        pattern = _validate_optional_regex(
-            str(item["pattern"]).strip() if item.get("pattern") else None
-        )
+        if item.get("pattern"):
+            _reject_custom_regex(str(item.get("pattern")), field=f"internal_code_sources.{key}.pattern")
         sources.append(
             InternalCodeSourceRule(
                 field_key=key,
@@ -150,7 +143,7 @@ def parse_extraction_configuration(
                 enabled=bool(item.get("enabled", True)),
                 allowed_as_internal_code=bool(item.get("allowed_as_internal_code", True)),
                 requires_label=bool(item.get("requires_label", False)),
-                pattern=pattern,
+                pattern=None,
             )
         )
     sources_sorted = tuple(sorted(sources, key=lambda s: s.priority))
@@ -200,34 +193,72 @@ def parse_extraction_configuration(
         raise ExtractionProfileConfigurationError(
             "INVALID_QUANTITY_RULES", "quantity maximum must be >= minimum"
         )
+    if qty.allow_decimals or qty.data_type is FieldDataType.DECIMAL:
+        raise ExtractionProfileConfigurationError(
+            "QUANTITY_DECIMALS_NOT_SUPPORTED",
+            "quantity_rules.allow_decimals / DECIMAL are not supported; use INTEGER only",
+        )
+    # Force integer domain regardless of payload.
+    qty = QuantityExtractionRules(
+        aliases=qty.aliases,
+        required=qty.required,
+        data_type=FieldDataType.INTEGER,
+        minimum=qty.minimum,
+        maximum=qty.maximum,
+        allow_decimals=False,
+        allow_negative=False,
+        default_value=None,
+        accepted_units=qty.accepted_units,
+    )
 
     add_fields: list[AdditionalFieldRule] = []
-    for item in raw.get("additional_fields") or []:
+    seen_add_keys: set[str] = set()
+    seen_add_priorities: set[int] = set()
+    for idx, item in enumerate(raw.get("additional_fields") or []):
+        path = f"additional_fields[{idx}]"
         if not isinstance(item, dict):
-            continue
+            raise ExtractionProfileConfigurationError(
+                "INVALID_ADDITIONAL_FIELD",
+                f"{path}: entry must be an object",
+            )
         fk = str(item.get("field_key") or "").strip().lower()
         if not fk:
             raise ExtractionProfileConfigurationError(
-                "INVALID_ADDITIONAL_FIELD", "additional field_key is required"
+                "INVALID_ADDITIONAL_FIELD",
+                f"{path}.field_key is required",
+            )
+        if fk in seen_add_keys:
+            raise ExtractionProfileConfigurationError(
+                "DUPLICATE_ADDITIONAL_FIELD",
+                f"{path}.field_key duplicate {fk!r}",
+            )
+        priority = int(item.get("priority") or 100)
+        if priority in seen_add_priorities:
+            raise ExtractionProfileConfigurationError(
+                "DUPLICATE_PRIORITY",
+                f"{path}.priority duplicate {priority}",
+            )
+        seen_add_keys.add(fk)
+        seen_add_priorities.add(priority)
+        if item.get("validation_rule"):
+            _reject_custom_regex(
+                str(item.get("validation_rule")),
+                field=f"{path}.validation_rule",
             )
         add_fields.append(
             AdditionalFieldRule(
                 field_key=fk,
                 display_name=str(item.get("display_name") or fk).strip() or fk,
-                aliases=_as_str_tuple(item.get("aliases"), field=f"additional.{fk}.aliases"),
-                data_type=_parse_data_type(item.get("data_type"), field=fk),
+                aliases=_as_str_tuple(item.get("aliases"), field=f"{path}.aliases"),
+                data_type=_parse_data_type(item.get("data_type"), field=f"{path}.data_type"),
                 required=bool(item.get("required", False)),
-                priority=int(item.get("priority") or 100),
+                priority=priority,
                 normalization_rule=(
                     str(item["normalization_rule"]).strip()
                     if item.get("normalization_rule")
                     else None
                 ),
-                validation_rule=_validate_optional_regex(
-                    str(item["validation_rule"]).strip()
-                    if item.get("validation_rule")
-                    else None
-                ),
+                validation_rule=None,
             )
         )
 
@@ -246,9 +277,7 @@ def parse_extraction_configuration(
             allow_slash=bool(craw.get("allow_slash", True)),
             allow_spaces=bool(craw.get("allow_spaces", False)),
             preserve_leading_zeros=bool(craw.get("preserve_leading_zeros", True)),
-            regex=_validate_optional_regex(
-                str(craw["regex"]).strip() if craw.get("regex") else None
-            ),
+            regex=None,
         ),
         ean=EanValidationRules(
             allow_ean8=bool(eraw.get("allow_ean8", True)),
@@ -257,8 +286,10 @@ def parse_extraction_configuration(
             allow_ean14=bool(eraw.get("allow_ean14", True)),
             validate_checksum=bool(eraw.get("validate_checksum", True)),
         ),
-        quantity_integer_only=bool(vraw.get("quantity_integer_only", True)),
+        quantity_integer_only=True,
     )
+    if craw.get("regex"):
+        _reject_custom_regex(str(craw.get("regex")), field="validation_rules.code.regex")
 
     formats = tuple(
         str(x).strip().upper()
@@ -290,11 +321,14 @@ def parse_extraction_configuration(
         if str(x).strip()
     )
 
-    custom_pattern = _validate_optional_regex(
-        str(raw["custom_payload_pattern"]).strip()
-        if raw.get("custom_payload_pattern")
-        else None
-    )
+    custom_pattern = None
+    if raw.get("custom_payload_pattern"):
+        _reject_custom_regex(
+            str(raw.get("custom_payload_pattern")),
+            field="custom_payload_pattern",
+        )
+
+    allow_fallback = bool(raw.get("allow_unconfigured_code_source_fallback", False))
 
     if not sources_sorted:
         return default_extraction_configuration()
@@ -310,6 +344,7 @@ def parse_extraction_configuration(
         custom_payload_pattern=custom_pattern,
         required_fields=required or ("internal_code", "quantity"),
         aliases=aliases,
+        allow_unconfigured_code_source_fallback=allow_fallback,
     )
 
 

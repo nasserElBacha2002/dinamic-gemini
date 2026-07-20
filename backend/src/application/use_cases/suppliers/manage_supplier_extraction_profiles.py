@@ -14,6 +14,7 @@ from src.application.errors import (
     SupplierExtractionProfileInvalidConfigurationError,
     SupplierExtractionProfileNotFoundError,
     SupplierExtractionProfileRowVersionConflictError,
+    SupplierExtractionProfileVersionConflictError,
     SupplierReferenceImageNotFoundError,
 )
 from src.application.ports.clock import Clock
@@ -314,23 +315,23 @@ class CreateSupplierExtractionProfileVersionUseCase:
             else default_extraction_configuration()
         )
         profile_key = _normalize_profile_key(command.profile_key)
-        next_version = self._profile_repo.next_version(command.client_id, command.supplier_id)
         now = self._clock.now()
-        created = SupplierExtractionProfile(
-            id=str(uuid4()),
-            client_id=command.client_id,
-            supplier_id=command.supplier_id,
-            profile_key=profile_key,
-            version=next_version,
-            status=ExtractionProfileStatus.DRAFT,
-            configuration=configuration,
-            visual_notes=_normalize_visual_notes(command.visual_notes),
-            created_by=(command.created_by or "").strip() or None,
-            created_at=now,
-            updated_at=now,
-            row_version=1,
-        )
-        self._profile_repo.save(created)
+        try:
+            created = self._profile_repo.create_next_version(
+                client_id=command.client_id,
+                supplier_id=command.supplier_id,
+                profile_key=profile_key,
+                configuration=configuration,
+                visual_notes=_normalize_visual_notes(command.visual_notes),
+                created_by=(command.created_by or "").strip() or None,
+                created_at=now,
+            )
+        except SupplierExtractionProfileVersionConflictError:
+            raise
+        except ValueError as exc:
+            if "version_conflict" in str(exc):
+                raise SupplierExtractionProfileVersionConflictError(str(exc)) from exc
+            raise
         if not command.activate:
             return created
         try:
@@ -423,24 +424,23 @@ class CloneSupplierExtractionProfileUseCase:
             profile_id=command.source_profile_id,
         )
         configuration = parse_extraction_configuration(source.configuration.to_public_dict())
-        next_version = self._profile_repo.next_version(command.client_id, command.supplier_id)
         now = self._clock.now()
-        cloned = SupplierExtractionProfile(
-            id=str(uuid4()),
-            client_id=command.client_id,
-            supplier_id=command.supplier_id,
-            profile_key=source.profile_key,
-            version=next_version,
-            status=ExtractionProfileStatus.DRAFT,
-            configuration=configuration,
-            visual_notes=source.visual_notes,
-            created_by=(command.created_by or "").strip() or None,
-            created_at=now,
-            updated_at=now,
-            row_version=1,
-        )
-        self._profile_repo.save(cloned)
-        return cloned
+        try:
+            return self._profile_repo.create_next_version(
+                client_id=command.client_id,
+                supplier_id=command.supplier_id,
+                profile_key=source.profile_key,
+                configuration=configuration,
+                visual_notes=source.visual_notes,
+                created_by=(command.created_by or "").strip() or None,
+                created_at=now,
+            )
+        except SupplierExtractionProfileVersionConflictError:
+            raise
+        except ValueError as exc:
+            if "version_conflict" in str(exc):
+                raise SupplierExtractionProfileVersionConflictError(str(exc)) from exc
+            raise
 
 
 class ListSupplierReferenceAnnotationsUseCase:
@@ -480,11 +480,13 @@ class ReplaceSupplierReferenceAnnotationsUseCase:
         client_supplier_repo: ClientSupplierRepository,
         reference_repo: SupplierReferenceImageRepository,
         annotation_repo: SupplierReferenceAnnotationRepository,
+        profile_repo: SupplierExtractionProfileRepository | None = None,
     ) -> None:
         self._client_repo = client_repo
         self._client_supplier_repo = client_supplier_repo
         self._reference_repo = reference_repo
         self._annotation_repo = annotation_repo
+        self._profile_repo = profile_repo
 
     def execute(
         self, command: ReplaceSupplierReferenceAnnotationsCommand
@@ -500,6 +502,33 @@ class ReplaceSupplierReferenceAnnotationsUseCase:
             raise SupplierReferenceImageNotFoundError(
                 f"Supplier reference image not found in supplier scope: {command.image_id}"
             )
+        # Tenant isolation: image must belong to the same client via client_supplier.
+        supplier = self._client_supplier_repo.get_by_id(command.supplier_id)
+        if supplier is None or supplier.client_id != command.client_id:
+            raise ClientSupplierClientMismatchError(
+                "Client supplier does not belong to the requested client"
+            )
+
+        if command.profile_id:
+            if self._profile_repo is None:
+                raise SupplierExtractionProfileNotFoundError(
+                    f"Supplier extraction profile not found: {command.profile_id}"
+                )
+            profile = _ensure_profile_in_scope(
+                self._profile_repo.get_by_id(command.profile_id),
+                client_id=command.client_id,
+                supplier_id=command.supplier_id,
+                profile_id=command.profile_id,
+            )
+            if profile.status not in (
+                ExtractionProfileStatus.DRAFT,
+                ExtractionProfileStatus.ACTIVE,
+            ):
+                raise SupplierExtractionProfileInvalidConfigurationError(
+                    f"profile {command.profile_id} status {profile.status.value} "
+                    "cannot receive annotations"
+                )
+
         parsed = [
             _parse_annotation_payload(
                 item,

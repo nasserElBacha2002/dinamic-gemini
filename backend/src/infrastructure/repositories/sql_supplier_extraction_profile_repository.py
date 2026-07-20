@@ -259,6 +259,80 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
             return 1
         return int(row.max_version) + 1
 
+    def create_next_version(
+        self,
+        *,
+        client_id: str,
+        supplier_id: str,
+        profile_key: str,
+        configuration: object,
+        visual_notes: str | None,
+        created_by: str | None,
+        created_at: object,
+        profile_id: str | None = None,
+    ) -> SupplierExtractionProfile:
+        import pyodbc
+        from uuid import uuid4
+
+        from src.application.errors import SupplierExtractionProfileVersionConflictError
+
+        new_id = profile_id or str(uuid4())
+        created_at_utc = _to_utc(created_at) if isinstance(created_at, datetime) else None
+        if created_at_utc is None:
+            created_at_utc = datetime.now(timezone.utc)
+
+        last_exc: Exception | None = None
+        for _ in range(5):
+            try:
+                with self._client.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT ISNULL(MAX(version), 0) AS max_version
+                        FROM supplier_extraction_profiles WITH (UPDLOCK, HOLDLOCK)
+                        WHERE client_id = ? AND supplier_id = ?
+                        """,
+                        (client_id, supplier_id),
+                    )
+                    row = cur.fetchone()
+                    next_ver = int(getattr(row, "max_version", 0) or 0) + 1
+                    cur.execute(
+                        """
+                        INSERT INTO supplier_extraction_profiles (
+                            id, client_id, supplier_id, profile_key, version, status,
+                            configuration_json, visual_notes, created_by, created_at,
+                            activated_by, activated_at, superseded_at, updated_at, row_version
+                        )
+                        VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, NULL, NULL, NULL, ?, 1)
+                        """,
+                        (
+                            new_id,
+                            client_id,
+                            supplier_id,
+                            profile_key,
+                            next_ver,
+                            _configuration_to_json(configuration),
+                            visual_notes,
+                            created_by,
+                            created_at_utc,
+                            created_at_utc,
+                        ),
+                    )
+                created = self.get_by_id(new_id)
+                if created is None:
+                    raise RuntimeError("create_next_version insert succeeded but row missing")
+                return created
+            except pyodbc.IntegrityError as exc:
+                last_exc = exc
+                msg = str(exc).lower()
+                if "unique" in msg or "2627" in msg or "2601" in msg:
+                    continue
+                raise SupplierExtractionProfileVersionConflictError(
+                    "version_conflict"
+                ) from exc
+        raise SupplierExtractionProfileVersionConflictError(
+            "version_conflict"
+        ) from last_exc
+
     def activate_version(
         self,
         *,

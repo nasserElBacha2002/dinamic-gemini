@@ -8,6 +8,14 @@ from src.application.ports.external_image_analysis_provider import (
     ExternalAnalysisResult,
     ExternalAnalysisStatus,
 )
+from src.application.services.image_processing.field_candidate_set import (
+    FieldCandidateSet,
+    apply_profile_validation,
+    configuration_from_job_snapshot,
+)
+from src.application.services.image_processing.profile_aware_processing_result_validator import (
+    FieldCandidate,
+)
 from src.domain.image_processing.contracts import (
     ExecutionScope,
     ImageProcessingResult,
@@ -64,6 +72,8 @@ class ExternalResultNormalizer:
         quantity_max: int = 99_999_999,
         client_rules: dict[str, Any] | None = None,
         client_id: str | None = None,
+        supplier_extraction_profile: dict[str, Any] | None = None,
+        profile_aware_validation_enabled: bool = False,
     ) -> ImageProcessingResult:
         base_fields = {
             "fallback_executed": True,
@@ -174,6 +184,16 @@ class ExternalResultNormalizer:
                 logical_asset_attempt=False,
             )
 
+        if profile_aware_validation_enabled:
+            return self._normalize_via_profile(
+                job_id=job_id,
+                asset_id=asset_id,
+                analysis=analysis,
+                base_fields=base_fields,
+                evidence=evidence,
+                supplier_extraction_profile=supplier_extraction_profile,
+            )
+
         # VALID — still apply business validation (never trust provider alone).
         code = (analysis.internal_code or "").strip() or None
         code = _apply_client_code_priority(
@@ -243,6 +263,80 @@ class ExternalResultNormalizer:
             execution_scope=ExecutionScope.SINGLE_ASSET,
             logical_asset_attempt=False,
         )
+
+    def _normalize_via_profile(
+        self,
+        *,
+        job_id: str,
+        asset_id: str,
+        analysis: ExternalAnalysisResult,
+        base_fields: dict[str, Any],
+        evidence: dict[str, Any],
+        supplier_extraction_profile: dict[str, Any] | None,
+    ) -> ImageProcessingResult:
+        code_candidates: list[FieldCandidate] = []
+        qty_candidates: list[FieldCandidate] = []
+        norm = analysis.normalized_result if isinstance(analysis.normalized_result, dict) else {}
+
+        if analysis.internal_code:
+            code_candidates.append(
+                FieldCandidate(
+                    source_key="INTERNAL_CODE",
+                    value=str(analysis.internal_code).strip(),
+                    evidence_score=float(analysis.confidence or 0.5),
+                    labeled=True,
+                )
+            )
+        for key, source in (
+            ("ean", "EAN"),
+            ("EAN", "EAN"),
+            ("article", "ARTICLE"),
+            ("sku", "SKU"),
+            ("internal_code", "INTERNAL_CODE"),
+            ("product", "PRODUCT"),
+        ):
+            raw = norm.get(key)
+            if isinstance(raw, str) and raw.strip():
+                code_candidates.append(
+                    FieldCandidate(
+                        source_key=source,
+                        value=raw.strip(),
+                        evidence_score=float(analysis.confidence or 0.5),
+                        labeled=True,
+                    )
+                )
+        if analysis.quantity is not None:
+            qty_candidates.append(
+                FieldCandidate(source_key="QUANTITY", value=str(analysis.quantity))
+            )
+        elif norm.get("quantity") is not None:
+            qty_candidates.append(
+                FieldCandidate(source_key="QUANTITY", value=str(norm.get("quantity")))
+            )
+
+        config = configuration_from_job_snapshot(supplier_extraction_profile)
+        result = apply_profile_validation(
+            job_id=job_id,
+            asset_id=asset_id,
+            processing_mode=EXTERNAL_PROVIDER_STRATEGY,
+            resolved_by=EXTERNAL_PROVIDER_STRATEGY,
+            candidates=FieldCandidateSet(
+                code_candidates=code_candidates,
+                quantity_candidates=qty_candidates,
+                additional_fields={},
+                evidence=evidence,
+                warnings=list(analysis.warnings),
+            ),
+            configuration=config,
+            duration_ms=analysis.duration_ms,
+            provider_name=analysis.provider_name,
+            model_name=analysis.model_name,
+            for_external=True,
+        )
+        merged = dict(base_fields)
+        merged.update(result.additional_fields or {})
+        result.additional_fields = merged
+        return result
 
     def _technical(
         self,

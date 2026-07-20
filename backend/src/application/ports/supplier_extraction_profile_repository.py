@@ -37,6 +37,22 @@ class SupplierExtractionProfileRepository(ABC):
     def next_version(self, client_id: str, supplier_id: str) -> int: ...
 
     @abstractmethod
+    def create_next_version(
+        self,
+        *,
+        client_id: str,
+        supplier_id: str,
+        profile_key: str,
+        configuration: object,
+        visual_notes: str | None,
+        created_by: str | None,
+        created_at: object,
+        profile_id: str | None = None,
+    ) -> SupplierExtractionProfile:
+        """Atomically allocate next version and insert DRAFT (safe under concurrency)."""
+        ...
+
+    @abstractmethod
     def activate_version(
         self,
         *,

@@ -41,6 +41,9 @@ from src.application.ports.repositories import (
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
+from src.application.ports.supplier_extraction_profile_repository import (
+    SupplierExtractionProfileRepository,
+)
 from src.application.services.aisle_identification_configuration_query import (
     AisleIdentificationConfigurationQuery,
 )
@@ -235,6 +238,10 @@ def get_artifact_publication_outbox_store():
 
 def get_artifact_manifest_store():
     return _get_artifact_manifest_store()
+
+
+def get_supplier_extraction_profile_repo() -> SupplierExtractionProfileRepository:
+    return get_app_container().get_supplier_extraction_profile_repo()
 
 
 def get_result_evidence_repo():
@@ -618,9 +625,10 @@ def get_start_aisle_processing_use_case(
     launch_service: AisleJobLaunchService = Depends(get_aisle_job_launch_service),
     stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
     client_repo: ClientRepository = Depends(get_client_repo),
+    extraction_profile_repo: SupplierExtractionProfileRepository = Depends(
+        get_supplier_extraction_profile_repo
+    ),
 ) -> StartAisleProcessingUseCase:
-    from src.runtime.v3_deps import get_supplier_extraction_profile_repo
-
     return StartAisleProcessingUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
@@ -629,7 +637,7 @@ def get_start_aisle_processing_use_case(
         launch_service=launch_service,
         stale_reconciler=stale_reconciler,
         client_repo=client_repo,
-        extraction_profile_repo=get_supplier_extraction_profile_repo(),
+        extraction_profile_repo=extraction_profile_repo,
     )
 
 

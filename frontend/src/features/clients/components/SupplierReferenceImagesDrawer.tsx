@@ -47,6 +47,7 @@ export interface SupplierReferenceImagesDrawerProps {
   isDeleting?: boolean;
   deleteError?: string | null;
   activeExtractionProfileId?: string | null;
+  annotationsEnabled?: boolean;
 }
 
 export default function SupplierReferenceImagesDrawer({
@@ -67,6 +68,7 @@ export default function SupplierReferenceImagesDrawer({
   isDeleting = false,
   deleteError,
   activeExtractionProfileId = null,
+  annotationsEnabled = false,
 }: SupplierReferenceImagesDrawerProps) {
   const { t } = useTranslation();
   const { loadPreview } = useSupplierReferencePreview({ clientId, supplierId });
@@ -164,11 +166,15 @@ export default function SupplierReferenceImagesDrawer({
         formatDeleteConfirm={(name) =>
           t('clients.suppliers.reference_images.delete_confirm_body', { name })
         }
-        renderItemExtraActions={(item) => (
-          <Button variant="outlined" size="small" onClick={() => setAnnotationTarget(item)}>
-            {t('clients.extraction_profile.annotations.configure_fields')}
-          </Button>
-        )}
+        renderItemExtraActions={
+          annotationsEnabled
+            ? (item) => (
+                <Button variant="outlined" size="small" onClick={() => setAnnotationTarget(item)}>
+                  {t('clients.extraction_profile.annotations.configure_fields')}
+                </Button>
+              )
+            : undefined
+        }
       />
       {annotationTarget ? (
         <SupplierReferenceAnnotationEditorDialog

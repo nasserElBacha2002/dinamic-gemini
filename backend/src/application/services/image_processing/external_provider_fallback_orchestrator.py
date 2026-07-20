@@ -30,6 +30,7 @@ from src.application.services.image_processing.external_concurrency_limiter impo
     ExternalConcurrencyLimiter,
 )
 from src.application.services.image_processing.external_fallback_recovery import (
+    ExternalFallbackRecoveryDecision,
     ExternalFallbackRecoveryService,
 )
 from src.application.services.image_processing.external_fallback_prompt import (
@@ -127,6 +128,8 @@ class ExternalFallbackSnapshot:
     client_rules: dict[str, Any] | None = None
     recoverable_technical_codes: tuple[str, ...] = ()
     retry_backoff_seconds: float = 0.5
+    supplier_extraction_profile: dict[str, Any] | None = None
+    profile_aware_validation_enabled: bool = False
 
     @classmethod
     def from_identification_execution(
@@ -137,6 +140,11 @@ class ExternalFallbackSnapshot:
         raw = block.get("external_fallback")
         if not isinstance(raw, dict):
             return None
+        flags = block.get("feature_flag_state")
+        profile_aware = False
+        if isinstance(flags, dict):
+            profile_aware = bool(flags.get("profile_aware_validation_enabled"))
+        profile_snap = block.get("supplier_extraction_profile")
         return cls(
             enabled=bool(raw.get("fallback_enabled") or raw.get("enabled")),
             provider=str(raw.get("fallback_provider") or raw.get("provider") or "")
@@ -166,6 +174,10 @@ class ExternalFallbackSnapshot:
                 str(c) for c in (raw.get("recoverable_technical_codes") or [])
             ),
             retry_backoff_seconds=float(raw.get("retry_backoff_seconds") or 0.5),
+            supplier_extraction_profile=profile_snap
+            if isinstance(profile_snap, dict)
+            else None,
+            profile_aware_validation_enabled=profile_aware,
         )
 
 
@@ -282,10 +294,30 @@ class ExternalProviderFallbackOrchestrator:
         request = self.request_repo.try_claim(request=claim)
 
         recovery = self.recovery.decide(request)
-        # Recovery C / prior success: already persisted position.
+        # Recovery C / prior success: already persisted position or active result.
         if recovery.action == "SKIP_PERSISTED":
             self._bump_skipped()
             return ExternalFallbackOutcome(skipped=True, request=request)
+
+        # PERSISTED without position/active_result — never silent skip.
+        if recovery.action == "RECONCILE_PERSISTED":
+            logger.warning(
+                "fallback.persisted_inconsistent job_id=%s asset_id=%s request_id=%s",
+                job.id,
+                asset.id,
+                request.id,
+            )
+            if request.normalized_result:
+                recovery = ExternalFallbackRecoveryDecision(
+                    action="REUSE_NORMALIZED", request=request
+                )
+            else:
+                request.status = ExternalRequestStatus.PERSISTENCE_PENDING
+                request.updated_at = self.clock.now()
+                self.request_repo.save(request)
+                recovery = ExternalFallbackRecoveryDecision(
+                    action="CONTINUE", request=request
+                )
 
         # Recovery B: reused normalized response without new provider call.
         if recovery.action == "REUSE_NORMALIZED":
@@ -524,13 +556,11 @@ class ExternalProviderFallbackOrchestrator:
             executed_model,
             "default",
         ):
-            # Allow adapter default when snapshot model empty; otherwise require match.
             if (model_name or "").strip() and (executed_model or "").strip():
                 if model_name.strip().lower() != executed_model.strip().lower():
-                    logger.warning(
-                        "fallback.model_mismatch snapshot=%s executed=%s",
-                        model_name,
-                        executed_model,
+                    raise ValueError(
+                        "EXTERNAL_PROVIDER_MODEL_MISMATCH: "
+                        f"snapshot model {model_name!r} != executed {executed_model!r}"
                     )
 
         limiter = self.concurrency_limiter or ExternalConcurrencyLimiter(
@@ -637,6 +667,8 @@ class ExternalProviderFallbackOrchestrator:
                 quantity_max=snapshot.quantity_max,
                 client_rules=snapshot.client_rules,
                 client_id=client_id,
+                supplier_extraction_profile=snapshot.supplier_extraction_profile,
+                profile_aware_validation_enabled=snapshot.profile_aware_validation_enabled,
             )
             result.additional_fields["fallback_eligible"] = True
             result.additional_fields["fallback_reason"] = eligibility_reason
@@ -664,6 +696,8 @@ class ExternalProviderFallbackOrchestrator:
             quantity_max=snapshot.quantity_max,
             client_rules=snapshot.client_rules,
             client_id=client_id,
+            supplier_extraction_profile=snapshot.supplier_extraction_profile,
+            profile_aware_validation_enabled=snapshot.profile_aware_validation_enabled,
         )
         result.additional_fields["fallback_eligible"] = True
         result.additional_fields["fallback_reason"] = eligibility_reason

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 
 from src.api.constants.route_paths import API_V3_CONFIG_ROUTER_PREFIX
 from src.api.schemas.upload_limits_schemas import UploadLimitsResponse
@@ -15,6 +16,12 @@ router = APIRouter(
     tags=["config-v3"],
     dependencies=[Depends(get_current_admin)],
 )
+
+
+class ExtractionProfileCapabilitiesResponse(BaseModel):
+    client_extraction_profiles_enabled: bool = Field(...)
+    profile_aware_validation_enabled: bool = Field(...)
+    reference_template_annotations_enabled: bool = Field(...)
 
 
 @router.get("/upload-limits", response_model=UploadLimitsResponse)
@@ -36,4 +43,24 @@ def get_upload_limits() -> UploadLimitsResponse:
         upload_batch_concurrency=settings.upload_batch_concurrency,
         retry_attempts=settings.upload_retry_attempts,
         retry_base_delay_ms=settings.upload_retry_base_delay_ms,
+    )
+
+
+@router.get(
+    "/extraction-profile-capabilities",
+    response_model=ExtractionProfileCapabilitiesResponse,
+)
+def get_extraction_profile_capabilities() -> ExtractionProfileCapabilitiesResponse:
+    """Real feature-flag capabilities for Phase 6 supplier extraction profiles."""
+    settings = load_settings()
+    return ExtractionProfileCapabilitiesResponse(
+        client_extraction_profiles_enabled=bool(
+            getattr(settings, "client_extraction_profiles_enabled", False)
+        ),
+        profile_aware_validation_enabled=bool(
+            getattr(settings, "profile_aware_validation_enabled", False)
+        ),
+        reference_template_annotations_enabled=bool(
+            getattr(settings, "reference_template_annotations_enabled", False)
+        ),
     )

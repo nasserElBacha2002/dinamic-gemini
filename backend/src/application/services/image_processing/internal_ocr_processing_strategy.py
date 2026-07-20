@@ -28,7 +28,17 @@ from src.application.ports.internal_label_reader import (
     InternalOcrEngineUnavailableError,
     InternalOcrReadResult,
 )
-from src.application.services.image_processing.ocr_field_extractor import OcrFieldExtractor
+from src.application.services.image_processing.field_candidate_set import (
+    FieldCandidateSet,
+    apply_profile_validation,
+    configuration_from_job_snapshot,
+)
+from src.application.services.image_processing.ocr_field_extractor import (
+    OcrFieldCandidate,
+    OcrFieldExtraction,
+    OcrFieldExtractor,
+    OcrFieldKind,
+)
 from src.application.services.image_processing.ocr_image_preprocessor import (
     OcrImagePreprocessor,
 )
@@ -37,6 +47,9 @@ from src.application.services.image_processing.ocr_result_normalizer import (
     OcrClientFieldRules,
     OcrNormalizeStatus,
     OcrResultNormalizer,
+)
+from src.application.services.image_processing.profile_aware_processing_result_validator import (
+    FieldCandidate,
 )
 from src.domain.assets.entities import SourceAsset
 from src.domain.image_processing.contracts import (
@@ -298,6 +311,33 @@ class InternalOcrProcessingStrategy:
             engine_ms=engine_ms_total,
         )
 
+        if context.profile_aware_validation_enabled:
+            # Re-run extraction candidates through the shared profile validator.
+            # Prefer the extraction that produced the selected normalized label.
+            extraction_for_profile = self._extractor.extract(read)
+            if context.reference_template_annotations_enabled:
+                from src.application.services.image_processing.reference_template_hint_resolver import (
+                    ReferenceTemplateHintResolver,
+                )
+
+                hint_res = ReferenceTemplateHintResolver().resolve(
+                    template_image_id=None,
+                    profile_id=(
+                        (context.supplier_extraction_profile or {}).get("supplier_profile_id")
+                        if isinstance(context.supplier_extraction_profile, dict)
+                        else None
+                    ),
+                    annotations=(),
+                )
+                evidence = {**(evidence or {}), **hint_res.evidence}
+            return self._result_via_profile(
+                context=context,
+                mode=mode,
+                extraction=extraction_for_profile,
+                evidence=evidence or {},
+                duration_ms=duration_ms,
+            )
+
         if normalized.status is OcrNormalizeStatus.RESOLVED:
             self._metrics.increment("ocr_resolved_total")
             logger.info(
@@ -476,6 +516,92 @@ class InternalOcrProcessingStrategy:
             "selected_qty_rule": normalized.selected_qty_rule,
             "warnings": list(normalized.warnings)[:20],
         }
+
+    def _result_via_profile(
+        self,
+        *,
+        context: ImageProcessingContext,
+        mode: str,
+        extraction: OcrFieldExtraction,
+        evidence: dict[str, Any],
+        duration_ms: int,
+    ) -> ImageProcessingResult:
+        def _map_code(c: OcrFieldCandidate) -> FieldCandidate | None:
+            source = "INTERNAL_CODE"
+            labeled = "label" in (c.source or "") or c.source.endswith("_label")
+            if c.kind is OcrFieldKind.EAN or c.source in ("ean_label", "bare_ean"):
+                source = "EAN"
+                labeled = c.source == "ean_label"
+            elif c.kind is OcrFieldKind.ARTICLE or c.source == "article_label":
+                source = "ARTICLE"
+                labeled = True
+            elif c.kind is OcrFieldKind.PRODUCT or c.source == "product_label":
+                source = "PRODUCT"
+                labeled = True
+            elif c.kind is OcrFieldKind.INTERNAL_CODE:
+                source = "INTERNAL_CODE"
+            else:
+                return None
+            return FieldCandidate(
+                source_key=source,
+                value=c.value,
+                evidence_score=float(c.confidence or 0.5),
+                labeled=labeled,
+            )
+
+        code_candidates: list[FieldCandidate] = []
+        for c in extraction.internal_code_candidates:
+            mapped = _map_code(c)
+            if mapped:
+                code_candidates.append(mapped)
+        for c in extraction.ean_candidates:
+            mapped = _map_code(c)
+            if mapped:
+                code_candidates.append(mapped)
+        for c in extraction.article_candidates:
+            mapped = _map_code(c)
+            if mapped:
+                code_candidates.append(mapped)
+        for c in extraction.product_candidates:
+            mapped = _map_code(c)
+            if mapped:
+                code_candidates.append(mapped)
+
+        qty_candidates = [
+            FieldCandidate(
+                source_key="QUANTITY",
+                value=c.value,
+                evidence_score=float(c.confidence or 0.5),
+            )
+            for c in extraction.quantity_candidates
+        ]
+        additional: dict[str, str] = {}
+        if extraction.lot_candidates:
+            additional["lote"] = extraction.lot_candidates[0].value
+        if extraction.expiration_candidates:
+            additional["vencimiento"] = extraction.expiration_candidates[0].value
+
+        config = configuration_from_job_snapshot(context.supplier_extraction_profile)
+        result = apply_profile_validation(
+            job_id=context.job_id,
+            asset_id=context.asset_id,
+            processing_mode=mode,
+            resolved_by=STRATEGY_KEY,
+            candidates=FieldCandidateSet(
+                code_candidates=code_candidates,
+                quantity_candidates=qty_candidates,
+                additional_fields=additional,
+                evidence=dict(evidence or {}),
+                warnings=list(extraction.warnings),
+            ),
+            configuration=config,
+            duration_ms=duration_ms,
+            provider_name=PROCESSOR_NAME,
+            model_name=self.attempt_model,
+        )
+        if result.status is ImageResultStatus.RESOLVED_INTERNAL:
+            self._metrics.increment("ocr_resolved_total")
+        return result
 
     def _technical(
         self,

@@ -9,6 +9,7 @@ import {
 } from '../../../hooks';
 import { ApiError } from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
+import { useExtractionProfileCapabilities } from '../hooks/useExtractionProfileCapabilities';
 import SupplierReferenceImagesDrawer, {
   type SupplierReferenceImagesDrawerProps,
 } from './SupplierReferenceImagesDrawer';
@@ -52,6 +53,9 @@ export default function SupplierReferenceImagesModule({
       : undefined);
   const uploadMutation = useUploadSupplierReferenceImages(clientId, supplierId);
   const deleteMutation = useDeleteSupplierReferenceImage(clientId, supplierId);
+  const capabilities = useExtractionProfileCapabilities({
+    enabled: Boolean(moduleActive && clientId && supplierId),
+  });
 
   const handleClose = useCallback(() => {
     onClose();
@@ -111,6 +115,7 @@ export default function SupplierReferenceImagesModule({
           : null
       }
       activeExtractionProfileId={activeExtractionProfileId ?? null}
+      annotationsEnabled={capabilities.reference_template_annotations_enabled}
     />
   );
 }

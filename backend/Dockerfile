@@ -68,9 +68,17 @@ import pytesseract
 _ver = str(pytesseract.get_tesseract_version())
 print(f"pytesseract OK; tesseract version={_ver}")
 _langs = {x.strip() for x in pytesseract.get_languages(config="") if x.strip()}
-if "spa" not in _langs:
-    raise SystemExit(f"Build verification failed: tesseract spa language missing. Got: {sorted(_langs)}")
+if "spa" not in _langs or "eng" not in _langs:
+    raise SystemExit(
+        f"Build verification failed: tesseract requires spa+eng. Got: {sorted(_langs)}"
+    )
+if not ({"spa", "eng"} <= _langs):
+    raise SystemExit(
+        f"Build verification failed: tesseract languages must include spa and eng. Got: {sorted(_langs)}"
+    )
 print("tesseract spa+eng language packs available for INTERNAL_OCR")
+# Negative probe at runtime (missing binary after image build) requires container restart —
+# this image is immutable; do not add probe retries.
 PY
 
 COPY . .

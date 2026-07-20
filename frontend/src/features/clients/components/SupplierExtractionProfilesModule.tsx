@@ -41,6 +41,7 @@ import {
   INTERNAL_CODE_SOURCE_KEYS,
   SUPPORTED_BARCODE_FORMATS,
 } from '../utils/defaultExtractionProfileConfiguration';
+import { useExtractionProfileCapabilities } from '../hooks/useExtractionProfileCapabilities';
 import SupplierExtractionProfileVersionList from './SupplierExtractionProfileVersionList';
 
 export interface SupplierExtractionProfilesModuleProps {
@@ -114,6 +115,9 @@ export default function SupplierExtractionProfilesModule({
   const createMutation = useCreateSupplierExtractionProfileVersion(clientId, supplierId);
   const activateMutation = useActivateSupplierExtractionProfileVersion(clientId, supplierId);
   const cloneMutation = useCloneSupplierExtractionProfile(clientId, supplierId);
+  const capabilities = useExtractionProfileCapabilities({
+    enabled: Boolean(clientId && supplierId),
+  });
 
   const activeProfile = useMemo(() => {
     if (activeQuery.data) return activeQuery.data;
@@ -286,6 +290,12 @@ export default function SupplierExtractionProfilesModule({
       <Stack spacing={2} sx={{ p: 2.5 }}>
         <Alert severity="info">{t('clients.extraction_profile.processing_flag_hint')}</Alert>
 
+        {!capabilities.profile_aware_validation_enabled ? (
+          <Alert severity="warning" role="status">
+            {t('clients.extraction_profile.profile_aware_disabled_warning')}
+          </Alert>
+        ) : null}
+
         {isLoading ? (
           <LoadingBlock message={t('common.loading')} py={1} sx={{ justifyContent: 'flex-start' }} />
         ) : null}
@@ -315,6 +325,9 @@ export default function SupplierExtractionProfilesModule({
                 · {t(`clients.extraction_profile.status.${String(headerProfile.status).toLowerCase()}`, {
                   defaultValue: String(headerProfile.status),
                 })}
+                {capabilities.profile_aware_validation_enabled
+                  ? ` · ${t('clients.extraction_profile.processing_active_label')}`
+                  : ` · ${t('clients.extraction_profile.processing_inactive_label')}`}
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 {t('clients.extraction_profile.header_dates', {

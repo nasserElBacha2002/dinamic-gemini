@@ -35,6 +35,15 @@ from src.application.services.image_processing.code_detection_consolidator impor
 from src.application.services.image_processing.encoded_label_payload_parser import (
     EncodedLabelPayloadParser,
 )
+from src.application.services.image_processing.field_candidate_set import (
+    FieldCandidateSet,
+    apply_profile_validation,
+    configuration_from_job_snapshot,
+    symbology_to_code_source,
+)
+from src.application.services.image_processing.profile_aware_processing_result_validator import (
+    FieldCandidate,
+)
 from src.domain.assets.entities import SourceAsset
 from src.domain.code_scans.entities import CodeType
 from src.domain.image_processing.contracts import (
@@ -190,6 +199,16 @@ class CodeScanProcessingStrategy:
         duration_ms = int((time.monotonic() - started) * 1000)
         evidence = self._build_evidence(consolidated, detections)
 
+        if context.profile_aware_validation_enabled:
+            return self._result_via_profile(
+                context=context,
+                mode=mode,
+                detections=detections,
+                consolidated=consolidated,
+                evidence=evidence or {},
+                duration_ms=duration_ms,
+            )
+
         if consolidated.status is CodeConsolidationStatus.RESOLVED:
             self._metrics.increment("code_scan.resolved")
             logger.info(
@@ -249,6 +268,79 @@ class CodeScanProcessingStrategy:
             logical_asset_attempt=False,
             processing_duration_ms=duration_ms,
         )
+
+    def _result_via_profile(
+        self,
+        *,
+        context: ImageProcessingContext,
+        mode: str,
+        detections: list[CodeDetectionInput],
+        consolidated,
+        evidence: dict,
+        duration_ms: int,
+    ) -> ImageProcessingResult:
+        code_candidates: list[FieldCandidate] = []
+        qty_candidates: list[FieldCandidate] = []
+        barcode_format = evidence.get("symbology") if isinstance(evidence, dict) else None
+        for det in detections:
+            source = symbology_to_code_source(det.symbology)
+            if det.parsed.internal_code:
+                code_candidates.append(
+                    FieldCandidate(
+                        source_key=source,
+                        value=str(det.parsed.internal_code),
+                        evidence_score=1.0,
+                        labeled=False,
+                        barcode_format=det.symbology,
+                    )
+                )
+            if det.parsed.quantity is not None:
+                qty_candidates.append(
+                    FieldCandidate(
+                        source_key="QUANTITY",
+                        value=str(det.parsed.quantity),
+                        evidence_score=1.0,
+                    )
+                )
+        # Prefer consolidator selection when present.
+        if consolidated.internal_code and not code_candidates:
+            code_candidates.append(
+                FieldCandidate(
+                    source_key=symbology_to_code_source(
+                        str(barcode_format) if barcode_format else None
+                    ),
+                    value=str(consolidated.internal_code),
+                    labeled=False,
+                    barcode_format=str(barcode_format) if barcode_format else None,
+                )
+            )
+        if consolidated.quantity is not None and not qty_candidates:
+            qty_candidates.append(
+                FieldCandidate(source_key="QUANTITY", value=str(consolidated.quantity))
+            )
+        config = configuration_from_job_snapshot(context.supplier_extraction_profile)
+        result = apply_profile_validation(
+            job_id=context.job_id,
+            asset_id=context.asset_id,
+            processing_mode=mode,
+            resolved_by=STRATEGY_KEY,
+            candidates=FieldCandidateSet(
+                code_candidates=code_candidates,
+                quantity_candidates=qty_candidates,
+                barcode_format=str(barcode_format) if barcode_format else None,
+                evidence=dict(evidence or {}),
+                warnings=list(consolidated.warnings),
+            ),
+            configuration=config,
+            duration_ms=duration_ms,
+        )
+        if result.status is ImageResultStatus.RESOLVED_INTERNAL:
+            self._metrics.increment("code_scan.resolved")
+        elif result.status is ImageResultStatus.UNRECOGNIZED:
+            self._metrics.increment("code_scan.unrecognized")
+        else:
+            self._metrics.increment("code_scan.manual_review")
+        return result
 
     # ------------------------------------------------------------------
     # Scanning
