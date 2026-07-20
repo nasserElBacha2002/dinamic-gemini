@@ -169,6 +169,28 @@ def test_sanitize_public_hides_hashes_and_secrets() -> None:
     assert tech["request_image_sha256"] == "abc"
 
 
+def test_sanitize_keeps_ocr_diagnostic_counters() -> None:
+    tech = sanitize_metadata(
+        {
+            "byte_length": 1024,
+            "candidate_count": 3,
+            "variant": "original_psm6",
+            "psm": 6,
+            "light_ocr_executed": True,
+            "matched_anchors": ["CODIGO INTERNO"],
+            "raw_ocr_text": "should_drop",
+        },
+        level="TECHNICAL_SAFE",
+    )
+    assert tech["byte_length"] == 1024
+    assert tech["candidate_count"] == 3
+    assert tech["variant"] == "original_psm6"
+    assert tech["psm"] == 6
+    assert tech["light_ocr_executed"] is True
+    assert tech["matched_anchors"] == ["CODIGO INTERNO"]
+    assert "raw_ocr_text" not in tech
+
+
 def test_csv_safe_cell_guards_formulas() -> None:
     assert csv_safe_cell("=CMD()") == "'=CMD()"
     assert csv_safe_cell("ok") == "ok"

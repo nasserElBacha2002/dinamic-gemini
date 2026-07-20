@@ -711,6 +711,20 @@ class V3JobExecutor:
                 exc_info=True,
             )
             if require_sql:
+                exec_log.structured_event(
+                    job_id=job_id,
+                    inventory_id=aisle.inventory_id,
+                    aisle_id=aisle_id,
+                    attempt=job.attempt_count,
+                    stage="InternalOcr",
+                    substep="repo_resolve",
+                    event="job.failed",
+                    details={
+                        "error_code": "IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE",
+                        "message": str(repo_exc)[:500],
+                    },
+                    level="error",
+                )
                 self._state.fail_job_and_aisle(
                     job_id,
                     aisle,
@@ -725,12 +739,69 @@ class V3JobExecutor:
         job_ocr_config = identification_execution.get("ocr_config")
         job_client_id = engine_params.get("client_id") or getattr(aisle, "client_id", None)
 
+        from src.application.services.image_processing.processing_event_publisher import (
+            CompositeProcessingEventPublisher,
+            ExecutionLogProcessingEventPublisher,
+            RepositoryProcessingEventPublisher,
+        )
+
+        exec_log_publisher = ExecutionLogProcessingEventPublisher(
+            exec_log=exec_log,
+            inventory_id=aisle.inventory_id,
+            aisle_id=aisle_id,
+            attempt=int(getattr(job, "attempt_count", 1) or 1),
+            stage="InternalOcr",
+        )
+        repo_publisher = None
+        if bool(getattr(settings, "processing_events_persistence_enabled", False)):
+            try:
+                repo_publisher = RepositoryProcessingEventPublisher(
+                    event_repo=container.get_processing_event_repo(),
+                    clock=container.get_clock(),
+                )
+            except Exception as pub_exc:
+                logger.warning(
+                    "internal_ocr.event_publisher_unavailable job_id=%s err=%s",
+                    job_id,
+                    pub_exc,
+                )
+        event_publisher = CompositeProcessingEventPublisher(
+            *(p for p in (repo_publisher, exec_log_publisher) if p is not None)
+        )
+
+        def _publish_job_event(
+            event_type: str,
+            *,
+            message: str | None = None,
+            error_code: str | None = None,
+            metadata: dict | None = None,
+            severity: str = "INFO",
+        ) -> None:
+            try:
+                event_publisher.publish(
+                    job_id=job_id,
+                    event_type=event_type,
+                    strategy="INTERNAL_OCR",
+                    severity=severity,
+                    message=message,
+                    error_code=error_code,
+                    metadata=metadata,
+                )
+            except Exception:
+                logger.debug(
+                    "internal_ocr.job_event_publish_skipped job_id=%s event=%s",
+                    job_id,
+                    event_type,
+                    exc_info=True,
+                )
+
         try:
             strategy = build_default_internal_ocr_strategy(
                 settings,
                 self._artifact_store,
                 client_id=job_client_id,
                 ocr_config_override=job_ocr_config if isinstance(job_ocr_config, dict) else None,
+                event_publisher=event_publisher,
             )
             persister = build_default_code_scan_persister(
                 job_source_asset_repo=container.get_job_source_asset_repo(),
@@ -742,7 +813,6 @@ class V3JobExecutor:
             def _is_cancelled() -> bool:
                 current = self._job_repo.get_by_id(job_id)
                 return current is not None and current.status == JobStatus.CANCEL_REQUESTED
-
             external_fallback = None
             external_request_repo = None
             if attempt_repo is not None:
@@ -787,6 +857,12 @@ class V3JobExecutor:
             logger.error(
                 "internal_ocr.repos_unavailable job_id=%s err=%s", job_id, unavailable
             )
+            _publish_job_event(
+                "job.failed",
+                message=str(unavailable)[:500],
+                error_code="IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE",
+                severity="ERROR",
+            )
             self._state.fail_job_and_aisle(
                 job_id,
                 aisle,
@@ -822,6 +898,27 @@ class V3JobExecutor:
                 job_id, {"asset_progress": progress_to_public_dict(progress)}
             )
 
+        total_assets = len(assets)
+        _publish_job_event(
+            "job.processing_started",
+            message="INTERNAL_OCR processing started",
+            metadata={"total_assets": total_assets},
+        )
+        _publish_job_event(
+            "job.assets_loaded",
+            message="job source assets ready for INTERNAL_OCR",
+            metadata={
+                "total_assets": total_assets,
+                "assets_eligible": total_assets,
+                "assets_skipped": 0,
+            },
+        )
+        _publish_job_event(
+            "job.asset_loop_started",
+            message="per-asset INTERNAL_OCR loop started",
+            metadata={"total_assets": total_assets},
+        )
+
         try:
             outcome = run_orchestrated_internal_ocr(
                 orchestrator=orch,
@@ -837,6 +934,12 @@ class V3JobExecutor:
             )
         except CodeScanPipelineMisconfiguredError as misconfig:
             logger.error("internal_ocr.misconfigured job_id=%s err=%s", job_id, misconfig)
+            _publish_job_event(
+                "job.failed",
+                message=str(misconfig)[:500],
+                error_code="INTERNAL_OCR_PIPELINE_MISCONFIGURED",
+                severity="ERROR",
+            )
             self._state.fail_job_and_aisle(
                 job_id,
                 aisle,
@@ -844,6 +947,22 @@ class V3JobExecutor:
                 failure_code="INTERNAL_OCR_PIPELINE_MISCONFIGURED",
             )
             return True
+        except Exception as unhandled:
+            logger.exception("internal_ocr.unhandled_worker_error job_id=%s", job_id)
+            _publish_job_event(
+                "job.failed",
+                message=type(unhandled).__name__,
+                error_code="UNHANDLED_WORKER_ERROR",
+                severity="ERROR",
+                metadata={"error_type": type(unhandled).__name__},
+            )
+            self._state.fail_job_and_aisle(
+                job_id,
+                aisle,
+                f"Unhandled INTERNAL_OCR worker error: {type(unhandled).__name__}",
+                failure_code="UNHANDLED_WORKER_ERROR",
+            )
+            raise
 
         merge_payload: dict = {"asset_progress": progress_to_public_dict(outcome.progress)}
         if external_fallback is not None:
@@ -880,6 +999,12 @@ class V3JobExecutor:
         if job_outcome is CodeScanJobOutcome.FAILED:
             current = self._job_repo.get_by_id(job_id)
             if current is not None and current.status == JobStatus.RUNNING:
+                _publish_job_event(
+                    "job.failed",
+                    message=(outcome.error_message or "internal_ocr_failed")[:500],
+                    error_code="INTERNAL_OCR_FAILED",
+                    severity="ERROR",
+                )
                 self._state.fail_job_and_aisle(
                     job_id,
                     aisle,
@@ -887,6 +1012,18 @@ class V3JobExecutor:
                     failure_code="INTERNAL_OCR_FAILED",
                 )
             return True
+
+        progress = outcome.progress
+        _publish_job_event(
+            "job.finalization_started",
+            message="INTERNAL_OCR finalization started",
+            metadata={
+                "resolved": int(getattr(progress, "resolved", 0) or 0),
+                "manual_review": int(getattr(progress, "manual_review", 0) or 0),
+                "unrecognized": int(getattr(progress, "unrecognized", 0) or 0),
+                "failed_technical": int(getattr(progress, "failed", 0) or 0),
+            },
+        )
 
         self._job_repo.merge_result_json(
             job_id, {"internal_ocr_outcome": job_outcome.value}
@@ -898,12 +1035,36 @@ class V3JobExecutor:
             self._state.finalize_code_scan_success(job_id, aisle)
         except Exception as exc:
             logger.exception("internal_ocr.finalize_failed job_id=%s", job_id)
+            _publish_job_event(
+                "job.failed",
+                message=f"internal_ocr finalization failed: {type(exc).__name__}",
+                error_code="INTERNAL_OCR_FINALIZATION_FAILED",
+                severity="ERROR",
+            )
             self._state.fail_job_and_aisle(
                 job_id,
                 aisle,
                 f"internal_ocr finalization failed: {exc}",
                 failure_code="INTERNAL_OCR_FINALIZATION_FAILED",
             )
+            return True
+
+        completed_event = (
+            "job.partially_completed"
+            if job_outcome is CodeScanJobOutcome.PARTIALLY_COMPLETED
+            else "job.completed"
+        )
+        _publish_job_event(
+            completed_event,
+            message=f"INTERNAL_OCR {job_outcome.value}",
+            metadata={
+                "resolved": int(getattr(progress, "resolved", 0) or 0),
+                "manual_review": int(getattr(progress, "manual_review", 0) or 0),
+                "unrecognized": int(getattr(progress, "unrecognized", 0) or 0),
+                "failed_technical": int(getattr(progress, "failed", 0) or 0),
+                "status": job_outcome.value,
+            },
+        )
         return True
 
     def _v3_run_job_body(self, base_path: Path, job_id: str, prep: V3PreparedJob) -> bool:

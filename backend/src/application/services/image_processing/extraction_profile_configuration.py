@@ -8,6 +8,7 @@ from src.domain.client_supplier.extraction_profile import (
     INTERNAL_CODE_SOURCE_KEYS,
     SUPPORTED_BARCODE_FORMATS,
     AdditionalFieldRule,
+    AnchorMatchPolicy,
     CodeValidationRules,
     EanValidationRules,
     ExtractionProfileConfiguration,
@@ -21,7 +22,7 @@ from src.domain.client_supplier.extraction_profile import (
     MissingQuantityAction,
     QuantityExtractionRules,
     QuantityPresence,
-    AnchorMatchPolicy,
+    UnanchoredCodeCandidatePolicy,
     default_extraction_configuration,
 )
 
@@ -76,6 +77,19 @@ def _parse_data_type(raw: object, *, field: str) -> FieldDataType:
     except ValueError as exc:
         raise ExtractionProfileConfigurationError(
             "UNSUPPORTED_FIELD_TYPE", f"{field} has unsupported type {key!r}"
+        ) from exc
+
+
+def _parse_unanchored_policy(raw: object) -> UnanchoredCodeCandidatePolicy:
+    if raw is None or str(raw).strip() == "":
+        return UnanchoredCodeCandidatePolicy.REJECT
+    key = str(raw).strip().upper()
+    try:
+        return UnanchoredCodeCandidatePolicy(key)
+    except ValueError as exc:
+        raise ExtractionProfileConfigurationError(
+            "INVALID_UNANCHORED_POLICY",
+            f"validation_rules.code.unanchored_candidate_policy has unsupported value {key!r}",
         ) from exc
 
 
@@ -324,6 +338,9 @@ def parse_extraction_configuration(
             regex=None,
             reject_measurement_patterns=bool(
                 craw.get("reject_measurement_patterns", True)
+            ),
+            unanchored_candidate_policy=_parse_unanchored_policy(
+                craw.get("unanchored_candidate_policy")
             ),
         ),
         ean=EanValidationRules(

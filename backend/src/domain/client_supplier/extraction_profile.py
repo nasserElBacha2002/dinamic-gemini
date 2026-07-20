@@ -64,6 +64,14 @@ class AnchorMatchPolicy(str, Enum):
     GEOMETRY_ONLY_ALLOWED = "GEOMETRY_ONLY_ALLOWED"
 
 
+class UnanchoredCodeCandidatePolicy(str, Enum):
+    """Policy for strong numeric codes that lack a matched label anchor."""
+
+    REJECT = "REJECT"
+    ALLOW_FOR_MANUAL_REVIEW = "ALLOW_FOR_MANUAL_REVIEW"
+    ALLOW_IF_UNIQUE_AND_STRONG = "ALLOW_IF_UNIQUE_AND_STRONG"
+
+
 class QuantityPresence(str, Enum):
     ALWAYS = "ALWAYS"
     OPTIONAL = "OPTIONAL"
@@ -189,6 +197,9 @@ class CodeValidationRules:
     preserve_leading_zeros: bool = True
     regex: str | None = None
     reject_measurement_patterns: bool = True
+    unanchored_candidate_policy: UnanchoredCodeCandidatePolicy = (
+        UnanchoredCodeCandidatePolicy.REJECT
+    )
 
 
 @dataclass(frozen=True)
@@ -320,6 +331,9 @@ class ExtractionProfileConfiguration:
                     "reject_measurement_patterns": (
                         self.validation_rules.code.reject_measurement_patterns
                     ),
+                    "unanchored_candidate_policy": (
+                        self.validation_rules.code.unanchored_candidate_policy.value
+                    ),
                 },
                 "ean": {
                     "allow_ean8": self.validation_rules.ean.allow_ean8,
@@ -437,6 +451,7 @@ def inventory_seven_digit_internal_code_template() -> ExtractionProfileConfigura
                 allow_spaces=False,
                 preserve_leading_zeros=True,
                 reject_measurement_patterns=True,
+                unanchored_candidate_policy=UnanchoredCodeCandidatePolicy.ALLOW_FOR_MANUAL_REVIEW,
             ),
             ean=base.validation_rules.ean,
             quantity_integer_only=True,
@@ -446,10 +461,10 @@ def inventory_seven_digit_internal_code_template() -> ExtractionProfileConfigura
             expected_background=LabelBackgroundHint.LIGHT,
             expected_shape=LabelShapeHint.APPROXIMATELY_RECTANGULAR,
             expected_orientation=LabelOrientationHint.ANY,
-            primary_anchors=("CÓDIGO INTERNO", "CODIGO INTERNO"),
+            primary_anchors=("CÓDIGO INTERNO", "CODIGO INTERNO", "COD. INTERNO"),
             secondary_anchors=("INVENTARIO GENERAL", "CANT. TOTAL", "CANTIDAD"),
             minimum_anchor_matches=1,
-            anchor_match_policy=AnchorMatchPolicy.ANCHORS_REQUIRED,
+            anchor_match_policy=AnchorMatchPolicy.ANCHORS_PREFERRED,
             allow_rotation=True,
             allow_deskew=True,
             allow_perspective_correction=True,
@@ -521,6 +536,7 @@ class ReferenceAnnotation:
 
 __all__ = [
     "AdditionalFieldRule",
+    "AnchorMatchPolicy",
     "CodeValidationRules",
     "EanValidationRules",
     "ExtractionProfileConfiguration",
@@ -529,11 +545,19 @@ __all__ = [
     "FieldDataType",
     "INTERNAL_CODE_SOURCE_KEYS",
     "InternalCodeSourceRule",
+    "LabelBackgroundHint",
+    "LabelDetectionRules",
+    "LabelOrientationHint",
+    "LabelShapeHint",
+    "MissingQuantityAction",
     "QrPayloadFormat",
     "QuantityExtractionRules",
+    "QuantityPresence",
     "ReferenceAnnotation",
     "SUPPORTED_BARCODE_FORMATS",
     "SpatialRelation",
     "SupplierExtractionProfile",
+    "UnanchoredCodeCandidatePolicy",
     "default_extraction_configuration",
+    "inventory_seven_digit_internal_code_template",
 ]

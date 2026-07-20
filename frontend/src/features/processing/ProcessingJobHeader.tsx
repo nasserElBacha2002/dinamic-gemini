@@ -2,6 +2,10 @@ import { useTranslation } from 'react-i18next';
 import { Box, Paper, Typography } from '@mui/material';
 import type { JobSummary } from '../../api/types';
 import type { ProcessingJobProgressSummary } from '../../api/types/processing';
+import {
+  buildJobExecutionPresentation,
+  strategyLabelKey,
+} from './mappers/processingExecutionPresentation';
 
 export interface ProcessingJobHeaderProps {
   job: JobSummary | null;
@@ -35,6 +39,18 @@ export default function ProcessingJobHeader({ job, summary, isLoading }: Process
   }
 
   const progress = summary ?? job.asset_progress ?? null;
+  const presentation = buildJobExecutionPresentation({
+    identification_mode: job.identification_mode,
+    execution_strategy: job.execution_strategy,
+    current_stage: job.current_stage,
+    provider_name: job.provider_name,
+    model_name: job.model_name,
+    prompt_key: job.prompt_key,
+    result_json: (job as { result_json?: Record<string, unknown> | null }).result_json ?? null,
+    external_execution_used:
+      Number(job.fallback_progress?.resolved_external || 0) > 0 ||
+      Number(job.fallback_progress?.fallback_requested || 0) > 0,
+  });
 
   return (
     <Paper variant="outlined" sx={{ p: 1.5 }} data-testid="processing-job-header">
@@ -51,18 +67,31 @@ export default function ProcessingJobHeader({ job, summary, isLoading }: Process
           </Typography>
           <Typography variant="caption">
             {job.execution_strategy
-              ? t(`aisle.execution_strategy_${String(job.execution_strategy).toLowerCase()}`, {
+              ? t(strategyLabelKey(job.execution_strategy), {
                   defaultValue: String(job.execution_strategy),
                 })
               : dash}
           </Typography>
 
           <Typography variant="caption" color="text.secondary">
-            {t('processing.header.profile')}
+            {t('aisle.obs_external_provider_used')}
           </Typography>
-          <Typography variant="caption">
-            {[job.provider_name, job.model_name, job.prompt_key].filter(Boolean).join(' · ') || dash}
+          <Typography variant="caption" data-testid="processing-job-external-provider-used">
+            {presentation.externalProviderUsedLabel === 'yes'
+              ? t('aisle.obs_external_provider_yes')
+              : t('aisle.obs_external_provider_no')}
           </Typography>
+
+          {presentation.showProviderModelRows ? (
+            <>
+              <Typography variant="caption" color="text.secondary">
+                {t('processing.header.profile')}
+              </Typography>
+              <Typography variant="caption">
+                {[job.provider_name, job.model_name, job.prompt_key].filter(Boolean).join(' · ') || dash}
+              </Typography>
+            </>
+          ) : null}
 
           {progress ? (
             <>

@@ -28,8 +28,6 @@ export interface AisleResultsHeaderProps {
   onExport: () => void;
   refreshDisabled: boolean;
   onRefresh: () => void;
-  onOpenCodeScan?: () => void;
-  codeScanDisabled?: boolean;
   onOpenObservability?: () => void;
   onEditName?: () => void;
   onDeactivate?: () => void;
@@ -58,8 +56,6 @@ export default function AisleResultsHeader({
   onExport,
   refreshDisabled,
   onRefresh,
-  onOpenCodeScan,
-  codeScanDisabled = false,
   onOpenObservability,
   onEditName,
   onDeactivate,
@@ -205,18 +201,6 @@ export default function AisleResultsHeader({
                     }}
                   >
                     {t('positions.promote_run')}
-                  </MenuItem>
-                ) : null}
-                {onOpenCodeScan ? (
-                  <MenuItem
-                    data-testid="aisle-code-scan-menu-open"
-                    onClick={() => {
-                      handleCloseMoreActions();
-                      onOpenCodeScan();
-                    }}
-                    disabled={codeScanDisabled}
-                  >
-                    {t('aisleCodeScans.actions.open')}
                   </MenuItem>
                 ) : null}
                 {onOpenObservability ? (

@@ -47,7 +47,11 @@ def test_seven_digit_template_is_opt_in() -> None:
     assert tpl.validation_rules.code.exact_length == 7
     assert tpl.validation_rules.code.allow_letters is False
     assert tpl.label_detection_rules.expected_background is LabelBackgroundHint.LIGHT
-    assert tpl.label_detection_rules.anchor_match_policy is AnchorMatchPolicy.ANCHORS_REQUIRED
+    assert tpl.label_detection_rules.anchor_match_policy is AnchorMatchPolicy.ANCHORS_PREFERRED
+    assert (
+        tpl.validation_rules.code.unanchored_candidate_policy.value
+        == "ALLOW_FOR_MANUAL_REVIEW"
+    )
     assert any(
         s.field_key == "EAN" and s.enabled is False for s in tpl.internal_code_sources
     )

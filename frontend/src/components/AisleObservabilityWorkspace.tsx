@@ -51,6 +51,12 @@ import {
 import { ProcessingWorkspace } from '../features/processing';
 import { useProcessingObservabilityCapabilities } from '../features/processing/hooks';
 import {
+  buildJobExecutionPresentation,
+  buildObsContentTabsForJob,
+  strategyLabelKey,
+  type ProcessingObsTabId,
+} from '../features/processing/mappers/processingExecutionPresentation';
+import {
   PROCESSING_TAB_QUERY_VALUE,
   clearProcessingFilterParams,
 } from '../features/processing/utils/processingUrlFilters';
@@ -82,10 +88,28 @@ function shortJobId(id: string): string {
 }
 
 function jobOptionLabel(job: JobSummary): string {
-  const head = [job.provider_name, job.model_name]
-    .filter((x) => x != null && String(x).trim() !== '')
-    .join(' · ');
-  if (head) return `${head} · ${shortJobId(job.id)}`;
+  const presentation = buildJobExecutionPresentation({
+    identification_mode: job.identification_mode,
+    execution_strategy: job.execution_strategy,
+    current_stage: job.current_stage,
+    provider_name: job.provider_name,
+    model_name: job.model_name,
+    external_execution_used:
+      Number(job.fallback_progress?.resolved_external || 0) > 0 ||
+      Number(job.fallback_progress?.fallback_requested || 0) > 0,
+  });
+  if (presentation.showProviderModelRows) {
+    const head = [job.provider_name, job.model_name]
+      .filter((x) => x != null && String(x).trim() !== '')
+      .join(' · ');
+    if (head) return `${head} · ${shortJobId(job.id)}`;
+  }
+  const strategy = job.execution_strategy
+    ? i18n.t(strategyLabelKey(job.execution_strategy), {
+        defaultValue: String(job.execution_strategy),
+      })
+    : null;
+  if (strategy) return `${strategy} · ${shortJobId(job.id)}`;
   return shortJobId(job.id);
 }
 
@@ -96,20 +120,31 @@ function jobMetadataRows(
   if (!job) return [];
   const displayFinished = resolveDisplayFinishedAt(job, executionLogEvents);
   const dash = i18n.t('common.em_dash');
+  const presentation = buildJobExecutionPresentation({
+    identification_mode: job.identification_mode,
+    execution_strategy: job.execution_strategy,
+    current_stage: job.current_stage,
+    provider_name: job.provider_name,
+    model_name: job.model_name,
+    prompt_key: job.prompt_key,
+    result_json: (job as { result_json?: Record<string, unknown> | null }).result_json ?? null,
+    external_execution_used:
+      Number(job.fallback_progress?.resolved_external || 0) > 0 ||
+      Number(job.fallback_progress?.fallback_requested || 0) > 0,
+  });
   return [
     { label: i18n.t('jobs.obs_started'), value: formatOptionalDate(job.started_at) },
     { label: i18n.t('jobs.obs_finished'), value: formatOptionalDate(displayFinished) },
     { label: i18n.t('jobs.obs_last_heartbeat'), value: formatOptionalDate(job.last_heartbeat_at) },
     { label: i18n.t('jobs.obs_cancel_requested'), value: formatOptionalDate(job.cancel_requested_at) },
-    { label: i18n.t('jobs.obs_current_stage'), value: job.current_stage || dash },
+    { label: i18n.t('jobs.obs_current_stage'), value: presentation.currentStageLabel || dash },
     ...(job.execution_strategy
       ? [
           {
             label: i18n.t('jobs.obs_execution_strategy'),
-            value: i18n.t(
-              `aisle.execution_strategy_${String(job.execution_strategy).toLowerCase()}`,
-              { defaultValue: String(job.execution_strategy) },
-            ),
+            value: i18n.t(strategyLabelKey(job.execution_strategy), {
+              defaultValue: String(job.execution_strategy),
+            }),
           },
           ...(job.identification_mode
             ? [
@@ -121,6 +156,13 @@ function jobMetadataRows(
                 },
               ]
             : []),
+          {
+            label: i18n.t('aisle.obs_external_provider_used'),
+            value:
+              presentation.externalProviderUsedLabel === 'yes'
+                ? i18n.t('aisle.obs_external_provider_yes')
+                : i18n.t('aisle.obs_external_provider_no'),
+          },
           {
             label: i18n.t('jobs.obs_execution_scope'),
             value:
@@ -195,10 +237,14 @@ function jobMetadataRows(
     { label: i18n.t('jobs.obs_current_step'), value: job.current_substep || dash },
     { label: i18n.t('jobs.obs_step_started'), value: formatOptionalDate(job.current_step_started_at) },
     { label: i18n.t('common.execution_id'), value: job.execution_id || dash },
-    { label: i18n.t('jobs.obs_provider_row'), value: job.provider_name || dash },
-    { label: i18n.t('jobs.obs_model_row'), value: job.model_name || dash },
-    { label: i18n.t('jobs.obs_prompt_key'), value: job.prompt_key || dash },
-    { label: i18n.t('jobs.obs_prompt_version'), value: job.prompt_version || dash },
+    ...(presentation.showProviderModelRows
+      ? [
+          { label: i18n.t('jobs.obs_provider_row'), value: job.provider_name || dash },
+          { label: i18n.t('jobs.obs_model_row'), value: job.model_name || dash },
+          { label: i18n.t('jobs.obs_prompt_key'), value: job.prompt_key || dash },
+          { label: i18n.t('jobs.obs_prompt_version'), value: job.prompt_version || dash },
+        ]
+      : []),
     {
       label: i18n.t('jobs.obs_attempt_row'),
       value: job.attempt_count ? i18n.t('jobs.attempt_number', { count: job.attempt_count }) : dash,
@@ -241,27 +287,17 @@ export interface AisleObservabilityWorkspaceProps {
 
 type LogScope = 'merged' | 'job';
 
-type ObsContentTab =
-  | 'events'
-  | 'processing'
-  | 'prompt'
-  | 'attachments'
-  | 'traceability'
-  | 'auditability'
-  | 'diagnostics';
+type ObsContentTab = ProcessingObsTabId;
 
-function buildObsContentTabs(processingEnabled: boolean): ObsContentTab[] {
-  const base: ObsContentTab[] = [
-    'events',
-    'prompt',
-    'attachments',
-    'traceability',
-    'auditability',
-    'diagnostics',
-  ];
-  if (!processingEnabled) return base;
-  return ['events', 'processing', ...base.slice(1)];
-}
+const OBS_TAB_LABEL_KEYS: Record<ObsContentTab, string> = {
+  events: 'jobs.obs_tab_events',
+  processing: 'jobs.obs_tab_processing',
+  prompt: 'jobs.obs_tab_prompt',
+  attachments: 'jobs.obs_tab_attachments',
+  traceability: 'jobs.obs_tab_traceability',
+  auditability: 'jobs.obs_tab_auditability',
+  diagnostics: 'jobs.obs_tab_diagnostics',
+};
 
 export default function AisleObservabilityWorkspace({
   inventoryId,
@@ -276,10 +312,6 @@ export default function AisleObservabilityWorkspace({
   const [searchParams, setSearchParams] = useSearchParams();
   const processingCapabilities = useProcessingObservabilityCapabilities({ enabled: active });
   const processingObservabilityEnabled = processingCapabilities.processing_observability_enabled;
-  const contentTabs = useMemo(
-    () => buildObsContentTabs(processingObservabilityEnabled),
-    [processingObservabilityEnabled]
-  );
   const [logScope, setLogScope] = useState<LogScope>(() => (initialSelectedJobId ? 'job' : 'merged'));
   const [selectedJobId, setSelectedJobId] = useState<string>(() => initialSelectedJobId ?? '');
   const [contentTab, setContentTab] = useState<ObsContentTab>(() =>
@@ -344,6 +376,25 @@ export default function AisleObservabilityWorkspace({
 
   const selectedJob = jobDetailQuery.data ?? null;
   const jobs = jobsListQuery.data?.jobs ?? [];
+
+  const jobPresentation = useMemo(
+    () =>
+      buildJobExecutionPresentation({
+        identification_mode: selectedJob?.identification_mode,
+        execution_strategy: selectedJob?.execution_strategy,
+        current_stage: selectedJob?.current_stage,
+        provider_name: selectedJob?.provider_name,
+        model_name: selectedJob?.model_name,
+        prompt_key: selectedJob?.prompt_key,
+        result_json:
+          (selectedJob as { result_json?: Record<string, unknown> | null } | null)?.result_json ??
+          null,
+        external_execution_used:
+          Number(selectedJob?.fallback_progress?.resolved_external || 0) > 0 ||
+          Number(selectedJob?.fallback_progress?.fallback_requested || 0) > 0,
+      }),
+    [selectedJob]
+  );
 
   const executionEventsForFinished = logScope === 'job' ? executionLogQuery.data?.events : null;
 
@@ -430,6 +481,40 @@ export default function AisleObservabilityWorkspace({
     setLogScope(scope);
   };
 
+  const lastProviderRequest = useMemo((): {
+    event: ExecutionLogEvent;
+    request: ProviderRequestLogPayload;
+  } | null => {
+    const events = panelLog?.events ?? [];
+    let last: { event: ExecutionLogEvent; request: ProviderRequestLogPayload } | null = null;
+    for (const e of events) {
+      const p = parseProviderRequestPayload(e);
+      if (p) last = { event: e, request: p };
+    }
+    return last;
+  }, [panelLog]);
+
+  const hasAttachments = Boolean(
+    (lastProviderRequest?.request.primary_evidence_attachments?.length ?? 0) > 0 ||
+      (lastProviderRequest?.request.visual_reference_attachments?.length ?? 0) > 0
+  );
+
+  const contentTabs = useMemo(
+    () =>
+      buildObsContentTabsForJob({
+        processingEnabled: processingObservabilityEnabled,
+        presentation: jobPresentation,
+        hasAttachments,
+      }),
+    [processingObservabilityEnabled, jobPresentation, hasAttachments]
+  );
+
+  useEffect(() => {
+    if (!contentTabs.includes(contentTab)) {
+      setContentTab(contentTabs[0] ?? 'events');
+    }
+  }, [contentTabs, contentTab]);
+
   const onContentTabChange = (_: unknown, nextIndex: number) => {
     const nextTab = contentTabs[nextIndex] ?? 'events';
     setContentTab(nextTab);
@@ -445,19 +530,6 @@ export default function AisleObservabilityWorkspace({
   };
 
   const contentTabIndex = Math.max(0, contentTabs.indexOf(contentTab));
-
-  const lastProviderRequest = useMemo((): {
-    event: ExecutionLogEvent;
-    request: ProviderRequestLogPayload;
-  } | null => {
-    const events = panelLog?.events ?? [];
-    let last: { event: ExecutionLogEvent; request: ProviderRequestLogPayload } | null = null;
-    for (const e of events) {
-      const p = parseProviderRequestPayload(e);
-      if (p) last = { event: e, request: p };
-    }
-    return last;
-  }, [panelLog]);
 
   const effectivePrompt = useMemo(() => {
     const comp = lastProviderRequest?.request.prompt_composition;
@@ -733,15 +805,13 @@ export default function AisleObservabilityWorkspace({
             scrollButtons="auto"
             sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
           >
-            <Tab label={t('jobs.obs_tab_events')} />
-            {processingObservabilityEnabled ? (
-              <Tab label={t('jobs.obs_tab_processing')} data-testid="obs-tab-processing" />
-            ) : null}
-            <Tab label={t('jobs.obs_tab_prompt')} />
-            <Tab label={t('jobs.obs_tab_attachments')} />
-            <Tab label={t('jobs.obs_tab_traceability')} />
-            <Tab label={t('jobs.obs_tab_auditability')} />
-            <Tab label={t('jobs.obs_tab_diagnostics')} />
+            {contentTabs.map((tabId) => (
+              <Tab
+                key={tabId}
+                label={t(OBS_TAB_LABEL_KEYS[tabId])}
+                data-testid={tabId === 'processing' ? 'obs-tab-processing' : `obs-tab-${tabId}`}
+              />
+            ))}
           </Tabs>
 
           {contentTab === 'events' ? (

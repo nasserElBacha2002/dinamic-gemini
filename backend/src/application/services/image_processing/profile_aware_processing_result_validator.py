@@ -37,6 +37,10 @@ class FieldCandidate:
     # candidates with labeled=True are eligible.
     labeled: bool = True
     barcode_format: str | None = None
+    extraction_method: str | None = None
+    spatial_relation: str | None = None
+    normalized_distance: float | None = None
+    anchor_text: str | None = None
 
 
 @dataclass
@@ -140,14 +144,18 @@ class ProfileAwareProcessingResultValidator:
     ) -> tuple[str | None, str | None, list[str]]:
         if not candidates:
             return None, None, [ExtractionValidationErrorCode.MISSING_INTERNAL_CODE.value]
+        from src.application.services.image_processing.ocr_candidate_ranker import (
+            rank_code_candidates,
+        )
+
         forbidden = {s.upper() for s in self._config.forbidden_internal_code_sources}
         configured_keys = {
             s.field_key.upper() for s in self._config.internal_code_sources
         }
         by_source: dict[str, list[FieldCandidate]] = {}
         for c in candidates:
-            key = c.source_key.strip().upper()
-            if key in forbidden:
+            key = (c.source_key or "").strip().upper()
+            if not key or key in forbidden:
                 continue
             # Unconfigured sources are ignored (no permissive fallback).
             if key not in configured_keys:
@@ -166,14 +174,12 @@ class ProfileAwareProcessingResultValidator:
                 opts = [o for o in opts if o.labeled]
             if not opts:
                 continue
-            # Ambiguity: two comparable candidates for same source.
-            distinct = {self._normalize_code(o.value) for o in opts if o.value}
-            distinct.discard("")
-            if len(distinct) > 1:
-                scores = {o.evidence_score for o in opts}
-                if len(scores) <= 1 or max(scores) - min(scores) < 0.05:
-                    return None, None, [ExtractionValidationErrorCode.AMBIGUOUS_INTERNAL_CODE.value]
-            chosen = max(opts, key=lambda o: o.evidence_score)
+            decision = rank_code_candidates(opts)
+            if decision.ambiguous:
+                return None, None, [ExtractionValidationErrorCode.AMBIGUOUS_INTERNAL_CODE.value]
+            if decision.winner is None:
+                continue
+            chosen = decision.winner
             code = self._normalize_code(chosen.value)
             if source.pattern:
                 # Literal/substring policy only — custom regex is rejected at parse time.
@@ -189,15 +195,28 @@ class ProfileAwareProcessingResultValidator:
             eligible = [
                 c
                 for c in candidates
-                if c.source_key.strip().upper() not in forbidden
+                if (c.source_key or "").strip().upper() not in forbidden
             ]
             if eligible:
-                c = max(eligible, key=lambda o: o.evidence_score)
+                decision = rank_code_candidates(eligible)
+                if decision.ambiguous:
+                    return (
+                        None,
+                        None,
+                        [ExtractionValidationErrorCode.AMBIGUOUS_INTERNAL_CODE.value],
+                    )
+                if decision.winner is None:
+                    return (
+                        None,
+                        None,
+                        [ExtractionValidationErrorCode.MISSING_INTERNAL_CODE.value],
+                    )
+                c = decision.winner
                 code = self._normalize_code(c.value)
-                err = self._validate_code_value(code, source_key=c.source_key.upper())
+                err = self._validate_code_value(code, source_key=(c.source_key or "").upper())
                 if err:
                     return None, None, [err]
-                return code or None, c.source_key.upper(), []
+                return code or None, (c.source_key or "").upper(), []
 
         return None, None, [ExtractionValidationErrorCode.MISSING_INTERNAL_CODE.value]
 
@@ -218,7 +237,11 @@ class ProfileAwareProcessingResultValidator:
         values = {q for q, _ in parsed}
         if len(values) > 1:
             return None, None, [ExtractionValidationErrorCode.AMBIGUOUS_QUANTITY.value]
-        q, c = max(parsed, key=lambda t: t[1].evidence_score)
+        from src.application.services.image_processing.ocr_candidate_ranker import (
+            safe_confidence,
+        )
+
+        q, c = max(parsed, key=lambda t: safe_confidence(t[1]))
         if q < rules.minimum or q > rules.maximum:
             return None, None, [ExtractionValidationErrorCode.INVALID_QUANTITY.value]
         if rules.allow_negative is False and q < 0:

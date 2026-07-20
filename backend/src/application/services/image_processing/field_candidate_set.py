@@ -76,6 +76,8 @@ def apply_profile_validation(
     for_external: bool = False,
 ) -> ImageProcessingResult:
     """Run ProfileAwareProcessingResultValidator and map to ImageProcessingResult."""
+    from src.domain.client_supplier.extraction_profile import UnanchoredCodeCandidatePolicy
+
     validator = ProfileAwareProcessingResultValidator(configuration)
     outcome: ProfileValidationResult = validator.validate_resolved(
         code_candidates=candidates.code_candidates,
@@ -90,7 +92,23 @@ def apply_profile_validation(
         "profile_validation_executed": True,
         "validation_errors": list(outcome.errors),
     }
-    if outcome.ok:
+    policy = configuration.validation_rules.code.unanchored_candidate_policy
+    unanchored_selected = any(
+        (not c.labeled)
+        and c.source_key.upper() == "INTERNAL_CODE"
+        and (c.extraction_method or "") == "NUMERIC_PATTERN"
+        and outcome.internal_code
+        and c.value.replace(" ", "") == (outcome.internal_code or "").replace(" ", "")
+        for c in candidates.code_candidates
+    )
+    # First-correction policy: unanchored strong codes never auto-resolve.
+    force_manual_unanchored = (
+        unanchored_selected
+        and policy is UnanchoredCodeCandidatePolicy.ALLOW_FOR_MANUAL_REVIEW
+        and outcome.internal_code
+    )
+
+    if outcome.ok and not force_manual_unanchored:
         status = (
             ImageResultStatus.RESOLVED_EXTERNAL
             if for_external
@@ -120,15 +138,79 @@ def apply_profile_validation(
             logical_asset_attempt=False,
         )
 
+    errors = list(outcome.errors)
+    warnings = list(candidates.warnings) + list(outcome.warnings)
+    if force_manual_unanchored:
+        warnings.append("UNANCHORED_CODE_REQUIRES_REVIEW")
+        if "MISSING_QUANTITY" not in errors and outcome.quantity is None:
+            errors.append("MISSING_QUANTITY")
+
+    # Prefer MissingQuantityResolutionPolicy when code is present and qty missing.
+    if outcome.internal_code and outcome.quantity is None:
+        from src.application.services.image_processing.missing_quantity_resolution_policy import (
+            MissingQuantityResolutionPolicy,
+        )
+
+        mq = MissingQuantityResolutionPolicy().resolve(
+            rules=configuration.quantity_rules,
+            has_valid_internal_code=True,
+            quantity_found=False,
+        )
+        if mq is not None:
+            evidence["missing_quantity_policy"] = mq.reason
+            evidence["fallback_eligible"] = mq.allow_external_fallback
+            return ImageProcessingResult(
+                job_id=job_id,
+                asset_id=asset_id,
+                status=mq.status,
+                processing_mode=processing_mode,
+                resolved_by=resolved_by,
+                internal_code=outcome.internal_code,
+                quantity=None,
+                additional_fields=dict(outcome.additional_fields),
+                validation_errors=list(dict.fromkeys(errors + [mq.error_code])),
+                warnings=warnings,
+                evidence=evidence,
+                provider_name=provider_name,
+                model_name=model_name,
+                processing_duration_ms=duration_ms,
+                error_code=mq.error_code,
+                error_message="Profile validation failed",
+                execution_scope=ExecutionScope.SINGLE_ASSET,
+                logical_asset_attempt=False,
+            )
+
+    if force_manual_unanchored and outcome.internal_code:
+        return ImageProcessingResult(
+            job_id=job_id,
+            asset_id=asset_id,
+            status=ImageResultStatus.PENDING_MANUAL_REVIEW,
+            processing_mode=processing_mode,
+            resolved_by=resolved_by,
+            internal_code=outcome.internal_code,
+            quantity=float(outcome.quantity) if outcome.quantity is not None else None,
+            additional_fields=dict(outcome.additional_fields),
+            validation_errors=list(dict.fromkeys(errors or ["UNANCHORED_CODE_REQUIRES_REVIEW"])),
+            warnings=warnings,
+            evidence=evidence,
+            provider_name=provider_name,
+            model_name=model_name,
+            processing_duration_ms=duration_ms,
+            error_code="UNANCHORED_CODE_REQUIRES_REVIEW",
+            error_message="Unanchored code requires manual review",
+            execution_scope=ExecutionScope.SINGLE_ASSET,
+            logical_asset_attempt=False,
+        )
+
     missing_both = (
-        "MISSING_INTERNAL_CODE" in outcome.errors and "MISSING_QUANTITY" in outcome.errors
+        "MISSING_INTERNAL_CODE" in errors and "MISSING_QUANTITY" in errors
     )
     if missing_both and not outcome.internal_code and outcome.quantity is None:
         status = ImageResultStatus.UNRECOGNIZED
-        error_code = outcome.errors[0] if outcome.errors else "UNRECOGNIZED"
-    elif outcome.errors:
+        error_code = errors[0] if errors else "UNRECOGNIZED"
+    elif errors:
         status = ImageResultStatus.PENDING_MANUAL_REVIEW
-        error_code = outcome.errors[0]
+        error_code = errors[0]
     else:
         status = ImageResultStatus.UNRECOGNIZED
         error_code = "UNRECOGNIZED"
@@ -142,8 +224,8 @@ def apply_profile_validation(
         internal_code=outcome.internal_code,
         quantity=float(outcome.quantity) if outcome.quantity is not None else None,
         additional_fields=dict(outcome.additional_fields),
-        validation_errors=list(outcome.errors),
-        warnings=list(candidates.warnings) + list(outcome.warnings),
+        validation_errors=list(errors),
+        warnings=warnings,
         evidence=evidence,
         provider_name=provider_name,
         model_name=model_name,

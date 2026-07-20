@@ -44,6 +44,40 @@ PUBLIC_OPERATIONAL_KEYS = frozenset(
         "language",
         "selected_variant",
         "text_block_count",
+        # OCR / label-detection operational counters (no raw OCR text).
+        "byte_length",
+        "candidate_count",
+        "selected",
+        "variant",
+        "psm",
+        "failure_reason",
+        "total_assets",
+        "assets_eligible",
+        "assets_skipped",
+        "resolved",
+        "unrecognized",
+        "manual_review",
+        "failed_technical",
+        "pending",
+        "cancelled",
+        "numeric_token_count",
+        "normalized_token_count",
+        "configured_anchor_count",
+        "exact_match_count",
+        "fuzzy_match_count",
+        "matched_anchor_count",
+        "code_before_filter",
+        "code_after_filter",
+        "quantity_before_filter",
+        "quantity_after_filter",
+        "rejected_candidate_count",
+        "code_candidates_after_filter",
+        "raw_numeric_token_count",
+        "masked_value",
+        "length",
+        "reason_code",
+        "source",
+        "field",
     }
 )
 
@@ -59,12 +93,41 @@ TECHNICAL_SAFE_KEYS = PUBLIC_OPERATIONAL_KEYS | frozenset(
         "validation_result",
         "execution_scope",
         "variants_attempted",
+        "variants_succeeded",
         "preprocessing_variant",
         "rotation",
         "region",
         "eligibility_reason",
         "retry_count",
         "circuit_breaker_state",
+        # Label detection / geometry diagnostics (no image bytes or full OCR text).
+        "selected_relative_area",
+        "matched_anchors",
+        "light_ocr_executed",
+        "light_ocr_failed",
+        "anchor_requirement_met",
+        "anchor_match_policy",
+        "deskew_applied",
+        "perspective_transform_applied",
+        "applied_rotation_deg",
+        "used_original_region",
+        "used_full_image_fallback",
+        "successful_engine_call",
+        "error_type",
+        "validation_errors",
+        "code_candidates_before_filter",
+        "quantity_candidates_before_filter",
+        "raw_alphanumeric_token_count",
+        "extraction_method",
+        "rejection_reasons",
+        "exception_type",
+        "safe_message",
+        "stage",
+        "code_candidates_count",
+        "quantity_candidates_count",
+        "status",
+        "internal_code_status",
+        "quantity_status",
     }
 )
 
@@ -104,6 +167,13 @@ def sanitize_metadata(
     for key, value in raw.items():
         lk = str(key)
         if lk not in allowed and lk.lower() not in {a.lower() for a in allowed}:
+            continue
+        if lk == "rejection_reasons" and isinstance(value, dict):
+            # Aggregated reason → count map (keys are reason codes, values ints).
+            out[key] = {
+                str(rk)[:80]: (int(rv) if isinstance(rv, (int, float)) else 0)
+                for rk, rv in list(value.items())[:50]
+            }
             continue
         out[key] = _sanitize_value(value, level=level, depth=_depth + 1)
     return out

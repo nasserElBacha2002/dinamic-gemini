@@ -64,6 +64,7 @@ export interface LabelDetectionRules {
   primary_anchors?: string[];
   secondary_anchors?: string[];
   minimum_anchor_matches?: number;
+  anchor_match_policy?: 'ANCHORS_REQUIRED' | 'ANCHORS_PREFERRED' | 'GEOMETRY_ONLY_ALLOWED' | string;
   minimum_relative_area?: number;
   maximum_relative_area?: number;
   allow_rotation?: boolean;
@@ -95,6 +96,11 @@ export interface CodeValidationRules {
   preserve_leading_zeros: boolean;
   regex?: string | null;
   reject_measurement_patterns?: boolean;
+  unanchored_candidate_policy?:
+    | 'REJECT'
+    | 'ALLOW_FOR_MANUAL_REVIEW'
+    | 'ALLOW_IF_UNIQUE_AND_STRONG'
+    | string;
 }
 
 export interface EanValidationRules {

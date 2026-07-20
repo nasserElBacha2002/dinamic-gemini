@@ -44,6 +44,9 @@ from src.application.services.image_processing.ocr_client_field_rules import (
     resolve_ocr_client_field_rules,
 )
 from src.application.services.job_stale_reconciler import JobStaleReconciler
+from src.application.services.legacy_processing_guard import (
+    reject_legacy_mode_for_new_job,
+)
 from src.application.services.process_aisle_execution_resolution import (
     resolve_process_aisle_execution_keys,
 )
@@ -246,6 +249,7 @@ class StartAisleProcessingUseCase:
                 client_mode = client.default_identification_mode
 
         settings = load_settings()
+        reject_legacy_mode_for_new_job(command.requested_identification_mode)
         resolution = resolve_aisle_identification_mode(
             request_mode=command.requested_identification_mode,
             aisle_mode=aisle.identification_mode,

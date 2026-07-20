@@ -291,7 +291,12 @@ class V3JobExecutionStateService:
         job.updated_at = completion_now
         job.finished_at = completion_now
         job.last_heartbeat_at = completion_now
-        job.current_stage = "CodeScan"
+        job.current_stage = (
+            "InternalOcr"
+            if str(getattr(job.execution_strategy, "value", job.execution_strategy)).upper()
+            == "INTERNAL_OCR"
+            else "CodeScan"
+        )
         job.current_substep = "completed"
         result_json = dict(job.result_json or {})
         result_json["execution_strategy"] = getattr(

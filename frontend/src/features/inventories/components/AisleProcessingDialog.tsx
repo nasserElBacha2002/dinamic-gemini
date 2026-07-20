@@ -3,6 +3,10 @@ import { useTranslation } from 'react-i18next';
 import BaseDialog from '../../../components/ui/BaseDialog';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import type { AisleIdentificationMode, ProcessingProviderOptionsResponse } from '../../../api/types';
+import {
+  PROCESS_AISLE_IDENTIFICATION_OPTIONS,
+  isLegacyIdentificationMode,
+} from '../../processing/mappers/processingExecutionPresentation';
 import { INHERITED_IDENTIFICATION_MODE } from '../hooks/useAisleProcessingFlow';
 
 /** Narrow query surface for the dialog — avoids coupling to full react-query generics. */
@@ -43,11 +47,7 @@ export interface AisleProcessingDialogProps {
   confirmBusyLabel: boolean;
 }
 
-const IDENTIFICATION_OPTIONS: AisleIdentificationMode[] = [
-  'CODE_SCAN',
-  'INTERNAL_OCR',
-  'LEGACY_LLM',
-];
+const IDENTIFICATION_OPTIONS: AisleIdentificationMode[] = PROCESS_AISLE_IDENTIFICATION_OPTIONS;
 
 export default function AisleProcessingDialog({
   open,
@@ -91,10 +91,12 @@ export default function AisleProcessingDialog({
       : modelKey || (productionMode && productionProvidersReady ? providerConfig?.default_model ?? '' : '');
 
   const usingInherited = identificationMode === INHERITED_IDENTIFICATION_MODE;
-  const effectiveDisplayMode = String(inheritedEffectiveMode || 'LEGACY_LLM');
+  const effectiveDisplayMode = String(inheritedEffectiveMode || 'INTERNAL_OCR');
   const selectedExplicitMode = usingInherited ? effectiveDisplayMode : String(identificationMode);
-  const showPhase1Warning =
+  const showAiProviderControls = isLegacyIdentificationMode(selectedExplicitMode);
+  const showModeHelp =
     selectedExplicitMode === 'INTERNAL_OCR' || selectedExplicitMode === 'CODE_SCAN';
+  const showLegacyRetirementWarning = isLegacyIdentificationMode(selectedExplicitMode);
 
   const sourceLabel = identificationModeSource
     ? t(`aisle.identification_source_${String(identificationModeSource).toLowerCase()}`, {
@@ -102,8 +104,11 @@ export default function AisleProcessingDialog({
       })
     : t('aisle.identification_source_system_default');
 
-  const inheritedOptionLabel = t('aisle.identification_use_inherited', {
-    mode: effectiveDisplayMode,
+  const inheritedModeLabel = t(`aisle.identification_mode_${effectiveDisplayMode.toLowerCase()}`, {
+    defaultValue: effectiveDisplayMode,
+  });
+  const inheritedOptionLabel = t('aisle.identification_use_default', {
+    mode: inheritedModeLabel,
     source: sourceLabel,
   });
 
@@ -166,8 +171,8 @@ export default function AisleProcessingDialog({
         </FormControl>
         <Typography variant="body2" color="text.secondary" data-testid="process-identification-help">
           {usingInherited
-            ? t('aisle.identification_will_use_inherited', {
-                mode: effectiveDisplayMode,
+            ? t('aisle.identification_will_use_default', {
+                mode: inheritedModeLabel,
                 source: sourceLabel,
               })
             : t('aisle.identification_override_only_this_run')}
@@ -178,19 +183,29 @@ export default function AisleProcessingDialog({
           </Typography>
         ) : (
           <Typography variant="caption" color="text.secondary" data-testid="process-identification-source">
-            {t('aisle.identification_inherited_reference', {
-              mode: effectiveDisplayMode,
+            {t('aisle.identification_default_reference', {
+              mode: inheritedModeLabel,
               source: sourceLabel,
             })}
           </Typography>
         )}
-        {showPhase1Warning ? (
-          <Alert severity="info" variant="outlined" data-testid="process-identification-phase1-warning">
-            {t('aisle.identification_phase1_warning')}
+        {showModeHelp ? (
+          <Alert severity="info" variant="outlined" data-testid="process-identification-mode-help">
+            {t(`aisle.identification_mode_${selectedExplicitMode.toLowerCase()}_help`)}
+            {selectedExplicitMode === 'INTERNAL_OCR' ? (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                {t('aisle.identification_ocr_fallback_note')}
+              </Typography>
+            ) : null}
+          </Alert>
+        ) : null}
+        {showLegacyRetirementWarning ? (
+          <Alert severity="warning" variant="outlined" data-testid="process-legacy-retirement-warning">
+            {t('aisle.identification_legacy_retirement_warning')}
           </Alert>
         ) : null}
 
-        {!deferProviderModelSelects ? (
+        {showAiProviderControls && !deferProviderModelSelects ? (
           <>
             <FormControl
               fullWidth
@@ -264,28 +279,33 @@ export default function AisleProcessingDialog({
                 ))}
               </Select>
             </FormControl>
+            <Alert severity="info" variant="outlined">
+              <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                {t('aisle.process_prompt_used_heading')}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {t('aisle.process_prompt_auto_body')}
+              </Typography>
+              {clientSupplierId ? (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  {t('aisle.process_prompt_supplier_linked')}
+                </Typography>
+              ) : (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  {t('aisle.process_prompt_no_supplier')}
+                </Typography>
+              )}
+            </Alert>
           </>
         ) : null}
 
-        <Alert severity="info" variant="outlined">
-          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
-            {t('aisle.process_prompt_used_heading')}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {t('aisle.process_prompt_auto_body')}
-          </Typography>
-          {clientSupplierId ? (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {t('aisle.process_prompt_supplier_linked')}
-            </Typography>
-          ) : (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {t('aisle.process_prompt_no_supplier')}
-            </Typography>
-          )}
-        </Alert>
+        {!showAiProviderControls ? (
+          <Alert severity="success" variant="outlined" data-testid="process-no-immediate-external">
+            {t('aisle.process_no_immediate_external_provider')}
+          </Alert>
+        ) : null}
 
-        {providerOptsQuery.isError ? (
+        {providerOptsQuery.isError && showAiProviderControls ? (
           <Typography variant="caption" color="error">
             {resolveApiErrorMessage(providerOptsQuery.error, 'common.provider_list_error')}
           </Typography>

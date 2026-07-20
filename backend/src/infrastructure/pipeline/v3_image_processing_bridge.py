@@ -443,6 +443,7 @@ def build_default_internal_ocr_strategy(
     *,
     client_id: str | None = None,
     ocr_config_override: dict | None = None,
+    event_publisher=None,
 ):
     """Build :class:`InternalOcrProcessingStrategy` from settings + artifact store.
 
@@ -555,8 +556,9 @@ def build_default_internal_ocr_strategy(
         ),
         variant_plan_version=str(snapshot.get("variant_plan_version") or "v1"),
     )
-    event_publisher = None
-    if bool(getattr(settings, "processing_events_persistence_enabled", False)):
+    if event_publisher is None and bool(
+        getattr(settings, "processing_events_persistence_enabled", False)
+    ):
         try:
             from src.application.services.image_processing.processing_event_publisher import (
                 RepositoryProcessingEventPublisher,

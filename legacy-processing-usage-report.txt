@@ -1,0 +1,62 @@
+# Legacy processing usage report (read-only template)
+
+Generated as part of Phase 8 Etapa A. Execute against production/replica with read-only credentials.
+
+## SQL (SQL Server) — adjust table/column names to match live schema
+
+```sql
+-- Clients with legacy default / override (example shapes — verify columns)
+SELECT c.id, c.name, c.identification_mode, c.updated_at
+FROM clients c
+WHERE UPPER(COALESCE(c.identification_mode, '')) IN ('LEGACY_LLM', 'LEGACY_LLM_TEMPORARY');
+
+-- Inventories
+SELECT i.id, i.client_id, i.identification_mode, i.updated_at
+FROM inventories i
+WHERE UPPER(COALESCE(i.identification_mode, '')) IN ('LEGACY_LLM', 'LEGACY_LLM_TEMPORARY');
+
+-- Aisles
+SELECT a.id, a.inventory_id, a.identification_mode, a.updated_at
+FROM aisles a
+WHERE UPPER(COALESCE(a.identification_mode, '')) IN ('LEGACY_LLM', 'LEGACY_LLM_TEMPORARY');
+
+-- Recent jobs executed with legacy strategy
+SELECT TOP 200
+  j.id,
+  j.aisle_id,
+  j.identification_mode,
+  j.execution_strategy,
+  j.status,
+  j.started_at,
+  j.finished_at
+FROM inventory_jobs j
+WHERE UPPER(COALESCE(j.execution_strategy, j.identification_mode, '')) IN (
+  'LEGACY_LLM', 'LEGACY_LLM_TEMPORARY'
+)
+ORDER BY j.started_at DESC;
+
+-- Counts
+SELECT
+  UPPER(COALESCE(execution_strategy, identification_mode, '')) AS mode_or_strategy,
+  COUNT(*) AS executions,
+  MAX(started_at) AS last_started_at
+FROM inventory_jobs
+WHERE started_at >= DATEADD(day, -90, SYSUTCDATETIME())
+GROUP BY UPPER(COALESCE(execution_strategy, identification_mode, ''));
+```
+
+## In-process metrics (API process)
+
+```text
+legacy_mode_jobs_blocked_total
+legacy_mode_config_writes_blocked_total
+legacy_mode_jobs_created_total   -- reserved
+legacy_frontend_action_used_total -- reserved
+```
+
+Snapshot helper: `legacy_usage_metrics_snapshot()` in `legacy_processing_guard.py`.
+
+## Notes
+
+- This file is a **template**; do not treat empty local results as production evidence.
+- No automatic migration in Etapa A–C.

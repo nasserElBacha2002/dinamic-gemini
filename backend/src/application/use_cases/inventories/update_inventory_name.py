@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from src.application.errors import InventoryNotFoundError
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import InventoryRepository
+from src.application.services.legacy_processing_guard import (
+    reject_legacy_mode_for_new_configuration,
+)
 from src.application.services.optional_unset import UNSET, OptionalModeUpdate, UnsetType
 from src.domain.aisle_identification.modes import AisleIdentificationMode, parse_identification_mode
 from src.domain.inventory.entities import Inventory
@@ -63,6 +66,7 @@ class UpdateInventoryUseCase:
                 mode = command.identification_mode
             else:
                 mode = parse_identification_mode(command.identification_mode)
+            reject_legacy_mode_for_new_configuration(mode, context="inventory")
             if inventory.identification_mode != mode:
                 inventory.identification_mode = mode
                 changed = True

@@ -185,6 +185,19 @@ class StrategyDisabledError(Exception):
     """Raised when a processing strategy / feature flag is disabled."""
 
 
+class LegacyProcessingModeNotAllowedError(ValueError):
+    """Raised when LEGACY_LLM is set on new configs or process overrides (Phase 8)."""
+
+    def __init__(self, mode: str, *, context: str = "configuration") -> None:
+        self.code = "LEGACY_PROCESSING_MODE_NOT_ALLOWED_FOR_NEW_CONFIGURATION"
+        self.mode = mode
+        self.context = context
+        super().__init__(
+            f"{self.code}: {mode} is not allowed for new {context}; "
+            f"use CODE_SCAN, INTERNAL_OCR, or inherit (null)"
+        )
+
+
 class ProcessingObservabilityDisabledError(Exception):
     """Raised when Phase 7 observability mutations are disabled."""
 

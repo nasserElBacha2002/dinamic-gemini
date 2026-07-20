@@ -1,13 +1,17 @@
-import '@testing-library/jest-dom/vitest';
+/**
+ * @vitest-environment jsdom
+ */
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { I18nextProvider } from 'react-i18next';
+import i18n from '../../../src/i18n';
 import AisleResultsHeader from '../../../src/features/results/components/AisleResultsHeader';
 
 const baseProps = {
-  breadcrumbs: [{ label: 'Inventarios', to: '/' }],
-  title: 'A-01',
-  subtitle: 'Inventario test',
+  breadcrumbs: [{ label: 'Inv', to: '/' }],
+  title: 'A01',
+  subtitle: null,
   mergeButtonVisible: false,
   mergeDisabledReason: '',
   mergeButtonDisabled: true,
@@ -26,29 +30,34 @@ const baseProps = {
   onRefresh: vi.fn(),
 };
 
-describe('AisleResultsHeader code scan menu', () => {
-  it('opens code scan from Más acciones menu', () => {
-    const onOpenCodeScan = vi.fn();
-    render(
-      <MemoryRouter>
-        <AisleResultsHeader {...baseProps} onOpenCodeScan={onOpenCodeScan} />
-      </MemoryRouter>,
-    );
-    expect(screen.queryByTestId('aisle-code-scan-open')).not.toBeInTheDocument();
+function wrap(ui: React.ReactElement) {
+  return render(
+    <MemoryRouter>
+      <I18nextProvider i18n={i18n}>{ui}</I18nextProvider>
+    </MemoryRouter>
+  );
+}
+
+describe('AisleResultsHeader more actions (Phase 8)', () => {
+  it('does not expose Escanear códigos (CODE_SCAN lives in Procesar)', () => {
+    wrap(<AisleResultsHeader {...baseProps} onOpenObservability={vi.fn()} />);
     fireEvent.click(screen.getByTestId('aisle-results-more-actions'));
-    fireEvent.click(screen.getByTestId('aisle-code-scan-menu-open'));
-    expect(onOpenCodeScan).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('aisle-code-scan-menu-open')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Escanear códigos|Scan codes/i)).not.toBeInTheDocument();
   });
 
-  it('opens observability from Más acciones menu', () => {
+  it('still exposes observability from more actions', () => {
     const onOpenObservability = vi.fn();
-    render(
-      <MemoryRouter>
-        <AisleResultsHeader {...baseProps} onOpenObservability={onOpenObservability} />
-      </MemoryRouter>,
-    );
+    wrap(<AisleResultsHeader {...baseProps} onOpenObservability={onOpenObservability} />);
     fireEvent.click(screen.getByTestId('aisle-results-more-actions'));
     fireEvent.click(screen.getByTestId('aisle-observability-menu-open'));
     expect(onOpenObservability).toHaveBeenCalledTimes(1);
+  });
+
+  it('menu still renders export', () => {
+    wrap(<AisleResultsHeader {...baseProps} />);
+    fireEvent.click(screen.getByTestId('aisle-results-more-actions'));
+    const menu = screen.getByRole('menu');
+    expect(within(menu).getByTestId('aisle-export-operational')).toBeInTheDocument();
   });
 });

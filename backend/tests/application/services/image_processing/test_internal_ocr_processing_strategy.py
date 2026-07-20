@@ -165,3 +165,32 @@ def test_strategy_empty_asset_technical() -> None:
     result = strategy.process(_context(), _asset())
     assert result.status is ImageResultStatus.FAILED_TECHNICAL
     assert result.error_code == "SOURCE_ASSET_EMPTY"
+
+
+def test_strategy_emits_variant_completed_and_asset_finalized() -> None:
+    events: list[dict] = []
+
+    class _CapturePublisher:
+        def publish(self, **kwargs) -> None:
+            events.append(kwargs)
+
+    strategy = InternalOcrProcessingStrategy(
+        reader=_FakeReader("CODIGO: SKU42\nCANTIDAD: 7"),
+        content_reader=_BytesReader(_png_bytes()),
+        preprocessor=OcrImagePreprocessor(
+            OcrPreprocessConfig(max_variants=1, enable_adaptive_threshold=False)
+        ),
+        extractor=OcrFieldExtractor(),
+        normalizer=OcrResultNormalizer(quantity_max=9999),
+        config=InternalOcrConfig(quantity_max=9999, max_variants=1, timeout_seconds=30),
+        event_publisher=_CapturePublisher(),
+    )
+    result = strategy.process(_context(), _asset())
+    assert result.status is ImageResultStatus.RESOLVED_INTERNAL
+    types = [e["event_type"] for e in events]
+    assert "asset.source_loaded" in types
+    assert "ocr.variant_started" in types
+    assert "ocr.variant_completed" in types
+    assert "asset.finalized" in types
+    finalized = next(e for e in events if e["event_type"] == "asset.finalized")
+    assert finalized["metadata"]["status"] == ImageResultStatus.RESOLVED_INTERNAL.value
