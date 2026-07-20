@@ -66,6 +66,7 @@ class SingleAssetStrategyProcessor:
         attempts_enabled: bool = True,
         reconciler: AssetProcessingReconciler | None = None,
         inventory_client_id: str | None = None,
+        external_fallback=None,
     ) -> None:
         self._state_repo = state_repo
         self._attempt_repo = attempt_repo
@@ -78,6 +79,7 @@ class SingleAssetStrategyProcessor:
         self._attempts_enabled = attempts_enabled
         self._reconciler = reconciler
         self._inventory_client_id = inventory_client_id
+        self._external_fallback = external_fallback
 
     def _attempt_provider(self) -> str:
         return str(
@@ -206,6 +208,12 @@ class SingleAssetStrategyProcessor:
                 job=job, aisle=aisle, asset=asset, strategy_key=strategy_key, result=result
             )
             error = error or persist_error
+            if (
+                result.status is ImageResultStatus.RESOLVED_INTERNAL
+                and self._external_fallback is not None
+                and getattr(self._external_fallback, "counters", None) is not None
+            ):
+                self._external_fallback.counters.resolved_internal += 1
 
         logger.info(
             "image_processing.strategy_completed job_id=%s asset_id=%s strategy=%s "
@@ -218,13 +226,65 @@ class SingleAssetStrategyProcessor:
             result.processing_duration_ms,
         )
 
+        finalize_strategy = strategy_key
+        finalize_attempt = attempt
+
+        # Phase 5: close the internal attempt, then optionally run EXTERNAL_PROVIDER.
+        if (
+            result.status is not ImageResultStatus.RESOLVED_INTERNAL
+            and self._external_fallback is not None
+        ):
+            if attempt is not None and self._attempts_enabled:
+                self._image_orch.complete_attempt_from_result(
+                    attempt=attempt,
+                    result=result,
+                    duration_ms=result.processing_duration_ms,
+                )
+                finalize_attempt = None
+
+            from src.application.services.image_processing.external_provider_fallback_orchestrator import (
+                ExternalFallbackSnapshot,
+            )
+
+            params = job.engine_params_json if isinstance(job.engine_params_json, dict) else {}
+            ident = params.get("identification_execution")
+            snapshot = ExternalFallbackSnapshot.from_identification_execution(
+                ident if isinstance(ident, dict) else None
+            )
+            if snapshot is not None and snapshot.enabled:
+                external = self._external_fallback.process_if_eligible(
+                    job=job,
+                    asset=asset,
+                    internal_result=result,
+                    worker_token=worker_token,
+                    snapshot=snapshot,
+                )
+                if external is not None:
+                    result = external
+                    finalize_strategy = "EXTERNAL_PROVIDER"
+                    if result.status is ImageResultStatus.RESOLVED_EXTERNAL:
+                        result, persist_error = self._apply_persist(
+                            job=job,
+                            aisle=aisle,
+                            asset=asset,
+                            strategy_key=finalize_strategy,
+                            result=result,
+                        )
+                        error = error or persist_error
+                        if result.status is ImageResultStatus.RESOLVED_EXTERNAL:
+                            logger.info(
+                                "fallback.persisted job_id=%s asset_id=%s",
+                                job.id,
+                                asset.id,
+                            )
+
         self._finalize(
             job=job,
             asset=asset,
             acquired=acquired,
-            attempt=attempt,
+            attempt=finalize_attempt,
             result=result,
-            strategy_key=strategy_key,
+            strategy_key=finalize_strategy,
         )
         return SingleAssetProcessResult(processed=True, error=error)
 

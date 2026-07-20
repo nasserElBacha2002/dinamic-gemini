@@ -141,6 +141,27 @@ function jobMetadataRows(
           },
         ]
       : []),
+    ...(job.fallback_progress
+      ? [
+          {
+            label: i18n.t('jobs.obs_fallback_progress', {
+              defaultValue: 'Fallback externo',
+            }),
+            value: i18n.t('jobs.obs_fallback_progress_value', {
+              defaultValue:
+                '{{resolved_internal}} internas · {{fallback_requested}} a fallback · {{resolved_external}} externas · {{external_failed}} fallidas · costo {{estimated_external_cost}}',
+              resolved_internal: job.fallback_progress.resolved_internal,
+              fallback_requested: job.fallback_progress.fallback_requested,
+              resolved_external: job.fallback_progress.resolved_external,
+              external_failed: job.fallback_progress.external_failed,
+              estimated_external_cost:
+                job.fallback_progress.estimated_external_cost == null
+                  ? i18n.t('common.em_dash')
+                  : String(job.fallback_progress.estimated_external_cost),
+            }),
+          },
+        ]
+      : []),
     { label: i18n.t('jobs.obs_current_step'), value: job.current_substep || dash },
     { label: i18n.t('jobs.obs_step_started'), value: formatOptionalDate(job.current_step_started_at) },
     { label: i18n.t('common.execution_id'), value: job.execution_id || dash },

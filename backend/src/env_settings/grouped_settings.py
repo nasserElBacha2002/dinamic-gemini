@@ -1219,6 +1219,88 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
         description="Include deskew as an OCR preprocessing variant. Env: INTERNAL_OCR_ENABLE_DESKEW.",
     )
+    external_fallback_per_image_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("EXTERNAL_FALLBACK_PER_IMAGE_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 5: when true, unresolved CODE_SCAN/INTERNAL_OCR assets may call one "
+            "external provider per image. Default false. "
+            "Env: EXTERNAL_FALLBACK_PER_IMAGE_ENABLED."
+        ),
+    )
+    external_fallback_provider: str = Field(
+        default_factory=lambda: (
+            os.getenv("EXTERNAL_FALLBACK_PROVIDER", "gemini") or "gemini"
+        ).strip().lower(),
+        description=(
+            "Phase 5 primary external provider key (gemini|openai|claude). "
+            "Env: EXTERNAL_FALLBACK_PROVIDER."
+        ),
+    )
+    external_fallback_model: str = Field(
+        default_factory=lambda: (os.getenv("EXTERNAL_FALLBACK_MODEL", "") or "").strip(),
+        description="Phase 5 model override for the primary provider. Env: EXTERNAL_FALLBACK_MODEL.",
+    )
+    max_external_fallback_concurrency: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_EXTERNAL_FALLBACK_CONCURRENCY", "1")),
+        ge=1,
+        le=16,
+        description=(
+            "Phase 5 process-local concurrency for external provider calls (independent of "
+            "internal SINGLE_ASSET pools). Env: MAX_EXTERNAL_FALLBACK_CONCURRENCY."
+        ),
+    )
+    external_fallback_timeout_seconds: float = Field(
+        default_factory=lambda: float(os.getenv("EXTERNAL_FALLBACK_TIMEOUT_SECONDS", "60")),
+        ge=5,
+        le=600,
+        description="Phase 5 wall-clock budget hint per external call. Env: EXTERNAL_FALLBACK_TIMEOUT_SECONDS.",
+    )
+    external_fallback_max_attempts: int = Field(
+        default_factory=lambda: int(os.getenv("EXTERNAL_FALLBACK_MAX_ATTEMPTS", "1")),
+        ge=1,
+        le=5,
+        description=(
+            "Phase 5 max external attempts per asset for retryable provider errors. "
+            "Env: EXTERNAL_FALLBACK_MAX_ATTEMPTS (default 1)."
+        ),
+    )
+    external_fallback_circuit_breaker_threshold: int = Field(
+        default_factory=lambda: int(
+            os.getenv("EXTERNAL_FALLBACK_CIRCUIT_BREAKER_THRESHOLD", "5")
+        ),
+        ge=1,
+        le=100,
+        description="Phase 5 failures before opening the circuit. Env: EXTERNAL_FALLBACK_CIRCUIT_BREAKER_THRESHOLD.",
+    )
+    external_fallback_circuit_breaker_cooldown_seconds: float = Field(
+        default_factory=lambda: float(
+            os.getenv("EXTERNAL_FALLBACK_CIRCUIT_BREAKER_COOLDOWN_SECONDS", "60")
+        ),
+        ge=1,
+        le=3600,
+        description="Phase 5 circuit open cooldown. Env: EXTERNAL_FALLBACK_CIRCUIT_BREAKER_COOLDOWN_SECONDS.",
+    )
+    external_fallback_max_image_dimension: int = Field(
+        default_factory=lambda: int(
+            os.getenv("EXTERNAL_FALLBACK_MAX_IMAGE_DIMENSION", "2048")
+        ),
+        ge=256,
+        le=8192,
+        description="Phase 5 max longest image side before provider call. Env: EXTERNAL_FALLBACK_MAX_IMAGE_DIMENSION.",
+    )
+    multi_provider_fallback_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("MULTI_PROVIDER_FALLBACK_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 5 reserved: multi-provider chains are NOT implemented. Must stay false. "
+            "Env: MULTI_PROVIDER_FALLBACK_ENABLED."
+        ),
+    )
     v3_capture_max_open_sessions_per_aisle: int = Field(
         default_factory=lambda: int(os.getenv("V3_CAPTURE_MAX_OPEN_SESSIONS_PER_AISLE", "1")),
         ge=1,

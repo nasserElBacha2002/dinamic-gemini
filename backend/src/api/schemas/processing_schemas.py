@@ -134,6 +134,20 @@ class AssetProgressResponse(BaseModel):
     cancelled: int = 0
 
 
+class FallbackProgressResponse(BaseModel):
+    """Phase 5 selective external-fallback counters (from ``result_json.fallback_progress``)."""
+
+    fallback_requested: int = 0
+    fallback_skipped: int = 0
+    fallback_in_progress: int = 0
+    resolved_external: int = 0
+    external_unrecognized: int = 0
+    external_failed: int = 0
+    pending_manual_review: int = 0
+    estimated_external_cost: float | None = None
+    resolved_internal: int = 0
+
+
 class JobSummary(BaseModel):
     """Summary of latest job for an aisle."""
 
@@ -173,7 +187,9 @@ class JobSummary(BaseModel):
     llm_cost_snapshot: Optional[LlmCostSnapshotResponse] = None
     #: Phase 2 additive per-asset progress (absent for legacy jobs / orchestrator off).
     asset_progress: Optional[AssetProgressResponse] = None
-    #: Immutable identification execution snapshot from ``engine_params_json`` (Phase 3/4).
+    #: Phase 5 selective external fallback counters (absent when fallback never ran).
+    fallback_progress: Optional[FallbackProgressResponse] = None
+    #: Immutable identification execution snapshot from ``engine_params_json`` (Phase 3/4/5).
     identification_execution: Optional[dict[str, Any]] = None
     client_id: Optional[str] = None
 

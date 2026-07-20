@@ -174,18 +174,7 @@ class ImageProcessingOrchestrator:
         )
 
         if attempt is not None and self._attempts_enabled:
-            attempt.status = self._map_attempt_status(result.status)
-            attempt.finished_at = now
-            attempt.duration_ms = duration
-            attempt.error_code = result.error_code
-            attempt.error_message = result.error_message
-            attempt.normalized_result = result.normalized_result
-            attempt.validation_result = {
-                "errors": list(result.validation_errors),
-                "warnings": list(result.warnings),
-            }
-            attempt.execution_scope = result.execution_scope.value
-            self._attempt_repo.save(attempt)
+            self.complete_attempt_from_result(attempt=attempt, result=result, duration_ms=duration)
 
         logger.info(
             "image_orchestrator.asset_finalized job_id=%s asset_id=%s status=%s "
@@ -197,6 +186,35 @@ class ImageProcessingOrchestrator:
             duration,
         )
         return state
+
+    def complete_attempt_from_result(
+        self,
+        *,
+        attempt: ProcessingAttempt,
+        result: ImageProcessingResult,
+        duration_ms: int | None = None,
+    ) -> None:
+        """Close one attempt without finalizing asset state (Phase 5 internal→external handoff)."""
+        if not self._attempts_enabled:
+            return
+        now = self._clock.now()
+        attempt.status = self._map_attempt_status(result.status)
+        attempt.finished_at = now
+        if duration_ms is not None:
+            attempt.duration_ms = duration_ms
+        elif attempt.started_at is not None:
+            attempt.duration_ms = int((now - attempt.started_at).total_seconds() * 1000)
+        elif result.processing_duration_ms is not None:
+            attempt.duration_ms = result.processing_duration_ms
+        attempt.error_code = result.error_code
+        attempt.error_message = result.error_message
+        attempt.normalized_result = result.normalized_result
+        attempt.validation_result = {
+            "errors": list(result.validation_errors),
+            "warnings": list(result.warnings),
+        }
+        attempt.execution_scope = result.execution_scope.value
+        self._attempt_repo.save(attempt)
 
     def mark_cancelled(self, state: JobAssetProcessingState, attempt: ProcessingAttempt | None) -> None:
         now = self._clock.now()

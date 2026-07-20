@@ -290,12 +290,83 @@ class StartAisleProcessingUseCase:
                 ),
                 "processor_version": "1.0.0",
             }
+        from src.application.services.image_processing.external_provider_fallback_orchestrator import (
+            build_external_fallback_snapshot_dict,
+        )
+        from src.application.services.image_processing.fallback_eligibility_policy import (
+            DEFAULT_RECOVERABLE_TECHNICAL_CODES,
+        )
+
+        external_fallback = None
+        if execution_strategy.value in ("CODE_SCAN", "INTERNAL_OCR"):
+            if bool(getattr(settings, "multi_provider_fallback_enabled", False)):
+                raise ValueError(
+                    "MULTI_PROVIDER_FALLBACK_ENABLED is not supported in Phase 5; "
+                    "keep it false and use a single EXTERNAL_FALLBACK_PROVIDER."
+                )
+            fallback_enabled = bool(
+                getattr(settings, "external_fallback_per_image_enabled", False)
+            )
+            provider_key = str(
+                getattr(settings, "external_fallback_provider", "gemini") or "gemini"
+            ).strip().lower()
+            if fallback_enabled:
+                from src.pipeline.providers.registry import (
+                    UnknownPipelineProviderError,
+                    resolve_llm_executor,
+                )
+
+                try:
+                    resolve_llm_executor(provider_key, settings)
+                except UnknownPipelineProviderError as exc:
+                    raise ValueError(
+                        f"EXTERNAL_FALLBACK_PROVIDER={provider_key!r} is not a registered "
+                        f"pipeline provider: {exc}"
+                    ) from exc
+            external_fallback = build_external_fallback_snapshot_dict(
+                enabled=fallback_enabled,
+                provider=provider_key,
+                model=(
+                    str(getattr(settings, "external_fallback_model", "") or "").strip()
+                    or None
+                ),
+                timeout_seconds=float(
+                    getattr(settings, "external_fallback_timeout_seconds", 60)
+                ),
+                max_attempts=int(getattr(settings, "external_fallback_max_attempts", 1)),
+                max_concurrency=int(
+                    getattr(settings, "max_external_fallback_concurrency", 1)
+                ),
+                max_image_dimension=int(
+                    getattr(settings, "external_fallback_max_image_dimension", 2048)
+                ),
+                quantity_max=int(
+                    getattr(settings, "code_scan_quantity_max", 99_999_999)
+                    if execution_strategy.value == "CODE_SCAN"
+                    else getattr(settings, "internal_ocr_quantity_max", 99_999_999)
+                ),
+                circuit_breaker_threshold=int(
+                    getattr(settings, "external_fallback_circuit_breaker_threshold", 5)
+                ),
+                circuit_breaker_cooldown_seconds=float(
+                    getattr(
+                        settings,
+                        "external_fallback_circuit_breaker_cooldown_seconds",
+                        60,
+                    )
+                ),
+                multi_provider_enabled=False,
+                snapshot_version=CONFIGURATION_SNAPSHOT_VERSION,
+                client_rules=ocr_client_rules_snapshot(client_rules),
+                recoverable_technical_codes=sorted(DEFAULT_RECOVERABLE_TECHNICAL_CODES),
+            )
         engine_params_json = {
             "identification_execution": identification_execution_snapshot_dict(
                 decision,
                 ocr_config=ocr_config,
                 client_rules=ocr_client_rules_snapshot(client_rules),
                 configuration_snapshot_version=CONFIGURATION_SNAPSHOT_VERSION,
+                external_fallback=external_fallback,
             ),
             "client_id": client_id,
         }

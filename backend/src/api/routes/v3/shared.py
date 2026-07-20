@@ -610,6 +610,22 @@ def _asset_progress_from_job_result(
         return None
 
 
+def _fallback_progress_from_job_result(
+    result_json: dict[str, Any] | None,
+):
+    from src.api.schemas.processing_schemas import FallbackProgressResponse
+
+    if not result_json or not isinstance(result_json, dict):
+        return None
+    raw = result_json.get("fallback_progress")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return FallbackProgressResponse.model_validate(raw)
+    except Exception:
+        return None
+
+
 def _identification_execution_from_job(j: Job) -> dict | None:
     params = j.engine_params_json if isinstance(j.engine_params_json, dict) else None
     if not params:
@@ -663,6 +679,7 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
         is_operational=is_operational,
         llm_cost_snapshot=_llm_cost_snapshot_from_job_result(j.result_json),
         asset_progress=_asset_progress_from_job_result(j.result_json),
+        fallback_progress=_fallback_progress_from_job_result(j.result_json),
         identification_execution=_identification_execution_from_job(j),
         client_id=_client_id_from_job(j),
     )

@@ -437,7 +437,9 @@ export interface JobSummary {
   llm_cost_snapshot?: LlmCostSnapshot | null;
   /** Phase 2 additive per-asset progress when orchestrator ran. */
   asset_progress?: AssetProgress | null;
-  /** Immutable identification execution snapshot from job engine_params (Phase 3/4). */
+  /** Phase 5 selective external fallback counters. */
+  fallback_progress?: FallbackProgress | null;
+  /** Immutable identification execution snapshot from job engine_params (Phase 3/4/5). */
   identification_execution?: Record<string, unknown> | null;
   client_id?: string | null;
 }
@@ -451,6 +453,18 @@ export interface AssetProgress {
   failed: number;
   manual_review: number;
   cancelled: number;
+}
+
+export interface FallbackProgress {
+  fallback_requested: number;
+  fallback_skipped: number;
+  fallback_in_progress: number;
+  resolved_external: number;
+  external_unrecognized: number;
+  external_failed: number;
+  pending_manual_review: number;
+  estimated_external_cost?: number | null;
+  resolved_internal: number;
 }
 
 /** GET .../aisles/{aisle_id}/jobs — newest first (multi-run browsing). */

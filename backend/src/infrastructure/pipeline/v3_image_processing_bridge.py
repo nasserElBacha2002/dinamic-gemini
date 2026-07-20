@@ -93,6 +93,7 @@ def build_default_aisle_processing_orchestrator(
     result_persister=None,
     code_scan_concurrency: int = 1,
     reconciler=None,
+    external_fallback=None,
 ) -> AisleProcessingOrchestrator:
     """Build the Phase 2 orchestrator from injected repos.
 
@@ -173,6 +174,7 @@ def build_default_aisle_processing_orchestrator(
         result_persister=result_persister,
         code_scan_concurrency=code_scan_concurrency,
         reconciler=reconciler,
+        external_fallback=external_fallback,
     )
 
 
@@ -307,6 +309,7 @@ def build_default_code_scan_orchestrator(
     require_sql: bool = False,
     abandoned_processing_ttl_seconds: int = _DEFAULT_ABANDONED_TTL_SECONDS,
     manual_coverage_repo=None,
+    external_fallback=None,
 ) -> AisleProcessingOrchestrator:
     """Build the Phase 3 orchestrator wired for CODE_SCAN SINGLE_ASSET processing.
 
@@ -343,6 +346,73 @@ def build_default_code_scan_orchestrator(
         result_persister=result_persister,
         code_scan_concurrency=max(1, int(code_scan_concurrency or 1)),
         reconciler=reconciler,
+        external_fallback=external_fallback,
+    )
+
+
+def build_default_external_fallback_orchestrator(
+    *,
+    settings,
+    artifact_store,
+    attempt_repo: ProcessingAttemptRepository,
+    clock: Clock,
+    is_cancelled: Callable[[], bool] | None = None,
+):
+    """Build Phase 5 selective external fallback (flag-gated at snapshot + eligibility)."""
+    from src.application.services.image_processing.external_circuit_breaker import (
+        ExternalCircuitBreaker,
+    )
+    from src.application.services.image_processing.external_concurrency_limiter import (
+        ExternalConcurrencyLimiter,
+    )
+    from src.application.services.image_processing.external_provider_fallback_orchestrator import (
+        ExternalProviderFallbackOrchestrator,
+        FallbackProgressCounters,
+    )
+    from src.application.services.image_processing.external_result_normalizer import (
+        ExternalResultNormalizer,
+    )
+    from src.application.services.image_processing.fallback_eligibility_policy import (
+        FallbackEligibilityPolicy,
+    )
+    from src.infrastructure.code_scanning.artifact_store_source_asset_content_reader import (
+        ArtifactStoreSourceAssetContentReader,
+    )
+    from src.infrastructure.image_processing.llm_external_image_analysis_provider import (
+        LlmExternalImageAnalysisProvider,
+    )
+
+    provider_key = str(
+        getattr(settings, "external_fallback_provider", "gemini") or "gemini"
+    ).strip().lower()
+    model = str(getattr(settings, "external_fallback_model", "") or "").strip() or None
+    provider = LlmExternalImageAnalysisProvider(
+        settings=settings,
+        provider_name=provider_key,
+        model_name=model,
+    )
+    reader = ArtifactStoreSourceAssetContentReader(artifact_store)
+    return ExternalProviderFallbackOrchestrator(
+        provider=provider,
+        content_reader=reader.read_image_bytes,
+        attempt_repo=attempt_repo,
+        clock=clock,
+        # Snapshot.fallback_enabled is the immutable gate; policy decides per-result eligibility.
+        eligibility=FallbackEligibilityPolicy(enabled=True),
+        normalizer=ExternalResultNormalizer(),
+        circuit_breaker=ExternalCircuitBreaker(
+            failure_threshold=int(
+                getattr(settings, "external_fallback_circuit_breaker_threshold", 5)
+            ),
+            cooldown_seconds=float(
+                getattr(settings, "external_fallback_circuit_breaker_cooldown_seconds", 60)
+            ),
+        ),
+        concurrency_limiter=ExternalConcurrencyLimiter(
+            int(getattr(settings, "max_external_fallback_concurrency", 1))
+        ),
+        counters=FallbackProgressCounters(),
+        is_cancelled=is_cancelled,
     )
 
 
@@ -482,6 +552,7 @@ def build_default_internal_ocr_orchestrator(
     require_sql: bool = False,
     abandoned_processing_ttl_seconds: int = _DEFAULT_ABANDONED_TTL_SECONDS,
     manual_coverage_repo=None,
+    external_fallback=None,
 ) -> AisleProcessingOrchestrator:
     """Build orchestrator wired for INTERNAL_OCR SINGLE_ASSET processing."""
     return build_default_code_scan_orchestrator(
@@ -500,6 +571,7 @@ def build_default_internal_ocr_orchestrator(
         require_sql=require_sql,
         abandoned_processing_ttl_seconds=abandoned_processing_ttl_seconds,
         manual_coverage_repo=manual_coverage_repo,
+        external_fallback=external_fallback,
     )
 
 

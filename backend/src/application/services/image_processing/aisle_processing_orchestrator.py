@@ -142,6 +142,7 @@ class AisleProcessingOrchestrator:
         result_persister: ProcessingResultPersister | None = None,
         code_scan_concurrency: int = 1,
         reconciler: AssetProcessingReconciler | None = None,
+        external_fallback=None,
     ) -> None:
         self._state_repo = state_repo
         self._attempt_repo = attempt_repo
@@ -160,6 +161,7 @@ class AisleProcessingOrchestrator:
         self._result_persister = result_persister
         self._code_scan_concurrency = max(1, int(code_scan_concurrency or 1))
         self._reconciler = reconciler
+        self._external_fallback = external_fallback
 
     # ------------------------------------------------------------------
     # State bootstrap
@@ -584,6 +586,7 @@ class AisleProcessingOrchestrator:
             clock=self._clock,
             attempts_enabled=self._attempts_enabled,
             reconciler=self._reconciler,
+            external_fallback=self._external_fallback,
         )
 
         lock = threading.Lock()

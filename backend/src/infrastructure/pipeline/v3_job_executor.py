@@ -477,6 +477,7 @@ class V3JobExecutor:
             build_default_code_scan_orchestrator,
             build_default_code_scan_persister,
             build_default_code_scan_strategy,
+            build_default_external_fallback_orchestrator,
             progress_to_public_dict,
             run_orchestrated_code_scan,
         )
@@ -515,6 +516,21 @@ class V3JobExecutor:
                 clock=self._clock,
                 unit_of_work_factory=container.get_manual_image_result_uow_factory(),
             )
+
+            def _is_cancelled() -> bool:
+                current = self._job_repo.get_by_id(job_id)
+                return current is not None and current.status == JobStatus.CANCEL_REQUESTED
+
+            external_fallback = None
+            if attempt_repo is not None:
+                external_fallback = build_default_external_fallback_orchestrator(
+                    settings=settings,
+                    artifact_store=self._artifact_store,
+                    attempt_repo=attempt_repo,
+                    clock=self._clock,
+                    is_cancelled=_is_cancelled,
+                )
+
             orch = build_default_code_scan_orchestrator(
                 self._clock,
                 attempts_enabled=bool(settings.processing_attempts_enabled),
@@ -533,6 +549,7 @@ class V3JobExecutor:
                     settings.image_processing_abandoned_ttl_seconds
                 ),
                 manual_coverage_repo=container.get_manual_image_coverage_repo(),
+                external_fallback=external_fallback,
             )
         except ImageProcessingRepositoryUnavailableError as unavailable:
             logger.error(
@@ -545,10 +562,6 @@ class V3JobExecutor:
                 failure_code="IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE",
             )
             return True
-
-        def _is_cancelled() -> bool:
-            current = self._job_repo.get_by_id(job_id)
-            return current is not None and current.status == JobStatus.CANCEL_REQUESTED
 
         def _merge_progress(progress) -> None:
             self._job_repo.merge_result_json(
@@ -578,9 +591,10 @@ class V3JobExecutor:
             )
             return True
 
-        self._job_repo.merge_result_json(
-            job_id, {"asset_progress": progress_to_public_dict(outcome.progress)}
-        )
+        merge_payload: dict = {"asset_progress": progress_to_public_dict(outcome.progress)}
+        if external_fallback is not None and getattr(external_fallback, "counters", None):
+            merge_payload["fallback_progress"] = external_fallback.counters.to_public_dict()
+        self._job_repo.merge_result_json(job_id, merge_payload)
 
         job_outcome = outcome.job_outcome
 
@@ -656,6 +670,7 @@ class V3JobExecutor:
             build_default_code_scan_persister,
             build_default_internal_ocr_orchestrator,
             build_default_internal_ocr_strategy,
+            build_default_external_fallback_orchestrator,
             progress_to_public_dict,
             run_orchestrated_internal_ocr,
         )
@@ -704,6 +719,21 @@ class V3JobExecutor:
                 clock=self._clock,
                 unit_of_work_factory=container.get_manual_image_result_uow_factory(),
             )
+
+            def _is_cancelled() -> bool:
+                current = self._job_repo.get_by_id(job_id)
+                return current is not None and current.status == JobStatus.CANCEL_REQUESTED
+
+            external_fallback = None
+            if attempt_repo is not None:
+                external_fallback = build_default_external_fallback_orchestrator(
+                    settings=settings,
+                    artifact_store=self._artifact_store,
+                    attempt_repo=attempt_repo,
+                    clock=self._clock,
+                    is_cancelled=_is_cancelled,
+                )
+
             orch = build_default_internal_ocr_orchestrator(
                 self._clock,
                 attempts_enabled=bool(settings.processing_attempts_enabled),
@@ -724,6 +754,7 @@ class V3JobExecutor:
                     settings.image_processing_abandoned_ttl_seconds
                 ),
                 manual_coverage_repo=container.get_manual_image_coverage_repo(),
+                external_fallback=external_fallback,
             )
         except ImageProcessingRepositoryUnavailableError as unavailable:
             logger.error(
@@ -759,10 +790,6 @@ class V3JobExecutor:
             },
         )
 
-        def _is_cancelled() -> bool:
-            current = self._job_repo.get_by_id(job_id)
-            return current is not None and current.status == JobStatus.CANCEL_REQUESTED
-
         def _merge_progress(progress) -> None:
             self._job_repo.merge_result_json(
                 job_id, {"asset_progress": progress_to_public_dict(progress)}
@@ -791,9 +818,10 @@ class V3JobExecutor:
             )
             return True
 
-        self._job_repo.merge_result_json(
-            job_id, {"asset_progress": progress_to_public_dict(outcome.progress)}
-        )
+        merge_payload: dict = {"asset_progress": progress_to_public_dict(outcome.progress)}
+        if external_fallback is not None and getattr(external_fallback, "counters", None):
+            merge_payload["fallback_progress"] = external_fallback.counters.to_public_dict()
+        self._job_repo.merge_result_json(job_id, merge_payload)
 
         job_outcome = outcome.job_outcome
 

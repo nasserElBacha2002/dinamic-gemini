@@ -50,6 +50,10 @@ logger = logging.getLogger(__name__)
 
 CODE_SCAN_PROVIDER = "code_scan"
 CODE_SCAN_QTY_SOURCE = "label_explicit"
+INTERNAL_OCR_PROVIDER = "internal_ocr"
+INTERNAL_OCR_QTY_SOURCE = "ocr_extracted"
+EXTERNAL_PROVIDER = "external_provider"
+EXTERNAL_QTY_SOURCE = "external_provider"
 
 
 class PersistSkipReason(str, Enum):
@@ -117,7 +121,7 @@ class ProcessingResultPersister:
         inventory_id: str,
         aisle_id: str,
     ) -> PersistOutcome:
-        if result.status is not ImageResultStatus.RESOLVED_INTERNAL:
+        if result.status is not ImageResultStatus.RESOLVED_INTERNAL and result.status is not ImageResultStatus.RESOLVED_EXTERNAL:
             return PersistOutcome(
                 persisted=False, skipped_reason=PersistSkipReason.NOT_RESOLVED_INTERNAL
             )
@@ -169,11 +173,17 @@ class ProcessingResultPersister:
         evidence_id = str(uuid.uuid4())
         result_evidence_id = str(uuid.uuid4())
         coverage_id = str(uuid.uuid4())
-        INTERNAL_OCR_PROVIDER = "internal_ocr"
-        INTERNAL_OCR_QTY_SOURCE = "ocr_extracted"
 
         resolved_by = (result.resolved_by or CODE_SCAN_PROVIDER).strip()
-        if resolved_by.upper() == "INTERNAL_OCR" or resolved_by == INTERNAL_OCR_PROVIDER:
+        if (
+            resolved_by.upper() == "EXTERNAL_PROVIDER"
+            or resolved_by == EXTERNAL_PROVIDER
+            or result.status is ImageResultStatus.RESOLVED_EXTERNAL
+        ):
+            provider = (result.provider_name or EXTERNAL_PROVIDER).strip() or EXTERNAL_PROVIDER
+            qty_source = EXTERNAL_QTY_SOURCE
+            entity_slug = "external"
+        elif resolved_by.upper() == "INTERNAL_OCR" or resolved_by == INTERNAL_OCR_PROVIDER:
             provider = INTERNAL_OCR_PROVIDER
             qty_source = INTERNAL_OCR_QTY_SOURCE
             entity_slug = "internal_ocr"

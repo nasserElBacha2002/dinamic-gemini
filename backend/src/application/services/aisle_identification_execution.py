@@ -137,19 +137,26 @@ def identification_execution_snapshot_dict(
     ocr_config: dict | None = None,
     client_rules: dict | None = None,
     configuration_snapshot_version: int,
+    external_fallback: dict | None = None,
 ) -> dict:
     """Build the immutable identification-execution block stored on the job."""
+    feature_flags = {
+        "code_scan_processing_enabled": decision.code_scan_processing_enabled,
+        "internal_ocr_processing_enabled": decision.internal_ocr_processing_enabled,
+        "aisle_identification_pipeline_enabled": decision.pipeline_enabled,
+    }
+    if isinstance(external_fallback, dict):
+        feature_flags["external_fallback_per_image_enabled"] = bool(
+            external_fallback.get("fallback_enabled")
+        )
     return {
         "requested_mode": decision.requested_mode.value,
         "executed_strategy": decision.strategy.value,
         "reason": decision.reason,
         "configuration_source": decision.requested_mode.value,
-        "feature_flag_state": {
-            "code_scan_processing_enabled": decision.code_scan_processing_enabled,
-            "internal_ocr_processing_enabled": decision.internal_ocr_processing_enabled,
-            "aisle_identification_pipeline_enabled": decision.pipeline_enabled,
-        },
+        "feature_flag_state": feature_flags,
         "snapshot_version": int(configuration_snapshot_version),
         "ocr_config": ocr_config,
         "client_rules": client_rules,
+        "external_fallback": external_fallback,
     }
