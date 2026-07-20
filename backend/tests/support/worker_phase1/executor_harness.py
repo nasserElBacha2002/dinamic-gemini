@@ -460,6 +460,8 @@ class ExecutorHarness:
         with patch("src.infrastructure.pipeline.v3_job_executor.load_settings") as ms:
             ms.return_value.output_dir = str(self.base_path)
             ms.return_value.artifact_storage_legacy_local_read_enabled = True
+            ms.return_value.image_processing_batch_lease_seconds = 900
+            ms.return_value.image_processing_abandoned_ttl_seconds = 900
             with patch(
                 "src.infrastructure.pipeline.v3_pipeline_execution_service.HybridInventoryPipeline"
             ) as mock_pipeline_cls:

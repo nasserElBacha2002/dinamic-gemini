@@ -11,6 +11,7 @@ from fastapi.responses import Response
 
 from src.api.constants.error_wire import HTTP_DETAIL_ONLY_FORMAT_CSV_SUPPORTED
 from src.api.dependencies import (
+    get_aisle_identification_configuration_query,
     get_create_inventory_use_case,
     get_export_inventory_package_zip_use_case,
     get_export_inventory_results_use_case,
@@ -34,10 +35,15 @@ from src.api.schemas.processing_schemas import (
     ProcessingProviderOptionItem,
     ProcessingProviderOptionsResponse,
 )
+from src.api.services.identification_mode_response import api_fields_from_configuration
 from src.application.errors import ClientNotFoundError, InventoryNotFoundError
+from src.application.services.aisle_identification_configuration_query import (
+    AisleIdentificationConfigurationQuery,
+)
 from src.application.services.inventory_table_query_params import (
     build_inventory_table_query_from_route_params,
 )
+from src.application.services.optional_unset import UNSET
 from src.application.services.processing_provider_availability import (
     ProcessingOptionsMode,
     build_processing_provider_options_payload,
@@ -63,9 +69,20 @@ from src.application.use_cases.inventories.update_inventory_name import (
     UpdateInventoryNameUseCase,
 )
 from src.config import load_settings
-from src.domain.inventory.entities import InventoryProcessingMode
+from src.domain.inventory.entities import Inventory, InventoryProcessingMode
 
 from .shared import inventory_list_item_to_response, inventory_to_response
+
+
+def _inventory_response(
+    inventory: Inventory,
+    id_query: AisleIdentificationConfigurationQuery,
+) -> InventoryResponse:
+    return inventory_to_response(
+        inventory,
+        identification=api_fields_from_configuration(id_query.for_inventory(inventory)),
+    )
+
 
 router = APIRouter()
 
@@ -74,6 +91,9 @@ router = APIRouter()
 def create_inventory(
     payload: CreateInventoryRequest,
     use_case: CreateInventoryUseCase = Depends(get_create_inventory_use_case),
+    id_query: AisleIdentificationConfigurationQuery = Depends(
+        get_aisle_identification_configuration_query
+    ),
 ) -> InventoryResponse:
     """Create a new inventory (v3.0)."""
     try:
@@ -85,7 +105,7 @@ def create_inventory(
                 client_id=payload.client_id,
             )
         )
-        return inventory_to_response(inventory)
+        return _inventory_response(inventory, id_query)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except ClientNotFoundError as e:
@@ -98,13 +118,24 @@ def update_inventory(
     inventory_id: str,
     payload: UpdateInventoryRequest,
     use_case: UpdateInventoryNameUseCase = Depends(get_update_inventory_name_use_case),
+    id_query: AisleIdentificationConfigurationQuery = Depends(
+        get_aisle_identification_configuration_query
+    ),
 ) -> InventoryResponse:
-    """Rename an inventory (v3.0). Returns 404 if not found."""
+    """Update inventory name and/or identification mode (v3.0). Returns 404 if not found."""
     try:
         inventory = use_case.execute(
-            UpdateInventoryNameCommand(inventory_id=inventory_id, name=payload.name)
+            UpdateInventoryNameCommand(
+                inventory_id=inventory_id,
+                name=payload.name if "name" in payload.model_fields_set else None,
+                identification_mode=(
+                    payload.identification_mode
+                    if "identification_mode" in payload.model_fields_set
+                    else UNSET
+                ),
+            )
         )
-        return inventory_to_response(inventory)
+        return _inventory_response(inventory, id_query)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except InventoryNotFoundError as e:
@@ -272,11 +303,14 @@ def export_inventory_results(
 def get_inventory(
     inventory_id: str,
     use_case: GetInventoryUseCase = Depends(get_get_inventory_use_case),
+    id_query: AisleIdentificationConfigurationQuery = Depends(
+        get_aisle_identification_configuration_query
+    ),
 ) -> InventoryResponse:
     """Get a single inventory by id (v3.0). Returns 404 if not found."""
     try:
         inventory = use_case.execute(inventory_id)
-        return inventory_to_response(inventory)
+        return _inventory_response(inventory, id_query)
     except InventoryNotFoundError as e:
         reraise_if_mapped(e)
         raise

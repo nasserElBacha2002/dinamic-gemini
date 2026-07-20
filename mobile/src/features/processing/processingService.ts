@@ -13,12 +13,29 @@ import type {
 import type { UploadQueue } from '../upload/uploadQueue';
 import type { AisleAssetsApi } from '../upload/aisleAssetsApi';
 import { computeProcessingReadiness, type ProcessingReadiness } from './processingReadiness';
+import {
+  buildProcessAisleRequestBody,
+  mapProcessStartErrorMessage,
+  sanitizeIdentificationModeSelection,
+  type AisleIdentificationMode,
+} from './processingMode';
+import { processingRunStore } from './processingRun';
 
 export type { ProcessingReadiness } from './processingReadiness';
+export type { AisleIdentificationMode } from './processingMode';
 
-export function processIdempotencyKey(sessionId: string): string {
+/** @deprecated Prefer run-scoped keys via processingRunStore. Kept for tests of key shape. */
+export function processIdempotencyKey(sessionId: string, runId?: string): string {
+  if (runId) {
+    return `mobile-process:${sessionId}:${runId}`;
+  }
   return `mobile-process:${sessionId}`;
 }
+
+export type StartProcessOptions = {
+  /** Explicit override. null/undefined → inherit (omit field). */
+  readonly identificationMode?: AisleIdentificationMode | null;
+};
 
 export type ResultLoadState = 'loading' | 'complete' | 'partial' | 'pending' | 'error';
 
@@ -88,31 +105,47 @@ export class ProcessingService {
     return { ok: readiness.ready, reason: readiness.reason };
   }
 
-  async startProcess(sessionId: string): Promise<{ ok: boolean; jobId: string | null; reason: string | null }> {
+  async startProcess(
+    sessionId: string,
+    options: StartProcessOptions = {},
+  ): Promise<{ ok: boolean; jobId: string | null; reason: string | null }> {
     if (this.processLocks.has(sessionId)) {
       return { ok: false, jobId: null, reason: 'Procesamiento ya en curso.' };
     }
     this.processLocks.add(sessionId);
-    const idempotencyKey = processIdempotencyKey(sessionId);
+    const identificationMode = sanitizeIdentificationModeSelection(options.identificationMode);
+    const run = await processingRunStore.getOrCreateForStart(sessionId, identificationMode);
+    const idempotencyKey = run.idempotencyKey;
     try {
       const check = await this.validateBeforeProcess(sessionId);
       if (!check.ok) {
+        await processingRunStore.markTerminal(run.id, 'failed');
         return { ok: false, jobId: null, reason: check.reason };
       }
       const session = await this.repo.getSession(sessionId);
       if (!session) {
+        await processingRunStore.markTerminal(run.id, 'failed');
         return { ok: false, jobId: null, reason: 'Sesión no encontrada.' };
+      }
+
+      if (run.backendJobId) {
+        const existing = await this.jobs.getByBackendJobId(run.backendJobId);
+        if (existing && (existing.status === 'pending' || existing.status === 'running' || existing.status === 'unknown')) {
+          return { ok: true, jobId: run.backendJobId, reason: null };
+        }
       }
 
       if (session.backend_job_id) {
         const existing = await this.jobs.getByBackendJobId(session.backend_job_id);
         if (existing && (existing.status === 'pending' || existing.status === 'running' || existing.status === 'unknown')) {
+          await processingRunStore.attachBackendJob(run.id, session.backend_job_id);
           return { ok: true, jobId: session.backend_job_id, reason: null };
         }
       }
 
       const recoveredRemote = await this.findActiveRemoteJob(session.inventory_id, session.aisle_id, idempotencyKey);
       if (recoveredRemote) {
+        await processingRunStore.attachBackendJob(run.id, recoveredRemote.id);
         await this.persistJob(
           sessionId,
           session.inventory_id,
@@ -137,19 +170,27 @@ export class ProcessingService {
       const path =
         `/api/v3/inventories/${encodeURIComponent(session.inventory_id)}` +
         `/aisles/${encodeURIComponent(session.aisle_id)}/process`;
+      const body = buildProcessAisleRequestBody(idempotencyKey, identificationMode);
       try {
-        const response = await this.api.post<ProcessAisleResponseDto>(
-          path,
-          { idempotency_key: idempotencyKey },
-          { headers: { 'Idempotency-Key': idempotencyKey } },
-        );
+        const response = await this.api.post<ProcessAisleResponseDto>(path, body, {
+          headers: { 'Idempotency-Key': idempotencyKey },
+        });
+        await processingRunStore.attachBackendJob(run.id, response.job_id);
         await this.persistJob(sessionId, session.inventory_id, session.aisle_id, response.job_id, 'queued');
-        this.logger.info('job_started', { sessionId, jobId: response.job_id, idempotencyKey });
+        this.logger.info('job_started', {
+          sessionId,
+          jobId: response.job_id,
+          runId: run.id,
+          idempotencyKey,
+          identificationMode: identificationMode ?? 'inherited',
+          executionStrategy: response.execution_strategy ?? null,
+        });
         return { ok: true, jobId: response.job_id, reason: null };
       } catch (e) {
         if (e instanceof ApiError && (e.status === 409 || e.code === 'ACTIVE_JOB_EXISTS')) {
           const recovered = await this.findActiveRemoteJob(session.inventory_id, session.aisle_id, idempotencyKey);
           if (recovered) {
+            await processingRunStore.attachBackendJob(run.id, recovered.id);
             await this.persistJob(sessionId, session.inventory_id, session.aisle_id, recovered.id, recovered.status);
             return { ok: true, jobId: recovered.id, reason: null };
           }
@@ -157,20 +198,32 @@ export class ProcessingService {
         if (e instanceof ApiError && (e.code === 'NETWORK_ERROR' || e.status === null)) {
           const recovered = await this.findActiveRemoteJob(session.inventory_id, session.aisle_id, idempotencyKey);
           if (recovered) {
+            await processingRunStore.attachBackendJob(run.id, recovered.id);
             await this.persistJob(sessionId, session.inventory_id, session.aisle_id, recovered.id, recovered.status);
             return { ok: true, jobId: recovered.id, reason: null };
           }
+          // Keep run active so a manual retry reuses the same idempotency key.
           return {
             ok: false,
             jobId: null,
             reason:
-              'No se confirmó el inicio del procesamiento. No reintentamos automáticamente para evitar jobs duplicados. Actualizá el estado o reintentá cuando haya conexión.',
+              'No se pudo iniciar el procesamiento. Verificá tu conexión e intentá nuevamente. ' +
+              'No reintentamos automáticamente para evitar jobs duplicados.',
           };
         }
+        if (e instanceof ApiError) {
+          await processingRunStore.markTerminal(run.id, 'failed');
+          return {
+            ok: false,
+            jobId: null,
+            reason: mapProcessStartErrorMessage(e),
+          };
+        }
+        await processingRunStore.markTerminal(run.id, 'failed');
         return {
           ok: false,
           jobId: null,
-          reason: e instanceof ApiError ? e.message : String(e),
+          reason: String(e),
         };
       }
     } finally {

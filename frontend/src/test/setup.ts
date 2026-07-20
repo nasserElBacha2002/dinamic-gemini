@@ -40,3 +40,11 @@ if (!('revokeObjectURL' in URL)) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (URL as any).revokeObjectURL = () => {};
 }
+
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as typeof ResizeObserver;
+}

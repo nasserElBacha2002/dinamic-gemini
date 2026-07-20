@@ -3,10 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { useAppSnackbar } from '../../../components/ui';
 import {
   useDeleteSupplierReferenceImage,
+  useActiveSupplierExtractionProfile,
   useSupplierReferenceImages,
   useUploadSupplierReferenceImages,
 } from '../../../hooks';
+import { ApiError } from '../../../api/types';
 import { resolveApiErrorMessage } from '../../../utils/apiErrors';
+import { useExtractionProfileCapabilities } from '../hooks/useExtractionProfileCapabilities';
 import SupplierReferenceImagesDrawer, {
   type SupplierReferenceImagesDrawerProps,
 } from './SupplierReferenceImagesDrawer';
@@ -38,8 +41,21 @@ export default function SupplierReferenceImagesModule({
   const imagesQuery = useSupplierReferenceImages(clientId, supplierId, {
     enabled: Boolean(moduleActive && clientId && supplierId),
   });
+  const activeProfileQuery = useActiveSupplierExtractionProfile(clientId, supplierId, {
+    enabled: Boolean(moduleActive && clientId && supplierId),
+  });
+  const activeExtractionProfileId =
+    activeProfileQuery.data?.id ??
+    (activeProfileQuery.isError &&
+    activeProfileQuery.error instanceof ApiError &&
+    activeProfileQuery.error.status === 404
+      ? null
+      : undefined);
   const uploadMutation = useUploadSupplierReferenceImages(clientId, supplierId);
   const deleteMutation = useDeleteSupplierReferenceImage(clientId, supplierId);
+  const capabilities = useExtractionProfileCapabilities({
+    enabled: Boolean(moduleActive && clientId && supplierId),
+  });
 
   const handleClose = useCallback(() => {
     onClose();
@@ -98,6 +114,8 @@ export default function SupplierReferenceImagesModule({
           ? resolveApiErrorMessage(deleteMutation.error, 'clients.suppliers.reference_images.delete_error')
           : null
       }
+      activeExtractionProfileId={activeExtractionProfileId ?? null}
+      annotationsEnabled={capabilities.reference_template_annotations_enabled}
     />
   );
 }

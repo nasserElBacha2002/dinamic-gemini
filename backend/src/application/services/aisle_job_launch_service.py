@@ -16,6 +16,12 @@ from src.application.ports.repositories import AisleRepository, JobRepository
 from src.application.ports.services import WorkerLaunchService
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.domain.aisle.entities import Aisle
+from src.domain.aisle_identification.modes import (
+    CONFIGURATION_SNAPSHOT_VERSION,
+    AisleIdentificationExecutionStrategy,
+    AisleIdentificationMode,
+    AisleIdentificationModeSource,
+)
 from src.domain.jobs.entities import Job, JobStatus
 from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 
@@ -41,6 +47,15 @@ class AisleJobLaunchService:
         provider_name: str,
         model_name: str | None,
         prompt_key: str,
+        identification_mode: AisleIdentificationMode = AisleIdentificationMode.INTERNAL_OCR,
+        identification_mode_source: AisleIdentificationModeSource = (
+            AisleIdentificationModeSource.SYSTEM_DEFAULT
+        ),
+        configuration_snapshot_version: int = CONFIGURATION_SNAPSHOT_VERSION,
+        execution_strategy: AisleIdentificationExecutionStrategy = (
+            AisleIdentificationExecutionStrategy.INTERNAL_OCR
+        ),
+        engine_params_json: dict | None = None,
     ) -> Job:
         now = self.clock.now()
         job = Job(
@@ -65,7 +80,13 @@ class AisleJobLaunchService:
                 else None
             ),
             prompt_key=prompt_key or DEFAULT_HYBRID_PROMPT_PROFILE,
-            engine_params_json=None,
+            engine_params_json=engine_params_json,
+            identification_mode=identification_mode,
+            identification_mode_source=identification_mode_source,
+            configuration_snapshot_version=int(
+                configuration_snapshot_version or CONFIGURATION_SNAPSHOT_VERSION
+            ),
+            execution_strategy=execution_strategy,
         )
         self.job_repo.save(job)
 
@@ -73,7 +94,10 @@ class AisleJobLaunchService:
         self.aisle_repo.save(aisle)
         self.status_reconciler.reconcile(aisle.inventory_id)
         logger.info(
-            "%s job_id=%s aisle_id=%s inventory_id=%s attempt_count=%s retry_of_job_id=%s provider_name=%s model_name=%s prompt_key=%s",
+            "%s job_id=%s aisle_id=%s inventory_id=%s attempt_count=%s retry_of_job_id=%s "
+            "provider_name=%s model_name=%s prompt_key=%s identification_mode=%s "
+            "identification_mode_source=%s configuration_snapshot_version=%s "
+            "actual_execution_strategy=%s",
             log_prefix,
             job.id,
             aisle.id,
@@ -83,6 +107,10 @@ class AisleJobLaunchService:
             job.provider_name,
             job.model_name,
             job.prompt_key,
+            job.identification_mode.value,
+            job.identification_mode_source.value,
+            job.configuration_snapshot_version,
+            job.execution_strategy.value,
         )
 
         try:

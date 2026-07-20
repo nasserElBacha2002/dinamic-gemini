@@ -31,3 +31,9 @@ class MemoryManualImageCoverageRepository:
             (link for link in self._by_key.values() if link.job_id == job_id),
             key=lambda x: (x.created_at, x.id),
         )
+
+    def delete_by_job_and_asset(self, job_id: str, source_asset_id: str) -> None:
+        key = (job_id, source_asset_id)
+        existing = self._by_key.pop(key, None)
+        if existing is not None:
+            self._by_id.pop(existing.id, None)

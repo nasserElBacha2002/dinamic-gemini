@@ -1,10 +1,15 @@
 """v3.0 Aisle API schemas (request/response)."""
 
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.api.schemas.identification_mode_literals import (
+    IdentificationModeLiteral,
+    IdentificationModeSourceLiteral,
+)
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 
 
@@ -32,17 +37,29 @@ class CreateAisleRequest(BaseModel):
 
 
 class UpdateAisleRequest(BaseModel):
-    """PATCH /api/v3/inventories/{inventory_id}/aisles/{aisle_id} body."""
+    """PATCH /api/v3/inventories/{inventory_id}/aisles/{aisle_id} — truly partial update."""
 
-    code: str = Field(..., min_length=1, max_length=64)
+    code: str | None = Field(None, min_length=1, max_length=64)
+    identification_mode: IdentificationModeLiteral | None = Field(
+        None,
+        description="Optional aisle identification override; send null to clear and inherit.",
+    )
 
     @field_validator("code")
     @classmethod
-    def strip_code(cls, value: str) -> str:
+    def strip_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         normalized = value.strip()
         if not normalized:
             raise ValueError("code must not be empty")
         return normalized
+
+    @model_validator(mode="after")
+    def require_at_least_one_field(self) -> UpdateAisleRequest:
+        if not self.model_fields_set:
+            raise ValueError("At least one field must be provided")
+        return self
 
 
 class AisleJobSummary(BaseModel):
@@ -52,23 +69,23 @@ class AisleJobSummary(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
-    error_message: Optional[str] = None
-    reference_usage: Optional[ReferenceUsageSummary] = None
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
-    last_heartbeat_at: Optional[datetime] = None
-    cancel_requested_at: Optional[datetime] = None
-    current_stage: Optional[str] = None
-    current_substep: Optional[str] = None
-    current_step_started_at: Optional[datetime] = None
+    error_message: str | None = None
+    reference_usage: ReferenceUsageSummary | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    last_heartbeat_at: datetime | None = None
+    cancel_requested_at: datetime | None = None
+    current_stage: str | None = None
+    current_substep: str | None = None
+    current_step_started_at: datetime | None = None
     attempt_count: int = 1
-    retry_of_job_id: Optional[str] = None
-    failure_code: Optional[str] = None
-    failure_message: Optional[str] = None
-    execution_id: Optional[str] = None
-    provider_name: Optional[str] = None
-    model_name: Optional[str] = None
-    prompt_key: Optional[str] = None
+    retry_of_job_id: str | None = None
+    failure_code: str | None = None
+    failure_message: str | None = None
+    execution_id: str | None = None
+    provider_name: str | None = None
+    model_name: str | None = None
+    prompt_key: str | None = None
 
 
 class AisleResponse(BaseModel):
@@ -86,14 +103,17 @@ class AisleResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     is_active: bool = True
-    error_code: Optional[str] = None
-    error_message: Optional[str] = None
-    operational_job_id: Optional[str] = Field(
+    error_code: str | None = None
+    error_message: str | None = None
+    operational_job_id: str | None = Field(
         None, description="Canonical run for default result reads (Phase 2); null = legacy aisle."
     )
-    client_supplier_id: Optional[str] = None
-    latest_job: Optional[AisleJobSummary] = None
+    client_supplier_id: str | None = None
+    latest_job: AisleJobSummary | None = None
     assets_count: int = 0
     positions_count: int = 0
     pending_review_positions_count: int = 0
-    last_activity_at: Optional[datetime] = None
+    last_activity_at: datetime | None = None
+    identification_mode: IdentificationModeLiteral | None = None
+    effective_identification_mode: IdentificationModeLiteral
+    identification_mode_source: IdentificationModeSourceLiteral

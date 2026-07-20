@@ -49,6 +49,10 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
+from src.application.ports.supplier_extraction_profile_repository import (
+    SupplierExtractionProfileRepository,
+    SupplierReferenceAnnotationRepository,
+)
 from src.application.services.artifact_publication_dispatcher import ArtifactPublicationDispatcher
 from src.application.services.artifact_recovery_source_resolver import (
     ArtifactRecoverySourceResolver,
@@ -74,6 +78,16 @@ from src.application.use_cases.finalization_recovery.verify_and_republish import
 )
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
+)
+from src.application.use_cases.suppliers.manage_supplier_extraction_profiles import (
+    ActivateSupplierExtractionProfileVersionUseCase,
+    CloneSupplierExtractionProfileUseCase,
+    CreateSupplierExtractionProfileVersionUseCase,
+    GetActiveSupplierExtractionProfileUseCase,
+    GetSupplierExtractionProfileByVersionUseCase,
+    ListSupplierExtractionProfilesUseCase,
+    ListSupplierReferenceAnnotationsUseCase,
+    ReplaceSupplierReferenceAnnotationsUseCase,
 )
 from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
     ActivateSupplierPromptConfigVersionUseCase,
@@ -124,6 +138,16 @@ from src.runtime.container.capture_session_builders import (
     build_capture_session_item_repository,
     build_capture_session_repository,
 )
+from src.runtime.container.extraction_profile_builders import (
+    build_activate_supplier_extraction_profile_version_use_case,
+    build_clone_supplier_extraction_profile_use_case,
+    build_create_supplier_extraction_profile_version_use_case,
+    build_get_active_supplier_extraction_profile_use_case,
+    build_get_supplier_extraction_profile_by_version_use_case,
+    build_list_supplier_extraction_profiles_use_case,
+    build_list_supplier_reference_annotations_use_case,
+    build_replace_supplier_reference_annotations_use_case,
+)
 from src.runtime.container.label_builders import (
     build_final_count_repository,
     build_normalized_label_repository,
@@ -154,7 +178,9 @@ from src.runtime.container.repository_builders import (
     build_result_evidence_repository,
     build_review_action_repository,
     build_source_asset_repository,
+    build_supplier_extraction_profile_repository,
     build_supplier_prompt_config_repository,
+    build_supplier_reference_annotation_repository,
     build_supplier_reference_image_repository,
 )
 from src.runtime.container.runtime_environment import is_production_like_runtime
@@ -215,6 +241,8 @@ class AppContainer:
         self._asset_repo: SourceAssetRepository | None = None
         self._supplier_reference_image_repo: SupplierReferenceImageRepository | None = None
         self._supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None
+        self._supplier_extraction_profile_repo: SupplierExtractionProfileRepository | None = None
+        self._supplier_reference_annotation_repo: SupplierReferenceAnnotationRepository | None = None
         self._position_repo: PositionRepository | None = None
         self._product_record_repo: ProductRecordRepository | None = None
         self._evidence_repo: EvidenceRepository | None = None
@@ -308,6 +336,8 @@ class AppContainer:
         self._asset_repo = None
         self._supplier_reference_image_repo = None
         self._supplier_prompt_config_repo = None
+        self._supplier_extraction_profile_repo = None
+        self._supplier_reference_annotation_repo = None
         self._position_repo = None
         self._product_record_repo = None
         self._evidence_repo = None
@@ -391,6 +421,15 @@ class AppContainer:
         else:
             logger.info(log_msg, *log_args)
         return res
+
+    def is_sql_repository_backend(self) -> bool:
+        """True when this container's resolved backend is SQL (not memory-only/fallback).
+
+        Callers that build optional collaborators (e.g. the Phase 2 image-processing bridge)
+        use this to decide whether an in-memory repository fallback would be inconsistent
+        with the rest of the app's persistence (``require_sql``).
+        """
+        return self._get_repository_backend_resolution().mode == RepositoryBackendMode.SQL
 
     def _build_sql_repository_or_memory(
         self,
@@ -479,6 +518,22 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._supplier_prompt_config_repo
+
+    def get_supplier_extraction_profile_repo(self) -> SupplierExtractionProfileRepository:
+        if self._supplier_extraction_profile_repo is not None:
+            return self._supplier_extraction_profile_repo
+        self._supplier_extraction_profile_repo = build_supplier_extraction_profile_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._supplier_extraction_profile_repo
+
+    def get_supplier_reference_annotation_repo(self) -> SupplierReferenceAnnotationRepository:
+        if self._supplier_reference_annotation_repo is not None:
+            return self._supplier_reference_annotation_repo
+        self._supplier_reference_annotation_repo = build_supplier_reference_annotation_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._supplier_reference_annotation_repo
 
     def get_position_repo(self) -> PositionRepository:
         if self._position_repo is not None:
@@ -672,6 +727,164 @@ class AppContainer:
         else:
             self._job_source_asset_repo = MemoryJobSourceAssetRepository()
         return self._job_source_asset_repo
+
+    def get_job_asset_processing_state_repo(self):
+        if getattr(self, "_job_asset_processing_state_repo", None) is not None:
+            return self._job_asset_processing_state_repo
+        from src.infrastructure.repositories.memory_job_asset_processing_state_repository import (
+            MemoryJobAssetProcessingStateRepository,
+        )
+        from src.infrastructure.repositories.sql_job_asset_processing_state_repository import (
+            SqlJobAssetProcessingStateRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._job_asset_processing_state_repo = SqlJobAssetProcessingStateRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._job_asset_processing_state_repo = MemoryJobAssetProcessingStateRepository()
+        return self._job_asset_processing_state_repo
+
+    def get_processing_attempt_repo(self):
+        if getattr(self, "_processing_attempt_repo", None) is not None:
+            return self._processing_attempt_repo
+        from src.infrastructure.repositories.memory_processing_attempt_repository import (
+            MemoryProcessingAttemptRepository,
+        )
+        from src.infrastructure.repositories.sql_processing_attempt_repository import (
+            SqlProcessingAttemptRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._processing_attempt_repo = SqlProcessingAttemptRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._processing_attempt_repo = MemoryProcessingAttemptRepository()
+        return self._processing_attempt_repo
+
+    def get_external_image_analysis_request_repo(self):
+        """Durable external fallback claims (Phase 5 corrections — SQL when available)."""
+        if getattr(self, "_external_image_analysis_request_repo", None) is not None:
+            return self._external_image_analysis_request_repo
+        from src.infrastructure.repositories.memory_external_image_analysis_request_repository import (
+            MemoryExternalImageAnalysisRequestRepository,
+        )
+        from src.infrastructure.repositories.sql_external_image_analysis_request_repository import (
+            SqlExternalImageAnalysisRequestRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._external_image_analysis_request_repo = (
+                SqlExternalImageAnalysisRequestRepository(self._get_v3_sql_client())
+            )
+        else:
+            self._external_image_analysis_request_repo = (
+                MemoryExternalImageAnalysisRequestRepository()
+            )
+        return self._external_image_analysis_request_repo
+
+    def get_processing_event_repo(self):
+        """Phase 7 structured processing events (memory or SQL)."""
+        if getattr(self, "_processing_event_repo", None) is not None:
+            return self._processing_event_repo
+        from src.infrastructure.repositories.memory_processing_event_repository import (
+            MemoryProcessingEventRepository,
+        )
+        from src.infrastructure.repositories.sql_processing_event_repository import (
+            SqlProcessingEventRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._processing_event_repo = SqlProcessingEventRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._processing_event_repo = MemoryProcessingEventRepository()
+        return self._processing_event_repo
+
+    def get_asset_processing_command_repo(self):
+        if getattr(self, "_asset_processing_command_repo", None) is not None:
+            return self._asset_processing_command_repo
+        from src.infrastructure.repositories.memory_asset_processing_command_repository import (
+            MemoryAssetProcessingCommandRepository,
+        )
+        from src.infrastructure.repositories.sql_asset_processing_command_repository import (
+            SqlAssetProcessingCommandRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._asset_processing_command_repo = SqlAssetProcessingCommandRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._asset_processing_command_repo = MemoryAssetProcessingCommandRepository()
+        return self._asset_processing_command_repo
+
+    def get_processing_action_idempotency_repo(self):
+        if getattr(self, "_processing_action_idempotency_repo", None) is not None:
+            return self._processing_action_idempotency_repo
+        from src.infrastructure.repositories.memory_processing_action_idempotency_repository import (
+            MemoryProcessingActionIdempotencyRepository,
+        )
+        from src.infrastructure.repositories.sql_processing_action_idempotency_repository import (
+            SqlProcessingActionIdempotencyRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._processing_action_idempotency_repo = (
+                SqlProcessingActionIdempotencyRepository(self._get_v3_sql_client())
+            )
+        else:
+            self._processing_action_idempotency_repo = (
+                MemoryProcessingActionIdempotencyRepository()
+            )
+        return self._processing_action_idempotency_repo
+
+    def get_job_processing_lease_repo(self):
+        if getattr(self, "_job_processing_lease_repo", None) is not None:
+            return self._job_processing_lease_repo
+        from src.infrastructure.repositories.memory_job_processing_lease_repository import (
+            MemoryJobProcessingLeaseRepository,
+        )
+        from src.infrastructure.repositories.sql_job_processing_lease_repository import (
+            SqlJobProcessingLeaseRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._job_processing_lease_repo = SqlJobProcessingLeaseRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._job_processing_lease_repo = MemoryJobProcessingLeaseRepository()
+        return self._job_processing_lease_repo
+
+    def get_batch_processing_attempt_repo(self):
+        if getattr(self, "_batch_processing_attempt_repo", None) is not None:
+            return self._batch_processing_attempt_repo
+        from src.infrastructure.repositories.memory_batch_processing_attempt_repository import (
+            MemoryBatchProcessingAttemptRepository,
+        )
+        from src.infrastructure.repositories.sql_batch_processing_attempt_repository import (
+            SqlBatchProcessingAttemptRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._batch_processing_attempt_repo = SqlBatchProcessingAttemptRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._batch_processing_attempt_repo = MemoryBatchProcessingAttemptRepository()
+        return self._batch_processing_attempt_repo
 
     def get_manual_image_coverage_repo(self):
         if self._manual_image_coverage_repo is not None:
@@ -1032,4 +1245,81 @@ class AppContainer:
             client_repo=self.get_client_repo(),
             client_supplier_repo=self.get_client_supplier_repo(),
             prompt_config_repo=self.get_supplier_prompt_config_repo(),
+        )
+
+    def get_list_supplier_extraction_profiles_use_case(
+        self,
+    ) -> ListSupplierExtractionProfilesUseCase:
+        return build_list_supplier_extraction_profiles_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
+        )
+
+    def get_get_active_supplier_extraction_profile_use_case(
+        self,
+    ) -> GetActiveSupplierExtractionProfileUseCase:
+        return build_get_active_supplier_extraction_profile_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
+        )
+
+    def get_get_supplier_extraction_profile_by_version_use_case(
+        self,
+    ) -> GetSupplierExtractionProfileByVersionUseCase:
+        return build_get_supplier_extraction_profile_by_version_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
+        )
+
+    def get_create_supplier_extraction_profile_version_use_case(
+        self,
+    ) -> CreateSupplierExtractionProfileVersionUseCase:
+        return build_create_supplier_extraction_profile_version_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
+            clock=self.get_clock(),
+        )
+
+    def get_activate_supplier_extraction_profile_version_use_case(
+        self,
+    ) -> ActivateSupplierExtractionProfileVersionUseCase:
+        return build_activate_supplier_extraction_profile_version_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
+        )
+
+    def get_clone_supplier_extraction_profile_use_case(
+        self,
+    ) -> CloneSupplierExtractionProfileUseCase:
+        return build_clone_supplier_extraction_profile_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
+            clock=self.get_clock(),
+        )
+
+    def get_list_supplier_reference_annotations_use_case(
+        self,
+    ) -> ListSupplierReferenceAnnotationsUseCase:
+        return build_list_supplier_reference_annotations_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            reference_repo=self.get_supplier_reference_image_repo(),
+            annotation_repo=self.get_supplier_reference_annotation_repo(),
+        )
+
+    def get_replace_supplier_reference_annotations_use_case(
+        self,
+    ) -> ReplaceSupplierReferenceAnnotationsUseCase:
+        return build_replace_supplier_reference_annotations_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            reference_repo=self.get_supplier_reference_image_repo(),
+            annotation_repo=self.get_supplier_reference_annotation_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
         )

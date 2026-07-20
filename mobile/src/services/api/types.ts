@@ -143,8 +143,18 @@ export interface UploadAisleAssetsResponseDto {
   readonly errors: readonly UploadAisleAssetErrorDto[];
 }
 
+export interface ProcessAisleRequestDto {
+  readonly idempotency_key?: string;
+  /** Job-only override. Omit to inherit aisle → inventory → client → system default. */
+  readonly identification_mode?: 'CODE_SCAN' | 'INTERNAL_OCR' | 'LEGACY_LLM' | null;
+}
+
 export interface ProcessAisleResponseDto {
   readonly job_id: string;
+  readonly identification_mode?: string | null;
+  readonly identification_mode_source?: string | null;
+  readonly execution_strategy?: string | null;
+  readonly configuration_snapshot_version?: number | null;
 }
 
 export interface JobSummaryDto {

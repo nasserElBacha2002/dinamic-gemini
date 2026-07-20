@@ -10,6 +10,9 @@ from src.application.ports.repositories import AisleRepository, JobRepository
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
+from src.application.services.legacy_processing_guard import (
+    note_historical_legacy_retry_created,
+)
 from src.application.services.process_aisle_job_for_aisle import (
     require_process_aisle_job_for_aisle,
 )
@@ -107,6 +110,14 @@ class RetryAisleJobUseCase:
         )
         raw_payload["aisle_id"] = resolved_aisle_id
         payload = cast(ProcessAislePayload, raw_payload)
+        # Retry must reuse the original immutable snapshot (strategy + engine_params), not
+        # re-interpret current feature flags / OCR settings.
+        execution_strategy = original_job.execution_strategy
+        engine_params_json = (
+            dict(original_job.engine_params_json)
+            if isinstance(original_job.engine_params_json, dict)
+            else None
+        )
         retry_job = self._launch_service.create_and_launch_attempt(
             aisle=aisle,
             payload=payload,
@@ -116,12 +127,27 @@ class RetryAisleJobUseCase:
             provider_name=(original_job.provider_name or "gemini").strip().lower(),
             model_name=original_job.model_name,
             prompt_key=DEFAULT_HYBRID_PROMPT_PROFILE,
+            identification_mode=original_job.identification_mode,
+            identification_mode_source=original_job.identification_mode_source,
+            configuration_snapshot_version=original_job.configuration_snapshot_version,
+            execution_strategy=execution_strategy,
+            engine_params_json=engine_params_json,
+        )
+        # Historical LEGACY retries are allowed (immutable snapshot). New starts are not.
+        note_historical_legacy_retry_created(
+            identification_mode=retry_job.identification_mode,
+            identification_mode_source=retry_job.identification_mode_source,
         )
         logger.info(
-            "job.retry_requested previous_job_id=%s new_job_id=%s aisle_id=%s attempt_count=%s",
+            "job.retry_requested previous_job_id=%s new_job_id=%s aisle_id=%s attempt_count=%s "
+            "identification_mode=%s identification_mode_source=%s actual_execution_strategy=%s "
+            "reused_original_snapshot=true",
             original_job.id,
             retry_job.id,
             command.aisle_id,
             retry_job.attempt_count,
+            retry_job.identification_mode.value,
+            retry_job.identification_mode_source.value,
+            retry_job.execution_strategy.value,
         )
         return retry_job

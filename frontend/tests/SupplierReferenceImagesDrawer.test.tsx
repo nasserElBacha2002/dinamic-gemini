@@ -103,4 +103,14 @@ describe('SupplierReferenceImagesDrawer', () => {
 
     await waitFor(() => expect(props.onDelete).toHaveBeenCalledWith('img-1'));
   });
+
+  it('hides configure-fields action when annotations are disabled', () => {
+    renderDrawer({ items: [defaultItem], annotationsEnabled: false });
+    expect(screen.queryByRole('button', { name: /configurar campos/i })).not.toBeInTheDocument();
+  });
+
+  it('shows configure-fields action when annotations are enabled', () => {
+    renderDrawer({ items: [defaultItem], annotationsEnabled: true });
+    expect(screen.getByRole('button', { name: /configurar campos/i })).toBeInTheDocument();
+  });
 });

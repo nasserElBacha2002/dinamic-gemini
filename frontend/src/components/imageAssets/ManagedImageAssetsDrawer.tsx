@@ -70,6 +70,8 @@ export interface ManagedImageAssetsDrawerProps {
   /** When this returns a non-empty string, preview is skipped and the message is shown (e.g. video in image-only viewer). */
   previewBlockedMessage?: (item: ManagedImageAssetItem) => string | null;
   formatDeleteConfirm?: (fileName: string) => string;
+  /** Extra actions rendered per asset row (after preview/replace/delete). */
+  renderItemExtraActions?: (item: ManagedImageAssetItem) => ReactNode;
   /** When true: no upload/replace/delete UI, no management panel, preview only. */
   readOnly?: boolean;
   /** Passed to {@link LoadingBlock} while `isLoading` is true. */
@@ -109,6 +111,7 @@ export default function ManagedImageAssetsDrawer({
   previewErrorMessageKey = 'errors.preview_reference_failed',
   previewBlockedMessage,
   formatDeleteConfirm,
+  renderItemExtraActions,
   readOnly = false,
   loadingMessage,
   showProgressDialog = true,
@@ -414,6 +417,7 @@ export default function ManagedImageAssetsDrawer({
                                 {copy.delete}
                               </Button>
                             ) : null}
+                            {renderItemExtraActions?.(item) ?? null}
                           </>
                         }
                       />

@@ -10,7 +10,18 @@ base de datos, worker ni flujo de procesamiento paralelo.
 
 ---
 
-## Alcance: solo fotografías
+## Tipo de procesamiento (process aisle)
+
+Antes de iniciar el job, la app muestra un modal de confirmación con:
+
+- Automático (herencia: omite `identification_mode`)
+- Escanear códigos → `CODE_SCAN`
+- Reconocimiento de etiqueta → `INTERNAL_OCR`
+
+Contrato: `POST /api/v3/inventories/{id}/aisles/{id}/process` con cuerpo
+`{ idempotency_key, identification_mode? }`. No se ofrecen modos legacy.
+La preferencia vive en estado de sesión de la app (una sola fuente de verdad).
+
 
 - Consulta únicamente `MediaStore.Images` / `MediaType.photo`.
 - Permisos: `READ_MEDIA_IMAGES` (+ parcial Android 14). **No** `READ_MEDIA_VIDEO`.

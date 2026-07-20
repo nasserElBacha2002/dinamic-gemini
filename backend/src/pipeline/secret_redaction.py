@@ -15,6 +15,12 @@ _SENSITIVE_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 
+# OCR / usage counters that contain ``token`` but are never secrets.
+_SAFE_TOKEN_METRIC_KEY_RE = re.compile(
+    r"(^|_)(normalized_)?token_count$|(^|_)tokens$|numeric_token_count|raw_numeric_token_count",
+    re.IGNORECASE,
+)
+
 _PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?i)\bBearer\s+[A-Za-z0-9\-._~+/]+=*"),
     re.compile(r"\bsk-(?:ant|proj|or-v1)-[A-Za-z0-9\-_]{8,}"),
@@ -49,7 +55,9 @@ def redact_secrets_in_value(value: Any, *, _depth: int = 0) -> Any:
         out: dict[str, Any] = {}
         for k, v in value.items():
             key = str(k)
-            if _SENSITIVE_KEY_RE.search(key):
+            if _SAFE_TOKEN_METRIC_KEY_RE.search(key):
+                out[key] = redact_secrets_in_value(v, _depth=_depth + 1)
+            elif _SENSITIVE_KEY_RE.search(key):
                 out[key] = REDACTED
             else:
                 out[key] = redact_secrets_in_value(v, _depth=_depth + 1)

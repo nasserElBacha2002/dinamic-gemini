@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 
 from src.api.constants.route_paths import API_V3_CONFIG_ROUTER_PREFIX
 from src.api.schemas.upload_limits_schemas import UploadLimitsResponse
@@ -15,6 +16,12 @@ router = APIRouter(
     tags=["config-v3"],
     dependencies=[Depends(get_current_admin)],
 )
+
+
+class ExtractionProfileCapabilitiesResponse(BaseModel):
+    client_extraction_profiles_enabled: bool = Field(...)
+    profile_aware_validation_enabled: bool = Field(...)
+    reference_template_annotations_enabled: bool = Field(...)
 
 
 @router.get("/upload-limits", response_model=UploadLimitsResponse)
@@ -36,4 +43,58 @@ def get_upload_limits() -> UploadLimitsResponse:
         upload_batch_concurrency=settings.upload_batch_concurrency,
         retry_attempts=settings.upload_retry_attempts,
         retry_base_delay_ms=settings.upload_retry_base_delay_ms,
+    )
+
+
+@router.get(
+    "/extraction-profile-capabilities",
+    response_model=ExtractionProfileCapabilitiesResponse,
+)
+def get_extraction_profile_capabilities() -> ExtractionProfileCapabilitiesResponse:
+    """Real feature-flag capabilities for Phase 6 supplier extraction profiles."""
+    settings = load_settings()
+    return ExtractionProfileCapabilitiesResponse(
+        client_extraction_profiles_enabled=bool(
+            getattr(settings, "client_extraction_profiles_enabled", False)
+        ),
+        profile_aware_validation_enabled=bool(
+            getattr(settings, "profile_aware_validation_enabled", False)
+        ),
+        reference_template_annotations_enabled=bool(
+            getattr(settings, "reference_template_annotations_enabled", False)
+        ),
+    )
+
+
+class ProcessingObservabilityCapabilitiesResponse(BaseModel):
+    processing_observability_enabled: bool = Field(...)
+    processing_asset_logs_ui_enabled: bool = False
+    processing_asset_reprocess_enabled: bool = False
+    processing_manual_actions_enabled: bool = False
+    processing_events_persistence_enabled: bool = False
+
+
+@router.get(
+    "/processing-observability-capabilities",
+    response_model=ProcessingObservabilityCapabilitiesResponse,
+)
+def get_processing_observability_capabilities() -> ProcessingObservabilityCapabilitiesResponse:
+    """Phase 7 feature-flag capabilities for operational processing UX."""
+    settings = load_settings()
+    return ProcessingObservabilityCapabilitiesResponse(
+        processing_observability_enabled=bool(
+            getattr(settings, "processing_observability_enabled", False)
+        ),
+        processing_asset_logs_ui_enabled=bool(
+            getattr(settings, "processing_asset_logs_ui_enabled", False)
+        ),
+        processing_asset_reprocess_enabled=bool(
+            getattr(settings, "processing_asset_reprocess_enabled", False)
+        ),
+        processing_manual_actions_enabled=bool(
+            getattr(settings, "processing_manual_actions_enabled", False)
+        ),
+        processing_events_persistence_enabled=bool(
+            getattr(settings, "processing_events_persistence_enabled", False)
+        ),
     )

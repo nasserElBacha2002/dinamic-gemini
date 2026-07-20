@@ -252,7 +252,8 @@ def test_start_aisle_processing_creates_job_and_marks_aisle_queued() -> None:
         ),
         stale_reconciler=make_stale_reconciler(job_repo, clock),
     )
-    job_id = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    result = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    job_id = result.job_id
     assert queue.launched == [job_id]
     saved_job = job_repo.get_by_id(job_id)
     assert saved_job is not None
@@ -297,7 +298,7 @@ def test_start_aisle_processing_persists_explicit_provider_and_prompt() -> None:
         ),
         stale_reconciler=make_stale_reconciler(job_repo, clock),
     )
-    job_id = use_case.execute(
+    result = use_case.execute(
         StartAisleProcessingCommand(
             inventory_id="inv1",
             aisle_id="a1",
@@ -306,6 +307,7 @@ def test_start_aisle_processing_persists_explicit_provider_and_prompt() -> None:
             prompt_key="global_v21",
         )
     )
+    job_id = result.job_id
     saved = job_repo.get_by_id(job_id)
     assert saved is not None
     assert saved.provider_name == STUB_PRIMARY_PROVIDER
@@ -353,7 +355,8 @@ def test_start_aisle_processing_persists_job_before_enqueue() -> None:
         stale_reconciler=make_stale_reconciler(job_repo, clock),
     )
 
-    job_id = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    result = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    job_id = result.job_id
     assert queue.launched == [job_id]
 
 
@@ -447,7 +450,8 @@ def test_start_aisle_processing_persists_starting_before_worker_launch() -> None
         stale_reconciler=make_stale_reconciler(job_repo, clock),
     )
 
-    job_id = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    result = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    job_id = result.job_id
     saved_job = job_repo.get_by_id(job_id)
     assert saved_job is not None
     assert saved_job.execution_id == "exec-started"
@@ -492,7 +496,8 @@ def test_start_aisle_processing_reconciles_stale_active_job_before_new_launch() 
         stale_reconciler=make_stale_reconciler(job_repo, clock, stale_after_seconds=60),
     )
 
-    new_job_id = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    new_result = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    new_job_id = new_result.job_id
 
     stale_job = job_repo.get_by_id("stale-job")
     assert stale_job is not None
@@ -696,7 +701,8 @@ def test_start_aisle_processing_allows_new_job_when_latest_is_terminal() -> None
         ),
         stale_reconciler=make_stale_reconciler(job_repo, clock),
     )
-    new_id = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    new_result = use_case.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+    new_id = new_result.job_id
     assert new_id != "old-done"
     assert queue.launched == [new_id]
 

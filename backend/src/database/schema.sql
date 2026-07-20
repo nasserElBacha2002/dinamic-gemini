@@ -146,6 +146,19 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventorie
     ALTER TABLE inventories ADD primary_prompt_key NVARCHAR(150) NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'primary_prompt_version')
     ALTER TABLE inventories ADD primary_prompt_version NVARCHAR(50) NULL;
+
+-- Phase 1 aisle identification override on inventories (mirror 0049).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventories') AND name = 'identification_mode')
+    ALTER TABLE inventories ADD identification_mode VARCHAR(32) NULL;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.check_constraints WHERE name = 'CK_inventories_identification_mode'
+)
+    ALTER TABLE inventories ADD CONSTRAINT CK_inventories_identification_mode
+    CHECK (
+        identification_mode IS NULL
+        OR identification_mode IN ('CODE_SCAN', 'INTERNAL_OCR', 'LEGACY_LLM')
+    );
 GO
 
 -- Align processing_mode with migrations/versions/0013_inventory_processing_mode.sql (backfill, NOT NULL, default).
@@ -205,6 +218,20 @@ IF NOT EXISTS (
 GO
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_clients_name' AND object_id = OBJECT_ID('clients'))
     CREATE INDEX IX_clients_name ON clients(name);
+GO
+
+-- Phase 1 aisle identification — clients.default_identification_mode (mirror 0049/0050).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('clients') AND name = 'default_identification_mode')
+    ALTER TABLE clients ADD default_identification_mode VARCHAR(32) NULL;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.check_constraints WHERE name = 'CK_clients_default_identification_mode'
+)
+    ALTER TABLE clients ADD CONSTRAINT CK_clients_default_identification_mode
+    CHECK (
+        default_identification_mode IS NULL
+        OR default_identification_mode IN ('CODE_SCAN', 'INTERNAL_OCR', 'LEGACY_LLM')
+    );
 GO
 
 -- Phase A2 — Client suppliers foundation (mirror migrations/versions/0025_client_suppliers_foundation.sql).
@@ -338,6 +365,58 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'prompt_version')
     ALTER TABLE inventory_jobs ADD prompt_version NVARCHAR(256) NULL;
 GO
+
+-- Phase 1 aisle identification snapshot (mirror migrations/versions/0049_aisle_identification_mode.sql).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'identification_mode')
+    ALTER TABLE inventory_jobs ADD identification_mode VARCHAR(32) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'identification_mode_source')
+    ALTER TABLE inventory_jobs ADD identification_mode_source VARCHAR(32) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'configuration_snapshot_version')
+    ALTER TABLE inventory_jobs ADD configuration_snapshot_version INT NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'execution_strategy')
+    ALTER TABLE inventory_jobs ADD execution_strategy VARCHAR(64) NULL;
+GO
+UPDATE inventory_jobs SET identification_mode = 'LEGACY_LLM' WHERE identification_mode IS NULL;
+UPDATE inventory_jobs SET identification_mode_source = 'LEGACY_MIGRATION' WHERE identification_mode_source IS NULL;
+UPDATE inventory_jobs SET configuration_snapshot_version = 1 WHERE configuration_snapshot_version IS NULL;
+UPDATE inventory_jobs SET execution_strategy = 'LEGACY_LLM' WHERE execution_strategy IS NULL;
+GO
+IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'identification_mode' AND is_nullable = 1)
+    ALTER TABLE inventory_jobs ALTER COLUMN identification_mode VARCHAR(32) NOT NULL;
+IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'identification_mode_source' AND is_nullable = 1)
+    ALTER TABLE inventory_jobs ALTER COLUMN identification_mode_source VARCHAR(32) NOT NULL;
+GO
+IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE parent_object_id = OBJECT_ID('inventory_jobs') AND name = 'DF_inventory_jobs_identification_mode')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT DF_inventory_jobs_identification_mode DEFAULT ('LEGACY_LLM') FOR identification_mode;
+IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE parent_object_id = OBJECT_ID('inventory_jobs') AND name = 'DF_inventory_jobs_identification_mode_source')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT DF_inventory_jobs_identification_mode_source DEFAULT ('LEGACY_MIGRATION') FOR identification_mode_source;
+IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE parent_object_id = OBJECT_ID('inventory_jobs') AND name = 'DF_inventory_jobs_configuration_snapshot_version')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT DF_inventory_jobs_configuration_snapshot_version DEFAULT (1) FOR configuration_snapshot_version;
+IF NOT EXISTS (SELECT * FROM sys.default_constraints WHERE parent_object_id = OBJECT_ID('inventory_jobs') AND name = 'DF_inventory_jobs_execution_strategy')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT DF_inventory_jobs_execution_strategy DEFAULT ('LEGACY_LLM') FOR execution_strategy;
+GO
+-- Phase 1 corrections — CHECK constraints (mirror 0050).
+IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_identification_mode')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_identification_mode
+    CHECK (identification_mode IN ('CODE_SCAN', 'INTERNAL_OCR', 'LEGACY_LLM'));
+GO
+IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_identification_mode_source')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_identification_mode_source
+    CHECK (
+        identification_mode_source IN (
+            'REQUEST', 'AISLE', 'INVENTORY', 'CLIENT', 'SYSTEM_DEFAULT', 'LEGACY_MIGRATION'
+        )
+    );
+GO
+-- Phase 3 (0053) + Phase 4 (0055): execution_strategy CHECK includes CODE_SCAN + INTERNAL_OCR.
+IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_execution_strategy')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_execution_strategy
+    CHECK (execution_strategy IN ('LEGACY_LLM', 'LEGACY_LLM_TEMPORARY', 'CODE_SCAN', 'INTERNAL_OCR'));
+GO
+IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_configuration_snapshot_version')
+    ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_configuration_snapshot_version
+    CHECK (configuration_snapshot_version > 0);
+GO
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_inventory_jobs_provider_model_prompt' AND object_id = OBJECT_ID('inventory_jobs'))
     CREATE INDEX IX_inventory_jobs_provider_model_prompt ON inventory_jobs(provider_name, model_name, prompt_key);
 GO
@@ -368,6 +447,19 @@ END;
 GO
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_aisles_client_supplier_id' AND object_id = OBJECT_ID('aisles'))
     CREATE INDEX IX_aisles_client_supplier_id ON aisles(client_supplier_id);
+
+-- Phase 1 aisle identification override on aisles (mirror 0049/0050).
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('aisles') AND name = 'identification_mode')
+    ALTER TABLE aisles ADD identification_mode VARCHAR(32) NULL;
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.check_constraints WHERE name = 'CK_aisles_identification_mode'
+)
+    ALTER TABLE aisles ADD CONSTRAINT CK_aisles_identification_mode
+    CHECK (
+        identification_mode IS NULL
+        OR identification_mode IN ('CODE_SCAN', 'INTERNAL_OCR', 'LEGACY_LLM')
+    );
 GO
 
 -- v3.0 — Source assets (Épica 4, Documento técnico §7.3)
@@ -1094,4 +1186,528 @@ BEGIN
     CREATE INDEX IX_result_evidence_job_source_asset_id ON result_evidence (job_id, source_asset_id);
     CREATE INDEX IX_result_evidence_job_resolved_manifest_entry_id ON result_evidence (job_id, resolved_manifest_entry_id);
 END;
+GO
+
+-- Phase 2 — job asset processing states + attempts (mirror 0051).
+IF OBJECT_ID('job_asset_processing_states', 'U') IS NULL
+BEGIN
+    CREATE TABLE job_asset_processing_states (
+        id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        active_result_id VARCHAR(36) NULL,
+        attempt_count INT NOT NULL CONSTRAINT DF_japs_attempt_count DEFAULT (0),
+        last_strategy VARCHAR(64) NULL,
+        started_at DATETIME2 NULL,
+        finished_at DATETIME2 NULL,
+        duration_ms INT NULL,
+        error_code VARCHAR(64) NULL,
+        error_message NVARCHAR(2048) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        version INT NOT NULL CONSTRAINT DF_japs_version DEFAULT (1),
+        execution_scope VARCHAR(32) NULL,
+        worker_token VARCHAR(128) NULL,
+        lease_expires_at DATETIME2 NULL,
+        CONSTRAINT PK_job_asset_processing_states PRIMARY KEY (id),
+        CONSTRAINT CK_job_asset_processing_states_status CHECK (
+            status IN (
+                'PENDING', 'PROCESSING', 'RESOLVED', 'UNRECOGNIZED',
+                'FAILED_TECHNICAL', 'PENDING_MANUAL_REVIEW', 'CANCELLED'
+            )
+        ),
+        CONSTRAINT CK_job_asset_processing_states_version CHECK (version > 0),
+        CONSTRAINT CK_job_asset_processing_states_attempt_count CHECK (attempt_count >= 0),
+        CONSTRAINT CK_job_asset_processing_states_worker_token CHECK (
+            worker_token IS NULL OR LEN(worker_token) > 0
+        ),
+        CONSTRAINT CK_job_asset_processing_states_execution_scope CHECK (
+            execution_scope IS NULL OR execution_scope IN ('AISLE_BATCH', 'SINGLE_ASSET')
+        )
+    );
+END
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_job_asset_processing_states_job_asset'
+      AND object_id = OBJECT_ID('job_asset_processing_states')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_job_asset_processing_states_job_asset
+        ON job_asset_processing_states(job_id, asset_id);
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_job_asset_processing_states_job_status'
+      AND object_id = OBJECT_ID('job_asset_processing_states')
+)
+    CREATE NONCLUSTERED INDEX IX_job_asset_processing_states_job_status
+        ON job_asset_processing_states(job_id, status);
+GO
+IF OBJECT_ID('processing_attempts', 'U') IS NULL
+BEGIN
+    CREATE TABLE processing_attempts (
+        id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        strategy VARCHAR(64) NOT NULL,
+        provider VARCHAR(128) NULL,
+        model VARCHAR(256) NULL,
+        status VARCHAR(32) NOT NULL,
+        attempt_number INT NOT NULL,
+        started_at DATETIME2 NULL,
+        finished_at DATETIME2 NULL,
+        duration_ms INT NULL,
+        error_code VARCHAR(64) NULL,
+        error_message NVARCHAR(2048) NULL,
+        raw_result_reference NVARCHAR(1024) NULL,
+        normalized_result_json NVARCHAR(MAX) NULL,
+        validation_result_json NVARCHAR(MAX) NULL,
+        execution_scope VARCHAR(32) NULL,
+        logical_asset_attempt BIT NOT NULL CONSTRAINT DF_pa_logical DEFAULT (1),
+        configuration_snapshot_version INT NULL,
+        parent_batch_attempt_id VARCHAR(36) NULL,
+        batch_execution_id VARCHAR(36) NULL,
+        worker_token VARCHAR(128) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NULL,
+        CONSTRAINT PK_processing_attempts PRIMARY KEY (id),
+        CONSTRAINT CK_processing_attempts_status CHECK (
+            status IN (
+                'STARTED', 'SUCCEEDED', 'INVALID', 'UNRECOGNIZED',
+                'FAILED_TECHNICAL', 'CANCELLED'
+            )
+        ),
+        CONSTRAINT CK_processing_attempts_attempt_number CHECK (attempt_number > 0)
+    );
+END
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_processing_attempts_job_asset_strategy_n'
+      AND object_id = OBJECT_ID('processing_attempts')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_processing_attempts_job_asset_strategy_n
+        ON processing_attempts(job_id, asset_id, strategy, attempt_number);
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_processing_attempts_job_asset'
+      AND object_id = OBJECT_ID('processing_attempts')
+)
+    CREATE NONCLUSTERED INDEX IX_processing_attempts_job_asset
+        ON processing_attempts(job_id, asset_id, attempt_number);
+GO
+
+-- Phase 2 corrections — exclusive batch lease + physical batch attempts (mirror 0052).
+IF OBJECT_ID('job_processing_leases', 'U') IS NULL
+BEGIN
+    CREATE TABLE job_processing_leases (
+        id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        strategy VARCHAR(64) NOT NULL,
+        execution_scope VARCHAR(32) NOT NULL,
+        status VARCHAR(16) NOT NULL,
+        worker_token VARCHAR(128) NULL,
+        acquired_at DATETIME2 NULL,
+        heartbeat_at DATETIME2 NULL,
+        lease_expires_at DATETIME2 NULL,
+        released_at DATETIME2 NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        version INT NOT NULL CONSTRAINT DF_jpl_version DEFAULT (1),
+        CONSTRAINT PK_job_processing_leases PRIMARY KEY (id),
+        CONSTRAINT CK_job_processing_leases_status CHECK (
+            status IN ('AVAILABLE', 'ACQUIRED', 'COMPLETED', 'FAILED', 'CANCELLED')
+        ),
+        CONSTRAINT CK_job_processing_leases_version CHECK (version > 0)
+    );
+END
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_job_processing_leases_scope'
+      AND object_id = OBJECT_ID('job_processing_leases')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_job_processing_leases_scope
+        ON job_processing_leases(job_id, strategy, execution_scope);
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_job_processing_leases_expiry'
+      AND object_id = OBJECT_ID('job_processing_leases')
+)
+    CREATE NONCLUSTERED INDEX IX_job_processing_leases_expiry
+        ON job_processing_leases(status, lease_expires_at);
+GO
+
+IF OBJECT_ID('batch_processing_attempts', 'U') IS NULL
+BEGIN
+    CREATE TABLE batch_processing_attempts (
+        id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        strategy VARCHAR(64) NOT NULL,
+        execution_scope VARCHAR(32) NOT NULL,
+        provider VARCHAR(128) NULL,
+        model VARCHAR(256) NULL,
+        prompt_key VARCHAR(128) NULL,
+        prompt_version VARCHAR(64) NULL,
+        status VARCHAR(32) NOT NULL,
+        worker_token VARCHAR(128) NULL,
+        started_at DATETIME2 NULL,
+        finished_at DATETIME2 NULL,
+        duration_ms INT NULL,
+        error_code VARCHAR(64) NULL,
+        error_message NVARCHAR(2048) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_batch_processing_attempts PRIMARY KEY (id),
+        CONSTRAINT CK_batch_processing_attempts_status CHECK (
+            status IN ('STARTED', 'SUCCEEDED', 'FAILED_TECHNICAL', 'CANCELLED')
+        )
+    );
+END
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_batch_processing_attempts_job_scope_status'
+      AND object_id = OBJECT_ID('batch_processing_attempts')
+)
+    CREATE NONCLUSTERED INDEX IX_batch_processing_attempts_job_scope_status
+        ON batch_processing_attempts(job_id, strategy, execution_scope, status);
+GO
+
+-- Phase 5 corrections — durable external analysis requests (mirror 0056).
+IF OBJECT_ID('external_image_analysis_requests', 'U') IS NULL
+BEGIN
+    CREATE TABLE external_image_analysis_requests (
+        id VARCHAR(36) NOT NULL,
+        idempotency_key VARCHAR(256) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        provider VARCHAR(128) NOT NULL,
+        model VARCHAR(256) NULL,
+        prompt_key VARCHAR(128) NULL,
+        prompt_version VARCHAR(64) NULL,
+        configuration_snapshot_version INT NULL,
+        status VARCHAR(32) NOT NULL,
+        attempt_id VARCHAR(36) NULL,
+        worker_token VARCHAR(128) NULL,
+        request_image_sha256 VARCHAR(64) NULL,
+        provider_response_sha256 VARCHAR(64) NULL,
+        normalized_result_sha256 VARCHAR(64) NULL,
+        normalized_result_json NVARCHAR(MAX) NULL,
+        validation_result_json NVARCHAR(MAX) NULL,
+        usage_json NVARCHAR(MAX) NULL,
+        estimated_cost FLOAT NULL,
+        duration_ms INT NULL,
+        confidence FLOAT NULL,
+        error_code VARCHAR(64) NULL,
+        error_message NVARCHAR(2048) NULL,
+        position_id VARCHAR(36) NULL,
+        active_result_id VARCHAR(36) NULL,
+        client_id VARCHAR(36) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_external_image_analysis_requests PRIMARY KEY (id),
+        CONSTRAINT CK_eiar_status CHECK (
+            status IN (
+                'CLAIMED',
+                'IN_FLIGHT',
+                'PROVIDER_SUCCEEDED',
+                'VALIDATION_FAILED',
+                'PERSISTENCE_PENDING',
+                'PERSISTED',
+                'FAILED_RETRYABLE',
+                'FAILED_FINAL',
+                'CANCELLED'
+            )
+        )
+    );
+END
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_eiar_idempotency_key'
+      AND object_id = OBJECT_ID('external_image_analysis_requests')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_eiar_idempotency_key
+        ON external_image_analysis_requests(idempotency_key);
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_eiar_job_asset'
+      AND object_id = OBJECT_ID('external_image_analysis_requests')
+)
+    CREATE NONCLUSTERED INDEX IX_eiar_job_asset
+        ON external_image_analysis_requests(job_id, asset_id, created_at);
+GO
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_eiar_job_status'
+      AND object_id = OBJECT_ID('external_image_analysis_requests')
+)
+    CREATE NONCLUSTERED INDEX IX_eiar_job_status
+        ON external_image_analysis_requests(job_id, status);
+GO
+IF COL_LENGTH('processing_attempts', 'extra_json') IS NULL
+    ALTER TABLE processing_attempts ADD extra_json NVARCHAR(MAX) NULL;
+GO
+-- Phase 6 — Supplier extraction profiles + reference annotations.
+-- Additive + idempotent. Keep aligned with backend/src/database/schema.sql.
+
+IF OBJECT_ID('supplier_extraction_profiles', 'U') IS NULL
+BEGIN
+    CREATE TABLE supplier_extraction_profiles (
+        id VARCHAR(36) NOT NULL,
+        client_id VARCHAR(36) NOT NULL,
+        supplier_id VARCHAR(36) NOT NULL,
+        profile_key VARCHAR(128) NOT NULL,
+        version INT NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        configuration_json NVARCHAR(MAX) NOT NULL,
+        visual_notes NVARCHAR(MAX) NULL,
+        created_by VARCHAR(128) NULL,
+        created_at DATETIME2 NOT NULL,
+        activated_by VARCHAR(128) NULL,
+        activated_at DATETIME2 NULL,
+        superseded_at DATETIME2 NULL,
+        updated_at DATETIME2 NOT NULL,
+        row_version INT NOT NULL CONSTRAINT DF_sep_row_version DEFAULT (1),
+        CONSTRAINT PK_supplier_extraction_profiles PRIMARY KEY (id),
+        CONSTRAINT CK_sep_status CHECK (
+            status IN ('DRAFT', 'ACTIVE', 'INACTIVE', 'SUPERSEDED')
+        ),
+        CONSTRAINT CK_sep_version CHECK (version > 0),
+        CONSTRAINT FK_sep_client FOREIGN KEY (client_id) REFERENCES clients(id),
+        CONSTRAINT FK_sep_supplier FOREIGN KEY (supplier_id) REFERENCES client_suppliers(id)
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_sep_client_supplier_version'
+      AND object_id = OBJECT_ID('supplier_extraction_profiles')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_sep_client_supplier_version
+        ON supplier_extraction_profiles(client_id, supplier_id, version);
+GO
+
+-- SQL Server filtered unique index: at most one ACTIVE profile per client+supplier.
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'UQ_sep_one_active'
+      AND object_id = OBJECT_ID('supplier_extraction_profiles')
+)
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_sep_one_active
+        ON supplier_extraction_profiles(client_id, supplier_id)
+        WHERE status = 'ACTIVE';
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_sep_supplier_status'
+      AND object_id = OBJECT_ID('supplier_extraction_profiles')
+)
+    CREATE NONCLUSTERED INDEX IX_sep_supplier_status
+        ON supplier_extraction_profiles(supplier_id, status, version DESC);
+GO
+
+IF OBJECT_ID('supplier_reference_annotations', 'U') IS NULL
+BEGIN
+    CREATE TABLE supplier_reference_annotations (
+        id VARCHAR(36) NOT NULL,
+        template_image_id VARCHAR(36) NOT NULL,
+        profile_id VARCHAR(36) NULL,
+        field_key VARCHAR(64) NOT NULL,
+        anchor_texts_json NVARCHAR(MAX) NOT NULL,
+        spatial_relation VARCHAR(32) NOT NULL,
+        normalized_polygon_json NVARCHAR(MAX) NULL,
+        priority INT NOT NULL CONSTRAINT DF_sra_priority DEFAULT (1),
+        required BIT NOT NULL CONSTRAINT DF_sra_required DEFAULT (0),
+        max_distance_ratio FLOAT NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_supplier_reference_annotations PRIMARY KEY (id),
+        CONSTRAINT CK_sra_spatial CHECK (
+            spatial_relation IN (
+                'RIGHT_OF', 'LEFT_OF', 'ABOVE', 'BELOW',
+                'SAME_ROW', 'SAME_COLUMN', 'SAME_CELL',
+                'NEAR', 'INSIDE_REGION'
+            )
+        ),
+        CONSTRAINT FK_sra_template FOREIGN KEY (template_image_id)
+            REFERENCES supplier_reference_images(id),
+        CONSTRAINT FK_sra_profile FOREIGN KEY (profile_id)
+            REFERENCES supplier_extraction_profiles(id)
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_sra_template'
+      AND object_id = OBJECT_ID('supplier_reference_annotations')
+)
+    CREATE NONCLUSTERED INDEX IX_sra_template
+        ON supplier_reference_annotations(template_image_id, priority);
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM sys.indexes
+    WHERE name = 'IX_supplier_reference_annotations_profile'
+      AND object_id = OBJECT_ID('supplier_reference_annotations')
+)
+    CREATE NONCLUSTERED INDEX IX_supplier_reference_annotations_profile
+        ON supplier_reference_annotations(profile_id, template_image_id)
+        WHERE profile_id IS NOT NULL;
+GO
+
+# Soft integrity note: prefer migration 0060b which reconciles inconsistent PERSISTED rows
+# then creates CK_external_image_analysis_requests_persisted_result WITH CHECK (trusted).
+# Fresh installs may still create WITH CHECK once data is clean.
+IF OBJECT_ID('external_image_analysis_requests', 'U') IS NOT NULL
+   AND NOT EXISTS (
+        SELECT 1 FROM sys.check_constraints
+        WHERE name = 'CK_external_image_analysis_requests_persisted_result'
+          AND parent_object_id = OBJECT_ID('external_image_analysis_requests')
+   )
+BEGIN
+    ALTER TABLE external_image_analysis_requests WITH CHECK
+    ADD CONSTRAINT CK_external_image_analysis_requests_persisted_result
+    CHECK (
+        status <> 'PERSISTED'
+        OR position_id IS NOT NULL
+        OR active_result_id IS NOT NULL
+    );
+END
+GO
+
+-- Optional template family metadata on existing reference images (additive).
+IF COL_LENGTH('supplier_reference_images', 'template_family') IS NULL
+    ALTER TABLE supplier_reference_images ADD template_family VARCHAR(128) NULL;
+GO
+
+IF COL_LENGTH('supplier_reference_images', 'orientation_hint') IS NULL
+    ALTER TABLE supplier_reference_images ADD orientation_hint VARCHAR(64) NULL;
+GO
+
+IF COL_LENGTH('supplier_reference_images', 'document_type') IS NULL
+    ALTER TABLE supplier_reference_images ADD document_type VARCHAR(64) NULL;
+GO
+
+IF COL_LENGTH('supplier_reference_images', 'profile_version') IS NULL
+    ALTER TABLE supplier_reference_images ADD profile_version INT NULL;
+GO
+
+-- end Phase 6 supplier extraction profiles
+
+-- Phase 7 — structured operational processing events (mirror 0059_processing_events.sql).
+IF OBJECT_ID('processing_events', 'U') IS NULL
+BEGIN
+    CREATE TABLE processing_events (
+        id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NULL,
+        attempt_id VARCHAR(36) NULL,
+        event_type VARCHAR(64) NOT NULL,
+        severity VARCHAR(16) NOT NULL CONSTRAINT DF_processing_events_severity DEFAULT ('INFO'),
+        strategy VARCHAR(64) NULL,
+        error_code VARCHAR(128) NULL,
+        message NVARCHAR(2000) NULL,
+        duration_ms INT NULL,
+        correlation_id VARCHAR(64) NULL,
+        metadata_json NVARCHAR(MAX) NULL,
+        created_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_processing_events PRIMARY KEY (id),
+        CONSTRAINT CK_processing_events_severity CHECK (severity IN ('INFO', 'WARN', 'ERROR'))
+    );
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_processing_events_job_created'
+      AND object_id = OBJECT_ID('processing_events')
+)
+    CREATE NONCLUSTERED INDEX IX_processing_events_job_created
+        ON processing_events(job_id, created_at);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_processing_events_job_asset_created'
+      AND object_id = OBJECT_ID('processing_events')
+)
+    CREATE NONCLUSTERED INDEX IX_processing_events_job_asset_created
+        ON processing_events(job_id, asset_id, created_at);
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE name = 'IX_processing_events_attempt_created'
+      AND object_id = OBJECT_ID('processing_events')
+)
+    CREATE NONCLUSTERED INDEX IX_processing_events_attempt_created
+        ON processing_events(attempt_id, created_at)
+        WHERE attempt_id IS NOT NULL;
+GO
+
+-- Phase 7 corrections — durable commands + idempotency (mirror 0060).
+IF OBJECT_ID('asset_processing_commands', 'U') IS NULL
+BEGIN
+    CREATE TABLE asset_processing_commands (
+        id VARCHAR(36) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        command_type VARCHAR(64) NOT NULL,
+        requested_strategy VARCHAR(64) NULL,
+        status VARCHAR(32) NOT NULL,
+        idempotency_key VARCHAR(128) NULL,
+        expected_state_version INT NULL,
+        actor NVARCHAR(256) NULL,
+        reason NVARCHAR(500) NULL,
+        payload_json NVARCHAR(MAX) NULL,
+        worker_token VARCHAR(128) NULL,
+        created_at DATETIME2 NOT NULL,
+        claimed_at DATETIME2 NULL,
+        completed_at DATETIME2 NULL,
+        error_code VARCHAR(128) NULL,
+        error_message NVARCHAR(2000) NULL,
+        CONSTRAINT PK_asset_processing_commands PRIMARY KEY (id),
+        CONSTRAINT CK_apc_status CHECK (
+            status IN ('QUEUED', 'CLAIMED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED')
+        ),
+        CONSTRAINT CK_apc_command_type CHECK (
+            command_type IN (
+                'REPROCESS_FROM_SOURCE',
+                'RETRY_PERSISTENCE',
+                'SEND_TO_EXTERNAL',
+                'RECONCILE_RESULT'
+            )
+        )
+    );
+END
+GO
+
+IF OBJECT_ID('processing_action_idempotency', 'U') IS NULL
+BEGIN
+    CREATE TABLE processing_action_idempotency (
+        id VARCHAR(36) NOT NULL,
+        action_type VARCHAR(64) NOT NULL,
+        job_id VARCHAR(36) NOT NULL,
+        asset_id VARCHAR(36) NOT NULL,
+        idempotency_key VARCHAR(128) NOT NULL,
+        request_hash VARCHAR(64) NOT NULL,
+        response_json NVARCHAR(MAX) NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        state_version INT NULL,
+        actor NVARCHAR(256) NULL,
+        created_at DATETIME2 NOT NULL,
+        updated_at DATETIME2 NOT NULL,
+        CONSTRAINT PK_processing_action_idempotency PRIMARY KEY (id),
+        CONSTRAINT UQ_pai_action_scope_key UNIQUE (action_type, job_id, asset_id, idempotency_key)
+    );
+END
 GO

@@ -105,21 +105,40 @@ export { createClient, getClient, listClients } from './clientsApi';
 export type { ClientSuppliersListQuery, SupplierPromptConfigsListQuery } from './clientSuppliersApi';
 export {
   activateSupplierPromptConfigVersion,
+  activateSupplierExtractionProfileVersion,
+  cloneSupplierExtractionProfile,
   createSupplierPromptConfigVersion,
+  createSupplierExtractionProfileVersion,
+  replaceSupplierReferenceAnnotations,
   createClientSupplier,
   deleteSupplierReferenceImage,
   fetchSupplierReferenceImageDisplay,
   fetchSupplierReferenceImageFile,
   getActiveSupplierPromptConfig,
+  getActiveSupplierExtractionProfile,
   getClientSupplier,
+  getSupplierExtractionProfileByVersion,
   getSupplierPromptConfigById,
   getSupplierReferenceImageDisplayUrl,
   getSupplierReferenceImageFileUrl,
   listClientSuppliers,
+  listSupplierExtractionProfiles,
   listSupplierPromptConfigs,
+  listSupplierReferenceAnnotations,
   listSupplierReferenceImages,
   uploadSupplierReferenceImages,
 } from './clientSuppliersApi';
 export type { ObservabilityMetricsQueryParams } from './observabilityApi';
 export { getObservabilityMetrics, getObservabilityMetricsPath } from './observabilityApi';
+export type { ProcessingAssetsQuery } from './processingApi';
+export {
+  getProcessingAssets,
+  getProcessingAssetDetail,
+  getProcessingEvents,
+  getProcessingObservabilityCapabilities,
+  invalidateAssetResult,
+  reprocessAsset,
+  retryAssetPersistence,
+  sendAssetToExternal,
+} from './processingApi';
 

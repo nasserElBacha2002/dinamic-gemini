@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from src.application.ports.repositories import AisleRepository
 from src.database.sqlserver import SqlServerClient
 from src.domain.aisle.entities import Aisle, AisleStatus
+from src.domain.aisle_identification.modes import optional_config_identification_mode
 from src.infrastructure.database.sql_transaction import sql_repository_cursor
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,9 @@ def _row_to_aisle(row) -> Aisle:
         error_message=getattr(row, "error_message", None),
         retryable=getattr(row, "retryable", None),
         is_active=bool(getattr(row, "is_active", True)),
+        identification_mode=optional_config_identification_mode(
+            getattr(row, "identification_mode", None)
+        ),
     )
 
 
@@ -77,6 +81,7 @@ class SqlAisleRepository(AisleRepository):
         created = _ensure_utc(aisle.created_at)
         updated = _ensure_utc(aisle.updated_at)
         is_active_bit = 1 if aisle.is_active else 0
+        mode_val = aisle.identification_mode.value if aisle.identification_mode else None
         with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 """
@@ -85,7 +90,7 @@ class SqlAisleRepository(AisleRepository):
                     operational_job_id = ?,
                     client_supplier_id = ?,
                     error_code = ?, error_message = ?, retryable = ?,
-                    is_active = ?
+                    is_active = ?, identification_mode = ?
                 WHERE id = ?
                 """,
                 (
@@ -99,6 +104,7 @@ class SqlAisleRepository(AisleRepository):
                     aisle.error_message,
                     aisle.retryable,
                     is_active_bit,
+                    mode_val,
                     aisle.id,
                 ),
             )
@@ -108,9 +114,9 @@ class SqlAisleRepository(AisleRepository):
                     INSERT INTO aisles (
                         id, inventory_id, code, status, created_at, updated_at,
                         operational_job_id, client_supplier_id, error_code, error_message, retryable,
-                        is_active
+                        is_active, identification_mode
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         aisle.id,
@@ -125,6 +131,7 @@ class SqlAisleRepository(AisleRepository):
                         aisle.error_message,
                         aisle.retryable,
                         is_active_bit,
+                        mode_val,
                     ),
                 )
 
@@ -134,7 +141,7 @@ class SqlAisleRepository(AisleRepository):
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
                        operational_job_id, client_supplier_id, error_code, error_message, retryable,
-                       is_active
+                       is_active, identification_mode
                 FROM aisles WHERE id = ?
                 """,
                 (aisle_id,),
@@ -150,7 +157,7 @@ class SqlAisleRepository(AisleRepository):
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
                        operational_job_id, client_supplier_id, error_code, error_message, retryable,
-                       is_active
+                       is_active, identification_mode
                 FROM aisles WHERE inventory_id = ? ORDER BY created_at DESC
                 """,
                 (inventory_id,),
@@ -164,7 +171,7 @@ class SqlAisleRepository(AisleRepository):
                 """
                 SELECT id, inventory_id, code, status, created_at, updated_at,
                        operational_job_id, client_supplier_id, error_code, error_message, retryable,
-                       is_active
+                       is_active, identification_mode
                 FROM aisles WHERE inventory_id = ? AND code = ?
                 """,
                 (inventory_id, code.strip()),

@@ -36,6 +36,10 @@ from src.application.ports.repositories import (
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
 from src.application.ports.stored_artifact_reader import StoredArtifactReader
+from src.application.ports.supplier_extraction_profile_repository import (
+    SupplierExtractionProfileRepository,
+    SupplierReferenceAnnotationRepository,
+)
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
 from src.runtime.app_container import get_app_container
 
@@ -74,6 +78,14 @@ def get_supplier_reference_image_repo() -> SupplierReferenceImageRepository:
 
 def get_supplier_prompt_config_repo() -> SupplierPromptConfigRepository:
     return get_app_container().get_supplier_prompt_config_repo()
+
+
+def get_supplier_extraction_profile_repo() -> SupplierExtractionProfileRepository:
+    return get_app_container().get_supplier_extraction_profile_repo()
+
+
+def get_supplier_reference_annotation_repo() -> SupplierReferenceAnnotationRepository:
+    return get_app_container().get_supplier_reference_annotation_repo()
 
 def get_position_repo() -> PositionRepository:
     return get_app_container().get_position_repo()

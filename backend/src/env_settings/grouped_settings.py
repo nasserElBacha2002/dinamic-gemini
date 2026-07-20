@@ -934,6 +934,181 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
         description="Enable aisle QR/barcode code scan API. Env: CODE_SCAN_ENABLED.",
     )
+    aisle_identification_pipeline_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 1+ aisle identification pipeline flag. When false, processing stays on the "
+            "legacy LLM path unchanged. When true (Phase 1), modes are resolved and snapshotted "
+            "but all modes still execute LEGACY_LLM_TEMPORARY. "
+            "Env: AISLE_IDENTIFICATION_PIPELINE_ENABLED (default false)."
+        ),
+    )
+    image_processing_orchestrator_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("IMAGE_PROCESSING_ORCHESTRATOR_ENABLED", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 2: enable AisleProcessingOrchestrator around process_aisle jobs. "
+            "When false, the worker uses the exact pre-Phase-2 legacy path. "
+            "Env: IMAGE_PROCESSING_ORCHESTRATOR_ENABLED (default false)."
+        ),
+    )
+    processing_attempts_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_ATTEMPTS_ENABLED", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 2: persist ProcessingAttempt rows when the image orchestrator runs. "
+            "Env: PROCESSING_ATTEMPTS_ENABLED (default false)."
+        ),
+    )
+    max_image_processing_concurrency: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_IMAGE_PROCESSING_CONCURRENCY", "1")),
+        ge=1,
+        le=32,
+        description=(
+            "Phase 3 SINGLE_ASSET concurrency for CODE_SCAN per-image processing (ThreadPool "
+            "max_workers). Not applied to the Phase 2 AISLE_BATCH legacy path: physical LLM "
+            "execution remains one batch call regardless of this value. Must be >= 1. "
+            "Production recommendation remains 1 until SQL concurrency tests pass; values > 1 "
+            "require per-UoW connections (ManualImageResultUnitOfWorkFactory creates its own "
+            "connection per `with uow`). Env: MAX_IMAGE_PROCESSING_CONCURRENCY."
+        ),
+    )
+    code_scan_processing_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CODE_SCAN_PROCESSING_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: when true, CODE_SCAN identification mode snapshots and runs the real "
+            "per-image QR/barcode strategy. When false (default), CODE_SCAN keeps "
+            "LEGACY_LLM_TEMPORARY / LEGACY_LLM for gradual rollout and rollback. "
+            "Env: CODE_SCAN_PROCESSING_ENABLED."
+        ),
+    )
+    code_scan_max_image_side: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_IMAGE_SIDE", "2048")),
+        ge=256,
+        le=8192,
+        description=(
+            "Phase 3: max longest side (px) for images before code scanning (downscaled if "
+            "larger). Env: CODE_SCAN_MAX_IMAGE_SIDE."
+        ),
+    )
+    code_scan_timeout_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_TIMEOUT_SECONDS", "15")),
+        ge=1,
+        le=300,
+        description=(
+            "DEPRECATED alias of CODE_SCAN_VARIANTS_BUDGET_SECONDS (kept for one release). "
+            "Env: CODE_SCAN_TIMEOUT_SECONDS."
+        ),
+    )
+    code_scan_variants_budget_seconds: int = Field(
+        default_factory=lambda: int(
+            os.getenv("CODE_SCAN_VARIANTS_BUDGET_SECONDS")
+            or os.getenv("CODE_SCAN_TIMEOUT_SECONDS")
+            or "15"
+        ),
+        ge=1,
+        le=300,
+        description=(
+            "Phase 3: wall-clock budget (seconds) checked BETWEEN scan variants for one image. "
+            "This does NOT interrupt a blocked native pyzbar decode already in progress. Prefer "
+            "this over the deprecated CODE_SCAN_TIMEOUT_SECONDS. "
+            "Env: CODE_SCAN_VARIANTS_BUDGET_SECONDS (alias: CODE_SCAN_TIMEOUT_SECONDS)."
+        ),
+    )
+    code_scan_enable_rotations: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CODE_SCAN_ENABLE_ROTATIONS", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: when a first (0°) scan finds nothing, retry with rotated variants "
+            "(90/180/270) up to CODE_SCAN_MAX_VARIANTS. Env: CODE_SCAN_ENABLE_ROTATIONS."
+        ),
+    )
+    code_scan_enable_preprocessing: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CODE_SCAN_ENABLE_PREPROCESSING", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: reserved image preprocessing (grayscale/contrast) before scanning. "
+            "Kept simple (off) for the MVP. Env: CODE_SCAN_ENABLE_PREPROCESSING."
+        ),
+    )
+    code_scan_max_variants: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_VARIANTS", "4")),
+        ge=1,
+        le=8,
+        description=(
+            "Phase 3: max scan variants attempted per image (0/90/180/270 when rotations on). "
+            "Env: CODE_SCAN_MAX_VARIANTS."
+        ),
+    )
+    code_scan_quantity_max: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_QUANTITY_MAX", "99999999")),
+        ge=1,
+        le=999_999_999,
+        description=(
+            "Phase 3: max accepted positive-integer quantity parsed from a label payload. "
+            "Values above this mark the asset PENDING_MANUAL_REVIEW. Env: CODE_SCAN_QUANTITY_MAX."
+        ),
+    )
+    code_scan_allow_decimal_quantity: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CODE_SCAN_ALLOW_DECIMAL_QUANTITY", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 3: whether decimal quantities are accepted. MVP keeps this false (positive "
+            "integers only). Env: CODE_SCAN_ALLOW_DECIMAL_QUANTITY."
+        ),
+    )
+    code_scan_max_technical_attempts: int = Field(
+        default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_TECHNICAL_ATTEMPTS", "2")),
+        ge=1,
+        le=10,
+        description=(
+            "Phase 3: max technical retries for one asset scan on transient scanner errors. "
+            "Env: CODE_SCAN_MAX_TECHNICAL_ATTEMPTS."
+        ),
+    )
+    image_processing_batch_lease_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("IMAGE_PROCESSING_BATCH_LEASE_SECONDS", "900")),
+        ge=30,
+        le=7200,
+        description=(
+            "Phase 2 corrections: JobProcessingLease duration for one AISLE_BATCH physical "
+            "run (job_id, strategy, execution_scope). A concurrent worker that fails to acquire "
+            "the lease skips the provider call entirely. Env: IMAGE_PROCESSING_BATCH_LEASE_SECONDS."
+        ),
+    )
+    image_processing_abandoned_ttl_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("IMAGE_PROCESSING_ABANDONED_TTL_SECONDS", "900")),
+        ge=30,
+        le=7200,
+        description=(
+            "Phase 2 corrections: age (seconds, based on updated_at/lease_expires_at) after "
+            "which a PROCESSING asset state, its owning lease, and any STARTED attempts are "
+            "considered abandoned and recovered back to PENDING/AVAILABLE. "
+            "Env: IMAGE_PROCESSING_ABANDONED_TTL_SECONDS."
+        ),
+    )
     code_scan_max_assets_per_run: int = Field(
         default_factory=lambda: int(os.getenv("CODE_SCAN_MAX_ASSETS_PER_RUN", "50")),
         ge=1,
@@ -947,6 +1122,323 @@ class LimitsAndSchemaSettings(BaseModel):
         description=(
             "Max normalized code value length accepted per detection. "
             "Env: CODE_SCAN_MAX_DECODED_PAYLOAD_LENGTH."
+        ),
+    )
+    internal_ocr_processing_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("INTERNAL_OCR_PROCESSING_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 4: when true, INTERNAL_OCR identification mode snapshots and runs the real "
+            "local OCR strategy. When false (default), INTERNAL_OCR keeps LEGACY_LLM_TEMPORARY. "
+            "Env: INTERNAL_OCR_PROCESSING_ENABLED."
+        ),
+    )
+    internal_ocr_engine: str = Field(
+        default_factory=lambda: (os.getenv("INTERNAL_OCR_ENGINE", "tesseract") or "tesseract").strip().lower(),
+        description="Phase 4 OCR engine key (only tesseract supported). Env: INTERNAL_OCR_ENGINE.",
+    )
+    internal_ocr_language: str = Field(
+        default_factory=lambda: (os.getenv("INTERNAL_OCR_LANGUAGE", "spa+eng") or "spa+eng").strip(),
+        description="Tesseract language pack(s). Env: INTERNAL_OCR_LANGUAGE.",
+    )
+    internal_ocr_max_variants: int = Field(
+        default_factory=lambda: int(os.getenv("INTERNAL_OCR_MAX_VARIANTS", "3")),
+        ge=1,
+        le=6,
+        description="Max preprocessing variants per image. Env: INTERNAL_OCR_MAX_VARIANTS.",
+    )
+    internal_ocr_timeout_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("INTERNAL_OCR_TIMEOUT_SECONDS", "20")),
+        ge=1,
+        le=300,
+        description=(
+            "Per-asset wall-clock budget; each Tesseract call uses a real subprocess timeout. "
+            "Env: INTERNAL_OCR_TIMEOUT_SECONDS."
+        ),
+    )
+    internal_ocr_max_image_dimension: int = Field(
+        default_factory=lambda: int(os.getenv("INTERNAL_OCR_MAX_IMAGE_DIMENSION", "2048")),
+        ge=256,
+        le=8192,
+        description="Max longest image side before OCR. Env: INTERNAL_OCR_MAX_IMAGE_DIMENSION.",
+    )
+    max_internal_image_processing_concurrency: int = Field(
+        default_factory=lambda: int(
+            os.getenv("MAX_INTERNAL_IMAGE_PROCESSING_CONCURRENCY", "1")
+        ),
+        ge=1,
+        le=16,
+        description=(
+            "Phase 4 ThreadPool concurrency for INTERNAL_OCR (independent of CODE_SCAN). "
+            "Env: MAX_INTERNAL_IMAGE_PROCESSING_CONCURRENCY."
+        ),
+    )
+    internal_ocr_quantity_max: int = Field(
+        default_factory=lambda: int(os.getenv("INTERNAL_OCR_QUANTITY_MAX", "99999999")),
+        ge=1,
+        description="Max accepted quantity for OCR. Env: INTERNAL_OCR_QUANTITY_MAX.",
+    )
+    internal_ocr_prefer_ean_as_internal_code: bool = Field(
+        default_factory=lambda: (
+            os.getenv("INTERNAL_OCR_PREFER_EAN_AS_INTERNAL_CODE", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "DEPRECATED global default for clients without a profile. Prefer "
+            "INTERNAL_OCR_EAN_FIRST_CLIENT_IDS for per-client EAN→internal_code rules. "
+            "Phase 6: superseded by supplier extraction profiles when "
+            "CLIENT_EXTRACTION_PROFILES_ENABLED + PROFILE_AWARE_VALIDATION_ENABLED. "
+            "Env: INTERNAL_OCR_PREFER_EAN_AS_INTERNAL_CODE."
+        ),
+    )
+    internal_ocr_ean_first_client_ids: str = Field(
+        default_factory=lambda: (
+            os.getenv("INTERNAL_OCR_EAN_FIRST_CLIENT_IDS", "") or ""
+        ).strip(),
+        description=(
+            "Comma-separated client UUIDs that map EAN→internal_code when present "
+            "(MASOL-style without hardcoding client names). "
+            "DEPRECATED when Phase 6 supplier extraction profiles drive validation. "
+            "Env: INTERNAL_OCR_EAN_FIRST_CLIENT_IDS."
+        ),
+    )
+    internal_ocr_min_aggregate_confidence: float | None = Field(
+        default_factory=lambda: (
+            float(raw)
+            if (raw := os.getenv("INTERNAL_OCR_MIN_AGGREGATE_CONFIDENCE")) and raw.strip()
+            else None
+        ),
+        description=(
+            "When set (0-100), OCR results with aggregate confidence below this threshold "
+            "become PENDING_MANUAL_REVIEW instead of RESOLVED_INTERNAL. "
+            "Env: INTERNAL_OCR_MIN_AGGREGATE_CONFIDENCE (empty = disabled)."
+        ),
+    )
+    internal_ocr_enable_deskew: bool = Field(
+        default_factory=lambda: (
+            os.getenv("INTERNAL_OCR_ENABLE_DESKEW", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description="Include deskew as an OCR preprocessing variant. Env: INTERNAL_OCR_ENABLE_DESKEW.",
+    )
+    ocr_label_detection_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("OCR_LABEL_DETECTION_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, INTERNAL_OCR runs LabelRegionDetector before high-quality OCR. "
+            "Default false (rollback-safe). Env: OCR_LABEL_DETECTION_ENABLED."
+        ),
+    )
+    ocr_diagnostic_evidence_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("OCR_DIAGNOSTIC_EVIDENCE_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, persist expanded OCR diagnostic evidence fields. "
+            "Default false. Env: OCR_DIAGNOSTIC_EVIDENCE_ENABLED."
+        ),
+    )
+    ocr_profile_test_tool_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("OCR_PROFILE_TEST_TOOL_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, enable POST .../extraction-profiles/test diagnostic endpoint. "
+            "Default false. Env: OCR_PROFILE_TEST_TOOL_ENABLED."
+        ),
+    )
+    external_fallback_per_image_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("EXTERNAL_FALLBACK_PER_IMAGE_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 5: when true, unresolved CODE_SCAN/INTERNAL_OCR assets may call one "
+            "external provider per image. Default false. "
+            "Env: EXTERNAL_FALLBACK_PER_IMAGE_ENABLED."
+        ),
+    )
+    external_fallback_ambiguous_internal_code_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv(
+                "EXTERNAL_FALLBACK_AMBIGUOUS_INTERNAL_CODE_ENABLED", "false"
+            )
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, AMBIGUOUS_INTERNAL_CODE internal results may call external "
+            "fallback (snapshotted at job create). Default false. "
+            "Env: EXTERNAL_FALLBACK_AMBIGUOUS_INTERNAL_CODE_ENABLED."
+        ),
+    )
+    job_startup_progress_timeout_seconds: float = Field(
+        default_factory=lambda: float(
+            os.getenv("JOB_STARTUP_PROGRESS_TIMEOUT_SECONDS", "120") or "120"
+        ),
+        description=(
+            "Fail RUNNING jobs stuck at current_substep=startup_confirmed after this "
+            "many seconds (heartbeat alone is not progress). 0 disables. "
+            "Env: JOB_STARTUP_PROGRESS_TIMEOUT_SECONDS."
+        ),
+    )
+    client_extraction_profiles_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CLIENT_EXTRACTION_PROFILES_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 6: enable versioned supplier extraction profiles (admin + job snapshot). "
+            "Default false. Env: CLIENT_EXTRACTION_PROFILES_ENABLED."
+        ),
+    )
+    profile_aware_validation_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROFILE_AWARE_VALIDATION_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 6: when true, CODE_SCAN/INTERNAL_OCR/EXTERNAL use snapshotted supplier "
+            "extraction profile for priorities/validation. Default false. "
+            "Env: PROFILE_AWARE_VALIDATION_ENABLED."
+        ),
+    )
+    reference_template_annotations_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("REFERENCE_TEMPLATE_ANNOTATIONS_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 6.2: enable spatial annotations on supplier reference images as OCR hints. "
+            "Default false. Env: REFERENCE_TEMPLATE_ANNOTATIONS_ENABLED."
+        ),
+    )
+    processing_observability_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_OBSERVABILITY_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: enable per-image operational processing UX and read APIs. "
+            "Default false. Env: PROCESSING_OBSERVABILITY_ENABLED."
+        ),
+    )
+    processing_asset_logs_ui_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_ASSET_LOGS_UI_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: show structured processing events timeline in UI. "
+            "Default false. Env: PROCESSING_ASSET_LOGS_UI_ENABLED."
+        ),
+    )
+    processing_asset_reprocess_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_ASSET_REPROCESS_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: allow per-asset reprocess mutations. "
+            "Default false. Env: PROCESSING_ASSET_REPROCESS_ENABLED."
+        ),
+    )
+    processing_manual_actions_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_MANUAL_ACTIONS_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: allow invalidate / enhanced manual actions from processing UX. "
+            "Default false. Env: PROCESSING_MANUAL_ACTIONS_ENABLED."
+        ),
+    )
+    processing_events_persistence_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_EVENTS_PERSISTENCE_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: persist operational ProcessingEvent rows. "
+            "Default false. Env: PROCESSING_EVENTS_PERSISTENCE_ENABLED."
+        ),
+    )
+    external_fallback_provider: str = Field(
+        default_factory=lambda: (
+            os.getenv("EXTERNAL_FALLBACK_PROVIDER", "gemini") or "gemini"
+        ).strip().lower(),
+        description=(
+            "Phase 5 primary external provider key (gemini|openai|claude). "
+            "Env: EXTERNAL_FALLBACK_PROVIDER."
+        ),
+    )
+    external_fallback_model: str = Field(
+        default_factory=lambda: (os.getenv("EXTERNAL_FALLBACK_MODEL", "") or "").strip(),
+        description="Phase 5 model override for the primary provider. Env: EXTERNAL_FALLBACK_MODEL.",
+    )
+    max_external_fallback_concurrency: int = Field(
+        default_factory=lambda: int(os.getenv("MAX_EXTERNAL_FALLBACK_CONCURRENCY", "1")),
+        ge=1,
+        le=16,
+        description=(
+            "Phase 5 process-local concurrency for external provider calls (independent of "
+            "internal SINGLE_ASSET pools). Env: MAX_EXTERNAL_FALLBACK_CONCURRENCY."
+        ),
+    )
+    external_fallback_timeout_seconds: float = Field(
+        default_factory=lambda: float(os.getenv("EXTERNAL_FALLBACK_TIMEOUT_SECONDS", "60")),
+        ge=5,
+        le=600,
+        description="Phase 5 wall-clock budget hint per external call. Env: EXTERNAL_FALLBACK_TIMEOUT_SECONDS.",
+    )
+    external_fallback_max_attempts: int = Field(
+        default_factory=lambda: int(os.getenv("EXTERNAL_FALLBACK_MAX_ATTEMPTS", "1")),
+        ge=1,
+        le=5,
+        description=(
+            "Phase 5 max external attempts per asset for retryable provider errors. "
+            "Env: EXTERNAL_FALLBACK_MAX_ATTEMPTS (default 1)."
+        ),
+    )
+    external_fallback_circuit_breaker_threshold: int = Field(
+        default_factory=lambda: int(
+            os.getenv("EXTERNAL_FALLBACK_CIRCUIT_BREAKER_THRESHOLD", "5")
+        ),
+        ge=1,
+        le=100,
+        description="Phase 5 failures before opening the circuit. Env: EXTERNAL_FALLBACK_CIRCUIT_BREAKER_THRESHOLD.",
+    )
+    external_fallback_circuit_breaker_cooldown_seconds: float = Field(
+        default_factory=lambda: float(
+            os.getenv("EXTERNAL_FALLBACK_CIRCUIT_BREAKER_COOLDOWN_SECONDS", "60")
+        ),
+        ge=1,
+        le=3600,
+        description="Phase 5 circuit open cooldown. Env: EXTERNAL_FALLBACK_CIRCUIT_BREAKER_COOLDOWN_SECONDS.",
+    )
+    external_fallback_max_image_dimension: int = Field(
+        default_factory=lambda: int(
+            os.getenv("EXTERNAL_FALLBACK_MAX_IMAGE_DIMENSION", "2048")
+        ),
+        ge=256,
+        le=8192,
+        description="Phase 5 max longest image side before provider call. Env: EXTERNAL_FALLBACK_MAX_IMAGE_DIMENSION.",
+    )
+    multi_provider_fallback_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("MULTI_PROVIDER_FALLBACK_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 5 reserved: multi-provider chains are NOT implemented. Must stay false. "
+            "Env: MULTI_PROVIDER_FALLBACK_ENABLED."
         ),
     )
     v3_capture_max_open_sessions_per_aisle: int = Field(

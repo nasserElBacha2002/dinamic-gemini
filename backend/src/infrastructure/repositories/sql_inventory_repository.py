@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 from src.application.ports.repositories import InventoryRepository
 from src.database.sqlserver import SqlServerClient, now_utc
+from src.domain.aisle_identification.modes import optional_config_identification_mode
 from src.domain.inventory.entities import (
     Inventory,
     InventoryProcessingMode,
@@ -31,7 +32,6 @@ def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt.tzinfo is not None:
         return dt
     return dt.replace(tzinfo=timezone.utc)
-
 
 class SqlInventoryRepository(InventoryRepository):
     def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
@@ -62,7 +62,8 @@ class SqlInventoryRepository(InventoryRepository):
                 UPDATE inventories
                 SET name = ?, status = ?, updated_at = ?, completed_at = ?,
                     processing_mode = ?, primary_provider_name = ?, primary_model_name = ?,
-                    primary_prompt_key = ?, primary_prompt_version = ?, client_id = ?
+                    primary_prompt_key = ?, primary_prompt_version = ?, client_id = ?,
+                    identification_mode = ?
                 WHERE id = ?
                 """,
                 (
@@ -76,6 +77,7 @@ class SqlInventoryRepository(InventoryRepository):
                     inventory.primary_prompt_key,
                     inventory.primary_prompt_version,
                     inventory.client_id,
+                    inventory.identification_mode.value if inventory.identification_mode else None,
                     inventory.id,
                 ),
             )
@@ -85,9 +87,10 @@ class SqlInventoryRepository(InventoryRepository):
                     INSERT INTO inventories (
                         id, name, status, created_at, updated_at, completed_at,
                         processing_mode, primary_provider_name, primary_model_name,
-                        primary_prompt_key, primary_prompt_version, client_id
+                        primary_prompt_key, primary_prompt_version, client_id,
+                        identification_mode
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         inventory.id,
@@ -102,6 +105,7 @@ class SqlInventoryRepository(InventoryRepository):
                         inventory.primary_prompt_key,
                         inventory.primary_prompt_version,
                         inventory.client_id,
+                        inventory.identification_mode.value if inventory.identification_mode else None,
                     ),
                 )
 
@@ -111,7 +115,8 @@ class SqlInventoryRepository(InventoryRepository):
                 """
                 SELECT id, name, status, created_at, updated_at, completed_at,
                        processing_mode, primary_provider_name, primary_model_name,
-                       primary_prompt_key, primary_prompt_version, client_id
+                       primary_prompt_key, primary_prompt_version, client_id,
+                       identification_mode
                 FROM inventories WHERE id = ?
                 """,
                 (inventory_id,),
@@ -143,6 +148,9 @@ class SqlInventoryRepository(InventoryRepository):
             primary_prompt_key=getattr(row, "primary_prompt_key", None),
             primary_prompt_version=getattr(row, "primary_prompt_version", None),
             client_id=getattr(row, "client_id", None),
+            identification_mode=optional_config_identification_mode(
+                getattr(row, "identification_mode", None)
+            ),
         )
 
     def list_all(self) -> Sequence[Inventory]:
@@ -152,7 +160,8 @@ class SqlInventoryRepository(InventoryRepository):
                 """
                 SELECT id, name, status, created_at, updated_at, completed_at,
                        processing_mode, primary_provider_name, primary_model_name,
-                       primary_prompt_key, primary_prompt_version, client_id
+                       primary_prompt_key, primary_prompt_version, client_id,
+                       identification_mode
                 FROM inventories ORDER BY created_at DESC
                 """
             )
@@ -185,6 +194,9 @@ class SqlInventoryRepository(InventoryRepository):
                     primary_prompt_key=getattr(row, "primary_prompt_key", None),
                     primary_prompt_version=getattr(row, "primary_prompt_version", None),
                     client_id=getattr(row, "client_id", None),
+                    identification_mode=optional_config_identification_mode(
+                        getattr(row, "identification_mode", None)
+                    ),
                 )
             )
         return out

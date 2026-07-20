@@ -1,9 +1,15 @@
 import {
   pathToClientSuppliersBase,
+  supplierExtractionProfileActivatePath,
+  supplierExtractionProfileByVersionPath,
+  supplierExtractionProfilesActivePath,
+  supplierExtractionProfilesClonePath,
+  supplierExtractionProfilesPath,
   supplierPromptConfigActivatePath,
   supplierPromptConfigByIdPath,
   supplierPromptConfigsActivePath,
   supplierPromptConfigsPath,
+  supplierReferenceImageAnnotationsPath,
   supplierReferenceImageDisplayUrlPath,
   supplierReferenceImageFilePath,
   supplierReferenceImagesPath,
@@ -14,10 +20,16 @@ import type {
   ClientSupplier,
   ClientSuppliersListResponse,
   CreateSupplierPromptConfigRequest,
+  CreateSupplierExtractionProfileRequest,
+  CloneSupplierExtractionProfileRequest,
+  ReplaceSupplierReferenceAnnotationsRequest,
   CreateClientSupplierRequest,
   DeleteSupplierReferenceImageResponse,
   SupplierPromptConfig,
   SupplierPromptConfigsListResponse,
+  SupplierExtractionProfile,
+  SupplierExtractionProfilesListResponse,
+  SupplierReferenceAnnotationsListResponse,
   SupplierReferenceImagesListResponse,
   UploadSupplierReferenceImagesRequest,
   UploadSupplierReferenceImagesResponse,
@@ -232,5 +244,90 @@ export async function activateSupplierPromptConfigVersion(
   return apiRequestJson<SupplierPromptConfig>(
     `${API_BASE}${supplierPromptConfigActivatePath(clientId, supplierId, configId)}`,
     { method: 'POST' }
+  );
+}
+
+export async function listSupplierExtractionProfiles(
+  clientId: string,
+  supplierId: string
+): Promise<SupplierExtractionProfilesListResponse> {
+  return apiRequestJson<SupplierExtractionProfilesListResponse>(
+    `${API_BASE}${supplierExtractionProfilesPath(clientId, supplierId)}`
+  );
+}
+
+export async function getActiveSupplierExtractionProfile(
+  clientId: string,
+  supplierId: string
+): Promise<SupplierExtractionProfile> {
+  return apiRequestJson<SupplierExtractionProfile>(
+    `${API_BASE}${supplierExtractionProfilesActivePath(clientId, supplierId)}`
+  );
+}
+
+export async function getSupplierExtractionProfileByVersion(
+  clientId: string,
+  supplierId: string,
+  version: number
+): Promise<SupplierExtractionProfile> {
+  return apiRequestJson<SupplierExtractionProfile>(
+    `${API_BASE}${supplierExtractionProfileByVersionPath(clientId, supplierId, version)}`
+  );
+}
+
+export async function createSupplierExtractionProfileVersion(
+  clientId: string,
+  supplierId: string,
+  body: CreateSupplierExtractionProfileRequest
+): Promise<SupplierExtractionProfile> {
+  return apiRequestJson<SupplierExtractionProfile>(
+    `${API_BASE}${supplierExtractionProfilesPath(clientId, supplierId)}`,
+    { method: 'POST', body }
+  );
+}
+
+export async function cloneSupplierExtractionProfile(
+  clientId: string,
+  supplierId: string,
+  body: CloneSupplierExtractionProfileRequest
+): Promise<SupplierExtractionProfile> {
+  return apiRequestJson<SupplierExtractionProfile>(
+    `${API_BASE}${supplierExtractionProfilesClonePath(clientId, supplierId)}`,
+    { method: 'POST', body }
+  );
+}
+
+export async function activateSupplierExtractionProfileVersion(
+  clientId: string,
+  supplierId: string,
+  profileId: string,
+  expectedRowVersion?: number | null
+): Promise<SupplierExtractionProfile> {
+  const qs = buildQueryString([['expected_row_version', expectedRowVersion ?? undefined, { min: 1 }]]);
+  return apiRequestJson<SupplierExtractionProfile>(
+    `${API_BASE}${supplierExtractionProfileActivatePath(clientId, supplierId, profileId)}${qs}`,
+    { method: 'POST' }
+  );
+}
+
+export async function listSupplierReferenceAnnotations(
+  clientId: string,
+  supplierId: string,
+  imageId: string
+): Promise<SupplierReferenceAnnotationsListResponse> {
+  return apiRequestJson<SupplierReferenceAnnotationsListResponse>(
+    `${API_BASE}${supplierReferenceImageAnnotationsPath(clientId, supplierId, imageId)}`
+  );
+}
+
+export async function replaceSupplierReferenceAnnotations(
+  clientId: string,
+  supplierId: string,
+  imageId: string,
+  body: ReplaceSupplierReferenceAnnotationsRequest
+): Promise<SupplierReferenceAnnotationsListResponse> {
+  return apiRequestJson<SupplierReferenceAnnotationsListResponse>(
+    `${API_BASE}${supplierReferenceImageAnnotationsPath(clientId, supplierId, imageId)}`,
+    { method: 'PUT', body }
   );
 }

@@ -9,9 +9,10 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from src.api.constants.error_wire import (
     HTTP_DETAIL_REVIEW_CORRECTED_QUANTITY_REQUIRED_FOR_UPDATE_QUANTITY,
@@ -22,6 +23,10 @@ from src.api.errors import review_exception_to_http
 from src.api.schemas.aisle_schemas import AisleJobSummary, AisleResponse
 from src.api.schemas.asset_schemas import SourceAssetResponse
 from src.api.schemas.benchmark_schemas import LlmCostSnapshotResponse
+from src.api.schemas.identification_mode_literals import (
+    IdentificationModeLiteral,
+    IdentificationModeSourceLiteral,
+)
 from src.api.schemas.inventory_schemas import (
     InventoryListItemResponse,
     InventoryResponse,
@@ -41,12 +46,18 @@ from src.api.schemas.processing_schemas import (
     AisleStatusResponse,
     ArtifactPublicationBlock,
     ArtifactPublicationItemResponse,
+    AssetProgressResponse,
     FinalizationAssessmentBlock,
     FinalizationStageAssessmentItem,
     JobDetailResponse,
     JobSummary,
 )
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
+from src.api.services.identification_mode_response import (
+    IdentificationModeApiFields,
+    aisle_identification_fields,
+    inventory_identification_fields,
+)
 from src.application.errors import (
     AisleNotFoundError,
     InventoryNotFoundError,
@@ -83,6 +94,7 @@ from src.application.use_cases.positions.update_product_quantity import UpdatePr
 from src.application.use_cases.positions.update_product_sku import UpdateProductSkuUseCase
 from src.domain.aisle.entities import Aisle
 from src.domain.assets.entities import SourceAsset
+from src.domain.client.entities import Client
 from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
 from src.domain.jobs.entities import Job
@@ -444,7 +456,12 @@ def handle_delete_position(
         )
 
 
-def inventory_to_response(inv: Inventory) -> InventoryResponse:
+def inventory_to_response(
+    inv: Inventory,
+    *,
+    client: Client | None = None,
+    identification: IdentificationModeApiFields | None = None,
+) -> InventoryResponse:
     pec = primary_execution_config_for_inventory(inv)
     primary_execution_config = (
         PrimaryExecutionConfigResponse(
@@ -456,6 +473,7 @@ def inventory_to_response(inv: Inventory) -> InventoryResponse:
         if pec is not None
         else None
     )
+    id_fields = identification or inventory_identification_fields(inv, client=client)
     return InventoryResponse(
         id=inv.id,
         name=inv.name,
@@ -465,6 +483,15 @@ def inventory_to_response(inv: Inventory) -> InventoryResponse:
         primary_execution_config=primary_execution_config,
         created_at=inv.created_at,
         updated_at=inv.updated_at,
+        identification_mode=cast(
+            IdentificationModeLiteral | None, id_fields.identification_mode
+        ),
+        effective_identification_mode=cast(
+            IdentificationModeLiteral, id_fields.effective_identification_mode
+        ),
+        identification_mode_source=cast(
+            IdentificationModeSourceLiteral, id_fields.identification_mode_source
+        ),
     )
 
 
@@ -492,6 +519,9 @@ def aisle_to_response(
     positions_count: int = 0,
     pending_review_positions_count: int = 0,
     last_activity_at: datetime | None = None,
+    inventory: Inventory | None = None,
+    client: Client | None = None,
+    identification: IdentificationModeApiFields | None = None,
 ) -> AisleResponse:
     latest = None
     if latest_job is not None:
@@ -518,6 +548,9 @@ def aisle_to_response(
             model_name=latest_job.model_name,
             prompt_key=latest_job.prompt_key,
         )
+    id_fields = identification or aisle_identification_fields(
+        a, inventory=inventory, client=client
+    )
     return AisleResponse(
         id=a.id,
         inventory_id=a.inventory_id,
@@ -535,16 +568,33 @@ def aisle_to_response(
         positions_count=positions_count,
         pending_review_positions_count=pending_review_positions_count,
         last_activity_at=last_activity_at,
+        identification_mode=cast(
+            IdentificationModeLiteral | None, id_fields.identification_mode
+        ),
+        effective_identification_mode=cast(
+            IdentificationModeLiteral, id_fields.effective_identification_mode
+        ),
+        identification_mode_source=cast(
+            IdentificationModeSourceLiteral, id_fields.identification_mode_source
+        ),
     )
 
 
-def status_response_from_result(result: AisleProcessingStatusResult) -> AisleStatusResponse:
+def status_response_from_result(
+    result: AisleProcessingStatusResult,
+    *,
+    identification: IdentificationModeApiFields | None = None,
+) -> AisleStatusResponse:
     job_summary = None
     if result.latest_job is not None:
         job_summary = job_to_summary(result.latest_job)
     recent = [job_to_summary(j) for j in result.recent_jobs]
     return AisleStatusResponse(
-        aisle=aisle_to_response(result.aisle, result.latest_job),
+        aisle=aisle_to_response(
+            result.aisle,
+            result.latest_job,
+            identification=identification,
+        ),
         latest_job=job_summary,
         operational_job_id=result.aisle.operational_job_id,
         recent_jobs=recent,
@@ -561,6 +611,73 @@ def _llm_cost_snapshot_from_job_result(
         return LlmCostSnapshotResponse.model_validate(d)
     except Exception:
         return None
+
+
+def _asset_progress_from_job_result(
+    result_json: dict[str, Any] | None,
+) -> AssetProgressResponse | None:
+    if not result_json or not isinstance(result_json, dict):
+        return None
+    raw = result_json.get("asset_progress")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return AssetProgressResponse.model_validate(raw)
+    except ValidationError:
+        return None
+
+
+def _fallback_progress_from_job_result(
+    result_json: dict[str, Any] | None,
+):
+    from src.api.schemas.processing_schemas import FallbackProgressResponse
+
+    if not result_json or not isinstance(result_json, dict):
+        return None
+    raw = result_json.get("fallback_progress")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return FallbackProgressResponse.model_validate(raw)
+    except ValidationError:
+        return None
+
+
+def _fallback_asset_summaries_from_job_result(
+    result_json: dict[str, Any] | None,
+):
+    from src.api.schemas.processing_schemas import AssetFallbackSummaryResponse
+
+    if not result_json or not isinstance(result_json, dict):
+        return None
+    raw = result_json.get("fallback_asset_summaries")
+    if not isinstance(raw, list):
+        return None
+    out = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            out.append(AssetFallbackSummaryResponse.model_validate(item))
+        except ValidationError:
+            continue
+    return out or None
+
+
+def _identification_execution_from_job(j: Job) -> dict | None:
+    params = j.engine_params_json if isinstance(j.engine_params_json, dict) else None
+    if not params:
+        return None
+    raw = params.get("identification_execution")
+    return raw if isinstance(raw, dict) else None
+
+
+def _client_id_from_job(j: Job) -> str | None:
+    params = j.engine_params_json if isinstance(j.engine_params_json, dict) else None
+    if not params:
+        return None
+    cid = params.get("client_id")
+    return str(cid).strip() if isinstance(cid, str) and cid.strip() else None
 
 
 def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
@@ -587,6 +704,10 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
         model_name=j.model_name,
         prompt_key=j.prompt_key,
         prompt_version=j.prompt_version,
+        identification_mode=j.identification_mode.value,
+        identification_mode_source=j.identification_mode_source.value,
+        execution_strategy=j.execution_strategy.value,
+        configuration_snapshot_version=j.configuration_snapshot_version,
         finalization_status=j.finalization_status.value,
         current_finalization_step=(
             j.current_finalization_step.value if j.current_finalization_step else None
@@ -595,6 +716,11 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
         finalization_error_code=j.finalization_error_code,
         is_operational=is_operational,
         llm_cost_snapshot=_llm_cost_snapshot_from_job_result(j.result_json),
+        asset_progress=_asset_progress_from_job_result(j.result_json),
+        fallback_progress=_fallback_progress_from_job_result(j.result_json),
+        fallback_asset_summaries=_fallback_asset_summaries_from_job_result(j.result_json),
+        identification_execution=_identification_execution_from_job(j),
+        client_id=_client_id_from_job(j),
     )
 
 

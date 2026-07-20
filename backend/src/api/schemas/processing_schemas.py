@@ -7,6 +7,11 @@ from pydantic import BaseModel, Field
 
 from src.api.schemas.aisle_schemas import AisleResponse
 from src.api.schemas.benchmark_schemas import LlmCostSnapshotResponse
+from src.api.schemas.identification_mode_literals import (
+    ExecutionStrategyLiteral,
+    IdentificationModeLiteral,
+    IdentificationModeSourceLiteral,
+)
 from src.api.schemas.reference_usage_schemas import ReferenceUsageSummary
 
 
@@ -38,6 +43,13 @@ class ProcessAisleRequest(BaseModel):
         description=(
             "Client idempotency key for process start. Replays return the existing job id when the same "
             "key was used for this aisle (including completed jobs within recent history)."
+        ),
+    )
+    identification_mode: IdentificationModeLiteral | None = Field(
+        None,
+        description=(
+            "Optional job-only override for aisle identification mode. Does not permanently change "
+            "aisle/inventory/client config. Omit to resolve Request→Aisle→Inventory→Client→LEGACY_LLM."
         ),
     )
 
@@ -103,6 +115,58 @@ class ProcessAisleResponse(BaseModel):
     """Response for POST .../aisles/{aisle_id}/process."""
 
     job_id: str
+    identification_mode: IdentificationModeLiteral
+    identification_mode_source: IdentificationModeSourceLiteral
+    execution_strategy: ExecutionStrategyLiteral
+    configuration_snapshot_version: int
+
+
+class AssetProgressResponse(BaseModel):
+    """Derived counts from job_asset_processing_states (Phase 2)."""
+
+    total: int = 0
+    pending: int = 0
+    processing: int = 0
+    resolved: int = 0
+    unrecognized: int = 0
+    failed: int = 0
+    manual_review: int = 0
+    cancelled: int = 0
+
+
+class FallbackProgressResponse(BaseModel):
+    """Phase 5 selective external-fallback counters (from ``result_json.fallback_progress``)."""
+
+    fallback_requested: int = 0
+    fallback_skipped: int = 0
+    fallback_in_progress: int = 0
+    resolved_external: int = 0
+    external_unrecognized: int = 0
+    external_failed: int = 0
+    pending_manual_review: int = 0
+    estimated_external_cost: float | None = None
+    resolved_internal: int = 0
+
+
+class AssetFallbackSummaryResponse(BaseModel):
+    """Sanitized per-asset external fallback observability (no secrets / raw payloads)."""
+
+    asset_id: str
+    fallback_status: str | None = None
+    external_provider: str | None = None
+    external_model: str | None = None
+    external_attempt_id: str | None = None
+    external_duration_ms: int | None = None
+    estimated_cost: float | None = None
+    internal_code: str | None = None
+    quantity: float | int | None = None
+    validation_errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    persistence_status: str | None = None
+    position_id: str | None = None
+    active_result_id: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
 
 
 class JobSummary(BaseModel):
@@ -130,6 +194,10 @@ class JobSummary(BaseModel):
     model_name: Optional[str] = None
     prompt_key: Optional[str] = None
     prompt_version: Optional[str] = None
+    identification_mode: IdentificationModeLiteral
+    identification_mode_source: IdentificationModeSourceLiteral
+    execution_strategy: ExecutionStrategyLiteral
+    configuration_snapshot_version: int
     finalization_status: Optional[str] = None
     current_finalization_step: Optional[str] = None
     last_completed_finalization_step: Optional[str] = None
@@ -138,6 +206,15 @@ class JobSummary(BaseModel):
     is_operational: bool = False
     #: Optional LLM cost snapshot from ``result_json`` (sanitized; additive for run pickers).
     llm_cost_snapshot: Optional[LlmCostSnapshotResponse] = None
+    #: Phase 2 additive per-asset progress (absent for legacy jobs / orchestrator off).
+    asset_progress: Optional[AssetProgressResponse] = None
+    #: Phase 5 selective external fallback counters (absent when fallback never ran).
+    fallback_progress: Optional[FallbackProgressResponse] = None
+    #: Phase 5 per-asset sanitized fallback rows (derived from durable requests).
+    fallback_asset_summaries: Optional[list[AssetFallbackSummaryResponse]] = None
+    #: Immutable identification execution snapshot from ``engine_params_json`` (Phase 3/4/5).
+    identification_execution: Optional[dict[str, Any]] = None
+    client_id: Optional[str] = None
 
 
 class FinalizationStageAssessmentItem(BaseModel):

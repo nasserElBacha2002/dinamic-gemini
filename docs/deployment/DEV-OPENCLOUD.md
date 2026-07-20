@@ -9,6 +9,8 @@ Automatic backend deploy runs from GitHub Actions (`.github/workflows/deploy-dev
 3. GCP secrets preflight (container) → `dev_deploy_db_migrate.sh`
 4. Poll `http://127.0.0.1:${BACKEND_HOST_PORT}/health`
 
+The compose stack runs only the **`api`** service. On-demand aisle workers are subprocesses of that container, so native deps for Phase 3/4 (`libzbar0`, `tesseract-ocr` + spa/eng) are installed in `backend/Dockerfile` and verified at image build time.
+
 Environment for the API lives at the **repository root** `.env` (e.g. `/opt/dinamic/dinamic-gemini/.env`), loaded by `backend/docker-compose.yml`.
 
 ## GCP credentials (`GOOGLE_APPLICATION_CREDENTIALS`)

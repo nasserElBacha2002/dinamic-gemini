@@ -1179,6 +1179,11 @@ def test_retry_endpoint_returns_202_and_new_job_summary_with_lineage() -> None:
             provider_name=STUB_PRIMARY_PROVIDER,
             model_name=None,
             prompt_key="global_v21",
+            identification_mode=None,
+            identification_mode_source=None,
+            configuration_snapshot_version=None,
+            execution_strategy=None,
+            engine_params_json=None,
         ):
             job = Job(
                 id="job-retry-created",

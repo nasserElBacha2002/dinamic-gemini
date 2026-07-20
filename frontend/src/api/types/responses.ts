@@ -8,6 +8,9 @@ import type {
   ClientSupplierStatus,
   InventoryStatus,
   InventoryProcessingMode,
+  AisleIdentificationMode,
+  AisleIdentificationModeSource,
+  AisleIdentificationExecutionStrategy,
   AisleStatus,
   JobStatus,
   FinalizationStatus,
@@ -26,6 +29,9 @@ export interface Client {
   status: ClientStatus | string;
   created_at: string;
   updated_at: string;
+  identification_mode?: AisleIdentificationMode | string | null;
+  effective_identification_mode?: AisleIdentificationMode | string;
+  identification_mode_source?: AisleIdentificationModeSource | string;
 }
 
 export interface ClientsListResponse {
@@ -115,6 +121,9 @@ export interface Inventory {
   primary_execution_config?: PrimaryExecutionConfig | null;
   created_at?: string | null;
   updated_at?: string | null;
+  identification_mode?: AisleIdentificationMode | string | null;
+  effective_identification_mode?: AisleIdentificationMode | string;
+  identification_mode_source?: AisleIdentificationModeSource | string;
 }
 
 /** GET /api/v3/inventories — one row with aggregates for list/table screens. */
@@ -208,6 +217,9 @@ export interface Aisle {
   positions_count?: number;
   pending_review_positions_count?: number;
   last_activity_at?: string | null;
+  identification_mode?: AisleIdentificationMode | string | null;
+  effective_identification_mode?: AisleIdentificationMode | string;
+  identification_mode_source?: AisleIdentificationModeSource | string;
 }
 
 /**
@@ -230,6 +242,10 @@ export interface AisleStatusResponse {
 
 export interface ProcessAisleResponse {
   job_id: string;
+  identification_mode?: AisleIdentificationMode | string | null;
+  identification_mode_source?: AisleIdentificationModeSource | string | null;
+  execution_strategy?: AisleIdentificationExecutionStrategy | string | null;
+  configuration_snapshot_version?: number | null;
 }
 
 /** GET /api/v3/inventories/processing-provider-options (Phase 5). */
@@ -401,6 +417,10 @@ export interface JobSummary {
   prompt_key?: string | null;
   /** Tracked prompt line (e.g. prompt_key@v2.1); empty if unknown. */
   prompt_version?: string | null;
+  identification_mode?: AisleIdentificationMode | string | null;
+  identification_mode_source?: AisleIdentificationModeSource | string | null;
+  execution_strategy?: AisleIdentificationExecutionStrategy | string | null;
+  configuration_snapshot_version?: number | null;
   finalization_status?: FinalizationStatus | string | null;
   current_finalization_step?: FinalizationStep | string | null;
   last_completed_finalization_step?: string | null;
@@ -415,6 +435,57 @@ export interface JobSummary {
   is_operational?: boolean;
   /** Present when ``result_json`` includes a validated LLM cost snapshot (list jobs; additive). */
   llm_cost_snapshot?: LlmCostSnapshot | null;
+  /** Phase 2 additive per-asset progress when orchestrator ran. */
+  asset_progress?: AssetProgress | null;
+  /** Phase 5 selective external fallback counters. */
+  fallback_progress?: FallbackProgress | null;
+  /** Phase 5 per-asset sanitized external fallback summaries. */
+  fallback_asset_summaries?: AssetFallbackSummary[] | null;
+  /** Immutable identification execution snapshot from job engine_params (Phase 3/4/5). */
+  identification_execution?: Record<string, unknown> | null;
+  client_id?: string | null;
+}
+
+export interface AssetProgress {
+  total: number;
+  pending: number;
+  processing: number;
+  resolved: number;
+  unrecognized: number;
+  failed: number;
+  manual_review: number;
+  cancelled: number;
+}
+
+export interface FallbackProgress {
+  fallback_requested: number;
+  fallback_skipped: number;
+  fallback_in_progress: number;
+  resolved_external: number;
+  external_unrecognized: number;
+  external_failed: number;
+  pending_manual_review: number;
+  estimated_external_cost?: number | null;
+  resolved_internal: number;
+}
+
+export interface AssetFallbackSummary {
+  asset_id: string;
+  fallback_status?: string | null;
+  external_provider?: string | null;
+  external_model?: string | null;
+  external_attempt_id?: string | null;
+  external_duration_ms?: number | null;
+  estimated_cost?: number | null;
+  internal_code?: string | null;
+  quantity?: number | null;
+  validation_errors?: string[];
+  warnings?: string[];
+  persistence_status?: string | null;
+  position_id?: string | null;
+  active_result_id?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
 }
 
 /** GET .../aisles/{aisle_id}/jobs — newest first (multi-run browsing). */

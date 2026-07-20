@@ -74,8 +74,9 @@ output/
 # Data files (videos de prueba, etc.)
 data/
 
-# Audit artifacts (salidas fijas por corrida + historial versionado bajo runs/)
-audit/raw/*
+# Mobile / Android Gradle caches (never commit)
+**/.gradle/
+
 !audit/raw/.gitkeep
 !audit/raw/LATEST_RUN.txt
 !audit/raw/runs/
@@ -119,6 +120,19 @@ Thumbs.db
 
 # Local Git review artifacts (/implement, /corrections-scoped workflows)
 review/
+
+# Generated correction / cleanup dumps (never commit)
+*-cleanup-diff.txt
+*-cleanup-diffstat.txt
+*-cleanup-status.txt
+implementation-corrections-diff.txt
+implementation-corrections-diffstat.txt
+implementation-corrections-status.txt
+legacy-processing-cleanup-*.txt
+implementation-corrections-*.txt
+mobile-processing-mode-diff.txt
+mobile-processing-mode-diffstat.txt
+mobile-processing-mode-status.txt
 
 # Local pre-commit review artifacts (scripts/review_working_tree.sh)
 .review/

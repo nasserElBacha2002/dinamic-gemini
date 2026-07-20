@@ -18,6 +18,29 @@ export type InventoryStatus = (typeof INVENTORY_STATUSES)[number];
 export const INVENTORY_PROCESSING_MODES = ['production', 'test'] as const;
 export type InventoryProcessingMode = (typeof INVENTORY_PROCESSING_MODES)[number];
 
+/** Aisle identification strategy (independent of production/test). */
+export const AISLE_IDENTIFICATION_MODES = ['CODE_SCAN', 'INTERNAL_OCR', 'LEGACY_LLM'] as const;
+export type AisleIdentificationMode = (typeof AISLE_IDENTIFICATION_MODES)[number];
+
+export const AISLE_IDENTIFICATION_MODE_SOURCES = [
+  'REQUEST',
+  'AISLE',
+  'INVENTORY',
+  'CLIENT',
+  'SYSTEM_DEFAULT',
+  'LEGACY_MIGRATION',
+] as const;
+export type AisleIdentificationModeSource = (typeof AISLE_IDENTIFICATION_MODE_SOURCES)[number];
+
+export const AISLE_IDENTIFICATION_EXECUTION_STRATEGIES = [
+  'LEGACY_LLM',
+  'LEGACY_LLM_TEMPORARY',
+  'CODE_SCAN',
+  'INTERNAL_OCR',
+] as const;
+export type AisleIdentificationExecutionStrategy =
+  (typeof AISLE_IDENTIFICATION_EXECUTION_STRATEGIES)[number];
+
 export const AISLE_STATUSES = [
   'created',
   'assets_uploaded',

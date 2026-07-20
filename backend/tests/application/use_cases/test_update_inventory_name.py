@@ -9,10 +9,12 @@ import pytest
 
 from src.application.errors import InventoryNotFoundError
 from src.application.ports.repositories import InventoryRepository
+from src.application.services.optional_unset import UNSET
 from src.application.use_cases.inventories.update_inventory_name import (
     UpdateInventoryNameCommand,
     UpdateInventoryNameUseCase,
 )
+from src.domain.aisle_identification.modes import AisleIdentificationMode
 from src.domain.inventory.entities import Inventory, InventoryStatus
 
 
@@ -91,3 +93,83 @@ def test_update_inventory_name_not_found() -> None:
 
     with pytest.raises(InventoryNotFoundError):
         uc.execute(UpdateInventoryNameCommand(inventory_id="missing", name="X"))
+
+
+def test_update_inventory_partial_patch_identification_mode_only_leaves_name_unchanged() -> None:
+    """Partial PATCH: omitting ``name`` must not require it (identification_mode alone is enough)."""
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.DRAFT, now, now)
+    repo = StubInventoryRepo([inv])
+
+    uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
+    result = uc.execute(
+        UpdateInventoryNameCommand(
+            inventory_id="inv-1", name=None, identification_mode=AisleIdentificationMode.CODE_SCAN
+        )
+    )
+
+    assert result.name == "Warehouse"
+    assert result.identification_mode == AisleIdentificationMode.CODE_SCAN
+    assert repo.save_calls == 1
+
+
+def test_update_inventory_partial_patch_explicit_null_clears_identification_mode() -> None:
+    """Explicit ``identification_mode=None`` clears the inventory override (inherit from client)."""
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory(
+        "inv-1",
+        "Warehouse",
+        InventoryStatus.DRAFT,
+        now,
+        now,
+        identification_mode=AisleIdentificationMode.INTERNAL_OCR,
+    )
+    repo = StubInventoryRepo([inv])
+
+    uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
+    result = uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", name=None, identification_mode=None))
+
+    assert result.identification_mode is None
+    assert repo.save_calls == 1
+
+
+def test_update_inventory_partial_patch_unset_identification_mode_is_noop_field() -> None:
+    """Default ``UNSET`` identification_mode leaves the stored override untouched."""
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory(
+        "inv-1",
+        "Warehouse",
+        InventoryStatus.DRAFT,
+        now,
+        now,
+        identification_mode=AisleIdentificationMode.INTERNAL_OCR,
+    )
+    repo = StubInventoryRepo([inv])
+
+    uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
+    result = uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", name="New Warehouse"))
+
+    assert result.identification_mode == AisleIdentificationMode.INTERNAL_OCR
+    assert UpdateInventoryNameCommand(inventory_id="inv-1", name="x").identification_mode is UNSET
+
+
+def test_update_inventory_partial_patch_requires_at_least_one_field() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.DRAFT, now, now)
+    repo = StubInventoryRepo([inv])
+    uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
+
+    with pytest.raises(ValueError, match="At least one field must be provided"):
+        uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1"))
+    assert repo.save_calls == 0
+
+
+def test_update_inventory_partial_patch_invalid_identification_mode_raises() -> None:
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv-1", "Warehouse", InventoryStatus.DRAFT, now, now)
+    repo = StubInventoryRepo([inv])
+    uc = UpdateInventoryNameUseCase(inventory_repo=repo, clock=FixedClock(now))
+
+    with pytest.raises(ValueError, match="Invalid identification_mode"):
+        uc.execute(UpdateInventoryNameCommand(inventory_id="inv-1", identification_mode="AUTO"))
+    assert repo.save_calls == 0

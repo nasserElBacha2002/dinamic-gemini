@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
+from src.domain.aisle_identification.modes import AisleIdentificationMode
+
 
 class InventoryStatus(str, Enum):
     DRAFT = "draft"
@@ -42,6 +44,8 @@ class Inventory:
     primary_prompt_key: str | None = None
     primary_prompt_version: str | None = None
     client_id: str | None = None
+    #: Optional aisle identification override; null inherits client/system. Not production/test.
+    identification_mode: AisleIdentificationMode | None = None
 
     def mark_processing(self, now: datetime) -> None:
         self.status = InventoryStatus.PROCESSING

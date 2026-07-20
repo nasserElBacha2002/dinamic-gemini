@@ -6,7 +6,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { executeBulkUpload } from '../features/uploads';
 import {
   activateSupplierPromptConfigVersion,
+  activateSupplierExtractionProfileVersion,
+  cloneSupplierExtractionProfile,
   createSupplierPromptConfigVersion,
+  createSupplierExtractionProfileVersion,
+  replaceSupplierReferenceAnnotations,
   createInventory,
   createAisle,
   createClient,
@@ -32,6 +36,8 @@ import type {
   CreateClientRequest,
   CreateClientSupplierRequest,
   CreateSupplierPromptConfigRequest,
+  CreateSupplierExtractionProfileRequest,
+  ReplaceSupplierReferenceAnnotationsRequest,
   CreateInventoryRequest,
   CreateAisleRequest,
   CreateManualImageResultRequest,
@@ -201,6 +207,77 @@ export function useActivateSupplierPromptConfigVersion(clientId: string, supplie
   });
 }
 
+function invalidateSupplierExtractionProfileQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  clientId: string,
+  supplierId: string
+) {
+  queryClient.invalidateQueries({
+    queryKey: queryKeys.clients.suppliers.extractionProfiles.list(clientId, supplierId),
+  });
+  queryClient.invalidateQueries({
+    queryKey: queryKeys.clients.suppliers.extractionProfiles.active(clientId, supplierId),
+  });
+  queryClient.invalidateQueries({
+    queryKey: queryKeys.clients.suppliers.extractionProfiles.all(clientId, supplierId),
+  });
+}
+
+export function useCreateSupplierExtractionProfileVersion(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateSupplierExtractionProfileRequest) =>
+      createSupplierExtractionProfileVersion(clientId, supplierId, body),
+    onSuccess: () => {
+      invalidateSupplierExtractionProfileQueries(queryClient, clientId, supplierId);
+    },
+  });
+}
+
+export function useActivateSupplierExtractionProfileVersion(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      profileId,
+      expectedRowVersion,
+    }: {
+      profileId: string;
+      expectedRowVersion?: number | null;
+    }) => activateSupplierExtractionProfileVersion(clientId, supplierId, profileId, expectedRowVersion),
+    onSuccess: () => {
+      invalidateSupplierExtractionProfileQueries(queryClient, clientId, supplierId);
+    },
+  });
+}
+
+export function useCloneSupplierExtractionProfile(clientId: string, supplierId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sourceProfileId: string) =>
+      cloneSupplierExtractionProfile(clientId, supplierId, { source_profile_id: sourceProfileId }),
+    onSuccess: () => {
+      invalidateSupplierExtractionProfileQueries(queryClient, clientId, supplierId);
+    },
+  });
+}
+
+export function useReplaceSupplierReferenceAnnotations(
+  clientId: string,
+  supplierId: string,
+  imageId: string
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ReplaceSupplierReferenceAnnotationsRequest) =>
+      replaceSupplierReferenceAnnotations(clientId, supplierId, imageId, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.clients.suppliers.extractionProfiles.annotations(clientId, supplierId, imageId),
+      });
+    },
+  });
+}
+
 export function useCreateAisle(inventoryId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -273,11 +350,13 @@ export function useStartAisleProcessing(inventoryId: string) {
       providerName?: string | null;
       modelName?: string | null;
       promptKey?: string | null;
+      identificationMode?: string | null;
     }) =>
       startAisleProcessing(inventoryId, vars.aisleId, {
         providerName: vars.providerName,
         modelName: vars.modelName,
         promptKey: vars.promptKey,
+        identificationMode: vars.identificationMode,
       }),
     onSuccess: (_, vars) => {
       const { aisleId } = vars;

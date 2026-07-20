@@ -7,6 +7,10 @@ Import from here instead of defining in a single use case module.
 
 from __future__ import annotations
 
+from src.domain.aisle_identification.modes import (
+    InvalidPersistedIdentificationModeError as InvalidPersistedIdentificationModeError,
+)
+
 
 class AisleNotFoundError(Exception):
     """Raised when the aisle does not exist or does not belong to the given inventory."""
@@ -30,6 +34,10 @@ class ClientNotFoundError(Exception):
 
 class InvalidClientNameError(Exception):
     """Raised when client name is missing or invalid."""
+
+
+class IdempotentJobInconsistencyError(Exception):
+    """Raised when an idempotency key matched a job id that cannot be loaded."""
 
 
 class ClientSupplierNotFoundError(Exception):
@@ -151,6 +159,55 @@ class SupplierPromptConfigInvalidScopeError(Exception):
 
 class SupplierPromptConfigActivationFailedError(Exception):
     """Raised when prompt-config activation does not return an activated row."""
+
+
+class SupplierExtractionProfileNotFoundError(Exception):
+    """Raised when an extraction profile does not exist or is out of supplier scope."""
+
+
+class SupplierExtractionProfileInvalidConfigurationError(Exception):
+    """Raised when extraction profile configuration JSON fails validation."""
+
+
+class SupplierExtractionProfileActivationFailedError(Exception):
+    """Raised when extraction profile activation fails."""
+
+
+class SupplierExtractionProfileRowVersionConflictError(Exception):
+    """Raised when optimistic row_version does not match on activation."""
+
+
+class SupplierExtractionProfileVersionConflictError(Exception):
+    """Raised when concurrent create/clone hits unique (client, supplier, version)."""
+
+
+class StrategyDisabledError(Exception):
+    """Raised when a processing strategy / feature flag is disabled."""
+
+
+class LegacyProcessingModeNotAllowedError(ValueError):
+    """Raised when LEGACY_LLM is set on new configs or process overrides (Phase 8)."""
+
+    def __init__(self, mode: str, *, context: str = "configuration") -> None:
+        self.code = "LEGACY_PROCESSING_MODE_NOT_ALLOWED_FOR_NEW_CONFIGURATION"
+        self.mode = mode
+        self.context = context
+        super().__init__(
+            f"{self.code}: {mode} is not allowed for new {context}; "
+            f"use CODE_SCAN, INTERNAL_OCR, or inherit (null)"
+        )
+
+
+class ProcessingObservabilityDisabledError(Exception):
+    """Raised when Phase 7 observability mutations are disabled."""
+
+
+class IdempotencyKeyReusedError(Exception):
+    """Same Idempotency-Key with a different payload (409)."""
+
+
+class DurableCommandMissingError(Exception):
+    """Raised when a mutation could not persist a durable command."""
 
 
 class PositionNotFoundError(Exception):
@@ -393,3 +450,38 @@ class AssetNotInJobSnapshotError(Exception):
 
 class ManualResultNotAllowedForAssetTypeError(Exception):
     """Raised when manual coverage is requested for a non-image / video snapshot asset."""
+
+
+class ImageProcessingRepositoryUnavailableError(Exception):
+    """Raised when Phase 2 image-processing SQL repos are required but unavailable.
+
+    Fail-fast policy: when the app resolves a SQL repository backend, the image-processing
+    bridge must not silently fall back to in-memory lease/state/attempt repositories (that
+    would break cross-worker mutual exclusion). Raised instead of falling back.
+    """
+
+
+class AssetProcessingStateConcurrencyError(Exception):
+    """Raised when an ownership-checked write to job_asset_processing_states affects 0 rows.
+
+    Indicates the caller's ``(expected_version, worker_token)`` no longer matches the
+    persisted row (lost race, expired lease, or already-finalized state).
+    """
+
+
+class JobProcessingLeaseNotAcquiredError(Exception):
+    """Optional: raised by callers that require a lease and treat "not acquired" as fatal.
+
+    ``AisleProcessingOrchestrator.process_with_legacy_batch`` does not raise this by default;
+    it returns ``LegacyBatchOutcome(ok=False, skipped_busy=True)`` instead so callers can decide.
+    """
+
+
+class CodeScanPipelineMisconfiguredError(Exception):
+    """Raised when the CODE_SCAN path is entered without a required collaborator.
+
+    Phase 3 corrections: ``AisleProcessingOrchestrator.process_with_code_scan`` must never
+    run without both a configured code-scan strategy AND a result persister — otherwise a
+    RESOLVED_INTERNAL scan could never create a position (silent data loss) or the run would
+    crash mid-loop. The executor catches this and fails the job/aisle deterministically.
+    """

@@ -711,8 +711,6 @@ export default function AislePositionsPage() {
         title={aisleLabel}
         subtitle=""
         showInactiveBadge={!aisleIsActive}
-        onOpenCodeScan={() => setCodeScanDrawerOpen(true)}
-        codeScanDisabled={!aisleIsActive}
         onEditName={() => setEditCodeOpen(true)}
         onDeactivate={aisleIsActive ? () => { setLifecycleError(null); setDeactivateConfirmOpen(true); } : undefined}
         onReactivate={!aisleIsActive ? () => { setLifecycleError(null); setReactivateConfirmOpen(true); } : undefined}

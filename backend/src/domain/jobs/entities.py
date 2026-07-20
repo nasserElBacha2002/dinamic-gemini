@@ -11,6 +11,12 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from src.domain.aisle_identification.modes import (
+    CONFIGURATION_SNAPSHOT_VERSION,
+    AisleIdentificationExecutionStrategy,
+    AisleIdentificationMode,
+    AisleIdentificationModeSource,
+)
 from src.domain.jobs.finalization import (
     CurrentFinalizationStep,
     FinalizationStatus,
@@ -65,6 +71,16 @@ class Job:
     engine_params_json: dict[str, Any] | None = None
     #: Resolved prompt profile version / schema tag for audit (e.g. ``global_v21@v2.1``).
     prompt_version: str | None = None
+    # Phase 1 aisle identification — immutable snapshot at job creation (do not re-resolve).
+    identification_mode: AisleIdentificationMode = AisleIdentificationMode.LEGACY_LLM
+    identification_mode_source: AisleIdentificationModeSource = (
+        AisleIdentificationModeSource.SYSTEM_DEFAULT
+    )
+    configuration_snapshot_version: int = CONFIGURATION_SNAPSHOT_VERSION
+    #: Actual worker path (Phase 1: LEGACY_LLM or LEGACY_LLM_TEMPORARY).
+    execution_strategy: AisleIdentificationExecutionStrategy = (
+        AisleIdentificationExecutionStrategy.LEGACY_LLM
+    )
     # Phase 3.2 — explicit finalization progress (distinct from pipeline current_stage).
     finalization_status: FinalizationStatus = FinalizationStatus.NOT_STARTED
     current_finalization_step: CurrentFinalizationStep | None = None

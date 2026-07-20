@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from src.application.services.source_asset_heic import HEIC_FILENAME_SUFFIXES, source_asset_is_heic
 from src.domain.assets.entities import SourceAsset, SourceAssetType
@@ -80,7 +80,7 @@ def decode_bytes_to_rgb_image(
             raise UnreadableImageError(f"cannot decode HEIC image for asset {aid}") from exc
     try:
         img = Image.open(io.BytesIO(raw))
-        return img.convert("RGB")
+        return _to_oriented_rgb(img)
     except Exception as exc:
         if _bytes_look_like_heic(raw):
             try:
@@ -90,6 +90,21 @@ def decode_bytes_to_rgb_image(
                     f"cannot decode HEIC image for asset {aid}"
                 ) from heic_exc
         raise UnreadableImageError(f"cannot decode image bytes for asset {aid}") from exc
+
+
+def _to_oriented_rgb(img: Image.Image) -> Image.Image:
+    """Apply EXIF orientation then convert to RGB.
+
+    Barcode/QR decoding is orientation-sensitive; phones commonly store a rotated sensor
+    image plus an EXIF orientation tag. ``ImageOps.exif_transpose`` bakes that rotation in
+    so pyzbar sees the upright image. Images without EXIF orientation are returned unchanged
+    (exif_transpose is a no-op), so JPEG/PNG/WebP without the tag keep prior behavior.
+    """
+    try:
+        transposed = ImageOps.exif_transpose(img)
+    except Exception:
+        transposed = img
+    return (transposed or img).convert("RGB")
 
 
 def _bytes_look_like_heic(raw: bytes) -> bool:
@@ -102,4 +117,4 @@ def _decode_heic_bytes(raw: bytes) -> Image.Image:
     except ImportError as exc:
         raise UnreadableImageError("HEIC decode requires pillow-heif") from exc
     pillow_heif.register_heif_opener()
-    return Image.open(io.BytesIO(raw)).convert("RGB")
+    return _to_oriented_rgb(Image.open(io.BytesIO(raw)))

@@ -193,3 +193,18 @@ HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_INVALID_SCOPE = (
 HTTP_DETAIL_SUPPLIER_PROMPT_CONFIG_ACTIVATION_FAILED = (
     "Supplier prompt config activation failed"
 )
+
+# Supplier extraction profiles (Phase 6)
+HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_NOT_FOUND = "Supplier extraction profile not found"
+HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_INVALID_CONFIGURATION = (
+    "Supplier extraction profile configuration is invalid"
+)
+HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_ACTIVATION_FAILED = (
+    "Supplier extraction profile activation failed"
+)
+HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_ROW_VERSION_CONFLICT = (
+    "Supplier extraction profile was modified concurrently; refresh and retry"
+)
+HTTP_DETAIL_SUPPLIER_EXTRACTION_PROFILE_VERSION_CONFLICT = (
+    "Supplier extraction profile version conflict; refresh and retry"
+)

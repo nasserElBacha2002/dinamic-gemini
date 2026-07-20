@@ -1,0 +1,17 @@
+LEGACY processing usage — read-only report notes
+================================================
+
+Canonical SQL: backend/docs/sql/legacy_processing_usage_report.sql
+
+Source of truth table for v3 process_aisle jobs: inventory_jobs
+(NOT the pipeline legacy table named `jobs`).
+
+Columns used:
+- clients.default_identification_mode
+- inventories.identification_mode
+- aisles.identification_mode
+- inventory_jobs.identification_mode, execution_strategy, job_type, created_at
+
+Validated: 2026-07-20 against src/database/schema.sql (read-only review).
+Execute the SQL against a read-only replica before any tenant migration.
+Do not run UPDATEs automatically.

@@ -17,6 +17,7 @@ from . import (
     image_results,
     inventories,
     positions,
+    processing_observability,
     reviews,
 )
 
@@ -33,4 +34,5 @@ router.include_router(code_scans.router)
 router.include_router(assets.router)
 router.include_router(positions.router)
 router.include_router(image_results.router)
+router.include_router(processing_observability.router)
 router.include_router(reviews.router)
