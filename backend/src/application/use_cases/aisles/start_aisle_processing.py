@@ -246,8 +246,8 @@ class StartAisleProcessingUseCase:
         execution_strategy = resolve_execution_strategy(
             effective_mode=resolution.effective_mode,
             pipeline_enabled=bool(settings.aisle_identification_pipeline_enabled),
-            code_scan_processing_enabled=bool(
-                getattr(settings, "code_scan_processing_enabled", False)
+            internal_ocr_processing_enabled=bool(
+                getattr(settings, "internal_ocr_processing_enabled", False)
             ),
         )
 

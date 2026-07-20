@@ -988,13 +988,13 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     code_scan_processing_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv("CODE_SCAN_PROCESSING_ENABLED", "false").strip().lower()
+            os.getenv("CODE_SCAN_PROCESSING_ENABLED", "true").strip().lower()
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 3: enable deterministic per-image CODE_SCAN execution strategy for aisle "
-            "jobs whose effective identification mode is CODE_SCAN. Default false (safe): jobs "
-            "stay on the legacy LLM path. Env: CODE_SCAN_PROCESSING_ENABLED."
+            "DEPRECATED / ignored: CODE_SCAN runs whenever the job identification mode is "
+            "CODE_SCAN. Kept only so existing .env files do not break settings load. "
+            "Env: CODE_SCAN_PROCESSING_ENABLED."
         ),
     )
     code_scan_max_image_side: int = Field(
@@ -1121,6 +1121,80 @@ class LimitsAndSchemaSettings(BaseModel):
             "Max normalized code value length accepted per detection. "
             "Env: CODE_SCAN_MAX_DECODED_PAYLOAD_LENGTH."
         ),
+    )
+    internal_ocr_processing_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("INTERNAL_OCR_PROCESSING_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 4: when true, INTERNAL_OCR identification mode snapshots and runs the real "
+            "local OCR strategy. When false (default), INTERNAL_OCR keeps LEGACY_LLM_TEMPORARY. "
+            "Env: INTERNAL_OCR_PROCESSING_ENABLED."
+        ),
+    )
+    internal_ocr_engine: str = Field(
+        default_factory=lambda: (os.getenv("INTERNAL_OCR_ENGINE", "tesseract") or "tesseract").strip().lower(),
+        description="Phase 4 OCR engine key (only tesseract supported). Env: INTERNAL_OCR_ENGINE.",
+    )
+    internal_ocr_language: str = Field(
+        default_factory=lambda: (os.getenv("INTERNAL_OCR_LANGUAGE", "spa+eng") or "spa+eng").strip(),
+        description="Tesseract language pack(s). Env: INTERNAL_OCR_LANGUAGE.",
+    )
+    internal_ocr_max_variants: int = Field(
+        default_factory=lambda: int(os.getenv("INTERNAL_OCR_MAX_VARIANTS", "3")),
+        ge=1,
+        le=6,
+        description="Max preprocessing variants per image. Env: INTERNAL_OCR_MAX_VARIANTS.",
+    )
+    internal_ocr_timeout_seconds: int = Field(
+        default_factory=lambda: int(os.getenv("INTERNAL_OCR_TIMEOUT_SECONDS", "20")),
+        ge=1,
+        le=300,
+        description=(
+            "Per-asset wall-clock budget; each Tesseract call uses a real subprocess timeout. "
+            "Env: INTERNAL_OCR_TIMEOUT_SECONDS."
+        ),
+    )
+    internal_ocr_max_image_dimension: int = Field(
+        default_factory=lambda: int(os.getenv("INTERNAL_OCR_MAX_IMAGE_DIMENSION", "2048")),
+        ge=256,
+        le=8192,
+        description="Max longest image side before OCR. Env: INTERNAL_OCR_MAX_IMAGE_DIMENSION.",
+    )
+    max_internal_image_processing_concurrency: int = Field(
+        default_factory=lambda: int(
+            os.getenv("MAX_INTERNAL_IMAGE_PROCESSING_CONCURRENCY", "1")
+        ),
+        ge=1,
+        le=16,
+        description=(
+            "Phase 4 ThreadPool concurrency for INTERNAL_OCR (independent of CODE_SCAN). "
+            "Env: MAX_INTERNAL_IMAGE_PROCESSING_CONCURRENCY."
+        ),
+    )
+    internal_ocr_quantity_max: int = Field(
+        default_factory=lambda: int(os.getenv("INTERNAL_OCR_QUANTITY_MAX", "99999999")),
+        ge=1,
+        description="Max accepted quantity for OCR. Env: INTERNAL_OCR_QUANTITY_MAX.",
+    )
+    internal_ocr_prefer_ean_as_internal_code: bool = Field(
+        default_factory=lambda: (
+            os.getenv("INTERNAL_OCR_PREFER_EAN_AS_INTERNAL_CODE", "true").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, labeled/bare EAN candidates win over ARTICULO/PRODUCTO for internal_code "
+            "(client-rule compatible without hardcoding client names). "
+            "Env: INTERNAL_OCR_PREFER_EAN_AS_INTERNAL_CODE."
+        ),
+    )
+    internal_ocr_enable_deskew: bool = Field(
+        default_factory=lambda: (
+            os.getenv("INTERNAL_OCR_ENABLE_DESKEW", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description="Include deskew as an OCR preprocessing variant. Env: INTERNAL_OCR_ENABLE_DESKEW.",
     )
     v3_capture_max_open_sessions_per_aisle: int = Field(
         default_factory=lambda: int(os.getenv("V3_CAPTURE_MAX_OPEN_SESSIONS_PER_AISLE", "1")),

@@ -539,6 +539,7 @@ class AisleProcessingOrchestrator:
         is_cancelled: Callable[[], bool],
         worker_token: str,
         code_scan_processing_enabled: bool = True,
+        internal_ocr_processing_enabled: bool = False,
         merge_progress: Callable[[AssetProgressCounts], None] | None = None,
         progress_merge_interval: int = 10,
     ) -> CodeScanAisleOutcome:
@@ -563,6 +564,7 @@ class AisleProcessingOrchestrator:
             pipeline_enabled=pipeline_enabled,
             orchestrator_enabled=orchestrator_enabled,
             code_scan_processing_enabled=code_scan_processing_enabled,
+            internal_ocr_processing_enabled=internal_ocr_processing_enabled,
         )
 
         self.ensure_asset_states(job, assets, execution_scope=ExecutionScope.SINGLE_ASSET)
@@ -668,6 +670,46 @@ class AisleProcessingOrchestrator:
             strategy_key=strategy_key,
             job_outcome=job_outcome,
             error_message="; ".join(errors) if errors else None,
+        )
+
+    def process_with_internal_ocr(
+        self,
+        *,
+        job: Job,
+        aisle: Aisle,
+        assets: Sequence[SourceAsset],
+        pipeline_enabled: bool,
+        orchestrator_enabled: bool,
+        is_cancelled: Callable[[], bool],
+        worker_token: str,
+        internal_ocr_processing_enabled: bool = True,
+        merge_progress: Callable[[AssetProgressCounts], None] | None = None,
+        progress_merge_interval: int = 10,
+    ) -> CodeScanAisleOutcome:
+        """Phase 4 — process each PENDING asset via local INTERNAL_OCR (no LLM).
+
+        Reuses the CODE_SCAN SINGLE_ASSET run loop, persister, reconciler, and job-outcome
+        policy. The injected ``code_scan_strategy`` collaborator must be an
+        :class:`InternalOcrProcessingStrategy` (duck-typed ``process(context, asset)``).
+        """
+        if self._code_scan_strategy is None or self._result_persister is None:
+            raise CodeScanPipelineMisconfiguredError(
+                "process_with_internal_ocr requires both an OCR strategy and a result_persister "
+                f"(strategy={'set' if self._code_scan_strategy else 'missing'}, "
+                f"persister={'set' if self._result_persister else 'missing'})"
+            )
+        return self.process_with_code_scan(
+            job=job,
+            aisle=aisle,
+            assets=assets,
+            pipeline_enabled=pipeline_enabled,
+            orchestrator_enabled=orchestrator_enabled,
+            is_cancelled=is_cancelled,
+            worker_token=worker_token,
+            code_scan_processing_enabled=True,
+            internal_ocr_processing_enabled=internal_ocr_processing_enabled,
+            merge_progress=merge_progress,
+            progress_merge_interval=progress_merge_interval,
         )
 
     def _code_scan_cancel(self, job: Job, strategy_key: str) -> CodeScanAisleOutcome:

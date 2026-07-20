@@ -93,8 +93,7 @@ export default function AisleProcessingDialog({
   const usingInherited = identificationMode === INHERITED_IDENTIFICATION_MODE;
   const effectiveDisplayMode = String(inheritedEffectiveMode || 'LEGACY_LLM');
   const selectedExplicitMode = usingInherited ? effectiveDisplayMode : String(identificationMode);
-  const showPhase1Warning =
-    selectedExplicitMode === 'CODE_SCAN' || selectedExplicitMode === 'INTERNAL_OCR';
+  const showPhase1Warning = selectedExplicitMode === 'INTERNAL_OCR';
 
   const sourceLabel = identificationModeSource
     ? t(`aisle.identification_source_${String(identificationModeSource).toLowerCase()}`, {

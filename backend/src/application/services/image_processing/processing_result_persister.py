@@ -169,7 +169,20 @@ class ProcessingResultPersister:
         evidence_id = str(uuid.uuid4())
         result_evidence_id = str(uuid.uuid4())
         coverage_id = str(uuid.uuid4())
-        entity_uid = f"{job_id}_code_scan_{asset_id}"
+        INTERNAL_OCR_PROVIDER = "internal_ocr"
+        INTERNAL_OCR_QTY_SOURCE = "ocr_extracted"
+
+        resolved_by = (result.resolved_by or CODE_SCAN_PROVIDER).strip()
+        if resolved_by.upper() == "INTERNAL_OCR" or resolved_by == INTERNAL_OCR_PROVIDER:
+            provider = INTERNAL_OCR_PROVIDER
+            qty_source = INTERNAL_OCR_QTY_SOURCE
+            entity_slug = "internal_ocr"
+        else:
+            provider = CODE_SCAN_PROVIDER
+            qty_source = CODE_SCAN_QTY_SOURCE
+            entity_slug = "code_scan"
+
+        entity_uid = f"{job_id}_{entity_slug}_{asset_id}"
 
         summary: dict = {
             "entity_uid": entity_uid,
@@ -180,12 +193,12 @@ class ProcessingResultPersister:
             "source_image_original_filename": snap.original_filename,
             "source_image_sequence": snap.position_order + 1,
             "creation_source": PositionCreationSource.AUTOMATIC.value,
-            "qty_source": CODE_SCAN_QTY_SOURCE,
+            "qty_source": qty_source,
             "qty_parse_status": "valid_positive",
-            "resolved_by": CODE_SCAN_PROVIDER,
+            "resolved_by": provider,
         }
 
-        storage_path = snap.storage_key or f"code_scan://{asset_id}"
+        storage_path = snap.storage_key or f"{entity_slug}://{asset_id}"
         if live is not None:
             storage_path = live.storage_path or live.storage_key or storage_path
 
@@ -215,7 +228,7 @@ class ProcessingResultPersister:
             confidence=1.0,
             created_at=now,
             updated_at=now,
-            qty_source=CODE_SCAN_QTY_SOURCE,
+            qty_source=qty_source,
             qty_inference_reason=None,
             raw_qty=quantity,
             qty_parse_status="valid_positive",
@@ -249,7 +262,7 @@ class ProcessingResultPersister:
             traceability_status=TraceabilityStatus.VALID.value,
             traceability_warning=None,
             role=ResultEvidenceRole.PRIMARY_EVIDENCE,
-            provider=CODE_SCAN_PROVIDER,
+            provider=provider,
             model_name=None,
             schema_version=None,
             manifest_version=None,

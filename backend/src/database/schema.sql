@@ -408,10 +408,10 @@ IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jo
         )
     );
 GO
--- Phase 3 (0053): execution_strategy CHECK includes CODE_SCAN.
+-- Phase 3 (0053) + Phase 4 (0055): execution_strategy CHECK includes CODE_SCAN + INTERNAL_OCR.
 IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_execution_strategy')
     ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_execution_strategy
-    CHECK (execution_strategy IN ('LEGACY_LLM', 'LEGACY_LLM_TEMPORARY', 'CODE_SCAN'));
+    CHECK (execution_strategy IN ('LEGACY_LLM', 'LEGACY_LLM_TEMPORARY', 'CODE_SCAN', 'INTERNAL_OCR'));
 GO
 IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jobs_configuration_snapshot_version')
     ALTER TABLE inventory_jobs ADD CONSTRAINT CK_inventory_jobs_configuration_snapshot_version

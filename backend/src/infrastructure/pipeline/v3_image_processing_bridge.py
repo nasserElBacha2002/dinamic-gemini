@@ -371,6 +371,130 @@ def run_orchestrated_code_scan(
     )
 
 
+def build_default_internal_ocr_strategy(settings, artifact_store, *, client_id: str | None = None):
+    """Build :class:`InternalOcrProcessingStrategy` from settings + artifact store."""
+    _ = client_id  # reserved for future per-client rule tables
+    from src.application.services.image_processing.internal_ocr_processing_strategy import (
+        InternalOcrConfig,
+        InternalOcrProcessingStrategy,
+    )
+    from src.application.services.image_processing.ocr_field_extractor import OcrFieldExtractor
+    from src.application.services.image_processing.ocr_image_preprocessor import (
+        OcrImagePreprocessor,
+        OcrPreprocessConfig,
+    )
+    from src.application.services.image_processing.ocr_result_normalizer import (
+        OcrClientFieldRules,
+        OcrResultNormalizer,
+    )
+    from src.infrastructure.code_scanning.artifact_store_source_asset_content_reader import (
+        ArtifactStoreSourceAssetContentReader,
+    )
+    from src.infrastructure.ocr.tesseract_internal_label_reader import (
+        TesseractInternalLabelReader,
+    )
+
+    engine = str(getattr(settings, "internal_ocr_engine", "tesseract") or "tesseract").lower()
+    if engine != "tesseract":
+        logger.error(
+            "internal_ocr.unsupported_engine engine=%s; only tesseract is supported",
+            engine,
+        )
+    prefer_ean = bool(getattr(settings, "internal_ocr_prefer_ean_as_internal_code", True))
+    rules = OcrClientFieldRules(prefer_ean_as_internal_code=prefer_ean)
+    preprocess = OcrPreprocessConfig(
+        max_image_dimension=int(getattr(settings, "internal_ocr_max_image_dimension", 2048)),
+        max_variants=int(getattr(settings, "internal_ocr_max_variants", 3)),
+        enable_gray_contrast=True,
+        enable_adaptive_threshold=True,
+        enable_deskew=bool(getattr(settings, "internal_ocr_enable_deskew", False)),
+    )
+    quantity_max = int(getattr(settings, "internal_ocr_quantity_max", 99999999))
+    config = InternalOcrConfig(
+        quantity_max=quantity_max,
+        max_image_dimension=preprocess.max_image_dimension,
+        timeout_seconds=int(getattr(settings, "internal_ocr_timeout_seconds", 20)),
+        max_variants=preprocess.max_variants,
+        language=str(getattr(settings, "internal_ocr_language", "spa+eng") or "spa+eng"),
+        enable_gray_contrast=preprocess.enable_gray_contrast,
+        enable_adaptive_threshold=preprocess.enable_adaptive_threshold,
+        enable_deskew=preprocess.enable_deskew,
+        client_rules=rules,
+    )
+    return InternalOcrProcessingStrategy(
+        reader=TesseractInternalLabelReader(default_language=config.language),
+        content_reader=ArtifactStoreSourceAssetContentReader(artifact_store),
+        preprocessor=OcrImagePreprocessor(preprocess),
+        extractor=OcrFieldExtractor(),
+        normalizer=OcrResultNormalizer(quantity_max=quantity_max, client_rules=rules),
+        config=config,
+    )
+
+
+def build_default_internal_ocr_orchestrator(
+    clock: Clock,
+    *,
+    attempts_enabled: bool,
+    state_repo: JobAssetProcessingStateRepository | None,
+    attempt_repo: ProcessingAttemptRepository | None,
+    lease_repo: JobProcessingLeaseRepository | None,
+    batch_attempt_repo: BatchProcessingAttemptRepository | None,
+    result_evidence_repo: ResultEvidenceRepository,
+    evidence_repo: EvidenceRepository,
+    position_repo: PositionRepository,
+    internal_ocr_strategy,
+    result_persister,
+    internal_ocr_concurrency: int = 1,
+    require_sql: bool = False,
+    abandoned_processing_ttl_seconds: int = _DEFAULT_ABANDONED_TTL_SECONDS,
+    manual_coverage_repo=None,
+) -> AisleProcessingOrchestrator:
+    """Build orchestrator wired for INTERNAL_OCR SINGLE_ASSET processing."""
+    return build_default_code_scan_orchestrator(
+        clock,
+        attempts_enabled=attempts_enabled,
+        state_repo=state_repo,
+        attempt_repo=attempt_repo,
+        lease_repo=lease_repo,
+        batch_attempt_repo=batch_attempt_repo,
+        result_evidence_repo=result_evidence_repo,
+        evidence_repo=evidence_repo,
+        position_repo=position_repo,
+        code_scan_strategy=internal_ocr_strategy,
+        result_persister=result_persister,
+        code_scan_concurrency=max(1, int(internal_ocr_concurrency or 1)),
+        require_sql=require_sql,
+        abandoned_processing_ttl_seconds=abandoned_processing_ttl_seconds,
+        manual_coverage_repo=manual_coverage_repo,
+    )
+
+
+def run_orchestrated_internal_ocr(
+    *,
+    orchestrator: AisleProcessingOrchestrator,
+    job: Job,
+    aisle: Aisle,
+    assets: Sequence[SourceAsset],
+    pipeline_enabled: bool,
+    orchestrator_enabled: bool,
+    internal_ocr_processing_enabled: bool,
+    is_cancelled: Callable[[], bool],
+    worker_token: str,
+    merge_progress: Callable[[AssetProgressCounts], None] | None = None,
+) -> CodeScanAisleOutcome:
+    return orchestrator.process_with_internal_ocr(
+        job=job,
+        aisle=aisle,
+        assets=assets,
+        pipeline_enabled=pipeline_enabled,
+        orchestrator_enabled=orchestrator_enabled,
+        internal_ocr_processing_enabled=internal_ocr_processing_enabled,
+        is_cancelled=is_cancelled,
+        worker_token=worker_token,
+        merge_progress=merge_progress,
+    )
+
+
 def assets_with_result_from_evidence(
     result_evidence_repo: ResultEvidenceRepository, job_id: str
 ) -> frozenset[str]:

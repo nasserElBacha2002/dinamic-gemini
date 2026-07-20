@@ -15,4 +15,6 @@ IdentificationModeSourceLiteral = Literal[
     "LEGACY_MIGRATION",
 ]
 
-ExecutionStrategyLiteral = Literal["LEGACY_LLM", "LEGACY_LLM_TEMPORARY"]
+ExecutionStrategyLiteral = Literal[
+    "LEGACY_LLM", "LEGACY_LLM_TEMPORARY", "CODE_SCAN", "INTERNAL_OCR"
+]

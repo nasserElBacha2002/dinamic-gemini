@@ -30,7 +30,7 @@ the **code** are preserved.
 
 ```text
 V3JobExecutor._v3_run_job_body
-  └─ execution_strategy == CODE_SCAN and CODE_SCAN_PROCESSING_ENABLED
+  └─ execution_strategy == CODE_SCAN  (or identification_mode == CODE_SCAN)
         → _run_code_scan_path
             → AisleProcessingOrchestrator.process_with_code_scan   (no JobProcessingLease)
                 → ensure JobAssetProcessingState rows
@@ -126,11 +126,14 @@ Per-detection evidence carries `scanner_name`, `scanner_version`, `symbology`,
 `bounding_box`, `detection_count`, and `raw_value_hash` (SHA-256 hex). The **raw payload is
 never logged** or stored in cleartext in evidence.
 
-## Feature flags (defaults safe)
+## Feature flags / settings
+
+`CODE_SCAN` no longer requires an env gate: selecting identification mode `CODE_SCAN`
+always snapshots `execution_strategy=CODE_SCAN` and the worker runs the per-image scanner.
+`CODE_SCAN_PROCESSING_ENABLED` is deprecated and ignored if present in older `.env` files.
 
 | Env | Default | Role |
 |-----|---------|------|
-| `CODE_SCAN_PROCESSING_ENABLED` | false | Master switch for the CODE_SCAN strategy |
 | `MAX_IMAGE_PROCESSING_CONCURRENCY` | 1 | ThreadPool workers for SINGLE_ASSET code scan. **Keep 1 in production** until SQL concurrency tests pass; values > 1 rely on the `ManualImageResultUnitOfWork` creating its own connection per `with uow` |
 | `CODE_SCAN_MAX_IMAGE_SIDE` | 2048 | Downscale before rotated-variant scanning |
 | `CODE_SCAN_VARIANTS_BUDGET_SECONDS` | 15 | Wall-clock budget checked **between** scan variants; does NOT interrupt a blocked native decode. (Alias: deprecated `CODE_SCAN_TIMEOUT_SECONDS`.) |
@@ -143,8 +146,8 @@ Not exposed (setting them has no effect; coerced to safe defaults with a warning
 (preprocessing not implemented), `CODE_SCAN_MAX_TECHNICAL_ATTEMPTS` (no transient-retry loop).
 
 `execution_strategy` is resolved at job start by
-`resolve_execution_strategy(effective_mode, pipeline_enabled, code_scan_processing_enabled)`
-and snapshotted immutably on the job.
+`resolve_execution_strategy(effective_mode, pipeline_enabled)` and snapshotted immutably on
+the job (`CODE_SCAN` mode → `CODE_SCAN` strategy).
 
 ## Migrations
 

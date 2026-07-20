@@ -36,6 +36,7 @@ export const AISLE_IDENTIFICATION_EXECUTION_STRATEGIES = [
   'LEGACY_LLM',
   'LEGACY_LLM_TEMPORARY',
   'CODE_SCAN',
+  'INTERNAL_OCR',
 ] as const;
 export type AisleIdentificationExecutionStrategy =
   (typeof AISLE_IDENTIFICATION_EXECUTION_STRATEGIES)[number];

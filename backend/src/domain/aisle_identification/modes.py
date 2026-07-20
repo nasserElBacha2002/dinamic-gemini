@@ -41,11 +41,13 @@ class AisleIdentificationExecutionStrategy(str, Enum):
 
     Phase 1/2: always legacy LLM (``LEGACY_LLM`` / ``LEGACY_LLM_TEMPORARY``).
     Phase 3: ``CODE_SCAN`` for deterministic per-image QR/barcode internal-code reading.
+    Phase 4: ``INTERNAL_OCR`` for local Tesseract OCR when the feature flag is enabled.
     """
 
     LEGACY_LLM = "LEGACY_LLM"
     LEGACY_LLM_TEMPORARY = "LEGACY_LLM_TEMPORARY"
     CODE_SCAN = "CODE_SCAN"
+    INTERNAL_OCR = "INTERNAL_OCR"
 
 
 def parse_identification_mode(value: str | AisleIdentificationMode) -> AisleIdentificationMode:

@@ -22,6 +22,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb1 \
     libgl1 \
     libzbar0 \
+    tesseract-ocr \
+    tesseract-ocr-spa \
+    tesseract-ocr-eng \
     unixodbc \
     unixodbc-dev \
     && rm -rf /var/lib/apt/lists/* \
@@ -53,6 +56,15 @@ if not (drivers & required):
 # Phase 3 CODE_SCAN: verify pyzbar + libzbar0 are importable/loadable in the worker image.
 from pyzbar.pyzbar import decode as _pyzbar_decode  # noqa: F401
 print("pyzbar OK; libzbar0 loadable for CODE_SCAN worker path")
+
+# Phase 4 INTERNAL_OCR: verify pytesseract + tesseract binary + Spanish traineddata.
+import pytesseract
+_ver = str(pytesseract.get_tesseract_version())
+print(f"pytesseract OK; tesseract version={_ver}")
+_langs = {x.strip() for x in pytesseract.get_languages(config="") if x.strip()}
+if "spa" not in _langs:
+    raise SystemExit(f"Build verification failed: tesseract spa language missing. Got: {sorted(_langs)}")
+print("tesseract spa+eng language packs available for INTERNAL_OCR worker path")
 PY
 
 COPY . .

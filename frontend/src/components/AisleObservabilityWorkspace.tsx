@@ -107,7 +107,8 @@ function jobMetadataRows(
           {
             label: i18n.t('jobs.obs_execution_scope'),
             value:
-              String(job.execution_strategy) === 'CODE_SCAN'
+              String(job.execution_strategy) === 'CODE_SCAN' ||
+              String(job.execution_strategy) === 'INTERNAL_OCR'
                 ? i18n.t('aisle.execution_scope_single_asset')
                 : i18n.t('aisle.execution_scope_aisle_batch'),
           },

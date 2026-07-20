@@ -630,6 +630,210 @@ class V3JobExecutor:
             )
         return True
 
+    def _run_internal_ocr_path(
+        self,
+        *,
+        job: Any,
+        aisle: Aisle,
+        aisle_id: str,
+        assets: list[Any],
+        settings: Settings,
+        exec_log: Any,
+        cancel_event_emitted: dict[str, bool],
+    ) -> bool:
+        """Phase 4 INTERNAL_OCR execution — local Tesseract OCR per image, no LLM."""
+        import uuid as _uuid
+
+        from src.application.errors import (
+            CodeScanPipelineMisconfiguredError,
+            ImageProcessingRepositoryUnavailableError,
+        )
+        from src.application.services.image_processing.code_scan_job_outcome_policy import (
+            CodeScanJobOutcome,
+        )
+        from src.domain.jobs.entities import JobStatus
+        from src.infrastructure.pipeline.v3_image_processing_bridge import (
+            build_default_code_scan_persister,
+            build_default_internal_ocr_orchestrator,
+            build_default_internal_ocr_strategy,
+            progress_to_public_dict,
+            run_orchestrated_internal_ocr,
+        )
+        from src.runtime.app_container import get_app_container
+
+        job_id = job.id
+        container = get_app_container()
+        require_sql = container.is_sql_repository_backend()
+        try:
+            state_repo = container.get_job_asset_processing_state_repo()
+            attempt_repo = container.get_processing_attempt_repo()
+            lease_repo = container.get_job_processing_lease_repo()
+            batch_attempt_repo = container.get_batch_processing_attempt_repo()
+        except Exception as repo_exc:
+            logger.error(
+                "internal_ocr.repo_resolve_failed job_id=%s require_sql=%s",
+                job_id,
+                require_sql,
+                exc_info=True,
+            )
+            if require_sql:
+                self._state.fail_job_and_aisle(
+                    job_id,
+                    aisle,
+                    f"Phase 4 SQL image-processing repositories unavailable: {repo_exc}",
+                    failure_code="IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE",
+                )
+                return True
+            state_repo = attempt_repo = lease_repo = batch_attempt_repo = None
+
+        try:
+            strategy = build_default_internal_ocr_strategy(
+                settings,
+                self._artifact_store,
+                client_id=getattr(aisle, "client_id", None),
+            )
+            persister = build_default_code_scan_persister(
+                job_source_asset_repo=container.get_job_source_asset_repo(),
+                source_asset_repo=self._source_asset_repo,
+                clock=self._clock,
+                unit_of_work_factory=container.get_manual_image_result_uow_factory(),
+            )
+            orch = build_default_internal_ocr_orchestrator(
+                self._clock,
+                attempts_enabled=bool(settings.processing_attempts_enabled),
+                state_repo=state_repo,
+                attempt_repo=attempt_repo,
+                lease_repo=lease_repo,
+                batch_attempt_repo=batch_attempt_repo,
+                result_evidence_repo=self._result_evidence_repo,
+                evidence_repo=self._evidence_repo,
+                position_repo=self._position_repo,
+                internal_ocr_strategy=strategy,
+                result_persister=persister,
+                internal_ocr_concurrency=int(
+                    getattr(settings, "max_internal_image_processing_concurrency", 1)
+                ),
+                require_sql=require_sql,
+                abandoned_processing_ttl_seconds=(
+                    settings.image_processing_abandoned_ttl_seconds
+                ),
+                manual_coverage_repo=container.get_manual_image_coverage_repo(),
+            )
+        except ImageProcessingRepositoryUnavailableError as unavailable:
+            logger.error(
+                "internal_ocr.repos_unavailable job_id=%s err=%s", job_id, unavailable
+            )
+            self._state.fail_job_and_aisle(
+                job_id,
+                aisle,
+                str(unavailable),
+                failure_code="IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE",
+            )
+            return True
+
+        self._job_repo.merge_result_json(
+            job_id,
+            {
+                "internal_ocr_config": {
+                    "engine": getattr(settings, "internal_ocr_engine", "tesseract"),
+                    "language": getattr(settings, "internal_ocr_language", "spa+eng"),
+                    "max_variants": getattr(settings, "internal_ocr_max_variants", 3),
+                    "timeout_seconds": getattr(settings, "internal_ocr_timeout_seconds", 20),
+                    "max_image_dimension": getattr(
+                        settings, "internal_ocr_max_image_dimension", 2048
+                    ),
+                    "prefer_ean_as_internal_code": getattr(
+                        settings, "internal_ocr_prefer_ean_as_internal_code", True
+                    ),
+                    "processor_version": "1.0.0",
+                    "snapshot_version": getattr(
+                        job, "configuration_snapshot_version", None
+                    ),
+                }
+            },
+        )
+
+        def _is_cancelled() -> bool:
+            current = self._job_repo.get_by_id(job_id)
+            return current is not None and current.status == JobStatus.CANCEL_REQUESTED
+
+        def _merge_progress(progress) -> None:
+            self._job_repo.merge_result_json(
+                job_id, {"asset_progress": progress_to_public_dict(progress)}
+            )
+
+        try:
+            outcome = run_orchestrated_internal_ocr(
+                orchestrator=orch,
+                job=job,
+                aisle=aisle,
+                assets=assets,
+                pipeline_enabled=bool(settings.aisle_identification_pipeline_enabled),
+                orchestrator_enabled=bool(settings.image_processing_orchestrator_enabled),
+                internal_ocr_processing_enabled=True,
+                is_cancelled=_is_cancelled,
+                worker_token=str(_uuid.uuid4()),
+                merge_progress=_merge_progress,
+            )
+        except CodeScanPipelineMisconfiguredError as misconfig:
+            logger.error("internal_ocr.misconfigured job_id=%s err=%s", job_id, misconfig)
+            self._state.fail_job_and_aisle(
+                job_id,
+                aisle,
+                str(misconfig),
+                failure_code="INTERNAL_OCR_PIPELINE_MISCONFIGURED",
+            )
+            return True
+
+        self._job_repo.merge_result_json(
+            job_id, {"asset_progress": progress_to_public_dict(outcome.progress)}
+        )
+
+        job_outcome = outcome.job_outcome
+
+        if job_outcome is CodeScanJobOutcome.CANCELLED:
+            current = self._job_repo.get_by_id(job_id)
+            if current is not None and current.status == JobStatus.RUNNING:
+                return self._cancellation_coordinator.handle_pipeline_cancellation(
+                    job_id=job_id,
+                    aisle=aisle,
+                    error=PipelineCancellationRequestedError(
+                        outcome.error_message or "cancelled"
+                    ),
+                    exec_log=exec_log,
+                    cancel_event_emitted=cancel_event_emitted,
+                )
+            return True
+
+        if job_outcome is CodeScanJobOutcome.FAILED:
+            current = self._job_repo.get_by_id(job_id)
+            if current is not None and current.status == JobStatus.RUNNING:
+                self._state.fail_job_and_aisle(
+                    job_id,
+                    aisle,
+                    outcome.error_message or "internal_ocr_failed",
+                    failure_code="INTERNAL_OCR_FAILED",
+                )
+            return True
+
+        self._job_repo.merge_result_json(
+            job_id, {"internal_ocr_outcome": job_outcome.value}
+        )
+        if job_outcome is CodeScanJobOutcome.PARTIALLY_COMPLETED:
+            self._job_repo.merge_result_json(job_id, {"internal_ocr_partial": True})
+
+        try:
+            self._state.finalize_code_scan_success(job_id, aisle)
+        except Exception as exc:
+            logger.exception("internal_ocr.finalize_failed job_id=%s", job_id)
+            self._state.fail_job_and_aisle(
+                job_id,
+                aisle,
+                f"internal_ocr finalization failed: {exc}",
+                failure_code="INTERNAL_OCR_FINALIZATION_FAILED",
+            )
+        return True
+
     def _v3_run_job_body(self, base_path: Path, job_id: str, prep: V3PreparedJob) -> bool:
         """Dirs, pipeline input, hybrid run, persist, artifacts, success — matches pre-refactor order."""
         job = prep.job
@@ -812,14 +1016,33 @@ class V3JobExecutor:
 
                 from src.domain.aisle_identification.modes import (
                     AisleIdentificationExecutionStrategy,
+                    AisleIdentificationMode,
                 )
 
+                # CODE_SCAN is the normal path when the job snapshot says so (or when the
+                # configured identification mode is CODE_SCAN on older snapshots that still
+                # carried LEGACY_LLM / LEGACY_LLM_TEMPORARY before the ungated rollout).
                 if (
                     job.execution_strategy
                     == AisleIdentificationExecutionStrategy.CODE_SCAN
-                    and bool(settings.code_scan_processing_enabled)
+                    or job.identification_mode
+                    == AisleIdentificationMode.CODE_SCAN
                 ):
                     return self._run_code_scan_path(
+                        job=job,
+                        aisle=aisle,
+                        aisle_id=aisle_id,
+                        assets=assets,
+                        settings=settings,
+                        exec_log=rt.exec_log,
+                        cancel_event_emitted=rt.cancel_event_emitted,
+                    )
+
+                if (
+                    job.execution_strategy
+                    == AisleIdentificationExecutionStrategy.INTERNAL_OCR
+                ):
+                    return self._run_internal_ocr_path(
                         job=job,
                         aisle=aisle,
                         aisle_id=aisle_id,

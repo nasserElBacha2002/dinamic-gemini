@@ -122,13 +122,13 @@ describe('AisleProcessingDialog identification mode', () => {
     );
   });
 
-  it('shows phase-1 warning for CODE_SCAN', () => {
+  it('does not show phase-1 warning for CODE_SCAN (native path)', () => {
     render(
       <I18nextProvider i18n={i18n}>
         <AisleProcessingDialog {...baseProps} identificationMode="CODE_SCAN" />
       </I18nextProvider>
     );
-    expect(screen.getByTestId('process-identification-phase1-warning')).toBeInTheDocument();
+    expect(screen.queryByTestId('process-identification-phase1-warning')).not.toBeInTheDocument();
   });
 
   it('shows phase-1 warning for INTERNAL_OCR', () => {
