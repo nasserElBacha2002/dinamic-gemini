@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -47,6 +48,12 @@ import {
   type GeminiAttachmentSlice,
   type ProviderRequestLogPayload,
 } from '../utils/parseExecutionLogProviderRequest';
+import { ProcessingWorkspace } from '../features/processing';
+import { useProcessingObservabilityCapabilities } from '../features/processing/hooks';
+import {
+  PROCESSING_TAB_QUERY_VALUE,
+  clearProcessingFilterParams,
+} from '../features/processing/utils/processingUrlFilters';
 
 const AISLE_OBSERVABILITY_JOBS_LIMIT = 500;
 
@@ -234,6 +241,28 @@ export interface AisleObservabilityWorkspaceProps {
 
 type LogScope = 'merged' | 'job';
 
+type ObsContentTab =
+  | 'events'
+  | 'processing'
+  | 'prompt'
+  | 'attachments'
+  | 'traceability'
+  | 'auditability'
+  | 'diagnostics';
+
+function buildObsContentTabs(processingEnabled: boolean): ObsContentTab[] {
+  const base: ObsContentTab[] = [
+    'events',
+    'prompt',
+    'attachments',
+    'traceability',
+    'auditability',
+    'diagnostics',
+  ];
+  if (!processingEnabled) return base;
+  return ['events', 'processing', ...base.slice(1)];
+}
+
 export default function AisleObservabilityWorkspace({
   inventoryId,
   aisleId,
@@ -244,9 +273,29 @@ export default function AisleObservabilityWorkspace({
 }: AisleObservabilityWorkspaceProps) {
   const { t } = useTranslation();
   const { showSnackbar } = useAppSnackbar();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const processingCapabilities = useProcessingObservabilityCapabilities({ enabled: active });
+  const processingObservabilityEnabled = processingCapabilities.processing_observability_enabled;
+  const contentTabs = useMemo(
+    () => buildObsContentTabs(processingObservabilityEnabled),
+    [processingObservabilityEnabled]
+  );
   const [logScope, setLogScope] = useState<LogScope>(() => (initialSelectedJobId ? 'job' : 'merged'));
   const [selectedJobId, setSelectedJobId] = useState<string>(() => initialSelectedJobId ?? '');
-  const [mainTab, setMainTab] = useState(0);
+  const [contentTab, setContentTab] = useState<ObsContentTab>(() =>
+    searchParams.get('tab') === PROCESSING_TAB_QUERY_VALUE && processingObservabilityEnabled
+      ? 'processing'
+      : 'events'
+  );
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === PROCESSING_TAB_QUERY_VALUE && processingObservabilityEnabled) {
+      setContentTab('processing');
+      return;
+    }
+    setContentTab((current) => (current === 'processing' ? 'events' : current));
+  }, [searchParams, processingObservabilityEnabled]);
 
   useEffect(() => {
     if (initialSelectedJobId) {
@@ -380,6 +429,22 @@ export default function AisleObservabilityWorkspace({
   const onScopeChange = (scope: LogScope) => {
     setLogScope(scope);
   };
+
+  const onContentTabChange = (_: unknown, nextIndex: number) => {
+    const nextTab = contentTabs[nextIndex] ?? 'events';
+    setContentTab(nextTab);
+    const nextParams =
+      nextTab === 'processing'
+        ? (() => {
+            const params = new URLSearchParams(searchParams);
+            params.set('tab', PROCESSING_TAB_QUERY_VALUE);
+            return params;
+          })()
+        : clearProcessingFilterParams(searchParams);
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  const contentTabIndex = Math.max(0, contentTabs.indexOf(contentTab));
 
   const lastProviderRequest = useMemo((): {
     event: ExecutionLogEvent;
@@ -662,13 +727,16 @@ export default function AisleObservabilityWorkspace({
 
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Tabs
-            value={mainTab}
-            onChange={(_, v) => setMainTab(v)}
+            value={contentTabIndex}
+            onChange={onContentTabChange}
             variant="scrollable"
             scrollButtons="auto"
             sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
           >
             <Tab label={t('jobs.obs_tab_events')} />
+            {processingObservabilityEnabled ? (
+              <Tab label={t('jobs.obs_tab_processing')} data-testid="obs-tab-processing" />
+            ) : null}
             <Tab label={t('jobs.obs_tab_prompt')} />
             <Tab label={t('jobs.obs_tab_attachments')} />
             <Tab label={t('jobs.obs_tab_traceability')} />
@@ -676,7 +744,7 @@ export default function AisleObservabilityWorkspace({
             <Tab label={t('jobs.obs_tab_diagnostics')} />
           </Tabs>
 
-          {mainTab === 0 ? (
+          {contentTab === 'events' ? (
             logScope === 'job' && !selectedJobId ? (
               <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                 {t('jobs.obs_choose_job_for_log')}
@@ -692,7 +760,23 @@ export default function AisleObservabilityWorkspace({
             )
           ) : null}
 
-          {mainTab === 1 ? (
+          {contentTab === 'processing' ? (
+            logScope === 'job' && selectedJobId ? (
+              <ProcessingWorkspace
+                inventoryId={inventoryId}
+                aisleId={aisleId}
+                jobId={selectedJobId}
+                selectedJob={selectedJob}
+                active={active}
+              />
+            ) : (
+              <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                {t('jobs.obs_choose_job_for_log')}
+              </Typography>
+            )
+          ) : null}
+
+          {contentTab === 'prompt' ? (
             <Stack spacing={2}>
               <Typography variant="body2" color="text.secondary">
                 {t('jobs.obs_prompt_audit_notice')}
@@ -799,7 +883,7 @@ export default function AisleObservabilityWorkspace({
             </Stack>
           ) : null}
 
-          {mainTab === 2 ? (
+          {contentTab === 'attachments' ? (
             lastProviderRequest ? (
               <Stack spacing={2}>
                 <Typography variant="subtitle2">{t('execution_log.attached_files')}</Typography>
@@ -850,7 +934,7 @@ export default function AisleObservabilityWorkspace({
             )
           ) : null}
 
-          {mainTab === 3 ? (
+          {contentTab === 'traceability' ? (
             <Stack spacing={2}>
               {!effectivePrompt && !promptComposition ? (
                 <Typography variant="body2" color="text.secondary">
@@ -933,7 +1017,7 @@ export default function AisleObservabilityWorkspace({
             </Stack>
           ) : null}
 
-          {mainTab === 4 ? (
+          {contentTab === 'auditability' ? (
             logScope === 'job' && selectedJobId ? (
               <JobAuditabilityPanel
                 inventoryId={inventoryId}
@@ -948,7 +1032,7 @@ export default function AisleObservabilityWorkspace({
             )
           ) : null}
 
-          {mainTab === 5 ? (
+          {contentTab === 'diagnostics' ? (
             selectedJobId ? (
               <JobObservabilityDiagnosticsPanel
                 inventoryId={inventoryId}

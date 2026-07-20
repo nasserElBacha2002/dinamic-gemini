@@ -1264,6 +1264,56 @@ class LimitsAndSchemaSettings(BaseModel):
             "Default false. Env: REFERENCE_TEMPLATE_ANNOTATIONS_ENABLED."
         ),
     )
+    processing_observability_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_OBSERVABILITY_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: enable per-image operational processing UX and read APIs. "
+            "Default false. Env: PROCESSING_OBSERVABILITY_ENABLED."
+        ),
+    )
+    processing_asset_logs_ui_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_ASSET_LOGS_UI_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: show structured processing events timeline in UI. "
+            "Default false. Env: PROCESSING_ASSET_LOGS_UI_ENABLED."
+        ),
+    )
+    processing_asset_reprocess_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_ASSET_REPROCESS_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: allow per-asset reprocess mutations. "
+            "Default false. Env: PROCESSING_ASSET_REPROCESS_ENABLED."
+        ),
+    )
+    processing_manual_actions_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_MANUAL_ACTIONS_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: allow invalidate / enhanced manual actions from processing UX. "
+            "Default false. Env: PROCESSING_MANUAL_ACTIONS_ENABLED."
+        ),
+    )
+    processing_events_persistence_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROCESSING_EVENTS_PERSISTENCE_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: persist operational ProcessingEvent rows. "
+            "Default false. Env: PROCESSING_EVENTS_PERSISTENCE_ENABLED."
+        ),
+    )
     external_fallback_provider: str = Field(
         default_factory=lambda: (
             os.getenv("EXTERNAL_FALLBACK_PROVIDER", "gemini") or "gemini"

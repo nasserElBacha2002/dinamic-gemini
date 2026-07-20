@@ -787,6 +787,26 @@ class AppContainer:
             )
         return self._external_image_analysis_request_repo
 
+    def get_processing_event_repo(self):
+        """Phase 7 structured processing events (memory or SQL)."""
+        if getattr(self, "_processing_event_repo", None) is not None:
+            return self._processing_event_repo
+        from src.infrastructure.repositories.memory_processing_event_repository import (
+            MemoryProcessingEventRepository,
+        )
+        from src.infrastructure.repositories.sql_processing_event_repository import (
+            SqlProcessingEventRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._processing_event_repo = SqlProcessingEventRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._processing_event_repo = MemoryProcessingEventRepository()
+        return self._processing_event_repo
+
     def get_job_processing_lease_repo(self):
         if getattr(self, "_job_processing_lease_repo", None) is not None:
             return self._job_processing_lease_repo

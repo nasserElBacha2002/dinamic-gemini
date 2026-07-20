@@ -1648,6 +1648,7 @@
     "obs_tab_attachments": "Adjuntos",
     "obs_tab_auditability": "Auditabilidad",
     "obs_tab_events": "Eventos",
+    "obs_tab_processing": "Procesamiento",
     "obs_tab_prompt": "Prompt utilizado",
     "obs_tab_traceability": "Trazabilidad",
     "obs_tab_diagnostics": "Diagnóstico",
@@ -1929,6 +1930,152 @@
     "replace": "Replace",
     "subtitle_uploaded": "{{mime}} · {{size}} · {{date}}",
     "upload_references": "Upload references"
+  },
+  "processing": {
+    "selectJob": "Seleccioná una ejecución para inspeccionar el procesamiento por imagen.",
+    "duration_ms": "{{value}} ms",
+    "duration_seconds": "{{value}} s",
+    "header": {
+      "title": "Contexto del procesamiento",
+      "loading": "Cargando contexto de la ejecución…",
+      "selectJob": "Seleccioná una ejecución para ver contadores.",
+      "mode": "Modo solicitado",
+      "strategy": "Estrategia de ejecución",
+      "profile": "Proveedor / modelo / prompt",
+      "progress": "Progreso por imagen",
+      "progressValue": "{{resolved}} de {{total}} resueltas · {{failed}} fallidas · {{processing}} en curso · {{pending}} pendientes · {{manual_review}} revisión manual"
+    },
+    "summary": {
+      "title": "Contadores de procesamiento",
+      "total": "Total",
+      "resolved": "Resueltas",
+      "failed": "Fallidas",
+      "pending": "Pendientes",
+      "processing": "En curso",
+      "manualReview": "Revisión manual"
+    },
+    "filters": {
+      "all": "Todas",
+      "search": "Buscar archivo o código",
+      "status": "Estado",
+      "strategy": "Estrategia",
+      "resolvedBy": "Resuelta por",
+      "hasWarnings": "Con advertencias",
+      "hasFallback": "Con fallback"
+    },
+    "list": {
+      "loading": "Cargando imágenes…",
+      "loadFailed": "No se pudo cargar el listado de procesamiento.",
+      "empty": "Ninguna imagen coincide con los filtros.",
+      "file": "Archivo",
+      "status": "Estado",
+      "strategy": "Estrategia",
+      "result": "Resultado",
+      "duration": "Duración",
+      "signals": "Señales",
+      "actions": "Acciones",
+      "error": "Error",
+      "viewDetail": "Ver detalle",
+      "fallback": "Fallback",
+      "manual": "Manual",
+      "warningsCount": "{{count}} advertencia(s)"
+    },
+    "status": {
+      "pending": "Pendiente",
+      "processing": "En curso",
+      "resolved": "Resuelta",
+      "failed": "Fallida",
+      "manual_review": "Revisión manual",
+      "cancelled": "Cancelada"
+    },
+    "resolvedBy": {
+      "internal": "Interna",
+      "external": "Externa",
+      "manual": "Manual",
+      "none": "Ninguna"
+    },
+    "errors": {
+      "unknown_code": "Error {{code}}",
+      "INSUFFICIENT_EVIDENCE": "Evidencia insuficiente",
+      "STATE_VERSION_CONFLICT": "El estado cambió; actualizá e intentá de nuevo."
+    },
+    "drawer": {
+      "title": "Procesamiento de imagen",
+      "loading": "Cargando detalle…",
+      "loadFailed": "No se pudo cargar el detalle de procesamiento.",
+      "historicalUnavailable": "Información no disponible para esta ejecución histórica.",
+      "summarySection": "Estado actual",
+      "attemptsSection": "Intentos",
+      "logsSection": "Eventos estructurados",
+      "resolvedBy": "Resuelta por",
+      "strategy": "Estrategia",
+      "mode": "Modo solicitado",
+      "result": "Resultado",
+      "attempts": "Intentos",
+      "persistence": "Persistencia"
+    },
+    "attempts": {
+      "historicalUnavailable": "Información no disponible",
+      "empty": "No hay intentos registrados.",
+      "item": "Intento {{number}}",
+      "strategy": "Estrategia: {{value}}",
+      "startedAt": "Inicio: {{value}}",
+      "errorCode": "Error: {{value}}"
+    },
+    "evidence": {
+      "title": "Evidencia",
+      "limitedNotice": "Los campos sensibles de evidencia están ocultos para tu rol.",
+      "warnings": "Advertencias",
+      "sanitizedNote": "Solo se muestra evidencia segura para operadores."
+    },
+    "logs": {
+      "loading": "Cargando eventos…",
+      "empty": "Sin eventos estructurados.",
+      "loadMore": "Cargar más"
+    },
+    "actions": {
+      "title": "Acciones operativas",
+      "none": "No hay acciones disponibles para esta imagen.",
+      "reprocess": "Reprocesar",
+      "retryPersistence": "Reintentar persistencia",
+      "sendExternal": "Enviar a externo",
+      "assignManual": "Asignar resultado manual",
+      "invalidate": "Invalidar resultado",
+      "defaultReason": "Acción del operador desde observabilidad de procesamiento",
+      "success": "Acción completada.",
+      "failed": "La acción falló.",
+      "externalConfirmTitle": "¿Enviar a proveedor externo?",
+      "externalConfirmDescription": "Puede generar costo externo (estimado: {{cost}}). Confirmá para continuar.",
+      "externalConfirmAction": "Enviar externamente"
+    },
+    "manual": {
+      "title": "Resultado manual",
+      "save": "Guardar resultado manual",
+      "success": "Resultado manual guardado.",
+      "failed": "No se pudo guardar el resultado manual."
+    },
+    "reprocess": {
+      "title": "Reprocesar imagen",
+      "strategy": "Estrategia",
+      "strategyDefault": "Usar default del job",
+      "reason": "Motivo",
+      "reasonHint": "Obligatorio para auditoría.",
+      "reasonRequired": "Ingresá un motivo.",
+      "costWarning": "Reprocesar puede activar fallback externo (costo estimado: {{cost}}).",
+      "confirm": "Reprocesar",
+      "success": "Reproceso solicitado.",
+      "failed": "El reproceso falló."
+    },
+    "invalidate": {
+      "title": "Invalidar resultado",
+      "warning": "Marca el resultado actual como inválido. La imagen puede requerir reproceso.",
+      "reason": "Motivo",
+      "reasonHint": "Obligatorio para auditoría.",
+      "reasonRequired": "Ingresá un motivo.",
+      "confirm": "Invalidar",
+      "success": "Resultado invalidado.",
+      "failed": "No se pudo invalidar."
+    }
   },
   "results": {
     "browse_run": "Seleccionar corrida",

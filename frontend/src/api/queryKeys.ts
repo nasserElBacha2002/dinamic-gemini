@@ -125,6 +125,63 @@ export const queryKeys = {
     /** Invalidate all benchmark-compare queries for one inventory (narrower than full `benchmark-compare` prefix). */
     benchmarkCompareInventory: (inventoryId: string) =>
       [...queryKeys.inventories.all, 'benchmark-compare', inventoryId] as const,
+    /** GET .../jobs/{jobId}/assets/processing (Phase 7). */
+    processingAssets: (
+      inventoryId: string,
+      aisleId: string,
+      jobId: string,
+      params: Record<string, string | number | boolean>
+    ) =>
+      [
+        ...queryKeys.inventories.all,
+        'aisles',
+        inventoryId,
+        aisleId,
+        'jobs',
+        jobId,
+        'processing-assets',
+        params,
+      ] as const,
+    processingAssetDetail: (
+      inventoryId: string,
+      aisleId: string,
+      jobId: string,
+      assetId: string
+    ) =>
+      [
+        ...queryKeys.inventories.all,
+        'aisles',
+        inventoryId,
+        aisleId,
+        'jobs',
+        jobId,
+        'processing-detail',
+        assetId,
+      ] as const,
+    processingEvents: (
+      inventoryId: string,
+      aisleId: string,
+      jobId: string,
+      assetId: string,
+      params: Record<string, string | number>
+    ) =>
+      [
+        ...queryKeys.inventories.all,
+        'aisles',
+        inventoryId,
+        aisleId,
+        'jobs',
+        jobId,
+        'processing-events',
+        assetId,
+        params,
+      ] as const,
+  },
+
+  config: {
+    all: ['v3', 'config'] as const,
+    processingObservabilityCapabilities: () =>
+      [...queryKeys.config.all, 'processing-observability-capabilities'] as const,
   },
 
   clients: {

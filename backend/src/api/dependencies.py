@@ -1316,6 +1316,97 @@ def get_list_job_image_results_use_case(
     )
 
 
+def get_processing_event_repo():
+    return get_app_container().get_processing_event_repo()
+
+
+def get_list_asset_processing_use_case():
+    from src.application.use_cases.processing.asset_processing_queries import (
+        ListAssetProcessingUseCase,
+    )
+
+    c = get_app_container()
+    return ListAssetProcessingUseCase(
+        inventory_repo=c.get_inventory_repo(),
+        aisle_repo=c.get_aisle_repo(),
+        job_repo=c.get_job_repo(),
+        state_repo=c.get_job_asset_processing_state_repo(),
+        attempt_repo=c.get_processing_attempt_repo(),
+        job_source_asset_repo=c.get_job_source_asset_repo(),
+        source_asset_repo=c.get_source_asset_repo(),
+        external_request_repo=c.get_external_image_analysis_request_repo(),
+        coverage_repo=c.get_manual_image_coverage_repo(),
+    )
+
+
+def get_get_asset_processing_detail_use_case():
+    from src.application.use_cases.processing.asset_processing_queries import (
+        GetAssetProcessingDetailUseCase,
+    )
+
+    c = get_app_container()
+    return GetAssetProcessingDetailUseCase(
+        inventory_repo=c.get_inventory_repo(),
+        aisle_repo=c.get_aisle_repo(),
+        job_repo=c.get_job_repo(),
+        state_repo=c.get_job_asset_processing_state_repo(),
+        attempt_repo=c.get_processing_attempt_repo(),
+        job_source_asset_repo=c.get_job_source_asset_repo(),
+        source_asset_repo=c.get_source_asset_repo(),
+        external_request_repo=c.get_external_image_analysis_request_repo(),
+        coverage_repo=c.get_manual_image_coverage_repo(),
+        event_repo=c.get_processing_event_repo(),
+        position_repo=c.get_position_repo(),
+    )
+
+
+def get_list_processing_events_use_case():
+    from src.application.use_cases.processing.list_processing_events import (
+        ListProcessingEventsUseCase,
+    )
+
+    c = get_app_container()
+    return ListProcessingEventsUseCase(
+        inventory_repo=c.get_inventory_repo(),
+        aisle_repo=c.get_aisle_repo(),
+        job_repo=c.get_job_repo(),
+        job_source_asset_repo=c.get_job_source_asset_repo(),
+        event_repo=c.get_processing_event_repo(),
+    )
+
+
+def get_reprocess_asset_use_case():
+    from src.application.use_cases.processing.reprocess_asset import ReprocessAssetUseCase
+
+    c = get_app_container()
+    return ReprocessAssetUseCase(
+        inventory_repo=c.get_inventory_repo(),
+        aisle_repo=c.get_aisle_repo(),
+        job_repo=c.get_job_repo(),
+        state_repo=c.get_job_asset_processing_state_repo(),
+        job_source_asset_repo=c.get_job_source_asset_repo(),
+        clock=c.get_clock(),
+        event_repo=c.get_processing_event_repo(),
+    )
+
+
+def get_invalidate_asset_result_use_case():
+    from src.application.use_cases.processing.reprocess_asset import (
+        InvalidateAssetResultUseCase,
+    )
+
+    c = get_app_container()
+    return InvalidateAssetResultUseCase(
+        inventory_repo=c.get_inventory_repo(),
+        aisle_repo=c.get_aisle_repo(),
+        job_repo=c.get_job_repo(),
+        state_repo=c.get_job_asset_processing_state_repo(),
+        job_source_asset_repo=c.get_job_source_asset_repo(),
+        clock=c.get_clock(),
+        event_repo=c.get_processing_event_repo(),
+    )
+
+
 def get_create_manual_image_result_use_case(
     inventory_repo: InventoryRepository = Depends(get_inventory_repo),
     aisle_repo: AisleRepository = Depends(get_aisle_repo),

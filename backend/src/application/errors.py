@@ -181,6 +181,14 @@ class SupplierExtractionProfileVersionConflictError(Exception):
     """Raised when concurrent create/clone hits unique (client, supplier, version)."""
 
 
+class StrategyDisabledError(Exception):
+    """Raised when a processing strategy / feature flag is disabled."""
+
+
+class ProcessingObservabilityDisabledError(Exception):
+    """Raised when Phase 7 observability mutations are disabled."""
+
+
 class PositionNotFoundError(Exception):
     """Raised when the position does not exist or does not belong to the given aisle."""
 

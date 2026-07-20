@@ -11,3 +11,4 @@ export * from './analytics';
 export * from './analyticsCost';
 export * from './codeScans';
 export * from './extractionProfile';
+export * from './processing';

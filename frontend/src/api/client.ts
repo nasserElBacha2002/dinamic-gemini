@@ -130,4 +130,15 @@ export {
 } from './clientSuppliersApi';
 export type { ObservabilityMetricsQueryParams } from './observabilityApi';
 export { getObservabilityMetrics, getObservabilityMetricsPath } from './observabilityApi';
+export type { ProcessingAssetsQuery } from './processingApi';
+export {
+  getProcessingAssets,
+  getProcessingAssetDetail,
+  getProcessingEvents,
+  getProcessingObservabilityCapabilities,
+  invalidateAssetResult,
+  reprocessAsset,
+  retryAssetPersistence,
+  sendAssetToExternal,
+} from './processingApi';
 

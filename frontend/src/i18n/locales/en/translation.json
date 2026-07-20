@@ -1092,6 +1092,7 @@
     "obs_started": "Obs started",
     "obs_step_started": "Obs step started",
     "obs_tab_diagnostics": "Diagnostics",
+    "obs_tab_processing": "Processing",
     "obs_tab_retry_chain": "Retry chain",
     "obs_tab_artifacts": "Artifacts",
     "obs_tab_timeline": "Timeline",
@@ -1252,6 +1253,152 @@
     "replace": "Replace",
     "subtitle_uploaded": "Subtitle uploaded",
     "upload_references": "Upload references"
+  },
+  "processing": {
+    "selectJob": "Select a job to inspect per-asset processing.",
+    "duration_ms": "{{value}} ms",
+    "duration_seconds": "{{value}} s",
+    "header": {
+      "title": "Job processing context",
+      "loading": "Loading job context…",
+      "selectJob": "Select a job to view processing counters.",
+      "mode": "Requested mode",
+      "strategy": "Execution strategy",
+      "profile": "Provider / model / prompt",
+      "progress": "Asset progress",
+      "progressValue": "{{resolved}} of {{total}} resolved · {{failed}} failed · {{processing}} in progress · {{pending}} pending · {{manual_review}} manual review"
+    },
+    "summary": {
+      "title": "Processing counters",
+      "total": "Total",
+      "resolved": "Resolved",
+      "failed": "Failed",
+      "pending": "Pending",
+      "processing": "In progress",
+      "manualReview": "Manual review"
+    },
+    "filters": {
+      "all": "All",
+      "search": "Search file or code",
+      "status": "Status",
+      "strategy": "Strategy",
+      "resolvedBy": "Resolved by",
+      "hasWarnings": "With warnings",
+      "hasFallback": "With fallback"
+    },
+    "list": {
+      "loading": "Loading assets…",
+      "loadFailed": "Could not load processing assets.",
+      "empty": "No assets match the current filters.",
+      "file": "File",
+      "status": "Status",
+      "strategy": "Strategy",
+      "result": "Result",
+      "duration": "Duration",
+      "signals": "Signals",
+      "actions": "Actions",
+      "error": "Error",
+      "viewDetail": "View detail",
+      "fallback": "Fallback",
+      "manual": "Manual",
+      "warningsCount": "{{count}} warning(s)"
+    },
+    "status": {
+      "pending": "Pending",
+      "processing": "In progress",
+      "resolved": "Resolved",
+      "failed": "Failed",
+      "manual_review": "Manual review",
+      "cancelled": "Cancelled"
+    },
+    "resolvedBy": {
+      "internal": "Internal",
+      "external": "External",
+      "manual": "Manual",
+      "none": "None"
+    },
+    "errors": {
+      "unknown_code": "Error {{code}}",
+      "INSUFFICIENT_EVIDENCE": "Insufficient evidence",
+      "STATE_VERSION_CONFLICT": "State changed; refresh and try again."
+    },
+    "drawer": {
+      "title": "Asset processing",
+      "loading": "Loading asset detail…",
+      "loadFailed": "Could not load asset processing detail.",
+      "historicalUnavailable": "Information not available for this historical job.",
+      "summarySection": "Current state",
+      "attemptsSection": "Attempts",
+      "logsSection": "Structured events",
+      "resolvedBy": "Resolved by",
+      "strategy": "Strategy",
+      "mode": "Requested mode",
+      "result": "Result",
+      "attempts": "Attempts",
+      "persistence": "Persistence"
+    },
+    "attempts": {
+      "historicalUnavailable": "Information not available",
+      "empty": "No attempts recorded.",
+      "item": "Attempt {{number}}",
+      "strategy": "Strategy: {{value}}",
+      "startedAt": "Started: {{value}}",
+      "errorCode": "Error: {{value}}"
+    },
+    "evidence": {
+      "title": "Evidence",
+      "limitedNotice": "Sensitive evidence fields are hidden for your role.",
+      "warnings": "Warnings",
+      "sanitizedNote": "Only operator-safe evidence is shown."
+    },
+    "logs": {
+      "loading": "Loading events…",
+      "empty": "No structured events.",
+      "loadMore": "Load more"
+    },
+    "actions": {
+      "title": "Operational actions",
+      "none": "No actions available for this asset.",
+      "reprocess": "Reprocess",
+      "retryPersistence": "Retry persistence",
+      "sendExternal": "Send to external",
+      "assignManual": "Assign manual result",
+      "invalidate": "Invalidate result",
+      "defaultReason": "Operator action from processing observability",
+      "success": "Action completed.",
+      "failed": "Action failed.",
+      "externalConfirmTitle": "Send to external provider?",
+      "externalConfirmDescription": "This may incur external cost (estimated: {{cost}}). Confirm to continue.",
+      "externalConfirmAction": "Send externally"
+    },
+    "manual": {
+      "title": "Manual result",
+      "save": "Save manual result",
+      "success": "Manual result saved.",
+      "failed": "Could not save manual result."
+    },
+    "reprocess": {
+      "title": "Reprocess asset",
+      "strategy": "Strategy",
+      "strategyDefault": "Use job default",
+      "reason": "Reason",
+      "reasonHint": "Required for audit trail.",
+      "reasonRequired": "Enter a reason.",
+      "costWarning": "Reprocessing may trigger external fallback (estimated cost: {{cost}}).",
+      "confirm": "Reprocess",
+      "success": "Reprocess requested.",
+      "failed": "Reprocess failed."
+    },
+    "invalidate": {
+      "title": "Invalidate result",
+      "warning": "This marks the current result invalid. The asset may need reprocessing.",
+      "reason": "Reason",
+      "reasonHint": "Required for audit trail.",
+      "reasonRequired": "Enter a reason.",
+      "confirm": "Invalidate",
+      "success": "Result invalidated.",
+      "failed": "Invalidate failed."
+    }
   },
   "results": {
     "browse_run": "Browse run",

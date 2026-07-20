@@ -64,3 +64,37 @@ def get_extraction_profile_capabilities() -> ExtractionProfileCapabilitiesRespon
             getattr(settings, "reference_template_annotations_enabled", False)
         ),
     )
+
+
+class ProcessingObservabilityCapabilitiesResponse(BaseModel):
+    processing_observability_enabled: bool = Field(...)
+    processing_asset_logs_ui_enabled: bool = False
+    processing_asset_reprocess_enabled: bool = False
+    processing_manual_actions_enabled: bool = False
+    processing_events_persistence_enabled: bool = False
+
+
+@router.get(
+    "/processing-observability-capabilities",
+    response_model=ProcessingObservabilityCapabilitiesResponse,
+)
+def get_processing_observability_capabilities() -> ProcessingObservabilityCapabilitiesResponse:
+    """Phase 7 feature-flag capabilities for operational processing UX."""
+    settings = load_settings()
+    return ProcessingObservabilityCapabilitiesResponse(
+        processing_observability_enabled=bool(
+            getattr(settings, "processing_observability_enabled", False)
+        ),
+        processing_asset_logs_ui_enabled=bool(
+            getattr(settings, "processing_asset_logs_ui_enabled", False)
+        ),
+        processing_asset_reprocess_enabled=bool(
+            getattr(settings, "processing_asset_reprocess_enabled", False)
+        ),
+        processing_manual_actions_enabled=bool(
+            getattr(settings, "processing_manual_actions_enabled", False)
+        ),
+        processing_events_persistence_enabled=bool(
+            getattr(settings, "processing_events_persistence_enabled", False)
+        ),
+    )
