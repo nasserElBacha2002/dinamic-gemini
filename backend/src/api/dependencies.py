@@ -1320,6 +1320,53 @@ def get_processing_event_repo():
     return get_app_container().get_processing_event_repo()
 
 
+def _build_processing_scope_validator(c):
+    from src.application.services.image_processing.processing_asset_scope_validator import (
+        ProcessingAssetScopeValidator,
+    )
+
+    return ProcessingAssetScopeValidator(
+        inventory_repo=c.get_inventory_repo(),
+        aisle_repo=c.get_aisle_repo(),
+        job_repo=c.get_job_repo(),
+        job_source_asset_repo=c.get_job_source_asset_repo(),
+    )
+
+
+def _build_processing_idempotency_service(c):
+    from src.application.services.image_processing.processing_action_idempotency_service import (
+        ProcessingActionIdempotencyService,
+    )
+
+    return ProcessingActionIdempotencyService(c.get_processing_action_idempotency_repo())
+
+
+def _build_processing_event_publisher(c):
+    from src.application.services.image_processing.processing_event_publisher import (
+        RepositoryProcessingEventPublisher,
+    )
+
+    return RepositoryProcessingEventPublisher(
+        event_repo=c.get_processing_event_repo(),
+        clock=c.get_clock(),
+    )
+
+
+def _build_queue_asset_command_use_case(c):
+    from src.application.use_cases.processing.reprocess_asset import (
+        QueueAssetProcessingCommandUseCase,
+    )
+
+    return QueueAssetProcessingCommandUseCase(
+        scope_validator=_build_processing_scope_validator(c),
+        state_repo=c.get_job_asset_processing_state_repo(),
+        command_repo=c.get_asset_processing_command_repo(),
+        idempotency=_build_processing_idempotency_service(c),
+        clock=c.get_clock(),
+        event_publisher=_build_processing_event_publisher(c),
+    )
+
+
 def get_list_asset_processing_use_case():
     from src.application.use_cases.processing.asset_processing_queries import (
         ListAssetProcessingUseCase,
@@ -1379,31 +1426,58 @@ def get_reprocess_asset_use_case():
     from src.application.use_cases.processing.reprocess_asset import ReprocessAssetUseCase
 
     c = get_app_container()
-    return ReprocessAssetUseCase(
-        inventory_repo=c.get_inventory_repo(),
-        aisle_repo=c.get_aisle_repo(),
-        job_repo=c.get_job_repo(),
-        state_repo=c.get_job_asset_processing_state_repo(),
-        job_source_asset_repo=c.get_job_source_asset_repo(),
-        clock=c.get_clock(),
-        event_repo=c.get_processing_event_repo(),
+    return ReprocessAssetUseCase(_build_queue_asset_command_use_case(c))
+
+
+def get_retry_asset_persistence_use_case():
+    from src.application.use_cases.processing.reprocess_asset import (
+        RetryAssetPersistenceUseCase,
     )
+
+    c = get_app_container()
+    return RetryAssetPersistenceUseCase(_build_queue_asset_command_use_case(c))
+
+
+def get_send_asset_to_external_use_case():
+    from src.application.use_cases.processing.reprocess_asset import (
+        SendAssetToExternalUseCase,
+    )
+
+    c = get_app_container()
+    return SendAssetToExternalUseCase(_build_queue_asset_command_use_case(c))
 
 
 def get_invalidate_asset_result_use_case():
-    from src.application.use_cases.processing.reprocess_asset import (
+    from src.application.use_cases.processing.invalidate_asset_result import (
         InvalidateAssetResultUseCase,
     )
 
     c = get_app_container()
     return InvalidateAssetResultUseCase(
-        inventory_repo=c.get_inventory_repo(),
-        aisle_repo=c.get_aisle_repo(),
-        job_repo=c.get_job_repo(),
+        scope_validator=_build_processing_scope_validator(c),
         state_repo=c.get_job_asset_processing_state_repo(),
-        job_source_asset_repo=c.get_job_source_asset_repo(),
+        coverage_repo=c.get_manual_image_coverage_repo(),
+        position_repo=c.get_position_repo(),
+        idempotency=_build_processing_idempotency_service(c),
         clock=c.get_clock(),
-        event_repo=c.get_processing_event_repo(),
+        event_publisher=_build_processing_event_publisher(c),
+    )
+
+
+def get_single_asset_command_executor():
+    from src.application.services.image_processing.single_asset_command_executor import (
+        SingleAssetCommandExecutor,
+    )
+
+    c = get_app_container()
+    return SingleAssetCommandExecutor(
+        command_repo=c.get_asset_processing_command_repo(),
+        state_repo=c.get_job_asset_processing_state_repo(),
+        job_repo=c.get_job_repo(),
+        source_asset_repo=c.get_source_asset_repo(),
+        clock=c.get_clock(),
+        external_request_repo=c.get_external_image_analysis_request_repo(),
+        event_publisher=_build_processing_event_publisher(c),
     )
 
 

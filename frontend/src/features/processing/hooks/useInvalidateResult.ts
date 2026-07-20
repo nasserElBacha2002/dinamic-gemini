@@ -3,6 +3,10 @@ import { invalidateAssetResult } from '../../../api/processingApi';
 import { queryKeys } from '../../../api/queryKeys';
 import type { InvalidateResultRequest } from '../../../api/types/processing';
 
+export type InvalidateMutationInput = InvalidateResultRequest & {
+  idempotencyKey: string;
+};
+
 export function useInvalidateResult(
   inventoryId: string,
   aisleId: string,
@@ -11,13 +15,8 @@ export function useInvalidateResult(
 ) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: InvalidateResultRequest) =>
-      invalidateAssetResult(inventoryId, aisleId, jobId, assetId, body, {
-        idempotencyKey:
-          typeof crypto !== 'undefined' && 'randomUUID' in crypto
-            ? crypto.randomUUID()
-            : `invalidate-${Date.now()}`,
-      }),
+    mutationFn: ({ idempotencyKey, ...body }: InvalidateMutationInput) =>
+      invalidateAssetResult(inventoryId, aisleId, jobId, assetId, body, { idempotencyKey }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.processingAssetDetail(inventoryId, aisleId, jobId, assetId),

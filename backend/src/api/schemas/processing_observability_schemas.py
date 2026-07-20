@@ -14,6 +14,16 @@ class AvailableAssetActionsResponse(BaseModel):
     can_assign_manual: bool
     can_invalidate: bool
     can_view_sensitive_evidence: bool
+    can_reconcile: bool = False
+
+
+class MutationAssetResponse(BaseModel):
+    asset_id: str
+    state_version: int
+    status: str | None = None
+    command_id: str | None = None
+    command_type: str | None = None
+    idempotent_replay: bool = False
 
 
 class AssetProcessingSummaryResponse(BaseModel):
@@ -96,12 +106,6 @@ class ReprocessAssetRequest(BaseModel):
 class InvalidateResultRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=500)
     expected_state_version: int = Field(..., ge=0)
-
-
-class MutationAssetResponse(BaseModel):
-    asset_id: str
-    state_version: int
-    status: str | None = None
 
 
 class ProcessingObservabilityCapabilitiesResponse(BaseModel):

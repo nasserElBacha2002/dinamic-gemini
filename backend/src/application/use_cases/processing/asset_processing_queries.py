@@ -527,6 +527,7 @@ class GetAssetProcessingDetailUseCase:
             has_manual_result=has_manual,
             has_reusable_external_normalized=has_reusable,
             flags=_feature_flags(),
+            historical_incomplete=historical_incomplete,
         )
 
         current_state = None

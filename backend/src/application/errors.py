@@ -189,6 +189,14 @@ class ProcessingObservabilityDisabledError(Exception):
     """Raised when Phase 7 observability mutations are disabled."""
 
 
+class IdempotencyKeyReusedError(Exception):
+    """Same Idempotency-Key with a different payload (409)."""
+
+
+class DurableCommandMissingError(Exception):
+    """Raised when a mutation could not persist a durable command."""
+
+
 class PositionNotFoundError(Exception):
     """Raised when the position does not exist or does not belong to the given aisle."""
 

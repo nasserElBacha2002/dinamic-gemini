@@ -3,6 +3,10 @@ import { reprocessAsset } from '../../../api/processingApi';
 import { queryKeys } from '../../../api/queryKeys';
 import type { ReprocessAssetRequest } from '../../../api/types/processing';
 
+export type ReprocessMutationInput = ReprocessAssetRequest & {
+  idempotencyKey: string;
+};
+
 export function useReprocessAsset(
   inventoryId: string,
   aisleId: string,
@@ -11,13 +15,8 @@ export function useReprocessAsset(
 ) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: ReprocessAssetRequest) =>
-      reprocessAsset(inventoryId, aisleId, jobId, assetId, body, {
-        idempotencyKey:
-          typeof crypto !== 'undefined' && 'randomUUID' in crypto
-            ? crypto.randomUUID()
-            : `reprocess-${Date.now()}`,
-      }),
+    mutationFn: ({ idempotencyKey, ...body }: ReprocessMutationInput) =>
+      reprocessAsset(inventoryId, aisleId, jobId, assetId, body, { idempotencyKey }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.inventories.processingAssetDetail(inventoryId, aisleId, jobId, assetId),

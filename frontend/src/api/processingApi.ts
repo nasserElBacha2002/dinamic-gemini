@@ -1,6 +1,6 @@
 import { V3_INVENTORIES_BASE } from '../constants/v3ApiPaths';
 import { buildQueryString } from './queryString';
-import { apiRequestJson, apiRequestVoid } from './request';
+import { apiRequestJson } from './request';
 import type {
   AssetProcessingDetail,
   AssetProcessingListResponse,
@@ -136,30 +136,40 @@ export async function getProcessingObservabilityCapabilities(): Promise<Processi
   );
 }
 
-/** POST retry persistence — void success when backend exposes it. */
+/** POST retry persistence with durable Idempotency-Key. */
 export async function retryAssetPersistence(
   inventoryId: string,
   aisleId: string,
   jobId: string,
   assetId: string,
-  body: { reason: string; expected_state_version: number }
-): Promise<void> {
-  await apiRequestVoid(
+  body: { reason: string; expected_state_version: number },
+  options?: { idempotencyKey?: string }
+): Promise<ReprocessAssetResponse> {
+  const headers: HeadersInit = {};
+  if (options?.idempotencyKey) {
+    headers['Idempotency-Key'] = options.idempotencyKey;
+  }
+  return apiRequestJson<ReprocessAssetResponse>(
     assetScopedPath(inventoryId, aisleId, jobId, assetId, '/retry-persistence'),
-    { method: 'POST', body }
+    { method: 'POST', body, headers }
   );
 }
 
-/** POST send to external — void success when backend exposes it. */
+/** POST send to external with durable Idempotency-Key. */
 export async function sendAssetToExternal(
   inventoryId: string,
   aisleId: string,
   jobId: string,
   assetId: string,
-  body: { reason: string; expected_state_version: number }
-): Promise<void> {
-  await apiRequestVoid(
+  body: { reason: string; expected_state_version: number },
+  options?: { idempotencyKey?: string }
+): Promise<ReprocessAssetResponse> {
+  const headers: HeadersInit = {};
+  if (options?.idempotencyKey) {
+    headers['Idempotency-Key'] = options.idempotencyKey;
+  }
+  return apiRequestJson<ReprocessAssetResponse>(
     assetScopedPath(inventoryId, aisleId, jobId, assetId, '/send-to-external'),
-    { method: 'POST', body }
+    { method: 'POST', body, headers }
   );
 }

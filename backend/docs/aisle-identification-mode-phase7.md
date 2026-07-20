@@ -52,11 +52,15 @@ Concurrency conflict → `409 ASSET_PROCESSING_STATE_CONCURRENCY_CONFLICT`.
 
 ## Reprocess policy
 
-1. Resets asset state to `PENDING` with optimistic version bump.
+1. Persist durable `asset_processing_commands` row (`QUEUED`) — never report QUEUED without save.
 2. Does **not** delete attempts, external requests, or events.
 3. Does **not** restart the whole aisle.
-4. Execution is picked up by an active job worker, or left PENDING for a follow-up single-asset runner (finished jobs may need that runner — see limitations).
-5. Manual overwrite requires explicit `manual_policy` confirmation in the UI dialog.
+4. `SingleAssetCommandExecutor` claims the command (active or terminal jobs) and:
+   - `REPROCESS_FROM_SOURCE` / `SEND_TO_EXTERNAL`: set state PENDING (preserving `last_strategy` history) then run processor or leave for worker
+   - `RETRY_PERSISTENCE`: reuse durable normalized external result — **no provider call**
+   - `RECONCILE_RESULT`: reconcile without OCR/provider
+5. Idempotency is durable (`processing_action_idempotency`); same key+payload replays; same key+different payload → `409 IDEMPOTENCY_KEY_REUSED`.
+6. Manual overwrite requires explicit `manual_policy` confirmation in the UI dialog.
 
 ## Events
 

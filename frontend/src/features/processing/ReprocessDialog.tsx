@@ -34,6 +34,7 @@ export default function ReprocessDialog({
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState('');
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState('');
   const mutation = useReprocessAsset(inventoryId, aisleId, jobId, asset.asset_id);
 
   useEffect(() => {
@@ -42,6 +43,11 @@ export default function ReprocessDialog({
     setReason('');
     setReasonError('');
     setSubmitError(null);
+    setIdempotencyKey(
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `reprocess-${Date.now()}`
+    );
   }, [open, asset.asset_id, asset.executed_strategy]);
 
   const handleConfirm = async () => {
@@ -53,16 +59,26 @@ export default function ReprocessDialog({
     setReasonError('');
     setSubmitError(null);
     try {
-      await mutation.mutateAsync({
+      const result = await mutation.mutateAsync({
         reason: trimmedReason,
         expected_state_version: asset.state_version,
         strategy: strategy || undefined,
+        idempotencyKey,
       });
-      showSnackbar(t('processing.reprocess.success'), 'success');
+      if (result.status === 'QUEUED' || result.command_id) {
+        showSnackbar(t('processing.reprocess.queued', { defaultValue: t('processing.reprocess.success') }), 'success');
+      } else {
+        showSnackbar(t('processing.reprocess.success'), 'success');
+      }
       onSuccess?.();
       onClose();
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
+      if (err.status === 409) {
+        setSubmitError(resolveApiErrorMessage(err, 'processing.reprocess.conflict'));
+        onSuccess?.();
+        return;
+      }
       setSubmitError(resolveApiErrorMessage(err, 'processing.reprocess.failed'));
     }
   };

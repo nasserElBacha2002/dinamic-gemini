@@ -1,10 +1,14 @@
-"""Phase 7 — per-asset processing observability routes."""
+"""Phase 7 — per-asset processing observability routes (corrections)."""
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 import logging
 
 from fastapi import APIRouter, Depends, Header, Query
+from fastapi.responses import StreamingResponse
 
 from src.api.dependencies import (
     get_get_asset_processing_detail_use_case,
@@ -12,6 +16,9 @@ from src.api.dependencies import (
     get_list_asset_processing_use_case,
     get_list_processing_events_use_case,
     get_reprocess_asset_use_case,
+    get_retry_asset_persistence_use_case,
+    get_send_asset_to_external_use_case,
+    get_single_asset_command_executor,
 )
 from src.api.errors.error_mapping import reraise_if_mapped
 from src.api.schemas.processing_observability_schemas import (
@@ -29,6 +36,8 @@ from src.api.schemas.processing_observability_schemas import (
 from src.application.errors import (
     AssetNotInJobSnapshotError,
     AssetProcessingStateConcurrencyError,
+    DurableCommandMissingError,
+    IdempotencyKeyReusedError,
     InventoryNotFoundError,
     JobDoesNotBelongToAisleError,
     JobNotFoundError,
@@ -36,24 +45,72 @@ from src.application.errors import (
     SourceAssetNotFoundForAisleError,
     StrategyDisabledError,
 )
+from src.application.services.image_processing.processing_evidence_sanitizer import (
+    csv_safe_cell,
+)
 from src.application.use_cases.processing.asset_processing_queries import (
     GetAssetProcessingDetailCommand,
     GetAssetProcessingDetailUseCase,
     ListAssetProcessingCommand,
     ListAssetProcessingUseCase,
 )
-from src.application.use_cases.processing.reprocess_asset import (
+from src.application.use_cases.processing.invalidate_asset_result import (
     InvalidateAssetResultCommand,
     InvalidateAssetResultUseCase,
+)
+from src.application.use_cases.processing.reprocess_asset import (
     ReprocessAssetCommand,
     ReprocessAssetUseCase,
+    RetryAssetPersistenceUseCase,
+    RetryPersistenceCommand,
+    SendAssetToExternalUseCase,
+    SendToExternalCommand,
 )
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
+from src.config import load_settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_MUTATION_ERRORS = (
+    InventoryNotFoundError,
+    JobNotFoundError,
+    JobDoesNotBelongToAisleError,
+    AssetNotInJobSnapshotError,
+    AssetProcessingStateConcurrencyError,
+    StrategyDisabledError,
+    ProcessingObservabilityDisabledError,
+    IdempotencyKeyReusedError,
+    DurableCommandMissingError,
+    SourceAssetNotFoundForAisleError,
+)
+
+
+def _require_observability_reads() -> None:
+    settings = load_settings()
+    if not bool(getattr(settings, "processing_observability_enabled", False)):
+        raise ProcessingObservabilityDisabledError("PROCESSING_OBSERVABILITY_ENABLED=false")
+
+
+def _require_logs_ui() -> None:
+    _require_observability_reads()
+    settings = load_settings()
+    if not bool(getattr(settings, "processing_asset_logs_ui_enabled", False)):
+        raise ProcessingObservabilityDisabledError("PROCESSING_ASSET_LOGS_UI_ENABLED=false")
+
+
+def _kick_executor(command_id: str | None) -> None:
+    if not command_id:
+        return
+    try:
+        executor = get_single_asset_command_executor()
+        executor.execute_command(command_id)
+    except Exception as exc:  # best-effort kick; command remains QUEUED
+        logger.warning(
+            "single_asset_executor.kick_failed command_id=%s err=%s", command_id, exc
+        )
 
 
 @router.get(
@@ -76,6 +133,7 @@ def list_asset_processing(
     _user: AuthUser = Depends(get_current_admin),
 ) -> AssetProcessingListResponse:
     try:
+        _require_observability_reads()
         raw = use_case.execute(
             ListAssetProcessingCommand(
                 inventory_id=inventory_id,
@@ -95,6 +153,7 @@ def list_asset_processing(
         InventoryNotFoundError,
         JobNotFoundError,
         JobDoesNotBelongToAisleError,
+        ProcessingObservabilityDisabledError,
     ) as exc:
         reraise_if_mapped(exc)
         raise
@@ -123,6 +182,7 @@ def get_asset_processing_detail(
     _user: AuthUser = Depends(get_current_admin),
 ) -> AssetProcessingDetailResponse:
     try:
+        _require_observability_reads()
         raw = use_case.execute(
             GetAssetProcessingDetailCommand(
                 inventory_id=inventory_id,
@@ -137,6 +197,7 @@ def get_asset_processing_detail(
         JobDoesNotBelongToAisleError,
         SourceAssetNotFoundForAisleError,
         AssetNotInJobSnapshotError,
+        ProcessingObservabilityDisabledError,
     ) as exc:
         reraise_if_mapped(exc)
         raise
@@ -170,6 +231,7 @@ def list_processing_events(
     _user: AuthUser = Depends(get_current_admin),
 ) -> ProcessingEventsPageResponse:
     try:
+        _require_logs_ui()
         raw = use_case.execute(
             inventory_id=inventory_id,
             aisle_id=aisle_id,
@@ -184,6 +246,7 @@ def list_processing_events(
         JobDoesNotBelongToAisleError,
         SourceAssetNotFoundForAisleError,
         AssetNotInJobSnapshotError,
+        ProcessingObservabilityDisabledError,
     ) as exc:
         reraise_if_mapped(exc)
         raise
@@ -193,6 +256,17 @@ def list_processing_events(
         page=raw["page"],
         page_size=raw["page_size"],
         has_more=raw.get("has_more", False),
+    )
+
+
+def _mutation_response(raw: dict) -> MutationAssetResponse:
+    return MutationAssetResponse(
+        asset_id=raw["asset_id"],
+        state_version=int(raw.get("state_version") or 0),
+        status=raw.get("status"),
+        command_id=raw.get("command_id"),
+        command_type=raw.get("command_type"),
+        idempotent_replay=bool(raw.get("idempotent_replay", False)),
     )
 
 
@@ -225,18 +299,12 @@ def reprocess_asset(
                 actor=getattr(user, "email", None) or getattr(user, "sub", None),
             )
         )
-    except (
-        InventoryNotFoundError,
-        JobNotFoundError,
-        JobDoesNotBelongToAisleError,
-        AssetNotInJobSnapshotError,
-        AssetProcessingStateConcurrencyError,
-        StrategyDisabledError,
-        ProcessingObservabilityDisabledError,
-    ) as exc:
+    except _MUTATION_ERRORS as exc:
         reraise_if_mapped(exc)
         raise
-    return MutationAssetResponse(**raw)
+    if not raw.get("idempotent_replay"):
+        _kick_executor(raw.get("command_id"))
+    return _mutation_response(raw)
 
 
 @router.post(
@@ -266,18 +334,10 @@ def invalidate_asset_result(
                 actor=getattr(user, "email", None) or getattr(user, "sub", None),
             )
         )
-    except (
-        InventoryNotFoundError,
-        JobNotFoundError,
-        JobDoesNotBelongToAisleError,
-        SourceAssetNotFoundForAisleError,
-        AssetProcessingStateConcurrencyError,
-        StrategyDisabledError,
-        ProcessingObservabilityDisabledError,
-    ) as exc:
+    except _MUTATION_ERRORS as exc:
         reraise_if_mapped(exc)
         raise
-    return MutationAssetResponse(**raw)
+    return _mutation_response(raw)
 
 
 @router.post(
@@ -290,38 +350,29 @@ def retry_asset_persistence(
     job_id: str,
     asset_id: str,
     payload: ReprocessAssetRequest,
-    use_case: ReprocessAssetUseCase = Depends(get_reprocess_asset_use_case),
+    use_case: RetryAssetPersistenceUseCase = Depends(get_retry_asset_persistence_use_case),
     user: AuthUser = Depends(get_current_admin),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ) -> MutationAssetResponse:
-    """Queue reprocess that reuses durable external normalized results when present."""
     try:
         raw = use_case.execute(
-            ReprocessAssetCommand(
+            RetryPersistenceCommand(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
                 job_id=job_id,
                 asset_id=asset_id,
                 reason=payload.reason or "RETRY_PERSISTENCE",
                 expected_state_version=payload.expected_state_version,
-                strategy="EXTERNAL_PROVIDER",
-                manual_policy=payload.manual_policy,
                 idempotency_key=idempotency_key,
                 actor=getattr(user, "email", None) or getattr(user, "sub", None),
             )
         )
-    except (
-        InventoryNotFoundError,
-        JobNotFoundError,
-        JobDoesNotBelongToAisleError,
-        AssetNotInJobSnapshotError,
-        AssetProcessingStateConcurrencyError,
-        StrategyDisabledError,
-        ProcessingObservabilityDisabledError,
-    ) as exc:
+    except _MUTATION_ERRORS as exc:
         reraise_if_mapped(exc)
         raise
-    return MutationAssetResponse(**raw)
+    if not raw.get("idempotent_replay"):
+        _kick_executor(raw.get("command_id"))
+    return _mutation_response(raw)
 
 
 @router.post(
@@ -334,37 +385,29 @@ def send_asset_to_external(
     job_id: str,
     asset_id: str,
     payload: ReprocessAssetRequest,
-    use_case: ReprocessAssetUseCase = Depends(get_reprocess_asset_use_case),
+    use_case: SendAssetToExternalUseCase = Depends(get_send_asset_to_external_use_case),
     user: AuthUser = Depends(get_current_admin),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ) -> MutationAssetResponse:
     try:
         raw = use_case.execute(
-            ReprocessAssetCommand(
+            SendToExternalCommand(
                 inventory_id=inventory_id,
                 aisle_id=aisle_id,
                 job_id=job_id,
                 asset_id=asset_id,
                 reason=payload.reason or "MANUAL_EXTERNAL_FALLBACK",
                 expected_state_version=payload.expected_state_version,
-                strategy="EXTERNAL_PROVIDER",
-                manual_policy=payload.manual_policy,
                 idempotency_key=idempotency_key,
                 actor=getattr(user, "email", None) or getattr(user, "sub", None),
             )
         )
-    except (
-        InventoryNotFoundError,
-        JobNotFoundError,
-        JobDoesNotBelongToAisleError,
-        AssetNotInJobSnapshotError,
-        AssetProcessingStateConcurrencyError,
-        StrategyDisabledError,
-        ProcessingObservabilityDisabledError,
-    ) as exc:
+    except _MUTATION_ERRORS as exc:
         reraise_if_mapped(exc)
         raise
-    return MutationAssetResponse(**raw)
+    if not raw.get("idempotent_replay"):
+        _kick_executor(raw.get("command_id"))
+    return _mutation_response(raw)
 
 
 @router.get(
@@ -379,87 +422,103 @@ def export_processing_events(
     use_case=Depends(get_list_processing_events_use_case),
     _user: AuthUser = Depends(get_current_admin),
 ):
-    """Sanitized event export (JSONL or CSV). No secrets."""
-    import csv
-    import io
-    import json
-
-    from fastapi.responses import PlainTextResponse
-
     try:
-        raw = use_case.execute(
-            inventory_id=inventory_id,
-            aisle_id=aisle_id,
-            job_id=job_id,
-            asset_id=asset_id,
-            page=1,
-            page_size=500,
-        )
-    except (
-        InventoryNotFoundError,
-        JobNotFoundError,
-        JobDoesNotBelongToAisleError,
-        SourceAssetNotFoundForAisleError,
-        AssetNotInJobSnapshotError,
-    ) as exc:
+        _require_logs_ui()
+    except ProcessingObservabilityDisabledError as exc:
         reraise_if_mapped(exc)
         raise
 
+    def _iter_pages():
+        page = 1
+        page_size = 200
+        total_emitted = 0
+        hard_cap = 10_000
+        while True:
+            raw = use_case.execute(
+                inventory_id=inventory_id,
+                aisle_id=aisle_id,
+                job_id=job_id,
+                asset_id=asset_id,
+                page=page,
+                page_size=page_size,
+            )
+            items = list(raw.get("items") or [])
+            if not items:
+                break
+            for item in items:
+                yield item
+                total_emitted += 1
+                if total_emitted >= hard_cap:
+                    return
+            if not raw.get("has_more"):
+                break
+            page += 1
+
     logger.info(
-        "processing_ui.logs_exported job_id=%s asset_id=%s format=%s count=%s",
+        "processing_ui.logs_exported job_id=%s asset_id=%s format=%s",
         job_id,
         asset_id,
         format,
-        raw.get("total", 0),
     )
-    items = list(raw.get("items") or [])
+
     if format == "csv":
-        buf = io.StringIO()
-        writer = csv.DictWriter(
-            buf,
-            fieldnames=[
-                "timestamp",
-                "event_type",
-                "asset_id",
-                "level",
-                "message",
-            ],
-        )
-        writer.writeheader()
-        for item in items:
-            writer.writerow(
-                {
-                    "timestamp": item.get("timestamp"),
-                    "event_type": item.get("event_type"),
-                    "asset_id": asset_id,
-                    "level": item.get("level"),
-                    "message": item.get("message"),
-                }
+
+        def csv_stream():
+            buf = io.StringIO()
+            writer = csv.DictWriter(
+                buf,
+                fieldnames=["timestamp", "event_type", "asset_id", "level", "message"],
             )
-        return PlainTextResponse(
-            buf.getvalue(),
+            writer.writeheader()
+            yield buf.getvalue()
+            buf.seek(0)
+            buf.truncate(0)
+            for item in _iter_pages():
+                writer.writerow(
+                    {
+                        "timestamp": csv_safe_cell(item.get("timestamp")),
+                        "event_type": csv_safe_cell(item.get("event_type")),
+                        "asset_id": csv_safe_cell(asset_id),
+                        "level": csv_safe_cell(item.get("level")),
+                        "message": csv_safe_cell(item.get("message")),
+                    }
+                )
+                yield buf.getvalue()
+                buf.seek(0)
+                buf.truncate(0)
+            yield "# export_limit_note=hard_cap_10000\n"
+
+        return StreamingResponse(
+            csv_stream(),
             media_type="text/csv",
             headers={
-                "Content-Disposition": f'attachment; filename="processing-events-{asset_id}.csv"'
+                "Content-Disposition": f'attachment; filename="processing-events-{asset_id}.csv"',
+                "X-Export-Hard-Cap": "10000",
             },
         )
-    lines = [
-        json.dumps(
-            {
-                "timestamp": item.get("timestamp"),
-                "event_type": item.get("event_type"),
-                "asset_id": asset_id,
-                "level": item.get("level"),
-                "message": item.get("message"),
-            },
-            ensure_ascii=False,
-        )
-        for item in items
-    ]
-    return PlainTextResponse(
-        "\n".join(lines) + ("\n" if lines else ""),
+
+    def jsonl_stream():
+        for item in _iter_pages():
+            yield (
+                json.dumps(
+                    {
+                        "timestamp": item.get("timestamp"),
+                        "event_type": item.get("event_type"),
+                        "asset_id": asset_id,
+                        "level": item.get("level"),
+                        "message": item.get("message"),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+        yield json.dumps({"export_hard_cap": 10000, "truncated": False}) + "\n"
+
+    return StreamingResponse(
+        jsonl_stream(),
         media_type="application/x-ndjson",
         headers={
-            "Content-Disposition": f'attachment; filename="processing-events-{asset_id}.jsonl"'
+            "Content-Disposition": f'attachment; filename="processing-events-{asset_id}.jsonl"',
+            "X-Export-Hard-Cap": "10000",
         },
     )

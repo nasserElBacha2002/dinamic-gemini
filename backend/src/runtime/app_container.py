@@ -807,6 +807,46 @@ class AppContainer:
             self._processing_event_repo = MemoryProcessingEventRepository()
         return self._processing_event_repo
 
+    def get_asset_processing_command_repo(self):
+        if getattr(self, "_asset_processing_command_repo", None) is not None:
+            return self._asset_processing_command_repo
+        from src.infrastructure.repositories.memory_asset_processing_command_repository import (
+            MemoryAssetProcessingCommandRepository,
+        )
+        from src.infrastructure.repositories.sql_asset_processing_command_repository import (
+            SqlAssetProcessingCommandRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._asset_processing_command_repo = SqlAssetProcessingCommandRepository(
+                self._get_v3_sql_client()
+            )
+        else:
+            self._asset_processing_command_repo = MemoryAssetProcessingCommandRepository()
+        return self._asset_processing_command_repo
+
+    def get_processing_action_idempotency_repo(self):
+        if getattr(self, "_processing_action_idempotency_repo", None) is not None:
+            return self._processing_action_idempotency_repo
+        from src.infrastructure.repositories.memory_processing_action_idempotency_repository import (
+            MemoryProcessingActionIdempotencyRepository,
+        )
+        from src.infrastructure.repositories.sql_processing_action_idempotency_repository import (
+            SqlProcessingActionIdempotencyRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._processing_action_idempotency_repo = (
+                SqlProcessingActionIdempotencyRepository(self._get_v3_sql_client())
+            )
+        else:
+            self._processing_action_idempotency_repo = (
+                MemoryProcessingActionIdempotencyRepository()
+            )
+        return self._processing_action_idempotency_repo
+
     def get_job_processing_lease_repo(self):
         if getattr(self, "_job_processing_lease_repo", None) is not None:
             return self._job_processing_lease_repo

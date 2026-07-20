@@ -31,6 +31,7 @@ export default function InvalidateResultDialog({
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState('');
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState('');
   const mutation = useInvalidateResult(inventoryId, aisleId, jobId, asset.asset_id);
 
   useEffect(() => {
@@ -38,6 +39,11 @@ export default function InvalidateResultDialog({
     setReason('');
     setReasonError('');
     setSubmitError(null);
+    setIdempotencyKey(
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `invalidate-${Date.now()}`
+    );
   }, [open, asset.asset_id]);
 
   const handleConfirm = async () => {
@@ -52,12 +58,18 @@ export default function InvalidateResultDialog({
       await mutation.mutateAsync({
         reason: trimmedReason,
         expected_state_version: asset.state_version,
+        idempotencyKey,
       });
       showSnackbar(t('processing.invalidate.success'), 'success');
       onSuccess?.();
       onClose();
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError(String(e));
+      if (err.status === 409) {
+        setSubmitError(resolveApiErrorMessage(err, 'processing.invalidate.conflict'));
+        onSuccess?.();
+        return;
+      }
       setSubmitError(resolveApiErrorMessage(err, 'processing.invalidate.failed'));
     }
   };

@@ -91,3 +91,13 @@ class SqlManualImageCoverageRepository:
             )
             rows = cur.fetchall()
         return [_row_to_link(r) for r in rows]
+
+    def delete_by_job_and_asset(self, job_id: str, source_asset_id: str) -> None:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                """
+                DELETE FROM position_manual_image_coverage
+                WHERE job_id = ? AND source_asset_id = ?
+                """,
+                (job_id, source_asset_id),
+            )

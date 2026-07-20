@@ -63,11 +63,14 @@ describe('ReprocessDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /reprocesar/i }));
 
     await waitFor(() => {
-      expect(mutateAsync).toHaveBeenCalledWith({
-        reason: 'Operador solicitó reproceso',
-        expected_state_version: 2,
-        strategy: 'INTERNAL',
-      });
+      expect(mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: 'Operador solicitó reproceso',
+          expected_state_version: 2,
+          strategy: 'INTERNAL',
+          idempotencyKey: expect.any(String),
+        })
+      );
     });
   });
 });

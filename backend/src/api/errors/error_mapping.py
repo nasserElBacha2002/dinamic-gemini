@@ -376,6 +376,8 @@ from src.application.errors import (
     PositionNotFoundError,
     PositionResultContextMismatchError,
     ProcessingObservabilityDisabledError,
+    IdempotencyKeyReusedError,
+    DurableCommandMissingError,
     ProcessingProviderIncompatibleWithJobError,
     ProcessingProviderNotConfiguredError,
     ProductNotFoundError,
@@ -912,6 +914,16 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         422,
         error_code="PROCESSING_OBSERVABILITY_DISABLED",
         detail=lambda e: str(e) or "Processing observability is disabled.",
+    ),
+    IdempotencyKeyReusedError: _structured_detail(
+        409,
+        error_code="IDEMPOTENCY_KEY_REUSED",
+        detail=lambda e: str(e) or "Idempotency key reused with a different payload.",
+    ),
+    DurableCommandMissingError: _structured_detail(
+        500,
+        error_code="DURABLE_COMMAND_MISSING",
+        detail=lambda e: str(e) or "Failed to persist durable processing command.",
     ),
     ImageProcessingRepositoryUnavailableError: _structured_detail(
         500,

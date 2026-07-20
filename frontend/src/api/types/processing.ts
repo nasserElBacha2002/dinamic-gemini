@@ -7,6 +7,7 @@ export interface AvailableAssetActions {
   can_assign_manual: boolean;
   can_invalidate: boolean;
   can_view_sensitive_evidence: boolean;
+  can_reconcile?: boolean;
 }
 
 export interface AssetProcessingSummary {
@@ -103,10 +104,15 @@ export interface ReprocessAssetResponse {
   asset_id: string;
   state_version: number;
   status?: string;
+  command_id?: string | null;
+  command_type?: string | null;
+  idempotent_replay?: boolean;
 }
 
 export interface InvalidateResultResponse {
   asset_id: string;
   state_version: number;
   status?: string;
+  command_id?: string | null;
+  idempotent_replay?: boolean;
 }
