@@ -22,6 +22,7 @@ from src.application.services.image_processing.asset_processing_reconciler impor
 from src.application.services.image_processing.external_provider_fallback_orchestrator import (
     ExternalFallbackOutcome,
     ExternalFallbackSnapshot,
+    FallbackProgressCounters,
 )
 from src.application.services.image_processing.image_processing_orchestrator import (
     ImageProcessingOrchestrator,
@@ -57,8 +58,12 @@ _DEFAULT_ATTEMPT_PROVIDER = "image_processing"
 
 class SingleAssetProcessingStrategy(Protocol):
     strategy_key: str
-    attempt_provider: str
-    attempt_model: str
+
+    @property
+    def attempt_provider(self) -> str: ...
+
+    @property
+    def attempt_model(self) -> str: ...
 
     def process(
         self, context: ImageProcessingContext, asset: SourceAsset
@@ -66,7 +71,7 @@ class SingleAssetProcessingStrategy(Protocol):
 
 
 class ExternalFallbackProcessor(Protocol):
-    counters: object | None
+    counters: FallbackProgressCounters | None
 
     def process_if_eligible(
         self,
@@ -118,9 +123,10 @@ class SingleAssetStrategyProcessor:
         self._state_repo = state_repo
         self._attempt_repo = attempt_repo
         self._image_orch = image_orchestrator
-        self._strategy = strategy if strategy is not None else code_scan_strategy
-        if self._strategy is None:
+        strategy_resolved = strategy if strategy is not None else code_scan_strategy
+        if strategy_resolved is None:
             raise ValueError("SingleAssetStrategyProcessor requires strategy= or code_scan_strategy=")
+        self._strategy: SingleAssetProcessingStrategy = strategy_resolved
         self._result_persister = result_persister
         self._clock = clock
         self._attempts_enabled = attempts_enabled

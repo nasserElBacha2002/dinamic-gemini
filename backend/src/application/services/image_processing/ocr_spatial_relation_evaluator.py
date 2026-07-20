@@ -98,8 +98,8 @@ class OcrSpatialRelationEvaluator:
         if diag is None or diag <= 0:
             # Fallback: normalize by average box size.
             scale = max(1.0, (a.width + a.height + b.width + b.height) / 4.0)
-            return dist / scale
-        return dist / diag
+            return float(dist / scale)
+        return float(dist / diag)
 
 
 __all__ = [

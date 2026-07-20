@@ -19,7 +19,7 @@ import threading
 import time
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from src.application.ports.internal_label_reader import (
     InternalLabelReader,
@@ -140,8 +140,8 @@ class InternalOcrMetrics:
             return dict(self._counters)
 
 
-class SourceAssetContentReaderPort:
-    def read_image_bytes(self, asset: SourceAsset) -> bytes: ...  # pragma: no cover
+class SourceAssetContentReaderPort(Protocol):
+    def read_image_bytes(self, asset: SourceAsset) -> bytes: ...
 
 
 class InternalOcrProcessingStrategy:

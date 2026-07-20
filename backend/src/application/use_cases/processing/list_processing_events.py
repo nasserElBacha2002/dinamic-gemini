@@ -61,7 +61,7 @@ class ListProcessingEventsUseCase:
             )
         if not any(
             link.source_asset_id == asset_id
-            for link in self._job_source_asset_repo.list_by_job(job_id)
+            for link in self._job_source_asset_repo.list_for_job(job_id)
         ):
             raise AssetNotInJobSnapshotError(
                 f"Asset {asset_id} is not part of job snapshot {job_id}"

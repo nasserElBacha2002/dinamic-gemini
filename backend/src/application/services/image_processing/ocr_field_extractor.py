@@ -25,6 +25,7 @@ from src.application.services.image_processing.ocr_spatial_relation_evaluator im
     OcrSpatialRelationEvaluator,
 )
 from src.application.services.image_processing.ocr_token_normalizer import (
+    NormalizedOcrToken,
     OcrTokenNormalizer,
     fold_ocr_text,
 )
@@ -201,14 +202,18 @@ class OcrFieldExtractor:
         out.stats["normalized_token_count"] = len(tokens)
 
         # Detect anchors (profile primary + code/qty aliases).
-        configured_anchors = list(config.label_detection_rules.primary_anchors) + list(
+        configured_anchors_list = list(config.label_detection_rules.primary_anchors) + list(
             config.label_detection_rules.secondary_anchors
         )
         for src in config.internal_code_sources:
-            configured_anchors.extend(src.aliases)
-        configured_anchors.extend(config.quantity_rules.aliases)
-        configured_anchors = tuple(dict.fromkeys(a for a in configured_anchors if a))
-        line_texts = [(text, None) for text, *_rest in lines]
+            configured_anchors_list.extend(src.aliases)
+        configured_anchors_list.extend(config.quantity_rules.aliases)
+        configured_anchors: tuple[str, ...] = tuple(
+            dict.fromkeys(a for a in configured_anchors_list if a)
+        )
+        line_texts: list[tuple[str, NormalizedOcrToken | None]] = [
+            (text, None) for text, *_rest in lines
+        ]
         anchor_matches = self._anchor_matcher.match_anchors(
             configured_anchors=configured_anchors,
             tokens=tokens,
@@ -404,8 +409,8 @@ class OcrFieldExtractor:
         out.stats["quantity_candidates_after_filter"] = len(out.quantity_candidates)
         out.stats["rejected_candidate_count"] = len(out.rejected_candidates)
         rejection_reasons: dict[str, int] = {}
-        for rej in out.rejected_candidates:
-            reason = str(rej.get("reason_code") or "UNKNOWN")
+        for rejected_entry in out.rejected_candidates:
+            reason = str(rejected_entry.get("reason_code") or "UNKNOWN")
             rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
         out.stats["rejection_reasons"] = rejection_reasons
         return out
@@ -541,88 +546,78 @@ class OcrFieldExtractor:
         value = value.strip()
         if not value:
             return
-        common = dict(
-            confidence=conf,
-            region=region,
-            rule=rule,
-            extraction_method=extraction_method,
-            anchor_text=anchor_text or label,
-            anchor_bbox=anchor_bbox or region,
-            line_num=line_num,
-            block_num=block_num,
-        )
+        def _candidate(
+            kind: OcrFieldKind,
+            source: str,
+            associated_text: str,
+        ) -> OcrFieldCandidate:
+            return OcrFieldCandidate(
+                kind=kind,
+                value=value,
+                source=source,
+                associated_text=associated_text,
+                confidence=conf,
+                region=region,
+                rule=rule,
+                extraction_method=extraction_method,
+                anchor_text=anchor_text or label,
+                anchor_bbox=anchor_bbox or region,
+                line_num=line_num,
+                block_num=block_num,
+            )
+
         if label in qty_aliases:
             out.quantity_candidates.append(
-                OcrFieldCandidate(
-                    OcrFieldKind.QUANTITY, value, "label", label, **common
-                )
+                _candidate(OcrFieldKind.QUANTITY, "label", label)
             )
             return
         if label == "ean" or label.startswith("ean"):
             out.ean_candidates.append(
-                OcrFieldCandidate(OcrFieldKind.EAN, value, "label", label, **common)
+                _candidate(OcrFieldKind.EAN, "label", label)
             )
             out.internal_code_candidates.append(
-                OcrFieldCandidate(
-                    OcrFieldKind.INTERNAL_CODE, value, "ean_label", label, **common
-                )
+                _candidate(OcrFieldKind.INTERNAL_CODE, "ean_label", label)
             )
             return
         if label in code_aliases:
             out.internal_code_candidates.append(
-                OcrFieldCandidate(
-                    OcrFieldKind.INTERNAL_CODE, value, "label", label, **common
-                )
+                _candidate(OcrFieldKind.INTERNAL_CODE, "label", label)
             )
             return
         if label in ("articulo", "artículo", "art", "art."):
             out.article_candidates.append(
-                OcrFieldCandidate(
-                    OcrFieldKind.ARTICLE, value, "label", label, **common
-                )
+                _candidate(OcrFieldKind.ARTICLE, "label", label)
             )
             out.internal_code_candidates.append(
-                OcrFieldCandidate(
-                    OcrFieldKind.INTERNAL_CODE, value, "article_label", label, **common
-                )
+                _candidate(OcrFieldKind.INTERNAL_CODE, "article_label", label)
             )
             return
         if label in ("producto", "product"):
             out.product_candidates.append(
-                OcrFieldCandidate(
-                    OcrFieldKind.PRODUCT, value, "label", label, **common
-                )
+                _candidate(OcrFieldKind.PRODUCT, "label", label)
             )
             out.internal_code_candidates.append(
-                OcrFieldCandidate(
-                    OcrFieldKind.INTERNAL_CODE, value, "product_label", label, **common
-                )
+                _candidate(OcrFieldKind.INTERNAL_CODE, "product_label", label)
             )
             return
         if label in _LOT_ALIASES:
             out.lot_candidates.append(
-                OcrFieldCandidate(OcrFieldKind.LOT, value, "label", label, **common)
+                _candidate(OcrFieldKind.LOT, "label", label)
             )
             return
         if label in _EXP_ALIASES:
             out.expiration_candidates.append(
-                OcrFieldCandidate(
-                    OcrFieldKind.EXPIRATION, value, "label", label, **common
-                )
+                _candidate(OcrFieldKind.EXPIRATION, "label", label)
             )
             return
         if label in _RECEPTION_ALIASES:
             out.reception_candidates.append(
-                OcrFieldCandidate(
-                    OcrFieldKind.RECEPTION, value, "label", label, **common
-                )
+                _candidate(OcrFieldKind.RECEPTION, "label", label)
             )
             return
         if label in _RESPONSIBLE_ALIASES:
             out.responsible_candidates.append(
-                OcrFieldCandidate(
-                    OcrFieldKind.RESPONSIBLE, value, "label", label, **common
-                )
+                _candidate(OcrFieldKind.RESPONSIBLE, "label", label)
             )
 
     def _scan_bare_eans(

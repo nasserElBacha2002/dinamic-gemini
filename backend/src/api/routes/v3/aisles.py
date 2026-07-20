@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
@@ -56,6 +56,11 @@ from src.api.schemas.benchmark_schemas import (
     AisleBenchmarkCompareResponse,
     PromoteOperationalJobRequest,
     PromoteOperationalJobResponse,
+)
+from src.api.schemas.identification_mode_literals import (
+    ExecutionStrategyLiteral,
+    IdentificationModeLiteral,
+    IdentificationModeSourceLiteral,
 )
 from src.api.schemas.listing_schemas import PaginatedAisleListResponse, compute_total_pages
 from src.api.schemas.merge_schemas import (
@@ -571,9 +576,11 @@ def start_aisle_processing(
         )
         return ProcessAisleResponse(
             job_id=result.job_id,
-            identification_mode=result.identification_mode,
-            identification_mode_source=result.identification_mode_source,
-            execution_strategy=result.execution_strategy,
+            identification_mode=cast(IdentificationModeLiteral, result.identification_mode),
+            identification_mode_source=cast(
+                IdentificationModeSourceLiteral, result.identification_mode_source
+            ),
+            execution_strategy=cast(ExecutionStrategyLiteral, result.execution_strategy),
             configuration_snapshot_version=result.configuration_snapshot_version,
         )
     except Exception as e:

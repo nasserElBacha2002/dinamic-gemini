@@ -1019,7 +1019,8 @@ class LimitsAndSchemaSettings(BaseModel):
     code_scan_variants_budget_seconds: int = Field(
         default_factory=lambda: int(
             os.getenv("CODE_SCAN_VARIANTS_BUDGET_SECONDS")
-            or os.getenv("CODE_SCAN_TIMEOUT_SECONDS", "15")
+            or os.getenv("CODE_SCAN_TIMEOUT_SECONDS")
+            or "15"
         ),
         ge=1,
         le=300,
@@ -1205,8 +1206,8 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     internal_ocr_min_aggregate_confidence: float | None = Field(
         default_factory=lambda: (
-            float(os.getenv("INTERNAL_OCR_MIN_AGGREGATE_CONFIDENCE"))
-            if (os.getenv("INTERNAL_OCR_MIN_AGGREGATE_CONFIDENCE") or "").strip()
+            float(raw)
+            if (raw := os.getenv("INTERNAL_OCR_MIN_AGGREGATE_CONFIDENCE")) and raw.strip()
             else None
         ),
         description=(

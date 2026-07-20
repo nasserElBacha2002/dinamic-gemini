@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from io import BytesIO
+from typing import cast
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
@@ -52,6 +53,10 @@ from src.api.schemas.client_supplier_schemas import (
     ClientSupplierResponse,
     CreateClientSupplierRequest,
     PaginatedClientSupplierListResponse,
+)
+from src.api.schemas.identification_mode_literals import (
+    IdentificationModeLiteral,
+    IdentificationModeSourceLiteral,
 )
 from src.api.schemas.listing_schemas import compute_total_pages
 from src.api.schemas.supplier_extraction_profile_schemas import (
@@ -173,9 +178,15 @@ def _to_response(client: Client) -> ClientResponse:
         status=client.status.value,
         created_at=client.created_at,
         updated_at=client.updated_at,
-        identification_mode=id_fields.identification_mode,
-        effective_identification_mode=id_fields.effective_identification_mode,
-        identification_mode_source=id_fields.identification_mode_source,
+        identification_mode=cast(
+            IdentificationModeLiteral | None, id_fields.identification_mode
+        ),
+        effective_identification_mode=cast(
+            IdentificationModeLiteral, id_fields.effective_identification_mode
+        ),
+        identification_mode_source=cast(
+            IdentificationModeSourceLiteral, id_fields.identification_mode_source
+        ),
     )
 
 

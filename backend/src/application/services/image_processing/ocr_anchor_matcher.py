@@ -104,14 +104,20 @@ class OcrAnchorMatcher:
         for tok in tokens:
             candidates.append((tok.normalized_text, tok, tok.bounding_box))
         if line_texts:
-            for text, tok in line_texts:
-                candidates.append((fold_ocr_text(text), tok, tok.bounding_box if tok else None))
+            for text, line_tok in line_texts:
+                candidates.append(
+                    (
+                        fold_ocr_text(text),
+                        line_tok,
+                        line_tok.bounding_box if line_tok else None,
+                    )
+                )
 
         for anchor in anchors:
             target = fold_ocr_text(anchor)
             if not target:
                 continue
-            for text, tok, bbox in candidates:
+            for text, candidate_tok, bbox in candidates:
                 hit = self._score_text(target, text)
                 if hit is None:
                     continue
@@ -126,8 +132,8 @@ class OcrAnchorMatcher:
                         mode=hit[1],
                         similarity=hit[2],
                         bounding_box=bbox,
-                        line_num=tok.line_num if tok else None,
-                        block_num=tok.block_num if tok else None,
+                        line_num=candidate_tok.line_num if candidate_tok else None,
+                        block_num=candidate_tok.block_num if candidate_tok else None,
                         token_count=1,
                     )
                 )
@@ -173,10 +179,10 @@ class OcrAnchorMatcher:
         # Prefer higher similarity per configured anchor.
         best: dict[str, AnchorMatch] = {}
         for m in matches:
-            key = fold_ocr_text(m.configured_anchor)
-            prev = best.get(key)
+            anchor_key = fold_ocr_text(m.configured_anchor)
+            prev = best.get(anchor_key)
             if prev is None or m.similarity > prev.similarity:
-                best[key] = m
+                best[anchor_key] = m
         return list(best.values())
 
     def _score_text(

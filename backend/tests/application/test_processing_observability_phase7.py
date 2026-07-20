@@ -126,7 +126,7 @@ def _scope_and_state():
         },
     )
     job_source = MagicMock()
-    job_source.list_by_job.return_value = [SimpleNamespace(source_asset_id="asset1")]
+    job_source.list_for_job.return_value = [SimpleNamespace(source_asset_id="asset1")]
     state_repo = MemoryJobAssetProcessingStateRepository()
     state_repo.save(
         JobAssetProcessingState(

@@ -142,7 +142,11 @@ class InvalidateAssetResultUseCase:
             self._coverage_deleter.delete_by_job_and_asset(
                 command.job_id, command.asset_id
             )
-        elif coverage is not None and hasattr(self._coverage_repo, "delete_by_job_and_asset"):
+        elif (
+            coverage is not None
+            and self._coverage_repo is not None
+            and hasattr(self._coverage_repo, "delete_by_job_and_asset")
+        ):
             self._coverage_repo.delete_by_job_and_asset(  # type: ignore[attr-defined]
                 command.job_id, command.asset_id
             )
@@ -171,9 +175,10 @@ class InvalidateAssetResultUseCase:
                 "actor": command.actor,
             },
         )
+        state_version = refreshed.version if refreshed else state.version
         response = {
             "asset_id": command.asset_id,
-            "state_version": refreshed.version if refreshed else state.version,
+            "state_version": state_version,
             "status": refreshed.status.value if refreshed else "PENDING_MANUAL_REVIEW",
             "position_id": position_id,
             "prior_active_result_id": prior_active,
@@ -182,7 +187,7 @@ class InvalidateAssetResultUseCase:
             begin.record,
             response=response,
             status="COMPLETED",
-            state_version=response["state_version"],
+            state_version=state_version,
             now=self._clock.now(),
         )
         logger.info(

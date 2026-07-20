@@ -64,7 +64,16 @@ def _coerce_positive_int(value: object, *, default: int, label: str) -> int:
     orchestrator, where it would otherwise raise a confusing ``TypeError``.
     """
     try:
-        coerced = int(value)  # type: ignore[arg-type]
+        if isinstance(value, bool):
+            coerced = int(value)
+        elif isinstance(value, int):
+            coerced = value
+        elif isinstance(value, float):
+            coerced = int(value)
+        elif isinstance(value, str):
+            coerced = int(value.strip())
+        else:
+            raise TypeError(f"unsupported duration type: {type(value).__name__}")
     except (TypeError, ValueError):
         logger.warning(
             "image_orchestrator.invalid_%s value=%r using_default=%s", label, value, default
@@ -567,14 +576,16 @@ def build_default_internal_ocr_strategy(
         label_detection_enabled=label_detection_enabled,
         diagnostic_evidence_enabled=diagnostic_evidence_enabled,
         page_segmentation_modes=page_modes,
-        light_ocr_timeout_seconds=float(
-            snapshot.get("light_ocr_timeout_seconds")
-            if snapshot.get("light_ocr_timeout_seconds") is not None
+        light_ocr_timeout_seconds=(
+            float(raw_timeout)
+            if (raw_timeout := snapshot.get("light_ocr_timeout_seconds")) is not None
+            and isinstance(raw_timeout, (int, float, str))
             else 3.0
         ),
-        max_light_ocr_candidates=int(
-            snapshot.get("max_light_ocr_candidates")
-            if snapshot.get("max_light_ocr_candidates") is not None
+        max_light_ocr_candidates=(
+            int(raw_candidates)
+            if (raw_candidates := snapshot.get("max_light_ocr_candidates")) is not None
+            and isinstance(raw_candidates, (int, float, str))
             else 3
         ),
         variant_plan_version=str(snapshot.get("variant_plan_version") or "v1"),

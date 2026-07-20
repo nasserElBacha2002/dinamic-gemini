@@ -170,7 +170,7 @@ class ListAssetProcessingUseCase:
 
     def execute(self, command: ListAssetProcessingCommand) -> dict[str, Any]:
         job = self._load_scoped_job(command.inventory_id, command.aisle_id, command.job_id)
-        links = list(self._job_source_asset_repo.list_by_job(command.job_id))
+        links = list(self._job_source_asset_repo.list_for_job(command.job_id))
         states = {s.asset_id: s for s in self._state_repo.list_by_job(command.job_id)}
         attempts_by_asset: dict[str, list[ProcessingAttempt]] = {}
         for att in self._attempt_repo.list_by_job(command.job_id):
@@ -377,7 +377,7 @@ class GetAssetProcessingDetailUseCase:
         )
         links = {
             link.source_asset_id: link
-            for link in self._job_source_asset_repo.list_by_job(command.job_id)
+            for link in self._job_source_asset_repo.list_for_job(command.job_id)
         }
         if command.asset_id not in links:
             raise SourceAssetNotFoundForAisleError(

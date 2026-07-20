@@ -174,7 +174,8 @@ def parse_external_fallback_payload(
     except (TypeError, ValueError):
         confidence_f = None
 
-    warnings = parsed.get("warnings") if isinstance(parsed.get("warnings"), list) else []
+    warnings_raw = parsed.get("warnings")
+    warnings: list[Any] = list(warnings_raw) if isinstance(warnings_raw, list) else []
     reason = str(parsed.get("reason"))[:200] if parsed.get("reason") else None
 
     if status_raw in {s.value for s in ExternalAnalysisStatus}:
@@ -629,12 +630,12 @@ class LlmExternalImageAnalysisProvider:
             raise ValueError("image_validation_unavailable") from None
 
         try:
-            with Image.open(io.BytesIO(content)) as img:
-                fmt = (img.format or "").upper()
+            with Image.open(io.BytesIO(content)) as opened:
+                fmt = (opened.format or "").upper()
                 if fmt not in {"JPEG", "JPG", "PNG", "WEBP"}:
                     raise ValueError(f"unsupported_image_format:{fmt or 'unknown'}")
-                img.load()
-                img = ImageOps.exif_transpose(img)
+                opened.load()
+                img: Image.Image = ImageOps.exif_transpose(opened)
                 if img.mode not in ("RGB", "L"):
                     img = img.convert("RGB")
                 elif img.mode == "L":

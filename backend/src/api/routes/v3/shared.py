@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -23,6 +23,10 @@ from src.api.errors import review_exception_to_http
 from src.api.schemas.aisle_schemas import AisleJobSummary, AisleResponse
 from src.api.schemas.asset_schemas import SourceAssetResponse
 from src.api.schemas.benchmark_schemas import LlmCostSnapshotResponse
+from src.api.schemas.identification_mode_literals import (
+    IdentificationModeLiteral,
+    IdentificationModeSourceLiteral,
+)
 from src.api.schemas.inventory_schemas import (
     InventoryListItemResponse,
     InventoryResponse,
@@ -479,9 +483,15 @@ def inventory_to_response(
         primary_execution_config=primary_execution_config,
         created_at=inv.created_at,
         updated_at=inv.updated_at,
-        identification_mode=id_fields.identification_mode,
-        effective_identification_mode=id_fields.effective_identification_mode,
-        identification_mode_source=id_fields.identification_mode_source,
+        identification_mode=cast(
+            IdentificationModeLiteral | None, id_fields.identification_mode
+        ),
+        effective_identification_mode=cast(
+            IdentificationModeLiteral, id_fields.effective_identification_mode
+        ),
+        identification_mode_source=cast(
+            IdentificationModeSourceLiteral, id_fields.identification_mode_source
+        ),
     )
 
 
@@ -558,9 +568,15 @@ def aisle_to_response(
         positions_count=positions_count,
         pending_review_positions_count=pending_review_positions_count,
         last_activity_at=last_activity_at,
-        identification_mode=id_fields.identification_mode,
-        effective_identification_mode=id_fields.effective_identification_mode,
-        identification_mode_source=id_fields.identification_mode_source,
+        identification_mode=cast(
+            IdentificationModeLiteral | None, id_fields.identification_mode
+        ),
+        effective_identification_mode=cast(
+            IdentificationModeLiteral, id_fields.effective_identification_mode
+        ),
+        identification_mode_source=cast(
+            IdentificationModeSourceLiteral, id_fields.identification_mode_source
+        ),
     )
 
 

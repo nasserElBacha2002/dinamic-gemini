@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from datetime import datetime, timezone
+from typing import Any
 
 from src.application.ports.asset_processing_command_repository import (
     AssetProcessingCommandRepository,
@@ -27,7 +28,7 @@ def _utc(dt: datetime | None) -> datetime | None:
 
 def _row_to_cmd(row: object) -> AssetProcessingCommand:
     payload_raw = getattr(row, "payload_json", None)
-    payload = {}
+    payload: dict[str, Any] = {}
     if payload_raw:
         payload = json.loads(str(payload_raw)) if not isinstance(payload_raw, dict) else payload_raw
     return AssetProcessingCommand(
