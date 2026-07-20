@@ -508,6 +508,27 @@ def build_default_internal_ocr_strategy(
     min_aggregate_confidence = _cfg("min_aggregate_confidence", None)
     if min_aggregate_confidence is not None:
         min_aggregate_confidence = float(min_aggregate_confidence)
+    modes_raw = snapshot.get("page_segmentation_modes")
+    if isinstance(modes_raw, (list, tuple)) and modes_raw:
+        page_modes = tuple(int(x) for x in modes_raw)
+    else:
+        page_modes = (6, 11, 12)
+
+    # Snapshot wins for label-detection / diagnostic flags (retry reproducibility).
+    # Live settings only fill gaps when creating a job that lacks these keys (legacy).
+    if "label_detection_enabled" in snapshot:
+        label_detection_enabled = bool(snapshot.get("label_detection_enabled"))
+    else:
+        label_detection_enabled = bool(
+            getattr(settings, "ocr_label_detection_enabled", False)
+        )
+    if "diagnostic_evidence_enabled" in snapshot:
+        diagnostic_evidence_enabled = bool(snapshot.get("diagnostic_evidence_enabled"))
+    else:
+        diagnostic_evidence_enabled = bool(
+            getattr(settings, "ocr_diagnostic_evidence_enabled", False)
+        )
+
     config = InternalOcrConfig(
         quantity_max=quantity_max,
         max_image_dimension=preprocess.max_image_dimension,
@@ -519,7 +540,36 @@ def build_default_internal_ocr_strategy(
         enable_deskew=preprocess.enable_deskew,
         client_rules=rules,
         min_aggregate_confidence=min_aggregate_confidence,
+        label_detection_enabled=label_detection_enabled,
+        diagnostic_evidence_enabled=diagnostic_evidence_enabled,
+        page_segmentation_modes=page_modes,
+        light_ocr_timeout_seconds=float(
+            snapshot.get("light_ocr_timeout_seconds")
+            if snapshot.get("light_ocr_timeout_seconds") is not None
+            else 3.0
+        ),
+        max_light_ocr_candidates=int(
+            snapshot.get("max_light_ocr_candidates")
+            if snapshot.get("max_light_ocr_candidates") is not None
+            else 3
+        ),
+        variant_plan_version=str(snapshot.get("variant_plan_version") or "v1"),
     )
+    event_publisher = None
+    if bool(getattr(settings, "processing_events_persistence_enabled", False)):
+        try:
+            from src.application.services.image_processing.processing_event_publisher import (
+                RepositoryProcessingEventPublisher,
+            )
+            from src.runtime.app_container import get_app_container
+
+            container = get_app_container()
+            event_publisher = RepositoryProcessingEventPublisher(
+                event_repo=container.get_processing_event_repo(),
+                clock=container.get_clock(),
+            )
+        except (ImportError, AttributeError, RuntimeError, TypeError) as exc:
+            logger.warning("internal_ocr.event_publisher_unavailable err=%s", exc)
     return InternalOcrProcessingStrategy(
         reader=TesseractInternalLabelReader(default_language=config.language),
         content_reader=ArtifactStoreSourceAssetContentReader(artifact_store),
@@ -527,6 +577,7 @@ def build_default_internal_ocr_strategy(
         extractor=OcrFieldExtractor(),
         normalizer=OcrResultNormalizer(quantity_max=quantity_max, client_rules=rules),
         config=config,
+        event_publisher=event_publisher,
     )
 
 

@@ -14,7 +14,14 @@ from src.domain.client_supplier.extraction_profile import (
     ExtractionValidationRules,
     FieldDataType,
     InternalCodeSourceRule,
+    LabelBackgroundHint,
+    LabelDetectionRules,
+    LabelOrientationHint,
+    LabelShapeHint,
+    MissingQuantityAction,
     QuantityExtractionRules,
+    QuantityPresence,
+    AnchorMatchPolicy,
     default_extraction_configuration,
 )
 
@@ -144,6 +151,17 @@ def parse_extraction_configuration(
                 allowed_as_internal_code=bool(item.get("allowed_as_internal_code", True)),
                 requires_label=bool(item.get("requires_label", False)),
                 pattern=None,
+                aliases=_as_str_tuple(item.get("aliases"), field=f"internal_code_sources.{key}.aliases"),
+                allowed_spatial_relations=tuple(
+                    str(x).strip().upper()
+                    for x in (item.get("allowed_spatial_relations") or [])
+                    if str(x).strip()
+                ),
+                maximum_anchor_distance_ratio=(
+                    float(item["maximum_anchor_distance_ratio"])
+                    if item.get("maximum_anchor_distance_ratio") is not None
+                    else None
+                ),
             )
         )
     sources_sorted = tuple(sorted(sources, key=lambda s: s.priority))
@@ -183,6 +201,24 @@ def parse_extraction_configuration(
         accepted_units=_as_str_tuple(
             qty_raw.get("accepted_units"), field="quantity_rules.accepted_units"
         ),
+        expected_presence=_parse_quantity_presence(qty_raw.get("expected_presence")),
+        missing_quantity_action=_parse_missing_quantity_action(
+            qty_raw.get("missing_quantity_action")
+        ),
+        allow_external_fallback=bool(qty_raw.get("allow_external_fallback", True)),
+        allowed_spatial_relations=tuple(
+            str(x).strip().upper()
+            for x in (
+                qty_raw.get("allowed_spatial_relations")
+                or QuantityExtractionRules().allowed_spatial_relations
+            )
+            if str(x).strip()
+        ),
+        maximum_anchor_distance_ratio=(
+            float(qty_raw["maximum_anchor_distance_ratio"])
+            if qty_raw.get("maximum_anchor_distance_ratio") is not None
+            else QuantityExtractionRules().maximum_anchor_distance_ratio
+        ),
     )
     if qty.allow_negative or qty.minimum < 1:
         raise ExtractionProfileConfigurationError(
@@ -209,6 +245,11 @@ def parse_extraction_configuration(
         allow_negative=False,
         default_value=None,
         accepted_units=qty.accepted_units,
+        expected_presence=qty.expected_presence,
+        missing_quantity_action=qty.missing_quantity_action,
+        allow_external_fallback=qty.allow_external_fallback,
+        allowed_spatial_relations=qty.allowed_spatial_relations,
+        maximum_anchor_distance_ratio=qty.maximum_anchor_distance_ratio,
     )
 
     add_fields: list[AdditionalFieldRule] = []
@@ -271,6 +312,9 @@ def parse_extraction_configuration(
         code=CodeValidationRules(
             min_length=int(craw.get("min_length") or 1),
             max_length=int(craw.get("max_length") or 128),
+            exact_length=(
+                int(craw["exact_length"]) if craw.get("exact_length") is not None else None
+            ),
             allow_letters=bool(craw.get("allow_letters", True)),
             allow_digits=bool(craw.get("allow_digits", True)),
             allow_hyphen=bool(craw.get("allow_hyphen", True)),
@@ -278,6 +322,9 @@ def parse_extraction_configuration(
             allow_spaces=bool(craw.get("allow_spaces", False)),
             preserve_leading_zeros=bool(craw.get("preserve_leading_zeros", True)),
             regex=None,
+            reject_measurement_patterns=bool(
+                craw.get("reject_measurement_patterns", True)
+            ),
         ),
         ean=EanValidationRules(
             allow_ean8=bool(eraw.get("allow_ean8", True)),
@@ -290,6 +337,19 @@ def parse_extraction_configuration(
     )
     if craw.get("regex"):
         _reject_custom_regex(str(craw.get("regex")), field="validation_rules.code.regex")
+    if validation.code.exact_length is not None:
+        if validation.code.exact_length < 1 or validation.code.exact_length > 128:
+            raise ExtractionProfileConfigurationError(
+                "INVALID_CODE_LENGTH",
+                "validation_rules.code.exact_length must be between 1 and 128",
+            )
+
+    label_raw: dict[str, Any] = (
+        raw["label_detection_rules"]
+        if isinstance(raw.get("label_detection_rules"), dict)
+        else {}
+    )
+    label_detection = _parse_label_detection_rules(label_raw)
 
     formats = tuple(
         str(x).strip().upper()
@@ -339,12 +399,148 @@ def parse_extraction_configuration(
         quantity_rules=qty,
         additional_fields=tuple(add_fields),
         validation_rules=validation,
+        label_detection_rules=label_detection,
         accepted_barcode_formats=formats,
         qr_payload_formats=payload_formats,
         custom_payload_pattern=custom_pattern,
         required_fields=required or ("internal_code", "quantity"),
         aliases=aliases,
         allow_unconfigured_code_source_fallback=allow_fallback,
+    )
+
+
+def _parse_quantity_presence(raw: object) -> QuantityPresence:
+    key = str(raw or QuantityPresence.ALWAYS.value).strip().upper()
+    try:
+        return QuantityPresence(key)
+    except ValueError as exc:
+        raise ExtractionProfileConfigurationError(
+            "INVALID_QUANTITY_PRESENCE",
+            f"quantity_rules.expected_presence unsupported: {key!r}",
+        ) from exc
+
+
+def _parse_missing_quantity_action(raw: object) -> MissingQuantityAction:
+    key = str(raw or MissingQuantityAction.PENDING_MANUAL_REVIEW.value).strip().upper()
+    try:
+        action = MissingQuantityAction(key)
+    except ValueError as exc:
+        raise ExtractionProfileConfigurationError(
+            "INVALID_MISSING_QUANTITY_ACTION",
+            f"quantity_rules.missing_quantity_action unsupported: {key!r}",
+        ) from exc
+    if action is MissingQuantityAction.RESOLVE_CODE_ONLY:
+        raise ExtractionProfileConfigurationError(
+            "RESOLVE_CODE_ONLY_NOT_SUPPORTED",
+            "RESOLVE_CODE_ONLY is not enabled for automatic resolution in this phase",
+        )
+    return action
+
+
+def _parse_label_detection_rules(raw: dict[str, Any]) -> LabelDetectionRules:
+    defaults = LabelDetectionRules()
+    if not raw:
+        return defaults
+
+    def _enum(cls, value: object, *, field: str, default):
+        if value is None:
+            return default
+        key = str(value).strip().upper()
+        try:
+            return cls(key)
+        except ValueError as exc:
+            raise ExtractionProfileConfigurationError(
+                "INVALID_LABEL_DETECTION",
+                f"label_detection_rules.{field} unsupported: {key!r}",
+            ) from exc
+
+    min_area = float(
+        raw["minimum_relative_area"]
+        if raw.get("minimum_relative_area") is not None
+        else defaults.minimum_relative_area
+    )
+    max_area = float(
+        raw["maximum_relative_area"]
+        if raw.get("maximum_relative_area") is not None
+        else defaults.maximum_relative_area
+    )
+    if min_area < 0 or max_area > 1 or min_area > max_area:
+        raise ExtractionProfileConfigurationError(
+            "INVALID_LABEL_DETECTION",
+            "label_detection_rules relative area bounds must satisfy 0 <= min <= max <= 1",
+        )
+    max_regions = int(
+        raw["maximum_candidate_regions"]
+        if raw.get("maximum_candidate_regions") is not None
+        else defaults.maximum_candidate_regions
+    )
+    if max_regions < 1 or max_regions > 20:
+        raise ExtractionProfileConfigurationError(
+            "INVALID_LABEL_DETECTION",
+            "label_detection_rules.maximum_candidate_regions must be 1..20",
+        )
+    min_anchors = int(
+        raw["minimum_anchor_matches"]
+        if raw.get("minimum_anchor_matches") is not None
+        else defaults.minimum_anchor_matches
+    )
+    # Deskew flag: prefer allow_deskew; legacy allow_perspective_correction maps to deskew.
+    if "allow_deskew" in raw:
+        allow_deskew = bool(raw.get("allow_deskew"))
+    elif "allow_perspective_correction" in raw:
+        allow_deskew = bool(raw.get("allow_perspective_correction"))
+    else:
+        allow_deskew = defaults.allow_deskew
+
+    policy = _enum(
+        AnchorMatchPolicy,
+        raw.get("anchor_match_policy"),
+        field="anchor_match_policy",
+        default=defaults.anchor_match_policy,
+    )
+    # If anchors are required via minimum_anchor_matches but policy omitted, upgrade.
+    if min_anchors > 0 and raw.get("anchor_match_policy") is None:
+        policy = AnchorMatchPolicy.ANCHORS_REQUIRED
+
+    return LabelDetectionRules(
+        enabled=bool(raw.get("enabled", defaults.enabled)),
+        expected_background=_enum(
+            LabelBackgroundHint,
+            raw.get("expected_background"),
+            field="expected_background",
+            default=defaults.expected_background,
+        ),
+        expected_shape=_enum(
+            LabelShapeHint,
+            raw.get("expected_shape"),
+            field="expected_shape",
+            default=defaults.expected_shape,
+        ),
+        expected_orientation=_enum(
+            LabelOrientationHint,
+            raw.get("expected_orientation"),
+            field="expected_orientation",
+            default=defaults.expected_orientation,
+        ),
+        primary_anchors=_as_str_tuple(
+            raw.get("primary_anchors"), field="label_detection_rules.primary_anchors"
+        )
+        or defaults.primary_anchors,
+        secondary_anchors=_as_str_tuple(
+            raw.get("secondary_anchors"), field="label_detection_rules.secondary_anchors"
+        )
+        or defaults.secondary_anchors,
+        minimum_anchor_matches=min_anchors,
+        anchor_match_policy=policy,
+        minimum_relative_area=min_area,
+        maximum_relative_area=max_area,
+        allow_rotation=bool(raw.get("allow_rotation", defaults.allow_rotation)),
+        allow_deskew=allow_deskew,
+        allow_perspective_correction=allow_deskew,
+        allow_full_image_fallback=bool(
+            raw.get("allow_full_image_fallback", defaults.allow_full_image_fallback)
+        ),
+        maximum_candidate_regions=max_regions,
     )
 
 

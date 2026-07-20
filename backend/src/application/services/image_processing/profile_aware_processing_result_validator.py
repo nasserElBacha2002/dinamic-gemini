@@ -237,19 +237,26 @@ class ProfileAwareProcessingResultValidator:
         rules = self._config.validation_rules.code
         if not code:
             return ExtractionValidationErrorCode.MISSING_INTERNAL_CODE.value
-        if len(code) < rules.min_length or len(code) > rules.max_length:
+
+        from src.application.services.image_processing.ocr_candidate_filters import (
+            filter_internal_code_candidate,
+        )
+
+        decision = filter_internal_code_candidate(code, rules=rules)
+        if not decision.accepted:
+            # Map filter reasons onto profile validation codes for API compatibility.
+            if decision.reason_code in {
+                "CODE_LENGTH_TOO_SHORT",
+                "CODE_LENGTH_TOO_LONG",
+                "CODE_LENGTH_NOT_EXACT",
+                "CODE_INVALID_CHARSET",
+                "CODE_MEASUREMENT_PATTERN",
+                "CODE_UNIT_SUFFIX",
+                "CODE_FORBIDDEN_CONTEXT",
+            }:
+                return ExtractionValidationErrorCode.INVALID_INTERNAL_CODE.value
             return ExtractionValidationErrorCode.INVALID_INTERNAL_CODE.value
-        for ch in code:
-            if ch.isalpha() and not rules.allow_letters:
-                return ExtractionValidationErrorCode.INVALID_INTERNAL_CODE.value
-            if ch.isdigit() and not rules.allow_digits:
-                return ExtractionValidationErrorCode.INVALID_INTERNAL_CODE.value
-            if ch == "-" and not rules.allow_hyphen:
-                return ExtractionValidationErrorCode.INVALID_INTERNAL_CODE.value
-            if ch == "/" and not rules.allow_slash:
-                return ExtractionValidationErrorCode.INVALID_INTERNAL_CODE.value
-            if ch == " " and not rules.allow_spaces:
-                return ExtractionValidationErrorCode.INVALID_INTERNAL_CODE.value
+
         # Custom regex is withdrawn for this phase (ReDoS safety). Ignore if present.
         if source_key == "EAN":
             ean = self._config.validation_rules.ean

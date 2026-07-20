@@ -30,6 +30,26 @@ Tesseract via `pytesseract` (subprocess timeout).
 
 Missing binary is a per-asset `FAILED_TECHNICAL` (`INTERNAL_OCR_ENGINE_UNAVAILABLE`), not an uncaught process crash.
 
+## Label detection (optional)
+
+```env
+OCR_LABEL_DETECTION_ENABLED=false   # default OFF — rollback-safe
+OCR_DIAGNOSTIC_EVIDENCE_ENABLED=false
+PROCESSING_EVENTS_PERSISTENCE_ENABLED=false
+```
+
+When `OCR_LABEL_DETECTION_ENABLED=true`:
+
+1. `LabelRegionDetector` finds rectangular candidates (OpenCV) with explicit `anchor_match_policy`.
+2. Optional light OCR matches profile anchors (`ANCHORS_REQUIRED` / `PREFERRED` / `GEOMETRY_ONLY_ALLOWED`).
+3. `LabelGeometryNormalizer` crops + **deskew** (small-angle Hough). Homography/perspective warp is **not** implemented; evidence uses `deskew_applied` / `perspective_transform_applied=false`.
+4. Versioned variant plan (`variant_plan_version=v1`), e.g. for 3 calls: `original_psm6`, `adaptive_threshold_psm6`, `adaptive_threshold_psm11`.
+5. If no label and `allow_full_image_fallback=false` → `UNRECOGNIZED` / `LABEL_NOT_DETECTED` (no full-image OCR).
+
+OCR flags (`label_detection_enabled`, `diagnostic_evidence_enabled`, PSM list, light-OCR limits, `label_detection_rules`) are **snapshotted** on the job at start; retries reuse the snapshot.
+
+System default profile is **supplier-agnostic** (`exact_length=null`). The 7-digit inventory layout is an **opt-in template** only.
+
 ## Client rules (minimal, not Phase 6 admin)
 
 - Default: labeled `codigo` / article / product before bare EAN.

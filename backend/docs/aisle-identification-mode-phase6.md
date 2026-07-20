@@ -20,6 +20,22 @@ REFERENCE_TEMPLATE_ANNOTATIONS_ENABLED=false
 | `PROFILE_AWARE_VALIDATION_ENABLED` | Derive OCR/client_rules and validation from snapshotted profile |
 | `REFERENCE_TEMPLATE_ANNOTATIONS_ENABLED` | Use spatial annotations as OCR hints (when strategies load them) |
 
+## Profile sections (A/B/C)
+
+Configuration JSON now separates:
+
+| Section | Key | Purpose |
+|---------|-----|---------|
+| A — Label detection | `label_detection_rules` | Background/shape/orientation hints, primary/secondary anchors, area bounds, rotation/perspective/full-image fallback |
+| B — Internal code | `internal_code_sources` + `validation_rules.code` | Source priority, aliases, `exact_length`, charset, `reject_measurement_patterns` |
+| C — Quantity | `quantity_rules` | Aliases, `expected_presence`, `missing_quantity_action` (default `PENDING_MANUAL_REVIEW`), min/max |
+
+Recommended inventory-label starting point:
+
+- Label: LIGHT, APPROXIMATELY_RECTANGULAR, anchors `CÓDIGO INTERNO` / `INVENTARIO GENERAL`
+- Code: INTERNAL_CODE only, numeric, `exact_length=7`, preserve leading zeros
+- Quantity: aliases `CANT. TOTAL` / `CANTIDAD`, required, missing → manual review
+
 Rollback: set flags to `false`. Profiles remain in DB; historical jobs keep their snapshots.
 
 ## Precedence

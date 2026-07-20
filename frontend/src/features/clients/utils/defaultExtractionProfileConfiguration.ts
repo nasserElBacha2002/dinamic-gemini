@@ -1,6 +1,6 @@
 import type { ExtractionProfileConfiguration } from '../../../api/types/extractionProfile';
 
-/** Mirrors backend ``default_extraction_configuration()`` for empty-state editing. */
+/** Conservative default — not specialized for any supplier (mirrors backend). */
 export function defaultExtractionProfileConfiguration(): ExtractionProfileConfiguration {
   return {
     internal_code_sources: [
@@ -19,12 +19,32 @@ export function defaultExtractionProfileConfiguration(): ExtractionProfileConfig
       allow_negative: false,
       default_value: null,
       accepted_units: [],
+      expected_presence: 'ALWAYS',
+      missing_quantity_action: 'PENDING_MANUAL_REVIEW',
+      allow_external_fallback: true,
+      allowed_spatial_relations: ['BELOW', 'RIGHT_OF', 'NEAR'],
+    },
+    label_detection_rules: {
+      enabled: true,
+      expected_background: 'VARIABLE',
+      expected_shape: 'APPROXIMATELY_RECTANGULAR',
+      expected_orientation: 'ANY',
+      primary_anchors: [],
+      secondary_anchors: [],
+      minimum_anchor_matches: 0,
+      minimum_relative_area: 0.005,
+      maximum_relative_area: 0.45,
+      allow_rotation: true,
+      allow_perspective_correction: true,
+      allow_full_image_fallback: true,
+      maximum_candidate_regions: 8,
     },
     additional_fields: [],
     validation_rules: {
       code: {
         min_length: 1,
         max_length: 128,
+        exact_length: null,
         allow_letters: true,
         allow_digits: true,
         allow_hyphen: true,
@@ -32,6 +52,7 @@ export function defaultExtractionProfileConfiguration(): ExtractionProfileConfig
         allow_spaces: false,
         preserve_leading_zeros: true,
         regex: null,
+        reject_measurement_patterns: true,
       },
       ean: {
         allow_ean8: true,
@@ -54,6 +75,75 @@ export function defaultExtractionProfileConfiguration(): ExtractionProfileConfig
     },
   };
 }
+
+/** Opt-in template — never auto-applied. */
+export function inventorySevenDigitInternalCodeTemplate(): ExtractionProfileConfiguration {
+  const base = defaultExtractionProfileConfiguration();
+  return {
+    ...base,
+    internal_code_sources: [
+      {
+        field_key: 'INTERNAL_CODE',
+        priority: 1,
+        enabled: true,
+        aliases: ['CÓDIGO INTERNO', 'CODIGO INTERNO', 'COD. INTERNO'],
+        allowed_spatial_relations: ['BELOW', 'SAME_COLUMN', 'NEAR'],
+      },
+      { field_key: 'EAN', priority: 2, enabled: false },
+      { field_key: 'ARTICLE', priority: 3, enabled: false },
+    ],
+    quantity_rules: {
+      ...base.quantity_rules,
+      aliases: ['CANT. TOTAL', 'CANTIDAD', 'CANT.', 'QTY', 'QUANTITY', 'UNIDADES'],
+    },
+    label_detection_rules: {
+      enabled: true,
+      expected_background: 'LIGHT',
+      expected_shape: 'APPROXIMATELY_RECTANGULAR',
+      expected_orientation: 'ANY',
+      primary_anchors: ['CÓDIGO INTERNO', 'CODIGO INTERNO'],
+      secondary_anchors: ['INVENTARIO GENERAL', 'CANT. TOTAL', 'CANTIDAD'],
+      minimum_anchor_matches: 1,
+      minimum_relative_area: 0.005,
+      maximum_relative_area: 0.45,
+      allow_rotation: true,
+      allow_perspective_correction: true,
+      allow_full_image_fallback: true,
+      maximum_candidate_regions: 8,
+    },
+    validation_rules: {
+      ...base.validation_rules,
+      code: {
+        ...base.validation_rules.code,
+        exact_length: 7,
+        min_length: 7,
+        max_length: 7,
+        allow_letters: false,
+        allow_digits: true,
+        allow_hyphen: false,
+        allow_slash: false,
+        reject_measurement_patterns: true,
+      },
+    },
+    aliases: {
+      ...base.aliases,
+      quantity: ['CANT. TOTAL', 'CANTIDAD', 'CANT.', 'QTY', 'QUANTITY', 'UNIDADES'],
+    },
+  };
+}
+
+export const EXTRACTION_PROFILE_TEMPLATES = [
+  {
+    id: 'conservative_default',
+    labelKey: 'clients.extraction_profile.template_conservative',
+    build: defaultExtractionProfileConfiguration,
+  },
+  {
+    id: 'inventory_7_digit',
+    labelKey: 'clients.extraction_profile.template_inventory_7_digit',
+    build: inventorySevenDigitInternalCodeTemplate,
+  },
+] as const;
 
 export const INTERNAL_CODE_SOURCE_KEYS = ['EAN', 'INTERNAL_CODE', 'ARTICLE', 'SKU', 'PRODUCT'] as const;
 
@@ -80,3 +170,11 @@ export const SPATIAL_RELATIONS = [
   'NEAR',
   'INSIDE_REGION',
 ] as const;
+
+export const INTERNAL_CODE_SOURCE_LABELS: Record<string, string> = {
+  INTERNAL_CODE: 'Código interno',
+  EAN: 'EAN',
+  ARTICLE: 'Artículo',
+  SKU: 'SKU',
+  PRODUCT: 'Producto',
+};

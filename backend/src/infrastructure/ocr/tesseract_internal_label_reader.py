@@ -93,10 +93,15 @@ class TesseractInternalLabelReader:
         try:
             with Image.open(io.BytesIO(image.content)) as img:
                 rgb = img.convert("RGB")
+                tesseract_config = ""
+                psm = getattr(context, "page_segmentation_mode", None)
+                if psm is not None:
+                    tesseract_config = f"--psm {int(psm)}"
                 try:
                     data: dict[str, Any] = pytesseract.image_to_data(
                         rgb,
                         lang=lang,
+                        config=tesseract_config,
                         output_type=pytesseract.Output.DICT,
                         timeout=timeout,
                     )
@@ -141,6 +146,7 @@ class TesseractInternalLabelReader:
                 "variant": image.variant_name,
                 "lang": lang,
                 "timeout_seconds": timeout,
+                "psm": getattr(context, "page_segmentation_mode", None),
             },
         )
 

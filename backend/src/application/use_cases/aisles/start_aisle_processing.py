@@ -333,6 +333,23 @@ class StartAisleProcessingUseCase:
                     settings, "internal_ocr_min_aggregate_confidence", None
                 ),
                 "processor_version": "1.0.0",
+                "label_detection_enabled": bool(
+                    getattr(settings, "ocr_label_detection_enabled", False)
+                ),
+                "diagnostic_evidence_enabled": bool(
+                    getattr(settings, "ocr_diagnostic_evidence_enabled", False)
+                ),
+                "page_segmentation_modes": [6, 11, 12],
+                "light_ocr_timeout_seconds": 3.0,
+                "max_light_ocr_candidates": 3,
+                "variant_plan_version": "v1",
+                "label_detection_rules": (
+                    (
+                        supplier_extraction_profile.get("configuration") or {}
+                    ).get("label_detection_rules")
+                    if isinstance(supplier_extraction_profile, dict)
+                    else None
+                ),
             }
         from src.application.services.image_processing.external_provider_fallback_orchestrator import (
             build_external_fallback_snapshot_dict,

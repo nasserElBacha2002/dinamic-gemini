@@ -21,6 +21,32 @@ class CloneSupplierExtractionProfileRequest(BaseModel):
     source_profile_id: str
 
 
+class TestExtractionProfileRequest(BaseModel):
+    """Diagnostic dry-run — does not create positions or mutate inventory."""
+
+    configuration: dict[str, Any]
+    image_base64: str = Field(..., min_length=8, max_length=12_000_000)
+
+
+class TestExtractionProfileResponse(BaseModel):
+    client_id: str
+    supplier_id: str
+    label_detected: bool
+    selected_relative_area: float | None = None
+    matched_anchors: list[str] = Field(default_factory=list)
+    candidate_count: int = 0
+    geometry: dict[str, Any] = Field(default_factory=dict)
+    ocr: dict[str, Any] = Field(default_factory=dict)
+    code_candidate: str | None = None
+    quantity_candidate: float | int | None = None
+    rejected_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    validation_errors: list[str] = Field(default_factory=list)
+    expected_status: str
+    error_code: str | None = None
+    profile_rules_applied: dict[str, Any] = Field(default_factory=dict)
+    persists_inventory: bool = False
+
+
 class SupplierExtractionProfileResponse(BaseModel):
     id: str
     client_id: str

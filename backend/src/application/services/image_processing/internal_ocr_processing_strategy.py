@@ -33,6 +33,9 @@ from src.application.services.image_processing.field_candidate_set import (
     apply_profile_validation,
     configuration_from_job_snapshot,
 )
+from src.application.services.image_processing.extraction_profile_configuration import (
+    ExtractionProfileConfigurationError,
+)
 from src.application.services.image_processing.ocr_field_extractor import (
     OcrFieldCandidate,
     OcrFieldExtraction,
@@ -82,6 +85,12 @@ class InternalOcrConfig:
     enable_deskew: bool = False
     client_rules: OcrClientFieldRules | None = None
     min_aggregate_confidence: float | None = None
+    label_detection_enabled: bool = False
+    diagnostic_evidence_enabled: bool = False
+    page_segmentation_modes: tuple[int, ...] = (6, 11, 12)
+    light_ocr_timeout_seconds: float = 3.0
+    max_light_ocr_candidates: int = 3
+    variant_plan_version: str = "v1"
 
 
 @dataclass
@@ -137,6 +146,7 @@ class InternalOcrProcessingStrategy:
         normalizer: OcrResultNormalizer,
         config: InternalOcrConfig,
         metrics: InternalOcrMetrics | None = None,
+        event_publisher: Any | None = None,
     ) -> None:
         self._reader = reader
         self._content_reader = content_reader
@@ -145,6 +155,7 @@ class InternalOcrProcessingStrategy:
         self._normalizer = normalizer
         self._config = config
         self._metrics = metrics or InternalOcrMetrics()
+        self._events = event_publisher
 
     @property
     def metrics(self) -> InternalOcrMetrics:
@@ -183,12 +194,65 @@ class InternalOcrProcessingStrategy:
                 context, mode, "SOURCE_ASSET_EMPTY", "empty source asset content", started
             )
 
+        self._emit(
+            context,
+            "asset.source_loaded",
+            message="source image bytes loaded",
+            metadata={"byte_length": len(content)},
+        )
+
+        label_evidence: dict[str, Any] = {}
+        ocr_source_bytes = content
+        if self._config.label_detection_enabled:
+            try:
+                ocr_source_bytes, label_evidence, abort_code = self._detect_and_crop_label(
+                    context, content
+                )
+            except ExtractionProfileConfigurationError as exc:
+                return self._technical(
+                    context,
+                    mode,
+                    "PROFILE_SNAPSHOT_INVALID",
+                    str(exc.message if hasattr(exc, "message") else exc),
+                    started,
+                )
+            if abort_code:
+                duration_ms = int((time.monotonic() - started) * 1000)
+                self._emit(
+                    context,
+                    "asset.finalized",
+                    message="label not detected; aborting OCR",
+                    error_code=abort_code,
+                    duration_ms=duration_ms,
+                )
+                return ImageProcessingResult(
+                    job_id=context.job_id,
+                    asset_id=context.asset_id,
+                    status=ImageResultStatus.UNRECOGNIZED,
+                    processing_mode=mode,
+                    resolved_by=STRATEGY_KEY,
+                    validation_errors=[abort_code],
+                    warnings=[abort_code],
+                    evidence=label_evidence if self._config.diagnostic_evidence_enabled else {
+                        "selected_variant": None,
+                        "error_code": abort_code,
+                    },
+                    provider_name=PROCESSOR_NAME,
+                    model_name=self.attempt_model,
+                    processing_duration_ms=duration_ms,
+                    error_code=abort_code,
+                    execution_scope=ExecutionScope.SINGLE_ASSET,
+                    logical_asset_attempt=False,
+                )
+
         try:
-            variants = self._preprocessor.prepare_variants(content)
+            prepared_list = self._preprocessor.prepare_variants(ocr_source_bytes)
         except ValueError as exc:
             return self._technical(context, mode, "OCR_IMAGE_DECODE_FAILED", str(exc), started)
-        except Exception as exc:
+        except (OSError, RuntimeError) as exc:
             return self._technical(context, mode, "OCR_PREPROCESS_FAILED", str(exc), started)
+
+        variants = self._apply_variant_plan(prepared_list)
 
         best: tuple[NormalizedOcrLabel, InternalOcrReadResult, str, int] | None = None
         variants_attempted = 0
@@ -203,6 +267,13 @@ class InternalOcrProcessingStrategy:
                 variants_attempted += 1
                 self._metrics.increment("ocr_variants_attempted")
                 variant_started = time.monotonic()
+                psm = prepared.metadata.get("psm") if isinstance(prepared.metadata, dict) else None
+                self._emit(
+                    context,
+                    "ocr.variant_started",
+                    message=f"variant {prepared.variant_name}",
+                    metadata={"variant": prepared.variant_name, "psm": psm},
+                )
                 ocr_ctx = InternalOcrContext(
                     job_id=context.job_id,
                     asset_id=context.asset_id,
@@ -210,6 +281,7 @@ class InternalOcrProcessingStrategy:
                     language=self._config.language,
                     timeout_seconds=float(self._remaining_timeout(started)),
                     max_image_dimension=self._config.max_image_dimension,
+                    page_segmentation_mode=int(psm) if psm is not None else 6,
                 )
                 try:
                     read = self._reader.read(prepared, ocr_ctx)
@@ -310,6 +382,8 @@ class InternalOcrProcessingStrategy:
             preprocess_ms=preprocess_ms,
             engine_ms=engine_ms_total,
         )
+        if label_evidence:
+            evidence = {**evidence, **label_evidence}
 
         if context.profile_aware_validation_enabled:
             # Re-run extraction candidates through the shared profile validator.
@@ -376,8 +450,38 @@ class InternalOcrProcessingStrategy:
             self._metrics.increment("ocr_unrecognized_total")
             if "NO_INTERNAL_CODE" in normalized.validation_errors:
                 self._metrics.increment("ocr_missing_code_total")
-            if "QUANTITY_MISSING" in normalized.validation_errors:
+            if "QUANTITY_MISSING" in normalized.validation_errors or "MISSING_QUANTITY" in normalized.validation_errors:
                 self._metrics.increment("ocr_missing_quantity_total")
+            # Code present + missing qty must go to manual review, not UNRECOGNIZED.
+            if (
+                normalized.internal_code
+                and (
+                    "QUANTITY_MISSING" in normalized.validation_errors
+                    or "MISSING_QUANTITY" in normalized.validation_errors
+                )
+                and "NO_INTERNAL_CODE" not in normalized.validation_errors
+                and "MISSING_INTERNAL_CODE" not in normalized.validation_errors
+            ):
+                self._metrics.increment("ocr_manual_review_total")
+                return ImageProcessingResult(
+                    job_id=context.job_id,
+                    asset_id=context.asset_id,
+                    status=ImageResultStatus.PENDING_MANUAL_REVIEW,
+                    processing_mode=mode,
+                    resolved_by=STRATEGY_KEY,
+                    internal_code=normalized.internal_code,
+                    quantity=None,
+                    additional_fields=dict(normalized.additional_fields),
+                    validation_errors=["MISSING_QUANTITY"],
+                    warnings=list(normalized.warnings),
+                    evidence=evidence,
+                    provider_name=PROCESSOR_NAME,
+                    model_name=self.attempt_model,
+                    processing_duration_ms=duration_ms,
+                    error_code="MISSING_QUANTITY",
+                    execution_scope=ExecutionScope.SINGLE_ASSET,
+                    logical_asset_attempt=False,
+                )
             return ImageProcessingResult(
                 job_id=context.job_id,
                 asset_id=context.asset_id,
@@ -428,6 +532,206 @@ class InternalOcrProcessingStrategy:
             execution_scope=ExecutionScope.SINGLE_ASSET,
             logical_asset_attempt=False,
         )
+
+    def _emit(
+        self,
+        context: ImageProcessingContext,
+        event_type: str,
+        *,
+        message: str | None = None,
+        error_code: str | None = None,
+        duration_ms: int | None = None,
+        metadata: dict[str, Any] | None = None,
+        severity: str = "INFO",
+    ) -> None:
+        if self._events is None:
+            return
+        try:
+            self._events.publish(
+                job_id=context.job_id,
+                event_type=event_type,
+                asset_id=context.asset_id,
+                attempt_id=getattr(context, "attempt_id", None),
+                strategy=STRATEGY_KEY,
+                severity=severity,
+                message=message,
+                error_code=error_code,
+                duration_ms=duration_ms,
+                correlation_id=getattr(context, "correlation_id", None),
+                metadata=metadata,
+            )
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            logger.debug("internal_ocr.event_publish_skipped err=%s", exc)
+
+    def _detect_and_crop_label(
+        self, context: ImageProcessingContext, content: bytes
+    ) -> tuple[bytes, dict[str, Any], str | None]:
+        from src.application.services.image_processing.label_geometry_normalizer import (
+            LabelGeometryNormalizer,
+        )
+        from src.application.services.image_processing.label_region_detector import (
+            LabelRegionDetector,
+        )
+
+        # Invalid present snapshot must fail closed (no silent defaults).
+        if isinstance(context.supplier_extraction_profile, dict):
+            config = configuration_from_job_snapshot(context.supplier_extraction_profile)
+            rules = config.label_detection_rules
+        else:
+            from src.domain.client_supplier.extraction_profile import LabelDetectionRules
+
+            rules = LabelDetectionRules()
+
+        self._emit(context, "label_detection.started", message="label detection started")
+        detector = LabelRegionDetector(
+            rules=rules,
+            light_ocr_reader=self._reader,
+            light_ocr_language=self._config.language,
+            light_ocr_timeout_seconds=float(
+                getattr(self._config, "light_ocr_timeout_seconds", 3.0)
+            ),
+            max_light_ocr_candidates=int(
+                getattr(self._config, "max_light_ocr_candidates", 3)
+            ),
+        )
+        detection = detector.detect(content)
+        selected = detection.selected_candidate
+        self._emit(
+            context,
+            "label_detection.completed",
+            message="label detection completed",
+            duration_ms=detection.duration_ms,
+            metadata={
+                "candidate_count": len(detection.candidates),
+                "selected": bool(selected),
+                "selected_relative_area": (
+                    selected.relative_area if selected is not None else None
+                ),
+                "matched_anchors": (
+                    list(selected.matched_anchors) if selected is not None else []
+                ),
+                "failure_reason": detection.failure_reason,
+                "light_ocr_executed": detection.light_ocr_executed,
+                "light_ocr_failed": detection.light_ocr_failed,
+                "anchor_requirement_met": detection.anchor_requirement_met,
+                "anchor_match_policy": detection.anchor_match_policy,
+            },
+        )
+        evidence: dict[str, Any] = {
+            "label_detection": {
+                "detected": detection.detected,
+                "candidate_count": len(detection.candidates),
+                "failure_reason": detection.failure_reason,
+                "duration_ms": detection.duration_ms,
+                "used_full_image_fallback": detection.used_full_image_fallback,
+                "light_ocr_executed": detection.light_ocr_executed,
+                "light_ocr_failed": detection.light_ocr_failed,
+                "anchor_requirement_met": detection.anchor_requirement_met,
+                "anchor_match_policy": detection.anchor_match_policy,
+                "selected_relative_area": (
+                    selected.relative_area if selected is not None else None
+                ),
+                "matched_anchors": (
+                    list(selected.matched_anchors) if selected is not None else []
+                ),
+                "selected_polygon": (
+                    [list(p) for p in selected.polygon] if selected is not None else None
+                ),
+            }
+        }
+
+        if not detection.detected and not rules.allow_full_image_fallback:
+            return content, evidence, "LABEL_NOT_DETECTED"
+
+        if selected is not None:
+            self._emit(context, "label_region.selected", message="label region selected")
+
+        normalizer = LabelGeometryNormalizer(
+            allow_perspective_correction=bool(
+                getattr(rules, "allow_deskew", rules.allow_perspective_correction)
+            ),
+        )
+        try:
+            geom = normalizer.normalize_region(
+                content,
+                selected,
+                allow_full_image_fallback=rules.allow_full_image_fallback,
+            )
+        except ValueError as exc:
+            if not rules.allow_full_image_fallback:
+                evidence["label_geometry"] = {"failure_reason": str(exc)}
+                return content, evidence, "LABEL_NOT_DETECTED"
+            evidence["label_geometry"] = {"failure_reason": str(exc)}
+            return content, evidence, None
+
+        self._emit(
+            context,
+            "label_geometry.normalized",
+            message="label geometry normalized",
+            metadata={
+                "deskew_applied": bool(geom.perspective_corrected),
+                "perspective_transform_applied": False,
+                "applied_rotation_deg": geom.applied_rotation_deg,
+                "used_original_region": geom.used_original_region,
+            },
+        )
+        evidence["label_geometry"] = {
+            "exif_rotated": True,
+            "deskew_applied": bool(geom.perspective_corrected),
+            "perspective_transform_applied": False,
+            "applied_rotation_deg": geom.applied_rotation_deg,
+            "used_original_region": geom.used_original_region,
+            "failure_reason": geom.failure_reason,
+            "width": geom.width,
+            "height": geom.height,
+        }
+        return geom.image_bytes, evidence, None
+
+    def _apply_variant_plan(self, prepared_variants: list[Any]) -> list[Any]:
+        """Map preprocess outputs through the versioned variant plan."""
+        from src.application.ports.internal_label_reader import PreparedImage
+        from src.application.services.image_processing.ocr_variant_plan import (
+            VARIANT_PLAN_VERSION,
+            build_ocr_variant_plan,
+        )
+
+        by_name = {p.variant_name: p for p in prepared_variants}
+        # Alias without psm suffix from preprocessor.
+        plan = build_ocr_variant_plan(
+            max_total_engine_calls=int(self._config.max_variants),
+            enable_gray_contrast=self._config.enable_gray_contrast,
+            enable_adaptive_threshold=self._config.enable_adaptive_threshold,
+            enable_deskew=self._config.enable_deskew,
+            page_segmentation_modes=self._config.page_segmentation_modes or (6, 11, 12),
+        )
+        out: list[PreparedImage] = []
+        for spec in plan:
+            base = by_name.get(spec.preprocess_variant)
+            if base is None:
+                # Fall back to original if requested preprocess missing.
+                base = by_name.get("original") or (
+                    prepared_variants[0] if prepared_variants else None
+                )
+            if base is None:
+                continue
+            meta = dict(base.metadata or {})
+            meta["psm"] = int(spec.psm)
+            meta["variant_plan_version"] = VARIANT_PLAN_VERSION
+            out.append(
+                PreparedImage(
+                    content=base.content,
+                    width=base.width,
+                    height=base.height,
+                    variant_name=spec.name,
+                    mime_type=base.mime_type,
+                    metadata=meta,
+                )
+            )
+        return out or list(prepared_variants)
+
+    def _expand_psm_variants(self, variants: list[Any]) -> list[Any]:
+        # Backward-compatible alias — prefer _apply_variant_plan.
+        return self._apply_variant_plan(variants)
 
     def _rank(self, label: NormalizedOcrLabel) -> int:
         order = {

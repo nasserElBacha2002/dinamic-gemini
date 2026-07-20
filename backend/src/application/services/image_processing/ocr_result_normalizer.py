@@ -119,8 +119,8 @@ class OcrResultNormalizer:
                 status=OcrNormalizeStatus.PENDING_MANUAL_REVIEW,
                 internal_code=code,
                 additional_fields=additional,
-                warnings=warnings + ["QUANTITY_MISSING"],
-                validation_errors=["QUANTITY_MISSING"],
+                warnings=warnings + ["MISSING_QUANTITY"],
+                validation_errors=["MISSING_QUANTITY"],
                 selected_code_rule=code_rule,
             )
 
@@ -137,8 +137,8 @@ class OcrResultNormalizer:
         return NormalizedOcrLabel(
             status=OcrNormalizeStatus.UNRECOGNIZED,
             additional_fields=additional,
-            warnings=warnings + ["NO_INTERNAL_CODE", "QUANTITY_MISSING"],
-            validation_errors=["NO_INTERNAL_CODE", "QUANTITY_MISSING"],
+            warnings=warnings + ["NO_INTERNAL_CODE", "MISSING_QUANTITY"],
+            validation_errors=["NO_INTERNAL_CODE", "MISSING_QUANTITY"],
         )
 
     def _additional(self, extraction: OcrFieldExtraction) -> dict[str, str]:

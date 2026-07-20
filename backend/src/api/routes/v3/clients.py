@@ -68,6 +68,8 @@ from src.api.schemas.supplier_extraction_profile_schemas import (
     SupplierExtractionProfileResponse,
     SupplierExtractionProfilesListResponse,
     SupplierReferenceAnnotationsListResponse,
+    TestExtractionProfileRequest,
+    TestExtractionProfileResponse,
 )
 from src.api.schemas.supplier_prompt_config_schemas import (
     CreateSupplierPromptConfigRequest,
@@ -876,6 +878,50 @@ def clone_supplier_extraction_profile(
             )
         )
         return _supplier_extraction_profile_to_response(cloned)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.post(
+    "/{client_id}/suppliers/{supplier_id}/extraction-profiles/test",
+    response_model=TestExtractionProfileResponse,
+)
+def test_supplier_extraction_profile(
+    client_id: str,
+    supplier_id: str,
+    payload: TestExtractionProfileRequest,
+    get_supplier: GetClientSupplierUseCase = Depends(get_get_client_supplier_use_case),
+) -> TestExtractionProfileResponse:
+    """Diagnostic OCR/profile dry-run — never creates positions."""
+    import base64
+    import binascii
+
+    # Scope: supplier must belong to client (admin router already gates role).
+    get_supplier.execute(client_id=client_id, supplier_id=supplier_id)
+
+    try:
+        raw = payload.image_base64
+        if "," in raw and raw.strip().lower().startswith("data:"):
+            raw = raw.split(",", 1)[1]
+        image_bytes = base64.b64decode(raw, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="INVALID_IMAGE_BASE64") from exc
+
+    try:
+        result = TestExtractionProfileUseCase().execute(
+            TestExtractionProfileCommand(
+                client_id=client_id,
+                supplier_id=supplier_id,
+                configuration=payload.configuration,
+                image_bytes=image_bytes,
+            )
+        )
+        return TestExtractionProfileResponse(**result)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as e:
         reraise_if_mapped(e)
         raise

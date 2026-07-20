@@ -14,7 +14,18 @@ PROCESSING_EVENTS_PERSISTENCE_ENABLED=false # write ProcessingEvent rows
 |------|--------|
 | All `false` (default) | Pipeline unchanged; capabilities endpoint reports UX off; legacy observability tab remains |
 | `PROCESSING_OBSERVABILITY_ENABLED=true` | List/detail/events read APIs + Procesamiento tab |
-| Reprocess / manual flags | Gate mutations independently |
+| `PROCESSING_EVENTS_PERSISTENCE_ENABLED=true` | Persist `ProcessingEvent` rows (including INTERNAL_OCR stage events when publisher is wired) |
+
+### OCR stage events (when persistence ON)
+
+Emitted from `InternalOcrProcessingStrategy` (not only Phase 7 command path):
+
+- `asset.source_loaded`
+- `label_detection.started` / `label_detection.completed` / `label_region.selected`
+- `label_geometry.normalized`
+- `ocr.variant_started` (and failures via variant records in evidence)
+
+Metadata is sanitized (no full OCR text, no filesystem paths).
 
 Rollback: set flags to `false`. Attempts, states, and events rows are **not** deleted.
 

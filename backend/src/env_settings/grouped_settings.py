@@ -1222,6 +1222,36 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
         description="Include deskew as an OCR preprocessing variant. Env: INTERNAL_OCR_ENABLE_DESKEW.",
     )
+    ocr_label_detection_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("OCR_LABEL_DETECTION_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, INTERNAL_OCR runs LabelRegionDetector before high-quality OCR. "
+            "Default false (rollback-safe). Env: OCR_LABEL_DETECTION_ENABLED."
+        ),
+    )
+    ocr_diagnostic_evidence_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("OCR_DIAGNOSTIC_EVIDENCE_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, persist expanded OCR diagnostic evidence fields. "
+            "Default false. Env: OCR_DIAGNOSTIC_EVIDENCE_ENABLED."
+        ),
+    )
+    ocr_profile_test_tool_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("OCR_PROFILE_TEST_TOOL_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, enable POST .../extraction-profiles/test diagnostic endpoint. "
+            "Default false. Env: OCR_PROFILE_TEST_TOOL_ENABLED."
+        ),
+    )
     external_fallback_per_image_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("EXTERNAL_FALLBACK_PER_IMAGE_ENABLED", "false").strip().lower()

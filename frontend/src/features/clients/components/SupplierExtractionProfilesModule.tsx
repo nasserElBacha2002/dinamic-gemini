@@ -38,7 +38,9 @@ import { resolveApiErrorMessage } from '../../../utils/apiErrors';
 import { formatDate } from '../../../utils/formatDate';
 import {
   defaultExtractionProfileConfiguration,
+  EXTRACTION_PROFILE_TEMPLATES,
   INTERNAL_CODE_SOURCE_KEYS,
+  INTERNAL_CODE_SOURCE_LABELS,
   SUPPORTED_BARCODE_FORMATS,
 } from '../utils/defaultExtractionProfileConfiguration';
 import { useExtractionProfileCapabilities } from '../hooks/useExtractionProfileCapabilities';
@@ -382,6 +384,194 @@ export default function SupplierExtractionProfilesModule({
           <Divider sx={{ my: 2 }} />
         </Collapse>
 
+        <SectionCard title={t('clients.extraction_profile.templates_gallery')} variant="outlined">
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} flexWrap="wrap" useFlexGap>
+            {EXTRACTION_PROFILE_TEMPLATES.map((tpl) => (
+              <Button
+                key={tpl.id}
+                size="small"
+                variant="outlined"
+                onClick={() =>
+                  updateConfiguration(() => cloneConfiguration(tpl.build()))
+                }
+              >
+                {t(tpl.labelKey)}
+              </Button>
+            ))}
+          </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+            {t('clients.extraction_profile.apply_template')} — {t('clients.extraction_profile.label_detection_help')}
+          </Typography>
+        </SectionCard>
+
+        <SectionCard title={t('clients.extraction_profile.section_label_detection')} variant="outlined">
+          <Stack spacing={1.5}>
+            <Alert severity="info">{t('clients.extraction_profile.label_detection_help')}</Alert>
+            <TextField
+              select
+              size="small"
+              label={t('clients.extraction_profile.label_background')}
+              value={formState.configuration.label_detection_rules?.expected_background ?? 'LIGHT'}
+              onChange={(e) =>
+                updateConfiguration((prev) => ({
+                  ...prev,
+                  label_detection_rules: {
+                    ...(prev.label_detection_rules ?? {}),
+                    expected_background: e.target.value,
+                  },
+                }))
+              }
+            >
+              <MenuItem value="LIGHT">{t('clients.extraction_profile.bg_light')}</MenuItem>
+              <MenuItem value="DARK">{t('clients.extraction_profile.bg_dark')}</MenuItem>
+              <MenuItem value="VARIABLE">{t('clients.extraction_profile.bg_variable')}</MenuItem>
+              <MenuItem value="DISABLED">{t('clients.extraction_profile.bg_disabled')}</MenuItem>
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label={t('clients.extraction_profile.label_shape')}
+              value={formState.configuration.label_detection_rules?.expected_shape ?? 'APPROXIMATELY_RECTANGULAR'}
+              onChange={(e) =>
+                updateConfiguration((prev) => ({
+                  ...prev,
+                  label_detection_rules: {
+                    ...(prev.label_detection_rules ?? {}),
+                    expected_shape: e.target.value,
+                  },
+                }))
+              }
+            >
+              <MenuItem value="RECTANGULAR">{t('clients.extraction_profile.shape_rectangular')}</MenuItem>
+              <MenuItem value="APPROXIMATELY_RECTANGULAR">{t('clients.extraction_profile.shape_approx')}</MenuItem>
+              <MenuItem value="VARIABLE">{t('clients.extraction_profile.shape_variable')}</MenuItem>
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label={t('clients.extraction_profile.label_orientation')}
+              value={formState.configuration.label_detection_rules?.expected_orientation ?? 'ANY'}
+              onChange={(e) =>
+                updateConfiguration((prev) => ({
+                  ...prev,
+                  label_detection_rules: {
+                    ...(prev.label_detection_rules ?? {}),
+                    expected_orientation: e.target.value,
+                  },
+                }))
+              }
+            >
+              <MenuItem value="ANY">{t('clients.extraction_profile.orient_any')}</MenuItem>
+              <MenuItem value="HORIZONTAL">{t('clients.extraction_profile.orient_horizontal')}</MenuItem>
+              <MenuItem value="VERTICAL">{t('clients.extraction_profile.orient_vertical')}</MenuItem>
+              <MenuItem value="SQUARE_OR_VERTICAL">{t('clients.extraction_profile.orient_square')}</MenuItem>
+            </TextField>
+            <TextField
+              size="small"
+              label={t('clients.extraction_profile.label_primary_anchors')}
+              helperText={t('clients.extraction_profile.comma_separated_hint')}
+              value={aliasesToText(formState.configuration.label_detection_rules?.primary_anchors ?? [])}
+              onChange={(e) =>
+                updateConfiguration((prev) => ({
+                  ...prev,
+                  label_detection_rules: {
+                    ...(prev.label_detection_rules ?? {}),
+                    primary_anchors: textToAliases(e.target.value),
+                  },
+                }))
+              }
+            />
+            <TextField
+              size="small"
+              label={t('clients.extraction_profile.label_secondary_anchors')}
+              helperText={t('clients.extraction_profile.comma_separated_hint')}
+              value={aliasesToText(formState.configuration.label_detection_rules?.secondary_anchors ?? [])}
+              onChange={(e) =>
+                updateConfiguration((prev) => ({
+                  ...prev,
+                  label_detection_rules: {
+                    ...(prev.label_detection_rules ?? {}),
+                    secondary_anchors: textToAliases(e.target.value),
+                  },
+                }))
+              }
+            />
+            <TextField
+              size="small"
+              type="number"
+              label={t('clients.extraction_profile.label_min_anchor_matches')}
+              value={formState.configuration.label_detection_rules?.minimum_anchor_matches ?? 1}
+              onChange={(e) =>
+                updateConfiguration((prev) => ({
+                  ...prev,
+                  label_detection_rules: {
+                    ...(prev.label_detection_rules ?? {}),
+                    minimum_anchor_matches: Number(e.target.value) || 0,
+                  },
+                }))
+              }
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={formState.configuration.label_detection_rules?.allow_rotation ?? true}
+                  onChange={(e) =>
+                    updateConfiguration((prev) => ({
+                      ...prev,
+                      label_detection_rules: {
+                        ...(prev.label_detection_rules ?? {}),
+                        allow_rotation: e.target.checked,
+                      },
+                    }))
+                  }
+                />
+              }
+              label={t('clients.extraction_profile.label_allow_rotation')}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={
+                    formState.configuration.label_detection_rules?.allow_perspective_correction ?? true
+                  }
+                  onChange={(e) =>
+                    updateConfiguration((prev) => ({
+                      ...prev,
+                      label_detection_rules: {
+                        ...(prev.label_detection_rules ?? {}),
+                        allow_perspective_correction: e.target.checked,
+                      },
+                    }))
+                  }
+                />
+              }
+              label={t('clients.extraction_profile.label_allow_deskew')}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={
+                    formState.configuration.label_detection_rules?.allow_full_image_fallback ?? true
+                  }
+                  onChange={(e) =>
+                    updateConfiguration((prev) => ({
+                      ...prev,
+                      label_detection_rules: {
+                        ...(prev.label_detection_rules ?? {}),
+                        allow_full_image_fallback: e.target.checked,
+                      },
+                    }))
+                  }
+                />
+              }
+              label={t('clients.extraction_profile.label_allow_full_image_fallback')}
+            />
+          </Stack>
+        </SectionCard>
+
         <SectionCard title={t('clients.extraction_profile.section_internal_code')} variant="outlined">
           <Stack spacing={1}>
             {formState.configuration.internal_code_sources.map((source, index) => (
@@ -399,7 +589,7 @@ export default function SupplierExtractionProfilesModule({
                 }}
               >
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  {source.field_key}
+                  {INTERNAL_CODE_SOURCE_LABELS[source.field_key] ?? source.field_key}
                 </Typography>
                 <FormControlLabel
                   control={
@@ -460,12 +650,175 @@ export default function SupplierExtractionProfilesModule({
             >
               {t('clients.extraction_profile.add_internal_code_source')}
             </Button>
+            <TextField
+              size="small"
+              type="number"
+              label={t('clients.extraction_profile.code_exact_length')}
+              helperText={t('clients.extraction_profile.code_exact_length_hint')}
+              value={formState.configuration.validation_rules.code.exact_length ?? ''}
+              onChange={(e) =>
+                updateConfiguration((prev) => ({
+                  ...prev,
+                  validation_rules: {
+                    ...prev.validation_rules,
+                    code: {
+                      ...prev.validation_rules.code,
+                      exact_length: e.target.value === '' ? null : Number(e.target.value),
+                    },
+                  },
+                }))
+              }
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={formState.configuration.validation_rules.code.allow_digits}
+                  onChange={(e) =>
+                    updateConfiguration((prev) => ({
+                      ...prev,
+                      validation_rules: {
+                        ...prev.validation_rules,
+                        code: { ...prev.validation_rules.code, allow_digits: e.target.checked },
+                      },
+                    }))
+                  }
+                />
+              }
+              label={t('clients.extraction_profile.code_allow_digits')}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={formState.configuration.validation_rules.code.allow_letters}
+                  onChange={(e) =>
+                    updateConfiguration((prev) => ({
+                      ...prev,
+                      validation_rules: {
+                        ...prev.validation_rules,
+                        code: { ...prev.validation_rules.code, allow_letters: e.target.checked },
+                      },
+                    }))
+                  }
+                />
+              }
+              label={t('clients.extraction_profile.code_allow_letters')}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={formState.configuration.validation_rules.code.preserve_leading_zeros}
+                  onChange={(e) =>
+                    updateConfiguration((prev) => ({
+                      ...prev,
+                      validation_rules: {
+                        ...prev.validation_rules,
+                        code: {
+                          ...prev.validation_rules.code,
+                          preserve_leading_zeros: e.target.checked,
+                        },
+                      },
+                    }))
+                  }
+                />
+              }
+              label={t('clients.extraction_profile.code_preserve_zeros')}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={
+                    formState.configuration.validation_rules.code.reject_measurement_patterns ?? true
+                  }
+                  onChange={(e) =>
+                    updateConfiguration((prev) => ({
+                      ...prev,
+                      validation_rules: {
+                        ...prev.validation_rules,
+                        code: {
+                          ...prev.validation_rules.code,
+                          reject_measurement_patterns: e.target.checked,
+                        },
+                      },
+                    }))
+                  }
+                />
+              }
+              label={t('clients.extraction_profile.code_reject_measurements')}
+            />
           </Stack>
         </SectionCard>
-
         <SectionCard title={t('clients.extraction_profile.section_quantity')} variant="outlined">
           <Stack spacing={1.5}>
             <Alert severity="warning">{t('clients.extraction_profile.quantity_no_default_warning')}</Alert>
+            <TextField
+              select
+              size="small"
+              label={t('clients.extraction_profile.quantity_expected_presence')}
+              value={formState.configuration.quantity_rules.expected_presence ?? 'ALWAYS'}
+              onChange={(e) =>
+                updateConfiguration((prev) => ({
+                  ...prev,
+                  quantity_rules: {
+                    ...prev.quantity_rules,
+                    expected_presence: e.target.value,
+                  },
+                }))
+              }
+            >
+              <MenuItem value="ALWAYS">{t('clients.extraction_profile.presence_always')}</MenuItem>
+              <MenuItem value="OPTIONAL">{t('clients.extraction_profile.presence_optional')}</MenuItem>
+              <MenuItem value="UNKNOWN">{t('clients.extraction_profile.presence_unknown')}</MenuItem>
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label={t('clients.extraction_profile.quantity_missing_action')}
+              value={
+                formState.configuration.quantity_rules.missing_quantity_action ??
+                'PENDING_MANUAL_REVIEW'
+              }
+              onChange={(e) =>
+                updateConfiguration((prev) => ({
+                  ...prev,
+                  quantity_rules: {
+                    ...prev.quantity_rules,
+                    missing_quantity_action: e.target.value,
+                  },
+                }))
+              }
+            >
+              <MenuItem value="PENDING_MANUAL_REVIEW">
+                {t('clients.extraction_profile.missing_action_manual')}
+              </MenuItem>
+              <MenuItem value="EXTERNAL_FALLBACK">
+                {t('clients.extraction_profile.missing_action_external')}
+              </MenuItem>
+              <MenuItem value="UNRECOGNIZED">
+                {t('clients.extraction_profile.missing_action_unrecognized')}
+              </MenuItem>
+            </TextField>
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={formState.configuration.quantity_rules.required}
+                  onChange={(e) =>
+                    updateConfiguration((prev) => ({
+                      ...prev,
+                      quantity_rules: {
+                        ...prev.quantity_rules,
+                        required: e.target.checked,
+                      },
+                    }))
+                  }
+                />
+              }
+              label={t('clients.extraction_profile.quantity_required_auto')}
+            />
             <TextField
               label={t('clients.extraction_profile.quantity_aliases')}
               value={aliasesToText(formState.configuration.quantity_rules.aliases)}

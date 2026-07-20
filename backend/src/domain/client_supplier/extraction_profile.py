@@ -36,6 +36,48 @@ class SpatialRelation(str, Enum):
     INSIDE_REGION = "INSIDE_REGION"
 
 
+class LabelBackgroundHint(str, Enum):
+    LIGHT = "LIGHT"
+    DARK = "DARK"
+    VARIABLE = "VARIABLE"
+    DISABLED = "DISABLED"
+
+
+class LabelShapeHint(str, Enum):
+    RECTANGULAR = "RECTANGULAR"
+    APPROXIMATELY_RECTANGULAR = "APPROXIMATELY_RECTANGULAR"
+    VARIABLE = "VARIABLE"
+
+
+class LabelOrientationHint(str, Enum):
+    HORIZONTAL = "HORIZONTAL"
+    VERTICAL = "VERTICAL"
+    SQUARE_OR_VERTICAL = "SQUARE_OR_VERTICAL"
+    ANY = "ANY"
+
+
+class AnchorMatchPolicy(str, Enum):
+    """How strictly label candidates must match OCR anchors."""
+
+    ANCHORS_REQUIRED = "ANCHORS_REQUIRED"
+    ANCHORS_PREFERRED = "ANCHORS_PREFERRED"
+    GEOMETRY_ONLY_ALLOWED = "GEOMETRY_ONLY_ALLOWED"
+
+
+class QuantityPresence(str, Enum):
+    ALWAYS = "ALWAYS"
+    OPTIONAL = "OPTIONAL"
+    UNKNOWN = "UNKNOWN"
+
+
+class MissingQuantityAction(str, Enum):
+    PENDING_MANUAL_REVIEW = "PENDING_MANUAL_REVIEW"
+    EXTERNAL_FALLBACK = "EXTERNAL_FALLBACK"
+    UNRECOGNIZED = "UNRECOGNIZED"
+    # RESOLVE_CODE_ONLY reserved — not enabled by default (domain requires qty).
+    RESOLVE_CODE_ONLY = "RESOLVE_CODE_ONLY"
+
+
 class QrPayloadFormat(str, Enum):
     PLAIN_CODE = "PLAIN_CODE"
     CODE_QUANTITY_PIPE = "CODE_QUANTITY_PIPE"
@@ -60,6 +102,32 @@ INTERNAL_CODE_SOURCE_KEYS: tuple[str, ...] = (
 
 
 @dataclass(frozen=True)
+class LabelDetectionRules:
+    """Section A — how to locate the inventory label inside a pallet photo.
+
+    Defaults are **supplier-agnostic** (not specialized for 7-digit inventory labels).
+    """
+
+    enabled: bool = True
+    expected_background: LabelBackgroundHint = LabelBackgroundHint.VARIABLE
+    expected_shape: LabelShapeHint = LabelShapeHint.APPROXIMATELY_RECTANGULAR
+    expected_orientation: LabelOrientationHint = LabelOrientationHint.ANY
+    primary_anchors: tuple[str, ...] = ()
+    secondary_anchors: tuple[str, ...] = ()
+    minimum_anchor_matches: int = 0
+    anchor_match_policy: AnchorMatchPolicy = AnchorMatchPolicy.GEOMETRY_ONLY_ALLOWED
+    minimum_relative_area: float = 0.005
+    maximum_relative_area: float = 0.45
+    allow_rotation: bool = True
+    # Deskew (small-angle Hough). Not a full perspective/homography transform.
+    allow_deskew: bool = True
+    # Kept for backward-compatible payloads; mapped to allow_deskew when parsing.
+    allow_perspective_correction: bool = True
+    allow_full_image_fallback: bool = True
+    maximum_candidate_regions: int = 8
+
+
+@dataclass(frozen=True)
 class InternalCodeSourceRule:
     field_key: str
     priority: int
@@ -67,11 +135,14 @@ class InternalCodeSourceRule:
     allowed_as_internal_code: bool = True
     requires_label: bool = False
     pattern: str | None = None
+    aliases: tuple[str, ...] = ()
+    allowed_spatial_relations: tuple[str, ...] = ()
+    maximum_anchor_distance_ratio: float | None = None
 
 
 @dataclass(frozen=True)
 class QuantityExtractionRules:
-    aliases: tuple[str, ...] = ("CANTIDAD", "CANT.", "QTY", "QUANTITY", "UNIDADES")
+    aliases: tuple[str, ...] = ("CANTIDAD", "CANT.", "QTY", "QUANTITY", "UNIDADES", "CANT. TOTAL")
     required: bool = True
     data_type: FieldDataType = FieldDataType.INTEGER
     minimum: int = 1
@@ -80,6 +151,17 @@ class QuantityExtractionRules:
     allow_negative: bool = False
     default_value: int | None = None  # must remain None for automatic resolution
     accepted_units: tuple[str, ...] = ()
+    expected_presence: QuantityPresence = QuantityPresence.ALWAYS
+    missing_quantity_action: MissingQuantityAction = (
+        MissingQuantityAction.PENDING_MANUAL_REVIEW
+    )
+    allow_external_fallback: bool = True
+    allowed_spatial_relations: tuple[str, ...] = (
+        SpatialRelation.BELOW.value,
+        SpatialRelation.RIGHT_OF.value,
+        SpatialRelation.NEAR.value,
+    )
+    maximum_anchor_distance_ratio: float | None = 0.25
 
 
 @dataclass(frozen=True)
@@ -98,6 +180,7 @@ class AdditionalFieldRule:
 class CodeValidationRules:
     min_length: int = 1
     max_length: int = 128
+    exact_length: int | None = None
     allow_letters: bool = True
     allow_digits: bool = True
     allow_hyphen: bool = True
@@ -105,6 +188,7 @@ class CodeValidationRules:
     allow_spaces: bool = False
     preserve_leading_zeros: bool = True
     regex: str | None = None
+    reject_measurement_patterns: bool = True
 
 
 @dataclass(frozen=True)
@@ -134,6 +218,7 @@ class ExtractionProfileConfiguration:
     validation_rules: ExtractionValidationRules = field(
         default_factory=ExtractionValidationRules
     )
+    label_detection_rules: LabelDetectionRules = field(default_factory=LabelDetectionRules)
     accepted_barcode_formats: tuple[str, ...] = ("QR", "CODE128", "EAN13", "EAN8", "UPC_A")
     qr_payload_formats: tuple[str, ...] = (
         QrPayloadFormat.PLAIN_CODE.value,
@@ -157,6 +242,9 @@ class ExtractionProfileConfiguration:
                     "allowed_as_internal_code": s.allowed_as_internal_code,
                     "requires_label": s.requires_label,
                     "pattern": s.pattern,
+                    "aliases": list(s.aliases),
+                    "allowed_spatial_relations": list(s.allowed_spatial_relations),
+                    "maximum_anchor_distance_ratio": s.maximum_anchor_distance_ratio,
                 }
                 for s in self.internal_code_sources
             ],
@@ -171,6 +259,38 @@ class ExtractionProfileConfiguration:
                 "allow_negative": self.quantity_rules.allow_negative,
                 "default_value": self.quantity_rules.default_value,
                 "accepted_units": list(self.quantity_rules.accepted_units),
+                "expected_presence": self.quantity_rules.expected_presence.value,
+                "missing_quantity_action": self.quantity_rules.missing_quantity_action.value,
+                "allow_external_fallback": self.quantity_rules.allow_external_fallback,
+                "allowed_spatial_relations": list(
+                    self.quantity_rules.allowed_spatial_relations
+                ),
+                "maximum_anchor_distance_ratio": (
+                    self.quantity_rules.maximum_anchor_distance_ratio
+                ),
+            },
+            "label_detection_rules": {
+                "enabled": self.label_detection_rules.enabled,
+                "expected_background": self.label_detection_rules.expected_background.value,
+                "expected_shape": self.label_detection_rules.expected_shape.value,
+                "expected_orientation": self.label_detection_rules.expected_orientation.value,
+                "primary_anchors": list(self.label_detection_rules.primary_anchors),
+                "secondary_anchors": list(self.label_detection_rules.secondary_anchors),
+                "minimum_anchor_matches": self.label_detection_rules.minimum_anchor_matches,
+                "anchor_match_policy": self.label_detection_rules.anchor_match_policy.value,
+                "minimum_relative_area": self.label_detection_rules.minimum_relative_area,
+                "maximum_relative_area": self.label_detection_rules.maximum_relative_area,
+                "allow_rotation": self.label_detection_rules.allow_rotation,
+                "allow_deskew": self.label_detection_rules.allow_deskew,
+                "allow_perspective_correction": (
+                    self.label_detection_rules.allow_deskew
+                ),
+                "allow_full_image_fallback": (
+                    self.label_detection_rules.allow_full_image_fallback
+                ),
+                "maximum_candidate_regions": (
+                    self.label_detection_rules.maximum_candidate_regions
+                ),
             },
             "additional_fields": [
                 {
@@ -189,6 +309,7 @@ class ExtractionProfileConfiguration:
                 "code": {
                     "min_length": self.validation_rules.code.min_length,
                     "max_length": self.validation_rules.code.max_length,
+                    "exact_length": self.validation_rules.code.exact_length,
                     "allow_letters": self.validation_rules.code.allow_letters,
                     "allow_digits": self.validation_rules.code.allow_digits,
                     "allow_hyphen": self.validation_rules.code.allow_hyphen,
@@ -196,6 +317,9 @@ class ExtractionProfileConfiguration:
                     "allow_spaces": self.validation_rules.code.allow_spaces,
                     "preserve_leading_zeros": self.validation_rules.code.preserve_leading_zeros,
                     "regex": self.validation_rules.code.regex,
+                    "reject_measurement_patterns": (
+                        self.validation_rules.code.reject_measurement_patterns
+                    ),
                 },
                 "ean": {
                     "allow_ean8": self.validation_rules.ean.allow_ean8,
@@ -218,12 +342,12 @@ class ExtractionProfileConfiguration:
 
 
 def default_extraction_configuration() -> ExtractionProfileConfiguration:
-    """Conservative system default when no supplier profile is active."""
+    """Conservative system default — not specialized for any supplier label layout."""
     return ExtractionProfileConfiguration(
         internal_code_sources=(
-            InternalCodeSourceRule("INTERNAL_CODE", priority=1),
-            InternalCodeSourceRule("EAN", priority=2),
-            InternalCodeSourceRule("ARTICLE", priority=3),
+            InternalCodeSourceRule("INTERNAL_CODE", priority=1, enabled=True),
+            InternalCodeSourceRule("EAN", priority=2, enabled=True),
+            InternalCodeSourceRule("ARTICLE", priority=3, enabled=True),
         ),
         quantity_rules=QuantityExtractionRules(
             aliases=("CANTIDAD", "CANT.", "QTY", "QUANTITY", "UNIDADES"),
@@ -232,7 +356,24 @@ def default_extraction_configuration() -> ExtractionProfileConfiguration:
             allow_decimals=False,
             minimum=1,
             default_value=None,
+            expected_presence=QuantityPresence.ALWAYS,
+            missing_quantity_action=MissingQuantityAction.PENDING_MANUAL_REVIEW,
         ),
+        validation_rules=ExtractionValidationRules(
+            code=CodeValidationRules(
+                min_length=1,
+                max_length=128,
+                exact_length=None,
+                allow_letters=True,
+                allow_digits=True,
+                allow_hyphen=True,
+                allow_slash=True,
+                allow_spaces=False,
+                preserve_leading_zeros=True,
+                reject_measurement_patterns=True,
+            )
+        ),
+        label_detection_rules=LabelDetectionRules(),
         aliases={
             "internal_code": (
                 "CÓDIGO INTERNO",
@@ -248,6 +389,80 @@ def default_extraction_configuration() -> ExtractionProfileConfiguration:
         },
         required_fields=("internal_code", "quantity"),
         allow_unconfigured_code_source_fallback=True,
+    )
+
+
+def inventory_seven_digit_internal_code_template() -> ExtractionProfileConfiguration:
+    """Opt-in template: light inventory label with numeric internal code of length 7.
+
+    Never applied automatically — callers must select it explicitly.
+    """
+    base = default_extraction_configuration()
+    return ExtractionProfileConfiguration(
+        internal_code_sources=(
+            InternalCodeSourceRule(
+                "INTERNAL_CODE",
+                priority=1,
+                enabled=True,
+                aliases=("CÓDIGO INTERNO", "CODIGO INTERNO", "COD. INTERNO"),
+                allowed_spatial_relations=(
+                    SpatialRelation.BELOW.value,
+                    SpatialRelation.SAME_COLUMN.value,
+                    SpatialRelation.NEAR.value,
+                ),
+            ),
+            InternalCodeSourceRule("EAN", priority=2, enabled=False),
+            InternalCodeSourceRule("ARTICLE", priority=3, enabled=False),
+        ),
+        quantity_rules=QuantityExtractionRules(
+            aliases=("CANT. TOTAL", "CANTIDAD", "CANT.", "QTY", "QUANTITY", "UNIDADES"),
+            required=True,
+            data_type=FieldDataType.INTEGER,
+            allow_decimals=False,
+            minimum=1,
+            default_value=None,
+            expected_presence=QuantityPresence.ALWAYS,
+            missing_quantity_action=MissingQuantityAction.PENDING_MANUAL_REVIEW,
+            allow_external_fallback=True,
+        ),
+        validation_rules=ExtractionValidationRules(
+            code=CodeValidationRules(
+                min_length=7,
+                max_length=7,
+                exact_length=7,
+                allow_letters=False,
+                allow_digits=True,
+                allow_hyphen=False,
+                allow_slash=False,
+                allow_spaces=False,
+                preserve_leading_zeros=True,
+                reject_measurement_patterns=True,
+            ),
+            ean=base.validation_rules.ean,
+            quantity_integer_only=True,
+        ),
+        label_detection_rules=LabelDetectionRules(
+            enabled=True,
+            expected_background=LabelBackgroundHint.LIGHT,
+            expected_shape=LabelShapeHint.APPROXIMATELY_RECTANGULAR,
+            expected_orientation=LabelOrientationHint.ANY,
+            primary_anchors=("CÓDIGO INTERNO", "CODIGO INTERNO"),
+            secondary_anchors=("INVENTARIO GENERAL", "CANT. TOTAL", "CANTIDAD"),
+            minimum_anchor_matches=1,
+            anchor_match_policy=AnchorMatchPolicy.ANCHORS_REQUIRED,
+            allow_rotation=True,
+            allow_deskew=True,
+            allow_perspective_correction=True,
+            allow_full_image_fallback=True,
+        ),
+        aliases={
+            **base.aliases,
+            "quantity": ("CANT. TOTAL", "CANTIDAD", "CANT.", "QTY", "QUANTITY", "UNIDADES"),
+        },
+        required_fields=("internal_code", "quantity"),
+        allow_unconfigured_code_source_fallback=False,
+        accepted_barcode_formats=base.accepted_barcode_formats,
+        qr_payload_formats=base.qr_payload_formats,
     )
 
 

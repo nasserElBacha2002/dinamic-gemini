@@ -39,6 +39,7 @@ class InternalOcrContext:
     language: str
     timeout_seconds: float
     max_image_dimension: int
+    page_segmentation_mode: int | None = None
 
 
 @dataclass(frozen=True)
