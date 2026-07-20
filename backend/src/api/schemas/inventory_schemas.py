@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -68,7 +68,7 @@ class PrimaryExecutionConfigResponse(BaseModel):
     provider_name: str
     model_name: str
     prompt_key: str
-    prompt_version: Optional[str] = None
+    prompt_version: str | None = None
 
 
 class InventoryResponse(BaseModel):
@@ -79,9 +79,9 @@ class InventoryResponse(BaseModel):
     status: str
     processing_mode: str = "production"
     client_id: str | None = None
-    primary_execution_config: Optional[PrimaryExecutionConfigResponse] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    primary_execution_config: PrimaryExecutionConfigResponse | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
     identification_mode: IdentificationModeLiteral | None = None
     effective_identification_mode: IdentificationModeLiteral
     identification_mode_source: IdentificationModeSourceLiteral
@@ -99,15 +99,15 @@ class InventoryListItemResponse(BaseModel):
     name: str
     status: str
     client_id: str | None = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
     aisles_count: int = Field(0, ge=0, description="Number of aisles in this inventory.")
     pending_review_count: int = Field(
         0,
         ge=0,
         description="Positions with needs_review true across all aisles.",
     )
-    last_activity_at: Optional[datetime] = Field(
+    last_activity_at: datetime | None = Field(
         None,
         description=(
             "Freshness for list UX: max of inventory/aisle/position created_at and updated_at. "

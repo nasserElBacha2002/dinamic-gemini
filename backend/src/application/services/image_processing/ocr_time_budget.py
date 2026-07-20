@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 
 
-class OcrBudgetExceeded(RuntimeError):
+class OcrBudgetExceededError(RuntimeError):
     """Raised when the shared OCR deadline is exhausted."""
 
 
@@ -45,11 +45,11 @@ class OcrTimeBudget:
 
     def check(self, *, stage: str) -> None:
         if self.remaining_seconds() <= 0:
-            raise OcrBudgetExceeded(f"OCR budget exhausted at stage={stage}")
+            raise OcrBudgetExceededError(f"OCR budget exhausted at stage={stage}")
 
     def check_detection(self, *, stage: str) -> None:
         if self.remaining_for_detection_seconds() <= 0:
-            raise OcrBudgetExceeded(f"OCR detection budget exhausted at stage={stage}")
+            raise OcrBudgetExceededError(f"OCR detection budget exhausted at stage={stage}")
 
 
-__all__ = ["OcrBudgetExceeded", "OcrTimeBudget"]
+__all__ = ["OcrBudgetExceededError", "OcrTimeBudget"]

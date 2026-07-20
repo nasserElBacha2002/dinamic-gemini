@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.use_cases.aisles.start_aisle_processing import (
     StartAisleProcessingCommand,
     StartAisleProcessingUseCase,
@@ -27,7 +28,6 @@ from tests.application.use_cases.test_aisle_processing import (
     make_launch_service,
     make_stale_reconciler,
 )
-from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 
 
 def _build_use_case(

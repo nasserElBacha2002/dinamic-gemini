@@ -48,6 +48,7 @@ from src.application.ports.repositories import (
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
+from src.application.ports.stored_artifact_reader import StoredArtifactReader
 from src.application.ports.supplier_extraction_profile_repository import (
     SupplierExtractionProfileRepository,
     SupplierReferenceAnnotationRepository,
@@ -137,11 +138,6 @@ from src.runtime.container.capture_session_builders import (
     build_capture_session_item_repository,
     build_capture_session_repository,
 )
-from src.runtime.container.label_builders import (
-    build_final_count_repository,
-    build_normalized_label_repository,
-    build_raw_label_repository,
-)
 from src.runtime.container.extraction_profile_builders import (
     build_activate_supplier_extraction_profile_version_use_case,
     build_clone_supplier_extraction_profile_use_case,
@@ -151,6 +147,11 @@ from src.runtime.container.extraction_profile_builders import (
     build_list_supplier_extraction_profiles_use_case,
     build_list_supplier_reference_annotations_use_case,
     build_replace_supplier_reference_annotations_use_case,
+)
+from src.runtime.container.label_builders import (
+    build_final_count_repository,
+    build_normalized_label_repository,
+    build_raw_label_repository,
 )
 from src.runtime.container.prompt_config_builders import (
     build_activate_supplier_prompt_config_version_use_case,

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from datetime import datetime
 
 from src.domain.image_processing.external_image_analysis_request import (
     ExternalImageAnalysisRequest,

@@ -48,12 +48,6 @@ from src.api.schemas.client_schemas import (
     PaginatedClientListResponse,
     UpdateClientRequest,
 )
-from src.api.services.identification_mode_response import client_identification_fields
-from src.application.services.optional_unset import UNSET
-from src.application.use_cases.clients.update_client import (
-    UpdateClientCommand,
-    UpdateClientUseCase,
-)
 from src.api.schemas.client_supplier_schemas import (
     ClientSupplierResponse,
     CreateClientSupplierRequest,
@@ -82,6 +76,7 @@ from src.api.schemas.supplier_reference_image_schemas import (
     SupplierReferenceImagesListResponse,
     UploadSupplierReferenceImagesResponse,
 )
+from src.api.services.identification_mode_response import client_identification_fields
 from src.api.services.v3_stored_artifact_access import (
     StoredArtifactAccessError,
     resolve_supplier_reference_image_display,
@@ -91,12 +86,17 @@ from src.application.errors import (
     DuplicateClientSupplierNameError,
     InvalidClientNameError,
     InvalidClientSupplierNameError,
-    SupplierPromptConfigNotFoundError,
     SupplierExtractionProfileNotFoundError,
+    SupplierPromptConfigNotFoundError,
 )
+from src.application.services.optional_unset import UNSET
 from src.application.use_cases.clients.create_client import CreateClientCommand, CreateClientUseCase
 from src.application.use_cases.clients.get_client import GetClientUseCase
 from src.application.use_cases.clients.list_clients import ListClientsUseCase
+from src.application.use_cases.clients.update_client import (
+    UpdateClientCommand,
+    UpdateClientUseCase,
+)
 from src.application.use_cases.suppliers.create_client_supplier import (
     CreateClientSupplierCommand,
     CreateClientSupplierUseCase,
@@ -136,6 +136,10 @@ from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
 from src.application.use_cases.suppliers.manage_supplier_reference_images import (
     DeleteSupplierReferenceImageUseCase,
     GetSupplierReferenceImageUseCase,
+)
+from src.application.use_cases.suppliers.test_extraction_profile_diagnostic import (
+    TestExtractionProfileCommand,
+    TestExtractionProfileUseCase,
 )
 from src.application.use_cases.suppliers.upload_supplier_reference_images import (
     ListSupplierReferenceImagesUseCase,

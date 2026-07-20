@@ -14,13 +14,13 @@ import pytest
 )
 def test_live_external_fallback_provider_smoke() -> None:
     """Controlled live call — must not run in default CI."""
-    from src.env_settings import get_settings
-    from src.infrastructure.image_processing.llm_external_image_analysis_provider import (
-        LlmExternalImageAnalysisProvider,
-    )
     from src.application.ports.external_image_analysis_provider import (
         ExternalAnalysisContext,
         ExternalImageInput,
+    )
+    from src.env_settings import get_settings
+    from src.infrastructure.image_processing.llm_external_image_analysis_provider import (
+        LlmExternalImageAnalysisProvider,
     )
 
     settings = get_settings()

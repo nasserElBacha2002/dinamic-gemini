@@ -7,11 +7,12 @@ feature flag, so a flag toggle between the original attempt and the retry is ref
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytest
 
 from src.application.services.aisle_identification_execution import phase1_execution_strategy
+from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.use_cases.aisles.retry_aisle_job import (
     RetryAisleJobCommand,
     RetryAisleJobUseCase,
@@ -22,7 +23,6 @@ from src.domain.aisle_identification.modes import (
     AisleIdentificationModeSource,
 )
 from src.domain.jobs.entities import Job, JobStatus
-from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from tests.application.use_cases.test_retry_aisle_job import (
     StubWorkerLaunchService,
     _base_context,

@@ -35,6 +35,7 @@ from src.application.ports.repositories import (
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import MetricsCalculator, WorkerLaunchService
+from src.application.ports.stored_artifact_reader import StoredArtifactReader
 from src.application.ports.supplier_extraction_profile_repository import (
     SupplierExtractionProfileRepository,
     SupplierReferenceAnnotationRepository,

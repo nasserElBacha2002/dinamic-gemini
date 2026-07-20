@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from src.application.ports.internal_label_reader import (
     InternalOcrContext,
     InternalOcrEngineTimeoutError,
@@ -29,7 +31,6 @@ from src.domain.image_processing.contracts import (
     ImageProcessingContext,
     ImageResultStatus,
 )
-from datetime import datetime, timezone
 
 
 class _FakeReader:

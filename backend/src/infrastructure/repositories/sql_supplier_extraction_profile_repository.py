@@ -162,7 +162,7 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
             raise ValueError("SupplierExtractionProfile.updated_at is required")
         with self._client.cursor() as cur:
             cur.execute(
-                f"""
+                """
                 INSERT INTO supplier_extraction_profiles (
                     id, client_id, supplier_id, profile_key, version, status,
                     configuration_json, visual_notes, created_by, created_at,
@@ -271,8 +271,9 @@ class SqlSupplierExtractionProfileRepository(SupplierExtractionProfileRepository
         created_at: object,
         profile_id: str | None = None,
     ) -> SupplierExtractionProfile:
-        import pyodbc
         from uuid import uuid4
+
+        import pyodbc
 
         from src.application.errors import SupplierExtractionProfileVersionConflictError
 

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from src.application.services.image_processing.external_fallback_recovery import (
+    ExternalFallbackRecoveryService,
+)
 from src.application.services.image_processing.extraction_profile_configuration import (
     ExtractionProfileConfigurationError,
     parse_extraction_configuration,
-)
-from src.application.services.image_processing.external_fallback_recovery import (
-    ExternalFallbackRecoveryService,
 )
 from src.application.services.image_processing.field_candidate_set import (
     FieldCandidateSet,

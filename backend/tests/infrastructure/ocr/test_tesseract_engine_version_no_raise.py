@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from src.application.ports.internal_label_reader import InternalOcrEngineUnavailableError
 from src.infrastructure.ocr.tesseract_internal_label_reader import (
     TesseractInternalLabelReader,
 )
-from src.application.ports.internal_label_reader import InternalOcrEngineUnavailableError
 
 
 def test_engine_version_property_does_not_raise_when_tesseract_missing(monkeypatch) -> None:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -70,23 +69,23 @@ class AisleJobSummary(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
-    error_message: Optional[str] = None
-    reference_usage: Optional[ReferenceUsageSummary] = None
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
-    last_heartbeat_at: Optional[datetime] = None
-    cancel_requested_at: Optional[datetime] = None
-    current_stage: Optional[str] = None
-    current_substep: Optional[str] = None
-    current_step_started_at: Optional[datetime] = None
+    error_message: str | None = None
+    reference_usage: ReferenceUsageSummary | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    last_heartbeat_at: datetime | None = None
+    cancel_requested_at: datetime | None = None
+    current_stage: str | None = None
+    current_substep: str | None = None
+    current_step_started_at: datetime | None = None
     attempt_count: int = 1
-    retry_of_job_id: Optional[str] = None
-    failure_code: Optional[str] = None
-    failure_message: Optional[str] = None
-    execution_id: Optional[str] = None
-    provider_name: Optional[str] = None
-    model_name: Optional[str] = None
-    prompt_key: Optional[str] = None
+    retry_of_job_id: str | None = None
+    failure_code: str | None = None
+    failure_message: str | None = None
+    execution_id: str | None = None
+    provider_name: str | None = None
+    model_name: str | None = None
+    prompt_key: str | None = None
 
 
 class AisleResponse(BaseModel):
@@ -104,17 +103,17 @@ class AisleResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     is_active: bool = True
-    error_code: Optional[str] = None
-    error_message: Optional[str] = None
-    operational_job_id: Optional[str] = Field(
+    error_code: str | None = None
+    error_message: str | None = None
+    operational_job_id: str | None = Field(
         None, description="Canonical run for default result reads (Phase 2); null = legacy aisle."
     )
-    client_supplier_id: Optional[str] = None
-    latest_job: Optional[AisleJobSummary] = None
+    client_supplier_id: str | None = None
+    latest_job: AisleJobSummary | None = None
     assets_count: int = 0
     positions_count: int = 0
     pending_review_positions_count: int = 0
-    last_activity_at: Optional[datetime] = None
+    last_activity_at: datetime | None = None
     identification_mode: IdentificationModeLiteral | None = None
     effective_identification_mode: IdentificationModeLiteral
     identification_mode_source: IdentificationModeSourceLiteral

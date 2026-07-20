@@ -107,7 +107,7 @@ class SqlExternalImageAnalysisRequestRepository(ExternalImageAnalysisRequestRepo
     def save(self, request: ExternalImageAnalysisRequest) -> None:
         with self._client.cursor() as cur:
             cur.execute(
-                f"""
+                """
                 UPDATE external_image_analysis_requests SET
                     status = ?, attempt_id = ?, worker_token = ?,
                     request_image_sha256 = ?, provider_response_sha256 = ?,
