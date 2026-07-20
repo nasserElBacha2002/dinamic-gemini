@@ -686,11 +686,17 @@ class V3JobExecutor:
                 return True
             state_repo = attempt_repo = lease_repo = batch_attempt_repo = None
 
+        engine_params = job.engine_params_json if isinstance(job.engine_params_json, dict) else {}
+        identification_execution = engine_params.get("identification_execution") or {}
+        job_ocr_config = identification_execution.get("ocr_config")
+        job_client_id = engine_params.get("client_id") or getattr(aisle, "client_id", None)
+
         try:
             strategy = build_default_internal_ocr_strategy(
                 settings,
                 self._artifact_store,
-                client_id=getattr(aisle, "client_id", None),
+                client_id=job_client_id,
+                ocr_config_override=job_ocr_config if isinstance(job_ocr_config, dict) else None,
             )
             persister = build_default_code_scan_persister(
                 job_source_asset_repo=container.get_job_source_asset_repo(),
@@ -1019,14 +1025,10 @@ class V3JobExecutor:
                     AisleIdentificationMode,
                 )
 
-                # CODE_SCAN is the normal path when the job snapshot says so (or when the
-                # configured identification mode is CODE_SCAN on older snapshots that still
-                # carried LEGACY_LLM / LEGACY_LLM_TEMPORARY before the ungated rollout).
+                # Trust immutable execution_strategy only (feature flags applied at job start).
                 if (
                     job.execution_strategy
                     == AisleIdentificationExecutionStrategy.CODE_SCAN
-                    or job.identification_mode
-                    == AisleIdentificationMode.CODE_SCAN
                 ):
                     return self._run_code_scan_path(
                         job=job,

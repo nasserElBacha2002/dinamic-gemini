@@ -1,6 +1,8 @@
-"""Phase 1 helpers: resolve execution strategy label for aisle identification jobs."""
+"""Resolve aisle identification execution strategy with an auditable reason."""
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from src.domain.aisle_identification.modes import (
     AisleIdentificationExecutionStrategy,
@@ -8,37 +10,113 @@ from src.domain.aisle_identification.modes import (
 )
 
 
+@dataclass(frozen=True)
+class ExecutionStrategyDecision:
+    """Immutable decision snapshotted at job creation (do not re-resolve on retry)."""
+
+    requested_mode: AisleIdentificationMode
+    strategy: AisleIdentificationExecutionStrategy
+    reason: str
+    code_scan_processing_enabled: bool
+    internal_ocr_processing_enabled: bool
+    pipeline_enabled: bool
+
+
+def resolve_execution_strategy_decision(
+    *,
+    effective_mode: AisleIdentificationMode,
+    pipeline_enabled: bool,
+    code_scan_processing_enabled: bool = False,
+    internal_ocr_processing_enabled: bool = False,
+) -> ExecutionStrategyDecision:
+    """Resolve the worker path from mode + feature flags.
+
+    ``CODE_SCAN`` / ``INTERNAL_OCR`` only become real execution strategies when their
+    respective flags are enabled. Otherwise they fall back to the Phase 1 temporary bridge
+    (``LEGACY_LLM_TEMPORARY`` when the aisle-identification pipeline flag is on, else
+    ``LEGACY_LLM``).
+    """
+    if effective_mode == AisleIdentificationMode.CODE_SCAN:
+        if code_scan_processing_enabled:
+            return ExecutionStrategyDecision(
+                requested_mode=effective_mode,
+                strategy=AisleIdentificationExecutionStrategy.CODE_SCAN,
+                reason="CODE_SCAN_PROCESSING_ENABLED_TRUE",
+                code_scan_processing_enabled=True,
+                internal_ocr_processing_enabled=internal_ocr_processing_enabled,
+                pipeline_enabled=pipeline_enabled,
+            )
+        if pipeline_enabled:
+            return ExecutionStrategyDecision(
+                requested_mode=effective_mode,
+                strategy=AisleIdentificationExecutionStrategy.LEGACY_LLM_TEMPORARY,
+                reason="CODE_SCAN_PROCESSING_ENABLED_FALSE",
+                code_scan_processing_enabled=False,
+                internal_ocr_processing_enabled=internal_ocr_processing_enabled,
+                pipeline_enabled=True,
+            )
+        return ExecutionStrategyDecision(
+            requested_mode=effective_mode,
+            strategy=AisleIdentificationExecutionStrategy.LEGACY_LLM,
+            reason="CODE_SCAN_PROCESSING_ENABLED_FALSE_PIPELINE_OFF",
+            code_scan_processing_enabled=False,
+            internal_ocr_processing_enabled=internal_ocr_processing_enabled,
+            pipeline_enabled=False,
+        )
+
+    if effective_mode == AisleIdentificationMode.INTERNAL_OCR:
+        if internal_ocr_processing_enabled:
+            return ExecutionStrategyDecision(
+                requested_mode=effective_mode,
+                strategy=AisleIdentificationExecutionStrategy.INTERNAL_OCR,
+                reason="INTERNAL_OCR_PROCESSING_ENABLED_TRUE",
+                code_scan_processing_enabled=code_scan_processing_enabled,
+                internal_ocr_processing_enabled=True,
+                pipeline_enabled=pipeline_enabled,
+            )
+        if pipeline_enabled:
+            return ExecutionStrategyDecision(
+                requested_mode=effective_mode,
+                strategy=AisleIdentificationExecutionStrategy.LEGACY_LLM_TEMPORARY,
+                reason="INTERNAL_OCR_PROCESSING_ENABLED_FALSE",
+                code_scan_processing_enabled=code_scan_processing_enabled,
+                internal_ocr_processing_enabled=False,
+                pipeline_enabled=True,
+            )
+        return ExecutionStrategyDecision(
+            requested_mode=effective_mode,
+            strategy=AisleIdentificationExecutionStrategy.LEGACY_LLM,
+            reason="INTERNAL_OCR_PROCESSING_ENABLED_FALSE_PIPELINE_OFF",
+            code_scan_processing_enabled=code_scan_processing_enabled,
+            internal_ocr_processing_enabled=False,
+            pipeline_enabled=False,
+        )
+
+    # LEGACY_LLM (or unknown mapped earlier) always stays on the legacy path.
+    return ExecutionStrategyDecision(
+        requested_mode=effective_mode,
+        strategy=AisleIdentificationExecutionStrategy.LEGACY_LLM,
+        reason="LEGACY_LLM_MODE",
+        code_scan_processing_enabled=code_scan_processing_enabled,
+        internal_ocr_processing_enabled=internal_ocr_processing_enabled,
+        pipeline_enabled=pipeline_enabled,
+    )
+
+
 def resolve_execution_strategy(
     *,
     effective_mode: AisleIdentificationMode,
     pipeline_enabled: bool,
-    code_scan_processing_enabled: bool = True,
+    code_scan_processing_enabled: bool = False,
     internal_ocr_processing_enabled: bool = False,
 ) -> AisleIdentificationExecutionStrategy:
-    """Resolve the actual worker execution path from the effective identification mode.
-
-    ``CODE_SCAN`` is the normal production path for that identification mode (no feature-flag
-    gate). The unused ``code_scan_processing_enabled`` kwarg is kept for call-site compatibility
-    and ignored.
-
-    ``INTERNAL_OCR`` runs local OCR only when ``internal_ocr_processing_enabled`` is true;
-    otherwise it keeps the Phase 1 temporary bridge (``LEGACY_LLM_TEMPORARY`` / ``LEGACY_LLM``).
-    ``LEGACY_LLM`` mode always stays on the legacy path.
-    """
-    _ = code_scan_processing_enabled  # deprecated; CODE_SCAN no longer gated by env
-    if effective_mode == AisleIdentificationMode.CODE_SCAN:
-        return AisleIdentificationExecutionStrategy.CODE_SCAN
-    if (
-        effective_mode == AisleIdentificationMode.INTERNAL_OCR
-        and internal_ocr_processing_enabled
-    ):
-        return AisleIdentificationExecutionStrategy.INTERNAL_OCR
-    if (
-        pipeline_enabled
-        and effective_mode != AisleIdentificationMode.LEGACY_LLM
-    ):
-        return AisleIdentificationExecutionStrategy.LEGACY_LLM_TEMPORARY
-    return AisleIdentificationExecutionStrategy.LEGACY_LLM
+    """Resolve the actual worker execution path from the effective identification mode."""
+    return resolve_execution_strategy_decision(
+        effective_mode=effective_mode,
+        pipeline_enabled=pipeline_enabled,
+        code_scan_processing_enabled=code_scan_processing_enabled,
+        internal_ocr_processing_enabled=internal_ocr_processing_enabled,
+    ).strategy
 
 
 def phase1_execution_strategy(
@@ -46,13 +124,32 @@ def phase1_execution_strategy(
     effective_mode: AisleIdentificationMode,
     pipeline_enabled: bool,
 ) -> AisleIdentificationExecutionStrategy:
-    """Backward-compatible alias for callers that do not pass code-scan / OCR kwargs.
-
-    Prefer :func:`resolve_execution_strategy`. Selecting ``CODE_SCAN`` resolves to the real
-    ``CODE_SCAN`` execution strategy (same as the primary helper). ``INTERNAL_OCR`` stays on
-    the temporary legacy bridge unless the OCR flag is passed explicitly.
-    """
+    """Backward-compatible alias (CODE_SCAN / INTERNAL_OCR flags default off)."""
     return resolve_execution_strategy(
         effective_mode=effective_mode,
         pipeline_enabled=pipeline_enabled,
     )
+
+
+def identification_execution_snapshot_dict(
+    decision: ExecutionStrategyDecision,
+    *,
+    ocr_config: dict | None = None,
+    client_rules: dict | None = None,
+    configuration_snapshot_version: int,
+) -> dict:
+    """Build the immutable identification-execution block stored on the job."""
+    return {
+        "requested_mode": decision.requested_mode.value,
+        "executed_strategy": decision.strategy.value,
+        "reason": decision.reason,
+        "configuration_source": decision.requested_mode.value,
+        "feature_flag_state": {
+            "code_scan_processing_enabled": decision.code_scan_processing_enabled,
+            "internal_ocr_processing_enabled": decision.internal_ocr_processing_enabled,
+            "aisle_identification_pipeline_enabled": decision.pipeline_enabled,
+        },
+        "snapshot_version": int(configuration_snapshot_version),
+        "ocr_config": ocr_config,
+        "client_rules": client_rules,
+    }

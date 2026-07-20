@@ -55,6 +55,7 @@ class AisleJobLaunchService:
         execution_strategy: AisleIdentificationExecutionStrategy = (
             AisleIdentificationExecutionStrategy.LEGACY_LLM
         ),
+        engine_params_json: dict | None = None,
     ) -> Job:
         now = self.clock.now()
         job = Job(
@@ -79,7 +80,7 @@ class AisleJobLaunchService:
                 else None
             ),
             prompt_key=prompt_key or DEFAULT_HYBRID_PROMPT_PROFILE,
-            engine_params_json=None,
+            engine_params_json=engine_params_json,
             identification_mode=identification_mode,
             identification_mode_source=identification_mode_source,
             configuration_snapshot_version=int(

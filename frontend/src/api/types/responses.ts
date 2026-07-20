@@ -437,6 +437,9 @@ export interface JobSummary {
   llm_cost_snapshot?: LlmCostSnapshot | null;
   /** Phase 2 additive per-asset progress when orchestrator ran. */
   asset_progress?: AssetProgress | null;
+  /** Immutable identification execution snapshot from job engine_params (Phase 3/4). */
+  identification_execution?: Record<string, unknown> | null;
+  client_id?: string | null;
 }
 
 export interface AssetProgress {

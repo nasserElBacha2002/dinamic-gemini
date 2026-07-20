@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable, Sequence
+from typing import Any
 
 from src.application.errors import ImageProcessingRepositoryUnavailableError
 from src.application.ports.clock import Clock
@@ -371,12 +372,29 @@ def run_orchestrated_code_scan(
     )
 
 
-def build_default_internal_ocr_strategy(settings, artifact_store, *, client_id: str | None = None):
-    """Build :class:`InternalOcrProcessingStrategy` from settings + artifact store."""
-    _ = client_id  # reserved for future per-client rule tables
+def build_default_internal_ocr_strategy(
+    settings,
+    artifact_store,
+    *,
+    client_id: str | None = None,
+    ocr_config_override: dict | None = None,
+):
+    """Build :class:`InternalOcrProcessingStrategy` from settings + artifact store.
+
+    ``ocr_config_override`` should be the immutable OCR config snapshot recorded on the job
+    at creation time (``job.engine_params_json['identification_execution']['ocr_config']``),
+    when the caller has a ``job`` available. Snapshot values take precedence over live
+    ``settings`` so retries/resumes reproduce the exact configuration the job was created
+    with rather than picking up any settings changes made since (determinism/auditability).
+    Any key missing from the snapshot (or an older snapshot that predates it) falls back to
+    live settings.
+    """
     from src.application.services.image_processing.internal_ocr_processing_strategy import (
         InternalOcrConfig,
         InternalOcrProcessingStrategy,
+    )
+    from src.application.services.image_processing.ocr_client_field_rules import (
+        resolve_ocr_client_field_rules,
     )
     from src.application.services.image_processing.ocr_field_extractor import OcrFieldExtractor
     from src.application.services.image_processing.ocr_image_preprocessor import (
@@ -384,7 +402,6 @@ def build_default_internal_ocr_strategy(settings, artifact_store, *, client_id: 
         OcrPreprocessConfig,
     )
     from src.application.services.image_processing.ocr_result_normalizer import (
-        OcrClientFieldRules,
         OcrResultNormalizer,
     )
     from src.infrastructure.code_scanning.artifact_store_source_asset_content_reader import (
@@ -394,32 +411,49 @@ def build_default_internal_ocr_strategy(settings, artifact_store, *, client_id: 
         TesseractInternalLabelReader,
     )
 
-    engine = str(getattr(settings, "internal_ocr_engine", "tesseract") or "tesseract").lower()
+    snapshot = ocr_config_override or {}
+
+    def _cfg(key: str, default: Any) -> Any:
+        value = snapshot.get(key)
+        if value is not None:
+            return value
+        return getattr(settings, f"internal_ocr_{key}", default)
+
+    engine = str(_cfg("engine", "tesseract") or "tesseract").lower()
     if engine != "tesseract":
         logger.error(
             "internal_ocr.unsupported_engine engine=%s; only tesseract is supported",
             engine,
         )
-    prefer_ean = bool(getattr(settings, "internal_ocr_prefer_ean_as_internal_code", True))
-    rules = OcrClientFieldRules(prefer_ean_as_internal_code=prefer_ean)
+    rules = resolve_ocr_client_field_rules(
+        client_id=client_id,
+        ean_first_client_ids=getattr(settings, "internal_ocr_ean_first_client_ids", ""),
+        global_prefer_ean=bool(
+            getattr(settings, "internal_ocr_prefer_ean_as_internal_code", False)
+        ),
+    )
     preprocess = OcrPreprocessConfig(
-        max_image_dimension=int(getattr(settings, "internal_ocr_max_image_dimension", 2048)),
-        max_variants=int(getattr(settings, "internal_ocr_max_variants", 3)),
+        max_image_dimension=int(_cfg("max_image_dimension", 2048)),
+        max_variants=int(_cfg("max_variants", 3)),
         enable_gray_contrast=True,
         enable_adaptive_threshold=True,
-        enable_deskew=bool(getattr(settings, "internal_ocr_enable_deskew", False)),
+        enable_deskew=bool(_cfg("enable_deskew", False)),
     )
-    quantity_max = int(getattr(settings, "internal_ocr_quantity_max", 99999999))
+    quantity_max = int(_cfg("quantity_max", 99999999))
+    min_aggregate_confidence = _cfg("min_aggregate_confidence", None)
+    if min_aggregate_confidence is not None:
+        min_aggregate_confidence = float(min_aggregate_confidence)
     config = InternalOcrConfig(
         quantity_max=quantity_max,
         max_image_dimension=preprocess.max_image_dimension,
-        timeout_seconds=int(getattr(settings, "internal_ocr_timeout_seconds", 20)),
+        timeout_seconds=int(_cfg("timeout_seconds", 20)),
         max_variants=preprocess.max_variants,
-        language=str(getattr(settings, "internal_ocr_language", "spa+eng") or "spa+eng"),
+        language=str(_cfg("language", "spa+eng") or "spa+eng"),
         enable_gray_contrast=preprocess.enable_gray_contrast,
         enable_adaptive_threshold=preprocess.enable_adaptive_threshold,
         enable_deskew=preprocess.enable_deskew,
         client_rules=rules,
+        min_aggregate_confidence=min_aggregate_confidence,
     )
     return InternalOcrProcessingStrategy(
         reader=TesseractInternalLabelReader(default_language=config.language),

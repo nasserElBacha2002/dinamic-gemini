@@ -7,14 +7,12 @@ from typing import cast
 from src.application.errors import ActiveJobExistsError
 from src.application.ports.contracts import ProcessAislePayload
 from src.application.ports.repositories import AisleRepository, JobRepository
-from src.application.services.aisle_identification_execution import resolve_execution_strategy
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.process_aisle_job_for_aisle import (
     require_process_aisle_job_for_aisle,
 )
-from src.config import load_settings
 from src.domain.jobs.entities import Job, JobStatus
 from src.llm.prompt_composer.hybrid_assembly import DEFAULT_HYBRID_PROMPT_PROFILE
 
@@ -109,13 +107,13 @@ class RetryAisleJobUseCase:
         )
         raw_payload["aisle_id"] = resolved_aisle_id
         payload = cast(ProcessAislePayload, raw_payload)
-        settings = load_settings()
-        execution_strategy = resolve_execution_strategy(
-            effective_mode=original_job.identification_mode,
-            pipeline_enabled=bool(settings.aisle_identification_pipeline_enabled),
-            internal_ocr_processing_enabled=bool(
-                getattr(settings, "internal_ocr_processing_enabled", False)
-            ),
+        # Retry must reuse the original immutable snapshot (strategy + engine_params), not
+        # re-interpret current feature flags / OCR settings.
+        execution_strategy = original_job.execution_strategy
+        engine_params_json = (
+            dict(original_job.engine_params_json)
+            if isinstance(original_job.engine_params_json, dict)
+            else None
         )
         retry_job = self._launch_service.create_and_launch_attempt(
             aisle=aisle,
@@ -130,11 +128,12 @@ class RetryAisleJobUseCase:
             identification_mode_source=original_job.identification_mode_source,
             configuration_snapshot_version=original_job.configuration_snapshot_version,
             execution_strategy=execution_strategy,
+            engine_params_json=engine_params_json,
         )
         logger.info(
             "job.retry_requested previous_job_id=%s new_job_id=%s aisle_id=%s attempt_count=%s "
             "identification_mode=%s identification_mode_source=%s actual_execution_strategy=%s "
-            "aisle_identification_pipeline_enabled=%s",
+            "reused_original_snapshot=true",
             original_job.id,
             retry_job.id,
             command.aisle_id,
@@ -142,6 +141,5 @@ class RetryAisleJobUseCase:
             retry_job.identification_mode.value,
             retry_job.identification_mode_source.value,
             retry_job.execution_strategy.value,
-            settings.aisle_identification_pipeline_enabled,
         )
         return retry_job

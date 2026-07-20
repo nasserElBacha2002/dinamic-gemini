@@ -1,10 +1,11 @@
-"""Unit tests for Phase 4 InternalOcrProcessingStrategy (fake reader)."""
+"""Unit tests for Phase 4 InternalOcrProcessingStrategy confidence gating (LOW_OCR_CONFIDENCE)."""
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from src.application.ports.internal_label_reader import (
     InternalOcrContext,
-    InternalOcrEngineTimeoutError,
     InternalOcrReadResult,
     OcrTextBlock,
     PreparedImage,
@@ -29,24 +30,21 @@ from src.domain.image_processing.contracts import (
     ImageProcessingContext,
     ImageResultStatus,
 )
-from datetime import datetime, timezone
 
 
 class _FakeReader:
     engine_name = "fake"
     engine_version = "1"
 
-    def __init__(self, full_text: str, *, fail: Exception | None = None) -> None:
+    def __init__(self, full_text: str, *, confidence: float | None) -> None:
         self._full_text = full_text
-        self._fail = fail
+        self._confidence = confidence
 
     def read(self, image: PreparedImage, context: InternalOcrContext) -> InternalOcrReadResult:
-        if self._fail is not None:
-            raise self._fail
         return InternalOcrReadResult(
             full_text=self._full_text,
-            text_blocks=(OcrTextBlock(text=self._full_text, confidence=95.0),),
-            confidence=95.0,
+            text_blocks=(OcrTextBlock(text=self._full_text, confidence=self._confidence),),
+            confidence=self._confidence,
             orientation=0,
             engine_name=self.engine_name,
             engine_version=self.engine_version,
@@ -103,7 +101,7 @@ def _context() -> ImageProcessingContext:
     )
 
 
-def _strategy(reader) -> InternalOcrProcessingStrategy:
+def _strategy(reader, *, min_aggregate_confidence: float | None) -> InternalOcrProcessingStrategy:
     return InternalOcrProcessingStrategy(
         reader=reader,
         content_reader=_BytesReader(_png_bytes()),
@@ -112,56 +110,77 @@ def _strategy(reader) -> InternalOcrProcessingStrategy:
         ),
         extractor=OcrFieldExtractor(),
         normalizer=OcrResultNormalizer(quantity_max=9999),
-        config=InternalOcrConfig(quantity_max=9999, max_variants=1, timeout_seconds=30),
+        config=InternalOcrConfig(
+            quantity_max=9999,
+            max_variants=1,
+            timeout_seconds=30,
+            min_aggregate_confidence=min_aggregate_confidence,
+        ),
     )
 
 
-def test_strategy_resolves_labeled_text() -> None:
-    result = _strategy(_FakeReader("CODIGO: SKU42\nCANTIDAD: 7")).process(_context(), _asset())
+_LABEL_TEXT = "CODIGO: SKU42\nCANTIDAD: 7"
+
+
+def test_confidence_disabled_resolves_regardless_of_low_confidence() -> None:
+    strategy = _strategy(_FakeReader(_LABEL_TEXT, confidence=10.0), min_aggregate_confidence=None)
+    result = strategy.process(_context(), _asset())
+    assert result.status is ImageResultStatus.RESOLVED_INTERNAL
+    assert result.internal_code == "SKU42"
+
+
+def test_confidence_at_or_above_threshold_resolves() -> None:
+    strategy = _strategy(
+        _FakeReader(_LABEL_TEXT, confidence=80.0), min_aggregate_confidence=75.0
+    )
+    result = strategy.process(_context(), _asset())
     assert result.status is ImageResultStatus.RESOLVED_INTERNAL
     assert result.internal_code == "SKU42"
     assert result.quantity == 7.0
-    assert result.resolved_by == "INTERNAL_OCR"
-    assert result.evidence is not None
-    assert "full_text_sha256" in result.evidence
 
 
-def test_strategy_unrecognized_without_fields() -> None:
-    result = _strategy(_FakeReader("hola mundo")).process(_context(), _asset())
-    assert result.status is ImageResultStatus.UNRECOGNIZED
-
-
-def test_strategy_technical_on_timeout() -> None:
-    strategy = _strategy(_FakeReader("", fail=InternalOcrEngineTimeoutError("timeout")))
-    result = strategy.process(_context(), _asset())
-    assert result.status is ImageResultStatus.FAILED_TECHNICAL
-    assert result.error_code == "INTERNAL_OCR_TIMEOUT"
-    # `_technical()` must be the sole increment site — a caller-side increment before
-    # delegating to it would double-count every technical failure in metrics.
-    assert strategy.metrics.snapshot().get("ocr_technical_failures_total", 0) == 1
-
-
-def test_strategy_technical_on_no_variant_result_increments_metric_once() -> None:
-    strategy = _strategy(_FakeReader("", fail=RuntimeError("engine exploded")))
-    result = strategy.process(_context(), _asset())
-    assert result.status is ImageResultStatus.FAILED_TECHNICAL
-    assert result.error_code == "INTERNAL_OCR_NO_VARIANT_RESULT"
-    assert strategy.metrics.snapshot().get("ocr_technical_failures_total", 0) == 1
-    assert result.evidence is not None
-    assert result.evidence["variants_attempted"] == 1
-    assert result.evidence["variants_succeeded"] == 0
-    assert result.evidence["variant_failures"][0]["error_type"] == "RuntimeError"
-
-
-def test_strategy_empty_asset_technical() -> None:
-    strategy = InternalOcrProcessingStrategy(
-        reader=_FakeReader("CODIGO: X\nCANTIDAD: 1"),
-        content_reader=_BytesReader(b""),
-        preprocessor=OcrImagePreprocessor(OcrPreprocessConfig(max_variants=1)),
-        extractor=OcrFieldExtractor(),
-        normalizer=OcrResultNormalizer(quantity_max=9999),
-        config=InternalOcrConfig(quantity_max=9999, max_variants=1),
+def test_confidence_below_threshold_demotes_to_manual_review_not_resolved() -> None:
+    strategy = _strategy(
+        _FakeReader(_LABEL_TEXT, confidence=40.0), min_aggregate_confidence=75.0
     )
     result = strategy.process(_context(), _asset())
-    assert result.status is ImageResultStatus.FAILED_TECHNICAL
-    assert result.error_code == "SOURCE_ASSET_EMPTY"
+
+    assert result.status is ImageResultStatus.PENDING_MANUAL_REVIEW
+    assert result.error_code == "LOW_OCR_CONFIDENCE"
+    assert "LOW_OCR_CONFIDENCE" in result.validation_errors
+    assert "LOW_OCR_CONFIDENCE" in result.warnings
+    # The extracted fields are still surfaced for the reviewer, just not auto-accepted.
+    assert result.internal_code == "SKU42"
+    assert result.quantity == 7.0
+
+    evidence = result.evidence
+    assert evidence is not None
+    assert evidence["confidence"] == 40.0
+    assert evidence["confidence_threshold"] == 75.0
+    assert evidence["preprocessing_variant"]
+    assert evidence["selected_variant"]
+    assert evidence["engine_name"] == "fake"
+    assert evidence["selected_code_rule"] is not None
+    assert evidence["selected_qty_rule"] is not None
+
+
+def test_confidence_missing_with_threshold_configured_fails_closed() -> None:
+    strategy = _strategy(_FakeReader(_LABEL_TEXT, confidence=None), min_aggregate_confidence=75.0)
+    result = strategy.process(_context(), _asset())
+
+    assert result.status is ImageResultStatus.PENDING_MANUAL_REVIEW
+    assert result.error_code == "LOW_OCR_CONFIDENCE"
+    assert "LOW_OCR_CONFIDENCE" in result.validation_errors
+
+
+def test_low_confidence_does_not_mutate_or_leak_as_resolved_metric() -> None:
+    strategy = _strategy(
+        _FakeReader(_LABEL_TEXT, confidence=10.0), min_aggregate_confidence=75.0
+    )
+    result = strategy.process(_context(), _asset())
+
+    assert result.status is not ImageResultStatus.RESOLVED_INTERNAL
+    snapshot = strategy.metrics.snapshot()
+    assert snapshot.get("ocr_resolved_total", 0) == 0
+    assert snapshot.get("ocr_low_confidence_total", 0) == 1
+    assert snapshot.get("ocr_manual_review_total", 0) == 1

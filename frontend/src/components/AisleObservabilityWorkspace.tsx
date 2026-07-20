@@ -104,6 +104,16 @@ function jobMetadataRows(
               { defaultValue: String(job.execution_strategy) },
             ),
           },
+          ...(job.identification_mode
+            ? [
+                {
+                  label: i18n.t('jobs.obs_requested_mode', {
+                    defaultValue: 'Requested mode',
+                  }),
+                  value: String(job.identification_mode),
+                },
+              ]
+            : []),
           {
             label: i18n.t('jobs.obs_execution_scope'),
             value:

@@ -988,12 +988,13 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     code_scan_processing_enabled: bool = Field(
         default_factory=lambda: (
-            os.getenv("CODE_SCAN_PROCESSING_ENABLED", "true").strip().lower()
+            os.getenv("CODE_SCAN_PROCESSING_ENABLED", "false").strip().lower()
             in ("1", "true", "yes")
         ),
         description=(
-            "DEPRECATED / ignored: CODE_SCAN runs whenever the job identification mode is "
-            "CODE_SCAN. Kept only so existing .env files do not break settings load. "
+            "Phase 3: when true, CODE_SCAN identification mode snapshots and runs the real "
+            "per-image QR/barcode strategy. When false (default), CODE_SCAN keeps "
+            "LEGACY_LLM_TEMPORARY / LEGACY_LLM for gradual rollout and rollback. "
             "Env: CODE_SCAN_PROCESSING_ENABLED."
         ),
     )
@@ -1180,13 +1181,35 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     internal_ocr_prefer_ean_as_internal_code: bool = Field(
         default_factory=lambda: (
-            os.getenv("INTERNAL_OCR_PREFER_EAN_AS_INTERNAL_CODE", "true").strip().lower()
+            os.getenv("INTERNAL_OCR_PREFER_EAN_AS_INTERNAL_CODE", "false").strip().lower()
             in ("1", "true", "yes")
         ),
         description=(
-            "When true, labeled/bare EAN candidates win over ARTICULO/PRODUCTO for internal_code "
-            "(client-rule compatible without hardcoding client names). "
+            "DEPRECATED global default for clients without a profile. Prefer "
+            "INTERNAL_OCR_EAN_FIRST_CLIENT_IDS for per-client EAN→internal_code rules. "
             "Env: INTERNAL_OCR_PREFER_EAN_AS_INTERNAL_CODE."
+        ),
+    )
+    internal_ocr_ean_first_client_ids: str = Field(
+        default_factory=lambda: (
+            os.getenv("INTERNAL_OCR_EAN_FIRST_CLIENT_IDS", "") or ""
+        ).strip(),
+        description=(
+            "Comma-separated client UUIDs that map EAN→internal_code when present "
+            "(MASOL-style without hardcoding client names). "
+            "Env: INTERNAL_OCR_EAN_FIRST_CLIENT_IDS."
+        ),
+    )
+    internal_ocr_min_aggregate_confidence: float | None = Field(
+        default_factory=lambda: (
+            float(os.getenv("INTERNAL_OCR_MIN_AGGREGATE_CONFIDENCE"))
+            if (os.getenv("INTERNAL_OCR_MIN_AGGREGATE_CONFIDENCE") or "").strip()
+            else None
+        ),
+        description=(
+            "When set (0-100), OCR results with aggregate confidence below this threshold "
+            "become PENDING_MANUAL_REVIEW instead of RESOLVED_INTERNAL. "
+            "Env: INTERNAL_OCR_MIN_AGGREGATE_CONFIDENCE (empty = disabled)."
         ),
     )
     internal_ocr_enable_deskew: bool = Field(

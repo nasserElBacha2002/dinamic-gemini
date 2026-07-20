@@ -173,6 +173,9 @@ class JobSummary(BaseModel):
     llm_cost_snapshot: Optional[LlmCostSnapshotResponse] = None
     #: Phase 2 additive per-asset progress (absent for legacy jobs / orchestrator off).
     asset_progress: Optional[AssetProgressResponse] = None
+    #: Immutable identification execution snapshot from ``engine_params_json`` (Phase 3/4).
+    identification_execution: Optional[dict[str, Any]] = None
+    client_id: Optional[str] = None
 
 
 class FinalizationStageAssessmentItem(BaseModel):

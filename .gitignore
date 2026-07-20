@@ -74,8 +74,9 @@ output/
 # Data files (videos de prueba, etc.)
 data/
 
-# Audit artifacts (salidas fijas por corrida + historial versionado bajo runs/)
-audit/raw/*
+# Mobile / Android Gradle caches (never commit)
+**/.gradle/
+
 !audit/raw/.gitkeep
 !audit/raw/LATEST_RUN.txt
 !audit/raw/runs/

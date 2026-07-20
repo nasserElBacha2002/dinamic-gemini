@@ -1,6 +1,7 @@
 -- Phase 4 — INTERNAL_OCR execution strategy.
 -- Additive + idempotent. Widens inventory_jobs.execution_strategy CHECK to allow
--- 'INTERNAL_OCR' and adds an optional per-attempt OCR evidence audit table.
+-- 'INTERNAL_OCR'. OCR evidence lives in the common ImageProcessingResult.evidence
+-- contract (and job.engine_params_json snapshot); no dedicated dead table.
 -- Keep aligned with backend/src/database/schema.sql.
 
 -- 1) Guard: reject unknown persisted execution_strategy values before touching the constraint.
@@ -25,32 +26,4 @@ IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CK_inventory_jo
     CHECK (execution_strategy IN (
         'LEGACY_LLM', 'LEGACY_LLM_TEMPORARY', 'CODE_SCAN', 'INTERNAL_OCR'
     ));
-GO
-
--- 3) Optional per-attempt OCR evidence audit table (text hash + variant metadata only).
-IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'job_asset_internal_ocr_evidence')
-BEGIN
-    CREATE TABLE job_asset_internal_ocr_evidence (
-        id VARCHAR(64) NOT NULL PRIMARY KEY,
-        job_id VARCHAR(64) NOT NULL,
-        asset_id VARCHAR(64) NOT NULL,
-        attempt_id VARCHAR(64) NULL,
-        engine_name VARCHAR(64) NULL,
-        engine_version VARCHAR(64) NULL,
-        preprocessing_variant VARCHAR(64) NULL,
-        variants_attempted INT NULL,
-        confidence FLOAT NULL,
-        full_text_sha256 VARCHAR(64) NULL,
-        duration_ms INT NULL,
-        status VARCHAR(32) NULL,
-        created_at DATETIME2 NOT NULL DEFAULT (SYSUTCDATETIME())
-    );
-END;
-GO
-
-IF NOT EXISTS (
-    SELECT * FROM sys.indexes WHERE name = 'IX_job_asset_internal_ocr_evidence_job_asset'
-)
-    CREATE INDEX IX_job_asset_internal_ocr_evidence_job_asset
-    ON job_asset_internal_ocr_evidence (job_id, asset_id);
 GO

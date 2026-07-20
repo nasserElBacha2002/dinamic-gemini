@@ -1,9 +1,6 @@
-"""Phase 3 corrections — deterministic CODE_SCAN job outcome policy.
+"""Deterministic SINGLE_ASSET job outcome policy (CODE_SCAN / INTERNAL_OCR).
 
-Maps the terminal per-asset progress counters of a CODE_SCAN run to a single job-level
-outcome. Kept pure (no I/O) so it is trivially unit-testable and auditable: the same counters
-always map to the same outcome. The executor uses this to decide job finalization, and — most
-importantly — to never report success for a run that left assets stuck in a non-terminal state.
+Maps terminal per-asset progress counters to a single job-level outcome. Kept pure (no I/O).
 """
 
 from __future__ import annotations
@@ -13,11 +10,15 @@ from enum import Enum
 from src.application.ports.image_processing_repositories import AssetProgressCounts
 
 
-class CodeScanJobOutcome(str, Enum):
+class ImageProcessingJobOutcome(str, Enum):
     SUCCEEDED = "SUCCEEDED"
     PARTIALLY_COMPLETED = "PARTIALLY_COMPLETED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
+
+
+# Temporary alias
+CodeScanJobOutcome = ImageProcessingJobOutcome
 
 
 def decide(
@@ -25,7 +26,7 @@ def decide(
     progress: AssetProgressCounts,
     cancelled: bool,
     infrastructure_error: str | None,
-) -> CodeScanJobOutcome:
+) -> ImageProcessingJobOutcome:
     """Decide the job-level outcome from terminal per-asset counters.
 
     Precedence (highest first):
@@ -41,20 +42,20 @@ def decide(
        completed deterministically even though no code was resolved).
     """
     if cancelled:
-        return CodeScanJobOutcome.CANCELLED
+        return ImageProcessingJobOutcome.CANCELLED
     if infrastructure_error:
-        return CodeScanJobOutcome.FAILED
+        return ImageProcessingJobOutcome.FAILED
 
     total = int(progress.total)
     if total == 0:
-        return CodeScanJobOutcome.SUCCEEDED
+        return ImageProcessingJobOutcome.SUCCEEDED
 
     if int(progress.pending) > 0 or int(progress.processing) > 0:
-        return CodeScanJobOutcome.FAILED
+        return ImageProcessingJobOutcome.FAILED
 
     failed = int(progress.failed)
     if failed >= total and failed > 0:
-        return CodeScanJobOutcome.FAILED
+        return ImageProcessingJobOutcome.FAILED
 
     productive = (
         int(progress.resolved)
@@ -62,9 +63,13 @@ def decide(
         + int(progress.manual_review)
     )
     if failed > 0 and productive > 0:
-        return CodeScanJobOutcome.PARTIALLY_COMPLETED
+        return ImageProcessingJobOutcome.PARTIALLY_COMPLETED
 
-    return CodeScanJobOutcome.SUCCEEDED
+    return ImageProcessingJobOutcome.SUCCEEDED
 
 
-__all__ = ["CodeScanJobOutcome", "decide"]
+__all__ = [
+    "CodeScanJobOutcome",
+    "ImageProcessingJobOutcome",
+    "decide",
+]

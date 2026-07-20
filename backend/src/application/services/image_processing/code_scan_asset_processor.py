@@ -1,13 +1,7 @@
-"""Phase 3 corrections — per-asset CODE_SCAN processing (extracted from the orchestrator).
+"""Per-asset SINGLE_ASSET processing runner (CODE_SCAN / INTERNAL_OCR).
 
-Owns everything that happens to ONE asset during a CODE_SCAN run: reconcile against an
-already-persisted result, acquire the state, open a code-scan attempt, run the deterministic
-scan strategy, honor the persist outcome (never finalize RESOLVED unless a position actually
-exists), and finalize the per-asset state with concurrency-conflict recovery.
-
-Extracted so :class:`AisleProcessingOrchestrator` stays a coordinator rather than growing an
-ever-larger god method. The orchestrator still owns the run loop, progress publishing, and
-cancellation.
+Neutral orchestration for one asset: reconcile → acquire → attempt → strategy.process →
+persist → finalize. Strategy-specific naming belongs on the strategy, not this runner.
 """
 
 from __future__ import annotations
@@ -47,47 +41,61 @@ from src.domain.jobs.entities import Job
 
 logger = logging.getLogger(__name__)
 
-_CODE_SCAN_ATTEMPT_PROVIDER = "code_scan"
+_DEFAULT_ATTEMPT_PROVIDER = "image_processing"
 
 
 @dataclass(frozen=True)
-class CodeScanAssetResult:
+class SingleAssetProcessResult:
     processed: bool
     error: str | None = None
 
 
-class CodeScanAssetProcessor:
+class SingleAssetStrategyProcessor:
+    """Runs one physical image through any duck-typed per-image strategy."""
+
     def __init__(
         self,
         *,
         state_repo: JobAssetProcessingStateRepository,
         attempt_repo: ProcessingAttemptRepository,
         image_orchestrator: ImageProcessingOrchestrator,
-        code_scan_strategy: object,
+        strategy: object | None = None,
+        code_scan_strategy: object | None = None,
         result_persister: ProcessingResultPersister,
         clock: Clock,
         attempts_enabled: bool = True,
         reconciler: AssetProcessingReconciler | None = None,
+        inventory_client_id: str | None = None,
     ) -> None:
         self._state_repo = state_repo
         self._attempt_repo = attempt_repo
         self._image_orch = image_orchestrator
-        self._code_scan_strategy = code_scan_strategy
+        self._strategy = strategy if strategy is not None else code_scan_strategy
+        if self._strategy is None:
+            raise ValueError("SingleAssetStrategyProcessor requires strategy= or code_scan_strategy=")
         self._result_persister = result_persister
         self._clock = clock
         self._attempts_enabled = attempts_enabled
         self._reconciler = reconciler
-
-    # ------------------------------------------------------------------
+        self._inventory_client_id = inventory_client_id
 
     def _attempt_provider(self) -> str:
         return str(
-            getattr(self._code_scan_strategy, "attempt_provider", _CODE_SCAN_ATTEMPT_PROVIDER)
-            or _CODE_SCAN_ATTEMPT_PROVIDER
+            getattr(self._strategy, "attempt_provider", _DEFAULT_ATTEMPT_PROVIDER)
+            or _DEFAULT_ATTEMPT_PROVIDER
         )
 
     def _attempt_model(self) -> str:
-        return str(getattr(self._code_scan_strategy, "attempt_model", "pyzbar") or "pyzbar")
+        return str(getattr(self._strategy, "attempt_model", "unknown") or "unknown")
+
+    def _resolve_client_id(self, job: Job) -> str | None:
+        params = job.engine_params_json if isinstance(job.engine_params_json, dict) else {}
+        snap_client = params.get("client_id")
+        if isinstance(snap_client, str) and snap_client.strip():
+            return snap_client.strip()
+        if self._inventory_client_id and str(self._inventory_client_id).strip():
+            return str(self._inventory_client_id).strip()
+        return None
 
     def process_asset(
         self,
@@ -97,13 +105,11 @@ class CodeScanAssetProcessor:
         asset: SourceAsset,
         strategy_key: str,
         worker_token: str,
-    ) -> CodeScanAssetResult:
+    ) -> SingleAssetProcessResult:
         state = self._state_repo.get_by_job_and_asset(job.id, asset.id)
         if state is None or self._image_orch.is_terminal(state):
-            return CodeScanAssetResult(processed=False)
+            return SingleAssetProcessResult(processed=False)
 
-        # Reconcile before scanning: a prior worker may have persisted a complete result but
-        # crashed before finalizing this state. Never rescan (or downgrade) a covered asset.
         if self._reconciler is not None:
             lookup = self._reconciler.find_active_result(
                 job_id=job.id, asset_id=asset.id, aisle_id=aisle.id
@@ -112,11 +118,12 @@ class CodeScanAssetProcessor:
                 state, lookup=lookup, strategy=strategy_key, aisle_id=aisle.id
             ):
                 logger.info(
-                    "code_scan.reconciled_before_scan job_id=%s asset_id=%s",
+                    "image_processing.reconciled job_id=%s asset_id=%s strategy=%s",
                     job.id,
                     asset.id,
+                    strategy_key,
                 )
-                return CodeScanAssetResult(processed=True)
+                return SingleAssetProcessResult(processed=True)
 
         acquired = self._image_orch.acquire_for_processing(
             job_id=job.id,
@@ -125,7 +132,7 @@ class CodeScanAssetProcessor:
             worker_token=worker_token,
         )
         if acquired is None:
-            return CodeScanAssetResult(processed=False)
+            return SingleAssetProcessResult(processed=False)
 
         attempt = None
         attempt_number = int(acquired.attempt_count or 0) + 1
@@ -152,7 +159,7 @@ class CodeScanAssetProcessor:
             asset_id=asset.id,
             aisle_id=aisle.id,
             inventory_id=aisle.inventory_id,
-            client_id=None,
+            client_id=self._resolve_client_id(job),
             identification_mode=job.identification_mode,
             execution_strategy=job.execution_strategy,
             configuration_snapshot_version=job.configuration_snapshot_version,
@@ -166,15 +173,32 @@ class CodeScanAssetProcessor:
         )
 
         error: str | None = None
+        logger.info(
+            "image_processing.strategy_started job_id=%s asset_id=%s strategy=%s "
+            "worker_token=%s provider=%s model=%s",
+            job.id,
+            asset.id,
+            strategy_key,
+            worker_token,
+            context.provider_name,
+            context.model_name,
+        )
         try:
-            result = self._code_scan_strategy.process(context, asset)
-        except Exception as exc:  # defensive: strategy must not crash the run
+            result = self._strategy.process(context, asset)
+        except Exception as exc:
             logger.exception(
-                "code_scan.strategy_exception job_id=%s asset_id=%s", job.id, asset.id
+                "image_processing.strategy_failed job_id=%s asset_id=%s strategy=%s",
+                job.id,
+                asset.id,
+                strategy_key,
             )
             error = f"strategy_exception:{asset.id}"
             result = self._failed_technical(
-                job, asset, strategy_key, "CODE_SCAN_STRATEGY_EXCEPTION", str(exc)
+                job,
+                asset,
+                strategy_key,
+                f"{strategy_key}_STRATEGY_EXCEPTION",
+                str(exc),
             )
 
         if result.status is ImageResultStatus.RESOLVED_INTERNAL:
@@ -182,6 +206,17 @@ class CodeScanAssetProcessor:
                 job=job, aisle=aisle, asset=asset, strategy_key=strategy_key, result=result
             )
             error = error or persist_error
+
+        logger.info(
+            "image_processing.strategy_completed job_id=%s asset_id=%s strategy=%s "
+            "status=%s error_code=%s duration_ms=%s",
+            job.id,
+            asset.id,
+            strategy_key,
+            result.status.value,
+            result.error_code,
+            result.processing_duration_ms,
+        )
 
         self._finalize(
             job=job,
@@ -191,9 +226,7 @@ class CodeScanAssetProcessor:
             result=result,
             strategy_key=strategy_key,
         )
-        return CodeScanAssetResult(processed=True, error=error)
-
-    # ------------------------------------------------------------------
+        return SingleAssetProcessResult(processed=True, error=error)
 
     def _apply_persist(
         self,
@@ -204,6 +237,12 @@ class CodeScanAssetProcessor:
         strategy_key: str,
         result: ImageProcessingResult,
     ) -> tuple[ImageProcessingResult, str | None]:
+        logger.info(
+            "image_processing.persistence_started job_id=%s asset_id=%s strategy=%s",
+            job.id,
+            asset.id,
+            strategy_key,
+        )
         try:
             outcome = self._result_persister.persist(
                 result=result,
@@ -212,11 +251,18 @@ class CodeScanAssetProcessor:
             )
         except Exception as exc:
             logger.exception(
-                "code_scan.persist_failed job_id=%s asset_id=%s", job.id, asset.id
+                "image_processing.persistence_failed job_id=%s asset_id=%s strategy=%s",
+                job.id,
+                asset.id,
+                strategy_key,
             )
             return (
                 self._failed_technical(
-                    job, asset, strategy_key, "CODE_SCAN_PERSISTENCE_FAILED", str(exc)
+                    job,
+                    asset,
+                    strategy_key,
+                    "PROCESSING_PERSISTENCE_FAILED",
+                    str(exc),
                 ),
                 f"persist_failed:{asset.id}",
             )
@@ -225,6 +271,18 @@ class CodeScanAssetProcessor:
             active_id = outcome.active_result_id or outcome.position_id
             result.additional_fields["active_result_id"] = active_id
             result.additional_fields["position_id"] = outcome.position_id
+            result.additional_fields["persistence_status"] = (
+                "persisted" if outcome.persisted else "reconciled"
+            )
+            logger.info(
+                "image_processing.persistence_completed job_id=%s asset_id=%s strategy=%s "
+                "persistence_outcome=%s position_id=%s",
+                job.id,
+                asset.id,
+                strategy_key,
+                "persisted" if outcome.persisted else "reconciled",
+                outcome.position_id,
+            )
             return result, None
 
         reason = outcome.skipped_reason
@@ -252,17 +310,16 @@ class CodeScanAssetProcessor:
         ):
             return (
                 self._pending_manual_review(
-                    job, asset, strategy_key, "CODE_SCAN_INCOMPLETE_RESULT", result
+                    job, asset, strategy_key, "PROCESSING_INCOMPLETE_RESULT", result
                 ),
                 None,
             )
-        # CONCURRENCY_CONFLICT (unreconciled), PERSISTENCE_ERROR, NOT_RESOLVED_INTERNAL, or None.
         return (
             self._failed_technical(
                 job,
                 asset,
                 strategy_key,
-                "CODE_SCAN_PERSISTENCE_FAILED",
+                "PROCESSING_PERSISTENCE_FAILED",
                 f"persist skipped without a position: {reason.value if reason else 'unknown'}",
             ),
             f"persist_not_resolved:{asset.id}",
@@ -285,10 +342,12 @@ class CodeScanAssetProcessor:
             return
         except AssetProcessingStateConcurrencyError:
             logger.warning(
-                "code_scan.state_conflict job_id=%s asset_id=%s", job.id, asset.id
+                "image_processing.state_conflict job_id=%s asset_id=%s strategy=%s",
+                job.id,
+                asset.id,
+                strategy_key,
             )
 
-        # F — reconcile after a conflict: another worker finalized this asset first.
         reloaded = self._state_repo.get_by_job_and_asset(job.id, asset.id)
         if reloaded is not None and reloaded.status is JobAssetProcessingStatus.RESOLVED:
             self._close_attempt_reconciled(attempt)
@@ -299,6 +358,8 @@ class CodeScanAssetProcessor:
             and self._reconciler is not None
         ):
             self._reconciler.reconcile_state_if_complete(reloaded, strategy=strategy_key)
+            self._close_attempt_reconciled(attempt)
+            return
         self._close_attempt_reconciled(attempt)
 
     def _close_attempt_reconciled(self, attempt) -> None:
@@ -311,9 +372,10 @@ class CodeScanAssetProcessor:
             attempt.error_message = "Asset finalized by a concurrent worker before this attempt."
             self._attempt_repo.save(attempt)
         except Exception:
-            logger.warning("code_scan.close_attempt_failed attempt_id=%s", getattr(attempt, "id", None))
-
-    # ------------------------------------------------------------------
+            logger.warning(
+                "image_processing.close_attempt_failed attempt_id=%s",
+                getattr(attempt, "id", None),
+            )
 
     def _failed_technical(
         self,
@@ -321,16 +383,16 @@ class CodeScanAssetProcessor:
         asset: SourceAsset,
         strategy_key: str,
         error_code: str,
-        error_message: str,
+        message: str,
     ) -> ImageProcessingResult:
         return ImageProcessingResult(
             job_id=job.id,
             asset_id=asset.id,
             status=ImageResultStatus.FAILED_TECHNICAL,
-            processing_mode=job.identification_mode.value,
+            processing_mode=strategy_key,
             resolved_by=strategy_key,
             error_code=error_code,
-            error_message=error_message,
+            error_message=(message or "")[:500],
             execution_scope=ExecutionScope.SINGLE_ASSET,
             logical_asset_attempt=False,
         )
@@ -347,15 +409,28 @@ class CodeScanAssetProcessor:
             job_id=job.id,
             asset_id=asset.id,
             status=ImageResultStatus.PENDING_MANUAL_REVIEW,
-            processing_mode=job.identification_mode.value,
+            processing_mode=strategy_key,
             resolved_by=strategy_key,
             internal_code=prior.internal_code,
+            quantity=prior.quantity,
+            additional_fields=dict(prior.additional_fields),
+            warnings=list(prior.warnings) + [error_code],
+            validation_errors=list(prior.validation_errors) + [error_code],
             evidence=prior.evidence,
-            warnings=list(prior.warnings),
             error_code=error_code,
             execution_scope=ExecutionScope.SINGLE_ASSET,
             logical_asset_attempt=False,
         )
 
 
-__all__ = ["CodeScanAssetProcessor", "CodeScanAssetResult"]
+# Temporary aliases (Phase 3/4 compatibility)
+CodeScanAssetResult = SingleAssetProcessResult
+CodeScanAssetProcessor = SingleAssetStrategyProcessor
+
+
+__all__ = [
+    "CodeScanAssetProcessor",
+    "CodeScanAssetResult",
+    "SingleAssetProcessResult",
+    "SingleAssetStrategyProcessor",
+]

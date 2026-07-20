@@ -610,6 +610,22 @@ def _asset_progress_from_job_result(
         return None
 
 
+def _identification_execution_from_job(j: Job) -> dict | None:
+    params = j.engine_params_json if isinstance(j.engine_params_json, dict) else None
+    if not params:
+        return None
+    raw = params.get("identification_execution")
+    return raw if isinstance(raw, dict) else None
+
+
+def _client_id_from_job(j: Job) -> str | None:
+    params = j.engine_params_json if isinstance(j.engine_params_json, dict) else None
+    if not params:
+        return None
+    cid = params.get("client_id")
+    return str(cid).strip() if isinstance(cid, str) and cid.strip() else None
+
+
 def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
     return JobSummary(
         id=j.id,
@@ -647,6 +663,8 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
         is_operational=is_operational,
         llm_cost_snapshot=_llm_cost_snapshot_from_job_result(j.result_json),
         asset_progress=_asset_progress_from_job_result(j.result_json),
+        identification_execution=_identification_execution_from_job(j),
+        client_id=_client_id_from_job(j),
     )
 
 

@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from src.domain.aisle_identification.modes import (
-    AisleIdentificationExecutionStrategy,
-    AisleIdentificationMode,
-)
+from src.domain.aisle_identification.modes import AisleIdentificationExecutionStrategy
 from src.domain.jobs.entities import Job
 
 logger = logging.getLogger(__name__)
@@ -18,11 +15,10 @@ STRATEGY_INTERNAL_OCR = "INTERNAL_OCR"
 
 
 class ProcessingStrategyResolver:
-    """Central selector.
+    """Central selector — trusts the immutable ``execution_strategy`` snapshotted at job start.
 
-    ``CODE_SCAN`` / ``INTERNAL_OCR`` jobs (by immutable ``execution_strategy`` or
-    ``identification_mode`` when that mode is the real path) use per-image strategies.
-    All other modes stay on LegacyLlm.
+    Feature flags are applied only when creating the job. Workers and retries must not
+    re-interpret env flags against ``identification_mode``.
     """
 
     def resolve_strategy_key(
@@ -31,40 +27,30 @@ class ProcessingStrategyResolver:
         *,
         pipeline_enabled: bool,
         orchestrator_enabled: bool,
-        code_scan_processing_enabled: bool = True,
+        code_scan_processing_enabled: bool = False,
         internal_ocr_processing_enabled: bool = False,
     ) -> str:
-        _ = code_scan_processing_enabled  # deprecated; CODE_SCAN is no longer env-gated
+        # Flags are intentionally unused here: the job snapshot already encoded them.
+        _ = (
+            code_scan_processing_enabled,
+            internal_ocr_processing_enabled,
+            pipeline_enabled,
+            orchestrator_enabled,
+        )
         configured = job.identification_mode
         actual = job.execution_strategy
-        if (
-            actual == AisleIdentificationExecutionStrategy.CODE_SCAN
-            or configured == AisleIdentificationMode.CODE_SCAN
-        ):
+        if actual == AisleIdentificationExecutionStrategy.CODE_SCAN:
             selected = STRATEGY_CODE_SCAN
-        elif (
-            actual == AisleIdentificationExecutionStrategy.INTERNAL_OCR
-            or (
-                configured == AisleIdentificationMode.INTERNAL_OCR
-                and internal_ocr_processing_enabled
-            )
-        ):
+        elif actual == AisleIdentificationExecutionStrategy.INTERNAL_OCR:
             selected = STRATEGY_INTERNAL_OCR
         else:
             selected = STRATEGY_LEGACY_LLM
         logger.info(
             "image_processing.strategy_resolved job_id=%s configured_identification_mode=%s "
-            "selected_strategy=%s actual_execution_strategy=%s "
-            "aisle_identification_pipeline_enabled=%s image_processing_orchestrator_enabled=%s "
-            "internal_ocr_processing_enabled=%s",
+            "selected_strategy=%s actual_execution_strategy=%s",
             job.id,
-            configured.value if isinstance(configured, AisleIdentificationMode) else configured,
+            getattr(configured, "value", configured),
             selected,
-            actual.value
-            if isinstance(actual, AisleIdentificationExecutionStrategy)
-            else actual,
-            pipeline_enabled,
-            orchestrator_enabled,
-            internal_ocr_processing_enabled,
+            getattr(actual, "value", actual),
         )
         return selected

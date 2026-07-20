@@ -38,17 +38,20 @@ class OcrClientFieldRules:
     ``internal_code_priority`` is an ordered list of source tags, e.g.
     ``("ean_label", "label", "article_label", "product_label", "bare_ean")``.
     Clients that historically map EAN → internal_code put ``ean_label`` / ``bare_ean`` first
-    (configured via settings, never hardcoded client names here).
+    (configured via settings client-id lists, never hardcoded client names here).
     """
 
+    profile_key: str = "default"
+    profile_version: str = "1"
     internal_code_priority: tuple[str, ...] = (
-        "ean_label",
-        "bare_ean",
         "label",
         "article_label",
         "product_label",
+        "ean_label",
+        "bare_ean",
     )
-    prefer_ean_as_internal_code: bool = True
+    prefer_ean_as_internal_code: bool = False
+    required_fields: tuple[str, ...] = ("internal_code", "quantity")
 
 
 @dataclass

@@ -33,9 +33,16 @@ from src.application.ports.repositories import (
     JobRepository,
     SourceAssetRepository,
 )
-from src.application.services.aisle_identification_execution import resolve_execution_strategy
+from src.application.services.aisle_identification_execution import (
+    identification_execution_snapshot_dict,
+    resolve_execution_strategy_decision,
+)
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
+from src.application.services.image_processing.ocr_client_field_rules import (
+    ocr_client_rules_snapshot,
+    resolve_ocr_client_field_rules,
+)
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.process_aisle_execution_resolution import (
     resolve_process_aisle_execution_keys,
@@ -243,20 +250,62 @@ class StartAisleProcessingUseCase:
             inventory_mode=inventory.identification_mode,
             client_mode=client_mode,
         )
-        execution_strategy = resolve_execution_strategy(
+        decision = resolve_execution_strategy_decision(
             effective_mode=resolution.effective_mode,
             pipeline_enabled=bool(settings.aisle_identification_pipeline_enabled),
+            code_scan_processing_enabled=bool(
+                getattr(settings, "code_scan_processing_enabled", False)
+            ),
             internal_ocr_processing_enabled=bool(
                 getattr(settings, "internal_ocr_processing_enabled", False)
             ),
         )
+        execution_strategy = decision.strategy
+
+        client_id = inventory.client_id
+        client_rules = resolve_ocr_client_field_rules(
+            client_id=client_id,
+            ean_first_client_ids=getattr(settings, "internal_ocr_ean_first_client_ids", ""),
+            global_prefer_ean=bool(
+                getattr(settings, "internal_ocr_prefer_ean_as_internal_code", False)
+            ),
+        )
+        ocr_config = None
+        if (
+            resolution.effective_mode.value == "INTERNAL_OCR"
+            or execution_strategy.value == "INTERNAL_OCR"
+        ):
+            ocr_config = {
+                "engine": getattr(settings, "internal_ocr_engine", "tesseract"),
+                "language": getattr(settings, "internal_ocr_language", "spa+eng"),
+                "max_variants": getattr(settings, "internal_ocr_max_variants", 3),
+                "timeout_seconds": getattr(settings, "internal_ocr_timeout_seconds", 20),
+                "max_image_dimension": getattr(
+                    settings, "internal_ocr_max_image_dimension", 2048
+                ),
+                "enable_deskew": getattr(settings, "internal_ocr_enable_deskew", False),
+                "quantity_max": getattr(settings, "internal_ocr_quantity_max", 99999999),
+                "min_aggregate_confidence": getattr(
+                    settings, "internal_ocr_min_aggregate_confidence", None
+                ),
+                "processor_version": "1.0.0",
+            }
+        engine_params_json = {
+            "identification_execution": identification_execution_snapshot_dict(
+                decision,
+                ocr_config=ocr_config,
+                client_rules=ocr_client_rules_snapshot(client_rules),
+                configuration_snapshot_version=CONFIGURATION_SNAPSHOT_VERSION,
+            ),
+            "client_id": client_id,
+        }
 
         logger.info(
             "aisle.identification_resolved inventory_id=%s aisle_id=%s "
             "requested_identification_mode=%s configured_aisle=%s configured_inventory=%s "
             "configured_client=%s effective_identification_mode=%s identification_mode_source=%s "
             "configuration_snapshot_version=%s aisle_identification_pipeline_enabled=%s "
-            "actual_execution_strategy=%s",
+            "actual_execution_strategy=%s execution_reason=%s",
             command.inventory_id,
             command.aisle_id,
             command.requested_identification_mode,
@@ -268,6 +317,7 @@ class StartAisleProcessingUseCase:
             CONFIGURATION_SNAPSHOT_VERSION,
             settings.aisle_identification_pipeline_enabled,
             execution_strategy.value,
+            decision.reason,
         )
 
         payload: ProcessAislePayload = {"aisle_id": command.aisle_id}
@@ -286,6 +336,7 @@ class StartAisleProcessingUseCase:
             identification_mode_source=resolution.source,
             configuration_snapshot_version=CONFIGURATION_SNAPSHOT_VERSION,
             execution_strategy=execution_strategy,
+            engine_params_json=engine_params_json,
         )
         return StartAisleProcessingResult(
             job_id=job.id,

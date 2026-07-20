@@ -156,7 +156,7 @@
     "identification_mode_code_scan_help": "Reads code and quantity from QR/barcode on each image (no LLM provider).",
     "identification_mode_internal_ocr_help": "Prepared to extract code, quantity and extra fields via visual reading.",
     "identification_mode_legacy_llm_help": "Uses the current external-provider analysis.",
-    "identification_phase1_warning": "Internal OCR still uses traditional processing temporarily unless INTERNAL_OCR_PROCESSING_ENABLED is on the server. CODE_SCAN already runs natively per image.",
+    "identification_phase1_warning": "CODE_SCAN and Internal OCR use real per-image processing only when enabled on the server (feature flags). Otherwise traditional processing runs temporarily.",
     "identification_use_inherited": "Use inherited configuration — {{mode}} from {{source}}",
     "identification_will_use_inherited": "{{mode}} inherited from {{source}} will be used.",
     "identification_override_only_this_run": "This selection applies only to this processing run.",
