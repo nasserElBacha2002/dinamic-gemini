@@ -57,7 +57,7 @@ class _FixedContentReader:
         return self._content
 
 
-def _strategy(content: bytes) -> CodeScanProcessingStrategy:
+def _strategy(content: bytes, *, event_publisher=None) -> CodeScanProcessingStrategy:
     try:
         from src.infrastructure.code_scanning.pyzbar_code_scanner import PyzbarCodeScanner
 
@@ -70,6 +70,7 @@ def _strategy(content: bytes) -> CodeScanProcessingStrategy:
         parser=EncodedLabelPayloadParser(quantity_max=99999999, allow_decimal_quantity=False),
         consolidator=CodeDetectionConsolidator(),
         config=CodeScanConfig(quantity_max=99999999),
+        event_publisher=event_publisher,
     )
 
 
@@ -110,6 +111,91 @@ def test_real_qr_pipe_payload_resolves_code_and_quantity() -> None:
     assert result.status is ImageResultStatus.RESOLVED_INTERNAL
     assert result.internal_code == "ABC123"
     assert int(result.quantity) == 5
+
+
+def test_real_qr_with_profile_aware_flag_still_uses_consolidator() -> None:
+    """OCR profile_aware flag must not divert CODE_SCAN away from consolidator."""
+    from src.domain.client_supplier.extraction_profile import (
+        default_extraction_configuration,
+    )
+
+    strategy = _strategy(_qr_png_bytes("DINAMIC42|7"))
+    ctx = _context()
+    # ImageProcessingContext is a dataclass — rebuild with profile flags.
+    ctx = ImageProcessingContext(
+        job_id=ctx.job_id,
+        asset_id=ctx.asset_id,
+        aisle_id=ctx.aisle_id,
+        inventory_id=ctx.inventory_id,
+        client_id=ctx.client_id,
+        identification_mode=ctx.identification_mode,
+        execution_strategy=ctx.execution_strategy,
+        configuration_snapshot_version=ctx.configuration_snapshot_version,
+        provider_name=ctx.provider_name,
+        model_name=ctx.model_name,
+        prompt_key=ctx.prompt_key,
+        prompt_version=ctx.prompt_version,
+        attempt_number=ctx.attempt_number,
+        execution_scope=ctx.execution_scope,
+        profile_aware_validation_enabled=True,
+        supplier_extraction_profile={
+            "configuration": default_extraction_configuration().to_public_dict()
+        },
+    )
+    result = strategy.process(ctx, _asset())
+    assert result.status is ImageResultStatus.RESOLVED_INTERNAL
+    assert result.internal_code == "DINAMIC42"
+    assert int(result.quantity) == 7
+    assert not (result.evidence or {}).get("profile_validation_executed")
+
+
+def test_real_qr_emits_per_asset_events() -> None:
+    events: list[str] = []
+
+    class _Capture:
+        def publish(self, **kwargs):
+            events.append(str(kwargs.get("event_type")))
+
+    strategy = _strategy(_qr_png_bytes("EVT|1"), event_publisher=_Capture())
+    result = strategy.process(_context(), _asset())
+    assert result.status is ImageResultStatus.RESOLVED_INTERNAL
+    assert "code_scan.asset_started" in events
+    assert "asset.source_loaded" in events
+    assert "code_scan.decode_started" in events
+    assert "code_scan.decode_completed" in events
+    assert "code_scan.symbols_detected" in events
+    assert "code_scan.asset_finalized" in events
+
+
+def test_real_code128_payload_resolves() -> None:
+    from pathlib import Path
+
+    fixture = (
+        Path(__file__).resolve().parent / "fixtures" / "code128_c128test_3.png"
+    )
+    if not fixture.is_file():
+        pytest.skip("CODE128 fixture missing")
+    strategy = _strategy(fixture.read_bytes())
+    result = strategy.process(_context(), _asset())
+    assert result.status is ImageResultStatus.RESOLVED_INTERNAL
+    assert result.internal_code == "C128TEST"
+    assert int(result.quantity) == 3
+
+
+def test_real_invalid_payload_is_unrecognized_or_manual() -> None:
+    strategy = _strategy(_qr_png_bytes("|||"))
+    result = strategy.process(_context(), _asset())
+    assert result.status in (
+        ImageResultStatus.UNRECOGNIZED,
+        ImageResultStatus.PENDING_MANUAL_REVIEW,
+    )
+
+
+def test_real_corrupt_image_is_technical() -> None:
+    strategy = _strategy(b"not-an-image")
+    result = strategy.process(_context(), _asset())
+    assert result.status is ImageResultStatus.FAILED_TECHNICAL
+    assert result.error_code == "CODE_SCAN_SCANNER_ERROR"
 
 
 def test_real_qr_code_only_is_manual_review() -> None:

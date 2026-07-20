@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 
+import pytest
+
 from src.application.ports.code_scanner import CodeScanDetectionCandidate
 from src.application.services.image_processing.code_detection_consolidator import (
     CodeDetectionConsolidator,
@@ -146,7 +148,13 @@ def test_missing_file_is_failed_technical() -> None:
 
 
 def test_scanner_error_is_failed_technical() -> None:
-    strategy = _strategy(FakeCodeScanner(RuntimeError("boom")), FakeReader())
+    strategy = _strategy(FakeCodeScanner(ValueError("boom")), FakeReader())
     result = strategy.process(_context(), _asset())
     assert result.status is ImageResultStatus.FAILED_TECHNICAL
     assert result.error_code == "CODE_SCAN_SCANNER_ERROR"
+
+
+def test_programming_error_from_scanner_propagates() -> None:
+    strategy = _strategy(FakeCodeScanner(RuntimeError("boom")), FakeReader())
+    with pytest.raises(RuntimeError, match="boom"):
+        strategy.process(_context(), _asset())

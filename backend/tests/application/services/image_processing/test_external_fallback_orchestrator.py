@@ -582,3 +582,129 @@ def test_aggregate_progress_from_requests() -> None:
     progress = aggregate_fallback_progress_from_requests(rows, resolved_internal=2)
     assert progress["resolved_external"] == 1
     assert progress["resolved_internal"] == 2
+
+
+def test_fallback_completed_only_after_durable_persist() -> None:
+    events: list[str] = []
+
+    class _Capture:
+        def publish(self, **kwargs):
+            events.append(str(kwargs.get("event_type")))
+
+    provider = _FakeProvider(
+        result=ExternalAnalysisResult(
+            status=ExternalAnalysisStatus.VALID,
+            internal_code="CODE1",
+            quantity=2,
+            provider_name="fake",
+            model_name="fake-model",
+        )
+    )
+    orch, _, _ = _orch(provider)
+    orch.event_publisher = _Capture()
+    out = orch.process_if_eligible(
+        job=_job(),
+        asset=_asset(),
+        internal_result=_internal_unrecognized(),
+        worker_token="w",
+        snapshot=_snapshot(),
+        client_id="c1",
+    )
+    assert "fallback.started" in events
+    assert "fallback.provider_completed" in events
+    assert "fallback.completed" not in events
+    assert out.persistence_status == "PENDING"
+
+    orch.finalize_after_persist(
+        attempt=out.attempt,  # type: ignore[arg-type]
+        request=out.request,
+        result=out.result,  # type: ignore[arg-type]
+        position_id="pos-1",
+        active_result_id="ar-1",
+        persisted=True,
+    )
+    assert "fallback.persistence_started" in events
+    assert events.count("fallback.completed") == 1
+    assert "fallback.failed" not in events
+    terminals = [
+        e
+        for e in events
+        if e
+        in (
+            "fallback.completed",
+            "fallback.failed",
+            "fallback.cancelled",
+            "fallback.skipped",
+        )
+    ]
+    assert terminals[-1] == "fallback.completed"
+
+
+def test_fallback_provider_unresolved_emits_failed_not_completed() -> None:
+    events: list[str] = []
+
+    class _Capture:
+        def publish(self, **kwargs):
+            events.append(str(kwargs.get("event_type")))
+
+    provider = _FakeProvider(
+        result=ExternalAnalysisResult(
+            status=ExternalAnalysisStatus.INVALID,
+            provider_name="fake",
+            model_name="fake-model",
+        )
+    )
+    orch, _, _ = _orch(provider)
+    orch.event_publisher = _Capture()
+    out = orch.process_if_eligible(
+        job=_job(),
+        asset=_asset(),
+        internal_result=_internal_unrecognized(),
+        worker_token="w",
+        snapshot=_snapshot(),
+    )
+    assert out.result is not None
+    assert "fallback.started" in events
+    assert "fallback.failed" in events
+    assert "fallback.completed" not in events
+
+
+def test_two_workers_same_idempotency_single_provider_call() -> None:
+    import threading
+
+    provider = _FakeProvider(
+        result=ExternalAnalysisResult(
+            status=ExternalAnalysisStatus.VALID,
+            internal_code="CODE1",
+            quantity=2,
+            provider_name="fake",
+            model_name="fake-model",
+        )
+    )
+    requests = MemoryExternalImageAnalysisRequestRepository()
+    barrier = threading.Barrier(2)
+    outcomes: list = []
+
+    def worker(token: str) -> None:
+        orch, _, _ = _orch(provider, request_repo=requests)
+        barrier.wait()
+        outcomes.append(
+            orch.process_if_eligible(
+                job=_job(),
+                asset=_asset(),
+                internal_result=_internal_unrecognized(),
+                worker_token=token,
+                snapshot=_snapshot(),
+                client_id="c1",
+            )
+        )
+
+    t1 = threading.Thread(target=worker, args=("w1",))
+    t2 = threading.Thread(target=worker, args=("w2",))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+    assert len(provider.calls) == 1
+    assert len(outcomes) == 2
+    assert all(o.result is not None or o.skipped for o in outcomes)

@@ -142,7 +142,10 @@ def test_strategy_technical_on_timeout() -> None:
 
 
 def test_strategy_technical_on_no_variant_result_increments_metric_once() -> None:
-    strategy = _strategy(_FakeReader("", fail=RuntimeError("engine exploded")))
+    """Known soft variant failures still produce NO_VARIANT_RESULT; use typed soft error."""
+    from src.application.ports.internal_label_reader import OcrVariantReadError
+
+    strategy = _strategy(_FakeReader("", fail=OcrVariantReadError("variant soft fail")))
     result = strategy.process(_context(), _asset())
     assert result.status is ImageResultStatus.FAILED_TECHNICAL
     assert result.error_code == "INTERNAL_OCR_NO_VARIANT_RESULT"
@@ -150,7 +153,16 @@ def test_strategy_technical_on_no_variant_result_increments_metric_once() -> Non
     assert result.evidence is not None
     assert result.evidence["variants_attempted"] == 1
     assert result.evidence["variants_succeeded"] == 0
-    assert result.evidence["variant_failures"][0]["error_type"] == "RuntimeError"
+    assert result.evidence["variant_failures"][0]["error_type"] == "OcrVariantReadError"
+
+
+def test_strategy_unexpected_runtime_error_propagates() -> None:
+    import pytest
+
+    strategy = _strategy(_FakeReader("", fail=RuntimeError("engine exploded")))
+    with pytest.raises(RuntimeError, match="engine exploded"):
+        strategy.process(_context(), _asset())
+    assert strategy.metrics.snapshot().get("ocr_technical_failures_total", 0) == 1
 
 
 def test_strategy_empty_asset_technical() -> None:

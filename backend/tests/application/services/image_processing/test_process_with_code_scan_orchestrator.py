@@ -166,9 +166,7 @@ def _build(strategy, persister, *, concurrency: int = 1):
     result_evidence_repo = MemoryResultEvidenceRepository()
     evidence_repo = MemoryEvidenceRepository()
     position_repo = MemoryPositionRepository()
-    image_orch = ImageProcessingOrchestrator(
-        state_repo, attempt_repo, clock, attempts_enabled=True
-    )
+    image_orch = ImageProcessingOrchestrator(state_repo, attempt_repo, clock, attempts_enabled=True)
     orch = AisleProcessingOrchestrator(
         state_repo=state_repo,
         attempt_repo=attempt_repo,
@@ -394,3 +392,53 @@ def test_concurrency_one_processes_all() -> None:
 
     assert outcome.progress.resolved == 2
     assert sorted(persister.persisted) == ["s1", "s2"]
+
+
+def test_ten_eligible_assets_must_start_processing() -> None:
+    """Regression: assets_eligible=10 must not complete with assets_started=0."""
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    ids = [f"s{i}" for i in range(10)]
+    strategy = FakeCodeScanStrategy({aid: ImageResultStatus.RESOLVED_INTERNAL for aid in ids})
+    persister = FakePersister()
+    orch, _ = _build(strategy, persister)
+
+    outcome = orch.process_with_code_scan(
+        job=_job(),
+        aisle=_aisle(now),
+        assets=[_asset(aid, now) for aid in ids],
+        pipeline_enabled=True,
+        orchestrator_enabled=True,
+        is_cancelled=lambda: False,
+        worker_token="w1",
+    )
+
+    assert outcome.assets_eligible == 10
+    assert outcome.assets_started == 10
+    assert outcome.progress.resolved == 10
+    assert outcome.job_outcome.value == "SUCCEEDED"
+
+
+def test_assets_started_exact_under_concurrent_stress() -> None:
+    """assets_started must be exact with ThreadPoolExecutor (no GIL reliance)."""
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    n = 120
+    ids = [f"s{i}" for i in range(n)]
+    strategy = FakeCodeScanStrategy({aid: ImageResultStatus.RESOLVED_INTERNAL for aid in ids})
+    persister = FakePersister()
+    orch, _ = _build(strategy, persister, concurrency=8)
+
+    outcome = orch.process_with_code_scan(
+        job=_job(),
+        aisle=_aisle(now),
+        assets=[_asset(aid, now) for aid in ids],
+        pipeline_enabled=True,
+        orchestrator_enabled=True,
+        is_cancelled=lambda: False,
+        worker_token="w1",
+    )
+
+    assert outcome.assets_eligible == n
+    assert outcome.assets_started == n
+    assert outcome.progress.resolved == n
+    assert len(persister.persisted) == n
+    assert outcome.job_outcome.value == "SUCCEEDED"

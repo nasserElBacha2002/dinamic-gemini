@@ -11,6 +11,10 @@ Hard constraints (no OCR, no LLM fallback, no multi-label per image):
 - No detection → UNRECOGNIZED. Ambiguity → PENDING_MANUAL_REVIEW.
 - Technical problems (missing file, corrupt image, scanner unavailable, timeout) →
   FAILED_TECHNICAL.
+
+Supplier extraction-profile / OCR validation rules (exact_length, anchors, charset for
+printed text, etc.) apply only to INTERNAL_OCR. CODE_SCAN uses the deterministic
+parser + consolidator. External AI (Gemini, etc.) uses prompts, not OCR profile rules.
 """
 
 from __future__ import annotations
@@ -35,14 +39,8 @@ from src.application.services.image_processing.code_detection_consolidator impor
 from src.application.services.image_processing.encoded_label_payload_parser import (
     EncodedLabelPayloadParser,
 )
-from src.application.services.image_processing.field_candidate_set import (
-    FieldCandidateSet,
-    apply_profile_validation,
-    configuration_from_job_snapshot,
-    symbology_to_code_source,
-)
-from src.application.services.image_processing.profile_aware_processing_result_validator import (
-    FieldCandidate,
+from src.application.services.image_processing.processing_event_publisher import (
+    ProcessingEventPublisher,
 )
 from src.domain.assets.entities import SourceAsset
 from src.domain.code_scans.entities import CodeType
@@ -52,6 +50,11 @@ from src.domain.image_processing.contracts import (
     ImageProcessingResult,
     ImageResultStatus,
 )
+from src.infrastructure.code_scanning.image_decode import (
+    UnreadableImageError,
+    UnsupportedImageFormatError,
+)
+from src.infrastructure.code_scanning.pyzbar_code_scanner import PyzbarUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +80,18 @@ _PYZBAR_SYMBOLOGY_NORMALIZE = {
 
 class CodeScanTimeoutError(RuntimeError):
     """Raised when scanning one asset exceeds the configured wall-clock budget."""
+
+
+class CodeScannerUnavailableError(RuntimeError):
+    """Raised when the barcode/QR scanner backend cannot be loaded."""
+
+
+class CodeScannerDecodeError(RuntimeError):
+    """Raised when the scanner fails to decode an otherwise readable image."""
+
+
+class InvalidImageError(ValueError):
+    """Raised when image bytes are corrupt or an unsupported format."""
 
 
 @dataclass
@@ -122,7 +137,8 @@ def _sha256_hex(value: str) -> str:
 class SourceAssetContentReaderPort:
     """Structural port: ``read_image_bytes(asset) -> bytes``."""
 
-    def read_image_bytes(self, asset: SourceAsset) -> bytes: ...  # pragma: no cover
+    def read_image_bytes(self, asset: SourceAsset) -> bytes:
+        raise NotImplementedError
 
 
 class CodeScanProcessingStrategy:
@@ -137,6 +153,7 @@ class CodeScanProcessingStrategy:
         consolidator: CodeDetectionConsolidator,
         config: CodeScanConfig,
         metrics: CodeScanMetrics | None = None,
+        event_publisher: ProcessingEventPublisher | None = None,
     ) -> None:
         self._scanner = scanner
         self._reader = content_reader
@@ -144,6 +161,40 @@ class CodeScanProcessingStrategy:
         self._consolidator = consolidator
         self._config = config
         self._metrics = metrics or CodeScanMetrics()
+        self._events = event_publisher
+
+    def _publish_asset_event(
+        self,
+        context: ImageProcessingContext,
+        event_type: str,
+        *,
+        message: str | None = None,
+        error_code: str | None = None,
+        metadata: dict | None = None,
+        severity: str = "INFO",
+    ) -> None:
+        if self._events is None:
+            return
+        try:
+            self._events.publish(
+                job_id=context.job_id,
+                asset_id=context.asset_id,
+                event_type=event_type,
+                strategy=STRATEGY_KEY,
+                severity=severity,
+                message=message,
+                error_code=error_code,
+                metadata=metadata,
+            )
+        except Exception:
+            self._metrics.increment("code_scan.event_publish_failed")
+            logger.warning(
+                "code_scan.asset_event_publish_failed job_id=%s asset_id=%s event=%s",
+                context.job_id,
+                context.asset_id,
+                event_type,
+                exc_info=True,
+            )
 
     @property
     def metrics(self) -> CodeScanMetrics:
@@ -164,50 +215,130 @@ class CodeScanProcessingStrategy:
         version = self._scanner_version()
         return f"pyzbar/{version}" if version else "pyzbar"
 
-    def process(
-        self, context: ImageProcessingContext, asset: SourceAsset
-    ) -> ImageProcessingResult:
+    def process(self, context: ImageProcessingContext, asset: SourceAsset) -> ImageProcessingResult:
         started = time.monotonic()
         mode = getattr(context.identification_mode, "value", str(context.identification_mode))
         self._metrics.increment("code_scan.assets_processed")
+        self._publish_asset_event(
+            context,
+            "code_scan.asset_started",
+            message="CODE_SCAN asset processing started",
+            metadata={"asset_id": context.asset_id},
+        )
 
         try:
             content = self._reader.read_image_bytes(asset)
         except FileNotFoundError as exc:
-            return self._technical(context, mode, "SOURCE_ASSET_NOT_FOUND", str(exc), started)
-        except Exception as exc:  # storage/read error
-            return self._technical(context, mode, "SOURCE_ASSET_READ_FAILED", str(exc), started)
+            result = self._technical(context, mode, "SOURCE_ASSET_NOT_FOUND", str(exc), started)
+            self._finalize_asset_event(context, result)
+            return result
+        except (OSError, ValueError) as exc:
+            # ValueError: missing storage_key / empty object from content reader.
+            result = self._technical(context, mode, "SOURCE_ASSET_READ_FAILED", str(exc), started)
+            self._finalize_asset_event(context, result)
+            return result
 
         if not content:
-            return self._technical(
+            result = self._technical(
                 context, mode, "SOURCE_ASSET_EMPTY", "empty source asset content", started
             )
+            self._finalize_asset_event(context, result)
+            return result
+
+        self._publish_asset_event(
+            context,
+            "asset.source_loaded",
+            message="source asset bytes loaded",
+            metadata={"byte_length": len(content)},
+        )
+        self._publish_asset_event(
+            context,
+            "code_scan.decode_started",
+            message="barcode/QR decode started",
+        )
 
         try:
             candidates = self._scan_with_variants(asset, content, started)
         except CodeScanTimeoutError as exc:
             self._metrics.increment("code_scan.timeout")
-            return self._technical(context, mode, "CODE_SCAN_TIMEOUT", str(exc), started)
-        except Exception as exc:
-            # scanner unavailable / corrupt image / decode error
+            self._publish_asset_event(
+                context,
+                "code_scan.decode_failed",
+                message="CODE_SCAN timeout",
+                error_code="CODE_SCAN_TIMEOUT",
+                severity="ERROR",
+            )
+            result = self._technical(context, mode, "CODE_SCAN_TIMEOUT", str(exc), started)
+            self._finalize_asset_event(context, result)
+            return result
+        except (PyzbarUnavailableError, CodeScannerUnavailableError) as exc:
+            self._metrics.increment("code_scan.scanner_unavailable")
+            self._publish_asset_event(
+                context,
+                "code_scan.decode_failed",
+                message="CODE_SCAN scanner unavailable",
+                error_code="CODE_SCAN_SCANNER_ERROR",
+                severity="ERROR",
+                metadata={"error_type": type(exc).__name__},
+            )
+            result = self._technical(context, mode, "CODE_SCAN_SCANNER_ERROR", str(exc), started)
+            self._finalize_asset_event(context, result)
+            return result
+        except (
+            UnreadableImageError,
+            UnsupportedImageFormatError,
+            InvalidImageError,
+        ) as exc:
+            self._metrics.increment("code_scan.invalid_image")
+            self._publish_asset_event(
+                context,
+                "code_scan.decode_failed",
+                message="CODE_SCAN invalid image",
+                error_code="CODE_SCAN_SCANNER_ERROR",
+                severity="ERROR",
+                metadata={"error_type": type(exc).__name__},
+            )
+            result = self._technical(context, mode, "CODE_SCAN_SCANNER_ERROR", str(exc), started)
+            self._finalize_asset_event(context, result)
+            return result
+        except (CodeScannerDecodeError, ValueError) as exc:
+            # pyzbar_code_scanner raises ValueError for decode failures.
             self._metrics.increment("code_scan.scanner_error")
-            return self._technical(context, mode, "CODE_SCAN_SCANNER_ERROR", str(exc), started)
+            self._publish_asset_event(
+                context,
+                "code_scan.decode_failed",
+                message="CODE_SCAN decoder error",
+                error_code="CODE_SCAN_SCANNER_ERROR",
+                severity="ERROR",
+                metadata={"error_type": type(exc).__name__},
+            )
+            result = self._technical(context, mode, "CODE_SCAN_SCANNER_ERROR", str(exc), started)
+            self._finalize_asset_event(context, result)
+            return result
+
+        symbol_count = len(candidates)
+        self._publish_asset_event(
+            context,
+            "code_scan.decode_completed",
+            message="barcode/QR decode completed",
+            metadata={"symbol_count": symbol_count},
+            error_code="NO_CODE_SYMBOL_FOUND" if symbol_count == 0 else None,
+        )
+        if symbol_count > 0:
+            self._publish_asset_event(
+                context,
+                "code_scan.symbols_detected",
+                message="symbols detected",
+                metadata={"symbol_count": symbol_count},
+            )
 
         detections = self._to_detection_inputs(candidates)
         consolidated = self._consolidator.consolidate(detections)
 
         duration_ms = int((time.monotonic() - started) * 1000)
         evidence = self._build_evidence(consolidated, detections)
-
-        if context.profile_aware_validation_enabled:
-            return self._result_via_profile(
-                context=context,
-                mode=mode,
-                detections=detections,
-                consolidated=consolidated,
-                evidence=evidence or {},
-                duration_ms=duration_ms,
-            )
+        # Never apply OCR/supplier text-profile validation here. Profile rules are for
+        # INTERNAL_OCR; AI fallback uses prompts. CODE_SCAN is consolidator-only.
 
         if consolidated.status is CodeConsolidationStatus.RESOLVED:
             self._metrics.increment("code_scan.resolved")
@@ -218,7 +349,7 @@ class CodeScanProcessingStrategy:
                 evidence.get("symbology") if evidence else None,
                 duration_ms,
             )
-            return ImageProcessingResult(
+            result = ImageProcessingResult(
                 job_id=context.job_id,
                 asset_id=context.asset_id,
                 status=ImageResultStatus.RESOLVED_INTERNAL,
@@ -233,13 +364,21 @@ class CodeScanProcessingStrategy:
                 logical_asset_attempt=False,
                 processing_duration_ms=duration_ms,
             )
+            self._publish_asset_event(
+                context,
+                "code_scan.validation_completed",
+                message="consolidator validation completed",
+                metadata={"status": ImageResultStatus.RESOLVED_INTERNAL.value},
+            )
+            self._finalize_asset_event(context, result)
+            return result
 
         if consolidated.status in (
             CodeConsolidationStatus.NO_DETECTIONS,
             CodeConsolidationStatus.NO_VALID_CODE,
         ):
             self._metrics.increment("code_scan.unrecognized")
-            return ImageProcessingResult(
+            result = ImageProcessingResult(
                 job_id=context.job_id,
                 asset_id=context.asset_id,
                 status=ImageResultStatus.UNRECOGNIZED,
@@ -247,14 +386,17 @@ class CodeScanProcessingStrategy:
                 resolved_by=STRATEGY_KEY,
                 evidence=evidence,
                 warnings=list(consolidated.warnings),
+                error_code="NO_CODE_SYMBOL_FOUND",
                 execution_scope=ExecutionScope.SINGLE_ASSET,
                 logical_asset_attempt=False,
                 processing_duration_ms=duration_ms,
             )
+            self._finalize_asset_event(context, result)
+            return result
 
         # MISSING_QUANTITY / QUANTITY_CONFLICT / MULTIPLE_DISTINCT_CODES → manual review.
         self._metrics.increment("code_scan.manual_review")
-        return ImageProcessingResult(
+        result = ImageProcessingResult(
             job_id=context.job_id,
             asset_id=context.asset_id,
             status=ImageResultStatus.PENDING_MANUAL_REVIEW,
@@ -268,79 +410,21 @@ class CodeScanProcessingStrategy:
             logical_asset_attempt=False,
             processing_duration_ms=duration_ms,
         )
-
-    def _result_via_profile(
-        self,
-        *,
-        context: ImageProcessingContext,
-        mode: str,
-        detections: list[CodeDetectionInput],
-        consolidated,
-        evidence: dict,
-        duration_ms: int,
-    ) -> ImageProcessingResult:
-        code_candidates: list[FieldCandidate] = []
-        qty_candidates: list[FieldCandidate] = []
-        barcode_format = evidence.get("symbology") if isinstance(evidence, dict) else None
-        for det in detections:
-            source = symbology_to_code_source(det.symbology)
-            if det.parsed.internal_code:
-                code_candidates.append(
-                    FieldCandidate(
-                        source_key=source,
-                        value=str(det.parsed.internal_code),
-                        evidence_score=1.0,
-                        labeled=False,
-                        barcode_format=det.symbology,
-                    )
-                )
-            if det.parsed.quantity is not None:
-                qty_candidates.append(
-                    FieldCandidate(
-                        source_key="QUANTITY",
-                        value=str(det.parsed.quantity),
-                        evidence_score=1.0,
-                    )
-                )
-        # Prefer consolidator selection when present.
-        if consolidated.internal_code and not code_candidates:
-            code_candidates.append(
-                FieldCandidate(
-                    source_key=symbology_to_code_source(
-                        str(barcode_format) if barcode_format else None
-                    ),
-                    value=str(consolidated.internal_code),
-                    labeled=False,
-                    barcode_format=str(barcode_format) if barcode_format else None,
-                )
-            )
-        if consolidated.quantity is not None and not qty_candidates:
-            qty_candidates.append(
-                FieldCandidate(source_key="QUANTITY", value=str(consolidated.quantity))
-            )
-        config = configuration_from_job_snapshot(context.supplier_extraction_profile)
-        result = apply_profile_validation(
-            job_id=context.job_id,
-            asset_id=context.asset_id,
-            processing_mode=mode,
-            resolved_by=STRATEGY_KEY,
-            candidates=FieldCandidateSet(
-                code_candidates=code_candidates,
-                quantity_candidates=qty_candidates,
-                barcode_format=str(barcode_format) if barcode_format else None,
-                evidence=dict(evidence or {}),
-                warnings=list(consolidated.warnings),
-            ),
-            configuration=config,
-            duration_ms=duration_ms,
-        )
-        if result.status is ImageResultStatus.RESOLVED_INTERNAL:
-            self._metrics.increment("code_scan.resolved")
-        elif result.status is ImageResultStatus.UNRECOGNIZED:
-            self._metrics.increment("code_scan.unrecognized")
-        else:
-            self._metrics.increment("code_scan.manual_review")
+        self._finalize_asset_event(context, result)
         return result
+
+    def _finalize_asset_event(
+        self, context: ImageProcessingContext, result: ImageProcessingResult
+    ) -> None:
+        status = getattr(result.status, "value", str(result.status))
+        self._publish_asset_event(
+            context,
+            "code_scan.asset_finalized",
+            message="CODE_SCAN asset finalized",
+            error_code=result.error_code,
+            metadata={"status": status},
+            severity="ERROR" if result.status is ImageResultStatus.FAILED_TECHNICAL else "INFO",
+        )
 
     # ------------------------------------------------------------------
     # Scanning
@@ -350,9 +434,7 @@ class CodeScanProcessingStrategy:
         if self._config.timeout_seconds <= 0:
             return
         if (time.monotonic() - started) > self._config.timeout_seconds:
-            raise CodeScanTimeoutError(
-                f"code scan exceeded {self._config.timeout_seconds}s budget"
-            )
+            raise CodeScanTimeoutError(f"code scan exceeded {self._config.timeout_seconds}s budget")
 
     def _scan_with_variants(
         self, asset: SourceAsset, content: bytes, started: float
@@ -433,9 +515,7 @@ class CodeScanProcessingStrategy:
         selected_idx = consolidated.selected_detection_index
         selected = None
         if selected_idx is not None:
-            selected = next(
-                (d for d in detections if d.detection_index == selected_idx), None
-            )
+            selected = next((d for d in detections if d.detection_index == selected_idx), None)
         if selected is None:
             selected = detections[0]
         return {

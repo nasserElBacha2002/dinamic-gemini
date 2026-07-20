@@ -66,10 +66,14 @@ def _coerce_positive_int(value: object, *, default: int, label: str) -> int:
     try:
         coerced = int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
-        logger.warning("image_orchestrator.invalid_%s value=%r using_default=%s", label, value, default)
+        logger.warning(
+            "image_orchestrator.invalid_%s value=%r using_default=%s", label, value, default
+        )
         return default
     if coerced <= 0:
-        logger.warning("image_orchestrator.invalid_%s value=%r using_default=%s", label, value, default)
+        logger.warning(
+            "image_orchestrator.invalid_%s value=%r using_default=%s", label, value, default
+        )
         return default
     return coerced
 
@@ -104,7 +108,9 @@ def build_default_aisle_processing_orchestrator(
     exclusive-lease guarantee across worker processes.
     """
     lease_duration_seconds = _coerce_positive_int(
-        lease_duration_seconds, default=_DEFAULT_LEASE_DURATION_SECONDS, label="lease_duration_seconds"
+        lease_duration_seconds,
+        default=_DEFAULT_LEASE_DURATION_SECONDS,
+        label="lease_duration_seconds",
     )
     abandoned_processing_ttl_seconds = _coerce_positive_int(
         abandoned_processing_ttl_seconds,
@@ -128,7 +134,12 @@ def build_default_aisle_processing_orchestrator(
                 f"require_sql=True but repositories unavailable: {', '.join(missing)}"
             )
 
-    if state_repo is None or attempt_repo is None or lease_repo is None or batch_attempt_repo is None:
+    if (
+        state_repo is None
+        or attempt_repo is None
+        or lease_repo is None
+        or batch_attempt_repo is None
+    ):
         from src.infrastructure.repositories.memory_batch_processing_attempt_repository import (
             MemoryBatchProcessingAttemptRepository,
         )
@@ -142,7 +153,9 @@ def build_default_aisle_processing_orchestrator(
             MemoryProcessingAttemptRepository,
         )
 
-        logger.warning("image_orchestrator.repos_falling_back_to_memory require_sql=%s", require_sql)
+        logger.warning(
+            "image_orchestrator.repos_falling_back_to_memory require_sql=%s", require_sql
+        )
         state_repo = state_repo or MemoryJobAssetProcessingStateRepository()
         attempt_repo = attempt_repo or MemoryProcessingAttemptRepository()
         lease_repo = lease_repo or MemoryJobProcessingLeaseRepository()
@@ -209,7 +222,7 @@ class _LazyPyzbarCodeScanner:
         return self._ensure().scan_asset(asset, content)
 
 
-def build_default_code_scan_strategy(settings, artifact_store):
+def build_default_code_scan_strategy(settings, artifact_store, *, event_publisher=None):
     """Build a :class:`CodeScanProcessingStrategy` from settings + artifact store."""
     from src.application.services.image_processing.code_detection_consolidator import (
         CodeDetectionConsolidator,
@@ -274,6 +287,7 @@ def build_default_code_scan_strategy(settings, artifact_store):
         parser=parser,
         consolidator=CodeDetectionConsolidator(),
         config=config,
+        event_publisher=event_publisher,
     )
 
 
@@ -358,6 +372,7 @@ def build_default_external_fallback_orchestrator(
     clock: Clock,
     is_cancelled: Callable[[], bool] | None = None,
     request_repo=None,
+    event_publisher=None,
 ):
     """Build Phase 5 selective external fallback (snapshot governs provider identity)."""
     from src.application.services.image_processing.external_concurrency_limiter import (
@@ -408,6 +423,7 @@ def build_default_external_fallback_orchestrator(
         ),
         counters=FallbackProgressCounters(),
         is_cancelled=is_cancelled,
+        event_publisher=event_publisher,
     )
 
 
@@ -520,9 +536,7 @@ def build_default_internal_ocr_strategy(
     if "label_detection_enabled" in snapshot:
         label_detection_enabled = bool(snapshot.get("label_detection_enabled"))
     else:
-        label_detection_enabled = bool(
-            getattr(settings, "ocr_label_detection_enabled", False)
-        )
+        label_detection_enabled = bool(getattr(settings, "ocr_label_detection_enabled", False))
     if "diagnostic_evidence_enabled" in snapshot:
         diagnostic_evidence_enabled = bool(snapshot.get("diagnostic_evidence_enabled"))
     else:
@@ -655,9 +669,7 @@ def assets_with_result_from_evidence(
     """Legacy/audit-only helper (superseded by ``AssetResultCoverageResolver`` for synthesis)."""
     rows = result_evidence_repo.list_by_job_id(job_id)
     return frozenset(
-        (r.source_asset_id or "").strip()
-        for r in rows
-        if (r.source_asset_id or "").strip()
+        (r.source_asset_id or "").strip() for r in rows if (r.source_asset_id or "").strip()
     )
 
 

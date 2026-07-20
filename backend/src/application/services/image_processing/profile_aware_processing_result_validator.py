@@ -103,8 +103,17 @@ class ProfileAwareProcessingResultValidator:
         warnings: list[str] = []
 
         if barcode_format:
-            fmt = barcode_format.strip().upper()
-            if fmt and fmt not in self._config.accepted_barcode_formats:
+            from src.application.services.image_processing.field_candidate_set import (
+                normalize_barcode_format_for_profile,
+            )
+
+            fmt = normalize_barcode_format_for_profile(barcode_format)
+            accepted = {
+                normalize_barcode_format_for_profile(x)
+                for x in self._config.accepted_barcode_formats
+            }
+            accepted.discard(None)
+            if fmt and fmt not in accepted:
                 errors.append(ExtractionValidationErrorCode.UNSUPPORTED_BARCODE_FORMAT.value)
                 return ProfileValidationResult(ok=False, errors=errors)
 
@@ -149,9 +158,7 @@ class ProfileAwareProcessingResultValidator:
         )
 
         forbidden = {s.upper() for s in self._config.forbidden_internal_code_sources}
-        configured_keys = {
-            s.field_key.upper() for s in self._config.internal_code_sources
-        }
+        configured_keys = {s.field_key.upper() for s in self._config.internal_code_sources}
         by_source: dict[str, list[FieldCandidate]] = {}
         for c in candidates:
             key = (c.source_key or "").strip().upper()
@@ -193,9 +200,7 @@ class ProfileAwareProcessingResultValidator:
         # Explicit legacy fallback only when the configuration opts in (system default).
         if getattr(self._config, "allow_unconfigured_code_source_fallback", False):
             eligible = [
-                c
-                for c in candidates
-                if (c.source_key or "").strip().upper() not in forbidden
+                c for c in candidates if (c.source_key or "").strip().upper() not in forbidden
             ]
             if eligible:
                 decision = rank_code_candidates(eligible)
@@ -345,8 +350,7 @@ def configuration_to_ocr_client_field_rules(config: ExtractionProfileConfigurati
     return OcrClientFieldRules(
         profile_key="supplier_extraction_profile",
         profile_version="1",
-        internal_code_priority=tuple(priority)
-        or OcrClientFieldRules().internal_code_priority,
+        internal_code_priority=tuple(priority) or OcrClientFieldRules().internal_code_priority,
         prefer_ean_as_internal_code=prefer_ean,
         required_fields=tuple(config.required_fields) or ("internal_code", "quantity"),
     )
@@ -370,7 +374,8 @@ def snapshot_dict_from_configuration(
         "client_id": client_id,
         "supplier_id": supplier_id,
         "internal_code_priority": [
-            s.field_key for s in sorted(configuration.internal_code_sources, key=lambda x: x.priority)
+            s.field_key
+            for s in sorted(configuration.internal_code_sources, key=lambda x: x.priority)
             if s.enabled
         ],
         "quantity_rules": configuration.to_public_dict()["quantity_rules"],

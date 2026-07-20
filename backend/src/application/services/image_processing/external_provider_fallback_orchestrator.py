@@ -29,13 +29,13 @@ from src.application.services.image_processing.external_circuit_breaker import (
 from src.application.services.image_processing.external_concurrency_limiter import (
     ExternalConcurrencyLimiter,
 )
-from src.application.services.image_processing.external_fallback_recovery import (
-    ExternalFallbackRecoveryDecision,
-    ExternalFallbackRecoveryService,
-)
 from src.application.services.image_processing.external_fallback_prompt import (
     EXTERNAL_FALLBACK_PROMPT_KEY,
     EXTERNAL_FALLBACK_PROMPT_VERSION,
+)
+from src.application.services.image_processing.external_fallback_recovery import (
+    ExternalFallbackRecoveryDecision,
+    ExternalFallbackRecoveryService,
 )
 from src.application.services.image_processing.external_result_normalizer import (
     EXTERNAL_PROVIDER_STRATEGY,
@@ -44,6 +44,9 @@ from src.application.services.image_processing.external_result_normalizer import
 from src.application.services.image_processing.fallback_eligibility_policy import (
     DEFAULT_RECOVERABLE_TECHNICAL_CODES,
     FallbackEligibilityPolicy,
+)
+from src.application.services.image_processing.processing_event_publisher import (
+    ProcessingEventPublisher,
 )
 from src.domain.assets.entities import SourceAsset
 from src.domain.image_processing.contracts import (
@@ -148,9 +151,7 @@ class ExternalFallbackSnapshot:
         profile_snap = block.get("supplier_extraction_profile")
         return cls(
             enabled=bool(raw.get("fallback_enabled") or raw.get("enabled")),
-            provider=str(raw.get("fallback_provider") or raw.get("provider") or "")
-            .strip()
-            .lower(),
+            provider=str(raw.get("fallback_provider") or raw.get("provider") or "").strip().lower(),
             model=(str(raw["fallback_model"]).strip() if raw.get("fallback_model") else None)
             or (str(raw["model"]).strip() if raw.get("model") else None),
             prompt_key=str(raw.get("prompt_key") or EXTERNAL_FALLBACK_PROMPT_KEY),
@@ -175,9 +176,7 @@ class ExternalFallbackSnapshot:
                 str(c) for c in (raw.get("recoverable_technical_codes") or [])
             ),
             retry_backoff_seconds=float(raw.get("retry_backoff_seconds") or 0.5),
-            supplier_extraction_profile=profile_snap
-            if isinstance(profile_snap, dict)
-            else None,
+            supplier_extraction_profile=profile_snap if isinstance(profile_snap, dict) else None,
             profile_aware_validation_enabled=profile_aware,
             ambiguous_internal_code_fallback_enabled=bool(
                 raw.get("ambiguous_internal_code_fallback_enabled", False)
@@ -217,6 +216,41 @@ class ExternalProviderFallbackOrchestrator:
     recovery: ExternalFallbackRecoveryService = field(
         default_factory=ExternalFallbackRecoveryService
     )
+    event_publisher: ProcessingEventPublisher | None = None
+
+    def _publish_fallback_event(
+        self,
+        *,
+        job_id: str,
+        asset_id: str,
+        event_type: str,
+        message: str | None = None,
+        error_code: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        severity: str = "INFO",
+    ) -> None:
+        if self.event_publisher is None:
+            return
+        try:
+            self.event_publisher.publish(
+                job_id=job_id,
+                asset_id=asset_id,
+                event_type=event_type,
+                strategy="EXTERNAL_PROVIDER",
+                severity=severity,
+                message=message,
+                error_code=error_code,
+                metadata=metadata,
+            )
+        except Exception:
+            # Best-effort observability only — never affect fallback processing.
+            logger.warning(
+                "fallback.event_publish_failed job_id=%s asset_id=%s event=%s",
+                job_id,
+                asset_id,
+                event_type,
+                exc_info=True,
+            )
 
     def process_if_eligible(
         self,
@@ -229,7 +263,7 @@ class ExternalProviderFallbackOrchestrator:
         client_id: str | None = None,
     ) -> ExternalFallbackOutcome:
         eligibility = FallbackEligibilityPolicy(
-            enabled=snapshot.enabled,
+            enabled=bool(snapshot.enabled),
             recoverable_technical_codes=frozenset(snapshot.recoverable_technical_codes)
             if snapshot.recoverable_technical_codes
             else DEFAULT_RECOVERABLE_TECHNICAL_CODES,
@@ -237,11 +271,25 @@ class ExternalProviderFallbackOrchestrator:
                 snapshot.ambiguous_internal_code_fallback_enabled
             ),
         )
-        if not snapshot.enabled:
-            self._bump_skipped()
-            return ExternalFallbackOutcome(skipped=True)
-
         decision = eligibility.evaluate(internal_result)
+        eval_metadata = {
+            "asset_id": asset.id,
+            "internal_status": getattr(
+                internal_result.status, "value", str(internal_result.status)
+            ),
+            "internal_error_code": internal_result.error_code,
+            "validation_errors": list(internal_result.validation_errors or [])[:20],
+            "has_internal_code": bool(
+                internal_result.internal_code and str(internal_result.internal_code).strip()
+            ),
+            "has_quantity": internal_result.quantity is not None,
+            "fallback_enabled": bool(snapshot.enabled),
+            "eligible": decision.eligible,
+            "reason": decision.reason,
+            "next_strategy": decision.next_strategy,
+            "provider": snapshot.provider,
+            "model": snapshot.model,
+        }
         logger.info(
             "fallback.evaluated job_id=%s asset_id=%s eligible=%s reason=%s "
             "next_strategy=%s client_id=%s",
@@ -252,10 +300,59 @@ class ExternalProviderFallbackOrchestrator:
             decision.next_strategy,
             client_id,
         )
+        self._publish_fallback_event(
+            job_id=job.id,
+            asset_id=asset.id,
+            event_type="fallback.evaluated",
+            message="external fallback eligibility evaluated",
+            error_code=None if decision.eligible else decision.reason,
+            metadata=eval_metadata,
+        )
         if not decision.eligible:
             self._bump_skipped()
+            self._publish_fallback_event(
+                job_id=job.id,
+                asset_id=asset.id,
+                event_type="fallback.skipped",
+                message="external fallback skipped",
+                error_code=decision.reason,
+                metadata=eval_metadata,
+            )
             return ExternalFallbackOutcome(skipped=True)
 
+        if not (snapshot.provider or "").strip():
+            self._publish_fallback_event(
+                job_id=job.id,
+                asset_id=asset.id,
+                event_type="fallback.skipped",
+                message="external fallback provider misconfigured",
+                error_code="PROVIDER_MISCONFIGURED",
+                metadata={**eval_metadata, "reason": "PROVIDER_MISCONFIGURED"},
+                severity="ERROR",
+            )
+            return ExternalFallbackOutcome(
+                result=self._technical(
+                    job,
+                    asset,
+                    "EXTERNAL_PROVIDER_MISCONFIGURED",
+                    "snapshot missing fallback_provider",
+                    "unknown",
+                    snapshot.model,
+                    decision.reason,
+                )
+            )
+
+        self._publish_fallback_event(
+            job_id=job.id,
+            asset_id=asset.id,
+            event_type="fallback.started",
+            message="external fallback started",
+            metadata={
+                **eval_metadata,
+                "reason": decision.reason,
+                "strategy": decision.next_strategy,
+            },
+        )
         logger.info(
             "fallback.started job_id=%s asset_id=%s reason=%s strategy=%s",
             job.id,
@@ -266,20 +363,17 @@ class ExternalProviderFallbackOrchestrator:
 
         provider_name = (snapshot.provider or "").strip().lower()
         model_name = snapshot.model
-        if not provider_name:
-            return ExternalFallbackOutcome(
-                result=self._technical(
-                    job,
-                    asset,
-                    "EXTERNAL_PROVIDER_MISCONFIGURED",
-                    "snapshot missing fallback_provider",
-                    provider_name or "unknown",
-                    model_name,
-                    decision.reason,
-                )
-            )
 
         if self._cancelled():
+            self._publish_fallback_event(
+                job_id=job.id,
+                asset_id=asset.id,
+                event_type="fallback.cancelled",
+                message="external fallback cancelled before provider call",
+                error_code="JOB_CANCELLED",
+                metadata=eval_metadata,
+                severity="WARNING",
+            )
             return ExternalFallbackOutcome(cancelled=True)
 
         key = build_external_idempotency_key(
@@ -313,6 +407,14 @@ class ExternalProviderFallbackOrchestrator:
         # Recovery C / prior success: already persisted position or active result.
         if recovery.action == "SKIP_PERSISTED":
             self._bump_skipped()
+            self._publish_fallback_event(
+                job_id=job.id,
+                asset_id=asset.id,
+                event_type="fallback.skipped",
+                message="external fallback skipped; already persisted",
+                error_code="SKIP_PERSISTED",
+                metadata={**eval_metadata, "recovery_action": "SKIP_PERSISTED"},
+            )
             return ExternalFallbackOutcome(skipped=True, request=request)
 
         # PERSISTED without position/active_result — never silent skip.
@@ -331,9 +433,7 @@ class ExternalProviderFallbackOrchestrator:
                 request.status = ExternalRequestStatus.PERSISTENCE_PENDING
                 request.updated_at = self.clock.now()
                 self.request_repo.save(request)
-                recovery = ExternalFallbackRecoveryDecision(
-                    action="CONTINUE", request=request
-                )
+                recovery = ExternalFallbackRecoveryDecision(action="CONTINUE", request=request)
 
         # Recovery B: reused normalized response without new provider call.
         if recovery.action == "REUSE_NORMALIZED":
@@ -357,6 +457,18 @@ class ExternalProviderFallbackOrchestrator:
             result.additional_fields["persistence_status"] = "PENDING"
             if self.counters is not None:
                 self.counters.fallback_requested += 1
+            self._publish_fallback_event(
+                job_id=job.id,
+                asset_id=asset.id,
+                event_type="fallback.provider_completed",
+                message="reused normalized provider response; persistence pending",
+                metadata={
+                    **eval_metadata,
+                    "recovery_action": "REUSE_NORMALIZED",
+                    "provider_call_status": "SUCCEEDED",
+                    "persistence_status": "PENDING",
+                },
+            )
             return ExternalFallbackOutcome(
                 result=result,
                 attempt=attempt,
@@ -369,25 +481,31 @@ class ExternalProviderFallbackOrchestrator:
         if breaker is not None and breaker.is_open(provider_name, model_name or ""):
             if self.counters is not None:
                 self.counters.external_failed += 1
-            return ExternalFallbackOutcome(
-                result=self._technical(
-                    job,
-                    asset,
-                    "EXTERNAL_PROVIDER_CIRCUIT_OPEN",
-                    "External provider circuit breaker is open",
-                    provider_name,
-                    model_name,
-                    decision.reason,
-                )
+            tech = self._technical(
+                job,
+                asset,
+                "EXTERNAL_PROVIDER_CIRCUIT_OPEN",
+                "External provider circuit breaker is open",
+                provider_name,
+                model_name,
+                decision.reason,
             )
+            self._publish_fallback_event(
+                job_id=job.id,
+                asset_id=asset.id,
+                event_type="fallback.failed",
+                message="external fallback failed; circuit breaker open",
+                error_code="EXTERNAL_PROVIDER_CIRCUIT_OPEN",
+                metadata=eval_metadata,
+                severity="ERROR",
+            )
+            return ExternalFallbackOutcome(result=tech)
 
         if self.counters is not None:
             self.counters.fallback_requested += 1
             self.counters.fallback_in_progress += 1
 
-        attempt = self._ensure_attempt(
-            job, asset, worker_token, provider_name, model_name, request
-        )
+        attempt = self._ensure_attempt(job, asset, worker_token, provider_name, model_name, request)
         request.status = ExternalRequestStatus.IN_FLIGHT
         request.attempt_id = attempt.id
         request.updated_at = self.clock.now()
@@ -456,9 +574,19 @@ class ExternalProviderFallbackOrchestrator:
             self.attempt_repo.save(attempt)
             result.additional_fields["persistence_status"] = "PENDING"
             if self.counters is not None:
-                self.counters.fallback_in_progress = max(
-                    0, self.counters.fallback_in_progress - 1
-                )
+                self.counters.fallback_in_progress = max(0, self.counters.fallback_in_progress - 1)
+            self._publish_fallback_event(
+                job_id=job.id,
+                asset_id=asset.id,
+                event_type="fallback.provider_completed",
+                message="external provider response ready; persistence pending",
+                metadata={
+                    **eval_metadata,
+                    "status": getattr(result.status, "value", str(result.status)),
+                    "provider_call_status": provider_call_status,
+                    "persistence_status": "PENDING",
+                },
+            )
             return ExternalFallbackOutcome(
                 result=result,
                 attempt=attempt,
@@ -467,11 +595,25 @@ class ExternalProviderFallbackOrchestrator:
                 persistence_status="PENDING",
             )
 
-        # Non-resolved terminal: close attempt now (not SUCCEEDED).
+        # Non-resolved: provider finished but no durable position — terminal failed.
         self._close_attempt_terminal(attempt, result, request)
         self._update_counters(result)
         if self.counters is not None:
             self.counters.fallback_in_progress = max(0, self.counters.fallback_in_progress - 1)
+        self._publish_fallback_event(
+            job_id=job.id,
+            asset_id=asset.id,
+            event_type="fallback.failed",
+            message="external fallback finished without durable resolve",
+            error_code=result.error_code,
+            metadata={
+                **eval_metadata,
+                "status": getattr(result.status, "value", str(result.status)),
+                "provider_call_status": provider_call_status,
+                "persistence_status": "NOT_APPLICABLE",
+            },
+            severity="ERROR",
+        )
         return ExternalFallbackOutcome(
             result=result,
             attempt=attempt,
@@ -490,7 +632,23 @@ class ExternalProviderFallbackOrchestrator:
         active_result_id: str | None,
         persisted: bool,
     ) -> None:
-        """Mark attempt SUCCEEDED only when a position exists (persisted or reconciled)."""
+        """Mark attempt SUCCEEDED only when a position exists (persisted or reconciled).
+
+        ``fallback.completed`` is published only from this durable boundary.
+        """
+        self._publish_fallback_event(
+            job_id=attempt.job_id,
+            asset_id=attempt.asset_id,
+            event_type="fallback.persistence_started",
+            message="external fallback persistence started",
+            metadata={
+                "asset_id": attempt.asset_id,
+                "attempt_id": attempt.id,
+                "persisted": persisted,
+                "position_id": position_id,
+                "active_result_id": active_result_id,
+            },
+        )
         now = self.clock.now()
         if result.status is ImageResultStatus.RESOLVED_EXTERNAL and (
             persisted or position_id or active_result_id
@@ -549,6 +707,30 @@ class ExternalProviderFallbackOrchestrator:
         attempt.normalized_result = result.normalized_result
         self.attempt_repo.save(attempt)
 
+        durable = result.status is ImageResultStatus.RESOLVED_EXTERNAL and (
+            persisted or position_id or active_result_id
+        )
+        self._publish_fallback_event(
+            job_id=attempt.job_id,
+            asset_id=attempt.asset_id,
+            event_type="fallback.completed" if durable else "fallback.failed",
+            message=(
+                "external fallback persisted"
+                if durable
+                else "external fallback persistence failed"
+            ),
+            error_code=None if durable else (attempt.error_code or "PROCESSING_PERSISTENCE_FAILED"),
+            metadata={
+                "asset_id": attempt.asset_id,
+                "position_id": position_id,
+                "active_result_id": active_result_id,
+                "persisted": persisted,
+                "persistence_status": "SUCCEEDED" if durable else "FAILED",
+                "status": getattr(result.status, "value", str(result.status)),
+            },
+            severity="INFO" if durable else "ERROR",
+        )
+
     def _execute_with_retries(
         self,
         *,
@@ -568,9 +750,14 @@ class ExternalProviderFallbackOrchestrator:
                 f"snapshot provider {provider_name!r} != executed {provider.provider_name!r}"
             )
         executed_model = provider.model_name
-        if model_name and executed_model and model_name.strip() not in (
-            executed_model,
-            "default",
+        if (
+            model_name
+            and executed_model
+            and model_name.strip()
+            not in (
+                executed_model,
+                "default",
+            )
         ):
             if (model_name or "").strip() and (executed_model or "").strip():
                 if model_name.strip().lower() != executed_model.strip().lower():
@@ -579,9 +766,7 @@ class ExternalProviderFallbackOrchestrator:
                         f"snapshot model {model_name!r} != executed {executed_model!r}"
                     )
 
-        limiter = self.concurrency_limiter or ExternalConcurrencyLimiter(
-            snapshot.max_concurrency
-        )
+        limiter = self.concurrency_limiter or ExternalConcurrencyLimiter(snapshot.max_concurrency)
         last_analysis: ExternalAnalysisResult | None = None
         max_attempts = max(1, int(snapshot.max_attempts))
 
@@ -829,7 +1014,9 @@ class ExternalProviderFallbackOrchestrator:
             processing_mode=EXTERNAL_PROVIDER_STRATEGY,
             resolved_by=EXTERNAL_PROVIDER_STRATEGY,
             internal_code=str(code) if code else None,
-            quantity=float(qty) if isinstance(qty, (int, float)) and not isinstance(qty, bool) else None,
+            quantity=float(qty)
+            if isinstance(qty, (int, float)) and not isinstance(qty, bool)
+            else None,
             normalized_result=norm,
             additional_fields={
                 "fallback_eligible": True,
@@ -882,9 +1069,7 @@ class ExternalProviderFallbackOrchestrator:
         }
         attempt.extra = {
             **dict(attempt.extra or {}),
-            "provider_call_status": (result.additional_fields or {}).get(
-                "provider_call_status"
-            ),
+            "provider_call_status": (result.additional_fields or {}).get("provider_call_status"),
             "persistence_status": "NOT_APPLICABLE",
             "request_image_sha256": request.request_image_sha256,
             "provider_response_sha256": request.provider_response_sha256,
@@ -910,6 +1095,19 @@ class ExternalProviderFallbackOrchestrator:
         self.request_repo.save(request)
         if self.counters is not None:
             self.counters.fallback_in_progress = max(0, self.counters.fallback_in_progress - 1)
+        self._publish_fallback_event(
+            job_id=attempt.job_id,
+            asset_id=attempt.asset_id,
+            event_type="fallback.cancelled",
+            message="external fallback cancelled",
+            error_code="JOB_CANCELLED",
+            metadata={
+                "asset_id": attempt.asset_id,
+                "attempt_id": attempt.id,
+                "request_id": request.id,
+            },
+            severity="WARNING",
+        )
         return ExternalFallbackOutcome(cancelled=True, attempt=attempt, request=request)
 
     def _update_counters(self, result: ImageProcessingResult) -> None:
@@ -1038,9 +1236,7 @@ def build_external_fallback_snapshot_dict(
         "snapshot_version": int(snapshot_version),
         "client_rules": client_rules,
         "recoverable_technical_codes": list(recoverable_technical_codes or []),
-        "ambiguous_internal_code_fallback_enabled": bool(
-            ambiguous_internal_code_fallback_enabled
-        ),
+        "ambiguous_internal_code_fallback_enabled": bool(ambiguous_internal_code_fallback_enabled),
     }
 
 
@@ -1143,9 +1339,7 @@ def resolve_fallback_progress_payload(
             payload["fallback_asset_summaries"] = sanitize_fallback_asset_summaries(req_rows)
             return payload
         except Exception:
-            logger.warning(
-                "fallback.progress_aggregate_failed job_id=%s", job_id, exc_info=True
-            )
+            logger.warning("fallback.progress_aggregate_failed job_id=%s", job_id, exc_info=True)
     counters = getattr(external_fallback, "counters", None)
     if counters is not None:
         payload["fallback_progress"] = counters.to_public_dict()

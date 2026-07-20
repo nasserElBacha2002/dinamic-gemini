@@ -117,6 +117,8 @@ class CodeScanAisleOutcome:
     strategy_key: str
     job_outcome: CodeScanJobOutcome = CodeScanJobOutcome.SUCCEEDED
     error_message: str | None = None
+    assets_eligible: int = 0
+    assets_started: int = 0
 
 
 class AisleProcessingOrchestrator:
@@ -224,9 +226,7 @@ class AisleProcessingOrchestrator:
             # E — if a complete result already exists (position persisted, state never
             # finalized), reconcile straight to RESOLVED instead of resetting to PENDING for
             # a wasteful (and potentially downgrading) rescan.
-            if self._reconciler is not None and self._reconciler.reconcile_state_if_complete(
-                state
-            ):
+            if self._reconciler is not None and self._reconciler.reconcile_state_if_complete(state):
                 recovered.append(state.asset_id)
                 logger.info(
                     "aisle_orchestrator.recovery_reconciled_to_resolved job_id=%s asset_id=%s",
@@ -499,7 +499,10 @@ class AisleProcessingOrchestrator:
                 error_message=outcome.error_message,
             )
             self._lease_repo.fail(
-                lease.id, worker_token=worker_token, now=finish_now, error_message=outcome.error_message
+                lease.id,
+                worker_token=worker_token,
+                now=finish_now,
+                error_message=outcome.error_message,
             )
 
         self._synthesize_after_batch(
@@ -524,7 +527,9 @@ class AisleProcessingOrchestrator:
             progress.unrecognized,
             progress.failed,
         )
-        return AisleOrchestratorOutcome(legacy=outcome, progress=progress, strategy_key=strategy_key)
+        return AisleOrchestratorOutcome(
+            legacy=outcome, progress=progress, strategy_key=strategy_key
+        )
 
     # ------------------------------------------------------------------
     # Phase 3 — CODE_SCAN per-asset processing (no lease, no LLM)
@@ -612,9 +617,21 @@ class AisleProcessingOrchestrator:
                         asset_progress_publish_failed_total,
                     )
 
+        eligible = [
+            asset
+            for asset in assets
+            if not self._image_orch.is_terminal(
+                self._state_repo.get_by_job_and_asset(job.id, asset.id)
+            )
+        ]
+        assets_eligible = len(eligible)
+        assets_started_box = {"n": 0}
+
         def _process_one(asset: SourceAsset) -> None:
             if is_cancelled():
                 return
+            with lock:
+                assets_started_box["n"] += 1
             outcome = processor.process_asset(
                 job=job,
                 aisle=aisle,
@@ -627,14 +644,6 @@ class AisleProcessingOrchestrator:
                     errors.append(outcome.error)
             _maybe_merge_progress()
 
-        eligible = [
-            asset
-            for asset in assets
-            if not self._image_orch.is_terminal(
-                self._state_repo.get_by_job_and_asset(job.id, asset.id)
-            )
-        ]
-
         if self._code_scan_concurrency <= 1:
             for asset in eligible:
                 if is_cancelled():
@@ -643,6 +652,34 @@ class AisleProcessingOrchestrator:
         else:
             with ThreadPoolExecutor(max_workers=self._code_scan_concurrency) as executor:
                 list(executor.map(_process_one, eligible))
+
+        with lock:
+            assets_started = int(assets_started_box["n"])
+
+        if (
+            strategy_key == "CODE_SCAN"
+            and assets_eligible > 0
+            and assets_started == 0
+            and not is_cancelled()
+        ):
+            progress = self._state_repo.aggregate_progress(job.id)
+            logger.error(
+                "aisle_orchestrator.code_scan_asset_loop_not_executed job_id=%s "
+                "assets_eligible=%s assets_started=%s",
+                job.id,
+                assets_eligible,
+                assets_started,
+            )
+            return CodeScanAisleOutcome(
+                ok=False,
+                cancelled=False,
+                progress=progress,
+                strategy_key=strategy_key,
+                job_outcome=CodeScanJobOutcome.FAILED,
+                error_message="CODE_SCAN_ASSET_LOOP_NOT_EXECUTED",
+                assets_eligible=assets_eligible,
+                assets_started=assets_started,
+            )
 
         cancelled = is_cancelled()
         if cancelled:
@@ -655,7 +692,8 @@ class AisleProcessingOrchestrator:
         )
         logger.info(
             "aisle_orchestrator.code_scan_complete job_id=%s strategy=%s job_outcome=%s "
-            "total=%s resolved=%s unrecognized=%s failed=%s manual_review=%s cancelled=%s",
+            "total=%s resolved=%s unrecognized=%s failed=%s manual_review=%s cancelled=%s "
+            "assets_eligible=%s assets_started=%s",
             job.id,
             strategy_key,
             job_outcome.value,
@@ -665,14 +703,19 @@ class AisleProcessingOrchestrator:
             progress.failed,
             progress.manual_review,
             cancelled,
+            assets_eligible,
+            assets_started,
         )
         return CodeScanAisleOutcome(
-            ok=job_outcome in (CodeScanJobOutcome.SUCCEEDED, CodeScanJobOutcome.PARTIALLY_COMPLETED),
+            ok=job_outcome
+            in (CodeScanJobOutcome.SUCCEEDED, CodeScanJobOutcome.PARTIALLY_COMPLETED),
             cancelled=cancelled,
             progress=progress,
             strategy_key=strategy_key,
             job_outcome=job_outcome,
             error_message="; ".join(errors) if errors else None,
+            assets_eligible=assets_eligible,
+            assets_started=assets_started,
         )
 
     def process_with_internal_ocr(
@@ -961,7 +1004,9 @@ class AisleProcessingOrchestrator:
             error_code="BATCH_RUNNER_EXCEPTION",
             error_message=error_message,
         )
-        self._lease_repo.fail(lease_id, worker_token=worker_token, now=now, error_message=error_message)
+        self._lease_repo.fail(
+            lease_id, worker_token=worker_token, now=now, error_message=error_message
+        )
 
     def _cancel_pending(self, job_id: str) -> None:
         for state in self._state_repo.list_by_job(job_id):

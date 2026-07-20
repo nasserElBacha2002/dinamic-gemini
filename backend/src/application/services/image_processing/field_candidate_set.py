@@ -53,11 +53,53 @@ def configuration_from_job_snapshot(
         ) from exc
 
 
+# Profile ``accepted_barcode_formats`` uses compact names (QR, CODE128, EAN13, …).
+# pyzbar / ZXing evidence symbology uses QR_CODE / CODE_128 / EAN_13. Normalize both
+# sides before comparison so profile-aware CODE_SCAN does not reject valid symbols.
+_BARCODE_FORMAT_CANONICAL: dict[str, str] = {
+    "QR": "QR",
+    "QRCODE": "QR",
+    "QR_CODE": "QR",
+    "MICROQR": "QR",
+    "RMQR": "QR",
+    "CODE128": "CODE128",
+    "CODE_128": "CODE128",
+    "CODE39": "CODE39",
+    "CODE_39": "CODE39",
+    "EAN13": "EAN13",
+    "EAN_13": "EAN13",
+    "EAN8": "EAN8",
+    "EAN_8": "EAN8",
+    "EAN14": "EAN14",
+    "EAN_14": "EAN14",
+    "UPC_A": "UPC_A",
+    "UPCA": "UPC_A",
+    "UPC": "UPC_A",
+    "UPC_E": "UPC_E",
+    "UPCE": "UPC_E",
+    "DATAMATRIX": "DATAMATRIX",
+    "DATA_MATRIX": "DATAMATRIX",
+    "I25": "I25",
+    "PDF417": "PDF417",
+    "DATABAR": "DATABAR",
+}
+
+
+def normalize_barcode_format_for_profile(fmt: str | None) -> str | None:
+    """Map decoder/evidence symbology names onto profile accepted-format vocabulary."""
+    if fmt is None:
+        return None
+    key = str(fmt).strip().upper().replace("-", "_")
+    if not key:
+        return None
+    return _BARCODE_FORMAT_CANONICAL.get(key, key)
+
+
 def symbology_to_code_source(symbology: str | None) -> str:
-    key = (symbology or "").strip().upper()
-    if key in {"EAN8", "EAN13", "EAN14", "UPC_A", "UPCA", "UPC"}:
+    key = normalize_barcode_format_for_profile(symbology) or ""
+    if key in {"EAN8", "EAN13", "EAN14", "UPC_A", "UPC_E"}:
         return "EAN"
-    if key in {"QR", "CODE128", "CODE39", "I25", "PDF417", "DATABAR"}:
+    if key in {"QR", "CODE128", "CODE39", "I25", "PDF417", "DATABAR", "DATAMATRIX"}:
         return "INTERNAL_CODE"
     return "INTERNAL_CODE"
 
@@ -202,9 +244,7 @@ def apply_profile_validation(
             logical_asset_attempt=False,
         )
 
-    missing_both = (
-        "MISSING_INTERNAL_CODE" in errors and "MISSING_QUANTITY" in errors
-    )
+    missing_both = "MISSING_INTERNAL_CODE" in errors and "MISSING_QUANTITY" in errors
     if missing_both and not outcome.internal_code and outcome.quantity is None:
         status = ImageResultStatus.UNRECOGNIZED
         error_code = errors[0] if errors else "UNRECOGNIZED"
@@ -241,5 +281,6 @@ __all__ = [
     "FieldCandidateSet",
     "apply_profile_validation",
     "configuration_from_job_snapshot",
+    "normalize_barcode_format_for_profile",
     "symbology_to_code_source",
 ]
