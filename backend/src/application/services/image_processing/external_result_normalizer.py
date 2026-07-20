@@ -158,10 +158,35 @@ class ExternalResultNormalizer:
                 logical_asset_attempt=False,
             )
 
-        if analysis.status in (
-            ExternalAnalysisStatus.NO_RESULT,
-            ExternalAnalysisStatus.INVALID,
-        ):
+        if analysis.status is ExternalAnalysisStatus.NO_RESULT:
+            return ImageProcessingResult(
+                job_id=job_id,
+                asset_id=asset_id,
+                status=ImageResultStatus.UNRECOGNIZED,
+                processing_mode=EXTERNAL_PROVIDER_STRATEGY,
+                resolved_by=EXTERNAL_PROVIDER_STRATEGY,
+                additional_fields={
+                    **base_fields,
+                    "provider_declared_no_result": True,
+                },
+                normalized_result=analysis.normalized_result,
+                validation_errors=list(analysis.validation_errors),
+                warnings=list(analysis.warnings),
+                evidence=evidence,
+                provider_name=analysis.provider_name,
+                model_name=analysis.model_name,
+                processing_duration_ms=analysis.duration_ms,
+                error_code=analysis.error_code or "EXTERNAL_NO_RESULT",
+                error_message=(analysis.error_message or "Provider declared no usable label")[
+                    :500
+                ],
+                execution_scope=ExecutionScope.SINGLE_ASSET,
+                logical_asset_attempt=False,
+            )
+
+        if analysis.status is ExternalAnalysisStatus.INVALID:
+            # INVALID after successful parse = empty/unusable label (business), not parse failure.
+            # Parse/schema failures must arrive as FAILED_TECHNICAL from the provider adapter.
             return ImageProcessingResult(
                 job_id=job_id,
                 asset_id=asset_id,
@@ -176,10 +201,8 @@ class ExternalResultNormalizer:
                 provider_name=analysis.provider_name,
                 model_name=analysis.model_name,
                 processing_duration_ms=analysis.duration_ms,
-                error_code=analysis.error_code or "EXTERNAL_NO_RESULT",
-                error_message=(analysis.error_message or "Provider returned no usable label")[
-                    :500
-                ],
+                error_code=analysis.error_code or "EXTERNAL_RESULT_EMPTY",
+                error_message=(analysis.error_message or "Provider marked result INVALID")[:500],
                 execution_scope=ExecutionScope.SINGLE_ASSET,
                 logical_asset_attempt=False,
             )
@@ -335,6 +358,18 @@ class ExternalResultNormalizer:
         )
         merged = dict(base_fields)
         merged.update(result.additional_fields or {})
+        merged["external_raw_fields_present"] = {
+            "internal_code": bool(analysis.internal_code),
+            "quantity": analysis.quantity is not None,
+        }
+        merged["external_normalized_fields_present"] = {
+            "internal_code": bool(result.internal_code),
+            "quantity": result.quantity is not None,
+        }
+        if result.validation_errors:
+            merged["external_validation_errors"] = list(result.validation_errors)
+            if result.status is not ImageResultStatus.RESOLVED_EXTERNAL:
+                result.error_code = result.error_code or "EXTERNAL_RESULT_VALIDATION_FAILED"
         result.additional_fields = merged
         return result
 

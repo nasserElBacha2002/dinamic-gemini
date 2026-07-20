@@ -399,10 +399,19 @@ def build_default_external_fallback_orchestrator(
         """Credentials from live settings; provider/model identity from snapshot at resolve()."""
 
         def resolve(self, *, provider: str, model: str | None):
+            resolved_model = (model or "").strip() or None
+            if not resolved_model and (provider or "").strip().lower() == "gemini":
+                resolved_model = (
+                    str(getattr(settings, "gemini_model_name", "") or "").strip() or None
+                )
+            if not resolved_model:
+                resolved_model = (
+                    str(getattr(settings, "external_fallback_model", "") or "").strip() or None
+                )
             return LlmExternalImageAnalysisProvider(
                 settings=settings,
                 provider_name=provider,
-                model_name=model,
+                model_name=resolved_model,
             )
 
     reader = ArtifactStoreSourceAssetContentReader(artifact_store)

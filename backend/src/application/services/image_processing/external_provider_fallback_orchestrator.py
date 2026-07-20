@@ -611,6 +611,12 @@ class ExternalProviderFallbackOrchestrator:
                 "status": getattr(result.status, "value", str(result.status)),
                 "provider_call_status": provider_call_status,
                 "persistence_status": "NOT_APPLICABLE",
+                "requested_model": snapshot.model,
+                "executed_model": result.model_name
+                or (result.additional_fields or {}).get("executed_model"),
+                "provider_declared_no_result": bool(
+                    (result.additional_fields or {}).get("provider_declared_no_result")
+                ),
             },
             severity="ERROR",
         )
@@ -821,6 +827,19 @@ class ExternalProviderFallbackOrchestrator:
                     )
                 content = self.content_reader(asset)
                 request.request_image_sha256 = hashlib.sha256(content).hexdigest()
+                self._publish_fallback_event(
+                    job_id=job.id,
+                    asset_id=asset.id,
+                    event_type="fallback.provider_call_started",
+                    message="external provider call started",
+                    metadata={
+                        "provider": provider_name,
+                        "requested_model": model_name,
+                        "attempt_number": attempt_idx,
+                        "request_image_sha256": request.request_image_sha256,
+                        "request_image_bytes": len(content),
+                    },
+                )
                 analysis = provider.analyze_image(
                     ExternalImageInput(
                         content=content,
@@ -842,6 +861,45 @@ class ExternalProviderFallbackOrchestrator:
                     ),
                 )
                 last_analysis = analysis
+                self._publish_fallback_event(
+                    job_id=job.id,
+                    asset_id=asset.id,
+                    event_type="fallback.provider_call_completed",
+                    message="external provider call completed",
+                    error_code=analysis.error_code
+                    if analysis.status
+                    in (
+                        ExternalAnalysisStatus.FAILED_TECHNICAL,
+                        ExternalAnalysisStatus.TIMEOUT,
+                        ExternalAnalysisStatus.RATE_LIMITED,
+                    )
+                    else None,
+                    metadata={
+                        "provider": analysis.provider_name or provider_name,
+                        "requested_model": model_name,
+                        "executed_model": analysis.model_name,
+                        "attempt_number": attempt_idx,
+                        "analysis_status": analysis.status.value,
+                        "duration_ms": analysis.duration_ms,
+                        "parse_status": (analysis.additional_fields or {}).get("parse_status"),
+                        "normalized_code_present": bool(analysis.internal_code),
+                        "normalized_quantity_present": analysis.quantity is not None,
+                        "provider_response_sha256": analysis.raw_reference,
+                        "request_image_sha256": (analysis.additional_fields or {}).get(
+                            "request_image_sha256"
+                        ),
+                    },
+                    severity=(
+                        "ERROR"
+                        if analysis.status
+                        in (
+                            ExternalAnalysisStatus.FAILED_TECHNICAL,
+                            ExternalAnalysisStatus.TIMEOUT,
+                            ExternalAnalysisStatus.RATE_LIMITED,
+                        )
+                        else "INFO"
+                    ),
+                )
 
             if analysis.status in _RETRYABLE_ANALYSIS:
                 if breaker is not None:
