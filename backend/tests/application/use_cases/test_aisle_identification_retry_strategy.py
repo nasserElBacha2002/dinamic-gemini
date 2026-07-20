@@ -100,10 +100,10 @@ def test_retry_code_scan_original_flag_off_recomputes_legacy_llm(
     assert retried.execution_strategy == AisleIdentificationExecutionStrategy.LEGACY_LLM
 
 
-def test_retry_code_scan_flag_turned_on_before_retry_recomputes_temporary(
+def test_retry_reuses_execution_strategy_snapshot_when_flag_flips(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Original attempt made while flag was off; flag flips on before retry → LEGACY_LLM_TEMPORARY."""
+    """Retry keeps the original immutable execution_strategy (flags do not recompute it)."""
     monkeypatch.setenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "false")
     from src.config import reload_settings
 
@@ -125,7 +125,7 @@ def test_retry_code_scan_flag_turned_on_before_retry_recomputes_temporary(
     retried = use_case.execute(RetryAisleJobCommand("inv-1", "aisle-1", "job-failed"))
 
     assert retried.identification_mode == AisleIdentificationMode.CODE_SCAN
-    assert retried.execution_strategy == AisleIdentificationExecutionStrategy.LEGACY_LLM_TEMPORARY
+    assert retried.execution_strategy == AisleIdentificationExecutionStrategy.LEGACY_LLM
 
 
 def test_retry_legacy_llm_stays_legacy_llm_regardless_of_flag(

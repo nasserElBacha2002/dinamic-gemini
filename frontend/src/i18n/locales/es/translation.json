@@ -2003,7 +2003,7 @@
       "strategy": "Estrategia de ejecución",
       "profile": "Proveedor / modelo / prompt",
       "progress": "Progreso por imagen",
-      "progressValue": "{{resolved}} de {{total}} resueltas · {{failed}} fallidas · {{processing}} en curso · {{pending}} pendientes · {{manual_review}} revisión manual"
+      "progressValue": "{{resolved}} de {{total}} resueltas · {{unrecognized}} no reconocidas · {{manual_review}} revisión manual · {{failed}} fallidas · {{processing}} en curso · {{pending}} pendientes"
     },
     "summary": {
       "title": "Contadores de procesamiento",
@@ -2012,7 +2012,8 @@
       "failed": "Fallidas",
       "pending": "Pendientes",
       "processing": "En curso",
-      "manualReview": "Revisión manual"
+      "manualReview": "Revisión manual",
+      "unrecognized": "No reconocidas"
     },
     "filters": {
       "all": "Todas",

@@ -19,6 +19,8 @@ import { ProcessingScreen } from './src/screens/ProcessingScreen';
 import { ResultsScreen } from './src/screens/ResultsScreen';
 import { ReviewScreen } from './src/screens/ReviewScreen';
 import { UploadsScreen } from './src/screens/UploadsScreen';
+import type { AisleIdentificationMode } from './src/features/processing/processingMode';
+import { sanitizeIdentificationModeSelection } from './src/features/processing/processingMode';
 import { ErrorText, Shell, SmallButton, messageOf, styles } from './src/ui';
 
 type Screen =
@@ -43,6 +45,9 @@ export default function App(): JSX.Element {
   const [selectedAisle, setSelectedAisle] = useState<AisleDto | null>(null);
   const [capture, setCapture] = useState<CaptureSnapshot | null>(null);
   const [workSessionId, setWorkSessionId] = useState<string | null>(null);
+  /** Session preference for process-aisle mode (null = inherit). Survives aisle changes until app restart. */
+  const [identificationModePreference, setIdentificationModePreference] =
+    useState<AisleIdentificationMode | null>(null);
   const [connectivity, setConnectivity] = useState<'online' | 'offline' | 'unknown'>('unknown');
   const [localSessions, setLocalSessions] = useState<CaptureSessionRow[]>([]);
   const [uploadProgress, setUploadProgress] = useState<readonly UploadSessionProgress[]>([]);
@@ -312,6 +317,10 @@ export default function App(): JSX.Element {
         <UploadsScreen
           services={services}
           sessionId={workSessionId}
+          identificationModePreference={identificationModePreference}
+          onIdentificationModePreferenceChange={(next) =>
+            setIdentificationModePreference(sanitizeIdentificationModeSelection(next))
+          }
           onBack={() => setScreen(selectedInventory ? 'aisles' : 'inventories')}
           onProcess={() => setScreen('processing')}
           onError={setError}
@@ -321,6 +330,12 @@ export default function App(): JSX.Element {
         <ProcessingScreen
           services={services}
           sessionId={workSessionId}
+          inventoryName={selectedInventory?.name ?? ''}
+          aisleName={selectedAisle?.code ?? ''}
+          identificationModePreference={identificationModePreference}
+          onIdentificationModePreferenceChange={(next) =>
+            setIdentificationModePreference(sanitizeIdentificationModeSelection(next))
+          }
           onBack={() => setScreen(selectedInventory ? 'aisles' : 'inventories')}
           onAnotherAisle={() => setScreen('inventories')}
           onViewResults={() => setScreen('results')}

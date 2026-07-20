@@ -13,12 +13,24 @@ import type {
 import type { UploadQueue } from '../upload/uploadQueue';
 import type { AisleAssetsApi } from '../upload/aisleAssetsApi';
 import { computeProcessingReadiness, type ProcessingReadiness } from './processingReadiness';
+import {
+  buildProcessAisleRequestBody,
+  mapProcessStartErrorMessage,
+  sanitizeIdentificationModeSelection,
+  type AisleIdentificationMode,
+} from './processingMode';
 
 export type { ProcessingReadiness } from './processingReadiness';
+export type { AisleIdentificationMode } from './processingMode';
 
 export function processIdempotencyKey(sessionId: string): string {
   return `mobile-process:${sessionId}`;
 }
+
+export type StartProcessOptions = {
+  /** Explicit override. null/undefined → inherit (omit field). */
+  readonly identificationMode?: AisleIdentificationMode | null;
+};
 
 export type ResultLoadState = 'loading' | 'complete' | 'partial' | 'pending' | 'error';
 
@@ -88,12 +100,16 @@ export class ProcessingService {
     return { ok: readiness.ready, reason: readiness.reason };
   }
 
-  async startProcess(sessionId: string): Promise<{ ok: boolean; jobId: string | null; reason: string | null }> {
+  async startProcess(
+    sessionId: string,
+    options: StartProcessOptions = {},
+  ): Promise<{ ok: boolean; jobId: string | null; reason: string | null }> {
     if (this.processLocks.has(sessionId)) {
       return { ok: false, jobId: null, reason: 'Procesamiento ya en curso.' };
     }
     this.processLocks.add(sessionId);
     const idempotencyKey = processIdempotencyKey(sessionId);
+    const identificationMode = sanitizeIdentificationModeSelection(options.identificationMode);
     try {
       const check = await this.validateBeforeProcess(sessionId);
       if (!check.ok) {
@@ -137,14 +153,19 @@ export class ProcessingService {
       const path =
         `/api/v3/inventories/${encodeURIComponent(session.inventory_id)}` +
         `/aisles/${encodeURIComponent(session.aisle_id)}/process`;
+      const body = buildProcessAisleRequestBody(idempotencyKey, identificationMode);
       try {
-        const response = await this.api.post<ProcessAisleResponseDto>(
-          path,
-          { idempotency_key: idempotencyKey },
-          { headers: { 'Idempotency-Key': idempotencyKey } },
-        );
+        const response = await this.api.post<ProcessAisleResponseDto>(path, body, {
+          headers: { 'Idempotency-Key': idempotencyKey },
+        });
         await this.persistJob(sessionId, session.inventory_id, session.aisle_id, response.job_id, 'queued');
-        this.logger.info('job_started', { sessionId, jobId: response.job_id, idempotencyKey });
+        this.logger.info('job_started', {
+          sessionId,
+          jobId: response.job_id,
+          idempotencyKey,
+          identificationMode: identificationMode ?? 'inherited',
+          executionStrategy: response.execution_strategy ?? null,
+        });
         return { ok: true, jobId: response.job_id, reason: null };
       } catch (e) {
         if (e instanceof ApiError && (e.status === 409 || e.code === 'ACTIVE_JOB_EXISTS')) {
@@ -164,13 +185,21 @@ export class ProcessingService {
             ok: false,
             jobId: null,
             reason:
-              'No se confirmó el inicio del procesamiento. No reintentamos automáticamente para evitar jobs duplicados. Actualizá el estado o reintentá cuando haya conexión.',
+              'No se pudo iniciar el procesamiento. Verificá tu conexión e intentá nuevamente. ' +
+              'No reintentamos automáticamente para evitar jobs duplicados.',
+          };
+        }
+        if (e instanceof ApiError) {
+          return {
+            ok: false,
+            jobId: null,
+            reason: mapProcessStartErrorMessage(e),
           };
         }
         return {
           ok: false,
           jobId: null,
-          reason: e instanceof ApiError ? e.message : String(e),
+          reason: String(e),
         };
       }
     } finally {

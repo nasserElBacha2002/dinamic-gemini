@@ -1,3 +1,0 @@
-Full unified diff (gitignored):
-  review/legacy-processing-cleanup-diff.txt
-  review/latest-diff.txt

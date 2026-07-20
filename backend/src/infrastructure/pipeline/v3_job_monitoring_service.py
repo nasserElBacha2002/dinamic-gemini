@@ -2,12 +2,15 @@
 V3 worker run monitoring — Phase 6 extraction from :class:`V3JobExecutor`.
 
 Sets up run directory logging, execution log writer, and cooperative heartbeat thread.
+Heartbeat proves process liveness only — a progress watchdog fails jobs stuck at
+``startup_confirmed`` without advancing into a real processing substep.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -25,6 +28,8 @@ from src.pipeline.execution_log import ExecutionLogWriter
 logger = logging.getLogger(__name__)
 
 RUN_ID = DEFAULT_V3_WORKER_RUN_SEGMENT
+STARTUP_CONFIRMED_SUBSTEP = "startup_confirmed"
+STARTUP_NO_PROGRESS_FAILURE_CODE = "JOB_STARTUP_NO_PROGRESS"
 
 
 @dataclass(frozen=True)
@@ -59,9 +64,11 @@ class V3JobMonitoringService:
         *,
         state_service: V3JobExecutionStateService,
         heartbeat_interval_sec: float = 10.0,
+        startup_progress_timeout_sec: float = 120.0,
     ) -> None:
         self._state = state_service
         self._heartbeat_interval_sec = heartbeat_interval_sec
+        self._startup_progress_timeout_sec = float(startup_progress_timeout_sec)
 
     @contextmanager
     def session(self, req: V3JobMonitoringRequest) -> Iterator[V3WorkerRuntimeHandles]:
@@ -100,12 +107,50 @@ class V3JobMonitoringService:
             "detected": False,
             "cancelled": False,
         }
+        monitor_started_at = time.monotonic()
 
         def heartbeat_loop() -> None:
             while not stop_heartbeat.wait(self._heartbeat_interval_sec):
                 current_job = self._state.heartbeat(req.job_id)
                 if current_job is None:
                     continue
+                if self._startup_progress_timed_out(current_job, monitor_started_at):
+                    message = (
+                        "Job remained at startup_confirmed without processing progress "
+                        f"for {self._startup_progress_timeout_sec:.0f}s"
+                    )
+                    logger.error(
+                        "job.startup_no_progress job_id=%s substep=%s timeout_sec=%s",
+                        req.job_id,
+                        current_job.current_substep,
+                        self._startup_progress_timeout_sec,
+                    )
+                    exec_log.structured_event(
+                        job_id=req.job_id,
+                        inventory_id=req.aisle.inventory_id,
+                        aisle_id=req.aisle_id,
+                        attempt=current_job.attempt_count,
+                        stage=current_job.current_stage or "WorkerLaunch",
+                        substep=current_job.current_substep,
+                        event="job.startup_timeout",
+                        details={
+                            "failure_code": STARTUP_NO_PROGRESS_FAILURE_CODE,
+                            "timeout_seconds": self._startup_progress_timeout_sec,
+                        },
+                    )
+                    try:
+                        self._state.fail_job_and_aisle(
+                            req.job_id,
+                            req.aisle,
+                            message,
+                            failure_code=STARTUP_NO_PROGRESS_FAILURE_CODE,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "job.startup_timeout_fail_failed job_id=%s", req.job_id
+                        )
+                    stop_heartbeat.set()
+                    break
                 exec_log.structured_event(
                     job_id=req.job_id,
                     inventory_id=req.aisle.inventory_id,
@@ -128,3 +173,11 @@ class V3JobMonitoringService:
             heartbeat_thread=heartbeat_thread,
             cancel_event_emitted=cancel_event_emitted,
         )
+
+    def _startup_progress_timed_out(self, job: Job, monitor_started_at: float) -> bool:
+        if self._startup_progress_timeout_sec <= 0:
+            return False
+        substep = (job.current_substep or "").strip()
+        if substep != STARTUP_CONFIRMED_SUBSTEP:
+            return False
+        return (time.monotonic() - monitor_started_at) >= self._startup_progress_timeout_sec

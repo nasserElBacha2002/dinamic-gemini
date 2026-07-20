@@ -47,9 +47,9 @@ def test_client_when_no_overrides() -> None:
     assert r.source == AisleIdentificationModeSource.CLIENT
 
 
-def test_system_default_legacy_llm() -> None:
+def test_system_default_internal_ocr() -> None:
     r = resolve_aisle_identification_mode()
-    assert r.effective_mode == AisleIdentificationMode.LEGACY_LLM
+    assert r.effective_mode == AisleIdentificationMode.INTERNAL_OCR
     assert r.source == AisleIdentificationModeSource.SYSTEM_DEFAULT
 
 

@@ -45,7 +45,7 @@ from src.application.services.image_processing.ocr_client_field_rules import (
 )
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.legacy_processing_guard import (
-    reject_legacy_mode_for_new_job,
+    reject_legacy_effective_mode_for_new_job,
 )
 from src.application.services.process_aisle_execution_resolution import (
     resolve_process_aisle_execution_keys,
@@ -249,12 +249,16 @@ class StartAisleProcessingUseCase:
                 client_mode = client.default_identification_mode
 
         settings = load_settings()
-        reject_legacy_mode_for_new_job(command.requested_identification_mode)
         resolution = resolve_aisle_identification_mode(
             request_mode=command.requested_identification_mode,
             aisle_mode=aisle.identification_mode,
             inventory_mode=inventory.identification_mode,
             client_mode=client_mode,
+        )
+        # Central enforcement: block effective LEGACY after full inheritance resolution.
+        reject_legacy_effective_mode_for_new_job(
+            resolution,
+            requested_mode=command.requested_identification_mode,
         )
         decision = resolve_execution_strategy_decision(
             effective_mode=resolution.effective_mode,
@@ -423,7 +427,15 @@ class StartAisleProcessingUseCase:
                 multi_provider_enabled=False,
                 snapshot_version=CONFIGURATION_SNAPSHOT_VERSION,
                 client_rules=ocr_client_rules_snapshot(client_rules),
+                # Technical failures never go to AI by default (empty allowlist).
                 recoverable_technical_codes=sorted(DEFAULT_RECOVERABLE_TECHNICAL_CODES),
+                ambiguous_internal_code_fallback_enabled=bool(
+                    getattr(
+                        settings,
+                        "external_fallback_ambiguous_internal_code_enabled",
+                        False,
+                    )
+                ),
             )
         engine_params_json = {
             "identification_execution": identification_execution_snapshot_dict(

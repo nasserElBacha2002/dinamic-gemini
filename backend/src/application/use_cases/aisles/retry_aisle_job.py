@@ -10,6 +10,9 @@ from src.application.ports.repositories import AisleRepository, JobRepository
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_job_launch_service import AisleJobLaunchService
 from src.application.services.job_stale_reconciler import JobStaleReconciler
+from src.application.services.legacy_processing_guard import (
+    note_historical_legacy_retry_created,
+)
 from src.application.services.process_aisle_job_for_aisle import (
     require_process_aisle_job_for_aisle,
 )
@@ -129,6 +132,11 @@ class RetryAisleJobUseCase:
             configuration_snapshot_version=original_job.configuration_snapshot_version,
             execution_strategy=execution_strategy,
             engine_params_json=engine_params_json,
+        )
+        # Historical LEGACY retries are allowed (immutable snapshot). New starts are not.
+        note_historical_legacy_retry_created(
+            identification_mode=retry_job.identification_mode,
+            identification_mode_source=retry_job.identification_mode_source,
         )
         logger.info(
             "job.retry_requested previous_job_id=%s new_job_id=%s aisle_id=%s attempt_count=%s "

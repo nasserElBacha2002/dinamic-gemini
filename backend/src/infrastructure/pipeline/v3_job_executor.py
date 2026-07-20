@@ -300,7 +300,12 @@ class V3JobExecutor:
             state_service=self._state,
             clock=clock,
         )
-        self._monitoring_service = V3JobMonitoringService(state_service=self._state)
+        self._monitoring_service = V3JobMonitoringService(
+            state_service=self._state,
+            startup_progress_timeout_sec=float(
+                getattr(load_settings(), "job_startup_progress_timeout_seconds", 120.0)
+            ),
+        )
         self._cancellation_coordinator = V3CancellationCoordinator(state_service=self._state)
         self._pipeline_execution_service = V3PipelineExecutionService(
             state_service=self._state,
@@ -508,7 +513,64 @@ class V3JobExecutor:
                 return True
             state_repo = attempt_repo = lease_repo = batch_attempt_repo = None
 
+        event_publisher = None
         try:
+            from src.application.services.image_processing.processing_event_publisher import (
+                CompositeProcessingEventPublisher,
+                ExecutionLogProcessingEventPublisher,
+                RepositoryProcessingEventPublisher,
+            )
+
+            exec_log_publisher = ExecutionLogProcessingEventPublisher(
+                exec_log=exec_log,
+                inventory_id=aisle.inventory_id,
+                aisle_id=aisle_id,
+                attempt=int(getattr(job, "attempt_count", 1) or 1),
+                stage="CodeScan",
+            )
+            repo_publisher = None
+            if bool(getattr(settings, "processing_events_persistence_enabled", False)):
+                try:
+                    repo_publisher = RepositoryProcessingEventPublisher(
+                        event_repo=container.get_processing_event_repo(),
+                        clock=container.get_clock(),
+                    )
+                except Exception as pub_exc:
+                    logger.warning(
+                        "code_scan.event_publisher_unavailable job_id=%s err=%s",
+                        job_id,
+                        pub_exc,
+                    )
+            event_publisher = CompositeProcessingEventPublisher(
+                *(p for p in (repo_publisher, exec_log_publisher) if p is not None)
+            )
+
+            def _publish_job_event(
+                event_type: str,
+                *,
+                message: str | None = None,
+                error_code: str | None = None,
+                metadata: dict | None = None,
+                severity: str = "INFO",
+            ) -> None:
+                try:
+                    event_publisher.publish(
+                        job_id=job_id,
+                        event_type=event_type,
+                        strategy="CODE_SCAN",
+                        severity=severity,
+                        message=message,
+                        error_code=error_code,
+                        metadata=metadata,
+                    )
+                except Exception:
+                    logger.debug(
+                        "code_scan.job_event_publish_skipped job_id=%s event=%s",
+                        job_id,
+                        event_type,
+                        exc_info=True,
+                    )
+
             strategy = build_default_code_scan_strategy(settings, self._artifact_store)
             persister = build_default_code_scan_persister(
                 job_source_asset_repo=container.get_job_source_asset_repo(),
@@ -570,11 +632,74 @@ class V3JobExecutor:
                 failure_code="IMAGE_PROCESSING_REPOSITORY_UNAVAILABLE",
             )
             return True
+        except Exception as build_exc:
+            # Fail closed before the asset loop — never leave heartbeat-only RUNNING.
+            logger.exception("code_scan.startup_failed job_id=%s", job_id)
+            if event_publisher is not None:
+                try:
+                    event_publisher.publish(
+                        job_id=job_id,
+                        event_type="job.failed",
+                        strategy="CODE_SCAN",
+                        severity="ERROR",
+                        message="CODE_SCAN startup failed before processing_started",
+                        error_code="CODE_SCAN_STARTUP_FAILED",
+                        metadata={"error_type": type(build_exc).__name__},
+                    )
+                except Exception:
+                    pass
+            self._state.fail_job_and_aisle(
+                job_id,
+                aisle,
+                f"CODE_SCAN startup failed: {type(build_exc).__name__}",
+                failure_code="CODE_SCAN_STARTUP_FAILED",
+            )
+            return True
 
         def _merge_progress(progress) -> None:
-            self._job_repo.merge_result_json(
-                job_id, {"asset_progress": progress_to_public_dict(progress)}
+            public = progress_to_public_dict(progress)
+            self._job_repo.merge_result_json(job_id, {"asset_progress": public})
+            # Heartbeat alone is not progress — advance runtime stage from asset counts.
+            processed = (
+                int(public.get("resolved", 0) or 0)
+                + int(public.get("failed", 0) or 0)
+                + int(public.get("manual_review", 0) or 0)
+                + int(public.get("unrecognized", 0) or 0)
             )
+            self._state.update_runtime_status(
+                job_id,
+                stage="CodeScan",
+                substep=f"assets_processed:{processed}/{public.get('total', len(assets))}",
+            )
+
+        total_assets = len(assets)
+        self._state.update_runtime_status(
+            job_id, stage="CodeScan", substep="processing_started"
+        )
+        _publish_job_event(
+            "job.processing_started",
+            message="CODE_SCAN processing started",
+            metadata={"total_assets": total_assets},
+        )
+        _publish_job_event(
+            "code_scan.processing_started",
+            message="CODE_SCAN strategy entered",
+            metadata={"total_assets": total_assets},
+        )
+        _publish_job_event(
+            "job.assets_loaded",
+            message="job source assets ready for CODE_SCAN",
+            metadata={
+                "total_assets": total_assets,
+                "assets_eligible": total_assets,
+                "assets_skipped": 0,
+            },
+        )
+        _publish_job_event(
+            "job.asset_loop_started",
+            message="per-asset CODE_SCAN loop started",
+            metadata={"total_assets": total_assets},
+        )
 
         try:
             outcome = run_orchestrated_code_scan(
@@ -591,11 +716,33 @@ class V3JobExecutor:
             )
         except CodeScanPipelineMisconfiguredError as misconfig:
             logger.error("code_scan.misconfigured job_id=%s err=%s", job_id, misconfig)
+            _publish_job_event(
+                "job.failed",
+                message=str(misconfig)[:500],
+                error_code="CODE_SCAN_PIPELINE_MISCONFIGURED",
+                severity="ERROR",
+            )
             self._state.fail_job_and_aisle(
                 job_id,
                 aisle,
                 str(misconfig),
                 failure_code="CODE_SCAN_PIPELINE_MISCONFIGURED",
+            )
+            return True
+        except Exception as unhandled:
+            logger.exception("code_scan.unhandled_worker_error job_id=%s", job_id)
+            _publish_job_event(
+                "job.failed",
+                message=type(unhandled).__name__,
+                error_code="UNHANDLED_WORKER_ERROR",
+                severity="ERROR",
+                metadata={"error_type": type(unhandled).__name__},
+            )
+            self._state.fail_job_and_aisle(
+                job_id,
+                aisle,
+                f"CODE_SCAN unhandled error: {type(unhandled).__name__}",
+                failure_code="UNHANDLED_WORKER_ERROR",
             )
             return True
 
@@ -634,6 +781,12 @@ class V3JobExecutor:
         if job_outcome is CodeScanJobOutcome.FAILED:
             current = self._job_repo.get_by_id(job_id)
             if current is not None and current.status == JobStatus.RUNNING:
+                _publish_job_event(
+                    "job.failed",
+                    message=(outcome.error_message or "code_scan_failed")[:500],
+                    error_code="CODE_SCAN_FAILED",
+                    severity="ERROR",
+                )
                 self._state.fail_job_and_aisle(
                     job_id,
                     aisle,
@@ -651,10 +804,29 @@ class V3JobExecutor:
         if job_outcome is CodeScanJobOutcome.PARTIALLY_COMPLETED:
             self._job_repo.merge_result_json(job_id, {"code_scan_partial": True})
 
+        _publish_job_event(
+            "job.finalization_started",
+            message="CODE_SCAN finalization started",
+            metadata={"outcome": job_outcome.value},
+        )
         try:
             self._state.finalize_code_scan_success(job_id, aisle)
+            _publish_job_event(
+                "job.completed",
+                message="CODE_SCAN job completed",
+                metadata={
+                    "outcome": job_outcome.value,
+                    "asset_progress": progress_to_public_dict(outcome.progress),
+                },
+            )
         except Exception as exc:
             logger.exception("code_scan.finalize_failed job_id=%s", job_id)
+            _publish_job_event(
+                "job.failed",
+                message=f"code_scan finalization failed: {type(exc).__name__}",
+                error_code="CODE_SCAN_FINALIZATION_FAILED",
+                severity="ERROR",
+            )
             self._state.fail_job_and_aisle(
                 job_id,
                 aisle,
@@ -893,12 +1065,26 @@ class V3JobExecutor:
             },
         )
 
+        total_assets = len(assets)
+
         def _merge_progress(progress) -> None:
-            self._job_repo.merge_result_json(
-                job_id, {"asset_progress": progress_to_public_dict(progress)}
+            public = progress_to_public_dict(progress)
+            self._job_repo.merge_result_json(job_id, {"asset_progress": public})
+            processed = (
+                int(public.get("resolved", 0) or 0)
+                + int(public.get("failed", 0) or 0)
+                + int(public.get("manual_review", 0) or 0)
+                + int(public.get("unrecognized", 0) or 0)
+            )
+            self._state.update_runtime_status(
+                job_id,
+                stage="InternalOcr",
+                substep=f"assets_processed:{processed}/{public.get('total', total_assets)}",
             )
 
-        total_assets = len(assets)
+        self._state.update_runtime_status(
+            job_id, stage="InternalOcr", substep="processing_started"
+        )
         _publish_job_event(
             "job.processing_started",
             message="INTERNAL_OCR processing started",

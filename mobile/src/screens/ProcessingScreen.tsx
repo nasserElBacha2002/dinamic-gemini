@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 
+import { ProcessAisleConfirmModal } from '../components/ProcessAisleConfirmModal';
 import {
   primaryProcessingAction,
   primaryProcessingActionLabel,
@@ -8,12 +9,18 @@ import {
   processingStateLabelFromRemote,
   type ProcessingState,
 } from '../core/processingState';
+import type { AisleIdentificationMode } from '../features/processing/processingMode';
+import { labelForIdentificationMode } from '../features/processing/processingMode';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import { Button, ErrorText, SmallButton, messageOf, styles } from '../ui';
 
 export interface ProcessingScreenProps {
   services: AppServices;
   sessionId: string;
+  inventoryName?: string;
+  aisleName?: string;
+  identificationModePreference: AisleIdentificationMode | null;
+  onIdentificationModePreferenceChange: (next: AisleIdentificationMode | null) => void;
   onBack: () => void;
   onAnotherAisle: () => void;
   onViewResults: () => void;
@@ -23,6 +30,10 @@ export interface ProcessingScreenProps {
 export function ProcessingScreen({
   services,
   sessionId,
+  inventoryName = '',
+  aisleName = '',
+  identificationModePreference,
+  onIdentificationModePreferenceChange,
   onBack,
   onAnotherAisle,
   onViewResults,
@@ -32,6 +43,8 @@ export function ProcessingScreen({
     null,
   );
   const [busy, setBusy] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     void services.processing.getSessionProcessingView(sessionId).then(setView);
@@ -59,16 +72,24 @@ export function ProcessingScreen({
   const startOrResumeProcessing = async () => {
     if (busy) return;
     setBusy(true);
+    setConfirmError(null);
+    const modeAtConfirm = identificationModePreference;
     try {
-      const res = await services.processing.startProcess(sessionId);
+      const res = await services.processing.startProcess(sessionId, {
+        identificationMode: modeAtConfirm,
+      });
       if (!res.ok) {
+        setConfirmError(res.reason);
         onError(res.reason);
         return;
       }
+      setConfirmVisible(false);
       if (res.jobId) await services.jobMonitor.watch(res.jobId);
       refresh();
     } catch (e) {
-      onError(messageOf(e));
+      const msg = messageOf(e);
+      setConfirmError(msg);
+      onError(msg);
     } finally {
       setBusy(false);
     }
@@ -80,6 +101,9 @@ export function ProcessingScreen({
       <Text style={styles.h2}>Procesamiento</Text>
       <Text style={styles.row}>Estado local: {processingStateLabel(view?.localState ?? 'idle')}</Text>
       <Text style={styles.row}>Estado remoto: {processingStateLabel(state)}</Text>
+      <Text style={styles.muted}>
+        Preferencia de tipo: {labelForIdentificationMode(identificationModePreference)}
+      </Text>
       {view?.remoteStatus ? (
         <Text style={styles.muted}>Detalle remoto: {processingStateLabelFromRemote(view.remoteStatus)}</Text>
       ) : null}
@@ -99,7 +123,8 @@ export function ProcessingScreen({
               if (view?.jobId) void services.jobMonitor.refresh(view.jobId);
               return;
             }
-            void startOrResumeProcessing();
+            setConfirmError(null);
+            setConfirmVisible(true);
           }}
         />
       )}
@@ -108,6 +133,25 @@ export function ProcessingScreen({
       <Text style={styles.muted}>
         Podés capturar otro pasillo mientras este se procesa. No se mezclan fotos ni lotes.
       </Text>
+      <ProcessAisleConfirmModal
+        visible={confirmVisible}
+        inventoryName={inventoryName}
+        aisleName={aisleName}
+        uploadedCount={0}
+        pendingCount={0}
+        preference={identificationModePreference}
+        busy={busy}
+        error={confirmError}
+        onPreferenceChange={onIdentificationModePreferenceChange}
+        onClose={() => {
+          if (busy) return;
+          setConfirmVisible(false);
+          setConfirmError(null);
+        }}
+        onConfirm={() => {
+          void startOrResumeProcessing();
+        }}
+      />
     </View>
   );
 }

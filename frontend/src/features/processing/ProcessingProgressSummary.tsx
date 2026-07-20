@@ -18,6 +18,10 @@ export default function ProcessingProgressSummary({ summary }: ProcessingProgres
     { label: t('processing.summary.pending'), value: summary.pending },
     { label: t('processing.summary.processing'), value: summary.processing },
     { label: t('processing.summary.manualReview'), value: summary.manual_review },
+    {
+      label: t('processing.summary.unrecognized'),
+      value: summary.unrecognized ?? 0,
+    },
   ];
 
   return (

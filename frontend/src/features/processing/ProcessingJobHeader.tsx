@@ -106,6 +106,7 @@ export default function ProcessingJobHeader({ job, summary, isLoading }: Process
                   pending: progress.pending,
                   processing: progress.processing,
                   manual_review: progress.manual_review,
+                  unrecognized: progress.unrecognized ?? 0,
                 })}
               </Typography>
             </>

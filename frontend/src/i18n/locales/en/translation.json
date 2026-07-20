@@ -1276,7 +1276,7 @@
       "strategy": "Execution strategy",
       "profile": "Provider / model / prompt",
       "progress": "Asset progress",
-      "progressValue": "{{resolved}} of {{total}} resolved · {{failed}} failed · {{processing}} in progress · {{pending}} pending · {{manual_review}} manual review"
+      "progressValue": "{{resolved}} of {{total}} resolved · {{unrecognized}} unrecognized · {{manual_review}} manual review · {{failed}} failed · {{processing}} in progress · {{pending}} pending"
     },
     "summary": {
       "title": "Processing counters",
@@ -1285,7 +1285,8 @@
       "failed": "Failed",
       "pending": "Pending",
       "processing": "In progress",
-      "manualReview": "Manual review"
+      "manualReview": "Manual review",
+      "unrecognized": "Unrecognized"
     },
     "filters": {
       "all": "All",

@@ -80,4 +80,49 @@ describe('processingExecutionPresentation', () => {
     expect(formatCurrentStageLabel('CodeScan', 'INTERNAL_OCR')).toBe('InternalOcr');
     expect(formatCurrentStageLabel('CodeScan', 'CODE_SCAN')).toBe('CodeScan');
   });
+
+  it('presents historical LEGACY job with AI fields visible', () => {
+    const presentation = buildJobExecutionPresentation({
+      identification_mode: 'LEGACY_LLM',
+      execution_strategy: 'LEGACY_LLM',
+      provider_name: 'gemini',
+      model_name: 'x',
+      prompt_key: 'hybrid',
+    });
+    expect(presentation.requestedMode).toBe('LEGACY_LLM');
+    expect(presentation.executedStrategy).toBe('LEGACY_LLM');
+    expect(presentation.showProviderModelRows).toBe(true);
+    expect(presentation.showPromptTab).toBe(true);
+  });
+
+  it('presents INTERNAL_OCR and CODE_SCAN without AI fields', () => {
+    for (const strategy of ['INTERNAL_OCR', 'CODE_SCAN'] as const) {
+      const presentation = buildJobExecutionPresentation({
+        identification_mode: strategy,
+        execution_strategy: strategy,
+      });
+      expect(presentation.showProviderModelRows).toBe(false);
+      expect(presentation.showPromptTab).toBe(false);
+    }
+  });
+
+  it('handles unknown strategy and requested≠executed without crashing', () => {
+    const presentation = buildJobExecutionPresentation({
+      identification_mode: 'INTERNAL_OCR',
+      execution_strategy: 'FUTURE_STRATEGY',
+      current_stage: 'UnknownStage',
+    });
+    expect(presentation.requestedMode).toBe('INTERNAL_OCR');
+    expect(presentation.executedStrategy).toBe('FUTURE_STRATEGY');
+    expect(presentation.currentStageLabel).toBe('UnknownStage');
+    // Unknown non-legacy strategy does not imply external LLM.
+    expect(presentation.showProviderModelRows).toBe(false);
+  });
+
+  it('keeps compatibility with sparse/legacy response shapes', () => {
+    const presentation = buildJobExecutionPresentation({});
+    expect(presentation.requestedMode).toBe('—');
+    expect(presentation.executedStrategy).toBe('—');
+    expect(presentation.showPromptTab).toBe(false);
+  });
 });

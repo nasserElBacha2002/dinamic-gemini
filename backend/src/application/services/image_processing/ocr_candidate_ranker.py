@@ -35,14 +35,32 @@ class RankedCodeDecision:
     second_score: float | None
 
 
-def safe_confidence(candidate: FieldCandidate) -> float:
-    conf = candidate.evidence_score
-    if conf is None:
+def normalize_confidence(raw: float | int | None) -> float:
+    """Normalize engine confidence into the contractual [0, 1] range.
+
+    Engines may deliver:
+    * ``None`` → 0.0
+    * values in ``[0, 1]`` → unchanged (clamped)
+    * values in ``(1, 100]`` → divided by 100
+    * other values → clamped to [0, 1] after best-effort float cast
+    """
+    if raw is None:
         return 0.0
     try:
-        return float(conf)
+        value = float(raw)
     except (TypeError, ValueError):
         return 0.0
+    if value > 1.0 and value <= 100.0:
+        value = value / 100.0
+    if value < 0.0:
+        return 0.0
+    if value > 1.0:
+        return 1.0
+    return value
+
+
+def safe_confidence(candidate: FieldCandidate) -> float:
+    return normalize_confidence(candidate.evidence_score)
 
 
 def safe_distance(candidate: FieldCandidate) -> float:
@@ -158,6 +176,7 @@ __all__ = [
     "RankedCodeDecision",
     "dedupe_by_normalized_value",
     "normalize_code_value",
+    "normalize_confidence",
     "rank_code_candidates",
     "safe_confidence",
     "safe_distance",

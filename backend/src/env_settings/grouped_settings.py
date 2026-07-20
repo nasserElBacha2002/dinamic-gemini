@@ -1263,6 +1263,31 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: EXTERNAL_FALLBACK_PER_IMAGE_ENABLED."
         ),
     )
+    external_fallback_ambiguous_internal_code_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv(
+                "EXTERNAL_FALLBACK_AMBIGUOUS_INTERNAL_CODE_ENABLED", "false"
+            )
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "When true, AMBIGUOUS_INTERNAL_CODE internal results may call external "
+            "fallback (snapshotted at job create). Default false. "
+            "Env: EXTERNAL_FALLBACK_AMBIGUOUS_INTERNAL_CODE_ENABLED."
+        ),
+    )
+    job_startup_progress_timeout_seconds: float = Field(
+        default_factory=lambda: float(
+            os.getenv("JOB_STARTUP_PROGRESS_TIMEOUT_SECONDS", "120") or "120"
+        ),
+        description=(
+            "Fail RUNNING jobs stuck at current_substep=startup_confirmed after this "
+            "many seconds (heartbeat alone is not progress). 0 disables. "
+            "Env: JOB_STARTUP_PROGRESS_TIMEOUT_SECONDS."
+        ),
+    )
     client_extraction_profiles_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("CLIENT_EXTRACTION_PROFILES_ENABLED", "false").strip().lower()

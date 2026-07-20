@@ -24,9 +24,11 @@
 | `LEGACY_LLM_TEMPORARY` | executed_strategy | COMPATIBILIDAD HISTÓRICA | Indirect via disabled flags | Flag-off fallback path |
 | `EXTERNAL_PROVIDER` | future naming | — | Not primary UX yet | Mapped conceptually from legacy LLM |
 
-**Resolution chain (effective mode):** request override → aisle → inventory → client → system default.
+**System default (new jobs):** `INTERNAL_OCR`. Effective `LEGACY_LLM` after inheritance is **blocked** at job start. Historical jobs remain readable; historical retries may re-execute LEGACY snapshots (explicit residual path).
 
-**System default:** still may resolve to `LEGACY_LLM` until config migration (Etapa D). Explicit save/start with `LEGACY_LLM` is blocked.
+**Resolution chain (effective mode):** request override → aisle → inventory → client → system default (`INTERNAL_OCR`).
+
+**Status:** partial retirement — new effective LEGACY blocked; enums/columns retained for history.
 
 ---
 

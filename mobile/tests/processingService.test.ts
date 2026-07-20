@@ -87,6 +87,128 @@ describe('ProcessingService', () => {
     expect(result.jobId).toBe('job-existing');
   });
 
+  it('startProcess sends identification_mode when selected', async () => {
+    repo.listPhotos.mockResolvedValue([
+      { status: 'stable', upload_status: 'uploaded', backend_asset_id: 'asset-1' },
+    ]);
+    uploadQueue.refreshSessionReadiness.mockResolvedValue('ready');
+    repo.getSession.mockResolvedValue({
+      id: 'session-1',
+      inventory_id: 'inv-1',
+      aisle_id: 'aisle-1',
+      backend_job_id: null,
+    });
+    assetsApi.listAssets.mockResolvedValue([{ id: 'asset-1' }]);
+    jobs.getByBackendJobId.mockResolvedValue(null);
+    api.get.mockResolvedValue({ latest_job: null, recent_jobs: [], operational_job_id: null, aisle: {} });
+    api.post.mockResolvedValue({ job_id: 'job-new', identification_mode: 'CODE_SCAN' });
+    const service = new ProcessingService(
+      api as never,
+      repo as never,
+      jobs as never,
+      uploadQueue as never,
+      assetsApi as never,
+      logger,
+    );
+    const result = await service.startProcess('session-1', { identificationMode: 'CODE_SCAN' });
+    expect(result.ok).toBe(true);
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/v3/inventories/inv-1/aisles/aisle-1/process',
+      { idempotency_key: 'mobile-process:session-1', identification_mode: 'CODE_SCAN' },
+      { headers: { 'Idempotency-Key': 'mobile-process:session-1' } },
+    );
+  });
+
+  it('startProcess omits identification_mode when inheriting', async () => {
+    repo.listPhotos.mockResolvedValue([
+      { status: 'stable', upload_status: 'uploaded', backend_asset_id: 'asset-1' },
+    ]);
+    uploadQueue.refreshSessionReadiness.mockResolvedValue('ready');
+    repo.getSession.mockResolvedValue({
+      id: 'session-1',
+      inventory_id: 'inv-1',
+      aisle_id: 'aisle-1',
+      backend_job_id: null,
+    });
+    assetsApi.listAssets.mockResolvedValue([{ id: 'asset-1' }]);
+    jobs.getByBackendJobId.mockResolvedValue(null);
+    api.get.mockResolvedValue({ latest_job: null, recent_jobs: [], operational_job_id: null, aisle: {} });
+    api.post.mockResolvedValue({ job_id: 'job-new' });
+    const service = new ProcessingService(
+      api as never,
+      repo as never,
+      jobs as never,
+      uploadQueue as never,
+      assetsApi as never,
+      logger,
+    );
+    await service.startProcess('session-1', { identificationMode: null });
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/v3/inventories/inv-1/aisles/aisle-1/process',
+      { idempotency_key: 'mobile-process:session-1' },
+      { headers: { 'Idempotency-Key': 'mobile-process:session-1' } },
+    );
+  });
+
+  it('startProcess maps legacy-not-allowed to clear message', async () => {
+    repo.listPhotos.mockResolvedValue([
+      { status: 'stable', upload_status: 'uploaded', backend_asset_id: 'asset-1' },
+    ]);
+    uploadQueue.refreshSessionReadiness.mockResolvedValue('ready');
+    repo.getSession.mockResolvedValue({
+      id: 'session-1',
+      inventory_id: 'inv-1',
+      aisle_id: 'aisle-1',
+      backend_job_id: null,
+    });
+    assetsApi.listAssets.mockResolvedValue([{ id: 'asset-1' }]);
+    jobs.getByBackendJobId.mockResolvedValue(null);
+    api.get.mockResolvedValue({ latest_job: null, recent_jobs: [], operational_job_id: null, aisle: {} });
+    api.post.mockRejectedValue(
+      new ApiError('blocked', 422, 'LEGACY_PROCESSING_MODE_NOT_ALLOWED_FOR_NEW_CONFIGURATION'),
+    );
+    const service = new ProcessingService(
+      api as never,
+      repo as never,
+      jobs as never,
+      uploadQueue as never,
+      assetsApi as never,
+      logger,
+    );
+    const result = await service.startProcess('session-1', { identificationMode: 'INTERNAL_OCR' });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/ya no está disponible/i);
+  });
+
+  it('startProcess rejects concurrent double start with lock', async () => {
+    let resolveReady: (v: string) => void = () => undefined;
+    uploadQueue.refreshSessionReadiness.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveReady = resolve;
+        }),
+    );
+    repo.listPhotos.mockResolvedValue([
+      { status: 'stable', upload_status: 'uploaded', backend_asset_id: 'asset-1' },
+    ]);
+    const service = new ProcessingService(
+      api as never,
+      repo as never,
+      jobs as never,
+      uploadQueue as never,
+      assetsApi as never,
+      logger,
+    );
+    const first = service.startProcess('session-1', { identificationMode: 'CODE_SCAN' });
+    await Promise.resolve();
+    const second = await service.startProcess('session-1', { identificationMode: 'INTERNAL_OCR' });
+    expect(second).toEqual({ ok: false, jobId: null, reason: 'Procesamiento ya en curso.' });
+    resolveReady('pending');
+    const firstResult = await first;
+    expect(firstResult.ok).toBe(false);
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
   it('getResultSummary does not invent zeros on merge error', async () => {
     repo.getSession.mockResolvedValue({
       id: 'session-1',
@@ -109,7 +231,14 @@ describe('ProcessingService', () => {
       last_polled_at: '2026-01-01T00:00:00Z',
     });
     api.get.mockRejectedValue(new ApiError('forbidden', 403, 'FORBIDDEN'));
-    const service = new ProcessingService(api as never, repo as never, jobs as never, uploadQueue as never, assetsApi as never, logger);
+    const service = new ProcessingService(
+      api as never,
+      repo as never,
+      jobs as never,
+      uploadQueue as never,
+      assetsApi as never,
+      logger,
+    );
     const summary = await service.getResultSummary('session-1');
     expect(summary.loadState).toBe('error');
     expect(summary.positions).toBeNull();

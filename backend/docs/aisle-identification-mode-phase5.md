@@ -49,11 +49,25 @@ Idempotency key: `job_id|asset_id|provider|model|prompt_version|configuration_sn
 
 ## Eligibility (`FallbackEligibilityPolicy`)
 
-Built from **snapshot** `enabled` + `recoverable_technical_codes` (not live defaults alone).
+Built from **snapshot** `enabled` + optional `recoverable_technical_codes` +
+`ambiguous_internal_code_fallback_enabled` (not live defaults alone).
 
-Eligible examples: `UNRECOGNIZED`, `PENDING_MANUAL_REVIEW`, allowlisted recoverable technical codes.
+Eligible examples:
+- `UNRECOGNIZED` / missing internal code
+- `MISSING_QUANTITY` only when profile evidence sets `fallback_eligible=true`
+  (`MissingQuantityResolutionPolicy.allow_external_fallback`)
+- `AMBIGUOUS_INTERNAL_CODE` only when the snapshot flag is true
 
-Never eligible: `RESOLVED_INTERNAL`, persistence failures, manual result exists, snapshot/config errors, cancelled jobs, circuit open.
+Never eligible:
+- `RESOLVED_INTERNAL` / `RESOLVED_EXTERNAL`
+- technical source/engine failures (`INTERNAL_OCR_TIMEOUT`, decode/read failures,
+  `PROFILE_SNAPSHOT_INVALID`, …) — AI must not paper over defects
+- persistence / concurrency / misconfiguration codes
+- cancelled jobs / lost lease / circuit open
+- broad `PENDING_MANUAL_REVIEW` (e.g. `CODE_LENGTH_NOT_EXACT`) without an
+  allowlisted business reason
+
+Default `recoverable_technical_codes` is **empty**.
 
 ## Snapshot
 

@@ -130,6 +130,7 @@ class ExternalFallbackSnapshot:
     retry_backoff_seconds: float = 0.5
     supplier_extraction_profile: dict[str, Any] | None = None
     profile_aware_validation_enabled: bool = False
+    ambiguous_internal_code_fallback_enabled: bool = False
 
     @classmethod
     def from_identification_execution(
@@ -178,6 +179,9 @@ class ExternalFallbackSnapshot:
             if isinstance(profile_snap, dict)
             else None,
             profile_aware_validation_enabled=profile_aware,
+            ambiguous_internal_code_fallback_enabled=bool(
+                raw.get("ambiguous_internal_code_fallback_enabled", False)
+            ),
         )
 
 
@@ -229,6 +233,9 @@ class ExternalProviderFallbackOrchestrator:
             recoverable_technical_codes=frozenset(snapshot.recoverable_technical_codes)
             if snapshot.recoverable_technical_codes
             else DEFAULT_RECOVERABLE_TECHNICAL_CODES,
+            ambiguous_internal_code_fallback_enabled=bool(
+                snapshot.ambiguous_internal_code_fallback_enabled
+            ),
         )
         if not snapshot.enabled:
             self._bump_skipped()
@@ -236,17 +243,26 @@ class ExternalProviderFallbackOrchestrator:
 
         decision = eligibility.evaluate(internal_result)
         logger.info(
-            "fallback.eligibility_evaluated job_id=%s asset_id=%s eligible=%s reason=%s "
-            "client_id=%s",
+            "fallback.evaluated job_id=%s asset_id=%s eligible=%s reason=%s "
+            "next_strategy=%s client_id=%s",
             job.id,
             asset.id,
             decision.eligible,
             decision.reason,
+            decision.next_strategy,
             client_id,
         )
         if not decision.eligible:
             self._bump_skipped()
             return ExternalFallbackOutcome(skipped=True)
+
+        logger.info(
+            "fallback.started job_id=%s asset_id=%s reason=%s strategy=%s",
+            job.id,
+            asset.id,
+            decision.reason,
+            decision.next_strategy,
+        )
 
         provider_name = (snapshot.provider or "").strip().lower()
         model_name = snapshot.model
@@ -994,6 +1010,7 @@ def build_external_fallback_snapshot_dict(
     client_rules: dict | None = None,
     recoverable_technical_codes: list[str] | None = None,
     retry_backoff_seconds: float = 0.5,
+    ambiguous_internal_code_fallback_enabled: bool = False,
 ) -> dict[str, Any]:
     return {
         "fallback_enabled": bool(enabled),
@@ -1021,6 +1038,9 @@ def build_external_fallback_snapshot_dict(
         "snapshot_version": int(snapshot_version),
         "client_rules": client_rules,
         "recoverable_technical_codes": list(recoverable_technical_codes or []),
+        "ambiguous_internal_code_fallback_enabled": bool(
+            ambiguous_internal_code_fallback_enabled
+        ),
     }
 
 

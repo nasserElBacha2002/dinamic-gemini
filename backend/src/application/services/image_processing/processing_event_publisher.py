@@ -1,4 +1,15 @@
-"""Processing event publisher (Phase 7 corrections)."""
+"""Processing event publisher (Phase 7 corrections).
+
+Observability semantics (chosen): **A — best-effort telemetry**.
+
+* Publish failures must not break OCR / code-scan processing.
+* Failures increment ``processing_event_publish_failed_total`` (structured log metric).
+* Results may mark ``observability_incomplete`` when publish fails.
+* ProcessingEvent rows are **not** transactional audit evidence; do not rely on them
+  for commit/rollback decisions. Prefer job/attempt/asset state for consistency.
+* At most one ``asset.finalized`` per attempt/asset orchestration call.
+* Do not publish OCR full text; metadata is sanitized via ``sanitize_metadata``.
+"""
 
 from __future__ import annotations
 
@@ -11,10 +22,27 @@ from src.application.ports.processing_event_repository import ProcessingEventRep
 from src.application.services.image_processing.processing_evidence_sanitizer import (
     sanitize_metadata,
 )
+from src.application.services.legacy_processing_metrics import (
+    record_processing_event_publish_failed,
+)
 from src.config import load_settings
 from src.domain.image_processing.processing_event import ProcessingEvent
 
 logger = logging.getLogger(__name__)
+
+_ALLOWED_SEVERITIES = frozenset({"INFO", "WARN", "ERROR"})
+
+
+def normalize_processing_event_severity(raw: str | None) -> str:
+    """Map caller severities onto CK_processing_events_severity values."""
+    value = str(raw or "INFO").strip().upper()
+    if value in {"WARNING", "WARN"}:
+        return "WARN"
+    if value in {"CRITICAL", "FATAL", "ERROR"}:
+        return "ERROR"
+    if value in _ALLOWED_SEVERITIES:
+        return value
+    return "INFO"
 
 
 class ProcessingEventPublisher(Protocol):
@@ -50,7 +78,7 @@ class CompositeProcessingEventPublisher:
         for publisher in self._publishers:
             try:
                 publisher.publish(**kwargs)
-            except (OSError, ValueError, TypeError, AttributeError) as exc:
+            except Exception as exc:
                 logger.debug(
                     "processing_event.composite_publish_skipped err=%s",
                     exc,
@@ -173,7 +201,7 @@ class RepositoryProcessingEventPublisher:
                     event_type=event_type,
                     created_at=self._clock.now(),
                     strategy=strategy,
-                    severity=severity,
+                    severity=normalize_processing_event_severity(severity),
                     message=(message or "")[:2000] if message else None,
                     error_code=error_code,
                     duration_ms=duration_ms,
@@ -181,12 +209,17 @@ class RepositoryProcessingEventPublisher:
                     metadata=sanitize_metadata(metadata or {}, level="TECHNICAL_SAFE"),
                 )
             )
-        except (OSError, ValueError, TypeError) as exc:
+        except Exception as exc:
+            # Best-effort telemetry: never fail the OCR asset path on publish errors.
+            record_processing_event_publish_failed(
+                event_type=event_type,
+                err_type=type(exc).__name__,
+            )
             logger.warning(
                 "processing_event.publish_failed job_id=%s event_type=%s err=%s",
                 job_id,
                 event_type,
-                exc,
+                type(exc).__name__,
             )
 
 
@@ -196,4 +229,5 @@ __all__ = [
     "NoOpProcessingEventPublisher",
     "ProcessingEventPublisher",
     "RepositoryProcessingEventPublisher",
+    "normalize_processing_event_severity",
 ]

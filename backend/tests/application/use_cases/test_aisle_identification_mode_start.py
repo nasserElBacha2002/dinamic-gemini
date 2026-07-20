@@ -99,6 +99,7 @@ def _build_use_case(
 
 def test_create_job_with_request_code_scan(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "true")
+    monkeypatch.setenv("CODE_SCAN_PROCESSING_ENABLED", "true")
     from src.config import reload_settings
 
     reload_settings()
@@ -115,11 +116,11 @@ def test_create_job_with_request_code_scan(monkeypatch: pytest.MonkeyPatch) -> N
     )
     assert result.identification_mode == "CODE_SCAN"
     assert result.identification_mode_source == "REQUEST"
-    assert result.execution_strategy == "LEGACY_LLM_TEMPORARY"
+    assert result.execution_strategy == "CODE_SCAN"
     job = job_repo.get_by_id(result.job_id)
     assert job is not None
     assert job.identification_mode == AisleIdentificationMode.CODE_SCAN
-    assert job.execution_strategy == AisleIdentificationExecutionStrategy.LEGACY_LLM_TEMPORARY
+    assert job.execution_strategy == AisleIdentificationExecutionStrategy.CODE_SCAN
 
 
 def test_create_job_inherits_aisle_then_snapshot_immutable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -155,7 +156,8 @@ def test_create_job_inherits_aisle_then_snapshot_immutable(monkeypatch: pytest.M
 
 
 def test_create_job_inherits_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "false")
+    monkeypatch.setenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "true")
+    monkeypatch.setenv("CODE_SCAN_PROCESSING_ENABLED", "true")
     from src.config import reload_settings
 
     reload_settings()
@@ -174,11 +176,10 @@ def test_create_job_inherits_client(monkeypatch: pytest.MonkeyPatch) -> None:
     result = uc.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
     assert result.identification_mode == "CODE_SCAN"
     assert result.identification_mode_source == "CLIENT"
-    # Flag off → still legacy execution label (not TEMPORARY)
-    assert result.execution_strategy == "LEGACY_LLM"
+    assert result.execution_strategy == "CODE_SCAN"
     job = job_repo.get_by_id(result.job_id)
     assert job is not None
-    assert job.execution_strategy == AisleIdentificationExecutionStrategy.LEGACY_LLM
+    assert job.execution_strategy == AisleIdentificationExecutionStrategy.CODE_SCAN
 
 
 def test_historical_job_null_fields_coerce() -> None:
@@ -195,3 +196,57 @@ def test_historical_job_null_fields_coerce() -> None:
     )
     assert job.identification_mode == AisleIdentificationMode.LEGACY_LLM
     assert historical_job_identification_mode(None) == AisleIdentificationMode.LEGACY_LLM
+
+
+def test_blocks_effective_legacy_from_aisle(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "true")
+    from src.application.errors import LegacyProcessingModeNotAllowedError
+    from src.config import reload_settings
+
+    reload_settings()
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)
+    aisle = Aisle(
+        "a1",
+        "inv1",
+        "A01",
+        AisleStatus.CREATED,
+        now,
+        now,
+        identification_mode=AisleIdentificationMode.LEGACY_LLM,
+    )
+    uc, _, _ = _build_use_case(inventory=inv, aisle=aisle)
+    with pytest.raises(LegacyProcessingModeNotAllowedError):
+        uc.execute(StartAisleProcessingCommand(inventory_id="inv1", aisle_id="a1"))
+
+
+def test_modern_override_allows_despite_legacy_aisle(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "true")
+    monkeypatch.setenv("INTERNAL_OCR_PROCESSING_ENABLED", "true")
+    from src.config import reload_settings
+
+    reload_settings()
+    now = datetime(2025, 3, 6, 12, 0, 0, tzinfo=timezone.utc)
+    inv = Inventory("inv1", "W", InventoryStatus.DRAFT, now, now)
+    aisle = Aisle(
+        "a1",
+        "inv1",
+        "A01",
+        AisleStatus.CREATED,
+        now,
+        now,
+        identification_mode=AisleIdentificationMode.LEGACY_LLM,
+    )
+    uc, job_repo, _ = _build_use_case(inventory=inv, aisle=aisle)
+    result = uc.execute(
+        StartAisleProcessingCommand(
+            inventory_id="inv1",
+            aisle_id="a1",
+            requested_identification_mode="INTERNAL_OCR",
+        )
+    )
+    assert result.identification_mode == "INTERNAL_OCR"
+    assert result.identification_mode_source == "REQUEST"
+    job = job_repo.get_by_id(result.job_id)
+    assert job is not None
+    assert job.identification_mode == AisleIdentificationMode.INTERNAL_OCR

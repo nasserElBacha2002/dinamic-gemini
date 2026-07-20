@@ -47,13 +47,13 @@ class AisleJobLaunchService:
         provider_name: str,
         model_name: str | None,
         prompt_key: str,
-        identification_mode: AisleIdentificationMode = AisleIdentificationMode.LEGACY_LLM,
+        identification_mode: AisleIdentificationMode = AisleIdentificationMode.INTERNAL_OCR,
         identification_mode_source: AisleIdentificationModeSource = (
             AisleIdentificationModeSource.SYSTEM_DEFAULT
         ),
         configuration_snapshot_version: int = CONFIGURATION_SNAPSHOT_VERSION,
         execution_strategy: AisleIdentificationExecutionStrategy = (
-            AisleIdentificationExecutionStrategy.LEGACY_LLM
+            AisleIdentificationExecutionStrategy.INTERNAL_OCR
         ),
         engine_params_json: dict | None = None,
     ) -> Job:

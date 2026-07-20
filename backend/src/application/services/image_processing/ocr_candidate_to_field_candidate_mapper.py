@@ -6,6 +6,13 @@ from dataclasses import asdict, is_dataclass
 from enum import Enum
 from typing import Any
 
+from src.application.services.image_processing.ocr_candidate_policy import (
+    OcrCandidateOrigin,
+    classify_ocr_field_origin,
+)
+from src.application.services.image_processing.ocr_candidate_ranker import (
+    normalize_confidence,
+)
 from src.application.services.image_processing.ocr_field_extractor import (
     OcrFieldCandidate,
     OcrFieldKind,
@@ -16,11 +23,15 @@ from src.application.services.image_processing.profile_aware_processing_result_v
 
 
 def serialize_ocr_candidate_evidence(value: Any) -> Any:
-    """Convert OCR / domain objects to JSON-primitive structures."""
+    """Convert OCR / domain objects to a closed JSON-safe schema.
+
+    Never call ``str()`` / ``repr()`` on arbitrary objects — their ``__str__`` may
+    embed secrets. Unsupported types become ``{"unsupported_type": "ClassName"}``.
+    """
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, Enum):
-        return getattr(value, "value", str(value))
+        return getattr(value, "value", type(value).__name__)
     if isinstance(value, (list, tuple)):
         return [serialize_ocr_candidate_evidence(v) for v in value]
     if isinstance(value, dict):
@@ -36,22 +47,22 @@ def serialize_ocr_candidate_evidence(value: Any) -> Any:
                 "height": int(getattr(value, "height", 0) or 0),
             }
         except (TypeError, ValueError):
-            return str(value)
-    return str(value)
+            return {"unsupported_type": type(value).__name__}
+    return {"unsupported_type": type(value).__name__}
 
 
 class OcrCandidateToFieldCandidateMapper:
     """Typed mapper from OcrFieldCandidate → FieldCandidate (no final status decisions)."""
 
     def map_code(self, candidate: OcrFieldCandidate) -> FieldCandidate | None:
+        origin = classify_ocr_field_origin(candidate)
         method = candidate.extraction_method or "LABELED_EXACT"
         source = "INTERNAL_CODE"
-        labeled = (
-            "label" in (candidate.source or "")
-            or str(candidate.source).endswith("_label")
-            or method in ("LABELED_EXACT", "LABELED_FUZZY")
-        )
-        if candidate.source == "numeric_pattern" or method == "NUMERIC_PATTERN":
+        labeled = origin in {
+            OcrCandidateOrigin.ANCHORED_EXACT,
+            OcrCandidateOrigin.ANCHORED_FUZZY,
+        }
+        if origin is OcrCandidateOrigin.UNANCHORED_PATTERN:
             source = "INTERNAL_CODE"
             labeled = False
         elif candidate.kind is OcrFieldKind.EAN or candidate.source in (
@@ -59,7 +70,7 @@ class OcrCandidateToFieldCandidateMapper:
             "bare_ean",
         ):
             source = "EAN"
-            labeled = candidate.source == "ean_label"
+            labeled = candidate.source == "ean_label" or labeled
         elif candidate.kind is OcrFieldKind.ARTICLE or candidate.source == "article_label":
             source = "ARTICLE"
             labeled = True
@@ -68,11 +79,18 @@ class OcrCandidateToFieldCandidateMapper:
             labeled = True
         elif candidate.kind is OcrFieldKind.INTERNAL_CODE:
             source = "INTERNAL_CODE"
+        elif origin is OcrCandidateOrigin.BARCODE:
+            source = "INTERNAL_CODE"
+            labeled = False
+            method = "BARCODE"
         else:
             return None
 
-        confidence = candidate.confidence
-        score = float(confidence) if confidence is not None else 0.5
+        # Missing confidence uses mid prior; engines on 0–100 are normalized to 0–1.
+        if candidate.confidence is None:
+            score = 0.5
+        else:
+            score = normalize_confidence(candidate.confidence)
         return FieldCandidate(
             source_key=source,
             value=str(candidate.value or ""),
@@ -85,8 +103,10 @@ class OcrCandidateToFieldCandidateMapper:
         )
 
     def map_quantity(self, candidate: OcrFieldCandidate) -> FieldCandidate:
-        confidence = candidate.confidence
-        score = float(confidence) if confidence is not None else 0.5
+        if candidate.confidence is None:
+            score = 0.5
+        else:
+            score = normalize_confidence(candidate.confidence)
         return FieldCandidate(
             source_key="QUANTITY",
             value=str(candidate.value or ""),
@@ -98,9 +118,7 @@ class OcrCandidateToFieldCandidateMapper:
             anchor_text=candidate.anchor_text,
         )
 
-    def map_code_list(
-        self, candidates: list[OcrFieldCandidate]
-    ) -> list[FieldCandidate]:
+    def map_code_list(self, candidates: list[OcrFieldCandidate]) -> list[FieldCandidate]:
         out: list[FieldCandidate] = []
         for cand in candidates:
             mapped = self.map_code(cand)
@@ -108,9 +126,7 @@ class OcrCandidateToFieldCandidateMapper:
                 out.append(mapped)
         return out
 
-    def map_quantity_list(
-        self, candidates: list[OcrFieldCandidate]
-    ) -> list[FieldCandidate]:
+    def map_quantity_list(self, candidates: list[OcrFieldCandidate]) -> list[FieldCandidate]:
         return [self.map_quantity(c) for c in candidates]
 
 

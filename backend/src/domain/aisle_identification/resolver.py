@@ -1,9 +1,13 @@
 """Central resolver for aisle identification mode inheritance.
 
 Priority (highest first):
-  Request → Aisle → Inventory → Client → SYSTEM_DEFAULT (LEGACY_LLM)
+  Request → Aisle → Inventory → Client → SYSTEM_DEFAULT (INTERNAL_OCR)
 
 Null overrides mean “inherit from the next level” and must not be treated as a mode.
+
+New job starts reject effective LEGACY_LLM after resolution (see
+``reject_legacy_effective_mode_for_new_job``). Historical jobs that stored LEGACY
+remain readable; historical retries may re-execute that snapshot.
 """
 
 from __future__ import annotations
@@ -52,6 +56,6 @@ def resolve_aisle_identification_mode(
             source=AisleIdentificationModeSource.CLIENT,
         )
     return AisleIdentificationModeResolution(
-        effective_mode=AisleIdentificationMode.LEGACY_LLM,
+        effective_mode=AisleIdentificationMode.INTERNAL_OCR,
         source=AisleIdentificationModeSource.SYSTEM_DEFAULT,
     )

@@ -34,7 +34,6 @@ from src.application.services.image_processing.extraction_profile_configuration 
 from src.application.services.image_processing.field_candidate_set import (
     FieldCandidateSet,
     apply_profile_validation,
-    configuration_from_job_snapshot,
 )
 from src.application.services.image_processing.ocr_candidate_to_field_candidate_mapper import (
     OcrCandidateToFieldCandidateMapper,
@@ -50,13 +49,21 @@ from src.application.services.image_processing.ocr_image_preprocessor import (
 from src.application.services.image_processing.ocr_numeric_candidate_generator import (
     mask_value,
 )
+from src.application.services.image_processing.ocr_profile_context import (
+    OcrProfileContext,
+    resolve_ocr_profile_context,
+)
 from src.application.services.image_processing.ocr_result_normalizer import (
     NormalizedOcrLabel,
     OcrClientFieldRules,
     OcrNormalizeStatus,
     OcrResultNormalizer,
 )
+from src.application.services.legacy_processing_metrics import (
+    record_processing_event_publish_failed,
+)
 from src.domain.assets.entities import SourceAsset
+from src.domain.client_supplier.extraction_profile import ExtractionProfileConfiguration
 from src.domain.image_processing.contracts import (
     ExecutionScope,
     ImageProcessingContext,
@@ -177,22 +184,37 @@ class InternalOcrProcessingStrategy:
         name = getattr(self._reader, "engine_name", None) or "ocr"
         return f"{name}/{version}"
 
-    def process(
-        self, context: ImageProcessingContext, asset: SourceAsset
-    ) -> ImageProcessingResult:
+    def process(self, context: ImageProcessingContext, asset: SourceAsset) -> ImageProcessingResult:
+        """Orchestrate one asset. Expected failures return results; unexpected raise."""
         started = time.monotonic()
+        mode = getattr(context.identification_mode, "value", str(context.identification_mode))
         try:
             result = self._process_core(context, asset)
-        except Exception as exc:
-            # Unexpected invariant violations only — functional outcomes must not raise.
+        except (
+            FileNotFoundError,
+            InternalOcrTimeoutError,
+            InternalOcrEngineTimeoutError,
+            InternalOcrEngineUnavailableError,
+            ExtractionProfileConfigurationError,
+            OSError,
+        ) as exc:
+            # Typed / expected operational failures → functional technical result.
+            error_code = self._expected_error_code(exc)
+            result = self._technical(
+                context,
+                mode,
+                error_code,
+                f"{type(exc).__name__}: {exc}",
+                started,
+            )
+            self._emit_asset_finalized(context, result)
+            return result
+        except Exception:
+            # Programming defects / unexpected errors: log, emit, do NOT normalize away.
             logger.exception(
-                "internal_ocr.strategy_unexpected job_id=%s asset_id=%s err=%s",
+                "internal_ocr.strategy_unexpected job_id=%s asset_id=%s",
                 context.job_id,
                 context.asset_id,
-                type(exc).__name__,
-            )
-            mode = getattr(
-                context.identification_mode, "value", str(context.identification_mode)
             )
             self._emit(
                 context,
@@ -201,20 +223,37 @@ class InternalOcrProcessingStrategy:
                 error_code="INTERNAL_OCR_STRATEGY_EXCEPTION",
                 severity="ERROR",
                 metadata={
-                    "stage": "PROCESS_CORE",
-                    "exception_type": type(exc).__name__,
-                    "safe_message": str(exc)[:200],
+                    "stage": "PROCESS",
+                    "exception_type": "unexpected",
                 },
             )
-            result = self._technical(
+            failed = self._technical(
                 context,
                 mode,
                 "INTERNAL_OCR_STRATEGY_EXCEPTION",
-                f"{type(exc).__name__}: {exc}",
+                "unexpected strategy exception",
                 started,
             )
+            self._emit_asset_finalized(context, failed)
+            raise
         self._emit_asset_finalized(context, result)
         return result
+
+    @staticmethod
+    def _expected_error_code(exc: BaseException) -> str:
+        if isinstance(exc, FileNotFoundError):
+            return "SOURCE_ASSET_NOT_FOUND"
+        if isinstance(exc, InternalOcrTimeoutError):
+            return "INTERNAL_OCR_TIMEOUT"
+        if isinstance(exc, InternalOcrEngineTimeoutError):
+            return "INTERNAL_OCR_ENGINE_TIMEOUT"
+        if isinstance(exc, InternalOcrEngineUnavailableError):
+            return "INTERNAL_OCR_ENGINE_UNAVAILABLE"
+        if isinstance(exc, ExtractionProfileConfigurationError):
+            return "PROFILE_SNAPSHOT_INVALID"
+        if isinstance(exc, OSError):
+            return "SOURCE_ASSET_READ_FAILED"
+        return "INTERNAL_OCR_EXPECTED_FAILURE"
 
     def _process_core(
         self, context: ImageProcessingContext, asset: SourceAsset
@@ -227,7 +266,7 @@ class InternalOcrProcessingStrategy:
             content = self._content_reader.read_image_bytes(asset)
         except FileNotFoundError as exc:
             return self._technical(context, mode, "SOURCE_ASSET_NOT_FOUND", str(exc), started)
-        except Exception as exc:
+        except OSError as exc:
             return self._technical(context, mode, "SOURCE_ASSET_READ_FAILED", str(exc), started)
 
         if not content:
@@ -242,12 +281,24 @@ class InternalOcrProcessingStrategy:
             metadata={"byte_length": len(content)},
         )
 
+        # Resolve profile once before any variant / extractor / validator work.
+        profile_ctx = self._resolve_profile_context(context)
+        if profile_ctx.is_invalid:
+            return self._technical(
+                context,
+                mode,
+                "PROFILE_SNAPSHOT_INVALID",
+                profile_ctx.error_message or "invalid extraction profile snapshot",
+                started,
+            )
+        profile_cfg = profile_ctx.configuration
+
         label_evidence: dict[str, Any] = {}
         ocr_source_bytes = content
         if self._config.label_detection_enabled:
             try:
                 ocr_source_bytes, label_evidence, abort_code = self._detect_and_crop_label(
-                    context, content
+                    context, content, profile_cfg=profile_cfg
                 )
             except ExtractionProfileConfigurationError as exc:
                 return self._technical(
@@ -267,7 +318,9 @@ class InternalOcrProcessingStrategy:
                     resolved_by=STRATEGY_KEY,
                     validation_errors=[abort_code],
                     warnings=[abort_code],
-                    evidence=label_evidence if self._config.diagnostic_evidence_enabled else {
+                    evidence=label_evidence
+                    if self._config.diagnostic_evidence_enabled
+                    else {
                         "selected_variant": None,
                         "error_code": abort_code,
                     },
@@ -323,9 +376,7 @@ class InternalOcrProcessingStrategy:
                 except InternalOcrEngineTimeoutError as exc:
                     # Hard technical failure: bail out immediately (do not keep trying
                     # variants against a wall-clock budget that has already been blown).
-                    return self._technical(
-                        context, mode, "INTERNAL_OCR_TIMEOUT", str(exc), started
-                    )
+                    return self._technical(context, mode, "INTERNAL_OCR_TIMEOUT", str(exc), started)
                 except InternalOcrEngineUnavailableError as exc:
                     return self._technical(
                         context,
@@ -351,7 +402,7 @@ class InternalOcrProcessingStrategy:
                         message=f"variant {prepared.variant_name} failed",
                         error_code="OCR_VARIANT_EXCEPTION",
                         duration_ms=variant_fail_ms,
-                        severity="WARNING",
+                        severity="WARN",
                         metadata={
                             "variant": prepared.variant_name,
                             "psm": psm,
@@ -380,14 +431,6 @@ class InternalOcrProcessingStrategy:
                     )
                 )
                 engine_ms_total += variant_duration_ms
-                profile_cfg = None
-                if isinstance(context.supplier_extraction_profile, dict):
-                    try:
-                        profile_cfg = configuration_from_job_snapshot(
-                            context.supplier_extraction_profile
-                        )
-                    except ExtractionProfileConfigurationError:
-                        profile_cfg = None
                 extraction = self._extractor.extract(read, configuration=profile_cfg)
                 normalized = self._normalizer.normalize(extraction)
                 stats = dict(extraction.stats or {})
@@ -419,33 +462,15 @@ class InternalOcrProcessingStrategy:
                     metadata={
                         "code_before_filter": stats.get("code_candidates_before_filter", 0),
                         "code_after_filter": stats.get("code_candidates_after_filter", 0),
-                        "quantity_before_filter": stats.get(
-                            "quantity_candidates_before_filter", 0
-                        ),
-                        "quantity_after_filter": stats.get(
-                            "quantity_candidates_after_filter", 0
-                        ),
+                        "quantity_before_filter": stats.get("quantity_candidates_before_filter", 0),
+                        "quantity_after_filter": stats.get("quantity_candidates_after_filter", 0),
                         "rejected_candidate_count": stats.get("rejected_candidate_count", 0),
                         "rejection_reasons": serialize_ocr_candidate_evidence(
                             stats.get("rejection_reasons") or {}
                         ),
                     },
                 )
-                for rej in (extraction.rejected_candidates or [])[:20]:
-                    self._emit(
-                        context,
-                        "ocr.candidate_rejected",
-                        message="candidate rejected",
-                        error_code=str(rej.get("reason_code") or ""),
-                        severity="WARNING",
-                        metadata={
-                            "field": rej.get("field"),
-                            "masked_value": rej.get("masked_value"),
-                            "length": rej.get("length"),
-                            "reason_code": rej.get("reason_code"),
-                            "source": rej.get("source"),
-                        },
-                    )
+                self._emit_candidate_rejections(context, extraction.rejected_candidates)
                 self._emit(
                     context,
                     "ocr.variant_completed",
@@ -530,14 +555,6 @@ class InternalOcrProcessingStrategy:
 
         if context.profile_aware_validation_enabled:
             # Prefer the extraction already computed for the selected OCR variant.
-            profile_cfg = None
-            if isinstance(context.supplier_extraction_profile, dict):
-                try:
-                    profile_cfg = configuration_from_job_snapshot(
-                        context.supplier_extraction_profile
-                    )
-                except ExtractionProfileConfigurationError:
-                    profile_cfg = None
             extraction_for_profile = best_extraction or self._extractor.extract(
                 read, configuration=profile_cfg
             )
@@ -554,8 +571,7 @@ class InternalOcrProcessingStrategy:
                         list(extraction_for_profile.rejected_candidates or [])[:30]
                     ),
                     "rejection_reasons": serialize_ocr_candidate_evidence(
-                        (extraction_for_profile.stats or {}).get("rejection_reasons")
-                        or {}
+                        (extraction_for_profile.stats or {}).get("rejection_reasons") or {}
                     ),
                     "numeric_tokens": serialize_ocr_candidate_evidence(
                         [
@@ -591,6 +607,7 @@ class InternalOcrProcessingStrategy:
                 extraction=extraction_for_profile,
                 evidence=evidence or {},
                 duration_ms=duration_ms,
+                profile_cfg=profile_cfg,
             )
 
         if normalized.status is OcrNormalizeStatus.RESOLVED:
@@ -609,9 +626,7 @@ class InternalOcrProcessingStrategy:
                 processing_mode=mode,
                 resolved_by=STRATEGY_KEY,
                 internal_code=normalized.internal_code,
-                quantity=float(normalized.quantity)
-                if normalized.quantity is not None
-                else None,
+                quantity=float(normalized.quantity) if normalized.quantity is not None else None,
                 additional_fields=dict(normalized.additional_fields),
                 normalized_result={
                     "internal_code": normalized.internal_code,
@@ -631,7 +646,10 @@ class InternalOcrProcessingStrategy:
             self._metrics.increment("ocr_unrecognized_total")
             if "NO_INTERNAL_CODE" in normalized.validation_errors:
                 self._metrics.increment("ocr_missing_code_total")
-            if "QUANTITY_MISSING" in normalized.validation_errors or "MISSING_QUANTITY" in normalized.validation_errors:
+            if (
+                "QUANTITY_MISSING" in normalized.validation_errors
+                or "MISSING_QUANTITY" in normalized.validation_errors
+            ):
                 self._metrics.increment("ocr_missing_quantity_total")
             # Code present + missing qty must go to manual review, not UNRECOGNIZED.
             if (
@@ -714,6 +732,51 @@ class InternalOcrProcessingStrategy:
             logical_asset_attempt=False,
         )
 
+    def _resolve_profile_context(self, context: ImageProcessingContext) -> OcrProfileContext:
+        return resolve_ocr_profile_context(
+            context.supplier_extraction_profile
+            if isinstance(context.supplier_extraction_profile, dict)
+            else None
+        )
+
+    def _emit_candidate_rejections(
+        self,
+        context: ImageProcessingContext,
+        rejected: list[dict[str, Any]] | None,
+        *,
+        sample_limit: int = 5,
+    ) -> None:
+        """Emit one aggregated rejection summary (+ optional sample), never unbounded events."""
+        items = list(rejected or [])
+        if not items:
+            return
+        reasons: Counter[str] = Counter()
+        for rej in items:
+            code = str(rej.get("reason_code") or "UNKNOWN")
+            reasons[code] += 1
+        sample = [
+            {
+                "field": rej.get("field"),
+                "masked_value": rej.get("masked_value"),
+                "length": rej.get("length"),
+                "reason_code": rej.get("reason_code"),
+                "source": rej.get("source"),
+            }
+            for rej in items[: max(0, int(sample_limit))]
+        ]
+        self._emit(
+            context,
+            "ocr.candidate_rejected",
+            message="candidates rejected (aggregated)",
+            severity="WARN",
+            metadata={
+                "rejected_total": len(items),
+                "rejection_reasons": dict(reasons),
+                "sample": sample,
+                "sample_limit": sample_limit,
+            },
+        )
+
     def _emit(
         self,
         context: ImageProcessingContext,
@@ -725,6 +788,7 @@ class InternalOcrProcessingStrategy:
         metadata: dict[str, Any] | None = None,
         severity: str = "INFO",
     ) -> None:
+        """Best-effort telemetry — publish failures must not fail OCR processing."""
         if self._events is None:
             return
         try:
@@ -741,11 +805,27 @@ class InternalOcrProcessingStrategy:
                 correlation_id=getattr(context, "correlation_id", None),
                 metadata=metadata,
             )
-        except (OSError, ValueError, TypeError, AttributeError) as exc:
-            logger.debug("internal_ocr.event_publish_skipped err=%s", exc)
+        except Exception as exc:
+            record_processing_event_publish_failed(
+                event_type=event_type,
+                err_type=type(exc).__name__,
+            )
+            self._metrics.increment("ocr_observability_publish_failed_total")
+            flags = getattr(context, "__dict__", None)
+            if isinstance(flags, dict):
+                flags["_ocr_observability_incomplete"] = True
+            logger.warning(
+                "internal_ocr.event_publish_failed event_type=%s err=%s",
+                event_type,
+                type(exc).__name__,
+            )
 
     def _detect_and_crop_label(
-        self, context: ImageProcessingContext, content: bytes
+        self,
+        context: ImageProcessingContext,
+        content: bytes,
+        *,
+        profile_cfg: ExtractionProfileConfiguration,
     ) -> tuple[bytes, dict[str, Any], str | None]:
         from src.application.services.image_processing.label_geometry_normalizer import (
             LabelGeometryNormalizer,
@@ -754,14 +834,7 @@ class InternalOcrProcessingStrategy:
             LabelRegionDetector,
         )
 
-        # Invalid present snapshot must fail closed (no silent defaults).
-        if isinstance(context.supplier_extraction_profile, dict):
-            config = configuration_from_job_snapshot(context.supplier_extraction_profile)
-            rules = config.label_detection_rules
-        else:
-            from src.domain.client_supplier.extraction_profile import LabelDetectionRules
-
-            rules = LabelDetectionRules()
+        rules = profile_cfg.label_detection_rules
 
         self._emit(context, "label_detection.started", message="label detection started")
         detector = LabelRegionDetector(
@@ -771,9 +844,7 @@ class InternalOcrProcessingStrategy:
             light_ocr_timeout_seconds=float(
                 getattr(self._config, "light_ocr_timeout_seconds", 3.0)
             ),
-            max_light_ocr_candidates=int(
-                getattr(self._config, "max_light_ocr_candidates", 3)
-            ),
+            max_light_ocr_candidates=int(getattr(self._config, "max_light_ocr_candidates", 3)),
         )
         detection = detector.detect(content)
         selected = detection.selected_candidate
@@ -788,9 +859,7 @@ class InternalOcrProcessingStrategy:
                 "selected_relative_area": (
                     selected.relative_area if selected is not None else None
                 ),
-                "matched_anchors": (
-                    list(selected.matched_anchors) if selected is not None else []
-                ),
+                "matched_anchors": (list(selected.matched_anchors) if selected is not None else []),
                 "failure_reason": detection.failure_reason,
                 "light_ocr_executed": detection.light_ocr_executed,
                 "light_ocr_failed": detection.light_ocr_failed,
@@ -812,9 +881,7 @@ class InternalOcrProcessingStrategy:
                 "selected_relative_area": (
                     selected.relative_area if selected is not None else None
                 ),
-                "matched_anchors": (
-                    list(selected.matched_anchors) if selected is not None else []
-                ),
+                "matched_anchors": (list(selected.matched_anchors) if selected is not None else []),
                 "selected_polygon": (
                     [list(p) for p in selected.polygon] if selected is not None else None
                 ),
@@ -1010,6 +1077,7 @@ class InternalOcrProcessingStrategy:
         extraction: OcrFieldExtraction,
         evidence: dict[str, Any],
         duration_ms: int,
+        profile_cfg: ExtractionProfileConfiguration,
     ) -> ImageProcessingResult:
         mapper = OcrCandidateToFieldCandidateMapper()
         stage = "CANDIDATE_MAPPING"
@@ -1055,10 +1123,14 @@ class InternalOcrProcessingStrategy:
                     "quantity_candidates_count": len(qty_candidates),
                 },
             )
-            config = configuration_from_job_snapshot(context.supplier_extraction_profile)
             safe_evidence = serialize_ocr_candidate_evidence(dict(evidence or {}))
             if not isinstance(safe_evidence, dict):
                 safe_evidence = {}
+            if getattr(context, "_ocr_observability_incomplete", False):
+                safe_evidence = {
+                    **safe_evidence,
+                    "observability_incomplete": True,
+                }
             result = apply_profile_validation(
                 job_id=context.job_id,
                 asset_id=context.asset_id,
@@ -1071,7 +1143,7 @@ class InternalOcrProcessingStrategy:
                     evidence=safe_evidence,
                     warnings=list(extraction.warnings),
                 ),
-                configuration=config,
+                configuration=profile_cfg,
                 duration_ms=duration_ms,
                 provider_name=PROCESSOR_NAME,
                 model_name=self.attempt_model,
@@ -1087,12 +1159,8 @@ class InternalOcrProcessingStrategy:
                 duration_ms=duration_ms,
                 metadata={
                     "status": getattr(result.status, "value", str(result.status)),
-                    "internal_code_status": (
-                        "present" if result.internal_code else "missing"
-                    ),
-                    "quantity_status": (
-                        "present" if result.quantity is not None else "missing"
-                    ),
+                    "internal_code_status": ("present" if result.internal_code else "missing"),
+                    "quantity_status": ("present" if result.quantity is not None else "missing"),
                     "validation_errors": validation_errors[:20],
                     "error_code": result.error_code,
                 },
@@ -1139,47 +1207,36 @@ class InternalOcrProcessingStrategy:
                 metadata={
                     "stage": stage,
                     "exception_type": type(exc).__name__,
-                    "safe_message": str(exc)[:200],
                     "code_candidates_count": len(extraction.internal_code_candidates),
                     "quantity_candidates_count": len(extraction.quantity_candidates),
                 },
             )
-            return self._technical(
-                context,
-                mode,
-                "INTERNAL_OCR_STRATEGY_EXCEPTION",
-                f"{type(exc).__name__}: {exc}",
-                time.monotonic() - (duration_ms / 1000.0),
-                evidence={
-                    **(
-                        serialize_ocr_candidate_evidence(evidence)
-                        if isinstance(evidence, dict)
-                        else {}
-                    ),
-                    "stage": stage,
-                    "exception_type": type(exc).__name__,
-                },
-            )
+            # Do not normalize programming defects into a successful functional path.
+            raise
 
     def _emit_asset_finalized(
         self, context: ImageProcessingContext, result: ImageProcessingResult
     ) -> None:
+        flags = getattr(context, "__dict__", None)
+        if isinstance(flags, dict) and flags.get("_ocr_asset_finalized"):
+            return
+        if isinstance(flags, dict):
+            flags["_ocr_asset_finalized"] = True
         status_value = getattr(result.status, "value", str(result.status))
+        meta: dict[str, Any] = {
+            "status": status_value,
+            "validation_errors": list(result.validation_errors or [])[:20],
+        }
+        if isinstance(flags, dict) and flags.get("_ocr_observability_incomplete"):
+            meta["observability_incomplete"] = True
         self._emit(
             context,
             "asset.finalized",
             message=f"asset finalized as {status_value}",
             error_code=result.error_code,
             duration_ms=result.processing_duration_ms,
-            severity=(
-                "ERROR"
-                if result.status is ImageResultStatus.FAILED_TECHNICAL
-                else "INFO"
-            ),
-            metadata={
-                "status": status_value,
-                "validation_errors": list(result.validation_errors or [])[:20],
-            },
+            severity=("ERROR" if result.status is ImageResultStatus.FAILED_TECHNICAL else "INFO"),
+            metadata=meta,
         )
 
     def _technical(
