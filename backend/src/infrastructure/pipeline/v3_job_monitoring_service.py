@@ -3,7 +3,8 @@ V3 worker run monitoring — Phase 6 extraction from :class:`V3JobExecutor`.
 
 Sets up run directory logging, execution log writer, and cooperative heartbeat thread.
 Heartbeat proves process liveness only — a progress watchdog fails jobs stuck at
-``startup_confirmed`` without advancing into a real processing substep.
+``startup_confirmed`` without advancing into a real processing substep, and signals
+``runtime_abort_event`` so the worker stops construction / asset loop / persist / fallback.
 """
 
 from __future__ import annotations
@@ -54,6 +55,7 @@ class V3WorkerRuntimeHandles:
     stop_heartbeat: threading.Event
     heartbeat_thread: threading.Thread
     cancel_event_emitted: dict[str, bool]
+    runtime_abort_event: threading.Event
 
 
 class V3JobMonitoringService:
@@ -102,6 +104,7 @@ class V3JobMonitoringService:
         )
 
         stop_heartbeat = threading.Event()
+        runtime_abort_event = threading.Event()
         cancel_event_emitted: dict[str, bool] = {
             "requested": False,
             "detected": False,
@@ -113,6 +116,8 @@ class V3JobMonitoringService:
             while not stop_heartbeat.wait(self._heartbeat_interval_sec):
                 current_job = self._state.heartbeat(req.job_id)
                 if current_job is None:
+                    # Job already terminal (or missing) — abort worker if still running.
+                    runtime_abort_event.set()
                     continue
                 if self._startup_progress_timed_out(current_job, monitor_started_at):
                     message = (
@@ -138,6 +143,9 @@ class V3JobMonitoringService:
                             "timeout_seconds": self._startup_progress_timeout_sec,
                         },
                     )
+                    # Signal abort BEFORE / with terminal transition so the worker cannot
+                    # race into success finalization after a lost CAS.
+                    runtime_abort_event.set()
                     try:
                         self._state.fail_job_and_aisle(
                             req.job_id,
@@ -172,6 +180,7 @@ class V3JobMonitoringService:
             stop_heartbeat=stop_heartbeat,
             heartbeat_thread=heartbeat_thread,
             cancel_event_emitted=cancel_event_emitted,
+            runtime_abort_event=runtime_abort_event,
         )
 
     def _startup_progress_timed_out(self, job: Job, monitor_started_at: float) -> bool:

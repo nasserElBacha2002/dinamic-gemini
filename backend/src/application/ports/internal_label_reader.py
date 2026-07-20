@@ -17,6 +17,14 @@ class InternalOcrEngineTimeoutError(RuntimeError):
     """OCR engine call exceeded a real cancellable timeout (subprocess killed)."""
 
 
+class OcrVariantReadError(RuntimeError):
+    """Known operational failure reading a single OCR variant (may try next variant)."""
+
+
+class OcrEngineTransientError(OcrVariantReadError):
+    """Transient engine/IO failure for one variant (may try next variant)."""
+
+
 @dataclass(frozen=True)
 class PreparedImage:
     """Preprocessed image bytes ready for the OCR engine (typically PNG/JPEG RGB)."""
@@ -89,6 +97,8 @@ __all__ = [
     "InternalOcrEngineTimeoutError",
     "InternalOcrEngineUnavailableError",
     "InternalOcrReadResult",
+    "OcrEngineTransientError",
     "OcrTextBlock",
+    "OcrVariantReadError",
     "PreparedImage",
 ]

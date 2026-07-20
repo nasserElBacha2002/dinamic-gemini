@@ -4,7 +4,10 @@ import { FlatList, Image, Text, View } from 'react-native';
 import { ProcessAisleConfirmModal } from '../components/ProcessAisleConfirmModal';
 import type { CapturePhotoRow } from '../database/schema/captureSchema';
 import type { AisleIdentificationMode } from '../features/processing/processingMode';
-import { labelForIdentificationMode } from '../features/processing/processingMode';
+import {
+  labelForIdentificationMode,
+  preferenceFromSelection,
+} from '../features/processing/processingMode';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import { Button, SmallButton, messageOf, styles } from '../ui';
 
@@ -65,12 +68,12 @@ export function UploadsScreen({
     setConfirmVisible(true);
   };
 
-  const confirmAndStart = () => {
+  const confirmAndStart = (selection: import('../features/processing/processingMode').IdentificationModeSelection) => {
     if (busy) return;
     setBusy(true);
     setConfirmError(null);
-    // Capture preference at confirm time to avoid stale closures if user changes selection mid-flight.
-    const modeAtConfirm = identificationModePreference;
+    const modeAtConfirm = preferenceFromSelection(selection);
+    onIdentificationModePreferenceChange(modeAtConfirm);
     void services.processing
       .startProcess(sessionId, { identificationMode: modeAtConfirm })
       .then(async (res) => {
@@ -176,7 +179,6 @@ export function UploadsScreen({
         preference={identificationModePreference}
         busy={busy}
         error={confirmError}
-        onPreferenceChange={onIdentificationModePreferenceChange}
         onClose={() => {
           if (busy) return;
           setConfirmVisible(false);

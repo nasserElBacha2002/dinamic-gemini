@@ -18,13 +18,13 @@ export interface ProcessAisleConfirmModalProps {
   aisleName: string;
   uploadedCount: number;
   pendingCount: number;
-  /** Session preference: null = inherit. */
+  /** Session preference: null = inherit. Used only to seed draft when opening. */
   preference: AisleIdentificationMode | null;
   busy: boolean;
   error: string | null;
-  onPreferenceChange: (next: AisleIdentificationMode | null) => void;
   onClose: () => void;
-  onConfirm: () => void;
+  /** Confirm commits the draft selection (does not mutate preference while picking). */
+  onConfirm: (selection: IdentificationModeSelection) => void;
 }
 
 export function ProcessAisleConfirmModal({
@@ -36,20 +36,19 @@ export function ProcessAisleConfirmModal({
   preference,
   busy,
   error,
-  onPreferenceChange,
   onClose,
   onConfirm,
 }: ProcessAisleConfirmModalProps) {
-  const [selection, setSelection] = useState<IdentificationModeSelection>(
+  const [draft, setDraft] = useState<IdentificationModeSelection>(
     selectionFromPreference(preference),
   );
 
   useEffect(() => {
     if (!visible) return;
-    setSelection(selectionFromPreference(preference));
+    setDraft(selectionFromPreference(preference));
   }, [visible, preference]);
 
-  const selectedLabel = labelForIdentificationMode(preferenceFromSelection(selection));
+  const selectedLabel = labelForIdentificationMode(preferenceFromSelection(draft));
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -68,7 +67,7 @@ export function ProcessAisleConfirmModal({
             Seleccionado: {selectedLabel}
           </Text>
           {PROCESS_AISLE_IDENTIFICATION_OPTIONS.map((option) => {
-            const active = selection === option.value;
+            const active = draft === option.value;
             return (
               <TouchableOpacity
                 key={option.value}
@@ -78,8 +77,7 @@ export function ProcessAisleConfirmModal({
                 disabled={busy}
                 style={[styles.pickerItem, active ? styles.pickerItemActive : null]}
                 onPress={() => {
-                  setSelection(option.value);
-                  onPreferenceChange(preferenceFromSelection(option.value));
+                  setDraft(option.value);
                 }}
               >
                 <Text style={styles.row}>{option.label}</Text>
@@ -93,13 +91,13 @@ export function ProcessAisleConfirmModal({
             <Button
               label={busy ? 'Iniciando…' : 'Confirmar e iniciar'}
               disabled={busy}
-              onPress={onConfirm}
+              onPress={() => onConfirm(draft)}
             />
           </View>
           <Text style={styles.muted}>
-            {selection === INHERITED_IDENTIFICATION_MODE
+            {draft === INHERITED_IDENTIFICATION_MODE
               ? 'Se usará la configuración heredada del pasillo, inventario o cliente.'
-              : `Se enviará el modo ${selection} al iniciar el trabajo.`}
+              : `Se enviará el modo ${draft} al iniciar el trabajo.`}
           </Text>
         </View>
       </View>

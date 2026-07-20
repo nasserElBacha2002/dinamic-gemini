@@ -62,6 +62,8 @@ def test_session_creates_run_dir_and_execution_log(tmp_path: Path) -> None:
     with service.session(req) as handles:
         assert handles.run_dir == tmp_path / req.job_id / RUN_ID
         assert handles.exec_log is not None
+        assert handles.runtime_abort_event is not None
+        assert not handles.runtime_abort_event.is_set()
         assert handles.cancel_event_emitted == {
             "requested": False,
             "detected": False,
@@ -157,6 +159,30 @@ def test_startup_progress_timeout_fails_job_stuck_at_startup_confirmed(
         if line.strip()
     ]
     assert any(e.get("message") == "job.startup_timeout" for e in events)
+
+
+def test_startup_progress_timeout_sets_runtime_abort_event(tmp_path: Path) -> None:
+    state = MagicMock()
+    stuck = MagicMock(
+        attempt_count=1,
+        current_stage="WorkerLaunch",
+        current_substep="startup_confirmed",
+    )
+    state.heartbeat.return_value = stuck
+    state.fail_job_and_aisle.return_value = True
+    service = V3JobMonitoringService(
+        state_service=state,
+        heartbeat_interval_sec=0.01,
+        startup_progress_timeout_sec=0.02,
+    )
+    req = _monitoring_request(tmp_path)
+
+    with service.session(req) as handles:
+        deadline = time.time() + 2.0
+        while not handles.runtime_abort_event.is_set() and time.time() < deadline:
+            time.sleep(0.02)
+        assert handles.runtime_abort_event.is_set()
+        assert state.fail_job_and_aisle.called
 
 
 def test_startup_progress_timeout_skipped_after_processing_started(tmp_path: Path) -> None:

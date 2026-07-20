@@ -282,11 +282,15 @@ class V3JobExecutionStateService:
         aisle processed, and reconciles inventory — without a durable pipeline report or LLM
         artifacts. ``result_json`` keys already merged by the worker (e.g. ``asset_progress``)
         are preserved.
+
+        Refuses FAILED → SUCCEEDED (watchdog / concurrent terminal wins).
         """
         completion_now = self._clock.now()
-        job = self._job_repo.get_by_id(job_id)
+        job = self.try_transition_to_succeeded(job_id)
         if job is None:
-            raise RuntimeError(f"Job not found for code_scan finalization: {job_id}")
+            raise RuntimeError(
+                f"Job not eligible for code_scan success finalization: {job_id}"
+            )
         job.status = JobStatus.SUCCEEDED
         job.updated_at = completion_now
         job.finished_at = completion_now
@@ -401,19 +405,66 @@ class V3JobExecutionStateService:
         *,
         failure_code: str = "PROCESSING_FAILED",
     ) -> None:
+        self.try_transition_to_failed(
+            job_id, error_message, failure_code=failure_code
+        )
+
+    def try_transition_to_failed(
+        self,
+        job_id: str,
+        error_message: str,
+        *,
+        failure_code: str = "PROCESSING_FAILED",
+    ) -> bool:
+        """CAS-style terminal fail: only active statuses may become FAILED.
+
+        Returns True when this caller won the transition. Never reopens FAILED/CANCELED/
+        SUCCEEDED into another terminal or RUNNING.
+        """
         job = self._job_repo.get_by_id(job_id)
-        if job:
-            now = self._clock.now()
-            job.status = JobStatus.FAILED
-            job.updated_at = now
-            job.finished_at = now
-            job.last_heartbeat_at = now
-            job.failure_code = failure_code
-            job.failure_message = (
-                error_message[:2048] if len(error_message) > 2048 else error_message
+        if job is None:
+            return False
+        if job.status not in (
+            JobStatus.STARTING,
+            JobStatus.RUNNING,
+            JobStatus.CANCEL_REQUESTED,
+        ):
+            logger.info(
+                "job.terminal_transition_skipped job_id=%s current_status=%s "
+                "wanted=FAILED failure_code=%s",
+                job_id,
+                job.status.value,
+                failure_code,
             )
-            job.error_message = job.failure_message
-            self._job_repo.save(job)
+            return False
+        now = self._clock.now()
+        job.status = JobStatus.FAILED
+        job.updated_at = now
+        job.finished_at = now
+        job.last_heartbeat_at = now
+        job.failure_code = failure_code
+        job.failure_message = (
+            error_message[:2048] if len(error_message) > 2048 else error_message
+        )
+        job.error_message = job.failure_message
+        self._job_repo.save(job)
+        return True
+
+    def try_transition_to_succeeded(self, job_id: str) -> Job | None:
+        """Load job only if still eligible for success finalization (not already terminal)."""
+        job = self._job_repo.get_by_id(job_id)
+        if job is None:
+            return None
+        if job.status in (JobStatus.FAILED, JobStatus.CANCELED, JobStatus.SUCCEEDED):
+            logger.info(
+                "job.success_finalization_skipped job_id=%s current_status=%s",
+                job_id,
+                job.status.value,
+            )
+            return None
+        if job.status not in (JobStatus.RUNNING, JobStatus.STARTING):
+            return None
+        return job
 
     def cancel_job(self, job: Job, reason: str, *, now) -> None:
         job.status = JobStatus.CANCELED
@@ -466,9 +517,14 @@ class V3JobExecutionStateService:
         error_message: str,
         *,
         failure_code: str = "PROCESSING_FAILED",
-    ) -> None:
+    ) -> bool:
+        """Fail job+aisle if the job transition wins. Returns False if already terminal."""
         now = self._clock.now()
-        self.fail_job(job_id, error_message, failure_code=failure_code)
+        won = self.try_transition_to_failed(
+            job_id, error_message, failure_code=failure_code
+        )
+        if not won:
+            return False
         if self._operational_promotion_service is not None and (
             self._operational_promotion_service.is_stale_non_operational_failure(
                 aisle_id=aisle.id,
@@ -483,7 +539,7 @@ class V3JobExecutionStateService:
                 aisle.operational_job_id,
             )
             self.reconcile_inventory_for_aisle(aisle)
-            return
+            return True
         aisle_error = failure_code if failure_code != "PROCESSING_FAILED" else "PROCESSING_FAILED"
         self._fail_aisle_for_finalization(
             aisle,
@@ -492,6 +548,7 @@ class V3JobExecutionStateService:
             message=error_message,
             now=now,
         )
+        return True
 
     def _fail_aisle_for_finalization(
         self,

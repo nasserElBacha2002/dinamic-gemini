@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from src.application.errors import StrategyDisabledError
 from src.application.services.aisle_identification_execution import resolve_execution_strategy
 from src.domain.aisle_identification.modes import (
     AisleIdentificationExecutionStrategy,
@@ -9,15 +12,13 @@ from src.domain.aisle_identification.modes import (
 )
 
 
-def test_internal_ocr_flag_off_keeps_temporary() -> None:
-    assert (
+def test_internal_ocr_flag_off_raises() -> None:
+    with pytest.raises(StrategyDisabledError, match="INTERNAL_OCR_PROCESSING_ENABLED=false"):
         resolve_execution_strategy(
             effective_mode=AisleIdentificationMode.INTERNAL_OCR,
             pipeline_enabled=True,
             internal_ocr_processing_enabled=False,
         )
-        is AisleIdentificationExecutionStrategy.LEGACY_LLM_TEMPORARY
-    )
 
 
 def test_internal_ocr_flag_on_selects_internal_ocr() -> None:

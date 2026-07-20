@@ -466,6 +466,7 @@ class V3JobExecutor:
         settings: Settings,
         exec_log: Any,
         cancel_event_emitted: dict[str, bool],
+        runtime_abort_event: Any = None,
     ) -> bool:
         """Phase 3 CODE_SCAN execution — deterministic per-image scan, no LLM pipeline."""
         import uuid as _uuid
@@ -580,8 +581,24 @@ class V3JobExecutor:
             )
 
             def _is_cancelled() -> bool:
+                if runtime_abort_event is not None and runtime_abort_event.is_set():
+                    return True
                 current = self._job_repo.get_by_id(job_id)
-                return current is not None and current.status == JobStatus.CANCEL_REQUESTED
+                if current is None:
+                    return True
+                if current.status in (
+                    JobStatus.FAILED,
+                    JobStatus.CANCELED,
+                    JobStatus.SUCCEEDED,
+                ):
+                    return True
+                return current.status == JobStatus.CANCEL_REQUESTED
+
+            if _is_cancelled():
+                logger.warning(
+                    "code_scan.aborted_before_orchestrator job_id=%s", job_id
+                )
+                return True
 
             external_fallback = None
             external_request_repo = None
@@ -673,6 +690,9 @@ class V3JobExecutor:
             )
 
         total_assets = len(assets)
+        if _is_cancelled():
+            logger.warning("code_scan.aborted_before_processing_started job_id=%s", job_id)
+            return True
         self._state.update_runtime_status(
             job_id, stage="CodeScan", substep="processing_started"
         )
@@ -809,6 +829,11 @@ class V3JobExecutor:
             message="CODE_SCAN finalization started",
             metadata={"outcome": job_outcome.value},
         )
+        if _is_cancelled():
+            logger.warning(
+                "code_scan.aborted_before_success_finalization job_id=%s", job_id
+            )
+            return True
         try:
             self._state.finalize_code_scan_success(job_id, aisle)
             _publish_job_event(
@@ -845,6 +870,7 @@ class V3JobExecutor:
         settings: Settings,
         exec_log: Any,
         cancel_event_emitted: dict[str, bool],
+        runtime_abort_event: Any = None,
     ) -> bool:
         """Phase 4 INTERNAL_OCR execution — local Tesseract OCR per image, no LLM."""
         import uuid as _uuid
@@ -983,8 +1009,18 @@ class V3JobExecutor:
             )
 
             def _is_cancelled() -> bool:
+                if runtime_abort_event is not None and runtime_abort_event.is_set():
+                    return True
                 current = self._job_repo.get_by_id(job_id)
-                return current is not None and current.status == JobStatus.CANCEL_REQUESTED
+                if current is None:
+                    return True
+                if current.status in (
+                    JobStatus.FAILED,
+                    JobStatus.CANCELED,
+                    JobStatus.SUCCEEDED,
+                ):
+                    return True
+                return current.status == JobStatus.CANCEL_REQUESTED
             external_fallback = None
             external_request_repo = None
             if attempt_repo is not None:
@@ -1085,6 +1121,11 @@ class V3JobExecutor:
         self._state.update_runtime_status(
             job_id, stage="InternalOcr", substep="processing_started"
         )
+        if _is_cancelled():
+            logger.warning(
+                "internal_ocr.aborted_before_processing_started job_id=%s", job_id
+            )
+            return True
         _publish_job_event(
             "job.processing_started",
             message="INTERNAL_OCR processing started",
@@ -1218,6 +1259,11 @@ class V3JobExecutor:
             self._job_repo.merge_result_json(job_id, {"internal_ocr_partial": True})
 
         try:
+            if _is_cancelled():
+                logger.warning(
+                    "internal_ocr.aborted_before_success_finalization job_id=%s", job_id
+                )
+                return True
             self._state.finalize_code_scan_success(job_id, aisle)
         except Exception as exc:
             logger.exception("internal_ocr.finalize_failed job_id=%s", job_id)
@@ -1451,6 +1497,7 @@ class V3JobExecutor:
                         settings=settings,
                         exec_log=rt.exec_log,
                         cancel_event_emitted=rt.cancel_event_emitted,
+                        runtime_abort_event=rt.runtime_abort_event,
                     )
 
                 if (
@@ -1465,6 +1512,7 @@ class V3JobExecutor:
                         settings=settings,
                         exec_log=rt.exec_log,
                         cancel_event_emitted=rt.cancel_event_emitted,
+                        runtime_abort_event=rt.runtime_abort_event,
                     )
 
                 if bool(settings.image_processing_orchestrator_enabled):

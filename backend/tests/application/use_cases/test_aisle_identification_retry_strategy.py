@@ -151,14 +151,20 @@ def test_retry_legacy_llm_stays_legacy_llm_regardless_of_flag(
     assert retried.execution_strategy == AisleIdentificationExecutionStrategy.LEGACY_LLM
 
 
-def test_phase1_execution_strategy_helper_matches_retry_recomputation() -> None:
-    """Sanity-check the shared helper directly (used both at start and at retry)."""
-    assert phase1_execution_strategy(
-        effective_mode=AisleIdentificationMode.CODE_SCAN, pipeline_enabled=False
-    ) == AisleIdentificationExecutionStrategy.LEGACY_LLM
-    assert phase1_execution_strategy(
-        effective_mode=AisleIdentificationMode.CODE_SCAN, pipeline_enabled=True
-    ) == AisleIdentificationExecutionStrategy.LEGACY_LLM_TEMPORARY
+def test_phase1_execution_strategy_helper_requires_flags() -> None:
+    """Sanity-check the shared helper: disabled strategies no longer fall back to legacy."""
+    import pytest
+
+    from src.application.errors import StrategyDisabledError
+
+    with pytest.raises(StrategyDisabledError):
+        phase1_execution_strategy(
+            effective_mode=AisleIdentificationMode.CODE_SCAN, pipeline_enabled=False
+        )
+    with pytest.raises(StrategyDisabledError):
+        phase1_execution_strategy(
+            effective_mode=AisleIdentificationMode.CODE_SCAN, pipeline_enabled=True
+        )
     assert phase1_execution_strategy(
         effective_mode=AisleIdentificationMode.LEGACY_LLM, pipeline_enabled=True
     ) == AisleIdentificationExecutionStrategy.LEGACY_LLM

@@ -1,9 +1,17 @@
 -- Read-only LEGACY processing usage report (do not mutate data).
--- Run against the operational SQL Server database before tenant migration.
--- Safe to re-run; no DDL/DML.
+-- Canonical table: inventory_jobs (v3). Do NOT use the legacy `jobs` table here.
+--
+-- Validated against: SQL Server operational DB schema (src/database/schema.sql).
+-- Schema objects:
+--   clients.default_identification_mode
+--   inventories.identification_mode
+--   aisles.identification_mode
+--   inventory_jobs.identification_mode, execution_strategy, job_type, created_at
+-- Validation date: 2026-07-20 (query reviewed against schema; execute on a read-only replica
+-- before tenant migration). Safe to re-run; no DDL/DML.
 
 -- 1) System / config notes: system default for NEW jobs is INTERNAL_OCR (application).
---    Historical null job modes still coerce to LEGACY_LLM on read.
+--    Historical null job modes may still coerce to LEGACY_LLM on read for old rows.
 
 -- 2) Clients with LEGACY default
 SELECT c.id AS client_id, c.name, c.default_identification_mode
@@ -31,7 +39,7 @@ SELECT
   j.identification_mode AS requested_mode,
   j.execution_strategy AS executed_strategy,
   COUNT(*) AS job_count
-FROM jobs j
+FROM inventory_jobs j
 WHERE j.job_type = 'process_aisle'
   AND (
     UPPER(ISNULL(j.identification_mode, '')) IN ('LEGACY_LLM', 'LEGACY_LLM_TEMPORARY')

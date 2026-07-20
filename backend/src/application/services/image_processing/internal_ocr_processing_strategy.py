@@ -27,6 +27,8 @@ from src.application.ports.internal_label_reader import (
     InternalOcrEngineTimeoutError,
     InternalOcrEngineUnavailableError,
     InternalOcrReadResult,
+    OcrEngineTransientError,
+    OcrVariantReadError,
 )
 from src.application.services.image_processing.extraction_profile_configuration import (
     ExtractionProfileConfigurationError,
@@ -385,8 +387,8 @@ class InternalOcrProcessingStrategy:
                         str(exc),
                         started,
                     )
-                except Exception as exc:
-                    # Soft-fail this variant; try next if any remain.
+                except (OcrVariantReadError, OcrEngineTransientError) as exc:
+                    # Soft-fail this variant only for known operational read errors.
                     variant_fail_ms = int((time.monotonic() - variant_started) * 1000)
                     variant_records.append(
                         _VariantAttempt(
@@ -420,7 +422,7 @@ class InternalOcrProcessingStrategy:
                         exc,
                     )
                     continue
-
+                # Programming / contract / mapper / extractor defects: do not soft-fail.
                 variants_succeeded += 1
                 variant_duration_ms = int(read.duration_ms or 0)
                 variant_records.append(

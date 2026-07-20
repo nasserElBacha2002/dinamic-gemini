@@ -108,6 +108,17 @@ Limitation: not shared across worker processes.
 
 No API keys, full images, or raw provider payloads in logs. Image MIME/size/dimensions validated before provider call. Response evidence uses hashes / normalized fields only.
 
+## Metrics (process-local)
+
+In-process counters / log lines (`fallback_requested`, etc.) are **not** a
+multi-replica guarantee. Prefer:
+
+1. SQL durable rows (`external_image_analysis_requests`, `processing_attempts`)
+2. Structured JSON events in the execution log / processing_events table
+
+Do not treat `local_total` style counters as global. Prometheus/OTel adapters
+are a follow-up; SQL remains the source of truth for legacy / fallback audit.
+
 ## How to test
 
 1. Enable CODE_SCAN or INTERNAL_OCR + `EXTERNAL_FALLBACK_PER_IMAGE_ENABLED=true` in a controlled env.

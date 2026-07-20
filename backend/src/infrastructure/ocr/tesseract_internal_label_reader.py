@@ -17,6 +17,7 @@ from src.application.ports.internal_label_reader import (
     InternalOcrEngineTimeoutError,
     InternalOcrEngineUnavailableError,
     InternalOcrReadResult,
+    OcrEngineTransientError,
     OcrTextBlock,
     PreparedImage,
 )
@@ -118,7 +119,7 @@ class TesseractInternalLabelReader:
         except InternalOcrEngineUnavailableError:
             raise
         except Exception as exc:
-            raise RuntimeError(f"tesseract_read_failed: {exc}") from exc
+            raise OcrEngineTransientError(f"tesseract_read_failed: {exc}") from exc
 
         blocks = self._blocks_from_data(data)
         full_text = "\n".join(

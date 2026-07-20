@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from src.application.errors import StrategyDisabledError
 from src.domain.aisle_identification.modes import (
     AisleIdentificationExecutionStrategy,
     AisleIdentificationMode,
@@ -31,68 +32,38 @@ def resolve_execution_strategy_decision(
 ) -> ExecutionStrategyDecision:
     """Resolve the worker path from mode + feature flags.
 
-    ``CODE_SCAN`` / ``INTERNAL_OCR`` only become real execution strategies when their
-    respective flags are enabled. Otherwise they fall back to the Phase 1 temporary bridge
-    (``LEGACY_LLM_TEMPORARY`` when the aisle-identification pipeline flag is on, else
-    ``LEGACY_LLM``).
+    ``CODE_SCAN`` / ``INTERNAL_OCR`` require their flags enabled. Disabled strategies
+    raise ``StrategyDisabledError`` — they must not silently fall back to legacy LLM.
     """
     if effective_mode == AisleIdentificationMode.CODE_SCAN:
-        if code_scan_processing_enabled:
-            return ExecutionStrategyDecision(
-                requested_mode=effective_mode,
-                strategy=AisleIdentificationExecutionStrategy.CODE_SCAN,
-                reason="CODE_SCAN_PROCESSING_ENABLED_TRUE",
-                code_scan_processing_enabled=True,
-                internal_ocr_processing_enabled=internal_ocr_processing_enabled,
-                pipeline_enabled=pipeline_enabled,
-            )
-        if pipeline_enabled:
-            return ExecutionStrategyDecision(
-                requested_mode=effective_mode,
-                strategy=AisleIdentificationExecutionStrategy.LEGACY_LLM_TEMPORARY,
-                reason="CODE_SCAN_PROCESSING_ENABLED_FALSE",
-                code_scan_processing_enabled=False,
-                internal_ocr_processing_enabled=internal_ocr_processing_enabled,
-                pipeline_enabled=True,
+        if not code_scan_processing_enabled:
+            raise StrategyDisabledError(
+                "CODE_SCAN_PROCESSING_ENABLED=false; cannot start CODE_SCAN jobs"
             )
         return ExecutionStrategyDecision(
             requested_mode=effective_mode,
-            strategy=AisleIdentificationExecutionStrategy.LEGACY_LLM,
-            reason="CODE_SCAN_PROCESSING_ENABLED_FALSE_PIPELINE_OFF",
-            code_scan_processing_enabled=False,
+            strategy=AisleIdentificationExecutionStrategy.CODE_SCAN,
+            reason="CODE_SCAN_PROCESSING_ENABLED_TRUE",
+            code_scan_processing_enabled=True,
             internal_ocr_processing_enabled=internal_ocr_processing_enabled,
-            pipeline_enabled=False,
+            pipeline_enabled=pipeline_enabled,
         )
 
     if effective_mode == AisleIdentificationMode.INTERNAL_OCR:
-        if internal_ocr_processing_enabled:
-            return ExecutionStrategyDecision(
-                requested_mode=effective_mode,
-                strategy=AisleIdentificationExecutionStrategy.INTERNAL_OCR,
-                reason="INTERNAL_OCR_PROCESSING_ENABLED_TRUE",
-                code_scan_processing_enabled=code_scan_processing_enabled,
-                internal_ocr_processing_enabled=True,
-                pipeline_enabled=pipeline_enabled,
-            )
-        if pipeline_enabled:
-            return ExecutionStrategyDecision(
-                requested_mode=effective_mode,
-                strategy=AisleIdentificationExecutionStrategy.LEGACY_LLM_TEMPORARY,
-                reason="INTERNAL_OCR_PROCESSING_ENABLED_FALSE",
-                code_scan_processing_enabled=code_scan_processing_enabled,
-                internal_ocr_processing_enabled=False,
-                pipeline_enabled=True,
+        if not internal_ocr_processing_enabled:
+            raise StrategyDisabledError(
+                "INTERNAL_OCR_PROCESSING_ENABLED=false; cannot start INTERNAL_OCR jobs"
             )
         return ExecutionStrategyDecision(
             requested_mode=effective_mode,
-            strategy=AisleIdentificationExecutionStrategy.LEGACY_LLM,
-            reason="INTERNAL_OCR_PROCESSING_ENABLED_FALSE_PIPELINE_OFF",
+            strategy=AisleIdentificationExecutionStrategy.INTERNAL_OCR,
+            reason="INTERNAL_OCR_PROCESSING_ENABLED_TRUE",
             code_scan_processing_enabled=code_scan_processing_enabled,
-            internal_ocr_processing_enabled=False,
-            pipeline_enabled=False,
+            internal_ocr_processing_enabled=True,
+            pipeline_enabled=pipeline_enabled,
         )
 
-    # LEGACY_LLM (or unknown mapped earlier) always stays on the legacy path.
+    # LEGACY_LLM remains only for historical retries / explicit residual paths.
     return ExecutionStrategyDecision(
         requested_mode=effective_mode,
         strategy=AisleIdentificationExecutionStrategy.LEGACY_LLM,

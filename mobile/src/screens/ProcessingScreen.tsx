@@ -9,8 +9,11 @@ import {
   processingStateLabelFromRemote,
   type ProcessingState,
 } from '../core/processingState';
-import type { AisleIdentificationMode } from '../features/processing/processingMode';
-import { labelForIdentificationMode } from '../features/processing/processingMode';
+import type { AisleIdentificationMode, IdentificationModeSelection } from '../features/processing/processingMode';
+import {
+  labelForIdentificationMode,
+  preferenceFromSelection,
+} from '../features/processing/processingMode';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import { Button, ErrorText, SmallButton, messageOf, styles } from '../ui';
 
@@ -69,11 +72,12 @@ export function ProcessingScreen({
   const state: ProcessingState = view?.state ?? 'idle';
   const action = primaryProcessingAction(state);
 
-  const startOrResumeProcessing = async () => {
+  const startOrResumeProcessing = async (selection: IdentificationModeSelection) => {
     if (busy) return;
     setBusy(true);
     setConfirmError(null);
-    const modeAtConfirm = identificationModePreference;
+    const modeAtConfirm = preferenceFromSelection(selection);
+    onIdentificationModePreferenceChange(modeAtConfirm);
     try {
       const res = await services.processing.startProcess(sessionId, {
         identificationMode: modeAtConfirm,
@@ -142,14 +146,13 @@ export function ProcessingScreen({
         preference={identificationModePreference}
         busy={busy}
         error={confirmError}
-        onPreferenceChange={onIdentificationModePreferenceChange}
         onClose={() => {
           if (busy) return;
           setConfirmVisible(false);
           setConfirmError(null);
         }}
-        onConfirm={() => {
-          void startOrResumeProcessing();
+        onConfirm={(selection) => {
+          void startOrResumeProcessing(selection);
         }}
       />
     </View>
