@@ -57,6 +57,26 @@ python -c "from pyzbar.pyzbar import decode; print('pyzbar-ok')"
 
 If this fails with `Unable to find zbar shared library`, install zbar as above and restart the API.
 
+### Internal OCR (Tesseract) — Phase 4
+
+`INTERNAL_OCR` runs in **on-demand workers**. Locally (`./dev.sh`) those workers use the host Python process, so the **Tesseract binary** must be on `PATH`. On OpenCloud DEV, workers spawn **inside the API container**, so `backend/Dockerfile` installs `tesseract-ocr` + `tesseract-ocr-spa` + `tesseract-ocr-eng` (same packages as `Dockerfile.worker`).
+
+**Local macOS:**
+
+```bash
+brew install tesseract
+brew install tesseract-lang   # includes spa + eng traineddata
+```
+
+Validate:
+
+```bash
+tesseract --version
+cd backend && .venv/bin/python -c "import pytesseract; print(pytesseract.get_tesseract_version()); print(pytesseract.get_languages())"
+```
+
+If OCR jobs fail with `tesseract is not installed or it's not in your PATH`, install as above and restart `./dev.sh`.
+
 ### Manual maintenance backfills
 
 Backfills are explicit one-shot commands and do not run automatically on API startup.

@@ -61,6 +61,16 @@ fi
 echo "[dev] Runtime: OUTPUT_DIR=${OUTPUT_DIR:-output} SQLSERVER_ENABLED=${SQLSERVER_ENABLED:-unset} EMBEDDED_WORKER_ENABLED=${EMBEDDED_WORKER_ENABLED:-unset}"
 echo "[dev] On-demand worker command: ${WORKER_ON_DEMAND_COMMAND}"
 
+# Phase 4 INTERNAL_OCR needs the host tesseract binary (workers inherit this PATH).
+if [[ "${INTERNAL_OCR_PROCESSING_ENABLED:-false}" =~ ^(1|true|yes)$ ]]; then
+  if ! command -v tesseract >/dev/null 2>&1; then
+    echo "[dev] WARNING: INTERNAL_OCR_PROCESSING_ENABLED=true but 'tesseract' is not on PATH."
+    echo "[dev]          Install: brew install tesseract tesseract-lang  (see backend/README.md)"
+  else
+    echo "[dev] Tesseract OK: $(command -v tesseract) ($(tesseract --version 2>/dev/null | head -1))"
+  fi
+fi
+
 # Prevent stale mixed runtimes: kill previously running local backend/legacy worker
 # processes before starting fresh ones.
 echo "[dev] Limpiando procesos previos de backend/worker..."

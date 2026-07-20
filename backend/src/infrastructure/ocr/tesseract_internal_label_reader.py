@@ -44,18 +44,20 @@ class TesseractInternalLabelReader:
 
     @property
     def engine_version(self) -> str | None:
-        self._ensure_available()
+        """Best-effort version string. Never raises — missing Tesseract returns ``None``.
+
+        Raising here would abort the whole job when attempt metadata is collected before
+        ``process()`` (see ``SingleAssetStrategyProcessor._attempt_model``). Unavailability
+        is signaled by :meth:`_ensure_available` / :meth:`read` instead.
+        """
+        self._probe_once()
         return self._version
 
-    def _ensure_available(self) -> None:
+    def _probe_once(self) -> None:
         if self._probed:
-            if self._probe_error:
-                raise InternalOcrEngineUnavailableError(self._probe_error)
             return
         with self._lock:
             if self._probed:
-                if self._probe_error:
-                    raise InternalOcrEngineUnavailableError(self._probe_error)
                 return
             try:
                 import pytesseract
@@ -68,8 +70,11 @@ class TesseractInternalLabelReader:
                 self._version = None
             finally:
                 self._probed = True
-            if self._probe_error:
-                raise InternalOcrEngineUnavailableError(self._probe_error)
+
+    def _ensure_available(self) -> None:
+        self._probe_once()
+        if self._probe_error:
+            raise InternalOcrEngineUnavailableError(self._probe_error)
 
     def read(
         self,

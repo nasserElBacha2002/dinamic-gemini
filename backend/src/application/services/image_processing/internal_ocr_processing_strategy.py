@@ -143,7 +143,11 @@ class InternalOcrProcessingStrategy:
 
     @property
     def attempt_model(self) -> str:
-        version = getattr(self._reader, "engine_version", None) or "unknown"
+        # Must never raise: called before process() when creating ProcessingAttempt rows.
+        try:
+            version = getattr(self._reader, "engine_version", None) or "unknown"
+        except Exception:
+            version = "unknown"
         name = getattr(self._reader, "engine_name", None) or "ocr"
         return f"{name}/{version}"
 

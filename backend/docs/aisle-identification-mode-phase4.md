@@ -20,7 +20,15 @@ Immutable snapshot at job start (`engine_params_json.identification_execution`):
 
 ## Engine
 
-Tesseract via `pytesseract` (subprocess timeout). Worker image: `tesseract-ocr`, `tesseract-ocr-spa`, `tesseract-ocr-eng`.
+Tesseract via `pytesseract` (subprocess timeout).
+
+| Runtime | Where Tesseract must be installed |
+|---------|-----------------------------------|
+| Local `./dev.sh` | Host: `brew install tesseract tesseract-lang` (see `backend/README.md`) |
+| OpenCloud DEV (`docker-compose` `api`) | `backend/Dockerfile` — `tesseract-ocr`, `tesseract-ocr-spa`, `tesseract-ocr-eng` (on-demand workers run in this container) |
+| Dedicated worker image | `backend/Dockerfile.worker` — same packages + build-time verify |
+
+Missing binary is a per-asset `FAILED_TECHNICAL` (`INTERNAL_OCR_ENGINE_UNAVAILABLE`), not an uncaught process crash.
 
 ## Client rules (minimal, not Phase 6 admin)
 
