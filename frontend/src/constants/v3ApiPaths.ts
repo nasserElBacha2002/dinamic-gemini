@@ -67,3 +67,45 @@ export function supplierPromptConfigActivatePath(
   return `${supplierPromptConfigByIdPath(clientId, supplierId, configId)}/activate`;
 }
 
+/** GET|POST .../clients/{clientId}/suppliers/{supplierId}/extraction-profiles */
+export function supplierExtractionProfilesPath(clientId: string, supplierId: string): string {
+  return `${pathToClientSuppliersBase(clientId)}/${encodeURIComponent(supplierId)}/extraction-profiles`;
+}
+
+/** GET .../extraction-profiles/active */
+export function supplierExtractionProfilesActivePath(clientId: string, supplierId: string): string {
+  return `${supplierExtractionProfilesPath(clientId, supplierId)}/active`;
+}
+
+/** GET .../extraction-profiles/versions/{version} */
+export function supplierExtractionProfileByVersionPath(
+  clientId: string,
+  supplierId: string,
+  version: number
+): string {
+  return `${supplierExtractionProfilesPath(clientId, supplierId)}/versions/${encodeURIComponent(String(version))}`;
+}
+
+/** POST .../extraction-profiles/clone */
+export function supplierExtractionProfilesClonePath(clientId: string, supplierId: string): string {
+  return `${supplierExtractionProfilesPath(clientId, supplierId)}/clone`;
+}
+
+/** POST .../extraction-profiles/{profileId}/activate */
+export function supplierExtractionProfileActivatePath(
+  clientId: string,
+  supplierId: string,
+  profileId: string
+): string {
+  return `${supplierExtractionProfilesPath(clientId, supplierId)}/${encodeURIComponent(profileId)}/activate`;
+}
+
+/** GET|PUT .../reference-images/{imageId}/annotations */
+export function supplierReferenceImageAnnotationsPath(
+  clientId: string,
+  supplierId: string,
+  imageId: string
+): string {
+  return `${supplierReferenceImagePath(clientId, supplierId, imageId)}/annotations`;
+}
+

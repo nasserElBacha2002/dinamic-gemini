@@ -11,6 +11,9 @@ export {
   useClientSupplier,
   useSupplierPromptConfigs,
   useActiveSupplierPromptConfig,
+  useSupplierExtractionProfiles,
+  useActiveSupplierExtractionProfile,
+  useSupplierReferenceAnnotations,
   useSupplierReferenceImages,
 } from './useClients';
 export { useInventoriesList, useInventoryDetail } from './useInventories';
@@ -39,6 +42,10 @@ export {
   useCreateClientSupplier,
   useCreateSupplierPromptConfigVersion,
   useActivateSupplierPromptConfigVersion,
+  useCreateSupplierExtractionProfileVersion,
+  useActivateSupplierExtractionProfileVersion,
+  useCloneSupplierExtractionProfile,
+  useReplaceSupplierReferenceAnnotations,
   useUploadSupplierReferenceImages,
   useDeleteSupplierReferenceImage,
   useCreateInventory,

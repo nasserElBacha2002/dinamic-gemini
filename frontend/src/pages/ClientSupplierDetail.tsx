@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../api/types';
 import SupplierPromptConfigsModule from '../features/clients/components/SupplierPromptConfigsModule';
+import SupplierExtractionProfilesModule from '../features/clients/components/SupplierExtractionProfilesModule';
 import SupplierReferenceImagesModule from '../features/clients/components/SupplierReferenceImagesModule';
 import { PageHeader } from '../components/shell';
 import { ErrorAlert, LoadingBlock, SectionCard } from '../components/ui';
@@ -17,12 +18,12 @@ import {
 } from '../hooks';
 import { formatDate } from '../utils/formatDate';
 
-const TAB_VALUES = ['resumen', 'prompts', 'imagenes'] as const;
+const TAB_VALUES = ['resumen', 'prompts', 'instrucciones-ocr', 'imagenes'] as const;
 type SupplierDetailTab = (typeof TAB_VALUES)[number];
 
 function normalizeSupplierTab(raw: string | null): SupplierDetailTab {
   const v = (raw ?? '').trim().toLowerCase();
-  return v === 'prompts' || v === 'imagenes' ? v : 'resumen';
+  return v === 'prompts' || v === 'instrucciones-ocr' || v === 'imagenes' ? v : 'resumen';
 }
 
 export default function ClientSupplierDetail() {
@@ -153,6 +154,7 @@ export default function ClientSupplierDetail() {
           >
             <Tab value="resumen" label={t('clients.supplier_page.tab_summary')} />
             <Tab value="prompts" label={t('clients.supplier_page.tab_prompts')} />
+            <Tab value="instrucciones-ocr" label={t('clients.supplier_page.tab_extraction_profile')} />
             <Tab value="imagenes" label={t('clients.supplier_page.tab_reference_images')} />
           </Tabs>
 
@@ -210,6 +212,20 @@ export default function ClientSupplierDetail() {
                 open
                 presentation="inline"
                 onClose={() => {}}
+              />
+            </Box>
+          ) : null}
+
+          {tab === 'instrucciones-ocr' && supplierQuery.data ? (
+            <Box sx={{ display: 'grid', gap: 1.5 }} role="tabpanel">
+              <Typography variant="subtitle1">{t('clients.supplier_page.extraction_profile_section_title')}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {t('clients.supplier_page.extraction_profile_section_intro')}
+              </Typography>
+              <SupplierExtractionProfilesModule
+                clientId={safeClientId}
+                supplierId={safeSupplierId}
+                supplierName={supplierQuery.data.name}
               />
             </Box>
           ) : null}

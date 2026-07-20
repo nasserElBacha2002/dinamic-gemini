@@ -167,6 +167,7 @@ class StartAisleProcessingUseCase:
         launch_service: AisleJobLaunchService,
         stale_reconciler: JobStaleReconciler,
         client_repo: ClientRepository | None = None,
+        extraction_profile_repo=None,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
@@ -175,6 +176,7 @@ class StartAisleProcessingUseCase:
         self._launch_service = launch_service
         self._stale_reconciler = stale_reconciler
         self._client_repo = client_repo
+        self._extraction_profile_repo = extraction_profile_repo
 
     def execute(self, command: StartAisleProcessingCommand) -> StartAisleProcessingResult:
         pipeline_key, model_name, _resolved_prompt, inv_from_keys = (
@@ -270,6 +272,45 @@ class StartAisleProcessingUseCase:
                 getattr(settings, "internal_ocr_prefer_ean_as_internal_code", False)
             ),
         )
+        supplier_id = getattr(aisle, "client_supplier_id", None)
+        supplier_extraction_profile = None
+        profiles_enabled = bool(
+            getattr(settings, "client_extraction_profiles_enabled", False)
+        )
+        profile_aware = bool(
+            getattr(settings, "profile_aware_validation_enabled", False)
+        )
+        if profiles_enabled or profile_aware:
+            from src.application.services.image_processing.profile_aware_processing_result_validator import (
+                configuration_to_ocr_client_field_rules,
+            )
+            from src.application.services.image_processing.supplier_extraction_profile_resolver import (
+                SupplierExtractionProfileResolver,
+            )
+
+            resolver = SupplierExtractionProfileResolver(
+                self._extraction_profile_repo,
+                profiles_enabled=bool(profiles_enabled or profile_aware),
+            )
+            supplier_extraction_profile = resolver.build_snapshot_for_new_job(
+                client_id=client_id,
+                supplier_id=str(supplier_id).strip() if supplier_id else None,
+            ) or None
+            if profile_aware and isinstance(supplier_extraction_profile, dict):
+                from src.application.services.image_processing.extraction_profile_configuration import (
+                    parse_extraction_configuration,
+                )
+
+                try:
+                    cfg = parse_extraction_configuration(
+                        supplier_extraction_profile.get("configuration")
+                    )
+                    client_rules = configuration_to_ocr_client_field_rules(cfg)
+                except Exception:
+                    logger.warning(
+                        "extraction_profile.to_ocr_rules_failed using_legacy_client_rules",
+                        exc_info=True,
+                    )
         ocr_config = None
         if (
             resolution.effective_mode.value == "INTERNAL_OCR"
@@ -367,8 +408,10 @@ class StartAisleProcessingUseCase:
                 client_rules=ocr_client_rules_snapshot(client_rules),
                 configuration_snapshot_version=CONFIGURATION_SNAPSHOT_VERSION,
                 external_fallback=external_fallback,
+                supplier_extraction_profile=supplier_extraction_profile,
             ),
             "client_id": client_id,
+            "supplier_id": str(supplier_id).strip() if supplier_id else None,
         }
 
         logger.info(

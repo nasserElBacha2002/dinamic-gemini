@@ -619,6 +619,8 @@ def get_start_aisle_processing_use_case(
     stale_reconciler: JobStaleReconciler = Depends(get_job_stale_reconciler),
     client_repo: ClientRepository = Depends(get_client_repo),
 ) -> StartAisleProcessingUseCase:
+    from src.runtime.v3_deps import get_supplier_extraction_profile_repo
+
     return StartAisleProcessingUseCase(
         inventory_repo=inventory_repo,
         aisle_repo=aisle_repo,
@@ -627,6 +629,7 @@ def get_start_aisle_processing_use_case(
         launch_service=launch_service,
         stale_reconciler=stale_reconciler,
         client_repo=client_repo,
+        extraction_profile_repo=get_supplier_extraction_profile_repo(),
     )
 
 
@@ -972,6 +975,38 @@ def get_get_supplier_prompt_config_use_case(
         client_supplier_repo=client_supplier_repo,
         prompt_config_repo=prompt_config_repo,
     )
+
+
+def get_list_supplier_extraction_profiles_use_case():
+    return get_app_container().get_list_supplier_extraction_profiles_use_case()
+
+
+def get_get_active_supplier_extraction_profile_use_case():
+    return get_app_container().get_get_active_supplier_extraction_profile_use_case()
+
+
+def get_get_supplier_extraction_profile_by_version_use_case():
+    return get_app_container().get_get_supplier_extraction_profile_by_version_use_case()
+
+
+def get_create_supplier_extraction_profile_version_use_case():
+    return get_app_container().get_create_supplier_extraction_profile_version_use_case()
+
+
+def get_activate_supplier_extraction_profile_version_use_case():
+    return get_app_container().get_activate_supplier_extraction_profile_version_use_case()
+
+
+def get_clone_supplier_extraction_profile_use_case():
+    return get_app_container().get_clone_supplier_extraction_profile_use_case()
+
+
+def get_list_supplier_reference_annotations_use_case():
+    return get_app_container().get_list_supplier_reference_annotations_use_case()
+
+
+def get_replace_supplier_reference_annotations_use_case():
+    return get_app_container().get_replace_supplier_reference_annotations_use_case()
 
 
 def get_list_aisle_positions_use_case(

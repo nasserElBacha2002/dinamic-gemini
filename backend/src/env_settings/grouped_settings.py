@@ -1187,6 +1187,8 @@ class LimitsAndSchemaSettings(BaseModel):
         description=(
             "DEPRECATED global default for clients without a profile. Prefer "
             "INTERNAL_OCR_EAN_FIRST_CLIENT_IDS for per-client EAN→internal_code rules. "
+            "Phase 6: superseded by supplier extraction profiles when "
+            "CLIENT_EXTRACTION_PROFILES_ENABLED + PROFILE_AWARE_VALIDATION_ENABLED. "
             "Env: INTERNAL_OCR_PREFER_EAN_AS_INTERNAL_CODE."
         ),
     )
@@ -1197,6 +1199,7 @@ class LimitsAndSchemaSettings(BaseModel):
         description=(
             "Comma-separated client UUIDs that map EAN→internal_code when present "
             "(MASOL-style without hardcoding client names). "
+            "DEPRECATED when Phase 6 supplier extraction profiles drive validation. "
             "Env: INTERNAL_OCR_EAN_FIRST_CLIENT_IDS."
         ),
     )
@@ -1228,6 +1231,37 @@ class LimitsAndSchemaSettings(BaseModel):
             "Phase 5: when true, unresolved CODE_SCAN/INTERNAL_OCR assets may call one "
             "external provider per image. Default false. "
             "Env: EXTERNAL_FALLBACK_PER_IMAGE_ENABLED."
+        ),
+    )
+    client_extraction_profiles_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("CLIENT_EXTRACTION_PROFILES_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 6: enable versioned supplier extraction profiles (admin + job snapshot). "
+            "Default false. Env: CLIENT_EXTRACTION_PROFILES_ENABLED."
+        ),
+    )
+    profile_aware_validation_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PROFILE_AWARE_VALIDATION_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 6: when true, CODE_SCAN/INTERNAL_OCR/EXTERNAL use snapshotted supplier "
+            "extraction profile for priorities/validation. Default false. "
+            "Env: PROFILE_AWARE_VALIDATION_ENABLED."
+        ),
+    )
+    reference_template_annotations_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("REFERENCE_TEMPLATE_ANNOTATIONS_ENABLED", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 6.2: enable spatial annotations on supplier reference images as OCR hints. "
+            "Default false. Env: REFERENCE_TEMPLATE_ANNOTATIONS_ENABLED."
         ),
     )
     external_fallback_provider: str = Field(

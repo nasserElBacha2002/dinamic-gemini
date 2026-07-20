@@ -198,6 +198,52 @@ def build_supplier_reference_image_repository(
     )
 
 
+def build_supplier_extraction_profile_repository(build_repo: BuildSqlOrMemory):
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_supplier_extraction_profile_repository import (
+            SqlSupplierExtractionProfileRepository,
+        )
+
+        return SqlSupplierExtractionProfileRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_supplier_extraction_profile_repository import (
+            MemorySupplierExtractionProfileRepository,
+        )
+
+        return MemorySupplierExtractionProfileRepository()
+
+    return build_repo(
+        backend_info_name="SupplierExtractionProfileRepository",
+        sql_error_subject="supplier_extraction_profile repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_supplier_reference_annotation_repository(build_repo: BuildSqlOrMemory):
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_supplier_extraction_profile_repository import (
+            SqlSupplierReferenceAnnotationRepository,
+        )
+
+        return SqlSupplierReferenceAnnotationRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_supplier_extraction_profile_repository import (
+            MemorySupplierReferenceAnnotationRepository,
+        )
+
+        return MemorySupplierReferenceAnnotationRepository()
+
+    return build_repo(
+        backend_info_name="SupplierReferenceAnnotationRepository",
+        sql_error_subject="supplier_reference_annotation repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
 def build_supplier_prompt_config_repository(
     build_repo: BuildSqlOrMemory[SupplierPromptConfigRepository],
 ) -> SupplierPromptConfigRepository:

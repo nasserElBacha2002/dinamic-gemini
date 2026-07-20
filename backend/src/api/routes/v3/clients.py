@@ -14,21 +14,29 @@ from src.api.constants.error_wire import (
 )
 from src.api.constants.route_paths import API_V3_CLIENTS_ROUTER_PREFIX
 from src.api.dependencies import (
+    get_activate_supplier_extraction_profile_version_use_case,
     get_activate_supplier_prompt_config_version_use_case,
     get_artifact_storage,
+    get_clone_supplier_extraction_profile_use_case,
     get_create_client_supplier_use_case,
     get_create_client_use_case,
+    get_create_supplier_extraction_profile_version_use_case,
     get_create_supplier_prompt_config_version_use_case,
     get_delete_supplier_reference_image_use_case,
+    get_get_active_supplier_extraction_profile_use_case,
     get_get_active_supplier_prompt_config_use_case,
     get_get_client_supplier_use_case,
     get_get_client_use_case,
+    get_get_supplier_extraction_profile_by_version_use_case,
     get_get_supplier_prompt_config_use_case,
     get_get_supplier_reference_image_use_case,
     get_list_client_suppliers_use_case,
     get_list_clients_use_case,
+    get_list_supplier_extraction_profiles_use_case,
     get_list_supplier_prompt_configs_use_case,
+    get_list_supplier_reference_annotations_use_case,
     get_list_supplier_reference_images_use_case,
+    get_replace_supplier_reference_annotations_use_case,
     get_update_client_use_case,
     get_upload_supplier_reference_images_use_case,
 )
@@ -52,6 +60,15 @@ from src.api.schemas.client_supplier_schemas import (
     PaginatedClientSupplierListResponse,
 )
 from src.api.schemas.listing_schemas import compute_total_pages
+from src.api.schemas.supplier_extraction_profile_schemas import (
+    CloneSupplierExtractionProfileRequest,
+    CreateSupplierExtractionProfileRequest,
+    ReferenceAnnotationResponse,
+    ReplaceSupplierReferenceAnnotationsRequest,
+    SupplierExtractionProfileResponse,
+    SupplierExtractionProfilesListResponse,
+    SupplierReferenceAnnotationsListResponse,
+)
 from src.api.schemas.supplier_prompt_config_schemas import (
     CreateSupplierPromptConfigRequest,
     SupplierPromptConfigResponse,
@@ -73,6 +90,7 @@ from src.application.errors import (
     InvalidClientNameError,
     InvalidClientSupplierNameError,
     SupplierPromptConfigNotFoundError,
+    SupplierExtractionProfileNotFoundError,
 )
 from src.application.use_cases.clients.create_client import CreateClientCommand, CreateClientUseCase
 from src.application.use_cases.clients.get_client import GetClientUseCase
@@ -83,6 +101,24 @@ from src.application.use_cases.suppliers.create_client_supplier import (
 )
 from src.application.use_cases.suppliers.get_client_supplier import GetClientSupplierUseCase
 from src.application.use_cases.suppliers.list_client_suppliers import ListClientSuppliersUseCase
+from src.application.use_cases.suppliers.manage_supplier_extraction_profiles import (
+    ActivateSupplierExtractionProfileVersionCommand,
+    ActivateSupplierExtractionProfileVersionUseCase,
+    CloneSupplierExtractionProfileCommand,
+    CloneSupplierExtractionProfileUseCase,
+    CreateSupplierExtractionProfileVersionCommand,
+    CreateSupplierExtractionProfileVersionUseCase,
+    GetActiveSupplierExtractionProfileCommand,
+    GetActiveSupplierExtractionProfileUseCase,
+    GetSupplierExtractionProfileByVersionCommand,
+    GetSupplierExtractionProfileByVersionUseCase,
+    ListSupplierExtractionProfilesCommand,
+    ListSupplierExtractionProfilesUseCase,
+    ListSupplierReferenceAnnotationsCommand,
+    ListSupplierReferenceAnnotationsUseCase,
+    ReplaceSupplierReferenceAnnotationsCommand,
+    ReplaceSupplierReferenceAnnotationsUseCase,
+)
 from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
     ActivateSupplierPromptConfigVersionCommand,
     ActivateSupplierPromptConfigVersionUseCase,
@@ -107,6 +143,10 @@ from src.application.use_cases.suppliers.upload_supplier_reference_images import
 from src.auth.dependencies import get_current_admin
 from src.domain.client.entities import Client, ClientStatus
 from src.domain.client_supplier.entities import ClientSupplier, ClientSupplierStatus
+from src.domain.client_supplier.extraction_profile import (
+    ReferenceAnnotation,
+    SupplierExtractionProfile,
+)
 from src.domain.client_supplier.prompt_config import SupplierPromptConfig
 from src.domain.client_supplier.reference_image import SupplierReferenceImage
 
@@ -173,6 +213,50 @@ def _supplier_prompt_config_to_response(
         is_active=config.is_active,
         created_at=config.created_at,
         updated_at=config.updated_at,
+    )
+
+
+def _supplier_extraction_profile_to_response(
+    profile: SupplierExtractionProfile,
+) -> SupplierExtractionProfileResponse:
+    return SupplierExtractionProfileResponse(
+        id=profile.id,
+        client_id=profile.client_id,
+        supplier_id=profile.supplier_id,
+        profile_key=profile.profile_key,
+        version=profile.version,
+        status=profile.status.value,
+        configuration=profile.configuration.to_public_dict(),
+        visual_notes=profile.visual_notes,
+        created_by=profile.created_by,
+        created_at=profile.created_at,
+        activated_by=profile.activated_by,
+        activated_at=profile.activated_at,
+        superseded_at=profile.superseded_at,
+        updated_at=profile.updated_at,
+        row_version=profile.row_version,
+    )
+
+
+def _reference_annotation_to_response(
+    annotation: ReferenceAnnotation,
+) -> ReferenceAnnotationResponse:
+    polygon = (
+        [[x, y] for x, y in annotation.normalized_polygon]
+        if annotation.normalized_polygon
+        else None
+    )
+    return ReferenceAnnotationResponse(
+        id=annotation.id,
+        template_image_id=annotation.template_image_id,
+        profile_id=annotation.profile_id,
+        field_key=annotation.field_key,
+        anchor_texts=list(annotation.anchor_texts),
+        spatial_relation=annotation.spatial_relation.value,
+        normalized_polygon=polygon,
+        priority=annotation.priority,
+        required=annotation.required,
+        max_distance_ratio=annotation.max_distance_ratio,
     )
 
 
@@ -657,6 +741,228 @@ def activate_supplier_prompt_config(
             )
         )
         return _supplier_prompt_config_to_response(activated)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.get(
+    "/{client_id}/suppliers/{supplier_id}/extraction-profiles",
+    response_model=SupplierExtractionProfilesListResponse,
+)
+def list_supplier_extraction_profiles(
+    client_id: str,
+    supplier_id: str,
+    use_case: ListSupplierExtractionProfilesUseCase = Depends(
+        get_list_supplier_extraction_profiles_use_case
+    ),
+) -> SupplierExtractionProfilesListResponse:
+    try:
+        rows = use_case.execute(
+            ListSupplierExtractionProfilesCommand(
+                client_id=client_id, supplier_id=supplier_id
+            )
+        )
+        return SupplierExtractionProfilesListResponse(
+            items=[_supplier_extraction_profile_to_response(row) for row in rows]
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.post(
+    "/{client_id}/suppliers/{supplier_id}/extraction-profiles",
+    response_model=SupplierExtractionProfileResponse,
+    status_code=201,
+)
+def create_supplier_extraction_profile(
+    client_id: str,
+    supplier_id: str,
+    payload: CreateSupplierExtractionProfileRequest,
+    use_case: CreateSupplierExtractionProfileVersionUseCase = Depends(
+        get_create_supplier_extraction_profile_version_use_case
+    ),
+) -> SupplierExtractionProfileResponse:
+    try:
+        created = use_case.execute(
+            CreateSupplierExtractionProfileVersionCommand(
+                client_id=client_id,
+                supplier_id=supplier_id,
+                configuration=payload.configuration,
+                visual_notes=payload.visual_notes,
+                profile_key=payload.profile_key,
+                activate=payload.activate,
+            )
+        )
+        return _supplier_extraction_profile_to_response(created)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.get(
+    "/{client_id}/suppliers/{supplier_id}/extraction-profiles/active",
+    response_model=SupplierExtractionProfileResponse,
+)
+def get_active_supplier_extraction_profile(
+    client_id: str,
+    supplier_id: str,
+    use_case: GetActiveSupplierExtractionProfileUseCase = Depends(
+        get_get_active_supplier_extraction_profile_use_case
+    ),
+) -> SupplierExtractionProfileResponse:
+    try:
+        active = use_case.execute(
+            GetActiveSupplierExtractionProfileCommand(
+                client_id=client_id, supplier_id=supplier_id
+            )
+        )
+        if active is None:
+            raise SupplierExtractionProfileNotFoundError(
+                "Supplier extraction profile not found in requested scope"
+            )
+        return _supplier_extraction_profile_to_response(active)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.get(
+    "/{client_id}/suppliers/{supplier_id}/extraction-profiles/versions/{version}",
+    response_model=SupplierExtractionProfileResponse,
+)
+def get_supplier_extraction_profile_by_version(
+    client_id: str,
+    supplier_id: str,
+    version: int,
+    use_case: GetSupplierExtractionProfileByVersionUseCase = Depends(
+        get_get_supplier_extraction_profile_by_version_use_case
+    ),
+) -> SupplierExtractionProfileResponse:
+    try:
+        row = use_case.execute(
+            GetSupplierExtractionProfileByVersionCommand(
+                client_id=client_id,
+                supplier_id=supplier_id,
+                version=version,
+            )
+        )
+        return _supplier_extraction_profile_to_response(row)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.post(
+    "/{client_id}/suppliers/{supplier_id}/extraction-profiles/clone",
+    response_model=SupplierExtractionProfileResponse,
+    status_code=201,
+)
+def clone_supplier_extraction_profile(
+    client_id: str,
+    supplier_id: str,
+    payload: CloneSupplierExtractionProfileRequest,
+    use_case: CloneSupplierExtractionProfileUseCase = Depends(
+        get_clone_supplier_extraction_profile_use_case
+    ),
+) -> SupplierExtractionProfileResponse:
+    try:
+        cloned = use_case.execute(
+            CloneSupplierExtractionProfileCommand(
+                client_id=client_id,
+                supplier_id=supplier_id,
+                source_profile_id=payload.source_profile_id,
+            )
+        )
+        return _supplier_extraction_profile_to_response(cloned)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.post(
+    "/{client_id}/suppliers/{supplier_id}/extraction-profiles/{profile_id}/activate",
+    response_model=SupplierExtractionProfileResponse,
+)
+def activate_supplier_extraction_profile(
+    client_id: str,
+    supplier_id: str,
+    profile_id: str,
+    expected_row_version: int | None = Query(None),
+    use_case: ActivateSupplierExtractionProfileVersionUseCase = Depends(
+        get_activate_supplier_extraction_profile_version_use_case
+    ),
+) -> SupplierExtractionProfileResponse:
+    try:
+        activated = use_case.execute(
+            ActivateSupplierExtractionProfileVersionCommand(
+                client_id=client_id,
+                supplier_id=supplier_id,
+                profile_id=profile_id,
+                expected_row_version=expected_row_version,
+            )
+        )
+        return _supplier_extraction_profile_to_response(activated)
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.get(
+    "/{client_id}/suppliers/{supplier_id}/reference-images/{image_id}/annotations",
+    response_model=SupplierReferenceAnnotationsListResponse,
+)
+def list_supplier_reference_annotations(
+    client_id: str,
+    supplier_id: str,
+    image_id: str,
+    use_case: ListSupplierReferenceAnnotationsUseCase = Depends(
+        get_list_supplier_reference_annotations_use_case
+    ),
+) -> SupplierReferenceAnnotationsListResponse:
+    try:
+        rows = use_case.execute(
+            ListSupplierReferenceAnnotationsCommand(
+                client_id=client_id,
+                supplier_id=supplier_id,
+                image_id=image_id,
+            )
+        )
+        return SupplierReferenceAnnotationsListResponse(
+            items=[_reference_annotation_to_response(row) for row in rows]
+        )
+    except Exception as e:
+        reraise_if_mapped(e)
+        raise
+
+
+@router.put(
+    "/{client_id}/suppliers/{supplier_id}/reference-images/{image_id}/annotations",
+    response_model=SupplierReferenceAnnotationsListResponse,
+)
+def replace_supplier_reference_annotations(
+    client_id: str,
+    supplier_id: str,
+    image_id: str,
+    payload: ReplaceSupplierReferenceAnnotationsRequest,
+    use_case: ReplaceSupplierReferenceAnnotationsUseCase = Depends(
+        get_replace_supplier_reference_annotations_use_case
+    ),
+) -> SupplierReferenceAnnotationsListResponse:
+    try:
+        rows = use_case.execute(
+            ReplaceSupplierReferenceAnnotationsCommand(
+                client_id=client_id,
+                supplier_id=supplier_id,
+                image_id=image_id,
+                profile_id=payload.profile_id,
+                annotations=[item.model_dump() for item in payload.annotations],
+            )
+        )
+        return SupplierReferenceAnnotationsListResponse(
+            items=[_reference_annotation_to_response(row) for row in rows]
+        )
     except Exception as e:
         reraise_if_mapped(e)
         raise

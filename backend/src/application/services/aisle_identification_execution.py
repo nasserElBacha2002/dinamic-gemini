@@ -138,6 +138,7 @@ def identification_execution_snapshot_dict(
     client_rules: dict | None = None,
     configuration_snapshot_version: int,
     external_fallback: dict | None = None,
+    supplier_extraction_profile: dict | None = None,
 ) -> dict:
     """Build the immutable identification-execution block stored on the job."""
     feature_flags = {
@@ -149,6 +150,9 @@ def identification_execution_snapshot_dict(
         feature_flags["external_fallback_per_image_enabled"] = bool(
             external_fallback.get("fallback_enabled")
         )
+    if isinstance(supplier_extraction_profile, dict):
+        feature_flags["client_extraction_profiles_enabled"] = True
+        feature_flags["profile_aware_validation_enabled"] = True
     return {
         "requested_mode": decision.requested_mode.value,
         "executed_strategy": decision.strategy.value,
@@ -159,4 +163,5 @@ def identification_execution_snapshot_dict(
         "ocr_config": ocr_config,
         "client_rules": client_rules,
         "external_fallback": external_fallback,
+        "supplier_extraction_profile": supplier_extraction_profile,
     }

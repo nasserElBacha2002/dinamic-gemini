@@ -161,6 +161,22 @@ class SupplierPromptConfigActivationFailedError(Exception):
     """Raised when prompt-config activation does not return an activated row."""
 
 
+class SupplierExtractionProfileNotFoundError(Exception):
+    """Raised when an extraction profile does not exist or is out of supplier scope."""
+
+
+class SupplierExtractionProfileInvalidConfigurationError(Exception):
+    """Raised when extraction profile configuration JSON fails validation."""
+
+
+class SupplierExtractionProfileActivationFailedError(Exception):
+    """Raised when extraction profile activation fails."""
+
+
+class SupplierExtractionProfileRowVersionConflictError(Exception):
+    """Raised when optimistic row_version does not match on activation."""
+
+
 class PositionNotFoundError(Exception):
     """Raised when the position does not exist or does not belong to the given aisle."""
 

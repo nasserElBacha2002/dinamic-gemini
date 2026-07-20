@@ -48,7 +48,10 @@ from src.application.ports.repositories import (
     SupplierReferenceImageRepository,
 )
 from src.application.ports.services import ArtifactStorage, MetricsCalculator, WorkerLaunchService
-from src.application.ports.stored_artifact_reader import StoredArtifactReader
+from src.application.ports.supplier_extraction_profile_repository import (
+    SupplierExtractionProfileRepository,
+    SupplierReferenceAnnotationRepository,
+)
 from src.application.services.artifact_publication_dispatcher import ArtifactPublicationDispatcher
 from src.application.services.artifact_recovery_source_resolver import (
     ArtifactRecoverySourceResolver,
@@ -74,6 +77,16 @@ from src.application.use_cases.finalization_recovery.verify_and_republish import
 )
 from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
+)
+from src.application.use_cases.suppliers.manage_supplier_extraction_profiles import (
+    ActivateSupplierExtractionProfileVersionUseCase,
+    CloneSupplierExtractionProfileUseCase,
+    CreateSupplierExtractionProfileVersionUseCase,
+    GetActiveSupplierExtractionProfileUseCase,
+    GetSupplierExtractionProfileByVersionUseCase,
+    ListSupplierExtractionProfilesUseCase,
+    ListSupplierReferenceAnnotationsUseCase,
+    ReplaceSupplierReferenceAnnotationsUseCase,
 )
 from src.application.use_cases.suppliers.manage_supplier_prompt_configs import (
     ActivateSupplierPromptConfigVersionUseCase,
@@ -129,6 +142,16 @@ from src.runtime.container.label_builders import (
     build_normalized_label_repository,
     build_raw_label_repository,
 )
+from src.runtime.container.extraction_profile_builders import (
+    build_activate_supplier_extraction_profile_version_use_case,
+    build_clone_supplier_extraction_profile_use_case,
+    build_create_supplier_extraction_profile_version_use_case,
+    build_get_active_supplier_extraction_profile_use_case,
+    build_get_supplier_extraction_profile_by_version_use_case,
+    build_list_supplier_extraction_profiles_use_case,
+    build_list_supplier_reference_annotations_use_case,
+    build_replace_supplier_reference_annotations_use_case,
+)
 from src.runtime.container.prompt_config_builders import (
     build_activate_supplier_prompt_config_version_use_case,
     build_create_supplier_prompt_config_version_use_case,
@@ -154,7 +177,9 @@ from src.runtime.container.repository_builders import (
     build_result_evidence_repository,
     build_review_action_repository,
     build_source_asset_repository,
+    build_supplier_extraction_profile_repository,
     build_supplier_prompt_config_repository,
+    build_supplier_reference_annotation_repository,
     build_supplier_reference_image_repository,
 )
 from src.runtime.container.runtime_environment import is_production_like_runtime
@@ -215,6 +240,8 @@ class AppContainer:
         self._asset_repo: SourceAssetRepository | None = None
         self._supplier_reference_image_repo: SupplierReferenceImageRepository | None = None
         self._supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None
+        self._supplier_extraction_profile_repo: SupplierExtractionProfileRepository | None = None
+        self._supplier_reference_annotation_repo: SupplierReferenceAnnotationRepository | None = None
         self._position_repo: PositionRepository | None = None
         self._product_record_repo: ProductRecordRepository | None = None
         self._evidence_repo: EvidenceRepository | None = None
@@ -308,6 +335,8 @@ class AppContainer:
         self._asset_repo = None
         self._supplier_reference_image_repo = None
         self._supplier_prompt_config_repo = None
+        self._supplier_extraction_profile_repo = None
+        self._supplier_reference_annotation_repo = None
         self._position_repo = None
         self._product_record_repo = None
         self._evidence_repo = None
@@ -488,6 +517,22 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._supplier_prompt_config_repo
+
+    def get_supplier_extraction_profile_repo(self) -> SupplierExtractionProfileRepository:
+        if self._supplier_extraction_profile_repo is not None:
+            return self._supplier_extraction_profile_repo
+        self._supplier_extraction_profile_repo = build_supplier_extraction_profile_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._supplier_extraction_profile_repo
+
+    def get_supplier_reference_annotation_repo(self) -> SupplierReferenceAnnotationRepository:
+        if self._supplier_reference_annotation_repo is not None:
+            return self._supplier_reference_annotation_repo
+        self._supplier_reference_annotation_repo = build_supplier_reference_annotation_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._supplier_reference_annotation_repo
 
     def get_position_repo(self) -> PositionRepository:
         if self._position_repo is not None:
@@ -1139,4 +1184,80 @@ class AppContainer:
             client_repo=self.get_client_repo(),
             client_supplier_repo=self.get_client_supplier_repo(),
             prompt_config_repo=self.get_supplier_prompt_config_repo(),
+        )
+
+    def get_list_supplier_extraction_profiles_use_case(
+        self,
+    ) -> ListSupplierExtractionProfilesUseCase:
+        return build_list_supplier_extraction_profiles_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
+        )
+
+    def get_get_active_supplier_extraction_profile_use_case(
+        self,
+    ) -> GetActiveSupplierExtractionProfileUseCase:
+        return build_get_active_supplier_extraction_profile_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
+        )
+
+    def get_get_supplier_extraction_profile_by_version_use_case(
+        self,
+    ) -> GetSupplierExtractionProfileByVersionUseCase:
+        return build_get_supplier_extraction_profile_by_version_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
+        )
+
+    def get_create_supplier_extraction_profile_version_use_case(
+        self,
+    ) -> CreateSupplierExtractionProfileVersionUseCase:
+        return build_create_supplier_extraction_profile_version_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
+            clock=self.get_clock(),
+        )
+
+    def get_activate_supplier_extraction_profile_version_use_case(
+        self,
+    ) -> ActivateSupplierExtractionProfileVersionUseCase:
+        return build_activate_supplier_extraction_profile_version_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
+        )
+
+    def get_clone_supplier_extraction_profile_use_case(
+        self,
+    ) -> CloneSupplierExtractionProfileUseCase:
+        return build_clone_supplier_extraction_profile_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            profile_repo=self.get_supplier_extraction_profile_repo(),
+            clock=self.get_clock(),
+        )
+
+    def get_list_supplier_reference_annotations_use_case(
+        self,
+    ) -> ListSupplierReferenceAnnotationsUseCase:
+        return build_list_supplier_reference_annotations_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            reference_repo=self.get_supplier_reference_image_repo(),
+            annotation_repo=self.get_supplier_reference_annotation_repo(),
+        )
+
+    def get_replace_supplier_reference_annotations_use_case(
+        self,
+    ) -> ReplaceSupplierReferenceAnnotationsUseCase:
+        return build_replace_supplier_reference_annotations_use_case(
+            client_repo=self.get_client_repo(),
+            client_supplier_repo=self.get_client_supplier_repo(),
+            reference_repo=self.get_supplier_reference_image_repo(),
+            annotation_repo=self.get_supplier_reference_annotation_repo(),
         )

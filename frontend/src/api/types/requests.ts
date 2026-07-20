@@ -57,6 +57,31 @@ export interface CreateSupplierPromptConfigRequest {
   activate: boolean;
 }
 
+export interface CreateSupplierExtractionProfileRequest {
+  configuration?: Record<string, unknown> | null;
+  visual_notes?: string | null;
+  profile_key?: string | null;
+  activate?: boolean;
+}
+
+export interface CloneSupplierExtractionProfileRequest {
+  source_profile_id: string;
+}
+
+export interface ReplaceSupplierReferenceAnnotationsRequest {
+  profile_id?: string | null;
+  annotations: Array<{
+    id?: string | null;
+    field_key: string;
+    anchor_texts: string[];
+    spatial_relation: string;
+    normalized_polygon?: number[][] | null;
+    priority?: number;
+    required?: boolean;
+    max_distance_ratio?: number | null;
+  }>;
+}
+
 /** Request body for POST .../positions/{position_id}/reviews. */
 export interface ReviewActionRequest {
   action_type: ReviewActionType;

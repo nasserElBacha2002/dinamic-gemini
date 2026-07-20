@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Box, TextField, Typography } from '@mui/material';
+import { Box, Button, TextField, Typography } from '@mui/material';
 import type { SupplierReferenceImage } from '../../../api/types';
 import ManagedImageAssetsDrawer from '../../../components/imageAssets/ManagedImageAssetsDrawer';
 import type { ManagedImageAssetItem } from '../../../components/imageAssets/types';
 import { formatDate } from '../../../utils/formatDate';
 import { useSupplierReferencePreview } from '../hooks/useSupplierReferencePreview';
+import SupplierReferenceAnnotationEditorDialog from './SupplierReferenceAnnotationEditorDialog';
 
 function formatFileSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 1024) return `${Math.max(0, Math.round(bytes || 0))} B`;
@@ -45,6 +46,7 @@ export interface SupplierReferenceImagesDrawerProps {
   onDelete: (imageId: string) => Promise<unknown>;
   isDeleting?: boolean;
   deleteError?: string | null;
+  activeExtractionProfileId?: string | null;
 }
 
 export default function SupplierReferenceImagesDrawer({
@@ -64,11 +66,13 @@ export default function SupplierReferenceImagesDrawer({
   onDelete,
   isDeleting = false,
   deleteError,
+  activeExtractionProfileId = null,
 }: SupplierReferenceImagesDrawerProps) {
   const { t } = useTranslation();
   const { loadPreview } = useSupplierReferencePreview({ clientId, supplierId });
   const [label, setLabel] = useState('');
   const [description, setDescription] = useState('');
+  const [annotationTarget, setAnnotationTarget] = useState<ManagedImageAssetItem | null>(null);
   const managedItems = useMemo(() => toManagedItems(items), [items]);
 
   const copy = useMemo(
@@ -119,46 +123,64 @@ export default function SupplierReferenceImagesDrawer({
   );
 
   return (
-    <ManagedImageAssetsDrawer
-      open={embedded ? true : open}
-      embedded={embedded}
-      onClose={onClose}
-      copy={copy}
-      items={managedItems}
-      getItemSubtitle={(item) =>
-        t('clients.suppliers.reference_images.subtitle_uploaded', {
-          mime: item.mime_type,
-          size: formatFileSize(item.file_size),
-          date: formatDate(item.created_at),
-        })
-      }
-      isLoading={isLoading}
-      errorMessage={errorMessage}
-      onRetry={onRetry}
-      onFetchPreview={loadPreview}
-      showUpload
-      uploadMultiple={false}
-      uploadExtras={uploadExtras}
-      onUpload={async (files) => {
-        const trimmedLabel = label.trim();
-        const trimmedDesc = description.trim();
-        await onUpload({
-          files,
-          label: trimmedLabel || undefined,
-          description: trimmedDesc || undefined,
-        });
-        setLabel('');
-        setDescription('');
-      }}
-      isUploading={isUploading}
-      uploadError={uploadError}
-      showReplace={false}
-      onDelete={onDelete}
-      isDeleting={isDeleting}
-      deleteError={deleteError}
-      formatDeleteConfirm={(name) =>
-        t('clients.suppliers.reference_images.delete_confirm_body', { name })
-      }
-    />
+    <>
+      <ManagedImageAssetsDrawer
+        open={embedded ? true : open}
+        embedded={embedded}
+        onClose={onClose}
+        copy={copy}
+        items={managedItems}
+        getItemSubtitle={(item) =>
+          t('clients.suppliers.reference_images.subtitle_uploaded', {
+            mime: item.mime_type,
+            size: formatFileSize(item.file_size),
+            date: formatDate(item.created_at),
+          })
+        }
+        isLoading={isLoading}
+        errorMessage={errorMessage}
+        onRetry={onRetry}
+        onFetchPreview={loadPreview}
+        showUpload
+        uploadMultiple={false}
+        uploadExtras={uploadExtras}
+        onUpload={async (files) => {
+          const trimmedLabel = label.trim();
+          const trimmedDesc = description.trim();
+          await onUpload({
+            files,
+            label: trimmedLabel || undefined,
+            description: trimmedDesc || undefined,
+          });
+          setLabel('');
+          setDescription('');
+        }}
+        isUploading={isUploading}
+        uploadError={uploadError}
+        showReplace={false}
+        onDelete={onDelete}
+        isDeleting={isDeleting}
+        deleteError={deleteError}
+        formatDeleteConfirm={(name) =>
+          t('clients.suppliers.reference_images.delete_confirm_body', { name })
+        }
+        renderItemExtraActions={(item) => (
+          <Button variant="outlined" size="small" onClick={() => setAnnotationTarget(item)}>
+            {t('clients.extraction_profile.annotations.configure_fields')}
+          </Button>
+        )}
+      />
+      {annotationTarget ? (
+        <SupplierReferenceAnnotationEditorDialog
+          open
+          onClose={() => setAnnotationTarget(null)}
+          clientId={clientId}
+          supplierId={supplierId}
+          imageId={annotationTarget.id}
+          imageLabel={annotationTarget.filename}
+          activeProfileId={activeExtractionProfileId}
+        />
+      ) : null}
+    </>
   );
 }

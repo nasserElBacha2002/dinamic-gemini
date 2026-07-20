@@ -6,11 +6,14 @@ import { useQuery } from '@tanstack/react-query';
 import type { ClientsListQuery, ClientSuppliersListQuery, SupplierPromptConfigsListQuery } from '../api/client';
 import {
   getActiveSupplierPromptConfig,
+  getActiveSupplierExtractionProfile,
   getClient,
   getClientSupplier,
   listClients,
   listClientSuppliers,
+  listSupplierExtractionProfiles,
   listSupplierPromptConfigs,
+  listSupplierReferenceAnnotations,
   listSupplierReferenceImages,
 } from '../api/client';
 import { queryKeys } from '../api/queryKeys';
@@ -142,5 +145,47 @@ export function useActiveSupplierPromptConfig(
       (scope === 'all_providers_models' || Boolean(normalizedProviderName)) &&
       (options?.enabled !== false),
     retry: false,
+  });
+}
+
+export function useSupplierExtractionProfiles(
+  clientId: string | undefined,
+  supplierId: string | undefined,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: queryKeys.clients.suppliers.extractionProfiles.list(clientId ?? '', supplierId ?? ''),
+    queryFn: () => listSupplierExtractionProfiles(clientId!, supplierId!),
+    enabled: Boolean(clientId && supplierId) && (options?.enabled !== false),
+  });
+}
+
+export function useActiveSupplierExtractionProfile(
+  clientId: string | undefined,
+  supplierId: string | undefined,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: queryKeys.clients.suppliers.extractionProfiles.active(clientId ?? '', supplierId ?? ''),
+    queryFn: () => getActiveSupplierExtractionProfile(clientId!, supplierId!),
+    enabled: Boolean(clientId && supplierId) && (options?.enabled !== false),
+    retry: false,
+  });
+}
+
+export function useSupplierReferenceAnnotations(
+  clientId: string | undefined,
+  supplierId: string | undefined,
+  imageId: string | undefined,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: queryKeys.clients.suppliers.extractionProfiles.annotations(
+      clientId ?? '',
+      supplierId ?? '',
+      imageId ?? ''
+    ),
+    queryFn: () => listSupplierReferenceAnnotations(clientId!, supplierId!, imageId!),
+    enabled: Boolean(clientId && supplierId && imageId) && (options?.enabled !== false),
   });
 }

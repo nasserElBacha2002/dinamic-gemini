@@ -182,6 +182,20 @@ export const queryKeys = {
             'active',
           ] as const,
       },
+      extractionProfiles: {
+        all: (clientId: string, supplierId: string) =>
+          [...queryKeys.clients.suppliers.all(clientId), 'extraction-profiles', supplierId] as const,
+        list: (clientId: string, supplierId: string) =>
+          [...queryKeys.clients.suppliers.extractionProfiles.all(clientId, supplierId), 'list'] as const,
+        active: (clientId: string, supplierId: string) =>
+          [...queryKeys.clients.suppliers.extractionProfiles.all(clientId, supplierId), 'active'] as const,
+        annotations: (clientId: string, supplierId: string, imageId: string) =>
+          [
+            ...queryKeys.clients.suppliers.extractionProfiles.all(clientId, supplierId),
+            'annotations',
+            imageId,
+          ] as const,
+      },
     },
   },
 
