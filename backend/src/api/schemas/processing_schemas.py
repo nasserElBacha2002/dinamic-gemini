@@ -148,6 +148,27 @@ class FallbackProgressResponse(BaseModel):
     resolved_internal: int = 0
 
 
+class AssetFallbackSummaryResponse(BaseModel):
+    """Sanitized per-asset external fallback observability (no secrets / raw payloads)."""
+
+    asset_id: str
+    fallback_status: str | None = None
+    external_provider: str | None = None
+    external_model: str | None = None
+    external_attempt_id: str | None = None
+    external_duration_ms: int | None = None
+    estimated_cost: float | None = None
+    internal_code: str | None = None
+    quantity: float | int | None = None
+    validation_errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    persistence_status: str | None = None
+    position_id: str | None = None
+    active_result_id: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+
 class JobSummary(BaseModel):
     """Summary of latest job for an aisle."""
 
@@ -189,6 +210,8 @@ class JobSummary(BaseModel):
     asset_progress: Optional[AssetProgressResponse] = None
     #: Phase 5 selective external fallback counters (absent when fallback never ran).
     fallback_progress: Optional[FallbackProgressResponse] = None
+    #: Phase 5 per-asset sanitized fallback rows (derived from durable requests).
+    fallback_asset_summaries: Optional[list[AssetFallbackSummaryResponse]] = None
     #: Immutable identification execution snapshot from ``engine_params_json`` (Phase 3/4/5).
     identification_execution: Optional[dict[str, Any]] = None
     client_id: Optional[str] = None

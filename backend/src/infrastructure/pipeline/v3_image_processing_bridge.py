@@ -357,11 +357,9 @@ def build_default_external_fallback_orchestrator(
     attempt_repo: ProcessingAttemptRepository,
     clock: Clock,
     is_cancelled: Callable[[], bool] | None = None,
+    request_repo=None,
 ):
-    """Build Phase 5 selective external fallback (flag-gated at snapshot + eligibility)."""
-    from src.application.services.image_processing.external_circuit_breaker import (
-        ExternalCircuitBreaker,
-    )
+    """Build Phase 5 selective external fallback (snapshot governs provider identity)."""
     from src.application.services.image_processing.external_concurrency_limiter import (
         ExternalConcurrencyLimiter,
     )
@@ -372,42 +370,39 @@ def build_default_external_fallback_orchestrator(
     from src.application.services.image_processing.external_result_normalizer import (
         ExternalResultNormalizer,
     )
-    from src.application.services.image_processing.fallback_eligibility_policy import (
-        FallbackEligibilityPolicy,
-    )
     from src.infrastructure.code_scanning.artifact_store_source_asset_content_reader import (
         ArtifactStoreSourceAssetContentReader,
     )
     from src.infrastructure.image_processing.llm_external_image_analysis_provider import (
         LlmExternalImageAnalysisProvider,
     )
-
-    provider_key = str(
-        getattr(settings, "external_fallback_provider", "gemini") or "gemini"
-    ).strip().lower()
-    model = str(getattr(settings, "external_fallback_model", "") or "").strip() or None
-    provider = LlmExternalImageAnalysisProvider(
-        settings=settings,
-        provider_name=provider_key,
-        model_name=model,
+    from src.infrastructure.repositories.memory_external_image_analysis_request_repository import (
+        MemoryExternalImageAnalysisRequestRepository,
     )
+
+    class _SnapshotProviderFactory:
+        """Credentials from live settings; provider/model identity from snapshot at resolve()."""
+
+        def resolve(self, *, provider: str, model: str | None):
+            return LlmExternalImageAnalysisProvider(
+                settings=settings,
+                provider_name=provider,
+                model_name=model,
+            )
+
     reader = ArtifactStoreSourceAssetContentReader(artifact_store)
+    resolved_request_repo = request_repo
+    if resolved_request_repo is None:
+        resolved_request_repo = MemoryExternalImageAnalysisRequestRepository()
     return ExternalProviderFallbackOrchestrator(
-        provider=provider,
         content_reader=reader.read_image_bytes,
         attempt_repo=attempt_repo,
+        request_repo=resolved_request_repo,
         clock=clock,
-        # Snapshot.fallback_enabled is the immutable gate; policy decides per-result eligibility.
-        eligibility=FallbackEligibilityPolicy(enabled=True),
+        provider_factory=_SnapshotProviderFactory(),
         normalizer=ExternalResultNormalizer(),
-        circuit_breaker=ExternalCircuitBreaker(
-            failure_threshold=int(
-                getattr(settings, "external_fallback_circuit_breaker_threshold", 5)
-            ),
-            cooldown_seconds=float(
-                getattr(settings, "external_fallback_circuit_breaker_cooldown_seconds", 60)
-            ),
-        ),
+        # Process-local CB; thresholds overridden per-call from snapshot profile when unset.
+        circuit_breaker=None,
         concurrency_limiter=ExternalConcurrencyLimiter(
             int(getattr(settings, "max_external_fallback_concurrency", 1))
         ),

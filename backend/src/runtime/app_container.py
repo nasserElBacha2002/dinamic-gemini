@@ -720,6 +720,28 @@ class AppContainer:
             self._processing_attempt_repo = MemoryProcessingAttemptRepository()
         return self._processing_attempt_repo
 
+    def get_external_image_analysis_request_repo(self):
+        """Durable external fallback claims (Phase 5 corrections — SQL when available)."""
+        if getattr(self, "_external_image_analysis_request_repo", None) is not None:
+            return self._external_image_analysis_request_repo
+        from src.infrastructure.repositories.memory_external_image_analysis_request_repository import (
+            MemoryExternalImageAnalysisRequestRepository,
+        )
+        from src.infrastructure.repositories.sql_external_image_analysis_request_repository import (
+            SqlExternalImageAnalysisRequestRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._external_image_analysis_request_repo = (
+                SqlExternalImageAnalysisRequestRepository(self._get_v3_sql_client())
+            )
+        else:
+            self._external_image_analysis_request_repo = (
+                MemoryExternalImageAnalysisRequestRepository()
+            )
+        return self._external_image_analysis_request_repo
+
     def get_job_processing_lease_repo(self):
         if getattr(self, "_job_processing_lease_repo", None) is not None:
             return self._job_processing_lease_repo

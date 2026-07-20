@@ -1488,6 +1488,7 @@
     "obs_asset_progress_value_v2": "{{resolved}} de {{total}} resueltas · {{unrecognized}} no reconocidas · {{manual_review}} revisión · {{failed}} fallidas · {{processing}} en curso · {{pending}} pendientes · {{cancelled}} canceladas",
     "obs_fallback_progress": "Fallback externo",
     "obs_fallback_progress_value": "{{resolved_internal}} internas · {{fallback_requested}} a fallback · {{resolved_external}} externas · {{external_failed}} fallidas · costo {{estimated_external_cost}}",
+    "obs_fallback_assets": "Fallback por imagen",
     "obs_execution_strategy": "Estrategia",
     "obs_execution_scope": "Alcance",
     "obs_current_step": "Paso actual",

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from src.api.constants.error_wire import (
     HTTP_DETAIL_REVIEW_CORRECTED_QUANTITY_REQUIRED_FOR_UPDATE_QUANTITY,
@@ -606,7 +607,7 @@ def _asset_progress_from_job_result(
         return None
     try:
         return AssetProgressResponse.model_validate(raw)
-    except Exception:
+    except ValidationError:
         return None
 
 
@@ -622,8 +623,29 @@ def _fallback_progress_from_job_result(
         return None
     try:
         return FallbackProgressResponse.model_validate(raw)
-    except Exception:
+    except ValidationError:
         return None
+
+
+def _fallback_asset_summaries_from_job_result(
+    result_json: dict[str, Any] | None,
+):
+    from src.api.schemas.processing_schemas import AssetFallbackSummaryResponse
+
+    if not result_json or not isinstance(result_json, dict):
+        return None
+    raw = result_json.get("fallback_asset_summaries")
+    if not isinstance(raw, list):
+        return None
+    out = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            out.append(AssetFallbackSummaryResponse.model_validate(item))
+        except ValidationError:
+            continue
+    return out or None
 
 
 def _identification_execution_from_job(j: Job) -> dict | None:
@@ -680,6 +702,7 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
         llm_cost_snapshot=_llm_cost_snapshot_from_job_result(j.result_json),
         asset_progress=_asset_progress_from_job_result(j.result_json),
         fallback_progress=_fallback_progress_from_job_result(j.result_json),
+        fallback_asset_summaries=_fallback_asset_summaries_from_job_result(j.result_json),
         identification_execution=_identification_execution_from_job(j),
         client_id=_client_id_from_job(j),
     )

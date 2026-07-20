@@ -32,7 +32,8 @@ _SELECT_FIELDS = (
     "started_at, finished_at, duration_ms, error_code, error_message, "
     "raw_result_reference, normalized_result_json, validation_result_json, "
     "execution_scope, logical_asset_attempt, configuration_snapshot_version, "
-    "parent_batch_attempt_id, batch_execution_id, worker_token, created_at, updated_at"
+    "parent_batch_attempt_id, batch_execution_id, worker_token, created_at, updated_at, "
+    "extra_json"
 )
 
 
@@ -101,6 +102,7 @@ def _row_to_attempt(row: object) -> ProcessingAttempt:
         batch_execution_id=normalize_db_str(getattr(row, "batch_execution_id", None)),
         worker_token=normalize_db_str(getattr(row, "worker_token", None)),
         updated_at=_ensure_utc(getattr(row, "updated_at", None)),
+        extra=_loads(getattr(row, "extra_json", None)) or {},
     )
 
 
@@ -119,6 +121,7 @@ class SqlProcessingAttemptRepository(ProcessingAttemptRepository):
             if attempt.validation_result is not None
             else None
         )
+        extra = json.dumps(attempt.extra) if attempt.extra else None
         updated_at = attempt.updated_at or attempt.created_at
         with self._client.cursor() as cur:
             cur.execute(
@@ -129,7 +132,7 @@ class SqlProcessingAttemptRepository(ProcessingAttemptRepository):
                     raw_result_reference = ?, normalized_result_json = ?, validation_result_json = ?,
                     execution_scope = ?, logical_asset_attempt = ?,
                     configuration_snapshot_version = ?, parent_batch_attempt_id = ?,
-                    batch_execution_id = ?, worker_token = ?, updated_at = ?
+                    batch_execution_id = ?, worker_token = ?, updated_at = ?, extra_json = ?
                 WHERE id = ?
                 """,
                 (
@@ -151,6 +154,7 @@ class SqlProcessingAttemptRepository(ProcessingAttemptRepository):
                     attempt.batch_execution_id,
                     attempt.worker_token,
                     updated_at,
+                    extra,
                     attempt.id,
                 ),
             )
@@ -163,8 +167,8 @@ class SqlProcessingAttemptRepository(ProcessingAttemptRepository):
                         raw_result_reference, normalized_result_json, validation_result_json,
                         execution_scope, logical_asset_attempt, configuration_snapshot_version,
                         parent_batch_attempt_id, batch_execution_id, worker_token,
-                        created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        created_at, updated_at, extra_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         attempt.id,
@@ -191,6 +195,7 @@ class SqlProcessingAttemptRepository(ProcessingAttemptRepository):
                         attempt.worker_token,
                         attempt.created_at,
                         updated_at,
+                        extra,
                     ),
                 )
 

@@ -77,3 +77,21 @@ def test_circuit_breaker_opens_after_threshold() -> None:
     assert cb.is_open("gemini", "m") is True
     cb.record_success("gemini", "m")
     assert cb.is_open("gemini", "m") is False
+
+
+def test_request_hash_not_confused_with_response_hash() -> None:
+    n = ExternalResultNormalizer()
+    result = n.normalize(
+        job_id="j1",
+        asset_id="a1",
+        analysis=ExternalAnalysisResult(
+            status=ExternalAnalysisStatus.VALID,
+            internal_code="ABC",
+            quantity=1,
+            raw_reference="provider-response-sha",
+            additional_fields={"request_image_sha256": "prepared-image-sha"},
+        ),
+    )
+    assert result.evidence["request_image_sha256"] == "prepared-image-sha"
+    assert result.evidence["provider_response_sha256"] == "provider-response-sha"
+    assert "response_hash" not in result.evidence

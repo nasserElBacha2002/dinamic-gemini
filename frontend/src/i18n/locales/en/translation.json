@@ -1067,6 +1067,7 @@
     "obs_asset_progress_value_v2": "{{resolved}} of {{total}} resolved · {{unrecognized}} unrecognized · {{manual_review}} manual review · {{failed}} failed · {{processing}} processing · {{pending}} pending · {{cancelled}} cancelled",
     "obs_fallback_progress": "External fallback",
     "obs_fallback_progress_value": "{{resolved_internal}} internal · {{fallback_requested}} to fallback · {{resolved_external}} external · {{external_failed}} failed · cost {{estimated_external_cost}}",
+    "obs_fallback_assets": "Per-image fallback",
     "obs_execution_strategy": "Strategy",
     "obs_execution_scope": "Scope",
     "obs_current_step": "Obs current step",

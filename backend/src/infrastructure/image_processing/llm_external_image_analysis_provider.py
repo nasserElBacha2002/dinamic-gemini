@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import logging
 import tempfile
 import time
@@ -121,8 +122,20 @@ class LlmExternalImageAnalysisProvider:
             if isinstance(context.extra.get("client_rules"), dict)
             else None
         )
-        prepared = self._prepare_image_bytes(image.content, context.max_image_dimension)
-        response_hash = hashlib.sha256(prepared).hexdigest()[:32]
+        try:
+            prepared = self._prepare_image_bytes(image.content, context.max_image_dimension)
+        except ValueError as exc:
+            return ExternalAnalysisResult(
+                status=ExternalAnalysisStatus.FAILED_TECHNICAL,
+                provider_name=self._provider_name,
+                model_name=self.model_name,
+                prompt_version=context.prompt_version or EXTERNAL_FALLBACK_PROMPT_VERSION,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                error_code="EXTERNAL_IMAGE_VALIDATION_FAILED",
+                error_message=_sanitize_message(str(exc)),
+                raw_reference=None,
+            )
+        request_image_sha256 = hashlib.sha256(prepared).hexdigest()
 
         try:
             executor, normalized_key = resolve_llm_executor_for_context(
@@ -139,7 +152,8 @@ class LlmExternalImageAnalysisProvider:
                 duration_ms=int((time.perf_counter() - started) * 1000),
                 error_code="EXTERNAL_PROVIDER_MISCONFIGURED",
                 error_message=_sanitize_message(str(exc)),
-                raw_reference=response_hash,
+                raw_reference=None,
+                additional_fields={"request_image_sha256": request_image_sha256},
             )
 
         with tempfile.TemporaryDirectory(prefix="ext_fallback_") as tmp:
@@ -158,6 +172,7 @@ class LlmExternalImageAnalysisProvider:
                     "prompt_version": context.prompt_version
                     or EXTERNAL_FALLBACK_PROMPT_VERSION,
                     "model_name": self._model_name,
+                    "client_id": context.client_id,
                 },
             )
             try:
@@ -177,7 +192,8 @@ class LlmExternalImageAnalysisProvider:
                     duration_ms=int((time.perf_counter() - started) * 1000),
                     error_code=code or "EXTERNAL_PROVIDER_FAILED",
                     error_message=_sanitize_message(str(exc)),
-                    raw_reference=response_hash,
+                    raw_reference=None,
+                    additional_fields={"request_image_sha256": request_image_sha256},
                 )
             except Exception as exc:
                 return ExternalAnalysisResult(
@@ -188,7 +204,8 @@ class LlmExternalImageAnalysisProvider:
                     duration_ms=int((time.perf_counter() - started) * 1000),
                     error_code="EXTERNAL_PROVIDER_FAILED",
                     error_message=_sanitize_message(str(exc)),
-                    raw_reference=response_hash,
+                    raw_reference=None,
+                    additional_fields={"request_image_sha256": request_image_sha256},
                 )
 
         duration_ms = int((time.perf_counter() - started) * 1000)
@@ -202,6 +219,11 @@ class LlmExternalImageAnalysisProvider:
         )
         parsed = response.parsed_json if isinstance(response.parsed_json, dict) else {}
         status, normalized = _parse_provider_json(parsed)
+        # Hash of provider response payload (never the prepared image bytes).
+        response_material = response.raw_text or json.dumps(parsed, sort_keys=True, default=str)
+        provider_response_sha256 = hashlib.sha256(
+            response_material.encode("utf-8", errors="replace")
+        ).hexdigest()
         return ExternalAnalysisResult(
             status=status,
             internal_code=normalized.get("internal_code"),
@@ -214,41 +236,61 @@ class LlmExternalImageAnalysisProvider:
             duration_ms=duration_ms if response.latency_ms is None else int(response.latency_ms),
             usage=usage,
             estimated_cost=estimated,
-            raw_reference=response_hash,
+            raw_reference=provider_response_sha256,
             normalized_result=normalized,
+            additional_fields={
+                "request_image_sha256": request_image_sha256,
+                "provider_response_sha256": provider_response_sha256,
+            },
         )
 
     def _prepare_image_bytes(self, content: bytes, max_dim: int) -> bytes:
         if not content:
             raise ValueError("empty_image")
+        max_bytes = 12 * 1024 * 1024
+        if len(content) > max_bytes:
+            raise ValueError("image_too_large")
         try:
-            from PIL import Image, ImageOps
+            from PIL import Image, ImageOps, UnidentifiedImageError
         except ImportError:
-            return content[: 8 * 1024 * 1024]
+            # Without Pillow we cannot verify MIME; refuse rather than trust extension.
+            raise ValueError("image_validation_unavailable") from None
 
-        with Image.open(io.BytesIO(content)) as img:
-            img = ImageOps.exif_transpose(img)
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-            elif img.mode == "L":
-                img = img.convert("RGB")
-            w, h = img.size
-            longest = max(w, h)
-            if longest > max_dim > 0:
-                scale = max_dim / float(longest)
-                img = img.resize(
-                    (max(1, int(w * scale)), max(1, int(h * scale))),
-                    Image.Resampling.LANCZOS,
-                )
-            out = io.BytesIO()
-            img.save(out, format="JPEG", quality=85, optimize=True)
-            data = out.getvalue()
-            # Soft byte cap (~8 MiB) to protect provider payloads.
-            if len(data) > 8 * 1024 * 1024:
+        try:
+            with Image.open(io.BytesIO(content)) as img:
+                fmt = (img.format or "").upper()
+                if fmt not in {"JPEG", "JPG", "PNG", "WEBP"}:
+                    raise ValueError(f"unsupported_image_format:{fmt or 'unknown'}")
+                # Force load to catch truncated / bomb-like decompression early.
+                img.load()
+                img = ImageOps.exif_transpose(img)
+                if img.mode not in ("RGB", "L"):
+                    img = img.convert("RGB")
+                elif img.mode == "L":
+                    img = img.convert("RGB")
+                w, h = img.size
+                if w <= 0 or h <= 0 or w * h > 40_000_000:
+                    raise ValueError("image_dimensions_invalid")
+                longest = max(w, h)
+                if longest > max_dim > 0:
+                    scale = max_dim / float(longest)
+                    img = img.resize(
+                        (max(1, int(w * scale)), max(1, int(h * scale))),
+                        Image.Resampling.LANCZOS,
+                    )
                 out = io.BytesIO()
-                img.save(out, format="JPEG", quality=70, optimize=True)
+                img.save(out, format="JPEG", quality=85, optimize=True)
                 data = out.getvalue()
-            return data
+                # Soft byte cap (~8 MiB) to protect provider payloads.
+                if len(data) > 8 * 1024 * 1024:
+                    out = io.BytesIO()
+                    img.save(out, format="JPEG", quality=70, optimize=True)
+                    data = out.getvalue()
+                return data
+        except UnidentifiedImageError as exc:
+            raise ValueError("corrupt_or_unrecognized_image") from exc
+        except OSError as exc:
+            raise ValueError("corrupt_or_unreadable_image") from exc
 
 
 __all__ = ["LlmExternalImageAnalysisProvider"]

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Protocol
 
 from src.application.errors import AssetProcessingStateConcurrencyError
 from src.application.ports.clock import Clock
@@ -17,6 +18,10 @@ from src.application.ports.image_processing_repositories import (
 )
 from src.application.services.image_processing.asset_processing_reconciler import (
     AssetProcessingReconciler,
+)
+from src.application.services.image_processing.external_provider_fallback_orchestrator import (
+    ExternalFallbackOutcome,
+    ExternalFallbackSnapshot,
 )
 from src.application.services.image_processing.image_processing_orchestrator import (
     ImageProcessingOrchestrator,
@@ -33,15 +38,55 @@ from src.domain.image_processing.contracts import (
     ImageProcessingResult,
     ImageResultStatus,
 )
+from src.domain.image_processing.external_image_analysis_request import (
+    ExternalImageAnalysisRequest,
+)
 from src.domain.image_processing.job_asset_processing_state import (
     JobAssetProcessingStatus,
 )
-from src.domain.image_processing.processing_attempt import ProcessingAttemptStatus
+from src.domain.image_processing.processing_attempt import (
+    ProcessingAttempt,
+    ProcessingAttemptStatus,
+)
 from src.domain.jobs.entities import Job
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_ATTEMPT_PROVIDER = "image_processing"
+
+
+class SingleAssetProcessingStrategy(Protocol):
+    strategy_key: str
+    attempt_provider: str
+    attempt_model: str
+
+    def process(self, context: ImageProcessingContext) -> ImageProcessingResult: ...
+
+
+class ExternalFallbackProcessor(Protocol):
+    counters: object | None
+
+    def process_if_eligible(
+        self,
+        *,
+        job: Job,
+        asset: SourceAsset,
+        internal_result: ImageProcessingResult,
+        worker_token: str,
+        snapshot: ExternalFallbackSnapshot,
+        client_id: str | None = None,
+    ) -> ExternalFallbackOutcome: ...
+
+    def finalize_after_persist(
+        self,
+        *,
+        attempt: ProcessingAttempt,
+        request: ExternalImageAnalysisRequest | None,
+        result: ImageProcessingResult,
+        position_id: str | None,
+        active_result_id: str | None,
+        persisted: bool,
+    ) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -59,14 +104,14 @@ class SingleAssetStrategyProcessor:
         state_repo: JobAssetProcessingStateRepository,
         attempt_repo: ProcessingAttemptRepository,
         image_orchestrator: ImageProcessingOrchestrator,
-        strategy: object | None = None,
-        code_scan_strategy: object | None = None,
+        strategy: SingleAssetProcessingStrategy | None = None,
+        code_scan_strategy: SingleAssetProcessingStrategy | None = None,
         result_persister: ProcessingResultPersister,
         clock: Clock,
         attempts_enabled: bool = True,
         reconciler: AssetProcessingReconciler | None = None,
         inventory_client_id: str | None = None,
-        external_fallback=None,
+        external_fallback: ExternalFallbackProcessor | None = None,
     ) -> None:
         self._state_repo = state_repo
         self._attempt_repo = attempt_repo
@@ -83,12 +128,11 @@ class SingleAssetStrategyProcessor:
 
     def _attempt_provider(self) -> str:
         return str(
-            getattr(self._strategy, "attempt_provider", _DEFAULT_ATTEMPT_PROVIDER)
-            or _DEFAULT_ATTEMPT_PROVIDER
+            getattr(self._strategy, "attempt_provider", None) or _DEFAULT_ATTEMPT_PROVIDER
         )
 
     def _attempt_model(self) -> str:
-        return str(getattr(self._strategy, "attempt_model", "unknown") or "unknown")
+        return str(getattr(self._strategy, "attempt_model", None) or "unknown")
 
     def _resolve_client_id(self, job: Job) -> str | None:
         params = job.engine_params_json if isinstance(job.engine_params_json, dict) else {}
@@ -211,7 +255,7 @@ class SingleAssetStrategyProcessor:
             if (
                 result.status is ImageResultStatus.RESOLVED_INTERNAL
                 and self._external_fallback is not None
-                and getattr(self._external_fallback, "counters", None) is not None
+                and self._external_fallback.counters is not None
             ):
                 self._external_fallback.counters.resolved_internal += 1
 
@@ -242,26 +286,37 @@ class SingleAssetStrategyProcessor:
                 )
                 finalize_attempt = None
 
-            from src.application.services.image_processing.external_provider_fallback_orchestrator import (
-                ExternalFallbackSnapshot,
-            )
-
             params = job.engine_params_json if isinstance(job.engine_params_json, dict) else {}
             ident = params.get("identification_execution")
             snapshot = ExternalFallbackSnapshot.from_identification_execution(
                 ident if isinstance(ident, dict) else None
             )
+            client_id = self._resolve_client_id(job)
             if snapshot is not None and snapshot.enabled:
-                external = self._external_fallback.process_if_eligible(
+                outcome = self._external_fallback.process_if_eligible(
                     job=job,
                     asset=asset,
                     internal_result=result,
                     worker_token=worker_token,
                     snapshot=snapshot,
+                    client_id=client_id,
                 )
-                if external is not None:
-                    result = external
+                if outcome.cancelled:
+                    # Do not finalize as FAILED_TECHNICAL; leave state for cancel coordinator.
+                    if acquired is not None:
+                        try:
+                            self._image_orch.mark_cancelled(acquired, outcome.attempt)
+                        except Exception:
+                            logger.warning(
+                                "image_processing.cancel_finalize_failed job_id=%s asset_id=%s",
+                                job.id,
+                                asset.id,
+                            )
+                    return SingleAssetProcessResult(processed=True, error=None)
+                if not outcome.skipped and outcome.result is not None:
+                    result = outcome.result
                     finalize_strategy = "EXTERNAL_PROVIDER"
+                    finalize_attempt = outcome.attempt
                     if result.status is ImageResultStatus.RESOLVED_EXTERNAL:
                         result, persist_error = self._apply_persist(
                             job=job,
@@ -271,12 +326,23 @@ class SingleAssetStrategyProcessor:
                             result=result,
                         )
                         error = error or persist_error
-                        if result.status is ImageResultStatus.RESOLVED_EXTERNAL:
-                            logger.info(
-                                "fallback.persisted job_id=%s asset_id=%s",
-                                job.id,
-                                asset.id,
+                        position_id = (result.additional_fields or {}).get("position_id")
+                        active_id = (result.additional_fields or {}).get("active_result_id")
+                        persisted_ok = result.status is ImageResultStatus.RESOLVED_EXTERNAL
+                        if outcome.attempt is not None:
+                            self._external_fallback.finalize_after_persist(
+                                attempt=outcome.attempt,
+                                request=outcome.request,
+                                result=result,
+                                position_id=str(position_id) if position_id else None,
+                                active_result_id=str(active_id) if active_id else None,
+                                persisted=persisted_ok,
                             )
+                        # Attempt already finalized by finalize_after_persist.
+                        finalize_attempt = None
+                    elif outcome.attempt is not None:
+                        # Terminal non-resolved already closed inside orchestrator.
+                        finalize_attempt = None
 
         self._finalize(
             job=job,

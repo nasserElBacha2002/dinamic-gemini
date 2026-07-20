@@ -162,6 +162,29 @@ function jobMetadataRows(
           },
         ]
       : []),
+    ...(job.fallback_asset_summaries && job.fallback_asset_summaries.length > 0
+      ? [
+          {
+            label: i18n.t('jobs.obs_fallback_assets', {
+              defaultValue: 'Fallback por imagen',
+            }),
+            value: job.fallback_asset_summaries
+              .slice(0, 8)
+              .map((row) => {
+                const parts = [
+                  row.asset_id.slice(0, 8),
+                  row.external_provider || '—',
+                  row.external_model || '—',
+                  row.fallback_status || '—',
+                  row.persistence_status || '—',
+                  row.internal_code || row.error_code || '—',
+                ];
+                return parts.join(' · ');
+              })
+              .join(' | '),
+          },
+        ]
+      : []),
     { label: i18n.t('jobs.obs_current_step'), value: job.current_substep || dash },
     { label: i18n.t('jobs.obs_step_started'), value: formatOptionalDate(job.current_step_started_at) },
     { label: i18n.t('common.execution_id'), value: job.execution_id || dash },

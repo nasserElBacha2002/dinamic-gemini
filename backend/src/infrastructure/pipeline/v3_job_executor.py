@@ -522,13 +522,21 @@ class V3JobExecutor:
                 return current is not None and current.status == JobStatus.CANCEL_REQUESTED
 
             external_fallback = None
+            external_request_repo = None
             if attempt_repo is not None:
+                try:
+                    external_request_repo = (
+                        container.get_external_image_analysis_request_repo()
+                    )
+                except Exception:
+                    external_request_repo = None
                 external_fallback = build_default_external_fallback_orchestrator(
                     settings=settings,
                     artifact_store=self._artifact_store,
                     attempt_repo=attempt_repo,
                     clock=self._clock,
                     is_cancelled=_is_cancelled,
+                    request_repo=external_request_repo,
                 )
 
             orch = build_default_code_scan_orchestrator(
@@ -592,8 +600,19 @@ class V3JobExecutor:
             return True
 
         merge_payload: dict = {"asset_progress": progress_to_public_dict(outcome.progress)}
-        if external_fallback is not None and getattr(external_fallback, "counters", None):
-            merge_payload["fallback_progress"] = external_fallback.counters.to_public_dict()
+        if external_fallback is not None:
+            from src.application.services.image_processing.external_provider_fallback_orchestrator import (
+                resolve_fallback_progress_payload,
+            )
+
+            merge_payload.update(
+                resolve_fallback_progress_payload(
+                    job_id=job_id,
+                    external_fallback=external_fallback,
+                    external_request_repo=external_request_repo,
+                    resolved_internal=int(getattr(outcome.progress, "resolved", 0) or 0),
+                )
+            )
         self._job_repo.merge_result_json(job_id, merge_payload)
 
         job_outcome = outcome.job_outcome
@@ -725,13 +744,21 @@ class V3JobExecutor:
                 return current is not None and current.status == JobStatus.CANCEL_REQUESTED
 
             external_fallback = None
+            external_request_repo = None
             if attempt_repo is not None:
+                try:
+                    external_request_repo = (
+                        container.get_external_image_analysis_request_repo()
+                    )
+                except Exception:
+                    external_request_repo = None
                 external_fallback = build_default_external_fallback_orchestrator(
                     settings=settings,
                     artifact_store=self._artifact_store,
                     attempt_repo=attempt_repo,
                     clock=self._clock,
                     is_cancelled=_is_cancelled,
+                    request_repo=external_request_repo,
                 )
 
             orch = build_default_internal_ocr_orchestrator(
@@ -819,8 +846,19 @@ class V3JobExecutor:
             return True
 
         merge_payload: dict = {"asset_progress": progress_to_public_dict(outcome.progress)}
-        if external_fallback is not None and getattr(external_fallback, "counters", None):
-            merge_payload["fallback_progress"] = external_fallback.counters.to_public_dict()
+        if external_fallback is not None:
+            from src.application.services.image_processing.external_provider_fallback_orchestrator import (
+                resolve_fallback_progress_payload,
+            )
+
+            merge_payload.update(
+                resolve_fallback_progress_payload(
+                    job_id=job_id,
+                    external_fallback=external_fallback,
+                    external_request_repo=external_request_repo,
+                    resolved_internal=int(getattr(outcome.progress, "resolved", 0) or 0),
+                )
+            )
         self._job_repo.merge_result_json(job_id, merge_payload)
 
         job_outcome = outcome.job_outcome

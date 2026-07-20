@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from src.application.ports.external_image_analysis_provider import (
     ExternalAnalysisResult,
     ExternalAnalysisStatus,
@@ -15,6 +17,41 @@ from src.domain.image_processing.contracts import (
 EXTERNAL_PROVIDER_STRATEGY = "EXTERNAL_PROVIDER"
 
 
+def _apply_client_code_priority(
+    *,
+    code: str | None,
+    normalized: dict[str, Any] | None,
+    client_rules: dict[str, Any] | None,
+) -> str | None:
+    """Deterministic code selection from snapshot client_rules (not prompt-only).
+
+    When prefer_ean_as_internal_code is set, prefer EAN-like fields from the
+    normalized payload over a non-EAN provider code when both exist.
+    """
+    if not client_rules:
+        return code
+    prefer_ean = bool(client_rules.get("prefer_ean_as_internal_code"))
+    if not prefer_ean:
+        return code
+    candidates: list[str] = []
+    if isinstance(normalized, dict):
+        for key in ("ean", "ean_label", "bare_ean", "EAN", "codigo_ean"):
+            raw = normalized.get(key)
+            if isinstance(raw, str) and raw.strip():
+                candidates.append(raw.strip())
+        fields = normalized.get("fields")
+        if isinstance(fields, dict):
+            for key in ("ean", "EAN", "ean_label"):
+                raw = fields.get(key)
+                if isinstance(raw, str) and raw.strip():
+                    candidates.append(raw.strip())
+    for cand in candidates:
+        digits = "".join(ch for ch in cand if ch.isdigit())
+        if len(digits) in (8, 12, 13, 14):
+            return digits
+    return code
+
+
 class ExternalResultNormalizer:
     """Normalize provider adapter output into the shared image-processing contract."""
 
@@ -25,6 +62,8 @@ class ExternalResultNormalizer:
         asset_id: str,
         analysis: ExternalAnalysisResult,
         quantity_max: int = 99_999_999,
+        client_rules: dict[str, Any] | None = None,
+        client_id: str | None = None,
     ) -> ImageProcessingResult:
         base_fields = {
             "fallback_executed": True,
@@ -34,12 +73,20 @@ class ExternalResultNormalizer:
             "estimated_cost": analysis.estimated_cost,
             "usage": analysis.usage,
             "raw_reference": analysis.raw_reference,
+            "client_id": client_id,
+            "client_rule_key": (client_rules or {}).get("client_rule_key")
+            if client_rules
+            else None,
         }
         evidence = {
             "provider": analysis.provider_name,
             "model": analysis.model_name,
             "prompt_version": analysis.prompt_version,
-            "response_hash": analysis.raw_reference,
+            "request_image_sha256": (analysis.additional_fields or {}).get(
+                "request_image_sha256"
+            ),
+            "provider_response_sha256": analysis.raw_reference
+            or (analysis.additional_fields or {}).get("provider_response_sha256"),
             "normalized_result": analysis.normalized_result,
             "confidence": analysis.confidence,
             "usage": analysis.usage,
@@ -47,6 +94,7 @@ class ExternalResultNormalizer:
             "duration_ms": analysis.duration_ms,
             "warnings": list(analysis.warnings),
             "validation_errors": list(analysis.validation_errors),
+            "client_id": client_id,
         }
 
         if analysis.status is ExternalAnalysisStatus.TIMEOUT:
@@ -119,23 +167,37 @@ class ExternalResultNormalizer:
                 model_name=analysis.model_name,
                 processing_duration_ms=analysis.duration_ms,
                 error_code=analysis.error_code or "EXTERNAL_NO_RESULT",
-                error_message=(analysis.error_message or "Provider returned no usable label")[:500],
+                error_message=(analysis.error_message or "Provider returned no usable label")[
+                    :500
+                ],
                 execution_scope=ExecutionScope.SINGLE_ASSET,
                 logical_asset_attempt=False,
             )
 
         # VALID — still apply business validation (never trust provider alone).
         code = (analysis.internal_code or "").strip() or None
+        code = _apply_client_code_priority(
+            code=code,
+            normalized=analysis.normalized_result
+            if isinstance(analysis.normalized_result, dict)
+            else None,
+            client_rules=client_rules,
+        )
         qty = analysis.quantity
         errors: list[str] = list(analysis.validation_errors)
-        if not code:
+        required = list(
+            (client_rules or {}).get("required_fields") or ["internal_code", "quantity"]
+        )
+        if "internal_code" in required and not code:
             errors.append("MISSING_CODE")
-        if qty is None:
+        if "quantity" in required and qty is None:
             errors.append("MISSING_QUANTITY")
-        elif isinstance(qty, bool) or not isinstance(qty, int) or qty <= 0:
+        elif qty is not None and (
+            isinstance(qty, bool) or not isinstance(qty, int) or qty <= 0
+        ):
             errors.append("INVALID_QUANTITY")
             qty = None
-        elif qty > int(quantity_max):
+        elif isinstance(qty, int) and qty > int(quantity_max):
             errors.append("QUANTITY_ABOVE_MAX")
 
         if errors:
