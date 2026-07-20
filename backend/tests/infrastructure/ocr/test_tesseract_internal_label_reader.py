@@ -20,10 +20,18 @@ from src.infrastructure.ocr.tesseract_internal_label_reader import (
 
 
 def _tesseract_available() -> bool:
+    """True only when pytesseract is importable and the binary probe succeeds.
+
+    ``engine_version`` returns ``None`` (does not raise) when Tesseract is missing, so
+    a successful property read is not enough to mark the smoke suite runnable.
+    """
+    try:
+        import pytesseract  # noqa: F401
+    except ImportError:
+        return False
     try:
         reader = TesseractInternalLabelReader()
-        _ = reader.engine_version
-        return True
+        return reader.engine_version is not None
     except TesseractUnavailableError:
         return False
     except Exception:

@@ -125,6 +125,7 @@ def test_create_job_with_request_code_scan(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_create_job_inherits_aisle_then_snapshot_immutable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "true")
+    monkeypatch.setenv("INTERNAL_OCR_PROCESSING_ENABLED", "true")
     from src.config import reload_settings
 
     reload_settings()

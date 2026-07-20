@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Generator
 from pathlib import Path
 
@@ -23,9 +24,19 @@ def _bootstrap_dotenv_for_pytest() -> None:
     load_dotenv(backend / ".env.test", override=True)
 
 
+def _ensure_pytest_identification_flags() -> None:
+    """CI has no developer ``.env``; SYSTEM_DEFAULT is INTERNAL_OCR and needs the OCR flag on.
+
+    Unit tests that assert the disabled path pass ``internal_ocr_processing_enabled=False``
+    explicitly and do not depend on this env default.
+    """
+    os.environ.setdefault("INTERNAL_OCR_PROCESSING_ENABLED", "true")
+
+
 # Import-time bootstrap runs before deeper ``conftest`` files import ``src.*`` (so cached Settings
 # see test DB env, not only developer ``.env``).
 _bootstrap_dotenv_for_pytest()
+_ensure_pytest_identification_flags()
 
 
 def pytest_configure(config: object) -> None:
