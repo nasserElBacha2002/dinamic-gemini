@@ -14,6 +14,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from dotenv import load_dotenv
+from pydantic import model_validator
+from typing_extensions import Self
 
 from src.env_settings.grouped_settings import (
     ApiRuntimeSettings,
@@ -92,6 +94,47 @@ class AppSettings(
     """Top-level application settings — composed groups (field validators live on group mixins)."""
 
     model_config = {"extra": "forbid"}
+
+    @model_validator(mode="after")
+    def validate_external_fallback_when_enabled(self) -> Self:
+        """Fail closed at startup when per-image fallback is enabled but incomplete."""
+        if not bool(getattr(self, "external_fallback_per_image_enabled", False)):
+            return self
+        provider = str(getattr(self, "external_fallback_provider", "") or "").strip().lower()
+        model = str(getattr(self, "external_fallback_model", "") or "").strip()
+        if not provider:
+            raise ValueError(
+                "EXTERNAL_FALLBACK_PROVIDER is required when "
+                "EXTERNAL_FALLBACK_PER_IMAGE_ENABLED=true"
+            )
+        if not model:
+            raise ValueError(
+                "EXTERNAL_FALLBACK_MODEL is required when "
+                "EXTERNAL_FALLBACK_PER_IMAGE_ENABLED=true"
+            )
+        from src.pipeline.providers.definitions import (
+            credential_configured,
+            pipeline_provider_spec,
+        )
+        from src.pipeline.providers.registry import (
+            UnknownPipelineProviderError,
+            resolve_llm_executor,
+        )
+
+        try:
+            resolve_llm_executor(provider, self)
+        except UnknownPipelineProviderError as exc:
+            raise ValueError(
+                f"EXTERNAL_FALLBACK_PROVIDER={provider!r} is not a registered pipeline provider: {exc}"
+            ) from exc
+        spec = pipeline_provider_spec(provider)
+        if spec is None:
+            raise ValueError(
+                f"EXTERNAL_FALLBACK_PROVIDER={provider!r} has no provider definition"
+            )
+        if not credential_configured(spec, self):
+            raise ValueError(spec.credential_missing_message)
+        return self
 
     @property
     def sqlserver_effective_connection_string(self) -> str:

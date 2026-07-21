@@ -94,12 +94,26 @@ function jobOptionLabel(job: JobSummary): string {
     current_stage: job.current_stage,
     provider_name: job.provider_name,
     model_name: job.model_name,
+    identification_execution: job.identification_execution ?? null,
+    fallback_asset_summaries: job.fallback_asset_summaries ?? null,
     external_execution_used:
       Number(job.fallback_progress?.resolved_external || 0) > 0 ||
       Number(job.fallback_progress?.fallback_requested || 0) > 0,
   });
+  if (presentation.showFallbackConfiguredRows) {
+    const head = [presentation.configured.provider, presentation.configured.model]
+      .filter((x) => x != null && String(x).trim() !== '')
+      .join(' · ');
+    const strategy = job.execution_strategy
+      ? i18n.t(strategyLabelKey(job.execution_strategy), {
+          defaultValue: String(job.execution_strategy),
+        })
+      : null;
+    if (head && strategy) return `${strategy} · ${head} · ${shortJobId(job.id)}`;
+    if (head) return `${head} · ${shortJobId(job.id)}`;
+  }
   if (presentation.showProviderModelRows) {
-    const head = [job.provider_name, job.model_name]
+    const head = [presentation.displayProvider, presentation.displayModel]
       .filter((x) => x != null && String(x).trim() !== '')
       .join(' · ');
     if (head) return `${head} · ${shortJobId(job.id)}`;
@@ -127,6 +141,9 @@ function jobMetadataRows(
     provider_name: job.provider_name,
     model_name: job.model_name,
     prompt_key: job.prompt_key,
+    prompt_version: job.prompt_version,
+    identification_execution: job.identification_execution ?? null,
+    fallback_asset_summaries: job.fallback_asset_summaries ?? null,
     result_json: (job as { result_json?: Record<string, unknown> | null }).result_json ?? null,
     external_execution_used:
       Number(job.fallback_progress?.resolved_external || 0) > 0 ||
@@ -237,12 +254,69 @@ function jobMetadataRows(
     { label: i18n.t('jobs.obs_current_step'), value: job.current_substep || dash },
     { label: i18n.t('jobs.obs_step_started'), value: formatOptionalDate(job.current_step_started_at) },
     { label: i18n.t('common.execution_id'), value: job.execution_id || dash },
+    ...(presentation.showFallbackConfiguredRows
+      ? [
+          {
+            label: i18n.t('jobs.obs_fallback_provider', {
+              defaultValue: 'Fallback provider',
+            }),
+            value: presentation.configured.provider || dash,
+          },
+          {
+            label: i18n.t('jobs.obs_fallback_model', {
+              defaultValue: 'Fallback model',
+            }),
+            value: presentation.configured.model || dash,
+          },
+          {
+            label: i18n.t('jobs.obs_fallback_prompt_key', {
+              defaultValue: 'Fallback prompt key',
+            }),
+            value: presentation.configured.promptKey || dash,
+          },
+          {
+            label: i18n.t('jobs.obs_fallback_executed', {
+              defaultValue: 'Fallback executed',
+            }),
+            value: !presentation.fallbackUsed
+              ? i18n.t('processing.header.fallbackNotExecuted', {
+                  defaultValue: 'Not executed',
+                })
+              : presentation.executed?.evidencePresent
+                ? [
+                    presentation.executed.provider,
+                    presentation.executed.executedModel ?? presentation.executed.requestedModel,
+                    presentation.executed.promptKey,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') ||
+                  i18n.t('processing.header.unknown', { defaultValue: 'Unknown' })
+                : i18n.t('processing.header.unknown', { defaultValue: 'Unknown' }),
+          },
+        ]
+      : []),
     ...(presentation.showProviderModelRows
       ? [
-          { label: i18n.t('jobs.obs_provider_row'), value: job.provider_name || dash },
-          { label: i18n.t('jobs.obs_model_row'), value: job.model_name || dash },
-          { label: i18n.t('jobs.obs_prompt_key'), value: job.prompt_key || dash },
+          { label: i18n.t('jobs.obs_provider_row'), value: presentation.displayProvider || dash },
+          { label: i18n.t('jobs.obs_model_row'), value: presentation.displayModel || dash },
+          { label: i18n.t('jobs.obs_prompt_key'), value: presentation.displayPromptKey || dash },
           { label: i18n.t('jobs.obs_prompt_version'), value: job.prompt_version || dash },
+        ]
+      : []),
+    ...(presentation.historicalMetadataWarning
+      ? [
+          {
+            label: i18n.t('processing.header.metadataWarning', {
+              defaultValue: 'Metadata warning',
+            }),
+            value: `${i18n.t('processing.header.historicalMetadataInconsistent', {
+              defaultValue: 'Historical metadata inconsistent',
+            })}${
+              presentation.metadataInconsistencyReasons.length
+                ? ` (${presentation.metadataInconsistencyReasons.join(', ')})`
+                : ''
+            }`,
+          },
         ]
       : []),
     {
@@ -386,6 +460,9 @@ export default function AisleObservabilityWorkspace({
         provider_name: selectedJob?.provider_name,
         model_name: selectedJob?.model_name,
         prompt_key: selectedJob?.prompt_key,
+        prompt_version: selectedJob?.prompt_version,
+        identification_execution: selectedJob?.identification_execution ?? null,
+        fallback_asset_summaries: selectedJob?.fallback_asset_summaries ?? null,
         result_json:
           (selectedJob as { result_json?: Record<string, unknown> | null } | null)?.result_json ??
           null,
@@ -847,16 +924,57 @@ export default function AisleObservabilityWorkspace({
           ) : null}
 
           {contentTab === 'prompt' ? (
-            <Stack spacing={2}>
-              <Typography variant="body2" color="text.secondary">
-                {t('jobs.obs_prompt_audit_notice')}
-              </Typography>
-              {!lastProviderRequest ? (
+            <Stack spacing={2} data-testid="obs-prompt-tab">
+              {jobPresentation.promptTabMode === 'fallback' ? (
+                <>
+                  <Typography variant="body2" color="text.secondary">
+                    {t('jobs.obs_prompt_fallback_notice', {
+                      defaultValue:
+                        'Prompt identity for CODE_SCAN / INTERNAL_OCR comes from the external fallback snapshot, not legacy hybrid job fields.',
+                    })}
+                  </Typography>
+                  <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1 }}>
+                    <Typography variant="subtitle2">{t('jobs.obs_prompt_meta_heading')}</Typography>
+                    <Typography variant="body2" color="text.secondary" data-testid="obs-prompt-configured">
+                      {t('jobs.obs_prompt_fallback_configured', {
+                        defaultValue: 'Configured: {{value}}',
+                        value: jobPresentation.promptConfiguredLabel || t('common.em_dash'),
+                      })}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" data-testid="obs-prompt-executed">
+                      {t('jobs.obs_prompt_fallback_executed', {
+                        defaultValue: 'Executed: {{value}}',
+                        value:
+                          jobPresentation.promptExecutedLabel === 'configured_not_executed'
+                            ? t('processing.header.fallbackConfiguredNotExecuted', {
+                                defaultValue: 'Configured, not executed',
+                              })
+                            : jobPresentation.promptExecutedLabel === 'unknown'
+                              ? t('processing.header.unknown', { defaultValue: 'Unknown' })
+                              : jobPresentation.promptExecutedLabel || t('common.em_dash'),
+                      })}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {t('jobs.obs_prompt_provider_pipeline', {
+                        pipeline: jobPresentation.configured.provider ?? t('common.em_dash'),
+                      })}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {t('jobs.obs_prompt_model_row', {
+                        model: jobPresentation.configured.model ?? t('common.em_dash'),
+                      })}
+                    </Typography>
+                  </Paper>
+                </>
+              ) : !lastProviderRequest ? (
                 <Typography variant="body2" color="text.secondary">
                   {t('jobs.obs_prompt_no_request_event')}
                 </Typography>
               ) : (
                 <>
+                  <Typography variant="body2" color="text.secondary">
+                    {t('jobs.obs_prompt_audit_notice')}
+                  </Typography>
                   <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1 }}>
                     <Typography variant="subtitle2">{t('jobs.obs_prompt_meta_heading')}</Typography>
                     <Typography variant="body2" color="text.secondary">

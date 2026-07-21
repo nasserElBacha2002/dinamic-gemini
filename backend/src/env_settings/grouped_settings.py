@@ -1372,10 +1372,11 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     external_fallback_provider: str = Field(
         default_factory=lambda: (
-            os.getenv("EXTERNAL_FALLBACK_PROVIDER", "gemini") or "gemini"
+            os.getenv("EXTERNAL_FALLBACK_PROVIDER", "") or ""
         ).strip().lower(),
         description=(
-            "Phase 5 primary external provider key (gemini|openai|claude). "
+            "Phase 5 primary external provider key (gemini|openai|claude|deepseek). "
+            "Required when EXTERNAL_FALLBACK_PER_IMAGE_ENABLED=true; no silent default. "
             "Env: EXTERNAL_FALLBACK_PROVIDER."
         ),
     )

@@ -43,6 +43,8 @@ from src.llm.errors import LLMProviderError
 from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
 from src.llm.prompt_composer.hybrid_profiles import CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_PARITY_MODE
+from src.llm.response_trace import response_trace_metadata
+from src.llm.schema_versions import is_external_fallback_schema
 from src.llm.types import LLMRequest, LLMResponse
 from src.llm.vision_multimodal_payload import (
     LLM_METADATA_KEY_MULTIMODAL_ORDER,
@@ -567,10 +569,10 @@ def _anthropic_invoke_messages_with_retries(
     return message, total_attempt_window_ms
 
 
-def _parsed_v21_from_json_text(
+def _parsed_json_object_from_text(
     cleaned: str, *, error_context: dict[str, Any] | None = None
-) -> dict:
-    """Parse model JSON text, align ``total_entities_detected`` with ``entities`` length, validate v2.1."""
+) -> dict[str, Any]:
+    """Parse model JSON text into a JSON object (no domain-schema validation)."""
     ctx: dict[str, Any] = {"provider": "claude", "phase": "response_parse"}
     if error_context:
         ctx.update(error_context)
@@ -594,7 +596,17 @@ def _parsed_v21_from_json_text(
             message="Global analysis response must be a JSON object",
             details={**ctx, "parse_failure": "root_not_object"},
         )
-    data = parsed
+    return cast(dict[str, Any], parsed)
+
+
+def _parsed_v21_from_json_text(
+    cleaned: str, *, error_context: dict[str, Any] | None = None
+) -> dict:
+    """Parse model JSON text, align ``total_entities_detected`` with ``entities`` length, validate v2.1."""
+    ctx: dict[str, Any] = {"provider": "claude", "phase": "response_parse"}
+    if error_context:
+        ctx.update(error_context)
+    data = _parsed_json_object_from_text(cleaned, error_context=error_context)
 
     total = data.get("total_entities_detected")
     entities = data.get("entities") or []
@@ -781,10 +793,16 @@ class AnthropicSdkAdapter:
             )
 
         meta = request.metadata or {}
-        job_model = (meta.get("claude_model_name") or "").strip()
+        job_model = (
+            meta.get("claude_model_name") or meta.get("model_name") or ""
+        ).strip()
         effective_model = job_model or (getattr(settings, "anthropic_model", "") or "").strip()
         if not effective_model:
-            effective_model = "claude-sonnet-4-20250514"
+            raise LLMProviderError(
+                code="NOT_CONFIGURED",
+                message="Anthropic model is not configured (set EXTERNAL_FALLBACK_MODEL / ANTHROPIC_MODEL)",
+                details={"provider": "claude", "phase": "config"},
+            )
 
         timeout = float(getattr(settings, "anthropic_request_timeout_sec", 120.0))
         max_side = int(getattr(settings, "anthropic_vision_max_image_side", 1800))
@@ -853,13 +871,29 @@ class AnthropicSdkAdapter:
             "model": effective_model,
             "text_preview": _safe_preview(raw_text),
             **block_meta,
+            **response_trace_metadata(raw_text=raw_text, provider_model=effective_model),
         }
-        json_str = _coerce_claude_response_text_to_json_string(
-            raw_text,
-            model=effective_model,
-            extraction_meta=block_meta,
-        )
-        data = _parsed_v21_from_json_text(json_str, error_context=err_ctx)
+        try:
+            json_str = _coerce_claude_response_text_to_json_string(
+                raw_text,
+                model=effective_model,
+                extraction_meta=block_meta,
+            )
+            # External single-label fallback uses a different contract than hybrid GlobalEntityResponseV21.
+            if is_external_fallback_schema(request.schema_version):
+                data = _parsed_json_object_from_text(json_str, error_context=err_ctx)
+            else:
+                data = _parsed_v21_from_json_text(json_str, error_context=err_ctx)
+        except LLMProviderError as exc:
+            details = dict(exc.details or {})
+            details.update(
+                response_trace_metadata(raw_text=raw_text, provider_model=effective_model)
+            )
+            raise LLMProviderError(
+                code=exc.code,
+                message=exc.message,
+                details=details,
+            ) from exc
 
         usage = _anthropic_message_usage_dict(message)
 

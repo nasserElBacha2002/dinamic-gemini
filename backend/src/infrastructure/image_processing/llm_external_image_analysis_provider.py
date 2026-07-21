@@ -33,9 +33,18 @@ from src.application.services.image_processing.external_fallback_prompt import (
     EXTERNAL_FALLBACK_PROMPT_VERSION,
     build_external_fallback_prompt,
 )
+from src.application.services.image_processing.external_fallback_schema_error import (
+    build_external_schema_validation_error,
+    response_trace_metadata,
+)
 from src.llm.errors import LLMProviderError
+from src.llm.schema_versions import LlmSchemaVersion
 from src.llm.types import LLMRequest
+from src.pipeline.providers.registry import UnknownPipelineProviderError
 from src.pipeline.services.pipeline_provider_resolver import resolve_llm_executor_for_context
+from src.pipeline.services.provider_llm_request_metadata import (
+    apply_job_model_name_to_llm_request_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,10 +145,24 @@ def parse_external_fallback_payload(
             status=ExternalAnalysisStatus.FAILED_TECHNICAL,
             error_code="EXTERNAL_RESPONSE_PARSE_FAILED",
             error_message="provider response was not a JSON object",
-            additional_fields={**meta, "parse_status": "not_object"},
+            additional_fields={
+                **meta,
+                **response_trace_metadata(raw_text=raw_text),
+                "parse_status": "not_object",
+            },
+            raw_reference=response_trace_metadata(raw_text=raw_text).get(
+                "provider_response_sha256"
+            ),
         )
 
     if _looks_like_hybrid_v21(parsed):
+        schema_err = build_external_schema_validation_error(
+            phase="schema_validate",
+            reason_code="HYBRID_SCHEMA_MISMATCH",
+            field="entities",
+            expected_type="external_fallback_label",
+            received_type="GlobalEntityResponseV21",
+        )
         return ExternalAnalysisResult(
             status=ExternalAnalysisStatus.FAILED_TECHNICAL,
             error_code="EXTERNAL_SCHEMA_INVALID",
@@ -155,24 +178,73 @@ def parse_external_fallback_payload(
             },
             additional_fields={
                 **meta,
+                **response_trace_metadata(raw_text=raw_text),
                 "parse_status": "hybrid_schema_mismatch",
-                "schema_validation_status": "EXTERNAL_SCHEMA_INVALID",
+                "schema_validation": schema_err,
             },
+            raw_reference=response_trace_metadata(raw_text=raw_text).get(
+                "provider_response_sha256"
+            ),
         )
 
     status_raw = str(parsed.get("status") or "").strip().upper()
     code = _extract_code(parsed)
-    qty = _coerce_quantity(parsed.get("quantity"))
-    if qty is None:
-        qty = _coerce_quantity(parsed.get("cantidad"))
-    if qty is None:
-        qty = _coerce_quantity(parsed.get("qty"))
+    qty_raw = parsed.get("quantity")
+    if qty_raw is None:
+        qty_raw = parsed.get("cantidad")
+    if qty_raw is None:
+        qty_raw = parsed.get("qty")
+    qty = _coerce_quantity(qty_raw)
+    if qty_raw is not None and qty is None:
+        schema_err = build_external_schema_validation_error(
+            phase="schema_validate",
+            reason_code="INVALID_TYPE",
+            field="quantity",
+            expected_type="integer",
+            received_type=type(qty_raw).__name__,
+        )
+        return ExternalAnalysisResult(
+            status=ExternalAnalysisStatus.FAILED_TECHNICAL,
+            error_code="EXTERNAL_SCHEMA_INVALID",
+            error_message="quantity must be an integer",
+            additional_fields={
+                **meta,
+                **response_trace_metadata(raw_text=raw_text),
+                "schema_validation": schema_err,
+            },
+            raw_reference=response_trace_metadata(raw_text=raw_text).get(
+                "provider_response_sha256"
+            ),
+        )
 
     confidence = parsed.get("confidence")
-    try:
-        confidence_f = float(confidence) if confidence is not None else None
-    except (TypeError, ValueError):
+    confidence_f: float | None
+    if confidence is None:
         confidence_f = None
+    else:
+        try:
+            confidence_f = float(confidence)
+        except (TypeError, ValueError):
+            schema_err = build_external_schema_validation_error(
+                phase="schema_validate",
+                reason_code="INVALID_TYPE",
+                field="confidence",
+                expected_type="number",
+                received_type=type(confidence).__name__,
+            )
+            return ExternalAnalysisResult(
+                status=ExternalAnalysisStatus.FAILED_TECHNICAL,
+                error_code="EXTERNAL_SCHEMA_INVALID",
+                error_message="confidence must be a number",
+                additional_fields={
+                    **meta,
+                    **response_trace_metadata(raw_text=raw_text),
+                    "schema_validation": schema_err,
+                },
+                raw_reference=response_trace_metadata(raw_text=raw_text).get(
+                    "provider_response_sha256"
+                ),
+            )
 
     warnings_raw = parsed.get("warnings")
     warnings: list[Any] = list(warnings_raw) if isinstance(warnings_raw, list) else []
@@ -187,10 +259,17 @@ def parse_external_fallback_payload(
     elif not status_raw and not code and qty is None:
         status = ExternalAnalysisStatus.NO_RESULT
     else:
+        schema_err = build_external_schema_validation_error(
+            phase="schema_validate",
+            reason_code="UNKNOWN_STATUS",
+            field="status",
+            expected_type="ExternalAnalysisStatus",
+            received_type="string",
+        )
         return ExternalAnalysisResult(
             status=ExternalAnalysisStatus.FAILED_TECHNICAL,
             error_code="EXTERNAL_SCHEMA_INVALID",
-            error_message=f"unknown status value: {status_raw[:80] or '<empty>'}",
+            error_message="unknown status value",
             normalized_result={
                 "status": status_raw or None,
                 "internal_code": code,
@@ -198,8 +277,12 @@ def parse_external_fallback_payload(
             },
             additional_fields={
                 **meta,
-                "schema_validation_status": "EXTERNAL_SCHEMA_INVALID",
+                **response_trace_metadata(raw_text=raw_text),
+                "schema_validation": schema_err,
             },
+            raw_reference=response_trace_metadata(raw_text=raw_text).get(
+                "provider_response_sha256"
+            ),
         )
 
     normalized = {
@@ -319,6 +402,7 @@ class LlmExternalImageAnalysisProvider:
         request_image_sha256 = hashlib.sha256(prepared).hexdigest()
         base_meta = {
             "request_image_sha256": request_image_sha256,
+            "request_image_sha256_prepared": request_image_sha256,
             "request_image_bytes": len(prepared),
             "requested_model": requested_model,
             "executed_model": executed_model,
@@ -514,7 +598,7 @@ class LlmExternalImageAnalysisProvider:
                 self._settings,
                 model_name=self._model_name,
             )
-        except Exception as exc:
+        except UnknownPipelineProviderError as exc:
             return ExternalAnalysisResult(
                 status=ExternalAnalysisStatus.FAILED_TECHNICAL,
                 provider_name=self._provider_name,
@@ -523,31 +607,94 @@ class LlmExternalImageAnalysisProvider:
                 duration_ms=int((time.perf_counter() - started) * 1000),
                 error_code="EXTERNAL_PROVIDER_MISCONFIGURED",
                 error_message=_sanitize_message(str(exc)),
-                additional_fields=dict(base_meta),
+                additional_fields={**dict(base_meta), "resolver_error": "unknown_provider"},
+            )
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
+            logger.exception(
+                "external_fallback.resolver_internal_error provider=%s",
+                self._provider_name,
+            )
+            return ExternalAnalysisResult(
+                status=ExternalAnalysisStatus.FAILED_TECHNICAL,
+                provider_name=self._provider_name,
+                model_name=self.model_name,
+                prompt_version=prompt_version,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                error_code="EXTERNAL_INTERNAL_ERROR",
+                error_message=_sanitize_message(str(exc)),
+                additional_fields={**dict(base_meta), "resolver_error": type(exc).__name__},
             )
 
         with tempfile.TemporaryDirectory(prefix="ext_fallback_") as tmp:
             path = Path(tmp) / "label.jpg"
             path.write_bytes(prepared)
+            metadata: dict[str, Any] = {
+                "asset_id": context.asset_id,
+                "execution_scope": "SINGLE_ASSET",
+                "prompt_key": context.prompt_key,
+                "prompt_version": prompt_version,
+                "model_name": self._model_name,
+                "client_id": context.client_id,
+                "adapter_name": type(executor).__name__,
+                "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+            }
+            apply_job_model_name_to_llm_request_metadata(
+                resolved_provider_key=normalized_key,
+                job_model_name=self._model_name,
+                metadata=metadata,
+            )
             request = LLMRequest(
                 job_id=context.job_id,
                 frames=[path],
                 frame_refs=[context.asset_id or "asset"],
                 prompt=prompt,
-                schema_version="external_fallback_v1",
-                metadata={
-                    "asset_id": context.asset_id,
-                    "execution_scope": "SINGLE_ASSET",
-                    "prompt_key": context.prompt_key,
-                    "prompt_version": prompt_version,
-                    "model_name": self._model_name,
-                    "client_id": context.client_id,
-                },
+                schema_version=LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                metadata=metadata,
             )
             try:
                 response = executor.execute(request, self._settings)
             except LLMProviderError as exc:
                 status, error_code = _map_llm_provider_error(exc)
+                detail_fields = dict(base_meta)
+                detail_fields["provider_error_code"] = getattr(exc, "code", None)
+                detail_fields["adapter_name"] = type(executor).__name__
+                detail_fields["schema_version"] = LlmSchemaVersion.EXTERNAL_FALLBACK_V1
+                details = getattr(exc, "details", None)
+                if isinstance(details, dict):
+                    for key in (
+                        "provider_response_sha256",
+                        "provider_response_length",
+                        "provider_response_content_type",
+                        "provider_request_id",
+                        "provider_model",
+                    ):
+                        if key in details and details[key] is not None:
+                            detail_fields[key] = details[key]
+                    if error_code == "EXTERNAL_SCHEMA_INVALID":
+                        detail_fields["schema_validation"] = (
+                            build_external_schema_validation_error(
+                                phase=str(details.get("phase") or "schema_validate"),
+                                reason_code=str(
+                                    details.get("reason_code") or "SCHEMA_INVALID"
+                                ),
+                                field=(
+                                    str(details["field"])
+                                    if details.get("field") is not None
+                                    else None
+                                ),
+                                expected_type=(
+                                    str(details["expected_type"])
+                                    if details.get("expected_type") is not None
+                                    else None
+                                ),
+                                received_type=(
+                                    str(details["received_type"])
+                                    if details.get("received_type") is not None
+                                    else None
+                                ),
+                            )
+                        )
+                response_sha = detail_fields.get("provider_response_sha256")
                 return ExternalAnalysisResult(
                     status=status,
                     provider_name=normalized_key,
@@ -556,9 +703,15 @@ class LlmExternalImageAnalysisProvider:
                     duration_ms=int((time.perf_counter() - started) * 1000),
                     error_code=error_code,
                     error_message=_sanitize_message(str(exc)),
-                    additional_fields=dict(base_meta),
+                    additional_fields=detail_fields,
+                    raw_reference=str(response_sha) if response_sha else None,
                 )
-            except Exception as exc:
+            except (TimeoutError, OSError, RuntimeError) as exc:
+                logger.warning(
+                    "external_fallback.provider_runtime_error provider=%s err=%s",
+                    normalized_key,
+                    type(exc).__name__,
+                )
                 return ExternalAnalysisResult(
                     status=ExternalAnalysisStatus.FAILED_TECHNICAL,
                     provider_name=normalized_key,
@@ -567,7 +720,29 @@ class LlmExternalImageAnalysisProvider:
                     duration_ms=int((time.perf_counter() - started) * 1000),
                     error_code="EXTERNAL_PROVIDER_ERROR",
                     error_message=_sanitize_message(str(exc)),
-                    additional_fields=dict(base_meta),
+                    additional_fields={
+                        **dict(base_meta),
+                        "adapter_name": type(executor).__name__,
+                    },
+                )
+            except Exception as exc:
+                logger.exception(
+                    "external_fallback.unexpected_internal_error provider=%s",
+                    normalized_key,
+                )
+                return ExternalAnalysisResult(
+                    status=ExternalAnalysisStatus.FAILED_TECHNICAL,
+                    provider_name=normalized_key,
+                    model_name=self.model_name,
+                    prompt_version=prompt_version,
+                    duration_ms=int((time.perf_counter() - started) * 1000),
+                    error_code="EXTERNAL_INTERNAL_ERROR",
+                    error_message=_sanitize_message(f"internal:{type(exc).__name__}"),
+                    additional_fields={
+                        **dict(base_meta),
+                        "adapter_name": type(executor).__name__,
+                        "internal_error_type": type(exc).__name__,
+                    },
                 )
 
         duration_ms = int((time.perf_counter() - started) * 1000)

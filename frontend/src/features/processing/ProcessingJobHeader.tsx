@@ -18,6 +18,15 @@ function formatOptional(value: string | null | undefined, dash: string): string 
   return trimmed || dash;
 }
 
+function formatIdentity(
+  provider: string | null | undefined,
+  model: string | null | undefined,
+  promptKey: string | null | undefined,
+  dash: string,
+): string {
+  return [provider, model, promptKey].filter(Boolean).join(' · ') || dash;
+}
+
 export default function ProcessingJobHeader({ job, summary, isLoading }: ProcessingJobHeaderProps) {
   const { t } = useTranslation();
   const dash = t('common.em_dash');
@@ -46,6 +55,9 @@ export default function ProcessingJobHeader({ job, summary, isLoading }: Process
     provider_name: job.provider_name,
     model_name: job.model_name,
     prompt_key: job.prompt_key,
+    prompt_version: job.prompt_version,
+    identification_execution: job.identification_execution ?? null,
+    fallback_asset_summaries: job.fallback_asset_summaries ?? null,
     result_json: (job as { result_json?: Record<string, unknown> | null }).result_json ?? null,
     external_execution_used:
       Number(job.fallback_progress?.resolved_external || 0) > 0 ||
@@ -82,13 +94,68 @@ export default function ProcessingJobHeader({ job, summary, isLoading }: Process
               : t('aisle.obs_external_provider_no')}
           </Typography>
 
+          {presentation.showFallbackConfiguredRows ? (
+            <>
+              <Typography variant="caption" color="text.secondary">
+                {t('processing.header.fallbackConfigured')}
+              </Typography>
+              <Typography variant="caption" data-testid="processing-job-fallback-configured">
+                {formatIdentity(
+                  presentation.configured.provider,
+                  presentation.configured.model,
+                  presentation.configured.promptKey,
+                  dash,
+                )}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {t('processing.header.fallbackExecuted')}
+              </Typography>
+              <Typography variant="caption" data-testid="processing-job-fallback-executed">
+                {!presentation.fallbackUsed
+                  ? t('processing.header.fallbackNotExecuted')
+                  : presentation.executed?.evidencePresent
+                    ? formatIdentity(
+                        presentation.executed.provider,
+                        presentation.executed.executedModel ??
+                          presentation.executed.requestedModel,
+                        presentation.executed.promptKey,
+                        t('processing.header.unknown', { defaultValue: 'Unknown' }),
+                      )
+                    : t('processing.header.unknown', { defaultValue: 'Unknown' })}
+              </Typography>
+            </>
+          ) : null}
+
           {presentation.showProviderModelRows ? (
             <>
               <Typography variant="caption" color="text.secondary">
                 {t('processing.header.profile')}
               </Typography>
-              <Typography variant="caption">
-                {[job.provider_name, job.model_name, job.prompt_key].filter(Boolean).join(' · ') || dash}
+              <Typography variant="caption" data-testid="processing-job-legacy-profile">
+                {formatIdentity(
+                  presentation.displayProvider,
+                  presentation.displayModel,
+                  presentation.displayPromptKey,
+                  dash,
+                )}
+              </Typography>
+            </>
+          ) : null}
+
+          {presentation.historicalMetadataWarning ? (
+            <>
+              <Typography variant="caption" color="text.secondary">
+                {t('processing.header.metadataWarning')}
+              </Typography>
+              <Typography
+                variant="caption"
+                color="warning.main"
+                data-testid="processing-job-historical-metadata-warning"
+              >
+                {t('processing.header.historicalMetadataInconsistent')}
+                {presentation.metadataInconsistencyReasons.length
+                  ? ` (${presentation.metadataInconsistencyReasons.join(', ')})`
+                  : ''}
               </Typography>
             </>
           ) : null}

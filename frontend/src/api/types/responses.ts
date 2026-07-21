@@ -474,6 +474,12 @@ export interface AssetFallbackSummary {
   fallback_status?: string | null;
   external_provider?: string | null;
   external_model?: string | null;
+  requested_model?: string | null;
+  executed_model?: string | null;
+  prompt_key?: string | null;
+  prompt_version?: string | null;
+  adapter_name?: string | null;
+  schema_version?: string | null;
   external_attempt_id?: string | null;
   external_duration_ms?: number | null;
   estimated_cost?: number | null;
@@ -486,6 +492,8 @@ export interface AssetFallbackSummary {
   active_result_id?: string | null;
   error_code?: string | null;
   error_message?: string | null;
+  provider_response_sha256?: string | null;
+  request_image_sha256?: string | null;
 }
 
 /** GET .../aisles/{aisle_id}/jobs — newest first (multi-run browsing). */

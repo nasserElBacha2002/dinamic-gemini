@@ -826,7 +826,8 @@ class ExternalProviderFallbackOrchestrator:
                         "CANCELLED",
                     )
                 content = self.content_reader(asset)
-                request.request_image_sha256 = hashlib.sha256(content).hexdigest()
+                request_image_sha256_raw = hashlib.sha256(content).hexdigest()
+                request.request_image_sha256 = request_image_sha256_raw
                 self._publish_fallback_event(
                     job_id=job.id,
                     asset_id=asset.id,
@@ -836,7 +837,8 @@ class ExternalProviderFallbackOrchestrator:
                         "provider": provider_name,
                         "requested_model": model_name,
                         "attempt_number": attempt_idx,
-                        "request_image_sha256": request.request_image_sha256,
+                        "request_image_sha256": request_image_sha256_raw,
+                        "request_image_sha256_raw": request_image_sha256_raw,
                         "request_image_bytes": len(content),
                     },
                 )
@@ -884,10 +886,20 @@ class ExternalProviderFallbackOrchestrator:
                         "parse_status": (analysis.additional_fields or {}).get("parse_status"),
                         "normalized_code_present": bool(analysis.internal_code),
                         "normalized_quantity_present": analysis.quantity is not None,
-                        "provider_response_sha256": analysis.raw_reference,
-                        "request_image_sha256": (analysis.additional_fields or {}).get(
-                            "request_image_sha256"
+                        "provider_response_sha256": analysis.raw_reference
+                        or (analysis.additional_fields or {}).get("provider_response_sha256"),
+                        # Stable alias: always the raw asset bytes for this call.
+                        "request_image_sha256": request_image_sha256_raw,
+                        "request_image_sha256_raw": request_image_sha256_raw,
+                        "request_image_sha256_prepared": (analysis.additional_fields or {}).get(
+                            "request_image_sha256_prepared"
+                        )
+                        or (analysis.additional_fields or {}).get("request_image_sha256"),
+                        "schema_validation": (analysis.additional_fields or {}).get(
+                            "schema_validation"
                         ),
+                        "adapter_name": (analysis.additional_fields or {}).get("adapter_name"),
+                        "schema_version": (analysis.additional_fields or {}).get("schema_version"),
                     },
                     severity=(
                         "ERROR"
@@ -1026,16 +1038,26 @@ class ExternalProviderFallbackOrchestrator:
             request.estimated_cost = analysis.estimated_cost
             request.confidence = analysis.confidence
             request.duration_ms = analysis.duration_ms
-            img_hash = (analysis.additional_fields or {}).get("request_image_sha256")
-            if isinstance(img_hash, str) and img_hash:
-                request.request_image_sha256 = img_hash
+            # Keep request_image_sha256 as the raw asset hash set at call start.
             # Provider response hash (not the image bytes).
-            if analysis.raw_reference and analysis.raw_reference != request.request_image_sha256:
-                request.provider_response_sha256 = analysis.raw_reference
+            response_sha = analysis.raw_reference or (analysis.additional_fields or {}).get(
+                "provider_response_sha256"
+            )
+            if isinstance(response_sha, str) and response_sha:
+                request.provider_response_sha256 = response_sha
             elif analysis.normalized_result is not None:
                 request.provider_response_sha256 = hashlib.sha256(
                     json.dumps(analysis.normalized_result, sort_keys=True).encode()
                 ).hexdigest()
+            if analysis.model_name:
+                request.model = analysis.model_name
+            if analysis.provider_name:
+                request.provider = analysis.provider_name
+            if analysis.prompt_version:
+                request.prompt_version = analysis.prompt_version
+            prompt_key = (analysis.additional_fields or {}).get("prompt_key")
+            if isinstance(prompt_key, str) and prompt_key.strip():
+                request.prompt_key = prompt_key.strip()
         if result.normalized_result is not None:
             request.normalized_result_sha256 = hashlib.sha256(
                 json.dumps(result.normalized_result, sort_keys=True).encode()
@@ -1360,6 +1382,10 @@ def sanitize_fallback_asset_summaries(
                 "fallback_status": r.status.value,
                 "external_provider": r.provider,
                 "external_model": r.model,
+                "requested_model": r.model,
+                "executed_model": r.model,
+                "prompt_key": r.prompt_key,
+                "prompt_version": r.prompt_version,
                 "external_attempt_id": r.attempt_id,
                 "external_duration_ms": r.duration_ms,
                 "estimated_cost": r.estimated_cost,
@@ -1372,6 +1398,8 @@ def sanitize_fallback_asset_summaries(
                 "active_result_id": r.active_result_id,
                 "error_code": r.error_code,
                 "error_message": (r.error_message or "")[:200] or None,
+                "provider_response_sha256": r.provider_response_sha256,
+                "request_image_sha256": r.request_image_sha256,
             }
         )
     return out

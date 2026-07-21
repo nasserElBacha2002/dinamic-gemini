@@ -155,6 +155,10 @@ class AssetFallbackSummaryResponse(BaseModel):
     fallback_status: str | None = None
     external_provider: str | None = None
     external_model: str | None = None
+    requested_model: str | None = None
+    executed_model: str | None = None
+    prompt_key: str | None = None
+    prompt_version: str | None = None
     external_attempt_id: str | None = None
     external_duration_ms: int | None = None
     estimated_cost: float | None = None
@@ -167,6 +171,8 @@ class AssetFallbackSummaryResponse(BaseModel):
     active_result_id: str | None = None
     error_code: str | None = None
     error_message: str | None = None
+    provider_response_sha256: str | None = None
+    request_image_sha256: str | None = None
 
 
 class JobSummary(BaseModel):

@@ -377,9 +377,22 @@ class StartAisleProcessingUseCase:
                 getattr(settings, "external_fallback_per_image_enabled", False)
             )
             provider_key = str(
-                getattr(settings, "external_fallback_provider", "gemini") or "gemini"
+                getattr(settings, "external_fallback_provider", "") or ""
             ).strip().lower()
+            fallback_model = (
+                str(getattr(settings, "external_fallback_model", "") or "").strip() or None
+            )
             if fallback_enabled:
+                if not provider_key:
+                    raise ValueError(
+                        "EXTERNAL_FALLBACK_PROVIDER is required when "
+                        "EXTERNAL_FALLBACK_PER_IMAGE_ENABLED=true"
+                    )
+                if not fallback_model:
+                    raise ValueError(
+                        "EXTERNAL_FALLBACK_MODEL is required when "
+                        "EXTERNAL_FALLBACK_PER_IMAGE_ENABLED=true"
+                    )
                 from src.pipeline.providers.registry import (
                     UnknownPipelineProviderError,
                     resolve_llm_executor,
@@ -395,10 +408,7 @@ class StartAisleProcessingUseCase:
             external_fallback = build_external_fallback_snapshot_dict(
                 enabled=fallback_enabled,
                 provider=provider_key,
-                model=(
-                    str(getattr(settings, "external_fallback_model", "") or "").strip()
-                    or None
-                ),
+                model=fallback_model,
                 timeout_seconds=float(
                     getattr(settings, "external_fallback_timeout_seconds", 60)
                 ),

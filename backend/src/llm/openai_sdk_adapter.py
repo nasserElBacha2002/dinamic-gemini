@@ -35,6 +35,11 @@ from src.llm.errors import LLMProviderError
 from src.llm.normalization.model_entity_id import normalize_model_entity_ids
 from src.llm.prompt_composer.hybrid_assembly import compose_hybrid_base_from_settings
 from src.llm.prompt_composer.prompt_traceability import LLM_METADATA_KEY_PROMPT_PARITY_MODE
+from src.llm.response_trace import response_trace_metadata
+from src.llm.schema_versions import (
+    LlmSchemaVersion,
+    is_external_fallback_schema,
+)
 from src.llm.types import LLMRequest, LLMResponse
 from src.llm.vision_multimodal_payload import (
     LLM_METADATA_KEY_MULTIMODAL_ORDER,
@@ -257,11 +262,37 @@ def _openai_effective_model(
     request: LLMRequest, settings: Any, v: OpenAiCompatibleVendorConfig
 ) -> str:
     meta = request.metadata or {}
-    job_model = (meta.get(v.model_metadata_key) or "").strip()
+    job_model = (meta.get(v.model_metadata_key) or meta.get("model_name") or "").strip()
     default_m = (
         getattr(settings, v.settings_model_attr, "") or v.default_model_if_settings_empty
     ).strip()
     return job_model or default_m
+
+
+def _openai_parse_loose_json_object(
+    raw_text: str,
+    *,
+    prov: str,
+    v: OpenAiCompatibleVendorConfig,
+) -> dict[str, Any]:
+    """Parse provider JSON text into an object without hybrid v2.1 validation."""
+    cleaned = _extract_json_text(raw_text)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        logger.warning("%s external fallback: invalid JSON: %s", v.log_label, e)
+        raise LLMProviderError(
+            code="INVALID_JSON",
+            message=f"Invalid JSON: {e}",
+            details={"provider": prov, "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1},
+        ) from e
+    if not isinstance(parsed, dict):
+        raise LLMProviderError(
+            code="INVALID_JSON",
+            message="External fallback response must be a JSON object",
+            details={"provider": prov, "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1},
+        )
+    return cast(dict[str, Any], parsed)
 
 
 def _openai_build_user_content(
@@ -564,9 +595,36 @@ class OpenAiSdkAdapter:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(raw_text, encoding="utf-8")
 
-        data, repair_warnings = _openai_parse_validate_global_analysis_json(
-            raw_text, prov=prov, v=v, job_id=request.job_id
-        )
+        if is_external_fallback_schema(request.schema_version):
+            try:
+                data = _openai_parse_loose_json_object(raw_text, prov=prov, v=v)
+            except LLMProviderError as exc:
+                details = dict(exc.details or {})
+                details.update(
+                    response_trace_metadata(raw_text=raw_text, provider_model=str(effective_model))
+                )
+                details["schema_version"] = LlmSchemaVersion.EXTERNAL_FALLBACK_V1
+                raise LLMProviderError(
+                    code=exc.code,
+                    message=exc.message,
+                    details=details,
+                ) from exc
+            repair_warnings: list[str] = []
+        else:
+            try:
+                data, repair_warnings = _openai_parse_validate_global_analysis_json(
+                    raw_text, prov=prov, v=v, job_id=request.job_id
+                )
+            except LLMProviderError as exc:
+                details = dict(exc.details or {})
+                details.update(
+                    response_trace_metadata(raw_text=raw_text, provider_model=str(effective_model))
+                )
+                raise LLMProviderError(
+                    code=exc.code,
+                    message=exc.message,
+                    details=details,
+                ) from exc
 
         usage = _openai_completion_usage_dict(completion)
         if repair_warnings:
