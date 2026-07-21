@@ -161,6 +161,6 @@ def build_merge_plan(
     for aid in ordered:
         if aid in assigned:
             continue
-        internal = evidence_by_asset.get(aid)
-        plan.unchanged.append(decide_merge_for_asset(internal=internal, external=None))
+        leftover: InternalAssetEvidence | None = evidence_by_asset.get(aid)
+        plan.unchanged.append(decide_merge_for_asset(internal=leftover, external=None))
     return plan

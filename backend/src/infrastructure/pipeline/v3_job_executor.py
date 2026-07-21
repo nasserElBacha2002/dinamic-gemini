@@ -185,6 +185,7 @@ class V3JobExecutor:
         self._artifact_store = artifact_store
         self._clock = clock
         self._position_repo = position_repo
+        self._product_record_repo = product_record_repo
         self._evidence_repo = evidence_repo
         inventory_status_reconciler = InventoryStatusReconciler(
             inventory_repo=inventory_repo,

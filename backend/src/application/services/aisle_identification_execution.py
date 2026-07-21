@@ -118,7 +118,7 @@ def identification_execution_snapshot_dict(
     profile_validation_executed: bool = False,
 ) -> dict:
     """Build the immutable identification-execution block stored on the job."""
-    feature_flags = {
+    feature_flags: dict[str, bool | str] = {
         "code_scan_processing_enabled": decision.code_scan_processing_enabled,
         "internal_ocr_processing_enabled": decision.internal_ocr_processing_enabled,
         "aisle_identification_pipeline_enabled": decision.pipeline_enabled,

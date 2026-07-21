@@ -538,7 +538,7 @@ export function buildJobExecutionPresentation(
     ((fallbackUsed && supplierPromptExecuted?.loaded === false) ||
       (fallbackUsed &&
         Boolean(executedPromptContent) &&
-        !Boolean(executedPromptContent?.includes('[SUPPLIER CUSTOM INSTRUCTIONS]'))) ||
+        !executedPromptContent?.includes('[SUPPLIER CUSTOM INSTRUCTIONS]')) ||
       (supplierPromptConfigured?.required === true && !supplierPromptConfigured.content));
 
   return {

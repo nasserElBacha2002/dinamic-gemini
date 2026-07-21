@@ -1,19 +1,47 @@
-"""SQL Server GlobalFallbackBatchRequestRepository."""
+"""SQL Server GlobalFallbackBatchRequestRepository.
+
+Uses SqlServerClient.cursor() with ``?`` placeholders (same pattern as other SQL repos).
+"""
 
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
+
+import pyodbc
 
 from src.application.ports.global_fallback_batch_request_repository import (
     GlobalFallbackBatchRequestRepository,
 )
+from src.database.sqlserver import SqlServerClient
 from src.domain.image_processing.global_fallback_batch_request import (
     GlobalFallbackBatchRequest,
     GlobalFallbackBatchStatus,
 )
+from src.infrastructure.repositories.db_row_text import normalize_db_str
+
+logger = logging.getLogger(__name__)
+
+_SELECT_FIELDS = (
+    "id, job_id, execution_id, attempt, batch_index, batch_count, batch_fingerprint, "
+    "status, ordered_asset_ids_json, provider, model, schema_version, "
+    "configuration_fingerprint, prompt_fingerprint, prepared_image_hashes_json, "
+    "provider_request_id, response_sha256, normalized_response_json, "
+    "frame_to_asset_map_json, merge_plan_json, applied_operation_keys_json, "
+    "error_code, error_message, worker_token, estimated_cost, prompt_tokens, "
+    "response_tokens, duration_ms, created_at, updated_at"
+)
+
+
+def _ensure_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        return dt
+    return dt.replace(tzinfo=timezone.utc)
 
 
 def _loads(raw: Any, default: Any) -> Any:
@@ -27,106 +55,140 @@ def _loads(raw: Any, default: Any) -> Any:
         return default
 
 
-def _row_to_entity(row: dict[str, Any]) -> GlobalFallbackBatchRequest:
+def _dumps(value: Any) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, ensure_ascii=True, default=str)
+
+
+def _is_fingerprint_unique_violation(exc: pyodbc.IntegrityError) -> bool:
+    return "uq_gfbr_job_exec_fingerprint" in str(exc).lower()
+
+
+def _row_to_entity(row: object) -> GlobalFallbackBatchRequest:
+    status_raw = normalize_db_str(getattr(row, "status", None)) or "PREPARED"
+    try:
+        status = GlobalFallbackBatchStatus(status_raw)
+    except ValueError:
+        logger.error("invalid_persisted_global_fallback_batch_status value=%s", status_raw)
+        raise
+    model = normalize_db_str(getattr(row, "model", None))
     return GlobalFallbackBatchRequest(
-        id=str(row["id"]),
-        job_id=str(row["job_id"]),
-        execution_id=str(row["execution_id"]),
-        attempt=int(row["attempt"]),
-        batch_index=int(row["batch_index"]),
-        batch_count=int(row["batch_count"]),
-        batch_fingerprint=str(row["batch_fingerprint"]),
-        status=GlobalFallbackBatchStatus(str(row["status"])),
-        ordered_asset_ids=list(_loads(row.get("ordered_asset_ids_json"), [])),
-        provider=str(row["provider"]),
-        model=str(row["model"]) if row.get("model") is not None else None,
-        schema_version=str(row["schema_version"]),
-        configuration_fingerprint=str(row["configuration_fingerprint"]),
-        prompt_fingerprint=str(row["prompt_fingerprint"]),
-        prepared_image_hashes=list(_loads(row.get("prepared_image_hashes_json"), [])),
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-        provider_request_id=row.get("provider_request_id"),
-        response_sha256=row.get("response_sha256"),
-        normalized_response_json=_loads(row.get("normalized_response_json"), None),
-        frame_to_asset_map=dict(_loads(row.get("frame_to_asset_map_json"), {})),
-        merge_plan_json=_loads(row.get("merge_plan_json"), None),
-        applied_operation_keys=list(_loads(row.get("applied_operation_keys_json"), [])),
-        error_code=row.get("error_code"),
-        error_message=row.get("error_message"),
-        worker_token=row.get("worker_token"),
-        estimated_cost=row.get("estimated_cost"),
-        prompt_tokens=row.get("prompt_tokens"),
-        response_tokens=row.get("response_tokens"),
-        duration_ms=row.get("duration_ms"),
+        id=str(getattr(row, "id")),
+        job_id=str(getattr(row, "job_id")),
+        execution_id=str(getattr(row, "execution_id")),
+        attempt=int(getattr(row, "attempt")),
+        batch_index=int(getattr(row, "batch_index")),
+        batch_count=int(getattr(row, "batch_count")),
+        batch_fingerprint=str(getattr(row, "batch_fingerprint")),
+        status=status,
+        ordered_asset_ids=list(_loads(getattr(row, "ordered_asset_ids_json", None), [])),
+        provider=str(getattr(row, "provider") or ""),
+        model=model,
+        schema_version=str(getattr(row, "schema_version") or ""),
+        configuration_fingerprint=str(getattr(row, "configuration_fingerprint") or ""),
+        prompt_fingerprint=str(getattr(row, "prompt_fingerprint") or ""),
+        prepared_image_hashes=list(
+            _loads(getattr(row, "prepared_image_hashes_json", None), [])
+        ),
+        created_at=_ensure_utc(getattr(row, "created_at")) or datetime.now(timezone.utc),
+        updated_at=_ensure_utc(getattr(row, "updated_at")) or datetime.now(timezone.utc),
+        provider_request_id=normalize_db_str(getattr(row, "provider_request_id", None)),
+        response_sha256=normalize_db_str(getattr(row, "response_sha256", None)),
+        normalized_response_json=_loads(getattr(row, "normalized_response_json", None), None),
+        frame_to_asset_map=dict(_loads(getattr(row, "frame_to_asset_map_json", None), {})),
+        merge_plan_json=_loads(getattr(row, "merge_plan_json", None), None),
+        applied_operation_keys=list(
+            _loads(getattr(row, "applied_operation_keys_json", None), [])
+        ),
+        error_code=normalize_db_str(getattr(row, "error_code", None)),
+        error_message=normalize_db_str(getattr(row, "error_message", None)),
+        worker_token=normalize_db_str(getattr(row, "worker_token", None)),
+        estimated_cost=getattr(row, "estimated_cost", None),
+        prompt_tokens=getattr(row, "prompt_tokens", None),
+        response_tokens=getattr(row, "response_tokens", None),
+        duration_ms=getattr(row, "duration_ms", None),
     )
 
 
 class SqlGlobalFallbackBatchRequestRepository(GlobalFallbackBatchRequestRepository):
-    def __init__(self, sql_client: Any) -> None:
-        self._sql = sql_client
+    def __init__(self, client: SqlServerClient) -> None:
+        self._client = client
 
     def save(self, request: GlobalFallbackBatchRequest) -> None:
-        params = self._params(request)
         existing = self.get_by_id(request.id)
-        if existing is None:
-            self._sql.execute(
-                """
-                INSERT INTO global_fallback_batch_requests (
-                    id, job_id, execution_id, attempt, batch_index, batch_count,
-                    batch_fingerprint, status, ordered_asset_ids_json, provider, model,
-                    schema_version, configuration_fingerprint, prompt_fingerprint,
-                    prepared_image_hashes_json, provider_request_id, response_sha256,
-                    normalized_response_json, frame_to_asset_map_json, merge_plan_json,
-                    applied_operation_keys_json, error_code, error_message, worker_token,
-                    estimated_cost, prompt_tokens, response_tokens, duration_ms,
-                    created_at, updated_at
-                ) VALUES (
-                    :id, :job_id, :execution_id, :attempt, :batch_index, :batch_count,
-                    :batch_fingerprint, :status, :ordered_asset_ids_json, :provider, :model,
-                    :schema_version, :configuration_fingerprint, :prompt_fingerprint,
-                    :prepared_image_hashes_json, :provider_request_id, :response_sha256,
-                    :normalized_response_json, :frame_to_asset_map_json, :merge_plan_json,
-                    :applied_operation_keys_json, :error_code, :error_message, :worker_token,
-                    :estimated_cost, :prompt_tokens, :response_tokens, :duration_ms,
-                    :created_at, :updated_at
+        params = self._params_tuple(request)
+        with self._client.cursor() as cur:
+            if existing is None:
+                cur.execute(
+                    """
+                    INSERT INTO global_fallback_batch_requests (
+                        id, job_id, execution_id, attempt, batch_index, batch_count,
+                        batch_fingerprint, status, ordered_asset_ids_json, provider, model,
+                        schema_version, configuration_fingerprint, prompt_fingerprint,
+                        prepared_image_hashes_json, provider_request_id, response_sha256,
+                        normalized_response_json, frame_to_asset_map_json, merge_plan_json,
+                        applied_operation_keys_json, error_code, error_message, worker_token,
+                        estimated_cost, prompt_tokens, response_tokens, duration_ms,
+                        created_at, updated_at
+                    ) VALUES (
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    )
+                    """,
+                    params,
                 )
+                return
+            cur.execute(
+                """
+                UPDATE global_fallback_batch_requests SET
+                    status=?,
+                    ordered_asset_ids_json=?,
+                    provider_request_id=?,
+                    response_sha256=?,
+                    normalized_response_json=?,
+                    frame_to_asset_map_json=?,
+                    merge_plan_json=?,
+                    applied_operation_keys_json=?,
+                    error_code=?,
+                    error_message=?,
+                    worker_token=?,
+                    estimated_cost=?,
+                    prompt_tokens=?,
+                    response_tokens=?,
+                    duration_ms=?,
+                    updated_at=?
+                WHERE id=?
                 """,
-                params,
+                (
+                    request.status.value,
+                    _dumps(request.ordered_asset_ids) or "[]",
+                    request.provider_request_id,
+                    request.response_sha256,
+                    _dumps(request.normalized_response_json),
+                    _dumps(request.frame_to_asset_map) or "{}",
+                    _dumps(request.merge_plan_json),
+                    _dumps(request.applied_operation_keys) or "[]",
+                    request.error_code,
+                    request.error_message,
+                    request.worker_token,
+                    request.estimated_cost,
+                    request.prompt_tokens,
+                    request.response_tokens,
+                    request.duration_ms,
+                    request.updated_at,
+                    request.id,
+                ),
             )
-            return
-        self._sql.execute(
-            """
-            UPDATE global_fallback_batch_requests SET
-                status=:status,
-                ordered_asset_ids_json=:ordered_asset_ids_json,
-                provider_request_id=:provider_request_id,
-                response_sha256=:response_sha256,
-                normalized_response_json=:normalized_response_json,
-                frame_to_asset_map_json=:frame_to_asset_map_json,
-                merge_plan_json=:merge_plan_json,
-                applied_operation_keys_json=:applied_operation_keys_json,
-                error_code=:error_code,
-                error_message=:error_message,
-                worker_token=:worker_token,
-                estimated_cost=:estimated_cost,
-                prompt_tokens=:prompt_tokens,
-                response_tokens=:response_tokens,
-                duration_ms=:duration_ms,
-                updated_at=:updated_at
-            WHERE id=:id
-            """,
-            params,
-        )
 
     def get_by_id(self, request_id: str) -> GlobalFallbackBatchRequest | None:
-        rows = self._sql.fetch_all(
-            "SELECT * FROM global_fallback_batch_requests WHERE id = :id",
-            {"id": request_id},
-        )
-        if not rows:
-            return None
-        return _row_to_entity(rows[0])
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"SELECT {_SELECT_FIELDS} FROM global_fallback_batch_requests WHERE id = ?",
+                (request_id,),
+            )
+            row = cur.fetchone()
+        return _row_to_entity(row) if row is not None else None
 
     def get_by_fingerprint(
         self,
@@ -135,21 +197,16 @@ class SqlGlobalFallbackBatchRequestRepository(GlobalFallbackBatchRequestReposito
         execution_id: str,
         batch_fingerprint: str,
     ) -> GlobalFallbackBatchRequest | None:
-        rows = self._sql.fetch_all(
-            """
-            SELECT * FROM global_fallback_batch_requests
-            WHERE job_id=:job_id AND execution_id=:execution_id
-              AND batch_fingerprint=:batch_fingerprint
-            """,
-            {
-                "job_id": job_id,
-                "execution_id": execution_id,
-                "batch_fingerprint": batch_fingerprint,
-            },
-        )
-        if not rows:
-            return None
-        return _row_to_entity(rows[0])
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {_SELECT_FIELDS} FROM global_fallback_batch_requests
+                WHERE job_id=? AND execution_id=? AND batch_fingerprint=?
+                """,
+                (job_id, execution_id, batch_fingerprint),
+            )
+            row = cur.fetchone()
+        return _row_to_entity(row) if row is not None else None
 
     def try_insert(self, request: GlobalFallbackBatchRequest) -> GlobalFallbackBatchRequest | None:
         existing = self.get_by_fingerprint(
@@ -161,20 +218,23 @@ class SqlGlobalFallbackBatchRequestRepository(GlobalFallbackBatchRequestReposito
             return None
         try:
             self.save(request)
-        except Exception:
-            # Unique constraint race — reload.
-            return None
+        except pyodbc.IntegrityError as exc:
+            if _is_fingerprint_unique_violation(exc):
+                return None
+            raise
         return self.get_by_id(request.id)
 
     def list_by_job(self, job_id: str) -> Sequence[GlobalFallbackBatchRequest]:
-        rows = self._sql.fetch_all(
-            """
-            SELECT * FROM global_fallback_batch_requests
-            WHERE job_id=:job_id
-            ORDER BY batch_index ASC, created_at ASC
-            """,
-            {"job_id": job_id},
-        )
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT {_SELECT_FIELDS} FROM global_fallback_batch_requests
+                WHERE job_id=?
+                ORDER BY batch_index ASC, created_at ASC
+                """,
+                (job_id,),
+            )
+            rows = cur.fetchall()
         return [_row_to_entity(r) for r in rows]
 
     def append_applied_operation_key(self, request_id: str, *, operation_key: str) -> bool:
@@ -184,45 +244,41 @@ class SqlGlobalFallbackBatchRequestRepository(GlobalFallbackBatchRequestReposito
         if operation_key in row.applied_operation_keys:
             return False
         row.applied_operation_keys.append(operation_key)
-        row.updated_at = datetime.utcnow()
+        row.updated_at = datetime.now(timezone.utc)
         self.save(row)
         return True
 
     @staticmethod
-    def _params(request: GlobalFallbackBatchRequest) -> dict[str, Any]:
-        return {
-            "id": request.id,
-            "job_id": request.job_id,
-            "execution_id": request.execution_id,
-            "attempt": request.attempt,
-            "batch_index": request.batch_index,
-            "batch_count": request.batch_count,
-            "batch_fingerprint": request.batch_fingerprint,
-            "status": request.status.value,
-            "ordered_asset_ids_json": json.dumps(request.ordered_asset_ids),
-            "provider": request.provider,
-            "model": request.model,
-            "schema_version": request.schema_version,
-            "configuration_fingerprint": request.configuration_fingerprint,
-            "prompt_fingerprint": request.prompt_fingerprint,
-            "prepared_image_hashes_json": json.dumps(request.prepared_image_hashes),
-            "provider_request_id": request.provider_request_id,
-            "response_sha256": request.response_sha256,
-            "normalized_response_json": json.dumps(request.normalized_response_json)
-            if request.normalized_response_json is not None
-            else None,
-            "frame_to_asset_map_json": json.dumps(request.frame_to_asset_map),
-            "merge_plan_json": json.dumps(request.merge_plan_json)
-            if request.merge_plan_json is not None
-            else None,
-            "applied_operation_keys_json": json.dumps(request.applied_operation_keys),
-            "error_code": request.error_code,
-            "error_message": request.error_message,
-            "worker_token": request.worker_token,
-            "estimated_cost": request.estimated_cost,
-            "prompt_tokens": request.prompt_tokens,
-            "response_tokens": request.response_tokens,
-            "duration_ms": request.duration_ms,
-            "created_at": request.created_at,
-            "updated_at": request.updated_at,
-        }
+    def _params_tuple(request: GlobalFallbackBatchRequest) -> tuple[Any, ...]:
+        return (
+            request.id,
+            request.job_id,
+            request.execution_id,
+            request.attempt,
+            request.batch_index,
+            request.batch_count,
+            request.batch_fingerprint,
+            request.status.value,
+            _dumps(request.ordered_asset_ids) or "[]",
+            request.provider,
+            request.model,
+            request.schema_version,
+            request.configuration_fingerprint,
+            request.prompt_fingerprint,
+            _dumps(request.prepared_image_hashes) or "[]",
+            request.provider_request_id,
+            request.response_sha256,
+            _dumps(request.normalized_response_json),
+            _dumps(request.frame_to_asset_map) or "{}",
+            _dumps(request.merge_plan_json),
+            _dumps(request.applied_operation_keys) or "[]",
+            request.error_code,
+            request.error_message,
+            request.worker_token,
+            request.estimated_cost,
+            request.prompt_tokens,
+            request.response_tokens,
+            request.duration_ms,
+            request.created_at,
+            request.updated_at,
+        )

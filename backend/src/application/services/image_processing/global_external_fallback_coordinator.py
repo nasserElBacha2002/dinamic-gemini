@@ -15,6 +15,9 @@ from typing import Any, Protocol
 from src.application.ports.global_fallback_batch_request_repository import (
     GlobalFallbackBatchRequestRepository,
 )
+from src.application.ports.image_processing_repositories import (
+    JobProcessingLeaseRepository,
+)
 from src.application.services.image_processing.external_fallback_mode import (
     EXTERNAL_FALLBACK_MODE_GLOBAL_BATCH,
     EXTERNAL_FALLBACK_MODE_PER_ASSET,
@@ -124,7 +127,7 @@ class GlobalFallbackCoordinatorResult:
 
 @dataclass
 class GlobalExternalFallbackCoordinator:
-    lease_repo: Any
+    lease_repo: JobProcessingLeaseRepository
     clock: Any
     batch_analyzer: GlobalFallbackBatchAnalyzer
     batch_journal: GlobalFallbackBatchRequestRepository
