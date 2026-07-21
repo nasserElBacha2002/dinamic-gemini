@@ -439,6 +439,8 @@ export interface JobSummary {
   asset_progress?: AssetProgress | null;
   /** Phase 5 selective external fallback counters. */
   fallback_progress?: FallbackProgress | null;
+  /** GLOBAL_BATCH aisle-level fallback summary. */
+  global_fallback?: GlobalFallbackSummary | null;
   /** Phase 5 per-asset sanitized external fallback summaries. */
   fallback_asset_summaries?: AssetFallbackSummary[] | null;
   /** Immutable identification execution snapshot from job engine_params (Phase 3/4/5). */
@@ -467,6 +469,26 @@ export interface FallbackProgress {
   pending_manual_review: number;
   estimated_external_cost?: number | null;
   resolved_internal: number;
+}
+
+export interface GlobalFallbackSummary {
+  fallback_mode?: string | null;
+  execution_scope?: string | null;
+  schema_version?: string | null;
+  analysis_contract?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  prompt_key?: string | null;
+  images_sent?: number | null;
+  batch_count?: number | null;
+  requests_count?: number | null;
+  entity_count?: number | null;
+  conflicts?: number | null;
+  unmapped?: number | null;
+  applied_external?: number | null;
+  kept_internal?: number | null;
+  persistence_status?: string | null;
+  reused_durable?: boolean | null;
 }
 
 export interface AssetFallbackSummary {

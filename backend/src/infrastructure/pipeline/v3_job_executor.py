@@ -129,6 +129,20 @@ class _V3PipelineInputRequest:
     settings: Settings
 
 
+@dataclass(frozen=True)
+class _GlobalFallbackRuntimeCtx:
+    """Runtime dirs/observers needed to run GLOBAL_BATCH after the internal aisle pass."""
+
+    base_path: Path
+    v3_base: Path
+    job_dir: Path
+    run_dir: Path
+    log: logging.Logger
+    execution_observer: Any
+    cancellation_checkpoint: Any
+    legacy_local_read_enabled: bool = False
+
+
 class V3JobExecutor:
     """Execute v3 process_aisle jobs: load assets, run pipeline, persist results, update status."""
 
@@ -456,6 +470,198 @@ class V3JobExecutor:
         assert analysis_context is not None
         return analysis_context, job_input, video_path
 
+    def _run_global_external_fallback_after_internal(
+        self,
+        *,
+        job: Any,
+        aisle: Aisle,
+        assets: list[Any],
+        settings: Settings,
+        is_cancelled: Any,
+        event_publisher: Any,
+        state_repo: Any,
+        lease_repo: Any,
+        ctx: _GlobalFallbackRuntimeCtx,
+    ) -> bool:
+        """Run GLOBAL_BATCH after internal aisle pass. False => caller must stop (failed)."""
+        import uuid as _uuid
+
+        from src.application.services.image_processing.external_fallback_mode import (
+            EXTERNAL_FALLBACK_MODE_GLOBAL_BATCH,
+        )
+        from src.application.services.image_processing.external_provider_fallback_orchestrator import (
+            ExternalFallbackSnapshot,
+        )
+        from src.application.services.image_processing.global_external_fallback_coordinator import (
+            GlobalExternalFallbackCoordinator,
+        )
+        from src.application.services.image_processing.global_fallback_merge_policy import (
+            InternalAssetEvidence,
+        )
+        from src.infrastructure.pipeline.global_fallback_hybrid_runner import (
+            HybridGlobalFallbackBatchAnalyzer,
+        )
+        from src.infrastructure.pipeline.v3_image_processing_bridge import (
+            build_default_code_scan_persister,
+        )
+        from src.pipeline.stages.frame_acquisition_stage import HYBRID_MAX_FRAMES_LOAD_CAP
+        from src.runtime.app_container import get_app_container
+
+        params = job.engine_params_json if isinstance(job.engine_params_json, dict) else {}
+        ident = params.get("identification_execution")
+        snapshot = ExternalFallbackSnapshot.from_identification_execution(
+            ident if isinstance(ident, dict) else None
+        )
+        if snapshot is None or not snapshot.enabled:
+            return True
+        if snapshot.fallback_mode != EXTERNAL_FALLBACK_MODE_GLOBAL_BATCH:
+            return True
+        if lease_repo is None:
+            logger.error(
+                "global_fallback.lease_repo_unavailable job_id=%s",
+                job.id,
+            )
+            self._state.fail_job_and_aisle(
+                job.id,
+                aisle,
+                "GLOBAL_BATCH requires job processing lease repository",
+                failure_code="GLOBAL_FALLBACK_LEASE_UNAVAILABLE",
+            )
+            return False
+
+        container = get_app_container()
+        persister = build_default_code_scan_persister(
+            job_source_asset_repo=container.get_job_source_asset_repo(),
+            source_asset_repo=self._source_asset_repo,
+            clock=self._clock,
+            unit_of_work_factory=container.get_manual_image_result_uow_factory(),
+        )
+
+        def _load_internal(job_id: str, asset_id: str) -> InternalAssetEvidence | None:
+            status = None
+            code = None
+            qty = None
+            resolved = False
+            if state_repo is not None:
+                st = state_repo.get_by_job_and_asset(job_id, asset_id)
+                if st is not None:
+                    status = st.status.value if st.status is not None else None
+                    last = (st.last_strategy or "").upper()
+                    resolved = status == "RESOLVED" and last in (
+                        "CODE_SCAN",
+                        "INTERNAL_OCR",
+                        "CODE_SCAN_PROCESSING",
+                    )
+            try:
+                positions = self._position_repo.list_by_aisle(aisle.id, job_id=job_id)
+            except TypeError:
+                positions = self._position_repo.list_by_aisle(aisle.id)
+            except Exception:
+                positions = []
+            for pos in positions or []:
+                if getattr(pos, "job_id", None) and str(pos.job_id) != str(job_id):
+                    continue
+                summary = getattr(pos, "detected_summary_json", None) or {}
+                if not isinstance(summary, dict):
+                    continue
+                src = summary.get("source_asset_id") or summary.get("source_image_id")
+                if str(src or "") != asset_id:
+                    continue
+                code = summary.get("internal_code")
+                try:
+                    products = self._product_record_repo.list_by_position(pos.id)
+                    if products:
+                        qty = getattr(products[0], "detected_quantity", None)
+                except Exception:
+                    qty = None
+                if code and qty is not None:
+                    resolved = True
+                break
+            return InternalAssetEvidence(
+                asset_id=asset_id,
+                status=status,
+                internal_code=str(code).strip() if code else None,
+                quantity=float(qty) if isinstance(qty, (int, float)) else None,
+                resolved_internal=bool(resolved and code and qty is not None),
+            )
+
+        def _filename_map(asset_list: Any) -> dict[str, str]:
+            out: dict[str, str] = {}
+            for a in asset_list:
+                aid = getattr(a, "id", None)
+                if not aid:
+                    continue
+                for key in (
+                    getattr(a, "original_filename", None),
+                    getattr(a, "filename", None),
+                    getattr(a, "storage_key", None),
+                ):
+                    if key and str(key).strip():
+                        out[str(key).strip()] = str(aid)
+            return out
+
+        analyzer = HybridGlobalFallbackBatchAnalyzer(
+            pipeline_execution_service=self._pipeline_execution_service,
+            pipeline_runner=self._pipeline_runner,
+            settings=settings,
+            base_path=ctx.base_path,
+            v3_base=ctx.v3_base,
+            job_dir=ctx.job_dir,
+            run_dir=ctx.run_dir,
+            inventory_repo=self._inventory_repo,
+            log=ctx.log,
+            execution_observer=ctx.execution_observer,
+            cancellation_checkpoint=ctx.cancellation_checkpoint,
+            legacy_local_read_enabled=ctx.legacy_local_read_enabled,
+        )
+        max_frames = int(
+            getattr(settings, "hybrid_max_frames", None) or HYBRID_MAX_FRAMES_LOAD_CAP
+        )
+        max_frames = min(max_frames, HYBRID_MAX_FRAMES_LOAD_CAP)
+
+        coordinator = GlobalExternalFallbackCoordinator(
+            lease_repo=lease_repo,
+            clock=self._clock,
+            batch_analyzer=analyzer,
+            result_persister=persister,
+            event_publisher=event_publisher,
+            state_repo=state_repo,
+            lease_duration_seconds=int(
+                getattr(settings, "image_processing_batch_lease_seconds", 600) or 600
+            ),
+            max_frames_per_batch=max_frames,
+            load_internal_evidence=_load_internal,
+            filename_to_asset_id=_filename_map,
+        )
+        fresh_job = self._job_repo.get_by_id(job.id) or job
+        outcome = coordinator.process_after_internal_pass(
+            job=fresh_job,
+            aisle=aisle,
+            assets=assets,
+            snapshot=snapshot,
+            worker_token=str(_uuid.uuid4()),
+            is_cancelled=is_cancelled,
+            configuration_fingerprint=str(
+                getattr(job, "configuration_snapshot_version", "") or ""
+            ),
+            execution_id=str(job.id),
+        )
+        if outcome.public_summary:
+            self._job_repo.merge_result_json(
+                job.id, {"global_fallback": outcome.public_summary}
+            )
+        if outcome.cancelled:
+            return True
+        if outcome.failed:
+            self._state.fail_job_and_aisle(
+                job.id,
+                aisle,
+                outcome.error_message or "GLOBAL_BATCH fallback failed",
+                failure_code=outcome.error_code or "FALLBACK_BATCH_FAILED",
+            )
+            return False
+        return True
+
     def _run_code_scan_path(
         self,
         *,
@@ -467,6 +673,7 @@ class V3JobExecutor:
         exec_log: Any,
         cancel_event_emitted: dict[str, bool],
         runtime_abort_event: Any = None,
+        global_fallback_ctx: _GlobalFallbackRuntimeCtx | None = None,
     ) -> bool:
         """Phase 3 CODE_SCAN execution — deterministic per-image scan, no LLM pipeline."""
         import uuid as _uuid
@@ -836,6 +1043,21 @@ class V3JobExecutor:
         if job_outcome is CodeScanJobOutcome.PARTIALLY_COMPLETED:
             self._job_repo.merge_result_json(job_id, {"code_scan_partial": True})
 
+        if global_fallback_ctx is not None:
+            gf = self._run_global_external_fallback_after_internal(
+                job=job,
+                aisle=aisle,
+                assets=assets,
+                settings=settings,
+                is_cancelled=_is_cancelled,
+                event_publisher=event_publisher,
+                state_repo=state_repo,
+                lease_repo=lease_repo,
+                ctx=global_fallback_ctx,
+            )
+            if gf is False:
+                return True
+
         _publish_job_event(
             "job.finalization_started",
             message="CODE_SCAN finalization started",
@@ -882,6 +1104,7 @@ class V3JobExecutor:
         exec_log: Any,
         cancel_event_emitted: dict[str, bool],
         runtime_abort_event: Any = None,
+        global_fallback_ctx: _GlobalFallbackRuntimeCtx | None = None,
     ) -> bool:
         """Phase 4 INTERNAL_OCR execution — local Tesseract OCR per image, no LLM."""
         import uuid as _uuid
@@ -1240,6 +1463,21 @@ class V3JobExecutor:
             return True
 
         progress = outcome.progress
+        if global_fallback_ctx is not None:
+            gf = self._run_global_external_fallback_after_internal(
+                job=job,
+                aisle=aisle,
+                assets=assets,
+                settings=settings,
+                is_cancelled=_is_cancelled,
+                event_publisher=event_publisher,
+                state_repo=state_repo,
+                lease_repo=lease_repo,
+                ctx=global_fallback_ctx,
+            )
+            if gf is False:
+                return True
+
         _publish_job_event(
             "job.finalization_started",
             message="INTERNAL_OCR finalization started",
@@ -1491,6 +1729,22 @@ class V3JobExecutor:
                         exec_log=rt.exec_log,
                         cancel_event_emitted=rt.cancel_event_emitted,
                         runtime_abort_event=rt.runtime_abort_event,
+                        global_fallback_ctx=_GlobalFallbackRuntimeCtx(
+                            base_path=base_path,
+                            v3_base=v3_base,
+                            job_dir=job_dir,
+                            run_dir=rt.run_dir,
+                            log=rt.log,
+                            execution_observer=execution_observer,
+                            cancellation_checkpoint=cancellation_checkpoint,
+                            legacy_local_read_enabled=bool(
+                                getattr(
+                                    settings,
+                                    "artifact_storage_legacy_local_read_enabled",
+                                    False,
+                                )
+                            ),
+                        ),
                     )
 
                 if job.execution_strategy == AisleIdentificationExecutionStrategy.INTERNAL_OCR:
@@ -1503,6 +1757,22 @@ class V3JobExecutor:
                         exec_log=rt.exec_log,
                         cancel_event_emitted=rt.cancel_event_emitted,
                         runtime_abort_event=rt.runtime_abort_event,
+                        global_fallback_ctx=_GlobalFallbackRuntimeCtx(
+                            base_path=base_path,
+                            v3_base=v3_base,
+                            job_dir=job_dir,
+                            run_dir=rt.run_dir,
+                            log=rt.log,
+                            execution_observer=execution_observer,
+                            cancellation_checkpoint=cancellation_checkpoint,
+                            legacy_local_read_enabled=bool(
+                                getattr(
+                                    settings,
+                                    "artifact_storage_legacy_local_read_enabled",
+                                    False,
+                                )
+                            ),
+                        ),
                     )
 
                 if bool(settings.image_processing_orchestrator_enabled):

@@ -391,4 +391,30 @@ describe('processingExecutionPresentation', () => {
     });
     expect(presentation.supplierPromptMissingAlert).toBe(true);
   });
+
+  it('parses GLOBAL_BATCH summary from result_json', async () => {
+    const { parseGlobalFallbackPresentation } = await import(
+      '../../../src/features/processing/mappers/processingExecutionPresentation'
+    );
+    const gf = parseGlobalFallbackPresentation({
+      global_fallback: {
+        fallback_mode: 'GLOBAL_BATCH',
+        provider: 'claude',
+        model: 'sonnet',
+        schema_version: 'v2.1',
+        analysis_contract: 'GlobalEntityResponseV21',
+        images_sent: 5,
+        batch_count: 1,
+        requests_count: 1,
+        entity_count: 4,
+        conflicts: 0,
+        persistence_status: 'COMPLETED',
+        prompt_key: 'global_v22',
+      },
+    });
+    expect(gf?.mode).toBe('GLOBAL_BATCH');
+    expect(gf?.requestsCount).toBe(1);
+    expect(gf?.imagesSent).toBe(5);
+    expect(gf?.analysisContract).toBe('GlobalEntityResponseV21');
+  });
 });

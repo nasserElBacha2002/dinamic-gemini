@@ -54,6 +54,7 @@ import { useProcessingObservabilityCapabilities } from '../features/processing/h
 import {
   buildJobExecutionPresentation,
   buildObsContentTabsForJob,
+  parseGlobalFallbackPresentation,
   strategyLabelKey,
   type ProcessingObsTabId,
 } from '../features/processing/mappers/processingExecutionPresentation';
@@ -97,9 +98,12 @@ function jobOptionLabel(job: JobSummary): string {
     model_name: job.model_name,
     identification_execution: job.identification_execution ?? null,
     fallback_asset_summaries: job.fallback_asset_summaries ?? null,
+    global_fallback: job.global_fallback ?? null,
     external_execution_used:
       Number(job.fallback_progress?.resolved_external || 0) > 0 ||
-      Number(job.fallback_progress?.fallback_requested || 0) > 0,
+      Number(job.fallback_progress?.fallback_requested || 0) > 0 ||
+      Boolean(job.global_fallback?.requests_count) ||
+      Boolean(job.global_fallback?.persistence_status),
   });
   if (presentation.showFallbackConfiguredRows) {
     const head = [presentation.configured.provider, presentation.configured.model]
@@ -146,9 +150,12 @@ function jobMetadataRows(
     identification_execution: job.identification_execution ?? null,
     fallback_asset_summaries: job.fallback_asset_summaries ?? null,
     result_json: (job as { result_json?: Record<string, unknown> | null }).result_json ?? null,
+    global_fallback: job.global_fallback ?? null,
     external_execution_used:
       Number(job.fallback_progress?.resolved_external || 0) > 0 ||
-      Number(job.fallback_progress?.fallback_requested || 0) > 0,
+      Number(job.fallback_progress?.fallback_requested || 0) > 0 ||
+      Boolean(job.global_fallback?.requests_count) ||
+      Boolean(job.global_fallback?.persistence_status),
   });
   return [
     { label: i18n.t('jobs.obs_started'), value: formatOptionalDate(job.started_at) },
@@ -229,7 +236,53 @@ function jobMetadataRows(
           },
         ]
       : []),
-    ...(job.fallback_asset_summaries && job.fallback_asset_summaries.length > 0
+    ...(() => {
+      const gf =
+        job.global_fallback != null
+          ? {
+              mode: job.global_fallback.fallback_mode ?? null,
+              provider: job.global_fallback.provider ?? null,
+              model: job.global_fallback.model ?? null,
+              schemaVersion: job.global_fallback.schema_version ?? null,
+              analysisContract: job.global_fallback.analysis_contract ?? null,
+              imagesSent: job.global_fallback.images_sent ?? null,
+              batchCount: job.global_fallback.batch_count ?? null,
+              requestsCount: job.global_fallback.requests_count ?? null,
+              entityCount: job.global_fallback.entity_count ?? null,
+              conflicts: job.global_fallback.conflicts ?? null,
+              persistenceStatus: job.global_fallback.persistence_status ?? null,
+              promptKey: job.global_fallback.prompt_key ?? null,
+            }
+          : parseGlobalFallbackPresentation(null);
+      if (!gf || gf.mode !== 'GLOBAL_BATCH') return [];
+      // Do not render per-asset fallback call lists when GLOBAL_BATCH ran.
+      return [
+        {
+          label: i18n.t('jobs.obs_global_fallback', {
+            defaultValue: 'Fallback externo global',
+          }),
+          value: [
+            `Modo: ${gf.mode}`,
+            gf.provider ? `Proveedor: ${gf.provider}` : null,
+            gf.model ? `Modelo: ${gf.model}` : null,
+            gf.schemaVersion ? `Schema: ${gf.schemaVersion}` : null,
+            gf.analysisContract ? `Contrato: ${gf.analysisContract}` : null,
+            gf.imagesSent != null ? `Imágenes: ${gf.imagesSent}` : null,
+            gf.batchCount != null ? `Batches: ${gf.batchCount}` : null,
+            gf.requestsCount != null ? `Llamadas: ${gf.requestsCount}` : null,
+            gf.entityCount != null ? `Entidades: ${gf.entityCount}` : null,
+            gf.conflicts != null ? `Conflictos: ${gf.conflicts}` : null,
+            gf.promptKey ? `Prompt: ${gf.promptKey}` : null,
+            gf.persistenceStatus ? `Persistencia: ${gf.persistenceStatus}` : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        },
+      ];
+    })(),
+    ...(job.fallback_asset_summaries &&
+    job.fallback_asset_summaries.length > 0 &&
+    job.global_fallback?.fallback_mode !== 'GLOBAL_BATCH'
       ? [
           {
             label: i18n.t('jobs.obs_fallback_assets', {
@@ -467,9 +520,12 @@ export default function AisleObservabilityWorkspace({
         result_json:
           (selectedJob as { result_json?: Record<string, unknown> | null } | null)?.result_json ??
           null,
+        global_fallback: selectedJob?.global_fallback ?? null,
         external_execution_used:
           Number(selectedJob?.fallback_progress?.resolved_external || 0) > 0 ||
-          Number(selectedJob?.fallback_progress?.fallback_requested || 0) > 0,
+          Number(selectedJob?.fallback_progress?.fallback_requested || 0) > 0 ||
+          Boolean(selectedJob?.global_fallback?.requests_count) ||
+          Boolean(selectedJob?.global_fallback?.persistence_status),
       }),
     [selectedJob]
   );

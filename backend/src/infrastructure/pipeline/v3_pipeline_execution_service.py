@@ -76,6 +76,8 @@ class V3PipelineExecutionRequest:
         None,
     ]
     cancellation_checkpoint: Callable[[str, str | None, str], None]
+    # When set (GLOBAL_BATCH), use immutable job-snapshot instructions instead of live resolve.
+    supplier_prompt_resolution_override: SupplierPromptResolution | None = None
 
 
 @dataclass(frozen=True)
@@ -127,9 +129,9 @@ class V3PipelineExecutionService:
         job_prompt = (req.job.prompt_key or "").strip() or None
         job_prompt_version = (req.job.prompt_version or "").strip() or None
         job_prompt_parity_mode = coerce_prompt_parity_mode(req.job.engine_params_json)
-        supplier_prompt_resolution = None
+        supplier_prompt_resolution = req.supplier_prompt_resolution_override
         spr = self._supplier_prompt_resolver
-        if spr is not None:
+        if supplier_prompt_resolution is None and spr is not None:
             supplier_prompt_resolution = spr.resolve(
                 inventory_id=req.aisle.inventory_id,
                 aisle_id=req.aisle_id,
@@ -154,6 +156,16 @@ class V3PipelineExecutionService:
                     supplier_prompt_resolution_failure_message(supplier_prompt_resolution),
                 )
                 return None
+        elif (
+            supplier_prompt_resolution is not None
+            and supplier_prompt_resolution.resolution_status == "error"
+        ):
+            self._state.fail_job_and_aisle(
+                req.job_id,
+                req.aisle,
+                supplier_prompt_resolution_failure_message(supplier_prompt_resolution),
+            )
+            return None
         result = self._pipeline_runner.run_hybrid_pipeline(
             pipeline=pipeline,
             video_path=req.pipeline_video_path,

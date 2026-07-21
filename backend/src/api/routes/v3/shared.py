@@ -643,6 +643,22 @@ def _fallback_progress_from_job_result(
         return None
 
 
+def _global_fallback_from_job_result(
+    result_json: dict[str, Any] | None,
+):
+    from src.api.schemas.processing_schemas import GlobalFallbackSummaryResponse
+
+    if not result_json or not isinstance(result_json, dict):
+        return None
+    raw = result_json.get("global_fallback")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return GlobalFallbackSummaryResponse.model_validate(raw)
+    except ValidationError:
+        return None
+
+
 def _fallback_asset_summaries_from_job_result(
     result_json: dict[str, Any] | None,
 ):
@@ -718,6 +734,7 @@ def job_to_summary(j: Job, *, is_operational: bool = False) -> JobSummary:
         llm_cost_snapshot=_llm_cost_snapshot_from_job_result(j.result_json),
         asset_progress=_asset_progress_from_job_result(j.result_json),
         fallback_progress=_fallback_progress_from_job_result(j.result_json),
+        global_fallback=_global_fallback_from_job_result(j.result_json),
         fallback_asset_summaries=_fallback_asset_summaries_from_job_result(j.result_json),
         identification_execution=_identification_execution_from_job(j),
         client_id=_client_id_from_job(j),

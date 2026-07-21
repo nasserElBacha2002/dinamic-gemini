@@ -135,6 +135,10 @@ def identification_execution_snapshot_dict(
         feature_flags["external_fallback_per_image_enabled"] = bool(
             external_fallback.get("fallback_enabled")
         )
+        if external_fallback.get("fallback_mode"):
+            feature_flags["external_fallback_mode"] = str(
+                external_fallback.get("fallback_mode")
+            )
     return {
         "requested_mode": decision.requested_mode.value,
         "executed_strategy": decision.strategy.value,

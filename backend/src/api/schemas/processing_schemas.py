@@ -148,6 +148,28 @@ class FallbackProgressResponse(BaseModel):
     resolved_internal: int = 0
 
 
+class GlobalFallbackSummaryResponse(BaseModel):
+    """GLOBAL_BATCH external fallback summary (from ``result_json.global_fallback``)."""
+
+    fallback_mode: str | None = None
+    execution_scope: str | None = None
+    schema_version: str | None = None
+    analysis_contract: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    prompt_key: str | None = None
+    images_sent: int | None = None
+    batch_count: int | None = None
+    requests_count: int | None = None
+    entity_count: int | None = None
+    conflicts: int | None = None
+    unmapped: int | None = None
+    applied_external: int | None = None
+    kept_internal: int | None = None
+    persistence_status: str | None = None
+    reused_durable: bool | None = None
+
+
 class AssetFallbackSummaryResponse(BaseModel):
     """Sanitized per-asset external fallback observability (no secrets / raw payloads)."""
 
@@ -226,6 +248,8 @@ class JobSummary(BaseModel):
     asset_progress: Optional[AssetProgressResponse] = None
     #: Phase 5 selective external fallback counters (absent when fallback never ran).
     fallback_progress: Optional[FallbackProgressResponse] = None
+    #: GLOBAL_BATCH aisle-level fallback summary (absent when mode is PER_ASSET / unused).
+    global_fallback: Optional[GlobalFallbackSummaryResponse] = None
     #: Phase 5 per-asset sanitized fallback rows (derived from durable requests).
     fallback_asset_summaries: Optional[list[AssetFallbackSummaryResponse]] = None
     #: Immutable identification execution snapshot from ``engine_params_json`` (Phase 3/4/5).

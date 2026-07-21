@@ -142,6 +142,8 @@ class ExternalFallbackSnapshot:
     supplier_id: str | None = None
     profile_aware_validation_enabled: bool = False
     ambiguous_internal_code_fallback_enabled: bool = False
+    # GLOBAL_BATCH (default) | PER_ASSET (deprecated rollback). Snapshotted at job create.
+    fallback_mode: str = "GLOBAL_BATCH"
 
     @property
     def supplier_prompt_required(self) -> bool:
@@ -167,6 +169,19 @@ class ExternalFallbackSnapshot:
             supplier_id = str(profile_snap.get("supplier_id")).strip() or None
         if supplier_id is None and isinstance(supplier_prompt_snap, dict):
             supplier_id = str(supplier_prompt_snap.get("supplier_id") or "").strip() or None
+        from src.application.services.image_processing.external_fallback_mode import (
+            EXTERNAL_FALLBACK_MODE_PER_ASSET,
+            parse_external_fallback_mode,
+        )
+
+        # Jobs created before fallback_mode existed used PER_ASSET behavior; preserve that
+        # for in-flight compatibility when the key is absent.
+        raw_mode = raw.get("fallback_mode")
+        if raw_mode is None or str(raw_mode).strip() == "":
+            fallback_mode = EXTERNAL_FALLBACK_MODE_PER_ASSET
+        else:
+            fallback_mode = parse_external_fallback_mode(str(raw_mode))
+
         return cls(
             enabled=bool(raw.get("fallback_enabled") or raw.get("enabled")),
             provider=str(raw.get("fallback_provider") or raw.get("provider") or "").strip().lower(),
@@ -203,6 +218,7 @@ class ExternalFallbackSnapshot:
             ambiguous_internal_code_fallback_enabled=bool(
                 raw.get("ambiguous_internal_code_fallback_enabled", False)
             ),
+            fallback_mode=fallback_mode,
         )
 
 
@@ -1544,14 +1560,41 @@ def build_external_fallback_snapshot_dict(
     recoverable_technical_codes: list[str] | None = None,
     retry_backoff_seconds: float = 0.5,
     ambiguous_internal_code_fallback_enabled: bool = False,
+    fallback_mode: str = "GLOBAL_BATCH",
 ) -> dict[str, Any]:
+    from src.application.services.image_processing.external_fallback_mode import (
+        GLOBAL_FALLBACK_ANALYSIS_CONTRACT,
+        GLOBAL_FALLBACK_EXECUTION_SCOPE,
+        GLOBAL_FALLBACK_PROMPT_KEY,
+        GLOBAL_FALLBACK_SCHEMA_VERSION,
+        parse_external_fallback_mode,
+    )
+
+    mode = parse_external_fallback_mode(fallback_mode)
+    # GLOBAL_BATCH uses hybrid identity in the snapshot; PER_ASSET keeps single-label keys.
+    if mode == "GLOBAL_BATCH":
+        prompt_key = GLOBAL_FALLBACK_PROMPT_KEY
+        prompt_version = GLOBAL_FALLBACK_SCHEMA_VERSION
+    else:
+        prompt_key = EXTERNAL_FALLBACK_PROMPT_KEY
+        prompt_version = EXTERNAL_FALLBACK_PROMPT_VERSION
     return {
         "fallback_enabled": bool(enabled),
         "fallback_provider": (provider or "").strip().lower(),
         "fallback_model": model,
+        "fallback_mode": mode,
+        "execution_scope": GLOBAL_FALLBACK_EXECUTION_SCOPE
+        if mode == "GLOBAL_BATCH"
+        else "SINGLE_ASSET",
+        "schema_version": GLOBAL_FALLBACK_SCHEMA_VERSION
+        if mode == "GLOBAL_BATCH"
+        else "external_fallback_v1",
+        "analysis_contract": GLOBAL_FALLBACK_ANALYSIS_CONTRACT
+        if mode == "GLOBAL_BATCH"
+        else "ExternalFallbackLabelResponse",
         "fallback_order": [(provider or "").strip().lower()] if provider else [],
-        "prompt_key": EXTERNAL_FALLBACK_PROMPT_KEY,
-        "prompt_version": EXTERNAL_FALLBACK_PROMPT_VERSION,
+        "prompt_key": prompt_key,
+        "prompt_version": prompt_version,
         "timeout_seconds": float(timeout_seconds),
         "max_attempts": int(max_attempts),
         "retry_backoff_seconds": float(retry_backoff_seconds),

@@ -52,6 +52,22 @@ export interface ExternalFallbackSnapshot {
   model: string | null;
   promptKey: string | null;
   promptVersion: string | null;
+  fallbackMode: string | null;
+}
+
+export interface GlobalFallbackPresentation {
+  mode: string | null;
+  provider: string | null;
+  model: string | null;
+  schemaVersion: string | null;
+  analysisContract: string | null;
+  imagesSent: number | null;
+  batchCount: number | null;
+  requestsCount: number | null;
+  entityCount: number | null;
+  conflicts: number | null;
+  persistenceStatus: string | null;
+  promptKey: string | null;
 }
 
 export interface IdentificationExecutionSnapshot {
@@ -71,6 +87,11 @@ export interface JobExecutionPresentationInput {
   identification_execution?: Record<string, unknown> | IdentificationExecutionSnapshot | null;
   fallback_asset_summaries?: AssetFallbackSummary[] | null;
   external_execution_used?: boolean | null;
+  global_fallback?: {
+    fallback_mode?: string | null;
+    requests_count?: number | null;
+    persistence_status?: string | null;
+  } | null;
 }
 
 export interface JobExecutionPresentation {
@@ -186,6 +207,70 @@ export function parseExternalFallbackSnapshot(
     model: optionalString(ef.fallback_model ?? ef.model),
     promptKey: optionalString(ef.prompt_key),
     promptVersion: optionalString(ef.prompt_version),
+    fallbackMode: optionalString(ef.fallback_mode),
+  };
+}
+
+export function parseGlobalFallbackPresentation(
+  resultJson: Record<string, unknown> | null | undefined,
+): GlobalFallbackPresentation | null {
+  const root = asRecord(resultJson);
+  if (!root) return null;
+  const gf = asRecord(root.global_fallback);
+  if (!gf) return null;
+  const num = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) ? v : null;
+  return {
+    mode: optionalString(gf.fallback_mode),
+    provider: optionalString(gf.provider),
+    model: optionalString(gf.model),
+    schemaVersion: optionalString(gf.schema_version),
+    analysisContract: optionalString(gf.analysis_contract),
+    imagesSent: num(gf.images_sent),
+    batchCount: num(gf.batch_count),
+    requestsCount: num(gf.requests_count),
+    entityCount: num(gf.entity_count),
+    conflicts: num(gf.conflicts),
+    persistenceStatus: optionalString(gf.persistence_status),
+    promptKey: optionalString(gf.prompt_key),
+  };
+}
+
+/** Map API ``global_fallback`` summary onto presentation shape. */
+export function globalFallbackFromJobSummary(
+  summary: {
+    fallback_mode?: string | null;
+    provider?: string | null;
+    model?: string | null;
+    schema_version?: string | null;
+    analysis_contract?: string | null;
+    images_sent?: number | null;
+    batch_count?: number | null;
+    requests_count?: number | null;
+    entity_count?: number | null;
+    conflicts?: number | null;
+    persistence_status?: string | null;
+    prompt_key?: string | null;
+  } | null | undefined,
+): GlobalFallbackPresentation | null {
+  if (!summary) return null;
+  return {
+    mode: optionalString(summary.fallback_mode),
+    provider: optionalString(summary.provider),
+    model: optionalString(summary.model),
+    schemaVersion: optionalString(summary.schema_version),
+    analysisContract: optionalString(summary.analysis_contract),
+    imagesSent:
+      typeof summary.images_sent === 'number' ? summary.images_sent : null,
+    batchCount:
+      typeof summary.batch_count === 'number' ? summary.batch_count : null,
+    requestsCount:
+      typeof summary.requests_count === 'number' ? summary.requests_count : null,
+    entityCount:
+      typeof summary.entity_count === 'number' ? summary.entity_count : null,
+    conflicts: typeof summary.conflicts === 'number' ? summary.conflicts : null,
+    persistenceStatus: optionalString(summary.persistence_status),
+    promptKey: optionalString(summary.prompt_key),
   };
 }
 
@@ -332,10 +417,15 @@ export function buildJobExecutionPresentation(
   const fallbackProgress = input.result_json?.fallback_progress as
     | Record<string, unknown>
     | undefined;
+  const globalFallback =
+    parseGlobalFallbackPresentation(input.result_json) ||
+    globalFallbackFromJobSummary(input.global_fallback ?? null);
   const fallbackUsed =
     Boolean(input.external_execution_used) ||
     Number(fallbackProgress?.resolved_external || 0) > 0 ||
-    Number(fallbackProgress?.fallback_requested || 0) > 0;
+    Number(fallbackProgress?.fallback_requested || 0) > 0 ||
+    Boolean(globalFallback && (globalFallback.requestsCount ?? 0) > 0) ||
+    Boolean(globalFallback?.persistenceStatus);
 
   const configured = extractConfiguredFallbackIdentity(input.identification_execution);
   const executed = extractExecutedFallbackIdentity(input.fallback_asset_summaries);

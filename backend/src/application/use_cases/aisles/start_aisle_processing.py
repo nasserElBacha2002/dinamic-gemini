@@ -382,6 +382,23 @@ class StartAisleProcessingUseCase:
             fallback_enabled = bool(
                 getattr(settings, "external_fallback_per_image_enabled", False)
             )
+            from src.application.services.image_processing.external_fallback_mode import (
+                EXTERNAL_FALLBACK_MODE_PER_ASSET,
+                PER_ASSET_DEPRECATION_NOTE,
+                parse_external_fallback_mode,
+            )
+
+            fallback_mode = parse_external_fallback_mode(
+                getattr(settings, "external_fallback_mode", None)
+            )
+            if fallback_enabled and fallback_mode == EXTERNAL_FALLBACK_MODE_PER_ASSET:
+                logger.warning(
+                    "aisle.external_fallback_per_asset_deprecated inventory_id=%s "
+                    "aisle_id=%s note=%s",
+                    command.inventory_id,
+                    command.aisle_id,
+                    PER_ASSET_DEPRECATION_NOTE,
+                )
             provider_key = str(
                 getattr(settings, "external_fallback_provider", "") or ""
             ).strip().lower()
@@ -452,6 +469,7 @@ class StartAisleProcessingUseCase:
                         False,
                     )
                 ),
+                fallback_mode=fallback_mode,
             )
         supplier_prompt_snapshot = None
         if (

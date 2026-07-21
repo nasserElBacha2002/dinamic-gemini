@@ -98,8 +98,26 @@ class AppSettings(
     @model_validator(mode="after")
     def validate_external_fallback_when_enabled(self) -> Self:
         """Fail closed at startup when per-image fallback is enabled but incomplete."""
+        from src.application.services.image_processing.external_fallback_mode import (
+            EXTERNAL_FALLBACK_MODE_PER_ASSET,
+            parse_external_fallback_mode,
+        )
+
+        # Always validate mode (even when fallback disabled) — no silent defaults for junk.
+        mode = parse_external_fallback_mode(
+            getattr(self, "external_fallback_mode", None)
+        )
+        self.external_fallback_mode = mode
+
         if not bool(getattr(self, "external_fallback_per_image_enabled", False)):
             return self
+        if mode == EXTERNAL_FALLBACK_MODE_PER_ASSET:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "EXTERNAL_FALLBACK_MODE=PER_ASSET is deprecated; prefer GLOBAL_BATCH "
+                "(temporary rollback only)."
+            )
         provider = str(getattr(self, "external_fallback_provider", "") or "").strip().lower()
         model = str(getattr(self, "external_fallback_model", "") or "").strip()
         if not provider:
