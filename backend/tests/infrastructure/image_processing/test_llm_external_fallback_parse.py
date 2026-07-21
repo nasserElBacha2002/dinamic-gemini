@@ -86,12 +86,12 @@ def test_hybrid_v21_schema_is_not_external_no_result() -> None:
         }
     )
     assert analysis.status is ExternalAnalysisStatus.FAILED_TECHNICAL
-    assert analysis.error_code == "EXTERNAL_SCHEMA_INVALID"
+    assert analysis.error_code == "EXTERNAL_HYBRID_SCHEMA_MISROUTED"
     result = ExternalResultNormalizer().normalize(
         job_id="j", asset_id="a", analysis=analysis
     )
     assert result.status is ImageResultStatus.FAILED_TECHNICAL
-    assert result.error_code == "EXTERNAL_SCHEMA_INVALID"
+    assert result.error_code == "EXTERNAL_HYBRID_SCHEMA_MISROUTED"
 
 
 def test_unknown_status_is_schema_invalid() -> None:

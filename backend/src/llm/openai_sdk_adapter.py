@@ -318,15 +318,22 @@ def _openai_build_user_content(
     )
     if request.context_instruction and str(request.context_instruction).strip():
         prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text
-    prompt_text = prompt_text + _JSON_OBJECT_SUFFIX
+    # Hybrid GlobalEntityResponseV21 instruction must NOT be applied to single-label fallback.
+    if not is_external_fallback_schema(request.schema_version):
+        prompt_text = prompt_text + _JSON_OBJECT_SUFFIX
     prompt_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
     prompt_preview = prompt_text[:240].replace("\n", " ")
     logger.debug(
-        "%s prompt_contract hash=%s preview=%r requested_keys=%s",
+        "%s prompt_contract hash=%s preview=%r schema_version=%s requested_keys=%s",
         v.log_label,
         prompt_hash,
         prompt_preview,
-        _OPENAI_CANONICAL_ENTITY_KEYS,
+        request.schema_version,
+        (
+            "external_fallback"
+            if is_external_fallback_schema(request.schema_version)
+            else _OPENAI_CANONICAL_ENTITY_KEYS
+        ),
     )
 
     ctx_imgs = list(request.context_images) if request.context_images else []
@@ -637,4 +644,5 @@ class OpenAiSdkAdapter:
             parsed_json=data,
             raw_text=raw_text,
             usage=usage,
+            schema_version=(request.schema_version or "").strip() or None,
         )

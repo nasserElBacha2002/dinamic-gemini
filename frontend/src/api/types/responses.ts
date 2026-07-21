@@ -478,6 +478,8 @@ export interface AssetFallbackSummary {
   executed_model?: string | null;
   prompt_key?: string | null;
   prompt_version?: string | null;
+  prompt_sha256?: string | null;
+  prompt_text?: string | null;
   adapter_name?: string | null;
   schema_version?: string | null;
   external_attempt_id?: string | null;

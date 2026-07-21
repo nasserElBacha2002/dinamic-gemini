@@ -306,4 +306,36 @@ describe('processingExecutionPresentation', () => {
     expect(executed?.provider).toBe('claude');
     expect(executed?.evidencePresent).toBe(true);
   });
+
+  it('exposes executed prompt content when persisted on summaries', () => {
+    const presentation = buildJobExecutionPresentation({
+      identification_mode: 'INTERNAL_OCR',
+      execution_strategy: 'INTERNAL_OCR',
+      identification_execution: {
+        external_fallback: {
+          fallback_enabled: true,
+          fallback_provider: 'claude',
+          fallback_model: 'claude-opus-4-7',
+          prompt_key: 'external_fallback_single_label',
+          prompt_version: '1.0.0',
+        },
+      },
+      fallback_asset_summaries: [
+        {
+          asset_id: 'a1',
+          external_provider: 'claude',
+          executed_model: 'claude-opus-4-7',
+          prompt_key: 'external_fallback_single_label',
+          prompt_version: '1.0.0',
+          prompt_sha256: 'abc123',
+          prompt_text: '[BASE]\nYou analyze exactly ONE inventory label image.',
+        },
+      ],
+      result_json: { fallback_progress: { fallback_requested: 1 } },
+    });
+    expect(presentation.promptContentAvailability).toBe('available');
+    expect(presentation.executedPromptContent).toContain('[BASE]');
+    expect(presentation.executedPromptSha256).toBe('abc123');
+    expect(presentation.promptConfiguredLabel).not.toContain('global_v22');
+  });
 });

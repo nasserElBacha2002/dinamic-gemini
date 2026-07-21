@@ -31,7 +31,8 @@ from src.application.services.image_processing.external_cost_estimator import (
 )
 from src.application.services.image_processing.external_fallback_prompt import (
     EXTERNAL_FALLBACK_PROMPT_VERSION,
-    build_external_fallback_prompt,
+    build_external_provider_trace_metadata,
+    compose_external_fallback_prompt,
 )
 from src.application.services.image_processing.external_fallback_schema_error import (
     build_external_schema_validation_error,
@@ -157,7 +158,7 @@ def parse_external_fallback_payload(
 
     if _looks_like_hybrid_v21(parsed):
         schema_err = build_external_schema_validation_error(
-            phase="schema_validate",
+            phase="schema_route",
             reason_code="HYBRID_SCHEMA_MISMATCH",
             field="entities",
             expected_type="external_fallback_label",
@@ -165,10 +166,10 @@ def parse_external_fallback_payload(
         )
         return ExternalAnalysisResult(
             status=ExternalAnalysisStatus.FAILED_TECHNICAL,
-            error_code="EXTERNAL_SCHEMA_INVALID",
+            error_code="EXTERNAL_HYBRID_SCHEMA_MISROUTED",
             error_message=(
-                "provider returned GlobalEntityResponseV21 hybrid schema; "
-                "external fallback expects status/internal_code/quantity"
+                "fallback response matched hybrid GlobalEntityResponseV21; "
+                "external_fallback_v1 must never be validated as aisle hybrid schema"
             ),
             normalized_result={
                 "schema": "GlobalEntityResponseV21",
@@ -179,8 +180,9 @@ def parse_external_fallback_payload(
             additional_fields={
                 **meta,
                 **response_trace_metadata(raw_text=raw_text),
-                "parse_status": "hybrid_schema_mismatch",
+                "parse_status": "hybrid_schema_misrouted",
                 "schema_validation": schema_err,
+                "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
             },
             raw_reference=response_trace_metadata(raw_text=raw_text).get(
                 "provider_response_sha256"
@@ -374,14 +376,41 @@ class LlmExternalImageAnalysisProvider:
         context: ExternalAnalysisContext,
     ) -> ExternalAnalysisResult:
         started = time.perf_counter()
-        prompt = build_external_fallback_prompt(
-            client_rules=context.extra.get("client_rules")
+        client_rules = (
+            context.extra.get("client_rules")
             if isinstance(context.extra.get("client_rules"), dict)
             else None
         )
+        supplier_profile = (
+            context.extra.get("supplier_extraction_profile")
+            if isinstance(context.extra.get("supplier_extraction_profile"), dict)
+            else None
+        )
+        strategy = (
+            str(context.extra.get("primary_strategy")).strip()
+            if context.extra.get("primary_strategy")
+            else None
+        )
+        composed = compose_external_fallback_prompt(
+            client_rules=client_rules,
+            supplier_extraction_profile=supplier_profile,
+            quantity_max=context.quantity_max,
+            strategy=strategy,
+        )
+        prompt = str(composed["text"])
         prompt_version = context.prompt_version or EXTERNAL_FALLBACK_PROMPT_VERSION
         requested_model = self._model_name
         executed_model = self.model_name
+        prompt_meta = {
+            "prompt_key": context.prompt_key or composed.get("prompt_key"),
+            "prompt_version": prompt_version,
+            "prompt_sha256": composed.get("sha256"),
+            "prompt_length": composed.get("length"),
+            "prompt_composition_version": composed.get("composition_version"),
+            "prompt_sources": composed.get("sources"),
+            "prompt_text": prompt,
+            "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+        }
 
         try:
             prepared = self._prepare_image_bytes(image.content, context.max_image_dimension)
@@ -406,11 +435,12 @@ class LlmExternalImageAnalysisProvider:
             "request_image_bytes": len(prepared),
             "requested_model": requested_model,
             "executed_model": executed_model,
-            "prompt_key": context.prompt_key,
-            "prompt_version": prompt_version,
+            **prompt_meta,
         }
 
         if self._provider_name == "gemini":
+            # Structured Gemini path bypasses GeminiSdkAdapter; name the concrete client.
+            base_meta["adapter_name"] = "GeminiClient"
             result = self._analyze_gemini_structured(
                 prepared=prepared,
                 prompt=prompt,
@@ -431,7 +461,14 @@ class LlmExternalImageAnalysisProvider:
         merged = dict(result.additional_fields or {})
         merged.update(base_meta)
         merged["executed_model"] = result.model_name or executed_model
+        if not merged.get("adapter_name") and self._provider_name == "gemini":
+            merged["adapter_name"] = "GeminiClient"
+        if not merged.get("schema_version"):
+            merged["schema_version"] = LlmSchemaVersion.EXTERNAL_FALLBACK_V1
         result.additional_fields = merged
+        result.schema_version = str(
+            merged.get("schema_version") or LlmSchemaVersion.EXTERNAL_FALLBACK_V1
+        )
         if not result.model_name:
             result.model_name = executed_model
         if not result.provider_name:
@@ -576,9 +613,33 @@ class LlmExternalImageAnalysisProvider:
         mapped.estimated_cost = estimated
         mapped.raw_reference = provider_response_sha256
         extra = dict(mapped.additional_fields or {})
-        extra["provider_response_sha256"] = provider_response_sha256
-        extra["response_size"] = len(raw_text)
-        extra["http_ok"] = True
+        extra.update(
+            build_external_provider_trace_metadata(
+                llm_provider="gemini",
+                requested_model=self._model_name,
+                executed_model=executed_model,
+                adapter_name="GeminiClient",
+                schema_version=LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                prompt_key=str(base_meta.get("prompt_key") or ""),
+                prompt_version=prompt_version,
+                prompt_sha256=str(base_meta.get("prompt_sha256") or "") or None,
+                prompt_length=base_meta.get("prompt_length")
+                if isinstance(base_meta.get("prompt_length"), int)
+                else None,
+                request_image_sha256_prepared=str(
+                    base_meta.get("request_image_sha256_prepared") or ""
+                )
+                or None,
+                provider_response_sha256=provider_response_sha256,
+                extra={
+                    "response_size": len(raw_text),
+                    "http_ok": True,
+                    "prompt_text": base_meta.get("prompt_text"),
+                    "prompt_sources": base_meta.get("prompt_sources"),
+                    "prompt_composition_version": base_meta.get("prompt_composition_version"),
+                },
+            )
+        )
         mapped.additional_fields = extra
         return mapped
 
@@ -789,7 +850,34 @@ class LlmExternalImageAnalysisProvider:
         mapped.estimated_cost = estimated
         mapped.raw_reference = provider_response_sha256
         extra = dict(mapped.additional_fields or {})
-        extra["provider_response_sha256"] = provider_response_sha256
+        extra.update(
+            build_external_provider_trace_metadata(
+                llm_provider=normalized_key,
+                requested_model=self._model_name,
+                executed_model=model,
+                adapter_name=type(executor).__name__,
+                schema_version=(
+                    getattr(response, "schema_version", None)
+                    or LlmSchemaVersion.EXTERNAL_FALLBACK_V1
+                ),
+                prompt_key=str(base_meta.get("prompt_key") or ""),
+                prompt_version=prompt_version,
+                prompt_sha256=str(base_meta.get("prompt_sha256") or "") or None,
+                prompt_length=base_meta.get("prompt_length")
+                if isinstance(base_meta.get("prompt_length"), int)
+                else None,
+                request_image_sha256_prepared=str(
+                    base_meta.get("request_image_sha256_prepared") or ""
+                )
+                or None,
+                provider_response_sha256=provider_response_sha256,
+                extra={
+                    "prompt_text": base_meta.get("prompt_text"),
+                    "prompt_sources": base_meta.get("prompt_sources"),
+                    "prompt_composition_version": base_meta.get("prompt_composition_version"),
+                },
+            )
+        )
         mapped.additional_fields = extra
         return mapped
 

@@ -964,7 +964,54 @@ export default function AisleObservabilityWorkspace({
                         model: jobPresentation.configured.model ?? t('common.em_dash'),
                       })}
                     </Typography>
+                    {jobPresentation.executedPromptSha256 ? (
+                      <Typography variant="body2" color="text.secondary" data-testid="obs-prompt-sha">
+                        {t('jobs.obs_prompt_hash_row', {
+                          hash: jobPresentation.executedPromptSha256,
+                        })}
+                      </Typography>
+                    ) : null}
                   </Paper>
+                  {jobPresentation.promptContentAvailability === 'available' &&
+                  jobPresentation.executedPromptContent ? (
+                    <>
+                      <Typography variant="subtitle2">{t('jobs.obs_prompt_complete_heading')}</Typography>
+                      <Box
+                        component="pre"
+                        data-testid="obs-prompt-effective-content"
+                        sx={{
+                          m: 0,
+                          p: 2,
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          fontFamily: 'monospace',
+                          fontSize: '0.85rem',
+                          maxHeight: 480,
+                          overflow: 'auto',
+                          borderRadius: 1,
+                          bgcolor: 'action.hover',
+                          border: 1,
+                          borderColor: 'divider',
+                        }}
+                      >
+                        {jobPresentation.executedPromptContent}
+                      </Box>
+                    </>
+                  ) : (
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      data-testid="obs-prompt-content-status"
+                    >
+                      {jobPresentation.promptContentAvailability === 'not_executed'
+                        ? t('processing.header.fallbackConfiguredNotExecuted', {
+                            defaultValue: 'Configured, not executed',
+                          })
+                        : t('jobs.obs_prompt_executed_not_persisted', {
+                            defaultValue: 'Prompt executed — content not persisted',
+                          })}
+                    </Typography>
+                  )}
                 </>
               ) : !lastProviderRequest ? (
                 <Typography variant="body2" color="text.secondary">

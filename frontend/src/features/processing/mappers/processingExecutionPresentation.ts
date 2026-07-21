@@ -97,6 +97,10 @@ export interface JobExecutionPresentation {
   promptTabMode: 'legacy' | 'fallback' | 'hidden';
   promptConfiguredLabel: string | null;
   promptExecutedLabel: string | null;
+  /** Effective prompt text actually sent (when persisted). */
+  executedPromptContent: string | null;
+  executedPromptSha256: string | null;
+  promptContentAvailability: 'not_executed' | 'available' | 'not_persisted';
 }
 
 const LEGACY_STRATEGIES = new Set(['LEGACY_LLM', 'LEGACY_LLM_TEMPORARY']);
@@ -351,16 +355,30 @@ export function buildJobExecutionPresentation(
       ? [configured.promptKey, configured.promptVersion].filter(Boolean).join('@') || null
       : null;
   let promptExecutedLabel: string | null = null;
+  let executedPromptContent: string | null = null;
+  let executedPromptSha256: string | null = null;
+  let promptContentAvailability: JobExecutionPresentation['promptContentAvailability'] =
+    'not_executed';
   if (promptTabMode === 'fallback') {
     if (!fallbackUsed) {
       promptExecutedLabel = 'configured_not_executed';
-    } else if (executed?.evidencePresent && (executed.promptKey || executed.promptVersion)) {
-      promptExecutedLabel =
-        [executed.promptKey, executed.promptVersion].filter(Boolean).join('@') || null;
+      promptContentAvailability = 'not_executed';
     } else if (executed?.evidencePresent) {
-      promptExecutedLabel = 'unknown';
+      const withText = (input.fallback_asset_summaries || []).find(
+        (row) => optionalString(row.prompt_text) || optionalString(row.prompt_sha256),
+      );
+      executedPromptContent = optionalString(withText?.prompt_text);
+      executedPromptSha256 = optionalString(withText?.prompt_sha256);
+      if (executed.promptKey || executed.promptVersion) {
+        promptExecutedLabel =
+          [executed.promptKey, executed.promptVersion].filter(Boolean).join('@') || null;
+      } else {
+        promptExecutedLabel = 'unknown';
+      }
+      promptContentAvailability = executedPromptContent ? 'available' : 'not_persisted';
     } else {
       promptExecutedLabel = 'configured_not_executed';
+      promptContentAvailability = 'not_executed';
     }
   }
 
@@ -389,6 +407,9 @@ export function buildJobExecutionPresentation(
     promptTabMode,
     promptConfiguredLabel,
     promptExecutedLabel,
+    executedPromptContent,
+    executedPromptSha256,
+    promptContentAvailability,
   };
 }
 

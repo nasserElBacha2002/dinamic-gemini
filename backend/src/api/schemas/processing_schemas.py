@@ -159,6 +159,10 @@ class AssetFallbackSummaryResponse(BaseModel):
     executed_model: str | None = None
     prompt_key: str | None = None
     prompt_version: str | None = None
+    prompt_sha256: str | None = None
+    prompt_text: str | None = None
+    adapter_name: str | None = None
+    schema_version: str | None = None
     external_attempt_id: str | None = None
     external_duration_ms: int | None = None
     estimated_cost: float | None = None

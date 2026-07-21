@@ -32,6 +32,9 @@ from src.application.services.image_processing.external_concurrency_limiter impo
 from src.application.services.image_processing.external_fallback_prompt import (
     EXTERNAL_FALLBACK_PROMPT_KEY,
     EXTERNAL_FALLBACK_PROMPT_VERSION,
+    build_external_provider_trace_metadata,
+    compose_external_fallback_prompt,
+    prompt_composition_public_dict,
 )
 from src.application.services.image_processing.external_fallback_recovery import (
     ExternalFallbackRecoveryDecision,
@@ -64,6 +67,7 @@ from src.domain.image_processing.processing_attempt import (
     ProcessingAttemptStatus,
 )
 from src.domain.jobs.entities import Job
+from src.llm.schema_versions import LlmSchemaVersion
 
 logger = logging.getLogger(__name__)
 
@@ -828,19 +832,83 @@ class ExternalProviderFallbackOrchestrator:
                 content = self.content_reader(asset)
                 request_image_sha256_raw = hashlib.sha256(content).hexdigest()
                 request.request_image_sha256 = request_image_sha256_raw
+                composed_preview = compose_external_fallback_prompt(
+                    client_rules=snapshot.client_rules or {},
+                    supplier_extraction_profile=snapshot.supplier_extraction_profile or {},
+                    quantity_max=snapshot.quantity_max,
+                    strategy=(
+                        job.execution_strategy.value
+                        if getattr(job, "execution_strategy", None) is not None
+                        else None
+                    ),
+                )
+                composition_public = prompt_composition_public_dict(composed_preview)
+                self._publish_fallback_event(
+                    job_id=job.id,
+                    asset_id=asset.id,
+                    event_type="fallback.prompt_resolved",
+                    message="external fallback prompt identity resolved from snapshot",
+                    metadata={
+                        "base_prompt_key": composition_public.get("base_key"),
+                        "base_prompt_version": composition_public.get("base_version"),
+                        "composition_version": composition_public.get("composition_version"),
+                        "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                        "prompt_key": snapshot.prompt_key,
+                        "prompt_version": snapshot.prompt_version,
+                        "sources": composition_public.get("sources"),
+                    },
+                )
+                self._publish_fallback_event(
+                    job_id=job.id,
+                    asset_id=asset.id,
+                    event_type="fallback.prompt_composed",
+                    message="external fallback effective prompt composed",
+                    metadata={
+                        "prompt_sha256": composed_preview.get("sha256"),
+                        "prompt_length": composed_preview.get("length"),
+                        "composition_version": composed_preview.get("composition_version"),
+                        "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                        "sources": composition_public.get("sources"),
+                    },
+                )
+                self._publish_fallback_event(
+                    job_id=job.id,
+                    asset_id=asset.id,
+                    event_type="fallback.prompt_execution_started",
+                    message="external fallback prompt execution started",
+                    metadata=build_external_provider_trace_metadata(
+                        llm_provider=provider_name,
+                        requested_model=model_name,
+                        executed_model=executed_model,
+                        adapter_name=None,
+                        schema_version=LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                        prompt_key=snapshot.prompt_key,
+                        prompt_version=snapshot.prompt_version,
+                        prompt_sha256=str(composed_preview.get("sha256") or "") or None,
+                        prompt_length=composed_preview.get("length")
+                        if isinstance(composed_preview.get("length"), int)
+                        else None,
+                        request_image_sha256_raw=request_image_sha256_raw,
+                        attempt_number=attempt_idx,
+                    ),
+                )
                 self._publish_fallback_event(
                     job_id=job.id,
                     asset_id=asset.id,
                     event_type="fallback.provider_call_started",
                     message="external provider call started",
-                    metadata={
-                        "provider": provider_name,
-                        "requested_model": model_name,
-                        "attempt_number": attempt_idx,
-                        "request_image_sha256": request_image_sha256_raw,
-                        "request_image_sha256_raw": request_image_sha256_raw,
-                        "request_image_bytes": len(content),
-                    },
+                    metadata=build_external_provider_trace_metadata(
+                        llm_provider=provider_name,
+                        requested_model=model_name,
+                        executed_model=executed_model,
+                        schema_version=LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                        prompt_key=snapshot.prompt_key,
+                        prompt_version=snapshot.prompt_version,
+                        prompt_sha256=str(composed_preview.get("sha256") or "") or None,
+                        request_image_sha256_raw=request_image_sha256_raw,
+                        attempt_number=attempt_idx,
+                        extra={"request_image_bytes": len(content)},
+                    ),
                 )
                 analysis = provider.analyze_image(
                     ExternalImageInput(
@@ -859,7 +927,14 @@ class ExternalProviderFallbackOrchestrator:
                         max_image_dimension=snapshot.max_image_dimension,
                         quantity_max=snapshot.quantity_max,
                         configuration_snapshot_version=job.configuration_snapshot_version,
-                        extra={"client_rules": snapshot.client_rules or {}},
+                        extra={
+                            "client_rules": snapshot.client_rules or {},
+                            "supplier_extraction_profile": snapshot.supplier_extraction_profile
+                            or {},
+                            "primary_strategy": job.execution_strategy.value
+                            if getattr(job, "execution_strategy", None) is not None
+                            else None,
+                        },
                     ),
                 )
                 last_analysis = analysis
@@ -876,31 +951,93 @@ class ExternalProviderFallbackOrchestrator:
                         ExternalAnalysisStatus.RATE_LIMITED,
                     )
                     else None,
-                    metadata={
-                        "provider": analysis.provider_name or provider_name,
-                        "requested_model": model_name,
-                        "executed_model": analysis.model_name,
-                        "attempt_number": attempt_idx,
-                        "analysis_status": analysis.status.value,
-                        "duration_ms": analysis.duration_ms,
-                        "parse_status": (analysis.additional_fields or {}).get("parse_status"),
-                        "normalized_code_present": bool(analysis.internal_code),
-                        "normalized_quantity_present": analysis.quantity is not None,
-                        "provider_response_sha256": analysis.raw_reference
-                        or (analysis.additional_fields or {}).get("provider_response_sha256"),
-                        # Stable alias: always the raw asset bytes for this call.
-                        "request_image_sha256": request_image_sha256_raw,
-                        "request_image_sha256_raw": request_image_sha256_raw,
-                        "request_image_sha256_prepared": (analysis.additional_fields or {}).get(
+                    metadata=build_external_provider_trace_metadata(
+                        llm_provider=analysis.provider_name or provider_name,
+                        requested_model=model_name,
+                        executed_model=analysis.model_name,
+                        adapter_name=(analysis.additional_fields or {}).get("adapter_name"),
+                        schema_version=(analysis.additional_fields or {}).get("schema_version")
+                        or LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                        prompt_key=(analysis.additional_fields or {}).get("prompt_key")
+                        or snapshot.prompt_key,
+                        prompt_version=(analysis.additional_fields or {}).get("prompt_version")
+                        or snapshot.prompt_version,
+                        prompt_sha256=(analysis.additional_fields or {}).get("prompt_sha256")
+                        or composed_preview.get("sha256"),
+                        prompt_length=(analysis.additional_fields or {}).get("prompt_length")
+                        if isinstance(
+                            (analysis.additional_fields or {}).get("prompt_length"), int
+                        )
+                        else composed_preview.get("length"),
+                        request_image_sha256_raw=request_image_sha256_raw,
+                        request_image_sha256_prepared=(analysis.additional_fields or {}).get(
                             "request_image_sha256_prepared"
                         )
                         or (analysis.additional_fields or {}).get("request_image_sha256"),
-                        "schema_validation": (analysis.additional_fields or {}).get(
-                            "schema_validation"
+                        provider_response_sha256=analysis.raw_reference
+                        or (analysis.additional_fields or {}).get("provider_response_sha256"),
+                        attempt_number=attempt_idx,
+                        provider_request_id=(analysis.additional_fields or {}).get(
+                            "provider_request_id"
                         ),
-                        "adapter_name": (analysis.additional_fields or {}).get("adapter_name"),
-                        "schema_version": (analysis.additional_fields or {}).get("schema_version"),
-                    },
+                        extra={
+                            "analysis_status": analysis.status.value,
+                            "duration_ms": analysis.duration_ms,
+                            "parse_status": (analysis.additional_fields or {}).get("parse_status"),
+                            "normalized_code_present": bool(analysis.internal_code),
+                            "normalized_quantity_present": analysis.quantity is not None,
+                            "schema_validation": (analysis.additional_fields or {}).get(
+                                "schema_validation"
+                            ),
+                        },
+                    ),
+                    severity=(
+                        "ERROR"
+                        if analysis.status
+                        in (
+                            ExternalAnalysisStatus.FAILED_TECHNICAL,
+                            ExternalAnalysisStatus.TIMEOUT,
+                            ExternalAnalysisStatus.RATE_LIMITED,
+                        )
+                        else "INFO"
+                    ),
+                )
+                self._publish_fallback_event(
+                    job_id=job.id,
+                    asset_id=asset.id,
+                    event_type="fallback.prompt_execution_completed",
+                    message="external fallback prompt execution completed",
+                    error_code=analysis.error_code
+                    if analysis.status
+                    in (
+                        ExternalAnalysisStatus.FAILED_TECHNICAL,
+                        ExternalAnalysisStatus.TIMEOUT,
+                        ExternalAnalysisStatus.RATE_LIMITED,
+                    )
+                    else None,
+                    metadata=build_external_provider_trace_metadata(
+                        llm_provider=analysis.provider_name or provider_name,
+                        requested_model=model_name,
+                        executed_model=analysis.model_name,
+                        adapter_name=(analysis.additional_fields or {}).get("adapter_name"),
+                        schema_version=(analysis.additional_fields or {}).get("schema_version")
+                        or LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                        prompt_key=(analysis.additional_fields or {}).get("prompt_key")
+                        or snapshot.prompt_key,
+                        prompt_version=(analysis.additional_fields or {}).get("prompt_version")
+                        or snapshot.prompt_version,
+                        prompt_sha256=(analysis.additional_fields or {}).get("prompt_sha256")
+                        or composed_preview.get("sha256"),
+                        prompt_length=(analysis.additional_fields or {}).get("prompt_length")
+                        if isinstance(
+                            (analysis.additional_fields or {}).get("prompt_length"), int
+                        )
+                        else composed_preview.get("length"),
+                        attempt_number=attempt_idx,
+                        provider_response_sha256=analysis.raw_reference
+                        or (analysis.additional_fields or {}).get("provider_response_sha256"),
+                        extra={"analysis_status": analysis.status.value},
+                    ),
                     severity=(
                         "ERROR"
                         if analysis.status
@@ -1034,15 +1171,28 @@ class ExternalProviderFallbackOrchestrator:
             "warnings": list(result.warnings),
         }
         if analysis is not None:
-            request.usage = analysis.usage
+            usage = dict(analysis.usage or {})
+            af = analysis.additional_fields or {}
+            for key in (
+                "adapter_name",
+                "schema_version",
+                "prompt_sha256",
+                "prompt_length",
+                "prompt_text",
+                "prompt_key",
+                "prompt_version",
+                "prompt_composition_version",
+                "prompt_sources",
+            ):
+                if af.get(key) is not None and key not in usage:
+                    usage[key] = af[key]
+            request.usage = usage
             request.estimated_cost = analysis.estimated_cost
             request.confidence = analysis.confidence
             request.duration_ms = analysis.duration_ms
             # Keep request_image_sha256 as the raw asset hash set at call start.
             # Provider response hash (not the image bytes).
-            response_sha = analysis.raw_reference or (analysis.additional_fields or {}).get(
-                "provider_response_sha256"
-            )
+            response_sha = analysis.raw_reference or af.get("provider_response_sha256")
             if isinstance(response_sha, str) and response_sha:
                 request.provider_response_sha256 = response_sha
             elif analysis.normalized_result is not None:
@@ -1055,7 +1205,7 @@ class ExternalProviderFallbackOrchestrator:
                 request.provider = analysis.provider_name
             if analysis.prompt_version:
                 request.prompt_version = analysis.prompt_version
-            prompt_key = (analysis.additional_fields or {}).get("prompt_key")
+            prompt_key = af.get("prompt_key")
             if isinstance(prompt_key, str) and prompt_key.strip():
                 request.prompt_key = prompt_key.strip()
         if result.normalized_result is not None:
@@ -1400,6 +1550,18 @@ def sanitize_fallback_asset_summaries(
                 "error_message": (r.error_message or "")[:200] or None,
                 "provider_response_sha256": r.provider_response_sha256,
                 "request_image_sha256": r.request_image_sha256,
+                "adapter_name": (r.usage or {}).get("adapter_name")
+                if isinstance(r.usage, dict)
+                else None,
+                "schema_version": (r.usage or {}).get("schema_version")
+                if isinstance(r.usage, dict)
+                else None,
+                "prompt_sha256": (r.usage or {}).get("prompt_sha256")
+                if isinstance(r.usage, dict)
+                else None,
+                "prompt_text": (r.usage or {}).get("prompt_text")
+                if isinstance(r.usage, dict)
+                else None,
             }
         )
     return out

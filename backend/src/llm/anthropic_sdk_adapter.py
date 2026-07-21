@@ -369,7 +369,9 @@ def _anthropic_build_message_content(
     )
     if request.context_instruction and str(request.context_instruction).strip():
         prompt_text = str(request.context_instruction).strip() + "\n\n" + prompt_text
-    prompt_text = prompt_text + _JSON_OBJECT_SUFFIX
+    # Hybrid GlobalEntityResponseV21 instruction must NOT be applied to single-label fallback.
+    if not is_external_fallback_schema(request.schema_version):
+        prompt_text = prompt_text + _JSON_OBJECT_SUFFIX
 
     ctx_imgs = list(request.context_images) if request.context_images else []
     ref_ids_raw = meta.get(LLM_METADATA_KEY_REFERENCE_IMAGE_IDS) or []
@@ -906,4 +908,5 @@ class AnthropicSdkAdapter:
             parsed_json=data,
             raw_text=raw_text,
             usage=usage,
+            schema_version=(request.schema_version or "").strip() or None,
         )

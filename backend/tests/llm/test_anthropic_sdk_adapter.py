@@ -183,6 +183,35 @@ def test_anthropic_external_fallback_invalid_json_includes_response_hash() -> No
     assert ei.value.details.get("provider_response_length") == len("not-json-at-all")
 
 
+def test_anthropic_external_fallback_does_not_append_hybrid_json_suffix() -> None:
+    """Regression: hybrid entities instruction caused HYBRID_SCHEMA_MISMATCH on Claude fallback."""
+    from src.llm.anthropic_sdk_adapter import _anthropic_build_message_content
+    from src.llm.prompt_composer.hybrid_profiles import CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX
+
+    settings = _settings_claude()
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=["f0"],
+        prompt="EXTERNAL FALLBACK ONLY PROMPT MARKER",
+        schema_version="external_fallback_v1",
+        metadata={"claude_model_name": "claude-opus-4-7"},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+    content = _anthropic_build_message_content(
+        req,
+        settings,
+        [np.zeros((8, 8, 3), dtype=np.uint8)],
+        256,
+        effective_model="claude-opus-4-7",
+    )
+    text_blobs = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+    joined = "\n".join(text_blobs)
+    assert "EXTERNAL FALLBACK ONLY PROMPT MARKER" in joined
+    assert CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX not in joined
+    assert "total_entities_detected" not in joined
+
+
 def test_anthropic_sdk_adapter_uses_job_model_from_metadata() -> None:
     adapter = AnthropicSdkAdapter()
     settings = _settings_claude()
