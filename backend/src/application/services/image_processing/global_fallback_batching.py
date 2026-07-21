@@ -6,6 +6,8 @@ import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -18,8 +20,40 @@ class GlobalFallbackBatchSlice:
     fingerprint: str
 
 
-def stable_ordered_asset_ids(asset_ids: Sequence[str]) -> tuple[str, ...]:
-    """Stable order: lexicographic by asset id (deterministic across workers)."""
+@dataclass(frozen=True)
+class AssetOrderKey:
+    asset_id: str
+    sequence: int | None = None
+    uploaded_at: datetime | None = None
+
+
+def stable_ordered_asset_ids(
+    asset_ids: Sequence[str],
+    *,
+    order_keys: Sequence[AssetOrderKey] | None = None,
+) -> tuple[str, ...]:
+    """Stable domain order: capture/upload sequence, then uploaded_at, then asset_id.
+
+    Lexicographic UUID sort is only the last-resort tie-break when no keys provided.
+    """
+    if order_keys:
+        by_id = {k.asset_id: k for k in order_keys if k.asset_id}
+        ids = [str(a).strip() for a in asset_ids if str(a).strip()]
+
+        def sort_key(aid: str) -> tuple[Any, ...]:
+            k = by_id.get(aid)
+            if k is None:
+                return (10**12, datetime.max.replace(tzinfo=None), aid)
+            seq = k.sequence if k.sequence is not None else 10**12
+            ts = k.uploaded_at or datetime.max.replace(tzinfo=None)
+            # naive/aware mix: use timestamp ordinal when possible
+            try:
+                ts_key = ts.timestamp()
+            except Exception:
+                ts_key = 0.0
+            return (seq, ts_key, aid)
+
+        return tuple(sorted(ids, key=sort_key))
     return tuple(sorted(str(a).strip() for a in asset_ids if str(a).strip()))
 
 
@@ -55,6 +89,15 @@ def compute_batch_fingerprint(
     prepared_image_hashes: Sequence[str] | None = None,
 ) -> str:
     """Stable SHA-256 hex fingerprint for batch idempotency."""
+    hashes = list(prepared_image_hashes or [])
+    if not hashes or any(not h for h in hashes):
+        raise ValueError(
+            "PREPARED_IMAGE_HASHES_REQUIRED: fingerprint must include non-empty prepared hashes"
+        )
+    if not configuration_fingerprint:
+        raise ValueError("CONFIGURATION_FINGERPRINT_REQUIRED")
+    if not prompt_fingerprint:
+        raise ValueError("PROMPT_FINGERPRINT_REQUIRED")
     payload = {
         "job_id": str(job_id),
         "execution_id": str(execution_id or job_id),
@@ -63,11 +106,11 @@ def compute_batch_fingerprint(
         "provider": str(provider or "").strip().lower(),
         "model": str(model or "").strip(),
         "schema_version": str(schema_version),
-        "configuration_fingerprint": str(configuration_fingerprint or ""),
-        "prompt_fingerprint": str(prompt_fingerprint or ""),
+        "configuration_fingerprint": str(configuration_fingerprint),
+        "prompt_fingerprint": str(prompt_fingerprint),
         "batch_index": int(batch_index),
         "ordered_asset_ids": list(ordered_asset_ids),
-        "prepared_image_hashes": list(prepared_image_hashes or []),
+        "prepared_image_hashes": hashes,
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -86,16 +129,16 @@ def build_batch_slices(
     schema_version: str,
     configuration_fingerprint: str,
     prompt_fingerprint: str,
-    prepared_image_hashes_by_asset: dict[str, str] | None = None,
+    prepared_image_hashes_by_asset: dict[str, str],
+    order_keys: Sequence[AssetOrderKey] | None = None,
 ) -> list[GlobalFallbackBatchSlice]:
-    """Build ordered batch slices with fingerprints."""
-    ordered = stable_ordered_asset_ids(asset_ids)
+    """Build ordered batch slices with fingerprints (prepared hashes required)."""
+    ordered = stable_ordered_asset_ids(asset_ids, order_keys=order_keys)
     chunks = chunk_asset_ids(ordered, max_per_batch=max_per_batch)
     batch_count = len(chunks)
-    hashes = prepared_image_hashes_by_asset or {}
     slices: list[GlobalFallbackBatchSlice] = []
     for idx, chunk in enumerate(chunks):
-        prep_hashes = tuple(hashes.get(aid, "") for aid in chunk)
+        prep_hashes = tuple(prepared_image_hashes_by_asset[aid] for aid in chunk)
         fp = compute_batch_fingerprint(
             job_id=job_id,
             execution_id=execution_id,

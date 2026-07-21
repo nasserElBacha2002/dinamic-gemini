@@ -495,6 +495,16 @@ class V3JobExecutor:
         from src.application.services.image_processing.global_external_fallback_coordinator import (
             GlobalExternalFallbackCoordinator,
         )
+        from src.application.services.image_processing.global_fallback_batching import (
+            AssetOrderKey,
+        )
+        from src.application.services.image_processing.global_fallback_fingerprints import (
+            asset_content_identity_hash,
+            configuration_fingerprint_from_snapshot,
+        )
+        from src.application.services.image_processing.global_fallback_merge_applier import (
+            GlobalFallbackMergeApplier,
+        )
         from src.application.services.image_processing.global_fallback_merge_policy import (
             InternalAssetEvidence,
         )
@@ -517,10 +527,7 @@ class V3JobExecutor:
         if snapshot.fallback_mode != EXTERNAL_FALLBACK_MODE_GLOBAL_BATCH:
             return True
         if lease_repo is None:
-            logger.error(
-                "global_fallback.lease_repo_unavailable job_id=%s",
-                job.id,
-            )
+            logger.error("global_fallback.lease_repo_unavailable job_id=%s", job.id)
             self._state.fail_job_and_aisle(
                 job.id,
                 aisle,
@@ -536,53 +543,108 @@ class V3JobExecutor:
             clock=self._clock,
             unit_of_work_factory=container.get_manual_image_result_uow_factory(),
         )
+        try:
+            batch_journal = container.get_global_fallback_batch_request_repo()
+        except Exception as exc:
+            logger.error("global_fallback.journal_unavailable job_id=%s err=%s", job.id, exc)
+            self._state.fail_job_and_aisle(
+                job.id,
+                aisle,
+                f"GLOBAL_BATCH journal unavailable: {exc}",
+                failure_code="GLOBAL_FALLBACK_JOURNAL_UNAVAILABLE",
+            )
+            return False
 
-        def _load_internal(job_id: str, asset_id: str) -> InternalAssetEvidence | None:
-            status = None
+        # Batch-load internal evidence (avoid N+1 list_by_aisle).
+        evidence_by_asset: dict[str, InternalAssetEvidence] = {}
+        states_by_asset: dict[str, Any] = {}
+        if state_repo is not None:
+            try:
+                for st in state_repo.list_by_job(job.id):
+                    states_by_asset[st.asset_id] = st
+            except Exception:
+                logger.warning(
+                    "global_fallback.state_list_failed job_id=%s", job.id, exc_info=True
+                )
+        try:
+            positions = self._position_repo.list_by_aisle(aisle.id, job_id=job.id)
+        except TypeError:
+            positions = self._position_repo.list_by_aisle(aisle.id)
+        except Exception:
+            positions = []
+        pos_by_asset: dict[str, Any] = {}
+        position_ids: list[str] = []
+        for pos in positions or []:
+            if getattr(pos, "job_id", None) and str(pos.job_id) != str(job.id):
+                continue
+            summary = getattr(pos, "detected_summary_json", None) or {}
+            if not isinstance(summary, dict):
+                continue
+            src = summary.get("source_asset_id") or summary.get("source_image_id")
+            if not src:
+                continue
+            pos_by_asset[str(src)] = (pos, summary)
+            position_ids.append(pos.id)
+        products_by_position: dict[str, Any] = {}
+        if position_ids:
+            try:
+                for prod in self._product_record_repo.list_by_position_ids(position_ids):
+                    products_by_position.setdefault(prod.position_id, []).append(prod)
+            except Exception:
+                for pid in position_ids:
+                    try:
+                        products_by_position[pid] = list(
+                            self._product_record_repo.list_by_position(pid)
+                        )
+                    except Exception:
+                        products_by_position[pid] = []
+
+        order_keys: list[AssetOrderKey] = []
+        hashes: dict[str, str] = {}
+        for idx, asset in enumerate(assets):
+            if asset is None or not getattr(asset, "id", None):
+                continue
+            aid = asset.id
+            st = states_by_asset.get(aid)
+            status = st.status.value if st is not None and st.status is not None else None
+            last = (st.last_strategy or "").upper() if st is not None else ""
             code = None
             qty = None
             resolved = False
-            if state_repo is not None:
-                st = state_repo.get_by_job_and_asset(job_id, asset_id)
-                if st is not None:
-                    status = st.status.value if st.status is not None else None
-                    last = (st.last_strategy or "").upper()
-                    resolved = status == "RESOLVED" and last in (
-                        "CODE_SCAN",
-                        "INTERNAL_OCR",
-                        "CODE_SCAN_PROCESSING",
-                    )
-            try:
-                positions = self._position_repo.list_by_aisle(aisle.id, job_id=job_id)
-            except TypeError:
-                positions = self._position_repo.list_by_aisle(aisle.id)
-            except Exception:
-                positions = []
-            for pos in positions or []:
-                if getattr(pos, "job_id", None) and str(pos.job_id) != str(job_id):
-                    continue
-                summary = getattr(pos, "detected_summary_json", None) or {}
-                if not isinstance(summary, dict):
-                    continue
-                src = summary.get("source_asset_id") or summary.get("source_image_id")
-                if str(src or "") != asset_id:
-                    continue
+            if aid in pos_by_asset:
+                pos, summary = pos_by_asset[aid]
                 code = summary.get("internal_code")
-                try:
-                    products = self._product_record_repo.list_by_position(pos.id)
-                    if products:
-                        qty = getattr(products[0], "detected_quantity", None)
-                except Exception:
-                    qty = None
-                if code and qty is not None:
-                    resolved = True
-                break
-            return InternalAssetEvidence(
-                asset_id=asset_id,
+                prods = products_by_position.get(pos.id) or []
+                if prods:
+                    qty = getattr(prods[0], "detected_quantity", None)
+            if status == "RESOLVED" and last in (
+                "CODE_SCAN",
+                "INTERNAL_OCR",
+                "CODE_SCAN_PROCESSING",
+            ):
+                resolved = bool(code and qty is not None)
+            elif code and qty is not None:
+                resolved = True
+            evidence_by_asset[aid] = InternalAssetEvidence(
+                asset_id=aid,
                 status=status,
                 internal_code=str(code).strip() if code else None,
                 quantity=float(qty) if isinstance(qty, (int, float)) else None,
-                resolved_internal=bool(resolved and code and qty is not None),
+                resolved_internal=bool(resolved),
+            )
+            order_keys.append(
+                AssetOrderKey(
+                    asset_id=aid,
+                    sequence=idx,
+                    uploaded_at=getattr(asset, "uploaded_at", None),
+                )
+            )
+            hashes[aid] = asset_content_identity_hash(
+                asset_id=aid,
+                storage_key=getattr(asset, "storage_key", None),
+                etag=getattr(asset, "etag", None),
+                file_size_bytes=getattr(asset, "file_size_bytes", None),
+                mime_type=getattr(asset, "mime_type", None),
             )
 
         def _filename_map(asset_list: Any) -> dict[str, str]:
@@ -598,7 +660,24 @@ class V3JobExecutor:
                 ):
                     if key and str(key).strip():
                         out[str(key).strip()] = str(aid)
+                        # basename
+                        base = str(key).rsplit("/", 1)[-1]
+                        if base:
+                            out[base] = str(aid)
             return out
+
+        try:
+            config_fp = configuration_fingerprint_from_snapshot(
+                ident if isinstance(ident, dict) else None
+            )
+        except ValueError as exc:
+            self._state.fail_job_and_aisle(
+                job.id,
+                aisle,
+                str(exc),
+                failure_code="CONFIGURATION_FINGERPRINT_REQUIRED",
+            )
+            return False
 
         analyzer = HybridGlobalFallbackBatchAnalyzer(
             pipeline_execution_service=self._pipeline_execution_service,
@@ -619,18 +698,28 @@ class V3JobExecutor:
         )
         max_frames = min(max_frames, HYBRID_MAX_FRAMES_LOAD_CAP)
 
+        merge_applier = GlobalFallbackMergeApplier(
+            result_persister=persister,
+            batch_journal=batch_journal,
+            state_repo=state_repo,
+            clock=self._clock,
+        )
+
+        def _persist_summary(job_id: str, summary: dict) -> None:
+            self._job_repo.merge_result_json(job_id, {"global_fallback": summary})
+
         coordinator = GlobalExternalFallbackCoordinator(
             lease_repo=lease_repo,
             clock=self._clock,
             batch_analyzer=analyzer,
-            result_persister=persister,
+            batch_journal=batch_journal,
+            merge_applier=merge_applier,
+            persist_job_summary=_persist_summary,
             event_publisher=event_publisher,
-            state_repo=state_repo,
             lease_duration_seconds=int(
                 getattr(settings, "image_processing_batch_lease_seconds", 600) or 600
             ),
             max_frames_per_batch=max_frames,
-            load_internal_evidence=_load_internal,
             filename_to_asset_id=_filename_map,
         )
         fresh_job = self._job_repo.get_by_id(job.id) or job
@@ -641,15 +730,12 @@ class V3JobExecutor:
             snapshot=snapshot,
             worker_token=str(_uuid.uuid4()),
             is_cancelled=is_cancelled,
-            configuration_fingerprint=str(
-                getattr(job, "configuration_snapshot_version", "") or ""
-            ),
-            execution_id=str(job.id),
+            evidence_by_asset=evidence_by_asset,
+            configuration_fingerprint=config_fp,
+            execution_id=str(getattr(job, "execution_id", None) or job.id),
+            order_keys=order_keys,
+            prepared_image_hashes_by_asset=hashes,
         )
-        if outcome.public_summary:
-            self._job_repo.merge_result_json(
-                job.id, {"global_fallback": outcome.public_summary}
-            )
         if outcome.cancelled:
             return True
         if outcome.failed:

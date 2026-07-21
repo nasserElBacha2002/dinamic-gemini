@@ -489,6 +489,17 @@ export interface GlobalFallbackSummary {
   kept_internal?: number | null;
   persistence_status?: string | null;
   reused_durable?: boolean | null;
+  needs_fallback?: boolean | null;
+  skip_reason?: string | null;
+  estimated_cost_total?: number | null;
+  prompt_tokens?: number | null;
+  response_tokens?: number | null;
+  duration_ms?: number | null;
+  batches_reused?: number | null;
+  batches_completed?: number | null;
+  outcome_severity?: string | null;
+  eligibility_reason?: string | null;
+  prompt_fingerprint?: string | null;
 }
 
 export interface AssetFallbackSummary {

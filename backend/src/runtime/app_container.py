@@ -788,6 +788,28 @@ class AppContainer:
             )
         return self._external_image_analysis_request_repo
 
+    def get_global_fallback_batch_request_repo(self):
+        """Durable GLOBAL_BATCH journal (SQL when available)."""
+        if getattr(self, "_global_fallback_batch_request_repo", None) is not None:
+            return self._global_fallback_batch_request_repo
+        from src.infrastructure.repositories.memory_global_fallback_batch_request_repository import (
+            MemoryGlobalFallbackBatchRequestRepository,
+        )
+        from src.infrastructure.repositories.sql_global_fallback_batch_request_repository import (
+            SqlGlobalFallbackBatchRequestRepository,
+        )
+
+        resolution = self._get_repository_backend_resolution()
+        if resolution.mode == RepositoryBackendMode.SQL:
+            self._global_fallback_batch_request_repo = (
+                SqlGlobalFallbackBatchRequestRepository(self._get_v3_sql_client())
+            )
+        else:
+            self._global_fallback_batch_request_repo = (
+                MemoryGlobalFallbackBatchRequestRepository()
+            )
+        return self._global_fallback_batch_request_repo
+
     def get_processing_event_repo(self):
         """Phase 7 structured processing events (memory or SQL)."""
         if getattr(self, "_processing_event_repo", None) is not None:

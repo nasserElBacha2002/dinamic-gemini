@@ -168,6 +168,17 @@ class GlobalFallbackSummaryResponse(BaseModel):
     kept_internal: int | None = None
     persistence_status: str | None = None
     reused_durable: bool | None = None
+    needs_fallback: bool | None = None
+    skip_reason: str | None = None
+    estimated_cost_total: float | None = None
+    prompt_tokens: int | None = None
+    response_tokens: int | None = None
+    duration_ms: int | None = None
+    batches_reused: int | None = None
+    batches_completed: int | None = None
+    outcome_severity: str | None = None
+    eligibility_reason: str | None = None
+    prompt_fingerprint: str | None = None
 
 
 class AssetFallbackSummaryResponse(BaseModel):

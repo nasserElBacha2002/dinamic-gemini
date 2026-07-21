@@ -1,17 +1,20 @@
-"""Global EXTERNAL_FALLBACK_MODE=GLOBAL_BATCH coordinator (after internal aisle pass).
+"""GLOBAL_BATCH coordinator — orchestration only (after internal aisle pass).
 
-Runs once per job (or per deterministic ≤48 batch), never inside the per-asset loop.
-Reuses hybrid GlobalEntityResponseV21 analysis via an injected batch analyzer.
+Delegates eligibility, batching, journal, schema validation, merge plan/apply, outcome.
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
-from collections.abc import Callable, Sequence
+import uuid
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from src.application.ports.global_fallback_batch_request_repository import (
+    GlobalFallbackBatchRequestRepository,
+)
 from src.application.services.image_processing.external_fallback_mode import (
     EXTERNAL_FALLBACK_MODE_GLOBAL_BATCH,
     EXTERNAL_FALLBACK_MODE_PER_ASSET,
@@ -24,35 +27,48 @@ from src.application.services.image_processing.external_fallback_mode import (
     parse_external_fallback_mode,
 )
 from src.application.services.image_processing.global_fallback_batching import (
+    AssetOrderKey,
     GlobalFallbackBatchSlice,
     build_batch_slices,
-    stable_ordered_asset_ids,
+)
+from src.application.services.image_processing.global_fallback_eligibility import (
+    evaluate_global_fallback_eligibility,
+)
+from src.application.services.image_processing.global_fallback_fingerprints import (
+    asset_content_identity_hash,
+    prompt_fingerprint_from_parts,
+)
+from src.application.services.image_processing.global_fallback_merge_applier import (
+    GlobalFallbackMergeApplier,
+)
+from src.application.services.image_processing.global_fallback_merge_planner import (
+    build_merge_plan,
 )
 from src.application.services.image_processing.global_fallback_merge_policy import (
-    ExternalEntityEvidence,
-    GlobalFallbackMergeAction,
     GlobalFallbackMergeDecision,
     InternalAssetEvidence,
-    decide_merge_for_asset,
-    decide_unmapped_entity,
-    normalize_provider_source_image_id,
+)
+from src.application.services.image_processing.global_fallback_outcome_policy import (
+    GlobalFallbackOutcomeSeverity,
+    decide_global_fallback_outcome,
+)
+from src.application.services.image_processing.global_fallback_schema_validation import (
+    GlobalFallbackSchemaError,
+    validate_global_fallback_report,
 )
 from src.domain.assets.entities import SourceAsset
-from src.domain.image_processing.contracts import (
-    ExecutionScope,
-    ImageProcessingResult,
-    ImageResultStatus,
+from src.domain.image_processing.contracts import ExecutionScope
+from src.domain.image_processing.global_fallback_batch_request import (
+    GlobalFallbackBatchRequest,
+    GlobalFallbackBatchStatus,
+    sanitize_entities_for_storage,
 )
 from src.domain.image_processing.job_processing_lease import JobProcessingLease
 
 logger = logging.getLogger(__name__)
 
-EXTERNAL_PROVIDER_STRATEGY = "EXTERNAL_PROVIDER"
-
 
 class GlobalFallbackBatchAnalyzer(Protocol):
-    """Runs one hybrid GlobalEntityResponseV21 call for an ordered asset batch."""
-
     def analyze_batch(
         self,
         *,
@@ -72,6 +88,7 @@ class GlobalFallbackBatchAnalysisResult:
     schema_version: str | None = None
     prompt_key: str | None = None
     prompt_fingerprint: str | None = None
+    effective_prompt_text: str | None = None
     provider: str | None = None
     model: str | None = None
     estimated_cost: float | None = None
@@ -81,6 +98,8 @@ class GlobalFallbackBatchAnalysisResult:
     error_message: str | None = None
     raw_report: dict[str, Any] | None = None
     duration_ms: int | None = None
+    frame_to_asset_map: dict[str, str] = field(default_factory=dict)
+    prepared_image_hashes: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -91,6 +110,7 @@ class GlobalFallbackCoordinatorResult:
     failed: bool = False
     error_code: str | None = None
     error_message: str | None = None
+    outcome_severity: str | None = None
     requests_count: int = 0
     batch_count: int = 0
     entity_count: int = 0
@@ -104,17 +124,15 @@ class GlobalFallbackCoordinatorResult:
 
 @dataclass
 class GlobalExternalFallbackCoordinator:
-    """Orchestrates GLOBAL_BATCH after CODE_SCAN / INTERNAL_OCR aisle completion."""
-
     lease_repo: Any
     clock: Any
     batch_analyzer: GlobalFallbackBatchAnalyzer
-    result_persister: Any
+    batch_journal: GlobalFallbackBatchRequestRepository
+    merge_applier: GlobalFallbackMergeApplier
+    persist_job_summary: Callable[[str, dict[str, Any]], None]
     event_publisher: Any | None = None
-    state_repo: Any | None = None
     lease_duration_seconds: int = 600
     max_frames_per_batch: int = 48
-    load_internal_evidence: Callable[[str, str], InternalAssetEvidence | None] | None = None
     filename_to_asset_id: Callable[[Sequence[SourceAsset]], dict[str, str]] | None = None
 
     def process_after_internal_pass(
@@ -126,11 +144,13 @@ class GlobalExternalFallbackCoordinator:
         snapshot: Any,
         worker_token: str,
         is_cancelled: Callable[[], bool],
-        configuration_fingerprint: str = "",
-        prompt_fingerprint: str = "",
+        evidence_by_asset: Mapping[str, InternalAssetEvidence],
+        configuration_fingerprint: str,
+        prompt_fingerprint: str | None = None,
         execution_id: str | None = None,
+        order_keys: Sequence[AssetOrderKey] | None = None,
+        prepared_image_hashes_by_asset: dict[str, str] | None = None,
     ) -> GlobalFallbackCoordinatorResult:
-        """Entry point: only call after internal aisle pass finished and persisted."""
         if snapshot is None or not bool(getattr(snapshot, "enabled", False)):
             return GlobalFallbackCoordinatorResult(
                 skipped=True, skip_reason="fallback_disabled"
@@ -143,6 +163,7 @@ class GlobalExternalFallbackCoordinator:
                 failed=True,
                 error_code="EXTERNAL_FALLBACK_MODE_INVALID",
                 error_message=str(exc)[:500],
+                outcome_severity=GlobalFallbackOutcomeSeverity.FAILED_CONFIGURATION.value,
             )
 
         if mode == EXTERNAL_FALLBACK_MODE_PER_ASSET:
@@ -154,98 +175,127 @@ class GlobalExternalFallbackCoordinator:
             return GlobalFallbackCoordinatorResult(
                 skipped=True, skip_reason="mode_per_asset"
             )
-
         if mode != EXTERNAL_FALLBACK_MODE_GLOBAL_BATCH:
             return GlobalFallbackCoordinatorResult(
                 failed=True,
                 error_code="EXTERNAL_FALLBACK_MODE_INVALID",
                 error_message=f"Unexpected fallback_mode={mode}",
+                outcome_severity=GlobalFallbackOutcomeSeverity.FAILED_CONFIGURATION.value,
             )
 
         if is_cancelled():
             return GlobalFallbackCoordinatorResult(cancelled=True, skip_reason="cancelled")
 
-        eligible = [a for a in assets if a is not None and getattr(a, "id", None)]
-        if not eligible:
-            self._emit(
-                job.id,
-                "fallback.batch_evaluated",
-                message="no eligible assets for GLOBAL_BATCH",
-                metadata={"asset_count": 0, "fallback_mode": mode},
-            )
+        eligible_assets = [a for a in assets if a is not None and getattr(a, "id", None)]
+        if not eligible_assets:
             return GlobalFallbackCoordinatorResult(
                 skipped=True, skip_reason="no_eligible_assets"
             )
 
-        # Supplier prompt mandatory when supplier associated.
+        eligibility = evaluate_global_fallback_eligibility(evidence_by_asset)
+        self._emit(
+            job.id,
+            "fallback.batch_evaluated",
+            message=eligibility.reason,
+            metadata={
+                "fallback_mode": mode,
+                "needs_fallback": eligibility.needs_fallback,
+                "resolved_internal": eligibility.resolved_internal,
+                "eligible_count": eligibility.eligible_count,
+                "total_assets": eligibility.total_assets,
+            },
+        )
+        if not eligibility.needs_fallback:
+            summary = {
+                "fallback_mode": mode,
+                "needs_fallback": False,
+                "skip_reason": eligibility.reason,
+                "requests_count": 0,
+                "images_sent": 0,
+                "batch_count": 0,
+                "persistence_status": "SKIPPED",
+            }
+            self.persist_job_summary(job.id, summary)
+            return GlobalFallbackCoordinatorResult(
+                skipped=True,
+                skip_reason=eligibility.reason,
+                public_summary=summary,
+            )
+
         if getattr(snapshot, "supplier_prompt_required", False):
             sp = getattr(snapshot, "supplier_prompt", None)
             content = ""
             if isinstance(sp, dict):
                 content = str(sp.get("content") or sp.get("instructions_text") or "")
             if not content.strip():
-                self._emit(
-                    job.id,
-                    "fallback.batch_failed",
-                    message="missing supplier instructions_text",
-                    error_code="SUPPLIER_PROMPT_REQUIRED",
-                    severity="ERROR",
-                    metadata={"missing": "supplier_prompt.content"},
+                outcome = decide_global_fallback_outcome(
+                    eligibility=eligibility,
+                    configuration_error=True,
+                    configuration_code="SUPPLIER_PROMPT_REQUIRED",
+                    configuration_message="supplier instructions_text required",
                 )
                 return GlobalFallbackCoordinatorResult(
-                    failed=True,
-                    error_code="SUPPLIER_PROMPT_REQUIRED",
-                    error_message="supplier instructions_text required for GLOBAL_BATCH",
+                    failed=outcome.fail_job,
+                    error_code=outcome.error_code,
+                    error_message=outcome.message,
+                    outcome_severity=outcome.severity.value,
                 )
 
-        if not prompt_fingerprint:
-            prompt_fingerprint = self._prompt_fingerprint_from_snapshot(snapshot)
-
-        ordered_ids = stable_ordered_asset_ids([a.id for a in eligible])
-        asset_by_id = {a.id: a for a in eligible}
-        slices = build_batch_slices(
-            ordered_ids,
-            max_per_batch=int(self.max_frames_per_batch),
-            job_id=job.id,
-            execution_id=execution_id or job.id,
-            attempt=int(getattr(job, "attempt_count", 1) or 1),
-            fallback_mode=mode,
-            provider=str(getattr(snapshot, "provider", "") or ""),
-            model=getattr(snapshot, "model", None),
-            schema_version=GLOBAL_FALLBACK_SCHEMA_VERSION,
-            configuration_fingerprint=configuration_fingerprint,
-            prompt_fingerprint=prompt_fingerprint,
-        )
-
-        self._emit(
-            job.id,
-            "fallback.batch_evaluated",
-            message="GLOBAL_BATCH evaluated",
-            metadata={
-                "fallback_mode": mode,
-                "execution_scope": GLOBAL_FALLBACK_EXECUTION_SCOPE,
-                "schema_version": GLOBAL_FALLBACK_SCHEMA_VERSION,
-                "analysis_contract": GLOBAL_FALLBACK_ANALYSIS_CONTRACT,
-                "asset_count": len(ordered_ids),
-                "batch_count": len(slices),
-                "ordered_asset_ids": list(ordered_ids),
-                "provider": getattr(snapshot, "provider", None),
-                "model": getattr(snapshot, "model", None),
-            },
-        )
-
-        durable = self._load_durable_batches(job)
-        if self._all_batches_durable(slices, durable):
-            summary = self._public_summary_from_durable(
-                job, slices, durable, snapshot, ordered_ids
-            )
+        if not configuration_fingerprint:
             return GlobalFallbackCoordinatorResult(
-                skipped=True,
-                skip_reason="durable_result_reused",
-                requests_count=0,
-                batch_count=len(slices),
-                public_summary=summary,
+                failed=True,
+                error_code="CONFIGURATION_FINGERPRINT_REQUIRED",
+                error_message="configuration_fingerprint required",
+                outcome_severity=GlobalFallbackOutcomeSeverity.FAILED_CONFIGURATION.value,
             )
+
+        hashes = prepared_image_hashes_by_asset or {
+            a.id: asset_content_identity_hash(
+                asset_id=a.id,
+                storage_key=getattr(a, "storage_key", None),
+                etag=getattr(a, "etag", None),
+                file_size_bytes=getattr(a, "file_size_bytes", None),
+                mime_type=getattr(a, "mime_type", None),
+            )
+            for a in eligible_assets
+        }
+        pf = prompt_fingerprint or self._default_prompt_fingerprint(snapshot)
+        exec_id = str(
+            execution_id
+            or getattr(job, "execution_id", None)
+            or job.id
+        )
+
+        try:
+            slices = build_batch_slices(
+                [a.id for a in eligible_assets],
+                max_per_batch=int(self.max_frames_per_batch),
+                job_id=job.id,
+                execution_id=exec_id,
+                attempt=int(getattr(job, "attempt_count", 1) or 1),
+                fallback_mode=mode,
+                provider=str(getattr(snapshot, "provider", "") or ""),
+                model=getattr(snapshot, "model", None),
+                schema_version=GLOBAL_FALLBACK_SCHEMA_VERSION,
+                configuration_fingerprint=configuration_fingerprint,
+                prompt_fingerprint=pf,
+                prepared_image_hashes_by_asset=hashes,
+                order_keys=order_keys,
+            )
+        except ValueError as exc:
+            return GlobalFallbackCoordinatorResult(
+                failed=True,
+                error_code="FINGERPRINT_INVALID",
+                error_message=str(exc)[:500],
+                outcome_severity=GlobalFallbackOutcomeSeverity.FAILED_CONFIGURATION.value,
+            )
+
+        asset_by_id = {a.id: a for a in eligible_assets}
+        name_map = (
+            self.filename_to_asset_id(eligible_assets)
+            if self.filename_to_asset_id is not None
+            else {}
+        )
 
         lease = self._acquire_lease(job.id, worker_token)
         if lease is None:
@@ -254,479 +304,420 @@ class GlobalExternalFallbackCoordinator:
             )
 
         result = GlobalFallbackCoordinatorResult(batch_count=len(slices))
-        all_entities: list[dict[str, Any]] = []
-        batch_meta: list[dict[str, Any]] = []
+        batch_summaries: list[dict[str, Any]] = []
+        total_cost = 0.0
+        total_prompt_tokens = 0
+        total_response_tokens = 0
+        total_duration = 0
 
         try:
-            if is_cancelled():
-                self._release_lease(lease, worker_token)
-                return GlobalFallbackCoordinatorResult(cancelled=True)
-
-            name_map: dict[str, str] = {}
-            if self.filename_to_asset_id is not None:
-                name_map = self.filename_to_asset_id(eligible)
-
             for batch in slices:
                 if is_cancelled():
                     self._release_lease(lease, worker_token)
                     return GlobalFallbackCoordinatorResult(cancelled=True)
 
-                prior = durable.get(batch.fingerprint)
-                if isinstance(prior, dict) and prior.get("status") == "COMPLETED":
-                    ents = prior.get("entities") or []
-                    if isinstance(ents, list):
-                        all_entities.extend(e for e in ents if isinstance(e, dict))
-                    batch_meta.append(prior)
+                if not self._heartbeat(lease, worker_token):
+                    return GlobalFallbackCoordinatorResult(
+                        failed=True,
+                        error_code="LEASE_OWNERSHIP_LOST",
+                        error_message="lost GLOBAL_BATCH lease before provider call",
+                        outcome_severity=GlobalFallbackOutcomeSeverity.FAILED_TECHNICAL.value,
+                    )
+
+                durable = self.batch_journal.get_by_fingerprint(
+                    job_id=job.id,
+                    execution_id=exec_id,
+                    batch_fingerprint=batch.fingerprint,
+                )
+                if durable is not None and durable.status is GlobalFallbackBatchStatus.COMPLETED:
+                    ents = (durable.normalized_response_json or {}).get("entities") or []
+                    plan = build_merge_plan(
+                        batch_fingerprint=batch.fingerprint,
+                        entities=ents if isinstance(ents, list) else [],
+                        evidence_by_asset=evidence_by_asset,
+                        ordered_asset_ids=batch.ordered_asset_ids,
+                        frame_to_asset_map=durable.frame_to_asset_map,
+                        filename_to_asset_id=name_map,
+                    )
+                    # Re-apply is idempotent via operation keys.
+                    apply_res = self.merge_applier.apply(
+                        job=job,
+                        aisle=aisle,
+                        asset_by_id=asset_by_id,
+                        plan=plan,
+                        batch_row=durable,
+                        snapshot=snapshot,
+                    )
+                    result.applied_external += apply_res.applied
+                    result.conflict_count += len(plan.conflicts)
+                    result.unmapped_count += len(plan.unmapped)
+                    result.kept_internal += len(plan.unchanged)
+                    batch_summaries.append(self._batch_public(durable, reused=True))
                     self._emit(
                         job.id,
                         "fallback.batch_call_completed",
-                        message="reused durable batch result",
+                        message="reused durable batch",
                         metadata={
                             "batch_index": batch.batch_index,
-                            "batch_count": batch.batch_count,
                             "batch_fingerprint": batch.fingerprint,
                             "reused": True,
-                            "entity_count": len(ents) if isinstance(ents, list) else 0,
                         },
                     )
                     continue
 
                 batch_assets = [asset_by_id[aid] for aid in batch.ordered_asset_ids]
-                self._emit(
-                    job.id,
-                    "fallback.batch_prepared",
-                    message="GLOBAL_BATCH prepared",
-                    metadata={
-                        "batch_index": batch.batch_index,
-                        "batch_count": batch.batch_count,
-                        "asset_count": len(batch_assets),
-                        "ordered_asset_ids": list(batch.ordered_asset_ids),
-                        "batch_fingerprint": batch.fingerprint,
-                    },
+                now = self.clock.now()
+                row = GlobalFallbackBatchRequest(
+                    id=str(uuid.uuid4()),
+                    job_id=job.id,
+                    execution_id=exec_id,
+                    attempt=int(getattr(job, "attempt_count", 1) or 1),
+                    batch_index=batch.batch_index,
+                    batch_count=batch.batch_count,
+                    batch_fingerprint=batch.fingerprint,
+                    status=GlobalFallbackBatchStatus.PREPARED,
+                    ordered_asset_ids=list(batch.ordered_asset_ids),
+                    provider=str(getattr(snapshot, "provider", "") or ""),
+                    model=getattr(snapshot, "model", None),
+                    schema_version=GLOBAL_FALLBACK_SCHEMA_VERSION,
+                    configuration_fingerprint=configuration_fingerprint,
+                    prompt_fingerprint=pf,
+                    prepared_image_hashes=[hashes[aid] for aid in batch.ordered_asset_ids],
+                    created_at=now,
+                    updated_at=now,
+                    worker_token=worker_token,
                 )
-                self._emit(
-                    job.id,
-                    "fallback.prompt_resolved",
-                    message="GLOBAL_BATCH prompt resolved",
-                    metadata={
-                        "prompt_key": GLOBAL_FALLBACK_PROMPT_KEY,
-                        "schema_version": GLOBAL_FALLBACK_SCHEMA_VERSION,
-                        "analysis_contract": GLOBAL_FALLBACK_ANALYSIS_CONTRACT,
-                        "prompt_fingerprint": prompt_fingerprint,
-                        "supplier_prompt_id": (
-                            (snapshot.supplier_prompt or {}).get("prompt_id")
-                            if isinstance(getattr(snapshot, "supplier_prompt", None), dict)
-                            else None
-                        ),
-                    },
-                )
-                self._emit(
-                    job.id,
-                    "fallback.batch_call_started",
-                    message="GLOBAL_BATCH provider call started",
-                    metadata={
-                        "batch_index": batch.batch_index,
-                        "batch_count": batch.batch_count,
-                        "batch_fingerprint": batch.fingerprint,
-                        "provider": getattr(snapshot, "provider", None),
-                        "model": getattr(snapshot, "model", None),
-                        "schema": GLOBAL_FALLBACK_SCHEMA_VERSION,
-                    },
-                )
+                inserted = self.batch_journal.try_insert(row)
+                if inserted is None:
+                    # Concurrent insert — reload
+                    durable = self.batch_journal.get_by_fingerprint(
+                        job_id=job.id,
+                        execution_id=exec_id,
+                        batch_fingerprint=batch.fingerprint,
+                    )
+                    if durable is None:
+                        return GlobalFallbackCoordinatorResult(
+                            failed=True,
+                            error_code="BATCH_JOURNAL_CONFLICT",
+                            error_message="could not claim batch fingerprint",
+                            outcome_severity=GlobalFallbackOutcomeSeverity.FAILED_TECHNICAL.value,
+                        )
+                    row = durable
+                else:
+                    row = inserted
 
-                analysis = self.batch_analyzer.analyze_batch(
-                    job=job,
-                    aisle=aisle,
-                    assets=batch_assets,
-                    batch=batch,
-                    snapshot=snapshot,
-                    prompt_fingerprint=prompt_fingerprint,
-                )
-                result.requests_count += 1 if analysis.ok or analysis.error_code else 1
+                if row.status is GlobalFallbackBatchStatus.COMPLETED and row.normalized_response_json:
+                    # Another worker finished; reuse path above next iteration pattern
+                    ents = (row.normalized_response_json or {}).get("entities") or []
+                else:
+                    row.status = GlobalFallbackBatchStatus.CALLING
+                    row.updated_at = self.clock.now()
+                    self.batch_journal.save(row)
 
-                if not analysis.ok:
                     self._emit(
                         job.id,
-                        "fallback.batch_failed",
-                        message=analysis.error_message or "batch failed",
-                        error_code=analysis.error_code or "FALLBACK_BATCH_FAILED",
-                        severity="ERROR",
+                        "fallback.batch_call_started",
+                        message="GLOBAL_BATCH provider call started",
                         metadata={
                             "batch_index": batch.batch_index,
                             "batch_fingerprint": batch.fingerprint,
+                            "asset_count": len(batch_assets),
                         },
                     )
-                    self._fail_lease(lease, worker_token)
-                    result.failed = True
-                    result.error_code = analysis.error_code or "FALLBACK_BATCH_FAILED"
-                    result.error_message = analysis.error_message
-                    return result
+                    analysis = self.batch_analyzer.analyze_batch(
+                        job=job,
+                        aisle=aisle,
+                        assets=batch_assets,
+                        batch=batch,
+                        snapshot=snapshot,
+                        prompt_fingerprint=pf,
+                    )
+                    result.requests_count += 1
 
-                # Reject accidental single-label / external_fallback_v1 contract.
-                schema = str(analysis.schema_version or "").strip()
-                if schema and schema not in (
-                    GLOBAL_FALLBACK_SCHEMA_VERSION,
-                    "2.1",
-                    "v21",
-                ):
-                    if "external_fallback" in schema.lower():
-                        self._fail_lease(lease, worker_token)
-                        result.failed = True
-                        result.error_code = "EXTERNAL_SCHEMA_CONTRACT_MISMATCH"
-                        result.error_message = (
-                            f"GLOBAL_BATCH requires GlobalEntityResponseV21; got {schema}"
+                    if not analysis.ok:
+                        row.status = GlobalFallbackBatchStatus.FAILED_RETRYABLE
+                        row.error_code = analysis.error_code or "FALLBACK_BATCH_FAILED"
+                        row.error_message = (analysis.error_message or "")[:500]
+                        row.updated_at = self.clock.now()
+                        self.batch_journal.save(row)
+                        outcome = decide_global_fallback_outcome(
+                            eligibility=eligibility,
+                            provider_failed=True,
+                            provider_error_code=row.error_code,
+                            provider_error_message=row.error_message,
                         )
-                        return result
+                        self._fail_or_complete_lease(lease, worker_token, failed=outcome.fail_job)
+                        summary = self._build_summary(
+                            mode=mode,
+                            slices=slices,
+                            batch_summaries=batch_summaries,
+                            result=result,
+                            snapshot=snapshot,
+                            eligibility=eligibility,
+                            outcome=outcome,
+                            total_cost=total_cost,
+                            total_prompt_tokens=total_prompt_tokens,
+                            total_response_tokens=total_response_tokens,
+                            total_duration=total_duration,
+                            ordered_ids=tuple(a.id for a in eligible_assets),
+                        )
+                        self.persist_job_summary(job.id, summary)
+                        return GlobalFallbackCoordinatorResult(
+                            failed=outcome.fail_job,
+                            error_code=outcome.error_code,
+                            error_message=outcome.message,
+                            outcome_severity=outcome.severity.value,
+                            requests_count=result.requests_count,
+                            batch_count=len(slices),
+                            public_summary=summary,
+                        )
 
-                ents = list(analysis.entities or [])
-                all_entities.extend(ents)
-                meta = {
-                    "status": "COMPLETED",
-                    "batch_index": batch.batch_index,
-                    "batch_count": batch.batch_count,
-                    "batch_fingerprint": batch.fingerprint,
-                    "ordered_asset_ids": list(batch.ordered_asset_ids),
-                    "entity_count": len(ents),
-                    "provider": analysis.provider or getattr(snapshot, "provider", None),
-                    "model": analysis.model or getattr(snapshot, "model", None),
-                    "schema_version": analysis.schema_version
-                    or GLOBAL_FALLBACK_SCHEMA_VERSION,
-                    "prompt_key": analysis.prompt_key or GLOBAL_FALLBACK_PROMPT_KEY,
-                    "prompt_fingerprint": analysis.prompt_fingerprint or prompt_fingerprint,
-                    "estimated_cost": analysis.estimated_cost,
-                    "prompt_tokens": analysis.prompt_tokens,
-                    "response_tokens": analysis.response_tokens,
-                    "duration_ms": analysis.duration_ms,
-                    "entities": ents,
-                }
-                batch_meta.append(meta)
-                durable[batch.fingerprint] = meta
-                self._emit(
-                    job.id,
-                    "fallback.batch_call_completed",
-                    message="GLOBAL_BATCH provider call completed",
-                    metadata={
-                        "batch_index": batch.batch_index,
-                        "batch_count": batch.batch_count,
-                        "batch_fingerprint": batch.fingerprint,
-                        "entity_count": len(ents),
-                        "estimated_cost": analysis.estimated_cost,
-                        "duration_ms": analysis.duration_ms,
-                    },
-                )
-                self._emit(
-                    job.id,
-                    "fallback.batch_validation_completed",
-                    message="GLOBAL_BATCH response validated",
-                    metadata={
-                        "schema_version": meta["schema_version"],
-                        "analysis_contract": GLOBAL_FALLBACK_ANALYSIS_CONTRACT,
-                        "entity_count": len(ents),
-                    },
-                )
+                    report = analysis.raw_report or {
+                        "schema_version": analysis.schema_version or GLOBAL_FALLBACK_SCHEMA_VERSION,
+                        "entities": analysis.entities,
+                        "total_entities_detected": len(analysis.entities),
+                    }
+                    try:
+                        ents = validate_global_fallback_report(report)
+                    except GlobalFallbackSchemaError as exc:
+                        row.status = GlobalFallbackBatchStatus.FAILED_FINAL
+                        row.error_code = exc.code
+                        row.error_message = exc.message[:500]
+                        row.updated_at = self.clock.now()
+                        self.batch_journal.save(row)
+                        outcome = decide_global_fallback_outcome(
+                            eligibility=eligibility,
+                            provider_failed=True,
+                            provider_error_code=exc.code,
+                            provider_error_message=exc.message,
+                        )
+                        self._fail_or_complete_lease(lease, worker_token, failed=outcome.fail_job)
+                        summary = self._build_summary(
+                            mode=mode,
+                            slices=slices,
+                            batch_summaries=batch_summaries,
+                            result=result,
+                            snapshot=snapshot,
+                            eligibility=eligibility,
+                            outcome=outcome,
+                            total_cost=total_cost,
+                            total_prompt_tokens=total_prompt_tokens,
+                            total_response_tokens=total_response_tokens,
+                            total_duration=total_duration,
+                            ordered_ids=tuple(a.id for a in eligible_assets),
+                        )
+                        self.persist_job_summary(job.id, summary)
+                        return GlobalFallbackCoordinatorResult(
+                            failed=outcome.fail_job,
+                            error_code=exc.code,
+                            error_message=exc.message,
+                            outcome_severity=outcome.severity.value,
+                            requests_count=result.requests_count,
+                            batch_count=len(slices),
+                            public_summary=summary,
+                        )
 
-            self._emit(
-                job.id,
-                "fallback.batch_merge_started",
-                message="GLOBAL_BATCH merge started",
-                metadata={"entity_count": len(all_entities)},
-            )
-            decisions = self._merge_entities(
-                job=job,
-                aisle=aisle,
-                asset_by_id=asset_by_id,
-                entities=all_entities,
-                name_map=name_map,
+                    # Durable RESPONSE_RECEIVED before next batch / merge.
+                    sanitized = sanitize_entities_for_storage(ents)
+                    row.status = GlobalFallbackBatchStatus.RESPONSE_RECEIVED
+                    row.normalized_response_json = {
+                        "schema_version": GLOBAL_FALLBACK_SCHEMA_VERSION,
+                        "entities": sanitized,
+                        "total_entities_detected": len(sanitized),
+                    }
+                    row.response_sha256 = hashlib.sha256(
+                        str(sanitized).encode("utf-8")
+                    ).hexdigest()
+                    row.frame_to_asset_map = dict(analysis.frame_to_asset_map or {})
+                    row.estimated_cost = analysis.estimated_cost
+                    row.prompt_tokens = analysis.prompt_tokens
+                    row.response_tokens = analysis.response_tokens
+                    row.duration_ms = analysis.duration_ms
+                    if analysis.prompt_fingerprint:
+                        row.prompt_fingerprint = analysis.prompt_fingerprint
+                    row.updated_at = self.clock.now()
+                    self.batch_journal.save(row)
+
+                    row.status = GlobalFallbackBatchStatus.VALIDATED
+                    row.updated_at = self.clock.now()
+                    self.batch_journal.save(row)
+                    ents = sanitized
+
+                    if analysis.estimated_cost:
+                        total_cost += float(analysis.estimated_cost)
+                    if analysis.prompt_tokens:
+                        total_prompt_tokens += int(analysis.prompt_tokens)
+                    if analysis.response_tokens:
+                        total_response_tokens += int(analysis.response_tokens)
+                    if analysis.duration_ms:
+                        total_duration += int(analysis.duration_ms)
+
+                if not self._heartbeat(lease, worker_token):
+                    return GlobalFallbackCoordinatorResult(
+                        failed=True,
+                        error_code="LEASE_OWNERSHIP_LOST",
+                        error_message="lost lease before merge persist",
+                        outcome_severity=GlobalFallbackOutcomeSeverity.FAILED_TECHNICAL.value,
+                    )
+
+                plan = build_merge_plan(
+                    batch_fingerprint=batch.fingerprint,
+                    entities=ents if isinstance(ents, list) else [],
+                    evidence_by_asset=evidence_by_asset,
+                    ordered_asset_ids=batch.ordered_asset_ids,
+                    frame_to_asset_map=row.frame_to_asset_map,
+                    filename_to_asset_id=name_map,
+                )
+                apply_res = self.merge_applier.apply(
+                    job=job,
+                    aisle=aisle,
+                    asset_by_id=asset_by_id,
+                    plan=plan,
+                    batch_row=row,
+                    snapshot=snapshot,
+                )
+                if apply_res.failed:
+                    outcome = decide_global_fallback_outcome(
+                        eligibility=eligibility,
+                        persistence_inconsistent=True,
+                        provider_error_message=apply_res.error_message,
+                    )
+                    self._fail_or_complete_lease(lease, worker_token, failed=True)
+                    summary = self._build_summary(
+                        mode=mode,
+                        slices=slices,
+                        batch_summaries=batch_summaries,
+                        result=result,
+                        snapshot=snapshot,
+                        eligibility=eligibility,
+                        outcome=outcome,
+                        total_cost=total_cost,
+                        total_prompt_tokens=total_prompt_tokens,
+                        total_response_tokens=total_response_tokens,
+                        total_duration=total_duration,
+                        ordered_ids=tuple(a.id for a in eligible_assets),
+                    )
+                    self.persist_job_summary(job.id, summary)
+                    return GlobalFallbackCoordinatorResult(
+                        failed=True,
+                        error_code=apply_res.error_code,
+                        error_message=apply_res.error_message,
+                        outcome_severity=outcome.severity.value,
+                        requests_count=result.requests_count,
+                        batch_count=len(slices),
+                        public_summary=summary,
+                    )
+
+                result.applied_external += apply_res.applied
+                result.conflict_count += len(plan.conflicts)
+                result.unmapped_count += len(plan.unmapped)
+                result.kept_internal += len(plan.unchanged)
+                result.entity_count += len(ents) if isinstance(ents, list) else 0
+                batch_summaries.append(self._batch_public(row, reused=False))
+
+            outcome = decide_global_fallback_outcome(eligibility=eligibility)
+            summary = self._build_summary(
+                mode=mode,
+                slices=slices,
+                batch_summaries=batch_summaries,
+                result=result,
                 snapshot=snapshot,
+                eligibility=eligibility,
+                outcome=outcome,
+                total_cost=total_cost,
+                total_prompt_tokens=total_prompt_tokens,
+                total_response_tokens=total_response_tokens,
+                total_duration=total_duration,
+                ordered_ids=tuple(
+                    aid for s in slices for aid in s.ordered_asset_ids
+                ),
             )
-            result.decisions = decisions
-            for d in decisions:
-                if d.action is GlobalFallbackMergeAction.KEEP_INTERNAL:
-                    result.kept_internal += 1
-                elif d.action in (
-                    GlobalFallbackMergeAction.APPLY_EXTERNAL,
-                    GlobalFallbackMergeAction.COMBINE_QUANTITY,
-                ):
-                    result.applied_external += 1
-                elif d.action is GlobalFallbackMergeAction.CONFLICT_REVIEW:
-                    result.conflict_count += 1
-                elif d.action is GlobalFallbackMergeAction.UNMAPPED_REVIEW:
-                    result.unmapped_count += 1
-            result.entity_count = len(all_entities)
-            self._emit(
-                job.id,
-                "fallback.batch_merge_completed",
-                message="GLOBAL_BATCH merge completed",
-                metadata={
-                    "applied_external": result.applied_external,
-                    "kept_internal": result.kept_internal,
-                    "conflicts": result.conflict_count,
-                    "unmapped": result.unmapped_count,
-                },
-            )
-
-            self._emit(
-                job.id,
-                "fallback.batch_persistence_started",
-                message="GLOBAL_BATCH persistence started",
-                metadata={"apply_count": result.applied_external},
-            )
-            # Persistence of APPLY/COMBINE happens inside _merge_entities via persister.
+            # Persist durable summary BEFORE completing lease.
+            self.persist_job_summary(job.id, summary)
             self._complete_lease(lease, worker_token)
-            self._emit(
-                job.id,
-                "fallback.batch_persistence_completed",
-                message="GLOBAL_BATCH persistence completed",
-                metadata={"apply_count": result.applied_external},
-            )
-
-            result.public_summary = {
-                "fallback_mode": mode,
-                "execution_scope": GLOBAL_FALLBACK_EXECUTION_SCOPE,
-                "schema_version": GLOBAL_FALLBACK_SCHEMA_VERSION,
-                "analysis_contract": GLOBAL_FALLBACK_ANALYSIS_CONTRACT,
-                "provider": getattr(snapshot, "provider", None),
-                "model": getattr(snapshot, "model", None),
-                "prompt_key": GLOBAL_FALLBACK_PROMPT_KEY,
-                "images_sent": len(ordered_ids),
-                "ordered_asset_ids": list(ordered_ids),
-                "batch_count": len(slices),
-                "requests_count": result.requests_count,
-                "entity_count": result.entity_count,
-                "conflicts": result.conflict_count,
-                "unmapped": result.unmapped_count,
-                "applied_external": result.applied_external,
-                "kept_internal": result.kept_internal,
-                "batches": [
-                    {k: v for k, v in b.items() if k != "entities"} for b in batch_meta
-                ],
-                "durable_batches": durable,
-                "persistence_status": "COMPLETED",
-            }
+            result.public_summary = summary
+            result.outcome_severity = outcome.severity.value
             return result
         except Exception as exc:
             logger.exception("global_fallback.unhandled job_id=%s", job.id)
             self._fail_lease(lease, worker_token)
-            self._emit(
-                job.id,
-                "fallback.batch_failed",
-                message=type(exc).__name__,
-                error_code="FALLBACK_BATCH_UNHANDLED",
-                severity="ERROR",
-            )
             return GlobalFallbackCoordinatorResult(
                 failed=True,
                 error_code="FALLBACK_BATCH_UNHANDLED",
-                error_message=str(exc)[:500],
+                error_message=f"{type(exc).__name__}: {exc}"[:500],
+                outcome_severity=GlobalFallbackOutcomeSeverity.FAILED_TECHNICAL.value,
             )
 
-    def _merge_entities(
-        self,
-        *,
-        job: Any,
-        aisle: Any,
-        asset_by_id: dict[str, SourceAsset],
-        entities: list[dict[str, Any]],
-        name_map: dict[str, str],
-        snapshot: Any,
-    ) -> list[GlobalFallbackMergeDecision]:
-        asset_ids = set(asset_by_id.keys())
-        # First entity per asset wins for apply; conflicts still recorded.
-        assigned: dict[str, dict[str, Any]] = {}
-        decisions: list[GlobalFallbackMergeDecision] = []
+    def _build_summary(self, **kwargs: Any) -> dict[str, Any]:
+        mode = kwargs["mode"]
+        result: GlobalFallbackCoordinatorResult = kwargs["result"]
+        snapshot = kwargs["snapshot"]
+        eligibility = kwargs["eligibility"]
+        outcome = kwargs["outcome"]
+        return {
+            "fallback_mode": mode,
+            "needs_fallback": True,
+            "execution_scope": GLOBAL_FALLBACK_EXECUTION_SCOPE,
+            "schema_version": GLOBAL_FALLBACK_SCHEMA_VERSION,
+            "analysis_contract": GLOBAL_FALLBACK_ANALYSIS_CONTRACT,
+            "provider": getattr(snapshot, "provider", None),
+            "model": getattr(snapshot, "model", None),
+            "prompt_key": GLOBAL_FALLBACK_PROMPT_KEY,
+            "images_sent": len(kwargs["ordered_ids"]),
+            "batch_count": len(kwargs["slices"]),
+            "requests_count": result.requests_count,
+            "batches_reused": sum(1 for b in kwargs["batch_summaries"] if b.get("reused")),
+            "batches_completed": sum(
+                1 for b in kwargs["batch_summaries"] if b.get("status") == "COMPLETED"
+            ),
+            "entity_count": result.entity_count,
+            "conflicts": result.conflict_count,
+            "unmapped": result.unmapped_count,
+            "applied_external": result.applied_external,
+            "kept_internal": result.kept_internal,
+            "estimated_cost_total": kwargs["total_cost"] or None,
+            "prompt_tokens": kwargs["total_prompt_tokens"] or None,
+            "response_tokens": kwargs["total_response_tokens"] or None,
+            "duration_ms": kwargs["total_duration"] or None,
+            "eligibility_reason": eligibility.reason,
+            "outcome_severity": outcome.severity.value,
+            "batches": kwargs["batch_summaries"],
+            "persistence_status": "COMPLETED"
+            if not outcome.fail_job
+            else "FAILED",
+        }
 
-        for ent in entities:
-            if not isinstance(ent, dict):
-                continue
-            raw_src = ent.get("source_image_id") or ent.get("source_asset_id")
-            mapped = normalize_provider_source_image_id(
-                str(raw_src) if raw_src is not None else None,
-                asset_id_set=asset_ids,
-                filename_to_asset_id=name_map,
-            )
-            ext = ExternalEntityEvidence(
-                internal_code=(
-                    str(ent.get("internal_code")).strip()
-                    if ent.get("internal_code") is not None
-                    else None
-                ),
-                quantity=_coerce_qty(ent.get("quantity")),
-                confidence=_coerce_float(ent.get("confidence")),
-                source_image_id=mapped,
-                raw=ent,
-            )
-            if mapped is None:
-                decisions.append(decide_unmapped_entity(ext))
-                continue
-            if mapped in assigned:
-                # Same label / duplicate entity for asset — keep first (historical dedupe).
-                decisions.append(
-                    GlobalFallbackMergeDecision(
-                        action=GlobalFallbackMergeAction.KEEP_INTERNAL,
-                        asset_id=mapped,
-                        reason="duplicate_external_entity_deduped",
-                        external=ext,
-                    )
-                )
-                continue
-            assigned[mapped] = ent
+    @staticmethod
+    def _batch_public(row: GlobalFallbackBatchRequest, *, reused: bool) -> dict[str, Any]:
+        return {
+            "batch_index": row.batch_index,
+            "batch_count": row.batch_count,
+            "batch_fingerprint": row.batch_fingerprint,
+            "status": row.status.value,
+            "reused": reused,
+            "entity_count": len((row.normalized_response_json or {}).get("entities") or []),
+            "estimated_cost": row.estimated_cost,
+            "prompt_tokens": row.prompt_tokens,
+            "response_tokens": row.response_tokens,
+            "duration_ms": row.duration_ms,
+            "prompt_fingerprint": row.prompt_fingerprint,
+        }
 
-            internal = None
-            if self.load_internal_evidence is not None:
-                internal = self.load_internal_evidence(job.id, mapped)
-            if internal is None:
-                internal = InternalAssetEvidence(
-                    asset_id=mapped,
-                    status=None,
-                    internal_code=None,
-                    quantity=None,
-                    resolved_internal=False,
-                )
-            decision = decide_merge_for_asset(internal=internal, external=ext)
-            decisions.append(decision)
-
-            if decision.action in (
-                GlobalFallbackMergeAction.APPLY_EXTERNAL,
-                GlobalFallbackMergeAction.COMBINE_QUANTITY,
-            ):
-                self._persist_external(
-                    job=job,
-                    aisle=aisle,
-                    asset=asset_by_id[mapped],
-                    external=ext,
-                    snapshot=snapshot,
-                    reason=decision.reason,
-                )
-            elif decision.action is GlobalFallbackMergeAction.CONFLICT_REVIEW:
-                self._mark_conflict_review(
-                    job=job,
-                    asset_id=mapped,
-                    decision=decision,
-                )
-
-        # Assets with no external entity: keep internal (explicit decision for observability).
-        for aid in asset_ids:
-            if aid in assigned:
-                continue
-            internal = None
-            if self.load_internal_evidence is not None:
-                internal = self.load_internal_evidence(job.id, aid)
-            decisions.append(
-                decide_merge_for_asset(internal=internal, external=None)
-            )
-        return decisions
-
-    def _persist_external(
-        self,
-        *,
-        job: Any,
-        aisle: Any,
-        asset: SourceAsset,
-        external: ExternalEntityEvidence,
-        snapshot: Any,
-        reason: str,
-    ) -> None:
-        result = ImageProcessingResult(
-            job_id=job.id,
-            asset_id=asset.id,
-            status=ImageResultStatus.RESOLVED_EXTERNAL,
-            processing_mode=EXTERNAL_PROVIDER_STRATEGY,
-            resolved_by=EXTERNAL_PROVIDER_STRATEGY,
-            internal_code=external.internal_code,
-            quantity=external.quantity,
-            normalized_result={
-                "internal_code": external.internal_code,
-                "quantity": external.quantity,
-                "confidence": external.confidence,
-                "source_image_id": external.source_image_id,
-            },
-            additional_fields={
-                "fallback_mode": EXTERNAL_FALLBACK_MODE_GLOBAL_BATCH,
-                "fallback_reason": reason,
-                "execution_scope": ExecutionScope.AISLE_BATCH.value,
-                "external_provider": getattr(snapshot, "provider", None),
-                "external_model": getattr(snapshot, "model", None),
-                "analysis_contract": GLOBAL_FALLBACK_ANALYSIS_CONTRACT,
-                "schema_version": GLOBAL_FALLBACK_SCHEMA_VERSION,
-            },
-            evidence={
-                "provider": getattr(snapshot, "provider", None),
-                "model": getattr(snapshot, "model", None),
-                "raw_entity": external.raw,
-            },
-            provider_name=getattr(snapshot, "provider", None),
-            model_name=getattr(snapshot, "model", None),
-            execution_scope=ExecutionScope.AISLE_BATCH,
-            logical_asset_attempt=True,
+    @staticmethod
+    def _default_prompt_fingerprint(snapshot: Any) -> str:
+        sp = getattr(snapshot, "supplier_prompt", None)
+        sha = None
+        if isinstance(sp, dict):
+            sha = sp.get("content_sha256")
+        rules = getattr(snapshot, "client_rules", None)
+        return prompt_fingerprint_from_parts(
+            prompt_key=GLOBAL_FALLBACK_PROMPT_KEY,
+            schema_version=GLOBAL_FALLBACK_SCHEMA_VERSION,
+            composition_version="hybrid",
+            base_prompt_sha256=None,
+            supplier_content_sha256=str(sha) if sha else None,
+            client_rules=rules if isinstance(rules, dict) else None,
         )
-        try:
-            self.result_persister.persist(
-                result=result,
-                inventory_id=aisle.inventory_id,
-                aisle_id=aisle.id,
-            )
-        except Exception:
-            logger.exception(
-                "global_fallback.persist_failed job_id=%s asset_id=%s",
-                job.id,
-                asset.id,
-            )
-            raise
-
-        if self.state_repo is not None:
-            try:
-                state = self.state_repo.get_by_job_and_asset(job.id, asset.id)
-                if state is not None:
-                    from src.domain.image_processing.job_asset_processing_state import (
-                        JobAssetProcessingStatus,
-                    )
-
-                    state.status = JobAssetProcessingStatus.RESOLVED
-                    state.last_strategy = EXTERNAL_PROVIDER_STRATEGY
-                    state.updated_at = self.clock.now()
-                    self.state_repo.save(state)
-            except Exception:
-                logger.warning(
-                    "global_fallback.state_update_failed job_id=%s asset_id=%s",
-                    job.id,
-                    asset.id,
-                    exc_info=True,
-                )
-
-    def _mark_conflict_review(
-        self,
-        *,
-        job: Any,
-        asset_id: str,
-        decision: GlobalFallbackMergeDecision,
-    ) -> None:
-        if self.state_repo is None:
-            return
-        try:
-            from src.domain.image_processing.job_asset_processing_state import (
-                JobAssetProcessingStatus,
-            )
-
-            state = self.state_repo.get_by_job_and_asset(job.id, asset_id)
-            if state is None:
-                return
-            # Do not overwrite a durable RESOLVED internal with silent failure.
-            if state.status.value == "RESOLVED":
-                state.error_code = "GLOBAL_FALLBACK_CONFLICT"
-                state.error_message = decision.reason
-            else:
-                state.status = JobAssetProcessingStatus.PENDING_MANUAL_REVIEW
-                state.error_code = "GLOBAL_FALLBACK_CONFLICT"
-                state.error_message = decision.reason
-            state.updated_at = self.clock.now()
-            self.state_repo.save(state)
-        except Exception:
-            logger.warning(
-                "global_fallback.conflict_mark_failed job_id=%s asset_id=%s",
-                job.id,
-                asset_id,
-                exc_info=True,
-            )
 
     def _acquire_lease(self, job_id: str, worker_token: str) -> JobProcessingLease | None:
         return self.lease_repo.try_acquire_lease(
@@ -737,6 +728,19 @@ class GlobalExternalFallbackCoordinator:
             now=self.clock.now(),
             lease_duration_seconds=self.lease_duration_seconds,
         )
+
+    def _heartbeat(self, lease: JobProcessingLease, worker_token: str) -> bool:
+        try:
+            updated = self.lease_repo.heartbeat(
+                lease.id,
+                worker_token=worker_token,
+                now=self.clock.now(),
+                lease_duration_seconds=self.lease_duration_seconds,
+            )
+            return updated is not None
+        except Exception:
+            logger.warning("global_fallback.heartbeat_failed lease_id=%s", lease.id)
+            return False
 
     def _complete_lease(self, lease: JobProcessingLease, worker_token: str) -> None:
         try:
@@ -756,72 +760,13 @@ class GlobalExternalFallbackCoordinator:
         except Exception:
             logger.warning("global_fallback.lease_release_failed lease_id=%s", lease.id)
 
-    def _load_durable_batches(self, job: Any) -> dict[str, Any]:
-        result_json = getattr(job, "result_json", None) or {}
-        if not isinstance(result_json, dict):
-            return {}
-        block = result_json.get("global_fallback")
-        if not isinstance(block, dict):
-            return {}
-        durable = block.get("durable_batches")
-        return dict(durable) if isinstance(durable, dict) else {}
-
-    def _all_batches_durable(
-        self,
-        slices: list[GlobalFallbackBatchSlice],
-        durable: dict[str, Any],
-    ) -> bool:
-        if not slices:
-            return False
-        for batch in slices:
-            meta = durable.get(batch.fingerprint)
-            if not isinstance(meta, dict) or meta.get("status") != "COMPLETED":
-                return False
-        return True
-
-    def _public_summary_from_durable(
-        self,
-        job: Any,
-        slices: list[GlobalFallbackBatchSlice],
-        durable: dict[str, Any],
-        snapshot: Any,
-        ordered_ids: tuple[str, ...],
-    ) -> dict[str, Any]:
-        result_json = getattr(job, "result_json", None) or {}
-        existing = {}
-        if isinstance(result_json, dict):
-            gf = result_json.get("global_fallback")
-            if isinstance(gf, dict):
-                existing = gf
-        return {
-            **existing,
-            "fallback_mode": EXTERNAL_FALLBACK_MODE_GLOBAL_BATCH,
-            "reused_durable": True,
-            "batch_count": len(slices),
-            "requests_count": 0,
-            "images_sent": len(ordered_ids),
-            "provider": getattr(snapshot, "provider", None),
-            "model": getattr(snapshot, "model", None),
-            "schema_version": GLOBAL_FALLBACK_SCHEMA_VERSION,
-            "analysis_contract": GLOBAL_FALLBACK_ANALYSIS_CONTRACT,
-            "persistence_status": "REUSED",
-        }
-
-    @staticmethod
-    def _prompt_fingerprint_from_snapshot(snapshot: Any) -> str:
-        parts = [
-            GLOBAL_FALLBACK_PROMPT_KEY,
-            GLOBAL_FALLBACK_SCHEMA_VERSION,
-            str(getattr(snapshot, "provider", "") or ""),
-            str(getattr(snapshot, "model", "") or ""),
-        ]
-        sp = getattr(snapshot, "supplier_prompt", None)
-        if isinstance(sp, dict):
-            parts.append(str(sp.get("content_sha256") or ""))
-            parts.append(str(sp.get("prompt_id") or ""))
-            parts.append(str(sp.get("prompt_version") or ""))
-        raw = "|".join(parts)
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    def _fail_or_complete_lease(
+        self, lease: JobProcessingLease, worker_token: str, *, failed: bool
+    ) -> None:
+        if failed:
+            self._fail_lease(lease, worker_token)
+        else:
+            self._complete_lease(lease, worker_token)
 
     def _emit(
         self,
@@ -852,16 +797,3 @@ class GlobalExternalFallbackCoordinator:
                 event_type,
                 exc_info=True,
             )
-
-
-def _coerce_qty(value: Any) -> float | None:
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _coerce_float(value: Any) -> float | None:
-    return _coerce_qty(value)

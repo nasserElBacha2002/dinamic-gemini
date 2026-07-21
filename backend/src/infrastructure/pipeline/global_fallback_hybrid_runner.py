@@ -226,4 +226,14 @@ class HybridGlobalFallbackBatchAnalyzer:
             else None,
             raw_report=report,
             duration_ms=duration_ms,
+            frame_to_asset_map={
+                **{str(i): a.id for i, a in enumerate(assets)},
+                **{f"img_{i}": a.id for i, a in enumerate(assets)},
+                **{f"frame_{i}": a.id for i, a in enumerate(assets)},
+                **{
+                    str(getattr(a, "original_filename", "") or ""): a.id
+                    for a in assets
+                    if getattr(a, "original_filename", None)
+                },
+            },
         )
