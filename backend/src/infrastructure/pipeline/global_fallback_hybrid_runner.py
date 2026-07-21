@@ -120,6 +120,8 @@ class HybridGlobalFallbackBatchAnalyzer:
         job_view.prompt_key = GLOBAL_FALLBACK_PROMPT_KEY
         job_view.prompt_version = GLOBAL_FALLBACK_SCHEMA_VERSION
 
+        run_segment = f"global_fallback_batch_{batch.batch_index}"
+        batch_run_dir = self.job_dir / run_segment
         try:
             inv = self.inventory_repo.get_by_id(aisle.inventory_id)
             inv_client = (inv.client_id or "").strip() if inv is not None else ""
@@ -127,6 +129,9 @@ class HybridGlobalFallbackBatchAnalyzer:
                 aisle,
                 inventory_client_id=inv_client or None,
             )
+            # One run segment for input materialization + pipeline write + report load.
+            # Must NOT use hardcoded "run" while looking for the report under another dir.
+            batch_run_dir.mkdir(parents=True, exist_ok=True)
             job_input, video_path = self.pipeline_runner.build_pipeline_input(
                 list(assets),
                 self.v3_base,
@@ -134,7 +139,7 @@ class HybridGlobalFallbackBatchAnalyzer:
                 job.id,
                 analysis_context=analysis_context,
                 aisle=aisle,
-                run_id=f"global_fallback_b{batch.batch_index}",
+                run_id=run_segment,
                 legacy_local_read_enabled=self.legacy_local_read_enabled,
             )
         except Exception as exc:
@@ -149,9 +154,6 @@ class HybridGlobalFallbackBatchAnalyzer:
                 error_message=str(exc)[:500],
             )
 
-        batch_run_dir = self.run_dir / f"global_fallback_batch_{batch.batch_index}"
-        batch_run_dir.mkdir(parents=True, exist_ok=True)
-
         pipeline_out = self.pipeline_execution_service.run(
             V3PipelineExecutionRequest(
                 base_path=self.base_path,
@@ -160,6 +162,7 @@ class HybridGlobalFallbackBatchAnalyzer:
                 aisle=aisle,
                 aisle_id=aisle.id,
                 run_dir=batch_run_dir,
+                pipeline_run_id=run_segment,
                 settings=self.settings,
                 log=self.log,
                 pipeline_video_path=video_path or "",

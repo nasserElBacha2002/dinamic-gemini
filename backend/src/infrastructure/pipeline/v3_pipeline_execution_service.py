@@ -78,6 +78,9 @@ class V3PipelineExecutionRequest:
     cancellation_checkpoint: Callable[[str, str | None, str], None]
     # When set (GLOBAL_BATCH), use immutable job-snapshot instructions instead of live resolve.
     supplier_prompt_resolution_override: SupplierPromptResolution | None = None
+    # Must match the directory segment where the hybrid pipeline writes hybrid_report.json.
+    # Defaults to RUN_ID ("run"). GLOBAL_BATCH passes a per-batch segment aligned with run_dir.
+    pipeline_run_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -171,7 +174,7 @@ class V3PipelineExecutionService:
             video_path=req.pipeline_video_path,
             job_id=req.job_id,
             base_path=req.base_path,
-            run_id=RUN_ID,
+            run_id=(req.pipeline_run_id or RUN_ID),
             settings=req.settings,
             job_input=req.job_input,
             analysis_context=req.analysis_context,
