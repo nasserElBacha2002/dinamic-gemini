@@ -43,7 +43,6 @@ from src.application.services.image_processing.global_fallback_merge_policy impo
     ExternalEntityEvidence,
     GlobalFallbackMergeAction,
     InternalAssetEvidence,
-    decide_merge_for_asset,
     decide_multi_entity_for_asset,
     normalize_provider_source_image_id,
 )

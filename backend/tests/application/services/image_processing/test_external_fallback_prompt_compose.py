@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-
 import pytest
 
 from src.application.services.image_processing.external_fallback_prompt import (
