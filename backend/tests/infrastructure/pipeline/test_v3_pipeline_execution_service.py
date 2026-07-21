@@ -229,3 +229,33 @@ def test_run_passes_execution_observer_to_runner_unchanged(tmp_path: Path) -> No
     passed = runner.run_hybrid_pipeline.call_args.kwargs["execution_observer"]
     assert passed is req.execution_observer
     state.fail_job_and_aisle.assert_not_called()
+
+
+def test_run_custom_pipeline_run_id_passed_and_report_loaded_from_run_dir(
+    tmp_path: Path,
+) -> None:
+    """GLOBAL_BATCH must write/read under the same segment (not hardcoded RUN_ID)."""
+    from dataclasses import replace
+
+    service, state, runner = _service()
+    segment = "global_fallback_batch_0"
+    run_dir = tmp_path / "pipe-job" / segment
+    run_dir.mkdir(parents=True, exist_ok=True)
+    report = {"entities": [{"model_entity_id": "E1"}], "schema_version": "v2.1"}
+    (run_dir / "hybrid_report.json").write_text(json.dumps(report), encoding="utf-8")
+    # Misaligned default path must NOT be used.
+    wrong = tmp_path / "pipe-job" / RUN_ID
+    wrong.mkdir(parents=True, exist_ok=True)
+    (wrong / "hybrid_report.json").write_text(
+        json.dumps({"entities": [{"model_entity_id": "WRONG"}]}),
+        encoding="utf-8",
+    )
+    req = replace(_execution_request(tmp_path, run_dir=run_dir), pipeline_run_id=segment)
+    runner.run_hybrid_pipeline.return_value = PipelineRunResult(0, {})
+
+    out = service.run(req)
+
+    assert out is not None
+    assert out.report["entities"][0]["model_entity_id"] == "E1"
+    assert runner.run_hybrid_pipeline.call_args.kwargs["run_id"] == segment
+    state.fail_job_and_aisle.assert_not_called()

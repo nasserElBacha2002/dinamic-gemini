@@ -1259,9 +1259,19 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 5: when true, unresolved CODE_SCAN/INTERNAL_OCR assets may call one "
-            "external provider per image. Default false. "
-            "Env: EXTERNAL_FALLBACK_PER_IMAGE_ENABLED."
+            "Phase 5: when true, CODE_SCAN/INTERNAL_OCR jobs may run external fallback "
+            "after the internal pass (mode controlled by EXTERNAL_FALLBACK_MODE). "
+            "Default false. Env: EXTERNAL_FALLBACK_PER_IMAGE_ENABLED."
+        ),
+    )
+    external_fallback_mode: str = Field(
+        default_factory=lambda: (
+            os.getenv("EXTERNAL_FALLBACK_MODE", "GLOBAL_BATCH") or "GLOBAL_BATCH"
+        ).strip(),
+        description=(
+            "How external fallback runs when enabled: GLOBAL_BATCH (default, one hybrid "
+            "call for the aisle/job) or PER_ASSET (deprecated temporary rollback). "
+            "Unknown values fail closed. Env: EXTERNAL_FALLBACK_MODE."
         ),
     )
     external_fallback_ambiguous_internal_code_enabled: bool = Field(
@@ -1372,10 +1382,11 @@ class LimitsAndSchemaSettings(BaseModel):
     )
     external_fallback_provider: str = Field(
         default_factory=lambda: (
-            os.getenv("EXTERNAL_FALLBACK_PROVIDER", "gemini") or "gemini"
+            os.getenv("EXTERNAL_FALLBACK_PROVIDER", "") or ""
         ).strip().lower(),
         description=(
-            "Phase 5 primary external provider key (gemini|openai|claude). "
+            "Phase 5 primary external provider key (gemini|openai|claude|deepseek). "
+            "Required when EXTERNAL_FALLBACK_PER_IMAGE_ENABLED=true; no silent default. "
             "Env: EXTERNAL_FALLBACK_PROVIDER."
         ),
     )

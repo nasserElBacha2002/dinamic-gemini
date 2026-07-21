@@ -2002,6 +2002,13 @@
       "mode": "Modo solicitado",
       "strategy": "Estrategia de ejecución",
       "profile": "Proveedor / modelo / prompt",
+      "fallbackConfigured": "Fallback configurado",
+      "fallbackExecuted": "Fallback ejecutado",
+      "fallbackNotExecuted": "No ejecutado",
+      "fallbackConfiguredNotExecuted": "Configurado, no ejecutado",
+      "unknown": "Desconocido",
+      "metadataWarning": "Advertencia de metadata",
+      "historicalMetadataInconsistent": "Metadata histórica inconsistente",
       "progress": "Progreso por imagen",
       "progressValue": "{{resolved}} de {{total}} resueltas · {{unrecognized}} no reconocidas · {{manual_review}} revisión manual · {{failed}} fallidas · {{processing}} en curso · {{pending}} pendientes"
     },

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import {
+  Alert,
   Box,
   Button,
   Divider,
@@ -53,6 +54,7 @@ import { useProcessingObservabilityCapabilities } from '../features/processing/h
 import {
   buildJobExecutionPresentation,
   buildObsContentTabsForJob,
+  parseGlobalFallbackPresentation,
   strategyLabelKey,
   type ProcessingObsTabId,
 } from '../features/processing/mappers/processingExecutionPresentation';
@@ -94,12 +96,29 @@ function jobOptionLabel(job: JobSummary): string {
     current_stage: job.current_stage,
     provider_name: job.provider_name,
     model_name: job.model_name,
+    identification_execution: job.identification_execution ?? null,
+    fallback_asset_summaries: job.fallback_asset_summaries ?? null,
+    global_fallback: job.global_fallback ?? null,
     external_execution_used:
       Number(job.fallback_progress?.resolved_external || 0) > 0 ||
-      Number(job.fallback_progress?.fallback_requested || 0) > 0,
+      Number(job.fallback_progress?.fallback_requested || 0) > 0 ||
+      Boolean(job.global_fallback?.requests_count) ||
+      Boolean(job.global_fallback?.persistence_status),
   });
+  if (presentation.showFallbackConfiguredRows) {
+    const head = [presentation.configured.provider, presentation.configured.model]
+      .filter((x) => x != null && String(x).trim() !== '')
+      .join(' · ');
+    const strategy = job.execution_strategy
+      ? i18n.t(strategyLabelKey(job.execution_strategy), {
+          defaultValue: String(job.execution_strategy),
+        })
+      : null;
+    if (head && strategy) return `${strategy} · ${head} · ${shortJobId(job.id)}`;
+    if (head) return `${head} · ${shortJobId(job.id)}`;
+  }
   if (presentation.showProviderModelRows) {
-    const head = [job.provider_name, job.model_name]
+    const head = [presentation.displayProvider, presentation.displayModel]
       .filter((x) => x != null && String(x).trim() !== '')
       .join(' · ');
     if (head) return `${head} · ${shortJobId(job.id)}`;
@@ -127,10 +146,16 @@ function jobMetadataRows(
     provider_name: job.provider_name,
     model_name: job.model_name,
     prompt_key: job.prompt_key,
+    prompt_version: job.prompt_version,
+    identification_execution: job.identification_execution ?? null,
+    fallback_asset_summaries: job.fallback_asset_summaries ?? null,
     result_json: (job as { result_json?: Record<string, unknown> | null }).result_json ?? null,
+    global_fallback: job.global_fallback ?? null,
     external_execution_used:
       Number(job.fallback_progress?.resolved_external || 0) > 0 ||
-      Number(job.fallback_progress?.fallback_requested || 0) > 0,
+      Number(job.fallback_progress?.fallback_requested || 0) > 0 ||
+      Boolean(job.global_fallback?.requests_count) ||
+      Boolean(job.global_fallback?.persistence_status),
   });
   return [
     { label: i18n.t('jobs.obs_started'), value: formatOptionalDate(job.started_at) },
@@ -211,7 +236,53 @@ function jobMetadataRows(
           },
         ]
       : []),
-    ...(job.fallback_asset_summaries && job.fallback_asset_summaries.length > 0
+    ...(() => {
+      const gf =
+        job.global_fallback != null
+          ? {
+              mode: job.global_fallback.fallback_mode ?? null,
+              provider: job.global_fallback.provider ?? null,
+              model: job.global_fallback.model ?? null,
+              schemaVersion: job.global_fallback.schema_version ?? null,
+              analysisContract: job.global_fallback.analysis_contract ?? null,
+              imagesSent: job.global_fallback.images_sent ?? null,
+              batchCount: job.global_fallback.batch_count ?? null,
+              requestsCount: job.global_fallback.requests_count ?? null,
+              entityCount: job.global_fallback.entity_count ?? null,
+              conflicts: job.global_fallback.conflicts ?? null,
+              persistenceStatus: job.global_fallback.persistence_status ?? null,
+              promptKey: job.global_fallback.prompt_key ?? null,
+            }
+          : parseGlobalFallbackPresentation(null);
+      if (!gf || gf.mode !== 'GLOBAL_BATCH') return [];
+      // Do not render per-asset fallback call lists when GLOBAL_BATCH ran.
+      return [
+        {
+          label: i18n.t('jobs.obs_global_fallback', {
+            defaultValue: 'Fallback externo global',
+          }),
+          value: [
+            `Modo: ${gf.mode}`,
+            gf.provider ? `Proveedor: ${gf.provider}` : null,
+            gf.model ? `Modelo: ${gf.model}` : null,
+            gf.schemaVersion ? `Schema: ${gf.schemaVersion}` : null,
+            gf.analysisContract ? `Contrato: ${gf.analysisContract}` : null,
+            gf.imagesSent != null ? `Imágenes: ${gf.imagesSent}` : null,
+            gf.batchCount != null ? `Batches: ${gf.batchCount}` : null,
+            gf.requestsCount != null ? `Llamadas: ${gf.requestsCount}` : null,
+            gf.entityCount != null ? `Entidades: ${gf.entityCount}` : null,
+            gf.conflicts != null ? `Conflictos: ${gf.conflicts}` : null,
+            gf.promptKey ? `Prompt: ${gf.promptKey}` : null,
+            gf.persistenceStatus ? `Persistencia: ${gf.persistenceStatus}` : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        },
+      ];
+    })(),
+    ...(job.fallback_asset_summaries &&
+    job.fallback_asset_summaries.length > 0 &&
+    job.global_fallback?.fallback_mode !== 'GLOBAL_BATCH'
       ? [
           {
             label: i18n.t('jobs.obs_fallback_assets', {
@@ -237,12 +308,69 @@ function jobMetadataRows(
     { label: i18n.t('jobs.obs_current_step'), value: job.current_substep || dash },
     { label: i18n.t('jobs.obs_step_started'), value: formatOptionalDate(job.current_step_started_at) },
     { label: i18n.t('common.execution_id'), value: job.execution_id || dash },
+    ...(presentation.showFallbackConfiguredRows
+      ? [
+          {
+            label: i18n.t('jobs.obs_fallback_provider', {
+              defaultValue: 'Fallback provider',
+            }),
+            value: presentation.configured.provider || dash,
+          },
+          {
+            label: i18n.t('jobs.obs_fallback_model', {
+              defaultValue: 'Fallback model',
+            }),
+            value: presentation.configured.model || dash,
+          },
+          {
+            label: i18n.t('jobs.obs_fallback_prompt_key', {
+              defaultValue: 'Fallback prompt key',
+            }),
+            value: presentation.configured.promptKey || dash,
+          },
+          {
+            label: i18n.t('jobs.obs_fallback_executed', {
+              defaultValue: 'Fallback executed',
+            }),
+            value: !presentation.fallbackUsed
+              ? i18n.t('processing.header.fallbackNotExecuted', {
+                  defaultValue: 'Not executed',
+                })
+              : presentation.executed?.evidencePresent
+                ? [
+                    presentation.executed.provider,
+                    presentation.executed.executedModel ?? presentation.executed.requestedModel,
+                    presentation.executed.promptKey,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') ||
+                  i18n.t('processing.header.unknown', { defaultValue: 'Unknown' })
+                : i18n.t('processing.header.unknown', { defaultValue: 'Unknown' }),
+          },
+        ]
+      : []),
     ...(presentation.showProviderModelRows
       ? [
-          { label: i18n.t('jobs.obs_provider_row'), value: job.provider_name || dash },
-          { label: i18n.t('jobs.obs_model_row'), value: job.model_name || dash },
-          { label: i18n.t('jobs.obs_prompt_key'), value: job.prompt_key || dash },
+          { label: i18n.t('jobs.obs_provider_row'), value: presentation.displayProvider || dash },
+          { label: i18n.t('jobs.obs_model_row'), value: presentation.displayModel || dash },
+          { label: i18n.t('jobs.obs_prompt_key'), value: presentation.displayPromptKey || dash },
           { label: i18n.t('jobs.obs_prompt_version'), value: job.prompt_version || dash },
+        ]
+      : []),
+    ...(presentation.historicalMetadataWarning
+      ? [
+          {
+            label: i18n.t('processing.header.metadataWarning', {
+              defaultValue: 'Metadata warning',
+            }),
+            value: `${i18n.t('processing.header.historicalMetadataInconsistent', {
+              defaultValue: 'Historical metadata inconsistent',
+            })}${
+              presentation.metadataInconsistencyReasons.length
+                ? ` (${presentation.metadataInconsistencyReasons.join(', ')})`
+                : ''
+            }`,
+          },
         ]
       : []),
     {
@@ -386,12 +514,18 @@ export default function AisleObservabilityWorkspace({
         provider_name: selectedJob?.provider_name,
         model_name: selectedJob?.model_name,
         prompt_key: selectedJob?.prompt_key,
+        prompt_version: selectedJob?.prompt_version,
+        identification_execution: selectedJob?.identification_execution ?? null,
+        fallback_asset_summaries: selectedJob?.fallback_asset_summaries ?? null,
         result_json:
           (selectedJob as { result_json?: Record<string, unknown> | null } | null)?.result_json ??
           null,
+        global_fallback: selectedJob?.global_fallback ?? null,
         external_execution_used:
           Number(selectedJob?.fallback_progress?.resolved_external || 0) > 0 ||
-          Number(selectedJob?.fallback_progress?.fallback_requested || 0) > 0,
+          Number(selectedJob?.fallback_progress?.fallback_requested || 0) > 0 ||
+          Boolean(selectedJob?.global_fallback?.requests_count) ||
+          Boolean(selectedJob?.global_fallback?.persistence_status),
       }),
     [selectedJob]
   );
@@ -847,16 +981,192 @@ export default function AisleObservabilityWorkspace({
           ) : null}
 
           {contentTab === 'prompt' ? (
-            <Stack spacing={2}>
-              <Typography variant="body2" color="text.secondary">
-                {t('jobs.obs_prompt_audit_notice')}
-              </Typography>
-              {!lastProviderRequest ? (
+            <Stack spacing={2} data-testid="obs-prompt-tab">
+              {jobPresentation.promptTabMode === 'fallback' ? (
+                <>
+                  <Typography variant="body2" color="text.secondary">
+                    {t('jobs.obs_prompt_fallback_notice', {
+                      defaultValue:
+                        'Prompt identity for CODE_SCAN / INTERNAL_OCR comes from the external fallback snapshot, not legacy hybrid job fields.',
+                    })}
+                  </Typography>
+                  {jobPresentation.supplierPromptMissingAlert ? (
+                    <Alert severity="error" data-testid="obs-prompt-supplier-missing-alert">
+                      {t('jobs.obs_prompt_supplier_missing', {
+                        defaultValue:
+                          'Supplier asociado, pero prompt específico no aplicado',
+                      })}
+                    </Alert>
+                  ) : null}
+                  <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1 }}>
+                    <Typography variant="subtitle2">
+                      {t('jobs.obs_prompt_general_heading', { defaultValue: 'Prompt general' })}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" data-testid="obs-prompt-configured">
+                      {t('jobs.obs_prompt_fallback_configured', {
+                        defaultValue: 'Configured: {{value}}',
+                        value: jobPresentation.promptConfiguredLabel || t('common.em_dash'),
+                      })}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {t('jobs.obs_prompt_provider_pipeline', {
+                        pipeline: jobPresentation.configured.provider ?? t('common.em_dash'),
+                      })}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {t('jobs.obs_prompt_model_row', {
+                        model: jobPresentation.configured.model ?? t('common.em_dash'),
+                      })}
+                    </Typography>
+                  </Paper>
+                  <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1 }} data-testid="obs-prompt-supplier-block">
+                    <Typography variant="subtitle2">
+                      {t('jobs.obs_prompt_supplier_heading', {
+                        defaultValue: 'Prompt específico del supplier',
+                      })}
+                    </Typography>
+                    {jobPresentation.supplierPromptConfigured || jobPresentation.supplierPromptExecuted ? (
+                      <>
+                        <Typography variant="body2" color="text.secondary">
+                          {t('jobs.obs_prompt_supplier_id_row', {
+                            defaultValue: 'Prompt id: {{value}}',
+                            value:
+                              jobPresentation.supplierPromptExecuted?.promptId ||
+                              jobPresentation.supplierPromptConfigured?.promptId ||
+                              t('common.em_dash'),
+                          })}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {t('jobs.obs_prompt_supplier_key_row', {
+                            defaultValue: 'Key/version: {{value}}',
+                            value:
+                              [
+                                jobPresentation.supplierPromptExecuted?.promptKey ||
+                                  jobPresentation.supplierPromptConfigured?.promptKey,
+                                jobPresentation.supplierPromptExecuted?.promptVersion ||
+                                  jobPresentation.supplierPromptConfigured?.promptVersion,
+                              ]
+                                .filter(Boolean)
+                                .join('@') || t('common.em_dash'),
+                          })}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {t('jobs.obs_prompt_supplier_hash_row', {
+                            defaultValue: 'Hash: {{value}}',
+                            value:
+                              jobPresentation.supplierPromptExecuted?.contentSha256 ||
+                              jobPresentation.supplierPromptConfigured?.contentSha256 ||
+                              t('common.em_dash'),
+                          })}
+                        </Typography>
+                        {(jobPresentation.supplierPromptExecuted?.content ||
+                          jobPresentation.supplierPromptConfigured?.content) && (
+                          <Box
+                            component="pre"
+                            data-testid="obs-prompt-supplier-content"
+                            sx={{
+                              m: 0,
+                              p: 1.5,
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                              fontFamily: 'monospace',
+                              fontSize: '0.8rem',
+                              maxHeight: 240,
+                              overflow: 'auto',
+                              borderRadius: 1,
+                              bgcolor: 'action.hover',
+                            }}
+                          >
+                            {jobPresentation.supplierPromptExecuted?.content ||
+                              jobPresentation.supplierPromptConfigured?.content}
+                          </Box>
+                        )}
+                      </>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        {t('jobs.obs_prompt_supplier_absent', {
+                          defaultValue: 'No hay prompt específico de supplier en el snapshot.',
+                        })}
+                      </Typography>
+                    )}
+                  </Paper>
+                  <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1 }}>
+                    <Typography variant="subtitle2">
+                      {t('jobs.obs_prompt_effective_heading', {
+                        defaultValue: 'Prompt efectivo ejecutado',
+                      })}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" data-testid="obs-prompt-executed">
+                      {t('jobs.obs_prompt_fallback_executed', {
+                        defaultValue: 'Executed: {{value}}',
+                        value:
+                          jobPresentation.promptExecutedLabel === 'configured_not_executed'
+                            ? t('processing.header.fallbackConfiguredNotExecuted', {
+                                defaultValue: 'Configured, not executed',
+                              })
+                            : jobPresentation.promptExecutedLabel === 'unknown'
+                              ? t('processing.header.unknown', { defaultValue: 'Unknown' })
+                              : jobPresentation.promptExecutedLabel || t('common.em_dash'),
+                      })}
+                    </Typography>
+                    {jobPresentation.executedPromptSha256 ? (
+                      <Typography variant="body2" color="text.secondary" data-testid="obs-prompt-sha">
+                        {t('jobs.obs_prompt_hash_row', {
+                          hash: jobPresentation.executedPromptSha256,
+                        })}
+                      </Typography>
+                    ) : null}
+                  </Paper>
+                  {jobPresentation.promptContentAvailability === 'available' &&
+                  jobPresentation.executedPromptContent ? (
+                    <>
+                      <Typography variant="subtitle2">{t('jobs.obs_prompt_complete_heading')}</Typography>
+                      <Box
+                        component="pre"
+                        data-testid="obs-prompt-effective-content"
+                        sx={{
+                          m: 0,
+                          p: 2,
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          fontFamily: 'monospace',
+                          fontSize: '0.85rem',
+                          maxHeight: 480,
+                          overflow: 'auto',
+                          borderRadius: 1,
+                          bgcolor: 'action.hover',
+                          border: 1,
+                          borderColor: 'divider',
+                        }}
+                      >
+                        {jobPresentation.executedPromptContent}
+                      </Box>
+                    </>
+                  ) : (
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      data-testid="obs-prompt-content-status"
+                    >
+                      {jobPresentation.promptContentAvailability === 'not_executed'
+                        ? t('processing.header.fallbackConfiguredNotExecuted', {
+                            defaultValue: 'Configured, not executed',
+                          })
+                        : t('jobs.obs_prompt_executed_not_persisted', {
+                            defaultValue: 'Prompt executed — content not persisted',
+                          })}
+                    </Typography>
+                  )}
+                </>
+              ) : !lastProviderRequest ? (
                 <Typography variant="body2" color="text.secondary">
                   {t('jobs.obs_prompt_no_request_event')}
                 </Typography>
               ) : (
                 <>
+                  <Typography variant="body2" color="text.secondary">
+                    {t('jobs.obs_prompt_audit_notice')}
+                  </Typography>
                   <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1 }}>
                     <Typography variant="subtitle2">{t('jobs.obs_prompt_meta_heading')}</Typography>
                     <Typography variant="body2" color="text.secondary">

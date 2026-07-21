@@ -439,6 +439,8 @@ export interface JobSummary {
   asset_progress?: AssetProgress | null;
   /** Phase 5 selective external fallback counters. */
   fallback_progress?: FallbackProgress | null;
+  /** GLOBAL_BATCH aisle-level fallback summary. */
+  global_fallback?: GlobalFallbackSummary | null;
   /** Phase 5 per-asset sanitized external fallback summaries. */
   fallback_asset_summaries?: AssetFallbackSummary[] | null;
   /** Immutable identification execution snapshot from job engine_params (Phase 3/4/5). */
@@ -469,11 +471,56 @@ export interface FallbackProgress {
   resolved_internal: number;
 }
 
+export interface GlobalFallbackSummary {
+  fallback_mode?: string | null;
+  execution_scope?: string | null;
+  schema_version?: string | null;
+  analysis_contract?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  prompt_key?: string | null;
+  images_sent?: number | null;
+  batch_count?: number | null;
+  requests_count?: number | null;
+  entity_count?: number | null;
+  conflicts?: number | null;
+  unmapped?: number | null;
+  applied_external?: number | null;
+  kept_internal?: number | null;
+  persistence_status?: string | null;
+  reused_durable?: boolean | null;
+  needs_fallback?: boolean | null;
+  skip_reason?: string | null;
+  estimated_cost_total?: number | null;
+  prompt_tokens?: number | null;
+  response_tokens?: number | null;
+  duration_ms?: number | null;
+  batches_reused?: number | null;
+  batches_completed?: number | null;
+  outcome_severity?: string | null;
+  eligibility_reason?: string | null;
+  prompt_fingerprint?: string | null;
+}
+
 export interface AssetFallbackSummary {
   asset_id: string;
   fallback_status?: string | null;
   external_provider?: string | null;
   external_model?: string | null;
+  requested_model?: string | null;
+  executed_model?: string | null;
+  prompt_key?: string | null;
+  prompt_version?: string | null;
+  prompt_sha256?: string | null;
+  prompt_text?: string | null;
+  supplier_prompt_id?: string | null;
+  supplier_prompt_key?: string | null;
+  supplier_prompt_version?: string | null;
+  supplier_prompt_sha256?: string | null;
+  supplier_prompt_loaded?: boolean | null;
+  supplier_prompt_content?: string | null;
+  adapter_name?: string | null;
+  schema_version?: string | null;
   external_attempt_id?: string | null;
   external_duration_ms?: number | null;
   estimated_cost?: number | null;
@@ -486,6 +533,8 @@ export interface AssetFallbackSummary {
   active_result_id?: string | null;
   error_code?: string | null;
   error_message?: string | null;
+  provider_response_sha256?: string | null;
+  request_image_sha256?: string | null;
 }
 
 /** GET .../aisles/{aisle_id}/jobs — newest first (multi-run browsing). */

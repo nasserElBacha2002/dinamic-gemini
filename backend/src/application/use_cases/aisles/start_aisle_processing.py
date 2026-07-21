@@ -29,9 +29,11 @@ from src.application.ports.contracts import ProcessAislePayload
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
+    ClientSupplierRepository,
     InventoryRepository,
     JobRepository,
     SourceAssetRepository,
+    SupplierPromptConfigRepository,
 )
 from src.application.services.aisle_identification_execution import (
     identification_execution_snapshot_dict,
@@ -171,6 +173,8 @@ class StartAisleProcessingUseCase:
         stale_reconciler: JobStaleReconciler,
         client_repo: ClientRepository | None = None,
         extraction_profile_repo=None,
+        client_supplier_repo: ClientSupplierRepository | None = None,
+        supplier_prompt_config_repo: SupplierPromptConfigRepository | None = None,
     ) -> None:
         self._inventory_repo = inventory_repo
         self._aisle_repo = aisle_repo
@@ -180,6 +184,8 @@ class StartAisleProcessingUseCase:
         self._stale_reconciler = stale_reconciler
         self._client_repo = client_repo
         self._extraction_profile_repo = extraction_profile_repo
+        self._client_supplier_repo = client_supplier_repo
+        self._supplier_prompt_config_repo = supplier_prompt_config_repo
 
     def execute(self, command: StartAisleProcessingCommand) -> StartAisleProcessingResult:
         pipeline_key, model_name, _resolved_prompt, inv_from_keys = (
@@ -376,10 +382,40 @@ class StartAisleProcessingUseCase:
             fallback_enabled = bool(
                 getattr(settings, "external_fallback_per_image_enabled", False)
             )
+            from src.application.services.image_processing.external_fallback_mode import (
+                EXTERNAL_FALLBACK_MODE_PER_ASSET,
+                PER_ASSET_DEPRECATION_NOTE,
+                parse_external_fallback_mode,
+            )
+
+            fallback_mode = parse_external_fallback_mode(
+                getattr(settings, "external_fallback_mode", None)
+            )
+            if fallback_enabled and fallback_mode == EXTERNAL_FALLBACK_MODE_PER_ASSET:
+                logger.warning(
+                    "aisle.external_fallback_per_asset_deprecated inventory_id=%s "
+                    "aisle_id=%s note=%s",
+                    command.inventory_id,
+                    command.aisle_id,
+                    PER_ASSET_DEPRECATION_NOTE,
+                )
             provider_key = str(
-                getattr(settings, "external_fallback_provider", "gemini") or "gemini"
+                getattr(settings, "external_fallback_provider", "") or ""
             ).strip().lower()
+            fallback_model = (
+                str(getattr(settings, "external_fallback_model", "") or "").strip() or None
+            )
             if fallback_enabled:
+                if not provider_key:
+                    raise ValueError(
+                        "EXTERNAL_FALLBACK_PROVIDER is required when "
+                        "EXTERNAL_FALLBACK_PER_IMAGE_ENABLED=true"
+                    )
+                if not fallback_model:
+                    raise ValueError(
+                        "EXTERNAL_FALLBACK_MODEL is required when "
+                        "EXTERNAL_FALLBACK_PER_IMAGE_ENABLED=true"
+                    )
                 from src.pipeline.providers.registry import (
                     UnknownPipelineProviderError,
                     resolve_llm_executor,
@@ -395,10 +431,7 @@ class StartAisleProcessingUseCase:
             external_fallback = build_external_fallback_snapshot_dict(
                 enabled=fallback_enabled,
                 provider=provider_key,
-                model=(
-                    str(getattr(settings, "external_fallback_model", "") or "").strip()
-                    or None
-                ),
+                model=fallback_model,
                 timeout_seconds=float(
                     getattr(settings, "external_fallback_timeout_seconds", 60)
                 ),
@@ -436,7 +469,72 @@ class StartAisleProcessingUseCase:
                         False,
                     )
                 ),
+                fallback_mode=fallback_mode,
             )
+        supplier_prompt_snapshot = None
+        if (
+            external_fallback is not None
+            and bool(external_fallback.get("fallback_enabled"))
+            and supplier_id
+        ):
+            from src.application.services.image_processing.external_fallback_prompt import (
+                SupplierPromptConfigError,
+                build_resolved_supplier_prompt,
+            )
+            from src.application.services.supplier_prompt_resolver import (
+                SupplierPromptResolutionErrorCode,
+                SupplierPromptResolver,
+            )
+
+            if self._supplier_prompt_config_repo is None or self._client_supplier_repo is None:
+                raise ValueError(
+                    "SUPPLIER_PROMPT_REQUIRED: supplier prompt repositories are not configured"
+                )
+            prompt_resolver = SupplierPromptResolver(
+                inventory_repo=self._inventory_repo,
+                aisle_repo=self._aisle_repo,
+                client_supplier_repo=self._client_supplier_repo,
+                supplier_prompt_config_repo=self._supplier_prompt_config_repo,
+            )
+            supplier_prompt_resolution = prompt_resolver.resolve(
+                inventory_id=command.inventory_id,
+                aisle_id=command.aisle_id,
+                provider_name=str(external_fallback.get("fallback_provider") or "") or None,
+                model_name=str(external_fallback.get("fallback_model") or "") or None,
+                allow_missing_supplier_prompt_fallback=False,
+            )
+            if supplier_prompt_resolution.resolution_status != "resolved" or not (
+                supplier_prompt_resolution.editable_instructions or ""
+            ).strip():
+                code = supplier_prompt_resolution.error_code or "SUPPLIER_PROMPT_REQUIRED"
+                if code == SupplierPromptResolutionErrorCode.NO_ACTIVE_SUPPLIER_PROMPT_CONFIG:
+                    code = "SUPPLIER_PROMPT_REQUIRED"
+                elif code == SupplierPromptResolutionErrorCode.CLIENT_SUPPLIER_NOT_FOUND:
+                    code = "SUPPLIER_NOT_RESOLVED"
+                raise ValueError(
+                    f"{code}: active non-empty supplier prompt is required when "
+                    "external fallback is enabled for a supplier-associated aisle"
+                )
+            try:
+                profile_id = None
+                if isinstance(supplier_extraction_profile, dict):
+                    profile_id = supplier_extraction_profile.get("supplier_profile_id")
+                resolved_prompt = build_resolved_supplier_prompt(
+                    supplier_id=str(
+                        supplier_prompt_resolution.client_supplier_id or supplier_id
+                    ),
+                    prompt_id=str(supplier_prompt_resolution.supplier_prompt_config_id),
+                    prompt_version=int(
+                        supplier_prompt_resolution.supplier_prompt_config_version or 1
+                    ),
+                    content=str(supplier_prompt_resolution.editable_instructions),
+                    extraction_profile_id=str(profile_id) if profile_id else None,
+                    source_level="aisle.client_supplier.supplier_prompt_configs",
+                    is_active=True,
+                )
+            except SupplierPromptConfigError as exc:
+                raise ValueError(f"{exc.code}: {exc.message}") from exc
+            supplier_prompt_snapshot = resolved_prompt.public_snapshot(include_content=True)
         engine_params_json = {
             "identification_execution": identification_execution_snapshot_dict(
                 decision,
@@ -445,6 +543,7 @@ class StartAisleProcessingUseCase:
                 configuration_snapshot_version=CONFIGURATION_SNAPSHOT_VERSION,
                 external_fallback=external_fallback,
                 supplier_extraction_profile=supplier_extraction_profile,
+                supplier_prompt=supplier_prompt_snapshot,
                 client_extraction_profiles_enabled=profiles_enabled,
                 profile_aware_validation_enabled=profile_aware,
                 reference_template_annotations_enabled=annotations_enabled,

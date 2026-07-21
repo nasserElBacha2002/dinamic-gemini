@@ -31,11 +31,21 @@ from src.application.services.image_processing.external_cost_estimator import (
 )
 from src.application.services.image_processing.external_fallback_prompt import (
     EXTERNAL_FALLBACK_PROMPT_VERSION,
-    build_external_fallback_prompt,
+    build_external_provider_trace_metadata,
+    compose_external_fallback_prompt,
+)
+from src.application.services.image_processing.external_fallback_schema_error import (
+    build_external_schema_validation_error,
+    response_trace_metadata,
 )
 from src.llm.errors import LLMProviderError
+from src.llm.schema_versions import LlmSchemaVersion
 from src.llm.types import LLMRequest
+from src.pipeline.providers.registry import UnknownPipelineProviderError
 from src.pipeline.services.pipeline_provider_resolver import resolve_llm_executor_for_context
+from src.pipeline.services.provider_llm_request_metadata import (
+    apply_job_model_name_to_llm_request_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,16 +146,30 @@ def parse_external_fallback_payload(
             status=ExternalAnalysisStatus.FAILED_TECHNICAL,
             error_code="EXTERNAL_RESPONSE_PARSE_FAILED",
             error_message="provider response was not a JSON object",
-            additional_fields={**meta, "parse_status": "not_object"},
+            additional_fields={
+                **meta,
+                **response_trace_metadata(raw_text=raw_text),
+                "parse_status": "not_object",
+            },
+            raw_reference=response_trace_metadata(raw_text=raw_text).get(
+                "provider_response_sha256"
+            ),
         )
 
     if _looks_like_hybrid_v21(parsed):
+        schema_err = build_external_schema_validation_error(
+            phase="schema_route",
+            reason_code="HYBRID_SCHEMA_MISMATCH",
+            field="entities",
+            expected_type="external_fallback_label",
+            received_type="GlobalEntityResponseV21",
+        )
         return ExternalAnalysisResult(
             status=ExternalAnalysisStatus.FAILED_TECHNICAL,
-            error_code="EXTERNAL_SCHEMA_INVALID",
+            error_code="EXTERNAL_HYBRID_SCHEMA_MISROUTED",
             error_message=(
-                "provider returned GlobalEntityResponseV21 hybrid schema; "
-                "external fallback expects status/internal_code/quantity"
+                "fallback response matched hybrid GlobalEntityResponseV21; "
+                "external_fallback_v1 must never be validated as aisle hybrid schema"
             ),
             normalized_result={
                 "schema": "GlobalEntityResponseV21",
@@ -155,24 +179,74 @@ def parse_external_fallback_payload(
             },
             additional_fields={
                 **meta,
-                "parse_status": "hybrid_schema_mismatch",
-                "schema_validation_status": "EXTERNAL_SCHEMA_INVALID",
+                **response_trace_metadata(raw_text=raw_text),
+                "parse_status": "hybrid_schema_misrouted",
+                "schema_validation": schema_err,
+                "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
             },
+            raw_reference=response_trace_metadata(raw_text=raw_text).get(
+                "provider_response_sha256"
+            ),
         )
 
     status_raw = str(parsed.get("status") or "").strip().upper()
     code = _extract_code(parsed)
-    qty = _coerce_quantity(parsed.get("quantity"))
-    if qty is None:
-        qty = _coerce_quantity(parsed.get("cantidad"))
-    if qty is None:
-        qty = _coerce_quantity(parsed.get("qty"))
+    qty_raw = parsed.get("quantity")
+    if qty_raw is None:
+        qty_raw = parsed.get("cantidad")
+    if qty_raw is None:
+        qty_raw = parsed.get("qty")
+    qty = _coerce_quantity(qty_raw)
+    if qty_raw is not None and qty is None:
+        schema_err = build_external_schema_validation_error(
+            phase="schema_validate",
+            reason_code="INVALID_TYPE",
+            field="quantity",
+            expected_type="integer",
+            received_type=type(qty_raw).__name__,
+        )
+        return ExternalAnalysisResult(
+            status=ExternalAnalysisStatus.FAILED_TECHNICAL,
+            error_code="EXTERNAL_SCHEMA_INVALID",
+            error_message="quantity must be an integer",
+            additional_fields={
+                **meta,
+                **response_trace_metadata(raw_text=raw_text),
+                "schema_validation": schema_err,
+            },
+            raw_reference=response_trace_metadata(raw_text=raw_text).get(
+                "provider_response_sha256"
+            ),
+        )
 
     confidence = parsed.get("confidence")
-    try:
-        confidence_f = float(confidence) if confidence is not None else None
-    except (TypeError, ValueError):
+    confidence_f: float | None
+    if confidence is None:
         confidence_f = None
+    else:
+        try:
+            confidence_f = float(confidence)
+        except (TypeError, ValueError):
+            schema_err = build_external_schema_validation_error(
+                phase="schema_validate",
+                reason_code="INVALID_TYPE",
+                field="confidence",
+                expected_type="number",
+                received_type=type(confidence).__name__,
+            )
+            return ExternalAnalysisResult(
+                status=ExternalAnalysisStatus.FAILED_TECHNICAL,
+                error_code="EXTERNAL_SCHEMA_INVALID",
+                error_message="confidence must be a number",
+                additional_fields={
+                    **meta,
+                    **response_trace_metadata(raw_text=raw_text),
+                    "schema_validation": schema_err,
+                },
+                raw_reference=response_trace_metadata(raw_text=raw_text).get(
+                    "provider_response_sha256"
+                ),
+            )
 
     warnings_raw = parsed.get("warnings")
     warnings: list[Any] = list(warnings_raw) if isinstance(warnings_raw, list) else []
@@ -187,10 +261,17 @@ def parse_external_fallback_payload(
     elif not status_raw and not code and qty is None:
         status = ExternalAnalysisStatus.NO_RESULT
     else:
+        schema_err = build_external_schema_validation_error(
+            phase="schema_validate",
+            reason_code="UNKNOWN_STATUS",
+            field="status",
+            expected_type="ExternalAnalysisStatus",
+            received_type="string",
+        )
         return ExternalAnalysisResult(
             status=ExternalAnalysisStatus.FAILED_TECHNICAL,
             error_code="EXTERNAL_SCHEMA_INVALID",
-            error_message=f"unknown status value: {status_raw[:80] or '<empty>'}",
+            error_message="unknown status value",
             normalized_result={
                 "status": status_raw or None,
                 "internal_code": code,
@@ -198,8 +279,12 @@ def parse_external_fallback_payload(
             },
             additional_fields={
                 **meta,
-                "schema_validation_status": "EXTERNAL_SCHEMA_INVALID",
+                **response_trace_metadata(raw_text=raw_text),
+                "schema_validation": schema_err,
             },
+            raw_reference=response_trace_metadata(raw_text=raw_text).get(
+                "provider_response_sha256"
+            ),
         )
 
     normalized = {
@@ -291,14 +376,88 @@ class LlmExternalImageAnalysisProvider:
         context: ExternalAnalysisContext,
     ) -> ExternalAnalysisResult:
         started = time.perf_counter()
-        prompt = build_external_fallback_prompt(
-            client_rules=context.extra.get("client_rules")
-            if isinstance(context.extra.get("client_rules"), dict)
-            else None
-        )
+        effective_raw = context.extra.get("effective_prompt")
+        if isinstance(effective_raw, dict) and isinstance(effective_raw.get("text"), str):
+            prompt = str(effective_raw["text"])
+            prompt_meta = {
+                "prompt_key": context.prompt_key or effective_raw.get("base_prompt_key"),
+                "prompt_version": context.prompt_version
+                or effective_raw.get("base_prompt_version")
+                or EXTERNAL_FALLBACK_PROMPT_VERSION,
+                "prompt_sha256": effective_raw.get("sha256"),
+                "prompt_length": effective_raw.get("length"),
+                "prompt_composition_version": effective_raw.get("composition_version"),
+                "prompt_sources": effective_raw.get("sources"),
+                "prompt_text": prompt,
+                "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                "supplier_prompt_id": effective_raw.get("supplier_prompt_id"),
+                "supplier_prompt_key": effective_raw.get("supplier_prompt_key"),
+                "supplier_prompt_version": effective_raw.get("supplier_prompt_version"),
+                "supplier_prompt_sha256": effective_raw.get("supplier_prompt_sha256"),
+                "supplier_prompt_loaded": effective_raw.get("supplier_prompt_loaded"),
+                "supplier_prompt_required": effective_raw.get("supplier_prompt_required"),
+                "supplier_prompt_content": (
+                    (context.extra.get("supplier_prompt") or {}).get("content")
+                    if isinstance(context.extra.get("supplier_prompt"), dict)
+                    else None
+                ),
+            }
+        else:
+            # Legacy path for tests that call the provider without a precomposed prompt.
+            from src.application.services.image_processing.external_fallback_prompt import (
+                resolved_supplier_prompt_from_snapshot,
+            )
+
+            client_rules = (
+                context.extra.get("client_rules")
+                if isinstance(context.extra.get("client_rules"), dict)
+                else None
+            )
+            supplier_profile = (
+                context.extra.get("supplier_extraction_profile")
+                if isinstance(context.extra.get("supplier_extraction_profile"), dict)
+                else None
+            )
+            strategy = (
+                str(context.extra.get("primary_strategy")).strip()
+                if context.extra.get("primary_strategy")
+                else None
+            )
+            supplier_prompt = resolved_supplier_prompt_from_snapshot(
+                context.extra.get("supplier_prompt")
+                if isinstance(context.extra.get("supplier_prompt"), dict)
+                else None,
+                required=bool(context.extra.get("supplier_prompt_required")),
+            )
+            composed = compose_external_fallback_prompt(
+                client_rules=client_rules,
+                supplier_extraction_profile=supplier_profile,
+                supplier_prompt=supplier_prompt,
+                supplier_prompt_required=bool(context.extra.get("supplier_prompt_required")),
+                quantity_max=context.quantity_max,
+                strategy=strategy,
+            )
+            prompt = composed.text
+            prompt_meta = {
+                "prompt_key": context.prompt_key or composed.base_prompt_key,
+                "prompt_version": context.prompt_version or composed.base_prompt_version,
+                "prompt_sha256": composed.sha256,
+                "prompt_length": composed.length,
+                "prompt_composition_version": composed.composition_version,
+                "prompt_sources": list(composed.sources),
+                "prompt_text": prompt,
+                "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                "supplier_prompt_id": composed.supplier_prompt_id,
+                "supplier_prompt_key": composed.supplier_prompt_key,
+                "supplier_prompt_version": composed.supplier_prompt_version,
+                "supplier_prompt_sha256": composed.supplier_prompt_sha256,
+                "supplier_prompt_loaded": composed.supplier_prompt_loaded,
+                "supplier_prompt_required": composed.supplier_prompt_required,
+            }
         prompt_version = context.prompt_version or EXTERNAL_FALLBACK_PROMPT_VERSION
         requested_model = self._model_name
         executed_model = self.model_name
+
 
         try:
             prepared = self._prepare_image_bytes(image.content, context.max_image_dimension)
@@ -319,14 +478,16 @@ class LlmExternalImageAnalysisProvider:
         request_image_sha256 = hashlib.sha256(prepared).hexdigest()
         base_meta = {
             "request_image_sha256": request_image_sha256,
+            "request_image_sha256_prepared": request_image_sha256,
             "request_image_bytes": len(prepared),
             "requested_model": requested_model,
             "executed_model": executed_model,
-            "prompt_key": context.prompt_key,
-            "prompt_version": prompt_version,
+            **prompt_meta,
         }
 
         if self._provider_name == "gemini":
+            # Structured Gemini path bypasses GeminiSdkAdapter; name the concrete client.
+            base_meta["adapter_name"] = "GeminiClient"
             result = self._analyze_gemini_structured(
                 prepared=prepared,
                 prompt=prompt,
@@ -347,7 +508,14 @@ class LlmExternalImageAnalysisProvider:
         merged = dict(result.additional_fields or {})
         merged.update(base_meta)
         merged["executed_model"] = result.model_name or executed_model
+        if not merged.get("adapter_name") and self._provider_name == "gemini":
+            merged["adapter_name"] = "GeminiClient"
+        if not merged.get("schema_version"):
+            merged["schema_version"] = LlmSchemaVersion.EXTERNAL_FALLBACK_V1
         result.additional_fields = merged
+        result.schema_version = str(
+            merged.get("schema_version") or LlmSchemaVersion.EXTERNAL_FALLBACK_V1
+        )
         if not result.model_name:
             result.model_name = executed_model
         if not result.provider_name:
@@ -492,9 +660,33 @@ class LlmExternalImageAnalysisProvider:
         mapped.estimated_cost = estimated
         mapped.raw_reference = provider_response_sha256
         extra = dict(mapped.additional_fields or {})
-        extra["provider_response_sha256"] = provider_response_sha256
-        extra["response_size"] = len(raw_text)
-        extra["http_ok"] = True
+        extra.update(
+            build_external_provider_trace_metadata(
+                llm_provider="gemini",
+                requested_model=self._model_name,
+                executed_model=executed_model,
+                adapter_name="GeminiClient",
+                schema_version=LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                prompt_key=str(base_meta.get("prompt_key") or ""),
+                prompt_version=prompt_version,
+                prompt_sha256=str(base_meta.get("prompt_sha256") or "") or None,
+                prompt_length=base_meta.get("prompt_length")
+                if isinstance(base_meta.get("prompt_length"), int)
+                else None,
+                request_image_sha256_prepared=str(
+                    base_meta.get("request_image_sha256_prepared") or ""
+                )
+                or None,
+                provider_response_sha256=provider_response_sha256,
+                extra={
+                    "response_size": len(raw_text),
+                    "http_ok": True,
+                    "prompt_text": base_meta.get("prompt_text"),
+                    "prompt_sources": base_meta.get("prompt_sources"),
+                    "prompt_composition_version": base_meta.get("prompt_composition_version"),
+                },
+            )
+        )
         mapped.additional_fields = extra
         return mapped
 
@@ -514,7 +706,7 @@ class LlmExternalImageAnalysisProvider:
                 self._settings,
                 model_name=self._model_name,
             )
-        except Exception as exc:
+        except UnknownPipelineProviderError as exc:
             return ExternalAnalysisResult(
                 status=ExternalAnalysisStatus.FAILED_TECHNICAL,
                 provider_name=self._provider_name,
@@ -523,31 +715,94 @@ class LlmExternalImageAnalysisProvider:
                 duration_ms=int((time.perf_counter() - started) * 1000),
                 error_code="EXTERNAL_PROVIDER_MISCONFIGURED",
                 error_message=_sanitize_message(str(exc)),
-                additional_fields=dict(base_meta),
+                additional_fields={**dict(base_meta), "resolver_error": "unknown_provider"},
+            )
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
+            logger.exception(
+                "external_fallback.resolver_internal_error provider=%s",
+                self._provider_name,
+            )
+            return ExternalAnalysisResult(
+                status=ExternalAnalysisStatus.FAILED_TECHNICAL,
+                provider_name=self._provider_name,
+                model_name=self.model_name,
+                prompt_version=prompt_version,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                error_code="EXTERNAL_INTERNAL_ERROR",
+                error_message=_sanitize_message(str(exc)),
+                additional_fields={**dict(base_meta), "resolver_error": type(exc).__name__},
             )
 
         with tempfile.TemporaryDirectory(prefix="ext_fallback_") as tmp:
             path = Path(tmp) / "label.jpg"
             path.write_bytes(prepared)
+            metadata: dict[str, Any] = {
+                "asset_id": context.asset_id,
+                "execution_scope": "SINGLE_ASSET",
+                "prompt_key": context.prompt_key,
+                "prompt_version": prompt_version,
+                "model_name": self._model_name,
+                "client_id": context.client_id,
+                "adapter_name": type(executor).__name__,
+                "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+            }
+            apply_job_model_name_to_llm_request_metadata(
+                resolved_provider_key=normalized_key,
+                job_model_name=self._model_name,
+                metadata=metadata,
+            )
             request = LLMRequest(
                 job_id=context.job_id,
                 frames=[path],
                 frame_refs=[context.asset_id or "asset"],
                 prompt=prompt,
-                schema_version="external_fallback_v1",
-                metadata={
-                    "asset_id": context.asset_id,
-                    "execution_scope": "SINGLE_ASSET",
-                    "prompt_key": context.prompt_key,
-                    "prompt_version": prompt_version,
-                    "model_name": self._model_name,
-                    "client_id": context.client_id,
-                },
+                schema_version=LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                metadata=metadata,
             )
             try:
                 response = executor.execute(request, self._settings)
             except LLMProviderError as exc:
                 status, error_code = _map_llm_provider_error(exc)
+                detail_fields = dict(base_meta)
+                detail_fields["provider_error_code"] = getattr(exc, "code", None)
+                detail_fields["adapter_name"] = type(executor).__name__
+                detail_fields["schema_version"] = LlmSchemaVersion.EXTERNAL_FALLBACK_V1
+                details = getattr(exc, "details", None)
+                if isinstance(details, dict):
+                    for key in (
+                        "provider_response_sha256",
+                        "provider_response_length",
+                        "provider_response_content_type",
+                        "provider_request_id",
+                        "provider_model",
+                    ):
+                        if key in details and details[key] is not None:
+                            detail_fields[key] = details[key]
+                    if error_code == "EXTERNAL_SCHEMA_INVALID":
+                        detail_fields["schema_validation"] = (
+                            build_external_schema_validation_error(
+                                phase=str(details.get("phase") or "schema_validate"),
+                                reason_code=str(
+                                    details.get("reason_code") or "SCHEMA_INVALID"
+                                ),
+                                field=(
+                                    str(details["field"])
+                                    if details.get("field") is not None
+                                    else None
+                                ),
+                                expected_type=(
+                                    str(details["expected_type"])
+                                    if details.get("expected_type") is not None
+                                    else None
+                                ),
+                                received_type=(
+                                    str(details["received_type"])
+                                    if details.get("received_type") is not None
+                                    else None
+                                ),
+                            )
+                        )
+                response_sha = detail_fields.get("provider_response_sha256")
                 return ExternalAnalysisResult(
                     status=status,
                     provider_name=normalized_key,
@@ -556,9 +811,15 @@ class LlmExternalImageAnalysisProvider:
                     duration_ms=int((time.perf_counter() - started) * 1000),
                     error_code=error_code,
                     error_message=_sanitize_message(str(exc)),
-                    additional_fields=dict(base_meta),
+                    additional_fields=detail_fields,
+                    raw_reference=str(response_sha) if response_sha else None,
                 )
-            except Exception as exc:
+            except (TimeoutError, OSError, RuntimeError) as exc:
+                logger.warning(
+                    "external_fallback.provider_runtime_error provider=%s err=%s",
+                    normalized_key,
+                    type(exc).__name__,
+                )
                 return ExternalAnalysisResult(
                     status=ExternalAnalysisStatus.FAILED_TECHNICAL,
                     provider_name=normalized_key,
@@ -567,7 +828,29 @@ class LlmExternalImageAnalysisProvider:
                     duration_ms=int((time.perf_counter() - started) * 1000),
                     error_code="EXTERNAL_PROVIDER_ERROR",
                     error_message=_sanitize_message(str(exc)),
-                    additional_fields=dict(base_meta),
+                    additional_fields={
+                        **dict(base_meta),
+                        "adapter_name": type(executor).__name__,
+                    },
+                )
+            except Exception as exc:
+                logger.exception(
+                    "external_fallback.unexpected_internal_error provider=%s",
+                    normalized_key,
+                )
+                return ExternalAnalysisResult(
+                    status=ExternalAnalysisStatus.FAILED_TECHNICAL,
+                    provider_name=normalized_key,
+                    model_name=self.model_name,
+                    prompt_version=prompt_version,
+                    duration_ms=int((time.perf_counter() - started) * 1000),
+                    error_code="EXTERNAL_INTERNAL_ERROR",
+                    error_message=_sanitize_message(f"internal:{type(exc).__name__}"),
+                    additional_fields={
+                        **dict(base_meta),
+                        "adapter_name": type(executor).__name__,
+                        "internal_error_type": type(exc).__name__,
+                    },
                 )
 
         duration_ms = int((time.perf_counter() - started) * 1000)
@@ -614,7 +897,34 @@ class LlmExternalImageAnalysisProvider:
         mapped.estimated_cost = estimated
         mapped.raw_reference = provider_response_sha256
         extra = dict(mapped.additional_fields or {})
-        extra["provider_response_sha256"] = provider_response_sha256
+        extra.update(
+            build_external_provider_trace_metadata(
+                llm_provider=normalized_key,
+                requested_model=self._model_name,
+                executed_model=model,
+                adapter_name=type(executor).__name__,
+                schema_version=(
+                    getattr(response, "schema_version", None)
+                    or LlmSchemaVersion.EXTERNAL_FALLBACK_V1
+                ),
+                prompt_key=str(base_meta.get("prompt_key") or ""),
+                prompt_version=prompt_version,
+                prompt_sha256=str(base_meta.get("prompt_sha256") or "") or None,
+                prompt_length=base_meta.get("prompt_length")
+                if isinstance(base_meta.get("prompt_length"), int)
+                else None,
+                request_image_sha256_prepared=str(
+                    base_meta.get("request_image_sha256_prepared") or ""
+                )
+                or None,
+                provider_response_sha256=provider_response_sha256,
+                extra={
+                    "prompt_text": base_meta.get("prompt_text"),
+                    "prompt_sources": base_meta.get("prompt_sources"),
+                    "prompt_composition_version": base_meta.get("prompt_composition_version"),
+                },
+            )
+        )
         mapped.additional_fields = extra
         return mapped
 

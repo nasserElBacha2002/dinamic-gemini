@@ -84,6 +84,7 @@ class LLMResponse:
         parsed_json: dict[str, Any],
         raw_text: str | None = None,
         usage: dict[str, Any] | None = None,
+        schema_version: str | None = None,
     ):
         self.provider = provider
         self.model = model
@@ -91,3 +92,4 @@ class LLMResponse:
         self.parsed_json = parsed_json
         self.raw_text = raw_text
         self.usage = dict(usage) if usage else {}
+        self.schema_version = (schema_version or "").strip() or None

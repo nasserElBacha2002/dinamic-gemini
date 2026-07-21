@@ -1275,6 +1275,13 @@
       "mode": "Requested mode",
       "strategy": "Execution strategy",
       "profile": "Provider / model / prompt",
+      "fallbackConfigured": "Fallback configured",
+      "fallbackExecuted": "Fallback executed",
+      "fallbackNotExecuted": "Not executed",
+      "fallbackConfiguredNotExecuted": "Configured, not executed",
+      "unknown": "Unknown",
+      "metadataWarning": "Metadata warning",
+      "historicalMetadataInconsistent": "Historical metadata inconsistent",
       "progress": "Asset progress",
       "progressValue": "{{resolved}} of {{total}} resolved · {{unrecognized}} unrecognized · {{manual_review}} manual review · {{failed}} failed · {{processing}} in progress · {{pending}} pending"
     },

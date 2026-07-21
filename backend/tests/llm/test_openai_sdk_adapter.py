@@ -261,6 +261,93 @@ def test_extract_json_text_strips_markdown_fence() -> None:
     assert not t.startswith("```")
 
 
+def test_openai_external_fallback_schema_skips_v21_validation() -> None:
+    adapter = OpenAiSdkAdapter()
+    settings = _settings_openai()
+    ok_json = '{"status":"VALID","internal_code":"SKU-1","quantity":3}'
+    mock_completion = MagicMock()
+    mock_completion.choices = [MagicMock(message=MagicMock(content=ok_json))]
+    mock_completion.usage = None
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=["f0"],
+        prompt="EXTERNAL FALLBACK ONLY PROMPT MARKER",
+        schema_version="external_fallback_v1",
+        metadata={"openai_model_name": "gpt-4o-mini"},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+    with patch("src.llm.openai_sdk_adapter.OpenAI") as client_cls:
+        client_inst = MagicMock()
+        client_inst.chat.completions.create.return_value = mock_completion
+        client_cls.return_value = client_inst
+        out = adapter.execute(req, settings)
+        call_kwargs = client_inst.chat.completions.create.call_args.kwargs
+        messages = call_kwargs.get("messages") or []
+        user_content = messages[-1]["content"] if messages else []
+        text_parts = [
+            p.get("text", "")
+            for p in user_content
+            if isinstance(p, dict) and p.get("type") == "text"
+        ]
+        joined = "\n".join(text_parts)
+        assert "EXTERNAL FALLBACK ONLY PROMPT MARKER" in joined
+        assert "total_entities_detected" not in joined
+    assert out.model == "gpt-4o-mini"
+    assert out.parsed_json["status"] == "VALID"
+    assert out.parsed_json["quantity"] == 3
+    assert out.schema_version == "external_fallback_v1"
+
+
+def test_openai_external_fallback_invalid_json_includes_response_hash() -> None:
+    adapter = OpenAiSdkAdapter()
+    settings = _settings_openai()
+    mock_completion = MagicMock()
+    mock_completion.choices = [MagicMock(message=MagicMock(content="not-json"))]
+    mock_completion.usage = None
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=["f0"],
+        prompt="fallback",
+        schema_version="external_fallback_v1",
+        metadata={"openai_model_name": "gpt-4o-mini"},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+    with patch("src.llm.openai_sdk_adapter.OpenAI") as client_cls:
+        client_inst = MagicMock()
+        client_inst.chat.completions.create.return_value = mock_completion
+        client_cls.return_value = client_inst
+        with pytest.raises(LLMProviderError) as ei:
+            adapter.execute(req, settings)
+    assert ei.value.code == "INVALID_JSON"
+    assert ei.value.details.get("provider_response_sha256")
+
+
+def test_openai_external_fallback_root_array_is_invalid_json() -> None:
+    adapter = OpenAiSdkAdapter()
+    settings = _settings_openai()
+    mock_completion = MagicMock()
+    mock_completion.choices = [MagicMock(message=MagicMock(content="[1,2,3]"))]
+    mock_completion.usage = None
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=["f0"],
+        prompt="fallback",
+        schema_version="external_fallback_v1",
+        metadata={"openai_model_name": "gpt-4o-mini"},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+    with patch("src.llm.openai_sdk_adapter.OpenAI") as client_cls:
+        client_inst = MagicMock()
+        client_inst.chat.completions.create.return_value = mock_completion
+        client_cls.return_value = client_inst
+        with pytest.raises(LLMProviderError) as ei:
+            adapter.execute(req, settings)
+    assert ei.value.code == "INVALID_JSON"
+
+
 def test_openai_provider_delegates_to_adapter() -> None:
     from src.llm.providers.openai_provider import OpenAIProvider
 

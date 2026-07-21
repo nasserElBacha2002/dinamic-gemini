@@ -51,6 +51,7 @@ class ExternalAnalysisResult:
     provider_name: str = ""
     model_name: str = ""
     prompt_version: str | None = None
+    schema_version: str | None = None
     duration_ms: int | None = None
     usage: dict[str, Any] | None = None
     estimated_cost: float | None = None

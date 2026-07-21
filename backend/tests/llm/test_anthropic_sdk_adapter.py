@@ -100,6 +100,118 @@ def test_anthropic_sdk_adapter_accepts_prose_prefix_before_json_object() -> None
     assert out.parsed_json["entities"] == []
 
 
+def test_anthropic_external_fallback_schema_skips_v21_validation() -> None:
+    """Phase 5 single-label JSON must not be validated as GlobalEntityResponseV21."""
+    adapter = AnthropicSdkAdapter()
+    settings = _settings_claude()
+    ok_json = '{"status":"VALID","internal_code":"SKU-9","quantity":4}'
+    text_block = MagicMock()
+    text_block.type = "text"
+    text_block.text = ok_json
+    mock_message = MagicMock()
+    mock_message.content = [text_block]
+    mock_message.usage = None
+
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=["f0"],
+        prompt="external fallback",
+        schema_version="external_fallback_v1",
+        metadata={"claude_model_name": "claude-opus-4-7"},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+
+    with patch("anthropic.Anthropic") as client_cls:
+        client_inst = MagicMock()
+        client_inst.messages.create.return_value = mock_message
+        client_cls.return_value = client_inst
+        out = adapter.execute(req, settings)
+
+    assert out.model == "claude-opus-4-7"
+    assert out.parsed_json == {
+        "status": "VALID",
+        "internal_code": "SKU-9",
+        "quantity": 4,
+    }
+
+
+def test_anthropic_external_fallback_rejects_missing_model() -> None:
+    adapter = AnthropicSdkAdapter()
+    settings = _settings_claude()
+    settings.anthropic_model = ""
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=["f0"],
+        prompt="p",
+        schema_version="external_fallback_v1",
+        metadata={},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+    with pytest.raises(LLMProviderError) as ei:
+        adapter.execute(req, settings)
+    assert ei.value.code == "NOT_CONFIGURED"
+
+
+def test_anthropic_external_fallback_invalid_json_includes_response_hash() -> None:
+    adapter = AnthropicSdkAdapter()
+    settings = _settings_claude()
+    text_block = MagicMock()
+    text_block.type = "text"
+    text_block.text = "not-json-at-all"
+    mock_message = MagicMock()
+    mock_message.content = [text_block]
+    mock_message.usage = None
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=["f0"],
+        prompt="p",
+        schema_version="external_fallback_v1",
+        metadata={"claude_model_name": "claude-opus-4-7"},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+    with patch("anthropic.Anthropic") as client_cls:
+        client_inst = MagicMock()
+        client_inst.messages.create.return_value = mock_message
+        client_cls.return_value = client_inst
+        with pytest.raises(LLMProviderError) as ei:
+            adapter.execute(req, settings)
+    assert ei.value.code in {"INVALID_JSON", "SCHEMA_INVALID"}
+    assert ei.value.details.get("provider_response_sha256")
+    assert ei.value.details.get("provider_response_length") == len("not-json-at-all")
+
+
+def test_anthropic_external_fallback_does_not_append_hybrid_json_suffix() -> None:
+    """Regression: hybrid entities instruction caused HYBRID_SCHEMA_MISMATCH on Claude fallback."""
+    from src.llm.anthropic_sdk_adapter import _anthropic_build_message_content
+    from src.llm.prompt_composer.hybrid_profiles import CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX
+
+    settings = _settings_claude()
+    req = LLMRequest(
+        job_id="j1",
+        frames=[],
+        frame_refs=["f0"],
+        prompt="EXTERNAL FALLBACK ONLY PROMPT MARKER",
+        schema_version="external_fallback_v1",
+        metadata={"claude_model_name": "claude-opus-4-7"},
+        frames_nd=[np.zeros((8, 8, 3), dtype=np.uint8)],
+    )
+    content = _anthropic_build_message_content(
+        req,
+        settings,
+        [np.zeros((8, 8, 3), dtype=np.uint8)],
+        256,
+        effective_model="claude-opus-4-7",
+    )
+    text_blobs = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+    joined = "\n".join(text_blobs)
+    assert "EXTERNAL FALLBACK ONLY PROMPT MARKER" in joined
+    assert CLAUDE_JSON_OUTPUT_INSTRUCTION_SUFFIX not in joined
+    assert "total_entities_detected" not in joined
+
+
 def test_anthropic_sdk_adapter_uses_job_model_from_metadata() -> None:
     adapter = AnthropicSdkAdapter()
     settings = _settings_claude()

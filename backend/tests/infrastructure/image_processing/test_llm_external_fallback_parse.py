@@ -86,14 +86,53 @@ def test_hybrid_v21_schema_is_not_external_no_result() -> None:
         }
     )
     assert analysis.status is ExternalAnalysisStatus.FAILED_TECHNICAL
-    assert analysis.error_code == "EXTERNAL_SCHEMA_INVALID"
+    assert analysis.error_code == "EXTERNAL_HYBRID_SCHEMA_MISROUTED"
     result = ExternalResultNormalizer().normalize(
         job_id="j", asset_id="a", analysis=analysis
     )
     assert result.status is ImageResultStatus.FAILED_TECHNICAL
-    assert result.error_code == "EXTERNAL_SCHEMA_INVALID"
+    assert result.error_code == "EXTERNAL_HYBRID_SCHEMA_MISROUTED"
 
 
 def test_unknown_status_is_schema_invalid() -> None:
     analysis = parse_external_fallback_payload({"status": "MAYBE", "internal_code": None})
     assert analysis.error_code == "EXTERNAL_SCHEMA_INVALID"
+    assert (analysis.additional_fields or {}).get("schema_validation", {}).get(
+        "reason_code"
+    ) == "UNKNOWN_STATUS"
+
+
+def test_invalid_quantity_type_is_structured_schema_error() -> None:
+    analysis = parse_external_fallback_payload(
+        {"status": "VALID", "internal_code": "A", "quantity": "twelve"},
+        raw_text='{"status":"VALID","quantity":"twelve"}',
+    )
+    assert analysis.error_code == "EXTERNAL_SCHEMA_INVALID"
+    schema = (analysis.additional_fields or {}).get("schema_validation") or {}
+    assert schema.get("field") == "quantity"
+    assert schema.get("reason_code") == "INVALID_TYPE"
+    assert analysis.raw_reference is not None
+
+
+def test_invalid_confidence_type_is_structured_schema_error() -> None:
+    analysis = parse_external_fallback_payload(
+        {"status": "VALID", "internal_code": "A", "quantity": 1, "confidence": "high"},
+        raw_text='{"confidence":"high"}',
+    )
+    assert analysis.error_code == "EXTERNAL_SCHEMA_INVALID"
+    schema = (analysis.additional_fields or {}).get("schema_validation") or {}
+    assert schema.get("field") == "confidence"
+
+
+def test_extra_fields_are_ignored_when_contract_fields_valid() -> None:
+    analysis = parse_external_fallback_payload(
+        {
+            "status": "VALID",
+            "internal_code": "SKU1",
+            "quantity": 2,
+            "unexpected_vendor_field": {"nested": True},
+        }
+    )
+    assert analysis.status is ExternalAnalysisStatus.VALID
+    assert analysis.internal_code == "SKU1"
+    assert analysis.quantity == 2

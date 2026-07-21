@@ -288,7 +288,10 @@ def test_unrecognized_calls_provider_leaves_attempt_started_until_finalize() -> 
             provider_name="fake",
             model_name="fake-model",
             raw_reference="resp-hash-abc",
-            additional_fields={"request_image_sha256": "img-hash-xyz"},
+            additional_fields={
+                "request_image_sha256": "img-hash-xyz",
+                "request_image_sha256_prepared": "img-hash-xyz",
+            },
         )
     )
     orch, repo, req_repo = _orch(provider)
@@ -310,7 +313,10 @@ def test_unrecognized_calls_provider_leaves_attempt_started_until_finalize() -> 
     assert out.request is not None
     assert out.request.status is ExternalRequestStatus.PERSISTENCE_PENDING
     assert out.request.provider_response_sha256 == "resp-hash-abc"
-    assert out.request.request_image_sha256 == "img-hash-xyz"
+    # request_image_sha256 stays raw asset bytes (content_reader returns b"img")
+    import hashlib
+
+    assert out.request.request_image_sha256 == hashlib.sha256(b"img").hexdigest()
 
     orch.finalize_after_persist(
         attempt=out.attempt,

@@ -302,58 +302,78 @@ class SingleAssetStrategyProcessor:
             snapshot = ExternalFallbackSnapshot.from_identification_execution(
                 ident if isinstance(ident, dict) else None
             )
+            if snapshot is not None and not snapshot.supplier_id:
+                top_supplier = params.get("supplier_id")
+                if top_supplier and str(top_supplier).strip():
+                    from dataclasses import replace as _dc_replace
+
+                    snapshot = _dc_replace(
+                        snapshot, supplier_id=str(top_supplier).strip()
+                    )
             client_id = self._resolve_client_id(job)
             if snapshot is not None and snapshot.enabled:
-                outcome = self._external_fallback.process_if_eligible(
-                    job=job,
-                    asset=asset,
-                    internal_result=result,
-                    worker_token=worker_token,
-                    snapshot=snapshot,
-                    client_id=client_id,
+                from src.application.services.image_processing.external_fallback_mode import (
+                    EXTERNAL_FALLBACK_MODE_GLOBAL_BATCH,
                 )
-                if outcome.cancelled:
-                    # Do not finalize as FAILED_TECHNICAL; leave state for cancel coordinator.
-                    if acquired is not None:
-                        try:
-                            self._image_orch.mark_cancelled(acquired, outcome.attempt)
-                        except Exception:
-                            logger.warning(
-                                "image_processing.cancel_finalize_failed job_id=%s asset_id=%s",
-                                job.id,
-                                asset.id,
-                            )
-                    return SingleAssetProcessResult(processed=True, error=None)
-                if not outcome.skipped and outcome.result is not None:
-                    result = outcome.result
-                    finalize_strategy = "EXTERNAL_PROVIDER"
-                    finalize_attempt = outcome.attempt
-                    if result.status is ImageResultStatus.RESOLVED_EXTERNAL:
-                        result, persist_error = self._apply_persist(
-                            job=job,
-                            aisle=aisle,
-                            asset=asset,
-                            strategy_key=finalize_strategy,
-                            result=result,
-                        )
-                        error = error or persist_error
-                        position_id = (result.additional_fields or {}).get("position_id")
-                        active_id = (result.additional_fields or {}).get("active_result_id")
-                        persisted_ok = result.status is ImageResultStatus.RESOLVED_EXTERNAL
-                        if outcome.attempt is not None:
-                            self._external_fallback.finalize_after_persist(
-                                attempt=outcome.attempt,
-                                request=outcome.request,
+
+                # GLOBAL_BATCH runs once after the aisle internal pass — never per asset.
+                if snapshot.fallback_mode == EXTERNAL_FALLBACK_MODE_GLOBAL_BATCH:
+                    logger.info(
+                        "image_processing.global_batch_deferred job_id=%s asset_id=%s",
+                        job.id,
+                        asset.id,
+                    )
+                else:
+                    outcome = self._external_fallback.process_if_eligible(
+                        job=job,
+                        asset=asset,
+                        internal_result=result,
+                        worker_token=worker_token,
+                        snapshot=snapshot,
+                        client_id=client_id,
+                    )
+                    if outcome.cancelled:
+                        # Do not finalize as FAILED_TECHNICAL; leave state for cancel coordinator.
+                        if acquired is not None:
+                            try:
+                                self._image_orch.mark_cancelled(acquired, outcome.attempt)
+                            except Exception:
+                                logger.warning(
+                                    "image_processing.cancel_finalize_failed job_id=%s asset_id=%s",
+                                    job.id,
+                                    asset.id,
+                                )
+                        return SingleAssetProcessResult(processed=True, error=None)
+                    if not outcome.skipped and outcome.result is not None:
+                        result = outcome.result
+                        finalize_strategy = "EXTERNAL_PROVIDER"
+                        finalize_attempt = outcome.attempt
+                        if result.status is ImageResultStatus.RESOLVED_EXTERNAL:
+                            result, persist_error = self._apply_persist(
+                                job=job,
+                                aisle=aisle,
+                                asset=asset,
+                                strategy_key=finalize_strategy,
                                 result=result,
-                                position_id=str(position_id) if position_id else None,
-                                active_result_id=str(active_id) if active_id else None,
-                                persisted=persisted_ok,
                             )
-                        # Attempt already finalized by finalize_after_persist.
-                        finalize_attempt = None
-                    elif outcome.attempt is not None:
-                        # Terminal non-resolved already closed inside orchestrator.
-                        finalize_attempt = None
+                            error = error or persist_error
+                            position_id = (result.additional_fields or {}).get("position_id")
+                            active_id = (result.additional_fields or {}).get("active_result_id")
+                            persisted_ok = result.status is ImageResultStatus.RESOLVED_EXTERNAL
+                            if outcome.attempt is not None:
+                                self._external_fallback.finalize_after_persist(
+                                    attempt=outcome.attempt,
+                                    request=outcome.request,
+                                    result=result,
+                                    position_id=str(position_id) if position_id else None,
+                                    active_result_id=str(active_id) if active_id else None,
+                                    persisted=persisted_ok,
+                                )
+                            # Attempt already finalized by finalize_after_persist.
+                            finalize_attempt = None
+                        elif outcome.attempt is not None:
+                            # Terminal non-resolved already closed inside orchestrator.
+                            finalize_attempt = None
 
         self._finalize(
             job=job,
