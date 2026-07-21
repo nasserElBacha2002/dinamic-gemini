@@ -56,6 +56,7 @@ export interface ExternalFallbackSnapshot {
 
 export interface IdentificationExecutionSnapshot {
   externalFallback: ExternalFallbackSnapshot | null;
+  supplierPrompt: Record<string, unknown> | null;
 }
 
 export interface JobExecutionPresentationInput {
@@ -101,6 +102,24 @@ export interface JobExecutionPresentation {
   executedPromptContent: string | null;
   executedPromptSha256: string | null;
   promptContentAvailability: 'not_executed' | 'available' | 'not_persisted';
+  supplierPromptConfigured: {
+    promptId: string | null;
+    promptKey: string | null;
+    promptVersion: string | null;
+    contentSha256: string | null;
+    content: string | null;
+    source: string | null;
+    required: boolean;
+  } | null;
+  supplierPromptExecuted: {
+    promptId: string | null;
+    promptKey: string | null;
+    promptVersion: string | null;
+    contentSha256: string | null;
+    content: string | null;
+    loaded: boolean | null;
+  } | null;
+  supplierPromptMissingAlert: boolean;
 }
 
 const LEGACY_STRATEGIES = new Set(['LEGACY_LLM', 'LEGACY_LLM_TEMPORARY']);
@@ -177,6 +196,7 @@ export function parseIdentificationExecutionSnapshot(
   if (!root) return null;
   return {
     externalFallback: parseExternalFallbackSnapshot(root.external_fallback),
+    supplierPrompt: asRecord(root.supplier_prompt),
   };
 }
 
@@ -359,6 +379,7 @@ export function buildJobExecutionPresentation(
   let executedPromptSha256: string | null = null;
   let promptContentAvailability: JobExecutionPresentation['promptContentAvailability'] =
     'not_executed';
+  let supplierPromptExecuted: JobExecutionPresentation['supplierPromptExecuted'] = null;
   if (promptTabMode === 'fallback') {
     if (!fallbackUsed) {
       promptExecutedLabel = 'configured_not_executed';
@@ -376,11 +397,59 @@ export function buildJobExecutionPresentation(
         promptExecutedLabel = 'unknown';
       }
       promptContentAvailability = executedPromptContent ? 'available' : 'not_persisted';
+      const supplierRow = (input.fallback_asset_summaries || []).find(
+        (row) =>
+          optionalString(row.supplier_prompt_content) ||
+          optionalString(row.supplier_prompt_sha256) ||
+          row.supplier_prompt_loaded != null,
+      );
+      if (supplierRow) {
+        supplierPromptExecuted = {
+          promptId: optionalString(supplierRow.supplier_prompt_id),
+          promptKey: optionalString(supplierRow.supplier_prompt_key),
+          promptVersion: optionalString(supplierRow.supplier_prompt_version),
+          contentSha256: optionalString(supplierRow.supplier_prompt_sha256),
+          content: optionalString(supplierRow.supplier_prompt_content),
+          loaded:
+            typeof supplierRow.supplier_prompt_loaded === 'boolean'
+              ? supplierRow.supplier_prompt_loaded
+              : null,
+        };
+      }
     } else {
       promptExecutedLabel = 'configured_not_executed';
       promptContentAvailability = 'not_executed';
     }
   }
+
+  const identParsed = parseIdentificationExecutionSnapshot(input.identification_execution);
+  const snapSupplier = identParsed?.supplierPrompt;
+  const supplierPromptConfigured =
+    snapSupplier != null
+      ? {
+          promptId: optionalString(snapSupplier.prompt_id),
+          promptKey: optionalString(snapSupplier.prompt_key),
+          promptVersion: optionalString(snapSupplier.prompt_version),
+          contentSha256: optionalString(snapSupplier.content_sha256),
+          content: optionalString(snapSupplier.content),
+          source: optionalString(snapSupplier.source_level),
+          required: parseLooseBoolean(snapSupplier.required ?? true),
+        }
+      : null;
+
+  const supplierAssociated =
+    Boolean(supplierPromptConfigured) ||
+    Boolean(
+      asRecord(asRecord(input.identification_execution)?.supplier_extraction_profile)?.supplier_id,
+    );
+  const supplierPromptMissingAlert =
+    promptTabMode === 'fallback' &&
+    supplierAssociated &&
+    ((fallbackUsed && supplierPromptExecuted?.loaded === false) ||
+      (fallbackUsed &&
+        Boolean(executedPromptContent) &&
+        !Boolean(executedPromptContent?.includes('[SUPPLIER CUSTOM INSTRUCTIONS]'))) ||
+      (supplierPromptConfigured?.required === true && !supplierPromptConfigured.content));
 
   return {
     requestedMode: requested,
@@ -410,6 +479,9 @@ export function buildJobExecutionPresentation(
     executedPromptContent,
     executedPromptSha256,
     promptContentAvailability,
+    supplierPromptConfigured,
+    supplierPromptExecuted,
+    supplierPromptMissingAlert,
   };
 }
 

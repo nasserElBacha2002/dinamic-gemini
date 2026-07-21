@@ -161,6 +161,12 @@ class AssetFallbackSummaryResponse(BaseModel):
     prompt_version: str | None = None
     prompt_sha256: str | None = None
     prompt_text: str | None = None
+    supplier_prompt_id: str | None = None
+    supplier_prompt_key: str | None = None
+    supplier_prompt_version: str | None = None
+    supplier_prompt_sha256: str | None = None
+    supplier_prompt_loaded: bool | None = None
+    supplier_prompt_content: str | None = None
     adapter_name: str | None = None
     schema_version: str | None = None
     external_attempt_id: str | None = None

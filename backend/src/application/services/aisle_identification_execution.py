@@ -110,6 +110,7 @@ def identification_execution_snapshot_dict(
     configuration_snapshot_version: int,
     external_fallback: dict | None = None,
     supplier_extraction_profile: dict | None = None,
+    supplier_prompt: dict | None = None,
     client_extraction_profiles_enabled: bool = False,
     profile_aware_validation_enabled: bool = False,
     reference_template_annotations_enabled: bool = False,
@@ -128,6 +129,7 @@ def identification_execution_snapshot_dict(
         ),
         "profile_snapshotted": bool(profile_snapshotted),
         "profile_validation_executed": bool(profile_validation_executed),
+        "supplier_prompt_snapshotted": bool(supplier_prompt),
     }
     if isinstance(external_fallback, dict):
         feature_flags["external_fallback_per_image_enabled"] = bool(
@@ -144,4 +146,5 @@ def identification_execution_snapshot_dict(
         "client_rules": client_rules,
         "external_fallback": external_fallback,
         "supplier_extraction_profile": supplier_extraction_profile,
+        "supplier_prompt": supplier_prompt,
     }

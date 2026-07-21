@@ -480,6 +480,12 @@ export interface AssetFallbackSummary {
   prompt_version?: string | null;
   prompt_sha256?: string | null;
   prompt_text?: string | null;
+  supplier_prompt_id?: string | null;
+  supplier_prompt_key?: string | null;
+  supplier_prompt_version?: string | null;
+  supplier_prompt_sha256?: string | null;
+  supplier_prompt_loaded?: boolean | null;
+  supplier_prompt_content?: string | null;
   adapter_name?: string | null;
   schema_version?: string | null;
   external_attempt_id?: string | null;

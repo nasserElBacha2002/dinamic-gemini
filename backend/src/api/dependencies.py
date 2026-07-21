@@ -628,6 +628,10 @@ def get_start_aisle_processing_use_case(
     extraction_profile_repo: SupplierExtractionProfileRepository = Depends(
         get_supplier_extraction_profile_repo
     ),
+    client_supplier_repo: ClientSupplierRepository = Depends(get_client_supplier_repo),
+    supplier_prompt_config_repo: SupplierPromptConfigRepository = Depends(
+        get_supplier_prompt_config_repo
+    ),
 ) -> StartAisleProcessingUseCase:
     return StartAisleProcessingUseCase(
         inventory_repo=inventory_repo,
@@ -638,6 +642,8 @@ def get_start_aisle_processing_use_case(
         stale_reconciler=stale_reconciler,
         client_repo=client_repo,
         extraction_profile_repo=extraction_profile_repo,
+        client_supplier_repo=client_supplier_repo,
+        supplier_prompt_config_repo=supplier_prompt_config_repo,
     )
 
 

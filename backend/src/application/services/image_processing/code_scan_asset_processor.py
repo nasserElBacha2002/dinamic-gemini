@@ -302,6 +302,14 @@ class SingleAssetStrategyProcessor:
             snapshot = ExternalFallbackSnapshot.from_identification_execution(
                 ident if isinstance(ident, dict) else None
             )
+            if snapshot is not None and not snapshot.supplier_id:
+                top_supplier = params.get("supplier_id")
+                if top_supplier and str(top_supplier).strip():
+                    from dataclasses import replace as _dc_replace
+
+                    snapshot = _dc_replace(
+                        snapshot, supplier_id=str(top_supplier).strip()
+                    )
             client_id = self._resolve_client_id(job)
             if snapshot is not None and snapshot.enabled:
                 outcome = self._external_fallback.process_if_eligible(

@@ -319,6 +319,15 @@ describe('processingExecutionPresentation', () => {
           prompt_key: 'external_fallback_single_label',
           prompt_version: '1.0.0',
         },
+        supplier_prompt: {
+          prompt_id: 'p1',
+          prompt_key: 'supplier_prompt_config',
+          prompt_version: '3',
+          content_sha256: 'suphash',
+          content: 'UNIQUE_SUPPLIER_MARKER prefer labeled EAN-13.',
+          source_level: 'aisle.client_supplier',
+          required: true,
+        },
       },
       fallback_asset_summaries: [
         {
@@ -328,14 +337,58 @@ describe('processingExecutionPresentation', () => {
           prompt_key: 'external_fallback_single_label',
           prompt_version: '1.0.0',
           prompt_sha256: 'abc123',
-          prompt_text: '[BASE]\nYou analyze exactly ONE inventory label image.',
+          prompt_text:
+            '[BASE]\n...\n[SUPPLIER CUSTOM INSTRUCTIONS]\nUNIQUE_SUPPLIER_MARKER prefer labeled EAN-13.',
+          supplier_prompt_id: 'p1',
+          supplier_prompt_key: 'supplier_prompt_config',
+          supplier_prompt_version: '3',
+          supplier_prompt_sha256: 'suphash',
+          supplier_prompt_loaded: true,
+          supplier_prompt_content: 'UNIQUE_SUPPLIER_MARKER prefer labeled EAN-13.',
         },
       ],
       result_json: { fallback_progress: { fallback_requested: 1 } },
     });
     expect(presentation.promptContentAvailability).toBe('available');
-    expect(presentation.executedPromptContent).toContain('[BASE]');
-    expect(presentation.executedPromptSha256).toBe('abc123');
+    expect(presentation.executedPromptContent).toContain('[SUPPLIER CUSTOM INSTRUCTIONS]');
+    expect(presentation.executedPromptContent).toContain('UNIQUE_SUPPLIER_MARKER');
+    expect(presentation.supplierPromptConfigured?.content).toContain('UNIQUE_SUPPLIER_MARKER');
+    expect(presentation.supplierPromptExecuted?.loaded).toBe(true);
+    expect(presentation.supplierPromptMissingAlert).toBe(false);
     expect(presentation.promptConfiguredLabel).not.toContain('global_v22');
+  });
+
+  it('alerts when supplier is associated but custom instructions missing from effective prompt', () => {
+    const presentation = buildJobExecutionPresentation({
+      identification_mode: 'INTERNAL_OCR',
+      execution_strategy: 'INTERNAL_OCR',
+      identification_execution: {
+        external_fallback: {
+          fallback_enabled: true,
+          fallback_provider: 'claude',
+          fallback_model: 'claude-opus-4-7',
+          prompt_key: 'external_fallback_single_label',
+          prompt_version: '1.0.0',
+        },
+        supplier_extraction_profile: {
+          supplier_profile_id: 'c874',
+          supplier_id: 'sup-1',
+          quantity_rules: { required: true },
+        },
+      },
+      fallback_asset_summaries: [
+        {
+          asset_id: 'a1',
+          external_provider: 'claude',
+          executed_model: 'claude-opus-4-7',
+          prompt_key: 'external_fallback_single_label',
+          prompt_sha256: 'abc',
+          prompt_text: '[BASE]\n[SUPPLIER EXTRACTION PROFILE]\n- supplier_profile_id: c874',
+          supplier_prompt_loaded: false,
+        },
+      ],
+      result_json: { fallback_progress: { fallback_requested: 1 } },
+    });
+    expect(presentation.supplierPromptMissingAlert).toBe(true);
   });
 });

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import {
+  Alert,
   Box,
   Button,
   Divider,
@@ -933,12 +934,110 @@ export default function AisleObservabilityWorkspace({
                         'Prompt identity for CODE_SCAN / INTERNAL_OCR comes from the external fallback snapshot, not legacy hybrid job fields.',
                     })}
                   </Typography>
+                  {jobPresentation.supplierPromptMissingAlert ? (
+                    <Alert severity="error" data-testid="obs-prompt-supplier-missing-alert">
+                      {t('jobs.obs_prompt_supplier_missing', {
+                        defaultValue:
+                          'Supplier asociado, pero prompt específico no aplicado',
+                      })}
+                    </Alert>
+                  ) : null}
                   <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1 }}>
-                    <Typography variant="subtitle2">{t('jobs.obs_prompt_meta_heading')}</Typography>
+                    <Typography variant="subtitle2">
+                      {t('jobs.obs_prompt_general_heading', { defaultValue: 'Prompt general' })}
+                    </Typography>
                     <Typography variant="body2" color="text.secondary" data-testid="obs-prompt-configured">
                       {t('jobs.obs_prompt_fallback_configured', {
                         defaultValue: 'Configured: {{value}}',
                         value: jobPresentation.promptConfiguredLabel || t('common.em_dash'),
+                      })}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {t('jobs.obs_prompt_provider_pipeline', {
+                        pipeline: jobPresentation.configured.provider ?? t('common.em_dash'),
+                      })}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {t('jobs.obs_prompt_model_row', {
+                        model: jobPresentation.configured.model ?? t('common.em_dash'),
+                      })}
+                    </Typography>
+                  </Paper>
+                  <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1 }} data-testid="obs-prompt-supplier-block">
+                    <Typography variant="subtitle2">
+                      {t('jobs.obs_prompt_supplier_heading', {
+                        defaultValue: 'Prompt específico del supplier',
+                      })}
+                    </Typography>
+                    {jobPresentation.supplierPromptConfigured || jobPresentation.supplierPromptExecuted ? (
+                      <>
+                        <Typography variant="body2" color="text.secondary">
+                          {t('jobs.obs_prompt_supplier_id_row', {
+                            defaultValue: 'Prompt id: {{value}}',
+                            value:
+                              jobPresentation.supplierPromptExecuted?.promptId ||
+                              jobPresentation.supplierPromptConfigured?.promptId ||
+                              t('common.em_dash'),
+                          })}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {t('jobs.obs_prompt_supplier_key_row', {
+                            defaultValue: 'Key/version: {{value}}',
+                            value:
+                              [
+                                jobPresentation.supplierPromptExecuted?.promptKey ||
+                                  jobPresentation.supplierPromptConfigured?.promptKey,
+                                jobPresentation.supplierPromptExecuted?.promptVersion ||
+                                  jobPresentation.supplierPromptConfigured?.promptVersion,
+                              ]
+                                .filter(Boolean)
+                                .join('@') || t('common.em_dash'),
+                          })}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {t('jobs.obs_prompt_supplier_hash_row', {
+                            defaultValue: 'Hash: {{value}}',
+                            value:
+                              jobPresentation.supplierPromptExecuted?.contentSha256 ||
+                              jobPresentation.supplierPromptConfigured?.contentSha256 ||
+                              t('common.em_dash'),
+                          })}
+                        </Typography>
+                        {(jobPresentation.supplierPromptExecuted?.content ||
+                          jobPresentation.supplierPromptConfigured?.content) && (
+                          <Box
+                            component="pre"
+                            data-testid="obs-prompt-supplier-content"
+                            sx={{
+                              m: 0,
+                              p: 1.5,
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                              fontFamily: 'monospace',
+                              fontSize: '0.8rem',
+                              maxHeight: 240,
+                              overflow: 'auto',
+                              borderRadius: 1,
+                              bgcolor: 'action.hover',
+                            }}
+                          >
+                            {jobPresentation.supplierPromptExecuted?.content ||
+                              jobPresentation.supplierPromptConfigured?.content}
+                          </Box>
+                        )}
+                      </>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        {t('jobs.obs_prompt_supplier_absent', {
+                          defaultValue: 'No hay prompt específico de supplier en el snapshot.',
+                        })}
+                      </Typography>
+                    )}
+                  </Paper>
+                  <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1 }}>
+                    <Typography variant="subtitle2">
+                      {t('jobs.obs_prompt_effective_heading', {
+                        defaultValue: 'Prompt efectivo ejecutado',
                       })}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" data-testid="obs-prompt-executed">
@@ -952,16 +1051,6 @@ export default function AisleObservabilityWorkspace({
                             : jobPresentation.promptExecutedLabel === 'unknown'
                               ? t('processing.header.unknown', { defaultValue: 'Unknown' })
                               : jobPresentation.promptExecutedLabel || t('common.em_dash'),
-                      })}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {t('jobs.obs_prompt_provider_pipeline', {
-                        pipeline: jobPresentation.configured.provider ?? t('common.em_dash'),
-                      })}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {t('jobs.obs_prompt_model_row', {
-                        model: jobPresentation.configured.model ?? t('common.em_dash'),
                       })}
                     </Typography>
                     {jobPresentation.executedPromptSha256 ? (

@@ -32,9 +32,11 @@ from src.application.services.image_processing.external_concurrency_limiter impo
 from src.application.services.image_processing.external_fallback_prompt import (
     EXTERNAL_FALLBACK_PROMPT_KEY,
     EXTERNAL_FALLBACK_PROMPT_VERSION,
+    SupplierPromptConfigError,
     build_external_provider_trace_metadata,
     compose_external_fallback_prompt,
     prompt_composition_public_dict,
+    resolved_supplier_prompt_from_snapshot,
 )
 from src.application.services.image_processing.external_fallback_recovery import (
     ExternalFallbackRecoveryDecision,
@@ -136,8 +138,14 @@ class ExternalFallbackSnapshot:
     recoverable_technical_codes: tuple[str, ...] = ()
     retry_backoff_seconds: float = 0.5
     supplier_extraction_profile: dict[str, Any] | None = None
+    supplier_prompt: dict[str, Any] | None = None
+    supplier_id: str | None = None
     profile_aware_validation_enabled: bool = False
     ambiguous_internal_code_fallback_enabled: bool = False
+
+    @property
+    def supplier_prompt_required(self) -> bool:
+        return bool(self.supplier_id) and self.enabled
 
     @classmethod
     def from_identification_execution(
@@ -153,6 +161,12 @@ class ExternalFallbackSnapshot:
         if isinstance(flags, dict):
             profile_aware = bool(flags.get("profile_aware_validation_enabled"))
         profile_snap = block.get("supplier_extraction_profile")
+        supplier_prompt_snap = block.get("supplier_prompt")
+        supplier_id = None
+        if isinstance(profile_snap, dict) and profile_snap.get("supplier_id"):
+            supplier_id = str(profile_snap.get("supplier_id")).strip() or None
+        if supplier_id is None and isinstance(supplier_prompt_snap, dict):
+            supplier_id = str(supplier_prompt_snap.get("supplier_id") or "").strip() or None
         return cls(
             enabled=bool(raw.get("fallback_enabled") or raw.get("enabled")),
             provider=str(raw.get("fallback_provider") or raw.get("provider") or "").strip().lower(),
@@ -181,6 +195,10 @@ class ExternalFallbackSnapshot:
             ),
             retry_backoff_seconds=float(raw.get("retry_backoff_seconds") or 0.5),
             supplier_extraction_profile=profile_snap if isinstance(profile_snap, dict) else None,
+            supplier_prompt=supplier_prompt_snap
+            if isinstance(supplier_prompt_snap, dict)
+            else None,
+            supplier_id=supplier_id,
             profile_aware_validation_enabled=profile_aware,
             ambiguous_internal_code_fallback_enabled=bool(
                 raw.get("ambiguous_internal_code_fallback_enabled", False)
@@ -832,17 +850,72 @@ class ExternalProviderFallbackOrchestrator:
                 content = self.content_reader(asset)
                 request_image_sha256_raw = hashlib.sha256(content).hexdigest()
                 request.request_image_sha256 = request_image_sha256_raw
-                composed_preview = compose_external_fallback_prompt(
-                    client_rules=snapshot.client_rules or {},
-                    supplier_extraction_profile=snapshot.supplier_extraction_profile or {},
-                    quantity_max=snapshot.quantity_max,
-                    strategy=(
-                        job.execution_strategy.value
-                        if getattr(job, "execution_strategy", None) is not None
+                try:
+                    resolved_supplier_prompt = resolved_supplier_prompt_from_snapshot(
+                        snapshot.supplier_prompt,
+                        required=snapshot.supplier_prompt_required,
+                    )
+                    effective_prompt = compose_external_fallback_prompt(
+                        client_rules=snapshot.client_rules or {},
+                        supplier_extraction_profile=snapshot.supplier_extraction_profile or {},
+                        supplier_prompt=resolved_supplier_prompt,
+                        supplier_prompt_required=snapshot.supplier_prompt_required,
+                        quantity_max=snapshot.quantity_max,
+                        strategy=(
+                            job.execution_strategy.value
+                            if getattr(job, "execution_strategy", None) is not None
+                            else None
+                        ),
+                    )
+                except SupplierPromptConfigError as exc:
+                    self._publish_fallback_event(
+                        job_id=job.id,
+                        asset_id=asset.id,
+                        event_type="fallback.failed",
+                        message="supplier prompt configuration invalid before provider call",
+                        error_code=exc.code,
+                        metadata={
+                            "supplier_id": snapshot.supplier_id,
+                            "supplier_prompt_required": snapshot.supplier_prompt_required,
+                            "supplier_prompt_loaded": False,
+                            "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                        },
+                        severity="ERROR",
+                    )
+                    return (
+                        self._technical(
+                            job,
+                            asset,
+                            exc.code,
+                            exc.message,
+                            provider_name,
+                            model_name,
+                            eligibility_reason,
+                        ),
+                        None,
+                        "FAILED",
+                    )
+                composition_public = prompt_composition_public_dict(effective_prompt)
+                supplier_meta = {
+                    "supplier_id": snapshot.supplier_id
+                    or (resolved_supplier_prompt.supplier_id if resolved_supplier_prompt else None),
+                    "supplier_profile_id": (
+                        (snapshot.supplier_extraction_profile or {}).get("supplier_profile_id")
+                        if isinstance(snapshot.supplier_extraction_profile, dict)
                         else None
                     ),
-                )
-                composition_public = prompt_composition_public_dict(composed_preview)
+                    "supplier_prompt_id": effective_prompt.supplier_prompt_id,
+                    "supplier_prompt_key": effective_prompt.supplier_prompt_key,
+                    "supplier_prompt_version": effective_prompt.supplier_prompt_version,
+                    "supplier_prompt_sha256": effective_prompt.supplier_prompt_sha256,
+                    "supplier_prompt_required": effective_prompt.supplier_prompt_required,
+                    "supplier_prompt_loaded": effective_prompt.supplier_prompt_loaded,
+                    "effective_prompt_sha256": effective_prompt.sha256,
+                    "effective_prompt_length": effective_prompt.length,
+                    "composition_version": effective_prompt.composition_version,
+                    "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                    "sources": composition_public.get("sources"),
+                }
                 self._publish_fallback_event(
                     job_id=job.id,
                     asset_id=asset.id,
@@ -851,11 +924,9 @@ class ExternalProviderFallbackOrchestrator:
                     metadata={
                         "base_prompt_key": composition_public.get("base_key"),
                         "base_prompt_version": composition_public.get("base_version"),
-                        "composition_version": composition_public.get("composition_version"),
-                        "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                        **supplier_meta,
                         "prompt_key": snapshot.prompt_key,
                         "prompt_version": snapshot.prompt_version,
-                        "sources": composition_public.get("sources"),
                     },
                 )
                 self._publish_fallback_event(
@@ -864,13 +935,34 @@ class ExternalProviderFallbackOrchestrator:
                     event_type="fallback.prompt_composed",
                     message="external fallback effective prompt composed",
                     metadata={
-                        "prompt_sha256": composed_preview.get("sha256"),
-                        "prompt_length": composed_preview.get("length"),
-                        "composition_version": composed_preview.get("composition_version"),
-                        "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
-                        "sources": composition_public.get("sources"),
+                        "prompt_sha256": effective_prompt.sha256,
+                        "prompt_length": effective_prompt.length,
+                        **supplier_meta,
                     },
                 )
+                if snapshot.supplier_prompt_required and not effective_prompt.supplier_prompt_loaded:
+                    self._publish_fallback_event(
+                        job_id=job.id,
+                        asset_id=asset.id,
+                        event_type="fallback.failed",
+                        message="supplier prompt required but not loaded",
+                        error_code="SUPPLIER_PROMPT_REQUIRED",
+                        metadata=supplier_meta,
+                        severity="ERROR",
+                    )
+                    return (
+                        self._technical(
+                            job,
+                            asset,
+                            "SUPPLIER_PROMPT_REQUIRED",
+                            "supplier prompt required but not loaded",
+                            provider_name,
+                            model_name,
+                            eligibility_reason,
+                        ),
+                        None,
+                        "FAILED",
+                    )
                 self._publish_fallback_event(
                     job_id=job.id,
                     asset_id=asset.id,
@@ -884,12 +976,11 @@ class ExternalProviderFallbackOrchestrator:
                         schema_version=LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
                         prompt_key=snapshot.prompt_key,
                         prompt_version=snapshot.prompt_version,
-                        prompt_sha256=str(composed_preview.get("sha256") or "") or None,
-                        prompt_length=composed_preview.get("length")
-                        if isinstance(composed_preview.get("length"), int)
-                        else None,
+                        prompt_sha256=effective_prompt.sha256,
+                        prompt_length=effective_prompt.length,
                         request_image_sha256_raw=request_image_sha256_raw,
                         attempt_number=attempt_idx,
+                        extra=supplier_meta,
                     ),
                 )
                 self._publish_fallback_event(
@@ -904,10 +995,10 @@ class ExternalProviderFallbackOrchestrator:
                         schema_version=LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
                         prompt_key=snapshot.prompt_key,
                         prompt_version=snapshot.prompt_version,
-                        prompt_sha256=str(composed_preview.get("sha256") or "") or None,
+                        prompt_sha256=effective_prompt.sha256,
                         request_image_sha256_raw=request_image_sha256_raw,
                         attempt_number=attempt_idx,
-                        extra={"request_image_bytes": len(content)},
+                        extra={**supplier_meta, "request_image_bytes": len(content)},
                     ),
                 )
                 analysis = provider.analyze_image(
@@ -931,6 +1022,12 @@ class ExternalProviderFallbackOrchestrator:
                             "client_rules": snapshot.client_rules or {},
                             "supplier_extraction_profile": snapshot.supplier_extraction_profile
                             or {},
+                            "supplier_prompt": (
+                                resolved_supplier_prompt.public_snapshot(include_content=True)
+                                if resolved_supplier_prompt
+                                else None
+                            ),
+                            "effective_prompt": effective_prompt.to_public_dict(),
                             "primary_strategy": job.execution_strategy.value
                             if getattr(job, "execution_strategy", None) is not None
                             else None,
@@ -963,12 +1060,12 @@ class ExternalProviderFallbackOrchestrator:
                         prompt_version=(analysis.additional_fields or {}).get("prompt_version")
                         or snapshot.prompt_version,
                         prompt_sha256=(analysis.additional_fields or {}).get("prompt_sha256")
-                        or composed_preview.get("sha256"),
+                        or effective_prompt.sha256,
                         prompt_length=(analysis.additional_fields or {}).get("prompt_length")
                         if isinstance(
                             (analysis.additional_fields or {}).get("prompt_length"), int
                         )
-                        else composed_preview.get("length"),
+                        else effective_prompt.length,
                         request_image_sha256_raw=request_image_sha256_raw,
                         request_image_sha256_prepared=(analysis.additional_fields or {}).get(
                             "request_image_sha256_prepared"
@@ -981,6 +1078,7 @@ class ExternalProviderFallbackOrchestrator:
                             "provider_request_id"
                         ),
                         extra={
+                            **supplier_meta,
                             "analysis_status": analysis.status.value,
                             "duration_ms": analysis.duration_ms,
                             "parse_status": (analysis.additional_fields or {}).get("parse_status"),
@@ -1027,16 +1125,16 @@ class ExternalProviderFallbackOrchestrator:
                         prompt_version=(analysis.additional_fields or {}).get("prompt_version")
                         or snapshot.prompt_version,
                         prompt_sha256=(analysis.additional_fields or {}).get("prompt_sha256")
-                        or composed_preview.get("sha256"),
+                        or effective_prompt.sha256,
                         prompt_length=(analysis.additional_fields or {}).get("prompt_length")
                         if isinstance(
                             (analysis.additional_fields or {}).get("prompt_length"), int
                         )
-                        else composed_preview.get("length"),
+                        else effective_prompt.length,
                         attempt_number=attempt_idx,
                         provider_response_sha256=analysis.raw_reference
                         or (analysis.additional_fields or {}).get("provider_response_sha256"),
-                        extra={"analysis_status": analysis.status.value},
+                        extra={**supplier_meta, "analysis_status": analysis.status.value},
                     ),
                     severity=(
                         "ERROR"
@@ -1183,6 +1281,13 @@ class ExternalProviderFallbackOrchestrator:
                 "prompt_version",
                 "prompt_composition_version",
                 "prompt_sources",
+                "supplier_prompt_id",
+                "supplier_prompt_key",
+                "supplier_prompt_version",
+                "supplier_prompt_sha256",
+                "supplier_prompt_loaded",
+                "supplier_prompt_required",
+                "supplier_prompt_content",
             ):
                 if af.get(key) is not None and key not in usage:
                     usage[key] = af[key]
@@ -1560,6 +1665,24 @@ def sanitize_fallback_asset_summaries(
                 if isinstance(r.usage, dict)
                 else None,
                 "prompt_text": (r.usage or {}).get("prompt_text")
+                if isinstance(r.usage, dict)
+                else None,
+                "supplier_prompt_id": (r.usage or {}).get("supplier_prompt_id")
+                if isinstance(r.usage, dict)
+                else None,
+                "supplier_prompt_key": (r.usage or {}).get("supplier_prompt_key")
+                if isinstance(r.usage, dict)
+                else None,
+                "supplier_prompt_version": (r.usage or {}).get("supplier_prompt_version")
+                if isinstance(r.usage, dict)
+                else None,
+                "supplier_prompt_sha256": (r.usage or {}).get("supplier_prompt_sha256")
+                if isinstance(r.usage, dict)
+                else None,
+                "supplier_prompt_loaded": (r.usage or {}).get("supplier_prompt_loaded")
+                if isinstance(r.usage, dict)
+                else None,
+                "supplier_prompt_content": (r.usage or {}).get("supplier_prompt_content")
                 if isinstance(r.usage, dict)
                 else None,
             }

@@ -376,41 +376,88 @@ class LlmExternalImageAnalysisProvider:
         context: ExternalAnalysisContext,
     ) -> ExternalAnalysisResult:
         started = time.perf_counter()
-        client_rules = (
-            context.extra.get("client_rules")
-            if isinstance(context.extra.get("client_rules"), dict)
-            else None
-        )
-        supplier_profile = (
-            context.extra.get("supplier_extraction_profile")
-            if isinstance(context.extra.get("supplier_extraction_profile"), dict)
-            else None
-        )
-        strategy = (
-            str(context.extra.get("primary_strategy")).strip()
-            if context.extra.get("primary_strategy")
-            else None
-        )
-        composed = compose_external_fallback_prompt(
-            client_rules=client_rules,
-            supplier_extraction_profile=supplier_profile,
-            quantity_max=context.quantity_max,
-            strategy=strategy,
-        )
-        prompt = str(composed["text"])
+        effective_raw = context.extra.get("effective_prompt")
+        if isinstance(effective_raw, dict) and isinstance(effective_raw.get("text"), str):
+            prompt = str(effective_raw["text"])
+            prompt_meta = {
+                "prompt_key": context.prompt_key or effective_raw.get("base_prompt_key"),
+                "prompt_version": context.prompt_version
+                or effective_raw.get("base_prompt_version")
+                or EXTERNAL_FALLBACK_PROMPT_VERSION,
+                "prompt_sha256": effective_raw.get("sha256"),
+                "prompt_length": effective_raw.get("length"),
+                "prompt_composition_version": effective_raw.get("composition_version"),
+                "prompt_sources": effective_raw.get("sources"),
+                "prompt_text": prompt,
+                "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                "supplier_prompt_id": effective_raw.get("supplier_prompt_id"),
+                "supplier_prompt_key": effective_raw.get("supplier_prompt_key"),
+                "supplier_prompt_version": effective_raw.get("supplier_prompt_version"),
+                "supplier_prompt_sha256": effective_raw.get("supplier_prompt_sha256"),
+                "supplier_prompt_loaded": effective_raw.get("supplier_prompt_loaded"),
+                "supplier_prompt_required": effective_raw.get("supplier_prompt_required"),
+                "supplier_prompt_content": (
+                    (context.extra.get("supplier_prompt") or {}).get("content")
+                    if isinstance(context.extra.get("supplier_prompt"), dict)
+                    else None
+                ),
+            }
+        else:
+            # Legacy path for tests that call the provider without a precomposed prompt.
+            from src.application.services.image_processing.external_fallback_prompt import (
+                resolved_supplier_prompt_from_snapshot,
+            )
+
+            client_rules = (
+                context.extra.get("client_rules")
+                if isinstance(context.extra.get("client_rules"), dict)
+                else None
+            )
+            supplier_profile = (
+                context.extra.get("supplier_extraction_profile")
+                if isinstance(context.extra.get("supplier_extraction_profile"), dict)
+                else None
+            )
+            strategy = (
+                str(context.extra.get("primary_strategy")).strip()
+                if context.extra.get("primary_strategy")
+                else None
+            )
+            supplier_prompt = resolved_supplier_prompt_from_snapshot(
+                context.extra.get("supplier_prompt")
+                if isinstance(context.extra.get("supplier_prompt"), dict)
+                else None,
+                required=bool(context.extra.get("supplier_prompt_required")),
+            )
+            composed = compose_external_fallback_prompt(
+                client_rules=client_rules,
+                supplier_extraction_profile=supplier_profile,
+                supplier_prompt=supplier_prompt,
+                supplier_prompt_required=bool(context.extra.get("supplier_prompt_required")),
+                quantity_max=context.quantity_max,
+                strategy=strategy,
+            )
+            prompt = composed.text
+            prompt_meta = {
+                "prompt_key": context.prompt_key or composed.base_prompt_key,
+                "prompt_version": context.prompt_version or composed.base_prompt_version,
+                "prompt_sha256": composed.sha256,
+                "prompt_length": composed.length,
+                "prompt_composition_version": composed.composition_version,
+                "prompt_sources": list(composed.sources),
+                "prompt_text": prompt,
+                "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
+                "supplier_prompt_id": composed.supplier_prompt_id,
+                "supplier_prompt_key": composed.supplier_prompt_key,
+                "supplier_prompt_version": composed.supplier_prompt_version,
+                "supplier_prompt_sha256": composed.supplier_prompt_sha256,
+                "supplier_prompt_loaded": composed.supplier_prompt_loaded,
+                "supplier_prompt_required": composed.supplier_prompt_required,
+            }
         prompt_version = context.prompt_version or EXTERNAL_FALLBACK_PROMPT_VERSION
         requested_model = self._model_name
         executed_model = self.model_name
-        prompt_meta = {
-            "prompt_key": context.prompt_key or composed.get("prompt_key"),
-            "prompt_version": prompt_version,
-            "prompt_sha256": composed.get("sha256"),
-            "prompt_length": composed.get("length"),
-            "prompt_composition_version": composed.get("composition_version"),
-            "prompt_sources": composed.get("sources"),
-            "prompt_text": prompt,
-            "schema_version": LlmSchemaVersion.EXTERNAL_FALLBACK_V1,
-        }
+
 
         try:
             prepared = self._prepare_image_bytes(image.content, context.max_image_dimension)
