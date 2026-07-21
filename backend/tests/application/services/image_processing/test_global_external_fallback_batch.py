@@ -43,6 +43,7 @@ from src.application.services.image_processing.global_fallback_merge_policy impo
     ExternalEntityEvidence,
     GlobalFallbackMergeAction,
     InternalAssetEvidence,
+    decide_merge_for_asset,
     decide_multi_entity_for_asset,
     normalize_provider_source_image_id,
 )
@@ -215,6 +216,138 @@ def test_merge_plan_no_side_effects():
     )
     assert len(plan.operations) == 1
     assert plan.operations[0].decision.action is GlobalFallbackMergeAction.APPLY_EXTERNAL
+
+
+def test_merge_policy_code_without_quantity_applies_needs_review():
+    d = decide_merge_for_asset(
+        internal=InternalAssetEvidence("a1", "UNRECOGNIZED", None, None, False),
+        external=ExternalEntityEvidence("3075807", None, source_image_id="a1"),
+    )
+    assert d.action is GlobalFallbackMergeAction.APPLY_EXTERNAL
+    assert d.reason == "external_code_missing_quantity"
+
+
+def test_merge_policy_no_code_still_skips():
+    d = decide_merge_for_asset(
+        internal=InternalAssetEvidence("a1", "UNRECOGNIZED", None, None, False),
+        external=ExternalEntityEvidence(None, 12.0, source_image_id="a1"),
+    )
+    assert d.action is GlobalFallbackMergeAction.SKIP_EMPTY
+    assert d.reason == "external_entity_incomplete"
+
+
+def test_merge_policy_keeps_resolved_internal_when_external_missing_qty():
+    d = decide_merge_for_asset(
+        internal=InternalAssetEvidence("a1", "RESOLVED", "3075807", 16.0, True),
+        external=ExternalEntityEvidence("3075807", None, source_image_id="a1"),
+    )
+    assert d.action is GlobalFallbackMergeAction.KEEP_INTERNAL
+
+
+def test_merge_plan_code_only_entities_like_claude_report():
+    """Regression: Claude returned codes without product_label_quantity → must apply."""
+    plan = build_merge_plan(
+        batch_fingerprint="fp",
+        entities=[
+            {
+                "internal_code": "3075807",
+                "product_label_quantity": None,
+                "source_image_id": "a1",
+                "confidence": 0.9,
+            },
+            {
+                "internal_code": "1242879",
+                "product_label_quantity": None,
+                "source_image_id": "a2",
+                "confidence": 0.9,
+            },
+        ],
+        evidence_by_asset={
+            "a1": InternalAssetEvidence("a1", "UNRECOGNIZED", None, None, False),
+            "a2": InternalAssetEvidence("a2", "UNRECOGNIZED", None, None, False),
+        },
+        ordered_asset_ids=["a1", "a2"],
+    )
+    assert len(plan.operations) == 2
+    assert all(
+        op.decision.reason == "external_code_missing_quantity" for op in plan.operations
+    )
+    assert plan.to_public_dict()["apply_count"] == 2
+    assert plan.to_public_dict()["skipped_count"] == 0
+
+
+def test_applier_marks_pending_manual_review_when_quantity_missing():
+    from src.domain.image_processing.global_fallback_batch_request import (
+        GlobalFallbackBatchRequest,
+    )
+    from src.domain.image_processing.job_asset_processing_state import (
+        JobAssetProcessingStatus,
+    )
+
+    now = datetime.now(timezone.utc)
+    journal = MemoryGlobalFallbackBatchRequestRepository()
+    batch_row = GlobalFallbackBatchRequest(
+        id="br-1",
+        job_id="job-1",
+        execution_id="ex-1",
+        attempt=1,
+        batch_index=0,
+        batch_count=1,
+        batch_fingerprint="fp",
+        status=GlobalFallbackBatchStatus.VALIDATED,
+        ordered_asset_ids=["a1"],
+        provider="claude",
+        model="sonnet",
+        schema_version="v2.1",
+        configuration_fingerprint="cfg",
+        prompt_fingerprint="ph",
+        prepared_image_hashes=["h1"],
+        created_at=now,
+        updated_at=now,
+    )
+    journal.save(batch_row)
+
+    plan = build_merge_plan(
+        batch_fingerprint="fp",
+        entities=[
+            {
+                "internal_code": "3075807",
+                "product_label_quantity": None,
+                "source_image_id": "a1",
+            }
+        ],
+        evidence_by_asset={
+            "a1": InternalAssetEvidence("a1", "UNRECOGNIZED", None, None, False)
+        },
+        ordered_asset_ids=["a1"],
+    )
+
+    state = MagicMock()
+    state.status = JobAssetProcessingStatus.UNRECOGNIZED
+    state_repo = MagicMock()
+    state_repo.get_by_job_and_asset.return_value = state
+    persister = _FakePersister()
+    clock = MagicMock()
+    clock.now.return_value = now
+    applier = GlobalFallbackMergeApplier(
+        result_persister=persister,
+        batch_journal=journal,
+        state_repo=state_repo,
+        clock=clock,
+    )
+    result = applier.apply(
+        job=_FakeJob(),
+        aisle=_FakeAisle(),
+        asset_by_id={"a1": _FakeAsset("a1")},
+        plan=plan,
+        batch_row=batch_row,
+        snapshot=_FakeSnapshot(),
+    )
+    assert result.applied == 1
+    assert state.status is JobAssetProcessingStatus.PENDING_MANUAL_REVIEW
+    assert state.error_code == "MISSING_QUANTITY"
+    assert persister.persisted[0].quantity is None
+    assert persister.persisted[0].internal_code == "3075807"
 
 
 @dataclass

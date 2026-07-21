@@ -79,11 +79,40 @@ def decide_merge_for_asset(
 
     ext_code = _norm_code(external.internal_code)
     ext_qty_ok = _has_valid_quantity(external.quantity)
-    if not ext_code or not ext_qty_ok:
+    if not ext_code:
         return GlobalFallbackMergeDecision(
             action=GlobalFallbackMergeAction.SKIP_EMPTY,
             asset_id=asset_id,
             reason="external_entity_incomplete",
+            external=external,
+            internal=internal,
+        )
+    if not ext_qty_ok:
+        # Prefer keeping a fully resolved internal over an incomplete external.
+        if internal is not None and internal.resolved_internal:
+            int_code = _norm_code(internal.internal_code)
+            int_qty_ok = _has_valid_quantity(internal.quantity)
+            if int_code and int_qty_ok:
+                if int_code == ext_code:
+                    return GlobalFallbackMergeDecision(
+                        action=GlobalFallbackMergeAction.KEEP_INTERNAL,
+                        asset_id=asset_id,
+                        reason="internal_valid_matches_external",
+                        external=external,
+                        internal=internal,
+                    )
+                return GlobalFallbackMergeDecision(
+                    action=GlobalFallbackMergeAction.CONFLICT_REVIEW,
+                    asset_id=asset_id,
+                    reason="internal_external_code_conflict",
+                    external=external,
+                    internal=internal,
+                )
+        # Code without readable quantity → apply so operators see a NEEDS_REVIEW row.
+        return GlobalFallbackMergeDecision(
+            action=GlobalFallbackMergeAction.APPLY_EXTERNAL,
+            asset_id=asset_id,
+            reason="external_code_missing_quantity",
             external=external,
             internal=internal,
         )

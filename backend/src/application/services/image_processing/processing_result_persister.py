@@ -126,27 +126,40 @@ class ProcessingResultPersister:
                 persisted=False, skipped_reason=PersistSkipReason.NOT_RESOLVED_INTERNAL
             )
         code = (result.internal_code or "").strip()
-        if not code or result.quantity is None:
+        if not code:
             return PersistOutcome(
                 persisted=False, skipped_reason=PersistSkipReason.MISSING_CODE_OR_QUANTITY
             )
-        quantity = _coerce_positive_int_quantity(result.quantity)
-        if quantity is None:
-            # Non-integer decimal (or otherwise non-whole) quantity is never truncated; the
-            # caller routes this to manual review rather than silently changing the count.
-            logger.warning(
-                "code_scan.persist_reject_non_integer_quantity job_id=%s asset_id=%s quantity=%r",
-                result.job_id,
-                result.asset_id,
-                result.quantity,
-            )
-            return PersistOutcome(
-                persisted=False, skipped_reason=PersistSkipReason.MISSING_CODE_OR_QUANTITY
-            )
-        if quantity <= 0:
-            return PersistOutcome(
-                persisted=False, skipped_reason=PersistSkipReason.NON_POSITIVE_QUANTITY
-            )
+
+        needs_review = False
+        quantity: int
+        qty_source_override: str | None = None
+        qty_parse_status = "valid_positive"
+        if result.quantity is None:
+            # GLOBAL_BATCH / external: code without quantity → NEEDS_REVIEW position (hybrid parity).
+            needs_review = True
+            quantity = 0
+            qty_source_override = "unresolved"
+            qty_parse_status = "null"
+        else:
+            coerced = _coerce_positive_int_quantity(result.quantity)
+            if coerced is None:
+                # Non-integer decimal (or otherwise non-whole) quantity is never truncated; the
+                # caller routes this to manual review rather than silently changing the count.
+                logger.warning(
+                    "code_scan.persist_reject_non_integer_quantity job_id=%s asset_id=%s quantity=%r",
+                    result.job_id,
+                    result.asset_id,
+                    result.quantity,
+                )
+                return PersistOutcome(
+                    persisted=False, skipped_reason=PersistSkipReason.MISSING_CODE_OR_QUANTITY
+                )
+            if coerced <= 0:
+                return PersistOutcome(
+                    persisted=False, skipped_reason=PersistSkipReason.NON_POSITIVE_QUANTITY
+                )
+            quantity = coerced
 
         job_id = result.job_id
         asset_id = result.asset_id
@@ -181,15 +194,15 @@ class ProcessingResultPersister:
             or result.status is ImageResultStatus.RESOLVED_EXTERNAL
         ):
             provider = (result.provider_name or EXTERNAL_PROVIDER).strip() or EXTERNAL_PROVIDER
-            qty_source = EXTERNAL_QTY_SOURCE
+            qty_source = qty_source_override or EXTERNAL_QTY_SOURCE
             entity_slug = "external"
         elif resolved_by.upper() == "INTERNAL_OCR" or resolved_by == INTERNAL_OCR_PROVIDER:
             provider = INTERNAL_OCR_PROVIDER
-            qty_source = INTERNAL_OCR_QTY_SOURCE
+            qty_source = qty_source_override or INTERNAL_OCR_QTY_SOURCE
             entity_slug = "internal_ocr"
         else:
             provider = CODE_SCAN_PROVIDER
-            qty_source = CODE_SCAN_QTY_SOURCE
+            qty_source = qty_source_override or CODE_SCAN_QTY_SOURCE
             entity_slug = "code_scan"
 
         entity_uid = f"{job_id}_{entity_slug}_{asset_id}"
@@ -204,9 +217,12 @@ class ProcessingResultPersister:
             "source_image_sequence": snap.position_order + 1,
             "creation_source": PositionCreationSource.AUTOMATIC.value,
             "qty_source": qty_source,
-            "qty_parse_status": "valid_positive",
+            "qty_parse_status": qty_parse_status,
             "resolved_by": provider,
         }
+        if needs_review:
+            summary["count_status"] = "NEEDS_REVIEW"
+            summary["explicit_quantity_missing"] = True
 
         storage_path = snap.storage_key or f"{entity_slug}://{asset_id}"
         if live is not None:
@@ -217,7 +233,7 @@ class ProcessingResultPersister:
             aisle_id=aisle_id,
             status=PositionStatus.DETECTED,
             confidence=1.0,
-            needs_review=False,
+            needs_review=needs_review,
             primary_evidence_id=evidence_id,
             created_at=now,
             updated_at=now,
@@ -240,8 +256,8 @@ class ProcessingResultPersister:
             updated_at=now,
             qty_source=qty_source,
             qty_inference_reason=None,
-            raw_qty=quantity,
-            qty_parse_status="valid_positive",
+            raw_qty=None if needs_review else quantity,
+            qty_parse_status=qty_parse_status,
         )
         evidence = Evidence(
             id=evidence_id,

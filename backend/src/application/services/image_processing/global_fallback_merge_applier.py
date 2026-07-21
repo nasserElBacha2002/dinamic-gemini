@@ -35,6 +35,7 @@ from src.domain.image_processing.job_asset_processing_state import (
 logger = logging.getLogger(__name__)
 
 EXTERNAL_PROVIDER_STRATEGY = "EXTERNAL_PROVIDER"
+EXTERNAL_CODE_MISSING_QUANTITY_REASON = "external_code_missing_quantity"
 
 
 @dataclass
@@ -177,7 +178,14 @@ class GlobalFallbackMergeApplier:
         if self._state_repo is not None:
             state = self._state_repo.get_by_job_and_asset(job.id, asset.id)
             if state is not None:
-                state.status = JobAssetProcessingStatus.RESOLVED
+                if reason == EXTERNAL_CODE_MISSING_QUANTITY_REASON:
+                    state.status = JobAssetProcessingStatus.PENDING_MANUAL_REVIEW
+                    state.error_code = "MISSING_QUANTITY"
+                    state.error_message = reason
+                else:
+                    state.status = JobAssetProcessingStatus.RESOLVED
+                    state.error_code = None
+                    state.error_message = None
                 state.last_strategy = EXTERNAL_PROVIDER_STRATEGY
                 state.updated_at = self._now()
                 self._state_repo.save(state)
