@@ -21,6 +21,7 @@ export interface FeatureFlags {
   readonly uploadAbortEnabled: boolean;
 }
 
+/** Non-production defaults (development / staging). Production Phase 1 flags default off (opt-in). */
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   allowMobileDataUploads: true,
   heicConvertToJpeg: true,
@@ -35,8 +36,13 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   uploadAbortEnabled: true,
 };
 
-export function resolveFeatureFlags(raw: unknown, _environment: string): FeatureFlags {
+function phase1DefaultForEnvironment(environment: string): boolean {
+  return environment !== 'production';
+}
+
+export function resolveFeatureFlags(raw: unknown, environment: string): FeatureFlags {
   const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const phase1Default = phase1DefaultForEnvironment(environment);
   const bool = (key: keyof FeatureFlags, fallback: boolean): boolean => {
     const v = source[key];
     if (typeof v === 'boolean') {
@@ -64,15 +70,9 @@ export function resolveFeatureFlags(raw: unknown, _environment: string): Feature
       'uploadObservabilityEnabled',
       DEFAULT_FEATURE_FLAGS.uploadObservabilityEnabled,
     ),
-    uploadDimensionCap: bool('uploadDimensionCap', DEFAULT_FEATURE_FLAGS.uploadDimensionCap),
-    uploadAdaptiveQuality: bool(
-      'uploadAdaptiveQuality',
-      DEFAULT_FEATURE_FLAGS.uploadAdaptiveQuality,
-    ),
-    uploadAdaptiveConcurrency: bool(
-      'uploadAdaptiveConcurrency',
-      DEFAULT_FEATURE_FLAGS.uploadAdaptiveConcurrency,
-    ),
-    uploadAbortEnabled: bool('uploadAbortEnabled', DEFAULT_FEATURE_FLAGS.uploadAbortEnabled),
+    uploadDimensionCap: bool('uploadDimensionCap', phase1Default),
+    uploadAdaptiveQuality: bool('uploadAdaptiveQuality', phase1Default),
+    uploadAdaptiveConcurrency: bool('uploadAdaptiveConcurrency', phase1Default),
+    uploadAbortEnabled: bool('uploadAbortEnabled', phase1Default),
   };
 }

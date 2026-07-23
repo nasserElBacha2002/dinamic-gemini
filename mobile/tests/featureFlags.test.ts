@@ -1,7 +1,7 @@
 import { resolveFeatureFlags, DEFAULT_FEATURE_FLAGS } from '../src/core/featureFlags';
 
 describe('featureFlags', () => {
-  it('uses defaults when raw is empty', () => {
+  it('uses defaults when raw is empty in development', () => {
     expect(resolveFeatureFlags(undefined, 'development')).toEqual(DEFAULT_FEATURE_FLAGS);
   });
 
@@ -29,15 +29,41 @@ describe('featureFlags', () => {
     expect(resolveFeatureFlags({}, 'production').uploadObservabilityEnabled).toBe(true);
   });
 
-  it('enables phase1 upload optimization flags by default', () => {
+  it('keeps phase1 upload optimization flags on by default in development/staging', () => {
+    for (const env of ['development', 'staging'] as const) {
+      const flags = resolveFeatureFlags({}, env);
+      expect(flags.uploadDimensionCap).toBe(true);
+      expect(flags.uploadAdaptiveQuality).toBe(true);
+      expect(flags.uploadAdaptiveConcurrency).toBe(true);
+      expect(flags.uploadAbortEnabled).toBe(true);
+    }
+  });
+
+  it('defaults phase1 flags off in production (opt-in until device validation)', () => {
     const flags = resolveFeatureFlags({}, 'production');
+    expect(flags.uploadDimensionCap).toBe(false);
+    expect(flags.uploadAdaptiveQuality).toBe(false);
+    expect(flags.uploadAdaptiveConcurrency).toBe(false);
+    expect(flags.uploadAbortEnabled).toBe(false);
+  });
+
+  it('can independently enable phase1 flags in production', () => {
+    const flags = resolveFeatureFlags(
+      {
+        uploadDimensionCap: '1',
+        uploadAdaptiveQuality: true,
+        uploadAdaptiveConcurrency: '1',
+        uploadAbortEnabled: '1',
+      },
+      'production',
+    );
     expect(flags.uploadDimensionCap).toBe(true);
     expect(flags.uploadAdaptiveQuality).toBe(true);
     expect(flags.uploadAdaptiveConcurrency).toBe(true);
     expect(flags.uploadAbortEnabled).toBe(true);
   });
 
-  it('can independently disable phase1 flags', () => {
+  it('can independently disable phase1 flags in development', () => {
     const flags = resolveFeatureFlags(
       {
         uploadDimensionCap: '0',
@@ -46,7 +72,7 @@ describe('featureFlags', () => {
         uploadAbortEnabled: '0',
         heicConvertToJpeg: '0',
       },
-      'production',
+      'development',
     );
     expect(flags.uploadDimensionCap).toBe(false);
     expect(flags.uploadAdaptiveQuality).toBe(false);

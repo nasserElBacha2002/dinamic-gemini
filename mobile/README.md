@@ -193,10 +193,11 @@ En `.env` / CI:
 - `DINAMIC_FLAG_BG_POLL=0` — no schedule job-monitor wake
 - `DINAMIC_FLAG_AISLE_LOCK=1` — reservado (off por defecto)
 - `DINAMIC_FLAG_UPLOAD_OBS=0` — desactivar observabilidad Phase 0 (upload/prepare/process)
-- `DINAMIC_FLAG_UPLOAD_DIM_CAP=0` — desactivar límite proactivo de dimensión (Phase 1)
-- `DINAMIC_FLAG_UPLOAD_ADAPTIVE_QUALITY=0` — calidades JPEG legacy fijas
-- `DINAMIC_FLAG_UPLOAD_ADAPTIVE_CONCURRENCY=0` — concurrencia legacy cap 2
-- `DINAMIC_FLAG_UPLOAD_ABORT=0` — cancelPhoto no aborta multipart en vuelo
+- Phase 1 (opt-in en **production**; ON por defecto en development/staging):
+  - `DINAMIC_FLAG_UPLOAD_DIM_CAP=1|0` — límite proactivo de dimensión
+  - `DINAMIC_FLAG_UPLOAD_ADAPTIVE_QUALITY=1|0` — calidades JPEG por perfil/red
+  - `DINAMIC_FLAG_UPLOAD_ADAPTIVE_CONCURRENCY=1|0` — concurrencia adaptativa (cap legacy 2 si off)
+  - `DINAMIC_FLAG_UPLOAD_ABORT=1|0` — cancelPhoto aborta multipart en vuelo
 - `DINAMIC_FLAG_HEIC_JPEG=0` — subir HEIC sin convertir (el worker puede normalizar)
 
 ### Diagnóstico en app

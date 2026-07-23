@@ -1,4 +1,5 @@
 import { mapProcessingPersistence, toProcessingState } from '../../core/processingState';
+import { normalizePreparationProcessingMode } from '../../core/imagePreparationPolicy';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
@@ -145,6 +146,13 @@ export class ProcessingService {
       if (!session) {
         await processingRunStore.markTerminal(run.id, 'failed');
         return { ok: false, jobId: null, reason: 'Sesión no encontrada.' };
+      }
+
+      if (identificationMode) {
+        await this.repo.setPreparationProcessingMode(
+          sessionId,
+          normalizePreparationProcessingMode(identificationMode),
+        );
       }
 
       if (run.backendJobId) {

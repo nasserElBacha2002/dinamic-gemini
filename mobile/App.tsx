@@ -312,6 +312,12 @@ export default function App(): JSX.Element {
           onBack={() => setScreen('capture')}
           onDone={(sessionId) => {
             setWorkSessionId(sessionId);
+            if (identificationModePreference) {
+              void services.uploadQueue.setSessionPreparationMode(
+                sessionId,
+                identificationModePreference,
+              );
+            }
             void services.uploadQueue.enqueueSession(sessionId);
             setScreen('uploads');
           }}
@@ -323,9 +329,13 @@ export default function App(): JSX.Element {
           services={services}
           sessionId={workSessionId}
           identificationModePreference={identificationModePreference}
-          onIdentificationModePreferenceChange={(next) =>
-            setIdentificationModePreference(sanitizeIdentificationModeSelection(next))
-          }
+          onIdentificationModePreferenceChange={(next) => {
+            const sanitized = sanitizeIdentificationModeSelection(next);
+            setIdentificationModePreference(sanitized);
+            if (workSessionId && sanitized) {
+              void services.uploadQueue.setSessionPreparationMode(workSessionId, sanitized);
+            }
+          }}
           onBack={() => setScreen(selectedInventory ? 'aisles' : 'inventories')}
           onProcess={() => setScreen('processing')}
           onError={setError}
@@ -338,9 +348,13 @@ export default function App(): JSX.Element {
           inventoryName={selectedInventory?.name ?? ''}
           aisleName={selectedAisle?.code ?? ''}
           identificationModePreference={identificationModePreference}
-          onIdentificationModePreferenceChange={(next) =>
-            setIdentificationModePreference(sanitizeIdentificationModeSelection(next))
-          }
+          onIdentificationModePreferenceChange={(next) => {
+            const sanitized = sanitizeIdentificationModeSelection(next);
+            setIdentificationModePreference(sanitized);
+            if (workSessionId && sanitized) {
+              void services.uploadQueue.setSessionPreparationMode(workSessionId, sanitized);
+            }
+          }}
           onBack={() => setScreen(selectedInventory ? 'aisles' : 'inventories')}
           onAnotherAisle={() => setScreen('inventories')}
           onViewResults={() => setScreen('results')}

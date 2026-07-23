@@ -216,6 +216,17 @@ export class CaptureRepository {
     );
   }
 
+  async setPreparationProcessingMode(sessionId: string, mode: string): Promise<void> {
+    await this.db.runAsync(
+      `UPDATE capture_sessions
+       SET preparation_processing_mode = ?, updated_at = ?
+       WHERE id = ?;`,
+      mode,
+      new Date().toISOString(),
+      sessionId,
+    );
+  }
+
   async repairMultipleOpenSessions(keepSessionId: string, reason: string): Promise<void> {
     const now = new Date().toISOString();
     const placeholders = CAPTURE_EXCLUSIVE_SESSION_STATUSES.map(() => '?').join(', ');

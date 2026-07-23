@@ -191,6 +191,13 @@ CREATE INDEX IF NOT EXISTS idx_observability_events_client_file
   ON observability_events(client_file_id);
 `,
   },
+  {
+    version: 6,
+    name: 'session_preparation_processing_mode',
+    sql: `
+ALTER TABLE capture_sessions ADD COLUMN preparation_processing_mode TEXT NOT NULL DEFAULT 'UNKNOWN';
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

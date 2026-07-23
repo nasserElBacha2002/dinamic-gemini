@@ -32,6 +32,8 @@ export interface CaptureSessionRow {
   readonly processing_finished_at: string | null;
   readonly last_upload_error: string | null;
   readonly last_processing_error: string | null;
+  /** Preparation profile hint: CODE_SCAN | INTERNAL_OCR | LEGACY_LLM | UNKNOWN */
+  readonly preparation_processing_mode: string;
   readonly created_at: string;
   readonly updated_at: string;
 }

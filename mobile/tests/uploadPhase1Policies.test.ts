@@ -2,6 +2,8 @@ import {
   DefaultImagePreparationPolicy,
   LEGACY_JPEG_QUALITY_RESIZE,
   PREPARATION_PROFILE_VERSION,
+  classifyResizeReason,
+  isFormatConversion,
   normalizePreparationProcessingMode,
   targetWidthForByteBudget,
   targetWidthForMaxEdge,
@@ -12,20 +14,18 @@ import {
   UPLOAD_CONCURRENCY_LEGACY_CAP,
   UPLOAD_CONCURRENCY_WIFI_ETHERNET,
 } from '../src/core/uploadConcurrencyPolicy';
+import { UploadSlotGate, prepareAllowance } from '../src/core/uploadSlotGate';
 import { DEFAULT_MAX_DIMENSION_PX } from '../src/shared/constants/photoPrepare';
 
 describe('imagePreparationPolicy', () => {
   const policy = new DefaultImagePreparationPolicy();
   const baseCtx = {
-    originalBytes: 5_000_000,
-    originalWidth: 4000,
-    originalHeight: 3000,
     networkType: 'wifi' as const,
     serverLimits: { maxFileSizeBytes: 12_000_000 },
     convertHeic: true,
   };
 
-  it('selects CODE_SCAN profile with dimension cap', () => {
+  it('selects CODE_SCAN profile with dimension cap and mins', () => {
     const profile = policy.resolve({
       ...baseCtx,
       processingMode: 'CODE_SCAN',
@@ -36,11 +36,14 @@ describe('imagePreparationPolicy', () => {
     expect(profile.version).toBe(PREPARATION_PROFILE_VERSION);
     expect(profile.maxEdgeDimension).toBe(DEFAULT_MAX_DIMENSION_PX);
     expect(profile.jpegQuality).toBeGreaterThanOrEqual(0.85);
+    expect(profile.minimumJpegQuality).toBeGreaterThanOrEqual(0.8);
+    expect(profile.minimumEdgeDimension).toBeGreaterThanOrEqual(1600);
+    expect(profile.maxTransformPasses).toBe(2);
     expect(profile.convertHeic).toBe(true);
     expect(profile.outputFormat).toBe('jpeg');
   });
 
-  it('selects INTERNAL_OCR with higher quality bias', () => {
+  it('selects INTERNAL_OCR with higher quality bias and stricter mins', () => {
     const ocr = policy.resolve({
       ...baseCtx,
       processingMode: 'INTERNAL_OCR',
@@ -55,6 +58,8 @@ describe('imagePreparationPolicy', () => {
     });
     expect(ocr.profileId).toBe('internal_ocr_v1');
     expect(ocr.jpegQuality).toBeGreaterThanOrEqual(scan.jpegQuality);
+    expect(ocr.minimumJpegQuality).toBeGreaterThanOrEqual(scan.minimumJpegQuality);
+    expect(ocr.minimumEdgeDimension).toBeGreaterThanOrEqual(scan.minimumEdgeDimension);
   });
 
   it('selects LEGACY_LLM with smaller edge', () => {
@@ -112,13 +117,14 @@ describe('imagePreparationPolicy', () => {
     ).toBe(2250);
   });
 
-  it('computes byte-budget width without inventing when under limit', () => {
+  it('computes byte-budget width respecting minimum edge', () => {
     expect(
       targetWidthForByteBudget({
         width: 4000,
         height: 3000,
         currentBytes: 1_000_000,
         maxFileSizeBytes: 5_000_000,
+        minimumEdgeDimension: 1600,
       }),
     ).toBeNull();
     const w = targetWidthForByteBudget({
@@ -126,13 +132,24 @@ describe('imagePreparationPolicy', () => {
       height: 3000,
       currentBytes: 20_000_000,
       maxFileSizeBytes: 5_000_000,
+      minimumEdgeDimension: 1600,
     });
     expect(w).not.toBeNull();
-    expect(w!).toBeGreaterThanOrEqual(640);
+    expect(w!).toBeGreaterThanOrEqual(1600);
     expect(w!).toBeLessThan(4000);
   });
 
-  it('nudges cellular quality when adaptive', () => {
+  it('classifies resize_reason and format conversion', () => {
+    expect(classifyResizeReason({ edgeResize: false, byteResize: false })).toBe('none');
+    expect(classifyResizeReason({ edgeResize: true, byteResize: false })).toBe('dimension_cap');
+    expect(classifyResizeReason({ edgeResize: false, byteResize: true })).toBe('byte_budget');
+    expect(classifyResizeReason({ edgeResize: true, byteResize: true })).toBe('both');
+    expect(isFormatConversion({ sourceMime: 'image/jpeg', outputMime: 'image/jpeg' })).toBe(false);
+    expect(isFormatConversion({ sourceMime: 'image/png', outputMime: 'image/jpeg' })).toBe(true);
+    expect(isFormatConversion({ sourceMime: 'image/heic', outputMime: 'image/jpeg' })).toBe(true);
+  });
+
+  it('nudges cellular quality when adaptive without going below minimum', () => {
     const wifi = policy.resolve({
       ...baseCtx,
       processingMode: 'CODE_SCAN',
@@ -148,7 +165,7 @@ describe('imagePreparationPolicy', () => {
       adaptiveQualityEnabled: true,
     });
     expect(cell.jpegQuality).toBeLessThanOrEqual(wifi.jpegQuality);
-    expect(cell.jpegQuality).toBeGreaterThanOrEqual(0.82);
+    expect(cell.jpegQuality).toBeGreaterThanOrEqual(cell.minimumJpegQuality);
   });
 });
 
@@ -208,5 +225,62 @@ describe('uploadConcurrencyPolicy', () => {
         absoluteMax: 2,
       }),
     ).toBe(2);
+  });
+});
+
+describe('UploadSlotGate + prepareAllowance', () => {
+  it('never exceeds limit and releases exactly once per acquire', () => {
+    const gate = new UploadSlotGate();
+    expect(gate.tryAcquire(2)).toBe(true);
+    expect(gate.tryAcquire(2)).toBe(true);
+    expect(gate.tryAcquire(2)).toBe(false);
+    expect(gate.activeCount).toBe(2);
+    gate.release();
+    expect(gate.activeCount).toBe(1);
+    expect(gate.tryAcquire(2)).toBe(true);
+    expect(gate.activeCount).toBe(2);
+    gate.release();
+    gate.release();
+    expect(gate.activeCount).toBe(0);
+    gate.release();
+    expect(gate.activeCount).toBe(0);
+  });
+
+  it('limits prepare headroom when uploads are saturated', () => {
+    expect(
+      prepareAllowance({
+        preparedPending: 12,
+        freeUploadSlots: 0,
+        maxFilesPerBatch: 10,
+        maxPreparedPending: 12,
+      }),
+    ).toBe(0);
+    expect(
+      prepareAllowance({
+        preparedPending: 10,
+        freeUploadSlots: 0,
+        maxFilesPerBatch: 10,
+        maxPreparedPending: 12,
+      }),
+    ).toBe(2);
+  });
+
+  it('caps prepare by free slots × batch size when uploads have capacity', () => {
+    expect(
+      prepareAllowance({
+        preparedPending: 0,
+        freeUploadSlots: 1,
+        maxFilesPerBatch: 5,
+        maxPreparedPending: 12,
+      }),
+    ).toBe(5);
+    expect(
+      prepareAllowance({
+        preparedPending: 0,
+        freeUploadSlots: 3,
+        maxFilesPerBatch: 10,
+        maxPreparedPending: 12,
+      }),
+    ).toBe(12);
   });
 });

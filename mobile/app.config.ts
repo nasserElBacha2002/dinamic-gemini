@@ -12,6 +12,26 @@ function readGitSha(): string {
   }
 }
 
+/** Explicit 1/0 only — omit so resolveFeatureFlags can apply env defaults (prod opt-in). */
+function envTriStateFlag(name: string): boolean | undefined {
+  const v = process.env[name];
+  if (v === undefined || v === '') {
+    return undefined;
+  }
+  if (v === '1' || v === 'true') {
+    return true;
+  }
+  if (v === '0' || v === 'false') {
+    return false;
+  }
+  return undefined;
+}
+
+function optionalFlag(name: string, key: string): Record<string, boolean> {
+  const value = envTriStateFlag(name);
+  return value === undefined ? {} : { [key]: value };
+}
+
 const versionName = process.env.DINAMIC_VERSION_NAME ?? '0.3.0';
 const versionCode = Number(process.env.DINAMIC_VERSION_CODE ?? '30');
 const environment = process.env.DINAMIC_ENVIRONMENT ?? 'development';
@@ -92,10 +112,11 @@ const config: ExpoConfig = {
       backgroundJobPolling: process.env.DINAMIC_FLAG_BG_POLL !== '0',
       aisleDeviceLock: process.env.DINAMIC_FLAG_AISLE_LOCK === '1',
       uploadObservabilityEnabled: process.env.DINAMIC_FLAG_UPLOAD_OBS !== '0',
-      uploadDimensionCap: process.env.DINAMIC_FLAG_UPLOAD_DIM_CAP !== '0',
-      uploadAdaptiveQuality: process.env.DINAMIC_FLAG_UPLOAD_ADAPTIVE_QUALITY !== '0',
-      uploadAdaptiveConcurrency: process.env.DINAMIC_FLAG_UPLOAD_ADAPTIVE_CONCURRENCY !== '0',
-      uploadAbortEnabled: process.env.DINAMIC_FLAG_UPLOAD_ABORT !== '0',
+      // Phase 1: omit when unset so resolveFeatureFlags can default off in production.
+      ...optionalFlag('DINAMIC_FLAG_UPLOAD_DIM_CAP', 'uploadDimensionCap'),
+      ...optionalFlag('DINAMIC_FLAG_UPLOAD_ADAPTIVE_QUALITY', 'uploadAdaptiveQuality'),
+      ...optionalFlag('DINAMIC_FLAG_UPLOAD_ADAPTIVE_CONCURRENCY', 'uploadAdaptiveConcurrency'),
+      ...optionalFlag('DINAMIC_FLAG_UPLOAD_ABORT', 'uploadAbortEnabled'),
     },
   },
 };

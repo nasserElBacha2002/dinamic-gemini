@@ -11,9 +11,9 @@ import type { FeatureFlags } from '../../core/featureFlags';
 import {
   defaultImagePreparationPolicy,
   normalizePreparationProcessingMode,
-  type PreparationProcessingMode,
 } from '../../core/imagePreparationPolicy';
 import { defaultUploadConcurrencyPolicy } from '../../core/uploadConcurrencyPolicy';
+import { UploadSlotGate, prepareAllowance } from '../../core/uploadSlotGate';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
@@ -31,18 +31,18 @@ import {
   type ObservabilityReporter,
   type TimingMarkStore,
 } from '../../observability';
-import { ApiError } from '../../services/api/apiClient';
+import { ApiError, REQUEST_ABORTED, REQUEST_TIMEOUT } from '../../services/api/apiClient';
 import type { ConnectivityService } from '../../services/connectivity/connectivity';
 import { createId } from '../../shared/createId';
 import type { AisleAssetsApi } from './aisleAssetsApi';
-import { cleanupTransformUri, preparePhotoForUpload } from './photoPrepare';
+import { cleanupTransformUri, preparePhotoForUpload, PrepareFileTooLargeError } from './photoPrepare';
 import type { UploadLimitsService } from './uploadLimitsService';
 
 /** Multipart timeout is 120s; reclaim anything still "uploading/preparing" past this. */
 const UPLOAD_STALE_MS = 150_000;
 /** How many photos to prepare per tick before packing (keeps UI responsive for 20+ captures). */
 const PREPARE_PER_TICK = 4;
-/** Backpressure: do not prepare unbounded while uploads are saturated. */
+/** Backpressure: max prepared-but-not-yet-uploaded photos across sessions. */
 const MAX_PREPARED_PENDING = 12;
 
 export interface UploadQueueObservability {
@@ -54,11 +54,6 @@ export interface UploadQueueOptions {
   readonly flags?: FeatureFlags;
   readonly backgroundWork?: BackgroundWorkScheduler | null;
   readonly observability?: UploadQueueObservability | null;
-  /**
-   * Optional hint for preparation profile (CODE_SCAN / INTERNAL_OCR / …).
-   * When omitted, uses UNKNOWN safe defaults — mode is often chosen only at /process time.
-   */
-  readonly processingModeHint?: PreparationProcessingMode | null;
 }
 
 export interface UploadQueueSnapshot {
@@ -84,7 +79,6 @@ export type UploadQueueListener = (snapshot: UploadQueueSnapshot) => void;
 
 export class UploadQueue {
   private pauseReason: string | null = null;
-  private activeRequests = 0;
   private disposed = false;
   private tickTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly listeners = new Set<UploadQueueListener>();
@@ -94,6 +88,7 @@ export class UploadQueue {
   /** Effective packing budget; null until first limits load, then adapted on 413/success. */
   private packingBudget: PackingBudget | null = null;
   private readonly clock = createMonotonicClock();
+  private readonly uploadSlots = new UploadSlotGate();
   /** Sessions that already emitted first-upload session metric. */
   private readonly firstUploadEmitted = new Set<string>();
   /** In-flight multipart AbortControllers keyed by attempt id. */
@@ -102,6 +97,8 @@ export class UploadQueue {
   private readonly uploadAttemptByPhoto = new Map<string, string>();
   /** Photos cancelled while a batch was in flight (excluded after abort). */
   private readonly cancelledWhileUploading = new Set<string>();
+  /** Transforms deferred until batch settlement. */
+  private readonly pendingTransformCleanup = new Set<string>();
 
   constructor(
     private readonly repo: CaptureRepository,
@@ -118,6 +115,21 @@ export class UploadQueue {
 
   private get flags(): FeatureFlags | undefined {
     return this.options.flags;
+  }
+
+  get activeRequests(): number {
+    return this.uploadSlots.activeCount;
+  }
+
+  private tryAcquireUploadSlot(limit: number): boolean {
+    if (this.disposed) {
+      return false;
+    }
+    return this.uploadSlots.tryAcquire(limit);
+  }
+
+  private releaseUploadSlot(): void {
+    this.uploadSlots.release();
   }
 
   private resolveNetworkType() {
@@ -146,9 +158,15 @@ export class UploadQueue {
   getSnapshot(): UploadQueueSnapshot {
     return {
       pauseReason: this.pauseReason,
-      activeRequests: this.activeRequests,
+      activeRequests: this.uploadSlots.activeCount,
       sessions: this.cachedSessions,
     };
+  }
+
+  /** Persist preparation profile mode for a capture session (from UI preference). */
+  async setSessionPreparationMode(sessionId: string, mode: string | null): Promise<void> {
+    const normalized = normalizePreparationProcessingMode(mode);
+    await this.repo.setPreparationProcessingMode(sessionId, normalized);
   }
 
   async restoreAndStart(): Promise<void> {
@@ -309,6 +327,7 @@ export class UploadQueue {
       return;
     }
     if (photo.upload_status === 'uploading') {
+      // Intent + abort only; do NOT delete transform while multipart may still read it.
       this.cancelledWhileUploading.add(photoId);
       const attemptId = this.uploadAttemptByPhoto.get(photoId);
       if (this.flags?.uploadAbortEnabled !== false && attemptId) {
@@ -324,9 +343,10 @@ export class UploadQueue {
           },
         });
       }
-      // Persist excluded; batch catch will avoid retry for this photo.
       await this.repo.setPhotoUploadStatus(photoId, 'excluded');
-      await cleanupTransformUri(photo.local_transform_uri);
+      if (photo.local_transform_uri) {
+        this.pendingTransformCleanup.add(photo.local_transform_uri);
+      }
     }
     this.emit();
   }
@@ -411,6 +431,59 @@ export class UploadQueue {
     }
     this.connectivityUnsub?.();
     this.listeners.clear();
+    for (const controller of this.uploadAbortByAttempt.values()) {
+      controller.abort();
+    }
+    this.uploadAbortByAttempt.clear();
+    this.uploadAttemptByPhoto.clear();
+    this.uploadSlots.reset();
+  }
+
+  /**
+   * After a late success for a cancelled photo: keep excluded / remote_delete_pending,
+   * never promote to uploaded; attempt idempotent remote delete.
+   */
+  private async reconcileCancelledRemoteAsset(
+    session: CaptureSessionRow,
+    photoId: string,
+    assetId: string,
+  ): Promise<void> {
+    await this.repo.setPhotoUploadStatus(photoId, 'remote_delete_pending', {
+      backendAssetId: assetId,
+      errorCode: 'UPLOAD_CANCELLED_REMOTE_PENDING',
+      errorMessage: 'Asset remoto creado tras cancelación; eliminación pendiente.',
+      nextRetryAt: null,
+    });
+    try {
+      await this.assetsApi.deleteAsset(session.inventory_id, session.aisle_id, assetId);
+      await this.repo.setPhotoUploadStatus(photoId, 'remote_deleted', {
+        remoteDeletedAt: new Date().toISOString(),
+        errorCode: null,
+        errorMessage: null,
+      });
+    } catch (e) {
+      const err = e instanceof ApiError ? e : null;
+      // Stay remote_delete_pending — do not flip cancelled photos back to uploaded.
+      await this.repo.setPhotoUploadStatus(photoId, 'remote_delete_pending', {
+        backendAssetId: assetId,
+        errorCode: err?.code ?? 'DELETE_FAILED',
+        errorMessage: err?.message ?? String(e),
+      });
+      this.logger.warn('error', {
+        where: 'reconcile_cancelled_remote',
+        photoId,
+        code: err?.code ?? null,
+        status: err?.status ?? null,
+      });
+    }
+  }
+
+  private async flushPendingTransformCleanup(): Promise<void> {
+    const uris = [...this.pendingTransformCleanup];
+    this.pendingTransformCleanup.clear();
+    for (const uri of uris) {
+      await cleanupTransformUri(uri);
+    }
   }
 
   private scheduleTick(delayMs: number): void {
@@ -491,18 +564,24 @@ export class UploadQueue {
       this.scheduleTick(5_000);
       return;
     }
-    if (this.activeRequests >= concurrency) {
-      this.scheduleTick(500);
-      return;
-    }
 
     const sessions = await this.repo.listActivitySessions();
     let startedUpload = false;
+    let globalPreparedPending = 0;
+    for (const session of sessions) {
+      if (!session.upload_batch_id) {
+        continue;
+      }
+      const photos = await this.repo.listPhotosForUpload(session.id);
+      globalPreparedPending += photos.filter(
+        (p) =>
+          p.upload_size != null &&
+          p.upload_size > 0 &&
+          ['queued', 'preparing', 'uploading', 'retryable_error'].includes(p.upload_status),
+      ).length;
+    }
 
     for (const session of sessions) {
-      if (this.activeRequests >= concurrency) {
-        break;
-      }
       if (!session.upload_batch_id) {
         continue;
       }
@@ -512,18 +591,27 @@ export class UploadQueue {
         continue;
       }
 
-      const preparedPending = eligible.filter((p) => p.upload_size != null && p.upload_size > 0).length;
-      const uploadsSaturated = this.activeRequests >= concurrency;
-      const allowPrepare = !(uploadsSaturated && preparedPending >= MAX_PREPARED_PENDING);
+      const freeSlots = Math.max(0, concurrency - this.uploadSlots.activeCount);
+      const allowance = prepareAllowance({
+        preparedPending: globalPreparedPending,
+        freeUploadSlots: freeSlots,
+        maxFilesPerBatch: budget.maxFiles,
+        maxPreparedPending: MAX_PREPARED_PENDING,
+      });
 
-      if (allowPrepare) {
+      if (allowance > 0) {
         const needPrepare = eligible.filter((p) => !(p.upload_size != null && p.upload_size > 0));
-        for (const photo of needPrepare.slice(0, PREPARE_PER_TICK)) {
+        for (const photo of needPrepare.slice(0, Math.min(PREPARE_PER_TICK, allowance))) {
           if (this.inFlightPhotos.has(photo.id)) {
             continue;
           }
           await this.preparePhoto(photo, budget.maxFileBytes);
+          globalPreparedPending += 1;
         }
+      }
+
+      if (!this.tryAcquireUploadSlot(concurrency)) {
+        continue;
       }
 
       const prepared = (await this.repo.listPhotosForUpload(session.id))
@@ -547,22 +635,38 @@ export class UploadQueue {
       );
 
       if (!batch) {
+        this.releaseUploadSlot();
         const oversized = prepared.filter((p) => (p.upload_size ?? 0) > budget.maxFileBytes);
         for (const photo of oversized.slice(0, PREPARE_PER_TICK)) {
+          if (prepareAllowance({
+            preparedPending: globalPreparedPending,
+            freeUploadSlots: Math.max(0, concurrency - this.uploadSlots.activeCount),
+            maxFilesPerBatch: budget.maxFiles,
+            maxPreparedPending: MAX_PREPARED_PENDING,
+          }) <= 0) {
+            break;
+          }
           await this.invalidatePreparedSize(photo.id);
+          globalPreparedPending = Math.max(0, globalPreparedPending - 1);
           await this.preparePhoto(photo, budget.maxFileBytes);
+          globalPreparedPending += 1;
         }
         continue;
       }
 
+      // Slot already acquired; uploadPreparedBatch releases exactly once in finally.
       void this.uploadPreparedBatch(session, batch.photoIds, batch.totalBytes, {
         configuredConcurrency,
         effectiveConcurrency: concurrency,
       });
       startedUpload = true;
+      globalPreparedPending = Math.max(0, globalPreparedPending - batch.photoIds.length);
     }
 
-    this.scheduleTick(startedUpload || needMoreWorkSoon(sessions.length) ? 400 : 1000);
+    const uploadsSaturated = this.uploadSlots.activeCount >= concurrency;
+    this.scheduleTick(
+      startedUpload || uploadsSaturated || needMoreWorkSoon(sessions.length) ? 400 : 1000,
+    );
   }
 
   private isEligible(photo: CapturePhotoRow): boolean {
@@ -610,12 +714,10 @@ export class UploadQueue {
       await this.repo.setPhotoUploadStatus(photo.id, 'preparing', {
         incrementAttempts: true,
       });
-      const mode = normalizePreparationProcessingMode(this.options.processingModeHint);
+      const session = await this.repo.getSession(photo.capture_session_id);
+      const mode = normalizePreparationProcessingMode(session?.preparation_processing_mode);
       const profile = defaultImagePreparationPolicy.resolve({
         processingMode: mode,
-        originalWidth: photo.width,
-        originalHeight: photo.height,
-        originalBytes: photo.size,
         networkType: this.resolveNetworkType(),
         serverLimits: { maxFileSizeBytes: maxFileBytes },
         dimensionCapEnabled: this.flags?.uploadDimensionCap !== false,
@@ -656,8 +758,11 @@ export class UploadQueue {
             queued_to_prepare_started_ms: queuedWaitMs,
             preparation_profile_id: prepared.preparationProfileId,
             preparation_profile_version: prepared.preparationProfileVersion,
-            dimension_cap_applied: prepared.dimensionCapApplied,
+            preparation_processing_mode: mode,
+            resize_applied: prepared.resizeApplied,
+            reencode_applied: prepared.reencodeApplied,
             format_conversion_applied: prepared.formatConversionApplied,
+            resize_reason: prepared.resizeReason,
             quality_applied: prepared.qualityApplied,
             ...prepareMetricAttributes({
               originalBytes: prepared.originalSize,
@@ -675,8 +780,10 @@ export class UploadQueue {
       }
     } catch (e) {
       const prepareMs = Math.max(0, Math.round(this.clock.nowMs() - prepareStartedAt));
+      const errorCode =
+        e instanceof PrepareFileTooLargeError ? e.code : 'PREPARE_FAILED';
       await this.repo.setPhotoUploadStatus(photo.id, 'permanent_error', {
-        errorCode: 'PREPARE_FAILED',
+        errorCode,
         errorMessage: String(e),
       });
       emitObservability(this.obs?.reporter, {
@@ -689,7 +796,7 @@ export class UploadQueue {
           prepare_ms: prepareMs,
           error_code: normalizeObservabilityError({
             stage: 'prepare',
-            code: 'PREPARE_FAILED',
+            code: errorCode,
             message: String(e),
           }),
         },
@@ -715,481 +822,558 @@ export class UploadQueue {
     });
   }
 
-  /** HTTP upload for already-prepared photos (real sizes already packed). */
+  /** HTTP upload for already-prepared photos (real sizes already packed). Slot must be acquired by caller. */
   private async uploadPreparedBatch(
     session: CaptureSessionRow,
     photoIds: readonly string[],
     packedBytes: number,
     concurrencyMeta: { readonly configuredConcurrency: number; readonly effectiveConcurrency: number },
   ): Promise<void> {
-    const limits = await this.limits.ensureLoaded();
-    const budget = this.packingBudget ?? (await this.syncPackingBudgetFromServer());
-    this.activeRequests += 1;
-    for (const id of photoIds) {
-      this.inFlightPhotos.add(id);
-    }
-    this.emit();
-
-    const preparedFiles: { uri: string; name: string; mimeType: string }[] = [];
-    const clientFileIds: string[] = [];
-    const photoRows: CapturePhotoRow[] = [];
-    const attemptId = createId();
-    const abortController = new AbortController();
-    this.uploadAbortByAttempt.set(attemptId, abortController);
-    const network = networkAttributesFromConnectivity(this.connectivity);
-    const batchId = session.upload_batch_id ?? undefined;
-    let totalOriginalBytes = 0;
-    let totalPreparedBytes = 0;
+    let slotReleased = false;
+    const releaseSlotOnce = (): void => {
+      if (slotReleased) {
+        return;
+      }
+      slotReleased = true;
+      this.releaseUploadSlot();
+    };
 
     try {
-      for (const photoId of photoIds) {
-        const photo = await this.repo.getPhotoById(photoId);
-        if (!photo || !photo.client_file_id || !(photo.upload_size != null && photo.upload_size > 0)) {
-          continue;
+      const limits = await this.limits.ensureLoaded();
+      const budget = this.packingBudget ?? (await this.syncPackingBudgetFromServer());
+      for (const id of photoIds) {
+        this.inFlightPhotos.add(id);
+      }
+      this.emit();
+
+      const preparedFiles: { uri: string; name: string; mimeType: string }[] = [];
+      const clientFileIds: string[] = [];
+      const photoRows: CapturePhotoRow[] = [];
+      const attemptId = createId();
+      const abortController = new AbortController();
+      this.uploadAbortByAttempt.set(attemptId, abortController);
+      const network = networkAttributesFromConnectivity(this.connectivity);
+      const batchId = session.upload_batch_id ?? undefined;
+      let totalOriginalBytes = 0;
+      let totalPreparedBytes = 0;
+
+      try {
+        for (const photoId of photoIds) {
+          const photo = await this.repo.getPhotoById(photoId);
+          if (!photo || !photo.client_file_id || !(photo.upload_size != null && photo.upload_size > 0)) {
+            continue;
+          }
+          if (
+            photo.upload_status === 'excluded' ||
+            this.cancelledWhileUploading.has(photoId)
+          ) {
+            continue;
+          }
+          const uri = photo.local_transform_uri || photo.uri;
+          const mimeType = photo.local_transform_uri
+            ? 'image/jpeg'
+            : photo.mime_type || 'image/jpeg';
+          const name = photo.local_transform_uri
+            ? photo.display_name.replace(/\.(heic|heif)$/i, '.jpg')
+            : photo.display_name;
+          const queuedToUploadMs =
+            this.obs?.marks.takeElapsedMs(photoMarkKey(session.id, photo.client_file_id, 'prepared')) ??
+            this.obs?.marks.takeElapsedMs(photoMarkKey(session.id, photo.client_file_id, 'queued')) ??
+            null;
+          await this.repo.setPhotoUploadStatus(photoId, 'uploading', {
+            progress: 0,
+            incrementAttempts: true,
+          });
+          this.uploadAttemptByPhoto.set(photoId, attemptId);
+          preparedFiles.push({
+            uri,
+            name,
+            mimeType,
+          });
+          clientFileIds.push(photo.client_file_id);
+          photoRows.push(photo);
+          totalOriginalBytes += photo.original_size ?? photo.size ?? 0;
+          totalPreparedBytes += photo.upload_size ?? 0;
+          if (this.obs) {
+            this.obs.marks.mark(photoMarkKey(session.id, photo.client_file_id, 'upload_started'));
+            emitObservability(this.obs.reporter, {
+              name: 'photo.upload_started',
+              sessionId: session.id,
+              clientFileId: photo.client_file_id,
+              batchId,
+              attemptId,
+              attributes: {
+                queued_to_upload_started_ms: queuedToUploadMs,
+                prepared_bytes: photo.upload_size,
+                upload_attempt_count: (photo.upload_attempts ?? 0) + 1,
+                configured_concurrency: concurrencyMeta.configuredConcurrency,
+                effective_concurrency: concurrencyMeta.effectiveConcurrency,
+                active_upload_count: this.uploadSlots.activeCount,
+                ...network,
+              },
+            });
+          }
         }
-        const uri = photo.local_transform_uri || photo.uri;
-        const mimeType = photo.local_transform_uri
-          ? 'image/jpeg'
-          : photo.mime_type || 'image/jpeg';
-        const name = photo.local_transform_uri
-          ? photo.display_name.replace(/\.(heic|heif)$/i, '.jpg')
-          : photo.display_name;
-        const queuedToUploadMs =
-          this.obs?.marks.takeElapsedMs(photoMarkKey(session.id, photo.client_file_id, 'prepared')) ??
-          this.obs?.marks.takeElapsedMs(photoMarkKey(session.id, photo.client_file_id, 'queued')) ??
-          null;
-        await this.repo.setPhotoUploadStatus(photoId, 'uploading', {
-          progress: 0,
-          incrementAttempts: true,
-        });
-        this.uploadAttemptByPhoto.set(photoId, attemptId);
-        preparedFiles.push({
-          uri,
-          name,
-          mimeType,
-        });
-        clientFileIds.push(photo.client_file_id);
-        photoRows.push(photo);
-        totalOriginalBytes += photo.original_size ?? photo.size ?? 0;
-        totalPreparedBytes += photo.upload_size ?? 0;
-        if (this.obs) {
-          this.obs.marks.mark(photoMarkKey(session.id, photo.client_file_id, 'upload_started'));
+
+        if (preparedFiles.length === 0) {
+          return;
+        }
+
+        if (this.obs && batchId) {
+          this.obs.marks.mark(batchMarkKey(batchId, 'upload_started'));
+        }
+        if (!this.firstUploadEmitted.has(session.id) && this.obs) {
+          this.firstUploadEmitted.add(session.id);
+          const sessionCreatedToFirstUpload =
+            this.obs.marks.takeElapsedMs(sessionMarkKey(session.id, 'created')) ?? null;
           emitObservability(this.obs.reporter, {
-            name: 'photo.upload_started',
+            name: 'session.first_upload_started',
             sessionId: session.id,
-            clientFileId: photo.client_file_id,
             batchId,
             attemptId,
+            durationMs: sessionCreatedToFirstUpload ?? undefined,
             attributes: {
-              queued_to_upload_started_ms: queuedToUploadMs,
-              prepared_bytes: photo.upload_size,
-              upload_attempt_count: (photo.upload_attempts ?? 0) + 1,
-              configured_concurrency: concurrencyMeta.configuredConcurrency,
-              effective_concurrency: concurrencyMeta.effectiveConcurrency,
-              active_upload_count: this.activeRequests,
+              session_created_to_first_upload_ms: sessionCreatedToFirstUpload,
               ...network,
             },
           });
+          this.obs.marks.mark(sessionMarkKey(session.id, 'first_upload'));
         }
-      }
 
-      if (preparedFiles.length === 0) {
-        return;
-      }
+        this.logger.info('upload_started', {
+          sessionId: session.id,
+          count: preparedFiles.length,
+          packedBytes,
+          maxFiles: budget.maxFiles,
+          maxRequestBytes: budget.maxRequestBytes,
+        });
 
-      if (this.obs && batchId) {
-        this.obs.marks.mark(batchMarkKey(batchId, 'upload_started'));
-      }
-      if (!this.firstUploadEmitted.has(session.id) && this.obs) {
-        this.firstUploadEmitted.add(session.id);
-        const sessionCreatedToFirstUpload =
-          this.obs.marks.takeElapsedMs(sessionMarkKey(session.id, 'created')) ?? null;
-        emitObservability(this.obs.reporter, {
-          name: 'session.first_upload_started',
+        emitObservability(this.obs?.reporter, {
+          name: 'batch.upload_started',
           sessionId: session.id,
           batchId,
           attemptId,
-          durationMs: sessionCreatedToFirstUpload ?? undefined,
           attributes: {
-            session_created_to_first_upload_ms: sessionCreatedToFirstUpload,
+            image_count: preparedFiles.length,
+            total_original_bytes: totalOriginalBytes,
+            total_prepared_bytes: totalPreparedBytes,
+            packed_bytes: packedBytes,
+            configured_concurrency: concurrencyMeta.configuredConcurrency,
+            effective_concurrency: concurrencyMeta.effectiveConcurrency,
+            active_upload_count: this.uploadSlots.activeCount,
+            batch_attempt_count: 1,
             ...network,
           },
         });
-        this.obs.marks.mark(sessionMarkKey(session.id, 'first_upload'));
-      }
 
-      this.logger.info('upload_started', {
-        sessionId: session.id,
-        count: preparedFiles.length,
-        packedBytes,
-        maxFiles: budget.maxFiles,
-        maxRequestBytes: budget.maxRequestBytes,
-      });
-
-      emitObservability(this.obs?.reporter, {
-        name: 'batch.upload_started',
-        sessionId: session.id,
-        batchId,
-        attemptId,
-        attributes: {
-          image_count: preparedFiles.length,
-          total_original_bytes: totalOriginalBytes,
-          total_prepared_bytes: totalPreparedBytes,
-          packed_bytes: packedBytes,
-          configured_concurrency: concurrencyMeta.configuredConcurrency,
-          effective_concurrency: concurrencyMeta.effectiveConcurrency,
-          active_upload_count: this.activeRequests,
-          batch_attempt_count: 1,
-          ...network,
-        },
-      });
-
-      const uploadStartedAt = this.clock.nowMs();
-      const response = await this.assetsApi.uploadBatch({
-        inventoryId: session.inventory_id,
-        aisleId: session.aisle_id,
-        uploadBatchId: session.upload_batch_id!,
-        clientFileIds,
-        files: preparedFiles,
-        ...(this.flags?.uploadAbortEnabled !== false ? { signal: abortController.signal } : {}),
-      });
-      const uploadMs = Math.max(0, Math.round(this.clock.nowMs() - uploadStartedAt));
-
-      emitObservability(this.obs?.reporter, {
-        name: 'batch.upload_completed',
-        sessionId: session.id,
-        batchId,
-        attemptId,
-        durationMs: uploadMs,
-        attributes: {
-          batch_upload_ms: uploadMs,
-          image_count: preparedFiles.length,
-          total_original_bytes: totalOriginalBytes,
-          total_prepared_bytes: totalPreparedBytes,
-          uploaded_count: response.uploaded?.length ?? 0,
-          error_count: response.errors?.length ?? 0,
-          configured_concurrency: concurrencyMeta.configuredConcurrency,
-          effective_concurrency: concurrencyMeta.effectiveConcurrency,
-          active_upload_count: this.activeRequests,
-          ...network,
-        },
-      });
-
-      const byClient = new Map(photoRows.map((p) => [p.client_file_id!, p]));
-      for (const ok of response.uploaded ?? []) {
-        const photo = ok.client_file_id ? byClient.get(ok.client_file_id) : undefined;
-        if (!photo) {
-          continue;
-        }
-        await this.repo.setPhotoUploadStatus(photo.id, 'uploaded', {
-          progress: 1,
-          backendAssetId: ok.asset_id,
-          uploadedAt: new Date().toISOString(),
-          errorCode: null,
-          errorMessage: null,
-          nextRetryAt: null,
+        const uploadStartedAt = this.clock.nowMs();
+        const response = await this.assetsApi.uploadBatch({
+          inventoryId: session.inventory_id,
+          aisleId: session.aisle_id,
+          uploadBatchId: session.upload_batch_id!,
+          clientFileIds,
+          files: preparedFiles,
+          ...(this.flags?.uploadAbortEnabled !== false ? { signal: abortController.signal } : {}),
         });
-        await cleanupTransformUri(photo.local_transform_uri);
-        this.logger.info('upload_confirmed', { photoId: photo.id, assetId: ok.asset_id });
+        const uploadMs = Math.max(0, Math.round(this.clock.nowMs() - uploadStartedAt));
+
         emitObservability(this.obs?.reporter, {
-          name: 'photo.upload_completed',
+          name: 'batch.upload_completed',
           sessionId: session.id,
-          clientFileId: photo.client_file_id ?? undefined,
           batchId,
           attemptId,
           durationMs: uploadMs,
           attributes: {
-            upload_ms: uploadMs,
-            prepared_bytes: photo.upload_size,
-            upload_attempt_count: photo.upload_attempts,
-            upload_http_status: 200,
-            upload_error_code: null,
+            batch_upload_ms: uploadMs,
+            image_count: preparedFiles.length,
+            total_original_bytes: totalOriginalBytes,
+            total_prepared_bytes: totalPreparedBytes,
+            uploaded_count: response.uploaded?.length ?? 0,
+            error_count: response.errors?.length ?? 0,
+            configured_concurrency: concurrencyMeta.configuredConcurrency,
+            effective_concurrency: concurrencyMeta.effectiveConcurrency,
+            active_upload_count: this.uploadSlots.activeCount,
             ...network,
           },
         });
-      }
 
-      for (const err of response.errors ?? []) {
-        const photo = err.client_file_id ? byClient.get(err.client_file_id) : undefined;
-        if (!photo) {
-          continue;
-        }
-        const retryable = isSoftPerFileRetryable(err.code);
-        const attempt = photo.upload_attempts;
-        const errorCode = normalizeObservabilityError({
-          stage: 'upload',
-          code: err.code,
-          message: err.detail,
-        });
-        if (retryable && attempt < limits.retry_attempts) {
-          const delay = computeRetryDelayMs({
-            attempt,
-            baseDelayMs: limits.retry_base_delay_ms,
-          });
-          await this.repo.setPhotoUploadStatus(photo.id, 'retryable_error', {
-            errorCode: err.code,
-            errorMessage: err.detail,
-            nextRetryAt: new Date(Date.now() + delay).toISOString(),
-          });
-          this.logger.warn('upload_retry', { photoId: photo.id, code: err.code, delay });
-          emitObservability(this.obs?.reporter, {
-            name: 'photo.upload_retry',
-            sessionId: session.id,
-            clientFileId: photo.client_file_id ?? undefined,
-            batchId,
-            attemptId,
-            attributes: {
-              upload_attempt_count: attempt,
-              upload_error_code: errorCode,
-              retry_delay_ms: delay,
-              ...network,
-            },
-          });
-        } else {
-          await this.repo.setPhotoUploadStatus(photo.id, 'permanent_error', {
-            errorCode: err.code,
-            errorMessage: err.detail,
-          });
-          emitObservability(this.obs?.reporter, {
-            name: 'photo.upload_failed',
-            sessionId: session.id,
-            clientFileId: photo.client_file_id ?? undefined,
-            batchId,
-            attemptId,
-            attributes: {
-              upload_attempt_count: attempt,
-              upload_error_code: errorCode,
-              terminal: true,
-              ...network,
-            },
-          });
-        }
-      }
-
-      const accounted = new Set<string>();
-      for (const ok of response.uploaded ?? []) {
-        if (ok.client_file_id) accounted.add(ok.client_file_id);
-      }
-      for (const err of response.errors ?? []) {
-        if (err.client_file_id) accounted.add(err.client_file_id);
-      }
-      for (const photo of photoRows) {
-        const cid = photo.client_file_id;
-        if (!cid || accounted.has(cid)) continue;
-        const delay = computeRetryDelayMs({
-          attempt: photo.upload_attempts,
-          baseDelayMs: limits.retry_base_delay_ms,
-        });
-        await this.repo.setPhotoUploadStatus(photo.id, 'retryable_error', {
-          errorCode: 'UPLOAD_RESPONSE_INCOMPLETE',
-          errorMessage: 'El backend no confirmó ni rechazó este archivo.',
-          nextRetryAt: new Date(Date.now() + delay).toISOString(),
-        });
-      }
-
-      if ((response.uploaded?.length ?? 0) > 0) {
-        this.packingBudget = relaxPackingBudgetAfterSuccess({
-          current: budget,
-          server: {
-            maxFilesPerRequest: limits.max_files_per_request,
-            maxRequestSizeBytes: limits.max_request_size_bytes,
-            maxFileSizeBytes: limits.max_file_size_bytes,
-          },
-        });
-      }
-
-      await this.refreshSessionReadiness(session.id);
-      const readinessPhotos = await this.repo.listPhotos(session.id);
-      const stillPending = readinessPhotos.some(
-        (p) =>
-          p.status === 'stable' &&
-          ['not_queued', 'queued', 'preparing', 'uploading', 'retryable_error', 'remote_delete_pending'].includes(
-            p.upload_status,
-          ),
-      );
-      if (!stillPending && this.obs) {
-        const allUploadsMs =
-          this.obs.marks.takeElapsedMs(sessionMarkKey(session.id, 'created')) ?? null;
-        emitObservability(this.obs.reporter, {
-          name: 'session.all_uploads_completed',
-          sessionId: session.id,
-          batchId,
-          durationMs: allUploadsMs ?? undefined,
-          attributes: {
-            session_created_to_all_uploads_completed_ms: allUploadsMs,
-            ...network,
-          },
-        });
-        this.obs.marks.mark(sessionMarkKey(session.id, 'all_uploads_completed'));
-      }
-    } catch (e) {
-      const err = e instanceof ApiError ? e : null;
-      const aborted =
-        abortController.signal.aborted ||
-        (typeof e === 'object' &&
-          e !== null &&
-          ('name' in e || 'message' in e) &&
-          (String((e as { name?: string }).name).toLowerCase().includes('abort') ||
-            String((e as { message?: string }).message).toLowerCase().includes('abort')));
-      if (aborted) {
-        emitObservability(this.obs?.reporter, {
-          name: 'batch.upload_aborted',
-          sessionId: session.id,
-          batchId,
-          attemptId,
-          attributes: {
-            upload_error_code: 'UPLOAD_ABORTED',
-            image_count: photoIds.length,
-            ...network,
-          },
-        });
-        for (const photoId of photoIds) {
-          if (this.cancelledWhileUploading.has(photoId)) {
-            this.cancelledWhileUploading.delete(photoId);
-            // Already marked excluded in cancelPhoto.
+        const byClient = new Map(photoRows.map((p) => [p.client_file_id!, p]));
+        for (const ok of response.uploaded ?? []) {
+          const photo = ok.client_file_id ? byClient.get(ok.client_file_id) : undefined;
+          if (!photo) {
             continue;
           }
-          const photo = await this.repo.getPhotoById(photoId);
-          if (!photo || photo.upload_status === 'excluded' || photo.upload_status === 'uploaded') {
+          const current = await this.repo.getPhotoById(photo.id);
+          const cancelled =
+            this.cancelledWhileUploading.has(photo.id) ||
+            current?.upload_status === 'excluded' ||
+            current?.upload_status === 'remote_delete_pending' ||
+            current?.upload_status === 'remote_deleted';
+          if (cancelled) {
+            this.cancelledWhileUploading.delete(photo.id);
+            if (photo.local_transform_uri) {
+              this.pendingTransformCleanup.add(photo.local_transform_uri);
+            }
+            await this.reconcileCancelledRemoteAsset(session, photo.id, ok.asset_id);
             continue;
           }
-          // Sibling files in an aborted batch: re-queue without treating as network failure retry storm.
-          await this.repo.setPhotoUploadStatus(photoId, 'queued', {
-            errorCode: 'UPLOAD_ABORTED',
-            errorMessage: 'La carga del lote fue cancelada.',
+          await this.repo.setPhotoUploadStatus(photo.id, 'uploaded', {
+            progress: 1,
+            backendAssetId: ok.asset_id,
+            uploadedAt: new Date().toISOString(),
+            errorCode: null,
+            errorMessage: null,
             nextRetryAt: null,
           });
+          await cleanupTransformUri(photo.local_transform_uri);
+          this.logger.info('upload_confirmed', { photoId: photo.id, assetId: ok.asset_id });
+          emitObservability(this.obs?.reporter, {
+            name: 'photo.upload_completed',
+            sessionId: session.id,
+            clientFileId: photo.client_file_id ?? undefined,
+            batchId,
+            attemptId,
+            durationMs: uploadMs,
+            attributes: {
+              upload_ms: uploadMs,
+              prepared_bytes: photo.upload_size,
+              upload_attempt_count: photo.upload_attempts,
+              upload_http_status: 200,
+              upload_error_code: null,
+              ...network,
+            },
+          });
         }
-      } else {
-      const klass = classifyUploadHttpError(err?.status ?? null, err?.code ?? null);
-      this.logger.warn('error', {
-        where: 'upload_batch',
-        sessionId: session.id,
-        klass,
-        status: err?.status ?? null,
-        code: err?.code ?? null,
-        message: err?.message ?? String(e),
-        photoCount: photoIds.length,
-        packedBytes,
-      });
-      const errorCode = normalizeObservabilityError({
-        stage: 'upload',
-        code: err?.code,
-        httpStatus: err?.status,
-        message: err?.message ?? String(e),
-      });
-      emitObservability(this.obs?.reporter, {
-        name: 'batch.upload_failed',
-        sessionId: session.id,
-        batchId,
-        attemptId,
-        attributes: {
-          upload_http_status: err?.status ?? null,
-          upload_error_code: errorCode,
-          image_count: photoIds.length,
-          ...network,
-        },
-      });
 
-      if (klass === 'auth') {
-        for (const photoId of photoIds) {
-          const photo = await this.repo.getPhotoById(photoId);
-          if (!photo) continue;
-          if (photo.upload_status === 'preparing' || photo.upload_status === 'uploading') {
-            await this.repo.setPhotoUploadStatus(photoId, 'queued', {
-              errorCode: err?.code ?? 'AUTH_REQUIRED',
-              errorMessage: err?.message ?? String(e),
-              nextRetryAt: null,
+        for (const err of response.errors ?? []) {
+          const photo = err.client_file_id ? byClient.get(err.client_file_id) : undefined;
+          if (!photo) {
+            continue;
+          }
+          if (
+            this.cancelledWhileUploading.has(photo.id) ||
+            (await this.repo.getPhotoById(photo.id))?.upload_status === 'excluded'
+          ) {
+            this.cancelledWhileUploading.delete(photo.id);
+            if (photo.local_transform_uri) {
+              this.pendingTransformCleanup.add(photo.local_transform_uri);
+            }
+            continue;
+          }
+          const retryable = isSoftPerFileRetryable(err.code);
+          const attempt = photo.upload_attempts;
+          const errorCode = normalizeObservabilityError({
+            stage: 'upload',
+            code: err.code,
+            message: err.detail,
+          });
+          if (retryable && attempt < limits.retry_attempts) {
+            const delay = computeRetryDelayMs({
+              attempt,
+              baseDelayMs: limits.retry_base_delay_ms,
+            });
+            await this.repo.setPhotoUploadStatus(photo.id, 'retryable_error', {
+              errorCode: err.code,
+              errorMessage: err.detail,
+              nextRetryAt: new Date(Date.now() + delay).toISOString(),
+            });
+            this.logger.warn('upload_retry', { photoId: photo.id, code: err.code, delay });
+            emitObservability(this.obs?.reporter, {
+              name: 'photo.upload_retry',
+              sessionId: session.id,
+              clientFileId: photo.client_file_id ?? undefined,
+              batchId,
+              attemptId,
+              attributes: {
+                upload_attempt_count: attempt,
+                upload_error_code: errorCode,
+                retry_delay_ms: delay,
+                ...network,
+              },
+            });
+          } else {
+            await this.repo.setPhotoUploadStatus(photo.id, 'permanent_error', {
+              errorCode: err.code,
+              errorMessage: err.detail,
+            });
+            emitObservability(this.obs?.reporter, {
+              name: 'photo.upload_failed',
+              sessionId: session.id,
+              clientFileId: photo.client_file_id ?? undefined,
+              batchId,
+              attemptId,
+              attributes: {
+                upload_attempt_count: attempt,
+                upload_error_code: errorCode,
+                terminal: true,
+                ...network,
+              },
             });
           }
         }
-        await this.pause('auth');
-      } else if (klass === 'payload_too_large') {
-        await this.limits.refresh();
-        const refreshed = await this.limits.ensureLoaded();
-        this.packingBudget = shrinkPackingBudgetAfter413({
-          current: budget,
-          server: {
-            maxFilesPerRequest: refreshed.max_files_per_request,
-            maxRequestSizeBytes: refreshed.max_request_size_bytes,
-            maxFileSizeBytes: refreshed.max_file_size_bytes,
-          },
-          failedBatchFileCount: photoIds.length,
-          failedBatchBytes: packedBytes,
-        });
-        for (const photoId of photoIds) {
-          const photo = await this.repo.getPhotoById(photoId);
-          if (!photo) continue;
-          await cleanupTransformUri(photo.local_transform_uri);
-          const delay = computeRetryDelayMs({
-            attempt: photo.upload_attempts,
-            baseDelayMs: Math.max(refreshed.retry_base_delay_ms, 2_000),
-          });
-          // Clear prepared size so the next tick re-prepares under the shrunk maxFileBytes.
-          await this.repo.setPhotoUploadStatus(photoId, 'retryable_error', {
-            errorCode: err?.code ?? 'UPLOAD_TOO_LARGE',
-            errorMessage: err?.message ?? String(e),
-            nextRetryAt: new Date(Date.now() + delay).toISOString(),
-            localTransformUri: null,
-            uploadSize: null,
-          });
+
+        const accounted = new Set<string>();
+        for (const ok of response.uploaded ?? []) {
+          if (ok.client_file_id) accounted.add(ok.client_file_id);
         }
-        this.logger.warn('upload_retry', {
-          sessionId: session.id,
-          count: photoIds.length,
-          code: err?.code ?? 'UPLOAD_TOO_LARGE',
-          maxFiles: this.packingBudget.maxFiles,
-          maxRequestBytes: this.packingBudget.maxRequestBytes,
-          maxFileBytes: this.packingBudget.maxFileBytes,
-        });
-      } else if (klass === 'retryable') {
-        for (const photoId of photoIds) {
-          const photo = await this.repo.getPhotoById(photoId);
-          if (!photo) continue;
+        for (const err of response.errors ?? []) {
+          if (err.client_file_id) accounted.add(err.client_file_id);
+        }
+        for (const photo of photoRows) {
+          const cid = photo.client_file_id;
+          if (!cid || accounted.has(cid)) continue;
+          if (
+            this.cancelledWhileUploading.has(photo.id) ||
+            (await this.repo.getPhotoById(photo.id))?.upload_status === 'excluded'
+          ) {
+            this.cancelledWhileUploading.delete(photo.id);
+            if (photo.local_transform_uri) {
+              this.pendingTransformCleanup.add(photo.local_transform_uri);
+            }
+            continue;
+          }
           const delay = computeRetryDelayMs({
             attempt: photo.upload_attempts,
             baseDelayMs: limits.retry_base_delay_ms,
           });
-          await this.repo.setPhotoUploadStatus(photoId, 'retryable_error', {
-            errorCode: err?.code ?? 'NETWORK_ERROR',
-            errorMessage: err?.message ?? String(e),
+          await this.repo.setPhotoUploadStatus(photo.id, 'retryable_error', {
+            errorCode: 'UPLOAD_RESPONSE_INCOMPLETE',
+            errorMessage: 'El backend no confirmó ni rechazó este archivo.',
             nextRetryAt: new Date(Date.now() + delay).toISOString(),
           });
         }
-        this.logger.warn('upload_retry', {
-          sessionId: session.id,
-          count: photoIds.length,
-          code: err?.code ?? 'NETWORK_ERROR',
-        });
-      } else if (klass === 'not_found' || klass === 'forbidden' || klass === 'validation') {
-        for (const photoId of photoIds) {
-          await this.repo.setPhotoUploadStatus(photoId, 'permanent_error', {
-            errorCode: err?.code ?? 'UPLOAD_FAILED',
-            errorMessage: err?.message ?? String(e),
+
+        if ((response.uploaded?.length ?? 0) > 0) {
+          this.packingBudget = relaxPackingBudgetAfterSuccess({
+            current: budget,
+            server: {
+              maxFilesPerRequest: limits.max_files_per_request,
+              maxRequestSizeBytes: limits.max_request_size_bytes,
+              maxFileSizeBytes: limits.max_file_size_bytes,
+            },
           });
         }
-      } else {
-        for (const photoId of photoIds) {
-          const photo = await this.repo.getPhotoById(photoId);
-          const delay = computeRetryDelayMs({
-            attempt: photo?.upload_attempts ?? 0,
-            baseDelayMs: limits.retry_base_delay_ms,
+
+        await this.refreshSessionReadiness(session.id);
+        const readinessPhotos = await this.repo.listPhotos(session.id);
+        const stillPending = readinessPhotos.some(
+          (p) =>
+            p.status === 'stable' &&
+            ['not_queued', 'queued', 'preparing', 'uploading', 'retryable_error', 'remote_delete_pending'].includes(
+              p.upload_status,
+            ),
+        );
+        if (!stillPending && this.obs) {
+          const allUploadsMs =
+            this.obs.marks.takeElapsedMs(sessionMarkKey(session.id, 'created')) ?? null;
+          emitObservability(this.obs.reporter, {
+            name: 'session.all_uploads_completed',
+            sessionId: session.id,
+            batchId,
+            durationMs: allUploadsMs ?? undefined,
+            attributes: {
+              session_created_to_all_uploads_completed_ms: allUploadsMs,
+              ...network,
+            },
           });
-          await this.repo.setPhotoUploadStatus(photoId, 'retryable_error', {
-            errorCode: err?.code ?? 'UPLOAD_FAILED',
-            errorMessage: err?.message ?? String(e),
-            nextRetryAt: new Date(Date.now() + delay).toISOString(),
-          });
+          this.obs.marks.mark(sessionMarkKey(session.id, 'all_uploads_completed'));
         }
-      }
+      } catch (e) {
+        const err = e instanceof ApiError ? e : null;
+        const aborted = err?.code === REQUEST_ABORTED;
+        if (aborted) {
+          emitObservability(this.obs?.reporter, {
+            name: 'batch.upload_aborted',
+            sessionId: session.id,
+            batchId,
+            attemptId,
+            attributes: {
+              upload_error_code: REQUEST_ABORTED,
+              image_count: photoIds.length,
+              ...network,
+            },
+          });
+          for (const photoId of photoIds) {
+            if (this.cancelledWhileUploading.has(photoId)) {
+              this.cancelledWhileUploading.delete(photoId);
+              const photo = await this.repo.getPhotoById(photoId);
+              if (photo?.local_transform_uri) {
+                this.pendingTransformCleanup.add(photo.local_transform_uri);
+              }
+              continue;
+            }
+            const photo = await this.repo.getPhotoById(photoId);
+            if (!photo || photo.upload_status === 'excluded' || photo.upload_status === 'uploaded') {
+              continue;
+            }
+            // Sibling files: re-queue without network-style retry backoff.
+            await this.repo.setPhotoUploadStatus(photoId, 'queued', {
+              errorCode: REQUEST_ABORTED,
+              errorMessage: 'La carga del lote fue cancelada.',
+              nextRetryAt: null,
+            });
+          }
+        } else {
+          const klass =
+            err?.code === REQUEST_TIMEOUT
+              ? 'retryable'
+              : classifyUploadHttpError(err?.status ?? null, err?.code ?? null);
+          this.logger.warn('error', {
+            where: 'upload_batch',
+            sessionId: session.id,
+            klass,
+            status: err?.status ?? null,
+            code: err?.code ?? null,
+            message: err?.message ?? String(e),
+            photoCount: photoIds.length,
+            packedBytes,
+          });
+          const errorCode = normalizeObservabilityError({
+            stage: 'upload',
+            code: err?.code,
+            httpStatus: err?.status,
+            message: err?.message ?? String(e),
+          });
+          emitObservability(this.obs?.reporter, {
+            name: 'batch.upload_failed',
+            sessionId: session.id,
+            batchId,
+            attemptId,
+            attributes: {
+              upload_http_status: err?.status ?? null,
+              upload_error_code: errorCode,
+              image_count: photoIds.length,
+              ...network,
+            },
+          });
+
+          if (klass === 'auth') {
+            for (const photoId of photoIds) {
+              const photo = await this.repo.getPhotoById(photoId);
+              if (!photo) continue;
+              if (photo.upload_status === 'preparing' || photo.upload_status === 'uploading') {
+                await this.repo.setPhotoUploadStatus(photoId, 'queued', {
+                  errorCode: err?.code ?? 'AUTH_REQUIRED',
+                  errorMessage: err?.message ?? String(e),
+                  nextRetryAt: null,
+                });
+              }
+            }
+            await this.pause('auth');
+          } else if (klass === 'payload_too_large') {
+            await this.limits.refresh();
+            const refreshed = await this.limits.ensureLoaded();
+            this.packingBudget = shrinkPackingBudgetAfter413({
+              current: budget,
+              server: {
+                maxFilesPerRequest: refreshed.max_files_per_request,
+                maxRequestSizeBytes: refreshed.max_request_size_bytes,
+                maxFileSizeBytes: refreshed.max_file_size_bytes,
+              },
+              failedBatchFileCount: photoIds.length,
+              failedBatchBytes: packedBytes,
+            });
+            for (const photoId of photoIds) {
+              const photo = await this.repo.getPhotoById(photoId);
+              if (!photo) continue;
+              if (photo.upload_status === 'excluded') {
+                if (photo.local_transform_uri) {
+                  this.pendingTransformCleanup.add(photo.local_transform_uri);
+                }
+                continue;
+              }
+              await cleanupTransformUri(photo.local_transform_uri);
+              const delay = computeRetryDelayMs({
+                attempt: photo.upload_attempts,
+                baseDelayMs: Math.max(refreshed.retry_base_delay_ms, 2_000),
+              });
+              await this.repo.setPhotoUploadStatus(photoId, 'retryable_error', {
+                errorCode: err?.code ?? 'UPLOAD_TOO_LARGE',
+                errorMessage: err?.message ?? String(e),
+                nextRetryAt: new Date(Date.now() + delay).toISOString(),
+                localTransformUri: null,
+                uploadSize: null,
+              });
+            }
+            this.logger.warn('upload_retry', {
+              sessionId: session.id,
+              count: photoIds.length,
+              code: err?.code ?? 'UPLOAD_TOO_LARGE',
+              maxFiles: this.packingBudget.maxFiles,
+              maxRequestBytes: this.packingBudget.maxRequestBytes,
+              maxFileBytes: this.packingBudget.maxFileBytes,
+            });
+          } else if (klass === 'retryable') {
+            for (const photoId of photoIds) {
+              const photo = await this.repo.getPhotoById(photoId);
+              if (!photo) continue;
+              if (photo.upload_status === 'excluded') {
+                if (photo.local_transform_uri) {
+                  this.pendingTransformCleanup.add(photo.local_transform_uri);
+                }
+                continue;
+              }
+              const delay = computeRetryDelayMs({
+                attempt: photo.upload_attempts,
+                baseDelayMs: limits.retry_base_delay_ms,
+              });
+              await this.repo.setPhotoUploadStatus(photoId, 'retryable_error', {
+                errorCode: err?.code ?? 'NETWORK_ERROR',
+                errorMessage: err?.message ?? String(e),
+                nextRetryAt: new Date(Date.now() + delay).toISOString(),
+              });
+            }
+            this.logger.warn('upload_retry', {
+              sessionId: session.id,
+              count: photoIds.length,
+              code: err?.code ?? 'NETWORK_ERROR',
+            });
+          } else if (klass === 'not_found' || klass === 'forbidden' || klass === 'validation') {
+            for (const photoId of photoIds) {
+              const photo = await this.repo.getPhotoById(photoId);
+              if (photo?.upload_status === 'excluded') {
+                if (photo.local_transform_uri) {
+                  this.pendingTransformCleanup.add(photo.local_transform_uri);
+                }
+                continue;
+              }
+              await this.repo.setPhotoUploadStatus(photoId, 'permanent_error', {
+                errorCode: err?.code ?? 'UPLOAD_FAILED',
+                errorMessage: err?.message ?? String(e),
+              });
+            }
+          } else {
+            for (const photoId of photoIds) {
+              const photo = await this.repo.getPhotoById(photoId);
+              if (!photo) continue;
+              if (photo.upload_status === 'excluded') {
+                if (photo.local_transform_uri) {
+                  this.pendingTransformCleanup.add(photo.local_transform_uri);
+                }
+                continue;
+              }
+              const delay = computeRetryDelayMs({
+                attempt: photo.upload_attempts,
+                baseDelayMs: limits.retry_base_delay_ms,
+              });
+              await this.repo.setPhotoUploadStatus(photoId, 'retryable_error', {
+                errorCode: err?.code ?? 'UPLOAD_FAILED',
+                errorMessage: err?.message ?? String(e),
+                nextRetryAt: new Date(Date.now() + delay).toISOString(),
+              });
+            }
+          }
+        }
+      } finally {
+        this.uploadAbortByAttempt.delete(attemptId);
+        for (const id of photoIds) {
+          this.uploadAttemptByPhoto.delete(id);
+          this.inFlightPhotos.delete(id);
+        }
+        await this.flushPendingTransformCleanup();
       }
     } finally {
-      this.uploadAbortByAttempt.delete(attemptId);
-      for (const id of photoIds) {
-        this.uploadAttemptByPhoto.delete(id);
-        this.inFlightPhotos.delete(id);
-      }
-      this.activeRequests -= 1;
+      releaseSlotOnce();
       this.emit();
       this.scheduleTick(300);
     }

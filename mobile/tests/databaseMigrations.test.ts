@@ -31,7 +31,7 @@ describe('SQLite migrations', () => {
   });
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5]);
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
     expect(v2?.sql).toContain('last_stability_attempt_at');
@@ -51,6 +51,13 @@ describe('SQLite migrations', () => {
     expect(v5?.sql).toContain('CREATE TABLE IF NOT EXISTS observability_events');
     expect(v5?.sql).toContain('idx_observability_events_session');
     expect(v5?.sql).toContain('idx_observability_events_created_at');
+  });
+
+  it('adds v6 preparation_processing_mode with UNKNOWN default', () => {
+    const v6 = MIGRATIONS.find((m) => m.version === 6);
+    expect(v6?.name).toBe('session_preparation_processing_mode');
+    expect(v6?.sql).toContain('ALTER TABLE capture_sessions ADD COLUMN preparation_processing_mode');
+    expect(v6?.sql).toContain("DEFAULT 'UNKNOWN'");
   });
 });
 

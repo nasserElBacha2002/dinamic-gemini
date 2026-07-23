@@ -60,6 +60,7 @@ function session(overrides: Partial<CaptureSessionRow> = {}): CaptureSessionRow 
     processing_finished_at: null,
     last_upload_error: null,
     last_processing_error: null,
+    preparation_processing_mode: 'UNKNOWN',
     created_at: now,
     updated_at: now,
     ...overrides,

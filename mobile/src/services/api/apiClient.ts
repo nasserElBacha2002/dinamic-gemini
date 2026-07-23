@@ -102,8 +102,12 @@ export class ApiClient {
       throw new ApiError('La aplicación no tiene configurada la URL del backend.', null, 'CONFIG_MISSING');
     }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.resolveTimeout(options));
-    linkAbortSignal(controller, options.signal);
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.resolveTimeout(options));
+    const unlink = linkAbortSignal(controller, options.signal);
     const headers: Record<string, string> = {
       Accept: 'application/json',
       ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
@@ -130,8 +134,13 @@ export class ApiClient {
       return await fetch(`${this.options.config.apiBaseUrl}${path}`, init);
     } catch (e) {
       this.options.logger.warn('error', { where: 'api_fetch', message: String(e) });
-      throw new ApiError('No se pudo conectar con el backend.', null, 'NETWORK_ERROR');
+      throw mapFetchAbortError({
+        timedOut,
+        externalAborted: options.signal?.aborted === true,
+        fallbackMessage: 'No se pudo conectar con el backend.',
+      });
     } finally {
+      unlink();
       clearTimeout(timeout);
     }
   }
@@ -145,8 +154,12 @@ export class ApiClient {
       throw new ApiError('La aplicación no tiene configurada la URL del backend.', null, 'CONFIG_MISSING');
     }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.resolveTimeout(options));
-    linkAbortSignal(controller, options.signal);
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.resolveTimeout(options));
+    const unlink = linkAbortSignal(controller, options.signal);
     const headers: Record<string, string> = {
       Accept: 'application/json',
       ...options.headers,
@@ -170,8 +183,13 @@ export class ApiClient {
       });
     } catch (e) {
       this.options.logger.warn('error', { where: 'api_multipart', message: String(e) });
-      throw new ApiError('No se pudo conectar con el backend.', null, 'NETWORK_ERROR');
+      throw mapFetchAbortError({
+        timedOut,
+        externalAborted: options.signal?.aborted === true,
+        fallbackMessage: 'No se pudo conectar con el backend.',
+      });
     } finally {
+      unlink();
       clearTimeout(timeout);
     }
   }
@@ -280,14 +298,41 @@ function safeJson(text: string): unknown {
   }
 }
 
-/** Keep timeout AbortController authoritative while honoring an optional caller signal. */
-function linkAbortSignal(controller: AbortController, external?: AbortSignal): void {
+export const REQUEST_ABORTED = 'REQUEST_ABORTED';
+export const REQUEST_TIMEOUT = 'REQUEST_TIMEOUT';
+export const NETWORK_ERROR = 'NETWORK_ERROR';
+
+function mapFetchAbortError(input: {
+  readonly timedOut: boolean;
+  readonly externalAborted: boolean;
+  readonly fallbackMessage: string;
+}): ApiError {
+  if (input.externalAborted && !input.timedOut) {
+    return new ApiError('La solicitud fue cancelada.', null, REQUEST_ABORTED);
+  }
+  if (input.timedOut) {
+    return new ApiError('La solicitud excedió el tiempo de espera.', null, REQUEST_TIMEOUT);
+  }
+  return new ApiError(input.fallbackMessage, null, NETWORK_ERROR);
+}
+
+/**
+ * Keep timeout AbortController authoritative while honoring an optional caller signal.
+ * Returns an unlink function that must run in `finally`.
+ */
+export function linkAbortSignal(controller: AbortController, external?: AbortSignal): () => void {
   if (!external) {
-    return;
+    return () => undefined;
   }
   if (external.aborted) {
     controller.abort();
-    return;
+    return () => undefined;
   }
-  external.addEventListener('abort', () => controller.abort(), { once: true });
+  const onAbort = () => {
+    controller.abort();
+  };
+  external.addEventListener('abort', onAbort);
+  return () => {
+    external.removeEventListener('abort', onAbort);
+  };
 }

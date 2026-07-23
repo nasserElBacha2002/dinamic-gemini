@@ -15,6 +15,7 @@ module.exports = {
     '<rootDir>/tests/operationalFlow.test.ts',
     '<rootDir>/tests/aisleCreationRules.test.ts',
     '<rootDir>/tests/mediaStoreAccessMediaLocation.test.ts',
+    '<rootDir>/tests/uploadQueuePhase1Corrections.test.ts',
   ],
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
