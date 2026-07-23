@@ -39,6 +39,7 @@ describe('ApiClient refresh mutex', () => {
       advancedReconciliation: true,
       backgroundJobPolling: true,
       aisleDeviceLock: false,
+      uploadObservabilityEnabled: true,
     },
   };
 

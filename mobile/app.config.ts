@@ -91,6 +91,7 @@ const config: ExpoConfig = {
       advancedReconciliation: process.env.DINAMIC_FLAG_RECONCILE !== '0',
       backgroundJobPolling: process.env.DINAMIC_FLAG_BG_POLL !== '0',
       aisleDeviceLock: process.env.DINAMIC_FLAG_AISLE_LOCK === '1',
+      uploadObservabilityEnabled: process.env.DINAMIC_FLAG_UPLOAD_OBS !== '0',
     },
   },
 };

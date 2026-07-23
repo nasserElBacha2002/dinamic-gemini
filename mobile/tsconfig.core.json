@@ -17,6 +17,7 @@
     "src/core",
     "src/domain",
     "src/shared/constants",
+    "src/observability",
     "src/runtime/config/resolveAppConfig.ts",
     "src/services/api",
     "src/database/migrations",

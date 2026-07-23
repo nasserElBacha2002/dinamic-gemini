@@ -163,6 +163,34 @@ CREATE INDEX IF NOT EXISTS idx_processing_jobs_status ON processing_jobs(status)
 CREATE INDEX IF NOT EXISTS idx_processing_jobs_next_poll_at ON processing_jobs(next_poll_at);
 `,
   },
+  {
+    version: 5,
+    name: 'observability_events',
+    sql: `
+CREATE TABLE IF NOT EXISTS observability_events (
+  id TEXT PRIMARY KEY NOT NULL,
+  name TEXT NOT NULL,
+  timestamp TEXT NOT NULL,
+  session_id TEXT,
+  server_job_id TEXT,
+  client_file_id TEXT,
+  batch_id TEXT,
+  attempt_id TEXT,
+  duration_ms INTEGER,
+  attributes_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_observability_events_created_at
+  ON observability_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_observability_events_session
+  ON observability_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_observability_events_name
+  ON observability_events(name);
+CREATE INDEX IF NOT EXISTS idx_observability_events_client_file
+  ON observability_events(client_file_id);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

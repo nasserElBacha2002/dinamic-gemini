@@ -21,6 +21,12 @@ import { AisleAssetsApi } from '../../features/upload/aisleAssetsApi';
 import { UploadLimitsService } from '../../features/upload/uploadLimitsService';
 import { UploadQueue } from '../../features/upload/uploadQueue';
 import {
+  buildBaselineReport,
+  createObservabilityStack,
+  rowsToParsedEvents,
+  type BaselineReport,
+} from '../../observability';
+import {
   createBackgroundWorkScheduler,
   type BackgroundWorkScheduler,
 } from '../../native/backgroundWork';
@@ -49,6 +55,7 @@ export interface AppServices {
   readonly backgroundWork: BackgroundWorkScheduler;
   exportDiagnostic(): Promise<DiagnosticBundle>;
   diagnosticShareText(bundle: DiagnosticBundle): string;
+  exportObservabilityBaseline(): Promise<BaselineReport | null>;
   runHealthChecks(): Promise<readonly HealthCheckResult[]>;
   getStorageStatus(): ReturnType<typeof getStorageStatus>;
   dispose(): Promise<void>;
@@ -71,6 +78,15 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const backgroundWork = createBackgroundWorkScheduler(logger);
   const uploadLimits = new UploadLimitsService(api, logger);
   const assetsApi = new AisleAssetsApi(api);
+  const observability = createObservabilityStack({
+    enabled: config.flags.uploadObservabilityEnabled,
+    logger,
+    db,
+  });
+  const obsWire =
+    config.flags.uploadObservabilityEnabled
+      ? { reporter: observability.reporter, marks: observability.marks }
+      : null;
   const uploadQueue = new UploadQueue(
     captureRepo,
     assetsApi,
@@ -80,6 +96,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     {
       flags: config.flags,
       backgroundWork: config.flags.workManagerScheduling ? backgroundWork : null,
+      observability: obsWire,
     },
   );
 
@@ -95,12 +112,24 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     onPhotoStable: (sessionId, photoId) => {
       void uploadQueue.enqueuePhoto(sessionId, photoId);
     },
+    observability: obsWire,
   });
 
-  const processing = new ProcessingService(api, captureRepo, jobRepo, uploadQueue, assetsApi, logger);
+  const processing = new ProcessingService(
+    api,
+    captureRepo,
+    jobRepo,
+    uploadQueue,
+    assetsApi,
+    logger,
+    obsWire
+      ? { reporter: obsWire.reporter, marks: obsWire.marks, connectivity }
+      : null,
+  );
   const jobMonitor = new JobMonitor(api, jobRepo, captureRepo, logger, {
     backgroundPolling: config.flags.backgroundJobPolling,
     backgroundWork: config.flags.workManagerScheduling ? backgroundWork : null,
+    observability: obsWire,
   });
 
   if (!configError) {
@@ -141,8 +170,16 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
         jobRepo,
         uploadQueue,
         connectivity,
+        observabilityStore: observability.store,
       }),
     diagnosticShareText: diagnosticToShareText,
+    exportObservabilityBaseline: async () => {
+      if (!observability.store) {
+        return null;
+      }
+      const rows = await observability.store.listRecent(5000);
+      return buildBaselineReport(rowsToParsedEvents(rows));
+    },
     runHealthChecks: () =>
       runHealthChecks({
         config,
@@ -162,6 +199,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       capture.dispose();
       await uploadQueue.dispose();
       jobMonitor.dispose();
+      await observability.dispose();
       await backgroundWork.cancelAllTracked();
     },
   };

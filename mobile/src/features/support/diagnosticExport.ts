@@ -4,6 +4,12 @@ import type { CaptureRepository } from '../../database/repositories/captureRepos
 import type { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
 import type { UploadQueue } from '../upload/uploadQueue';
 import type { ConnectivityService } from '../../services/connectivity/connectivity';
+import {
+  buildBaselineReport,
+  rowsToParsedEvents,
+  type BaselineReport,
+  type SqliteObservabilityStore,
+} from '../../observability';
 
 export interface DiagnosticBundle {
   readonly exportedAt: string;
@@ -20,6 +26,7 @@ export interface DiagnosticBundle {
   readonly uploadSnapshot: Record<string, unknown>;
   readonly logs: readonly Record<string, unknown>[];
   readonly flags: Record<string, unknown>;
+  readonly observabilityBaseline: BaselineReport | null;
 }
 
 /**
@@ -32,10 +39,20 @@ export async function buildDiagnosticBundle(input: {
   readonly jobRepo: ProcessingJobRepository;
   readonly uploadQueue: UploadQueue;
   readonly connectivity: ConnectivityService;
+  readonly observabilityStore?: SqliteObservabilityStore | null;
 }): Promise<DiagnosticBundle> {
   const sessions = await input.captureRepo.listActivitySessions();
   const jobs = await input.jobRepo.listNonTerminal();
   const snapshot = input.uploadQueue.getSnapshot();
+  let observabilityBaseline: BaselineReport | null = null;
+  if (input.observabilityStore) {
+    try {
+      const rows = await input.observabilityStore.listRecent(5000);
+      observabilityBaseline = buildBaselineReport(rowsToParsedEvents(rows));
+    } catch {
+      observabilityBaseline = null;
+    }
+  }
   return {
     exportedAt: new Date().toISOString(),
     app: {
@@ -75,6 +92,7 @@ export async function buildDiagnosticBundle(input: {
       fields: r.fields,
     })),
     flags: { ...input.config.flags },
+    observabilityBaseline,
   };
 }
 

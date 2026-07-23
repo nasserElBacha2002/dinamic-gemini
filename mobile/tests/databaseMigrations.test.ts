@@ -31,7 +31,7 @@ describe('SQLite migrations', () => {
   });
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4]);
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
     expect(v2?.sql).toContain('last_stability_attempt_at');
@@ -43,6 +43,14 @@ describe('SQLite migrations', () => {
     expect(v3?.sql).toContain('ALTER TABLE capture_sessions ADD COLUMN upload_batch_id');
     expect(v4?.sql).toContain('ALTER TABLE capture_photos ADD COLUMN client_file_id');
     expect(v4?.sql).toContain('CREATE TABLE IF NOT EXISTS processing_jobs');
+  });
+
+  it('adds v5 observability_events table with indexes', () => {
+    const v5 = MIGRATIONS.find((m) => m.version === 5);
+    expect(v5?.name).toBe('observability_events');
+    expect(v5?.sql).toContain('CREATE TABLE IF NOT EXISTS observability_events');
+    expect(v5?.sql).toContain('idx_observability_events_session');
+    expect(v5?.sql).toContain('idx_observability_events_created_at');
   });
 });
 

@@ -5,6 +5,8 @@ export interface FeatureFlags {
   readonly advancedReconciliation: boolean;
   readonly backgroundJobPolling: boolean;
   readonly aisleDeviceLock: boolean;
+  /** Phase 0 upload/process observability (kill switch: set DINAMIC_FLAG_UPLOAD_OBS=0). */
+  readonly uploadObservabilityEnabled: boolean;
 }
 
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
@@ -14,6 +16,7 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   advancedReconciliation: true,
   backgroundJobPolling: true,
   aisleDeviceLock: false,
+  uploadObservabilityEnabled: true,
 };
 
 export function resolveFeatureFlags(raw: unknown, _environment: string): FeatureFlags {
@@ -41,5 +44,9 @@ export function resolveFeatureFlags(raw: unknown, _environment: string): Feature
     advancedReconciliation: bool('advancedReconciliation', DEFAULT_FEATURE_FLAGS.advancedReconciliation),
     backgroundJobPolling: bool('backgroundJobPolling', DEFAULT_FEATURE_FLAGS.backgroundJobPolling),
     aisleDeviceLock: bool('aisleDeviceLock', false),
+    uploadObservabilityEnabled: bool(
+      'uploadObservabilityEnabled',
+      DEFAULT_FEATURE_FLAGS.uploadObservabilityEnabled,
+    ),
   };
 }

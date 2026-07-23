@@ -9,8 +9,12 @@ export interface PreparedUploadFile {
   readonly size: number;
   readonly displayName: string;
   readonly transformUri: string | null;
+  /** Bytes before HEIC/resize transforms (gallery or re-stat). */
   readonly originalSize: number;
   readonly convertedFromHeic: boolean;
+  readonly preparedWidth: number;
+  readonly preparedHeight: number;
+  readonly transformationProfile: 'passthrough' | 'heic_jpeg' | 'resize_jpeg' | 'heic_resize_jpeg';
 }
 
 export interface PrepareLimits {
@@ -51,11 +55,15 @@ export async function preparePhotoForUpload(input: {
     throw new Error('Archivo vacío');
   }
 
+  const originalSize = size;
   let uri = input.uri;
   let mimeType = mime === 'image/jpg' ? 'image/jpeg' : mime;
   let transformUri: string | null = null;
   let convertedFromHeic = false;
   let displayName = input.displayName;
+  let preparedWidth = input.width > 0 ? input.width : 0;
+  let preparedHeight = input.height > 0 ? input.height : 0;
+  let didResize = false;
 
   const isHeic = mimeType === 'image/heic' || mimeType === 'image/heif';
   if (isHeic) {
@@ -68,6 +76,12 @@ export async function preparePhotoForUpload(input: {
     mimeType = 'image/jpeg';
     convertedFromHeic = true;
     displayName = displayName.replace(/\.(heic|heif)$/i, '.jpg');
+    if (typeof result.width === 'number' && result.width > 0) {
+      preparedWidth = result.width;
+    }
+    if (typeof result.height === 'number' && result.height > 0) {
+      preparedHeight = result.height;
+    }
     const info = await FileSystem.getInfoAsync(uri);
     size = info.exists && 'size' in info && typeof info.size === 'number' ? info.size : size;
   }
@@ -87,6 +101,13 @@ export async function preparePhotoForUpload(input: {
     transformUri = uri;
     mimeType = 'image/jpeg';
     displayName = displayName.replace(/\.[^.]+$/, '.jpg');
+    didResize = true;
+    if (typeof result.width === 'number' && result.width > 0) {
+      preparedWidth = result.width;
+    }
+    if (typeof result.height === 'number' && result.height > 0) {
+      preparedHeight = result.height;
+    }
     const info = await FileSystem.getInfoAsync(uri);
     size = info.exists && 'size' in info && typeof info.size === 'number' ? info.size : size;
   }
@@ -95,14 +116,26 @@ export async function preparePhotoForUpload(input: {
     throw new Error('Archivo demasiado grande tras transformar');
   }
 
+  let transformationProfile: PreparedUploadFile['transformationProfile'] = 'passthrough';
+  if (convertedFromHeic && didResize) {
+    transformationProfile = 'heic_resize_jpeg';
+  } else if (convertedFromHeic) {
+    transformationProfile = 'heic_jpeg';
+  } else if (didResize) {
+    transformationProfile = 'resize_jpeg';
+  }
+
   return {
     uri,
     mimeType,
     size,
     displayName,
     transformUri,
-    originalSize: size,
+    originalSize,
     convertedFromHeic,
+    preparedWidth,
+    preparedHeight,
+    transformationProfile,
   };
 }
 

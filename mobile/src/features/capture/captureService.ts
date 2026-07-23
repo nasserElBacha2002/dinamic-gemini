@@ -13,6 +13,7 @@ import { cursorFromInitialMarker, cursorFromSession, imageFromPhotoRow } from '.
 import type { ForegroundService } from '../../native/foregroundService';
 import type { IncrementalScanOptions, IncrementalScanResult, PermissionState } from '../../native/mediaStore';
 import type { StabilityOutcome } from '../../native/stabilityProber';
+import { emitObservability, sessionMarkKey } from '../../observability';
 
 const VALIDATION_TIMEOUT_MS = 15_000;
 /** Re-scan gallery while capture is active (missed MediaStore events / delayed indexing). */
@@ -65,6 +66,11 @@ export interface CaptureServiceAdapters {
   readonly createId?: () => string;
   /** Called after a photo becomes stable (progressive upload hook). */
   readonly onPhotoStable?: (sessionId: string, photoId: string) => void | Promise<void>;
+  /** Phase 0 observability (optional; never required for capture). */
+  readonly observability?: {
+    readonly reporter: import('../../observability').ObservabilityReporter;
+    readonly marks: import('../../observability').TimingMarkStore;
+  } | null;
 }
 
 type Listener = (snapshot: CaptureSnapshot) => void;
@@ -122,6 +128,7 @@ export class CaptureService {
   private readonly validationTimeoutMs: number;
   private readonly createId: () => string;
   private readonly onPhotoStable: CaptureServiceAdapters['onPhotoStable'];
+  private readonly observability: CaptureServiceAdapters['observability'];
 
   constructor(
     private readonly repo: CaptureRepository,
@@ -134,6 +141,7 @@ export class CaptureService {
     this.validationTimeoutMs = adapters.validationTimeoutMs ?? VALIDATION_TIMEOUT_MS;
     this.createId = adapters.createId ?? createId;
     this.onPhotoStable = adapters.onPhotoStable;
+    this.observability = adapters.observability ?? null;
     this.coordinator = createScanCoordinator(() => this.runScanOnce());
   }
 
@@ -291,6 +299,14 @@ export class CaptureService {
         inventoryId: input.inventoryId,
         aisleId: input.aisleId,
       });
+      if (this.observability) {
+        this.observability.marks.mark(sessionMarkKey(result.session.id, 'created'));
+        emitObservability(this.observability.reporter, {
+          name: 'session.created',
+          sessionId: result.session.id,
+          batchId: result.session.upload_batch_id ?? undefined,
+        });
+      }
     } catch (e) {
       this.detachListener();
       await this.stopForeground();

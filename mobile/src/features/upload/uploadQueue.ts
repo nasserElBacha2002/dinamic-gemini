@@ -12,6 +12,18 @@ import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
 import type { BackgroundWorkScheduler } from '../../native/backgroundWork';
+import {
+  createMonotonicClock,
+  emitObservability,
+  networkAttributesFromConnectivity,
+  normalizeObservabilityError,
+  prepareMetricAttributes,
+  photoMarkKey,
+  sessionMarkKey,
+  batchMarkKey,
+  type ObservabilityReporter,
+  type TimingMarkStore,
+} from '../../observability';
 import { ApiError } from '../../services/api/apiClient';
 import type { ConnectivityService } from '../../services/connectivity/connectivity';
 import { createId } from '../../shared/createId';
@@ -24,9 +36,15 @@ const UPLOAD_STALE_MS = 150_000;
 /** How many photos to prepare per tick before packing (keeps UI responsive for 20+ captures). */
 const PREPARE_PER_TICK = 4;
 
+export interface UploadQueueObservability {
+  readonly reporter: ObservabilityReporter;
+  readonly marks: TimingMarkStore;
+}
+
 export interface UploadQueueOptions {
   readonly flags?: FeatureFlags;
   readonly backgroundWork?: BackgroundWorkScheduler | null;
+  readonly observability?: UploadQueueObservability | null;
 }
 
 export interface UploadQueueSnapshot {
@@ -61,6 +79,9 @@ export class UploadQueue {
   private cachedSessions: UploadSessionProgress[] = [];
   /** Effective packing budget; null until first limits load, then adapted on 413/success. */
   private packingBudget: PackingBudget | null = null;
+  private readonly clock = createMonotonicClock();
+  /** Sessions that already emitted first-upload session metric. */
+  private readonly firstUploadEmitted = new Set<string>();
 
   constructor(
     private readonly repo: CaptureRepository,
@@ -70,6 +91,10 @@ export class UploadQueue {
     private readonly logger: Logger,
     private readonly options: UploadQueueOptions = {},
   ) {}
+
+  private get obs(): UploadQueueObservability | null {
+    return this.options.observability ?? null;
+  }
 
   subscribe(listener: UploadQueueListener): () => void {
     this.listeners.add(listener);
@@ -97,6 +122,13 @@ export class UploadQueue {
     await this.syncPackingBudgetFromServer();
     await this.reclaimOrphanedInFlight();
     const sessions = await this.repo.listActivitySessions();
+    emitObservability(this.obs?.reporter, {
+      name: 'queue.restored',
+      attributes: {
+        session_count: sessions.length,
+        ...networkAttributesFromConnectivity(this.connectivity),
+      },
+    });
     for (const session of sessions) {
       if (['active', 'paused', 'finishing', 'review', 'uploading', 'upload_review'].includes(session.status)) {
         await this.enqueueSession(session.id);
@@ -139,7 +171,12 @@ export class UploadQueue {
       this.logger.warn('upload_enqueue_missing_batch', { sessionId });
       return;
     }
-    await this.repo.ensureClientFileId(sessionId, photo.asset_id, createId(), session.upload_batch_id);
+    const clientFileId = await this.repo.ensureClientFileId(
+      sessionId,
+      photo.asset_id,
+      createId(),
+      session.upload_batch_id,
+    );
     if (photo.upload_status === 'not_queued' || photo.upload_status === 'retryable_error') {
       await this.repo.setPhotoUploadStatus(photo.id, 'queued', {
         errorCode: null,
@@ -147,6 +184,24 @@ export class UploadQueue {
         nextRetryAt: null,
       });
       this.logger.info('photo_enqueued', { sessionId, photoId: photo.id });
+      if (this.obs) {
+        this.obs.marks.mark(photoMarkKey(sessionId, clientFileId, 'queued'));
+        if (!this.obs.marks.get(sessionMarkKey(sessionId, 'created'))) {
+          this.obs.marks.mark(sessionMarkKey(sessionId, 'created'));
+        }
+        emitObservability(this.obs.reporter, {
+          name: 'photo.queued',
+          sessionId,
+          clientFileId,
+          batchId: session.upload_batch_id ?? undefined,
+          attributes: {
+            original_bytes: photo.size > 0 ? photo.size : null,
+            original_width: photo.width > 0 ? photo.width : null,
+            original_height: photo.height > 0 ? photo.height : null,
+            ...networkAttributesFromConnectivity(this.connectivity),
+          },
+        });
+      }
     }
     this.scheduleTick(0);
     this.emit();
@@ -457,6 +512,24 @@ export class UploadQueue {
       return;
     }
     this.inFlightPhotos.add(photo.id);
+    const sessionId = photo.capture_session_id;
+    const clientFileId = photo.client_file_id;
+    const queuedWaitMs = this.obs?.marks.takeElapsedMs(photoMarkKey(sessionId, clientFileId, 'queued')) ?? null;
+    const prepareStartedAt = this.clock.nowMs();
+    if (this.obs) {
+      this.obs.marks.mark(photoMarkKey(sessionId, clientFileId, 'prepare_started'));
+      emitObservability(this.obs.reporter, {
+        name: 'photo.prepare_started',
+        sessionId,
+        clientFileId,
+        batchId: photo.upload_batch_id ?? undefined,
+        durationMs: queuedWaitMs ?? undefined,
+        attributes: {
+          queued_to_prepare_started_ms: queuedWaitMs,
+          ...networkAttributesFromConnectivity(this.connectivity),
+        },
+      });
+    }
     try {
       await this.repo.setPhotoUploadStatus(photo.id, 'preparing', {
         incrementAttempts: true,
@@ -470,6 +543,7 @@ export class UploadQueue {
         height: photo.height,
         limits: { maxFileSizeBytes: maxFileBytes },
       });
+      const prepareMs = Math.max(0, Math.round(this.clock.nowMs() - prepareStartedAt));
       await this.repo.setPhotoUploadStatus(photo.id, 'queued', {
         progress: 0,
         localTransformUri: prepared.transformUri,
@@ -479,10 +553,51 @@ export class UploadQueue {
         errorMessage: null,
         nextRetryAt: null,
       });
+      if (this.obs) {
+        this.obs.marks.mark(photoMarkKey(sessionId, clientFileId, 'prepared'));
+        emitObservability(this.obs.reporter, {
+          name: 'photo.prepare_completed',
+          sessionId,
+          clientFileId,
+          batchId: photo.upload_batch_id ?? undefined,
+          durationMs: prepareMs,
+          attributes: {
+            prepare_ms: prepareMs,
+            queued_to_prepare_started_ms: queuedWaitMs,
+            ...prepareMetricAttributes({
+              originalBytes: prepared.originalSize,
+              preparedBytes: prepared.size,
+              originalWidth: photo.width > 0 ? photo.width : null,
+              originalHeight: photo.height > 0 ? photo.height : null,
+              preparedWidth: prepared.preparedWidth > 0 ? prepared.preparedWidth : null,
+              preparedHeight: prepared.preparedHeight > 0 ? prepared.preparedHeight : null,
+              transformationProfile: prepared.transformationProfile,
+              convertedFromHeic: prepared.convertedFromHeic,
+            }),
+            ...networkAttributesFromConnectivity(this.connectivity),
+          },
+        });
+      }
     } catch (e) {
+      const prepareMs = Math.max(0, Math.round(this.clock.nowMs() - prepareStartedAt));
       await this.repo.setPhotoUploadStatus(photo.id, 'permanent_error', {
         errorCode: 'PREPARE_FAILED',
         errorMessage: String(e),
+      });
+      emitObservability(this.obs?.reporter, {
+        name: 'photo.prepare_failed',
+        sessionId,
+        clientFileId,
+        batchId: photo.upload_batch_id ?? undefined,
+        durationMs: prepareMs,
+        attributes: {
+          prepare_ms: prepareMs,
+          error_code: normalizeObservabilityError({
+            stage: 'prepare',
+            code: 'PREPARE_FAILED',
+            message: String(e),
+          }),
+        },
       });
     } finally {
       this.inFlightPhotos.delete(photo.id);
@@ -522,6 +637,11 @@ export class UploadQueue {
     const preparedFiles: { uri: string; name: string; mimeType: string }[] = [];
     const clientFileIds: string[] = [];
     const photoRows: CapturePhotoRow[] = [];
+    const attemptId = createId();
+    const network = networkAttributesFromConnectivity(this.connectivity);
+    const batchId = session.upload_batch_id ?? undefined;
+    let totalOriginalBytes = 0;
+    let totalPreparedBytes = 0;
 
     try {
       for (const photoId of photoIds) {
@@ -536,6 +656,10 @@ export class UploadQueue {
         const name = photo.local_transform_uri
           ? photo.display_name.replace(/\.(heic|heif)$/i, '.jpg')
           : photo.display_name;
+        const queuedToUploadMs =
+          this.obs?.marks.takeElapsedMs(photoMarkKey(session.id, photo.client_file_id, 'prepared')) ??
+          this.obs?.marks.takeElapsedMs(photoMarkKey(session.id, photo.client_file_id, 'queued')) ??
+          null;
         await this.repo.setPhotoUploadStatus(photoId, 'uploading', {
           progress: 0,
           incrementAttempts: true,
@@ -547,10 +671,49 @@ export class UploadQueue {
         });
         clientFileIds.push(photo.client_file_id);
         photoRows.push(photo);
+        totalOriginalBytes += photo.original_size ?? photo.size ?? 0;
+        totalPreparedBytes += photo.upload_size ?? 0;
+        if (this.obs) {
+          this.obs.marks.mark(photoMarkKey(session.id, photo.client_file_id, 'upload_started'));
+          emitObservability(this.obs.reporter, {
+            name: 'photo.upload_started',
+            sessionId: session.id,
+            clientFileId: photo.client_file_id,
+            batchId,
+            attemptId,
+            attributes: {
+              queued_to_upload_started_ms: queuedToUploadMs,
+              prepared_bytes: photo.upload_size,
+              upload_attempt_count: (photo.upload_attempts ?? 0) + 1,
+              ...network,
+            },
+          });
+        }
       }
 
       if (preparedFiles.length === 0) {
         return;
+      }
+
+      if (this.obs && batchId) {
+        this.obs.marks.mark(batchMarkKey(batchId, 'upload_started'));
+      }
+      if (!this.firstUploadEmitted.has(session.id) && this.obs) {
+        this.firstUploadEmitted.add(session.id);
+        const sessionCreatedToFirstUpload =
+          this.obs.marks.takeElapsedMs(sessionMarkKey(session.id, 'created')) ?? null;
+        emitObservability(this.obs.reporter, {
+          name: 'session.first_upload_started',
+          sessionId: session.id,
+          batchId,
+          attemptId,
+          durationMs: sessionCreatedToFirstUpload ?? undefined,
+          attributes: {
+            session_created_to_first_upload_ms: sessionCreatedToFirstUpload,
+            ...network,
+          },
+        });
+        this.obs.marks.mark(sessionMarkKey(session.id, 'first_upload'));
       }
 
       this.logger.info('upload_started', {
@@ -561,12 +724,48 @@ export class UploadQueue {
         maxRequestBytes: budget.maxRequestBytes,
       });
 
+      emitObservability(this.obs?.reporter, {
+        name: 'batch.upload_started',
+        sessionId: session.id,
+        batchId,
+        attemptId,
+        attributes: {
+          image_count: preparedFiles.length,
+          total_original_bytes: totalOriginalBytes,
+          total_prepared_bytes: totalPreparedBytes,
+          packed_bytes: packedBytes,
+          effective_concurrency: this.activeRequests,
+          batch_attempt_count: 1,
+          ...network,
+        },
+      });
+
+      const uploadStartedAt = this.clock.nowMs();
       const response = await this.assetsApi.uploadBatch({
         inventoryId: session.inventory_id,
         aisleId: session.aisle_id,
         uploadBatchId: session.upload_batch_id!,
         clientFileIds,
         files: preparedFiles,
+      });
+      const uploadMs = Math.max(0, Math.round(this.clock.nowMs() - uploadStartedAt));
+
+      emitObservability(this.obs?.reporter, {
+        name: 'batch.upload_completed',
+        sessionId: session.id,
+        batchId,
+        attemptId,
+        durationMs: uploadMs,
+        attributes: {
+          batch_upload_ms: uploadMs,
+          image_count: preparedFiles.length,
+          total_original_bytes: totalOriginalBytes,
+          total_prepared_bytes: totalPreparedBytes,
+          uploaded_count: response.uploaded?.length ?? 0,
+          error_count: response.errors?.length ?? 0,
+          effective_concurrency: this.activeRequests,
+          ...network,
+        },
       });
 
       const byClient = new Map(photoRows.map((p) => [p.client_file_id!, p]));
@@ -585,6 +784,22 @@ export class UploadQueue {
         });
         await cleanupTransformUri(photo.local_transform_uri);
         this.logger.info('upload_confirmed', { photoId: photo.id, assetId: ok.asset_id });
+        emitObservability(this.obs?.reporter, {
+          name: 'photo.upload_completed',
+          sessionId: session.id,
+          clientFileId: photo.client_file_id ?? undefined,
+          batchId,
+          attemptId,
+          durationMs: uploadMs,
+          attributes: {
+            upload_ms: uploadMs,
+            prepared_bytes: photo.upload_size,
+            upload_attempt_count: photo.upload_attempts,
+            upload_http_status: 200,
+            upload_error_code: null,
+            ...network,
+          },
+        });
       }
 
       for (const err of response.errors ?? []) {
@@ -594,6 +809,11 @@ export class UploadQueue {
         }
         const retryable = isSoftPerFileRetryable(err.code);
         const attempt = photo.upload_attempts;
+        const errorCode = normalizeObservabilityError({
+          stage: 'upload',
+          code: err.code,
+          message: err.detail,
+        });
         if (retryable && attempt < limits.retry_attempts) {
           const delay = computeRetryDelayMs({
             attempt,
@@ -605,10 +825,36 @@ export class UploadQueue {
             nextRetryAt: new Date(Date.now() + delay).toISOString(),
           });
           this.logger.warn('upload_retry', { photoId: photo.id, code: err.code, delay });
+          emitObservability(this.obs?.reporter, {
+            name: 'photo.upload_retry',
+            sessionId: session.id,
+            clientFileId: photo.client_file_id ?? undefined,
+            batchId,
+            attemptId,
+            attributes: {
+              upload_attempt_count: attempt,
+              upload_error_code: errorCode,
+              retry_delay_ms: delay,
+              ...network,
+            },
+          });
         } else {
           await this.repo.setPhotoUploadStatus(photo.id, 'permanent_error', {
             errorCode: err.code,
             errorMessage: err.detail,
+          });
+          emitObservability(this.obs?.reporter, {
+            name: 'photo.upload_failed',
+            sessionId: session.id,
+            clientFileId: photo.client_file_id ?? undefined,
+            batchId,
+            attemptId,
+            attributes: {
+              upload_attempt_count: attempt,
+              upload_error_code: errorCode,
+              terminal: true,
+              ...network,
+            },
           });
         }
       }
@@ -646,6 +892,29 @@ export class UploadQueue {
       }
 
       await this.refreshSessionReadiness(session.id);
+      const readinessPhotos = await this.repo.listPhotos(session.id);
+      const stillPending = readinessPhotos.some(
+        (p) =>
+          p.status === 'stable' &&
+          ['not_queued', 'queued', 'preparing', 'uploading', 'retryable_error', 'remote_delete_pending'].includes(
+            p.upload_status,
+          ),
+      );
+      if (!stillPending && this.obs) {
+        const allUploadsMs =
+          this.obs.marks.takeElapsedMs(sessionMarkKey(session.id, 'created')) ?? null;
+        emitObservability(this.obs.reporter, {
+          name: 'session.all_uploads_completed',
+          sessionId: session.id,
+          batchId,
+          durationMs: allUploadsMs ?? undefined,
+          attributes: {
+            session_created_to_all_uploads_completed_ms: allUploadsMs,
+            ...network,
+          },
+        });
+        this.obs.marks.mark(sessionMarkKey(session.id, 'all_uploads_completed'));
+      }
     } catch (e) {
       const err = e instanceof ApiError ? e : null;
       const klass = classifyUploadHttpError(err?.status ?? null, err?.code ?? null);
@@ -658,6 +927,24 @@ export class UploadQueue {
         message: err?.message ?? String(e),
         photoCount: photoIds.length,
         packedBytes,
+      });
+      const errorCode = normalizeObservabilityError({
+        stage: 'upload',
+        code: err?.code,
+        httpStatus: err?.status,
+        message: err?.message ?? String(e),
+      });
+      emitObservability(this.obs?.reporter, {
+        name: 'batch.upload_failed',
+        sessionId: session.id,
+        batchId,
+        attemptId,
+        attributes: {
+          upload_http_status: err?.status ?? null,
+          upload_error_code: errorCode,
+          image_count: photoIds.length,
+          ...network,
+        },
       });
 
       if (klass === 'auth') {

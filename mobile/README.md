@@ -192,6 +192,7 @@ En `.env` / CI:
 - `DINAMIC_FLAG_RECONCILE=0` — reconciliación avanzada off
 - `DINAMIC_FLAG_BG_POLL=0` — no schedule job-monitor wake
 - `DINAMIC_FLAG_AISLE_LOCK=1` — reservado (off por defecto)
+- `DINAMIC_FLAG_UPLOAD_OBS=0` — desactivar observabilidad Phase 0 (upload/prepare/process)
 
 ### Diagnóstico en app
 

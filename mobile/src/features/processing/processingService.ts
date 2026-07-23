@@ -2,6 +2,15 @@ import { mapProcessingPersistence, toProcessingState } from '../../core/processi
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
+import {
+  createMonotonicClock,
+  emitObservability,
+  networkAttributesFromConnectivity,
+  normalizeObservabilityError,
+  sessionMarkKey,
+  type ObservabilityReporter,
+  type TimingMarkStore,
+} from '../../observability';
 import { ApiError } from '../../services/api/apiClient';
 import type { ApiClient } from '../../services/api/apiClient';
 import type {
@@ -10,6 +19,8 @@ import type {
   MergeResultsResponseDto,
   ProcessAisleResponseDto,
 } from '../../services/api/types';
+import type { ConnectivityService } from '../../services/connectivity/connectivity';
+import { createId } from '../../shared/createId';
 import type { UploadQueue } from '../upload/uploadQueue';
 import type { AisleAssetsApi } from '../upload/aisleAssetsApi';
 import { computeProcessingReadiness, type ProcessingReadiness } from './processingReadiness';
@@ -53,8 +64,15 @@ export interface ProcessingResultSummary {
   readonly jobId: string | null;
 }
 
+export interface ProcessingObservability {
+  readonly reporter: ObservabilityReporter;
+  readonly marks: TimingMarkStore;
+  readonly connectivity?: ConnectivityService | null;
+}
+
 export class ProcessingService {
   private processLocks = new Set<string>();
+  private readonly clock = createMonotonicClock();
 
   constructor(
     private readonly api: ApiClient,
@@ -63,6 +81,7 @@ export class ProcessingService {
     private readonly uploadQueue: UploadQueue,
     private readonly assetsApi: AisleAssetsApi,
     private readonly logger: Logger,
+    private readonly observability: ProcessingObservability | null = null,
   ) {}
 
   async readiness(sessionId: string): Promise<ProcessingReadiness> {
@@ -171,12 +190,41 @@ export class ProcessingService {
         `/api/v3/inventories/${encodeURIComponent(session.inventory_id)}` +
         `/aisles/${encodeURIComponent(session.aisle_id)}/process`;
       const body = buildProcessAisleRequestBody(idempotencyKey, identificationMode);
+      const processAttemptId = createId();
+      const uploadsCompletedToProcessMs =
+        this.observability?.marks.takeElapsedMs(sessionMarkKey(sessionId, 'all_uploads_completed')) ?? null;
+      const processStartedAt = this.clock.nowMs();
+      emitObservability(this.observability?.reporter, {
+        name: 'session.process_requested',
+        sessionId,
+        attemptId: processAttemptId,
+        attributes: {
+          all_uploads_completed_to_process_requested_ms: uploadsCompletedToProcessMs,
+          identification_mode: identificationMode ?? 'inherited',
+          ...networkAttributesFromConnectivity(this.observability?.connectivity),
+        },
+      });
       try {
         const response = await this.api.post<ProcessAisleResponseDto>(path, body, {
           headers: { 'Idempotency-Key': idempotencyKey },
         });
+        const processRequestMs = Math.max(0, Math.round(this.clock.nowMs() - processStartedAt));
         await processingRunStore.attachBackendJob(run.id, response.job_id);
         await this.persistJob(sessionId, session.inventory_id, session.aisle_id, response.job_id, 'queued');
+        this.observability?.marks.mark(sessionMarkKey(sessionId, 'process_requested'));
+        this.observability?.marks.mark(sessionMarkKey(sessionId, `job:${response.job_id}:queued`));
+        emitObservability(this.observability?.reporter, {
+          name: 'session.process_accepted',
+          sessionId,
+          serverJobId: response.job_id,
+          attemptId: processAttemptId,
+          durationMs: processRequestMs,
+          attributes: {
+            process_request_ms: processRequestMs,
+            execution_strategy: response.execution_strategy ?? null,
+            ...networkAttributesFromConnectivity(this.observability?.connectivity),
+          },
+        });
         this.logger.info('job_started', {
           sessionId,
           jobId: response.job_id,
@@ -187,6 +235,22 @@ export class ProcessingService {
         });
         return { ok: true, jobId: response.job_id, reason: null };
       } catch (e) {
+        const processRequestMs = Math.max(0, Math.round(this.clock.nowMs() - processStartedAt));
+        emitObservability(this.observability?.reporter, {
+          name: 'session.process_failed',
+          sessionId,
+          attemptId: processAttemptId,
+          durationMs: processRequestMs,
+          attributes: {
+            process_request_ms: processRequestMs,
+            error_code: normalizeObservabilityError({
+              stage: 'process',
+              code: e instanceof ApiError ? e.code : null,
+              httpStatus: e instanceof ApiError ? e.status : null,
+              message: e instanceof ApiError ? e.message : String(e),
+            }),
+          },
+        });
         if (e instanceof ApiError && (e.status === 409 || e.code === 'ACTIVE_JOB_EXISTS')) {
           const recovered = await this.findActiveRemoteJob(session.inventory_id, session.aisle_id, idempotencyKey);
           if (recovered) {
