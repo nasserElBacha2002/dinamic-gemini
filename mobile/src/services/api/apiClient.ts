@@ -103,6 +103,7 @@ export class ApiClient {
     }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.resolveTimeout(options));
+    linkAbortSignal(controller, options.signal);
     const headers: Record<string, string> = {
       Accept: 'application/json',
       ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
@@ -117,12 +118,11 @@ export class ApiClient {
         headers.Authorization = `Bearer ${token}`;
       }
     }
-    const signal = options.signal ?? controller.signal;
     try {
       const init: RequestInit = {
         method: options.method ?? 'GET',
         headers,
-        signal,
+        signal: controller.signal,
       };
       if (options.body !== undefined) {
         init.body = JSON.stringify(options.body);
@@ -146,6 +146,7 @@ export class ApiClient {
     }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.resolveTimeout(options));
+    linkAbortSignal(controller, options.signal);
     const headers: Record<string, string> = {
       Accept: 'application/json',
       ...options.headers,
@@ -165,7 +166,7 @@ export class ApiClient {
         method: 'POST',
         headers,
         body: formData,
-        signal: options.signal ?? controller.signal,
+        signal: controller.signal,
       });
     } catch (e) {
       this.options.logger.warn('error', { where: 'api_multipart', message: String(e) });
@@ -277,4 +278,16 @@ function safeJson(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+/** Keep timeout AbortController authoritative while honoring an optional caller signal. */
+function linkAbortSignal(controller: AbortController, external?: AbortSignal): void {
+  if (!external) {
+    return;
+  }
+  if (external.aborted) {
+    controller.abort();
+    return;
+  }
+  external.addEventListener('abort', () => controller.abort(), { once: true });
 }

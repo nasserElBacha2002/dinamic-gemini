@@ -40,6 +40,10 @@ describe('ApiClient refresh mutex', () => {
       backgroundJobPolling: true,
       aisleDeviceLock: false,
       uploadObservabilityEnabled: true,
+      uploadDimensionCap: true,
+      uploadAdaptiveQuality: true,
+      uploadAdaptiveConcurrency: true,
+      uploadAbortEnabled: true,
     },
   };
 

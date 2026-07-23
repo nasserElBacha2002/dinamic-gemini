@@ -92,6 +92,10 @@ const config: ExpoConfig = {
       backgroundJobPolling: process.env.DINAMIC_FLAG_BG_POLL !== '0',
       aisleDeviceLock: process.env.DINAMIC_FLAG_AISLE_LOCK === '1',
       uploadObservabilityEnabled: process.env.DINAMIC_FLAG_UPLOAD_OBS !== '0',
+      uploadDimensionCap: process.env.DINAMIC_FLAG_UPLOAD_DIM_CAP !== '0',
+      uploadAdaptiveQuality: process.env.DINAMIC_FLAG_UPLOAD_ADAPTIVE_QUALITY !== '0',
+      uploadAdaptiveConcurrency: process.env.DINAMIC_FLAG_UPLOAD_ADAPTIVE_CONCURRENCY !== '0',
+      uploadAbortEnabled: process.env.DINAMIC_FLAG_UPLOAD_ABORT !== '0',
     },
   },
 };

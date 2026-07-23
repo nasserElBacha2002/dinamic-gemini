@@ -8,6 +8,12 @@ import {
   type PackingBudget,
 } from '../../core/uploadPackingBudget';
 import type { FeatureFlags } from '../../core/featureFlags';
+import {
+  defaultImagePreparationPolicy,
+  normalizePreparationProcessingMode,
+  type PreparationProcessingMode,
+} from '../../core/imagePreparationPolicy';
+import { defaultUploadConcurrencyPolicy } from '../../core/uploadConcurrencyPolicy';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
@@ -16,6 +22,7 @@ import {
   createMonotonicClock,
   emitObservability,
   networkAttributesFromConnectivity,
+  normalizeNetworkType,
   normalizeObservabilityError,
   prepareMetricAttributes,
   photoMarkKey,
@@ -35,6 +42,8 @@ import type { UploadLimitsService } from './uploadLimitsService';
 const UPLOAD_STALE_MS = 150_000;
 /** How many photos to prepare per tick before packing (keeps UI responsive for 20+ captures). */
 const PREPARE_PER_TICK = 4;
+/** Backpressure: do not prepare unbounded while uploads are saturated. */
+const MAX_PREPARED_PENDING = 12;
 
 export interface UploadQueueObservability {
   readonly reporter: ObservabilityReporter;
@@ -45,6 +54,11 @@ export interface UploadQueueOptions {
   readonly flags?: FeatureFlags;
   readonly backgroundWork?: BackgroundWorkScheduler | null;
   readonly observability?: UploadQueueObservability | null;
+  /**
+   * Optional hint for preparation profile (CODE_SCAN / INTERNAL_OCR / …).
+   * When omitted, uses UNKNOWN safe defaults — mode is often chosen only at /process time.
+   */
+  readonly processingModeHint?: PreparationProcessingMode | null;
 }
 
 export interface UploadQueueSnapshot {
@@ -82,6 +96,12 @@ export class UploadQueue {
   private readonly clock = createMonotonicClock();
   /** Sessions that already emitted first-upload session metric. */
   private readonly firstUploadEmitted = new Set<string>();
+  /** In-flight multipart AbortControllers keyed by attempt id. */
+  private readonly uploadAbortByAttempt = new Map<string, AbortController>();
+  /** photoId → attemptId for abort lookup. */
+  private readonly uploadAttemptByPhoto = new Map<string, string>();
+  /** Photos cancelled while a batch was in flight (excluded after abort). */
+  private readonly cancelledWhileUploading = new Set<string>();
 
   constructor(
     private readonly repo: CaptureRepository,
@@ -94,6 +114,27 @@ export class UploadQueue {
 
   private get obs(): UploadQueueObservability | null {
     return this.options.observability ?? null;
+  }
+
+  private get flags(): FeatureFlags | undefined {
+    return this.options.flags;
+  }
+
+  private resolveNetworkType() {
+    const snap = this.connectivity.getSnapshot?.();
+    return normalizeNetworkType({
+      isConnected: snap?.isConnected ?? (this.connectivity.getState() === 'offline' ? false : true),
+      type: snap?.connectionType ?? null,
+      isCellular: snap?.isCellular ?? this.connectivity.isCellular?.() ?? false,
+    });
+  }
+
+  private resolveUploadConcurrency(serverConcurrency: number): number {
+    return defaultUploadConcurrencyPolicy.resolve({
+      networkType: this.resolveNetworkType(),
+      serverConcurrency,
+      adaptiveConcurrencyEnabled: this.flags?.uploadAdaptiveConcurrency !== false,
+    });
   }
 
   subscribe(listener: UploadQueueListener): () => void {
@@ -264,6 +305,28 @@ export class UploadQueue {
     if (['not_queued', 'queued', 'preparing', 'retryable_error', 'permanent_error'].includes(photo.upload_status)) {
       await this.repo.setPhotoUploadStatus(photoId, 'excluded');
       await cleanupTransformUri(photo.local_transform_uri);
+      this.emit();
+      return;
+    }
+    if (photo.upload_status === 'uploading') {
+      this.cancelledWhileUploading.add(photoId);
+      const attemptId = this.uploadAttemptByPhoto.get(photoId);
+      if (this.flags?.uploadAbortEnabled !== false && attemptId) {
+        const controller = this.uploadAbortByAttempt.get(attemptId);
+        controller?.abort();
+        emitObservability(this.obs?.reporter, {
+          name: 'photo.upload_aborted',
+          sessionId: photo.capture_session_id,
+          clientFileId: photo.client_file_id ?? undefined,
+          attemptId,
+          attributes: {
+            upload_error_code: 'UPLOAD_ABORTED',
+          },
+        });
+      }
+      // Persist excluded; batch catch will avoid retry for this photo.
+      await this.repo.setPhotoUploadStatus(photoId, 'excluded');
+      await cleanupTransformUri(photo.local_transform_uri);
     }
     this.emit();
   }
@@ -421,7 +484,13 @@ export class UploadQueue {
     await this.reclaimOrphanedInFlight();
     const limits = await this.limits.ensureLoaded();
     const budget = await this.syncPackingBudgetFromServer();
-    const concurrency = Math.min(2, Math.max(1, limits.upload_batch_concurrency || 2));
+    const configuredConcurrency = Math.max(1, limits.upload_batch_concurrency || 2);
+    const concurrency = this.resolveUploadConcurrency(configuredConcurrency);
+    if (concurrency <= 0) {
+      await this.pause('offline');
+      this.scheduleTick(5_000);
+      return;
+    }
     if (this.activeRequests >= concurrency) {
       this.scheduleTick(500);
       return;
@@ -443,16 +512,20 @@ export class UploadQueue {
         continue;
       }
 
-      // Phase 1: prepare photos that lack a real upload_size (scalable for 20+).
-      const needPrepare = eligible.filter((p) => !(p.upload_size != null && p.upload_size > 0));
-      for (const photo of needPrepare.slice(0, PREPARE_PER_TICK)) {
-        if (this.inFlightPhotos.has(photo.id)) {
-          continue;
+      const preparedPending = eligible.filter((p) => p.upload_size != null && p.upload_size > 0).length;
+      const uploadsSaturated = this.activeRequests >= concurrency;
+      const allowPrepare = !(uploadsSaturated && preparedPending >= MAX_PREPARED_PENDING);
+
+      if (allowPrepare) {
+        const needPrepare = eligible.filter((p) => !(p.upload_size != null && p.upload_size > 0));
+        for (const photo of needPrepare.slice(0, PREPARE_PER_TICK)) {
+          if (this.inFlightPhotos.has(photo.id)) {
+            continue;
+          }
+          await this.preparePhoto(photo, budget.maxFileBytes);
         }
-        await this.preparePhoto(photo, budget.maxFileBytes);
       }
 
-      // Phase 2: pack only prepared photos by real size, then upload one micro-batch.
       const prepared = (await this.repo.listPhotosForUpload(session.id))
         .filter((p) => this.isEligible(p))
         .filter((p) => p.upload_size != null && p.upload_size > 0 && !this.inFlightPhotos.has(p.id));
@@ -474,7 +547,6 @@ export class UploadQueue {
       );
 
       if (!batch) {
-        // Prepared files may individually exceed the shrunk request budget — re-prepare smaller.
         const oversized = prepared.filter((p) => (p.upload_size ?? 0) > budget.maxFileBytes);
         for (const photo of oversized.slice(0, PREPARE_PER_TICK)) {
           await this.invalidatePreparedSize(photo.id);
@@ -483,7 +555,10 @@ export class UploadQueue {
         continue;
       }
 
-      void this.uploadPreparedBatch(session, batch.photoIds, batch.totalBytes);
+      void this.uploadPreparedBatch(session, batch.photoIds, batch.totalBytes, {
+        configuredConcurrency,
+        effectiveConcurrency: concurrency,
+      });
       startedUpload = true;
     }
 
@@ -516,6 +591,7 @@ export class UploadQueue {
     const clientFileId = photo.client_file_id;
     const queuedWaitMs = this.obs?.marks.takeElapsedMs(photoMarkKey(sessionId, clientFileId, 'queued')) ?? null;
     const prepareStartedAt = this.clock.nowMs();
+    const network = networkAttributesFromConnectivity(this.connectivity);
     if (this.obs) {
       this.obs.marks.mark(photoMarkKey(sessionId, clientFileId, 'prepare_started'));
       emitObservability(this.obs.reporter, {
@@ -526,13 +602,25 @@ export class UploadQueue {
         durationMs: queuedWaitMs ?? undefined,
         attributes: {
           queued_to_prepare_started_ms: queuedWaitMs,
-          ...networkAttributesFromConnectivity(this.connectivity),
+          ...network,
         },
       });
     }
     try {
       await this.repo.setPhotoUploadStatus(photo.id, 'preparing', {
         incrementAttempts: true,
+      });
+      const mode = normalizePreparationProcessingMode(this.options.processingModeHint);
+      const profile = defaultImagePreparationPolicy.resolve({
+        processingMode: mode,
+        originalWidth: photo.width,
+        originalHeight: photo.height,
+        originalBytes: photo.size,
+        networkType: this.resolveNetworkType(),
+        serverLimits: { maxFileSizeBytes: maxFileBytes },
+        dimensionCapEnabled: this.flags?.uploadDimensionCap !== false,
+        adaptiveQualityEnabled: this.flags?.uploadAdaptiveQuality !== false,
+        convertHeic: this.flags?.heicConvertToJpeg !== false,
       });
       const prepared = await preparePhotoForUpload({
         uri: photo.uri,
@@ -542,6 +630,8 @@ export class UploadQueue {
         width: photo.width,
         height: photo.height,
         limits: { maxFileSizeBytes: maxFileBytes },
+        profile,
+        adaptiveQualityEnabled: this.flags?.uploadAdaptiveQuality !== false,
       });
       const prepareMs = Math.max(0, Math.round(this.clock.nowMs() - prepareStartedAt));
       await this.repo.setPhotoUploadStatus(photo.id, 'queued', {
@@ -564,6 +654,11 @@ export class UploadQueue {
           attributes: {
             prepare_ms: prepareMs,
             queued_to_prepare_started_ms: queuedWaitMs,
+            preparation_profile_id: prepared.preparationProfileId,
+            preparation_profile_version: prepared.preparationProfileVersion,
+            dimension_cap_applied: prepared.dimensionCapApplied,
+            format_conversion_applied: prepared.formatConversionApplied,
+            quality_applied: prepared.qualityApplied,
             ...prepareMetricAttributes({
               originalBytes: prepared.originalSize,
               preparedBytes: prepared.size,
@@ -574,7 +669,7 @@ export class UploadQueue {
               transformationProfile: prepared.transformationProfile,
               convertedFromHeic: prepared.convertedFromHeic,
             }),
-            ...networkAttributesFromConnectivity(this.connectivity),
+            ...network,
           },
         });
       }
@@ -625,6 +720,7 @@ export class UploadQueue {
     session: CaptureSessionRow,
     photoIds: readonly string[],
     packedBytes: number,
+    concurrencyMeta: { readonly configuredConcurrency: number; readonly effectiveConcurrency: number },
   ): Promise<void> {
     const limits = await this.limits.ensureLoaded();
     const budget = this.packingBudget ?? (await this.syncPackingBudgetFromServer());
@@ -638,6 +734,8 @@ export class UploadQueue {
     const clientFileIds: string[] = [];
     const photoRows: CapturePhotoRow[] = [];
     const attemptId = createId();
+    const abortController = new AbortController();
+    this.uploadAbortByAttempt.set(attemptId, abortController);
     const network = networkAttributesFromConnectivity(this.connectivity);
     const batchId = session.upload_batch_id ?? undefined;
     let totalOriginalBytes = 0;
@@ -664,6 +762,7 @@ export class UploadQueue {
           progress: 0,
           incrementAttempts: true,
         });
+        this.uploadAttemptByPhoto.set(photoId, attemptId);
         preparedFiles.push({
           uri,
           name,
@@ -685,6 +784,9 @@ export class UploadQueue {
               queued_to_upload_started_ms: queuedToUploadMs,
               prepared_bytes: photo.upload_size,
               upload_attempt_count: (photo.upload_attempts ?? 0) + 1,
+              configured_concurrency: concurrencyMeta.configuredConcurrency,
+              effective_concurrency: concurrencyMeta.effectiveConcurrency,
+              active_upload_count: this.activeRequests,
               ...network,
             },
           });
@@ -734,7 +836,9 @@ export class UploadQueue {
           total_original_bytes: totalOriginalBytes,
           total_prepared_bytes: totalPreparedBytes,
           packed_bytes: packedBytes,
-          effective_concurrency: this.activeRequests,
+          configured_concurrency: concurrencyMeta.configuredConcurrency,
+          effective_concurrency: concurrencyMeta.effectiveConcurrency,
+          active_upload_count: this.activeRequests,
           batch_attempt_count: 1,
           ...network,
         },
@@ -747,6 +851,7 @@ export class UploadQueue {
         uploadBatchId: session.upload_batch_id!,
         clientFileIds,
         files: preparedFiles,
+        ...(this.flags?.uploadAbortEnabled !== false ? { signal: abortController.signal } : {}),
       });
       const uploadMs = Math.max(0, Math.round(this.clock.nowMs() - uploadStartedAt));
 
@@ -763,7 +868,9 @@ export class UploadQueue {
           total_prepared_bytes: totalPreparedBytes,
           uploaded_count: response.uploaded?.length ?? 0,
           error_count: response.errors?.length ?? 0,
-          effective_concurrency: this.activeRequests,
+          configured_concurrency: concurrencyMeta.configuredConcurrency,
+          effective_concurrency: concurrencyMeta.effectiveConcurrency,
+          active_upload_count: this.activeRequests,
           ...network,
         },
       });
@@ -917,6 +1024,43 @@ export class UploadQueue {
       }
     } catch (e) {
       const err = e instanceof ApiError ? e : null;
+      const aborted =
+        abortController.signal.aborted ||
+        (typeof e === 'object' &&
+          e !== null &&
+          ('name' in e || 'message' in e) &&
+          (String((e as { name?: string }).name).toLowerCase().includes('abort') ||
+            String((e as { message?: string }).message).toLowerCase().includes('abort')));
+      if (aborted) {
+        emitObservability(this.obs?.reporter, {
+          name: 'batch.upload_aborted',
+          sessionId: session.id,
+          batchId,
+          attemptId,
+          attributes: {
+            upload_error_code: 'UPLOAD_ABORTED',
+            image_count: photoIds.length,
+            ...network,
+          },
+        });
+        for (const photoId of photoIds) {
+          if (this.cancelledWhileUploading.has(photoId)) {
+            this.cancelledWhileUploading.delete(photoId);
+            // Already marked excluded in cancelPhoto.
+            continue;
+          }
+          const photo = await this.repo.getPhotoById(photoId);
+          if (!photo || photo.upload_status === 'excluded' || photo.upload_status === 'uploaded') {
+            continue;
+          }
+          // Sibling files in an aborted batch: re-queue without treating as network failure retry storm.
+          await this.repo.setPhotoUploadStatus(photoId, 'queued', {
+            errorCode: 'UPLOAD_ABORTED',
+            errorMessage: 'La carga del lote fue cancelada.',
+            nextRetryAt: null,
+          });
+        }
+      } else {
       const klass = classifyUploadHttpError(err?.status ?? null, err?.code ?? null);
       this.logger.warn('error', {
         where: 'upload_batch',
@@ -1038,11 +1182,14 @@ export class UploadQueue {
           });
         }
       }
+      }
     } finally {
-      this.activeRequests -= 1;
+      this.uploadAbortByAttempt.delete(attemptId);
       for (const id of photoIds) {
+        this.uploadAttemptByPhoto.delete(id);
         this.inFlightPhotos.delete(id);
       }
+      this.activeRequests -= 1;
       this.emit();
       this.scheduleTick(300);
     }

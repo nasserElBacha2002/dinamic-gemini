@@ -1,5 +1,9 @@
 export interface FeatureFlags {
   readonly allowMobileDataUploads: boolean;
+  /**
+   * When true (default), convert HEIC/HEIF to JPEG before upload.
+   * When false, upload HEIC as-is (backend worker can normalize).
+   */
   readonly heicConvertToJpeg: boolean;
   readonly workManagerScheduling: boolean;
   readonly advancedReconciliation: boolean;
@@ -7,6 +11,14 @@ export interface FeatureFlags {
   readonly aisleDeviceLock: boolean;
   /** Phase 0 upload/process observability (kill switch: set DINAMIC_FLAG_UPLOAD_OBS=0). */
   readonly uploadObservabilityEnabled: boolean;
+  /** Phase 1: proactive max-edge dimension cap during prepare. */
+  readonly uploadDimensionCap: boolean;
+  /** Phase 1: profile/network JPEG quality instead of legacy fixed qualities. */
+  readonly uploadAdaptiveQuality: boolean;
+  /** Phase 1: network-aware upload concurrency (still capped). */
+  readonly uploadAdaptiveConcurrency: boolean;
+  /** Phase 1: abort in-flight multipart when cancelPhoto runs. */
+  readonly uploadAbortEnabled: boolean;
 }
 
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
@@ -17,6 +29,10 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   backgroundJobPolling: true,
   aisleDeviceLock: false,
   uploadObservabilityEnabled: true,
+  uploadDimensionCap: true,
+  uploadAdaptiveQuality: true,
+  uploadAdaptiveConcurrency: true,
+  uploadAbortEnabled: true,
 };
 
 export function resolveFeatureFlags(raw: unknown, _environment: string): FeatureFlags {
@@ -48,5 +64,15 @@ export function resolveFeatureFlags(raw: unknown, _environment: string): Feature
       'uploadObservabilityEnabled',
       DEFAULT_FEATURE_FLAGS.uploadObservabilityEnabled,
     ),
+    uploadDimensionCap: bool('uploadDimensionCap', DEFAULT_FEATURE_FLAGS.uploadDimensionCap),
+    uploadAdaptiveQuality: bool(
+      'uploadAdaptiveQuality',
+      DEFAULT_FEATURE_FLAGS.uploadAdaptiveQuality,
+    ),
+    uploadAdaptiveConcurrency: bool(
+      'uploadAdaptiveConcurrency',
+      DEFAULT_FEATURE_FLAGS.uploadAdaptiveConcurrency,
+    ),
+    uploadAbortEnabled: bool('uploadAbortEnabled', DEFAULT_FEATURE_FLAGS.uploadAbortEnabled),
   };
 }
