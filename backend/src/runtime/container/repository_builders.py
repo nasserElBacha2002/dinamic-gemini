@@ -10,6 +10,9 @@ from collections.abc import Callable
 from typing import Protocol, TypeVar
 
 from src.application.ports.code_scan_repository import CodeScanRepository
+from src.application.ports.mobile_preliminary_detection_repository import (
+    MobilePreliminaryDetectionRepository,
+)
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -408,6 +411,31 @@ def build_code_scan_repository(
     return build_repo(
         backend_info_name="CodeScanRepository",
         sql_error_subject="code_scan repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_mobile_preliminary_detection_repository(
+    build_repo: BuildSqlOrMemory[MobilePreliminaryDetectionRepository],
+) -> MobilePreliminaryDetectionRepository:
+    def _sql(client: SqlServerClient) -> MobilePreliminaryDetectionRepository:
+        from src.infrastructure.repositories.sql_mobile_preliminary_detection_repository import (
+            SqlMobilePreliminaryDetectionRepository,
+        )
+
+        return SqlMobilePreliminaryDetectionRepository(client)
+
+    def _memory() -> MobilePreliminaryDetectionRepository:
+        from src.infrastructure.repositories.memory_mobile_preliminary_detection_repository import (
+            MemoryMobilePreliminaryDetectionRepository,
+        )
+
+        return MemoryMobilePreliminaryDetectionRepository()
+
+    return build_repo(
+        backend_info_name="MobilePreliminaryDetectionRepository",
+        sql_error_subject="mobile_preliminary_detection repo",
         build_sql=_sql,
         build_memory=_memory,
     )

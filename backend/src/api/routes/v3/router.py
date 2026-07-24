@@ -17,6 +17,7 @@ from . import (
     image_results,
     inventories,
     positions,
+    preliminary_detections,
     processing_observability,
     reviews,
 )
@@ -32,6 +33,7 @@ router.include_router(capture_sessions.router)
 router.include_router(aisles.router)
 router.include_router(code_scans.router)
 router.include_router(assets.router)
+router.include_router(preliminary_detections.router)
 router.include_router(positions.router)
 router.include_router(image_results.router)
 router.include_router(processing_observability.router)

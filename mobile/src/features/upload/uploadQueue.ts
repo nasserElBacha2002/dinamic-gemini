@@ -66,6 +66,10 @@ export interface UploadQueueOptions {
   readonly observability?: UploadQueueObservability | null;
   /** Phase 3 shadow local CODE_SCAN — never blocks upload authority path. */
   readonly localCodeScan?: LocalCodeScanStrategy | null;
+  /** Phase 4 preliminary sync — never blocks upload or /process. */
+  readonly preliminarySync?: {
+    enqueuePhotoAfterUpload(photoId: string): Promise<void>;
+  } | null;
 }
 
 export interface UploadQueueSnapshot {
@@ -1139,6 +1143,9 @@ export class UploadQueue {
           });
           await cleanupTransformUri(photo.local_transform_uri);
           this.logger.info('upload_confirmed', { photoId: photo.id, assetId: ok.asset_id });
+          void this.options.preliminarySync?.enqueuePhotoAfterUpload(photo.id).catch(() => {
+            // Phase 4: sync must never block upload completion
+          });
           emitObservability(this.obs?.reporter, {
             name: 'photo.upload_completed',
             sessionId: session.id,

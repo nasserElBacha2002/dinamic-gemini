@@ -16,6 +16,9 @@ from src.application.ports.capture_repositories import (
 )
 from src.application.ports.clock import Clock
 from src.application.ports.code_scan_repository import CodeScanRepository
+from src.application.ports.mobile_preliminary_detection_repository import (
+    MobilePreliminaryDetectionRepository,
+)
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -70,6 +73,10 @@ def get_source_asset_repo() -> SourceAssetRepository:
 
 def get_code_scan_repo() -> CodeScanRepository:
     return get_app_container().get_code_scan_repo()
+
+
+def get_mobile_preliminary_detection_repo() -> MobilePreliminaryDetectionRepository:
+    return get_app_container().get_mobile_preliminary_detection_repo()
 
 
 def get_supplier_reference_image_repo() -> SupplierReferenceImageRepository:

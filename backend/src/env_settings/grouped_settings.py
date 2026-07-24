@@ -934,6 +934,17 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
         description="Enable aisle QR/barcode code scan API. Env: CODE_SCAN_ENABLED.",
     )
+    server_preliminary_detection_ingest_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_PRELIMINARY_DETECTION_INGEST", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 4: accept mobile preliminary CODE_SCAN drafts (diagnostic only). "
+            "Default false. Does not affect positions or authoritative pipeline results. "
+            "Env: SERVER_PRELIMINARY_DETECTION_INGEST."
+        ),
+    )
     aisle_identification_pipeline_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "false")

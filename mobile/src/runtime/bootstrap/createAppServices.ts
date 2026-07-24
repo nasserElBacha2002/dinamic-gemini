@@ -22,6 +22,8 @@ import { UploadLimitsService } from '../../features/upload/uploadLimitsService';
 import { UploadQueue } from '../../features/upload/uploadQueue';
 import { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
 import { LocalCodeScanStrategy } from '../../features/localCodeScan/localCodeScanStrategy';
+import { PreliminaryDetectionApi } from '../../features/preliminarySync/preliminaryDetectionApi';
+import { PreliminaryDetectionSyncService } from '../../features/preliminarySync/preliminaryDetectionSyncService';
 import {
   buildBaselineReport,
   createObservabilityStack,
@@ -85,6 +87,7 @@ export interface AppServices {
   readonly processing: ProcessingService;
   readonly jobMonitor: JobMonitor;
   readonly localDetectionDrafts: LocalDetectionDraftRepository;
+  readonly preliminarySync: PreliminaryDetectionSyncService;
   readonly connectivity: ConnectivityService;
   readonly backgroundWork: BackgroundWorkScheduler;
   readonly backgroundUpload: BackgroundUploadScheduler;
@@ -132,6 +135,15 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   void localCodeScan.recoverStaleDrafts().catch(() => {
     // best-effort recovery after process death
   });
+  const preliminaryApi = new PreliminaryDetectionApi(api);
+  const preliminarySync = new PreliminaryDetectionSyncService({
+    flags: config.flags,
+    drafts: localDetectionDrafts,
+    capture: captureRepo,
+    api: preliminaryApi,
+    logger,
+    reporter: obsWire?.reporter ?? null,
+  });
   const useNativeBg =
     config.flags.backgroundUploadWorker === true || config.flags.workManagerScheduling === true;
   const uploadQueue = new UploadQueue(
@@ -145,6 +157,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       backgroundWork: useNativeBg ? backgroundWork : null,
       observability: obsWire,
       localCodeScan,
+      preliminarySync,
     },
   );
 
@@ -214,6 +227,11 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     });
     void uploadQueue.restoreAndStart();
     void jobMonitor.restorePendingJobs();
+    if (config.flags.mobilePreliminaryDetectionSync) {
+      void preliminarySync.syncPending().catch(() => {
+        // best-effort — never block bootstrap
+      });
+    }
     void cleanupTransformTemps(logger);
     void getStorageStatus().then((s) => {
       if (s.lowSpace) {
@@ -246,6 +264,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     processing,
     jobMonitor,
     localDetectionDrafts,
+    preliminarySync,
     connectivity,
     backgroundWork,
     backgroundUpload,

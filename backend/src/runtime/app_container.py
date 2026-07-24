@@ -26,6 +26,9 @@ from src.application.ports.capture_repositories import (
 from src.application.ports.clock import Clock
 from src.application.ports.code_scan_repository import CodeScanRepository
 from src.application.ports.finalization_stage_store import FinalizationStageStore
+from src.application.ports.mobile_preliminary_detection_repository import (
+    MobilePreliminaryDetectionRepository,
+)
 from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
 from src.application.ports.operational_job_promotion import OperationalJobPromotionRepository
@@ -173,6 +176,7 @@ from src.runtime.container.repository_builders import (
     build_evidence_repository,
     build_inventory_repository,
     build_job_repository,
+    build_mobile_preliminary_detection_repository,
     build_position_repository,
     build_product_record_repository,
     build_result_evidence_repository,
@@ -260,6 +264,7 @@ class AppContainer:
         self._capture_session_confirm_repo: CaptureSessionConfirmIdempotencyRepository | None = None
         self._capture_session_group_repo: CaptureSessionGroupRepository | None = None
         self._code_scan_repo: CodeScanRepository | None = None
+        self._preliminary_detection_repo: MobilePreliminaryDetectionRepository | None = None
         self._stored_artifact_reader: StoredArtifactReader | None = None
         self._finalization_stage_store: FinalizationStageStore | None = None
         self._artifact_manifest_store: ArtifactManifestStore | None = None
@@ -359,6 +364,7 @@ class AppContainer:
         self._capture_session_confirm_repo = None
         self._capture_session_group_repo = None
         self._code_scan_repo = None
+        self._preliminary_detection_repo = None
         self._stored_artifact_reader = None
         self._repository_backend_resolution = None
 
@@ -502,6 +508,14 @@ class AppContainer:
             return self._code_scan_repo
         self._code_scan_repo = build_code_scan_repository(self._build_sql_repository_or_memory)
         return self._code_scan_repo
+
+    def get_mobile_preliminary_detection_repo(self) -> MobilePreliminaryDetectionRepository:
+        if self._preliminary_detection_repo is not None:
+            return self._preliminary_detection_repo
+        self._preliminary_detection_repo = build_mobile_preliminary_detection_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._preliminary_detection_repo
 
     def get_supplier_reference_image_repo(self) -> SupplierReferenceImageRepository:
         if self._supplier_reference_image_repo is not None:

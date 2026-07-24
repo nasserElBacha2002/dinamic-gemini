@@ -9,7 +9,7 @@ import {
   labelForIdentificationMode,
   preferenceFromSelection,
 } from '../features/processing/processingMode';
-import { labelForLocalScanStatus } from '../features/localCodeScan/localScanUi';
+import { labelForLocalScanStatus, labelForPreliminarySyncStatus } from '../features/localCodeScan/localScanUi';
 import { hasForeignUploadLease, UPLOAD_WORKER_OWNER_JS } from '../core/uploadLease';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import { Button, SmallButton, messageOf, styles } from '../ui';
@@ -123,6 +123,7 @@ export function UploadsScreen({
   const [localScanByPhoto, setLocalScanByPhoto] = useState<
     Record<string, LocalDetectionDraftStatus>
   >({});
+  const [localSyncByPhoto, setLocalSyncByPhoto] = useState<Record<string, string>>({});
   const [localScanSummary, setLocalScanSummary] = useState<{
     scanned: number;
     resolved: number;
@@ -135,6 +136,7 @@ export function UploadsScreen({
     if (services.config.flags.mobileLocalCodeScan) {
       void services.localDetectionDrafts.listForSession(sessionId).then((rows) => {
         const byPhoto: Record<string, LocalDetectionDraftStatus> = {};
+        const syncByPhoto: Record<string, string> = {};
         let scanned = 0;
         let resolved = 0;
         let unresolved = 0;
@@ -142,6 +144,9 @@ export function UploadsScreen({
           if (row.status === 'NOT_APPLICABLE') continue;
           scanned += 1;
           byPhoto[row.capture_photo_id] = row.status;
+          if (row.sync_status) {
+            syncByPhoto[row.capture_photo_id] = row.sync_status;
+          }
           if (row.status === 'RESOLVED') resolved += 1;
           else if (
             row.status === 'UNRESOLVED' ||
@@ -153,10 +158,12 @@ export function UploadsScreen({
           }
         }
         setLocalScanByPhoto(byPhoto);
+        setLocalSyncByPhoto(syncByPhoto);
         setLocalScanSummary({ scanned, resolved, unresolved });
       });
     } else {
       setLocalScanByPhoto({});
+      setLocalSyncByPhoto({});
       setLocalScanSummary(null);
     }
   }, [services, sessionId]);
@@ -273,6 +280,12 @@ export function UploadsScreen({
             {labelForLocalScanStatus(localScanByPhoto[photo.id]) ? (
               <Text style={styles.muted} numberOfLines={2}>
                 {labelForLocalScanStatus(localScanByPhoto[photo.id])}
+              </Text>
+            ) : null}
+            {services.config.flags.mobilePreliminaryDetectionSync &&
+            labelForPreliminarySyncStatus(localSyncByPhoto[photo.id]) ? (
+              <Text style={styles.muted} numberOfLines={2}>
+                {labelForPreliminarySyncStatus(localSyncByPhoto[photo.id])}
               </Text>
             ) : null}
             {photo.upload_status === 'retryable_error' || photo.upload_status === 'permanent_error' ? (

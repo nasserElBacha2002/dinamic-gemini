@@ -310,6 +310,23 @@ CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_status
   ON local_detection_drafts(status);
 `,
   },
+  {
+    version: 10,
+    name: 'local_detection_drafts_sync',
+    sql: `
+ALTER TABLE local_detection_drafts ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'NOT_READY';
+ALTER TABLE local_detection_drafts ADD COLUMN sync_attempt_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE local_detection_drafts ADD COLUMN sync_next_retry_at TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN sync_last_error_code TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN server_preliminary_id TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN synced_at TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN sync_lease_token TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN sync_lease_expires_at TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_sync
+  ON local_detection_drafts(sync_status, sync_next_retry_at);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

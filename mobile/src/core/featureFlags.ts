@@ -30,6 +30,10 @@ export interface FeatureFlags {
   readonly mobileLocalCodeScan: boolean;
   /** Phase 3: attempt shadow compare when a reliable mapping exists. */
   readonly mobileLocalCodeScanShadowCompare: boolean;
+  /** Phase 4: sync local drafts to server as diagnostic evidence (default false). */
+  readonly mobilePreliminaryDetectionSync: boolean;
+  /** Phase 4: allow background/WorkManager to drive preliminary sync retries. */
+  readonly preliminaryDetectionBackgroundSync: boolean;
 }
 
 /** Non-production defaults. Phase 1/2 upload optimizations default off in production. */
@@ -50,6 +54,8 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   backgroundUploadRebootResume: true,
   mobileLocalCodeScan: false,
   mobileLocalCodeScanShadowCompare: false,
+  mobilePreliminaryDetectionSync: false,
+  preliminaryDetectionBackgroundSync: false,
 };
 
 function phaseOptInDefaultForEnvironment(environment: string): boolean {
@@ -96,5 +102,8 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
     // Phase 3: kill-switch defaults off in every environment until explicitly enabled.
     mobileLocalCodeScan: bool('mobileLocalCodeScan', false),
     mobileLocalCodeScanShadowCompare: bool('mobileLocalCodeScanShadowCompare', false),
+    // Phase 4: preliminary sync — default off.
+    mobilePreliminaryDetectionSync: bool('mobilePreliminaryDetectionSync', false),
+    preliminaryDetectionBackgroundSync: bool('preliminaryDetectionBackgroundSync', false),
   };
 }

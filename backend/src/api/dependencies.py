@@ -172,6 +172,7 @@ from src.runtime.v3_deps import (
     get_inventory_repo,
     get_job_repo,
     get_metrics_calculator,
+    get_mobile_preliminary_detection_repo,
     get_position_repo,
     get_product_record_repo,
     get_recompute_consolidated_counts_use_case,
@@ -712,6 +713,29 @@ def get_list_aisle_assets_use_case(
     return ListAisleAssetsUseCase(
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
+    )
+
+
+def get_upsert_preliminary_detection_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    preliminary_repo=Depends(get_mobile_preliminary_detection_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.aisles.upsert_preliminary_detection import (
+        UpsertPreliminaryDetectionUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    return UpsertPreliminaryDetectionUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        preliminary_repo=preliminary_repo,
+        clock=clock,
+        enabled=bool(
+            getattr(settings, "server_preliminary_detection_ingest_enabled", False)
+        ),
     )
 
 

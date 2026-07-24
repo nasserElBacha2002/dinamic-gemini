@@ -52,6 +52,10 @@ export class ApiClient {
     return this.request<T>(path, { timeoutKind: kind, ...options, method: 'POST', body });
   }
 
+  async put<T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<T> {
+    return this.request<T>(path, { timeoutKind: 'default', ...options, method: 'PUT', body });
+  }
+
   async delete(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<void> {
     await this.request<unknown>(path, { ...options, method: 'DELETE' });
   }

@@ -16,6 +16,17 @@ export type LocalDetectionDraftStatus =
 /** comparison_status: open until a reliable mapping exists. */
 export type LocalComparisonStatus = 'PENDING' | 'MAPPED' | 'SKIPPED' | null;
 
+/** Sync lifecycle — independent from scan status. */
+export type LocalDraftSyncStatus =
+  | 'NOT_READY'
+  | 'PENDING'
+  | 'SYNCING'
+  | 'SYNCED'
+  | 'RETRY_SCHEDULED'
+  | 'REJECTED'
+  | 'CONFLICT'
+  | 'FAILED_TERMINAL';
+
 export interface LocalDetectionDraftRow {
   readonly id: string;
   readonly capture_photo_id: string;
@@ -39,6 +50,14 @@ export interface LocalDetectionDraftRow {
   readonly prepared_asset_fingerprint: string | null;
   readonly scan_owner: string | null;
   readonly scan_generation: number;
+  readonly sync_status: LocalDraftSyncStatus;
+  readonly sync_attempt_count: number;
+  readonly sync_next_retry_at: string | null;
+  readonly sync_last_error_code: string | null;
+  readonly server_preliminary_id: string | null;
+  readonly synced_at: string | null;
+  readonly sync_lease_token: string | null;
+  readonly sync_lease_expires_at: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -242,5 +261,171 @@ export class LocalDetectionDraftRepository {
       capturePhotoId,
     );
     return (row?.c ?? 0) > 0;
+  }
+
+  async getById(id: string): Promise<LocalDetectionDraftRow | null> {
+    return this.db.getFirstAsync<LocalDetectionDraftRow>(
+      `SELECT * FROM local_detection_drafts WHERE id = ? LIMIT 1;`,
+      id,
+    );
+  }
+
+  /**
+   * Mark terminal drafts for a photo as PENDING once the remote asset exists.
+   * Does not touch SYNCED / REJECTED / CONFLICT / FAILED_TERMINAL.
+   */
+  async markPendingForPhotoWhenReady(capturePhotoId: string): Promise<number> {
+    const now = new Date().toISOString();
+    const result = await this.db.runAsync(
+      `UPDATE local_detection_drafts
+       SET sync_status = 'PENDING',
+           sync_next_retry_at = NULL,
+           updated_at = ?
+       WHERE capture_photo_id = ?
+         AND status NOT IN ('PENDING', 'SCANNING', 'NOT_APPLICABLE')
+         AND sync_status IN ('NOT_READY', 'RETRY_SCHEDULED')
+         AND prepared_asset_fingerprint IS NOT NULL
+         AND client_file_id IS NOT NULL;`,
+      now,
+      capturePhotoId,
+    );
+    return result.changes ?? 0;
+  }
+
+  async listDueForSync(nowIso: string, limit: number): Promise<LocalDetectionDraftRow[]> {
+    return this.db.getAllAsync<LocalDetectionDraftRow>(
+      `SELECT * FROM local_detection_drafts
+       WHERE sync_status IN ('PENDING', 'RETRY_SCHEDULED')
+         AND (sync_next_retry_at IS NULL OR sync_next_retry_at <= ?)
+         AND status NOT IN ('PENDING', 'SCANNING', 'NOT_APPLICABLE')
+       ORDER BY created_at ASC
+       LIMIT ?;`,
+      nowIso,
+      limit,
+    );
+  }
+
+  async claimSyncLease(
+    draftId: string,
+    leaseToken: string,
+    leaseExpiresAt: string,
+    nowIso: string,
+  ): Promise<boolean> {
+    const result = await this.db.runAsync(
+      `UPDATE local_detection_drafts
+       SET sync_status = 'SYNCING',
+           sync_lease_token = ?,
+           sync_lease_expires_at = ?,
+           sync_attempt_count = sync_attempt_count + 1,
+           updated_at = ?
+       WHERE id = ?
+         AND sync_status IN ('PENDING', 'RETRY_SCHEDULED')
+         AND (
+           sync_lease_token IS NULL
+           OR sync_lease_expires_at IS NULL
+           OR sync_lease_expires_at <= ?
+           OR sync_lease_token = ?
+         );`,
+      leaseToken,
+      leaseExpiresAt,
+      nowIso,
+      draftId,
+      nowIso,
+      leaseToken,
+    );
+    return (result.changes ?? 0) > 0;
+  }
+
+  async completeSyncSuccess(
+    draftId: string,
+    leaseToken: string,
+    serverPreliminaryId: string,
+    syncedAt: string,
+  ): Promise<boolean> {
+    const result = await this.db.runAsync(
+      `UPDATE local_detection_drafts
+       SET sync_status = 'SYNCED',
+           server_preliminary_id = ?,
+           synced_at = ?,
+           sync_last_error_code = NULL,
+           sync_next_retry_at = NULL,
+           sync_lease_token = NULL,
+           sync_lease_expires_at = NULL,
+           updated_at = ?
+       WHERE id = ? AND sync_lease_token = ?;`,
+      serverPreliminaryId,
+      syncedAt,
+      syncedAt,
+      draftId,
+      leaseToken,
+    );
+    return (result.changes ?? 0) > 0;
+  }
+
+  async completeSyncTerminal(
+    draftId: string,
+    leaseToken: string,
+    syncStatus: 'REJECTED' | 'CONFLICT' | 'FAILED_TERMINAL',
+    errorCode: string,
+    nowIso: string,
+  ): Promise<boolean> {
+    const result = await this.db.runAsync(
+      `UPDATE local_detection_drafts
+       SET sync_status = ?,
+           sync_last_error_code = ?,
+           sync_next_retry_at = NULL,
+           sync_lease_token = NULL,
+           sync_lease_expires_at = NULL,
+           updated_at = ?
+       WHERE id = ? AND sync_lease_token = ?;`,
+      syncStatus,
+      errorCode,
+      nowIso,
+      draftId,
+      leaseToken,
+    );
+    return (result.changes ?? 0) > 0;
+  }
+
+  async completeSyncRetry(
+    draftId: string,
+    leaseToken: string,
+    errorCode: string,
+    nextRetryAt: string,
+    nowIso: string,
+  ): Promise<boolean> {
+    const result = await this.db.runAsync(
+      `UPDATE local_detection_drafts
+       SET sync_status = 'RETRY_SCHEDULED',
+           sync_last_error_code = ?,
+           sync_next_retry_at = ?,
+           sync_lease_token = NULL,
+           sync_lease_expires_at = NULL,
+           updated_at = ?
+       WHERE id = ? AND sync_lease_token = ?;`,
+      errorCode,
+      nextRetryAt,
+      nowIso,
+      draftId,
+      leaseToken,
+    );
+    return (result.changes ?? 0) > 0;
+  }
+
+  async recoverExpiredSyncLeases(nowIso: string): Promise<number> {
+    const result = await this.db.runAsync(
+      `UPDATE local_detection_drafts
+       SET sync_status = 'RETRY_SCHEDULED',
+           sync_last_error_code = 'SYNC_LEASE_EXPIRED',
+           sync_lease_token = NULL,
+           sync_lease_expires_at = NULL,
+           updated_at = ?
+       WHERE sync_status = 'SYNCING'
+         AND sync_lease_expires_at IS NOT NULL
+         AND sync_lease_expires_at <= ?;`,
+      nowIso,
+      nowIso,
+    );
+    return result.changes ?? 0;
   }
 }

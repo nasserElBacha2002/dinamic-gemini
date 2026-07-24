@@ -17,6 +17,7 @@ module.exports = {
     '<rootDir>/tests/mediaStoreAccessMediaLocation.test.ts',
     '<rootDir>/tests/uploadQueuePhase1Corrections.test.ts',
     '<rootDir>/tests/localCodeScanStrategy.test.ts',
+    '<rootDir>/tests/preliminaryDetectionSyncService.test.ts',
   ],
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }],

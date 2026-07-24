@@ -26,3 +26,27 @@ export function labelForLocalScanStatus(status: LocalDetectionDraftStatus | null
       return null;
   }
 }
+
+export function labelForPreliminarySyncStatus(
+  syncStatus: string | null | undefined,
+): string | null {
+  switch (syncStatus) {
+    case 'PENDING':
+    case 'NOT_READY':
+      return 'Borrador local pendiente de sincronización';
+    case 'SYNCING':
+      return 'Sincronizando borrador local';
+    case 'SYNCED':
+      return 'Borrador sincronizado';
+    case 'RETRY_SCHEDULED':
+      return 'Sincronización reintentando';
+    case 'REJECTED':
+      return 'Borrador rechazado';
+    case 'CONFLICT':
+      return 'Conflicto de sincronización';
+    case 'FAILED_TERMINAL':
+      return 'Sincronización fallida';
+    default:
+      return null;
+  }
+}
