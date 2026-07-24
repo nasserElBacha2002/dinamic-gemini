@@ -163,6 +163,8 @@ describe('uploadErrors', () => {
 describe('fase2 session transitions', () => {
   it('allows review -> uploading and processing terminal paths', () => {
     expect(canTransitionSession('review', 'uploading')).toBe(true);
+    expect(canTransitionSession('active', 'uploading')).toBe(true);
+    expect(canTransitionSession('paused', 'review')).toBe(true);
     expect(canTransitionSession('uploading', 'ready_to_process')).toBe(true);
     expect(canTransitionSession('ready_to_process', 'processing')).toBe(true);
     expect(canTransitionSession('processing', 'completed')).toBe(true);

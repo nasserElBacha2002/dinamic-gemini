@@ -361,9 +361,24 @@ export class CaptureService {
   /**
    * Confirms local review and hands the session to the upload pipeline.
    * Does not mark the session completed until processing succeeds.
+   *
+   * Phase 2 may already be uploading while status is still `active`; tolerate that
+   * handoff so we never throw `active -> uploading` at the operator.
    */
   async completeReview(): Promise<string> {
     const sessionId = this.requireSessionId();
+    const current = await this.repo.getSession(sessionId);
+    if (!current) {
+      throw new Error('No se encontró la captura local.');
+    }
+
+    if (current.status === 'active' || current.status === 'paused' || current.status === 'finishing') {
+      this.autoScanEnabled = false;
+      this.detachListener();
+      await this.stopForeground();
+      await this.repo.updateSessionStatus(sessionId, 'review');
+    }
+
     await this.reloadPhotos(sessionId);
     if (this.photos.some((p) => p.status === 'detected' || p.status === 'waiting_stability')) {
       throw new Error('Todavía hay fotografías validándose.');
@@ -371,6 +386,21 @@ export class CaptureService {
     if (this.photos.some((p) => p.status === 'unstable' || p.status === 'undecodable')) {
       throw new Error('Resolvé o excluí los errores antes de confirmar.');
     }
+
+    const latest = await this.repo.getSession(sessionId);
+    if (!latest) {
+      throw new Error('No se encontró la captura local.');
+    }
+    if (latest.status === 'uploading') {
+      this.clearCurrentSession();
+      return sessionId;
+    }
+    if (latest.status !== 'review') {
+      throw new Error(
+        `No se puede iniciar la carga desde el estado de captura "${latest.status}".`,
+      );
+    }
+
     await this.repo.updateSessionStatus(sessionId, 'uploading');
     this.clearCurrentSession();
     return sessionId;

@@ -8,6 +8,7 @@ When `backgroundUploadWorker` is enabled:
 - Only **prepared** photos are uploaded natively (prepare stays in JS).
 - Tokens are mirrored to **EncryptedSharedPreferences only** (no plaintext fallback). If the vault is unavailable, the worker does not upload (`AUTH_VAULT_UNAVAILABLE`).
 - Foreground progress uses `CoroutineWorker.setForeground` when `backgroundUploadForegroundService` is on (no duplicate Upload FGS).
+- WorkManager `SystemForegroundService` must declare `foregroundServiceType="dataSync"` (Android 12+); otherwise the app crashes on the first upload foreground promote.
 - Notification action **Pausar cola** cancels WorkManager + in-flight OkHttp and persists pause.
 - `allowMobileDataUploads=false` → `NetworkType.UNMETERED`; preference changes reschedule with REPLACE.
 - `backgroundUploadRebootResume=false` → BootReceiver cancels persisted upload work after reboot.

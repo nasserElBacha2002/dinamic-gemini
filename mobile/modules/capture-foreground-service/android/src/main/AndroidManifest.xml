@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -13,6 +14,17 @@
       android:exported="false"
       android:foregroundServiceType="dataSync" />
 
+    <!--
+      WorkManager uses this service for CoroutineWorker.setForeground().
+      Without dataSync here, Android 12+ crashes:
+      foregroundServiceType 0x1 is not a subset of attribute 0x0
+    -->
+    <service
+      android:name="androidx.work.impl.foreground.SystemForegroundService"
+      android:exported="false"
+      android:directBootAware="false"
+      android:foregroundServiceType="dataSync"
+      tools:node="merge" />
     <receiver
       android:name=".UploadPauseReceiver"
       android:exported="false" />
