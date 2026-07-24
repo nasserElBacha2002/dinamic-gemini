@@ -18,6 +18,7 @@ import { LoginScreen } from './src/screens/LoginScreen';
 import { ProcessingScreen } from './src/screens/ProcessingScreen';
 import { ResultsScreen } from './src/screens/ResultsScreen';
 import { ReviewScreen } from './src/screens/ReviewScreen';
+import { LocalResultReviewScreen } from './src/screens/LocalResultReviewScreen';
 import { UploadsScreen } from './src/screens/UploadsScreen';
 import type { AisleIdentificationMode } from './src/features/processing/processingMode';
 import { sanitizeIdentificationModeSelection } from './src/features/processing/processingMode';
@@ -30,6 +31,7 @@ type Screen =
   | 'aisles'
   | 'capture'
   | 'review'
+  | 'local-result-review'
   | 'uploads'
   | 'processing'
   | 'results'
@@ -310,16 +312,54 @@ export default function App(): JSX.Element {
           services={services}
           snapshot={capture}
           onBack={() => setScreen('capture')}
-          onDone={(sessionId) => {
+          onConfirm={(sessionId) => {
             setWorkSessionId(sessionId);
-            if (identificationModePreference) {
-              void services.uploadQueue.setSessionPreparationMode(
-                sessionId,
-                identificationModePreference,
-              );
+            const useLocalReview =
+              services.config.flags.mobileAuthoritativeLocalCodeScan &&
+              services.config.flags.mobileLocalResultReview;
+            if (useLocalReview) {
+              setScreen('local-result-review');
+              return;
             }
-            void services.uploadQueue.enqueueSession(sessionId);
-            setScreen('uploads');
+            void services.capture
+              .completeReview()
+              .then((sid) => {
+                setWorkSessionId(sid);
+                if (identificationModePreference) {
+                  void services.uploadQueue.setSessionPreparationMode(
+                    sid,
+                    identificationModePreference,
+                  );
+                }
+                void services.uploadQueue.enqueueSession(sid);
+                setScreen('uploads');
+              })
+              .catch((e) => setError(messageOf(e)));
+          }}
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'local-result-review' && workSessionId && auth ? (
+        <LocalResultReviewScreen
+          services={services}
+          sessionId={workSessionId}
+          userId={auth.user.id}
+          onBack={() => setScreen('review')}
+          onDone={(sessionId) => {
+            void services.capture
+              .completeReview()
+              .then((sid) => {
+                setWorkSessionId(sid);
+                if (identificationModePreference) {
+                  void services.uploadQueue.setSessionPreparationMode(
+                    sid,
+                    identificationModePreference,
+                  );
+                }
+                void services.uploadQueue.enqueueSession(sid);
+                setScreen('uploads');
+              })
+              .catch((e) => setError(messageOf(e)));
           }}
           onError={setError}
         />

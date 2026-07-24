@@ -338,6 +338,44 @@ UPDATE local_detection_drafts
    AND status NOT IN ('PENDING', 'SCANNING', 'NOT_APPLICABLE');
 `,
   },
+  {
+    version: 12,
+    name: 'confirmed_local_results',
+    sql: `
+CREATE TABLE IF NOT EXISTS confirmed_local_results (
+  id TEXT PRIMARY KEY NOT NULL,
+  capture_photo_id TEXT NOT NULL UNIQUE,
+  capture_session_id TEXT NOT NULL,
+  client_file_id TEXT,
+  asset_id TEXT,
+  detected_internal_code TEXT,
+  detected_quantity INTEGER,
+  confirmed_internal_code TEXT NOT NULL,
+  confirmed_quantity INTEGER,
+  quantity_status TEXT NOT NULL,
+  source TEXT NOT NULL,
+  detected_symbology TEXT,
+  parser_version TEXT NOT NULL,
+  detector_version TEXT NOT NULL,
+  prepared_asset_sha256 TEXT NOT NULL,
+  confirmed_by_user_id TEXT,
+  confirmed_at TEXT NOT NULL,
+  sync_status TEXT NOT NULL DEFAULT 'PENDING',
+  sync_attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_retry_at TEXT,
+  sync_last_error_code TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (capture_photo_id) REFERENCES capture_photos(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_confirmed_local_results_session
+  ON confirmed_local_results(capture_session_id);
+CREATE INDEX IF NOT EXISTS idx_confirmed_local_results_sync
+  ON confirmed_local_results(sync_status, next_retry_at);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

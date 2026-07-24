@@ -70,6 +70,10 @@ export interface UploadQueueOptions {
   readonly preliminarySync?: {
     enqueuePhotoAfterUpload(photoId: string): Promise<void>;
   } | null;
+  /** Authoritative local CODE_SCAN sync — never blocks upload completion. */
+  readonly authoritativeSync?: {
+    enqueuePhotoAfterUpload(photoId: string, backendAssetId: string): Promise<void>;
+  } | null;
 }
 
 export interface UploadQueueSnapshot {
@@ -1146,6 +1150,11 @@ export class UploadQueue {
           void this.options.preliminarySync?.enqueuePhotoAfterUpload(photo.id).catch(() => {
             // Phase 4: sync must never block upload completion
           });
+          void this.options.authoritativeSync
+            ?.enqueuePhotoAfterUpload(photo.id, ok.asset_id)
+            .catch(() => {
+              // Authoritative sync must never block upload completion
+            });
           emitObservability(this.obs?.reporter, {
             name: 'photo.upload_completed',
             sessionId: session.id,

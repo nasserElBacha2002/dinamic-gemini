@@ -156,6 +156,8 @@ from src.application.use_cases.suppliers.upload_supplier_reference_images import
     UploadSupplierReferenceImagesUseCase,
 )
 from src.runtime.app_container import get_app_container
+from src.auth.dependencies import get_current_admin
+from src.auth.schemas import AuthUser
 from src.runtime.v3_deps import (
     get_aisle_repo,
     get_analytics_repo,
@@ -737,6 +739,31 @@ def get_upsert_preliminary_detection_use_case(
         enabled=bool(
             getattr(settings, "server_preliminary_detection_ingest_enabled", False)
         ),
+    )
+
+
+def get_persist_authoritative_local_code_scan_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    clock: Clock = Depends(get_clock),
+    user: AuthUser = Depends(get_current_admin),
+):
+    from src.application.use_cases.aisles.persist_authoritative_local_code_scan import (
+        PersistAuthoritativeLocalCodeScanResultUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    c = get_app_container()
+    return PersistAuthoritativeLocalCodeScanResultUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        authoritative_repo=c.get_authoritative_local_code_scan_repo(),
+        clock=clock,
+        enabled=bool(
+            getattr(settings, "server_authoritative_local_code_scan_ingest_enabled", False)
+        ),
+        authenticated_user_id=str(getattr(user, "id", "") or ""),
     )
 
 

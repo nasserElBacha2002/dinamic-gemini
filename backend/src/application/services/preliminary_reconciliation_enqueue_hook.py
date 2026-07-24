@@ -8,11 +8,21 @@ logger = logging.getLogger(__name__)
 
 
 def try_enqueue_preliminary_reconciliations(*, job_id: str, aisle_id: str, inventory_id: str) -> None:
-    """Server-side trigger — independent of mobile UI flags."""
+    """DEPRECATED — productive path disabled when authoritative local ingest is on.
+
+    Phase 5 auto-reconcile remains opt-in and must not run alongside authoritative local
+    CODE_SCAN. Tables stay for historical read-only access.
+    """
     try:
         from src.config import load_settings
 
         settings = load_settings()
+        if getattr(settings, "server_authoritative_local_code_scan_ingest_enabled", False):
+            logger.info(
+                "reconciliation_enqueue_skipped_authoritative_path job_id=%s",
+                job_id,
+            )
+            return
         if not getattr(settings, "server_preliminary_reconciliation_enabled", False):
             return
         from src.application.use_cases.aisles.reconcile_preliminary_detections import (

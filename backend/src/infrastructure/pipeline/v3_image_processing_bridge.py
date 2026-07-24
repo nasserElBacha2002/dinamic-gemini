@@ -107,6 +107,7 @@ def build_default_aisle_processing_orchestrator(
     code_scan_concurrency: int = 1,
     reconciler=None,
     external_fallback=None,
+    apply_authoritative_local=None,
 ) -> AisleProcessingOrchestrator:
     """Build the Phase 2 orchestrator from injected repos.
 
@@ -197,6 +198,7 @@ def build_default_aisle_processing_orchestrator(
         code_scan_concurrency=code_scan_concurrency,
         reconciler=reconciler,
         external_fallback=external_fallback,
+        apply_authoritative_local=apply_authoritative_local,
     )
 
 
@@ -333,6 +335,7 @@ def build_default_code_scan_orchestrator(
     abandoned_processing_ttl_seconds: int = _DEFAULT_ABANDONED_TTL_SECONDS,
     manual_coverage_repo=None,
     external_fallback=None,
+    apply_authoritative_local=None,
 ) -> AisleProcessingOrchestrator:
     """Build the Phase 3 orchestrator wired for CODE_SCAN SINGLE_ASSET processing.
 
@@ -370,6 +373,7 @@ def build_default_code_scan_orchestrator(
         code_scan_concurrency=max(1, int(code_scan_concurrency or 1)),
         reconciler=reconciler,
         external_fallback=external_fallback,
+        apply_authoritative_local=apply_authoritative_local,
     )
 
 

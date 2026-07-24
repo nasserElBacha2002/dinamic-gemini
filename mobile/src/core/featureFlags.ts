@@ -36,6 +36,10 @@ export interface FeatureFlags {
   readonly mobilePreliminaryReconciliationView: boolean;
   /** Phase 5: allow JobMonitor to trigger server reconcile enqueue (default false). */
   readonly mobilePreliminaryReconciliationTrigger: boolean;
+  /** Authoritative local CODE_SCAN: operator-confirmed results sync (default false). */
+  readonly mobileAuthoritativeLocalCodeScan: boolean;
+  /** Authoritative local CODE_SCAN: review screen before upload (default false). */
+  readonly mobileLocalResultReview: boolean;
 }
 
 /** Non-production defaults. Phase 1/2 upload optimizations default off in production. */
@@ -59,6 +63,8 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   mobilePreliminaryDetectionSync: false,
   mobilePreliminaryReconciliationView: false,
   mobilePreliminaryReconciliationTrigger: false,
+  mobileAuthoritativeLocalCodeScan: false,
+  mobileLocalResultReview: false,
 };
 
 function phaseOptInDefaultForEnvironment(environment: string): boolean {
@@ -112,5 +118,7 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
       'mobilePreliminaryReconciliationTrigger',
       false,
     ),
+    mobileAuthoritativeLocalCodeScan: bool('mobileAuthoritativeLocalCodeScan', false),
+    mobileLocalResultReview: bool('mobileLocalResultReview', false),
   };
 }

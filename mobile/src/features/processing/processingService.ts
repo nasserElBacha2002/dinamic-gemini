@@ -1,7 +1,9 @@
+import type { FeatureFlags } from '../../core/featureFlags';
 import { mapProcessingPersistence, toProcessingState } from '../../core/processingState';
 import { normalizePreparationProcessingMode } from '../../core/imagePreparationPolicy';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
+import type { CapturePhotoRow } from '../../database/schema/captureSchema';
 import type { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
 import {
   createMonotonicClock,
@@ -24,6 +26,7 @@ import type { ConnectivityService } from '../../services/connectivity/connectivi
 import { createId } from '../../shared/createId';
 import type { UploadQueue } from '../upload/uploadQueue';
 import type { AisleAssetsApi } from '../upload/aisleAssetsApi';
+import type { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import { computeProcessingReadiness, type ProcessingReadiness } from './processingReadiness';
 import {
   buildProcessAisleRequestBody,
@@ -71,6 +74,11 @@ export interface ProcessingObservability {
   readonly connectivity?: ConnectivityService | null;
 }
 
+export interface ProcessingAuthoritativeGate {
+  readonly flags: FeatureFlags;
+  readonly confirmed: ConfirmedLocalResultRepository;
+}
+
 export class ProcessingService {
   private processLocks = new Set<string>();
   private readonly clock = createMonotonicClock();
@@ -83,6 +91,7 @@ export class ProcessingService {
     private readonly assetsApi: AisleAssetsApi,
     private readonly logger: Logger,
     private readonly observability: ProcessingObservability | null = null,
+    private readonly authoritativeGate: ProcessingAuthoritativeGate | null = null,
   ) {}
 
   async readiness(sessionId: string): Promise<ProcessingReadiness> {
@@ -117,7 +126,52 @@ export class ProcessingService {
     } catch (e) {
       return { ...base, ready: false, reason: `No se pudo validar assets remotos: ${String(e)}` };
     }
+    const authoritative = await this.checkAuthoritativeLocalResults(sessionId, photos);
+    if (!authoritative.ready) {
+      return { ...base, ready: false, reason: authoritative.reason };
+    }
     return base;
+  }
+
+  private async checkAuthoritativeLocalResults(
+    sessionId: string,
+    photos: readonly CapturePhotoRow[],
+  ): Promise<{ ready: boolean; reason: string | null }> {
+    const gate = this.authoritativeGate;
+    if (!gate?.flags.mobileAuthoritativeLocalCodeScan) {
+      return { ready: true, reason: null };
+    }
+    const included = photos.filter((p) => p.status === 'stable');
+    const confirmedRows = await gate.confirmed.listForSession(sessionId);
+    const byPhoto = new Map(confirmedRows.map((r) => [r.capture_photo_id, r]));
+    const missing = included.filter((p) => !byPhoto.has(p.id));
+    if (missing.length > 0) {
+      return {
+        ready: false,
+        reason: `Faltan ${missing.length} resultado(s) local(es) confirmado(s).`,
+      };
+    }
+    const notSynced = included.filter((p) => {
+      const row = byPhoto.get(p.id);
+      return !row || row.sync_status !== 'SYNCED';
+    });
+    if (notSynced.length > 0) {
+      return {
+        ready: false,
+        reason: `Hay ${notSynced.length} resultado(s) local(es) pendiente(s) de sincronización.`,
+      };
+    }
+    const terminal = included.filter((p) => {
+      const row = byPhoto.get(p.id);
+      return row && (row.sync_status === 'CONFLICT' || row.sync_status === 'FAILED_TERMINAL');
+    });
+    if (terminal.length > 0) {
+      return {
+        ready: false,
+        reason: 'Hay conflictos o errores terminales en resultados locales confirmados.',
+      };
+    }
+    return { ready: true, reason: null };
   }
 
   async validateBeforeProcess(sessionId: string): Promise<{ ok: boolean; reason: string | null }> {

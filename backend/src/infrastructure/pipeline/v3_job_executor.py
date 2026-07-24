@@ -911,6 +911,36 @@ class V3JobExecutor:
                     event_publisher=event_publisher,
                 )
 
+            apply_authoritative = None
+            if bool(
+                getattr(settings, "server_skip_remote_code_scan_for_local_authority", False)
+            ) or bool(
+                getattr(settings, "server_authoritative_local_code_scan_ingest_enabled", False)
+            ):
+                try:
+                    from src.application.services.image_processing.apply_authoritative_local_results import (
+                        ApplyAuthoritativeLocalResultsService,
+                    )
+
+                    apply_authoritative = ApplyAuthoritativeLocalResultsService(
+                        authoritative_repo=container.get_authoritative_local_code_scan_repo(),
+                        result_persister=persister,
+                        state_repo=state_repo,
+                        clock=self._clock,
+                        enabled=bool(
+                            getattr(
+                                settings,
+                                "server_skip_remote_code_scan_for_local_authority",
+                                False,
+                            )
+                        ),
+                    )
+                except Exception:
+                    logger.exception(
+                        "authoritative_local.apply_service_unavailable job_id=%s", job_id
+                    )
+                    apply_authoritative = None
+
             orch = build_default_code_scan_orchestrator(
                 self._clock,
                 attempts_enabled=bool(settings.processing_attempts_enabled),
@@ -928,6 +958,7 @@ class V3JobExecutor:
                 abandoned_processing_ttl_seconds=(settings.image_processing_abandoned_ttl_seconds),
                 manual_coverage_repo=container.get_manual_image_coverage_repo(),
                 external_fallback=external_fallback,
+                apply_authoritative_local=apply_authoritative,
             )
         except ImageProcessingRepositoryUnavailableError as unavailable:
             logger.error("code_scan.repos_unavailable job_id=%s err=%s", job_id, unavailable)

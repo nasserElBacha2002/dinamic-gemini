@@ -8,11 +8,12 @@ export interface ReviewScreenProps {
   services: AppServices;
   snapshot: CaptureSnapshot | null;
   onBack: () => void;
-  onDone: (sessionId: string) => void;
+  /** Called when capture review gates pass; parent decides next screen. */
+  onConfirm: (sessionId: string) => void;
   onError: (message: string | null) => void;
 }
 
-export function ReviewScreen({ services, snapshot, onBack, onDone, onError }: ReviewScreenProps) {
+export function ReviewScreen({ services, snapshot, onBack, onConfirm, onError }: ReviewScreenProps) {
   const photos = snapshot?.photos ?? [];
   const counts = countPhotos(photos);
   const canConfirm = counts.waiting === 0 && counts.errors === 0;
@@ -38,14 +39,16 @@ export function ReviewScreen({ services, snapshot, onBack, onDone, onError }: Re
             onPress={() => void services.capture.retryErrors()}
           />
           <Button
-            label="Confirmar y cargar"
+            label="Confirmar y continuar"
             disabled={!canConfirm}
-            onPress={() =>
-              void services.capture
-                .completeReview()
-                .then(onDone)
-                .catch((e) => onError(messageOf(e)))
-            }
+            onPress={() => {
+              const sessionId = snapshot?.session?.id;
+              if (!sessionId) {
+                onError('No se encontró la sesión de captura.');
+                return;
+              }
+              onConfirm(sessionId);
+            }}
           />
         </View>
       }

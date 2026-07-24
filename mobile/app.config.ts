@@ -134,6 +134,11 @@ const config: ExpoConfig = {
         'DINAMIC_FLAG_PRELIMINARY_RECONCILIATION_TRIGGER',
         'mobilePreliminaryReconciliationTrigger',
       ),
+      ...optionalFlag(
+        'DINAMIC_FLAG_AUTHORITATIVE_LOCAL_CODE_SCAN',
+        'mobileAuthoritativeLocalCodeScan',
+      ),
+      ...optionalFlag('DINAMIC_FLAG_LOCAL_RESULT_REVIEW', 'mobileLocalResultReview'),
     },
   },
 };

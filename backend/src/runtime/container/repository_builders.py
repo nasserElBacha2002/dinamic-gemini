@@ -444,6 +444,35 @@ def build_mobile_preliminary_detection_repository(
     )
 
 
+def build_authoritative_local_code_scan_repository(
+    build_repo: BuildSqlOrMemory,
+):
+    from src.application.ports.authoritative_local_code_scan_repository import (
+        AuthoritativeLocalCodeScanRepository,
+    )
+
+    def _sql(client: SqlServerClient) -> AuthoritativeLocalCodeScanRepository:
+        from src.infrastructure.repositories.sql_authoritative_local_code_scan_repository import (
+            SqlAuthoritativeLocalCodeScanRepository,
+        )
+
+        return SqlAuthoritativeLocalCodeScanRepository(client)
+
+    def _memory() -> AuthoritativeLocalCodeScanRepository:
+        from src.infrastructure.repositories.memory_authoritative_local_code_scan_repository import (
+            MemoryAuthoritativeLocalCodeScanRepository,
+        )
+
+        return MemoryAuthoritativeLocalCodeScanRepository()
+
+    return build_repo(
+        backend_info_name="AuthoritativeLocalCodeScanRepository",
+        sql_error_subject="authoritative_local_code_scan repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
 def build_preliminary_detection_reconciliation_repository(
     build_repo: BuildSqlOrMemory[PreliminaryDetectionReconciliationRepository],
 ) -> PreliminaryDetectionReconciliationRepository:

@@ -951,9 +951,9 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 5: compare local preliminary drafts vs remote asset results (diagnostic). "
-            "Default false. Never mutates positions or jobs. "
-            "Env: SERVER_PRELIMINARY_RECONCILIATION."
+            "DEPRECATED Phase 5: compare local preliminary drafts vs remote asset results. "
+            "Default false. Read-only / no new productive auto-reconcile when authoritative "
+            "local ingest is enabled. Env: SERVER_PRELIMINARY_RECONCILIATION."
         ),
     )
     preliminary_reconciliation_metrics_enabled: bool = Field(
@@ -962,8 +962,34 @@ class LimitsAndSchemaSettings(BaseModel):
             in ("1", "true", "yes")
         ),
         description=(
-            "Phase 5: emit aggregate server-agreement metrics for reconciliations. "
-            "Default false. Env: PRELIMINARY_RECONCILIATION_METRICS."
+            "DEPRECATED Phase 5: emit aggregate server-agreement metrics for reconciliations. "
+            "Default false. Prefer authoritative local CODE_SCAN path. "
+            "Env: PRELIMINARY_RECONCILIATION_METRICS."
+        ),
+    )
+    server_authoritative_local_code_scan_ingest_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_AUTHORITATIVE_LOCAL_CODE_SCAN_INGEST", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Intermediate: accept operator-confirmed local CODE_SCAN as authoritative. "
+            "Default false. Env: SERVER_AUTHORITATIVE_LOCAL_CODE_SCAN_INGEST."
+        ),
+    )
+    server_skip_remote_code_scan_for_local_authority: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_SKIP_REMOTE_CODE_SCAN_FOR_LOCAL_AUTHORITY", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Intermediate: at /process apply authoritative local results and skip remote "
+            "CODE_SCAN for those assets. Default false. "
+            "Env: SERVER_SKIP_REMOTE_CODE_SCAN_FOR_LOCAL_AUTHORITY."
         ),
     )
     aisle_identification_pipeline_enabled: bool = Field(

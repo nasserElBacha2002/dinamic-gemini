@@ -78,6 +78,9 @@ from src.domain.jobs.entities import Job
 from src.pipeline.errors import PipelineCancellationRequestedError
 
 if TYPE_CHECKING:
+    from src.application.services.image_processing.apply_authoritative_local_results import (
+        ApplyAuthoritativeLocalResultsService,
+    )
     from src.application.services.image_processing.asset_processing_reconciler import (
         AssetProcessingReconciler,
     )
@@ -145,6 +148,7 @@ class AisleProcessingOrchestrator:
         code_scan_concurrency: int = 1,
         reconciler: AssetProcessingReconciler | None = None,
         external_fallback=None,
+        apply_authoritative_local: ApplyAuthoritativeLocalResultsService | None = None,
     ) -> None:
         self._state_repo = state_repo
         self._attempt_repo = attempt_repo
@@ -164,6 +168,7 @@ class AisleProcessingOrchestrator:
         self._code_scan_concurrency = max(1, int(code_scan_concurrency or 1))
         self._reconciler = reconciler
         self._external_fallback = external_fallback
+        self._apply_authoritative_local = apply_authoritative_local
 
     # ------------------------------------------------------------------
     # State bootstrap
@@ -578,6 +583,21 @@ class AisleProcessingOrchestrator:
         now = self._clock.now()
         recovered = self.recover_abandoned_processing(job.id)
         self._close_started_attempts_for_assets(job.id, recovered, now)
+
+        if self._apply_authoritative_local is not None:
+            try:
+                self._apply_authoritative_local.apply_for_job(
+                    job=job,
+                    aisle_id=aisle.id,
+                    inventory_id=aisle.inventory_id,
+                    assets=list(assets),
+                )
+            except Exception:
+                logger.exception(
+                    "authoritative_local.apply_batch_failed job_id=%s aisle_id=%s",
+                    job.id,
+                    aisle.id,
+                )
 
         if is_cancelled():
             return self._code_scan_cancel(job, strategy_key)

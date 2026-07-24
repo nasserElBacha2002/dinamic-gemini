@@ -98,6 +98,8 @@ describe('featureFlags', () => {
     for (const env of ['development', 'staging', 'production'] as const) {
       expect(resolveFeatureFlags({}, env).mobilePreliminaryReconciliationView).toBe(false);
       expect(resolveFeatureFlags({}, env).mobilePreliminaryReconciliationTrigger).toBe(false);
+      expect(resolveFeatureFlags({}, env).mobileAuthoritativeLocalCodeScan).toBe(false);
+      expect(resolveFeatureFlags({}, env).mobileLocalResultReview).toBe(false);
     }
     const on = resolveFeatureFlags(
       {
@@ -108,5 +110,17 @@ describe('featureFlags', () => {
     );
     expect(on.mobilePreliminaryReconciliationView).toBe(true);
     expect(on.mobilePreliminaryReconciliationTrigger).toBe(true);
+  });
+
+  it('can independently enable authoritative local result flags', () => {
+    const on = resolveFeatureFlags(
+      {
+        mobileAuthoritativeLocalCodeScan: '1',
+        mobileLocalResultReview: true,
+      },
+      'production',
+    );
+    expect(on.mobileAuthoritativeLocalCodeScan).toBe(true);
+    expect(on.mobileLocalResultReview).toBe(true);
   });
 });

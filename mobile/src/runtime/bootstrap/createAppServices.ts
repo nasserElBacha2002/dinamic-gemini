@@ -21,9 +21,13 @@ import { AisleAssetsApi } from '../../features/upload/aisleAssetsApi';
 import { UploadLimitsService } from '../../features/upload/uploadLimitsService';
 import { UploadQueue } from '../../features/upload/uploadQueue';
 import { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
+import { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import { LocalCodeScanStrategy } from '../../features/localCodeScan/localCodeScanStrategy';
 import { PreliminaryDetectionApi } from '../../features/preliminarySync/preliminaryDetectionApi';
 import { PreliminaryDetectionSyncService } from '../../features/preliminarySync/preliminaryDetectionSyncService';
+import { AuthoritativeLocalResultApi } from '../../features/authoritativeLocalResult/authoritativeLocalResultApi';
+import { AuthoritativeLocalResultSyncService } from '../../features/authoritativeLocalResult/authoritativeLocalResultSyncService';
+import { ConfirmLocalResultService } from '../../features/authoritativeLocalResult/confirmLocalResultService';
 import { PreliminaryReconciliationApi } from '../../features/preliminaryReconciliation/preliminaryReconciliationApi';
 import { ReconciliationQueryService } from '../../features/preliminaryReconciliation/reconciliationQueryService';
 import {
@@ -89,7 +93,10 @@ export interface AppServices {
   readonly processing: ProcessingService;
   readonly jobMonitor: JobMonitor;
   readonly localDetectionDrafts: LocalDetectionDraftRepository;
+  readonly confirmedLocalResults: ConfirmedLocalResultRepository;
+  readonly confirmLocalResult: ConfirmLocalResultService;
   readonly preliminarySync: PreliminaryDetectionSyncService;
+  readonly authoritativeLocalSync: AuthoritativeLocalResultSyncService;
   readonly reconciliation: ReconciliationQueryService;
   readonly connectivity: ConnectivityService;
   readonly backgroundWork: BackgroundWorkScheduler;
@@ -117,6 +124,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const captureRepo = new CaptureRepository(db);
   const jobRepo = new ProcessingJobRepository(db);
   const localDetectionDrafts = new LocalDetectionDraftRepository(db);
+  const confirmedLocalResults = new ConfirmedLocalResultRepository(db);
   const connectivity = createConnectivityService();
   const backgroundWork = createBackgroundWorkScheduler(logger, config.flags);
   const backgroundUpload = asBackgroundUploadScheduler(backgroundWork);
@@ -159,6 +167,24 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   if (config.flags.mobilePreliminaryDetectionSync) {
     preliminarySync.startScheduler();
   }
+  const authoritativeApi = new AuthoritativeLocalResultApi(api);
+  const authoritativeLocalSync = new AuthoritativeLocalResultSyncService({
+    flags: config.flags,
+    confirmed: confirmedLocalResults,
+    capture: captureRepo,
+    api: authoritativeApi,
+    logger,
+    reporter: obsWire?.reporter ?? null,
+    connectivity,
+  });
+  const confirmLocalResult = new ConfirmLocalResultService(
+    config.flags,
+    confirmedLocalResults,
+    localDetectionDrafts,
+  );
+  if (config.flags.mobileAuthoritativeLocalCodeScan) {
+    authoritativeLocalSync.startScheduler();
+  }
   const useNativeBg =
     config.flags.backgroundUploadWorker === true || config.flags.workManagerScheduling === true;
   const uploadQueue = new UploadQueue(
@@ -173,6 +199,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       observability: obsWire,
       localCodeScan,
       preliminarySync,
+      authoritativeSync: authoritativeLocalSync,
     },
   );
 
@@ -201,6 +228,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     obsWire
       ? { reporter: obsWire.reporter, marks: obsWire.marks, connectivity }
       : null,
+    { flags: config.flags, confirmed: confirmedLocalResults },
   );
   const jobMonitor = new JobMonitor(api, jobRepo, captureRepo, logger, {
     backgroundPolling: config.flags.backgroundJobPolling,
@@ -248,6 +276,11 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
         // best-effort — never block bootstrap
       });
     }
+    if (config.flags.mobileAuthoritativeLocalCodeScan) {
+      void authoritativeLocalSync.syncPending().catch(() => {
+        // best-effort — never block bootstrap
+      });
+    }
     void cleanupTransformTemps(logger);
     void getStorageStatus().then((s) => {
       if (s.lowSpace) {
@@ -267,10 +300,12 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       await uploadQueue.pause('logout');
       try {
         await localDetectionDrafts.deleteAll();
+        await confirmedLocalResults.deleteAll();
       } catch {
         // best-effort — drafts must not survive logout
       }
       preliminarySync.stopScheduler();
+      authoritativeLocalSync.stopScheduler();
     }),
     inventories: new InventoryService(api),
     clients: new ClientService(api),
@@ -281,7 +316,10 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     processing,
     jobMonitor,
     localDetectionDrafts,
+    confirmedLocalResults,
+    confirmLocalResult,
     preliminarySync,
+    authoritativeLocalSync,
     reconciliation,
     connectivity,
     backgroundWork,
@@ -320,6 +358,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     getStorageStatus,
     async dispose() {
       preliminarySync.stopScheduler();
+      authoritativeLocalSync.stopScheduler();
       capture.dispose();
       await uploadQueue.dispose();
       jobMonitor.dispose();
