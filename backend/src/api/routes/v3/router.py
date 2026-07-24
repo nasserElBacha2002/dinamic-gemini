@@ -23,6 +23,7 @@ from . import (
     preliminary_reconciliations,
     processing_observability,
     reviews,
+    server_reprocess,
 )
 
 router = APIRouter(
@@ -38,6 +39,7 @@ router.include_router(code_scans.router)
 router.include_router(assets.router)
 router.include_router(authoritative_local_code_scan.router)
 router.include_router(authoritative_aisle_finalization.router)
+router.include_router(server_reprocess.router)
 router.include_router(preliminary_detections.router)
 router.include_router(preliminary_reconciliations.router)
 router.include_router(positions.router)

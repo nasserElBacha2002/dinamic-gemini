@@ -1,4 +1,9 @@
-"""Backend readiness for authoritative local CODE_SCAN before /process."""
+"""Backend readiness for authoritative local CODE_SCAN before /process.
+
+Fail-closed when enabled: every PHOTO asset must have a current authoritative row
+(or the caller must not use skip-remote). Missing rows block /process so remote
+CODE_SCAN is never an implicit fallback after local authority is opted in.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,7 @@ from src.application.ports.authoritative_local_code_scan_repository import (
 )
 from src.application.ports.repositories import SourceAssetRepository
 from src.domain.assets.entities import SourceAssetType
+from src.domain.authoritative_aisle_finalization.entities import AuthoritativeReadinessReason
 
 
 @dataclass(frozen=True)
@@ -18,15 +24,17 @@ class AuthoritativeSessionReadinessResult:
     with_current_result: int
     missing_asset_ids: tuple[str, ...]
     reasons: tuple[str, ...]
+    #: True when every photo has a current authoritative row (ready to apply positions).
+    can_apply: bool
+    #: Finalize requires applied positions — always False here (use EvaluateAuthoritativeAisleReadiness).
+    can_finalize: bool
 
 
 class AuthoritativeSessionReadiness:
-    """Hybrid readiness for authoritative local CODE_SCAN.
+    """Fail-closed apply readiness for authoritative local CODE_SCAN.
 
-    Photos *with* a current authoritative row use LOCAL_AUTHORITY at process time.
-    Photos *without* a row fall through to remote CODE_SCAN.
-
-    Missing rows are therefore **not** a hard block — only scope mismatches are.
+    Aligns with EvaluateAuthoritativeAisleReadiness.can_apply: missing current rows
+    block processing when the skip-remote / local-authority path is enabled.
     """
 
     def __init__(
@@ -50,6 +58,8 @@ class AuthoritativeSessionReadiness:
                 with_current_result=0,
                 missing_asset_ids=(),
                 reasons=(),
+                can_apply=True,
+                can_finalize=False,
             )
 
         assets = [
@@ -70,29 +80,41 @@ class AuthoritativeSessionReadiness:
             row = by_asset.get(asset.id)
             if row is None:
                 missing.append(asset.id)
+                reasons.append(AuthoritativeReadinessReason.PENDING_CONFIRMATION.value)
                 continue
             if row.inventory_id != inventory_id or row.aisle_id != aisle_id:
-                reasons.append(f"scope_mismatch:{asset.id}")
+                reasons.append(AuthoritativeReadinessReason.SESSION_INCONSISTENT.value)
                 continue
             with_current += 1
 
-        # Hybrid: missing authoritative rows are expected (remote CODE_SCAN).
-        ready = not reasons
+        can_apply = len(missing) == 0 and AuthoritativeReadinessReason.SESSION_INCONSISTENT.value not in reasons
+        # Fail-closed: no implicit remote CODE_SCAN for missing local confirms.
+        ready = can_apply
+        # Dedupe reasons
+        seen: set[str] = set()
+        uniq: list[str] = []
+        for r in reasons:
+            if r not in seen:
+                seen.add(r)
+                uniq.append(r)
         return AuthoritativeSessionReadinessResult(
             ready=ready,
             total_assets=len(assets),
             with_current_result=with_current,
             missing_asset_ids=tuple(missing),
-            reasons=tuple(reasons),
+            reasons=tuple(uniq),
+            can_apply=can_apply,
+            can_finalize=False,
         )
 
     def require_ready(self, *, inventory_id: str, aisle_id: str) -> None:
-        """Raise only on hard scope errors — never on missing local confirms."""
+        """Raise when aisle cannot apply local authority for all assets (fail-closed)."""
         from src.application.errors import AuthoritativeSessionNotReadyError
 
         result = self.evaluate(inventory_id=inventory_id, aisle_id=aisle_id)
         if not result.ready:
             raise AuthoritativeSessionNotReadyError(
-                "Authoritative local results have scope conflicts for aisle processing",
+                "Authoritative local results incomplete for aisle processing "
+                "(fail-closed; remote CODE_SCAN fallback disabled)",
                 reasons=result.reasons,
             )

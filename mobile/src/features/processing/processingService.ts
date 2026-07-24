@@ -141,11 +141,26 @@ export class ProcessingService {
     if (!gate?.flags.mobileAuthoritativeLocalCodeScan) {
       return { ready: true, reason: null };
     }
-    // Hybrid path: never block /process for missing local confirms.
-    // Confirmed+synced rows still apply as LOCAL_AUTHORITY on the server;
-    // everything else falls through to remote CODE_SCAN.
-    void sessionId;
-    void photos;
+    // Fail-closed: when local authority is on, do not start remote /process until every
+    // uploaded photo is confirmed+SYNCED or explicitly excluded.
+    const uploaded = photos.filter(
+      (p) => p.upload_status === 'uploaded' && Boolean(p.backend_asset_id),
+    );
+    const confirmed = await gate.confirmed.listForSession(sessionId);
+    const byPhoto = new Map(confirmed.map((c) => [c.capture_photo_id, c]));
+    const missing: string[] = [];
+    for (const photo of uploaded) {
+      const row = byPhoto.get(photo.id);
+      if (!row || row.sync_status !== 'SYNCED') {
+        missing.push(photo.display_name || photo.id);
+      }
+    }
+    if (missing.length > 0) {
+      return {
+        ready: false,
+        reason: `Faltan resultados locales confirmados/sincronizados (${missing.length}). No se inicia procesamiento remoto.`,
+      };
+    }
     return { ready: true, reason: null };
   }
 

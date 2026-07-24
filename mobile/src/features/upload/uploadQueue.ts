@@ -75,6 +75,15 @@ export interface UploadQueueOptions {
   readonly authoritativeSync?: {
     enqueuePhotoAfterUpload(photoId: string, backendAssetId: string): Promise<void>;
   } | null;
+  /** Phase 6: persist explicit exclusion before remote delete (best-effort). */
+  readonly authoritativeExclusion?: {
+    recordExclusion(input: {
+      inventoryId: string;
+      aisleId: string;
+      assetId: string;
+      reason?: string;
+    }): Promise<void>;
+  } | null;
 }
 
 export interface UploadQueueSnapshot {
@@ -419,6 +428,18 @@ export class UploadQueue {
     }
     await this.repo.setPhotoUploadStatus(photoId, 'remote_delete_pending');
     try {
+      if (this.options.authoritativeExclusion && photo.backend_asset_id) {
+        try {
+          await this.options.authoritativeExclusion.recordExclusion({
+            inventoryId: session.inventory_id,
+            aisleId: session.aisle_id,
+            assetId: photo.backend_asset_id,
+            reason: 'USER_EXCLUDED',
+          });
+        } catch {
+          // best-effort — still attempt remote delete
+        }
+      }
       await this.assetsApi.deleteAsset(session.inventory_id, session.aisle_id, photo.backend_asset_id);
       await this.repo.setPhotoUploadStatus(photoId, 'remote_deleted', {
         remoteDeletedAt: new Date().toISOString(),

@@ -16,6 +16,8 @@ class AuthoritativeAisleReadinessResponse(BaseModel):
     reasons: list[str] = Field(default_factory=list)
     unique_codes: int = 0
     total_quantity: int = 0
+    can_apply: bool = False
+    can_finalize: bool = False
 
 
 class FinalizeAuthoritativeAisleRequest(BaseModel):
@@ -33,3 +35,13 @@ class FinalizeAuthoritativeAisleResponse(BaseModel):
     excluded_assets: int
     position_count: int
     idempotent_replay: bool = False
+
+
+class AuthoritativeExclusionRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=40)
+
+
+class AuthoritativeExclusionResponse(BaseModel):
+    asset_id: str
+    reason: str
+    excluded_at: str

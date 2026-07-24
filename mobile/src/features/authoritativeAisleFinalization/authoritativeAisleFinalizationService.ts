@@ -1,5 +1,6 @@
 import type { FeatureFlags } from '../../core/featureFlags';
 import type { Logger } from '../../core/logging';
+import type { AisleFinalizationIntentRepository } from '../../database/repositories/aisleFinalizationIntentRepository';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import { ApiError } from '../../services/api/apiClient';
@@ -25,6 +26,7 @@ export interface AuthoritativeAisleFinalizationServiceOptions {
   readonly api: AuthoritativeAisleFinalizationApi;
   readonly capture: CaptureRepository;
   readonly confirmed: ConfirmedLocalResultRepository;
+  readonly intents?: AisleFinalizationIntentRepository | null;
   readonly connectivity?: ConnectivityService | null;
   readonly logger: Logger;
   readonly createId: () => string;
@@ -32,7 +34,7 @@ export interface AuthoritativeAisleFinalizationServiceOptions {
 
 /**
  * Phase 6: operator finalization. Never marks completed until server confirms.
- * Persists finalization_id for idempotent retries (in-memory for this session + caller store).
+ * Persists finalization_id + offline intent in SQLite when offline queue flag is on.
  */
 export class AuthoritativeAisleFinalizationService {
   private inFlight = false;
@@ -74,6 +76,21 @@ export class AuthoritativeAisleFinalizationService {
     return this.options.api.getReadiness(inventoryId, aisleId);
   }
 
+  async recordExclusion(input: {
+    readonly inventoryId: string;
+    readonly aisleId: string;
+    readonly assetId: string;
+    readonly reason?: string;
+  }): Promise<void> {
+    if (!this.isEnabled()) return;
+    await this.options.api.recordExclusion(
+      input.inventoryId,
+      input.aisleId,
+      input.assetId,
+      input.reason ?? 'USER_EXCLUDED',
+    );
+  }
+
   async finalize(input: {
     readonly sessionId: string;
     readonly inventoryId: string;
@@ -85,11 +102,27 @@ export class AuthoritativeAisleFinalizationService {
     if (this.inFlight) {
       return { ok: false, reason: 'Finalization already in progress', code: 'IN_FLIGHT' };
     }
+    const finalizationId = this.getOrCreateFinalizationId(input.sessionId);
     const online = this.options.connectivity
       ? this.options.connectivity.getState() === 'online'
       : true;
     if (!online) {
       this.statuses.set(input.sessionId, 'FINALIZATION_PENDING');
+      if (
+        this.options.flags.authoritativeFinalizationOfflineQueue &&
+        this.options.intents
+      ) {
+        const nowIso = new Date().toISOString();
+        await this.options.intents.upsertPending({
+          id: this.options.createId(),
+          sessionId: input.sessionId,
+          inventoryId: input.inventoryId,
+          aisleId: input.aisleId,
+          finalizationId,
+          expectedAssetCount: 0,
+          nowIso,
+        });
+      }
       return {
         ok: false,
         reason: 'Sin conexión. La finalización queda pendiente hasta recuperar red.',
@@ -99,10 +132,9 @@ export class AuthoritativeAisleFinalizationService {
 
     this.inFlight = true;
     this.statuses.set(input.sessionId, 'FINALIZATION_SYNCING');
-    const finalizationId = this.getOrCreateFinalizationId(input.sessionId);
     try {
       const server = await this.options.api.getReadiness(input.inventoryId, input.aisleId);
-      if (server.status !== 'READY') {
+      if (server.status !== 'READY' || !server.canFinalize) {
         this.statuses.set(input.sessionId, 'FINALIZATION_REJECTED');
         return {
           ok: false,
@@ -110,24 +142,52 @@ export class AuthoritativeAisleFinalizationService {
           code: 'AUTHORITATIVE_FINALIZATION_NOT_READY',
         };
       }
+      if (
+        this.options.flags.authoritativeFinalizationOfflineQueue &&
+        this.options.intents
+      ) {
+        const nowIso = new Date().toISOString();
+        await this.options.intents.upsertPending({
+          id: this.options.createId(),
+          sessionId: input.sessionId,
+          inventoryId: input.inventoryId,
+          aisleId: input.aisleId,
+          finalizationId,
+          expectedAssetCount: server.totalImages,
+          nowIso,
+        });
+        await this.options.intents.updateStatus(input.sessionId, 'FINALIZATION_SYNCING', {
+          nowIso,
+        });
+      }
       const result = await this.options.api.finalize(input.inventoryId, input.aisleId, {
         finalization_id: finalizationId,
         expected_asset_count: server.totalImages,
         client_session_id: input.sessionId,
       });
       this.statuses.set(input.sessionId, 'FINALIZATION_COMPLETED');
+      if (this.options.intents) {
+        await this.options.intents.updateStatus(input.sessionId, 'FINALIZATION_COMPLETED', {
+          nowIso: new Date().toISOString(),
+        });
+      }
       return { ok: true, status: result.status };
     } catch (e) {
       const apiErr = e instanceof ApiError ? e : null;
       const code = apiErr?.code ?? 'FINALIZATION_FAILED';
+      let status: MobileFinalizationStatus = 'FINALIZATION_RETRY_SCHEDULED';
       if (code.includes('CONFLICT') || apiErr?.status === 409) {
-        this.statuses.set(input.sessionId, 'FINALIZATION_CONFLICT');
-      } else if (apiErr?.status != null && apiErr.status >= 500) {
-        this.statuses.set(input.sessionId, 'FINALIZATION_RETRY_SCHEDULED');
+        status = 'FINALIZATION_CONFLICT';
       } else if (apiErr?.status === 422 || apiErr?.status === 404) {
-        this.statuses.set(input.sessionId, 'FINALIZATION_FAILED_TERMINAL');
-      } else {
-        this.statuses.set(input.sessionId, 'FINALIZATION_RETRY_SCHEDULED');
+        status = 'FINALIZATION_FAILED_TERMINAL';
+      }
+      this.statuses.set(input.sessionId, status);
+      if (this.options.intents) {
+        await this.options.intents.updateStatus(input.sessionId, status, {
+          errorCode: code,
+          nowIso: new Date().toISOString(),
+          bumpAttempt: true,
+        });
       }
       this.options.logger.warn('error', {
         where: 'authoritative_aisle_finalization',

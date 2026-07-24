@@ -383,6 +383,56 @@ CREATE INDEX IF NOT EXISTS idx_confirmed_local_results_sync
 ALTER TABLE confirmed_local_results ADD COLUMN applied_at TEXT;
 `,
   },
+  {
+    version: 14,
+    name: 'aisle_finalization_intents',
+    sql: `
+CREATE TABLE IF NOT EXISTS aisle_finalization_intents (
+  id TEXT PRIMARY KEY NOT NULL,
+  capture_session_id TEXT NOT NULL,
+  inventory_id TEXT NOT NULL,
+  aisle_id TEXT NOT NULL,
+  finalization_id TEXT NOT NULL,
+  expected_asset_count INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  last_error_code TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_retry_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(capture_session_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_aisle_finalization_intents_status
+  ON aisle_finalization_intents(status, next_retry_at);
+`,
+  },
+  {
+    version: 15,
+    name: 'server_reprocess_request_intents',
+    sql: `
+CREATE TABLE IF NOT EXISTS server_reprocess_request_intents (
+  id TEXT PRIMARY KEY NOT NULL,
+  request_id TEXT NOT NULL UNIQUE,
+  inventory_id TEXT NOT NULL,
+  aisle_id TEXT NOT NULL,
+  scope_type TEXT NOT NULL,
+  scope_json TEXT NOT NULL,
+  processing_mode TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL,
+  last_error_code TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_retry_at TEXT,
+  server_run_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_server_reprocess_request_intents_status
+  ON server_reprocess_request_intents(status, next_retry_at);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

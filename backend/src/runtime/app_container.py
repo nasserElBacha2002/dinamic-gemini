@@ -185,8 +185,9 @@ from src.runtime.container.repository_builders import (
     build_preliminary_detection_reconciliation_repository,
     build_position_repository,
     build_product_record_repository,
-    build_result_evidence_repository,
     build_review_action_repository,
+    build_result_evidence_repository,
+    build_server_reprocess_repository,
     build_source_asset_repository,
     build_supplier_extraction_profile_repository,
     build_supplier_prompt_config_repository,
@@ -273,6 +274,7 @@ class AppContainer:
         self._preliminary_detection_repo: MobilePreliminaryDetectionRepository | None = None
         self._authoritative_local_code_scan_repo = None
         self._authoritative_aisle_finalization_repo = None
+        self._server_reprocess_repo = None
         self._preliminary_reconciliation_repo: (
             PreliminaryDetectionReconciliationRepository | None
         ) = None
@@ -378,6 +380,7 @@ class AppContainer:
         self._preliminary_detection_repo = None
         self._authoritative_local_code_scan_repo = None
         self._authoritative_aisle_finalization_repo = None
+        self._server_reprocess_repo = None
         self._preliminary_reconciliation_repo = None
         self._stored_artifact_reader = None
         self._repository_backend_resolution = None
@@ -548,6 +551,84 @@ class AppContainer:
             )
         )
         return self._authoritative_aisle_finalization_repo
+
+    def get_server_reprocess_repo(self):
+        if self._server_reprocess_repo is not None:
+            return self._server_reprocess_repo
+        self._server_reprocess_repo = build_server_reprocess_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._server_reprocess_repo
+
+    @property
+    def create_server_reprocess_run(self):
+        from src.application.use_cases.aisles.create_server_reprocess_run import (
+            CreateServerReprocessRun,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return CreateServerReprocessRun(
+            enabled=bool(
+                getattr(settings, "server_server_reprocess_enabled", False)
+            ),
+            inventory_repo=self.get_inventory_repo(),
+            aisle_repo=self.get_aisle_repo(),
+            asset_repo=self.get_asset_repo(),
+            reprocess_repo=self.get_server_reprocess_repo(),
+            authoritative_repo=self.get_authoritative_local_code_scan_repo(),
+            position_repo=self.get_position_repo(),
+            clock=self.get_clock(),
+        )
+
+    @property
+    def list_server_reprocess_proposals(self):
+        from src.application.use_cases.aisles.list_server_reprocess_proposals import (
+            ListServerReprocessProposals,
+        )
+
+        return ListServerReprocessProposals(
+            reprocess_repo=self.get_server_reprocess_repo()
+        )
+
+    @property
+    def execute_server_reprocess_run(self):
+        from src.application.use_cases.aisles.execute_server_reprocess_run import (
+            ExecuteServerReprocessRun,
+        )
+
+        return ExecuteServerReprocessRun(
+            reprocess_repo=self.get_server_reprocess_repo(),
+            clock=self.get_clock(),
+        )
+
+    @property
+    def cancel_server_reprocess_run(self):
+        from src.application.use_cases.aisles.execute_server_reprocess_run import (
+            CancelServerReprocessRun,
+        )
+
+        return CancelServerReprocessRun(
+            reprocess_repo=self.get_server_reprocess_repo(),
+            clock=self.get_clock(),
+        )
+
+    @property
+    def adopt_server_reprocess_proposals(self):
+        from src.application.use_cases.aisles.adopt_server_reprocess_proposals import (
+            AdoptServerReprocessProposals,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return AdoptServerReprocessProposals(
+            enabled=bool(
+                getattr(settings, "server_server_reprocess_adoption_enabled", False)
+            ),
+            reprocess_repo=self.get_server_reprocess_repo(),
+            authoritative_repo=self.get_authoritative_local_code_scan_repo(),
+            clock=self.get_clock(),
+        )
 
     def get_preliminary_detection_reconciliation_repo(
         self,

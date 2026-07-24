@@ -32,6 +32,8 @@ export interface AuthoritativeAisleReadiness {
   readonly reasons: readonly AuthoritativeReadinessReason[];
   readonly uniqueCodes: number;
   readonly totalQuantity: number;
+  readonly canApply: boolean;
+  readonly canFinalize: boolean;
 }
 
 export interface AuthoritativeAisleReadinessApiDto {
@@ -45,6 +47,8 @@ export interface AuthoritativeAisleReadinessApiDto {
   readonly reasons: readonly string[];
   readonly unique_codes?: number;
   readonly total_quantity?: number;
+  readonly can_apply?: boolean;
+  readonly can_finalize?: boolean;
 }
 
 export function mapAuthoritativeReadinessDto(
@@ -65,6 +69,8 @@ export function mapAuthoritativeReadinessDto(
     reasons: dto.reasons as AuthoritativeReadinessReason[],
     uniqueCodes: dto.unique_codes ?? 0,
     totalQuantity: dto.total_quantity ?? 0,
+    canApply: dto.can_apply ?? status === 'READY',
+    canFinalize: dto.can_finalize ?? status === 'READY',
   };
 }
 
@@ -162,6 +168,8 @@ export function evaluateLocalAuthoritativeAisleReadiness(input: {
     reasons: status === 'READY' ? [] : uniqReasons,
     uniqueCodes: 0,
     totalQuantity: 0,
+    canApply: status === 'READY' || (pending === 0 && conflicted === 0 && failed === 0),
+    canFinalize: status === 'READY',
   };
 }
 
@@ -180,5 +188,7 @@ function emptyReadiness(
     reasons,
     uniqueCodes: 0,
     totalQuantity: 0,
+    canApply: false,
+    canFinalize: false,
   };
 }

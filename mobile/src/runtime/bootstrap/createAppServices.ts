@@ -22,6 +22,7 @@ import { UploadLimitsService } from '../../features/upload/uploadLimitsService';
 import { UploadQueue } from '../../features/upload/uploadQueue';
 import { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
 import { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
+import { AisleFinalizationIntentRepository } from '../../database/repositories/aisleFinalizationIntentRepository';
 import { LocalCodeScanStrategy } from '../../features/localCodeScan/localCodeScanStrategy';
 import { PreliminaryDetectionApi } from '../../features/preliminarySync/preliminaryDetectionApi';
 import { PreliminaryDetectionSyncService } from '../../features/preliminarySync/preliminaryDetectionSyncService';
@@ -30,6 +31,9 @@ import { AuthoritativeLocalResultSyncService } from '../../features/authoritativ
 import { ConfirmLocalResultService } from '../../features/authoritativeLocalResult/confirmLocalResultService';
 import { AuthoritativeAisleFinalizationApi } from '../../features/authoritativeAisleFinalization/authoritativeAisleFinalizationApi';
 import { AuthoritativeAisleFinalizationService } from '../../features/authoritativeAisleFinalization/authoritativeAisleFinalizationService';
+import { ServerReprocessApi } from '../../features/serverReprocess/serverReprocessApi';
+import { ServerReprocessService } from '../../features/serverReprocess/serverReprocessService';
+import { ServerReprocessIntentRepository } from '../../database/repositories/serverReprocessIntentRepository';
 import { createId } from '../../shared/createId';
 import { PreliminaryReconciliationApi } from '../../features/preliminaryReconciliation/preliminaryReconciliationApi';
 import { ReconciliationQueryService } from '../../features/preliminaryReconciliation/reconciliationQueryService';
@@ -101,6 +105,7 @@ export interface AppServices {
   readonly preliminarySync: PreliminaryDetectionSyncService;
   readonly authoritativeLocalSync: AuthoritativeLocalResultSyncService;
   readonly authoritativeAisleFinalization: AuthoritativeAisleFinalizationService;
+  readonly serverReprocess: ServerReprocessService;
   readonly reconciliation: ReconciliationQueryService;
   readonly connectivity: ConnectivityService;
   readonly backgroundWork: BackgroundWorkScheduler;
@@ -129,6 +134,8 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const jobRepo = new ProcessingJobRepository(db);
   const localDetectionDrafts = new LocalDetectionDraftRepository(db);
   const confirmedLocalResults = new ConfirmedLocalResultRepository(db);
+  const aisleFinalizationIntents = new AisleFinalizationIntentRepository(db);
+  const serverReprocessIntents = new ServerReprocessIntentRepository(db);
   const connectivity = createConnectivityService();
   const backgroundWork = createBackgroundWorkScheduler(logger, config.flags);
   const backgroundUpload = asBackgroundUploadScheduler(backgroundWork);
@@ -194,10 +201,16 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     api: new AuthoritativeAisleFinalizationApi(api),
     capture: captureRepo,
     confirmed: confirmedLocalResults,
+    intents: aisleFinalizationIntents,
     connectivity,
     logger,
     createId,
   });
+  const serverReprocess = new ServerReprocessService(
+    new ServerReprocessApi(api),
+    config.flags.serverReprocessOfflineQueue ? serverReprocessIntents : null,
+    config.flags,
+  );
   const useNativeBg =
     config.flags.backgroundUploadWorker === true || config.flags.workManagerScheduling === true;
   const uploadQueue = new UploadQueue(
@@ -213,6 +226,9 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       localCodeScan,
       preliminarySync,
       authoritativeSync: authoritativeLocalSync,
+      authoritativeExclusion: config.flags.mobileAuthoritativeAisleFinalization
+        ? authoritativeAisleFinalization
+        : null,
     },
   );
 
@@ -334,6 +350,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     preliminarySync,
     authoritativeLocalSync,
     authoritativeAisleFinalization,
+    serverReprocess,
     reconciliation,
     connectivity,
     backgroundWork,

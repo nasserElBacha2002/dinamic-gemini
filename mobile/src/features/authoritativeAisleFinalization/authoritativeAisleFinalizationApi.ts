@@ -38,6 +38,19 @@ export class AuthoritativeAisleFinalizationApi {
     return mapAuthoritativeReadinessDto(dto);
   }
 
+  async recordExclusion(
+    inventoryId: string,
+    aisleId: string,
+    assetId: string,
+    reason: string,
+  ): Promise<void> {
+    const path =
+      `/api/v3/inventories/${encodeURIComponent(inventoryId)}` +
+      `/aisles/${encodeURIComponent(aisleId)}` +
+      `/assets/${encodeURIComponent(assetId)}/authoritative-exclusion`;
+    await this.api.post(path, { reason }, { timeoutMs: 15_000 });
+  }
+
   async finalize(
     inventoryId: string,
     aisleId: string,

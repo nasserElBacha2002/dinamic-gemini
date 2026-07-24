@@ -29,6 +29,7 @@ from src.application.ports.repositories import (
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.evaluate_authoritative_aisle_readiness import (
     EvaluateAuthoritativeAisleReadiness,
+    position_source_asset_id,
 )
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.domain.assets.entities import SourceAssetType
@@ -38,6 +39,7 @@ from src.domain.authoritative_aisle_finalization.entities import (
     AuthoritativeAisleReadinessStatus,
     AuthoritativeFinalizationItemStatus,
     AuthoritativeFinalizationStatus,
+    AuthoritativeReadinessReason,
 )
 
 logger = logging.getLogger(__name__)
@@ -168,7 +170,7 @@ class FinalizeAuthoritativeAisle:
             readiness = self._readiness.execute(
                 inventory_id=command.inventory_id, aisle_id=command.aisle_id
             )
-            if readiness.status != AuthoritativeAisleReadinessStatus.READY:
+            if readiness.status != AuthoritativeAisleReadinessStatus.READY or not readiness.can_finalize:
                 raise AuthoritativeFinalizationNotReadyError(
                     "Aisle is not ready for authoritative finalization",
                     reasons=readiness.reasons,
@@ -198,11 +200,11 @@ class FinalizeAuthoritativeAisle:
             )
             by_asset = {r.asset_id: r for r in rows}
 
-            position_by_asset: dict[str, str] = {}
-            if self._position_repo is not None:
+            position_by_asset: dict[str, str] = dict(readiness.position_ids_by_asset)
+            if self._position_repo is not None and not position_by_asset:
                 positions = list(self._position_repo.list_by_aisle(command.aisle_id))
                 for p in positions:
-                    aid = getattr(p, "source_asset_id", None) or getattr(p, "asset_id", None)
+                    aid = position_source_asset_id(p)
                     pid = getattr(p, "id", None)
                     if aid and pid and aid not in position_by_asset:
                         position_by_asset[str(aid)] = str(pid)
@@ -227,6 +229,11 @@ class FinalizeAuthoritativeAisle:
                     continue
                 row = by_asset[asset.id]
                 pos_id = position_by_asset.get(asset.id)
+                if self._position_repo is not None and not pos_id:
+                    raise AuthoritativeFinalizationNotReadyError(
+                        "Applied authoritative result missing position",
+                        reasons=(AuthoritativeReadinessReason.POSITION_MISSING.value,),
+                    )
                 items.append(
                     AuthoritativeAisleFinalizationItem(
                         id=str(uuid.uuid4()),
@@ -238,7 +245,7 @@ class FinalizeAuthoritativeAisle:
                         created_at=now,
                     )
                 )
-                hash_parts.append(f"A:{asset.id}:{row.id}:{row.content_hash}")
+                hash_parts.append(f"A:{asset.id}:{row.id}:{row.content_hash}:{pos_id or ''}")
 
             # Exclusions for assets no longer listed.
             for ex in exclusions:

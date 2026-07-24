@@ -228,8 +228,29 @@ def test_readiness_ready_when_all_applied(harness):
     )
     result = harness["readiness"].execute(inventory_id="i1", aisle_id="a1")
     assert result.status == AuthoritativeAisleReadinessStatus.READY
+    assert result.can_apply is True
+    assert result.can_finalize is True
     assert result.applied_images == 2
     assert result.unique_codes == 2
+
+
+def test_readiness_can_apply_before_finalize(harness):
+    auth = harness["auth"]
+    auth.create_authoritative_version(
+        new_result=_auth_row(rid="r1", asset_id="p1", applied=False),
+        expected_current_id=None,
+        expected_row_version=None,
+    )
+    auth.create_authoritative_version(
+        new_result=_auth_row(rid="r2", asset_id="p2", applied=False),
+        expected_current_id=None,
+        expected_row_version=None,
+    )
+    result = harness["readiness"].execute(inventory_id="i1", aisle_id="a1")
+    assert result.can_apply is True
+    assert result.can_finalize is False
+    assert result.status == AuthoritativeAisleReadinessStatus.NOT_READY
+    assert "PENDING_FINAL_APPLY" in result.reasons
 
 
 def test_finalize_success_and_idempotent_replay(harness):

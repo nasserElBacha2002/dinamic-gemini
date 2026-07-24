@@ -44,6 +44,12 @@ export interface FeatureFlags {
   readonly mobileAuthoritativeAisleFinalization: boolean;
   /** Phase 6: persist offline finalization intent (default false). */
   readonly authoritativeFinalizationOfflineQueue: boolean;
+  /** Phase 7: optional server reprocess action (default false). */
+  readonly mobileServerReprocess: boolean;
+  /** Phase 7: proposal review / adoption UI (default false). */
+  readonly mobileServerReprocessReview: boolean;
+  /** Phase 7: persist offline reprocess request intent (default false). */
+  readonly serverReprocessOfflineQueue: boolean;
 }
 
 /** Non-production defaults. Phase 1/2 upload optimizations default off in production. */
@@ -71,6 +77,9 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   mobileLocalResultReview: false,
   mobileAuthoritativeAisleFinalization: false,
   authoritativeFinalizationOfflineQueue: false,
+  mobileServerReprocess: false,
+  mobileServerReprocessReview: false,
+  serverReprocessOfflineQueue: false,
 };
 
 function phaseOptInDefaultForEnvironment(environment: string): boolean {
@@ -131,5 +140,8 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
       'authoritativeFinalizationOfflineQueue',
       false,
     ),
+    mobileServerReprocess: bool('mobileServerReprocess', false),
+    mobileServerReprocessReview: bool('mobileServerReprocessReview', false),
+    serverReprocessOfflineQueue: bool('serverReprocessOfflineQueue', false),
   };
 }

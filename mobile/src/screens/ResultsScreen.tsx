@@ -13,14 +13,18 @@ export interface ResultsScreenProps {
   aisle: AisleDto | null;
   onBackToAisles: () => void;
   onAnotherAisle: () => void;
+  onServerReprocess?: () => void;
   onError: (message: string | null) => void;
 }
 
 export function ResultsScreen({
   services,
   sessionId,
+  inventory,
+  aisle,
   onBackToAisles,
   onAnotherAisle,
+  onServerReprocess,
   onError,
 }: ResultsScreenProps) {
   const [busy, setBusy] = useState(true);
@@ -95,6 +99,12 @@ export function ResultsScreen({
       {summary.jobId ? <Text style={styles.muted}>Diagnóstico job: {summary.jobId}</Text> : null}
       {summary.loadState === 'error' || summary.loadState === 'pending' || summary.loadState === 'partial' ? (
         <Button label="Reintentar consulta" onPress={load} />
+      ) : null}
+      {onServerReprocess &&
+      services.serverReprocess.isActionVisible() &&
+      inventory &&
+      aisle ? (
+        <Button label="Reprocesar en el servidor" onPress={onServerReprocess} />
       ) : null}
       <Button label="Volver a pasillos" onPress={onBackToAisles} />
       <Button label="Capturar otro pasillo" onPress={onAnotherAisle} />

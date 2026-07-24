@@ -20,6 +20,7 @@ import { ResultsScreen } from './src/screens/ResultsScreen';
 import { ReviewScreen } from './src/screens/ReviewScreen';
 import { LocalResultReviewScreen } from './src/screens/LocalResultReviewScreen';
 import { AuthoritativeFinalizeScreen } from './src/screens/AuthoritativeFinalizeScreen';
+import { ServerReprocessScreen } from './src/screens/ServerReprocessScreen';
 import { UploadsScreen } from './src/screens/UploadsScreen';
 import type { AisleIdentificationMode } from './src/features/processing/processingMode';
 import { sanitizeIdentificationModeSelection } from './src/features/processing/processingMode';
@@ -35,6 +36,7 @@ type Screen =
   | 'local-result-review'
   | 'uploads'
   | 'authoritative-finalize'
+  | 'server-reprocess'
   | 'processing'
   | 'results'
   | 'diagnostic';
@@ -441,6 +443,16 @@ export default function App(): JSX.Element {
           aisle={selectedAisle}
           onBackToAisles={() => setScreen(selectedInventory ? 'aisles' : 'inventories')}
           onAnotherAisle={() => setScreen('inventories')}
+          onServerReprocess={() => setScreen('server-reprocess')}
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'server-reprocess' && selectedInventory && selectedAisle ? (
+        <ServerReprocessScreen
+          services={services}
+          inventory={selectedInventory}
+          aisle={selectedAisle}
+          onBack={() => setScreen('results')}
           onError={setError}
         />
       ) : null}

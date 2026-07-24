@@ -147,6 +147,15 @@ const config: ExpoConfig = {
         'DINAMIC_FLAG_AUTHORITATIVE_FINALIZATION_OFFLINE_QUEUE',
         'authoritativeFinalizationOfflineQueue',
       ),
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_SERVER_REPROCESS', 'mobileServerReprocess'),
+      ...optionalFlag(
+        'DINAMIC_FLAG_MOBILE_SERVER_REPROCESS_REVIEW',
+        'mobileServerReprocessReview',
+      ),
+      ...optionalFlag(
+        'DINAMIC_FLAG_SERVER_REPROCESS_OFFLINE_QUEUE',
+        'serverReprocessOfflineQueue',
+      ),
     },
   },
 };

@@ -1005,6 +1005,28 @@ class LimitsAndSchemaSettings(BaseModel):
             "Default false. Env: SERVER_AUTHORITATIVE_AISLE_FINALIZATION."
         ),
     )
+    server_server_reprocess_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_SERVER_REPROCESS", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: enable POST/GET server-reprocess (proposal runs; no overwrite). "
+            "Default false. Env: SERVER_SERVER_REPROCESS."
+        ),
+    )
+    server_server_reprocess_adoption_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_SERVER_REPROCESS_ADOPTION", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: enable POST server-reprocess/{run_id}/adopt. "
+            "Default false. Env: SERVER_SERVER_REPROCESS_ADOPTION."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_authoritative_local_flag_matrix(self) -> Self:
