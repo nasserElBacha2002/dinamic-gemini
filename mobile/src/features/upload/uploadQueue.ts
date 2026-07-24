@@ -14,6 +14,11 @@ import {
 } from '../../core/imagePreparationPolicy';
 import { defaultUploadConcurrencyPolicy } from '../../core/uploadConcurrencyPolicy';
 import { UploadSlotGate, prepareAllowance } from '../../core/uploadSlotGate';
+import {
+  UPLOAD_WORKER_OWNER_JS,
+  hasForeignUploadLease,
+  leaseExpiresAtIso,
+} from '../../core/uploadLease';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
@@ -192,7 +197,7 @@ export class UploadQueue {
       if (['active', 'paused', 'finishing', 'review', 'uploading', 'upload_review'].includes(session.status)) {
         await this.enqueueSession(session.id);
         if (this.options.backgroundWork) {
-          void this.options.backgroundWork.scheduleUploadSession(session.id);
+          this.scheduleNativeDrain(session.id);
         }
       }
     }
@@ -215,6 +220,7 @@ export class UploadQueue {
     }
     this.scheduleTick(0);
     this.emit();
+    this.scheduleNativeDrain(sessionId);
   }
 
   async enqueuePhoto(sessionId: string, photoId: string): Promise<void> {
@@ -264,6 +270,7 @@ export class UploadQueue {
     }
     this.scheduleTick(0);
     this.emit();
+    this.scheduleNativeDrain(sessionId);
   }
 
   async pause(reason: string): Promise<void> {
@@ -329,6 +336,7 @@ export class UploadQueue {
     if (photo.upload_status === 'uploading') {
       // Intent + abort only; do NOT delete transform while multipart may still read it.
       this.cancelledWhileUploading.add(photoId);
+      await this.repo.setUploadCancelRequested(photoId, true);
       const attemptId = this.uploadAttemptByPhoto.get(photoId);
       if (this.flags?.uploadAbortEnabled !== false && attemptId) {
         const controller = this.uploadAbortByAttempt.get(attemptId);
@@ -673,6 +681,18 @@ export class UploadQueue {
     if (this.inFlightPhotos.has(photo.id)) {
       return false;
     }
+    if (
+      hasForeignUploadLease({
+        workerOwner: photo.upload_worker_owner,
+        leaseExpiresAt: photo.upload_lease_expires_at,
+        selfOwner: UPLOAD_WORKER_OWNER_JS,
+      })
+    ) {
+      return false;
+    }
+    if (photo.upload_cancel_requested === 1) {
+      return false;
+    }
     if (photo.upload_status === 'retryable_error') {
       if (!photo.next_retry_at) {
         return true;
@@ -680,6 +700,14 @@ export class UploadQueue {
       return Date.parse(photo.next_retry_at) <= Date.now();
     }
     return photo.upload_status === 'queued';
+  }
+
+  private scheduleNativeDrain(_sessionId?: string): void {
+    if (this.flags?.backgroundUploadWorker !== true || !this.options.backgroundWork) {
+      return;
+    }
+    // Single unique queue only — do not also schedule per-session workers.
+    void this.options.backgroundWork.scheduleUploadQueue?.(false);
   }
 
   /**
@@ -804,6 +832,7 @@ export class UploadQueue {
     } finally {
       this.inFlightPhotos.delete(photo.id);
       this.emit();
+      this.scheduleNativeDrain(sessionId);
     }
   }
 
@@ -880,6 +909,17 @@ export class UploadQueue {
             this.obs?.marks.takeElapsedMs(photoMarkKey(session.id, photo.client_file_id, 'prepared')) ??
             this.obs?.marks.takeElapsedMs(photoMarkKey(session.id, photo.client_file_id, 'queued')) ??
             null;
+          const leaseToken = `js-${createId()}`;
+          const leased = await this.repo.tryAcquireUploadLease({
+            photoId,
+            owner: UPLOAD_WORKER_OWNER_JS,
+            token: leaseToken,
+            expiresAt: leaseExpiresAtIso(),
+          });
+          if (!leased) {
+            // Native (or another) owner holds the lease — do not race the upload.
+            continue;
+          }
           await this.repo.setPhotoUploadStatus(photoId, 'uploading', {
             progress: 0,
             incrementAttempts: true,

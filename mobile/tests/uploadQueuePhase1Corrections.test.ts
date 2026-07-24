@@ -115,6 +115,11 @@ function photo(
     local_transform_uri: `file://transform/${id}.jpg`,
     original_size: 2_000_000,
     upload_size: 900_000,
+    upload_worker_owner: null,
+    upload_lease_token: null,
+    upload_lease_expires_at: null,
+    upload_heartbeat_at: null,
+    upload_cancel_requested: 0,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...overrides,
@@ -202,6 +207,15 @@ describe('UploadQueue phase1 corrections', () => {
           sessions.set(sessionId, { ...s, preparation_processing_mode: mode });
         }
       }),
+      tryAcquireUploadLease: jest.fn(async () => true),
+      heartbeatUploadLease: jest.fn(async () => true),
+      releaseUploadLease: jest.fn(async () => undefined),
+      setUploadCancelRequested: jest.fn(async (photoId: string, requested: boolean) => {
+        const current = photos.get(photoId);
+        if (current) {
+          photos.set(photoId, { ...current, upload_cancel_requested: requested ? 1 : 0 });
+        }
+      }),
       updateSessionStatus: jest.fn(async () => undefined),
       updateSessionUploadMeta: jest.fn(async () => undefined),
       listStableNotQueued: jest.fn(async () => []),
@@ -275,6 +289,9 @@ describe('UploadQueue phase1 corrections', () => {
           uploadAdaptiveQuality: true,
           uploadAdaptiveConcurrency: true,
           uploadAbortEnabled: true,
+          backgroundUploadWorker: false,
+          backgroundUploadForegroundService: false,
+          backgroundUploadRebootResume: false,
         },
       },
     );

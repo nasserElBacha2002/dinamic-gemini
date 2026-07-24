@@ -198,6 +198,20 @@ CREATE INDEX IF NOT EXISTS idx_observability_events_client_file
 ALTER TABLE capture_sessions ADD COLUMN preparation_processing_mode TEXT NOT NULL DEFAULT 'UNKNOWN';
 `,
   },
+  {
+    version: 7,
+    name: 'upload_worker_leases',
+    sql: `
+ALTER TABLE capture_photos ADD COLUMN upload_worker_owner TEXT;
+ALTER TABLE capture_photos ADD COLUMN upload_lease_token TEXT;
+ALTER TABLE capture_photos ADD COLUMN upload_lease_expires_at TEXT;
+ALTER TABLE capture_photos ADD COLUMN upload_heartbeat_at TEXT;
+ALTER TABLE capture_photos ADD COLUMN upload_cancel_requested INTEGER NOT NULL DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS idx_capture_photos_upload_lease
+  ON capture_photos(upload_lease_expires_at);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

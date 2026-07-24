@@ -27,7 +27,11 @@ import {
   type BaselineReport,
 } from '../../observability';
 import {
+  asBackgroundUploadScheduler,
+  clearNativeUploadAuth,
   createBackgroundWorkScheduler,
+  syncNativeUploadAuth,
+  type BackgroundUploadScheduler,
   type BackgroundWorkScheduler,
 } from '../../native/backgroundWork';
 import { createForegroundService } from '../../native/foregroundService';
@@ -35,7 +39,34 @@ import { queryMostRecentPhoto, queryNewPhotosSince, subscribeToGalleryChanges } 
 import { probeStability } from '../../native/stabilityProber';
 import { ApiClient } from '../../services/api/apiClient';
 import { createConnectivityService, type ConnectivityService } from '../../services/connectivity/connectivity';
-import { secureTokenStorage } from '../../services/secureStorage/tokenStorage';
+import { secureTokenStorage, type TokenStorage } from '../../services/secureStorage/tokenStorage';
+
+function createMirroredTokenStorage(base: TokenStorage, config: AppConfig): TokenStorage {
+  const sync = async () => {
+    const ok = await syncNativeUploadAuth({
+      accessToken: await base.getAccessToken(),
+      refreshToken: await base.getRefreshToken(),
+      apiBaseUrl: config.apiBaseUrl,
+      apiKey: config.apiKey,
+      flags: config.flags,
+    });
+    if (!ok) {
+      // Vault unavailable — leave JS queue able to run when app is open; native will not schedule.
+    }
+  };
+  return {
+    getAccessToken: () => base.getAccessToken(),
+    getRefreshToken: () => base.getRefreshToken(),
+    async saveTokens(tokens) {
+      await base.saveTokens(tokens);
+      await sync();
+    },
+    async clear() {
+      await base.clear();
+      await clearNativeUploadAuth();
+    },
+  };
+}
 
 export interface AppServices {
   readonly config: AppConfig;
@@ -53,6 +84,7 @@ export interface AppServices {
   readonly jobMonitor: JobMonitor;
   readonly connectivity: ConnectivityService;
   readonly backgroundWork: BackgroundWorkScheduler;
+  readonly backgroundUpload: BackgroundUploadScheduler;
   exportDiagnostic(): Promise<DiagnosticBundle>;
   diagnosticShareText(bundle: DiagnosticBundle): string;
   exportObservabilityBaseline(): Promise<BaselineReport | null>;
@@ -65,9 +97,10 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const config = loadAppConfig();
   const configError = validateAppConfig(config);
   const logger = createLogger();
+  const tokenStorage = createMirroredTokenStorage(secureTokenStorage, config);
   const api = new ApiClient({
     config,
-    tokenStorage: secureTokenStorage,
+    tokenStorage,
     logger,
     onAuthExpired,
   });
@@ -75,7 +108,8 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const captureRepo = new CaptureRepository(db);
   const jobRepo = new ProcessingJobRepository(db);
   const connectivity = createConnectivityService();
-  const backgroundWork = createBackgroundWorkScheduler(logger);
+  const backgroundWork = createBackgroundWorkScheduler(logger, config.flags);
+  const backgroundUpload = asBackgroundUploadScheduler(backgroundWork);
   const uploadLimits = new UploadLimitsService(api, logger);
   const assetsApi = new AisleAssetsApi(api);
   const observability = createObservabilityStack({
@@ -87,6 +121,8 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     config.flags.uploadObservabilityEnabled
       ? { reporter: observability.reporter, marks: observability.marks }
       : null;
+  const useNativeBg =
+    config.flags.backgroundUploadWorker === true || config.flags.workManagerScheduling === true;
   const uploadQueue = new UploadQueue(
     captureRepo,
     assetsApi,
@@ -95,7 +131,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     logger,
     {
       flags: config.flags,
-      backgroundWork: config.flags.workManagerScheduling ? backgroundWork : null,
+      backgroundWork: useNativeBg ? backgroundWork : null,
       observability: obsWire,
     },
   );
@@ -128,12 +164,40 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   );
   const jobMonitor = new JobMonitor(api, jobRepo, captureRepo, logger, {
     backgroundPolling: config.flags.backgroundJobPolling,
-    backgroundWork: config.flags.workManagerScheduling ? backgroundWork : null,
+    backgroundWork: config.flags.workManagerScheduling || config.flags.backgroundUploadWorker
+      ? backgroundWork
+      : null,
     observability: obsWire,
   });
 
   if (!configError) {
     void uploadLimits.refresh();
+    void syncNativeUploadAuth({
+      accessToken: null,
+      refreshToken: null,
+      apiBaseUrl: config.apiBaseUrl,
+      apiKey: config.apiKey,
+      flags: config.flags,
+    }).then(async (synced) => {
+      if (!synced) {
+        logger.warn('error', { code: 'AUTH_VAULT_UNAVAILABLE' });
+        return;
+      }
+      const access = await tokenStorage.getAccessToken();
+      const refresh = await tokenStorage.getRefreshToken();
+      if (access) {
+        const ok = await syncNativeUploadAuth({
+          accessToken: access,
+          refreshToken: refresh,
+          apiBaseUrl: config.apiBaseUrl,
+          apiKey: config.apiKey,
+          flags: config.flags,
+        });
+        if (ok && config.flags.backgroundUploadWorker) {
+          void backgroundWork.scheduleUploadQueue(false);
+        }
+      }
+    });
     void uploadQueue.restoreAndStart();
     void jobMonitor.restorePendingJobs();
     void cleanupTransformTemps(logger);
@@ -149,8 +213,9 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     configError,
     logger,
     api,
-    auth: new AuthService(api, secureTokenStorage, logger, async () => {
+    auth: new AuthService(api, tokenStorage, logger, async () => {
       await backgroundWork.cancelAllTracked();
+      await clearNativeUploadAuth();
       await uploadQueue.pause('logout');
     }),
     inventories: new InventoryService(api),
@@ -163,6 +228,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     jobMonitor,
     connectivity,
     backgroundWork,
+    backgroundUpload,
     exportDiagnostic: () =>
       buildDiagnosticBundle({
         config,

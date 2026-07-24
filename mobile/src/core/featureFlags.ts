@@ -5,6 +5,7 @@ export interface FeatureFlags {
    * When false, upload HEIC as-is (backend worker can normalize).
    */
   readonly heicConvertToJpeg: boolean;
+  /** Legacy gate for scheduling unique work names (kept for JobMonitor). */
   readonly workManagerScheduling: boolean;
   readonly advancedReconciliation: boolean;
   readonly backgroundJobPolling: boolean;
@@ -19,9 +20,15 @@ export interface FeatureFlags {
   readonly uploadAdaptiveConcurrency: boolean;
   /** Phase 1: abort in-flight multipart when cancelPhoto runs. */
   readonly uploadAbortEnabled: boolean;
+  /** Phase 2: native WorkManager upload worker. */
+  readonly backgroundUploadWorker: boolean;
+  /** Phase 2: promote long uploads to Foreground Service notification. */
+  readonly backgroundUploadForegroundService: boolean;
+  /** Phase 2: allow WorkManager to resume after device reboot. */
+  readonly backgroundUploadRebootResume: boolean;
 }
 
-/** Non-production defaults (development / staging). Production Phase 1 flags default off (opt-in). */
+/** Non-production defaults. Phase 1/2 upload optimizations default off in production. */
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   allowMobileDataUploads: true,
   heicConvertToJpeg: true,
@@ -34,15 +41,18 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   uploadAdaptiveQuality: true,
   uploadAdaptiveConcurrency: true,
   uploadAbortEnabled: true,
+  backgroundUploadWorker: true,
+  backgroundUploadForegroundService: true,
+  backgroundUploadRebootResume: true,
 };
 
-function phase1DefaultForEnvironment(environment: string): boolean {
+function phaseOptInDefaultForEnvironment(environment: string): boolean {
   return environment !== 'production';
 }
 
 export function resolveFeatureFlags(raw: unknown, environment: string): FeatureFlags {
   const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  const phase1Default = phase1DefaultForEnvironment(environment);
+  const optInDefault = phaseOptInDefaultForEnvironment(environment);
   const bool = (key: keyof FeatureFlags, fallback: boolean): boolean => {
     const v = source[key];
     if (typeof v === 'boolean') {
@@ -70,9 +80,12 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
       'uploadObservabilityEnabled',
       DEFAULT_FEATURE_FLAGS.uploadObservabilityEnabled,
     ),
-    uploadDimensionCap: bool('uploadDimensionCap', phase1Default),
-    uploadAdaptiveQuality: bool('uploadAdaptiveQuality', phase1Default),
-    uploadAdaptiveConcurrency: bool('uploadAdaptiveConcurrency', phase1Default),
-    uploadAbortEnabled: bool('uploadAbortEnabled', phase1Default),
+    uploadDimensionCap: bool('uploadDimensionCap', optInDefault),
+    uploadAdaptiveQuality: bool('uploadAdaptiveQuality', optInDefault),
+    uploadAdaptiveConcurrency: bool('uploadAdaptiveConcurrency', optInDefault),
+    uploadAbortEnabled: bool('uploadAbortEnabled', optInDefault),
+    backgroundUploadWorker: bool('backgroundUploadWorker', optInDefault),
+    backgroundUploadForegroundService: bool('backgroundUploadForegroundService', optInDefault),
+    backgroundUploadRebootResume: bool('backgroundUploadRebootResume', optInDefault),
   };
 }

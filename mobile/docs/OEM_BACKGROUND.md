@@ -1,26 +1,36 @@
-# OEM / background restrictions (Fase 3)
+# OEM / background restrictions
 
-## Estrategia WorkManager (honest)
+## Phase 2 WorkManager (corrected)
 
-No se usa un Worker nativo no-op que aparenta drenar la cola.
+When `backgroundUploadWorker` is enabled:
 
-- Recuperación de uploads/jobs: **al reabrir la app** (SQLite + JS).
-- Captura activa: **Foreground Service** mientras el proceso vive.
-- Unique work names quedan reservados por si se implementa un worker HTTP nativo real.
-- Flag `workManagerScheduling` default **off**.
+- Android WorkManager runs a **single** unique work: `dinamic-upload-queue`.
+- Only **prepared** photos are uploaded natively (prepare stays in JS).
+- Tokens are mirrored to **EncryptedSharedPreferences only** (no plaintext fallback). If the vault is unavailable, the worker does not upload (`AUTH_VAULT_UNAVAILABLE`).
+- Foreground progress uses `CoroutineWorker.setForeground` when `backgroundUploadForegroundService` is on (no duplicate Upload FGS).
+- Notification action **Pausar cola** cancels WorkManager + in-flight OkHttp and persists pause.
+- `allowMobileDataUploads=false` → `NetworkType.UNMETERED`; preference changes reschedule with REPLACE.
+- `backgroundUploadRebootResume=false` → BootReceiver cancels persisted upload work after reboot.
+- When all photos of a session are uploaded, native posts idempotent `POST /process`.
 
-## Ayuda al operador
+When flags are off: recovery remains **app reopen → SQLite + JS UploadQueue**.
 
-No abrir Settings automáticamente. Mostrar texto de ayuda si FGS falla o la cola no avanza:
+## Samsung / OEM honesty
 
-1. Ajustes → Apps → Dinamic Captura → Batería → Sin restricciones (si el fabricante lo ofrece).
-2. Permitir notificaciones.
-3. Reabrir la app y usar **Diagnóstico**.
+Do **not** promise unlimited background execution.
 
-## Work ownership
+- Doze / App Standby / battery saver may delay work.
+- Force-stop prevents WorkManager until the user opens the app again.
+- Swipe-away ≠ force-stop (behavior varies by OEM).
+- UI copy: *“La carga continuará en segundo plano cuando Android lo permita.”*
 
-- `upload-session-{id}` — wake para drain de uploads
-- `job-monitor-{id}` — wake para reanudar poll de job
-- `remote-delete-{id}` — wake para DELETE remoto pendiente
+## Operator tips
 
-Fuente de verdad: **SQLite**. WorkManager no duplica HTTP.
+1. Apps → Dinamic Captura → Battery → Unrestricted (if available).
+2. Allow notifications.
+3. Reopen the app and use **Diagnóstico** if the queue stalls (including after 413 reprepare).
+
+## Work ownership names
+
+- `dinamic-upload-queue` — sole upload drain (session schedule aliases map here)
+- Legacy `dinamic-upload-session-*` names are accepted but do **not** enqueue a second worker

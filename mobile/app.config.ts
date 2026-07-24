@@ -117,6 +117,9 @@ const config: ExpoConfig = {
       ...optionalFlag('DINAMIC_FLAG_UPLOAD_ADAPTIVE_QUALITY', 'uploadAdaptiveQuality'),
       ...optionalFlag('DINAMIC_FLAG_UPLOAD_ADAPTIVE_CONCURRENCY', 'uploadAdaptiveConcurrency'),
       ...optionalFlag('DINAMIC_FLAG_UPLOAD_ABORT', 'uploadAbortEnabled'),
+      ...optionalFlag('DINAMIC_FLAG_BG_UPLOAD_WORKER', 'backgroundUploadWorker'),
+      ...optionalFlag('DINAMIC_FLAG_BG_UPLOAD_FGS', 'backgroundUploadForegroundService'),
+      ...optionalFlag('DINAMIC_FLAG_BG_UPLOAD_REBOOT', 'backgroundUploadRebootResume'),
     },
   },
 };

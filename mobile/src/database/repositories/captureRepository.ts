@@ -376,6 +376,13 @@ export class CaptureRepository {
     } = {},
   ): Promise<void> {
     const now = new Date().toISOString();
+    const clearLease = [
+      'uploaded',
+      'excluded',
+      'permanent_error',
+      'remote_deleted',
+      'remote_delete_pending',
+    ].includes(status);
     await this.db.runAsync(
       `UPDATE capture_photos SET
         upload_status = ?,
@@ -391,6 +398,11 @@ export class CaptureRepository {
         local_transform_uri = CASE WHEN ? THEN ? ELSE local_transform_uri END,
         original_size = COALESCE(?, original_size),
         upload_size = CASE WHEN ? THEN ? ELSE upload_size END,
+        upload_worker_owner = CASE WHEN ? THEN NULL ELSE upload_worker_owner END,
+        upload_lease_token = CASE WHEN ? THEN NULL ELSE upload_lease_token END,
+        upload_lease_expires_at = CASE WHEN ? THEN NULL ELSE upload_lease_expires_at END,
+        upload_heartbeat_at = CASE WHEN ? THEN NULL ELSE upload_heartbeat_at END,
+        upload_cancel_requested = CASE WHEN ? THEN 0 ELSE upload_cancel_requested END,
         updated_at = ?
        WHERE id = ?;`,
       status,
@@ -409,7 +421,109 @@ export class CaptureRepository {
       patch.originalSize ?? null,
       patch.uploadSize !== undefined ? 1 : 0,
       patch.uploadSize ?? null,
+      clearLease ? 1 : 0,
+      clearLease ? 1 : 0,
+      clearLease ? 1 : 0,
+      clearLease ? 1 : 0,
+      clearLease ? 1 : 0,
       now,
+      photoId,
+    );
+  }
+
+  /**
+   * Transactional lease acquire. Returns true only when this owner won the row.
+   * Allows reclaim when lease is missing/expired or the same token renews.
+   */
+  async tryAcquireUploadLease(input: {
+    readonly photoId: string;
+    readonly owner: string;
+    readonly token: string;
+    readonly expiresAt: string;
+    readonly nowIso?: string;
+  }): Promise<boolean> {
+    const now = input.nowIso ?? new Date().toISOString();
+    const result = await this.db.runAsync(
+      `UPDATE capture_photos SET
+        upload_worker_owner = ?,
+        upload_lease_token = ?,
+        upload_lease_expires_at = ?,
+        upload_heartbeat_at = ?,
+        updated_at = ?
+       WHERE id = ?
+         AND upload_status IN ('queued', 'retryable_error', 'uploading')
+         AND COALESCE(upload_cancel_requested, 0) = 0
+         AND (
+           upload_lease_token IS NULL
+           OR upload_lease_expires_at IS NULL
+           OR upload_lease_expires_at <= ?
+           OR upload_lease_token = ?
+         );`,
+      input.owner,
+      input.token,
+      input.expiresAt,
+      now,
+      now,
+      input.photoId,
+      now,
+      input.token,
+    );
+    return (result.changes ?? 0) === 1;
+  }
+
+  async heartbeatUploadLease(photoId: string, token: string, expiresAt: string): Promise<boolean> {
+    const now = new Date().toISOString();
+    const result = await this.db.runAsync(
+      `UPDATE capture_photos SET
+        upload_lease_expires_at = ?,
+        upload_heartbeat_at = ?,
+        updated_at = ?
+       WHERE id = ?
+         AND upload_lease_token = ?;`,
+      expiresAt,
+      now,
+      now,
+      photoId,
+      token,
+    );
+    return (result.changes ?? 0) === 1;
+  }
+
+  async releaseUploadLease(photoId: string, token: string | null): Promise<void> {
+    const now = new Date().toISOString();
+    if (token) {
+      await this.db.runAsync(
+        `UPDATE capture_photos SET
+          upload_worker_owner = NULL,
+          upload_lease_token = NULL,
+          upload_lease_expires_at = NULL,
+          upload_heartbeat_at = NULL,
+          updated_at = ?
+         WHERE id = ? AND (upload_lease_token = ? OR upload_lease_token IS NULL);`,
+        now,
+        photoId,
+        token,
+      );
+      return;
+    }
+    await this.db.runAsync(
+      `UPDATE capture_photos SET
+        upload_worker_owner = NULL,
+        upload_lease_token = NULL,
+        upload_lease_expires_at = NULL,
+        upload_heartbeat_at = NULL,
+        updated_at = ?
+       WHERE id = ?;`,
+      now,
+      photoId,
+    );
+  }
+
+  async setUploadCancelRequested(photoId: string, requested: boolean): Promise<void> {
+    await this.db.runAsync(
+      `UPDATE capture_photos SET upload_cancel_requested = ?, updated_at = ? WHERE id = ?;`,
+      requested ? 1 : 0,
+      new Date().toISOString(),
       photoId,
     );
   }

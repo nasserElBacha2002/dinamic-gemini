@@ -77,6 +77,13 @@ export interface CapturePhotoRow {
   readonly local_transform_uri: string | null;
   readonly original_size: number | null;
   readonly upload_size: number | null;
+  /** Phase 2: `js` | `native` while a lease is held. */
+  readonly upload_worker_owner: string | null;
+  readonly upload_lease_token: string | null;
+  readonly upload_lease_expires_at: string | null;
+  readonly upload_heartbeat_at: string | null;
+  /** 1 when cancel was requested while uploading (settlement still pending). */
+  readonly upload_cancel_requested: number;
   readonly created_at: string;
   readonly updated_at: string;
 }

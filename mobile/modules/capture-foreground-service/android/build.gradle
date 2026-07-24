@@ -16,15 +16,37 @@ android {
   lintOptions {
     abortOnError false
   }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+
+  kotlinOptions {
+    jvmTarget = '17'
+  }
+
+  testOptions {
+    unitTests.returnDefaultValues = true
+  }
 }
 
 repositories {
   mavenCentral()
+  google()
 }
 
 dependencies {
   implementation project(':expo-modules-core')
   implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:${safeExtGet('kotlinVersion', '1.9.23')}"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
+  implementation "androidx.work:work-runtime-ktx:2.9.1"
+  implementation "androidx.core:core-ktx:1.13.1"
+  implementation "com.squareup.okhttp3:okhttp:4.12.0"
+  implementation "androidx.security:security-crypto:1.1.0-alpha06"
+
+  testImplementation "junit:junit:4.13.2"
+  testImplementation "org.jetbrains.kotlin:kotlin-test-junit:${safeExtGet('kotlinVersion', '1.9.23')}"
 }
 
 def safeExtGet(prop, fallback) {

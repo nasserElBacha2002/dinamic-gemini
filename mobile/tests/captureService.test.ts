@@ -108,6 +108,11 @@ function photo(status: CapturePhotoStatus): CapturePhotoRow {
     local_transform_uri: null,
     original_size: null,
     upload_size: null,
+    upload_worker_owner: null,
+    upload_lease_token: null,
+    upload_lease_expires_at: null,
+    upload_heartbeat_at: null,
+    upload_cancel_requested: 0,
     created_at: now,
     updated_at: now,
   };

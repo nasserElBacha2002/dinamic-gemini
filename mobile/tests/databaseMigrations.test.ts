@@ -31,7 +31,7 @@ describe('SQLite migrations', () => {
   });
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
     expect(v2?.sql).toContain('last_stability_attempt_at');
@@ -58,6 +58,14 @@ describe('SQLite migrations', () => {
     expect(v6?.name).toBe('session_preparation_processing_mode');
     expect(v6?.sql).toContain('ALTER TABLE capture_sessions ADD COLUMN preparation_processing_mode');
     expect(v6?.sql).toContain("DEFAULT 'UNKNOWN'");
+  });
+
+  it('adds v7 upload worker lease columns', () => {
+    const v7 = MIGRATIONS.find((m) => m.version === 7);
+    expect(v7?.name).toBe('upload_worker_leases');
+    expect(v7?.sql).toContain('upload_lease_token');
+    expect(v7?.sql).toContain('upload_worker_owner');
+    expect(v7?.sql).toContain('upload_cancel_requested');
   });
 });
 

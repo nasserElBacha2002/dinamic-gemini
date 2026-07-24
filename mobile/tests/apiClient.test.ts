@@ -50,6 +50,9 @@ describe('ApiClient refresh mutex', () => {
       uploadAdaptiveQuality: true,
       uploadAdaptiveConcurrency: true,
       uploadAbortEnabled: true,
+      backgroundUploadWorker: false,
+      backgroundUploadForegroundService: false,
+      backgroundUploadRebootResume: false,
     },
   };
 
@@ -191,6 +194,9 @@ describe('ApiClient abort / timeout classification', () => {
       uploadAdaptiveQuality: true,
       uploadAdaptiveConcurrency: true,
       uploadAbortEnabled: true,
+      backgroundUploadWorker: false,
+      backgroundUploadForegroundService: false,
+      backgroundUploadRebootResume: false,
     },
   };
 

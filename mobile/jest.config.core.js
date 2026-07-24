@@ -23,6 +23,7 @@ module.exports = {
     '<rootDir>/tests/featureFlags.test.ts',
     '<rootDir>/tests/observabilityPhase0.test.ts',
     '<rootDir>/tests/uploadPhase1Policies.test.ts',
+    '<rootDir>/tests/uploadLeasePhase2.test.ts',
     '<rootDir>/tests/fase3CorrectionsCore.test.ts',
     '<rootDir>/tests/processingState.test.ts',
     '<rootDir>/tests/processingReadiness.test.ts',
