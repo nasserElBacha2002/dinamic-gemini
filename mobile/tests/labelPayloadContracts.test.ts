@@ -119,7 +119,8 @@ describe('codeDetectionConsolidator contracts', () => {
 });
 
 describe('payloadFingerprint', () => {
-  it('is stable for identical input', () => {
+  it('uses sha256 prefix and is stable', () => {
+    expect(hashPayloadFingerprint('ABC|5')).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(hashPayloadFingerprint('ABC|5')).toBe(hashPayloadFingerprint('ABC|5'));
     expect(hashPayloadFingerprint('ABC|5')).not.toBe(hashPayloadFingerprint('ABC|6'));
   });

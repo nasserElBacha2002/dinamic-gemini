@@ -68,7 +68,6 @@ describe('featureFlags', () => {
       const flags = resolveFeatureFlags({}, env);
       expect(flags.mobileLocalCodeScan).toBe(false);
       expect(flags.mobileLocalCodeScanShadowCompare).toBe(false);
-      expect(flags.mobileLocalCodeScanDebugMetrics).toBe(false);
     }
   });
 
@@ -77,12 +76,10 @@ describe('featureFlags', () => {
       {
         mobileLocalCodeScan: '1',
         mobileLocalCodeScanShadowCompare: true,
-        mobileLocalCodeScanDebugMetrics: '1',
       },
       'production',
     );
     expect(flags.mobileLocalCodeScan).toBe(true);
     expect(flags.mobileLocalCodeScanShadowCompare).toBe(true);
-    expect(flags.mobileLocalCodeScanDebugMetrics).toBe(true);
   });
 });

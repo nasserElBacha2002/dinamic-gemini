@@ -129,6 +129,9 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     drafts: localDetectionDrafts,
     reporter: obsWire?.reporter ?? null,
   });
+  void localCodeScan.recoverStaleDrafts().catch(() => {
+    // best-effort recovery after process death
+  });
   const useNativeBg =
     config.flags.backgroundUploadWorker === true || config.flags.workManagerScheduling === true;
   const uploadQueue = new UploadQueue(
@@ -228,6 +231,11 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       await backgroundWork.cancelAllTracked();
       await clearNativeUploadAuth();
       await uploadQueue.pause('logout');
+      try {
+        await localDetectionDrafts.deleteAll();
+      } catch {
+        // best-effort — drafts must not survive logout
+      }
     }),
     inventories: new InventoryService(api),
     clients: new ClientService(api),

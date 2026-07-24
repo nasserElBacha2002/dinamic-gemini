@@ -125,7 +125,10 @@ class CaptureForegroundModule : Module() {
     AsyncFunction("detectBarcodes") { uri: String, formatsCsv: String ->
       val context = appContext.reactContext
         ?: throw Exception("React context unavailable; cannot scan barcodes")
-      LocalBarcodeDetector.detect(context, uri, formatsCsv)
+      // Suspendable ML Kit path; bridges as a single awaited AsyncFunction.
+      kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+        LocalBarcodeDetector.detect(context, uri, formatsCsv)
+      }
     }
   }
 }

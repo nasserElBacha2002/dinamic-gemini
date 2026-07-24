@@ -123,7 +123,6 @@ const config: ExpoConfig = {
       // Phase 3 local CODE_SCAN shadow — default off; set =1 to enable.
       ...optionalFlag('DINAMIC_FLAG_LOCAL_CODE_SCAN', 'mobileLocalCodeScan'),
       ...optionalFlag('DINAMIC_FLAG_LOCAL_CODE_SCAN_COMPARE', 'mobileLocalCodeScanShadowCompare'),
-      ...optionalFlag('DINAMIC_FLAG_LOCAL_CODE_SCAN_DEBUG', 'mobileLocalCodeScanDebugMetrics'),
     },
   },
 };

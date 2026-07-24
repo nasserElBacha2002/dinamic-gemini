@@ -28,10 +28,8 @@ export interface FeatureFlags {
   readonly backgroundUploadRebootResume: boolean;
   /** Phase 3: local CODE_SCAN shadow detection (hard opt-in; default false). */
   readonly mobileLocalCodeScan: boolean;
-  /** Phase 3: compare local drafts vs server when job completes. */
+  /** Phase 3: attempt shadow compare when a reliable mapping exists. */
   readonly mobileLocalCodeScanShadowCompare: boolean;
-  /** Phase 3: extra local-scan debug metrics in observability. */
-  readonly mobileLocalCodeScanDebugMetrics: boolean;
 }
 
 /** Non-production defaults. Phase 1/2 upload optimizations default off in production. */
@@ -52,7 +50,6 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   backgroundUploadRebootResume: true,
   mobileLocalCodeScan: false,
   mobileLocalCodeScanShadowCompare: false,
-  mobileLocalCodeScanDebugMetrics: false,
 };
 
 function phaseOptInDefaultForEnvironment(environment: string): boolean {
@@ -99,6 +96,5 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
     // Phase 3: kill-switch defaults off in every environment until explicitly enabled.
     mobileLocalCodeScan: bool('mobileLocalCodeScan', false),
     mobileLocalCodeScanShadowCompare: bool('mobileLocalCodeScanShadowCompare', false),
-    mobileLocalCodeScanDebugMetrics: bool('mobileLocalCodeScanDebugMetrics', false),
   };
 }

@@ -248,6 +248,68 @@ CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_session
   ON local_detection_drafts(capture_session_id);
 `,
   },
+  {
+    version: 9,
+    name: 'local_detection_drafts_harden',
+    sql: `
+CREATE TABLE IF NOT EXISTS local_detection_drafts_v9 (
+  id TEXT PRIMARY KEY NOT NULL,
+  capture_photo_id TEXT NOT NULL,
+  capture_session_id TEXT NOT NULL,
+  client_file_id TEXT,
+  status TEXT NOT NULL,
+  raw_value_hash TEXT,
+  internal_code TEXT,
+  quantity INTEGER,
+  quantity_status TEXT,
+  detected_format TEXT,
+  detected_symbology TEXT,
+  parser_version TEXT NOT NULL,
+  detector_version TEXT NOT NULL,
+  candidate_count INTEGER NOT NULL DEFAULT 0,
+  error_code TEXT,
+  processing_ms INTEGER,
+  comparison_status TEXT,
+  compare_result TEXT,
+  compared_at TEXT,
+  prepared_asset_fingerprint TEXT,
+  scan_owner TEXT,
+  scan_generation INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(capture_photo_id, detector_version, parser_version, prepared_asset_fingerprint),
+  FOREIGN KEY (capture_photo_id) REFERENCES capture_photos(id) ON DELETE CASCADE
+);
+
+DELETE FROM local_detection_drafts
+ WHERE capture_photo_id NOT IN (SELECT id FROM capture_photos);
+
+INSERT OR IGNORE INTO local_detection_drafts_v9 (
+  id, capture_photo_id, capture_session_id, client_file_id, status,
+  raw_value_hash, internal_code, quantity, quantity_status,
+  detected_format, detected_symbology, parser_version, detector_version,
+  candidate_count, error_code, processing_ms, comparison_status, compare_result, compared_at,
+  prepared_asset_fingerprint, scan_owner, scan_generation, created_at, updated_at
+)
+SELECT
+  id, capture_photo_id, capture_session_id, client_file_id, status,
+  raw_value_hash, internal_code, quantity, quantity_status,
+  detected_format, detected_symbology, parser_version, detector_version,
+  candidate_count, error_code, processing_ms, NULL, compare_result, compared_at,
+  prepared_asset_fingerprint, NULL, 0, created_at, updated_at
+FROM local_detection_drafts;
+
+DROP TABLE IF EXISTS local_detection_drafts;
+ALTER TABLE local_detection_drafts_v9 RENAME TO local_detection_drafts;
+
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_photo
+  ON local_detection_drafts(capture_photo_id);
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_session
+  ON local_detection_drafts(capture_session_id);
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_status
+  ON local_detection_drafts(status);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

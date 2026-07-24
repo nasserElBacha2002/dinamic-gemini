@@ -292,9 +292,8 @@ export class JobMonitor {
   }
 
   /**
-   * Phase 3 shadow compare. Without a reliable per-asset mapping from the
-   * aisle status payload (GLOBAL_BATCH / no client_file_id linkage), mark NOT_COMPARABLE.
-   * Never invent array-order matching.
+   * Shadow compare. Without reliable client_file_id → code/qty mapping, keep
+   * compare_result null and emit session-level mapping_unavailable. Never invent order matching.
    */
   private async maybeShadowCompare(sessionId: string, jobCompleted: boolean): Promise<void> {
     if (this.options.flags?.mobileLocalCodeScanShadowCompare !== true) {
@@ -306,14 +305,25 @@ export class JobMonitor {
     }
     try {
       const rows = await drafts.listForSession(sessionId);
-      // Status endpoint does not expose per-image code/quantity with client_file_id.
-      // Honest outcome until a mapped compare API exists.
       const mappingReliable = false;
+      if (!mappingReliable) {
+        await drafts.markComparisonMappingUnavailable(sessionId);
+        emitObservability(this.options.observability?.reporter, {
+          name: 'comparison_mapping_unavailable',
+          sessionId,
+          attributes: {
+            job_completed: jobCompleted,
+            draft_count: rows.filter((r) => r.status !== 'NOT_APPLICABLE').length,
+            reason: 'no_client_file_to_result_mapping',
+          },
+        });
+        return;
+      }
       for (const row of rows) {
         if (row.status === 'NOT_APPLICABLE') {
           continue;
         }
-        if (row.compare_result) {
+        if (row.compared_at) {
           continue;
         }
         const compareResult = compareLocalVsServer({
@@ -322,7 +332,7 @@ export class JobMonitor {
           localStatus: row.status,
           serverInternalCode: null,
           serverQuantity: null,
-          mappingReliable,
+          mappingReliable: true,
         });
         await drafts.markCompared(row.id, compareResult);
         emitObservability(this.options.observability?.reporter, {
@@ -333,7 +343,7 @@ export class JobMonitor {
             compare_result: compareResult,
             local_scan_status: row.status,
             job_completed: jobCompleted,
-            mapping_reliable: mappingReliable,
+            mapping_reliable: true,
             detector_version: row.detector_version,
             parser_version: row.parser_version,
           },

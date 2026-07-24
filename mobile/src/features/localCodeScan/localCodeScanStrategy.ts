@@ -15,6 +15,8 @@ import {
 
 export const LOCAL_CODE_SCAN_TIMEOUT_MS = 10_000;
 export const LOCAL_CODE_SCAN_CONCURRENCY = 1;
+export const LOCAL_SCAN_STALE_MS = 60_000;
+export const LOCAL_SCAN_OWNER = 'js-local-code-scan';
 
 export type ShadowCompareResult =
   | 'MATCH_CODE_AND_QUANTITY'
@@ -62,20 +64,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-function sanitizePreview(raw: string): string {
-  // Length-capped, strip ASCII controls — never log full payload.
-  let out = '';
-  for (let i = 0; i < raw.length && out.length < 32; i += 1) {
-    const c = raw.charCodeAt(i);
-    if (c >= 0x20 && c !== 0x7f) {
-      out += raw[i]!;
-    }
-  }
-  return out;
-}
-
 function draftStatusFromConsolidation(
   status: ReturnType<typeof consolidateCodeDetections>['status'],
+  parsedError?: string | null,
 ): LocalDetectionDraftStatus {
   switch (status) {
     case 'RESOLVED':
@@ -84,7 +75,7 @@ function draftStatusFromConsolidation(
     case 'NO_DETECTIONS':
       return 'UNRESOLVED';
     case 'NO_VALID_CODE':
-      return 'INVALID';
+      return parsedError === 'PLAIN_UNVERIFIED_PAYLOAD' ? 'DETECTED_UNVERIFIED' : 'INVALID';
     case 'MULTIPLE_DISTINCT_CODES':
     case 'QUANTITY_CONFLICT':
       return 'AMBIGUOUS';
@@ -94,11 +85,12 @@ function draftStatusFromConsolidation(
 }
 
 /**
- * Shadow-mode local CODE_SCAN. Never blocks upload; never creates positions.
+ * Shadow-mode local CODE_SCAN. Awaited before upload eligibility; never fails upload.
  */
 export class LocalCodeScanStrategy {
   private active = 0;
   private readonly waiters: Array<() => void> = [];
+  private generation = 0;
   private readonly detect: typeof detectLocalBarcodes;
   private readonly evaluateCapability: typeof evaluateLocalCodeScanCapability;
   private readonly nowMs: () => number;
@@ -109,6 +101,12 @@ export class LocalCodeScanStrategy {
     this.evaluateCapability = deps.evaluateCapability ?? evaluateLocalCodeScanCapability;
     this.nowMs = deps.nowMs ?? (() => Date.now());
     this.timeoutMs = deps.timeoutMs ?? LOCAL_CODE_SCAN_TIMEOUT_MS;
+  }
+
+  /** Recover drafts left in SCANNING after process death. */
+  async recoverStaleDrafts(): Promise<number> {
+    const cutoff = new Date(this.nowMs() - LOCAL_SCAN_STALE_MS).toISOString();
+    return this.deps.drafts.recoverStaleScanning(cutoff);
   }
 
   async execute(input: LocalCodeScanInput): Promise<LocalDetectionDraftStatus> {
@@ -122,6 +120,9 @@ export class LocalCodeScanStrategy {
         detectorVersion: LOCAL_CODE_DETECTOR_VERSION,
         preparedAssetFingerprint: input.preparedAssetFingerprint,
         candidateCount: 0,
+        scanOwner: null,
+        scanGeneration: 0,
+        comparisonStatus: 'SKIPPED',
       });
       return 'NOT_APPLICABLE';
     }
@@ -138,6 +139,9 @@ export class LocalCodeScanStrategy {
         preparedAssetFingerprint: input.preparedAssetFingerprint,
         errorCode: capability,
         candidateCount: 0,
+        scanOwner: null,
+        scanGeneration: 0,
+        comparisonStatus: capability === 'DISABLED' ? 'SKIPPED' : 'PENDING',
       });
       return capability === 'DISABLED' ? 'NOT_APPLICABLE' : 'FAILED';
     }
@@ -153,9 +157,26 @@ export class LocalCodeScanStrategy {
         preparedAssetFingerprint: input.preparedAssetFingerprint,
         errorCode: 'CANCELLED',
         candidateCount: 0,
+        scanGeneration: ++this.generation,
+        comparisonStatus: 'PENDING',
       });
       return 'FAILED';
     }
+
+    const scanGeneration = ++this.generation;
+    await this.deps.drafts.upsertDraft({
+      capturePhotoId: input.capturePhotoId,
+      captureSessionId: input.captureSessionId,
+      clientFileId: input.clientFileId,
+      status: 'PENDING',
+      parserVersion: LABEL_PAYLOAD_PARSER_VERSION,
+      detectorVersion: LOCAL_CODE_DETECTOR_VERSION,
+      preparedAssetFingerprint: input.preparedAssetFingerprint,
+      candidateCount: 0,
+      scanOwner: LOCAL_SCAN_OWNER,
+      scanGeneration,
+      comparisonStatus: 'PENDING',
+    });
 
     await this.acquireSlot();
     const started = this.nowMs();
@@ -166,6 +187,7 @@ export class LocalCodeScanStrategy {
       attributes: {
         detector_version: LOCAL_CODE_DETECTOR_VERSION,
         parser_version: LABEL_PAYLOAD_PARSER_VERSION,
+        scan_generation: scanGeneration,
       },
     });
 
@@ -179,11 +201,16 @@ export class LocalCodeScanStrategy {
         detectorVersion: LOCAL_CODE_DETECTOR_VERSION,
         preparedAssetFingerprint: input.preparedAssetFingerprint,
         candidateCount: 0,
+        scanOwner: LOCAL_SCAN_OWNER,
+        scanGeneration,
+        comparisonStatus: 'PENDING',
       });
 
       const candidates = await withTimeout(this.detect(input.preparedUri), this.timeoutMs);
       const consolidated = consolidateCodeDetections(candidates);
-      const status = draftStatusFromConsolidation(consolidated.status);
+      const parsedError =
+        consolidated.parsed?.status === 'INVALID' ? consolidated.parsed.errorCode : null;
+      const status = draftStatusFromConsolidation(consolidated.status, parsedError);
       const processingMs = Math.max(0, Math.round(this.nowMs() - started));
       const selectedRaw =
         consolidated.selectedIndex != null
@@ -196,7 +223,6 @@ export class LocalCodeScanStrategy {
         clientFileId: input.clientFileId,
         status,
         rawValueHash: selectedRaw ? hashPayloadFingerprint(selectedRaw) : null,
-        rawValuePreview: selectedRaw ? sanitizePreview(selectedRaw) : null,
         internalCode: consolidated.internalCode,
         quantity: consolidated.quantity,
         quantityStatus:
@@ -222,14 +248,15 @@ export class LocalCodeScanStrategy {
         errorCode:
           status === 'AMBIGUOUS'
             ? consolidated.status
-            : status === 'INVALID'
-              ? consolidated.parsed?.status === 'INVALID'
-                ? consolidated.parsed.errorCode
-                : 'NO_VALID_CODE'
+            : status === 'INVALID' || status === 'DETECTED_UNVERIFIED'
+              ? parsedError ?? 'NO_VALID_CODE'
               : status === 'UNRESOLVED'
                 ? 'NO_DETECTIONS'
                 : null,
         processingMs,
+        scanOwner: null,
+        scanGeneration,
+        comparisonStatus: 'PENDING',
       });
 
       const eventName =
@@ -265,13 +292,16 @@ export class LocalCodeScanStrategy {
         capturePhotoId: input.capturePhotoId,
         captureSessionId: input.captureSessionId,
         clientFileId: input.clientFileId,
-        status: 'FAILED',
+        status: timedOut ? 'FAILED' : 'FAILED_RETRYABLE',
         parserVersion: LABEL_PAYLOAD_PARSER_VERSION,
         detectorVersion: LOCAL_CODE_DETECTOR_VERSION,
         preparedAssetFingerprint: input.preparedAssetFingerprint,
         errorCode: timedOut ? 'LOCAL_SCAN_TIMEOUT' : 'LOCAL_SCAN_FAILED',
         candidateCount: 0,
         processingMs,
+        scanOwner: null,
+        scanGeneration,
+        comparisonStatus: 'PENDING',
       });
       emitObservability(this.deps.reporter, {
         name: timedOut ? 'local_scan_timeout' : 'local_scan_failed',
@@ -283,7 +313,7 @@ export class LocalCodeScanStrategy {
           error_code: timedOut ? 'LOCAL_SCAN_TIMEOUT' : 'LOCAL_SCAN_FAILED',
         },
       });
-      return 'FAILED';
+      return timedOut ? 'FAILED' : 'FAILED_RETRYABLE';
     } finally {
       this.releaseSlot();
     }
@@ -323,7 +353,8 @@ export function compareLocalVsServer(input: {
     return 'NOT_COMPARABLE';
   }
   const localResolved =
-    input.localStatus === 'RESOLVED' && Boolean(input.localInternalCode);
+    (input.localStatus === 'RESOLVED' || input.localStatus === 'DETECTED_UNVERIFIED') &&
+    Boolean(input.localInternalCode);
   const serverResolved = Boolean(input.serverInternalCode);
 
   if (!localResolved && !serverResolved) {
@@ -355,6 +386,5 @@ export function compareLocalVsServer(input: {
   ) {
     return 'MATCH_CODE_AND_QUANTITY';
   }
-  // Codes match; both missing quantity or local missing already handled.
   return 'MATCH_CODE_QUANTITY_MISSING_LOCAL';
 }

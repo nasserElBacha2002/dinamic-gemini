@@ -11,6 +11,8 @@ export function labelForLocalScanStatus(status: LocalDetectionDraftStatus | null
       return 'Escaneando código localmente';
     case 'RESOLVED':
       return 'Código detectado localmente (borrador; el servidor confirma)';
+    case 'DETECTED_UNVERIFIED':
+      return 'Código no verificable localmente — se procesará en servidor';
     case 'UNRESOLVED':
       return 'Sin código detectado — se procesará en servidor';
     case 'INVALID':
@@ -18,6 +20,7 @@ export function labelForLocalScanStatus(status: LocalDetectionDraftStatus | null
     case 'AMBIGUOUS':
       return 'Código ambiguo — se procesará en servidor';
     case 'FAILED':
+    case 'FAILED_RETRYABLE':
       return 'Error local — se procesará en servidor';
     default:
       return null;

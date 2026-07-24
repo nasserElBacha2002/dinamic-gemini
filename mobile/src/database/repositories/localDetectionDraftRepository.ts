@@ -9,7 +9,12 @@ export type LocalDetectionDraftStatus =
   | 'UNRESOLVED'
   | 'INVALID'
   | 'AMBIGUOUS'
-  | 'FAILED';
+  | 'FAILED'
+  | 'FAILED_RETRYABLE'
+  | 'DETECTED_UNVERIFIED';
+
+/** comparison_status: open until a reliable mapping exists. */
+export type LocalComparisonStatus = 'PENDING' | 'MAPPED' | 'SKIPPED' | null;
 
 export interface LocalDetectionDraftRow {
   readonly id: string;
@@ -18,7 +23,6 @@ export interface LocalDetectionDraftRow {
   readonly client_file_id: string | null;
   readonly status: LocalDetectionDraftStatus;
   readonly raw_value_hash: string | null;
-  readonly raw_value_preview: string | null;
   readonly internal_code: string | null;
   readonly quantity: number | null;
   readonly quantity_status: string | null;
@@ -29,9 +33,12 @@ export interface LocalDetectionDraftRow {
   readonly candidate_count: number;
   readonly error_code: string | null;
   readonly processing_ms: number | null;
+  readonly comparison_status: string | null;
   readonly compare_result: string | null;
   readonly compared_at: string | null;
   readonly prepared_asset_fingerprint: string | null;
+  readonly scan_owner: string | null;
+  readonly scan_generation: number;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -45,7 +52,6 @@ export class LocalDetectionDraftRepository {
     readonly clientFileId: string | null;
     readonly status: LocalDetectionDraftStatus;
     readonly rawValueHash?: string | null;
-    readonly rawValuePreview?: string | null;
     readonly internalCode?: string | null;
     readonly quantity?: number | null;
     readonly quantityStatus?: string | null;
@@ -57,29 +63,26 @@ export class LocalDetectionDraftRepository {
     readonly errorCode?: string | null;
     readonly processingMs?: number | null;
     readonly preparedAssetFingerprint: string;
+    readonly scanOwner?: string | null;
+    readonly scanGeneration?: number;
+    readonly comparisonStatus?: string | null;
   }): Promise<LocalDetectionDraftRow> {
     const now = new Date().toISOString();
-    const existing = await this.getByIdempotencyKey(
-      input.capturePhotoId,
-      input.detectorVersion,
-      input.parserVersion,
-      input.preparedAssetFingerprint,
-    );
-    const id = existing?.id ?? createId();
+    const id = createId();
+    const generation = input.scanGeneration ?? 0;
     await this.db.runAsync(
       `INSERT INTO local_detection_drafts (
         id, capture_photo_id, capture_session_id, client_file_id, status,
-        raw_value_hash, raw_value_preview, internal_code, quantity, quantity_status,
+        raw_value_hash, internal_code, quantity, quantity_status,
         detected_format, detected_symbology, parser_version, detector_version,
-        candidate_count, error_code, processing_ms, compare_result, compared_at,
-        prepared_asset_fingerprint, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
+        candidate_count, error_code, processing_ms, comparison_status, compare_result, compared_at,
+        prepared_asset_fingerprint, scan_owner, scan_generation, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)
       ON CONFLICT(capture_photo_id, detector_version, parser_version, prepared_asset_fingerprint)
       DO UPDATE SET
         status = excluded.status,
         client_file_id = excluded.client_file_id,
         raw_value_hash = excluded.raw_value_hash,
-        raw_value_preview = excluded.raw_value_preview,
         internal_code = excluded.internal_code,
         quantity = excluded.quantity,
         quantity_status = excluded.quantity_status,
@@ -88,14 +91,21 @@ export class LocalDetectionDraftRepository {
         candidate_count = excluded.candidate_count,
         error_code = excluded.error_code,
         processing_ms = excluded.processing_ms,
-        updated_at = excluded.updated_at;`,
+        comparison_status = COALESCE(excluded.comparison_status, local_detection_drafts.comparison_status),
+        scan_owner = excluded.scan_owner,
+        scan_generation = CASE
+          WHEN excluded.scan_generation >= local_detection_drafts.scan_generation
+          THEN excluded.scan_generation
+          ELSE local_detection_drafts.scan_generation
+        END,
+        updated_at = excluded.updated_at
+      WHERE excluded.scan_generation >= local_detection_drafts.scan_generation;`,
       id,
       input.capturePhotoId,
       input.captureSessionId,
       input.clientFileId,
       input.status,
       input.rawValueHash ?? null,
-      input.rawValuePreview ?? null,
       input.internalCode ?? null,
       input.quantity ?? null,
       input.quantityStatus ?? null,
@@ -106,8 +116,11 @@ export class LocalDetectionDraftRepository {
       input.candidateCount ?? 0,
       input.errorCode ?? null,
       input.processingMs ?? null,
+      input.comparisonStatus ?? null,
       input.preparedAssetFingerprint,
-      existing?.created_at ?? now,
+      input.scanOwner ?? null,
+      generation,
+      now,
       now,
     );
     const row = await this.getByIdempotencyKey(
@@ -160,16 +173,74 @@ export class LocalDetectionDraftRepository {
     );
   }
 
+  async listStaleScanning(olderThanIso: string): Promise<LocalDetectionDraftRow[]> {
+    return this.db.getAllAsync<LocalDetectionDraftRow>(
+      `SELECT * FROM local_detection_drafts
+       WHERE status = 'SCANNING' AND updated_at < ?;`,
+      olderThanIso,
+    );
+  }
+
+  async recoverStaleScanning(olderThanIso: string): Promise<number> {
+    const now = new Date().toISOString();
+    const result = await this.db.runAsync(
+      `UPDATE local_detection_drafts
+       SET status = 'FAILED_RETRYABLE',
+           error_code = 'SCANNING_LEASE_EXPIRED',
+           scan_owner = NULL,
+           updated_at = ?
+       WHERE status = 'SCANNING' AND updated_at < ?;`,
+      now,
+      olderThanIso,
+    );
+    return result.changes ?? 0;
+  }
+
+  /** Mark comparison complete only when mapping is reliable. */
   async markCompared(id: string, compareResult: string): Promise<void> {
     const now = new Date().toISOString();
     await this.db.runAsync(
       `UPDATE local_detection_drafts
-       SET compare_result = ?, compared_at = ?, updated_at = ?
+       SET compare_result = ?, compared_at = ?, comparison_status = 'MAPPED', updated_at = ?
        WHERE id = ?;`,
       compareResult,
       now,
       now,
       id,
     );
+  }
+
+  async markComparisonMappingUnavailable(sessionId: string): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.runAsync(
+      `UPDATE local_detection_drafts
+       SET comparison_status = 'PENDING', updated_at = ?
+       WHERE capture_session_id = ?
+         AND status NOT IN ('NOT_APPLICABLE')
+         AND compared_at IS NULL;`,
+      now,
+      sessionId,
+    );
+  }
+
+  async deleteForSession(sessionId: string): Promise<void> {
+    await this.db.runAsync(`DELETE FROM local_detection_drafts WHERE capture_session_id = ?;`, sessionId);
+  }
+
+  async deleteForPhoto(capturePhotoId: string): Promise<void> {
+    await this.db.runAsync(`DELETE FROM local_detection_drafts WHERE capture_photo_id = ?;`, capturePhotoId);
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.runAsync(`DELETE FROM local_detection_drafts;`);
+  }
+
+  async isScanInFlightForPhoto(capturePhotoId: string): Promise<boolean> {
+    const row = await this.db.getFirstAsync<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM local_detection_drafts
+       WHERE capture_photo_id = ? AND status IN ('PENDING', 'SCANNING');`,
+      capturePhotoId,
+    );
+    return (row?.c ?? 0) > 0;
   }
 }

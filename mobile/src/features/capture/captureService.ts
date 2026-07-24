@@ -338,12 +338,48 @@ export class CaptureService {
   }
 
   async finish(): Promise<void> {
+    await this.finalizeCaptureForUpload({ targetStatus: 'review' });
+  }
+
+  /**
+   * Single capture→upload handoff path. Stops autoscan, runs final scan/validation,
+   * then transitions to review or uploading. Does not skip validation gates.
+   */
+  async finalizeCaptureForUpload(options?: {
+    readonly targetStatus?: 'review' | 'uploading';
+  }): Promise<string> {
+    const target = options?.targetStatus ?? 'uploading';
     const sessionId = this.requireSessionId();
     const current = await this.repo.getSession(sessionId);
-    if (!current || (current.status !== 'active' && current.status !== 'paused')) {
-      throw new Error('Solo se puede finalizar una captura activa o pausada.');
+    if (!current) {
+      throw new Error('No se encontró la captura local.');
     }
-    await this.repo.updateSessionStatus(sessionId, 'finishing');
+
+    if (current.status === 'uploading' && target === 'uploading') {
+      this.clearCurrentSession();
+      return sessionId;
+    }
+
+    if (current.status === 'review' && target === 'uploading') {
+      await this.reloadPhotos(sessionId);
+      this.assertPhotosReadyForUpload();
+      await this.repo.updateSessionStatus(sessionId, 'uploading');
+      this.clearCurrentSession();
+      return sessionId;
+    }
+
+    if (current.status !== 'active' && current.status !== 'paused' && current.status !== 'finishing') {
+      if (current.status === 'review' && target === 'review') {
+        return sessionId;
+      }
+      throw new Error(
+        `No se puede finalizar la captura desde el estado "${current.status}".`,
+      );
+    }
+
+    if (current.status !== 'finishing') {
+      await this.repo.updateSessionStatus(sessionId, 'finishing');
+    }
     this.autoScanEnabled = false;
     this.detachListener();
     await this.loadSession(sessionId, false);
@@ -353,57 +389,37 @@ export class CaptureService {
     await this.markRemainingPendingAsInterrupted(sessionId, 'validation_timeout');
     await this.stopForeground();
     await this.reloadPhotos(sessionId);
+    this.assertPhotosReadyForUpload();
+
+    if (target === 'review') {
+      await this.repo.updateSessionStatus(sessionId, 'review');
+      await this.loadSession(sessionId, false);
+      this.logger.info('session_finish', { sessionId });
+      return sessionId;
+    }
+
     await this.repo.updateSessionStatus(sessionId, 'review');
-    await this.loadSession(sessionId, false);
-    this.logger.info('session_finish', { sessionId });
+    await this.repo.updateSessionStatus(sessionId, 'uploading');
+    this.clearCurrentSession();
+    this.logger.info('session_finish', { sessionId, handoff: 'uploading' });
+    return sessionId;
   }
 
-  /**
-   * Confirms local review and hands the session to the upload pipeline.
-   * Does not mark the session completed until processing succeeds.
-   *
-   * Phase 2 may already be uploading while status is still `active`; tolerate that
-   * handoff so we never throw `active -> uploading` at the operator.
-   */
-  async completeReview(): Promise<string> {
-    const sessionId = this.requireSessionId();
-    const current = await this.repo.getSession(sessionId);
-    if (!current) {
-      throw new Error('No se encontró la captura local.');
-    }
-
-    if (current.status === 'active' || current.status === 'paused' || current.status === 'finishing') {
-      this.autoScanEnabled = false;
-      this.detachListener();
-      await this.stopForeground();
-      await this.repo.updateSessionStatus(sessionId, 'review');
-    }
-
-    await this.reloadPhotos(sessionId);
+  private assertPhotosReadyForUpload(): void {
     if (this.photos.some((p) => p.status === 'detected' || p.status === 'waiting_stability')) {
       throw new Error('Todavía hay fotografías validándose.');
     }
     if (this.photos.some((p) => p.status === 'unstable' || p.status === 'undecodable')) {
       throw new Error('Resolvé o excluí los errores antes de confirmar.');
     }
+  }
 
-    const latest = await this.repo.getSession(sessionId);
-    if (!latest) {
-      throw new Error('No se encontró la captura local.');
-    }
-    if (latest.status === 'uploading') {
-      this.clearCurrentSession();
-      return sessionId;
-    }
-    if (latest.status !== 'review') {
-      throw new Error(
-        `No se puede iniciar la carga desde el estado de captura "${latest.status}".`,
-      );
-    }
-
-    await this.repo.updateSessionStatus(sessionId, 'uploading');
-    this.clearCurrentSession();
-    return sessionId;
+  /**
+   * Confirms local review and hands the session to the upload pipeline.
+   * Does not mark the session completed until processing succeeds.
+   */
+  async completeReview(): Promise<string> {
+    return this.finalizeCaptureForUpload({ targetStatus: 'uploading' });
   }
 
   async cancel(): Promise<void> {

@@ -21,7 +21,6 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
       clientFileId: string | null;
       status: LocalDetectionDraftStatus;
       rawValueHash?: string | null;
-      rawValuePreview?: string | null;
       internalCode?: string | null;
       quantity?: number | null;
       quantityStatus?: string | null;
@@ -33,6 +32,9 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
       errorCode?: string | null;
       processingMs?: number | null;
       preparedAssetFingerprint: string;
+      scanOwner?: string | null;
+      scanGeneration?: number;
+      comparisonStatus?: string | null;
     }): Promise<LocalDetectionDraftRow> {
       const existing = rows.find(
         (r) =>
@@ -41,6 +43,10 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
           r.parser_version === input.parserVersion &&
           r.prepared_asset_fingerprint === input.preparedAssetFingerprint,
       );
+      const gen = input.scanGeneration ?? 0;
+      if (existing && gen < existing.scan_generation) {
+        return existing;
+      }
       const now = new Date().toISOString();
       const row: LocalDetectionDraftRow = {
         id: existing?.id ?? `draft-${rows.length + 1}`,
@@ -49,7 +55,6 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
         client_file_id: input.clientFileId,
         status: input.status,
         raw_value_hash: input.rawValueHash ?? null,
-        raw_value_preview: input.rawValuePreview ?? null,
         internal_code: input.internalCode ?? null,
         quantity: input.quantity ?? null,
         quantity_status: input.quantityStatus ?? null,
@@ -60,9 +65,12 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
         candidate_count: input.candidateCount ?? 0,
         error_code: input.errorCode ?? null,
         processing_ms: input.processingMs ?? null,
+        comparison_status: input.comparisonStatus ?? existing?.comparison_status ?? null,
         compare_result: existing?.compare_result ?? null,
         compared_at: existing?.compared_at ?? null,
         prepared_asset_fingerprint: input.preparedAssetFingerprint,
+        scan_owner: input.scanOwner ?? null,
+        scan_generation: gen,
         created_at: existing?.created_at ?? now,
         updated_at: now,
       };
@@ -82,7 +90,22 @@ function createMemoryDrafts(): LocalDetectionDraftRepository & {
     async listForPhoto() {
       return rows;
     },
+    async listStaleScanning() {
+      return [];
+    },
+    async recoverStaleScanning() {
+      return 0;
+    },
     async markCompared() {},
+    async markComparisonMappingUnavailable() {},
+    async deleteForSession() {},
+    async deleteForPhoto() {},
+    async deleteAll() {
+      rows.length = 0;
+    },
+    async isScanInFlightForPhoto() {
+      return false;
+    },
   };
   return repo as unknown as LocalDetectionDraftRepository & { rows: LocalDetectionDraftRow[] };
 }
@@ -93,7 +116,7 @@ describe('LocalCodeScanStrategy', () => {
     captureSessionId: 'session-1',
     clientFileId: 'cf-1',
     preparedUri: 'file:///tmp/prepared.jpg',
-    preparedAssetFingerprint: 'fp-1',
+    preparedAssetFingerprint: 'sha256:abc',
   };
 
   it('marks NOT_APPLICABLE for INTERNAL_OCR', async () => {
@@ -144,6 +167,7 @@ describe('LocalCodeScanStrategy', () => {
     expect(status).toBe('RESOLVED');
     expect(drafts.rows.at(-1)?.internal_code).toBe('ABC');
     expect(drafts.rows.at(-1)?.quantity).toBe(5);
+    expect(drafts.rows.at(-1)?.raw_value_hash).toMatch(/^sha256:/);
   });
 
   it('marks AMBIGUOUS for distinct codes', async () => {
@@ -203,7 +227,7 @@ describe('LocalCodeScanStrategy', () => {
 });
 
 describe('compareLocalVsServer', () => {
-  it('returns NOT_COMPARABLE without reliable mapping', () => {
+  it('returns NOT_COMPARABLE without reliable mapping (caller must not persist)', () => {
     expect(
       compareLocalVsServer({
         localInternalCode: 'ABC',

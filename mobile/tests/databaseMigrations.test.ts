@@ -31,7 +31,7 @@ describe('SQLite migrations', () => {
   });
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
     expect(v2?.sql).toContain('last_stability_attempt_at');
@@ -69,7 +69,6 @@ describe('SQLite migrations', () => {
   });
 
   it('adds v8 local_detection_drafts with idempotency unique key', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     const v8 = MIGRATIONS.find((m) => m.version === 8);
     expect(v8?.name).toBe('local_detection_drafts');
     expect(v8?.sql).toContain('CREATE TABLE IF NOT EXISTS local_detection_drafts');
@@ -77,6 +76,16 @@ describe('SQLite migrations', () => {
       'UNIQUE(capture_photo_id, detector_version, parser_version, prepared_asset_fingerprint)',
     );
     expect(v8?.sql).toContain('idx_local_detection_drafts_photo');
+  });
+
+  it('adds v9 draft harden without raw_value_preview and with FK cascade', () => {
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const v9 = MIGRATIONS.find((m) => m.version === 9);
+    expect(v9?.name).toBe('local_detection_drafts_harden');
+    expect(v9?.sql).toContain('ON DELETE CASCADE');
+    expect(v9?.sql).toContain('scan_generation');
+    expect(v9?.sql).toContain('comparison_status');
+    expect(v9?.sql).not.toContain('raw_value_preview');
   });
 });
 

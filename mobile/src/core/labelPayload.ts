@@ -4,7 +4,7 @@
  * Authority: contracts/code-scan/v1 + backend Phase 3 docs.
  */
 
-export const LABEL_PAYLOAD_PARSER_VERSION = '1.0.0';
+export const LABEL_PAYLOAD_PARSER_VERSION = '1.1.0';
 export const CODE_MAX_LENGTH = 48;
 export const QUANTITY_MAX_DEFAULT = 99_999_999;
 export const QUANTITY_PATTERN = /^[1-9]\d{0,7}$/;
@@ -12,6 +12,19 @@ export const QUANTITY_PATTERN = /^[1-9]\d{0,7}$/;
 const DI1_PATTERN = /^DI1\|C=([^|]+)\|Q=([1-9]\d{0,7})$/i;
 const PIPE_PATTERN = /^([^|\n]{1,48})\|([1-9]\d{0,7})$/;
 const LABELED_CODE_PATTERN = /^\s*C[oó]digo interno:\s*(.+)\s*$/im;
+
+/** PLAIN payloads that are clearly other domains — reject (contract v1.1). */
+const PLAIN_REJECT_PATTERNS: readonly RegExp[] = [
+  /^https?:\/\//i,
+  /^WIFI:/i,
+  /^BEGIN:/i,
+  /^MECARD:/i,
+  /^MATMSG:/i,
+  /^SMTP:/i,
+  /^mailto:/i,
+  /^[{[]/,
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/i,
+];
 
 export type LabelPayloadFormat = 'PIPE' | 'DI1' | 'LABELED' | 'PLAIN' | 'UNKNOWN';
 export type QuantityStatus = 'PRESENT' | 'MISSING' | 'INVALID';
@@ -21,6 +34,7 @@ export type PayloadParseErrorCode =
   | 'NO_INTERNAL_CODE'
   | 'CODE_LENGTH_OUT_OF_RANGE'
   | 'CODE_CONTROL_CHARACTERS'
+  | 'PLAIN_UNVERIFIED_PAYLOAD'
   | 'QUANTITY_MISSING'
   | 'QUANTITY_NOT_POSITIVE'
   | 'QUANTITY_ABOVE_MAX'
@@ -64,6 +78,16 @@ function detectFormat(raw: string): LabelPayloadFormat {
   if (PIPE_PATTERN.test(text)) return 'PIPE';
   if (LABELED_CODE_PATTERN.test(text)) return 'LABELED';
   return 'PLAIN';
+}
+
+/** True when a PLAIN decode is not a trustworthy inventory internal code. */
+export function isRejectedPlainPayload(code: string, raw: string): boolean {
+  const text = (raw ?? '').trim();
+  if (text.includes('\n') && !LABELED_CODE_PATTERN.test(text)) {
+    // Multiline free text without labeled marker — unverified.
+    return true;
+  }
+  return PLAIN_REJECT_PATTERNS.some((re) => re.test(code.trim()) || re.test(text));
 }
 
 /** Mirror of Python parse_inventory_code_payload (raises on empty). */
@@ -151,6 +175,9 @@ export function parseEncodedLabelPayload(
   } else if (hasControlChars(code)) {
     warnings.push('CODE_CONTROL_CHARACTERS');
     code = null;
+  } else if (format === 'PLAIN' && isRejectedPlainPayload(code, rawValue)) {
+    warnings.push('PLAIN_UNVERIFIED_PAYLOAD');
+    code = null;
   }
 
   let quantity: number | null = null;
@@ -179,6 +206,7 @@ export function parseEncodedLabelPayload(
         'NO_INTERNAL_CODE',
         'CODE_LENGTH_OUT_OF_RANGE',
         'CODE_CONTROL_CHARACTERS',
+        'PLAIN_UNVERIFIED_PAYLOAD',
       ].includes(w),
     ) ?? 'NO_INTERNAL_CODE') as PayloadParseErrorCode;
     return {

@@ -16,6 +16,7 @@ Rules (no OCR, no LLM, no guessing):
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -27,6 +28,19 @@ from src.application.services.code_scan_qr_payload import (
 )
 
 CODE_MAX_LENGTH = 48
+
+# Contract v1.1 — reject PLAIN payloads that belong to other QR domains.
+_PLAIN_REJECT_PREFIXES = (
+    "http://",
+    "https://",
+    "WIFI:",
+    "BEGIN:",
+    "MECARD:",
+    "MATMSG:",
+    "SMTP:",
+    "mailto:",
+)
+_EMAIL_PLAIN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", re.IGNORECASE)
 
 
 class LabelPayloadFormat(str, Enum):
@@ -68,6 +82,22 @@ def _detect_format(raw: str) -> LabelPayloadFormat:
     if _LABELED_CODE_PATTERN.search(text):
         return LabelPayloadFormat.LABELED
     return LabelPayloadFormat.PLAIN
+
+
+def _is_rejected_plain_payload(code: str, raw: str) -> bool:
+    text = (raw or "").strip()
+    if "\n" in text and not _LABELED_CODE_PATTERN.search(text):
+        return True
+    lowered = code.strip()
+    upper = text.upper()
+    for prefix in _PLAIN_REJECT_PREFIXES:
+        if lowered.lower().startswith(prefix.lower()) or upper.startswith(prefix.upper()):
+            return True
+    if text[:1] in "{[":
+        return True
+    if _EMAIL_PLAIN.match(lowered):
+        return True
+    return False
 
 
 class EncodedLabelPayloadParser:
@@ -113,6 +143,9 @@ class EncodedLabelPayloadParser:
             code = None
         elif _has_control_chars(code):
             warnings.append("CODE_CONTROL_CHARACTERS")
+            code = None
+        elif fmt is LabelPayloadFormat.PLAIN and _is_rejected_plain_payload(code, raw_value):
+            warnings.append("PLAIN_UNVERIFIED_PAYLOAD")
             code = None
 
         quantity: int | None = None

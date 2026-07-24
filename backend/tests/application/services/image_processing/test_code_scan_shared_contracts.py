@@ -58,6 +58,7 @@ def _error_code(parsed) -> str | None:
         "NO_INTERNAL_CODE",
         "CODE_LENGTH_OUT_OF_RANGE",
         "CODE_CONTROL_CHARACTERS",
+        "PLAIN_UNVERIFIED_PAYLOAD",
     ):
         if code in parsed.warnings:
             return code
@@ -94,3 +95,48 @@ def test_invalid_fixtures(fixture: dict) -> None:
     if expected.get("errorCode"):
         assert _error_code(parsed) == expected["errorCode"]
     assert sorted(parsed.warnings) == sorted(expected.get("warnings") or [])
+
+
+@pytest.mark.parametrize("fixture", _load("ambiguous.json"), ids=lambda f: f["name"])
+def test_ambiguous_consolidator_fixtures(fixture: dict) -> None:
+    from src.application.services.image_processing.code_detection_consolidator import (
+        CodeDetectionConsolidator,
+        CodeDetectionInput,
+    )
+    from src.application.services.image_processing.encoded_label_payload_parser import (
+        EncodedLabelPayloadParser,
+    )
+
+    parser = EncodedLabelPayloadParser(quantity_max=99_999_999)
+    detections = []
+    for i, cand in enumerate(fixture.get("candidates") or []):
+        parsed = parser.parse(cand["raw"])
+        detections.append(
+            CodeDetectionInput(
+                symbology=cand.get("symbology") or "UNKNOWN",
+                raw_value=cand["raw"],
+                parsed=parsed,
+                detection_index=i,
+            )
+        )
+    result = CodeDetectionConsolidator().consolidate(detections)
+    expected = fixture["expected"]
+
+    def map_status(status: str) -> str:
+        if status in ("MULTIPLE_DISTINCT_CODES", "QUANTITY_CONFLICT"):
+            return "AMBIGUOUS"
+        if status == "NO_DETECTIONS":
+            return "UNRESOLVED"
+        if status == "NO_VALID_CODE":
+            return "INVALID"
+        if status in ("MISSING_QUANTITY", "RESOLVED"):
+            return "RESOLVED"
+        return status
+
+    assert map_status(result.status.value) == expected["status"]
+    assert result.internal_code == expected["internalCode"]
+    assert result.quantity == expected["quantity"]
+    if expected.get("errorCode"):
+        assert result.status.value == expected["errorCode"]
+    else:
+        assert result.status.value == "RESOLVED"

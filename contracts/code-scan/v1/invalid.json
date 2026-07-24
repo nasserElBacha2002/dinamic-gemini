@@ -54,5 +54,75 @@
       "formatVersion": "v1",
       "warnings": ["QUANTITY_ABOVE_MAX"]
     }
+  },
+  {
+    "name": "plain-url-rejected",
+    "raw": "https://example.com/product/123",
+    "expected": {
+      "status": "INVALID",
+      "format": "PLAIN",
+      "internalCode": null,
+      "quantity": null,
+      "quantityStatus": "MISSING",
+      "formatVersion": "v1",
+      "errorCode": "PLAIN_UNVERIFIED_PAYLOAD",
+      "warnings": ["PLAIN_UNVERIFIED_PAYLOAD", "QUANTITY_MISSING"]
+    }
+  },
+  {
+    "name": "plain-wifi-qr-rejected",
+    "raw": "WIFI:T:WPA;S:MyNet;P:secret;;",
+    "expected": {
+      "status": "INVALID",
+      "format": "PLAIN",
+      "internalCode": null,
+      "quantity": null,
+      "quantityStatus": "MISSING",
+      "formatVersion": "v1",
+      "errorCode": "PLAIN_UNVERIFIED_PAYLOAD",
+      "warnings": ["PLAIN_UNVERIFIED_PAYLOAD", "QUANTITY_MISSING"]
+    }
+  },
+  {
+    "name": "plain-email-rejected",
+    "raw": "ops@example.com",
+    "expected": {
+      "status": "INVALID",
+      "format": "PLAIN",
+      "internalCode": null,
+      "quantity": null,
+      "quantityStatus": "MISSING",
+      "formatVersion": "v1",
+      "errorCode": "PLAIN_UNVERIFIED_PAYLOAD",
+      "warnings": ["PLAIN_UNVERIFIED_PAYLOAD", "QUANTITY_MISSING"]
+    }
+  },
+  {
+    "name": "plain-json-rejected",
+    "raw": "{\"code\":\"ABC\",\"qty\":1}",
+    "expected": {
+      "status": "INVALID",
+      "format": "PLAIN",
+      "internalCode": null,
+      "quantity": null,
+      "quantityStatus": "MISSING",
+      "formatVersion": "v1",
+      "errorCode": "PLAIN_UNVERIFIED_PAYLOAD",
+      "warnings": ["PLAIN_UNVERIFIED_PAYLOAD", "QUANTITY_MISSING"]
+    }
+  },
+  {
+    "name": "plain-multiline-free-text-rejected",
+    "raw": "Line one\nLine two without labeled code",
+    "expected": {
+      "status": "INVALID",
+      "format": "PLAIN",
+      "internalCode": null,
+      "quantity": null,
+      "quantityStatus": "MISSING",
+      "formatVersion": "v1",
+      "errorCode": "PLAIN_UNVERIFIED_PAYLOAD",
+      "warnings": ["PLAIN_UNVERIFIED_PAYLOAD", "QUANTITY_MISSING"]
+    }
   }
 ]

@@ -6,7 +6,6 @@ export type DeviceCapabilityStatus =
   | 'SUPPORTED'
   | 'UNSUPPORTED_ANDROID_VERSION'
   | 'SDK_UNAVAILABLE'
-  | 'LOW_MEMORY'
   | 'DISABLED';
 
 type NativeBarcodeMod = {

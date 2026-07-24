@@ -12,9 +12,10 @@ const PHOTO_TRANSITIONS: Readonly<Record<CapturePhotoStatus, readonly CapturePho
 
 const SESSION_TRANSITIONS: Readonly<Record<CaptureSessionStatus, readonly CaptureSessionStatus[]>> = {
   preparing: ['active', 'failed', 'cancelled'],
-  // Phase 2 uploads while capturing: allow handoff to review/upload without a stuck active session.
-  active: ['paused', 'finishing', 'review', 'uploading', 'failed', 'cancelled'],
-  paused: ['active', 'finishing', 'review', 'uploading', 'failed', 'cancelled'],
+  // Handoff to review/upload must go through finalizeCaptureForUpload (finishing),
+  // not via direct active/paused → uploading jumps.
+  active: ['paused', 'finishing', 'failed', 'cancelled'],
+  paused: ['active', 'finishing', 'failed', 'cancelled'],
   finishing: ['review', 'uploading', 'failed', 'cancelled'],
   review: ['uploading', 'upload_review', 'ready_to_process', 'completed', 'cancelled', 'failed'],
   uploading: ['upload_review', 'ready_to_process', 'failed', 'cancelled'],
