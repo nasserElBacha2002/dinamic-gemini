@@ -212,6 +212,42 @@ CREATE INDEX IF NOT EXISTS idx_capture_photos_upload_lease
   ON capture_photos(upload_lease_expires_at);
 `,
   },
+  {
+    version: 8,
+    name: 'local_detection_drafts',
+    sql: `
+CREATE TABLE IF NOT EXISTS local_detection_drafts (
+  id TEXT PRIMARY KEY NOT NULL,
+  capture_photo_id TEXT NOT NULL,
+  capture_session_id TEXT NOT NULL,
+  client_file_id TEXT,
+  status TEXT NOT NULL,
+  raw_value_hash TEXT,
+  raw_value_preview TEXT,
+  internal_code TEXT,
+  quantity INTEGER,
+  quantity_status TEXT,
+  detected_format TEXT,
+  detected_symbology TEXT,
+  parser_version TEXT NOT NULL,
+  detector_version TEXT NOT NULL,
+  candidate_count INTEGER NOT NULL DEFAULT 0,
+  error_code TEXT,
+  processing_ms INTEGER,
+  compare_result TEXT,
+  compared_at TEXT,
+  prepared_asset_fingerprint TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(capture_photo_id, detector_version, parser_version, prepared_asset_fingerprint)
+);
+
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_photo
+  ON local_detection_drafts(capture_photo_id);
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_session
+  ON local_detection_drafts(capture_session_id);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

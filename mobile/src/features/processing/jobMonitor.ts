@@ -1,8 +1,10 @@
 import { mapProcessingPersistence } from '../../core/processingState';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
+import type { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
 import type { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
 import type { ProcessingJobRow } from '../../database/schema/captureSchema';
+import type { FeatureFlags } from '../../core/featureFlags';
 import type { BackgroundWorkScheduler } from '../../native/backgroundWork';
 import {
   emitObservability,
@@ -13,6 +15,7 @@ import {
 } from '../../observability';
 import type { ApiClient } from '../../services/api/apiClient';
 import type { AisleStatusResponseDto } from '../../services/api/types';
+import { compareLocalVsServer } from '../localCodeScan/localCodeScanStrategy';
 
 export interface JobMonitorSnapshot {
   readonly jobs: readonly ProcessingJobRow[];
@@ -29,6 +32,8 @@ export interface JobMonitorOptions {
   readonly backgroundPolling?: boolean;
   readonly backgroundWork?: BackgroundWorkScheduler | null;
   readonly observability?: JobMonitorObservability | null;
+  readonly flags?: FeatureFlags;
+  readonly localDrafts?: LocalDetectionDraftRepository | null;
 }
 
 export class JobMonitor {
@@ -260,6 +265,7 @@ export class JobMonitor {
       }
 
       if (mapping.terminal) {
+        await this.maybeShadowCompare(job.capture_session_id, mapping.state === 'completed');
         if (this.options.backgroundWork) {
           void this.options.backgroundWork.cancelJobMonitor(backendJobId);
         }
@@ -282,6 +288,63 @@ export class JobMonitor {
         },
       });
       this.schedule(backendJobId, 10_000);
+    }
+  }
+
+  /**
+   * Phase 3 shadow compare. Without a reliable per-asset mapping from the
+   * aisle status payload (GLOBAL_BATCH / no client_file_id linkage), mark NOT_COMPARABLE.
+   * Never invent array-order matching.
+   */
+  private async maybeShadowCompare(sessionId: string, jobCompleted: boolean): Promise<void> {
+    if (this.options.flags?.mobileLocalCodeScanShadowCompare !== true) {
+      return;
+    }
+    const drafts = this.options.localDrafts;
+    if (!drafts) {
+      return;
+    }
+    try {
+      const rows = await drafts.listForSession(sessionId);
+      // Status endpoint does not expose per-image code/quantity with client_file_id.
+      // Honest outcome until a mapped compare API exists.
+      const mappingReliable = false;
+      for (const row of rows) {
+        if (row.status === 'NOT_APPLICABLE') {
+          continue;
+        }
+        if (row.compare_result) {
+          continue;
+        }
+        const compareResult = compareLocalVsServer({
+          localInternalCode: row.internal_code,
+          localQuantity: row.quantity,
+          localStatus: row.status,
+          serverInternalCode: null,
+          serverQuantity: null,
+          mappingReliable,
+        });
+        await drafts.markCompared(row.id, compareResult);
+        emitObservability(this.options.observability?.reporter, {
+          name: 'local_scan_result_compared',
+          sessionId,
+          clientFileId: row.client_file_id ?? undefined,
+          attributes: {
+            compare_result: compareResult,
+            local_scan_status: row.status,
+            job_completed: jobCompleted,
+            mapping_reliable: mappingReliable,
+            detector_version: row.detector_version,
+            parser_version: row.parser_version,
+          },
+        });
+      }
+    } catch (e) {
+      this.logger.warn('error', {
+        code: 'LOCAL_SHADOW_COMPARE_FAILED',
+        sessionId,
+        message: String(e),
+      });
     }
   }
 

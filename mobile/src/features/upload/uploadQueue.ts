@@ -12,6 +12,7 @@ import {
   defaultImagePreparationPolicy,
   normalizePreparationProcessingMode,
 } from '../../core/imagePreparationPolicy';
+import { hashPayloadFingerprint } from '../../core/payloadFingerprint';
 import { defaultUploadConcurrencyPolicy } from '../../core/uploadConcurrencyPolicy';
 import { UploadSlotGate, prepareAllowance } from '../../core/uploadSlotGate';
 import {
@@ -22,6 +23,7 @@ import {
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type { CapturePhotoRow, CaptureSessionRow } from '../../database/schema/captureSchema';
+import type { LocalCodeScanStrategy } from '../localCodeScan/localCodeScanStrategy';
 import type { BackgroundWorkScheduler } from '../../native/backgroundWork';
 import {
   createMonotonicClock,
@@ -59,6 +61,8 @@ export interface UploadQueueOptions {
   readonly flags?: FeatureFlags;
   readonly backgroundWork?: BackgroundWorkScheduler | null;
   readonly observability?: UploadQueueObservability | null;
+  /** Phase 3 shadow local CODE_SCAN — never blocks upload authority path. */
+  readonly localCodeScan?: LocalCodeScanStrategy | null;
 }
 
 export interface UploadQueueSnapshot {
@@ -773,6 +777,16 @@ export class UploadQueue {
         errorMessage: null,
         nextRetryAt: null,
       });
+      // Phase 3 shadow scan: fire-and-forget after prepare; never fails upload.
+      this.maybeRunLocalCodeScan({
+        photo,
+        sessionId,
+        mode,
+        preparedUri: prepared.transformUri || photo.uri,
+        preparedBytes: prepared.size,
+        preparedWidth: prepared.preparedWidth,
+        preparedHeight: prepared.preparedHeight,
+      });
       if (this.obs) {
         this.obs.marks.mark(photoMarkKey(sessionId, clientFileId, 'prepared'));
         emitObservability(this.obs.reporter, {
@@ -834,6 +848,43 @@ export class UploadQueue {
       this.emit();
       this.scheduleNativeDrain(sessionId);
     }
+  }
+
+  private maybeRunLocalCodeScan(input: {
+    readonly photo: CapturePhotoRow;
+    readonly sessionId: string;
+    readonly mode: ReturnType<typeof normalizePreparationProcessingMode>;
+    readonly preparedUri: string;
+    readonly preparedBytes: number;
+    readonly preparedWidth: number;
+    readonly preparedHeight: number;
+  }): void {
+    const strategy = this.options.localCodeScan;
+    if (!strategy) {
+      return;
+    }
+    const flagEnabled = this.flags?.mobileLocalCodeScan === true;
+    const fingerprint = hashPayloadFingerprint(
+      `${input.preparedUri}|${input.preparedBytes}|${input.preparedWidth}x${input.preparedHeight}`,
+    );
+    void strategy
+      .execute({
+        capturePhotoId: input.photo.id,
+        captureSessionId: input.sessionId,
+        clientFileId: input.photo.client_file_id,
+        preparedUri: input.preparedUri,
+        preparedAssetFingerprint: fingerprint,
+        processingMode: input.mode,
+        flagEnabled,
+        cancelRequested: input.photo.upload_cancel_requested === 1,
+      })
+      .catch((e) => {
+        this.logger.warn('error', {
+          code: 'LOCAL_CODE_SCAN_UNHANDLED',
+          photoId: input.photo.id,
+          message: String(e),
+        });
+      });
   }
 
   private async invalidatePreparedSize(photoId: string): Promise<void> {

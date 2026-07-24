@@ -3,11 +3,13 @@ import { FlatList, Image, Text, View } from 'react-native';
 
 import { ProcessAisleConfirmModal } from '../components/ProcessAisleConfirmModal';
 import type { CapturePhotoRow } from '../database/schema/captureSchema';
+import type { LocalDetectionDraftStatus } from '../database/repositories/localDetectionDraftRepository';
 import type { AisleIdentificationMode } from '../features/processing/processingMode';
 import {
   labelForIdentificationMode,
   preferenceFromSelection,
 } from '../features/processing/processingMode';
+import { labelForLocalScanStatus } from '../features/localCodeScan/localScanUi';
 import { hasForeignUploadLease, UPLOAD_WORKER_OWNER_JS } from '../core/uploadLease';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import { Button, SmallButton, messageOf, styles } from '../ui';
@@ -118,10 +120,45 @@ export function UploadsScreen({
   const [ready, setReady] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [localScanByPhoto, setLocalScanByPhoto] = useState<
+    Record<string, LocalDetectionDraftStatus>
+  >({});
+  const [localScanSummary, setLocalScanSummary] = useState<{
+    scanned: number;
+    resolved: number;
+    unresolved: number;
+  } | null>(null);
 
   const refresh = useCallback(() => {
     void services.uploadQueue.getSessionProgress(sessionId).then(setProgress);
     void services.uploadQueue.refreshSessionReadiness(sessionId).then((r) => setReady(r === 'ready'));
+    if (services.config.flags.mobileLocalCodeScan) {
+      void services.localDetectionDrafts.listForSession(sessionId).then((rows) => {
+        const byPhoto: Record<string, LocalDetectionDraftStatus> = {};
+        let scanned = 0;
+        let resolved = 0;
+        let unresolved = 0;
+        for (const row of rows) {
+          if (row.status === 'NOT_APPLICABLE') continue;
+          scanned += 1;
+          byPhoto[row.capture_photo_id] = row.status;
+          if (row.status === 'RESOLVED') resolved += 1;
+          else if (
+            row.status === 'UNRESOLVED' ||
+            row.status === 'INVALID' ||
+            row.status === 'AMBIGUOUS' ||
+            row.status === 'FAILED'
+          ) {
+            unresolved += 1;
+          }
+        }
+        setLocalScanByPhoto(byPhoto);
+        setLocalScanSummary({ scanned, resolved, unresolved });
+      });
+    } else {
+      setLocalScanByPhoto({});
+      setLocalScanSummary(null);
+    }
   }, [services, sessionId]);
   useEffect(() => {
     refresh();
@@ -199,6 +236,13 @@ export function UploadsScreen({
             <Text style={styles.muted}>
               Tipo de trabajo: {labelForIdentificationMode(identificationModePreference)}
             </Text>
+            {localScanSummary && localScanSummary.scanned > 0 ? (
+              <Text style={styles.muted}>
+                Escaneo local (sombra): {localScanSummary.scanned} · Resueltas:{' '}
+                {localScanSummary.resolved} · Sin resolver: {localScanSummary.unresolved} · El
+                servidor sigue siendo la autoridad
+              </Text>
+            ) : null}
             <View style={styles.nav}>
               <SmallButton
                 label="Reintentar todo"
@@ -226,6 +270,11 @@ export function UploadsScreen({
               {photo.display_name}
             </Text>
             <Text style={styles.photoText}>{labelForUploadStatus(photo)}</Text>
+            {labelForLocalScanStatus(localScanByPhoto[photo.id]) ? (
+              <Text style={styles.muted} numberOfLines={2}>
+                {labelForLocalScanStatus(localScanByPhoto[photo.id])}
+              </Text>
+            ) : null}
             {photo.upload_status === 'retryable_error' || photo.upload_status === 'permanent_error' ? (
               <SmallButton
                 label="Reintentar"

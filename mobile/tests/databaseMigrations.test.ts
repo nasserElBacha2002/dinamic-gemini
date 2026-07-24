@@ -31,7 +31,7 @@ describe('SQLite migrations', () => {
   });
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
     expect(v2?.sql).toContain('last_stability_attempt_at');
@@ -66,6 +66,17 @@ describe('SQLite migrations', () => {
     expect(v7?.sql).toContain('upload_lease_token');
     expect(v7?.sql).toContain('upload_worker_owner');
     expect(v7?.sql).toContain('upload_cancel_requested');
+  });
+
+  it('adds v8 local_detection_drafts with idempotency unique key', () => {
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    const v8 = MIGRATIONS.find((m) => m.version === 8);
+    expect(v8?.name).toBe('local_detection_drafts');
+    expect(v8?.sql).toContain('CREATE TABLE IF NOT EXISTS local_detection_drafts');
+    expect(v8?.sql).toContain(
+      'UNIQUE(capture_photo_id, detector_version, parser_version, prepared_asset_fingerprint)',
+    );
+    expect(v8?.sql).toContain('idx_local_detection_drafts_photo');
   });
 });
 

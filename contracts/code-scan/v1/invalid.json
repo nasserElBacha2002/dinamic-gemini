@@ -1,0 +1,58 @@
+[
+  {
+    "name": "empty-payload",
+    "raw": "",
+    "expected": {
+      "status": "INVALID",
+      "format": "UNKNOWN",
+      "internalCode": null,
+      "quantity": null,
+      "quantityStatus": "MISSING",
+      "formatVersion": "v1",
+      "errorCode": "EMPTY_OR_UNPARSEABLE_PAYLOAD",
+      "warnings": ["EMPTY_OR_UNPARSEABLE_PAYLOAD"]
+    }
+  },
+  {
+    "name": "whitespace-only",
+    "raw": "   \n  ",
+    "expected": {
+      "status": "INVALID",
+      "format": "UNKNOWN",
+      "internalCode": null,
+      "quantity": null,
+      "quantityStatus": "MISSING",
+      "formatVersion": "v1",
+      "errorCode": "EMPTY_OR_UNPARSEABLE_PAYLOAD",
+      "warnings": ["EMPTY_OR_UNPARSEABLE_PAYLOAD"]
+    }
+  },
+  {
+    "name": "control-characters-in-code",
+    "raw": "AB\u0001C|2",
+    "expected": {
+      "status": "INVALID",
+      "format": "PIPE",
+      "internalCode": null,
+      "quantity": 2,
+      "quantityStatus": "PRESENT",
+      "formatVersion": "v1",
+      "errorCode": "CODE_CONTROL_CHARACTERS",
+      "warnings": ["CODE_CONTROL_CHARACTERS"]
+    }
+  },
+  {
+    "name": "quantity-above-max-keeps-code",
+    "raw": "ABC|99",
+    "quantityMax": 10,
+    "expected": {
+      "status": "VALID",
+      "format": "PIPE",
+      "internalCode": "ABC",
+      "quantity": null,
+      "quantityStatus": "INVALID",
+      "formatVersion": "v1",
+      "warnings": ["QUANTITY_ABOVE_MAX"]
+    }
+  }
+]

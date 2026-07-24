@@ -1,0 +1,51 @@
+[
+  {
+    "name": "two-distinct-codes",
+    "candidates": [
+      { "raw": "ABC|5", "symbology": "QR_CODE" },
+      { "raw": "XYZ|3", "symbology": "CODE_128" }
+    ],
+    "expected": {
+      "status": "AMBIGUOUS",
+      "errorCode": "MULTIPLE_DISTINCT_CODES",
+      "internalCode": null,
+      "quantity": null
+    }
+  },
+  {
+    "name": "same-code-quantity-conflict",
+    "candidates": [
+      { "raw": "ABC|5", "symbology": "QR_CODE" },
+      { "raw": "ABC|7", "symbology": "CODE_128" }
+    ],
+    "expected": {
+      "status": "AMBIGUOUS",
+      "errorCode": "QUANTITY_CONFLICT",
+      "internalCode": "ABC",
+      "quantity": null
+    }
+  },
+  {
+    "name": "duplicate-same-payload-resolves",
+    "candidates": [
+      { "raw": "ABC|5", "symbology": "QR_CODE" },
+      { "raw": "ABC|5", "symbology": "CODE_128" }
+    ],
+    "expected": {
+      "status": "RESOLVED",
+      "errorCode": null,
+      "internalCode": "ABC",
+      "quantity": 5
+    }
+  },
+  {
+    "name": "zero-candidates",
+    "candidates": [],
+    "expected": {
+      "status": "UNRESOLVED",
+      "errorCode": "NO_DETECTIONS",
+      "internalCode": null,
+      "quantity": null
+    }
+  }
+]

@@ -44,6 +44,8 @@ dependencies {
   implementation "androidx.core:core-ktx:1.13.1"
   implementation "com.squareup.okhttp3:okhttp:4.12.0"
   implementation "androidx.security:security-crypto:1.1.0-alpha06"
+  // Phase 3: offline barcode / QR shadow scan (bundled model; no network download per scan).
+  implementation "com.google.mlkit:barcode-scanning:17.3.0"
 
   testImplementation "junit:junit:4.13.2"
   testImplementation "org.jetbrains.kotlin:kotlin-test-junit:${safeExtGet('kotlinVersion', '1.9.23')}"

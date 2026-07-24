@@ -1,0 +1,19 @@
+{
+  "pipeline_version": "code-scan-v1",
+  "authority": "server EncodedLabelPayloadParser + parse_inventory_code_payload",
+  "code_max_length": 48,
+  "quantity_max_default": 99999999,
+  "quantity_pattern": "^[1-9]\\d{0,7}$",
+  "supported_formats": ["PIPE", "DI1", "LABELED", "PLAIN"],
+  "supported_symbologies_mobile": [
+    "QR_CODE",
+    "CODE_128",
+    "CODE_39",
+    "EAN_13",
+    "EAN_8",
+    "UPC_A",
+    "UPC_E"
+  ],
+  "parser_version": "1.0.0",
+  "detector_version": "mlkit-barcode-1.0.0"
+}

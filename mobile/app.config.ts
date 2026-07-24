@@ -120,6 +120,10 @@ const config: ExpoConfig = {
       ...optionalFlag('DINAMIC_FLAG_BG_UPLOAD_WORKER', 'backgroundUploadWorker'),
       ...optionalFlag('DINAMIC_FLAG_BG_UPLOAD_FGS', 'backgroundUploadForegroundService'),
       ...optionalFlag('DINAMIC_FLAG_BG_UPLOAD_REBOOT', 'backgroundUploadRebootResume'),
+      // Phase 3 local CODE_SCAN shadow — default off; set =1 to enable.
+      ...optionalFlag('DINAMIC_FLAG_LOCAL_CODE_SCAN', 'mobileLocalCodeScan'),
+      ...optionalFlag('DINAMIC_FLAG_LOCAL_CODE_SCAN_COMPARE', 'mobileLocalCodeScanShadowCompare'),
+      ...optionalFlag('DINAMIC_FLAG_LOCAL_CODE_SCAN_DEBUG', 'mobileLocalCodeScanDebugMetrics'),
     },
   },
 };

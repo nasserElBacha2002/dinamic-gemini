@@ -70,6 +70,7 @@ output/
 !frontend/scripts/i18n.overrides.en.json
 !backend/tests/fixtures/v2_1/global_analysis_ok.json
 !backend/tests/fixtures/v2_1/global_analysis_unlocalized.json
+!contracts/code-scan/**/*.json
 
 # Data files (videos de prueba, etc.)
 data/

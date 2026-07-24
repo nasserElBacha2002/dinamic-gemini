@@ -187,7 +187,7 @@ describe('fase2 session transitions', () => {
 
 describe('fase2 migrations', () => {
   it('includes v3 and v4 upload/job schema', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     const sql = MIGRATIONS.map((m) => m.sql).join('\n');
     expect(sql).toContain('upload_batch_id');
     expect(sql).toContain('client_file_id');

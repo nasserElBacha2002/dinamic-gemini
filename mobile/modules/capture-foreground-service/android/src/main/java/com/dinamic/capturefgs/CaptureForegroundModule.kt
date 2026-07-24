@@ -117,5 +117,15 @@ class CaptureForegroundModule : Module() {
       }
       DinamicUploadWorker.scheduleQueue(context, expedited == true)
     }
+
+    AsyncFunction("isBarcodeScannerAvailable") {
+      LocalBarcodeDetector.isAvailable()
+    }
+
+    AsyncFunction("detectBarcodes") { uri: String, formatsCsv: String ->
+      val context = appContext.reactContext
+        ?: throw Exception("React context unavailable; cannot scan barcodes")
+      LocalBarcodeDetector.detect(context, uri, formatsCsv)
+    }
   }
 }

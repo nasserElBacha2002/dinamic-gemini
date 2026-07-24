@@ -63,21 +63,26 @@ describe('featureFlags', () => {
     expect(flags.uploadAbortEnabled).toBe(true);
   });
 
-  it('can independently disable phase1 flags in development', () => {
+  it('defaults phase3 local code scan flags off in every environment', () => {
+    for (const env of ['development', 'staging', 'production'] as const) {
+      const flags = resolveFeatureFlags({}, env);
+      expect(flags.mobileLocalCodeScan).toBe(false);
+      expect(flags.mobileLocalCodeScanShadowCompare).toBe(false);
+      expect(flags.mobileLocalCodeScanDebugMetrics).toBe(false);
+    }
+  });
+
+  it('can independently enable phase3 local code scan flags', () => {
     const flags = resolveFeatureFlags(
       {
-        uploadDimensionCap: '0',
-        uploadAdaptiveQuality: false,
-        uploadAdaptiveConcurrency: '0',
-        uploadAbortEnabled: '0',
-        heicConvertToJpeg: '0',
+        mobileLocalCodeScan: '1',
+        mobileLocalCodeScanShadowCompare: true,
+        mobileLocalCodeScanDebugMetrics: '1',
       },
-      'development',
+      'production',
     );
-    expect(flags.uploadDimensionCap).toBe(false);
-    expect(flags.uploadAdaptiveQuality).toBe(false);
-    expect(flags.uploadAdaptiveConcurrency).toBe(false);
-    expect(flags.uploadAbortEnabled).toBe(false);
-    expect(flags.heicConvertToJpeg).toBe(false);
+    expect(flags.mobileLocalCodeScan).toBe(true);
+    expect(flags.mobileLocalCodeScanShadowCompare).toBe(true);
+    expect(flags.mobileLocalCodeScanDebugMetrics).toBe(true);
   });
 });

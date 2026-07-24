@@ -20,6 +20,8 @@ import { cleanupTransformTemps, getStorageStatus } from '../../features/support/
 import { AisleAssetsApi } from '../../features/upload/aisleAssetsApi';
 import { UploadLimitsService } from '../../features/upload/uploadLimitsService';
 import { UploadQueue } from '../../features/upload/uploadQueue';
+import { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
+import { LocalCodeScanStrategy } from '../../features/localCodeScan/localCodeScanStrategy';
 import {
   buildBaselineReport,
   createObservabilityStack,
@@ -82,6 +84,7 @@ export interface AppServices {
   readonly uploadLimits: UploadLimitsService;
   readonly processing: ProcessingService;
   readonly jobMonitor: JobMonitor;
+  readonly localDetectionDrafts: LocalDetectionDraftRepository;
   readonly connectivity: ConnectivityService;
   readonly backgroundWork: BackgroundWorkScheduler;
   readonly backgroundUpload: BackgroundUploadScheduler;
@@ -107,6 +110,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const db = await getDatabase();
   const captureRepo = new CaptureRepository(db);
   const jobRepo = new ProcessingJobRepository(db);
+  const localDetectionDrafts = new LocalDetectionDraftRepository(db);
   const connectivity = createConnectivityService();
   const backgroundWork = createBackgroundWorkScheduler(logger, config.flags);
   const backgroundUpload = asBackgroundUploadScheduler(backgroundWork);
@@ -121,6 +125,10 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     config.flags.uploadObservabilityEnabled
       ? { reporter: observability.reporter, marks: observability.marks }
       : null;
+  const localCodeScan = new LocalCodeScanStrategy({
+    drafts: localDetectionDrafts,
+    reporter: obsWire?.reporter ?? null,
+  });
   const useNativeBg =
     config.flags.backgroundUploadWorker === true || config.flags.workManagerScheduling === true;
   const uploadQueue = new UploadQueue(
@@ -133,6 +141,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       flags: config.flags,
       backgroundWork: useNativeBg ? backgroundWork : null,
       observability: obsWire,
+      localCodeScan,
     },
   );
 
@@ -168,6 +177,8 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       ? backgroundWork
       : null,
     observability: obsWire,
+    flags: config.flags,
+    localDrafts: localDetectionDrafts,
   });
 
   if (!configError) {
@@ -226,6 +237,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     uploadLimits,
     processing,
     jobMonitor,
+    localDetectionDrafts,
     connectivity,
     backgroundWork,
     backgroundUpload,
