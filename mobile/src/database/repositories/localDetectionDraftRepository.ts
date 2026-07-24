@@ -58,6 +58,7 @@ export interface LocalDetectionDraftRow {
   readonly synced_at: string | null;
   readonly sync_lease_token: string | null;
   readonly sync_lease_expires_at: string | null;
+  readonly detected_at: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -85,18 +86,24 @@ export class LocalDetectionDraftRepository {
     readonly scanOwner?: string | null;
     readonly scanGeneration?: number;
     readonly comparisonStatus?: string | null;
+    readonly detectedAt?: string | null;
   }): Promise<LocalDetectionDraftRow> {
     const now = new Date().toISOString();
     const id = createId();
     const generation = input.scanGeneration ?? 0;
+    const terminal =
+      input.status !== 'PENDING' &&
+      input.status !== 'SCANNING' &&
+      input.status !== 'NOT_APPLICABLE';
+    const detectedAt = terminal ? (input.detectedAt ?? now) : null;
     await this.db.runAsync(
       `INSERT INTO local_detection_drafts (
         id, capture_photo_id, capture_session_id, client_file_id, status,
         raw_value_hash, internal_code, quantity, quantity_status,
         detected_format, detected_symbology, parser_version, detector_version,
         candidate_count, error_code, processing_ms, comparison_status, compare_result, compared_at,
-        prepared_asset_fingerprint, scan_owner, scan_generation, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)
+        prepared_asset_fingerprint, scan_owner, scan_generation, detected_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(capture_photo_id, detector_version, parser_version, prepared_asset_fingerprint)
       DO UPDATE SET
         status = excluded.status,
@@ -117,6 +124,7 @@ export class LocalDetectionDraftRepository {
           THEN excluded.scan_generation
           ELSE local_detection_drafts.scan_generation
         END,
+        detected_at = COALESCE(local_detection_drafts.detected_at, excluded.detected_at),
         updated_at = excluded.updated_at
       WHERE excluded.scan_generation >= local_detection_drafts.scan_generation;`,
       id,
@@ -139,6 +147,7 @@ export class LocalDetectionDraftRepository {
       input.preparedAssetFingerprint,
       input.scanOwner ?? null,
       generation,
+      detectedAt,
       now,
       now,
     );
@@ -425,6 +434,62 @@ export class LocalDetectionDraftRepository {
          AND sync_lease_expires_at <= ?;`,
       nowIso,
       nowIso,
+    );
+    return result.changes ?? 0;
+  }
+
+  async getEarliestSyncRetryAt(): Promise<string | null> {
+    const row = await this.db.getFirstAsync<{ next_at: string | null }>(
+      `SELECT MIN(
+          CASE
+            WHEN sync_status = 'PENDING' THEN COALESCE(sync_next_retry_at, created_at)
+            WHEN sync_status = 'RETRY_SCHEDULED' THEN sync_next_retry_at
+            ELSE NULL
+          END
+        ) AS next_at
+       FROM local_detection_drafts
+       WHERE sync_status IN ('PENDING', 'RETRY_SCHEDULED');`,
+    );
+    return row?.next_at ?? null;
+  }
+
+  async markNotReady(
+    draftId: string,
+    errorCode: string,
+    nowIso: string,
+  ): Promise<void> {
+    await this.db.runAsync(
+      `UPDATE local_detection_drafts
+       SET sync_status = 'NOT_READY',
+           sync_last_error_code = ?,
+           sync_lease_token = NULL,
+           sync_lease_expires_at = NULL,
+           sync_next_retry_at = NULL,
+           updated_at = ?
+       WHERE id = ?;`,
+      errorCode,
+      nowIso,
+      draftId,
+    );
+  }
+
+  async purgeSyncedOlderThan(cutoffIso: string): Promise<number> {
+    const result = await this.db.runAsync(
+      `DELETE FROM local_detection_drafts
+       WHERE sync_status = 'SYNCED'
+         AND synced_at IS NOT NULL
+         AND synced_at < ?;`,
+      cutoffIso,
+    );
+    return result.changes ?? 0;
+  }
+
+  async purgeTerminalOlderThan(cutoffIso: string): Promise<number> {
+    const result = await this.db.runAsync(
+      `DELETE FROM local_detection_drafts
+       WHERE sync_status IN ('REJECTED', 'CONFLICT', 'FAILED_TERMINAL')
+         AND updated_at < ?;`,
+      cutoffIso,
     );
     return result.changes ?? 0;
   }

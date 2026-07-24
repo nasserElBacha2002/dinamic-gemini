@@ -327,6 +327,17 @@ CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_sync
   ON local_detection_drafts(sync_status, sync_next_retry_at);
 `,
   },
+  {
+    version: 11,
+    name: 'local_detection_drafts_detected_at',
+    sql: `
+ALTER TABLE local_detection_drafts ADD COLUMN detected_at TEXT;
+UPDATE local_detection_drafts
+   SET detected_at = updated_at
+ WHERE detected_at IS NULL
+   AND status NOT IN ('PENDING', 'SCANNING', 'NOT_APPLICABLE');
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

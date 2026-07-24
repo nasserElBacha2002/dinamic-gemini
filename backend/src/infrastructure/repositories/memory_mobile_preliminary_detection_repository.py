@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
+from src.application.ports.mobile_preliminary_detection_repository import (
+    PreliminaryUniqueViolationError,
+)
 from src.domain.mobile_preliminary_detections.entities import MobilePreliminaryDetection
 
 
@@ -29,14 +34,32 @@ class MemoryMobilePreliminaryDetectionRepository:
         )
         return self._by_idem.get(key)
 
-    def upsert(self, row: MobilePreliminaryDetection) -> MobilePreliminaryDetection:
+    def insert(self, row: MobilePreliminaryDetection) -> MobilePreliminaryDetection:
+        if row.draft_id in self._by_draft:
+            raise PreliminaryUniqueViolationError("draft_id")
+        key = (
+            row.client_file_id,
+            row.detector_version,
+            row.parser_version,
+            row.prepared_asset_sha256,
+        )
+        if key in self._by_idem:
+            raise PreliminaryUniqueViolationError("idempotency_key")
         self._by_draft[row.draft_id] = row
-        self._by_idem[
-            (
-                row.client_file_id,
-                row.detector_version,
-                row.parser_version,
-                row.prepared_asset_sha256,
-            )
-        ] = row
+        self._by_idem[key] = row
         return row
+
+    def delete_expired(self, *, now: datetime, limit: int = 500) -> int:
+        expired = [r for r in self._by_draft.values() if r.expires_at <= now][:limit]
+        for row in expired:
+            self._by_draft.pop(row.draft_id, None)
+            self._by_idem.pop(
+                (
+                    row.client_file_id,
+                    row.detector_version,
+                    row.parser_version,
+                    row.prepared_asset_sha256,
+                ),
+                None,
+            )
+        return len(expired)

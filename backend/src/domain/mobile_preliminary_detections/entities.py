@@ -28,6 +28,7 @@ class MobilePreliminaryDetection:
     processing_ms: int | None
     detected_at: datetime | None
     received_at: datetime
+    expires_at: datetime
     validation_status: str
     validation_error_code: str | None
     schema_version: str

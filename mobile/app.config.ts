@@ -123,9 +123,8 @@ const config: ExpoConfig = {
       // Phase 3 local CODE_SCAN shadow — default off; set =1 to enable.
       ...optionalFlag('DINAMIC_FLAG_LOCAL_CODE_SCAN', 'mobileLocalCodeScan'),
       ...optionalFlag('DINAMIC_FLAG_LOCAL_CODE_SCAN_COMPARE', 'mobileLocalCodeScanShadowCompare'),
-      // Phase 4 preliminary sync — default off.
+      // Phase 4 preliminary sync — default off. JS timer scheduler only (no WorkManager).
       ...optionalFlag('DINAMIC_FLAG_PRELIMINARY_SYNC', 'mobilePreliminaryDetectionSync'),
-      ...optionalFlag('DINAMIC_FLAG_PRELIMINARY_BG_SYNC', 'preliminaryDetectionBackgroundSync'),
     },
   },
 };

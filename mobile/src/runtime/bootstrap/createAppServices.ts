@@ -143,7 +143,11 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     api: preliminaryApi,
     logger,
     reporter: obsWire?.reporter ?? null,
+    connectivity,
   });
+  if (config.flags.mobilePreliminaryDetectionSync) {
+    preliminarySync.startScheduler();
+  }
   const useNativeBg =
     config.flags.backgroundUploadWorker === true || config.flags.workManagerScheduling === true;
   const uploadQueue = new UploadQueue(
@@ -254,6 +258,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       } catch {
         // best-effort — drafts must not survive logout
       }
+      preliminarySync.stopScheduler();
     }),
     inventories: new InventoryService(api),
     clients: new ClientService(api),
@@ -301,6 +306,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       }),
     getStorageStatus,
     async dispose() {
+      preliminarySync.stopScheduler();
       capture.dispose();
       await uploadQueue.dispose();
       jobMonitor.dispose();

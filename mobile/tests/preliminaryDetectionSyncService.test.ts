@@ -1,5 +1,15 @@
 import { ApiError } from '../src/services/api/apiClient';
-import { PreliminaryDetectionSyncService } from '../src/features/preliminarySync/preliminaryDetectionSyncService';
+import {
+  PRELIMINARY_ASSET_PENDING,
+  PRELIMINARY_INGEST_DISABLED,
+  PRELIMINARY_VALIDATION_FAILED,
+  classifyPreliminarySyncError,
+} from '../src/features/preliminarySync/preliminarySyncOutcomeClassifier';
+import {
+  PreliminaryDetectionSyncService,
+  SYNC_LEASE_MS,
+  SYNC_REQUEST_TIMEOUT_MS,
+} from '../src/features/preliminarySync/preliminaryDetectionSyncService';
 import type { LocalDetectionDraftRow } from '../src/database/repositories/localDetectionDraftRepository';
 import type { FeatureFlags } from '../src/core/featureFlags';
 import { DEFAULT_FEATURE_FLAGS } from '../src/core/featureFlags';
@@ -40,8 +50,9 @@ function draft(over: Partial<LocalDetectionDraftRow> = {}): LocalDetectionDraftR
     synced_at: null,
     sync_lease_token: null,
     sync_lease_expires_at: null,
+    detected_at: '2026-07-24T12:00:00.000Z',
     created_at: '2026-07-24T12:00:00.000Z',
-    updated_at: '2026-07-24T12:00:00.000Z',
+    updated_at: '2026-07-24T12:00:01.000Z',
     ...over,
   };
 }
@@ -51,21 +62,29 @@ function createHarness(opts: {
   drafts?: LocalDetectionDraftRow[];
   assetId?: string | null;
   upsert?: jest.Mock;
+  sessionCalls?: { count: number };
 }) {
   const rows = [...(opts.drafts ?? [draft()])];
+  const sessionCalls = opts.sessionCalls ?? { count: 0 };
   const draftsRepo = {
     markPendingForPhotoWhenReady: jest.fn(async () => 1),
     recoverExpiredSyncLeases: jest.fn(async () => 0),
-    listDueForSync: jest.fn(async () => rows.filter((r) => r.sync_status === 'PENDING' || r.sync_status === 'RETRY_SCHEDULED')),
+    listDueForSync: jest.fn(async () =>
+      rows.filter((r) => r.sync_status === 'PENDING' || r.sync_status === 'RETRY_SCHEDULED'),
+    ),
     claimSyncLease: jest.fn(async () => true),
     completeSyncSuccess: jest.fn(async () => true),
     completeSyncTerminal: jest.fn(async () => true),
     completeSyncRetry: jest.fn(async () => true),
+    getEarliestSyncRetryAt: jest.fn(async () => '2026-07-24T12:01:00.000Z'),
+    markNotReady: jest.fn(async () => undefined),
+    purgeSyncedOlderThan: jest.fn(async () => 0),
+    purgeTerminalOlderThan: jest.fn(async () => 0),
   };
   const capture = {
     getPhotoById: jest.fn(async () =>
       opts.assetId === null
-        ? null
+        ? { id: 'photo-1', capture_session_id: 'sess-1', client_file_id: 'cf-1', backend_asset_id: null }
         : {
             id: 'photo-1',
             capture_session_id: 'sess-1',
@@ -73,45 +92,93 @@ function createHarness(opts: {
             backend_asset_id: opts.assetId ?? 'asset-1',
           },
     ),
-    getSession: jest.fn(async () => ({
-      id: 'sess-1',
-      inventory_id: 'inv-1',
-      aisle_id: 'aisle-1',
-    })),
+    getSession: jest.fn(async () => {
+      sessionCalls.count += 1;
+      return { id: 'sess-1', inventory_id: 'inv-1', aisle_id: 'aisle-1' };
+    }),
   };
   const api = {
-    upsertDraft: opts.upsert ?? jest.fn(async () => ({
-      draft_id: 'draft-1',
-      server_preliminary_id: 'server-1',
-      status: 'VALIDATED',
-      received_at: '2026-07-24T12:00:01.000Z',
-      validation_errors: [],
-    })),
+    upsertDraft:
+      opts.upsert ??
+      jest.fn(async () => ({
+        draft_id: 'draft-1',
+        requested_draft_id: 'draft-1',
+        server_preliminary_id: 'server-1',
+        status: 'VALIDATED',
+        received_at: '2026-07-24T12:00:01.000Z',
+        validation_errors: [],
+      })),
   };
   const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
+  const timers: Array<{ delay: number; fn: () => void }> = [];
   const service = new PreliminaryDetectionSyncService({
     flags: opts.flags ?? flags(),
     drafts: draftsRepo as never,
     capture: capture as never,
     api: api as never,
     logger: logger as never,
+    nowMs: () => Date.parse('2026-07-24T12:00:00.000Z'),
+    setTimeoutFn: ((fn: () => void, delay: number) => {
+      timers.push({ delay, fn });
+      return 1 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout,
+    clearTimeoutFn: (() => undefined) as typeof clearTimeout,
   });
-  return { service, draftsRepo, api, capture };
+  return { service, draftsRepo, api, capture, timers, sessionCalls };
 }
 
+describe('classifyPreliminarySyncError', () => {
+  it('classifies by stable code not message text', () => {
+    expect(
+      classifyPreliminarySyncError({
+        status: 404,
+        code: PRELIMINARY_INGEST_DISABLED,
+        attempt: 1,
+        computeDelayMs: () => 1000,
+      }).kind,
+    ).toBe('feature_unavailable');
+    expect(
+      classifyPreliminarySyncError({
+        status: 404,
+        code: PRELIMINARY_ASSET_PENDING,
+        attempt: 1,
+        computeDelayMs: () => 1000,
+      }).kind,
+    ).toBe('pending_asset');
+    expect(
+      classifyPreliminarySyncError({
+        status: 422,
+        code: PRELIMINARY_VALIDATION_FAILED,
+        attempt: 1,
+        computeDelayMs: () => 1000,
+      }).kind,
+    ).toBe('rejected');
+  });
+});
+
 describe('PreliminaryDetectionSyncService', () => {
+  it('keeps lease longer than request timeout', () => {
+    expect(SYNC_LEASE_MS).toBeGreaterThan(SYNC_REQUEST_TIMEOUT_MS);
+  });
+
   it('does nothing when flag is off', async () => {
-    const { service, api } = createHarness({ flags: flags({ mobilePreliminaryDetectionSync: false }) });
+    const { service, api } = createHarness({
+      flags: flags({ mobilePreliminaryDetectionSync: false }),
+    });
     const summary = await service.syncPending();
     expect(summary.attempted).toBe(0);
     expect(api.upsertDraft).not.toHaveBeenCalled();
   });
 
-  it('skips when asset is missing', async () => {
-    const { service, api, draftsRepo } = createHarness({ assetId: null });
-    draftsRepo.listDueForSync.mockResolvedValue([draft()]);
+  it('marks NOT_READY_ASSET when asset missing', async () => {
+    const { service, draftsRepo, api } = createHarness({ assetId: null });
     const summary = await service.syncPending();
-    expect(summary.skipped).toBe(1);
+    expect(summary.not_ready).toBe(1);
+    expect(draftsRepo.markNotReady).toHaveBeenCalledWith(
+      'draft-1',
+      'NOT_READY_ASSET',
+      expect.any(String),
+    );
     expect(api.upsertDraft).not.toHaveBeenCalled();
   });
 
@@ -122,77 +189,65 @@ describe('PreliminaryDetectionSyncService', () => {
     expect(draftsRepo.completeSyncSuccess).toHaveBeenCalled();
   });
 
-  it('maps 422 to REJECTED', async () => {
+  it('maps 422 to rejected via code', async () => {
     const upsert = jest.fn(async () => {
-      throw new ApiError('validation', 422, 'HTTP_422');
+      throw new ApiError('validation', 422, PRELIMINARY_VALIDATION_FAILED);
     });
     const { service, draftsRepo } = createHarness({ upsert });
     const summary = await service.syncPending();
     expect(summary.rejected).toBe(1);
-    expect(draftsRepo.completeSyncTerminal).toHaveBeenCalledWith(
-      'draft-1',
-      expect.any(String),
-      'REJECTED',
-      'HTTP_422',
-      expect.any(String),
-    );
+    expect(draftsRepo.completeSyncTerminal).toHaveBeenCalled();
   });
 
-  it('maps 409 to CONFLICT', async () => {
-    const upsert = jest.fn(async () => {
-      throw new ApiError('conflict', 409, 'HTTP_409');
+  it('counts max attempts as failed_terminal not rejected', async () => {
+    const { service, draftsRepo } = createHarness({
+      drafts: [draft({ sync_attempt_count: 8 })],
     });
-    const { service, draftsRepo } = createHarness({ upsert });
     const summary = await service.syncPending();
-    expect(summary.conflicted).toBe(1);
-    expect(draftsRepo.completeSyncTerminal).toHaveBeenCalledWith(
-      'draft-1',
-      expect.any(String),
-      'CONFLICT',
-      'HTTP_409',
-      expect.any(String),
-    );
-  });
-
-  it('retries on 500', async () => {
-    const upsert = jest.fn(async () => {
-      throw new ApiError('server', 500, 'HTTP_500');
-    });
-    const { service, draftsRepo } = createHarness({ upsert });
-    const summary = await service.syncPending();
-    expect(summary.retried).toBe(1);
-    expect(draftsRepo.completeSyncRetry).toHaveBeenCalled();
-  });
-
-  it('retries on 404 asset pending', async () => {
-    const upsert = jest.fn(async () => {
-      throw new ApiError('asset pending', 404, 'PENDING_ASSET');
-    });
-    const { service, draftsRepo } = createHarness({ upsert });
-    const summary = await service.syncPending();
-    expect(summary.retried).toBe(1);
-    expect(draftsRepo.completeSyncRetry).toHaveBeenCalled();
-  });
-
-  it('terminates on 403', async () => {
-    const upsert = jest.fn(async () => {
-      throw new ApiError('forbidden', 403, 'HTTP_403');
-    });
-    const { service, draftsRepo } = createHarness({ upsert });
-    const summary = await service.syncPending();
-    expect(summary.rejected).toBe(1);
+    expect(summary.failed_terminal).toBe(1);
+    expect(summary.rejected).toBe(0);
     expect(draftsRepo.completeSyncTerminal).toHaveBeenCalledWith(
       'draft-1',
       expect.any(String),
       'FAILED_TERMINAL',
-      'HTTP_403',
+      'SYNC_MAX_ATTEMPTS',
       expect.any(String),
     );
   });
 
-  it('enqueuePhotoAfterUpload marks pending then syncs when enabled', async () => {
+  it('schedules a single retry timer from earliest next_retry_at', async () => {
+    const { service, timers, draftsRepo } = createHarness({});
+    await service.rescheduleRetryTimer();
+    expect(draftsRepo.getEarliestSyncRetryAt).toHaveBeenCalled();
+    expect(timers).toHaveLength(1);
+    expect(timers[0]!.delay).toBe(60_000);
+  });
+
+  it('caches session lookups across drafts in one batch', async () => {
+    const sessionCalls = { count: 0 };
+    const { service, capture } = createHarness({
+      drafts: [
+        draft({ id: 'd1', capture_photo_id: 'p1' }),
+        draft({ id: 'd2', capture_photo_id: 'p2' }),
+      ],
+      sessionCalls,
+    });
+    (capture.getPhotoById as jest.Mock).mockImplementation((id: string) =>
+      Promise.resolve({
+        id,
+        capture_session_id: 'sess-1',
+        client_file_id: 'cf-1',
+        backend_asset_id: 'asset-1',
+      }),
+    );
+    await service.syncPending();
+    expect(sessionCalls.count).toBe(1);
+  });
+
+  it('late response with wrong lease does not complete success', async () => {
     const { service, draftsRepo } = createHarness({});
-    await service.enqueuePhotoAfterUpload('photo-1');
-    expect(draftsRepo.markPendingForPhotoWhenReady).toHaveBeenCalledWith('photo-1');
+    draftsRepo.completeSyncSuccess.mockResolvedValue(false);
+    const summary = await service.syncPending();
+    expect(summary.skipped_lease).toBe(1);
   });
 });

@@ -4,16 +4,21 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from src.api.dependencies import get_upsert_preliminary_detection_use_case
 from src.api.errors import reraise_if_mapped
+from src.api.errors.structured_api_http import StructuredApiHttpError
 from src.api.schemas.preliminary_detection_schemas import (
     PreliminaryDetectionUpsertRequest,
     PreliminaryDetectionUpsertResponse,
 )
 from src.application.errors import AisleNotFoundError
 from src.application.use_cases.aisles.upsert_preliminary_detection import (
+    PRELIMINARY_ASSET_PENDING,
+    PRELIMINARY_IDEMPOTENCY_CONFLICT,
+    PRELIMINARY_INGEST_DISABLED,
+    PRELIMINARY_VALIDATION_FAILED,
     PreliminaryDetectionIngestDisabledError,
     UpsertPreliminaryDetectionCommand,
     UpsertPreliminaryDetectionUseCase,
@@ -63,41 +68,39 @@ def upsert_preliminary_detection(
             )
         )
     except PreliminaryDetectionIngestDisabledError as exc:
-        raise HTTPException(
-            status_code=404,
+        raise StructuredApiHttpError(
+            404,
+            error_code=PRELIMINARY_INGEST_DISABLED,
             detail="Preliminary detection ingest is not enabled",
         ) from exc
     except AisleNotFoundError as exc:
         reraise_if_mapped(exc)
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise StructuredApiHttpError(
+            404,
+            error_code="AISLE_NOT_FOUND",
+            detail=str(exc),
+        ) from exc
 
     if result.status == "REJECTED":
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "draft_id": result.draft_id,
-                "status": result.status,
-                "validation_errors": list(result.validation_errors),
-            },
+        raise StructuredApiHttpError(
+            422,
+            error_code=result.error_code or PRELIMINARY_VALIDATION_FAILED,
+            detail=";".join(result.validation_errors) or "Validation failed",
         )
     if result.status == "CONFLICT":
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "draft_id": result.draft_id,
-                "server_preliminary_id": result.server_preliminary_id,
-                "status": result.status,
-                "validation_errors": list(result.validation_errors),
-            },
+        raise StructuredApiHttpError(
+            409,
+            error_code=result.error_code or PRELIMINARY_IDEMPOTENCY_CONFLICT,
+            detail=(
+                f"Idempotency conflict requested={result.requested_draft_id} "
+                f"canonical={result.draft_id}"
+            ),
         )
     if result.status == "PENDING_ASSET":
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "draft_id": result.draft_id,
-                "status": result.status,
-                "validation_errors": list(result.validation_errors),
-            },
+        raise StructuredApiHttpError(
+            404,
+            error_code=result.error_code or PRELIMINARY_ASSET_PENDING,
+            detail="Asset not found or not scoped to aisle",
         )
 
     logger.info(
@@ -108,6 +111,7 @@ def upsert_preliminary_detection(
     )
     return PreliminaryDetectionUpsertResponse(
         draft_id=result.draft_id,
+        requested_draft_id=result.requested_draft_id,
         server_preliminary_id=result.server_preliminary_id,
         status=result.status,
         received_at=result.received_at,

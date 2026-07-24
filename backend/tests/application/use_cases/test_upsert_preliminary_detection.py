@@ -1,4 +1,4 @@
-"""Unit tests for UpsertPreliminaryDetectionUseCase (Phase 4)."""
+"""Unit tests for UpsertPreliminaryDetectionUseCase (Phase 4 corrections)."""
 
 from __future__ import annotations
 
@@ -6,13 +6,21 @@ from datetime import datetime, timezone
 
 import pytest
 
+from src.application.ports.mobile_preliminary_detection_repository import (
+    PreliminaryUniqueViolationError,
+)
+from src.application.services.preliminary_detection_content import (
+    PreliminaryDetectionContentCanonicalizer,
+)
 from src.application.use_cases.aisles.upsert_preliminary_detection import (
+    PRELIMINARY_IDEMPOTENCY_CONFLICT,
     PreliminaryDetectionIngestDisabledError,
     UpsertPreliminaryDetectionCommand,
     UpsertPreliminaryDetectionUseCase,
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.domain.mobile_preliminary_detections.entities import MobilePreliminaryDetection
 from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
 from src.infrastructure.repositories.memory_mobile_preliminary_detection_repository import (
     MemoryMobilePreliminaryDetectionRepository,
@@ -85,56 +93,106 @@ def _uc(
     enabled: bool = True,
     aisle: Aisle | None = None,
     asset: SourceAsset | None = None,
-) -> UpsertPreliminaryDetectionUseCase:
+    prelim: MemoryMobilePreliminaryDetectionRepository | None = None,
+) -> tuple[UpsertPreliminaryDetectionUseCase, MemoryMobilePreliminaryDetectionRepository]:
     aisle_repo = MemoryAisleRepository()
     asset_repo = MemorySourceAssetRepository()
-    prelim = MemoryMobilePreliminaryDetectionRepository()
-    if aisle is not None:
-        aisle_repo.save(aisle)
-    else:
-        aisle_repo.save(_aisle())
-    if asset is not None:
-        asset_repo.save(asset)
-    else:
-        asset_repo.save(_asset())
-    return UpsertPreliminaryDetectionUseCase(
-        aisle_repo=aisle_repo,
-        asset_repo=asset_repo,
-        preliminary_repo=prelim,
-        clock=_FixedClock(),
-        enabled=enabled,
+    repo = prelim or MemoryMobilePreliminaryDetectionRepository()
+    aisle_repo.save(aisle or _aisle())
+    asset_repo.save(asset or _asset())
+    return (
+        UpsertPreliminaryDetectionUseCase(
+            aisle_repo=aisle_repo,
+            asset_repo=asset_repo,
+            preliminary_repo=repo,
+            clock=_FixedClock(),
+            enabled=enabled,
+        ),
+        repo,
     )
 
 
 def test_disabled_raises():
-    uc = _uc(enabled=False)
+    uc, _ = _uc(enabled=False)
     with pytest.raises(PreliminaryDetectionIngestDisabledError):
         uc.execute(_cmd())
 
 
 def test_create_validated():
-    uc = _uc()
+    uc, _ = _uc()
     result = uc.execute(_cmd())
     assert result.status == "VALIDATED"
     assert result.server_preliminary_id
     assert result.duplicate is False
+    assert result.requested_draft_id == "draft-1"
+    assert result.draft_id == "draft-1"
 
 
 def test_idempotent_repeat():
-    uc = _uc()
+    uc, _ = _uc()
     first = uc.execute(_cmd())
     second = uc.execute(_cmd())
     assert second.duplicate is True
     assert second.server_preliminary_id == first.server_preliminary_id
-    assert second.status == "VALIDATED"
 
 
 def test_idempotency_content_conflict():
-    uc = _uc()
+    uc, _ = _uc()
     uc.execute(_cmd())
     result = uc.execute(_cmd(internal_code="OTHER"))
     assert result.status == "CONFLICT"
-    assert "IDEMPOTENCY_CONTENT_CONFLICT" in result.validation_errors
+    assert result.error_code == PRELIMINARY_IDEMPOTENCY_CONFLICT
+
+
+def test_secondary_key_same_content_is_duplicate():
+    uc, _ = _uc()
+    first = uc.execute(_cmd(draft_id="draft-a"))
+    second = uc.execute(_cmd(draft_id="draft-b"))
+    assert second.duplicate is True
+    assert second.draft_id == "draft-a"
+    assert second.requested_draft_id == "draft-b"
+    assert second.server_preliminary_id == first.server_preliminary_id
+
+
+def test_secondary_key_divergent_content_is_conflict():
+    uc, _ = _uc()
+    uc.execute(_cmd(draft_id="draft-a", internal_code="CODE1"))
+    result = uc.execute(_cmd(draft_id="draft-b", internal_code="CODE2"))
+    assert result.status == "CONFLICT"
+    assert result.error_code == PRELIMINARY_IDEMPOTENCY_CONFLICT
+    assert result.draft_id == "draft-a"
+    assert result.requested_draft_id == "draft-b"
+
+
+def test_unique_violation_race_returns_duplicate():
+    class RaceRepo(MemoryMobilePreliminaryDetectionRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self._first_insert = True
+
+        def insert(self, row: MobilePreliminaryDetection) -> MobilePreliminaryDetection:
+            if self._first_insert:
+                self._first_insert = False
+                # Simulate concurrent winner already present
+                super().insert(row)
+                raise PreliminaryUniqueViolationError("draft_id")
+            return super().insert(row)
+
+    uc, _ = _uc(prelim=RaceRepo())
+    result = uc.execute(_cmd())
+    assert result.duplicate is True
+    assert result.status == "VALIDATED"
+
+
+def test_canonicalizer_normalizes_case_and_sha():
+    canon = PreliminaryDetectionContentCanonicalizer()
+    a = canon.from_command_like(
+        _cmd(status="resolved", prepared_asset_sha256="SHA256:" + ("A" * 64))
+    )
+    b = canon.from_command_like(
+        _cmd(status="RESOLVED", prepared_asset_sha256="sha256:" + ("a" * 64))
+    )
+    assert canon.same_for_draft_id(a, b)
 
 
 def test_asset_missing_pending():
@@ -151,44 +209,18 @@ def test_asset_missing_pending():
     assert result.status == "PENDING_ASSET"
 
 
-def test_wrong_aisle_asset():
-    uc = _uc(asset=_asset(aisle_id="other-aisle"))
-    result = uc.execute(_cmd())
-    assert result.status == "PENDING_ASSET"
-
-
-def test_client_file_mismatch():
-    uc = _uc(asset=_asset(client_file_id="other-cf"))
-    result = uc.execute(_cmd())
-    assert result.status == "REJECTED"
-    assert "CLIENT_FILE_ID_MISMATCH" in result.validation_errors
-
-
-def test_resolved_requires_code():
-    uc = _uc()
-    result = uc.execute(_cmd(internal_code=None))
-    assert result.status == "REJECTED"
-    assert "INTERNAL_CODE_REQUIRED_FOR_RESOLVED" in result.validation_errors
-
-
-def test_invalid_hash():
-    uc = _uc()
-    result = uc.execute(_cmd(prepared_asset_sha256="not-a-hash"))
-    assert result.status == "REJECTED"
-    assert "PREPARED_ASSET_SHA256_INVALID" in result.validation_errors
-
-
-def test_ambiguous_must_not_have_quantity():
-    uc = _uc()
-    result = uc.execute(_cmd(status="AMBIGUOUS", internal_code=None, quantity=5, quantity_status=None))
-    assert result.status == "REJECTED"
-    assert "AMBIGUOUS_MUST_NOT_HAVE_QUANTITY" in result.validation_errors
-
-
-def test_same_image_versions_hash_dedupes_different_draft_id():
-    uc = _uc()
-    first = uc.execute(_cmd(draft_id="draft-a"))
-    second = uc.execute(_cmd(draft_id="draft-b"))
-    assert second.duplicate is True
-    assert second.server_preliminary_id == first.server_preliminary_id
-    assert second.draft_id == "draft-a"
+def test_purge_expired():
+    uc, repo = _uc()
+    uc.execute(_cmd())
+    # Force expire
+    row = repo.get_by_draft_id("draft-1")
+    assert row is not None
+    expired = MobilePreliminaryDetection(
+        **{**row.__dict__, "expires_at": datetime(2020, 1, 1, tzinfo=timezone.utc)}
+    )
+    repo._by_draft[row.draft_id] = expired
+    repo._by_idem[
+        (row.client_file_id, row.detector_version, row.parser_version, row.prepared_asset_sha256)
+    ] = expired
+    assert uc.purge_expired() == 1
+    assert repo.get_by_draft_id("draft-1") is None

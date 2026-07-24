@@ -34,6 +34,7 @@ class PreliminaryDetectionUpsertRequest(BaseModel):
 
 class PreliminaryDetectionUpsertResponse(BaseModel):
     draft_id: str
+    requested_draft_id: str
     server_preliminary_id: str
     status: str
     received_at: datetime

@@ -69,7 +69,6 @@ describe('featureFlags', () => {
       expect(flags.mobileLocalCodeScan).toBe(false);
       expect(flags.mobileLocalCodeScanShadowCompare).toBe(false);
       expect(flags.mobilePreliminaryDetectionSync).toBe(false);
-      expect(flags.preliminaryDetectionBackgroundSync).toBe(false);
     }
   });
 
@@ -89,11 +88,9 @@ describe('featureFlags', () => {
     const flags = resolveFeatureFlags(
       {
         mobilePreliminaryDetectionSync: '1',
-        preliminaryDetectionBackgroundSync: true,
       },
       'production',
     );
     expect(flags.mobilePreliminaryDetectionSync).toBe(true);
-    expect(flags.preliminaryDetectionBackgroundSync).toBe(true);
   });
 });

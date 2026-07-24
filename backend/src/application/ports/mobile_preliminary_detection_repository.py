@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from src.domain.mobile_preliminary_detections.entities import MobilePreliminaryDetection
+
+
+class PreliminaryUniqueViolationError(Exception):
+    """Raised when INSERT hits UNIQUE(draft_id) or UNIQUE(client+versions+hash)."""
+
+    def __init__(self, constraint: str) -> None:
+        self.constraint = constraint  # "draft_id" | "idempotency_key"
+        super().__init__(constraint)
 
 
 class MobilePreliminaryDetectionRepository(Protocol):
@@ -19,4 +28,8 @@ class MobilePreliminaryDetectionRepository(Protocol):
         prepared_asset_sha256: str,
     ) -> MobilePreliminaryDetection | None: ...
 
-    def upsert(self, row: MobilePreliminaryDetection) -> MobilePreliminaryDetection: ...
+    def insert(self, row: MobilePreliminaryDetection) -> MobilePreliminaryDetection:
+        """Insert a new row. Raises PreliminaryUniqueViolationError on unique race."""
+        ...
+
+    def delete_expired(self, *, now: datetime, limit: int = 500) -> int: ...

@@ -44,6 +44,8 @@ export class PreliminaryDetectionApi {
       `/api/v3/inventories/${encodeURIComponent(inventoryId)}` +
       `/aisles/${encodeURIComponent(aisleId)}` +
       `/preliminary-detections/${encodeURIComponent(draftId)}`;
-    return this.api.put<PreliminaryDetectionSyncResponse>(path, body);
+    return this.api.put<PreliminaryDetectionSyncResponse>(path, body, {
+      timeoutMs: 30_000,
+    });
   }
 }

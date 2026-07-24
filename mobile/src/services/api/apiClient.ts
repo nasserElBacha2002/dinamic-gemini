@@ -287,6 +287,12 @@ function extractErrorCode(data: unknown): string | null {
   if ('code' in data && typeof (data as { code: unknown }).code === 'string') {
     return (data as { code: string }).code;
   }
+  if ('detail' in data && typeof (data as { detail: unknown }).detail === 'object') {
+    const nested = (data as { detail?: { code?: string } }).detail?.code;
+    if (typeof nested === 'string') {
+      return nested;
+    }
+  }
   if ('error' in data) {
     const nested = (data as { error?: { code?: string } }).error?.code;
     return nested ?? null;
