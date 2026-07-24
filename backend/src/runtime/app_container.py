@@ -627,6 +627,41 @@ class AppContainer:
             ),
             reprocess_repo=self.get_server_reprocess_repo(),
             authoritative_repo=self.get_authoritative_local_code_scan_repo(),
+            position_repo=self.get_position_repo(),
+            clock=self.get_clock(),
+        )
+
+    @property
+    def execute_server_reprocess_worker(self):
+        from src.application.use_cases.aisles.execute_server_reprocess_worker import (
+            ExecuteServerReprocessWorker,
+        )
+        from src.domain.image_processing.contracts import (
+            ImageProcessingResult,
+            ImageResultStatus,
+        )
+
+        class _UnavailableStrategy:
+            def process_asset(self, asset):
+                return ImageProcessingResult(
+                    job_id="",
+                    asset_id=asset.id,
+                    status=ImageResultStatus.FAILED_TECHNICAL,
+                    processing_mode="UNAVAILABLE",
+                    error_code="SERVER_REPROCESS_MODE_UNAVAILABLE",
+                    error_message="No live strategy wired for worker in this process",
+                )
+
+        def _factory(mode: str):
+            # Production worker should inject real CODE_SCAN/OCR strategies.
+            # Default: unavailable until bridge wires strategies (fail-closed).
+            _ = mode
+            return _UnavailableStrategy()
+
+        return ExecuteServerReprocessWorker(
+            reprocess_repo=self.get_server_reprocess_repo(),
+            asset_repo=self.get_asset_repo(),
+            strategy_factory=_factory,
             clock=self.get_clock(),
         )
 

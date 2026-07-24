@@ -5,14 +5,13 @@ from __future__ import annotations
 import logging
 from datetime import timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 
 from src.api.errors import reraise_if_mapped
 from src.api.errors.structured_api_http import StructuredApiHttpError
 from src.api.schemas.server_reprocess_schemas import (
     ServerReprocessAdoptRequest,
     ServerReprocessAdoptResponse,
-    ServerReprocessCompleteWithResultsRequest,
     ServerReprocessDetailResponse,
     ServerReprocessProposalItemResponse,
     ServerReprocessProposalSummaryResponse,
@@ -43,14 +42,12 @@ from src.application.use_cases.aisles.create_server_reprocess_run import (
 )
 from src.application.use_cases.aisles.execute_server_reprocess_run import (
     CancelServerReprocessRun,
-    ExecuteServerReprocessRun,
 )
 from src.application.use_cases.aisles.list_server_reprocess_proposals import (
     ListServerReprocessProposals,
 )
 from src.auth.dependencies import get_current_admin
 from src.auth.schemas import AuthUser
-from src.domain.server_reprocess.entities import RemoteProposalInput
 from src.runtime.app_container import get_app_container
 
 logger = logging.getLogger(__name__)
@@ -113,10 +110,6 @@ def _get_create() -> CreateServerReprocessRun:
 
 def _get_list() -> ListServerReprocessProposals:
     return get_app_container().list_server_reprocess_proposals
-
-
-def _get_execute() -> ExecuteServerReprocessRun:
-    return get_app_container().execute_server_reprocess_run
 
 
 def _get_cancel() -> CancelServerReprocessRun:
@@ -246,47 +239,89 @@ def get_server_reprocess(
 
 
 @router.post(
-    "/{inventory_id}/aisles/{aisle_id}/server-reprocess/{run_id}/complete-with-results",
+    "/{inventory_id}/aisles/{aisle_id}/server-reprocess/{run_id}/execute",
     response_model=ServerReprocessDetailResponse,
-    summary="Attach remote outputs as proposals (no position overwrite)",
+    summary="Worker/internal: execute SERVER_REPROCESS strategies into proposals (no position write)",
 )
-def post_complete_with_results(
+def post_execute_server_reprocess(
     inventory_id: str,
     aisle_id: str,
     run_id: str,
-    body: ServerReprocessCompleteWithResultsRequest,
     user: AuthUser = Depends(get_current_admin),
+    x_dinamic_internal_worker: str | None = Header(default=None),
 ) -> ServerReprocessDetailResponse:
+    """Restricted to internal worker callers (header); never accepts client result payloads."""
+    from src.application.use_cases.aisles.execute_server_reprocess_worker import (
+        ServerReprocessWorkerFailedError,
+    )
+    from src.config import load_settings
+
     _ = user
-    try:
-        run, _proposals = _get_execute().complete_with_remote_results(
-            run_id=run_id,
-            remote_results=[
-                RemoteProposalInput(
-                    asset_id=r.asset_id,
-                    remote_result_id=r.remote_result_id,
-                    internal_code=r.internal_code,
-                    quantity=r.quantity,
-                    confidence=r.confidence,
-                    source=r.source,
-                    resolved=r.resolved,
-                    ambiguous=r.ambiguous,
-                    comparable=r.comparable,
-                    global_batch_unmapped=r.global_batch_unmapped,
-                )
-                for r in body.results
-            ],
+    settings = load_settings()
+    expected = str(getattr(settings, "server_reprocess_worker_token", "") or "").strip()
+    provided = (x_dinamic_internal_worker or "").strip()
+    if not expected or provided != expected:
+        raise StructuredApiHttpError(
+            403,
+            error_code="SERVER_REPROCESS_WORKER_FORBIDDEN",
+            detail="Internal worker token required",
         )
+
+    try:
+        worker = get_app_container().execute_server_reprocess_worker
+        run, _proposals = worker.execute(run_id=run_id)
     except ServerReprocessRunNotFoundError as exc:
         raise StructuredApiHttpError(404, error_code=exc.error_code, detail=str(exc)) from exc
     except ServerReprocessInvalidStateError as exc:
         raise StructuredApiHttpError(409, error_code=exc.error_code, detail=str(exc)) from exc
+    except ServerReprocessWorkerFailedError as exc:
+        raise StructuredApiHttpError(502, error_code=exc.error_code, detail=str(exc)) from exc
 
     if run.inventory_id != inventory_id or run.aisle_id != aisle_id:
         raise StructuredApiHttpError(
             404, error_code="SERVER_REPROCESS_RUN_NOT_FOUND", detail="Run not in aisle"
         )
     return get_server_reprocess(inventory_id, aisle_id, run_id)
+
+
+@router.get(
+    "/{inventory_id}/aisles/{aisle_id}/server-reprocess-capabilities",
+    summary="Modes/scopes available for server reprocess on this aisle",
+)
+def get_server_reprocess_capabilities(
+    inventory_id: str,
+    aisle_id: str,
+) -> dict:
+    from src.config import load_settings
+
+    settings = load_settings()
+    enabled = bool(getattr(settings, "server_server_reprocess_enabled", False))
+    adoption = bool(getattr(settings, "server_server_reprocess_adoption_enabled", False))
+    modes = []
+    if enabled:
+        if bool(getattr(settings, "aisle_identification_pipeline_enabled", False)):
+            modes.append("CODE_SCAN")
+        if bool(getattr(settings, "internal_ocr_processing_enabled", False)):
+            modes.append("INTERNAL_OCR")
+        modes.append("AUTO_PIPELINE")
+    return {
+        "inventory_id": inventory_id,
+        "aisle_id": aisle_id,
+        "enabled": enabled,
+        "adoption_enabled": adoption,
+        "processing_modes": modes,
+        "scopes": [
+            "FULL_AISLE",
+            "FAILED_ONLY",
+            "UNRECOGNIZED_ONLY",
+            "PENDING_REVIEW_ONLY",
+            "SELECTED_ASSETS",
+        ],
+        "notes": [
+            "SELECTED_ASSETS requires explicit asset_ids; mobile must not coerce to FULL_AISLE.",
+            "complete-with-results is removed; worker uses /execute with internal token.",
+        ],
+    }
 
 
 @router.post(

@@ -211,6 +211,17 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     config.flags.serverReprocessOfflineQueue ? serverReprocessIntents : null,
     config.flags,
   );
+  if (config.flags.serverReprocessOfflineQueue) {
+    const drain = () => {
+      void serverReprocess.drainPending().catch(() => undefined);
+    };
+    connectivity.subscribe((state) => {
+      if (state === 'online') {
+        drain();
+      }
+    });
+    drain();
+  }
   const useNativeBg =
     config.flags.backgroundUploadWorker === true || config.flags.workManagerScheduling === true;
   const uploadQueue = new UploadQueue(

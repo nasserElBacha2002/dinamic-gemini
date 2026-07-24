@@ -1027,6 +1027,13 @@ class LimitsAndSchemaSettings(BaseModel):
             "Default false. Env: SERVER_SERVER_REPROCESS_ADOPTION."
         ),
     )
+    server_reprocess_worker_token: str = Field(
+        default_factory=lambda: (os.getenv("SERVER_REPROCESS_WORKER_TOKEN", "") or "").strip(),
+        description=(
+            "Phase 7: shared secret for X-Dinamic-Internal-Worker on /server-reprocess/*/execute. "
+            "Empty disables the execute endpoint. Env: SERVER_REPROCESS_WORKER_TOKEN."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_authoritative_local_flag_matrix(self) -> Self:

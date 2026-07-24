@@ -1,6 +1,7 @@
 """Phase 7 server reprocess domain."""
 
 from src.domain.server_reprocess.entities import (
+    CurrentPositionSnapshot,
     RemoteProposalInput,
     ServerReprocessAdoption,
     ServerReprocessAdoptionAction,
@@ -18,6 +19,7 @@ from src.domain.server_reprocess.entities import (
 )
 
 __all__ = [
+    "CurrentPositionSnapshot",
     "RemoteProposalInput",
     "ServerReprocessAdoption",
     "ServerReprocessAdoptionAction",

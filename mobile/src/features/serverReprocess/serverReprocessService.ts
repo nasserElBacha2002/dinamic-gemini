@@ -114,4 +114,35 @@ export class ServerReprocessService {
       items,
     });
   }
+
+  async drainPending(limit = 10): Promise<number> {
+    if (!this.flags.serverReprocessOfflineQueue || !this.intents) {
+      return 0;
+    }
+    const pending = await this.intents.listPending(limit);
+    let drained = 0;
+    for (const intent of pending) {
+      try {
+        const scope = JSON.parse(intent.scope_json) as {
+          type: ServerReprocessScopeType;
+          asset_ids?: string[];
+        };
+        const run = await this.api.requestReprocess(intent.inventory_id, intent.aisle_id, {
+          request_id: intent.request_id,
+          scope: { type: scope.type, asset_ids: scope.asset_ids ?? [] },
+          processing_mode: intent.processing_mode as ServerReprocessProcessingMode,
+          reason: intent.reason,
+        });
+        await this.intents.markCompleted(
+          intent.request_id,
+          run.id,
+          new Date().toISOString(),
+        );
+        drained += 1;
+      } catch {
+        // leave pending for next retry cycle
+      }
+    }
+    return drained;
+  }
 }

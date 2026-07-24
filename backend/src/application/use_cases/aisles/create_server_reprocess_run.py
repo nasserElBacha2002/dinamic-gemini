@@ -13,6 +13,9 @@ from src.application.errors import InventoryNotFoundError
 from src.application.ports.repositories import AisleRepository, InventoryRepository
 from src.application.ports.server_reprocess_repository import ServerReprocessRepository
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
+from src.application.services.server_reprocess_position_snapshot import (
+    ServerReprocessPositionSnapshotQuery,
+)
 from src.domain.assets.entities import SourceAsset
 from src.domain.authoritative_local_code_scan.entities import AuthoritativeLocalCodeScanResult
 from src.domain.server_reprocess.entities import (
@@ -78,17 +81,8 @@ class _AuthRepo(Protocol):
     ) -> AuthoritativeLocalCodeScanResult | None: ...
 
 
-class _PositionLike(Protocol):
-    id: str
-    aisle_id: str
-    status: Any
-    needs_review: bool
-    detected_summary_json: dict[str, Any] | None
-    corrected_summary_json: dict[str, Any] | None
-
-
 class _PositionRepo(Protocol):
-    def list_by_aisle(self, aisle_id: str) -> list[_PositionLike]: ...
+    def list_by_aisle(self, aisle_id: str) -> list[Any]: ...
 
 
 @dataclass(frozen=True)
@@ -118,29 +112,6 @@ class CreateServerReprocessResult:
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _position_asset_id(pos: _PositionLike) -> str | None:
-    for blob in (pos.corrected_summary_json, pos.detected_summary_json):
-        if isinstance(blob, dict):
-            aid = blob.get("source_asset_id") or blob.get("asset_id")
-            if isinstance(aid, str) and aid.strip():
-                return aid.strip()
-    return None
-
-
-def _position_code_qty(pos: _PositionLike) -> tuple[str | None, float | None]:
-    blob = pos.corrected_summary_json or pos.detected_summary_json or {}
-    if not isinstance(blob, dict):
-        return None, None
-    code = blob.get("internal_code") or blob.get("sku") or blob.get("code")
-    qty = blob.get("quantity") or blob.get("qty")
-    code_s = str(code).strip() if code is not None else None
-    try:
-        qty_f = float(qty) if qty is not None else None
-    except (TypeError, ValueError):
-        qty_f = None
-    return code_s or None, qty_f
 
 
 class CreateServerReprocessRun:
@@ -231,16 +202,9 @@ class CreateServerReprocessRun:
                 "Resolved scope is empty", error_code=SERVER_REPROCESS_EMPTY_SCOPE
             )
 
-        positions = (
-            list(self._position_repo.list_by_aisle(command.aisle_id))
-            if self._position_repo is not None
-            else []
-        )
-        pos_by_asset: dict[str, _PositionLike] = {}
-        for p in positions:
-            aid = _position_asset_id(p)
-            if aid:
-                pos_by_asset[aid] = p
+        positions_by_asset = ServerReprocessPositionSnapshotQuery(
+            position_repo=self._position_repo
+        ).map_by_asset(command.aisle_id)
 
         prior_count = 0
         snapshot_assets: list[dict[str, Any]] = []
@@ -254,9 +218,9 @@ class CreateServerReprocessRun:
                 if self._auth_repo is not None
                 else None
             )
-            pos = pos_by_asset.get(asset.id)
-            prev_result_id = auth.id if auth is not None else None
-            prev_position_id = pos.id if pos is not None else None
+            pos = positions_by_asset.get(asset.id)
+            prev_result_id = auth.id if auth is not None else (pos.active_result_id if pos else None)
+            prev_position_id = pos.position_id if pos is not None else None
             prev_code: str | None = None
             prev_qty: float | None = None
             prev_resolved = False
@@ -266,7 +230,8 @@ class CreateServerReprocessRun:
                 prev_resolved = bool(prev_code) and auth.applied_at is not None
                 prior_count += 1
             elif pos is not None:
-                prev_code, prev_qty = _position_code_qty(pos)
+                prev_code = pos.internal_code
+                prev_qty = pos.quantity
                 prev_resolved = bool(prev_code)
                 if prev_resolved:
                     prior_count += 1
@@ -435,16 +400,9 @@ class CreateServerReprocessRun:
             return selected
 
         # Filter scopes need prior authority / position signals
-        positions = (
-            list(self._position_repo.list_by_aisle(aisle_id))
-            if self._position_repo is not None
-            else []
-        )
-        pos_by_asset = {}
-        for p in positions:
-            aid = _position_asset_id(p)
-            if aid:
-                pos_by_asset[aid] = p
+        snaps = ServerReprocessPositionSnapshotQuery(
+            position_repo=self._position_repo
+        ).map_by_asset(aisle_id)
 
         selected = []
         for asset in aisle_assets:
@@ -453,12 +411,12 @@ class CreateServerReprocessRun:
                 if self._auth_repo is not None
                 else None
             )
-            pos = pos_by_asset.get(asset.id)
+            pos = snaps.get(asset.id)
             if scope_type == ServerReprocessScopeType.FAILED_ONLY:
                 failed = False
                 if auth is not None and not (auth.internal_code or "").strip():
                     failed = True
-                if pos is not None and getattr(pos.status, "value", str(pos.status)) == "deleted":
+                if pos is not None and pos.status == "deleted":
                     failed = True
                 if auth is None and pos is None:
                     failed = True
@@ -469,7 +427,7 @@ class CreateServerReprocessRun:
                 if auth is not None:
                     code = (auth.internal_code or "").strip() or None
                 elif pos is not None:
-                    code, _ = _position_code_qty(pos)
+                    code = pos.internal_code
                 if not code:
                     selected.append(asset)
             elif scope_type == ServerReprocessScopeType.PENDING_REVIEW_ONLY:

@@ -499,22 +499,14 @@ def build_authoritative_aisle_finalization_repository(
 
 
 def build_server_reprocess_repository(build_repo: BuildSqlOrMemory):
-    """Phase 7: memory always until SqlServerReprocessRepository is production-hardened."""
+    """Phase 7: SQL when backend is SQL; memory only for explicit memory/test backends."""
 
     def _sql(client: SqlServerClient):
-        # Prefer dedicated SQL when present; fall back to memory so API boots.
-        try:
-            from src.infrastructure.repositories.sql_server_reprocess_repository import (
-                SqlServerReprocessRepository,
-            )
+        from src.infrastructure.repositories.sql_server_reprocess_repository import (
+            SqlServerReprocessRepository,
+        )
 
-            return SqlServerReprocessRepository(client)
-        except Exception:
-            from src.infrastructure.repositories.memory_server_reprocess_repository import (
-                MemoryServerReprocessRepository,
-            )
-
-            return MemoryServerReprocessRepository()
+        return SqlServerReprocessRepository(client)
 
     def _memory():
         from src.infrastructure.repositories.memory_server_reprocess_repository import (

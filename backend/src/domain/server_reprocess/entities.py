@@ -167,6 +167,21 @@ class ServerReprocessAdoption:
     row_version: int
     created_at: datetime
     updated_at: datetime
+    content_hash: str = ""
+
+
+@dataclass(frozen=True)
+class CurrentPositionSnapshot:
+    """Typed current-position view for reprocess snapshot/stale checks (no JSON key guessing)."""
+
+    position_id: str
+    asset_id: str
+    active_result_id: str | None
+    internal_code: str | None
+    quantity: float | None
+    row_version: int
+    needs_review: bool = False
+    status: str = "detected"
 
 
 @dataclass(frozen=True)

@@ -521,3 +521,83 @@ def test_adoption_idempotent_replay():
     assert first.replayed is False
     assert second.replayed is True
     assert second.adoption.id == first.adoption.id
+    assert first.adoption.content_hash
+
+
+def test_adoption_id_content_hash_conflict():
+    create, execute, adopt, *_rest = _harness()
+    created = create.execute(
+        CreateServerReprocessCommand(
+            inventory_id="i1",
+            aisle_id="a1",
+            request_id="req-hash",
+            scope_type="SELECTED_ASSETS",
+            asset_ids=("p1", "p2"),
+            processing_mode="CODE_SCAN",
+            reason="USER_REQUESTED_REPROCESS",
+            requested_by="u1",
+        )
+    )
+    _run, proposals = execute.complete_with_remote_results(
+        run_id=created.run.id,
+        remote_results=[
+            RemoteProposalInput(
+                asset_id="p1", internal_code="NEW1", quantity=1, resolved=True
+            ),
+            RemoteProposalInput(
+                asset_id="p2", internal_code="NEW2", quantity=1, resolved=True
+            ),
+        ],
+    )
+    p1 = next(p for p in proposals if p.asset_id == "p1")
+    p2 = next(p for p in proposals if p.asset_id == "p2")
+    adopt.execute(
+        AdoptServerReprocessCommand(
+            inventory_id="i1",
+            aisle_id="a1",
+            run_id=created.run.id,
+            adoption_id="adop-hash",
+            adopted_by="u1",
+            items=(AdoptItemCommand(proposal_id=p1.id, action="ADOPT"),),
+        )
+    )
+    from src.application.use_cases.aisles.adopt_server_reprocess_proposals import (
+        ServerReprocessAdoptionConflictError,
+    )
+
+    with pytest.raises(ServerReprocessAdoptionConflictError):
+        adopt.execute(
+            AdoptServerReprocessCommand(
+                inventory_id="i1",
+                aisle_id="a1",
+                run_id=created.run.id,
+                adoption_id="adop-hash",
+                adopted_by="u1",
+                items=(AdoptItemCommand(proposal_id=p2.id, action="KEEP_CURRENT"),),
+            )
+        )
+
+
+def test_proposal_sink_does_not_require_persister():
+    from src.application.services.server_reprocess_proposal_sink import (
+        ServerReprocessProposalResultSink,
+    )
+    from src.domain.image_processing.contracts import (
+        ImageProcessingResult,
+        ImageResultStatus,
+    )
+
+    sink = ServerReprocessProposalResultSink()
+    sink.accept(
+        ImageProcessingResult(
+            job_id="j1",
+            asset_id="p1",
+            status=ImageResultStatus.RESOLVED_INTERNAL,
+            processing_mode="CODE_SCAN",
+            internal_code="SKU9",
+            quantity=2,
+            resolved_by="CODE_SCAN",
+        )
+    )
+    assert sink.as_remote_inputs()[0].internal_code == "SKU9"
+    assert sink.as_remote_inputs()[0].resolved is True

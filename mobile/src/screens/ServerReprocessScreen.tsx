@@ -4,8 +4,10 @@ import { Text, View } from 'react-native';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import type { AisleDto, InventoryListItemDto } from '../services/api/types';
 import type {
+  ServerReprocessAdoptItem,
   ServerReprocessDetailDto,
   ServerReprocessProcessingMode,
+  ServerReprocessProposalItemDto,
   ServerReprocessScopeType,
 } from '../features/serverReprocess/serverReprocessApi';
 import { Button, ErrorText, styles } from '../ui';
@@ -19,10 +21,12 @@ export interface ServerReprocessScreenProps {
   onError: (message: string | null) => void;
 }
 
+type Decision = ServerReprocessAdoptItem['action'];
+
 const SCOPES: { value: ServerReprocessScopeType; label: string }[] = [
   { value: 'FULL_AISLE', label: 'Todo el pasillo' },
   { value: 'FAILED_ONLY', label: 'Solo imágenes con errores' },
-  { value: 'SELECTED_ASSETS', label: 'Seleccionar imágenes (próximamente: full aisle)' },
+  { value: 'UNRECOGNIZED_ONLY', label: 'Solo no reconocidos' },
 ];
 
 const MODES: { value: ServerReprocessProcessingMode; label: string }[] = [
@@ -45,6 +49,7 @@ export function ServerReprocessScreen({
   const [busy, setBusy] = useState(false);
   const [runId, setRunId] = useState<string | null>(initialRunId ?? null);
   const [detail, setDetail] = useState<ServerReprocessDetailDto | null>(null);
+  const [decisions, setDecisions] = useState<Record<string, Decision>>({});
   const [message, setMessage] = useState<string | null>(null);
 
   const warning = useMemo(
@@ -61,6 +66,10 @@ export function ServerReprocessScreen({
     );
   }
 
+  const setDecision = (proposalId: string, action: Decision) => {
+    setDecisions((prev) => ({ ...prev, [proposalId]: action }));
+  };
+
   const request = () => {
     setBusy(true);
     setMessage(null);
@@ -69,7 +78,7 @@ export function ServerReprocessScreen({
       .requestReprocess({
         inventoryId: inventory.id,
         aisleId: aisle.id,
-        scopeType: scope === 'SELECTED_ASSETS' ? 'FULL_AISLE' : scope,
+        scopeType: scope,
         processingMode: mode,
       })
       .then(async (result) => {
@@ -80,12 +89,13 @@ export function ServerReprocessScreen({
         setRunId(result.id);
         setMessage(
           result.initial_server_processing
-            ? 'Corrida servidor inicial creada (sin comparación previa).'
-            : 'Corrida de reproceso creada. Esperá propuestas del servidor.',
+            ? 'Procesamiento servidor inicial (sin comparación).'
+            : 'Corrida de reproceso creada.',
         );
         if (service.isReviewVisible()) {
           const d = await service.getRun(inventory.id, aisle.id, result.id);
           setDetail(d);
+          setDecisions({});
         }
       })
       .catch((e) => {
@@ -101,33 +111,59 @@ export function ServerReprocessScreen({
     setBusy(true);
     void service
       .getRun(inventory.id, aisle.id, runId)
-      .then(setDetail)
+      .then((d) => {
+        setDetail(d);
+      })
       .catch((e) => onError(e instanceof Error ? e.message : String(e)))
       .finally(() => setBusy(false));
   };
 
-  const adoptChanged = () => {
+  const submitExplicitDecisions = () => {
     if (!detail || !runId || !service.isReviewVisible()) return;
-    const items = detail.items
-      .filter((i) => i.difference_type !== 'SAME_RESULT')
-      .filter((i) => !i.difference_type.startsWith('NOT_COMPARABLE'))
-      .map((i) => ({ proposal_id: i.id, action: 'ADOPT' as const }));
-    const keep = detail.items
-      .filter((i) => i.difference_type === 'SAME_RESULT')
-      .map((i) => ({ proposal_id: i.id, action: 'KEEP_CURRENT' as const }));
+    const items: ServerReprocessAdoptItem[] = [];
+    for (const item of detail.items) {
+      if (item.difference_type.startsWith('NOT_COMPARABLE')) continue;
+      const action = decisions[item.id];
+      if (!action) continue;
+      items.push({ proposal_id: item.id, action });
+    }
     if (items.length === 0) {
-      setMessage('No hay cambios para adoptar.');
+      setMessage('Elegí una decisión por propuesta antes de aplicar.');
       return;
     }
     setBusy(true);
     void service
-      .adopt(inventory.id, aisle.id, runId, [...items, ...keep])
+      .adopt(inventory.id, aisle.id, runId, items)
       .then((res) => {
-        setMessage(`Cambios aplicados. Estado: ${res.review_status}`);
+        setMessage(`Decisiones aplicadas. Estado: ${res.review_status}`);
         refresh();
       })
       .catch((e) => onError(e instanceof Error ? e.message : String(e)))
       .finally(() => setBusy(false));
+  };
+
+  const renderProposalActions = (item: ServerReprocessProposalItemDto) => {
+    if (item.difference_type.startsWith('NOT_COMPARABLE')) {
+      return <Text style={styles.muted}>No comparable (requiere revisión manual)</Text>;
+    }
+    const current = decisions[item.id];
+    const opts: { action: Decision; label: string }[] = [
+      { action: 'ADOPT', label: 'Adoptar' },
+      { action: 'KEEP_CURRENT', label: 'Mantener actual' },
+      { action: 'EDIT_AND_ADOPT', label: 'Editar y adoptar' },
+      { action: 'DEFER', label: 'Revisar después' },
+    ];
+    return (
+      <View>
+        {opts.map((o) => (
+          <Button
+            key={o.action}
+            label={`${current === o.action ? '●' : '○'} ${o.label}`}
+            onPress={() => setDecision(item.id, o.action)}
+          />
+        ))}
+      </View>
+    );
   };
 
   return (
@@ -166,13 +202,16 @@ export function ServerReprocessScreen({
                 Resumen: {detail.summary.same} iguales · {detail.summary.changed} cambiaron ·{' '}
                 {detail.summary.newly_resolved} nuevos
               </Text>
-              {detail.items.slice(0, 8).map((item) => (
-                <Text key={item.id} style={styles.muted}>
-                  {item.asset_id}: {item.difference_type} → {item.internal_code ?? '—'}
-                </Text>
+              {detail.items.slice(0, 40).map((item) => (
+                <View key={item.id}>
+                  <Text style={styles.muted}>
+                    {item.asset_id}: {item.difference_type} → {item.internal_code ?? '—'}
+                  </Text>
+                  {service.isReviewVisible() ? renderProposalActions(item) : null}
+                </View>
               ))}
               {service.isReviewVisible() ? (
-                <Button label="Aplicar solo cambios" onPress={adoptChanged} />
+                <Button label="Aplicar decisiones seleccionadas" onPress={submitExplicitDecisions} />
               ) : null}
             </>
           ) : (
