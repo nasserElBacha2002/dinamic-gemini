@@ -1,7 +1,9 @@
 -- Intermediate phase: operator-confirmed local CODE_SCAN results (authoritative).
--- Additive / idempotent. Positions are applied at /process via ProcessingResultPersister.
+-- Additive / idempotent. Positions applied at /process via ProcessingResultPersister.
 -- Forward-only: disable via SERVER_AUTHORITATIVE_LOCAL_CODE_SCAN_INGEST=false.
 -- Formal rollback (dev/test only): DROP TABLE IF EXISTS authoritative_local_code_scan_results;
+--
+-- Window: AUTHORITATIVE_SYNCED (row stored) → FINAL_POSITION_APPLIED (applied_at set at /process).
 
 IF OBJECT_ID('authoritative_local_code_scan_results', 'U') IS NULL
 BEGIN
@@ -26,7 +28,10 @@ BEGIN
         prepared_asset_sha256 VARCHAR(80) NOT NULL,
         content_hash VARCHAR(80) NOT NULL,
         confirmed_by VARCHAR(36) NOT NULL,
-        confirmed_at DATETIME2 NOT NULL,
+        client_confirmed_at DATETIME2 NULL,
+        server_confirmed_at DATETIME2 NOT NULL,
+        server_received_at DATETIME2 NOT NULL,
+        confirmed_at DATETIME2 NOT NULL, -- = server_confirmed_at (compat)
         applied_job_id VARCHAR(36) NULL,
         applied_at DATETIME2 NULL,
         row_version INT NOT NULL CONSTRAINT DF_alcsr_row_version DEFAULT (1),
@@ -44,12 +49,7 @@ BEGIN
             quantity_status IN ('PRESENT', 'MISSING')
         ),
         CONSTRAINT CK_alcsr_source CHECK (
-            source IN (
-                'LOCAL_CODE_SCAN',
-                'LOCAL_MANUAL_CORRECTION',
-                'SERVER_CODE_SCAN',
-                'SERVER_REPROCESS'
-            )
+            source IN ('LOCAL_CODE_SCAN', 'LOCAL_MANUAL_CORRECTION')
         ),
         CONSTRAINT CK_alcsr_qty_consistency CHECK (
             (quantity_status = 'PRESENT' AND quantity IS NOT NULL AND quantity > 0)
@@ -79,7 +79,6 @@ IF OBJECT_ID('authoritative_local_code_scan_results', 'U') IS NOT NULL
         ON authoritative_local_code_scan_results (asset_id, is_current);
 GO
 
--- Filtered unique: at most one current result per asset (SQL Server filtered index).
 IF OBJECT_ID('authoritative_local_code_scan_results', 'U') IS NOT NULL
    AND NOT EXISTS (
         SELECT 1 FROM sys.indexes
@@ -91,14 +90,5 @@ IF OBJECT_ID('authoritative_local_code_scan_results', 'U') IS NOT NULL
         WHERE is_current = 1;
 GO
 
--- Link preliminary drafts to confirmed authoritative results (historical / diagnostic).
-IF OBJECT_ID('mobile_preliminary_detections', 'U') IS NOT NULL
-   AND COL_LENGTH('mobile_preliminary_detections', 'confirmed_result_id') IS NULL
-BEGIN
-    ALTER TABLE mobile_preliminary_detections
-        ADD confirmed_result_id VARCHAR(36) NULL;
-END
-GO
-
--- Phase 5 reconciliations: leave table; no new auto rows when authoritative path is on.
--- Mark deprecation in application settings / enqueue hook (no DROP).
+-- Note: mobile_preliminary_detections.confirmed_result_id intentionally NOT added;
+-- preliminary drafts remain diagnostic-only; link via client_file_id / asset_id when needed.

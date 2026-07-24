@@ -139,6 +139,14 @@ const config: ExpoConfig = {
         'mobileAuthoritativeLocalCodeScan',
       ),
       ...optionalFlag('DINAMIC_FLAG_LOCAL_RESULT_REVIEW', 'mobileLocalResultReview'),
+      ...optionalFlag(
+        'DINAMIC_FLAG_AUTHORITATIVE_AISLE_FINALIZATION',
+        'mobileAuthoritativeAisleFinalization',
+      ),
+      ...optionalFlag(
+        'DINAMIC_FLAG_AUTHORITATIVE_FINALIZATION_OFFLINE_QUEUE',
+        'authoritativeFinalizationOfflineQueue',
+      ),
     },
   },
 };

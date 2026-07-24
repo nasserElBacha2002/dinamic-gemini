@@ -18,6 +18,8 @@ export interface BackgroundWorkScheduler {
   scheduleRemoteDelete(assetId: string): Promise<void>;
   cancelAllTracked(): Promise<void>;
   scheduleUploadQueue(expedited?: boolean): Promise<void>;
+  /** Clear native AuthVault queuePaused and reschedule WorkManager (no-op if flag off). */
+  resumeUploadQueue(): Promise<void>;
   getStatus(): Promise<BackgroundUploadStatus>;
 }
 
@@ -117,12 +119,13 @@ export function createBackgroundWorkScheduler(
     // Per-session names still accepted for API stability; native maps them to the global queue.
     scheduleUploadSession: (_sessionId) => scheduleNative(UNIQUE_UPLOAD_QUEUE_WORK, 'upload'),
     cancelUploadSession: async (_sessionId) => {
-      if (workerEnabled && native?.pauseUploadQueue) {
-        await native.pauseUploadQueue();
+      // Cancel work only — never sticky-pause the vault (that blocked later schedules).
+      if (workerEnabled && native?.cancelAllUploadWork) {
+        await native.cancelAllUploadWork();
         logger.info('work_scheduled', {
           name: UNIQUE_UPLOAD_QUEUE_WORK,
-          tag: 'pause',
-          mode: 'native_pause_queue',
+          tag: 'cancel',
+          mode: 'native_cancel_queue',
         });
         return;
       }
@@ -144,6 +147,16 @@ export function createBackgroundWorkScheduler(
       }
       await scheduleNative(UNIQUE_UPLOAD_QUEUE_WORK, 'upload-queue');
     },
+    resumeUploadQueue: async () => {
+      if (workerEnabled && native?.resumeUploadQueue) {
+        await native.resumeUploadQueue();
+        logger.info('work_scheduled', {
+          name: UNIQUE_UPLOAD_QUEUE_WORK,
+          tag: 'resume',
+          mode: 'native_resume_queue',
+        });
+      }
+    },
     cancelAllTracked: async () => {
       if (workerEnabled && native?.cancelAllUploadWork) {
         await native.cancelAllUploadWork();
@@ -159,7 +172,7 @@ export function createBackgroundWorkScheduler(
           uniqueWorkState: String(s.uniqueWorkState ?? 'UNKNOWN'),
           pendingPrepared: Number(s.pendingPrepared ?? -1),
           running: Boolean(s.running),
-          mode: 'native',
+          mode: 'native' as const,
           queuePaused: Boolean(s.queuePaused),
           vaultAvailable: s.vaultAvailable !== false,
         };
@@ -168,7 +181,7 @@ export function createBackgroundWorkScheduler(
         uniqueWorkState: 'NONE',
         pendingPrepared: -1,
         running: false,
-        mode: 'noop',
+        mode: 'noop' as const,
       };
     },
   };

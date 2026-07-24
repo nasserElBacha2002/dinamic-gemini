@@ -767,6 +767,74 @@ def get_persist_authoritative_local_code_scan_use_case(
     )
 
 
+def get_evaluate_authoritative_aisle_readiness(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+):
+    from src.application.services.evaluate_authoritative_aisle_readiness import (
+        EvaluateAuthoritativeAisleReadiness,
+    )
+    from src.config import load_settings
+
+    del aisle_repo  # scope validated by callers / finalize
+    settings = load_settings()
+    c = get_app_container()
+    return EvaluateAuthoritativeAisleReadiness(
+        asset_repo=asset_repo,
+        authoritative_repo=c.get_authoritative_local_code_scan_repo(),
+        finalization_repo=c.get_authoritative_aisle_finalization_repo(),
+        position_repo=c.get_position_repo(),
+        enabled=bool(
+            getattr(settings, "server_authoritative_aisle_finalization_enabled", False)
+        ),
+    )
+
+
+def get_finalize_authoritative_aisle_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.services.evaluate_authoritative_aisle_readiness import (
+        EvaluateAuthoritativeAisleReadiness,
+    )
+    from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+    from src.application.use_cases.aisles.finalize_authoritative_aisle import (
+        FinalizeAuthoritativeAisle,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    c = get_app_container()
+    enabled = bool(
+        getattr(settings, "server_authoritative_aisle_finalization_enabled", False)
+    )
+    readiness = EvaluateAuthoritativeAisleReadiness(
+        asset_repo=asset_repo,
+        authoritative_repo=c.get_authoritative_local_code_scan_repo(),
+        finalization_repo=c.get_authoritative_aisle_finalization_repo(),
+        position_repo=c.get_position_repo(),
+        enabled=enabled,
+    )
+    return FinalizeAuthoritativeAisle(
+        aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
+        asset_repo=asset_repo,
+        authoritative_repo=c.get_authoritative_local_code_scan_repo(),
+        finalization_repo=c.get_authoritative_aisle_finalization_repo(),
+        readiness=readiness,
+        status_reconciler=InventoryStatusReconciler(
+            inventory_repo=inventory_repo,
+            aisle_repo=aisle_repo,
+            clock=clock,
+        ),
+        clock=clock,
+        position_repo=c.get_position_repo(),
+        enabled=enabled,
+    )
+
+
 def get_reconcile_preliminary_detections_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     job_repo: JobRepository = Depends(get_job_repo),

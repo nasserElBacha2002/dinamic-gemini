@@ -19,6 +19,7 @@ import { ProcessingScreen } from './src/screens/ProcessingScreen';
 import { ResultsScreen } from './src/screens/ResultsScreen';
 import { ReviewScreen } from './src/screens/ReviewScreen';
 import { LocalResultReviewScreen } from './src/screens/LocalResultReviewScreen';
+import { AuthoritativeFinalizeScreen } from './src/screens/AuthoritativeFinalizeScreen';
 import { UploadsScreen } from './src/screens/UploadsScreen';
 import type { AisleIdentificationMode } from './src/features/processing/processingMode';
 import { sanitizeIdentificationModeSelection } from './src/features/processing/processingMode';
@@ -33,6 +34,7 @@ type Screen =
   | 'review'
   | 'local-result-review'
   | 'uploads'
+  | 'authoritative-finalize'
   | 'processing'
   | 'results'
   | 'diagnostic';
@@ -48,7 +50,6 @@ export default function App(): JSX.Element {
   const [selectedAisle, setSelectedAisle] = useState<AisleDto | null>(null);
   const [capture, setCapture] = useState<CaptureSnapshot | null>(null);
   const [workSessionId, setWorkSessionId] = useState<string | null>(null);
-  /** Session preference for process-aisle mode (null = inherit). Survives aisle changes until app restart. */
   const [identificationModePreference, setIdentificationModePreference] =
     useState<AisleIdentificationMode | null>(null);
   const [connectivity, setConnectivity] = useState<'online' | 'offline' | 'unknown'>('unknown');
@@ -73,6 +74,12 @@ export default function App(): JSX.Element {
         createdServices = created;
         setServices(created);
         setConfigError(created.configError);
+        if (
+          created.config.flags.mobileLocalCodeScan ||
+          created.config.flags.mobileAuthoritativeLocalCodeScan
+        ) {
+          setIdentificationModePreference('CODE_SCAN');
+        }
         unsubscribeConnectivity = created.connectivity.subscribe((state) => {
           if (mounted) setConnectivity(state);
         });
@@ -210,6 +217,13 @@ export default function App(): JSX.Element {
       pending_review_positions_count: 0,
     });
     hydrateSelection(work.inventoryId, work.aisleId, work.aisleName);
+    if (
+      services &&
+      (services.config.flags.mobileLocalCodeScan ||
+        services.config.flags.mobileAuthoritativeLocalCodeScan)
+    ) {
+      void services.uploadQueue.setSessionPreparationMode(work.sessionId, 'CODE_SCAN');
+    }
     if (work.kind === 'capture_active' || work.kind === 'capture_paused') {
       void services.capture.loadSession(work.sessionId, work.kind === 'capture_active');
       setScreen('capture');
@@ -378,6 +392,24 @@ export default function App(): JSX.Element {
           }}
           onBack={() => setScreen(selectedInventory ? 'aisles' : 'inventories')}
           onProcess={() => setScreen('processing')}
+          onError={setError}
+          onLocalReview={() => setScreen('local-result-review')}
+          onAuthoritativeFinalize={() => setScreen('authoritative-finalize')}
+        />
+      ) : null}
+      {screen === 'authoritative-finalize' &&
+      workSessionId &&
+      selectedInventory &&
+      selectedAisle ? (
+        <AuthoritativeFinalizeScreen
+          services={services}
+          sessionId={workSessionId}
+          inventoryId={selectedInventory.id}
+          aisleId={selectedAisle.id}
+          inventoryName={selectedInventory.name ?? ''}
+          aisleName={selectedAisle.code ?? ''}
+          onBack={() => setScreen('uploads')}
+          onCompleted={() => setScreen('results')}
           onError={setError}
         />
       ) : null}

@@ -16,6 +16,7 @@ from src.api.schemas.authoritative_local_code_scan_schemas import (
 from src.application.errors import AisleNotFoundError
 from src.application.use_cases.aisles.persist_authoritative_local_code_scan import (
     AUTH_ASSET_MISMATCH,
+    AUTH_CLIENT_FILE_MISMATCH,
     AUTH_FORBIDDEN,
     AUTH_IDEMPOTENCY_CONFLICT,
     AUTH_INGEST_DISABLED,
@@ -83,8 +84,8 @@ def put_authoritative_local_code_scan(
     if result.status == "REJECTED":
         code = result.error_code or AUTH_VALIDATION_FAILED
         status = 403 if code == AUTH_FORBIDDEN else 422
-        if code == AUTH_ASSET_MISMATCH:
-            status = 404
+        if code in {AUTH_ASSET_MISMATCH, AUTH_CLIENT_FILE_MISMATCH}:
+            status = 404 if code == AUTH_ASSET_MISMATCH else 409
         raise StructuredApiHttpError(
             status,
             error_code=code,
@@ -105,4 +106,5 @@ def put_authoritative_local_code_scan(
         supersedes_result_id=result.supersedes_result_id,
         status=result.status,
         duplicate=result.duplicate,
+        applied_at=result.applied_at,
     )

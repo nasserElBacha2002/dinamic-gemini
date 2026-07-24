@@ -89,6 +89,24 @@ export function normalizePreparationProcessingMode(raw: unknown): PreparationPro
   return 'UNKNOWN';
 }
 
+/**
+ * Early capture uploads default session mode to UNKNOWN. When local CODE_SCAN is
+ * opted in, still run barcode detection (do not mark NOT_APPLICABLE).
+ * Explicit INTERNAL_OCR / LEGACY_LLM remain non-applicable for local barcode scan.
+ */
+export function resolveLocalScanProcessingMode(
+  mode: PreparationProcessingMode,
+  flagEnabled: boolean,
+): PreparationProcessingMode {
+  if (!flagEnabled) {
+    return mode;
+  }
+  if (mode === 'UNKNOWN') {
+    return 'CODE_SCAN';
+  }
+  return mode;
+}
+
 function baseForMode(mode: PreparationProcessingMode) {
   switch (mode) {
     case 'CODE_SCAN':

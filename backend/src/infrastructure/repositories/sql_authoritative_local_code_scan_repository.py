@@ -9,6 +9,7 @@ import pyodbc
 
 from src.application.ports.authoritative_local_code_scan_repository import (
     AuthoritativeUniqueViolationError,
+    AuthoritativeVersionConflictError,
 )
 from src.database.sqlserver import SqlServerClient
 from src.domain.authoritative_local_code_scan.entities import AuthoritativeLocalCodeScanResult
@@ -47,7 +48,15 @@ def _row_to_entity(row) -> AuthoritativeLocalCodeScanResult:
         prepared_asset_sha256=normalize_db_str(getattr(row, "prepared_asset_sha256", None)),
         content_hash=normalize_db_str(getattr(row, "content_hash", None)),
         confirmed_by=normalize_db_str(getattr(row, "confirmed_by", None)),
-        confirmed_at=_ensure_utc(getattr(row, "confirmed_at", None)) or datetime.now(timezone.utc),
+        client_confirmed_at=_ensure_utc(getattr(row, "client_confirmed_at", None)),
+        server_confirmed_at=_ensure_utc(getattr(row, "server_confirmed_at", None))
+        or datetime.now(timezone.utc),
+        server_received_at=_ensure_utc(getattr(row, "server_received_at", None))
+        or datetime.now(timezone.utc),
+        # Backward-compat alias for callers still reading confirmed_at
+        confirmed_at=_ensure_utc(getattr(row, "server_confirmed_at", None))
+        or _ensure_utc(getattr(row, "confirmed_at", None))
+        or datetime.now(timezone.utc),
         applied_job_id=optional_nonempty_db_str(getattr(row, "applied_job_id", None)),
         applied_at=_ensure_utc(getattr(row, "applied_at", None)),
         row_version=int(getattr(row, "row_version", 1) or 1),
@@ -61,8 +70,8 @@ _SELECT_COLS = """
 id, asset_id, inventory_id, aisle_id, client_file_id, result_version, supersedes_result_id,
 is_current, internal_code, quantity, quantity_status, source, detected_internal_code,
 detected_quantity, detected_symbology, parser_version, detector_version, prepared_asset_sha256,
-content_hash, confirmed_by, confirmed_at, applied_job_id, applied_at, row_version,
-schema_version, created_at, updated_at
+content_hash, confirmed_by, client_confirmed_at, server_confirmed_at, server_received_at,
+confirmed_at, applied_job_id, applied_at, row_version, schema_version, created_at, updated_at
 """
 
 
@@ -142,9 +151,58 @@ class SqlAuthoritativeLocalCodeScanRepository:
                 val = None
         return int(val or 0)
 
-    def insert(self, row: AuthoritativeLocalCodeScanResult) -> AuthoritativeLocalCodeScanResult:
-        try:
-            with self._client.cursor() as cur:
+    def create_authoritative_version(
+        self,
+        *,
+        new_result: AuthoritativeLocalCodeScanResult,
+        expected_current_id: str | None,
+        expected_row_version: int | None,
+    ) -> AuthoritativeLocalCodeScanResult:
+        """Transactional: lock asset rows, CAS supersede, insert new current."""
+        with self._client.begin_transaction() as txn:
+            cur = txn.connection.cursor()
+            try:
+                cur.execute(
+                    f"SELECT {_SELECT_COLS} FROM authoritative_local_code_scan_results "
+                    "WITH (UPDLOCK, HOLDLOCK) "
+                    "WHERE asset_id = ? AND is_current = 1",
+                    (new_result.asset_id,),
+                )
+                current_row = cur.fetchone()
+                current = _row_to_entity(current_row) if current_row else None
+
+                if expected_current_id is None:
+                    if current is not None:
+                        raise AuthoritativeVersionConflictError("expected_no_current")
+                else:
+                    if current is None or current.id != expected_current_id:
+                        raise AuthoritativeVersionConflictError("current_mismatch")
+                    if expected_row_version is None or int(current.row_version) != int(
+                        expected_row_version
+                    ):
+                        raise AuthoritativeVersionConflictError("row_version_mismatch")
+                    cur.execute(
+                        """
+                        UPDATE authoritative_local_code_scan_results
+                           SET is_current = 0,
+                               row_version = row_version + 1,
+                               updated_at = ?
+                         WHERE id = ? AND row_version = ? AND is_current = 1
+                        """,
+                        (new_result.updated_at, current.id, int(expected_row_version)),
+                    )
+                    if int(cur.rowcount or 0) != 1:
+                        raise AuthoritativeVersionConflictError("supersede_cas_failed")
+
+                cur.execute(
+                    "SELECT ISNULL(MAX(result_version), 0) AS max_v "
+                    "FROM authoritative_local_code_scan_results WHERE asset_id = ?",
+                    (new_result.asset_id,),
+                )
+                max_row = cur.fetchone()
+                max_v = int(getattr(max_row, "max_v", None) or 0)
+                next_version = max_v + 1
+
                 cur.execute(
                     """
                     INSERT INTO authoritative_local_code_scan_results (
@@ -152,65 +210,63 @@ class SqlAuthoritativeLocalCodeScanRepository:
                         supersedes_result_id, is_current, internal_code, quantity, quantity_status,
                         source, detected_internal_code, detected_quantity, detected_symbology,
                         parser_version, detector_version, prepared_asset_sha256, content_hash,
-                        confirmed_by, confirmed_at, applied_job_id, applied_at, row_version,
+                        confirmed_by, client_confirmed_at, server_confirmed_at, server_received_at,
+                        confirmed_at, applied_job_id, applied_at, row_version,
                         schema_version, created_at, updated_at
                     ) VALUES (
-                        ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                        ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
                     )
                     """,
                     (
-                        row.id,
-                        row.asset_id,
-                        row.inventory_id,
-                        row.aisle_id,
-                        row.client_file_id,
-                        row.result_version,
-                        row.supersedes_result_id,
-                        1 if row.is_current else 0,
-                        row.internal_code,
-                        row.quantity,
-                        row.quantity_status,
-                        row.source,
-                        row.detected_internal_code,
-                        row.detected_quantity,
-                        row.detected_symbology,
-                        row.parser_version,
-                        row.detector_version,
-                        row.prepared_asset_sha256,
-                        row.content_hash,
-                        row.confirmed_by,
-                        row.confirmed_at,
-                        row.applied_job_id,
-                        row.applied_at,
-                        row.row_version,
-                        row.schema_version,
-                        row.created_at,
-                        row.updated_at,
+                        new_result.id,
+                        new_result.asset_id,
+                        new_result.inventory_id,
+                        new_result.aisle_id,
+                        new_result.client_file_id,
+                        next_version,
+                        expected_current_id,
+                        1,
+                        new_result.internal_code,
+                        new_result.quantity,
+                        new_result.quantity_status,
+                        new_result.source,
+                        new_result.detected_internal_code,
+                        new_result.detected_quantity,
+                        new_result.detected_symbology,
+                        new_result.parser_version,
+                        new_result.detector_version,
+                        new_result.prepared_asset_sha256,
+                        new_result.content_hash,
+                        new_result.confirmed_by,
+                        new_result.client_confirmed_at,
+                        new_result.server_confirmed_at,
+                        new_result.server_received_at,
+                        new_result.server_confirmed_at,
+                        None,
+                        None,
+                        1,
+                        new_result.schema_version,
+                        new_result.created_at,
+                        new_result.updated_at,
                     ),
                 )
-        except pyodbc.IntegrityError as exc:
-            raise AuthoritativeUniqueViolationError(str(exc)) from exc
-        return row
+                txn.commit()
+            except AuthoritativeVersionConflictError:
+                txn.rollback()
+                raise
+            except pyodbc.IntegrityError as exc:
+                txn.rollback()
+                raise AuthoritativeUniqueViolationError(str(exc)) from exc
+            except Exception:
+                txn.rollback()
+                raise
 
-    def mark_superseded(
-        self, *, result_id: str, expected_row_version: int, updated_at: datetime
-    ) -> AuthoritativeLocalCodeScanResult | None:
-        with self._client.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE authoritative_local_code_scan_results
-                   SET is_current = 0,
-                       row_version = row_version + 1,
-                       updated_at = ?
-                 WHERE id = ? AND row_version = ? AND is_current = 1
-                """,
-                (updated_at, result_id.strip(), int(expected_row_version)),
-            )
-            if int(cur.rowcount or 0) <= 0:
-                return None
-        return self.get_by_id(result_id)
+        saved = self.get_by_id(new_result.id)
+        if saved is None:
+            raise RuntimeError(f"authoritative insert missing after commit id={new_result.id}")
+        return saved
 
-    def mark_applied(
+    def mark_applied_if_version(
         self,
         *,
         result_id: str,

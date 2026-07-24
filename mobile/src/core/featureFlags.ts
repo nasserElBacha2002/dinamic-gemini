@@ -40,6 +40,10 @@ export interface FeatureFlags {
   readonly mobileAuthoritativeLocalCodeScan: boolean;
   /** Authoritative local CODE_SCAN: review screen before upload (default false). */
   readonly mobileLocalResultReview: boolean;
+  /** Phase 6: authoritative aisle finalization without remote reprocess (default false). */
+  readonly mobileAuthoritativeAisleFinalization: boolean;
+  /** Phase 6: persist offline finalization intent (default false). */
+  readonly authoritativeFinalizationOfflineQueue: boolean;
 }
 
 /** Non-production defaults. Phase 1/2 upload optimizations default off in production. */
@@ -65,6 +69,8 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   mobilePreliminaryReconciliationTrigger: false,
   mobileAuthoritativeLocalCodeScan: false,
   mobileLocalResultReview: false,
+  mobileAuthoritativeAisleFinalization: false,
+  authoritativeFinalizationOfflineQueue: false,
 };
 
 function phaseOptInDefaultForEnvironment(environment: string): boolean {
@@ -120,5 +126,10 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
     ),
     mobileAuthoritativeLocalCodeScan: bool('mobileAuthoritativeLocalCodeScan', false),
     mobileLocalResultReview: bool('mobileLocalResultReview', false),
+    mobileAuthoritativeAisleFinalization: bool('mobileAuthoritativeAisleFinalization', false),
+    authoritativeFinalizationOfflineQueue: bool(
+      'authoritativeFinalizationOfflineQueue',
+      false,
+    ),
   };
 }

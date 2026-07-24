@@ -360,6 +360,16 @@ export class CaptureService {
       return sessionId;
     }
 
+    // Uploads may finish during capture/local-review before completeReview runs.
+    // Treat post-review pipeline states as an idempotent handoff to uploads UI.
+    if (
+      target === 'uploading' &&
+      (current.status === 'upload_review' || current.status === 'ready_to_process')
+    ) {
+      this.clearCurrentSession();
+      return sessionId;
+    }
+
     if (current.status === 'review' && target === 'uploading') {
       await this.reloadPhotos(sessionId);
       this.assertPhotosReadyForUpload();

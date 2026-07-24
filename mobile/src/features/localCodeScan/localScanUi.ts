@@ -1,3 +1,4 @@
+import type { LocalDetectionDraftRow } from '../../database/repositories/localDetectionDraftRepository';
 import type { LocalDetectionDraftStatus } from '../../database/repositories/localDetectionDraftRepository';
 
 /** Operational-only copy — never presents local result as authoritative. */
@@ -10,7 +11,7 @@ export function labelForLocalScanStatus(status: LocalDetectionDraftStatus | null
     case 'SCANNING':
       return 'Escaneando código localmente';
     case 'RESOLVED':
-      return 'Código detectado localmente (borrador; el servidor confirma)';
+      return 'Código detectado localmente (borrador)';
     case 'DETECTED_UNVERIFIED':
       return 'Código no verificable localmente — se procesará en servidor';
     case 'UNRESOLVED':
@@ -25,6 +26,29 @@ export function labelForLocalScanStatus(status: LocalDetectionDraftStatus | null
     default:
       return null;
   }
+}
+
+export function formatLocalScanDetection(draft: Pick<
+  LocalDetectionDraftRow,
+  'status' | 'internal_code' | 'quantity' | 'error_code' | 'detected_symbology'
+> | null | undefined): string | null {
+  if (!draft || draft.status === 'NOT_APPLICABLE') {
+    return null;
+  }
+  const parts: string[] = [];
+  if (draft.internal_code) {
+    parts.push(`Código: ${draft.internal_code}`);
+  }
+  if (draft.quantity != null) {
+    parts.push(`Cant: ${draft.quantity}`);
+  }
+  if (draft.detected_symbology) {
+    parts.push(draft.detected_symbology);
+  }
+  if (draft.error_code && !draft.internal_code) {
+    parts.push(`Error: ${draft.error_code}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 export function labelForPreliminarySyncStatus(

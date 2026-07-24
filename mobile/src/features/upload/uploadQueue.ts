@@ -11,6 +11,7 @@ import type { FeatureFlags } from '../../core/featureFlags';
 import {
   defaultImagePreparationPolicy,
   normalizePreparationProcessingMode,
+  resolveLocalScanProcessingMode,
 } from '../../core/imagePreparationPolicy';
 import { defaultUploadConcurrencyPolicy } from '../../core/uploadConcurrencyPolicy';
 import { UploadSlotGate, prepareAllowance } from '../../core/uploadSlotGate';
@@ -197,6 +198,14 @@ export class UploadQueue {
         void this.applyNetworkPolicyAndMaybeResume();
       }
     });
+    // Unstick native AuthVault.queuePaused leftover from notification pause / prior cancel.
+    if (this.flags?.backgroundUploadWorker === true && this.options.backgroundWork) {
+      try {
+        await this.options.backgroundWork.resumeUploadQueue();
+      } catch {
+        // best-effort — JS queue still runs
+      }
+    }
     await this.limits.ensureLoaded();
     await this.syncPackingBudgetFromServer();
     await this.reclaimOrphanedInFlight();
@@ -300,6 +309,17 @@ export class UploadQueue {
   async resume(): Promise<void> {
     this.pauseReason = null;
     this.logger.info('upload_resumed', {});
+    // Clear sticky native pause so WorkManager can schedule again.
+    if (this.flags?.backgroundUploadWorker === true && this.options.backgroundWork) {
+      try {
+        await this.options.backgroundWork.resumeUploadQueue();
+      } catch (e) {
+        this.logger.warn('error', {
+          code: 'NATIVE_UPLOAD_RESUME_FAILED',
+          message: String(e),
+        });
+      }
+    }
     await this.reclaimOrphanedInFlight();
     this.scheduleTick(0);
     this.emit();
@@ -328,6 +348,23 @@ export class UploadQueue {
         photo.upload_status === 'uploading'
       ) {
         await this.retryPhoto(photo.id);
+      }
+    }
+    // Also re-run local CODE_SCAN for failed / empty drafts (uploads may already be done).
+    if (this.flags?.mobileLocalCodeScan === true && this.options.localCodeScan) {
+      for (const photo of photos) {
+        if (photo.status !== 'stable') {
+          continue;
+        }
+        try {
+          await this.rescanPhotoForLocalReview(photo.id);
+        } catch (e) {
+          this.logger.warn('error', {
+            code: 'LOCAL_CODE_SCAN_RETRY_UNHANDLED',
+            photoId: photo.id,
+            message: String(e),
+          });
+        }
       }
     }
     if (this.pauseReason === 'offline' || this.pauseReason === 'mobile_data' || this.pauseReason === 'auth') {
@@ -722,7 +759,20 @@ export class UploadQueue {
       return;
     }
     // Single unique queue only — do not also schedule per-session workers.
-    void this.options.backgroundWork.scheduleUploadQueue?.(false);
+    // If AuthVault still has sticky pause (old cancel path / notification), clear it first.
+    const work = this.options.backgroundWork;
+    void (async () => {
+      try {
+        const status = await work.getStatus();
+        if (status.queuePaused) {
+          await work.resumeUploadQueue();
+          return;
+        }
+      } catch {
+        // best-effort
+      }
+      await work.scheduleUploadQueue?.(false);
+    })();
   }
 
   /**
@@ -758,7 +808,10 @@ export class UploadQueue {
         incrementAttempts: true,
       });
       const session = await this.repo.getSession(photo.capture_session_id);
-      const mode = normalizePreparationProcessingMode(session?.preparation_processing_mode);
+      const sessionMode = normalizePreparationProcessingMode(session?.preparation_processing_mode);
+      const localScanEnabled = this.flags?.mobileLocalCodeScan === true;
+      // Capture-time uploads often still have UNKNOWN; use CODE_SCAN prep when local scan is on.
+      const mode = resolveLocalScanProcessingMode(sessionMode, localScanEnabled);
       const profile = defaultImagePreparationPolicy.resolve({
         processingMode: mode,
         networkType: this.resolveNetworkType(),
@@ -885,6 +938,7 @@ export class UploadQueue {
       return;
     }
     const flagEnabled = this.flags?.mobileLocalCodeScan === true;
+    const processingMode = resolveLocalScanProcessingMode(input.mode, flagEnabled);
     let fingerprint: string;
     try {
       fingerprint = await hashPreparedFileSha256(input.preparedUri);
@@ -903,7 +957,7 @@ export class UploadQueue {
         clientFileId: input.photo.client_file_id,
         preparedUri: input.preparedUri,
         preparedAssetFingerprint: fingerprint,
-        processingMode: input.mode,
+        processingMode,
         flagEnabled,
         cancelRequested: input.photo.upload_cancel_requested === 1,
       });
@@ -914,6 +968,49 @@ export class UploadQueue {
         message: String(e),
       });
     }
+  }
+
+  /**
+   * Re-run local CODE_SCAN for review (e.g. drafts were NOT_APPLICABLE under UNKNOWN mode).
+   * Uses prepared transform URI when present, otherwise the original photo URI.
+   */
+  async rescanPhotoForLocalReview(photoId: string): Promise<void> {
+    const strategy = this.options.localCodeScan;
+    if (!strategy || this.flags?.mobileLocalCodeScan !== true) {
+      return;
+    }
+    const photo = await this.repo.getPhotoById(photoId);
+    if (!photo || photo.status !== 'stable') {
+      return;
+    }
+    const preparedUri = photo.local_transform_uri || photo.uri;
+    const mode = resolveLocalScanProcessingMode(
+      normalizePreparationProcessingMode(
+        (await this.repo.getSession(photo.capture_session_id))?.preparation_processing_mode,
+      ),
+      true,
+    );
+    let fingerprint: string;
+    try {
+      fingerprint = await hashPreparedFileSha256(preparedUri);
+    } catch {
+      fingerprint = hashPreparedMetaSha256({
+        uri: preparedUri,
+        bytes: photo.upload_size ?? photo.size ?? 0,
+        width: photo.width ?? 0,
+        height: photo.height ?? 0,
+      });
+    }
+    await strategy.execute({
+      capturePhotoId: photo.id,
+      captureSessionId: photo.capture_session_id,
+      clientFileId: photo.client_file_id,
+      preparedUri,
+      preparedAssetFingerprint: fingerprint,
+      processingMode: mode,
+      flagEnabled: true,
+      cancelRequested: photo.upload_cancel_requested === 1,
+    });
   }
 
   private async invalidatePreparedSize(photoId: string): Promise<void> {

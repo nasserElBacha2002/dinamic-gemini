@@ -989,9 +989,41 @@ class LimitsAndSchemaSettings(BaseModel):
         description=(
             "Intermediate: at /process apply authoritative local results and skip remote "
             "CODE_SCAN for those assets. Default false. "
+            "Must be true when SERVER_AUTHORITATIVE_LOCAL_CODE_SCAN_INGEST is true. "
             "Env: SERVER_SKIP_REMOTE_CODE_SCAN_FOR_LOCAL_AUTHORITY."
         ),
     )
+    server_authoritative_aisle_finalization_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_AUTHORITATIVE_AISLE_FINALIZATION", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 6: enable GET authoritative-readiness and POST finalize-authoritative. "
+            "Default false. Env: SERVER_AUTHORITATIVE_AISLE_FINALIZATION."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_authoritative_local_flag_matrix(self) -> Self:
+        """ingest=true requires skip=true (fail-closed; no remote fallback after local)."""
+        ingest = bool(
+            getattr(self, "server_authoritative_local_code_scan_ingest_enabled", False)
+        )
+        skip = bool(
+            getattr(self, "server_skip_remote_code_scan_for_local_authority", False)
+        )
+        if ingest and not skip:
+            raise ValueError(
+                "Invalid authoritative local CODE_SCAN config: "
+                "SERVER_AUTHORITATIVE_LOCAL_CODE_SCAN_INGEST=true requires "
+                "SERVER_SKIP_REMOTE_CODE_SCAN_FOR_LOCAL_AUTHORITY=true "
+                "(fail-closed; no remote CODE_SCAN fallback)."
+            )
+        return self
+
     aisle_identification_pipeline_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "false")

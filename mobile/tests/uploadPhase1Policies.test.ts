@@ -5,6 +5,7 @@ import {
   classifyResizeReason,
   isFormatConversion,
   normalizePreparationProcessingMode,
+  resolveLocalScanProcessingMode,
   targetWidthForByteBudget,
   targetWidthForMaxEdge,
 } from '../src/core/imagePreparationPolicy';
@@ -83,6 +84,13 @@ describe('imagePreparationPolicy', () => {
     });
     expect(profile.profileId).toBe('unknown_safe_v1');
     expect(profile.maxEdgeDimension).toBe(DEFAULT_MAX_DIMENSION_PX);
+  });
+
+  it('maps UNKNOWN to CODE_SCAN for local scan when flag enabled', () => {
+    expect(resolveLocalScanProcessingMode('UNKNOWN', true)).toBe('CODE_SCAN');
+    expect(resolveLocalScanProcessingMode('UNKNOWN', false)).toBe('UNKNOWN');
+    expect(resolveLocalScanProcessingMode('INTERNAL_OCR', true)).toBe('INTERNAL_OCR');
+    expect(resolveLocalScanProcessingMode('CODE_SCAN', true)).toBe('CODE_SCAN');
   });
 
   it('disables dimension cap when flag off', () => {

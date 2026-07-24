@@ -585,19 +585,13 @@ class AisleProcessingOrchestrator:
         self._close_started_attempts_for_assets(job.id, recovered, now)
 
         if self._apply_authoritative_local is not None:
-            try:
-                self._apply_authoritative_local.apply_for_job(
-                    job=job,
-                    aisle_id=aisle.id,
-                    inventory_id=aisle.inventory_id,
-                    assets=list(assets),
-                )
-            except Exception:
-                logger.exception(
-                    "authoritative_local.apply_batch_failed job_id=%s aisle_id=%s",
-                    job.id,
-                    aisle.id,
-                )
+            # Fail-closed: never fall through to remote CODE_SCAN after apply failure.
+            self._apply_authoritative_local.apply_for_job(
+                job=job,
+                aisle_id=aisle.id,
+                inventory_id=aisle.inventory_id,
+                assets=list(assets),
+            )
 
         if is_cancelled():
             return self._code_scan_cancel(job, strategy_key)

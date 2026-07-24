@@ -181,6 +181,7 @@ from src.runtime.container.repository_builders import (
     build_job_repository,
     build_mobile_preliminary_detection_repository,
     build_authoritative_local_code_scan_repository,
+    build_authoritative_aisle_finalization_repository,
     build_preliminary_detection_reconciliation_repository,
     build_position_repository,
     build_product_record_repository,
@@ -271,6 +272,7 @@ class AppContainer:
         self._code_scan_repo: CodeScanRepository | None = None
         self._preliminary_detection_repo: MobilePreliminaryDetectionRepository | None = None
         self._authoritative_local_code_scan_repo = None
+        self._authoritative_aisle_finalization_repo = None
         self._preliminary_reconciliation_repo: (
             PreliminaryDetectionReconciliationRepository | None
         ) = None
@@ -375,6 +377,7 @@ class AppContainer:
         self._code_scan_repo = None
         self._preliminary_detection_repo = None
         self._authoritative_local_code_scan_repo = None
+        self._authoritative_aisle_finalization_repo = None
         self._preliminary_reconciliation_repo = None
         self._stored_artifact_reader = None
         self._repository_backend_resolution = None
@@ -535,6 +538,16 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._authoritative_local_code_scan_repo
+
+    def get_authoritative_aisle_finalization_repo(self):
+        if self._authoritative_aisle_finalization_repo is not None:
+            return self._authoritative_aisle_finalization_repo
+        self._authoritative_aisle_finalization_repo = (
+            build_authoritative_aisle_finalization_repository(
+                self._build_sql_repository_or_memory
+            )
+        )
+        return self._authoritative_aisle_finalization_repo
 
     def get_preliminary_detection_reconciliation_repo(
         self,

@@ -40,3 +40,5 @@ class AuthoritativeLocalCodeScanResponse(BaseModel):
     supersedes_result_id: str | None = None
     status: str
     duplicate: bool = False
+    #: None until /process applies the final position (FINAL_POSITION_APPLIED).
+    applied_at: datetime | None = None

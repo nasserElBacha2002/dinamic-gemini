@@ -376,6 +376,13 @@ CREATE INDEX IF NOT EXISTS idx_confirmed_local_results_sync
   ON confirmed_local_results(sync_status, next_retry_at);
 `,
   },
+  {
+    version: 13,
+    name: 'confirmed_local_results_applied_at',
+    sql: `
+ALTER TABLE confirmed_local_results ADD COLUMN applied_at TEXT;
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

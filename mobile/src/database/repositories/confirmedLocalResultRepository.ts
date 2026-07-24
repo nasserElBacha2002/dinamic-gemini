@@ -36,6 +36,8 @@ export interface ConfirmedLocalResultRow {
   readonly next_retry_at: string | null;
   readonly sync_last_error_code: string | null;
   readonly row_version: number;
+  /** Set when server reports applied_at (FINAL_POSITION_APPLIED). Distinct from SYNCED. */
+  readonly applied_at: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -233,18 +235,38 @@ export class ConfirmedLocalResultRepository {
     return (result.changes ?? 0) > 0;
   }
 
-  async completeSyncSuccess(resultId: string, syncedAt: string): Promise<boolean> {
+  async completeSyncSuccess(
+    resultId: string,
+    syncedAt: string,
+    appliedAt: string | null = null,
+  ): Promise<boolean> {
     const result = await this.db.runAsync(
       `UPDATE confirmed_local_results
        SET sync_status = 'SYNCED',
            sync_last_error_code = NULL,
            next_retry_at = NULL,
+           applied_at = COALESCE(?, applied_at),
            updated_at = ?
        WHERE id = ? AND sync_status = 'SYNCING';`,
+      appliedAt,
       syncedAt,
       resultId,
     );
     return (result.changes ?? 0) > 0;
+  }
+
+  /** Retention: drop synced rows older than retentionDays (safe after logout / aisle done). */
+  async purgeSyncedOlderThan(retentionDays: number, nowIso: string): Promise<number> {
+    const cutoffMs = Date.parse(nowIso) - retentionDays * 24 * 60 * 60_000;
+    const cutoff = new Date(cutoffMs).toISOString();
+    const result = await this.db.runAsync(
+      `DELETE FROM confirmed_local_results
+       WHERE sync_status = 'SYNCED'
+         AND applied_at IS NOT NULL
+         AND updated_at < ?;`,
+      cutoff,
+    );
+    return result.changes ?? 0;
   }
 
   async completeSyncTerminal(

@@ -17,6 +17,11 @@ import {
   type AuthoritativeSyncOutcome,
 } from './authoritativeLocalResultSyncOutcomeClassifier';
 
+/**
+ * Authoritative sync: JS timer while app is open (same pattern as preliminary sync).
+ * No separate WorkManager worker — avoids a second background stack. Limitation: sync
+ * pauses when the process is killed until next app open / post-upload enqueue.
+ */
 export const AUTH_SYNC_LEASE_MS = 90_000;
 export const AUTH_SYNC_REQUEST_TIMEOUT_MS = 30_000;
 const SYNC_BATCH_MAX = 20;
@@ -268,7 +273,7 @@ export class AuthoritativeLocalResultSyncService {
     }
 
     try {
-      await this.options.api.upsertResult(
+      const response = await this.options.api.upsertResult(
         session.inventory_id,
         session.aisle_id,
         assetId,
@@ -277,9 +282,21 @@ export class AuthoritativeLocalResultSyncService {
       const ok = await this.options.confirmed.completeSyncSuccess(
         row.id,
         new Date(this.nowMs()).toISOString(),
+        response.applied_at ?? null,
       );
       return ok ? 'synced' : 'skipped_lease';
     } catch (e) {
+      const apiErr = e instanceof ApiError ? e : null;
+      emitObservability(this.options.reporter, {
+        name: 'authoritative_sync_item_failed',
+        clientFileId: row.client_file_id ?? undefined,
+        attributes: {
+          result_id: row.id,
+          http_status: apiErr?.status ?? null,
+          error_code: apiErr?.code ?? String(e),
+          attempt: row.sync_attempt_count,
+        },
+      });
       return this.handleSyncError(row, e);
     }
   }

@@ -10,8 +10,6 @@ from enum import Enum
 class AuthoritativeResultSource(str, Enum):
     LOCAL_CODE_SCAN = "LOCAL_CODE_SCAN"
     LOCAL_MANUAL_CORRECTION = "LOCAL_MANUAL_CORRECTION"
-    SERVER_CODE_SCAN = "SERVER_CODE_SCAN"
-    SERVER_REPROCESS = "SERVER_REPROCESS"
 
 
 class AuthoritativeQuantityStatus(str, Enum):
@@ -41,6 +39,12 @@ class AuthoritativeLocalCodeScanResult:
     prepared_asset_sha256: str
     content_hash: str
     confirmed_by: str
+    #: Operator time from client (audit only; not authoritative).
+    client_confirmed_at: datetime | None
+    #: Server clock at accept (authoritative).
+    server_confirmed_at: datetime
+    server_received_at: datetime
+    #: Alias of server_confirmed_at for older call sites.
     confirmed_at: datetime
     applied_job_id: str | None
     applied_at: datetime | None

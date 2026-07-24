@@ -473,6 +473,31 @@ def build_authoritative_local_code_scan_repository(
     )
 
 
+def build_authoritative_aisle_finalization_repository(
+    build_repo: BuildSqlOrMemory,
+):
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_authoritative_aisle_finalization_repository import (
+            SqlAuthoritativeAisleFinalizationRepository,
+        )
+
+        return SqlAuthoritativeAisleFinalizationRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_authoritative_aisle_finalization_repository import (
+            MemoryAuthoritativeAisleFinalizationRepository,
+        )
+
+        return MemoryAuthoritativeAisleFinalizationRepository()
+
+    return build_repo(
+        backend_info_name="AuthoritativeAisleFinalizationRepository",
+        sql_error_subject="authoritative_aisle_finalization repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
 def build_preliminary_detection_reconciliation_repository(
     build_repo: BuildSqlOrMemory[PreliminaryDetectionReconciliationRepository],
 ) -> PreliminaryDetectionReconciliationRepository:

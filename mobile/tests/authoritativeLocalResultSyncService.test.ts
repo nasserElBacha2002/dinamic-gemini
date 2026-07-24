@@ -41,6 +41,7 @@ function confirmed(over: Partial<ConfirmedLocalResultRow> = {}): ConfirmedLocalR
     next_retry_at: null,
     sync_last_error_code: null,
     row_version: 1,
+    applied_at: null,
     created_at: '2026-07-24T12:00:00.000Z',
     updated_at: '2026-07-24T12:00:01.000Z',
     ...over,

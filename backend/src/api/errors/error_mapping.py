@@ -314,6 +314,7 @@ from src.application.errors import (
     AnalyticsScopeValidationError,
     AssetNotInJobSnapshotError,
     AssetProcessingStateConcurrencyError,
+    AuthoritativeSessionNotReadyError,
     BenchmarkCompareJobsMustDifferError,
     BenchmarkCompareManyInvalidSelectionError,
     BenchmarkRequiresTestInventoryError,
@@ -657,6 +658,14 @@ _HTTP_EXCEPTION_DISPATCH: dict[type[BaseException], Callable[[BaseException], HT
         409,
         error_code=AISLE_HAS_NO_SOURCE_ASSETS_FOR_PROCESSING,
         detail=HTTP_DETAIL_AISLE_NO_SOURCE_ASSETS_FOR_PROCESSING,
+    ),
+    AuthoritativeSessionNotReadyError: _structured_fixed(
+        409,
+        error_code="AUTHORITATIVE_SESSION_NOT_READY",
+        detail=(
+            "Authoritative local CODE_SCAN results are incomplete; "
+            "confirm and sync all photos before processing."
+        ),
     ),
     NoSourceAssetsForCodeScanError: _structured_fixed(
         409,

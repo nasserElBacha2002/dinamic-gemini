@@ -19,11 +19,13 @@ object DinamicWorkScheduler {
     Log.i(TAG, "cancel name=$name")
     when {
       name == UploadContracts.UNIQUE_QUEUE_NAME || name == "dinamic-upload-queue" -> {
-        DinamicUploadWorker.pauseQueue(context)
+        // Cancel WorkManager only — never sticky-pause AuthVault.
+        // Pause is reserved for the notification "Pausar cola" action.
+        DinamicUploadWorker.cancelAll(context)
       }
       name.startsWith("dinamic-upload-session-") || name.startsWith("upload-session-") -> {
-        // Session cancel maps to pausing the shared queue (single-worker strategy).
-        DinamicUploadWorker.pauseQueue(context)
+        // Session cancel maps to the shared queue; cancel work without pausing.
+        DinamicUploadWorker.cancelAll(context)
       }
       else -> {
         WorkManagerCancelByName(context, name)

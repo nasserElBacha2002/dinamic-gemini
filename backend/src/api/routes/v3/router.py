@@ -12,6 +12,7 @@ from src.auth.dependencies import get_current_admin
 from . import (
     aisles,
     assets,
+    authoritative_aisle_finalization,
     authoritative_local_code_scan,
     capture_sessions,
     code_scans,
@@ -36,6 +37,7 @@ router.include_router(aisles.router)
 router.include_router(code_scans.router)
 router.include_router(assets.router)
 router.include_router(authoritative_local_code_scan.router)
+router.include_router(authoritative_aisle_finalization.router)
 router.include_router(preliminary_detections.router)
 router.include_router(preliminary_reconciliations.router)
 router.include_router(positions.router)

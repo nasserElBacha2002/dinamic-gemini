@@ -133,6 +133,15 @@ export class LocalCodeScanStrategy {
         scanGeneration: 0,
         comparisonStatus: capability === 'DISABLED' ? 'SKIPPED' : 'PENDING',
       });
+      emitObservability(this.deps.reporter, {
+        name: 'local_scan_failed',
+        sessionId: input.captureSessionId,
+        clientFileId: input.clientFileId ?? undefined,
+        attributes: {
+          error_code: capability,
+          detector_version: LOCAL_CODE_DETECTOR_VERSION,
+        },
+      });
       return capability === 'DISABLED' ? 'NOT_APPLICABLE' : 'FAILED';
     }
 

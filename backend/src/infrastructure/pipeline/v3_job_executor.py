@@ -912,34 +912,32 @@ class V3JobExecutor:
                 )
 
             apply_authoritative = None
-            if bool(
+            skip_remote = bool(
                 getattr(settings, "server_skip_remote_code_scan_for_local_authority", False)
-            ) or bool(
-                getattr(settings, "server_authoritative_local_code_scan_ingest_enabled", False)
-            ):
+            )
+            if skip_remote:
+                from src.application.services.image_processing.apply_authoritative_local_results import (
+                    ApplyAuthoritativeLocalResultsService,
+                )
+
                 try:
-                    from src.application.services.image_processing.apply_authoritative_local_results import (
-                        ApplyAuthoritativeLocalResultsService,
+                    auth_repo = container.get_authoritative_local_code_scan_repo()
+                except Exception as exc:
+                    from src.application.errors import (
+                        AuthoritativeResultRepositoryUnavailableError,
                     )
 
-                    apply_authoritative = ApplyAuthoritativeLocalResultsService(
-                        authoritative_repo=container.get_authoritative_local_code_scan_repo(),
-                        result_persister=persister,
-                        state_repo=state_repo,
-                        clock=self._clock,
-                        enabled=bool(
-                            getattr(
-                                settings,
-                                "server_skip_remote_code_scan_for_local_authority",
-                                False,
-                            )
-                        ),
-                    )
-                except Exception:
-                    logger.exception(
-                        "authoritative_local.apply_service_unavailable job_id=%s", job_id
-                    )
-                    apply_authoritative = None
+                    raise AuthoritativeResultRepositoryUnavailableError(
+                        f"Authoritative repo unavailable for job_id={job_id}"
+                    ) from exc
+                apply_authoritative = ApplyAuthoritativeLocalResultsService(
+                    authoritative_repo=auth_repo,
+                    result_persister=persister,
+                    state_repo=state_repo,
+                    clock=self._clock,
+                    enabled=True,
+                    require_all_assets=True,
+                )
 
             orch = build_default_code_scan_orchestrator(
                 self._clock,

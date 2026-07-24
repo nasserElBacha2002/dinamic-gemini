@@ -25,6 +25,8 @@ export interface AuthoritativeLocalCodeScanResponse {
   readonly supersedes_result_id: string | null;
   readonly status: string;
   readonly duplicate?: boolean;
+  /** Present only after final position apply; null while AUTHORITATIVE_SYNCED only. */
+  readonly applied_at?: string | null;
 }
 
 export class AuthoritativeLocalResultApi {

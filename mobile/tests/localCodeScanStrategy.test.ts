@@ -2,6 +2,7 @@ import {
   LocalCodeScanStrategy,
   compareLocalVsServer,
 } from '../src/features/localCodeScan/localCodeScanStrategy';
+import { resolveLocalScanProcessingMode } from '../src/core/imagePreparationPolicy';
 import type {
   LocalDetectionDraftRepository,
   LocalDetectionDraftRow,
@@ -144,6 +145,39 @@ describe('LocalCodeScanStrategy', () => {
     });
     expect(status).toBe('NOT_APPLICABLE');
     expect(drafts.rows[0]?.status).toBe('NOT_APPLICABLE');
+  });
+
+  it('runs detection when mode is UNKNOWN but flag is enabled (caller remaps)', async () => {
+    // resolveLocalScanProcessingMode(UNKNOWN, true) → CODE_SCAN before execute
+    expect(resolveLocalScanProcessingMode('UNKNOWN', true)).toBe('CODE_SCAN');
+    const drafts = createMemoryDrafts();
+    const strategy = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [{ rawValue: 'SKU99|2', symbology: 'CODE_128' }],
+      evaluateCapability: async () => 'SUPPORTED',
+    });
+    const status = await strategy.execute({
+      ...baseInput,
+      processingMode: resolveLocalScanProcessingMode('UNKNOWN', true),
+      flagEnabled: true,
+    });
+    expect(status).toBe('RESOLVED');
+    expect(drafts.rows.at(-1)?.internal_code).toBe('SKU99');
+  });
+
+  it('marks UNKNOWN as NOT_APPLICABLE when not remapped', async () => {
+    const drafts = createMemoryDrafts();
+    const strategy = new LocalCodeScanStrategy({
+      drafts,
+      detect: async () => [{ rawValue: 'SKU99|2', symbology: 'CODE_128' }],
+      evaluateCapability: async () => 'SUPPORTED',
+    });
+    const status = await strategy.execute({
+      ...baseInput,
+      processingMode: 'UNKNOWN',
+      flagEnabled: true,
+    });
+    expect(status).toBe('NOT_APPLICABLE');
   });
 
   it('skips when flag disabled', async () => {

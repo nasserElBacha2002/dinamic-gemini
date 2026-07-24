@@ -17,7 +17,9 @@ def try_enqueue_preliminary_reconciliations(*, job_id: str, aisle_id: str, inven
         from src.config import load_settings
 
         settings = load_settings()
-        if getattr(settings, "server_authoritative_local_code_scan_ingest_enabled", False):
+        if getattr(settings, "server_authoritative_local_code_scan_ingest_enabled", False) and getattr(
+            settings, "server_skip_remote_code_scan_for_local_authority", False
+        ):
             logger.info(
                 "reconciliation_enqueue_skipped_authoritative_path job_id=%s",
                 job_id,

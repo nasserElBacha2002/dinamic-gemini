@@ -8,11 +8,12 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from src.application.ports.authoritative_local_code_scan_repository import (
     AuthoritativeLocalCodeScanRepository,
     AuthoritativeUniqueViolationError,
+    AuthoritativeVersionConflictError,
 )
 from src.application.ports.clock import Clock
 from src.application.ports.repositories import AisleRepository, SourceAssetRepository
@@ -37,12 +38,15 @@ _ALLOWED_SOURCES = frozenset(
 _ALLOWED_SYMBOLOGY = frozenset(
     {"QR_CODE", "CODE_128", "CODE_39", "EAN_13", "EAN_8", "UPC_A", "UPC_E", "UNKNOWN"}
 )
+# Align with historical code-scan internal codes (alphanumeric + common separators).
 _CODE_CHARSET = re.compile(r"^[A-Za-z0-9._\-/#]+$")
+_CLIENT_CONFIRM_SKEW = timedelta(hours=24)
 
 AUTH_INGEST_DISABLED = "AUTHORITATIVE_INGEST_DISABLED"
 AUTH_VALIDATION_FAILED = "AUTHORITATIVE_VALIDATION_FAILED"
 AUTH_IDEMPOTENCY_CONFLICT = "AUTHORITATIVE_IDEMPOTENCY_CONFLICT"
 AUTH_ASSET_MISMATCH = "AUTHORITATIVE_ASSET_MISMATCH"
+AUTH_CLIENT_FILE_MISMATCH = "AUTHORITATIVE_CLIENT_FILE_MISMATCH"
 AUTH_FORBIDDEN = "AUTHORITATIVE_FORBIDDEN"
 
 
@@ -64,8 +68,8 @@ class PersistAuthoritativeLocalCodeScanCommand:
     parser_version: str
     detector_version: str
     prepared_asset_sha256: str
+    #: Client-reported confirm time (stored as client_confirmed_at only).
     confirmed_at: datetime | None
-    # Ignored if present — derived from auth.
     confirmed_by_user_id: str | None = None
 
 
@@ -80,6 +84,7 @@ class PersistAuthoritativeLocalCodeScanResult:
     duplicate: bool = False
     validation_errors: tuple[str, ...] = ()
     error_code: str | None = None
+    applied_at: datetime | None = None
 
 
 class AuthoritativeIngestDisabledError(Exception):
@@ -146,15 +151,8 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
         if not self._enabled:
             raise AuthoritativeIngestDisabledError()
         if not self._user_id:
-            return PersistAuthoritativeLocalCodeScanResult(
-                result_id=command.result_id,
-                asset_id=command.asset_id,
-                result_version=0,
-                is_current=False,
-                supersedes_result_id=None,
-                status="REJECTED",
-                validation_errors=("authenticated_user_required",),
-                error_code=AUTH_FORBIDDEN,
+            return self._rejected(
+                command, AUTH_FORBIDDEN, ("authenticated_user_required",)
             )
 
         require_aisle_scoped_to_inventory(
@@ -166,28 +164,17 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
 
         errors = self._validate(command)
         if errors:
-            return PersistAuthoritativeLocalCodeScanResult(
-                result_id=command.result_id,
-                asset_id=command.asset_id,
-                result_version=0,
-                is_current=False,
-                supersedes_result_id=None,
-                status="REJECTED",
-                validation_errors=tuple(errors),
-                error_code=AUTH_VALIDATION_FAILED,
-            )
+            return self._rejected(command, AUTH_VALIDATION_FAILED, tuple(errors))
 
         asset = self._asset_repo.get_by_id(command.asset_id.strip())
         if asset is None or asset.aisle_id != command.aisle_id.strip():
-            return PersistAuthoritativeLocalCodeScanResult(
-                result_id=command.result_id,
-                asset_id=command.asset_id,
-                result_version=0,
-                is_current=False,
-                supersedes_result_id=None,
-                status="REJECTED",
-                validation_errors=("asset_not_in_aisle",),
-                error_code=AUTH_ASSET_MISMATCH,
+            return self._rejected(command, AUTH_ASSET_MISMATCH, ("asset_not_in_aisle",))
+
+        client_file = command.client_file_id.strip()
+        asset_cf = (getattr(asset, "upload_client_file_id", None) or "").strip()
+        if asset_cf and asset_cf != client_file:
+            return self._rejected(
+                command, AUTH_CLIENT_FILE_MISMATCH, ("client_file_id_mismatch",)
             )
 
         result_id = command.result_id.strip()
@@ -202,19 +189,13 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
             parser_version=command.parser_version.strip(),
             detector_version=command.detector_version.strip(),
             prepared_asset_sha256=command.prepared_asset_sha256.strip(),
-            client_file_id=command.client_file_id.strip(),
+            client_file_id=client_file,
             asset_id=command.asset_id.strip(),
         )
 
         existing = self._repo.get_by_id(result_id)
         if existing is not None:
             if existing.content_hash == content_hash and existing.asset_id == command.asset_id.strip():
-                logger.info(
-                    "authoritative_local.duplicate result_id=%s asset_id=%s version=%s",
-                    result_id,
-                    existing.asset_id,
-                    existing.result_version,
-                )
                 return PersistAuthoritativeLocalCodeScanResult(
                     result_id=existing.id,
                     asset_id=existing.asset_id,
@@ -223,6 +204,7 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
                     supersedes_result_id=existing.supersedes_result_id,
                     status="OK",
                     duplicate=True,
+                    applied_at=existing.applied_at,
                 )
             return PersistAuthoritativeLocalCodeScanResult(
                 result_id=result_id,
@@ -238,47 +220,29 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
         now = self._clock.now()
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
-        confirmed_at = command.confirmed_at or now
-        if confirmed_at.tzinfo is None:
-            confirmed_at = confirmed_at.replace(tzinfo=timezone.utc)
+
+        client_confirmed_at = command.confirmed_at
+        if client_confirmed_at is not None:
+            if client_confirmed_at.tzinfo is None:
+                client_confirmed_at = client_confirmed_at.replace(tzinfo=timezone.utc)
+            if client_confirmed_at > now + _CLIENT_CONFIRM_SKEW:
+                return self._rejected(
+                    command, AUTH_VALIDATION_FAILED, ("client_confirmed_at_future",)
+                )
+            if client_confirmed_at < now - timedelta(days=30):
+                return self._rejected(
+                    command, AUTH_VALIDATION_FAILED, ("client_confirmed_at_too_old",)
+                )
 
         current = self._repo.get_current_for_asset(command.asset_id.strip())
-        supersedes_id: str | None = None
-        next_version = 1
-        if current is not None:
-            supersedes_id = current.id
-            next_version = max(self._repo.max_version_for_asset(command.asset_id.strip()) + 1, current.result_version + 1)
-            marked = self._repo.mark_superseded(
-                result_id=current.id,
-                expected_row_version=current.row_version,
-                updated_at=now,
-            )
-            if marked is None:
-                # Concurrent supersede — re-read and retry once via unique violation path.
-                current2 = self._repo.get_current_for_asset(command.asset_id.strip())
-                if current2 is not None and current2.id != current.id:
-                    supersedes_id = current2.id
-                    next_version = self._repo.max_version_for_asset(command.asset_id.strip()) + 1
-                    marked2 = self._repo.mark_superseded(
-                        result_id=current2.id,
-                        expected_row_version=current2.row_version,
-                        updated_at=now,
-                    )
-                    if marked2 is None:
-                        return PersistAuthoritativeLocalCodeScanResult(
-                            result_id=result_id,
-                            asset_id=command.asset_id,
-                            result_version=0,
-                            is_current=False,
-                            supersedes_result_id=None,
-                            status="CONFLICT",
-                            error_code=AUTH_IDEMPOTENCY_CONFLICT,
-                            validation_errors=("concurrent_supersede",),
-                        )
+        expected_current_id = current.id if current else None
+        expected_row_version = current.row_version if current else None
 
         code = command.internal_code.strip()
         qty_status = command.quantity_status.strip().upper()
-        quantity = command.quantity if qty_status == AuthoritativeQuantityStatus.PRESENT.value else None
+        quantity = (
+            command.quantity if qty_status == AuthoritativeQuantityStatus.PRESENT.value else None
+        )
         source = command.source.strip().upper()
         detected_code = (command.detected_internal_code or "").strip() or None
         detected_sym = (command.detected_symbology or "").strip().upper() or None
@@ -288,9 +252,9 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
             asset_id=command.asset_id.strip(),
             inventory_id=command.inventory_id.strip(),
             aisle_id=command.aisle_id.strip(),
-            client_file_id=command.client_file_id.strip(),
-            result_version=next_version,
-            supersedes_result_id=supersedes_id,
+            client_file_id=client_file,
+            result_version=1,  # overwritten atomically
+            supersedes_result_id=expected_current_id,
             is_current=True,
             internal_code=code,
             quantity=quantity,
@@ -304,7 +268,10 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
             prepared_asset_sha256=command.prepared_asset_sha256.strip().lower(),
             content_hash=content_hash,
             confirmed_by=self._user_id,
-            confirmed_at=confirmed_at,
+            client_confirmed_at=client_confirmed_at,
+            server_confirmed_at=now,
+            server_received_at=now,
+            confirmed_at=now,
             applied_job_id=None,
             applied_at=None,
             row_version=1,
@@ -314,7 +281,22 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
         )
 
         try:
-            saved = self._repo.insert(row)
+            saved = self._repo.create_authoritative_version(
+                new_result=row,
+                expected_current_id=expected_current_id,
+                expected_row_version=expected_row_version,
+            )
+        except AuthoritativeVersionConflictError:
+            return PersistAuthoritativeLocalCodeScanResult(
+                result_id=result_id,
+                asset_id=command.asset_id,
+                result_version=0,
+                is_current=False,
+                supersedes_result_id=None,
+                status="CONFLICT",
+                error_code=AUTH_IDEMPOTENCY_CONFLICT,
+                validation_errors=("concurrent_version",),
+            )
         except AuthoritativeUniqueViolationError:
             raced = self._repo.get_by_id(result_id)
             if raced is not None and raced.content_hash == content_hash:
@@ -326,6 +308,7 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
                     supersedes_result_id=raced.supersedes_result_id,
                     status="OK",
                     duplicate=True,
+                    applied_at=raced.applied_at,
                 )
             return PersistAuthoritativeLocalCodeScanResult(
                 result_id=result_id,
@@ -340,13 +323,14 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
 
         logger.info(
             "authoritative_local.persisted result_id=%s asset_id=%s version=%s "
-            "source=%s supersedes=%s confirmed_by=%s",
+            "source=%s supersedes=%s confirmed_by=%s applied_at=%s",
             saved.id,
             saved.asset_id,
             saved.result_version,
             saved.source,
             saved.supersedes_result_id,
             saved.confirmed_by,
+            saved.applied_at,
         )
         return PersistAuthoritativeLocalCodeScanResult(
             result_id=saved.id,
@@ -356,6 +340,24 @@ class PersistAuthoritativeLocalCodeScanResultUseCase:
             supersedes_result_id=saved.supersedes_result_id,
             status="OK",
             duplicate=False,
+            applied_at=saved.applied_at,
+        )
+
+    def _rejected(
+        self,
+        command: PersistAuthoritativeLocalCodeScanCommand,
+        error_code: str,
+        errors: tuple[str, ...],
+    ) -> PersistAuthoritativeLocalCodeScanResult:
+        return PersistAuthoritativeLocalCodeScanResult(
+            result_id=command.result_id,
+            asset_id=command.asset_id,
+            result_version=0,
+            is_current=False,
+            supersedes_result_id=None,
+            status="REJECTED",
+            validation_errors=errors,
+            error_code=error_code,
         )
 
     def _validate(self, command: PersistAuthoritativeLocalCodeScanCommand) -> list[str]:

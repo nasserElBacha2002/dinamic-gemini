@@ -28,6 +28,9 @@ import { PreliminaryDetectionSyncService } from '../../features/preliminarySync/
 import { AuthoritativeLocalResultApi } from '../../features/authoritativeLocalResult/authoritativeLocalResultApi';
 import { AuthoritativeLocalResultSyncService } from '../../features/authoritativeLocalResult/authoritativeLocalResultSyncService';
 import { ConfirmLocalResultService } from '../../features/authoritativeLocalResult/confirmLocalResultService';
+import { AuthoritativeAisleFinalizationApi } from '../../features/authoritativeAisleFinalization/authoritativeAisleFinalizationApi';
+import { AuthoritativeAisleFinalizationService } from '../../features/authoritativeAisleFinalization/authoritativeAisleFinalizationService';
+import { createId } from '../../shared/createId';
 import { PreliminaryReconciliationApi } from '../../features/preliminaryReconciliation/preliminaryReconciliationApi';
 import { ReconciliationQueryService } from '../../features/preliminaryReconciliation/reconciliationQueryService';
 import {
@@ -97,6 +100,7 @@ export interface AppServices {
   readonly confirmLocalResult: ConfirmLocalResultService;
   readonly preliminarySync: PreliminaryDetectionSyncService;
   readonly authoritativeLocalSync: AuthoritativeLocalResultSyncService;
+  readonly authoritativeAisleFinalization: AuthoritativeAisleFinalizationService;
   readonly reconciliation: ReconciliationQueryService;
   readonly connectivity: ConnectivityService;
   readonly backgroundWork: BackgroundWorkScheduler;
@@ -185,6 +189,15 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   if (config.flags.mobileAuthoritativeLocalCodeScan) {
     authoritativeLocalSync.startScheduler();
   }
+  const authoritativeAisleFinalization = new AuthoritativeAisleFinalizationService({
+    flags: config.flags,
+    api: new AuthoritativeAisleFinalizationApi(api),
+    capture: captureRepo,
+    confirmed: confirmedLocalResults,
+    connectivity,
+    logger,
+    createId,
+  });
   const useNativeBg =
     config.flags.backgroundUploadWorker === true || config.flags.workManagerScheduling === true;
   const uploadQueue = new UploadQueue(
@@ -320,6 +333,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     confirmLocalResult,
     preliminarySync,
     authoritativeLocalSync,
+    authoritativeAisleFinalization,
     reconciliation,
     connectivity,
     backgroundWork,

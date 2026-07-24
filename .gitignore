@@ -129,8 +129,11 @@ review/
 implementation-corrections-diff.txt
 implementation-corrections-diffstat.txt
 implementation-corrections-status.txt
-legacy-processing-cleanup-*.txt
+implementation-corrections-test-results.txt
 implementation-corrections-*.txt
+authoritative-local-code-scan-intermediate-*.txt
+authoritative-local-code-scan-intermediate-*.md
+legacy-processing-cleanup-*.txt
 mobile-processing-mode-diff.txt
 mobile-processing-mode-diffstat.txt
 mobile-processing-mode-status.txt
