@@ -16,6 +16,7 @@ import {
 import type { ApiClient } from '../../services/api/apiClient';
 import type { AisleStatusResponseDto } from '../../services/api/types';
 import { compareLocalVsServer } from '../localCodeScan/localCodeScanStrategy';
+import type { ReconciliationQueryService } from '../preliminaryReconciliation/reconciliationQueryService';
 
 export interface JobMonitorSnapshot {
   readonly jobs: readonly ProcessingJobRow[];
@@ -34,6 +35,8 @@ export interface JobMonitorOptions {
   readonly observability?: JobMonitorObservability | null;
   readonly flags?: FeatureFlags;
   readonly localDrafts?: LocalDetectionDraftRepository | null;
+  /** Phase 5: server-side reconciliation (never invents mapping in UI). */
+  readonly reconciliation?: ReconciliationQueryService | null;
 }
 
 export class JobMonitor {
@@ -265,7 +268,11 @@ export class JobMonitor {
       }
 
       if (mapping.terminal) {
-        await this.maybeShadowCompare(job.capture_session_id, mapping.state === 'completed');
+        await this.maybeReconcileOrShadowCompare(
+          job,
+          backendJobId,
+          mapping.state === 'completed',
+        );
         if (this.options.backgroundWork) {
           void this.options.backgroundWork.cancelJobMonitor(backendJobId);
         }
@@ -292,7 +299,28 @@ export class JobMonitor {
   }
 
   /**
-   * Shadow compare. Without reliable client_file_id → code/qty mapping, keep
+   * Phase 5: prefer server reconciliation (asset-mapped). Phase 3 shadow path stays
+   * NOT_COMPARABLE without inventing order matching.
+   */
+  private async maybeReconcileOrShadowCompare(
+    job: ProcessingJobRow,
+    backendJobId: string,
+    jobCompleted: boolean,
+  ): Promise<void> {
+    if (this.options.reconciliation?.canTrigger()) {
+      await this.options.reconciliation.syncAfterJobTerminal({
+        inventoryId: job.inventory_id,
+        aisleId: job.aisle_id,
+        jobId: backendJobId,
+        sessionId: job.capture_session_id,
+      });
+      return;
+    }
+    await this.maybeShadowCompare(job.capture_session_id, jobCompleted);
+  }
+
+  /**
+   * Legacy shadow compare. Without reliable client_file_id → code/qty mapping, keep
    * compare_result null and emit session-level mapping_unavailable. Never invent order matching.
    */
   private async maybeShadowCompare(sessionId: string, jobCompleted: boolean): Promise<void> {

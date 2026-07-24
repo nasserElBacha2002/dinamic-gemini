@@ -273,6 +273,15 @@ class V3JobExecutionStateService:
         aisle.mark_processed(completion_now)
         self._aisle_repo.save(aisle)
         self.reconcile_inventory_for_aisle(aisle)
+        from src.application.services.preliminary_reconciliation_enqueue_hook import (
+            try_enqueue_preliminary_reconciliations,
+        )
+
+        try_enqueue_preliminary_reconciliations(
+            job_id=job_id,
+            aisle_id=aisle.id,
+            inventory_id=aisle.inventory_id,
+        )
 
     def finalize_code_scan_success(self, job_id: str, aisle: Aisle) -> None:
         """Phase 3 lightweight finalize for CODE_SCAN jobs (no LLM pipeline report).
@@ -318,6 +327,15 @@ class V3JobExecutionStateService:
         aisle.mark_processed(completion_now)
         self._aisle_repo.save(aisle)
         self.reconcile_inventory_for_aisle(aisle)
+        from src.application.services.preliminary_reconciliation_enqueue_hook import (
+            try_enqueue_preliminary_reconciliations,
+        )
+
+        try_enqueue_preliminary_reconciliations(
+            job_id=job_id,
+            aisle_id=aisle.id,
+            inventory_id=aisle.inventory_id,
+        )
 
     def _terminalize_job_row(
         self,

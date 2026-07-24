@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Sequence
 
 import pyodbc
 
@@ -182,3 +183,50 @@ class SqlMobilePreliminaryDetectionRepository:
                 (int(limit), now),
             )
             return int(cur.rowcount or 0)
+
+    def list_validated_by_aisle(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        limit: int = 500,
+    ) -> list[MobilePreliminaryDetection]:
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT TOP (?) {_SELECT_COLS}
+                FROM mobile_preliminary_detections
+                WHERE inventory_id = ? AND aisle_id = ? AND validation_status = 'VALIDATED'
+                ORDER BY received_at ASC
+                """,
+                (int(limit), inventory_id.strip(), aisle_id.strip()),
+            )
+            return [_row_to_entity(row) for row in cur.fetchall()]
+
+    def list_validated_by_asset_ids(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        asset_ids: Sequence[str],
+        limit: int = 500,
+    ) -> list[MobilePreliminaryDetection]:
+        ids = [a.strip() for a in asset_ids if a and str(a).strip()]
+        if not ids:
+            return []
+        # Cap IN-list size for SQL Server parameter limits
+        ids = ids[: min(len(ids), int(limit), 500)]
+        placeholders = ",".join("?" for _ in ids)
+        with self._client.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT TOP (?) {_SELECT_COLS}
+                FROM mobile_preliminary_detections
+                WHERE inventory_id = ? AND aisle_id = ?
+                  AND validation_status = 'VALIDATED'
+                  AND asset_id IN ({placeholders})
+                ORDER BY received_at ASC
+                """,
+                (int(limit), inventory_id.strip(), aisle_id.strip(), *ids),
+            )
+            return [_row_to_entity(row) for row in cur.fetchall()]

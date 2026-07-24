@@ -945,6 +945,27 @@ class LimitsAndSchemaSettings(BaseModel):
             "Env: SERVER_PRELIMINARY_DETECTION_INGEST."
         ),
     )
+    server_preliminary_reconciliation_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_PRELIMINARY_RECONCILIATION", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 5: compare local preliminary drafts vs remote asset results (diagnostic). "
+            "Default false. Never mutates positions or jobs. "
+            "Env: SERVER_PRELIMINARY_RECONCILIATION."
+        ),
+    )
+    preliminary_reconciliation_metrics_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PRELIMINARY_RECONCILIATION_METRICS", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 5: emit aggregate server-agreement metrics for reconciliations. "
+            "Default false. Env: PRELIMINARY_RECONCILIATION_METRICS."
+        ),
+    )
     aisle_identification_pipeline_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "false")

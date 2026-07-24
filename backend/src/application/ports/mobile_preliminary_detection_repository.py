@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, Sequence
 
 from src.domain.mobile_preliminary_detections.entities import MobilePreliminaryDetection
 
@@ -33,3 +33,20 @@ class MobilePreliminaryDetectionRepository(Protocol):
         ...
 
     def delete_expired(self, *, now: datetime, limit: int = 500) -> int: ...
+
+    def list_validated_by_aisle(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        limit: int = 500,
+    ) -> Sequence[MobilePreliminaryDetection]: ...
+
+    def list_validated_by_asset_ids(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        asset_ids: Sequence[str],
+        limit: int = 500,
+    ) -> Sequence[MobilePreliminaryDetection]: ...

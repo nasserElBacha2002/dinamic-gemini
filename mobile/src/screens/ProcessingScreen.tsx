@@ -16,6 +16,10 @@ import {
 } from '../features/processing/processingMode';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
 import { Button, ErrorText, SmallButton, messageOf, styles } from '../ui';
+import {
+  reconciliationOutcomeLabel,
+  type ReconciliationSummary,
+} from '../features/preliminaryReconciliation/reconciliationQueryService';
 
 export interface ProcessingScreenProps {
   services: AppServices;
@@ -48,6 +52,9 @@ export function ProcessingScreen({
   const [busy, setBusy] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [reconciliationSummary, setReconciliationSummary] = useState<ReconciliationSummary | null>(
+    null,
+  );
 
   const refresh = useCallback(() => {
     void services.processing.getSessionProcessingView(sessionId).then(setView);
@@ -68,6 +75,20 @@ export function ProcessingScreen({
       void services.jobMonitor.watch(view.jobId);
     }
   }, [services, view?.jobId, view?.state]);
+
+  useEffect(() => {
+    if (!services.reconciliation.isViewEnabled() || !view?.inventoryId || !view?.aisleId) {
+      setReconciliationSummary(null);
+      return;
+    }
+    if (view.state !== 'completed' && view.state !== 'failed') {
+      return;
+    }
+    void services.reconciliation
+      .fetchForAisle(view.inventoryId, view.aisleId, view.jobId ?? undefined)
+      .then(setReconciliationSummary)
+      .catch(() => setReconciliationSummary(null));
+  }, [services, view?.inventoryId, view?.aisleId, view?.state, view?.jobId]);
 
   const state: ProcessingState = view?.state ?? 'idle';
   const action = primaryProcessingAction(state);
@@ -133,6 +154,26 @@ export function ProcessingScreen({
         />
       )}
       {view?.jobId ? <Text style={styles.muted}>Diagnóstico job: {view.jobId}</Text> : null}
+      {reconciliationSummary ? (
+        <View>
+          <Text style={styles.row}>Comparación local vs servidor (diagnóstico)</Text>
+          <Text style={styles.muted}>
+            Comparable: {reconciliationSummary.comparable} · No comparable:{' '}
+            {reconciliationSummary.notComparable}
+            {reconciliationSummary.serverAgreementRate != null
+              ? ` · Acuerdo con servidor: ${(reconciliationSummary.serverAgreementRate * 100).toFixed(0)}%`
+              : ''}
+          </Text>
+          {Object.entries(reconciliationSummary.byOutcome)
+            .slice(0, 6)
+            .map(([outcome, count]) => (
+              <Text key={outcome} style={styles.muted}>
+                {reconciliationOutcomeLabel(outcome)}: {count}
+              </Text>
+            ))}
+          <Text style={styles.muted}>{reconciliationSummary.authorityNotice}</Text>
+        </View>
+      ) : null}
       <Button label="Capturar otro pasillo" onPress={onAnotherAisle} />
       <Text style={styles.muted}>
         Podés capturar otro pasillo mientras este se procesa. No se mezclan fotos ni lotes.

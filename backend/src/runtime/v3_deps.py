@@ -19,6 +19,9 @@ from src.application.ports.code_scan_repository import CodeScanRepository
 from src.application.ports.mobile_preliminary_detection_repository import (
     MobilePreliminaryDetectionRepository,
 )
+from src.application.ports.preliminary_detection_reconciliation_repository import (
+    PreliminaryDetectionReconciliationRepository,
+)
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -77,6 +80,10 @@ def get_code_scan_repo() -> CodeScanRepository:
 
 def get_mobile_preliminary_detection_repo() -> MobilePreliminaryDetectionRepository:
     return get_app_container().get_mobile_preliminary_detection_repo()
+
+
+def get_preliminary_detection_reconciliation_repo() -> PreliminaryDetectionReconciliationRepository:
+    return get_app_container().get_preliminary_detection_reconciliation_repo()
 
 
 def get_supplier_reference_image_repo() -> SupplierReferenceImageRepository:

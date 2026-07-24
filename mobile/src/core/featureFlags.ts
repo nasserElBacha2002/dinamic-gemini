@@ -32,6 +32,10 @@ export interface FeatureFlags {
   readonly mobileLocalCodeScanShadowCompare: boolean;
   /** Phase 4: sync local drafts to server as diagnostic evidence (default false). */
   readonly mobilePreliminaryDetectionSync: boolean;
+  /** Phase 5: show server reconciliation outcomes (default false). */
+  readonly mobilePreliminaryReconciliationView: boolean;
+  /** Phase 5: allow JobMonitor to trigger server reconcile enqueue (default false). */
+  readonly mobilePreliminaryReconciliationTrigger: boolean;
 }
 
 /** Non-production defaults. Phase 1/2 upload optimizations default off in production. */
@@ -53,6 +57,8 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   mobileLocalCodeScan: false,
   mobileLocalCodeScanShadowCompare: false,
   mobilePreliminaryDetectionSync: false,
+  mobilePreliminaryReconciliationView: false,
+  mobilePreliminaryReconciliationTrigger: false,
 };
 
 function phaseOptInDefaultForEnvironment(environment: string): boolean {
@@ -101,5 +107,10 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
     mobileLocalCodeScanShadowCompare: bool('mobileLocalCodeScanShadowCompare', false),
     // Phase 4: preliminary sync — default off. JS scheduler only (no WorkManager worker).
     mobilePreliminaryDetectionSync: bool('mobilePreliminaryDetectionSync', false),
+    mobilePreliminaryReconciliationView: bool('mobilePreliminaryReconciliationView', false),
+    mobilePreliminaryReconciliationTrigger: bool(
+      'mobilePreliminaryReconciliationTrigger',
+      false,
+    ),
   };
 }

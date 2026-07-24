@@ -18,16 +18,6 @@ export const LOCAL_CODE_SCAN_CONCURRENCY = 1;
 export const LOCAL_SCAN_STALE_MS = 60_000;
 export const LOCAL_SCAN_OWNER = 'js-local-code-scan';
 
-export type ShadowCompareResult =
-  | 'MATCH_CODE_AND_QUANTITY'
-  | 'MATCH_CODE_QUANTITY_MISSING_LOCAL'
-  | 'MATCH_CODE_QUANTITY_DIFFERENT'
-  | 'CODE_MISMATCH'
-  | 'LOCAL_ONLY'
-  | 'SERVER_ONLY'
-  | 'BOTH_UNRESOLVED'
-  | 'NOT_COMPARABLE';
-
 export interface LocalCodeScanStrategyDeps {
   readonly drafts: LocalDetectionDraftRepository;
   readonly reporter?: ObservabilityReporter | null;
@@ -341,6 +331,24 @@ export class LocalCodeScanStrategy {
   }
 }
 
+export type ShadowCompareResult =
+  | 'MATCH_CODE_AND_QUANTITY'
+  | 'MATCH_CODE_BOTH_QUANTITY_MISSING'
+  | 'MATCH_CODE_LOCAL_QUANTITY_MISSING'
+  | 'MATCH_CODE_REMOTE_QUANTITY_MISSING'
+  | 'MATCH_CODE_QUANTITY_DIFFERENT'
+  | 'CODE_MISMATCH'
+  | 'LOCAL_ONLY'
+  | 'REMOTE_ONLY'
+  | 'BOTH_UNRESOLVED'
+  | 'LOCAL_AMBIGUOUS'
+  | 'REMOTE_AMBIGUOUS'
+  | 'BOTH_AMBIGUOUS'
+  | 'NOT_COMPARABLE';
+
+/** @deprecated Use REMOTE_ONLY — kept for older draft rows. */
+export type LegacyShadowCompareResult = ShadowCompareResult | 'SERVER_ONLY' | 'MATCH_CODE_QUANTITY_MISSING_LOCAL';
+
 export function compareLocalVsServer(input: {
   readonly localInternalCode: string | null;
   readonly localQuantity: number | null;
@@ -348,10 +356,25 @@ export function compareLocalVsServer(input: {
   readonly serverInternalCode: string | null | undefined;
   readonly serverQuantity: number | null | undefined;
   readonly mappingReliable: boolean;
+  readonly localAmbiguous?: boolean;
+  readonly remoteAmbiguous?: boolean;
 }): ShadowCompareResult {
   if (!input.mappingReliable) {
     return 'NOT_COMPARABLE';
   }
+  const localAmbiguous =
+    input.localAmbiguous === true || input.localStatus === 'AMBIGUOUS';
+  const remoteAmbiguous = input.remoteAmbiguous === true;
+  if (localAmbiguous && remoteAmbiguous) {
+    return 'BOTH_AMBIGUOUS';
+  }
+  if (localAmbiguous) {
+    return 'LOCAL_AMBIGUOUS';
+  }
+  if (remoteAmbiguous) {
+    return 'REMOTE_AMBIGUOUS';
+  }
+
   const localResolved =
     (input.localStatus === 'RESOLVED' || input.localStatus === 'DETECTED_UNVERIFIED') &&
     Boolean(input.localInternalCode);
@@ -364,13 +387,19 @@ export function compareLocalVsServer(input: {
     return 'LOCAL_ONLY';
   }
   if (!localResolved && serverResolved) {
-    return 'SERVER_ONLY';
+    return 'REMOTE_ONLY';
   }
   if (input.localInternalCode !== input.serverInternalCode) {
     return 'CODE_MISMATCH';
   }
+  if (input.localQuantity == null && input.serverQuantity == null) {
+    return 'MATCH_CODE_BOTH_QUANTITY_MISSING';
+  }
   if (input.localQuantity == null && input.serverQuantity != null) {
-    return 'MATCH_CODE_QUANTITY_MISSING_LOCAL';
+    return 'MATCH_CODE_LOCAL_QUANTITY_MISSING';
+  }
+  if (input.localQuantity != null && input.serverQuantity == null) {
+    return 'MATCH_CODE_REMOTE_QUANTITY_MISSING';
   }
   if (
     input.localQuantity != null &&
@@ -379,12 +408,5 @@ export function compareLocalVsServer(input: {
   ) {
     return 'MATCH_CODE_QUANTITY_DIFFERENT';
   }
-  if (
-    input.localQuantity != null &&
-    input.serverQuantity != null &&
-    input.localQuantity === input.serverQuantity
-  ) {
-    return 'MATCH_CODE_AND_QUANTITY';
-  }
-  return 'MATCH_CODE_QUANTITY_MISSING_LOCAL';
+  return 'MATCH_CODE_AND_QUANTITY';
 }

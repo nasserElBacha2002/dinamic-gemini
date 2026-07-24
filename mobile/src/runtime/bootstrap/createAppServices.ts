@@ -24,6 +24,8 @@ import { LocalDetectionDraftRepository } from '../../database/repositories/local
 import { LocalCodeScanStrategy } from '../../features/localCodeScan/localCodeScanStrategy';
 import { PreliminaryDetectionApi } from '../../features/preliminarySync/preliminaryDetectionApi';
 import { PreliminaryDetectionSyncService } from '../../features/preliminarySync/preliminaryDetectionSyncService';
+import { PreliminaryReconciliationApi } from '../../features/preliminaryReconciliation/preliminaryReconciliationApi';
+import { ReconciliationQueryService } from '../../features/preliminaryReconciliation/reconciliationQueryService';
 import {
   buildBaselineReport,
   createObservabilityStack,
@@ -88,6 +90,7 @@ export interface AppServices {
   readonly jobMonitor: JobMonitor;
   readonly localDetectionDrafts: LocalDetectionDraftRepository;
   readonly preliminarySync: PreliminaryDetectionSyncService;
+  readonly reconciliation: ReconciliationQueryService;
   readonly connectivity: ConnectivityService;
   readonly backgroundWork: BackgroundWorkScheduler;
   readonly backgroundUpload: BackgroundUploadScheduler;
@@ -145,6 +148,14 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     reporter: obsWire?.reporter ?? null,
     connectivity,
   });
+  const reconciliationApi = new PreliminaryReconciliationApi(api);
+  const reconciliation = new ReconciliationQueryService({
+    api: reconciliationApi,
+    drafts: localDetectionDrafts,
+    flags: config.flags,
+    logger,
+    observability: obsWire?.reporter ?? null,
+  });
   if (config.flags.mobilePreliminaryDetectionSync) {
     preliminarySync.startScheduler();
   }
@@ -199,6 +210,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     observability: obsWire,
     flags: config.flags,
     localDrafts: localDetectionDrafts,
+    reconciliation,
   });
 
   if (!configError) {
@@ -270,6 +282,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     jobMonitor,
     localDetectionDrafts,
     preliminarySync,
+    reconciliation,
     connectivity,
     backgroundWork,
     backgroundUpload,

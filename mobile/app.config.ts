@@ -125,6 +125,15 @@ const config: ExpoConfig = {
       ...optionalFlag('DINAMIC_FLAG_LOCAL_CODE_SCAN_COMPARE', 'mobileLocalCodeScanShadowCompare'),
       // Phase 4 preliminary sync — default off. JS timer scheduler only (no WorkManager).
       ...optionalFlag('DINAMIC_FLAG_PRELIMINARY_SYNC', 'mobilePreliminaryDetectionSync'),
+      // Phase 5 reconciliation view — default off; server remains authority.
+      ...optionalFlag(
+        'DINAMIC_FLAG_PRELIMINARY_RECONCILIATION_VIEW',
+        'mobilePreliminaryReconciliationView',
+      ),
+      ...optionalFlag(
+        'DINAMIC_FLAG_PRELIMINARY_RECONCILIATION_TRIGGER',
+        'mobilePreliminaryReconciliationTrigger',
+      ),
     },
   },
 };

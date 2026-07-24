@@ -13,6 +13,9 @@ from src.application.ports.code_scan_repository import CodeScanRepository
 from src.application.ports.mobile_preliminary_detection_repository import (
     MobilePreliminaryDetectionRepository,
 )
+from src.application.ports.preliminary_detection_reconciliation_repository import (
+    PreliminaryDetectionReconciliationRepository,
+)
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -436,6 +439,31 @@ def build_mobile_preliminary_detection_repository(
     return build_repo(
         backend_info_name="MobilePreliminaryDetectionRepository",
         sql_error_subject="mobile_preliminary_detection repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_preliminary_detection_reconciliation_repository(
+    build_repo: BuildSqlOrMemory[PreliminaryDetectionReconciliationRepository],
+) -> PreliminaryDetectionReconciliationRepository:
+    def _sql(client: SqlServerClient) -> PreliminaryDetectionReconciliationRepository:
+        from src.infrastructure.repositories.sql_preliminary_detection_reconciliation_repository import (
+            SqlPreliminaryDetectionReconciliationRepository,
+        )
+
+        return SqlPreliminaryDetectionReconciliationRepository(client)
+
+    def _memory() -> PreliminaryDetectionReconciliationRepository:
+        from src.infrastructure.repositories.memory_preliminary_detection_reconciliation_repository import (
+            MemoryPreliminaryDetectionReconciliationRepository,
+        )
+
+        return MemoryPreliminaryDetectionReconciliationRepository()
+
+    return build_repo(
+        backend_info_name="PreliminaryDetectionReconciliationRepository",
+        sql_error_subject="preliminary_detection_reconciliation repo",
         build_sql=_sql,
         build_memory=_memory,
     )

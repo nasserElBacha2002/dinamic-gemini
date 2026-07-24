@@ -29,6 +29,9 @@ from src.application.ports.finalization_stage_store import FinalizationStageStor
 from src.application.ports.mobile_preliminary_detection_repository import (
     MobilePreliminaryDetectionRepository,
 )
+from src.application.ports.preliminary_detection_reconciliation_repository import (
+    PreliminaryDetectionReconciliationRepository,
+)
 from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
 from src.application.ports.operational_job_promotion import OperationalJobPromotionRepository
@@ -177,6 +180,7 @@ from src.runtime.container.repository_builders import (
     build_inventory_repository,
     build_job_repository,
     build_mobile_preliminary_detection_repository,
+    build_preliminary_detection_reconciliation_repository,
     build_position_repository,
     build_product_record_repository,
     build_result_evidence_repository,
@@ -265,6 +269,9 @@ class AppContainer:
         self._capture_session_group_repo: CaptureSessionGroupRepository | None = None
         self._code_scan_repo: CodeScanRepository | None = None
         self._preliminary_detection_repo: MobilePreliminaryDetectionRepository | None = None
+        self._preliminary_reconciliation_repo: (
+            PreliminaryDetectionReconciliationRepository | None
+        ) = None
         self._stored_artifact_reader: StoredArtifactReader | None = None
         self._finalization_stage_store: FinalizationStageStore | None = None
         self._artifact_manifest_store: ArtifactManifestStore | None = None
@@ -365,6 +372,7 @@ class AppContainer:
         self._capture_session_group_repo = None
         self._code_scan_repo = None
         self._preliminary_detection_repo = None
+        self._preliminary_reconciliation_repo = None
         self._stored_artifact_reader = None
         self._repository_backend_resolution = None
 
@@ -516,6 +524,18 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._preliminary_detection_repo
+
+    def get_preliminary_detection_reconciliation_repo(
+        self,
+    ) -> PreliminaryDetectionReconciliationRepository:
+        if self._preliminary_reconciliation_repo is not None:
+            return self._preliminary_reconciliation_repo
+        self._preliminary_reconciliation_repo = (
+            build_preliminary_detection_reconciliation_repository(
+                self._build_sql_repository_or_memory
+            )
+        )
+        return self._preliminary_reconciliation_repo
 
     def get_supplier_reference_image_repo(self) -> SupplierReferenceImageRepository:
         if self._supplier_reference_image_repo is not None:

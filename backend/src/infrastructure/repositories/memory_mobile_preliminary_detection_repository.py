@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Sequence
 
 from src.application.ports.mobile_preliminary_detection_repository import (
     PreliminaryUniqueViolationError,
@@ -63,3 +64,42 @@ class MemoryMobilePreliminaryDetectionRepository:
                 None,
             )
         return len(expired)
+
+    def list_validated_by_aisle(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        limit: int = 500,
+    ) -> Sequence[MobilePreliminaryDetection]:
+        rows = [
+            r
+            for r in self._by_draft.values()
+            if r.inventory_id == inventory_id
+            and r.aisle_id == aisle_id
+            and r.validation_status == "VALIDATED"
+        ]
+        rows.sort(key=lambda r: r.received_at)
+        return rows[:limit]
+
+    def list_validated_by_asset_ids(
+        self,
+        *,
+        inventory_id: str,
+        aisle_id: str,
+        asset_ids: Sequence[str],
+        limit: int = 500,
+    ) -> Sequence[MobilePreliminaryDetection]:
+        wanted = {a.strip() for a in asset_ids if a and a.strip()}
+        if not wanted:
+            return []
+        rows = [
+            r
+            for r in self._by_draft.values()
+            if r.inventory_id == inventory_id
+            and r.aisle_id == aisle_id
+            and r.validation_status == "VALIDATED"
+            and r.asset_id in wanted
+        ]
+        rows.sort(key=lambda r: r.received_at)
+        return rows[:limit]

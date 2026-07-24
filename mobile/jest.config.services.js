@@ -19,6 +19,7 @@ module.exports = {
     '<rootDir>/tests/localCodeScanStrategy.test.ts',
     '<rootDir>/tests/preliminaryDetectionSyncService.test.ts',
     '<rootDir>/tests/preliminarySyncDoesNotBlockProcess.test.ts',
+    '<rootDir>/tests/preliminaryReconciliationPhase5.test.ts',
   ],
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }],

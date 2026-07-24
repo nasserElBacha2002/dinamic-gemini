@@ -308,6 +308,8 @@ export class ProcessingService {
     localState: ReturnType<typeof toProcessingState>;
     remoteStatus: string | null;
     jobId: string | null;
+    inventoryId: string | null;
+    aisleId: string | null;
     errorMessage: string | null;
     finishedAt: string | null;
     updatedAt: string | null;
@@ -319,6 +321,8 @@ export class ProcessingService {
         localState: 'idle',
         remoteStatus: null,
         jobId: null,
+        inventoryId: null,
+        aisleId: null,
         errorMessage: null,
         finishedAt: null,
         updatedAt: null,
@@ -332,6 +336,8 @@ export class ProcessingService {
       localState: toProcessingState(session.processing_status),
       remoteStatus,
       jobId: latest?.backend_job_id ?? session.backend_job_id,
+      inventoryId: session.inventory_id,
+      aisleId: session.aisle_id,
       errorMessage: latest?.error_message ?? session.last_processing_error,
       finishedAt: latest?.finished_at ?? session.processing_finished_at,
       updatedAt: latest?.last_polled_at ?? session.updated_at,

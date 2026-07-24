@@ -173,6 +173,7 @@ from src.runtime.v3_deps import (
     get_job_repo,
     get_metrics_calculator,
     get_mobile_preliminary_detection_repo,
+    get_preliminary_detection_reconciliation_repo,
     get_position_repo,
     get_product_record_repo,
     get_recompute_consolidated_counts_use_case,
@@ -735,6 +736,95 @@ def get_upsert_preliminary_detection_use_case(
         clock=clock,
         enabled=bool(
             getattr(settings, "server_preliminary_detection_ingest_enabled", False)
+        ),
+    )
+
+
+def get_reconcile_preliminary_detections_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    preliminary_repo=Depends(get_mobile_preliminary_detection_repo),
+    reconciliation_repo=Depends(get_preliminary_detection_reconciliation_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.aisles.reconcile_preliminary_detections import (
+        EnqueuePreliminaryReconciliationsUseCase,
+        ProcessPreliminaryReconciliationsUseCase,
+        ReconcilePreliminaryDetectionsUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    enabled = bool(getattr(settings, "server_preliminary_reconciliation_enabled", False))
+    metrics_enabled = bool(
+        getattr(settings, "preliminary_reconciliation_metrics_enabled", False)
+    )
+    c = get_app_container()
+    enqueue = EnqueuePreliminaryReconciliationsUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        preliminary_repo=preliminary_repo,
+        reconciliation_repo=reconciliation_repo,
+        job_source_asset_repo=c.get_job_source_asset_repo(),
+        enabled=enabled,
+        clock=clock,
+    )
+    process = ProcessPreliminaryReconciliationsUseCase(
+        job_repo=job_repo,
+        preliminary_repo=preliminary_repo,
+        reconciliation_repo=reconciliation_repo,
+        state_repo=c.get_job_asset_processing_state_repo(),
+        attempt_repo=c.get_processing_attempt_repo(),
+        job_source_asset_repo=c.get_job_source_asset_repo(),
+        enabled=enabled,
+        metrics_enabled=metrics_enabled,
+        clock=clock,
+    )
+    return ReconcilePreliminaryDetectionsUseCase(
+        enqueue=enqueue,
+        process=process,
+        process_inline_limit=0,
+    )
+
+
+def get_process_preliminary_reconciliations_use_case():
+    from src.application.use_cases.aisles.reconcile_preliminary_detections import (
+        ProcessPreliminaryReconciliationsUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    c = get_app_container()
+    return ProcessPreliminaryReconciliationsUseCase(
+        job_repo=c.get_job_repo(),
+        preliminary_repo=c.get_mobile_preliminary_detection_repo(),
+        reconciliation_repo=c.get_preliminary_detection_reconciliation_repo(),
+        state_repo=c.get_job_asset_processing_state_repo(),
+        attempt_repo=c.get_processing_attempt_repo(),
+        job_source_asset_repo=c.get_job_source_asset_repo(),
+        enabled=bool(getattr(settings, "server_preliminary_reconciliation_enabled", False)),
+        metrics_enabled=bool(
+            getattr(settings, "preliminary_reconciliation_metrics_enabled", False)
+        ),
+        clock=c.get_clock(),
+    )
+
+
+def get_list_preliminary_reconciliations_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    reconciliation_repo=Depends(get_preliminary_detection_reconciliation_repo),
+):
+    from src.application.use_cases.aisles.list_preliminary_reconciliations import (
+        ListPreliminaryReconciliationsUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    return ListPreliminaryReconciliationsUseCase(
+        aisle_repo=aisle_repo,
+        reconciliation_repo=reconciliation_repo,
+        enabled=bool(
+            getattr(settings, "server_preliminary_reconciliation_enabled", False)
         ),
     )
 

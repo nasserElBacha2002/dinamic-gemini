@@ -93,4 +93,20 @@ describe('featureFlags', () => {
     );
     expect(flags.mobilePreliminaryDetectionSync).toBe(true);
   });
+
+  it('defaults phase5 reconciliation view flag off', () => {
+    for (const env of ['development', 'staging', 'production'] as const) {
+      expect(resolveFeatureFlags({}, env).mobilePreliminaryReconciliationView).toBe(false);
+      expect(resolveFeatureFlags({}, env).mobilePreliminaryReconciliationTrigger).toBe(false);
+    }
+    const on = resolveFeatureFlags(
+      {
+        mobilePreliminaryReconciliationView: '1',
+        mobilePreliminaryReconciliationTrigger: '1',
+      },
+      'production',
+    );
+    expect(on.mobilePreliminaryReconciliationView).toBe(true);
+    expect(on.mobilePreliminaryReconciliationTrigger).toBe(true);
+  });
 });
