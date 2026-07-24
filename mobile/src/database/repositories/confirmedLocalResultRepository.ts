@@ -275,13 +275,16 @@ export class ConfirmedLocalResultRepository {
     errorCode: string,
     nowIso: string,
   ): Promise<boolean> {
+    // Allow PENDING / RETRY_SCHEDULED: pre-claim terminal paths (invalid local, max attempts)
+    // previously no-oped on SYNCING-only WHERE and re-queued forever.
     const result = await this.db.runAsync(
       `UPDATE confirmed_local_results
        SET sync_status = ?,
            sync_last_error_code = ?,
            next_retry_at = NULL,
            updated_at = ?
-       WHERE id = ? AND sync_status = 'SYNCING';`,
+       WHERE id = ?
+         AND sync_status IN ('PENDING', 'RETRY_SCHEDULED', 'SYNCING');`,
       syncStatus,
       errorCode,
       nowIso,

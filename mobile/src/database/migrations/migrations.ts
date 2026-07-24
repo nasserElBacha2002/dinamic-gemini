@@ -433,6 +433,28 @@ CREATE INDEX IF NOT EXISTS idx_server_reprocess_request_intents_status
   ON server_reprocess_request_intents(status, next_retry_at);
 `,
   },
+  {
+    version: 16,
+    name: 'aisle_revision_drafts',
+    sql: `
+CREATE TABLE IF NOT EXISTS aisle_revision_drafts (
+  revision_id TEXT PRIMARY KEY NOT NULL,
+  inventory_id TEXT NOT NULL,
+  aisle_id TEXT NOT NULL,
+  base_finalization_id TEXT,
+  status TEXT NOT NULL,
+  pending_changes_json TEXT NOT NULL DEFAULT '{}',
+  sync_status TEXT NOT NULL DEFAULT 'LOCAL',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_aisle_revision_drafts_aisle
+  ON aisle_revision_drafts(inventory_id, aisle_id);
+CREATE INDEX IF NOT EXISTS idx_aisle_revision_drafts_status
+  ON aisle_revision_drafts(status, sync_status);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

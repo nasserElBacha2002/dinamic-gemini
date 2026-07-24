@@ -6,6 +6,7 @@ import {
 } from '../src/features/authoritativeLocalResult/authoritativeLocalResultSyncOutcomeClassifier';
 import {
   AUTH_SYNC_LEASE_MS,
+  AUTH_SYNC_NO_PROGRESS_MIN_DELAY_MS,
   AUTH_SYNC_REQUEST_TIMEOUT_MS,
   AuthoritativeLocalResultSyncService,
 } from '../src/features/authoritativeLocalResult/authoritativeLocalResultSyncService';
@@ -217,5 +218,43 @@ describe('AuthoritativeLocalResultSyncService', () => {
       AUTH_VALIDATION_FAILED,
       expect.any(String),
     );
+  });
+
+  it('marks invalid local results terminal and applies no-progress backoff', async () => {
+    const { service, confirmedRepo, api, timers } = createHarness({
+      rows: [
+        confirmed({
+          prepared_asset_sha256: '',
+          confirmed_internal_code: 'ABC',
+        }),
+      ],
+    });
+    confirmedRepo.getEarliestSyncRetryAt.mockResolvedValue('2026-07-24T12:00:00.000Z');
+    const summary = await service.syncPending();
+    expect(summary.failed_terminal).toBe(1);
+    expect(summary.synced).toBe(0);
+    expect(api.upsertResult).not.toHaveBeenCalled();
+    expect(confirmedRepo.completeSyncTerminal).toHaveBeenCalledWith(
+      'result-1',
+      'FAILED_TERMINAL',
+      'INVALID_LOCAL_RESULT',
+      expect.any(String),
+    );
+    expect(timers.length).toBeGreaterThanOrEqual(1);
+    expect(timers[timers.length - 1]!.delay).toBeGreaterThanOrEqual(AUTH_SYNC_NO_PROGRESS_MIN_DELAY_MS);
+  });
+
+  it('stops scheduling after sqlite malformed errors', async () => {
+    const { service, confirmedRepo, timers } = createHarness({});
+    confirmedRepo.recoverExpiredSyncLeases.mockRejectedValue(
+      new Error('database disk image is malformed'),
+    );
+    await expect(service.syncPending()).rejects.toThrow(/malformed/);
+    const timerCountAfter = timers.length;
+    confirmedRepo.getEarliestSyncRetryAt.mockResolvedValue('2026-07-24T12:00:00.000Z');
+    await service.rescheduleRetryTimer();
+    expect(timers.length).toBe(timerCountAfter);
+    const empty = await service.syncPending();
+    expect(empty.attempted).toBe(0);
   });
 });

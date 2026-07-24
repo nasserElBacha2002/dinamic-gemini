@@ -1,6 +1,6 @@
 import { loadAppConfig, validateAppConfig, type AppConfig } from '../config/env';
 import { createLogger, type Logger } from '../../core/logging';
-import { getDatabase } from '../../database/database';
+import { getDatabase, consumeDatabaseRecoveryFlag } from '../../database/database';
 import { CaptureRepository } from '../../database/repositories/captureRepository';
 import { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
 import { AuthService } from '../../features/auth/authService';
@@ -34,6 +34,9 @@ import { AuthoritativeAisleFinalizationService } from '../../features/authoritat
 import { ServerReprocessApi } from '../../features/serverReprocess/serverReprocessApi';
 import { ServerReprocessService } from '../../features/serverReprocess/serverReprocessService';
 import { ServerReprocessIntentRepository } from '../../database/repositories/serverReprocessIntentRepository';
+import { AisleRevisionApi } from '../../features/aisleRevision/aisleRevisionApi';
+import { AisleRevisionService } from '../../features/aisleRevision/aisleRevisionService';
+import { AisleRevisionDraftRepository } from '../../database/repositories/aisleRevisionDraftRepository';
 import { createId } from '../../shared/createId';
 import { PreliminaryReconciliationApi } from '../../features/preliminaryReconciliation/preliminaryReconciliationApi';
 import { ReconciliationQueryService } from '../../features/preliminaryReconciliation/reconciliationQueryService';
@@ -88,6 +91,8 @@ function createMirroredTokenStorage(base: TokenStorage, config: AppConfig): Toke
 export interface AppServices {
   readonly config: AppConfig;
   readonly configError: string | null;
+  /** True when SQLite was deleted/recreated due to corruption on this boot. */
+  readonly databaseRecoveredFromCorruption: boolean;
   readonly logger: Logger;
   readonly auth: AuthService;
   readonly inventories: InventoryService;
@@ -106,6 +111,7 @@ export interface AppServices {
   readonly authoritativeLocalSync: AuthoritativeLocalResultSyncService;
   readonly authoritativeAisleFinalization: AuthoritativeAisleFinalizationService;
   readonly serverReprocess: ServerReprocessService;
+  readonly aisleRevision: AisleRevisionService;
   readonly reconciliation: ReconciliationQueryService;
   readonly connectivity: ConnectivityService;
   readonly backgroundWork: BackgroundWorkScheduler;
@@ -130,12 +136,20 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     onAuthExpired,
   });
   const db = await getDatabase();
+  const databaseRecoveredFromCorruption = consumeDatabaseRecoveryFlag();
+  if (databaseRecoveredFromCorruption) {
+    logger.warn('recovery', {
+      code: 'LOCAL_DB_CORRUPTED',
+      message: 'Local SQLite recreated after corruption',
+    });
+  }
   const captureRepo = new CaptureRepository(db);
   const jobRepo = new ProcessingJobRepository(db);
   const localDetectionDrafts = new LocalDetectionDraftRepository(db);
   const confirmedLocalResults = new ConfirmedLocalResultRepository(db);
   const aisleFinalizationIntents = new AisleFinalizationIntentRepository(db);
   const serverReprocessIntents = new ServerReprocessIntentRepository(db);
+  const aisleRevisionDrafts = new AisleRevisionDraftRepository(db);
   const connectivity = createConnectivityService();
   const backgroundWork = createBackgroundWorkScheduler(logger, config.flags);
   const backgroundUpload = asBackgroundUploadScheduler(backgroundWork);
@@ -211,6 +225,17 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     config.flags.serverReprocessOfflineQueue ? serverReprocessIntents : null,
     config.flags,
   );
+  const aisleRevision = new AisleRevisionService(
+    new AisleRevisionApi(api),
+    config.flags.mobileAisleRevisions ? aisleRevisionDrafts : null,
+    connectivity,
+    {
+      mobileAisleRevisions: config.flags.mobileAisleRevisions,
+      mobileAisleHistory: config.flags.mobileAisleHistory,
+      serverAisleRevisions: config.flags.serverAisleRevisions,
+      serverAisleRollback: config.flags.serverAisleRollback,
+    },
+  );
   if (config.flags.serverReprocessOfflineQueue) {
     const drain = () => {
       void serverReprocess.drainPending().catch(() => undefined);
@@ -221,6 +246,17 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       }
     });
     drain();
+  }
+  if (config.flags.mobileAisleRevisions && config.flags.serverAisleRevisions) {
+    const syncDrafts = () => {
+      void aisleRevision.syncPendingDrafts().catch(() => undefined);
+    };
+    connectivity.subscribe((state) => {
+      if (state === 'online') {
+        syncDrafts();
+      }
+    });
+    syncDrafts();
   }
   const useNativeBg =
     config.flags.backgroundUploadWorker === true || config.flags.workManagerScheduling === true;
@@ -332,6 +368,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   return {
     config,
     configError,
+    databaseRecoveredFromCorruption,
     logger,
     api,
     auth: new AuthService(api, tokenStorage, logger, async () => {
@@ -362,6 +399,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     authoritativeLocalSync,
     authoritativeAisleFinalization,
     serverReprocess,
+    aisleRevision,
     reconciliation,
     connectivity,
     backgroundWork,

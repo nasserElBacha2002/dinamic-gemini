@@ -1,5 +1,6 @@
 import type { Logger } from '../core/logging';
 import type { SQLiteDatabase } from '../database/database';
+import { isSqliteMalformedError } from '../database/sqliteErrors';
 import { createId } from '../shared/createId';
 import {
   BufferedSqliteObservabilityReporter,
@@ -50,6 +51,7 @@ export function createObservabilityStack(input: {
         obs: true,
         obs_name: 'observability.flush_failed',
         message: err instanceof Error ? err.message : String(err),
+        malformed: isSqliteMalformedError(err),
       });
     },
   });

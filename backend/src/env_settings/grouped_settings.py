@@ -1034,6 +1034,26 @@ class LimitsAndSchemaSettings(BaseModel):
             "Empty disables the execute endpoint. Env: SERVER_REPROCESS_WORKER_TOKEN."
         ),
     )
+    server_aisle_revisions_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_AISLE_REVISIONS", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 8: enable aisle revision create/edit/apply/history. "
+            "Default false. Env: SERVER_AISLE_REVISIONS."
+        ),
+    )
+    server_aisle_rollback_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_AISLE_ROLLBACK", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 8: enable POST .../rollback (requires SERVER_AISLE_REVISIONS). "
+            "Default false. Env: SERVER_AISLE_ROLLBACK."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_authoritative_local_flag_matrix(self) -> Self:

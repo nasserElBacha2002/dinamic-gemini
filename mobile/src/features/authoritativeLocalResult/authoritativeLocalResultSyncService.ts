@@ -1,6 +1,7 @@
 import { computeRetryDelayMs } from '../../core/uploadBackoff';
 import type { FeatureFlags } from '../../core/featureFlags';
 import type { Logger } from '../../core/logging';
+import { isSqliteMalformedError } from '../../database/sqliteErrors';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
 import type {
   ConfirmedLocalResultRepository,
@@ -28,6 +29,9 @@ const SYNC_BATCH_MAX = 20;
 const SYNC_CONCURRENCY = 2;
 const SYNC_MAX_ATTEMPTS = 8;
 const MAX_TIMER_DELAY_MS = 6 * 60 * 60_000;
+/** Floor delay after a sync pass with attempts but zero progress (no synced/retry). */
+export const AUTH_SYNC_NO_PROGRESS_MIN_DELAY_MS = 30_000;
+const AUTH_SYNC_NO_PROGRESS_MAX_DELAY_MS = 15 * 60_000;
 
 export interface AuthoritativeSyncSummary {
   attempted: number;
@@ -64,6 +68,8 @@ export class AuthoritativeLocalResultSyncService {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private connectivityUnsub: (() => void) | null = null;
   private disposed = false;
+  private noProgressBackoffMs = 0;
+  private pausedForCorruptDb = false;
 
   constructor(private readonly options: AuthoritativeLocalResultSyncServiceOptions) {}
 
@@ -112,7 +118,7 @@ export class AuthoritativeLocalResultSyncService {
 
   async syncPending(): Promise<AuthoritativeSyncSummary> {
     const empty = this.emptySummary();
-    if (!this.isSyncEnabled()) {
+    if (!this.isSyncEnabled() || this.pausedForCorruptDb) {
       return empty;
     }
     const nowMs = this.nowMs();
@@ -124,11 +130,13 @@ export class AuthoritativeLocalResultSyncService {
     }
     this.running = true;
     const summary = this.emptySummary();
+    let scheduleAfter = true;
     try {
       const now = new Date(nowMs).toISOString();
       await this.options.confirmed.recoverExpiredSyncLeases(now);
       const due = await this.options.confirmed.listDueForSync(now, SYNC_BATCH_MAX);
       if (due.length === 0) {
+        this.noProgressBackoffMs = 0;
         return summary;
       }
       emitObservability(this.options.reporter, {
@@ -151,14 +159,29 @@ export class AuthoritativeLocalResultSyncService {
       };
       await Promise.all(Array.from({ length: workers }, () => runOne()));
 
+      this.updateNoProgressBackoff(summary);
       emitObservability(this.options.reporter, {
         name: 'authoritative_sync_completed',
         attributes: { ...summary },
       });
       return summary;
+    } catch (error) {
+      if (isSqliteMalformedError(error)) {
+        this.pausedForCorruptDb = true;
+        scheduleAfter = false;
+        this.clearRetryTimer();
+        this.options.logger.warn('error', {
+          where: 'authoritative_sync',
+          code: 'LOCAL_DB_CORRUPTED',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+      throw error;
     } finally {
       this.running = false;
-      void this.rescheduleRetryTimer();
+      if (scheduleAfter) {
+        void this.rescheduleRetryTimer(summary);
+      }
     }
   }
 
@@ -191,20 +214,62 @@ export class AuthoritativeLocalResultSyncService {
     }
   }
 
-  async rescheduleRetryTimer(): Promise<void> {
+  async rescheduleRetryTimer(lastSummary?: AuthoritativeSyncSummary): Promise<void> {
     this.clearRetryTimer();
-    if (!this.isSyncEnabled() || this.disposed) {
+    if (!this.isSyncEnabled() || this.disposed || this.pausedForCorruptDb) {
       return;
     }
-    const nextAt = await this.options.confirmed.getEarliestSyncRetryAt();
+    let nextAt: string | null = null;
+    try {
+      nextAt = await this.options.confirmed.getEarliestSyncRetryAt();
+    } catch (error) {
+      if (isSqliteMalformedError(error)) {
+        this.pausedForCorruptDb = true;
+        this.options.logger.warn('error', {
+          where: 'authoritative_sync_reschedule',
+          code: 'LOCAL_DB_CORRUPTED',
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+      throw error;
+    }
     if (!nextAt) {
       return;
     }
-    const delay = Math.max(0, Date.parse(nextAt) - this.nowMs());
+    let delay = Math.max(0, Date.parse(nextAt) - this.nowMs());
+    if (lastSummary && this.isNoProgressPass(lastSummary)) {
+      delay = Math.max(delay, this.noProgressBackoffMs || AUTH_SYNC_NO_PROGRESS_MIN_DELAY_MS);
+      this.options.logger.warn('recovery', {
+        where: 'authoritative_sync_no_progress_backoff',
+        delay_ms: delay,
+        failed_terminal: lastSummary.failed_terminal,
+        attempted: lastSummary.attempted,
+      });
+    }
     const capped = Math.min(delay, MAX_TIMER_DELAY_MS);
     this.retryTimer = (this.options.setTimeoutFn ?? setTimeout)(() => {
       void this.syncPending().catch(() => undefined);
     }, capped);
+  }
+
+  private isNoProgressPass(summary: AuthoritativeSyncSummary): boolean {
+    return summary.attempted > 0 && summary.synced === 0 && summary.retry === 0;
+  }
+
+  private updateNoProgressBackoff(summary: AuthoritativeSyncSummary): void {
+    if (summary.synced > 0 || summary.retry > 0) {
+      this.noProgressBackoffMs = 0;
+      return;
+    }
+    if (!this.isNoProgressPass(summary)) {
+      return;
+    }
+    const next =
+      this.noProgressBackoffMs === 0
+        ? AUTH_SYNC_NO_PROGRESS_MIN_DELAY_MS
+        : Math.min(this.noProgressBackoffMs * 2, AUTH_SYNC_NO_PROGRESS_MAX_DELAY_MS);
+    this.noProgressBackoffMs = next;
   }
 
   private async getSessionCached(

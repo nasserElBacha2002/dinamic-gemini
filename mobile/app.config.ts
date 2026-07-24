@@ -156,6 +156,10 @@ const config: ExpoConfig = {
         'DINAMIC_FLAG_SERVER_REPROCESS_OFFLINE_QUEUE',
         'serverReprocessOfflineQueue',
       ),
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_AISLE_REVISIONS', 'mobileAisleRevisions'),
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_AISLE_HISTORY', 'mobileAisleHistory'),
+      ...optionalFlag('DINAMIC_FLAG_SERVER_AISLE_REVISIONS', 'serverAisleRevisions'),
+      ...optionalFlag('DINAMIC_FLAG_SERVER_AISLE_ROLLBACK', 'serverAisleRollback'),
     },
   },
 };

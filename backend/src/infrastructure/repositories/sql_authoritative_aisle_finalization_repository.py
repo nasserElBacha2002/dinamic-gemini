@@ -17,7 +17,7 @@ _FIN_COLS = (
     "id, inventory_id, aisle_id, capture_session_id, finalization_version, status, "
     "total_assets, applied_assets, excluded_assets, position_count, expected_asset_count, "
     "content_hash, confirmed_by, confirmed_at, completed_at, is_current, row_version, "
-    "created_at, updated_at"
+    "created_at, updated_at, supersedes_finalization_id, revision_id"
 )
 
 
@@ -54,6 +54,10 @@ def _fin_from_row(row) -> AuthoritativeAisleFinalization:
         row_version=int(getattr(row, "row_version", 1) or 1),
         created_at=_ensure_utc(getattr(row, "created_at", None)),  # type: ignore[arg-type]
         updated_at=_ensure_utc(getattr(row, "updated_at", None)),  # type: ignore[arg-type]
+        supersedes_finalization_id=optional_nonempty_db_str(
+            getattr(row, "supersedes_finalization_id", None)
+        ),
+        revision_id=optional_nonempty_db_str(getattr(row, "revision_id", None)),
     )
 
 
@@ -193,7 +197,8 @@ class SqlAuthoritativeAisleFinalizationRepository:
                 "id, inventory_id, aisle_id, capture_session_id, finalization_version, status, "
                 "total_assets, applied_assets, excluded_assets, position_count, expected_asset_count, "
                 "content_hash, confirmed_by, confirmed_at, completed_at, is_current, row_version, "
-                "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "created_at, updated_at, supersedes_finalization_id, revision_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     finalization.id,
                     finalization.inventory_id,
@@ -214,6 +219,8 @@ class SqlAuthoritativeAisleFinalizationRepository:
                     finalization.row_version,
                     finalization.created_at,
                     finalization.updated_at,
+                    getattr(finalization, "supersedes_finalization_id", None),
+                    getattr(finalization, "revision_id", None),
                 ),
             )
             for item in items:

@@ -21,6 +21,8 @@ import { ReviewScreen } from './src/screens/ReviewScreen';
 import { LocalResultReviewScreen } from './src/screens/LocalResultReviewScreen';
 import { AuthoritativeFinalizeScreen } from './src/screens/AuthoritativeFinalizeScreen';
 import { ServerReprocessScreen } from './src/screens/ServerReprocessScreen';
+import { AisleRevisionScreen } from './src/screens/AisleRevisionScreen';
+import { AisleHistoryScreen } from './src/screens/AisleHistoryScreen';
 import { UploadsScreen } from './src/screens/UploadsScreen';
 import type { AisleIdentificationMode } from './src/features/processing/processingMode';
 import { sanitizeIdentificationModeSelection } from './src/features/processing/processingMode';
@@ -37,6 +39,8 @@ type Screen =
   | 'uploads'
   | 'authoritative-finalize'
   | 'server-reprocess'
+  | 'aisle-revision'
+  | 'aisle-history'
   | 'processing'
   | 'results'
   | 'diagnostic';
@@ -76,6 +80,12 @@ export default function App(): JSX.Element {
         createdServices = created;
         setServices(created);
         setConfigError(created.configError);
+        if (created.databaseRecoveredFromCorruption) {
+          Alert.alert(
+            'Datos locales reiniciados',
+            userMessageForCode('LOCAL_DB_CORRUPTED'),
+          );
+        }
         if (
           created.config.flags.mobileLocalCodeScan ||
           created.config.flags.mobileAuthoritativeLocalCodeScan
@@ -444,6 +454,8 @@ export default function App(): JSX.Element {
           onBackToAisles={() => setScreen(selectedInventory ? 'aisles' : 'inventories')}
           onAnotherAisle={() => setScreen('inventories')}
           onServerReprocess={() => setScreen('server-reprocess')}
+          onAisleRevision={() => setScreen('aisle-revision')}
+          onAisleHistory={() => setScreen('aisle-history')}
           onError={setError}
         />
       ) : null}
@@ -453,6 +465,31 @@ export default function App(): JSX.Element {
           inventory={selectedInventory}
           aisle={selectedAisle}
           onBack={() => setScreen('results')}
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'aisle-revision' && selectedInventory && selectedAisle && auth ? (
+        <AisleRevisionScreen
+          services={services}
+          inventory={selectedInventory}
+          aisle={selectedAisle}
+          userId={auth.user.id}
+          onBack={() => setScreen('results')}
+          onOpenHistory={
+            services.aisleRevision.isHistoryVisible()
+              ? () => setScreen('aisle-history')
+              : undefined
+          }
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'aisle-history' && selectedInventory && selectedAisle && auth ? (
+        <AisleHistoryScreen
+          services={services}
+          inventory={selectedInventory}
+          aisle={selectedAisle}
+          userId={auth.user.id}
+          onBack={() => setScreen('aisle-revision')}
           onError={setError}
         />
       ) : null}

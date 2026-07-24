@@ -50,6 +50,14 @@ export interface FeatureFlags {
   readonly mobileServerReprocessReview: boolean;
   /** Phase 7: persist offline reprocess request intent (default false). */
   readonly serverReprocessOfflineQueue: boolean;
+  /** Phase 8: mobile aisle correction / revision UX (default false). */
+  readonly mobileAisleRevisions: boolean;
+  /** Phase 8: mobile aisle revision history screen (default false). */
+  readonly mobileAisleHistory: boolean;
+  /** Phase 8: call server aisle revision APIs (default false). */
+  readonly serverAisleRevisions: boolean;
+  /** Phase 8: allow rollback from history (default false). */
+  readonly serverAisleRollback: boolean;
 }
 
 /** Non-production defaults. Phase 1/2 upload optimizations default off in production. */
@@ -80,6 +88,10 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   mobileServerReprocess: false,
   mobileServerReprocessReview: false,
   serverReprocessOfflineQueue: false,
+  mobileAisleRevisions: false,
+  mobileAisleHistory: false,
+  serverAisleRevisions: false,
+  serverAisleRollback: false,
 };
 
 function phaseOptInDefaultForEnvironment(environment: string): boolean {
@@ -143,5 +155,9 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
     mobileServerReprocess: bool('mobileServerReprocess', false),
     mobileServerReprocessReview: bool('mobileServerReprocessReview', false),
     serverReprocessOfflineQueue: bool('serverReprocessOfflineQueue', false),
+    mobileAisleRevisions: bool('mobileAisleRevisions', false),
+    mobileAisleHistory: bool('mobileAisleHistory', false),
+    serverAisleRevisions: bool('serverAisleRevisions', false),
+    serverAisleRollback: bool('serverAisleRollback', false),
   };
 }

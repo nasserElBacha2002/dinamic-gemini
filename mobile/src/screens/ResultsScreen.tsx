@@ -14,6 +14,8 @@ export interface ResultsScreenProps {
   onBackToAisles: () => void;
   onAnotherAisle: () => void;
   onServerReprocess?: () => void;
+  onAisleRevision?: () => void;
+  onAisleHistory?: () => void;
   onError: (message: string | null) => void;
 }
 
@@ -25,6 +27,8 @@ export function ResultsScreen({
   onBackToAisles,
   onAnotherAisle,
   onServerReprocess,
+  onAisleRevision,
+  onAisleHistory,
   onError,
 }: ResultsScreenProps) {
   const [busy, setBusy] = useState(true);
@@ -105,6 +109,18 @@ export function ResultsScreen({
       inventory &&
       aisle ? (
         <Button label="Reprocesar en el servidor" onPress={onServerReprocess} />
+      ) : null}
+      {onAisleRevision &&
+      services.aisleRevision.isActionVisible() &&
+      inventory &&
+      aisle ? (
+        <Button label="Corregir pasillo" onPress={onAisleRevision} />
+      ) : null}
+      {onAisleHistory &&
+      services.aisleRevision.isHistoryVisible() &&
+      inventory &&
+      aisle ? (
+        <Button label="Historial del pasillo" onPress={onAisleHistory} />
       ) : null}
       <Button label="Volver a pasillos" onPress={onBackToAisles} />
       <Button label="Capturar otro pasillo" onPress={onAnotherAisle} />

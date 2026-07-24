@@ -24,6 +24,7 @@ module.exports = {
     '<rootDir>/tests/authoritativeLocalResultSyncService.test.ts',
     '<rootDir>/tests/authoritativeAisleReadiness.test.ts',
     '<rootDir>/tests/serverReprocessService.test.ts',
+    '<rootDir>/tests/aisleRevisionService.test.ts',
   ],
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }],

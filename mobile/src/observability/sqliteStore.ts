@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from '../database/database';
+import { isSqliteMalformedError } from '../database/sqliteErrors';
 import type { ObservabilityEvent, ObservabilityReporter } from './types';
 
 export interface ObservabilityEventRow {
@@ -100,6 +101,7 @@ export class BufferedSqliteObservabilityReporter implements ObservabilityReporte
   private buffer: { id: string; event: ObservabilityEvent }[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private flushing = false;
+  private disabled = false;
 
   constructor(
     private readonly store: SqliteObservabilityStore,
@@ -112,6 +114,9 @@ export class BufferedSqliteObservabilityReporter implements ObservabilityReporte
   ) {}
 
   emit(event: ObservabilityEvent): void {
+    if (this.disabled) {
+      return;
+    }
     this.buffer.push({ id: this.options.createId(), event });
     const flushSize = this.options.flushSize ?? 12;
     if (this.buffer.length >= flushSize) {
@@ -128,7 +133,7 @@ export class BufferedSqliteObservabilityReporter implements ObservabilityReporte
   }
 
   async flush(): Promise<void> {
-    if (this.flushing || this.buffer.length === 0) {
+    if (this.disabled || this.flushing || this.buffer.length === 0) {
       return;
     }
     this.flushing = true;
@@ -137,6 +142,14 @@ export class BufferedSqliteObservabilityReporter implements ObservabilityReporte
       await this.store.insertMany(batch);
     } catch (err) {
       this.options.onError?.(err);
+      if (isSqliteMalformedError(err)) {
+        this.disabled = true;
+        this.buffer = [];
+        if (this.flushTimer) {
+          clearTimeout(this.flushTimer);
+          this.flushTimer = null;
+        }
+      }
     } finally {
       this.flushing = false;
     }
@@ -147,6 +160,8 @@ export class BufferedSqliteObservabilityReporter implements ObservabilityReporte
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
-    await this.flush();
+    if (!this.disabled) {
+      await this.flush();
+    }
   }
 }

@@ -188,6 +188,7 @@ from src.runtime.container.repository_builders import (
     build_review_action_repository,
     build_result_evidence_repository,
     build_server_reprocess_repository,
+    build_aisle_revision_repository,
     build_source_asset_repository,
     build_supplier_extraction_profile_repository,
     build_supplier_prompt_config_repository,
@@ -275,6 +276,7 @@ class AppContainer:
         self._authoritative_local_code_scan_repo = None
         self._authoritative_aisle_finalization_repo = None
         self._server_reprocess_repo = None
+        self._aisle_revision_repo = None
         self._preliminary_reconciliation_repo: (
             PreliminaryDetectionReconciliationRepository | None
         ) = None
@@ -381,6 +383,7 @@ class AppContainer:
         self._authoritative_local_code_scan_repo = None
         self._authoritative_aisle_finalization_repo = None
         self._server_reprocess_repo = None
+        self._aisle_revision_repo = None
         self._preliminary_reconciliation_repo = None
         self._stored_artifact_reader = None
         self._repository_backend_resolution = None
@@ -559,6 +562,124 @@ class AppContainer:
             self._build_sql_repository_or_memory
         )
         return self._server_reprocess_repo
+
+    def get_aisle_revision_repo(self):
+        if self._aisle_revision_repo is not None:
+            return self._aisle_revision_repo
+        self._aisle_revision_repo = build_aisle_revision_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._aisle_revision_repo
+
+    @property
+    def create_aisle_revision(self):
+        from src.application.use_cases.aisles.manage_aisle_revisions import (
+            CreateAisleRevision,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return CreateAisleRevision(
+            enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
+            inventory_repo=self.get_inventory_repo(),
+            aisle_repo=self.get_aisle_repo(),
+            asset_repo=self.get_asset_repo(),
+            finalization_repo=self.get_authoritative_aisle_finalization_repo(),
+            authoritative_repo=self.get_authoritative_local_code_scan_repo(),
+            position_repo=self.get_position_repo(),
+            revision_repo=self.get_aisle_revision_repo(),
+            clock=self.get_clock(),
+        )
+
+    @property
+    def update_aisle_revision_item(self):
+        from src.application.use_cases.aisles.manage_aisle_revisions import (
+            UpdateAisleRevisionItem,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return UpdateAisleRevisionItem(
+            enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
+            revision_repo=self.get_aisle_revision_repo(),
+        )
+
+    @property
+    def cancel_aisle_revision(self):
+        from src.application.use_cases.aisles.manage_aisle_revisions import (
+            CancelAisleRevision,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return CancelAisleRevision(
+            enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
+            revision_repo=self.get_aisle_revision_repo(),
+        )
+
+    @property
+    def list_aisle_history(self):
+        from src.application.use_cases.aisles.manage_aisle_revisions import (
+            ListAisleHistory,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return ListAisleHistory(
+            enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
+            revision_repo=self.get_aisle_revision_repo(),
+            finalization_repo=self.get_authoritative_aisle_finalization_repo(),
+        )
+
+    @property
+    def get_aisle_revision_diff(self):
+        from src.application.use_cases.aisles.manage_aisle_revisions import (
+            GetAisleRevisionDiff,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return GetAisleRevisionDiff(
+            enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
+            revision_repo=self.get_aisle_revision_repo(),
+        )
+
+    @property
+    def apply_aisle_revision(self):
+        from src.application.use_cases.aisles.apply_aisle_revision import (
+            ApplyAisleRevision,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return ApplyAisleRevision(
+            enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
+            revision_repo=self.get_aisle_revision_repo(),
+            finalization_repo=self.get_authoritative_aisle_finalization_repo(),
+            authoritative_repo=self.get_authoritative_local_code_scan_repo(),
+            position_repo=self.get_position_repo(),
+            clock=self.get_clock(),
+        )
+
+    @property
+    def create_rollback_revision(self):
+        from src.application.use_cases.aisles.apply_aisle_revision import (
+            CreateRollbackRevision,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return CreateRollbackRevision(
+            enabled=bool(
+                getattr(settings, "server_aisle_revisions_enabled", False)
+                and getattr(settings, "server_aisle_rollback_enabled", False)
+            ),
+            create_revision=self.create_aisle_revision,
+            apply_revision=self.apply_aisle_revision,
+            finalization_repo=self.get_authoritative_aisle_finalization_repo(),
+            revision_repo=self.get_aisle_revision_repo(),
+            update_item=self.update_aisle_revision_item,
+        )
 
     @property
     def create_server_reprocess_run(self):

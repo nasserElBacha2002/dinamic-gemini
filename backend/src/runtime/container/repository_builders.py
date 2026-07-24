@@ -523,6 +523,31 @@ def build_server_reprocess_repository(build_repo: BuildSqlOrMemory):
     )
 
 
+def build_aisle_revision_repository(build_repo: BuildSqlOrMemory):
+    """Phase 8: aisle revisions + position versions."""
+
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_aisle_revision_repository import (
+            SqlAisleRevisionRepository,
+        )
+
+        return SqlAisleRevisionRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_aisle_revision_repository import (
+            MemoryAisleRevisionRepository,
+        )
+
+        return MemoryAisleRevisionRepository()
+
+    return build_repo(
+        backend_info_name="AisleRevisionRepository",
+        sql_error_subject="aisle_revision repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
 def build_preliminary_detection_reconciliation_repository(
     build_repo: BuildSqlOrMemory[PreliminaryDetectionReconciliationRepository],
 ) -> PreliminaryDetectionReconciliationRepository:

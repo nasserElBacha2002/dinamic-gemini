@@ -28,6 +28,7 @@ module.exports = {
     '<rootDir>/tests/processingState.test.ts',
     '<rootDir>/tests/processingReadiness.test.ts',
     '<rootDir>/tests/labelPayloadContracts.test.ts',
+    '<rootDir>/tests/databaseCorruption.test.ts',
   ],
   moduleNameMapper: {
     '^@core/(.*)$': '<rootDir>/src/core/$1',
