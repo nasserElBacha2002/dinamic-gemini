@@ -602,6 +602,7 @@ class AppContainer:
         return UpdateAisleRevisionItem(
             enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
             revision_repo=self.get_aisle_revision_repo(),
+            reprocess_repo=self.get_server_reprocess_repo(),
         )
 
     @property
@@ -646,23 +647,61 @@ class AppContainer:
 
     @property
     def apply_aisle_revision(self):
+        from src.application.ports.aisle_revision_unit_of_work import AisleRevisionRepositories
+        from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
         from src.application.use_cases.aisles.apply_aisle_revision import (
             ApplyAisleRevision,
         )
         from src.config import load_settings
+        from src.infrastructure.persistence.memory_aisle_revision_unit_of_work import (
+            build_memory_aisle_revision_uow_factory,
+        )
+        from src.infrastructure.persistence.sql_aisle_revision_unit_of_work import (
+            build_sql_aisle_revision_uow_factory,
+        )
 
         settings = load_settings()
+        revision_repo = self.get_aisle_revision_repo()
+        finalization_repo = self.get_authoritative_aisle_finalization_repo()
+        authoritative_repo = self.get_authoritative_local_code_scan_repo()
+        position_repo = self.get_position_repo()
+        aisle_repo = self.get_aisle_repo()
+        inventory_repo = self.get_inventory_repo()
+        clock = self.get_clock()
+        reconciler = InventoryStatusReconciler(
+            inventory_repo=inventory_repo,
+            aisle_repo=aisle_repo,
+            clock=clock,
+        )
+        if self.is_sql_repository_backend():
+            uow_factory = build_sql_aisle_revision_uow_factory(self._get_v3_sql_client())
+        else:
+            uow_factory = build_memory_aisle_revision_uow_factory(
+                AisleRevisionRepositories(
+                    revision_repo=revision_repo,
+                    authoritative_repo=authoritative_repo,
+                    position_repo=position_repo,
+                    finalization_repo=finalization_repo,
+                    aisle_repo=aisle_repo,
+                    inventory_repo=inventory_repo,
+                )
+            )
         return ApplyAisleRevision(
             enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
-            revision_repo=self.get_aisle_revision_repo(),
-            finalization_repo=self.get_authoritative_aisle_finalization_repo(),
-            authoritative_repo=self.get_authoritative_local_code_scan_repo(),
-            position_repo=self.get_position_repo(),
-            clock=self.get_clock(),
+            uow_factory=uow_factory,
+            revision_repo=revision_repo,
+            finalization_repo=finalization_repo,
+            authoritative_repo=authoritative_repo,
+            position_repo=position_repo,
+            inventory_status_reconciler=reconciler,
+            clock=clock,
         )
 
     @property
     def create_rollback_revision(self):
+        from src.application.services.historical_finalization_snapshot_reader import (
+            HistoricalFinalizationSnapshotReader,
+        )
         from src.application.use_cases.aisles.apply_aisle_revision import (
             CreateRollbackRevision,
         )
@@ -678,7 +717,13 @@ class AppContainer:
             apply_revision=self.apply_aisle_revision,
             finalization_repo=self.get_authoritative_aisle_finalization_repo(),
             revision_repo=self.get_aisle_revision_repo(),
+            authoritative_repo=self.get_authoritative_local_code_scan_repo(),
             update_item=self.update_aisle_revision_item,
+            snapshot_reader=HistoricalFinalizationSnapshotReader(
+                finalization_repo=self.get_authoritative_aisle_finalization_repo(),
+                authoritative_repo=self.get_authoritative_local_code_scan_repo(),
+                position_repo=self.get_position_repo(),
+            ),
         )
 
     @property

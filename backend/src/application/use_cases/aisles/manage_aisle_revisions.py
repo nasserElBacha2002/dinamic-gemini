@@ -287,6 +287,8 @@ class CreateAisleRevision:
                     ),
                     created_at=now,
                     updated_at=now,
+                    base_position_version_id=a.base_position_version_id,
+                    base_position_row_version=a.base_position_row_version,
                 )
                 for a in snapshot.assets
             ]
@@ -393,6 +395,11 @@ class CreateAisleRevision:
                 base_result_ids.append(base_result_id)
             if base_position_id:
                 base_position_ids.append(base_position_id)
+            base_position_version = (
+                self._revision_repo.get_current_position_version(base_position_id)
+                if base_position_id
+                else None
+            )
             snap_assets.append(
                 RevisionSnapshotAsset(
                     asset_id=aid,
@@ -404,6 +411,12 @@ class CreateAisleRevision:
                     or (
                         fi is not None
                         and fi.item_status == "EXCLUDED"
+                    ),
+                    base_position_version_id=(
+                        base_position_version.id if base_position_version else None
+                    ),
+                    base_position_row_version=(
+                        getattr(position, "row_version", None) if position else None
                     ),
                 )
             )
@@ -419,9 +432,58 @@ class CreateAisleRevision:
 
 
 class UpdateAisleRevisionItem:
-    def __init__(self, *, enabled: bool, revision_repo: AisleRevisionRepository) -> None:
+    def __init__(
+        self,
+        *,
+        enabled: bool,
+        revision_repo: AisleRevisionRepository,
+        reprocess_repo=None,
+    ) -> None:
         self._enabled = enabled
         self._revision_repo = revision_repo
+        self._reprocess_repo = reprocess_repo
+
+    def _resolve_server_proposal(
+        self, command: UpdateAisleRevisionItemCommand
+    ) -> tuple[str, int | None]:
+        """Load a server proposal server-side; client code/quantity are never authoritative."""
+        proposal_id = (command.proposal_reference_id or "").strip()
+        if not proposal_id:
+            raise AisleRevisionConflictError(
+                "proposal_reference_id es obligatorio para adoptar una propuesta del servidor",
+                error_code="AISLE_REVISION_INVALID",
+            )
+        if self._reprocess_repo is None:
+            raise AisleRevisionConflictError(
+                "Las propuestas del servidor no están disponibles",
+                error_code="AISLE_REVISION_SERVER_PROPOSAL_UNAVAILABLE",
+            )
+        proposal = self._reprocess_repo.get_proposal(proposal_id)
+        if proposal is None or proposal.asset_id != command.asset_id:
+            raise AisleRevisionConflictError(
+                f"Propuesta del servidor no encontrada: {proposal_id}",
+                error_code="AISLE_REVISION_PROPOSAL_NOT_FOUND",
+            )
+        run = self._reprocess_repo.get_run(proposal.run_id)
+        if (
+            run is None
+            or run.inventory_id != command.inventory_id
+            or run.aisle_id != command.aisle_id
+        ):
+            raise AisleRevisionConflictError(
+                "La propuesta del servidor no pertenece a este pasillo",
+                error_code="AISLE_REVISION_PROPOSAL_OUT_OF_SCOPE",
+            )
+        code = (proposal.internal_code or "").strip()
+        if not code:
+            raise AisleRevisionConflictError(
+                "La propuesta del servidor no tiene código interno",
+                error_code="AISLE_REVISION_INVALID",
+            )
+        quantity = (
+            int(proposal.quantity) if proposal.quantity is not None else None
+        )
+        return code, quantity
 
     def execute(self, command: UpdateAisleRevisionItemCommand) -> AisleRevisionItem:
         if not self._enabled:
@@ -482,25 +544,31 @@ class UpdateAisleRevisionItem:
                 }
             )
         else:
-            code = (command.internal_code or "").strip()
-            if not code:
-                raise AisleRevisionConflictError(
-                    "internal_code is required for manual correction",
-                    error_code="AISLE_REVISION_INVALID",
-                )
-            qty = command.quantity
+            source = (
+                command.proposal_source
+                or AisleRevisionProposalSource.MANUAL.value
+            )
+            is_server_proposal = (
+                source == AisleRevisionProposalSource.SERVER_REPROCESS_PROPOSAL.value
+            )
+            if is_server_proposal:
+                code, qty = self._resolve_server_proposal(command)
+            else:
+                code = (command.internal_code or "").strip()
+                if not code:
+                    raise AisleRevisionConflictError(
+                        "internal_code is required for manual correction",
+                        error_code="AISLE_REVISION_INVALID",
+                    )
+                qty = command.quantity
             if qty is not None and qty < 0:
                 raise AisleRevisionConflictError(
                     "quantity must be >= 0",
                     error_code="AISLE_REVISION_INVALID",
                 )
-            source = (
-                command.proposal_source
-                or AisleRevisionProposalSource.MANUAL.value
-            )
             status = (
                 AisleRevisionItemStatus.ADOPT_REMOTE.value
-                if source == AisleRevisionProposalSource.SERVER_REPROCESS_PROPOSAL.value
+                if is_server_proposal
                 else AisleRevisionItemStatus.MODIFIED.value
             )
             updated = AisleRevisionItem(

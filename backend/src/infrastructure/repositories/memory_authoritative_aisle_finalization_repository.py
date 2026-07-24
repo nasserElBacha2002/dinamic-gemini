@@ -51,10 +51,56 @@ class MemoryAuthoritativeAisleFinalizationRepository:
             and e.is_current
         ]
 
+    def get_current_exclusion(
+        self, *, inventory_id: str, aisle_id: str, asset_id: str
+    ) -> AuthoritativeAisleExcludedAsset | None:
+        for row in self._exclusions.values():
+            if (
+                row.inventory_id == inventory_id
+                and row.aisle_id == aisle_id
+                and row.asset_id == asset_id
+                and row.is_current
+            ):
+                return row
+        return None
+
+    def supersede_exclusion(
+        self, *, inventory_id: str, aisle_id: str, asset_id: str, now: datetime
+    ) -> bool:
+        with self._lock:
+            return self._supersede_exclusion_locked(
+                inventory_id=inventory_id, aisle_id=aisle_id, asset_id=asset_id, now=now
+            )
+
+    def _supersede_exclusion_locked(
+        self, *, inventory_id: str, aisle_id: str, asset_id: str, now: datetime
+    ) -> bool:
+        superseded = False
+        for row_id, row in list(self._exclusions.items()):
+            if (
+                row.inventory_id == inventory_id
+                and row.aisle_id == aisle_id
+                and row.asset_id == asset_id
+                and row.is_current
+            ):
+                self._exclusions[row_id] = AuthoritativeAisleExcludedAsset(
+                    **{**row.__dict__, "is_current": False, "updated_at": now}
+                )
+                superseded = True
+        return superseded
+
     def upsert_exclusion(
         self, row: AuthoritativeAisleExcludedAsset
     ) -> AuthoritativeAisleExcludedAsset:
         with self._lock:
+            # Mirror SQL: at most one current exclusion per (aisle, asset); history is kept.
+            if row.is_current:
+                self._supersede_exclusion_locked(
+                    inventory_id=row.inventory_id,
+                    aisle_id=row.aisle_id,
+                    asset_id=row.asset_id,
+                    now=row.updated_at,
+                )
             self._exclusions[row.id] = row
             return row
 

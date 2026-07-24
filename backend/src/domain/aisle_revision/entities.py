@@ -107,6 +107,8 @@ class AisleRevision:
     row_version: int
     created_at: datetime
     updated_at: datetime
+    #: Canonical hash of the applied mutation payload; guards apply retries (Phase 8 corrections).
+    apply_content_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -125,6 +127,9 @@ class AisleRevisionItem:
     item_status: str
     created_at: datetime
     updated_at: datetime
+    #: Position version observed when the revision snapshot was taken (compare-and-swap on apply).
+    base_position_version_id: str | None = None
+    base_position_row_version: int | None = None
 
 
 @dataclass(frozen=True)

@@ -44,6 +44,17 @@ from src.runtime.app_container import get_app_container
 router = APIRouter()
 
 
+def _require_actor_id(user: AuthUser) -> str:
+    actor = (getattr(user, "id", None) or "").strip()
+    if not actor:
+        raise StructuredApiHttpError(
+            401,
+            error_code="AISLE_REVISION_ACTOR_REQUIRED",
+            detail="Authenticated user id is required",
+        )
+    return actor
+
+
 def _iso(dt) -> str | None:
     if dt is None:
         return None
@@ -134,14 +145,33 @@ def get_revision_capabilities(
     aisle_id: str,
     _user: AuthUser = Depends(get_current_admin),
 ) -> AisleRevisionCapabilitiesResponse:
-    del inventory_id, aisle_id
+    container = get_app_container()
+    from src.application.use_cases.aisles.get_aisle_revision_capabilities import (
+        GetAisleRevisionCapabilities,
+    )
+    from src.config import load_settings
+
     settings = load_settings()
-    enabled = bool(getattr(settings, "server_aisle_revisions_enabled", False))
-    rollback = bool(getattr(settings, "server_aisle_rollback_enabled", False))
+    try:
+        caps = GetAisleRevisionCapabilities(
+            revisions_enabled=bool(
+                getattr(settings, "server_aisle_revisions_enabled", False)
+            ),
+            rollback_enabled=bool(
+                getattr(settings, "server_aisle_rollback_enabled", False)
+            ),
+            inventory_repo=container.get_inventory_repo(),
+            aisle_repo=container.get_aisle_repo(),
+            finalization_repo=container.get_authoritative_aisle_finalization_repo(),
+            revision_repo=container.get_aisle_revision_repo(),
+        ).execute(inventory_id=inventory_id, aisle_id=aisle_id)
+    except Exception as exc:
+        _map_errors(exc)
+        raise
     return AisleRevisionCapabilitiesResponse(
-        aisle_revisions_enabled=enabled,
-        aisle_rollback_enabled=enabled and rollback,
-        aisle_history_enabled=enabled,
+        aisle_revisions_enabled=caps.aisle_revisions_enabled,
+        aisle_rollback_enabled=caps.aisle_rollback_enabled,
+        aisle_history_enabled=caps.aisle_history_enabled,
     )
 
 
@@ -164,7 +194,7 @@ def create_revision(
                 revision_id=body.revision_id,
                 revision_type=body.revision_type,
                 reason=body.reason,
-                requested_by=str(getattr(user, "id", None) or getattr(user, "username", "admin")),
+                requested_by=_require_actor_id(user),
             )
         )
         return _revision_response(revision, replayed=replayed)
@@ -192,7 +222,7 @@ def update_revision_item(
                 aisle_id=aisle_id,
                 revision_id=revision_id,
                 asset_id=asset_id,
-                actor_id=str(getattr(user, "id", None) or getattr(user, "username", "admin")),
+                actor_id=_require_actor_id(user),
                 internal_code=body.internal_code,
                 quantity=body.quantity,
                 exclusion_action=body.exclusion_action,
@@ -226,7 +256,7 @@ def apply_revision(
                 revision_id=revision_id,
                 apply_id=body.apply_id,
                 expected_base_finalization_id=body.expected_base_finalization_id,
-                applied_by=str(getattr(user, "id", None) or getattr(user, "username", "admin")),
+                applied_by=_require_actor_id(user),
             )
         )
         return _revision_response(revision)
@@ -350,9 +380,7 @@ def rollback_aisle(
                 rollback_id=body.rollback_id,
                 target_finalization_id=body.target_finalization_id,
                 reason=body.reason,
-                requested_by=str(
-                    getattr(user, "id", None) or getattr(user, "username", "admin")
-                ),
+                requested_by=_require_actor_id(user),
                 apply_immediately=body.apply_immediately,
             )
         )

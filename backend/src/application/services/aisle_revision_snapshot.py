@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,6 +24,9 @@ class RevisionSnapshotAsset:
     base_internal_code: str | None
     base_quantity: int | None
     excluded: bool
+    #: Position lineage observed at snapshot time; enables compare-and-swap on apply.
+    base_position_version_id: str | None = None
+    base_position_row_version: int | None = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,8 @@ class RevisionSnapshot:
                     "base_internal_code": a.base_internal_code,
                     "base_quantity": a.base_quantity,
                     "excluded": a.excluded,
+                    "base_position_version_id": a.base_position_version_id,
+                    "base_position_row_version": a.base_position_row_version,
                 }
                 for a in self.assets
             ],
@@ -69,6 +74,12 @@ def parse_revision_snapshot(raw: str) -> RevisionSnapshot:
             base_internal_code=a.get("base_internal_code"),
             base_quantity=a.get("base_quantity"),
             excluded=bool(a.get("excluded")),
+            base_position_version_id=a.get("base_position_version_id"),
+            base_position_row_version=(
+                int(a["base_position_row_version"])
+                if a.get("base_position_row_version") is not None
+                else None
+            ),
         )
         for a in (data.get("assets") or [])
     )
@@ -152,16 +163,24 @@ def calculate_revision_diff(
     return out
 
 
-def apply_request_content_hash(
+def canonical_apply_content_hash(
     *,
-    apply_id: str,
     revision_id: str,
-    expected_base_finalization_id: str,
+    base_finalization_id: str,
+    items: Sequence[Mapping[str, Any]],
 ) -> str:
+    """Hash the mutation payload of an apply request.
+
+    Deliberately excludes ``apply_id`` and generated ids: the same apply_id retried with the
+    same item payload must produce the same hash (replay), while an edited payload must not.
+    """
     payload: dict[str, Any] = {
-        "apply_id": apply_id,
         "revision_id": revision_id,
-        "expected_base_finalization_id": expected_base_finalization_id,
+        "base_finalization_id": base_finalization_id,
+        "items": sorted(
+            ({str(k): v for k, v in item.items()} for item in items),
+            key=lambda entry: str(entry.get("asset_id") or ""),
+        ),
     }
-    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()

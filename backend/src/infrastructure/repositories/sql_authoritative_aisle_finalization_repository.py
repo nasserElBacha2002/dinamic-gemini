@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from typing import Any
 
 from src.database.sqlserver import SqlServerClient
 from src.domain.authoritative_aisle_finalization.entities import (
@@ -11,6 +13,7 @@ from src.domain.authoritative_aisle_finalization.entities import (
     AuthoritativeAisleFinalization,
     AuthoritativeAisleFinalizationItem,
 )
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 
 _FIN_COLS = (
@@ -20,6 +23,11 @@ _FIN_COLS = (
     "created_at, updated_at, supersedes_finalization_id, revision_id"
 )
 
+_EXCLUSION_COLS = (
+    "id, inventory_id, aisle_id, asset_id, reason, excluded_by, excluded_at, "
+    "is_current, created_at, updated_at"
+)
+
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
@@ -27,6 +35,21 @@ def _ensure_utc(dt: datetime | None) -> datetime | None:
     if dt.tzinfo is not None:
         return dt
     return dt.replace(tzinfo=timezone.utc)
+
+
+def _exclusion_from_row(row) -> AuthoritativeAisleExcludedAsset:
+    return AuthoritativeAisleExcludedAsset(
+        id=normalize_db_str(getattr(row, "id", None)),
+        inventory_id=normalize_db_str(getattr(row, "inventory_id", None)),
+        aisle_id=normalize_db_str(getattr(row, "aisle_id", None)),
+        asset_id=normalize_db_str(getattr(row, "asset_id", None)),
+        reason=normalize_db_str(getattr(row, "reason", None)),
+        excluded_by=normalize_db_str(getattr(row, "excluded_by", None)),
+        excluded_at=_ensure_utc(getattr(row, "excluded_at", None)),  # type: ignore[arg-type]
+        is_current=bool(getattr(row, "is_current", False)),
+        created_at=_ensure_utc(getattr(row, "created_at", None)),  # type: ignore[arg-type]
+        updated_at=_ensure_utc(getattr(row, "updated_at", None)),  # type: ignore[arg-type]
+    )
 
 
 def _fin_from_row(row) -> AuthoritativeAisleFinalization:
@@ -62,11 +85,30 @@ def _fin_from_row(row) -> AuthoritativeAisleFinalization:
 
 
 class SqlAuthoritativeAisleFinalizationRepository:
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
+
+    @contextmanager
+    def _write_cursor(self) -> Generator[Any, None, None]:
+        """Cursor for writes: joins the caller's transaction when bound, else owns one."""
+        if self._connection is not None:
+            cursor = self._connection.cursor()  # type: ignore[attr-defined]
+            try:
+                yield cursor
+            finally:
+                cursor.close()
+            return
+        with self._client.begin_transaction() as txn:
+            cursor = txn.connection.cursor()
+            try:
+                yield cursor
+                txn.commit()
+            finally:
+                cursor.close()
 
     def get_by_id(self, finalization_id: str) -> AuthoritativeAisleFinalization | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"SELECT {_FIN_COLS} FROM authoritative_aisle_finalizations WHERE id = ?",
                 (finalization_id.strip(),),
@@ -75,7 +117,7 @@ class SqlAuthoritativeAisleFinalizationRepository:
         return _fin_from_row(row) if row else None
 
     def get_current_for_aisle(self, aisle_id: str) -> AuthoritativeAisleFinalization | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"SELECT {_FIN_COLS} FROM authoritative_aisle_finalizations "
                 "WHERE aisle_id = ? AND is_current = 1",
@@ -85,7 +127,7 @@ class SqlAuthoritativeAisleFinalizationRepository:
         return _fin_from_row(row) if row else None
 
     def max_version_for_aisle(self, aisle_id: str) -> int:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 "SELECT MAX(finalization_version) AS max_v FROM authoritative_aisle_finalizations "
                 "WHERE aisle_id = ?",
@@ -98,7 +140,7 @@ class SqlAuthoritativeAisleFinalizationRepository:
         return int(val or 0)
 
     def list_items(self, finalization_id: str) -> Sequence[AuthoritativeAisleFinalizationItem]:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 "SELECT id, finalization_id, asset_id, authoritative_result_id, position_id, "
                 "item_status, created_at FROM authoritative_aisle_finalization_items "
@@ -124,35 +166,42 @@ class SqlAuthoritativeAisleFinalizationRepository:
     def list_current_exclusions(
         self, *, inventory_id: str, aisle_id: str
     ) -> Sequence[AuthoritativeAisleExcludedAsset]:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
-                "SELECT id, inventory_id, aisle_id, asset_id, reason, excluded_by, excluded_at, "
-                "is_current, created_at, updated_at FROM authoritative_aisle_excluded_assets "
+                f"SELECT {_EXCLUSION_COLS} FROM authoritative_aisle_excluded_assets "
                 "WHERE inventory_id = ? AND aisle_id = ? AND is_current = 1",
                 (inventory_id.strip(), aisle_id.strip()),
             )
             rows = cur.fetchall()
-        return [
-            AuthoritativeAisleExcludedAsset(
-                id=normalize_db_str(getattr(r, "id", None)),
-                inventory_id=normalize_db_str(getattr(r, "inventory_id", None)),
-                aisle_id=normalize_db_str(getattr(r, "aisle_id", None)),
-                asset_id=normalize_db_str(getattr(r, "asset_id", None)),
-                reason=normalize_db_str(getattr(r, "reason", None)),
-                excluded_by=normalize_db_str(getattr(r, "excluded_by", None)),
-                excluded_at=_ensure_utc(getattr(r, "excluded_at", None)),  # type: ignore[arg-type]
-                is_current=bool(getattr(r, "is_current", False)),
-                created_at=_ensure_utc(getattr(r, "created_at", None)),  # type: ignore[arg-type]
-                updated_at=_ensure_utc(getattr(r, "updated_at", None)),  # type: ignore[arg-type]
+        return [_exclusion_from_row(r) for r in rows]
+
+    def get_current_exclusion(
+        self, *, inventory_id: str, aisle_id: str, asset_id: str
+    ) -> AuthoritativeAisleExcludedAsset | None:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
+            cur.execute(
+                f"SELECT TOP 1 {_EXCLUSION_COLS} FROM authoritative_aisle_excluded_assets "
+                "WHERE inventory_id = ? AND aisle_id = ? AND asset_id = ? AND is_current = 1",
+                (inventory_id.strip(), aisle_id.strip(), asset_id.strip()),
             )
-            for r in rows
-        ]
+            row = cur.fetchone()
+        return _exclusion_from_row(row) if row else None
+
+    def supersede_exclusion(
+        self, *, inventory_id: str, aisle_id: str, asset_id: str, now: datetime
+    ) -> bool:
+        with self._write_cursor() as cur:
+            cur.execute(
+                "UPDATE authoritative_aisle_excluded_assets SET is_current = 0, updated_at = ? "
+                "WHERE inventory_id = ? AND aisle_id = ? AND asset_id = ? AND is_current = 1",
+                (now, inventory_id.strip(), aisle_id.strip(), asset_id.strip()),
+            )
+            return int(cur.rowcount or 0) > 0
 
     def upsert_exclusion(
         self, row: AuthoritativeAisleExcludedAsset
     ) -> AuthoritativeAisleExcludedAsset:
-        with self._client.begin_transaction() as txn:
-            cur = txn.connection.cursor()
+        with self._write_cursor() as cur:
             cur.execute(
                 "UPDATE authoritative_aisle_excluded_assets SET is_current = 0, updated_at = ? "
                 "WHERE aisle_id = ? AND asset_id = ? AND is_current = 1",
@@ -184,8 +233,7 @@ class SqlAuthoritativeAisleFinalizationRepository:
         items: Sequence[AuthoritativeAisleFinalizationItem],
         supersede_current: bool,
     ) -> AuthoritativeAisleFinalization:
-        with self._client.begin_transaction() as txn:
-            cur = txn.connection.cursor()
+        with self._write_cursor() as cur:
             if supersede_current:
                 cur.execute(
                     "UPDATE authoritative_aisle_finalizations SET is_current = 0, updated_at = ? "
@@ -249,8 +297,7 @@ class SqlAuthoritativeAisleFinalizationRepository:
         lease_expires_at: datetime,
         now: datetime,
     ) -> bool:
-        with self._client.begin_transaction() as txn:
-            cur = txn.connection.cursor()
+        with self._write_cursor() as cur:
             cur.execute(
                 "SELECT owner_token, lease_expires_at FROM authoritative_aisle_finalization_locks "
                 "WITH (UPDLOCK, HOLDLOCK) WHERE aisle_id = ?",
@@ -279,8 +326,7 @@ class SqlAuthoritativeAisleFinalizationRepository:
 
     def release_lock(self, *, aisle_id: str, owner_token: str, now: datetime) -> bool:
         del now  # API symmetry; delete is unconditional for owner
-        with self._client.begin_transaction() as txn:
-            cur = txn.connection.cursor()
+        with self._write_cursor() as cur:
             cur.execute(
                 "SELECT owner_token FROM authoritative_aisle_finalization_locks WHERE aisle_id = ?",
                 (aisle_id,),

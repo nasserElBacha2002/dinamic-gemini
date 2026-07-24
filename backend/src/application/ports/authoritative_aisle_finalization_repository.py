@@ -30,6 +30,16 @@ class AuthoritativeAisleFinalizationRepository(Protocol):
         self, *, inventory_id: str, aisle_id: str
     ) -> Sequence[AuthoritativeAisleExcludedAsset]: ...
 
+    def get_current_exclusion(
+        self, *, inventory_id: str, aisle_id: str, asset_id: str
+    ) -> AuthoritativeAisleExcludedAsset | None: ...
+
+    def supersede_exclusion(
+        self, *, inventory_id: str, aisle_id: str, asset_id: str, now: datetime
+    ) -> bool:
+        """Mark the current exclusion row (if any) as historical. Never deletes history."""
+        ...
+
     def upsert_exclusion(self, row: AuthoritativeAisleExcludedAsset) -> AuthoritativeAisleExcludedAsset: ...
 
     def save_finalization(

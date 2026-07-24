@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 
+from src.application.ports.aisle_revision_unit_of_work import AisleRevisionRepositories
 from src.application.use_cases.aisles.apply_aisle_revision import (
     ApplyAisleRevision,
     ApplyAisleRevisionCommand,
@@ -36,6 +37,9 @@ from src.domain.authoritative_local_code_scan.entities import (
 )
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.positions.entities import Position, PositionStatus
+from src.infrastructure.persistence.memory_aisle_revision_unit_of_work import (
+    build_memory_aisle_revision_uow_factory,
+)
 from src.infrastructure.repositories.memory_aisle_revision_repository import (
     MemoryAisleRevisionRepository,
 )
@@ -45,7 +49,6 @@ from src.infrastructure.repositories.memory_authoritative_aisle_finalization_rep
 from src.infrastructure.repositories.memory_authoritative_local_code_scan_repository import (
     MemoryAuthoritativeLocalCodeScanRepository,
 )
-
 
 class _MemInventory:
     def __init__(self) -> None:
@@ -246,8 +249,19 @@ def _seed():
         revision_repo=rev_repo,
     )
     update = UpdateAisleRevisionItem(enabled=True, revision_repo=rev_repo)
+    uow_factory = build_memory_aisle_revision_uow_factory(
+        AisleRevisionRepositories(
+            revision_repo=rev_repo,
+            authoritative_repo=auth_repo,
+            position_repo=pos_repo,
+            finalization_repo=fin_repo,
+            aisle_repo=aisle_repo,
+            inventory_repo=inv_repo,
+        )
+    )
     apply = ApplyAisleRevision(
         enabled=True,
+        uow_factory=uow_factory,
         revision_repo=rev_repo,
         finalization_repo=fin_repo,
         authoritative_repo=auth_repo,
@@ -258,6 +272,7 @@ def _seed():
         "aisle_id": aisle_id,
         "asset_id": asset_id,
         "fin_id": fin_id,
+        "position_id": position_id,
         "create": create,
         "update": update,
         "apply": apply,
@@ -265,6 +280,7 @@ def _seed():
         "auth_repo": auth_repo,
         "rev_repo": rev_repo,
         "pos_repo": pos_repo,
+        "uow_factory": uow_factory,
     }
 
 
@@ -450,6 +466,7 @@ def test_rollback_creates_new_version_not_reactivating_old():
         apply_revision=ctx["apply"],
         finalization_repo=ctx["fin_repo"],
         revision_repo=ctx["rev_repo"],
+        authoritative_repo=ctx["auth_repo"],
         update_item=ctx["update"],
     )
     rolled = rollback.execute(

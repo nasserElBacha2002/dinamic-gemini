@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from typing import Any
 
 from src.database.sqlserver import SqlServerClient
 from src.domain.aisle_revision.entities import (
@@ -12,13 +14,21 @@ from src.domain.aisle_revision.entities import (
     PositionVersion,
     revision_is_open,
 )
+from src.infrastructure.database.sql_transaction import sql_repository_cursor
 from src.infrastructure.repositories.db_row_text import normalize_db_str, optional_nonempty_db_str
 
 _REV_COLS = (
     "id, inventory_id, aisle_id, base_finalization_id, new_finalization_id, revision_type, "
     "status, reason, requested_by, requested_at, started_at, completed_at, canceled_at, "
     "failed_at, failure_code, failure_message, apply_id, snapshot_json, content_hash, "
-    "row_version, created_at, updated_at"
+    "row_version, created_at, updated_at, apply_content_hash"
+)
+
+_ITEM_COLS = (
+    "id, revision_id, asset_id, base_result_id, base_position_id, proposed_internal_code, "
+    "proposed_quantity, proposed_exclusion_state, proposal_source, proposal_reference_id, "
+    "change_reason, item_status, created_at, updated_at, base_position_version_id, "
+    "base_position_row_version"
 )
 
 
@@ -54,6 +64,9 @@ def _rev_from_row(row) -> AisleRevision:
         row_version=int(getattr(row, "row_version", 1) or 1),
         created_at=_utc(getattr(row, "created_at", None)),  # type: ignore[arg-type]
         updated_at=_utc(getattr(row, "updated_at", None)),  # type: ignore[arg-type]
+        apply_content_hash=optional_nonempty_db_str(
+            getattr(row, "apply_content_hash", None)
+        ),
     )
 
 
@@ -83,6 +96,14 @@ def _item_from_row(row) -> AisleRevisionItem:
         item_status=normalize_db_str(getattr(row, "item_status", None)),
         created_at=_utc(getattr(row, "created_at", None)),  # type: ignore[arg-type]
         updated_at=_utc(getattr(row, "updated_at", None)),  # type: ignore[arg-type]
+        base_position_version_id=optional_nonempty_db_str(
+            getattr(row, "base_position_version_id", None)
+        ),
+        base_position_row_version=(
+            int(getattr(row, "base_position_row_version"))
+            if getattr(row, "base_position_row_version", None) is not None
+            else None
+        ),
     )
 
 
@@ -113,11 +134,30 @@ def _pv_from_row(row) -> PositionVersion:
 
 
 class SqlAisleRevisionRepository:
-    def __init__(self, client: SqlServerClient) -> None:
+    def __init__(self, client: SqlServerClient, *, connection: object | None = None) -> None:
         self._client = client
+        self._connection = connection
+
+    @contextmanager
+    def _write_cursor(self) -> Generator[Any, None, None]:
+        """Cursor for writes: joins the caller's transaction when bound, else owns one."""
+        if self._connection is not None:
+            cursor = self._connection.cursor()  # type: ignore[attr-defined]
+            try:
+                yield cursor
+            finally:
+                cursor.close()
+            return
+        with self._client.begin_transaction() as txn:
+            cursor = txn.connection.cursor()
+            try:
+                yield cursor
+                txn.commit()
+            finally:
+                cursor.close()
 
     def get_revision(self, revision_id: str) -> AisleRevision | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"SELECT {_REV_COLS} FROM aisle_revisions WHERE id = ?",
                 (revision_id.strip(),),
@@ -126,7 +166,7 @@ class SqlAisleRevisionRepository:
         return _rev_from_row(row) if row else None
 
     def get_open_revision_for_aisle(self, aisle_id: str) -> AisleRevision | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"SELECT TOP 1 {_REV_COLS} FROM aisle_revisions WHERE aisle_id = ? "
                 "AND status IN ('DRAFT','OPEN','IN_REVIEW','READY_TO_APPLY','APPLYING') "
@@ -140,7 +180,7 @@ class SqlAisleRevisionRepository:
         self, *, aisle_id: str, limit: int = 50
     ) -> Sequence[AisleRevision]:
         lim = max(1, min(int(limit), 200))
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"SELECT TOP ({lim}) {_REV_COLS} FROM aisle_revisions WHERE aisle_id = ? "
                 "ORDER BY requested_at DESC",
@@ -150,24 +190,18 @@ class SqlAisleRevisionRepository:
         return [_rev_from_row(r) for r in rows]
 
     def list_items(self, revision_id: str) -> Sequence[AisleRevisionItem]:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
-                "SELECT id, revision_id, asset_id, base_result_id, base_position_id, "
-                "proposed_internal_code, proposed_quantity, proposed_exclusion_state, "
-                "proposal_source, proposal_reference_id, change_reason, item_status, "
-                "created_at, updated_at FROM aisle_revision_items WHERE revision_id = ?",
+                f"SELECT {_ITEM_COLS} FROM aisle_revision_items WHERE revision_id = ?",
                 (revision_id.strip(),),
             )
             rows = cur.fetchall()
         return [_item_from_row(r) for r in rows]
 
     def get_item(self, *, revision_id: str, asset_id: str) -> AisleRevisionItem | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
-                "SELECT id, revision_id, asset_id, base_result_id, base_position_id, "
-                "proposed_internal_code, proposed_quantity, proposed_exclusion_state, "
-                "proposal_source, proposal_reference_id, change_reason, item_status, "
-                "created_at, updated_at FROM aisle_revision_items "
+                f"SELECT {_ITEM_COLS} FROM aisle_revision_items "
                 "WHERE revision_id = ? AND asset_id = ?",
                 (revision_id.strip(), asset_id.strip()),
             )
@@ -180,8 +214,7 @@ class SqlAisleRevisionRepository:
         *,
         items: Sequence[AisleRevisionItem] | None = None,
     ) -> AisleRevision:
-        with self._client.begin_transaction() as txn:
-            cur = txn.connection.cursor()
+        with self._write_cursor() as cur:
             cur.execute("SELECT id FROM aisle_revisions WHERE id = ?", (revision.id,))
             exists = cur.fetchone() is not None
             vals = (
@@ -205,6 +238,7 @@ class SqlAisleRevisionRepository:
                 revision.content_hash,
                 revision.row_version,
                 revision.updated_at,
+                revision.apply_content_hash,
                 revision.id,
             )
             if exists:
@@ -213,7 +247,7 @@ class SqlAisleRevisionRepository:
                     "new_finalization_id=?, revision_type=?, status=?, reason=?, requested_by=?, "
                     "requested_at=?, started_at=?, completed_at=?, canceled_at=?, failed_at=?, "
                     "failure_code=?, failure_message=?, apply_id=?, snapshot_json=?, content_hash=?, "
-                    "row_version=?, updated_at=? WHERE id=?",
+                    "row_version=?, updated_at=?, apply_content_hash=? WHERE id=?",
                     vals,
                 )
             else:
@@ -222,8 +256,9 @@ class SqlAisleRevisionRepository:
                     "id, inventory_id, aisle_id, base_finalization_id, new_finalization_id, "
                     "revision_type, status, reason, requested_by, requested_at, started_at, "
                     "completed_at, canceled_at, failed_at, failure_code, failure_message, apply_id, "
-                    "snapshot_json, content_hash, row_version, created_at, updated_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "snapshot_json, content_hash, row_version, created_at, updated_at, "
+                    "apply_content_hash) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         revision.id,
                         revision.inventory_id,
@@ -247,6 +282,7 @@ class SqlAisleRevisionRepository:
                         revision.row_version,
                         revision.created_at,
                         revision.updated_at,
+                        revision.apply_content_hash,
                     ),
                 )
             if items is not None:
@@ -271,11 +307,8 @@ class SqlAisleRevisionRepository:
 
     def _insert_item(self, cur, item: AisleRevisionItem) -> None:
         cur.execute(
-            "INSERT INTO aisle_revision_items ("
-            "id, revision_id, asset_id, base_result_id, base_position_id, "
-            "proposed_internal_code, proposed_quantity, proposed_exclusion_state, "
-            "proposal_source, proposal_reference_id, change_reason, item_status, "
-            "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            f"INSERT INTO aisle_revision_items ({_ITEM_COLS}) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 item.id,
                 item.revision_id,
@@ -291,12 +324,13 @@ class SqlAisleRevisionRepository:
                 item.item_status,
                 item.created_at,
                 item.updated_at,
+                item.base_position_version_id,
+                item.base_position_row_version,
             ),
         )
 
     def save_item(self, item: AisleRevisionItem) -> AisleRevisionItem:
-        with self._client.begin_transaction() as txn:
-            cur = txn.connection.cursor()
+        with self._write_cursor() as cur:
             cur.execute(
                 "DELETE FROM aisle_revision_items WHERE revision_id = ? AND asset_id = ?",
                 (item.revision_id, item.asset_id),
@@ -313,8 +347,7 @@ class SqlAisleRevisionRepository:
         lease_expires_at: datetime,
         now: datetime,
     ) -> bool:
-        with self._client.begin_transaction() as txn:
-            cur = txn.connection.cursor()
+        with self._write_cursor() as cur:
             cur.execute(
                 "SELECT owner_token, lease_expires_at FROM aisle_revision_locks "
                 "WITH (UPDLOCK, HOLDLOCK) WHERE aisle_id = ?",
@@ -342,8 +375,7 @@ class SqlAisleRevisionRepository:
 
     def release_lock(self, *, aisle_id: str, owner_token: str, now: datetime) -> bool:
         del now
-        with self._client.begin_transaction() as txn:
-            cur = txn.connection.cursor()
+        with self._write_cursor() as cur:
             cur.execute(
                 "DELETE FROM aisle_revision_locks WHERE aisle_id = ? AND owner_token = ?",
                 (aisle_id, owner_token),
@@ -351,7 +383,7 @@ class SqlAisleRevisionRepository:
         return True
 
     def get_current_position_version(self, position_id: str) -> PositionVersion | None:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 "SELECT TOP 1 id, position_id, version, aisle_id, asset_id, internal_code, "
                 "quantity, result_id, is_current, supersedes_position_version_id, revision_id, "
@@ -363,7 +395,7 @@ class SqlAisleRevisionRepository:
         return _pv_from_row(row) if row else None
 
     def max_position_version(self, position_id: str) -> int:
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 "SELECT MAX(version) AS max_v FROM position_versions WHERE position_id = ?",
                 (position_id.strip(),),
@@ -377,8 +409,7 @@ class SqlAisleRevisionRepository:
         *,
         supersede_current: bool,
     ) -> PositionVersion:
-        with self._client.begin_transaction() as txn:
-            cur = txn.connection.cursor()
+        with self._write_cursor() as cur:
             if supersede_current:
                 cur.execute(
                     "UPDATE position_versions SET is_current = 0 WHERE position_id = ? AND is_current = 1",
@@ -414,7 +445,7 @@ class SqlAisleRevisionRepository:
         self, *, aisle_id: str, limit: int = 500
     ) -> Sequence[PositionVersion]:
         lim = max(1, min(int(limit), 2000))
-        with self._client.cursor() as cur:
+        with sql_repository_cursor(self._client, connection=self._connection) as cur:
             cur.execute(
                 f"SELECT TOP ({lim}) id, position_id, version, aisle_id, asset_id, internal_code, "
                 "quantity, result_id, is_current, supersedes_position_version_id, revision_id, "
