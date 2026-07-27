@@ -280,6 +280,9 @@ def _seed():
         "auth_repo": auth_repo,
         "rev_repo": rev_repo,
         "pos_repo": pos_repo,
+        "inv_repo": inv_repo,
+        "aisle_repo": aisle_repo,
+        "asset_repo": asset_repo,
         "uow_factory": uow_factory,
     }
 

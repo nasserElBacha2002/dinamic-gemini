@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from collections.abc import Sequence
@@ -22,6 +21,7 @@ from src.application.ports.repositories import (
     PositionRepository,
     SourceAssetRepository,
 )
+from src.application.ports.server_reprocess_repository import ServerReprocessRepository
 from src.application.services.aisle_inventory_scope import require_aisle_scoped_to_inventory
 from src.application.services.aisle_revision_snapshot import (
     RevisionSnapshot,
@@ -40,10 +40,10 @@ from src.domain.aisle_revision.entities import (
     AisleRevisionType,
     revision_is_editable,
 )
+from src.domain.assets.entities import SourceAssetType
 from src.domain.authoritative_aisle_finalization.entities import (
     AuthoritativeFinalizationStatus,
 )
-from src.domain.assets.entities import SourceAssetType
 
 logger = logging.getLogger(__name__)
 
@@ -437,7 +437,7 @@ class UpdateAisleRevisionItem:
         *,
         enabled: bool,
         revision_repo: AisleRevisionRepository,
-        reprocess_repo=None,
+        reprocess_repo: ServerReprocessRepository | None = None,
     ) -> None:
         self._enabled = enabled
         self._revision_repo = revision_repo

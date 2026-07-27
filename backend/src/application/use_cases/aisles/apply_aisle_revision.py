@@ -3,12 +3,19 @@
 Apply is all-or-nothing: the mutation planner builds an immutable plan; a Unit of Work
 executes every write on a single connection/transaction. Mid-flight failures roll back
 completely — the revision is never left half-published.
+
+Downstream notification is intentionally *not* an outbox event: the only outbox in the system
+(``ArtifactPublicationOutboxStore``) is keyed by job id and artifact kind, so it cannot carry an
+aisle-level domain event, and introducing a general event outbox is out of scope here. Instead the
+committed rows are the audit trail (``aisle_revisions`` plus the new authoritative finalization),
+and inventory rollup is refreshed post-commit through ``InventoryStatusReconciler``. If an
+``AISLE_REVISION_APPLIED`` event is needed later, publish it from the reconcile hook below so it
+stays after the commit.
 """
 
 from __future__ import annotations
 
 import logging
-import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -61,7 +68,6 @@ from src.domain.aisle_revision.entities import (
 )
 from src.domain.authoritative_aisle_finalization.entities import (
     AuthoritativeAisleFinalization,
-    AuthoritativeFinalizationItemStatus,
     AuthoritativeFinalizationStatus,
 )
 from src.domain.positions.entities import PositionStatus

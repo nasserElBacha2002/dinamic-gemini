@@ -21,9 +21,9 @@ from src.api.schemas.aisle_revision_schemas import (
     UpdateAisleRevisionItemRequest,
 )
 from src.application.use_cases.aisles.apply_aisle_revision import (
-    ApplyAisleRevisionCommand,
     AisleRevisionApplyConflictError,
     AisleRevisionStaleError,
+    ApplyAisleRevisionCommand,
     CreateRollbackCommand,
 )
 from src.application.use_cases.aisles.manage_aisle_revisions import (
