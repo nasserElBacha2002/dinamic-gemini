@@ -13,7 +13,6 @@ from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
     InventoryRepository,
-    JobRepository,
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
@@ -30,6 +29,7 @@ from src.domain.client_supplier.reference_image import SupplierReferenceImage
 from src.domain.inventory.entities import Inventory, InventoryProcessingMode, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_executor import RUN_ID, V3JobExecutor
+from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
 from src.infrastructure.repositories.memory_supplier_reference_image_repository import (
     MemorySupplierReferenceImageRepository,
 )
@@ -43,46 +43,11 @@ from src.pipeline.run_metadata import (
     build_run_metadata,
     default_empty_block,
 )
-from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
 from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
 
 
-class InMemoryJobRepo(JobRepository):
-    def __init__(self) -> None:
-        self._store: dict[str, Job] = {}
-
-    def save(self, job: Job) -> None:
-        self._store[job.id] = job
-
-    def get_by_id(self, job_id: str) -> Job | None:
-        return self._store.get(job_id)
-
-    def get_latest_by_target(self, target_type: str, target_id: str) -> Job | None:
-        return None
-
-    def get_latest_by_targets(self, target_type: str, target_ids: Sequence[str]) -> dict[str, Job]:
-        return {}
-
-    def list_jobs_for_target(
-        self, target_type: str, target_id: str, *, limit: int = 50
-    ) -> Sequence[Job]:
-        return []
-
-
-
-    def list_jobs_for_targets(
-        self,
-        target_type: str,
-        target_ids: Sequence[str],
-        *,
-        job_type: str | None = None,
-    ) -> Sequence[Job]:
-        store = getattr(self, "_store", None) or getattr(self, "_jobs", None)
-        if store is None:
-            return []
-        return list_jobs_for_targets_from_store(
-            store, target_type, target_ids, job_type=job_type
-        )
+class InMemoryJobRepo(MemoryJobRepository):
+    """Full claim/reclaim contract; aisle repo is bound via mark_running."""
 
 
 class CountingJobRepo(InMemoryJobRepo):
@@ -259,7 +224,7 @@ def test_mark_success_without_run_metadata_preserves_report_path_only() -> None:
         id="aisle-1",
         inventory_id="inv-1",
         code="A01",
-        status=AisleStatus.CREATED,
+        status=AisleStatus.QUEUED,
         created_at=now,
         updated_at=now,
     )
@@ -582,8 +547,12 @@ def test_failed_job_does_not_update_operational_job_id() -> None:
 
 
 def test_mark_running_transitions_starting_job_to_running() -> None:
+    from src.infrastructure.repositories.memory_aisle_repository import MemoryAisleRepository
+    from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+
     now = datetime(2025, 3, 17, 12, 0, 0, tzinfo=timezone.utc)
-    job_repo = InMemoryJobRepo()
+    aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository(aisle_repo=aisle_repo)
     job_repo.save(
         Job(
             id="job-running",
@@ -604,7 +573,6 @@ def test_mark_running_transitions_starting_job_to_running() -> None:
         created_at=now,
         updated_at=now,
     )
-    aisle_repo = InMemoryAisleRepo()
     aisle_repo.save(aisle)
     noop = NoopRepo()
     executor = V3JobExecutor(
@@ -620,11 +588,12 @@ def test_mark_running_transitions_starting_job_to_running() -> None:
         **memory_executor_persist_kwargs(raw_label_repo=noop),
     )
 
-    executor._state.mark_running("job-running", aisle, now)
+    executor._state.mark_running("job-running", aisle, now, claim_owner_id="owner-phase5")
 
     updated = job_repo.get_by_id("job-running")
     assert updated is not None
     assert updated.status == JobStatus.RUNNING
+    assert updated.claim_owner_id == "owner-phase5"
     assert updated.current_stage == "Pipeline"
     assert updated.current_substep == "startup_confirmed"
 
@@ -739,7 +708,7 @@ def test_mark_success_persists_provider_and_prompt_key_in_result_json() -> None:
         id="aisle-1",
         inventory_id="inv-1",
         code="A01",
-        status=AisleStatus.CREATED,
+        status=AisleStatus.QUEUED,
         created_at=now,
         updated_at=now,
     )
@@ -797,7 +766,7 @@ def test_mark_success_with_run_metadata_merges_into_result_json() -> None:
         id="aisle-1",
         inventory_id="inv-1",
         code="A01",
-        status=AisleStatus.CREATED,
+        status=AisleStatus.QUEUED,
         created_at=now,
         updated_at=now,
     )
@@ -871,7 +840,7 @@ def test_execute_persists_visual_reference_context_when_resolution_fails_before_
         id=aisle_id,
         inventory_id="inv-1",
         code="A01",
-        status=AisleStatus.CREATED,
+        status=AisleStatus.QUEUED,
         created_at=now,
         updated_at=now,
     )
@@ -971,7 +940,7 @@ def test_execute_passes_resolved_visual_reference_context_to_pipeline(tmp_path: 
         id=aisle_id,
         inventory_id=inventory_id,
         code="A01",
-        status=AisleStatus.CREATED,
+        status=AisleStatus.QUEUED,
         created_at=now,
         updated_at=now,
         client_supplier_id="sup-1",
@@ -1243,7 +1212,7 @@ def test_persist_failure_sets_error_message_with_persist_prefix() -> None:
         id=aisle_id,
         inventory_id="inv-1",
         code="A01",
-        status=AisleStatus.CREATED,
+        status=AisleStatus.QUEUED,
         created_at=now,
         updated_at=now,
     )

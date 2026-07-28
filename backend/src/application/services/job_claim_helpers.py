@@ -9,9 +9,13 @@ from src.domain.jobs.entities import Job, JobStatus
 def classify_claim_after_cas_miss(
     job: Job | None,
     *,
-    execution_id: str | None,
+    claim_owner_id: str | None,
 ) -> JobClaimResult:
-    """Map current job row to a claim outcome when the CAS UPDATE affected 0 rows."""
+    """Map current job row to a claim outcome when the CAS UPDATE affected 0 rows.
+
+    ``ALREADY_OWNED`` requires both caller and persisted ``claim_owner_id`` non-null and equal.
+    Matching ``execution_id`` alone never grants ownership.
+    """
     if job is None:
         return JobClaimResult(outcome=JobClaimOutcome.NOT_FOUND, reason="job_not_found")
 
@@ -27,30 +31,35 @@ def classify_claim_after_cas_miss(
             job=job,
             previous_status=status_value,
             reason="job_terminal",
+            claim_owner_id=claim_owner_id,
         )
 
     if job.status == JobStatus.RUNNING:
-        if execution_id is None or not job.execution_id or job.execution_id == execution_id:
+        persisted = (job.claim_owner_id or "").strip() or None
+        caller = (claim_owner_id or "").strip() or None
+        if caller is not None and persisted is not None and caller == persisted:
             return JobClaimResult(
                 outcome=JobClaimOutcome.ALREADY_OWNED,
                 job=job,
                 previous_status=status_value,
-                reason="same_execution_already_running",
+                reason="same_claim_owner_already_running",
+                claim_owner_id=caller,
             )
         return JobClaimResult(
             outcome=JobClaimOutcome.CONFLICT,
             job=job,
             previous_status=status_value,
-            reason="owned_by_other_execution",
+            reason="owned_by_other_or_null_claim_owner",
+            claim_owner_id=claim_owner_id,
         )
 
     if job.status == JobStatus.STARTING:
-        # Lost the race to another claim that already moved past STARTING, or concurrent miss.
         return JobClaimResult(
             outcome=JobClaimOutcome.CONFLICT,
             job=job,
             previous_status=status_value,
             reason="claim_race_lost",
+            claim_owner_id=claim_owner_id,
         )
 
     return JobClaimResult(
@@ -58,4 +67,5 @@ def classify_claim_after_cas_miss(
         job=job,
         previous_status=status_value,
         reason=f"status_not_claimable:{status_value}",
+        claim_owner_id=claim_owner_id,
     )

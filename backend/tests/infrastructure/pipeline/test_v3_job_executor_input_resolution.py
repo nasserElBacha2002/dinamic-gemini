@@ -12,7 +12,6 @@ from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
     InventoryRepository,
-    JobRepository,
     PositionRepository,
     ProductRecordRepository,
     RawLabelRepository,
@@ -28,6 +27,7 @@ from src.infrastructure.pipeline.v3_job_executor import V3JobExecutor
 from src.infrastructure.repositories.sql_source_asset_repository import _row_to_asset
 from src.pipeline.contracts.analysis_context import AnalysisContext, VisualReferenceContext
 from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
+from tests.support.job_repository_test_base import JobRepositoryTestBase
 from tests.support.worker_phase2.executor_persist_deps import memory_executor_persist_kwargs
 
 
@@ -69,7 +69,7 @@ class _Clock(Clock):
         return datetime(2025, 3, 20, 12, 0, 0, tzinfo=timezone.utc)
 
 
-class _NoopJobRepo(JobRepository):
+class _NoopJobRepo(JobRepositoryTestBase):
     def save(self, job):  # type: ignore[no-untyped-def]
         return None
 

@@ -323,7 +323,8 @@ BEGIN
             retry_of_job_id VARCHAR(36) NULL,
             failure_code VARCHAR(64) NULL,
             failure_message NVARCHAR(2048) NULL,
-            execution_id VARCHAR(64) NULL
+            execution_id VARCHAR(64) NULL,
+            claim_owner_id VARCHAR(64) NULL
         );
         CREATE INDEX IX_inventory_jobs_target ON inventory_jobs(target_type, target_id);
     END
@@ -353,6 +354,8 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_
     ALTER TABLE inventory_jobs ADD failure_message NVARCHAR(2048) NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'execution_id')
     ALTER TABLE inventory_jobs ADD execution_id VARCHAR(64) NULL;
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'claim_owner_id')
+    ALTER TABLE inventory_jobs ADD claim_owner_id VARCHAR(64) NULL;
 -- Phase 1 multi-run (mirror migrations/versions/0010_multi_run_job_scoping.sql; update both when changing).
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'provider_name')
     ALTER TABLE inventory_jobs ADD provider_name NVARCHAR(128) NULL;

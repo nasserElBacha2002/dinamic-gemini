@@ -6,6 +6,7 @@ from __future__ import annotations
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "backend"))
@@ -47,7 +48,6 @@ def main() -> int:
         _row_to_supplier_reference_image,
     )
     from src.tools.supplier_reference_image_audit import (
-        KNOWN_INCIDENT_CLIENT_SUPPLIER_ID,
         KNOWN_INCIDENT_REFERENCE_IMAGE_ID,
         KNOWN_INCIDENT_STORAGE_PATH,
         SupplierReferenceImageAuditRow,

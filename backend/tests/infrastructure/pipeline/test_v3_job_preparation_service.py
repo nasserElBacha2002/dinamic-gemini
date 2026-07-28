@@ -13,6 +13,7 @@ from src.application.ports.repositories import (
 )
 from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.assets.entities import SourceAsset, SourceAssetType
+from src.domain.jobs.claim import JobClaimOutcome, JobClaimResult
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_preparation_service import V3JobPreparationService
 from tests.infrastructure.pipeline.test_v3_job_executor_phase5 import (
@@ -58,6 +59,11 @@ def _build_service(
     aisles = aisle_repo if aisle_repo is not None else InMemoryAisleRepo()
     assets = source_asset_repo if source_asset_repo is not None else _OnePhotoRepo(aisle_id, ts)
     state = MagicMock()
+    state.mark_running.return_value = JobClaimResult(
+        outcome=JobClaimOutcome.ACQUIRED,
+        reason="test_acquired",
+        claim_owner_id="test-owner",
+    )
     service = V3JobPreparationService(
         job_repo=jobs,
         aisle_repo=aisles,

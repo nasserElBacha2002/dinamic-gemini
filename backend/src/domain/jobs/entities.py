@@ -64,6 +64,8 @@ class Job:
     failure_code: str | None = None
     failure_message: str | None = None
     execution_id: str | None = None
+    #: Worker process that acquired STARTING→RUNNING (Phase 1 corrections). Distinct from execution_id.
+    claim_owner_id: str | None = None
     # Phase 1 — transitional indexed metadata for future multi-provider work; not a runtime provider abstraction.
     provider_name: str | None = None
     model_name: str | None = None

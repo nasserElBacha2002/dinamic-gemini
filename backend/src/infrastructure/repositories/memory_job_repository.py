@@ -1,14 +1,12 @@
 """
 In-memory implementation of JobRepository — v3.0 (Épica 4).
 
-Used when no database is configured or when SQL fallback is used.
-get_latest_by_target orders by updated_at DESC, then created_at DESC.
-
-Phase 1: claim/reclaim use an internal lock to emulate SQL atomicity for tests.
+Phase 1 corrections: claim_owner_id CAS and transactional stale reclaim (lock-emulated).
 """
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Sequence
 from datetime import datetime, timezone
@@ -22,14 +20,19 @@ from src.application.services.job_stale_reconciler import (
     STALE_RECONCILE_STATUSES,
 )
 from src.domain.aisle.entities import AisleStatus
-from src.domain.jobs.claim import JobClaimOutcome, JobClaimResult
+from src.domain.jobs.claim import JobClaimOutcome, JobClaimResult, StaleReclaimResult
 from src.domain.jobs.entities import Job, JobStatus
-from src.domain.jobs.finalization import FinalizationStatus
+from src.domain.jobs.stale_transition import apply_stale_failure_fields
 
 if TYPE_CHECKING:
     from src.application.ports.repositories import AisleRepository
 
+logger = logging.getLogger(__name__)
+
 _AISLE_ACTIVE = frozenset({AisleStatus.QUEUED, AisleStatus.PROCESSING})
+_AISLE_CLAIMABLE = frozenset(
+    {AisleStatus.QUEUED, AisleStatus.ASSETS_UPLOADED, AisleStatus.PROCESSING}
+)
 
 
 class MemoryJobRepository(JobRepository):
@@ -38,12 +41,16 @@ class MemoryJobRepository(JobRepository):
         self._lock = threading.RLock()
         self._aisle_repo = aisle_repo
 
+    def bind_aisle_repository(self, aisle_repo: AisleRepository) -> None:
+        """Attach aisle repo when constructed without one (test harnesses)."""
+        if self._aisle_repo is None:
+            self._aisle_repo = aisle_repo
+
     def save(self, job: Job) -> None:
         with self._lock:
             self._store[job.id] = job
 
     def merge_result_json(self, job_id: str, patch: dict) -> Job | None:
-        """Thread-safe merge of top-level ``result_json`` keys (Phase 2 asset_progress)."""
         with self._lock:
             job = self._store.get(job_id)
             if job is None:
@@ -80,8 +87,7 @@ class MemoryJobRepository(JobRepository):
                 if j.target_type == target_type and j.target_id == target_id
             ]
         candidates.sort(key=lambda j: (j.updated_at, j.created_at), reverse=True)
-        n = max(1, int(limit))
-        return candidates[:n]
+        return candidates[: max(1, int(limit))]
 
     def list_jobs_for_targets(
         self,
@@ -90,11 +96,9 @@ class MemoryJobRepository(JobRepository):
         *,
         job_type: str | None = None,
     ) -> Sequence[Job]:
-        """All matching jobs for targets (no per-target history cap)."""
         if not target_ids:
             return []
-        unique_ids = list(dict.fromkeys(target_ids))
-        id_set = frozenset(unique_ids)
+        id_set = frozenset(dict.fromkeys(target_ids))
         with self._lock:
             candidates = [
                 j
@@ -118,7 +122,6 @@ class MemoryJobRepository(JobRepository):
             return list(self._store.values())
 
     def claim_next_queued_job(self) -> Job | None:
-        """Atomically claim oldest QUEUED → STARTING (mirrors SQL UPDLOCK claim)."""
         with self._lock:
             candidates = [j for j in self._store.values() if j.status == JobStatus.QUEUED]
             if not candidates:
@@ -137,102 +140,213 @@ class MemoryJobRepository(JobRepository):
         job_id: str,
         *,
         now: datetime,
-        execution_id: str | None = None,
-        aisle_id: str | None = None,
+        claim_owner_id: str,
+        aisle_id: str,
     ) -> JobClaimResult:
+        owner = (claim_owner_id or "").strip()
+        if not owner:
+            return JobClaimResult(
+                outcome=JobClaimOutcome.CONFLICT,
+                reason="claim_owner_id_required",
+                claim_owner_id=None,
+            )
         with self._lock:
             job = self._store.get(job_id)
             if job is None:
                 return JobClaimResult(outcome=JobClaimOutcome.NOT_FOUND, reason="job_not_found")
 
+            if job.target_type != "aisle" or job.target_id != aisle_id:
+                return JobClaimResult(
+                    outcome=JobClaimOutcome.TARGET_MISMATCH,
+                    job=job,
+                    previous_status=job.status.value,
+                    reason="job_aisle_mismatch",
+                    claim_owner_id=owner,
+                )
+
+            if job.status in (
+                JobStatus.SUCCEEDED,
+                JobStatus.FAILED,
+                JobStatus.CANCELED,
+                JobStatus.TIMED_OUT,
+            ):
+                return JobClaimResult(
+                    outcome=JobClaimOutcome.TERMINAL,
+                    job=job,
+                    previous_status=job.status.value,
+                    reason="job_terminal",
+                    claim_owner_id=owner,
+                )
+
+            if self._aisle_repo is None:
+                return JobClaimResult(
+                    outcome=JobClaimOutcome.TARGET_NOT_FOUND,
+                    job=job,
+                    reason="aisle_repo_unavailable",
+                    claim_owner_id=owner,
+                )
+            aisle = self._aisle_repo.get_by_id(aisle_id)
+            if aisle is None:
+                return JobClaimResult(
+                    outcome=JobClaimOutcome.TARGET_NOT_FOUND,
+                    job=job,
+                    reason="aisle_not_found",
+                    claim_owner_id=owner,
+                )
+            if aisle.status not in _AISLE_CLAIMABLE:
+                return JobClaimResult(
+                    outcome=JobClaimOutcome.TARGET_INVALID_STATUS,
+                    job=job,
+                    previous_status=job.status.value,
+                    reason=f"aisle_status:{aisle.status.value}",
+                    claim_owner_id=owner,
+                )
+
             if job.status == JobStatus.RUNNING:
-                result = classify_claim_after_cas_miss(job, execution_id=execution_id)
-                if result.outcome == JobClaimOutcome.ALREADY_OWNED:
-                    aisle = self._reconcile_aisle_processing(aisle_id, now)
+                classified = classify_claim_after_cas_miss(job, claim_owner_id=owner)
+                if classified.outcome == JobClaimOutcome.ALREADY_OWNED:
+                    applied = False
+                    if aisle.status != AisleStatus.PROCESSING:
+                        aisle.mark_processing(now)
+                        self._aisle_repo.save(aisle)
+                        applied = True
                     return JobClaimResult(
                         outcome=JobClaimOutcome.ALREADY_OWNED,
                         job=job,
-                        aisle=aisle,
+                        aisle_transition_applied=applied or aisle.status == AisleStatus.PROCESSING,
                         previous_status=JobStatus.RUNNING.value,
-                        reason=result.reason,
+                        reason=classified.reason,
+                        claim_owner_id=owner,
                     )
-                return result
+                return classified
 
             if job.status != JobStatus.STARTING:
-                return classify_claim_after_cas_miss(job, execution_id=execution_id)
+                return classify_claim_after_cas_miss(job, claim_owner_id=owner)
 
-            # CAS: only STARTING may become RUNNING.
             previous = job.status.value
             job.status = JobStatus.RUNNING
+            job.claim_owner_id = owner
             job.started_at = job.started_at or now
             job.last_heartbeat_at = now
             job.current_stage = "Pipeline"
             job.current_substep = "startup_confirmed"
             job.current_step_started_at = now
             job.updated_at = now
-            # Do not bump attempt_count — set once at job creation for a new attempt.
             self._store[job.id] = job
-            aisle = self._reconcile_aisle_processing(aisle_id, now)
+            aisle.mark_processing(now)
+            self._aisle_repo.save(aisle)
+            logger.info(
+                "event=job_claim_acquired job_id=%s aisle_id=%s claim_owner_id=%s "
+                "previous_status=%s new_status=running attempt=%s",
+                job_id,
+                aisle_id,
+                owner,
+                previous,
+                job.attempt_count,
+            )
             return JobClaimResult(
                 outcome=JobClaimOutcome.ACQUIRED,
                 job=job,
-                aisle=aisle,
+                aisle_transition_applied=True,
                 previous_status=previous,
                 reason="cas_acquired",
+                claim_owner_id=owner,
             )
 
-    def try_fail_stale_job(
+    def try_reclaim_stale_job_and_reconcile_aisle(
         self,
         job_id: str,
         *,
         now: datetime,
         stale_after_seconds: int,
-    ) -> bool:
+    ) -> StaleReclaimResult:
         if stale_after_seconds <= 0:
-            return False
+            return StaleReclaimResult(won=False, reason="stale_disabled")
         with self._lock:
             job = self._store.get(job_id)
             if job is None or job.status not in STALE_RECONCILE_STATUSES:
-                return False
+                return StaleReclaimResult(won=False, job=job, reason="not_eligible")
             reference = job.last_heartbeat_at or job.updated_at
             if (now - reference).total_seconds() < stale_after_seconds:
-                return False
-            job.status = JobStatus.FAILED
-            job.failure_code = STALE_FAILURE_CODE
-            job.failure_message = STALE_FAILURE_MESSAGE
-            job.error_message = STALE_FAILURE_MESSAGE
-            job.finished_at = now
-            job.updated_at = now
-            if job.finalization_status in (
-                FinalizationStatus.IN_PROGRESS,
-                FinalizationStatus.NOT_STARTED,
-            ):
-                job.finalization_status = FinalizationStatus.FAILED
-                if job.finalization_error_code is None:
-                    job.finalization_error_code = STALE_FAILURE_CODE
-                if job.finalization_started_at is None:
-                    job.finalization_started_at = now
-            self._store[job.id] = job
-            return True
+                return StaleReclaimResult(won=False, job=job, reason="not_stale")
 
-    def reclaim_stale_running_jobs(self, stale_after_seconds: int) -> int:
+            apply_stale_failure_fields(job, now=now)
+            self._store[job.id] = job
+
+            aisle_applied = False
+            if (
+                self._aisle_repo is not None
+                and job.target_type == "aisle"
+                and job.target_id
+            ):
+                other_active = [
+                    j
+                    for j in self._store.values()
+                    if j.id != job_id
+                    and j.target_type == "aisle"
+                    and j.target_id == job.target_id
+                    and j.status in STALE_RECONCILE_STATUSES
+                ]
+                aisle = self._aisle_repo.get_by_id(job.target_id)
+                if aisle is not None and aisle.status in _AISLE_ACTIVE and not other_active:
+                    aisle.mark_failed(
+                        now,
+                        error_code=STALE_FAILURE_CODE,
+                        error_message=STALE_FAILURE_MESSAGE,
+                        retryable=True,
+                    )
+                    self._aisle_repo.save(aisle)
+                    aisle_applied = True
+                elif other_active:
+                    logger.warning(
+                        "event=job_aisle_state_inconsistency job_id=%s aisle_id=%s "
+                        "job_status=failed aisle_status=%s processing_job_id=%s",
+                        job_id,
+                        job.target_id,
+                        aisle.status.value if aisle else None,
+                        other_active[0].id,
+                    )
+
+            logger.warning(
+                "event=job_stale_reclaimed job_id=%s aisle_id=%s previous_owner=%s "
+                "new_status=failed attempt=%s",
+                job_id,
+                job.target_id if job.target_type == "aisle" else None,
+                job.claim_owner_id,
+                job.attempt_count,
+            )
+            return StaleReclaimResult(
+                won=True,
+                job=job,
+                aisle_transition_applied=aisle_applied,
+                reason="stale_reclaimed",
+            )
+
+    def reclaim_stale_running_jobs(
+        self, stale_after_seconds: int, *, batch_size: int = 100
+    ) -> int:
         if stale_after_seconds <= 0:
             return 0
         now = datetime.now(timezone.utc)
+        batch = max(1, min(int(batch_size), 500))
         with self._lock:
             candidates = [
-                j.id
+                j
                 for j in self._store.values()
                 if j.status in STALE_RECONCILE_STATUSES
                 and (now - (j.last_heartbeat_at or j.updated_at)).total_seconds()
                 >= stale_after_seconds
             ]
+            candidates.sort(
+                key=lambda j: (j.last_heartbeat_at or j.updated_at, j.id)
+            )
+            ids = [j.id for j in candidates[:batch]]
         reclaimed = 0
-        for job_id in candidates:
-            if self.try_fail_stale_job(
+        for job_id in ids:
+            result = self.try_reclaim_stale_job_and_reconcile_aisle(
                 job_id, now=now, stale_after_seconds=stale_after_seconds
-            ):
-                self._reconcile_aisle_after_stale(job_id, now=now)
+            )
+            if result.won:
                 reclaimed += 1
         return reclaimed
 
@@ -253,43 +367,3 @@ class MemoryJobRepository(JobRepository):
             ):
                 by_target[j.target_id] = j
         return by_target
-
-    def _reconcile_aisle_processing(self, aisle_id: str | None, now: datetime):
-        if not aisle_id or self._aisle_repo is None:
-            return None
-        aisle = self._aisle_repo.get_by_id(aisle_id)
-        if aisle is None:
-            return None
-        if aisle.status in (AisleStatus.QUEUED, AisleStatus.ASSETS_UPLOADED, AisleStatus.PROCESSING):
-            aisle.mark_processing(now)
-            self._aisle_repo.save(aisle)
-        return aisle
-
-    def _reconcile_aisle_after_stale(self, job_id: str, *, now: datetime) -> None:
-        if self._aisle_repo is None:
-            return
-        job = self.get_by_id(job_id)
-        if job is None or job.target_type != "aisle" or not job.target_id:
-            return
-        aisle = self._aisle_repo.get_by_id(job.target_id)
-        if aisle is None or aisle.status not in _AISLE_ACTIVE:
-            return
-        # Do not fail aisle if another active job still owns it.
-        with self._lock:
-            other_active = [
-                j
-                for j in self._store.values()
-                if j.id != job_id
-                and j.target_type == "aisle"
-                and j.target_id == job.target_id
-                and j.status in STALE_RECONCILE_STATUSES
-            ]
-        if other_active:
-            return
-        aisle.mark_failed(
-            now,
-            error_code=STALE_FAILURE_CODE,
-            error_message=STALE_FAILURE_MESSAGE,
-            retryable=True,
-        )
-        self._aisle_repo.save(aisle)

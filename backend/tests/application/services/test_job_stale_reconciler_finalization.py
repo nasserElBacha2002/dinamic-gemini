@@ -44,8 +44,8 @@ def _aisle(*, status: AisleStatus = AisleStatus.PROCESSING) -> Aisle:
 
 
 def test_stale_running_before_finalization_marks_job_and_aisle_failed() -> None:
-    job_repo = MemoryJobRepository()
     aisle_repo = MemoryAisleRepository()
+    job_repo = MemoryJobRepository(aisle_repo=aisle_repo)
     clock = FixedClock(datetime(2026, 6, 12, 12, 0, 0, tzinfo=timezone.utc))
     job = _job(status=JobStatus.RUNNING, heartbeat_age_sec=1200)
     aisle = _aisle()

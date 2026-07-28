@@ -7,6 +7,7 @@ Loads job/aisle/assets, applies dispatch gate semantics, and marks STARTING jobs
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,6 +18,7 @@ from src.application.ports.repositories import (
     SourceAssetRepository,
 )
 from src.domain.aisle.entities import Aisle
+from src.domain.jobs.claim import JobClaimResult
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
 from src.jobs.worker_bootstrap import append_worker_bootstrap_event, checkpoint_v3_job_bootstrap
@@ -152,14 +154,21 @@ class V3JobPreparationService:
             event="worker.starting_to_running_transition_started",
             details={"inventory_id": aisle.inventory_id, "aisle_id": aisle_id},
         )
-        claim = self._state.mark_running(job_id, aisle, now)
-        may_execute = getattr(claim, "may_execute", True)
-        if may_execute is False:
-            logger.warning(
-                "v3 mark running rejected: job_id=%s reason=%s status=%s",
+        claim_owner_id = str(uuid.uuid4())
+        claim = self._state.mark_running(
+            job_id, aisle, now, claim_owner_id=claim_owner_id
+        )
+        if not isinstance(claim, JobClaimResult):
+            raise TypeError(
+                f"mark_running must return JobClaimResult, got {type(claim)!r}"
+            )
+        if claim.may_execute is not True:
+            logger.info(
+                "event=job_claim_conflict job_id=%s reason=%s status=%s claim_owner_id=%s",
                 job_id,
-                getattr(claim, "reason", None),
-                getattr(claim, "previous_status", None),
+                claim.reason,
+                claim.previous_status,
+                claim_owner_id,
             )
             append_worker_bootstrap_event(
                 job_id=job_id,
@@ -168,20 +177,25 @@ class V3JobPreparationService:
                 details={
                     "inventory_id": aisle.inventory_id,
                     "aisle_id": aisle_id,
-                    "reason": getattr(claim, "reason", None),
-                    "outcome": getattr(getattr(claim, "outcome", None), "value", None),
+                    "reason": claim.reason,
+                    "outcome": claim.outcome.value,
+                    "claim_owner_id": claim_owner_id,
                 },
             )
             return V3PreparationResult.halt(True)
         # Prefer refreshed job from claim when available (real Job only; mocks stay ignored).
-        claimed_job = getattr(claim, "job", None)
+        claimed_job = claim.job
         if isinstance(claimed_job, Job):
             job = claimed_job
         append_worker_bootstrap_event(
             job_id=job_id,
             execution_id=job.execution_id,
             event="worker.starting_to_running_transition_completed",
-            details={"inventory_id": aisle.inventory_id, "aisle_id": aisle_id},
+            details={
+                "inventory_id": aisle.inventory_id,
+                "aisle_id": aisle_id,
+                "claim_owner_id": claim_owner_id,
+            },
         )
         return V3PreparationResult.continue_with(
             V3PreparedJob(job=job, aisle=aisle, aisle_id=aisle_id, assets=assets)

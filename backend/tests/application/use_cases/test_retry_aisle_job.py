@@ -19,6 +19,7 @@ from src.domain.aisle.entities import Aisle, AisleStatus
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from tests.support.job_repository_list_helpers import list_jobs_for_targets_from_store
+from tests.support.job_repository_test_base import JobRepositoryTestBase
 from tests.support.processing_test_constants import STUB_PRIMARY_MODEL, STUB_PRIMARY_PROVIDER
 
 
@@ -64,7 +65,7 @@ class StubAisleRepo(AisleRepository):
         return None
 
 
-class StubJobRepo(JobRepository):
+class StubJobRepo(JobRepositoryTestBase):
     def __init__(self) -> None:
         self._store: dict[str, Job] = {}
 

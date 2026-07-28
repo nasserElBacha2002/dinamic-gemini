@@ -6,6 +6,7 @@ import copy
 import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal
 
 from src.application.ports.contracts import PositionListQuery
@@ -22,6 +23,7 @@ from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsUseCase,
 )
 from src.domain.aisle.entities import Aisle
+from src.domain.jobs.claim import JobClaimResult, StaleReclaimResult
 from src.domain.jobs.entities import Job, JobStatus
 from src.domain.positions.entities import Position
 from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
@@ -29,6 +31,7 @@ from src.infrastructure.pipeline.v3_process_aisle_pipeline_runner import (
 )
 from src.pipeline.contracts.analysis_context import AnalysisContext
 from src.pipeline.hybrid_inventory_pipeline import PipelineRunResult
+from tests.support.job_repository_test_base import JobRepositoryTestBase
 
 
 class FailOnNthSavePositionRepository(PositionRepository):
@@ -301,7 +304,7 @@ def _job_snapshot(job: Job) -> SaveAttemptSnapshot:
     )
 
 
-class PartialFailingJobRepository(JobRepository):
+class PartialFailingJobRepository(JobRepositoryTestBase):
     """Fails ``save`` when persisting a job transitioning to SUCCEEDED; records attempts."""
 
     def __init__(self, inner: JobRepository) -> None:
@@ -360,6 +363,48 @@ class PartialFailingJobRepository(JobRepository):
         job_type: str | None = None,
     ) -> Sequence[Job]:
         return self._inner.list_jobs_for_targets(target_type, target_ids, job_type=job_type)
+
+    def try_claim_starting_to_running(
+        self,
+        job_id: str,
+        *,
+        now: datetime,
+        claim_owner_id: str,
+        aisle_id: str,
+    ) -> JobClaimResult:
+        return self._inner.try_claim_starting_to_running(
+            job_id,
+            now=now,
+            claim_owner_id=claim_owner_id,
+            aisle_id=aisle_id,
+        )
+
+    def try_reclaim_stale_job_and_reconcile_aisle(
+        self,
+        job_id: str,
+        *,
+        now: datetime,
+        stale_after_seconds: int,
+    ) -> StaleReclaimResult:
+        return self._inner.try_reclaim_stale_job_and_reconcile_aisle(
+            job_id,
+            now=now,
+            stale_after_seconds=stale_after_seconds,
+        )
+
+    def bind_aisle_repository(self, aisle_repo: AisleRepository) -> None:
+        from src.infrastructure.repositories.memory_job_repository import MemoryJobRepository
+
+        if isinstance(self._inner, MemoryJobRepository):
+            self._inner.bind_aisle_repository(aisle_repo)
+
+    def reclaim_stale_running_jobs(
+        self, stale_after_seconds: int, *, batch_size: int = 100
+    ) -> int:
+        return self._inner.reclaim_stale_running_jobs(
+            stale_after_seconds, batch_size=batch_size
+        )
+
 
 @dataclass(frozen=True)
 class AisleSaveAttemptSnapshot:

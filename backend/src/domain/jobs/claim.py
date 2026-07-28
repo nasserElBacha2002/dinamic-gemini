@@ -1,8 +1,7 @@
-"""Atomic job claim outcomes (Phase 1 — job integrity).
+"""Atomic job claim outcomes (Phase 1 corrections).
 
-Ownership token for an execution attempt is ``Job.execution_id`` (already persisted).
-Claim must be decided by a compare-and-set ``UPDATE … WHERE status = 'starting'``,
-never by a bare read-then-write.
+``execution_id`` identifies the persisted attempt row.
+``claim_owner_id`` identifies the concrete worker process that acquired RUNNING.
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.domain.aisle.entities import Aisle
     from src.domain.jobs.entities import Job
 
 
@@ -25,6 +23,9 @@ class JobClaimOutcome(str, Enum):
     NOT_FOUND = "not_found"
     TERMINAL = "terminal"
     INVALID_STATUS = "invalid_status"
+    TARGET_NOT_FOUND = "target_not_found"
+    TARGET_MISMATCH = "target_mismatch"
+    TARGET_INVALID_STATUS = "target_invalid_status"
 
 
 TERMINAL_JOB_STATUSES = frozenset(
@@ -41,9 +42,10 @@ TERMINAL_JOB_STATUSES = frozenset(
 class JobClaimResult:
     outcome: JobClaimOutcome
     job: Job | None = None
-    aisle: Aisle | None = None
+    aisle_transition_applied: bool = False
     reason: str | None = None
     previous_status: str | None = None
+    claim_owner_id: str | None = None
 
     @property
     def acquired(self) -> bool:
@@ -51,8 +53,16 @@ class JobClaimResult:
 
     @property
     def may_execute(self) -> bool:
-        """True when the caller may proceed with pipeline execution."""
+        """Only ACQUIRED or same-owner idempotent ALREADY_OWNED may run the pipeline."""
         return self.outcome in (
             JobClaimOutcome.ACQUIRED,
             JobClaimOutcome.ALREADY_OWNED,
         )
+
+
+@dataclass(frozen=True)
+class StaleReclaimResult:
+    won: bool
+    job: Job | None = None
+    aisle_transition_applied: bool = False
+    reason: str | None = None

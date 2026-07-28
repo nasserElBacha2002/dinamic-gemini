@@ -1,36 +1,27 @@
 # Phase 1 — Concurrency test report
 
-## Suite
+## Memory contract (`test_phase1_atomic_job_claim.py`)
 
-`backend/tests/jobs/test_phase1_atomic_job_claim.py`
-
-## Results
-
-```text
-backend/.venv/bin/python -m pytest tests/jobs/test_phase1_atomic_job_claim.py -q --no-cov
-→ all passed (14 tests)
-```
-
-## Critical scenarios
-
-| Test | Expected | Result |
+| Scenario | Expected | Result |
 |---|---|---|
-| `test_two_workers_one_winner_barrier` | 1× `ACQUIRED`, 1× reject | PASS (Barrier, no sleep) |
-| `test_n_workers_single_winner` (N=8) | exactly 1 winner | PASS |
-| `test_claim_idempotent_same_execution_does_not_bump_attempt_or_restart` | `ALREADY_OWNED`, same `started_at`/`attempt_count` | PASS |
-| `test_claim_conflict_other_execution` | `CONFLICT`, owner unchanged | PASS |
-| `test_two_recovery_workers_one_stale_reclaim` | 1× True, 1× False on `try_fail_stale_job` | PASS |
-| `test_stale_reclaim_fails_job_and_aisle` | job+aisle `FAILED` | PASS |
-| `test_stale_reclaim_does_not_fail_aisle_when_other_active_job` | aisle stays `PROCESSING` | PASS |
-| `test_claim_next_queued_mutates_to_starting` | memory claim mutates once | PASS |
+| 2 workers, different `claim_owner_id`, same `execution_id` | 1 `ACQUIRED`, 1 `CONFLICT`, 0 `ALREADY_OWNED`, 1 `may_execute` | PASS |
+| 8 workers | 1 `ACQUIRED`, 1 `may_execute` | PASS |
+| Same owner retry | `ALREADY_OWNED`, attempts/`started_at` unchanged | PASS |
+| Null caller / null persisted / both null | `CONFLICT`, `may_execute=False` | PASS |
+| Preparation side-effect (2 threads) | 1 continues, 1 halts | PASS |
+| 2 stale recovery workers | 1 win | PASS |
+| Aisle missing / terminal / mismatch | `TARGET_*`, job remains `STARTING` | PASS |
 
-## Full backend regression
+## SQL unit (`test_sql_job_repository.py`)
 
-```text
-3811 passed, 44 skipped
-```
+CAS SQL + `claim_owner_id` params, commit on dual rowcount=1, rollback on aisle rowcount 0, target mismatch without CAS, exception after job update → rollback, stale finalization fields + commit.
 
-## Notes
+## SQL integration (`test_sql_atomic_job_claim.py`)
 
-- Concurrent tests use `threading.Barrier` against `MemoryJobRepository` (lock-emulated CAS).
-- SQL CAS path is implemented (`UPDATE … WHERE status='starting'` + aisle in one transaction); local environment lacked ODBC Driver 18 for live SQL race tests — memory contract covers the observable outcomes required for merge.
+Dual connection claim race, dual stale reclaim, invalid aisle leaves job `STARTING`.
+
+**Local run:** skipped when ODBC/SQL Server unavailable (`pytest.skip`). Must execute in CI with SQL Server + migration 0071 applied before merge.
+
+## Strictness
+
+Tests do **not** accept `INVALID_STATUS` or `ALREADY_OWNED` as alternate loser outcomes for different owners. No private method calls.

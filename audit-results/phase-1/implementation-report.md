@@ -1,85 +1,69 @@
-# Phase 1 — Implementation report
+# Phase 1 — Implementation report (corrections)
 
 ## 1. Estado final
 
-**COMPLETED**
+**CORRECTIONS_WITH_WARNINGS** — SQL integration tests present but **skipped** locally (no SQL Server/ODBC). Memory + SQL unit + full suites green; Quality Gate PASS after ruff fix.
 
 ```text
 DOUBLE_JOB_EXECUTION=PREVENTED
-ATOMIC_JOB_CLAIM=IMPLEMENTED
+CLAIM_OWNER_ID=SEPARATED_FROM_EXECUTION_ID
+ATOMIC_JOB_CLAIM=TRANSACTIONAL
 STALE_RECLAIM=TRANSACTIONAL
 JOB_AISLE_STATE=CONSISTENT
-CLAIM_IDEMPOTENCY=VALIDATED
-CONCURRENT_TESTS=PASSING
-SQL_MEMORY_CONTRACTS=ALIGNED
+CLAIM_IDEMPOTENCY=SAME_CLAIM_OWNER_ONLY
+CONCURRENT_TESTS=STRICT
+SQL_UNIT_TESTS=PASS
+SQL_INTEGRATION_TESTS=SKIPPED_NO_SQLSERVER (must run in CI)
+NO_RMW_FALLBACKS=YES
+PHASE_2=NOT_STARTED
 QUALITY_GATE=PASS
-MERGEABLE_TO_MAIN=YES
 ```
 
-## 2. Causa raíz confirmada
+## 2. Causa raíz
 
-1. `mark_running` hacía get → mutate → `save` sin `WHERE status='starting'`.
-2. `reclaim_stale_running_jobs` fallaba jobs en bulk sin reconciliar el aisle.
+1. Ownership vía `execution_id` → CAS loser podía obtener `ALREADY_OWNED` + `may_execute=True`.
+2. Stale reclaim SQL actualizaba job y aisle en operaciones separadas.
 
-## 3. Flujo anterior
+## 3. Diseño de ownership
 
-Create `STARTING` → spawn worker → preparation → **non-CAS** mark RUNNING + aisle PROCESSING → pipeline.
+- `execution_id` = intento persistido
+- `claim_owner_id` = UUID por invocación de worker (generado en `V3JobPreparationService`)
+- `ALREADY_OWNED` solo si ambos owners non-null e iguales
+- Tokens nulos → `CONFLICT`; matching `execution_id` nunca otorga ownership
 
-## 4. Flujo nuevo
+## 4. Migración
 
-Create `STARTING` → spawn worker → preparation → **`try_claim_starting_to_running` (CAS)** → only if `may_execute` → pipeline. Conflicts halt without failing the job.
+`0071_inventory_jobs_claim_owner_id.sql` — `claim_owner_id VARCHAR(64) NULL` (aditiva). Mirror en `schema.sql`.
 
-## 5–12. Diseño (resumen)
+## 5. Transacciones
 
-Ver `state-machine.md`, `adr-atomic-job-claiming.md`, `sql-validation.md`.
+- Claim: validate job+aisle → CAS job → update aisle → commit único / rollback
+- Stale: `try_reclaim_stale_job_and_reconcile_aisle` con `NOT EXISTS` + locking
+- Campos stale alineados vía `apply_stale_failure_fields` / SQL SET equivalente
 
-- Ownership: `execution_id`
-- Attempts: no bump on claim
-- Stale: Option C (`FAILED`/`STALE_JOB`) + aisle reconcile if sole active job
-- Memory: `threading.RLock` emulates CAS; `claim_next_queued_job` now mutates to `STARTING`
+## 6. Limpieza
 
-## 13–15. SQL / Memory / Worker
+Eliminados fallbacks RMW, `getattr(may_execute, True)`, acoplamiento `SqlAisleRepository` en claim. Port con `@abstractmethod` para claim/reclaim.
 
-- SQL: transactional claim+aisle; per-job stale CAS + aisle guard
-- Memory: same outcomes
-- Preparation: rejects non-executable claims; does not treat conflict as job failure
+## 7. Validación (esta corrida)
 
-## 16. Tests agregados
-
-`backend/tests/jobs/test_phase1_atomic_job_claim.py` (14 cases: claim, concurrent barrier, N workers, idempotency, stale, recovery race).
-
-## 17. Resultados
-
-| Suite | Resultado |
+| Comando | Resultado |
 |---|---|
-| Phase 1 claim tests | PASS |
-| Backend pytest | 3811 passed, 44 skipped |
-| mypy `backend/src` | Success |
-| Frontend typecheck/lint/test | PASS (1217) |
-| Mobile typecheck/lint/test | PASS |
-| `scripts/audit/tests` | 45 passed |
-| `run_full_audit.sh` | exit 0, gate PASS (`run_id=20260728T154432Z`) |
-| `enforce_quality_gate.py --strict` | PASS |
+| Phase 1 focus pytest | 28 passed, 3 skipped (SQL IT) |
+| Backend pytest | 3823 passed, 47 skipped |
+| Ruff `backend scripts` | All checks passed |
+| Mypy `backend/src` | Success |
+| Frontend typecheck/lint/test | 1217 passed |
+| Mobile typecheck/lint/test | OK |
+| `run_full_audit.sh` | exit 1 initially (ruff import order); fixed |
+| `enforce_quality_gate.py --strict` | PASS (after backend audit refresh) |
 
-## 18. Migraciones
+## 8. Limitaciones reales
 
-Ninguna.
+- Integration SQL **no ejecutada** sin ODBC Driver / SQL Server local → no declarar merge-ready en entornos sin CI SQL.
+- Sin índice nuevo para stale scan.
+- Sin fencing / lease steal.
 
-## 19. Logs
+## 9. Fase 2
 
-`event=job_claim_acquired|job_claim_rejected|job_stale_detected|job_stale_reclaimed|job_aisle_state_inconsistency`
-
-## 20. Limitaciones
-
-- Live SQL dual-worker race not executed in CI/local without ODBC Driver 18; memory contract covers outcomes.
-- No fencing token / lease steal (deferred).
-- No `processing_job_id` column.
-
-## 21. Riesgos pendientes
-
-- Stale scan without dedicated heartbeat index under very large tables.
-- Phase 2+ domains untouched by design.
-
-## 22–23. Alcance / mergeabilidad
-
-No OCR, uploads, frontend SoT, MEMORY_FALLBACK, Phase 2. Change is additive and mergeable to `main`.
+No iniciada.

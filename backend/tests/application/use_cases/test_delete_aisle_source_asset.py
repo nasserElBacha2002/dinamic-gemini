@@ -19,7 +19,6 @@ from src.application.ports.contracts import AisleAssetRollup
 from src.application.ports.repositories import (
     AisleRepository,
     InventoryRepository,
-    JobRepository,
     SourceAssetRepository,
 )
 from src.application.ports.services import ArtifactStorage
@@ -30,6 +29,7 @@ from src.domain.assets.entities import SourceAsset, SourceAssetType
 from src.domain.inventory.entities import Inventory, InventoryStatus
 from src.domain.jobs.entities import Job, JobStatus
 from src.infrastructure.storage.artifact_store import StoredArtifact
+from tests.support.job_repository_test_base import JobRepositoryTestBase
 
 
 class FixedClock:
@@ -137,7 +137,7 @@ class StubArtifactStorage(ArtifactStorage):
         self._deleted.append(path)
 
 
-class InMemoryJobRepo(JobRepository):
+class InMemoryJobRepo(JobRepositoryTestBase):
     def __init__(self, jobs: Sequence[Job] | None = None) -> None:
         self._store: dict[str, Job] = {j.id: j for j in (jobs or [])}
 

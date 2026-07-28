@@ -246,8 +246,15 @@ class ExecutorHarness:
         inventory_repo: InventoryRepository | None = None,
     ) -> ExecutorHarness:
         now = datetime(2026, 6, 12, 10, 0, 0, tzinfo=timezone.utc)
-        job_repo = job_repo or MemoryJobRepository()
         aisle_repo = aisle_repo or MemoryAisleRepository()
+        if job_repo is None:
+            job_repo = MemoryJobRepository(aisle_repo=aisle_repo)
+        elif isinstance(job_repo, MemoryJobRepository):
+            job_repo.bind_aisle_repository(aisle_repo)
+        else:
+            bind = getattr(job_repo, "bind_aisle_repository", None)
+            if callable(bind):
+                bind(aisle_repo)
         inventory_repo = inventory_repo or MemoryInventoryRepository()
         position_repo = position_repo or MemoryPositionRepository()
         product_repo = product_repo or MemoryProductRecordRepository()
