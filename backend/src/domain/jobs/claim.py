@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.domain.jobs.entities import Job
+    from src.domain.jobs.lease import JobLease
 
 
 class JobClaimOutcome(str, Enum):
@@ -46,6 +47,8 @@ class JobClaimResult:
     reason: str | None = None
     previous_status: str | None = None
     claim_owner_id: str | None = None
+    #: Phase 3 — lease acquired/current on ACQUIRED or ALREADY_OWNED outcomes. None otherwise.
+    lease: JobLease | None = None
 
     @property
     def acquired(self) -> bool:

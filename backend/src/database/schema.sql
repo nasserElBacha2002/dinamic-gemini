@@ -356,6 +356,24 @@ IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_
     ALTER TABLE inventory_jobs ADD execution_id VARCHAR(64) NULL;
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'claim_owner_id')
     ALTER TABLE inventory_jobs ADD claim_owner_id VARCHAR(64) NULL;
+-- Phase 3 lease fencing (mirror migrations/versions/0072_inventory_jobs_lease_fencing.sql; update both when changing).
+-- Reuses claim_owner_id as the lease owner (no duplicate lease_owner_id column).
+IF COL_LENGTH('inventory_jobs', 'lease_fencing_token') IS NULL
+    ALTER TABLE inventory_jobs ADD lease_fencing_token BIGINT NOT NULL
+        CONSTRAINT DF_inventory_jobs_lease_fencing_token DEFAULT (0);
+IF COL_LENGTH('inventory_jobs', 'lease_expires_at') IS NULL
+    ALTER TABLE inventory_jobs ADD lease_expires_at DATETIME2 NULL;
+IF COL_LENGTH('inventory_jobs', 'lease_acquired_at') IS NULL
+    ALTER TABLE inventory_jobs ADD lease_acquired_at DATETIME2 NULL;
+GO
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes
+    WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'IX_inventory_jobs_lease_expiry'
+)
+    CREATE NONCLUSTERED INDEX IX_inventory_jobs_lease_expiry
+        ON inventory_jobs(status, lease_expires_at)
+        WHERE lease_expires_at IS NOT NULL;
+GO
 -- Phase 1 multi-run (mirror migrations/versions/0010_multi_run_job_scoping.sql; update both when changing).
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('inventory_jobs') AND name = 'provider_name')
     ALTER TABLE inventory_jobs ADD provider_name NVARCHAR(128) NULL;

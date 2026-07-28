@@ -371,12 +371,43 @@ class PartialFailingJobRepository(JobRepositoryTestBase):
         now: datetime,
         claim_owner_id: str,
         aisle_id: str,
+        lease_duration_seconds: int = 60,
     ) -> JobClaimResult:
         return self._inner.try_claim_starting_to_running(
             job_id,
             now=now,
             claim_owner_id=claim_owner_id,
             aisle_id=aisle_id,
+            lease_duration_seconds=lease_duration_seconds,
+        )
+
+    def renew_lease(self, lease, *, now: datetime, extension_seconds: int):
+        return self._inner.renew_lease(lease, now=now, extension_seconds=extension_seconds)
+
+    def reacquire_expired_lease(
+        self, job_id: str, *, now: datetime, new_owner_id: str, extension_seconds: int
+    ):
+        return self._inner.reacquire_expired_lease(
+            job_id, now=now, new_owner_id=new_owner_id, extension_seconds=extension_seconds
+        )
+
+    def merge_result_json_if_leased(self, lease, patch, *, now: datetime):
+        return self._inner.merge_result_json_if_leased(lease, patch, now=now)
+
+    def touch_heartbeat_if_leased(self, lease, *, now: datetime, extension_seconds: int):
+        return self._inner.touch_heartbeat_if_leased(
+            lease, now=now, extension_seconds=extension_seconds
+        )
+
+    def assert_lease(self, lease, *, now: datetime):
+        return self._inner.assert_lease(lease, now=now)
+
+    def complete_if_leased(self, lease, job, *, now: datetime):
+        return self._inner.complete_if_leased(lease, job, now=now)
+
+    def fail_if_leased(self, lease, *, now: datetime, error_message: str, failure_code: str = "PROCESSING_FAILED"):
+        return self._inner.fail_if_leased(
+            lease, now=now, error_message=error_message, failure_code=failure_code
         )
 
     def try_reclaim_stale_job_and_reconcile_aisle(

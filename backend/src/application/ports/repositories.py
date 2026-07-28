@@ -23,6 +23,7 @@ from src.domain.evidence.entities import Evidence
 from src.domain.inventory.entities import Inventory
 from src.domain.jobs.claim import JobClaimResult, StaleReclaimResult
 from src.domain.jobs.entities import Job
+from src.domain.jobs.lease import JobLease, LeaseRenewalResult, LeaseWriteResult
 from src.domain.labels.entities import FinalCountRecord, NormalizedLabel, RawLabel
 from src.domain.positions.entities import Position
 from src.domain.products.entities import ProductRecord
@@ -293,11 +294,95 @@ class JobRepository(ABC):
         now: datetime,
         claim_owner_id: str,
         aisle_id: str,
+        lease_duration_seconds: int = 60,
     ) -> JobClaimResult:
         """Atomic STARTING → RUNNING claim with aisle PROCESSING in the same transaction.
 
         ``claim_owner_id`` must be a non-empty worker token (never ``execution_id``).
+        Phase 3: also acquires a lease (fencing token incremented, expiry set from
+        ``lease_duration_seconds``) and attaches it to the returned ``JobClaimResult.lease``.
         """
+
+    def renew_lease(
+        self,
+        lease: JobLease,
+        *,
+        now: datetime,
+        extension_seconds: int,
+    ) -> LeaseRenewalResult:
+        """Phase 3: extend ``lease_expires_at`` for an active lease (CAS on owner + fencing_token).
+
+        Does not increment the fencing token. Default implementation raises
+        ``NotImplementedError``; concrete repositories must override.
+        """
+        raise NotImplementedError
+
+    def reacquire_expired_lease(
+        self,
+        job_id: str,
+        *,
+        now: datetime,
+        new_owner_id: str,
+        extension_seconds: int,
+    ) -> JobClaimResult:
+        """Steal an expired RUNNING lease: new owner + fencing_token + 1.
+
+        For tests / controlled recovery. Default implementation raises ``NotImplementedError``;
+        concrete repositories must override.
+        """
+        raise NotImplementedError
+
+    def merge_result_json_if_leased(
+        self,
+        lease: JobLease,
+        patch: dict[str, Any],
+        *,
+        now: datetime,
+    ) -> tuple[LeaseWriteResult, Job | None]:
+        """Phase 3: merge ``result_json`` only while the caller still holds the lease.
+
+        Default implementation raises ``NotImplementedError``; concrete repositories must override.
+        """
+        raise NotImplementedError
+
+    def touch_heartbeat_if_leased(
+        self,
+        lease: JobLease,
+        *,
+        now: datetime,
+        extension_seconds: int,
+    ) -> LeaseRenewalResult:
+        """Renew lease + update ``last_heartbeat_at`` (same semantics as ``renew_lease`` for Phase 3)."""
+        return self.renew_lease(lease, now=now, extension_seconds=extension_seconds)
+
+    def assert_lease(self, lease: JobLease, *, now: datetime) -> LeaseWriteResult:
+        """Validate the caller still holds an active lease (no mutation). Default: NotImplementedError."""
+        raise NotImplementedError
+
+    def complete_if_leased(
+        self,
+        lease: JobLease,
+        job: Job,
+        *,
+        now: datetime,
+    ) -> LeaseWriteResult:
+        """Persist a SUCCEEDED terminal row only while ``lease`` is still held.
+
+        ``job`` must already carry the intended terminal fields (status, result_json, …).
+        Default raises ``NotImplementedError``; concrete repositories must override.
+        """
+        raise NotImplementedError
+
+    def fail_if_leased(
+        self,
+        lease: JobLease,
+        *,
+        now: datetime,
+        error_message: str,
+        failure_code: str = "PROCESSING_FAILED",
+    ) -> LeaseWriteResult:
+        """Mark job FAILED only while ``lease`` is still held. Default: NotImplementedError."""
+        raise NotImplementedError
 
     @abstractmethod
     def try_reclaim_stale_job_and_reconcile_aisle(

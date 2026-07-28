@@ -74,8 +74,9 @@ def test_save_insert_placeholder_count_matches_parameters_for_starting_job() -> 
     assert len(client.cursor_instance.executions) == 2
     insert_sql, insert_params = client.cursor_instance.executions[1]
     assert "INSERT INTO inventory_jobs" in insert_sql
-    # 36 base columns + claim_owner_id + 4 Phase 1 aisle identification snapshot columns.
-    assert insert_sql.count("?") == len(insert_params) == 41
+    # 36 base columns + claim_owner_id + 4 Phase 1 aisle identification snapshot columns
+    # + 3 Phase 3 lease fencing columns.
+    assert insert_sql.count("?") == len(insert_params) == 44
 
 
 def test_save_update_placeholder_count_matches_parameters() -> None:
@@ -87,8 +88,9 @@ def test_save_update_placeholder_count_matches_parameters() -> None:
     assert len(client.cursor_instance.executions) == 1
     update_sql, update_params = client.cursor_instance.executions[0]
     assert "UPDATE inventory_jobs" in update_sql
-    # 36 SET columns including claim_owner_id + WHERE id (id excluded from SET count previously 39).
-    assert update_sql.count("?") == len(update_params) == 40
+    # 36 SET columns including claim_owner_id + WHERE id (id excluded from SET count previously 39)
+    # + 3 Phase 3 lease fencing columns.
+    assert update_sql.count("?") == len(update_params) == 43
 
 
 class _TxnCursor:
@@ -302,3 +304,54 @@ def test_try_reclaim_stale_updates_finalization_fields_and_commits() -> None:
 
 def _job_row_ns(job: Job) -> SimpleNamespace:
     return SimpleNamespace(id=job.id)
+
+
+def test_renew_lease_sql_includes_owner_token_and_expiry() -> None:
+    from src.domain.jobs.lease import JobLease, LeaseRenewalOutcome
+
+    now = datetime(2026, 7, 28, 12, 0, 0, tzinfo=timezone.utc)
+    lease = JobLease(
+        job_id="job-1",
+        owner_id="owner-a",
+        fencing_token=3,
+        acquired_at=now,
+        expires_at=now + __import__("datetime").timedelta(seconds=60),
+    )
+    client = RecordingClient(rowcounts=[1])
+    repo = SqlJobRepository(client)  # type: ignore[arg-type]
+    result = repo.renew_lease(lease, now=now, extension_seconds=60)
+    assert result.outcome == LeaseRenewalOutcome.RENEWED
+    sql, params = client.cursor_instance.executions[0]
+    assert "lease_fencing_token = ?" in sql
+    assert "claim_owner_id = ?" in sql
+    assert "lease_expires_at >= ?" in sql
+    assert "OUTPUT" not in sql  # renewal must not bump fencing token
+    assert "owner-a" in params
+    assert 3 in params
+
+
+def test_complete_if_leased_sql_cas_where() -> None:
+    from src.domain.jobs.lease import JobLease, LeaseWriteOutcome
+
+    now = datetime(2026, 7, 28, 12, 0, 0, tzinfo=timezone.utc)
+    lease = JobLease(
+        job_id="job-1",
+        owner_id="owner-a",
+        fencing_token=2,
+        acquired_at=now,
+        expires_at=now + __import__("datetime").timedelta(seconds=60),
+    )
+    job = _make_job()
+    job.id = "job-1"
+    job.status = JobStatus.SUCCEEDED
+    job.result_json = {"ok": True}
+    client = RecordingClient(rowcounts=[1])
+    repo = SqlJobRepository(client)  # type: ignore[arg-type]
+    outcome = repo.complete_if_leased(lease, job, now=now)
+    assert outcome.outcome == LeaseWriteOutcome.APPLIED
+    sql, params = client.cursor_instance.executions[0]
+    assert "status = ?" in sql
+    assert "claim_owner_id = ?" in sql
+    assert "lease_fencing_token = ?" in sql
+    assert "lease_expires_at >= ?" in sql
+    assert params[params.index("owner-a")] == "owner-a"

@@ -20,6 +20,7 @@ from src.application.ports.repositories import (
 from src.domain.aisle.entities import Aisle
 from src.domain.jobs.claim import JobClaimResult
 from src.domain.jobs.entities import Job, JobStatus
+from src.domain.jobs.lease import JobLease
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
 from src.jobs.worker_bootstrap import append_worker_bootstrap_event, checkpoint_v3_job_bootstrap
 
@@ -34,6 +35,7 @@ class V3PreparedJob:
     aisle: Aisle
     aisle_id: str
     assets: list[Any]
+    lease: JobLease | None = None
 
 
 @dataclass(frozen=True)
@@ -155,8 +157,15 @@ class V3JobPreparationService:
             details={"inventory_id": aisle.inventory_id, "aisle_id": aisle_id},
         )
         claim_owner_id = str(uuid.uuid4())
+        from src.config import load_settings
+
+        lease_duration = int(getattr(load_settings(), "job_lease_duration_sec", 60) or 60)
         claim = self._state.mark_running(
-            job_id, aisle, now, claim_owner_id=claim_owner_id
+            job_id,
+            aisle,
+            now,
+            claim_owner_id=claim_owner_id,
+            lease_duration_seconds=lease_duration,
         )
         if not isinstance(claim, JobClaimResult):
             raise TypeError(
@@ -198,7 +207,13 @@ class V3JobPreparationService:
             },
         )
         return V3PreparationResult.continue_with(
-            V3PreparedJob(job=job, aisle=aisle, aisle_id=aisle_id, assets=assets)
+            V3PreparedJob(
+                job=job,
+                aisle=aisle,
+                aisle_id=aisle_id,
+                assets=assets,
+                lease=claim.lease,
+            )
         )
 
     def _should_skip_for_terminal_job_status(self, job: Job, job_id: str) -> bool:

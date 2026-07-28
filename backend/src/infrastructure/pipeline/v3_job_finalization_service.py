@@ -37,6 +37,7 @@ from src.domain.jobs.finalization import (
     FinalizationErrorCode,
     LastCompletedFinalizationStep,
 )
+from src.domain.jobs.lease import JobLease, JobLeaseLostError
 from src.domain.traceability_artifact.errors import TraceabilityArtifactError
 from src.infrastructure.pipeline.finalization_errors import (
     ArtifactPublishError,
@@ -87,6 +88,7 @@ class V3JobFinalizationRequest:
     cancel_event_emitted: dict[str, bool]
     input_type: str | None = None
     canonical_traceability_expected: bool = False
+    lease: JobLease | None = None
 
 
 class V3JobFinalizationService:
@@ -128,6 +130,16 @@ class V3JobFinalizationService:
         tracker.begin()
         try:
             return self._finalize_success_body(req, tracker)
+        except JobLeaseLostError as lease_exc:
+            logger.info(
+                "event=job_lease_lost job_id=%s owner_id=%s fencing_token=%s "
+                "reason=%s stage=finalization",
+                req.job_id,
+                lease_exc.owner_id,
+                lease_exc.fencing_token,
+                lease_exc.reason,
+            )
+            return True
         except PipelineCancellationRequestedError as cancel_exc:
             if tracker.last_completed == LastCompletedFinalizationStep.DOMAIN_RESULTS_PERSISTED:
                 self._state.cancel_finalization_after_domain_commit(
@@ -219,6 +231,17 @@ class V3JobFinalizationService:
                 },
             )
             return True
+
+        if req.lease is not None:
+            assert_result = self._job_repo.assert_lease(req.lease, now=self._clock.now())
+            if not assert_result.applied:
+                raise JobLeaseLostError(
+                    "Lease lost before artifact publication",
+                    job_id=req.job_id,
+                    owner_id=req.lease.owner_id,
+                    fencing_token=req.lease.fencing_token,
+                    reason=assert_result.reason,
+                )
 
         logger.info(
             "v3_job_domain_persist_complete job_id=%s aisle_id=%s next_step=traceability_artifact_generation",
@@ -470,6 +493,7 @@ class V3JobFinalizationService:
                 tracker=tracker,
                 run_metadata=req.pipeline_result.run_metadata,
                 durable_artifacts=durable_meta,
+                lease=req.lease,
             )
         except Exception:
             logger.exception("v3_job_finalization_terminal_failed job_id=%s", req.job_id)
@@ -627,6 +651,7 @@ class V3JobFinalizationService:
                     tracker=tracker,
                     run_metadata=req.pipeline_result.run_metadata,
                     durable_artifacts=dispatch_result.durable_meta,
+                    lease=req.lease,
                 )
             except Exception:
                 return True

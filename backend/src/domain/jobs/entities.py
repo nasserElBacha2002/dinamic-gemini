@@ -95,3 +95,7 @@ class Job:
     finalization_completed_at: datetime | None = None
     domain_persisted_at: datetime | None = None
     artifacts_published_at: datetime | None = None
+    # Phase 3 — lease fencing (monotonic token + expiry). Owner reuses claim_owner_id.
+    lease_fencing_token: int = 0
+    lease_expires_at: datetime | None = None
+    lease_acquired_at: datetime | None = None

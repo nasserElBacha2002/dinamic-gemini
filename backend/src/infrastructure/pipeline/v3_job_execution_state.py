@@ -28,6 +28,13 @@ from src.domain.jobs.finalization import (
     LastCompletedFinalizationStep,
     is_hard_promotion_failure,
 )
+from src.domain.jobs.lease import (
+    JobLease,
+    JobLeaseLostError,
+    LeaseRenewalOutcome,
+    LeaseRenewalResult,
+    LeaseWriteOutcome,
+)
 from src.infrastructure.pipeline.job_finalization_tracker import (
     JobFinalizationTracker,
     report_finalization_failure,
@@ -77,8 +84,9 @@ class V3JobExecutionStateService:
         now,
         *,
         claim_owner_id: str,
+        lease_duration_seconds: int = 60,
     ) -> JobClaimResult:
-        """Atomic STARTING → RUNNING claim + aisle PROCESSING (Phase 1 corrections).
+        """Atomic STARTING → RUNNING claim + aisle PROCESSING (Phase 1 + Phase 3 lease).
 
         Requires a non-empty ``claim_owner_id`` unique to this worker invocation.
         Callers must only execute the pipeline when ``result.may_execute`` is True.
@@ -98,6 +106,7 @@ class V3JobExecutionStateService:
             now=now,
             claim_owner_id=claim_owner_id.strip(),
             aisle_id=aisle.id,
+            lease_duration_seconds=lease_duration_seconds,
         )
         if not isinstance(result, JobClaimResult):
             raise TypeError(
@@ -152,9 +161,20 @@ class V3JobExecutionStateService:
         tracker: JobFinalizationTracker,
         run_metadata: dict | None = None,
         durable_artifacts: dict[str, dict[str, Any]] | None = None,
+        lease: JobLease | None = None,
     ) -> None:
         """Terminal success steps after durable artifacts — records finalization progress per step."""
         completion_now = self._clock.now()
+        if lease is not None:
+            assert_result = self._job_repo.assert_lease(lease, now=completion_now)
+            if not assert_result.applied:
+                raise JobLeaseLostError(
+                    "Lease lost before finalization",
+                    job_id=job_id,
+                    owner_id=lease.owner_id,
+                    fencing_token=lease.fencing_token,
+                    reason=assert_result.reason,
+                )
         tracker.set_current_step(CurrentFinalizationStep.TERMINALIZE_JOB)
         try:
             self._terminalize_job_row(
@@ -163,7 +183,11 @@ class V3JobExecutionStateService:
                 completion_now=completion_now,
                 run_metadata=run_metadata,
                 durable_artifacts=durable_artifacts,
+                lease=lease,
             )
+        except JobLeaseLostError:
+            # Another worker may own the job — do not fail aisle/job.
+            raise
         except Exception as exc:
             try:
                 report_finalization_failure(
@@ -342,7 +366,9 @@ class V3JobExecutionStateService:
             inventory_id=aisle.inventory_id,
         )
 
-    def finalize_code_scan_success(self, job_id: str, aisle: Aisle) -> None:
+    def finalize_code_scan_success(
+        self, job_id: str, aisle: Aisle, *, lease: JobLease | None = None
+    ) -> None:
         """Phase 3 lightweight finalize for CODE_SCAN jobs (no LLM pipeline report).
 
         Positions are already persisted per asset by the code-scan persister. This marks the
@@ -354,6 +380,16 @@ class V3JobExecutionStateService:
         Refuses FAILED → SUCCEEDED (watchdog / concurrent terminal wins).
         """
         completion_now = self._clock.now()
+        if lease is not None:
+            assert_result = self._job_repo.assert_lease(lease, now=completion_now)
+            if not assert_result.applied:
+                raise JobLeaseLostError(
+                    "Lease lost before code_scan finalization",
+                    job_id=job_id,
+                    owner_id=lease.owner_id,
+                    fencing_token=lease.fencing_token,
+                    reason=assert_result.reason,
+                )
         job = self.try_transition_to_succeeded(job_id)
         if job is None:
             raise RuntimeError(
@@ -380,7 +416,18 @@ class V3JobExecutionStateService:
         job.failure_message = None
         job.finalization_error_code = None
         job.finalization_error_metadata = None
-        self._job_repo.save(job)
+        if lease is not None:
+            write = self._job_repo.complete_if_leased(lease, job, now=completion_now)
+            if write.outcome != LeaseWriteOutcome.APPLIED:
+                raise JobLeaseLostError(
+                    "Lease lost during code_scan terminalization",
+                    job_id=job_id,
+                    owner_id=lease.owner_id,
+                    fencing_token=lease.fencing_token,
+                    reason=write.reason,
+                )
+        else:
+            self._job_repo.save(job)
 
         self._promote_operational_result(job_id, aisle)
         aisle.mark_processed(completion_now)
@@ -404,6 +451,7 @@ class V3JobExecutionStateService:
         completion_now,
         run_metadata: dict | None,
         durable_artifacts: dict[str, dict[str, Any]] | None,
+        lease: JobLease | None = None,
     ) -> None:
         job = self._job_repo.get_by_id(job_id)
         if job is None:
@@ -448,6 +496,17 @@ class V3JobExecutionStateService:
         job.failure_message = None
         job.finalization_error_code = None
         job.finalization_error_metadata = None
+        if lease is not None:
+            write = self._job_repo.complete_if_leased(lease, job, now=completion_now)
+            if write.outcome != LeaseWriteOutcome.APPLIED:
+                raise JobLeaseLostError(
+                    "Lease lost during terminalization",
+                    job_id=job_id,
+                    owner_id=lease.owner_id,
+                    fencing_token=lease.fencing_token,
+                    reason=write.reason,
+                )
+            return
         self._job_repo.save(job)
 
     def _promote_operational_result(self, job_id: str, aisle: Aisle) -> str:
@@ -559,6 +618,7 @@ class V3JobExecutionStateService:
         self._job_repo.save(job)
 
     def heartbeat(self, job_id: str) -> Job | None:
+        """Unfenced heartbeat (legacy). Prefer :meth:`heartbeat_with_lease` for Phase 3 workers."""
         job = self._job_repo.get_by_id(job_id)
         if job is None or job.status not in (
             JobStatus.STARTING,
@@ -571,6 +631,22 @@ class V3JobExecutionStateService:
         job.updated_at = now
         self._job_repo.save(job)
         return job
+
+    def heartbeat_with_lease(
+        self,
+        lease: JobLease,
+        *,
+        extension_seconds: int,
+    ) -> tuple[Job | None, LeaseRenewalResult]:
+        """Renew lease + heartbeat. On LEASE_LOST do not mark the job failed."""
+        now = self._clock.now()
+        result = self._job_repo.touch_heartbeat_if_leased(
+            lease, now=now, extension_seconds=extension_seconds
+        )
+        if result.outcome != LeaseRenewalOutcome.RENEWED:
+            return None, result
+        job = self._job_repo.get_by_id(lease.job_id)
+        return job, result
 
     def update_runtime_status(self, job_id: str, *, stage: str, substep: str | None) -> None:
         job = self._job_repo.get_by_id(job_id)
@@ -594,12 +670,33 @@ class V3JobExecutionStateService:
         error_message: str,
         *,
         failure_code: str = "PROCESSING_FAILED",
+        lease: JobLease | None = None,
     ) -> bool:
-        """Fail job+aisle if the job transition wins. Returns False if already terminal."""
+        """Fail job+aisle if the job transition wins. Returns False if already terminal / lease lost."""
         now = self._clock.now()
-        won = self.try_transition_to_failed(
-            job_id, error_message, failure_code=failure_code
-        )
+        if lease is not None:
+            write = self._job_repo.fail_if_leased(
+                lease,
+                now=now,
+                error_message=error_message,
+                failure_code=failure_code,
+            )
+            if write.outcome != LeaseWriteOutcome.APPLIED:
+                logger.info(
+                    "event=job_stale_write_rejected job_id=%s operation=fail_job_and_aisle "
+                    "owner_id=%s fencing_token=%s outcome=%s reason=%s",
+                    job_id,
+                    lease.owner_id,
+                    lease.fencing_token,
+                    write.outcome.value,
+                    write.reason,
+                )
+                return False
+            won = True
+        else:
+            won = self.try_transition_to_failed(
+                job_id, error_message, failure_code=failure_code
+            )
         if not won:
             return False
         if self._operational_promotion_service is not None and (
@@ -626,6 +723,29 @@ class V3JobExecutionStateService:
             now=now,
         )
         return True
+
+    def merge_result_json_protected(
+        self,
+        job_id: str,
+        patch: dict[str, Any],
+        *,
+        lease: JobLease | None,
+    ) -> None:
+        """Merge ``result_json``; when ``lease`` is set, reject stale workers via fencing CAS."""
+        if lease is None:
+            self._job_repo.merge_result_json(job_id, patch)
+            return
+        write, _job = self._job_repo.merge_result_json_if_leased(
+            lease, patch, now=self._clock.now()
+        )
+        if write.outcome != LeaseWriteOutcome.APPLIED:
+            raise JobLeaseLostError(
+                "Lease lost during result_json merge",
+                job_id=job_id,
+                owner_id=lease.owner_id,
+                fencing_token=lease.fencing_token,
+                reason=write.reason,
+            )
 
     def _fail_aisle_for_finalization(
         self,

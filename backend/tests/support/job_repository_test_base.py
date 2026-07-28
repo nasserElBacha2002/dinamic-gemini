@@ -21,6 +21,7 @@ class JobRepositoryTestBase(JobRepository):
         now: datetime,
         claim_owner_id: str,
         aisle_id: str,
+        lease_duration_seconds: int = 60,
     ) -> JobClaimResult:
         raise AssertionError(
             f"{type(self).__name__} does not support try_claim_starting_to_running"

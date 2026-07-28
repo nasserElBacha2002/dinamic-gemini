@@ -634,6 +634,33 @@ class ApiRuntimeSettings(BaseModel):
             "before claim. Set 0 to disable reclaim. Env: WORKER_STALE_RUNNING_TIMEOUT_SEC."
         ),
     )
+    job_lease_duration_sec: int = Field(
+        default_factory=lambda: int(os.getenv("JOB_LEASE_DURATION_SEC", "60")),
+        ge=10,
+        le=3600,
+        description=(
+            "Phase 3: lease duration (seconds) granted on STARTING→RUNNING acquire/reacquire and "
+            "extended on each renewal. Env: JOB_LEASE_DURATION_SEC."
+        ),
+    )
+    job_lease_heartbeat_interval_sec: int = Field(
+        default_factory=lambda: int(os.getenv("JOB_LEASE_HEARTBEAT_INTERVAL_SEC", "15")),
+        ge=1,
+        le=3600,
+        description=(
+            "Phase 3: interval (seconds) at which the worker renews its lease / heartbeat while "
+            "running. Env: JOB_LEASE_HEARTBEAT_INTERVAL_SEC."
+        ),
+    )
+    job_lease_renewal_safety_margin_sec: int = Field(
+        default_factory=lambda: int(os.getenv("JOB_LEASE_RENEWAL_SAFETY_MARGIN_SEC", "20")),
+        ge=0,
+        le=3600,
+        description=(
+            "Phase 3: safety margin (seconds) subtracted from lease_duration when deciding renewal "
+            "urgency (renew before expiry, not exactly at it). Env: JOB_LEASE_RENEWAL_SAFETY_MARGIN_SEC."
+        ),
+    )
     cors_allow_origins: str = Field(
         default_factory=lambda: (os.getenv("CORS_ALLOW_ORIGINS", "") or "").strip(),
         description=(
