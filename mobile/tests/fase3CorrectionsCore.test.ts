@@ -31,7 +31,7 @@ describe('deep redaction', () => {
 
 describe('WorkManager naming / noop scheduler', () => {
   it('uses stable unique work names', () => {
-    expect(uniqueUploadSessionWorkName('s1')).toBe('upload-session-s1');
+    expect(uniqueUploadSessionWorkName('s1')).toBe('dinamic-upload-session-s1');
     expect(uniqueJobMonitorWorkName('j1')).toBe('job-monitor-j1');
     expect(uniqueRemoteDeleteWorkName('a1')).toBe('remote-delete-a1');
   });

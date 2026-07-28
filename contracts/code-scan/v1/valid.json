@@ -1,0 +1,67 @@
+[
+  {
+    "name": "pipe-code-with-quantity",
+    "raw": "ABC123|5",
+    "expected": {
+      "status": "VALID",
+      "format": "PIPE",
+      "internalCode": "ABC123",
+      "quantity": 5,
+      "quantityStatus": "PRESENT",
+      "formatVersion": "v1",
+      "warnings": []
+    }
+  },
+  {
+    "name": "pipe-leading-zeros-preserved",
+    "raw": "007123|9",
+    "expected": {
+      "status": "VALID",
+      "format": "PIPE",
+      "internalCode": "007123",
+      "quantity": 9,
+      "quantityStatus": "PRESENT",
+      "formatVersion": "v1",
+      "warnings": []
+    }
+  },
+  {
+    "name": "di1-urlencoded",
+    "raw": "DI1|C=ABC%20123|Q=3",
+    "expected": {
+      "status": "VALID",
+      "format": "DI1",
+      "internalCode": "ABC 123",
+      "quantity": 3,
+      "quantityStatus": "PRESENT",
+      "formatVersion": "DI1",
+      "warnings": []
+    }
+  },
+  {
+    "name": "plain-code-quantity-missing",
+    "raw": "PLAINCODE",
+    "expected": {
+      "status": "VALID",
+      "format": "PLAIN",
+      "internalCode": "PLAINCODE",
+      "quantity": null,
+      "quantityStatus": "MISSING",
+      "formatVersion": "v1",
+      "warnings": ["QUANTITY_MISSING"]
+    }
+  },
+  {
+    "name": "labeled-human-qr",
+    "raw": "Producto demo\nCódigo interno: SKU-9988\nOtra línea",
+    "expected": {
+      "status": "VALID",
+      "format": "LABELED",
+      "internalCode": "SKU-9988",
+      "quantity": null,
+      "quantityStatus": "MISSING",
+      "formatVersion": "v1",
+      "warnings": ["QUANTITY_MISSING"]
+    }
+  }
+]

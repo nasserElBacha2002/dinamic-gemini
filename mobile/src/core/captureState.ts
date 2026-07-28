@@ -12,6 +12,8 @@ const PHOTO_TRANSITIONS: Readonly<Record<CapturePhotoStatus, readonly CapturePho
 
 const SESSION_TRANSITIONS: Readonly<Record<CaptureSessionStatus, readonly CaptureSessionStatus[]>> = {
   preparing: ['active', 'failed', 'cancelled'],
+  // Handoff to review/upload must go through finalizeCaptureForUpload (finishing),
+  // not via direct active/paused → uploading jumps.
   active: ['paused', 'finishing', 'failed', 'cancelled'],
   paused: ['active', 'finishing', 'failed', 'cancelled'],
   finishing: ['review', 'uploading', 'failed', 'cancelled'],

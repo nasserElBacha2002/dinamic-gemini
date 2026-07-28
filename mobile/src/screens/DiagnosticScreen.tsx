@@ -81,6 +81,27 @@ export function DiagnosticScreen({ services, onBack }: DiagnosticScreenProps) {
                 .finally(() => setBusy(false));
             }}
           />
+          <Button
+            label="Exportar baseline observabilidad"
+            disabled={busy || !services.config.flags.uploadObservabilityEnabled}
+            onPress={() => {
+              setBusy(true);
+              void services
+                .exportObservabilityBaseline()
+                .then((report) => {
+                  if (!report) {
+                    setError('Observabilidad desactivada o sin eventos.');
+                    return;
+                  }
+                  return Share.share({
+                    message: JSON.stringify(report, null, 2),
+                    title: 'Dinamic observability baseline',
+                  });
+                })
+                .catch((e) => setError(messageOf(e)))
+                .finally(() => setBusy(false));
+            }}
+          />
           <Text style={styles.muted}>
             El export no incluye tokens, fotos ni API keys. Usalo para soporte operativo.
           </Text>

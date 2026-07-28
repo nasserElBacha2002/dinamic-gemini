@@ -52,6 +52,10 @@ export class ApiClient {
     return this.request<T>(path, { timeoutKind: kind, ...options, method: 'POST', body });
   }
 
+  async put<T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<T> {
+    return this.request<T>(path, { timeoutKind: 'default', ...options, method: 'PUT', body });
+  }
+
   async delete(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<void> {
     await this.request<unknown>(path, { ...options, method: 'DELETE' });
   }
@@ -102,7 +106,12 @@ export class ApiClient {
       throw new ApiError('La aplicación no tiene configurada la URL del backend.', null, 'CONFIG_MISSING');
     }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.resolveTimeout(options));
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.resolveTimeout(options));
+    const unlink = linkAbortSignal(controller, options.signal);
     const headers: Record<string, string> = {
       Accept: 'application/json',
       ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
@@ -117,12 +126,11 @@ export class ApiClient {
         headers.Authorization = `Bearer ${token}`;
       }
     }
-    const signal = options.signal ?? controller.signal;
     try {
       const init: RequestInit = {
         method: options.method ?? 'GET',
         headers,
-        signal,
+        signal: controller.signal,
       };
       if (options.body !== undefined) {
         init.body = JSON.stringify(options.body);
@@ -130,8 +138,13 @@ export class ApiClient {
       return await fetch(`${this.options.config.apiBaseUrl}${path}`, init);
     } catch (e) {
       this.options.logger.warn('error', { where: 'api_fetch', message: String(e) });
-      throw new ApiError('No se pudo conectar con el backend.', null, 'NETWORK_ERROR');
+      throw mapFetchAbortError({
+        timedOut,
+        externalAborted: options.signal?.aborted === true,
+        fallbackMessage: 'No se pudo conectar con el backend.',
+      });
     } finally {
+      unlink();
       clearTimeout(timeout);
     }
   }
@@ -145,7 +158,12 @@ export class ApiClient {
       throw new ApiError('La aplicación no tiene configurada la URL del backend.', null, 'CONFIG_MISSING');
     }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.resolveTimeout(options));
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.resolveTimeout(options));
+    const unlink = linkAbortSignal(controller, options.signal);
     const headers: Record<string, string> = {
       Accept: 'application/json',
       ...options.headers,
@@ -165,12 +183,17 @@ export class ApiClient {
         method: 'POST',
         headers,
         body: formData,
-        signal: options.signal ?? controller.signal,
+        signal: controller.signal,
       });
     } catch (e) {
       this.options.logger.warn('error', { where: 'api_multipart', message: String(e) });
-      throw new ApiError('No se pudo conectar con el backend.', null, 'NETWORK_ERROR');
+      throw mapFetchAbortError({
+        timedOut,
+        externalAborted: options.signal?.aborted === true,
+        fallbackMessage: 'No se pudo conectar con el backend.',
+      });
     } finally {
+      unlink();
       clearTimeout(timeout);
     }
   }
@@ -207,6 +230,17 @@ export class ApiClient {
           refreshExpiresIn: payload.refresh_expires_in,
         };
         await this.options.tokenStorage.saveTokens(tokens);
+        // Phase 9: successful refresh restores auth for blocked offline ops.
+        try {
+          // Lazy require to avoid cycles with offline module graph.
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { emitAuthState } = require('../../features/offlineOperations/authStateEvents') as {
+            emitAuthState: (s: 'authenticated' | 'unauthenticated') => void;
+          };
+          emitAuthState('authenticated');
+        } catch {
+          /* optional */
+        }
       })().finally(() => {
         this.refreshPromise = null;
       });
@@ -219,6 +253,15 @@ export class ApiClient {
       return;
     }
     this.authExpiredNotified = true;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { emitAuthState } = require('../../features/offlineOperations/authStateEvents') as {
+        emitAuthState: (s: 'authenticated' | 'unauthenticated') => void;
+      };
+      emitAuthState('unauthenticated');
+    } catch {
+      /* optional */
+    }
     this.options.onAuthExpired?.();
   }
 }
@@ -264,6 +307,12 @@ function extractErrorCode(data: unknown): string | null {
   if ('code' in data && typeof (data as { code: unknown }).code === 'string') {
     return (data as { code: string }).code;
   }
+  if ('detail' in data && typeof (data as { detail: unknown }).detail === 'object') {
+    const nested = (data as { detail?: { code?: string } }).detail?.code;
+    if (typeof nested === 'string') {
+      return nested;
+    }
+  }
   if ('error' in data) {
     const nested = (data as { error?: { code?: string } }).error?.code;
     return nested ?? null;
@@ -277,4 +326,43 @@ function safeJson(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+export const REQUEST_ABORTED = 'REQUEST_ABORTED';
+export const REQUEST_TIMEOUT = 'REQUEST_TIMEOUT';
+export const NETWORK_ERROR = 'NETWORK_ERROR';
+
+function mapFetchAbortError(input: {
+  readonly timedOut: boolean;
+  readonly externalAborted: boolean;
+  readonly fallbackMessage: string;
+}): ApiError {
+  if (input.externalAborted && !input.timedOut) {
+    return new ApiError('La solicitud fue cancelada.', null, REQUEST_ABORTED);
+  }
+  if (input.timedOut) {
+    return new ApiError('La solicitud excedió el tiempo de espera.', null, REQUEST_TIMEOUT);
+  }
+  return new ApiError(input.fallbackMessage, null, NETWORK_ERROR);
+}
+
+/**
+ * Keep timeout AbortController authoritative while honoring an optional caller signal.
+ * Returns an unlink function that must run in `finally`.
+ */
+export function linkAbortSignal(controller: AbortController, external?: AbortSignal): () => void {
+  if (!external) {
+    return () => undefined;
+  }
+  if (external.aborted) {
+    controller.abort();
+    return () => undefined;
+  }
+  const onAbort = () => {
+    controller.abort();
+  };
+  external.addEventListener('abort', onAbort);
+  return () => {
+    external.removeEventListener('abort', onAbort);
+  };
 }

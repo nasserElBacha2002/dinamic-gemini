@@ -1,11 +1,22 @@
 import { mapProcessingPersistence } from '../../core/processingState';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
+import type { LocalDetectionDraftRepository } from '../../database/repositories/localDetectionDraftRepository';
 import type { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
 import type { ProcessingJobRow } from '../../database/schema/captureSchema';
+import type { FeatureFlags } from '../../core/featureFlags';
 import type { BackgroundWorkScheduler } from '../../native/backgroundWork';
+import {
+  emitObservability,
+  normalizeObservabilityError,
+  sessionMarkKey,
+  type ObservabilityReporter,
+  type TimingMarkStore,
+} from '../../observability';
 import type { ApiClient } from '../../services/api/apiClient';
 import type { AisleStatusResponseDto } from '../../services/api/types';
+import { compareLocalVsServer } from '../localCodeScan/localCodeScanStrategy';
+import type { ReconciliationQueryService } from '../preliminaryReconciliation/reconciliationQueryService';
 
 export interface JobMonitorSnapshot {
   readonly jobs: readonly ProcessingJobRow[];
@@ -13,15 +24,27 @@ export interface JobMonitorSnapshot {
 
 export type JobListener = (snapshot: JobMonitorSnapshot) => void;
 
+export interface JobMonitorObservability {
+  readonly reporter: ObservabilityReporter;
+  readonly marks: TimingMarkStore;
+}
+
 export interface JobMonitorOptions {
   readonly backgroundPolling?: boolean;
   readonly backgroundWork?: BackgroundWorkScheduler | null;
+  readonly observability?: JobMonitorObservability | null;
+  readonly flags?: FeatureFlags;
+  readonly localDrafts?: LocalDetectionDraftRepository | null;
+  /** Phase 5: server-side reconciliation (never invents mapping in UI). */
+  readonly reconciliation?: ReconciliationQueryService | null;
 }
 
 export class JobMonitor {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly listeners = new Set<JobListener>();
   private disposed = false;
+  private readonly firstResultEmitted = new Set<string>();
+  private readonly jobStartedEmitted = new Set<string>();
 
   constructor(
     private readonly api: ApiClient,
@@ -39,6 +62,10 @@ export class JobMonitor {
 
   async restorePendingJobs(): Promise<void> {
     const pending = await this.jobs.listNonTerminal();
+    emitObservability(this.options.observability?.reporter, {
+      name: 'job.monitor_restored',
+      attributes: { pending_job_count: pending.length },
+    });
     for (const job of pending) {
       await this.watch(job.backend_job_id);
     }
@@ -94,6 +121,7 @@ export class JobMonitor {
       this.stop(backendJobId);
       return;
     }
+    const obs = this.options.observability;
     try {
       const status = await this.api.get<AisleStatusResponseDto>(
         `/api/v3/inventories/${encodeURIComponent(job.inventory_id)}/aisles/${encodeURIComponent(job.aisle_id)}/status`,
@@ -131,7 +159,120 @@ export class JobMonitor {
         // ignore invalid transition races
       }
       this.logger.info('job_status_changed', { jobId: backendJobId, status: remoteStatus });
+
+      const sessionId = job.capture_session_id;
+      const statusLower = remoteStatus.toLowerCase();
+      if (
+        obs &&
+        !this.jobStartedEmitted.has(backendJobId) &&
+        (statusLower === 'running' || statusLower === 'starting' || mapping.state === 'processing')
+      ) {
+        this.jobStartedEmitted.add(backendJobId);
+        const processToStart =
+          obs.marks.takeElapsedMs(sessionMarkKey(sessionId, 'process_requested')) ?? null;
+        obs.marks.mark(sessionMarkKey(sessionId, `job:${backendJobId}:started`));
+        emitObservability(obs.reporter, {
+          name: 'job.started_observed',
+          sessionId,
+          serverJobId: backendJobId,
+          localJobId: job.id,
+          durationMs: processToStart ?? undefined,
+          attributes: {
+            process_requested_to_job_started_ms: processToStart,
+            remote_status: remoteStatus,
+          },
+        });
+      }
+
+      const positions = status.aisle.positions_count ?? 0;
+      if (
+        obs &&
+        !this.firstResultEmitted.has(backendJobId) &&
+        (positions > 0 || mapping.terminal)
+      ) {
+        this.firstResultEmitted.add(backendJobId);
+        const startedKey = sessionMarkKey(sessionId, `job:${backendJobId}:started`);
+        const jobToFirst =
+          obs.marks.takeElapsedMs(startedKey) ??
+          obs.marks.takeElapsedMs(sessionMarkKey(sessionId, 'process_requested'));
+        const captureToFirst =
+          obs.marks.takeElapsedMs(sessionMarkKey(sessionId, 'created')) ?? null;
+        emitObservability(obs.reporter, {
+          name: 'session.capture_to_first_server_result',
+          sessionId,
+          serverJobId: backendJobId,
+          localJobId: job.id,
+          durationMs: captureToFirst ?? undefined,
+          attributes: {
+            capture_to_first_server_result_ms: captureToFirst,
+            job_started_to_first_result_ms: jobToFirst,
+            positions_count: positions,
+            remote_status: remoteStatus,
+            approximated: positions === 0 && mapping.terminal,
+          },
+        });
+      }
+
+      if (mapping.terminal && obs) {
+        const startedKey = sessionMarkKey(sessionId, `job:${backendJobId}:started`);
+        const jobToTerminal =
+          obs.marks.takeElapsedMs(startedKey) ??
+          obs.marks.takeElapsedMs(sessionMarkKey(sessionId, 'process_requested'));
+        const captureToTerminal =
+          obs.marks.takeElapsedMs(sessionMarkKey(sessionId, 'created')) ?? null;
+        const photos = await this.sessions.listPhotos(sessionId);
+        const stable = photos.filter((p) => p.status === 'stable');
+        emitObservability(obs.reporter, {
+          name: 'session.job_terminal',
+          sessionId,
+          serverJobId: backendJobId,
+          localJobId: job.id,
+          durationMs: captureToTerminal ?? undefined,
+          attributes: {
+            capture_to_job_terminal_ms: captureToTerminal,
+            capture_to_full_sync_ms: captureToTerminal,
+            job_started_to_terminal_ms: jobToTerminal,
+            remote_status: remoteStatus,
+            total_images: stable.length,
+            uploaded_images: stable.filter((p) => p.upload_status === 'uploaded').length,
+            failed_images: stable.filter((p) =>
+              ['permanent_error', 'retryable_error'].includes(p.upload_status),
+            ).length,
+            retryable_failures: stable.filter((p) => p.upload_status === 'retryable_error').length,
+            terminal_failures: stable.filter((p) => p.upload_status === 'permanent_error').length,
+            error_code:
+              mapping.state === 'completed'
+                ? null
+                : normalizeObservabilityError({
+                    stage: 'job',
+                    code: remote?.failure_code ?? null,
+                    message: errorMessage,
+                  }),
+          },
+        });
+        if (mapping.state !== 'completed') {
+          emitObservability(obs.reporter, {
+            name: 'job.terminal_failed',
+            sessionId,
+            serverJobId: backendJobId,
+            attributes: {
+              error_code: normalizeObservabilityError({
+                stage: 'job',
+                code: remote?.failure_code ?? null,
+                message: errorMessage,
+              }),
+              remote_status: remoteStatus,
+            },
+          });
+        }
+      }
+
       if (mapping.terminal) {
+        await this.maybeReconcileOrShadowCompare(
+          job,
+          backendJobId,
+          mapping.state === 'completed',
+        );
         if (this.options.backgroundWork) {
           void this.options.backgroundWork.cancelJobMonitor(backendJobId);
         }
@@ -142,7 +283,106 @@ export class JobMonitor {
       await this.emit();
     } catch (e) {
       this.logger.warn('job_poll_error', { jobId: backendJobId, message: String(e) });
+      emitObservability(this.options.observability?.reporter, {
+        name: 'job.poll_failed',
+        sessionId: job.capture_session_id,
+        serverJobId: backendJobId,
+        attributes: {
+          error_code: normalizeObservabilityError({
+            stage: 'job',
+            message: String(e),
+          }),
+        },
+      });
       this.schedule(backendJobId, 10_000);
+    }
+  }
+
+  /**
+   * Phase 5: prefer server reconciliation (asset-mapped). Phase 3 shadow path stays
+   * NOT_COMPARABLE without inventing order matching.
+   */
+  private async maybeReconcileOrShadowCompare(
+    job: ProcessingJobRow,
+    backendJobId: string,
+    jobCompleted: boolean,
+  ): Promise<void> {
+    if (this.options.reconciliation?.canTrigger()) {
+      await this.options.reconciliation.syncAfterJobTerminal({
+        inventoryId: job.inventory_id,
+        aisleId: job.aisle_id,
+        jobId: backendJobId,
+        sessionId: job.capture_session_id,
+      });
+      return;
+    }
+    await this.maybeShadowCompare(job.capture_session_id, jobCompleted);
+  }
+
+  /**
+   * Legacy shadow compare. Without reliable client_file_id → code/qty mapping, keep
+   * compare_result null and emit session-level mapping_unavailable. Never invent order matching.
+   */
+  private async maybeShadowCompare(sessionId: string, jobCompleted: boolean): Promise<void> {
+    if (this.options.flags?.mobileLocalCodeScanShadowCompare !== true) {
+      return;
+    }
+    const drafts = this.options.localDrafts;
+    if (!drafts) {
+      return;
+    }
+    try {
+      const rows = await drafts.listForSession(sessionId);
+      const mappingReliable = false;
+      if (!mappingReliable) {
+        await drafts.markComparisonMappingUnavailable(sessionId);
+        emitObservability(this.options.observability?.reporter, {
+          name: 'comparison_mapping_unavailable',
+          sessionId,
+          attributes: {
+            job_completed: jobCompleted,
+            draft_count: rows.filter((r) => r.status !== 'NOT_APPLICABLE').length,
+            reason: 'no_client_file_to_result_mapping',
+          },
+        });
+        return;
+      }
+      for (const row of rows) {
+        if (row.status === 'NOT_APPLICABLE') {
+          continue;
+        }
+        if (row.compared_at) {
+          continue;
+        }
+        const compareResult = compareLocalVsServer({
+          localInternalCode: row.internal_code,
+          localQuantity: row.quantity,
+          localStatus: row.status,
+          serverInternalCode: null,
+          serverQuantity: null,
+          mappingReliable: true,
+        });
+        await drafts.markCompared(row.id, compareResult);
+        emitObservability(this.options.observability?.reporter, {
+          name: 'local_scan_result_compared',
+          sessionId,
+          clientFileId: row.client_file_id ?? undefined,
+          attributes: {
+            compare_result: compareResult,
+            local_scan_status: row.status,
+            job_completed: jobCompleted,
+            mapping_reliable: true,
+            detector_version: row.detector_version,
+            parser_version: row.parser_version,
+          },
+        });
+      }
+    } catch (e) {
+      this.logger.warn('error', {
+        code: 'LOCAL_SHADOW_COMPARE_FAILED',
+        sessionId,
+        message: String(e),
+      });
     }
   }
 

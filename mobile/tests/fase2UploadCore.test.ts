@@ -163,6 +163,9 @@ describe('uploadErrors', () => {
 describe('fase2 session transitions', () => {
   it('allows review -> uploading and processing terminal paths', () => {
     expect(canTransitionSession('review', 'uploading')).toBe(true);
+    expect(canTransitionSession('active', 'uploading')).toBe(false);
+    expect(canTransitionSession('paused', 'review')).toBe(false);
+    expect(canTransitionSession('active', 'finishing')).toBe(true);
     expect(canTransitionSession('uploading', 'ready_to_process')).toBe(true);
     expect(canTransitionSession('ready_to_process', 'processing')).toBe(true);
     expect(canTransitionSession('processing', 'completed')).toBe(true);
@@ -185,12 +188,20 @@ describe('fase2 session transitions', () => {
 
 describe('fase2 migrations', () => {
   it('includes v3 and v4 upload/job schema', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4]);
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+    ]);
     const sql = MIGRATIONS.map((m) => m.sql).join('\n');
     expect(sql).toContain('upload_batch_id');
     expect(sql).toContain('client_file_id');
+    expect(sql).toContain('observability_events');
+    expect(sql).toContain('preparation_processing_mode');
+    expect(sql).toContain('upload_lease_token');
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS upload_batches');
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS processing_jobs');
     expect(sql).toContain('idx_capture_photos_session_client_file');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS offline_operations');
+    expect(sql).toContain('payload_hash');
+    expect(sql).toContain('lease_expires_at');
   });
 });

@@ -1,7 +1,19 @@
+import type { FeatureFlags } from '../../core/featureFlags';
 import { mapProcessingPersistence, toProcessingState } from '../../core/processingState';
+import { normalizePreparationProcessingMode } from '../../core/imagePreparationPolicy';
 import type { Logger } from '../../core/logging';
 import type { CaptureRepository } from '../../database/repositories/captureRepository';
+import type { CapturePhotoRow } from '../../database/schema/captureSchema';
 import type { ProcessingJobRepository } from '../../database/repositories/processingJobRepository';
+import {
+  createMonotonicClock,
+  emitObservability,
+  networkAttributesFromConnectivity,
+  normalizeObservabilityError,
+  sessionMarkKey,
+  type ObservabilityReporter,
+  type TimingMarkStore,
+} from '../../observability';
 import { ApiError } from '../../services/api/apiClient';
 import type { ApiClient } from '../../services/api/apiClient';
 import type {
@@ -10,8 +22,11 @@ import type {
   MergeResultsResponseDto,
   ProcessAisleResponseDto,
 } from '../../services/api/types';
+import type { ConnectivityService } from '../../services/connectivity/connectivity';
+import { createId } from '../../shared/createId';
 import type { UploadQueue } from '../upload/uploadQueue';
 import type { AisleAssetsApi } from '../upload/aisleAssetsApi';
+import type { ConfirmedLocalResultRepository } from '../../database/repositories/confirmedLocalResultRepository';
 import { computeProcessingReadiness, type ProcessingReadiness } from './processingReadiness';
 import {
   buildProcessAisleRequestBody,
@@ -53,8 +68,20 @@ export interface ProcessingResultSummary {
   readonly jobId: string | null;
 }
 
+export interface ProcessingObservability {
+  readonly reporter: ObservabilityReporter;
+  readonly marks: TimingMarkStore;
+  readonly connectivity?: ConnectivityService | null;
+}
+
+export interface ProcessingAuthoritativeGate {
+  readonly flags: FeatureFlags;
+  readonly confirmed: ConfirmedLocalResultRepository;
+}
+
 export class ProcessingService {
   private processLocks = new Set<string>();
+  private readonly clock = createMonotonicClock();
 
   constructor(
     private readonly api: ApiClient,
@@ -63,6 +90,8 @@ export class ProcessingService {
     private readonly uploadQueue: UploadQueue,
     private readonly assetsApi: AisleAssetsApi,
     private readonly logger: Logger,
+    private readonly observability: ProcessingObservability | null = null,
+    private readonly authoritativeGate: ProcessingAuthoritativeGate | null = null,
   ) {}
 
   async readiness(sessionId: string): Promise<ProcessingReadiness> {
@@ -97,7 +126,42 @@ export class ProcessingService {
     } catch (e) {
       return { ...base, ready: false, reason: `No se pudo validar assets remotos: ${String(e)}` };
     }
+    const authoritative = await this.checkAuthoritativeLocalResults(sessionId, photos);
+    if (!authoritative.ready) {
+      return { ...base, ready: false, reason: authoritative.reason };
+    }
     return base;
+  }
+
+  private async checkAuthoritativeLocalResults(
+    sessionId: string,
+    photos: readonly CapturePhotoRow[],
+  ): Promise<{ ready: boolean; reason: string | null }> {
+    const gate = this.authoritativeGate;
+    if (!gate?.flags.mobileAuthoritativeLocalCodeScan) {
+      return { ready: true, reason: null };
+    }
+    // Fail-closed: when local authority is on, do not start remote /process until every
+    // uploaded photo is confirmed+SYNCED or explicitly excluded.
+    const uploaded = photos.filter(
+      (p) => p.upload_status === 'uploaded' && Boolean(p.backend_asset_id),
+    );
+    const confirmed = await gate.confirmed.listForSession(sessionId);
+    const byPhoto = new Map(confirmed.map((c) => [c.capture_photo_id, c]));
+    const missing: string[] = [];
+    for (const photo of uploaded) {
+      const row = byPhoto.get(photo.id);
+      if (!row || row.sync_status !== 'SYNCED') {
+        missing.push(photo.display_name || photo.id);
+      }
+    }
+    if (missing.length > 0) {
+      return {
+        ready: false,
+        reason: `Faltan resultados locales confirmados/sincronizados (${missing.length}). No se inicia procesamiento remoto.`,
+      };
+    }
+    return { ready: true, reason: null };
   }
 
   async validateBeforeProcess(sessionId: string): Promise<{ ok: boolean; reason: string | null }> {
@@ -126,6 +190,13 @@ export class ProcessingService {
       if (!session) {
         await processingRunStore.markTerminal(run.id, 'failed');
         return { ok: false, jobId: null, reason: 'Sesión no encontrada.' };
+      }
+
+      if (identificationMode) {
+        await this.repo.setPreparationProcessingMode(
+          sessionId,
+          normalizePreparationProcessingMode(identificationMode),
+        );
       }
 
       if (run.backendJobId) {
@@ -171,12 +242,41 @@ export class ProcessingService {
         `/api/v3/inventories/${encodeURIComponent(session.inventory_id)}` +
         `/aisles/${encodeURIComponent(session.aisle_id)}/process`;
       const body = buildProcessAisleRequestBody(idempotencyKey, identificationMode);
+      const processAttemptId = createId();
+      const uploadsCompletedToProcessMs =
+        this.observability?.marks.takeElapsedMs(sessionMarkKey(sessionId, 'all_uploads_completed')) ?? null;
+      const processStartedAt = this.clock.nowMs();
+      emitObservability(this.observability?.reporter, {
+        name: 'session.process_requested',
+        sessionId,
+        attemptId: processAttemptId,
+        attributes: {
+          all_uploads_completed_to_process_requested_ms: uploadsCompletedToProcessMs,
+          identification_mode: identificationMode ?? 'inherited',
+          ...networkAttributesFromConnectivity(this.observability?.connectivity),
+        },
+      });
       try {
         const response = await this.api.post<ProcessAisleResponseDto>(path, body, {
           headers: { 'Idempotency-Key': idempotencyKey },
         });
+        const processRequestMs = Math.max(0, Math.round(this.clock.nowMs() - processStartedAt));
         await processingRunStore.attachBackendJob(run.id, response.job_id);
         await this.persistJob(sessionId, session.inventory_id, session.aisle_id, response.job_id, 'queued');
+        this.observability?.marks.mark(sessionMarkKey(sessionId, 'process_requested'));
+        this.observability?.marks.mark(sessionMarkKey(sessionId, `job:${response.job_id}:queued`));
+        emitObservability(this.observability?.reporter, {
+          name: 'session.process_accepted',
+          sessionId,
+          serverJobId: response.job_id,
+          attemptId: processAttemptId,
+          durationMs: processRequestMs,
+          attributes: {
+            process_request_ms: processRequestMs,
+            execution_strategy: response.execution_strategy ?? null,
+            ...networkAttributesFromConnectivity(this.observability?.connectivity),
+          },
+        });
         this.logger.info('job_started', {
           sessionId,
           jobId: response.job_id,
@@ -187,6 +287,22 @@ export class ProcessingService {
         });
         return { ok: true, jobId: response.job_id, reason: null };
       } catch (e) {
+        const processRequestMs = Math.max(0, Math.round(this.clock.nowMs() - processStartedAt));
+        emitObservability(this.observability?.reporter, {
+          name: 'session.process_failed',
+          sessionId,
+          attemptId: processAttemptId,
+          durationMs: processRequestMs,
+          attributes: {
+            process_request_ms: processRequestMs,
+            error_code: normalizeObservabilityError({
+              stage: 'process',
+              code: e instanceof ApiError ? e.code : null,
+              httpStatus: e instanceof ApiError ? e.status : null,
+              message: e instanceof ApiError ? e.message : String(e),
+            }),
+          },
+        });
         if (e instanceof ApiError && (e.status === 409 || e.code === 'ACTIVE_JOB_EXISTS')) {
           const recovered = await this.findActiveRemoteJob(session.inventory_id, session.aisle_id, idempotencyKey);
           if (recovered) {
@@ -236,6 +352,8 @@ export class ProcessingService {
     localState: ReturnType<typeof toProcessingState>;
     remoteStatus: string | null;
     jobId: string | null;
+    inventoryId: string | null;
+    aisleId: string | null;
     errorMessage: string | null;
     finishedAt: string | null;
     updatedAt: string | null;
@@ -247,6 +365,8 @@ export class ProcessingService {
         localState: 'idle',
         remoteStatus: null,
         jobId: null,
+        inventoryId: null,
+        aisleId: null,
         errorMessage: null,
         finishedAt: null,
         updatedAt: null,
@@ -260,6 +380,8 @@ export class ProcessingService {
       localState: toProcessingState(session.processing_status),
       remoteStatus,
       jobId: latest?.backend_job_id ?? session.backend_job_id,
+      inventoryId: session.inventory_id,
+      aisleId: session.aisle_id,
       errorMessage: latest?.error_message ?? session.last_processing_error,
       finishedAt: latest?.finished_at ?? session.processing_finished_at,
       updatedAt: latest?.last_polled_at ?? session.updated_at,

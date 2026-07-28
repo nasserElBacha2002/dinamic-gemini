@@ -934,6 +934,145 @@ class LimitsAndSchemaSettings(BaseModel):
         ),
         description="Enable aisle QR/barcode code scan API. Env: CODE_SCAN_ENABLED.",
     )
+    server_preliminary_detection_ingest_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_PRELIMINARY_DETECTION_INGEST", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 4: accept mobile preliminary CODE_SCAN drafts (diagnostic only). "
+            "Default false. Does not affect positions or authoritative pipeline results. "
+            "Env: SERVER_PRELIMINARY_DETECTION_INGEST."
+        ),
+    )
+    server_preliminary_reconciliation_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_PRELIMINARY_RECONCILIATION", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "DEPRECATED Phase 5: compare local preliminary drafts vs remote asset results. "
+            "Default false. Read-only / no new productive auto-reconcile when authoritative "
+            "local ingest is enabled. Env: SERVER_PRELIMINARY_RECONCILIATION."
+        ),
+    )
+    preliminary_reconciliation_metrics_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("PRELIMINARY_RECONCILIATION_METRICS", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "DEPRECATED Phase 5: emit aggregate server-agreement metrics for reconciliations. "
+            "Default false. Prefer authoritative local CODE_SCAN path. "
+            "Env: PRELIMINARY_RECONCILIATION_METRICS."
+        ),
+    )
+    server_authoritative_local_code_scan_ingest_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_AUTHORITATIVE_LOCAL_CODE_SCAN_INGEST", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Intermediate: accept operator-confirmed local CODE_SCAN as authoritative. "
+            "Default false. Env: SERVER_AUTHORITATIVE_LOCAL_CODE_SCAN_INGEST."
+        ),
+    )
+    server_skip_remote_code_scan_for_local_authority: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_SKIP_REMOTE_CODE_SCAN_FOR_LOCAL_AUTHORITY", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Intermediate: at /process apply authoritative local results and skip remote "
+            "CODE_SCAN for those assets. Default false. "
+            "Must be true when SERVER_AUTHORITATIVE_LOCAL_CODE_SCAN_INGEST is true. "
+            "Env: SERVER_SKIP_REMOTE_CODE_SCAN_FOR_LOCAL_AUTHORITY."
+        ),
+    )
+    server_authoritative_aisle_finalization_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_AUTHORITATIVE_AISLE_FINALIZATION", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 6: enable GET authoritative-readiness and POST finalize-authoritative. "
+            "Default false. Env: SERVER_AUTHORITATIVE_AISLE_FINALIZATION."
+        ),
+    )
+    server_server_reprocess_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_SERVER_REPROCESS", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: enable POST/GET server-reprocess (proposal runs; no overwrite). "
+            "Default false. Env: SERVER_SERVER_REPROCESS."
+        ),
+    )
+    server_server_reprocess_adoption_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_SERVER_REPROCESS_ADOPTION", "false")
+            .strip()
+            .lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 7: enable POST server-reprocess/{run_id}/adopt. "
+            "Default false. Env: SERVER_SERVER_REPROCESS_ADOPTION."
+        ),
+    )
+    server_reprocess_worker_token: str = Field(
+        default_factory=lambda: (os.getenv("SERVER_REPROCESS_WORKER_TOKEN", "") or "").strip(),
+        description=(
+            "Phase 7: shared secret for X-Dinamic-Internal-Worker on /server-reprocess/*/execute. "
+            "Empty disables the execute endpoint. Env: SERVER_REPROCESS_WORKER_TOKEN."
+        ),
+    )
+    server_aisle_revisions_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_AISLE_REVISIONS", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 8: enable aisle revision create/edit/apply/history. "
+            "Default false. Env: SERVER_AISLE_REVISIONS."
+        ),
+    )
+    server_aisle_rollback_enabled: bool = Field(
+        default_factory=lambda: (
+            os.getenv("SERVER_AISLE_ROLLBACK", "false").strip().lower()
+            in ("1", "true", "yes")
+        ),
+        description=(
+            "Phase 8: enable POST .../rollback (requires SERVER_AISLE_REVISIONS). "
+            "Default false. Env: SERVER_AISLE_ROLLBACK."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_authoritative_local_flag_matrix(self) -> Self:
+        """ingest=true requires skip=true (fail-closed; no remote fallback after local)."""
+        ingest = bool(
+            getattr(self, "server_authoritative_local_code_scan_ingest_enabled", False)
+        )
+        skip = bool(
+            getattr(self, "server_skip_remote_code_scan_for_local_authority", False)
+        )
+        if ingest and not skip:
+            raise ValueError(
+                "Invalid authoritative local CODE_SCAN config: "
+                "SERVER_AUTHORITATIVE_LOCAL_CODE_SCAN_INGEST=true requires "
+                "SERVER_SKIP_REMOTE_CODE_SCAN_FOR_LOCAL_AUTHORITY=true "
+                "(fail-closed; no remote CODE_SCAN fallback)."
+            )
+        return self
+
     aisle_identification_pipeline_enabled: bool = Field(
         default_factory=lambda: (
             os.getenv("AISLE_IDENTIFICATION_PIPELINE_ENABLED", "false")

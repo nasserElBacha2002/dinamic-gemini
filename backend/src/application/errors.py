@@ -485,3 +485,39 @@ class CodeScanPipelineMisconfiguredError(Exception):
     RESOLVED_INTERNAL scan could never create a position (silent data loss) or the run would
     crash mid-loop. The executor catches this and fails the job/aisle deterministically.
     """
+
+
+class AuthoritativeResultRepositoryUnavailableError(Exception):
+    """Cannot read authoritative results (repo/DB unavailable)."""
+
+    error_code = "AUTHORITATIVE_RESULT_REPOSITORY_UNAVAILABLE"
+
+
+class AuthoritativeResultApplyFailedError(Exception):
+    """Failed to persist position / finalize state from a local authoritative result."""
+
+    error_code = "AUTHORITATIVE_RESULT_APPLY_FAILED"
+
+    def __init__(self, message: str, *, asset_id: str | None = None) -> None:
+        super().__init__(message)
+        self.asset_id = asset_id
+
+
+class AuthoritativeResultStateConflictError(Exception):
+    """Asset already resolved by a non-local strategy, or CAS conflict."""
+
+    error_code = "AUTHORITATIVE_RESULT_STATE_CONFLICT"
+
+    def __init__(self, message: str, *, asset_id: str | None = None) -> None:
+        super().__init__(message)
+        self.asset_id = asset_id
+
+
+class AuthoritativeSessionNotReadyError(Exception):
+    """Raised when /process cannot start under authoritative local policy."""
+
+    error_code = "AUTHORITATIVE_SESSION_NOT_READY"
+
+    def __init__(self, message: str, *, reasons: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.reasons = reasons

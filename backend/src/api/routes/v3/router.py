@@ -10,15 +10,21 @@ from src.api.constants.route_paths import API_V3_INVENTORIES_ROUTER_PREFIX
 from src.auth.dependencies import get_current_admin
 
 from . import (
+    aisle_revisions,
     aisles,
     assets,
+    authoritative_aisle_finalization,
+    authoritative_local_code_scan,
     capture_sessions,
     code_scans,
     image_results,
     inventories,
     positions,
+    preliminary_detections,
+    preliminary_reconciliations,
     processing_observability,
     reviews,
+    server_reprocess,
 )
 
 router = APIRouter(
@@ -32,6 +38,12 @@ router.include_router(capture_sessions.router)
 router.include_router(aisles.router)
 router.include_router(code_scans.router)
 router.include_router(assets.router)
+router.include_router(authoritative_local_code_scan.router)
+router.include_router(authoritative_aisle_finalization.router)
+router.include_router(server_reprocess.router)
+router.include_router(aisle_revisions.router)
+router.include_router(preliminary_detections.router)
+router.include_router(preliminary_reconciliations.router)
 router.include_router(positions.router)
 router.include_router(image_results.router)
 router.include_router(processing_observability.router)

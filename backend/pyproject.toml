@@ -33,7 +33,7 @@ dependencies = [
     "python-dotenv>=1.2.2; python_version>='3.10'",
     "python-dotenv>=1.2.1; python_version<'3.10'",
     "numpy>=1.24.0",
-    "pillow>=12.2.0; python_version>='3.10'",
+    "pillow>=12.3.0; python_version>='3.10'",
     "pillow>=10.0.0; python_version<'3.10'",
     "pillow-heif>=0.21.0",
     "imagehash>=4.3.0",

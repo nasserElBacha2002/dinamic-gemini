@@ -60,6 +60,7 @@ function session(overrides: Partial<CaptureSessionRow> = {}): CaptureSessionRow 
     processing_finished_at: null,
     last_upload_error: null,
     last_processing_error: null,
+    preparation_processing_mode: 'UNKNOWN',
     created_at: now,
     updated_at: now,
     ...overrides,
@@ -107,6 +108,11 @@ function photo(status: CapturePhotoStatus): CapturePhotoRow {
     local_transform_uri: null,
     original_size: null,
     upload_size: null,
+    upload_worker_owner: null,
+    upload_lease_token: null,
+    upload_lease_expires_at: null,
+    upload_heartbeat_at: null,
+    upload_cancel_requested: 0,
     created_at: now,
     updated_at: now,
   };
@@ -421,6 +427,18 @@ describe('CaptureService corrections', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect((await repo.getPhoto('session-1', '100'))?.status).toBe('excluded');
+  });
+
+  it('completeReview is idempotent when uploads already reached ready_to_process', async () => {
+    const repo = new FakeRepo();
+    repo.sessions.set('session-1', session({ status: 'ready_to_process' }));
+    const service = new CaptureService(repo as unknown as CaptureRepository, foreground(), createLogger(() => undefined), {
+      mediaStore: mediaStore(),
+      stabilityProber: { probe: jest.fn().mockResolvedValue({ ok: true, checks: 2 }) },
+    });
+    await service.loadSession('session-1', false);
+    await expect(service.completeReview()).resolves.toBe('session-1');
+    expect((await repo.getSession('session-1'))?.status).toBe('ready_to_process');
   });
 });
 

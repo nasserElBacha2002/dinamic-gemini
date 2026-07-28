@@ -1,0 +1,32 @@
+Authoritative local CODE_SCAN — intermediate phase test results
+Date: 2026-07-24
+
+## Backend
+Command:
+  .venv/bin/python -m pytest backend/tests/application/use_cases/test_persist_authoritative_local_code_scan.py backend/tests/database/test_migration_0065_authoritative_local_code_scan.py -q --tb=line --no-cov
+Result: 12 passed
+
+Ruff (new modules): clean after import fix.
+
+Smoke import: authoritative route + use case OK.
+
+Not run in this environment:
+  - Live SQL Server migration apply
+  - SQL concurrency / idempotency integration against real ODBC
+  - Full backend/tests/api suite (historical jwt/venv gaps)
+  - Full integration aisle E2E
+
+## Mobile
+Command:
+  npm run test:services -- --testPathPattern='confirmLocalResult|authoritativeLocalResultSync' --coverage=false
+Result: 2 suites, 13 passed
+
+npx tsc --noEmit: pass (exit 0)
+
+Not run:
+  - npm run lint / test:core / test:integration
+  - Android prebuild / gradlew
+  - Device E2E (capture → confirm → upload → process)
+
+## Flags
+Defaults remain false (rollback-safe).

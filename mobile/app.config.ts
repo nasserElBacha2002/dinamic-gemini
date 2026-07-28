@@ -12,6 +12,26 @@ function readGitSha(): string {
   }
 }
 
+/** Explicit 1/0 only — omit so resolveFeatureFlags can apply env defaults (prod opt-in). */
+function envTriStateFlag(name: string): boolean | undefined {
+  const v = process.env[name];
+  if (v === undefined || v === '') {
+    return undefined;
+  }
+  if (v === '1' || v === 'true') {
+    return true;
+  }
+  if (v === '0' || v === 'false') {
+    return false;
+  }
+  return undefined;
+}
+
+function optionalFlag(name: string, key: string): Record<string, boolean> {
+  const value = envTriStateFlag(name);
+  return value === undefined ? {} : { [key]: value };
+}
+
 const versionName = process.env.DINAMIC_VERSION_NAME ?? '0.3.0';
 const versionCode = Number(process.env.DINAMIC_VERSION_CODE ?? '30');
 const environment = process.env.DINAMIC_ENVIRONMENT ?? 'development';
@@ -91,6 +111,68 @@ const config: ExpoConfig = {
       advancedReconciliation: process.env.DINAMIC_FLAG_RECONCILE !== '0',
       backgroundJobPolling: process.env.DINAMIC_FLAG_BG_POLL !== '0',
       aisleDeviceLock: process.env.DINAMIC_FLAG_AISLE_LOCK === '1',
+      uploadObservabilityEnabled: process.env.DINAMIC_FLAG_UPLOAD_OBS !== '0',
+      // Phase 1: omit when unset so resolveFeatureFlags can default off in production.
+      ...optionalFlag('DINAMIC_FLAG_UPLOAD_DIM_CAP', 'uploadDimensionCap'),
+      ...optionalFlag('DINAMIC_FLAG_UPLOAD_ADAPTIVE_QUALITY', 'uploadAdaptiveQuality'),
+      ...optionalFlag('DINAMIC_FLAG_UPLOAD_ADAPTIVE_CONCURRENCY', 'uploadAdaptiveConcurrency'),
+      ...optionalFlag('DINAMIC_FLAG_UPLOAD_ABORT', 'uploadAbortEnabled'),
+      ...optionalFlag('DINAMIC_FLAG_BG_UPLOAD_WORKER', 'backgroundUploadWorker'),
+      ...optionalFlag('DINAMIC_FLAG_BG_UPLOAD_FGS', 'backgroundUploadForegroundService'),
+      ...optionalFlag('DINAMIC_FLAG_BG_UPLOAD_REBOOT', 'backgroundUploadRebootResume'),
+      // Phase 3 local CODE_SCAN shadow — default off; set =1 to enable.
+      ...optionalFlag('DINAMIC_FLAG_LOCAL_CODE_SCAN', 'mobileLocalCodeScan'),
+      ...optionalFlag('DINAMIC_FLAG_LOCAL_CODE_SCAN_COMPARE', 'mobileLocalCodeScanShadowCompare'),
+      // Phase 4 preliminary sync — default off. JS timer scheduler only (no WorkManager).
+      ...optionalFlag('DINAMIC_FLAG_PRELIMINARY_SYNC', 'mobilePreliminaryDetectionSync'),
+      // Phase 5 reconciliation view — default off; server remains authority.
+      ...optionalFlag(
+        'DINAMIC_FLAG_PRELIMINARY_RECONCILIATION_VIEW',
+        'mobilePreliminaryReconciliationView',
+      ),
+      ...optionalFlag(
+        'DINAMIC_FLAG_PRELIMINARY_RECONCILIATION_TRIGGER',
+        'mobilePreliminaryReconciliationTrigger',
+      ),
+      ...optionalFlag(
+        'DINAMIC_FLAG_AUTHORITATIVE_LOCAL_CODE_SCAN',
+        'mobileAuthoritativeLocalCodeScan',
+      ),
+      ...optionalFlag('DINAMIC_FLAG_LOCAL_RESULT_REVIEW', 'mobileLocalResultReview'),
+      ...optionalFlag(
+        'DINAMIC_FLAG_AUTHORITATIVE_AISLE_FINALIZATION',
+        'mobileAuthoritativeAisleFinalization',
+      ),
+      ...optionalFlag(
+        'DINAMIC_FLAG_AUTHORITATIVE_FINALIZATION_OFFLINE_QUEUE',
+        'authoritativeFinalizationOfflineQueue',
+      ),
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_SERVER_REPROCESS', 'mobileServerReprocess'),
+      ...optionalFlag(
+        'DINAMIC_FLAG_MOBILE_SERVER_REPROCESS_REVIEW',
+        'mobileServerReprocessReview',
+      ),
+      ...optionalFlag(
+        'DINAMIC_FLAG_SERVER_REPROCESS_OFFLINE_QUEUE',
+        'serverReprocessOfflineQueue',
+      ),
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_AISLE_REVISIONS', 'mobileAisleRevisions'),
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_AISLE_HISTORY', 'mobileAisleHistory'),
+      ...optionalFlag('DINAMIC_FLAG_SERVER_AISLE_REVISIONS', 'serverAisleRevisions'),
+      ...optionalFlag('DINAMIC_FLAG_SERVER_AISLE_ROLLBACK', 'serverAisleRollback'),
+      // Phase 9 offline operations — default off; set =1 to enable.
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_OFFLINE_OPERATIONS', 'mobileOfflineOperations'),
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_OFFLINE_WORKMANAGER', 'mobileOfflineWorkManager'),
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_OFFLINE_FINALIZATION', 'mobileOfflineFinalization'),
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_OFFLINE_REVISIONS', 'mobileOfflineRevisions'),
+      ...optionalFlag(
+        'DINAMIC_FLAG_MOBILE_OFFLINE_SERVER_PROCESSING',
+        'mobileOfflineServerProcessing',
+      ),
+      ...optionalFlag(
+        'DINAMIC_FLAG_SERVER_OFFLINE_IDEMPOTENCY_SUPPORT',
+        'serverOfflineIdempotencySupport',
+      ),
     },
   },
 };

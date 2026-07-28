@@ -1,30 +1,31 @@
-# Fase 2 — Implementación (carga progresiva + procesamiento)
+# Phase 2 Implementation (corrections applied)
 
-## Alcance entregado
+## Delivered
 
-- Migraciones SQLite v3/v4: campos de upload/procesamiento, `upload_batches`, `processing_jobs`, unicidad `(capture_session_id, client_file_id)`.
-- Estados locales de upload separados del lifecycle de captura/estabilidad.
-- Exclusividad de captura solo en `preparing|active|paused|finishing|review` (permite segundo pasillo mientras otro sube/procesa).
-- `UploadLimitsService` → `GET /api/v3/config/upload-limits` con fallback conservador.
-- `UploadQueue` persistente: micro-lotes, concurrencia ≤2, backoff, pausa offline/auth, respuestas parciales, DELETE remoto.
-- `ProcessingService` + `JobMonitor` contra `POST .../process`, `GET .../status`.
-- UI: pantallas de cargas, procesamiento y actividad.
-- HEIC/HEIF → JPEG en dispositivo antes del upload (documentado).
-- Contratos backend: `docs/PHASE_2_BACKEND_CONTRACTS.md`.
+- Single unique WorkManager queue: `dinamic-upload-queue` (no duplicate session+global workers).
+- Foreground owned only by `CoroutineWorker.setForeground` (UploadForegroundService removed).
+- Encrypted-only `AuthVault` (no plaintext SharedPreferences fallback); `AUTH_VAULT_UNAVAILABLE` blocks uploads.
+- Notification action **Pausar cola** cancels WorkManager + OkHttp + persists pause.
+- Network constraints: `CONNECTED` vs `UNMETERED` from `allowMobileDataUploads`; reschedule on change.
+- `backgroundUploadRebootResume`: BootReceiver cancels persisted work when flag/worker is off.
+- HTTP 413 → `UPLOAD_REPREPARE_REQUIRED` (clears transform/size; no same-file retry loop).
+- Lease heartbeat during long uploads; abort if ownership lost.
+- When all session photos are uploaded → idempotent `POST /process` (`mobile-process:{sessionId}`).
+- Schema gate: require migration ≥ 7 (`DB_MIGRATION_REQUIRED`).
+- Classified transport errors: timeout, cancel, TLS, file missing, parse, network.
 
-## Limitaciones / pendiente de evidencia
+## Honest limitations
 
-- WorkManager nativo completo: recuperación al arrancar JS + cola persistente; no hay worker Android independiente aún.
-- E2E físico / staging (20+20 fotos, offline, 401, respuesta perdida) pendiente de evidencia en dispositivo.
-- Reconciliación GET assets no expone `client_file_id` en listado; se usa idempotencia del POST + `backend_asset_id` local.
+- Prepare (HEIC/resize) remains JS-only; 413 reprepare waits for app open.
+- Vault/keystore failure leaves queue pending until app opens with working crypto.
+- OEM/Samsung may delay or kill background work — UI does not over-promise.
+- Full device release matrix (Samsung S10+) is tracked separately; not assumed green without evidence.
 
-## Validación local
+## Validation
 
 ```bash
 cd mobile
-npm run typecheck
-npm run lint
-npm test
+npm run typecheck && npm run lint && npm test
+# Android (after prebuild):
+cd android && ./gradlew :capture-foreground-service:test lint
 ```
-
-Estado: **parcialmente validada** — lista para piloto controlado tras E2E en dispositivo contra staging.

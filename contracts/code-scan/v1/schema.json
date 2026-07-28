@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dinamic.local/contracts/code-scan/v1/schema.json",
+  "title": "CodeScanPayloadFixture",
+  "type": "object",
+  "required": ["name", "raw", "expected"],
+  "properties": {
+    "name": { "type": "string" },
+    "raw": { "type": "string" },
+    "quantityMax": { "type": "integer", "minimum": 1 },
+    "expected": {
+      "type": "object",
+      "required": [
+        "status",
+        "format",
+        "internalCode",
+        "quantity",
+        "quantityStatus",
+        "formatVersion"
+      ],
+      "properties": {
+        "status": { "enum": ["VALID", "INVALID"] },
+        "format": {
+          "enum": ["PIPE", "DI1", "LABELED", "PLAIN", "UNKNOWN"]
+        },
+        "internalCode": { "type": ["string", "null"] },
+        "quantity": { "type": ["integer", "null"] },
+        "quantityStatus": { "enum": ["PRESENT", "MISSING", "INVALID"] },
+        "formatVersion": { "type": "string" },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "errorCode": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

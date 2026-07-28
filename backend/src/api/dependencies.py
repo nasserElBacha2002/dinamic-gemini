@@ -155,6 +155,8 @@ from src.application.use_cases.suppliers.upload_supplier_reference_images import
     ListSupplierReferenceImagesUseCase,
     UploadSupplierReferenceImagesUseCase,
 )
+from src.auth.dependencies import get_current_admin
+from src.auth.schemas import AuthUser
 from src.runtime.app_container import get_app_container
 from src.runtime.v3_deps import (
     get_aisle_repo,
@@ -172,7 +174,9 @@ from src.runtime.v3_deps import (
     get_inventory_repo,
     get_job_repo,
     get_metrics_calculator,
+    get_mobile_preliminary_detection_repo,
     get_position_repo,
+    get_preliminary_detection_reconciliation_repo,
     get_product_record_repo,
     get_recompute_consolidated_counts_use_case,
     get_review_action_repo,
@@ -712,6 +716,211 @@ def get_list_aisle_assets_use_case(
     return ListAisleAssetsUseCase(
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
+    )
+
+
+def get_upsert_preliminary_detection_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    preliminary_repo=Depends(get_mobile_preliminary_detection_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.aisles.upsert_preliminary_detection import (
+        UpsertPreliminaryDetectionUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    return UpsertPreliminaryDetectionUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        preliminary_repo=preliminary_repo,
+        clock=clock,
+        enabled=bool(
+            getattr(settings, "server_preliminary_detection_ingest_enabled", False)
+        ),
+    )
+
+
+def get_persist_authoritative_local_code_scan_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    clock: Clock = Depends(get_clock),
+    user: AuthUser = Depends(get_current_admin),
+):
+    from src.application.use_cases.aisles.persist_authoritative_local_code_scan import (
+        PersistAuthoritativeLocalCodeScanResultUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    c = get_app_container()
+    return PersistAuthoritativeLocalCodeScanResultUseCase(
+        aisle_repo=aisle_repo,
+        asset_repo=asset_repo,
+        authoritative_repo=c.get_authoritative_local_code_scan_repo(),
+        clock=clock,
+        enabled=bool(
+            getattr(settings, "server_authoritative_local_code_scan_ingest_enabled", False)
+        ),
+        authenticated_user_id=str(getattr(user, "id", "") or ""),
+    )
+
+
+def get_evaluate_authoritative_aisle_readiness(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+):
+    from src.application.services.evaluate_authoritative_aisle_readiness import (
+        EvaluateAuthoritativeAisleReadiness,
+    )
+    from src.config import load_settings
+
+    del aisle_repo  # scope validated by callers / finalize
+    settings = load_settings()
+    c = get_app_container()
+    return EvaluateAuthoritativeAisleReadiness(
+        asset_repo=asset_repo,
+        authoritative_repo=c.get_authoritative_local_code_scan_repo(),
+        finalization_repo=c.get_authoritative_aisle_finalization_repo(),
+        position_repo=c.get_position_repo(),
+        enabled=bool(
+            getattr(settings, "server_authoritative_aisle_finalization_enabled", False)
+        ),
+    )
+
+
+def get_finalize_authoritative_aisle_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.services.evaluate_authoritative_aisle_readiness import (
+        EvaluateAuthoritativeAisleReadiness,
+    )
+    from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+    from src.application.use_cases.aisles.finalize_authoritative_aisle import (
+        FinalizeAuthoritativeAisle,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    c = get_app_container()
+    enabled = bool(
+        getattr(settings, "server_authoritative_aisle_finalization_enabled", False)
+    )
+    readiness = EvaluateAuthoritativeAisleReadiness(
+        asset_repo=asset_repo,
+        authoritative_repo=c.get_authoritative_local_code_scan_repo(),
+        finalization_repo=c.get_authoritative_aisle_finalization_repo(),
+        position_repo=c.get_position_repo(),
+        enabled=enabled,
+    )
+    return FinalizeAuthoritativeAisle(
+        aisle_repo=aisle_repo,
+        inventory_repo=inventory_repo,
+        asset_repo=asset_repo,
+        authoritative_repo=c.get_authoritative_local_code_scan_repo(),
+        finalization_repo=c.get_authoritative_aisle_finalization_repo(),
+        readiness=readiness,
+        status_reconciler=InventoryStatusReconciler(
+            inventory_repo=inventory_repo,
+            aisle_repo=aisle_repo,
+            clock=clock,
+        ),
+        clock=clock,
+        position_repo=c.get_position_repo(),
+        enabled=enabled,
+    )
+
+
+def get_reconcile_preliminary_detections_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    preliminary_repo=Depends(get_mobile_preliminary_detection_repo),
+    reconciliation_repo=Depends(get_preliminary_detection_reconciliation_repo),
+    clock: Clock = Depends(get_clock),
+):
+    from src.application.use_cases.aisles.reconcile_preliminary_detections import (
+        EnqueuePreliminaryReconciliationsUseCase,
+        ProcessPreliminaryReconciliationsUseCase,
+        ReconcilePreliminaryDetectionsUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    enabled = bool(getattr(settings, "server_preliminary_reconciliation_enabled", False))
+    metrics_enabled = bool(
+        getattr(settings, "preliminary_reconciliation_metrics_enabled", False)
+    )
+    c = get_app_container()
+    enqueue = EnqueuePreliminaryReconciliationsUseCase(
+        aisle_repo=aisle_repo,
+        job_repo=job_repo,
+        preliminary_repo=preliminary_repo,
+        reconciliation_repo=reconciliation_repo,
+        job_source_asset_repo=c.get_job_source_asset_repo(),
+        enabled=enabled,
+        clock=clock,
+    )
+    process = ProcessPreliminaryReconciliationsUseCase(
+        job_repo=job_repo,
+        preliminary_repo=preliminary_repo,
+        reconciliation_repo=reconciliation_repo,
+        state_repo=c.get_job_asset_processing_state_repo(),
+        attempt_repo=c.get_processing_attempt_repo(),
+        job_source_asset_repo=c.get_job_source_asset_repo(),
+        enabled=enabled,
+        metrics_enabled=metrics_enabled,
+        clock=clock,
+    )
+    return ReconcilePreliminaryDetectionsUseCase(
+        enqueue=enqueue,
+        process=process,
+        process_inline_limit=0,
+    )
+
+
+def get_process_preliminary_reconciliations_use_case():
+    from src.application.use_cases.aisles.reconcile_preliminary_detections import (
+        ProcessPreliminaryReconciliationsUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    c = get_app_container()
+    return ProcessPreliminaryReconciliationsUseCase(
+        job_repo=c.get_job_repo(),
+        preliminary_repo=c.get_mobile_preliminary_detection_repo(),
+        reconciliation_repo=c.get_preliminary_detection_reconciliation_repo(),
+        state_repo=c.get_job_asset_processing_state_repo(),
+        attempt_repo=c.get_processing_attempt_repo(),
+        job_source_asset_repo=c.get_job_source_asset_repo(),
+        enabled=bool(getattr(settings, "server_preliminary_reconciliation_enabled", False)),
+        metrics_enabled=bool(
+            getattr(settings, "preliminary_reconciliation_metrics_enabled", False)
+        ),
+        clock=c.get_clock(),
+    )
+
+
+def get_list_preliminary_reconciliations_use_case(
+    aisle_repo: AisleRepository = Depends(get_aisle_repo),
+    reconciliation_repo=Depends(get_preliminary_detection_reconciliation_repo),
+):
+    from src.application.use_cases.aisles.list_preliminary_reconciliations import (
+        ListPreliminaryReconciliationsUseCase,
+    )
+    from src.config import load_settings
+
+    settings = load_settings()
+    return ListPreliminaryReconciliationsUseCase(
+        aisle_repo=aisle_repo,
+        reconciliation_repo=reconciliation_repo,
+        enabled=bool(
+            getattr(settings, "server_preliminary_reconciliation_enabled", False)
+        ),
     )
 
 
@@ -1271,7 +1480,6 @@ def get_observability_inventory_guard(
         ObservabilityAccessContext,
         assert_inventory_client_scope,
     )
-    from src.auth.schemas import AuthUser
     from src.domain.inventory.entities import Inventory
 
     def _guard(inventory_id: str, user: AuthUser) -> Inventory:

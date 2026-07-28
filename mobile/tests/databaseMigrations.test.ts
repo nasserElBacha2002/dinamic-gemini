@@ -31,7 +31,9 @@ describe('SQLite migrations', () => {
   });
 
   it('adds v2 stability metrics without editing migration 1 destructively', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4]);
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+    ]);
     const v2 = MIGRATIONS.find((m) => m.version === 2);
     expect(v2?.sql).toContain('stability_attempts');
     expect(v2?.sql).toContain('last_stability_attempt_at');
@@ -43,6 +45,58 @@ describe('SQLite migrations', () => {
     expect(v3?.sql).toContain('ALTER TABLE capture_sessions ADD COLUMN upload_batch_id');
     expect(v4?.sql).toContain('ALTER TABLE capture_photos ADD COLUMN client_file_id');
     expect(v4?.sql).toContain('CREATE TABLE IF NOT EXISTS processing_jobs');
+  });
+
+  it('adds v5 observability_events table with indexes', () => {
+    const v5 = MIGRATIONS.find((m) => m.version === 5);
+    expect(v5?.name).toBe('observability_events');
+    expect(v5?.sql).toContain('CREATE TABLE IF NOT EXISTS observability_events');
+    expect(v5?.sql).toContain('idx_observability_events_session');
+    expect(v5?.sql).toContain('idx_observability_events_created_at');
+  });
+
+  it('adds v6 preparation_processing_mode with UNKNOWN default', () => {
+    const v6 = MIGRATIONS.find((m) => m.version === 6);
+    expect(v6?.name).toBe('session_preparation_processing_mode');
+    expect(v6?.sql).toContain('ALTER TABLE capture_sessions ADD COLUMN preparation_processing_mode');
+    expect(v6?.sql).toContain("DEFAULT 'UNKNOWN'");
+  });
+
+  it('adds v7 upload worker lease columns', () => {
+    const v7 = MIGRATIONS.find((m) => m.version === 7);
+    expect(v7?.name).toBe('upload_worker_leases');
+    expect(v7?.sql).toContain('upload_lease_token');
+    expect(v7?.sql).toContain('upload_worker_owner');
+    expect(v7?.sql).toContain('upload_cancel_requested');
+  });
+
+  it('adds v8 local_detection_drafts with idempotency unique key', () => {
+    const v8 = MIGRATIONS.find((m) => m.version === 8);
+    expect(v8?.name).toBe('local_detection_drafts');
+    expect(v8?.sql).toContain('CREATE TABLE IF NOT EXISTS local_detection_drafts');
+    expect(v8?.sql).toContain(
+      'UNIQUE(capture_photo_id, detector_version, parser_version, prepared_asset_fingerprint)',
+    );
+    expect(v8?.sql).toContain('idx_local_detection_drafts_photo');
+  });
+
+  it('adds v9 draft harden without raw_value_preview and with FK cascade', () => {
+    const v9 = MIGRATIONS.find((m) => m.version === 9);
+    expect(v9?.name).toBe('local_detection_drafts_harden');
+    expect(v9?.sql).toContain('ON DELETE CASCADE');
+    expect(v9?.sql).toContain('scan_generation');
+    expect(v9?.sql).toContain('comparison_status');
+    expect(v9?.sql).not.toContain('raw_value_preview');
+  });
+
+  it('adds v17/v18 offline_operations ledger and claim lease columns', () => {
+    const v17 = MIGRATIONS.find((m) => m.version === 17);
+    const v18 = MIGRATIONS.find((m) => m.version === 18);
+    expect(v17?.name).toBe('offline_operations');
+    expect(v17?.sql).toContain('CREATE TABLE IF NOT EXISTS offline_operations');
+    expect(v18?.name).toBe('offline_operations_claim_and_payload_hash');
+    expect(v18?.sql).toContain('payload_hash');
+    expect(v18?.sql).toContain('lease_expires_at');
   });
 });
 

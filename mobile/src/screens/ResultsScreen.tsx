@@ -13,14 +13,22 @@ export interface ResultsScreenProps {
   aisle: AisleDto | null;
   onBackToAisles: () => void;
   onAnotherAisle: () => void;
+  onServerReprocess?: () => void;
+  onAisleRevision?: () => void;
+  onAisleHistory?: () => void;
   onError: (message: string | null) => void;
 }
 
 export function ResultsScreen({
   services,
   sessionId,
+  inventory,
+  aisle,
   onBackToAisles,
   onAnotherAisle,
+  onServerReprocess,
+  onAisleRevision,
+  onAisleHistory,
   onError,
 }: ResultsScreenProps) {
   const [busy, setBusy] = useState(true);
@@ -95,6 +103,24 @@ export function ResultsScreen({
       {summary.jobId ? <Text style={styles.muted}>Diagnóstico job: {summary.jobId}</Text> : null}
       {summary.loadState === 'error' || summary.loadState === 'pending' || summary.loadState === 'partial' ? (
         <Button label="Reintentar consulta" onPress={load} />
+      ) : null}
+      {onServerReprocess &&
+      services.serverReprocess.isActionVisible() &&
+      inventory &&
+      aisle ? (
+        <Button label="Reprocesar en el servidor" onPress={onServerReprocess} />
+      ) : null}
+      {onAisleRevision &&
+      services.aisleRevision.isActionVisible() &&
+      inventory &&
+      aisle ? (
+        <Button label="Corregir pasillo" onPress={onAisleRevision} />
+      ) : null}
+      {onAisleHistory &&
+      services.aisleRevision.isHistoryVisible() &&
+      inventory &&
+      aisle ? (
+        <Button label="Historial del pasillo" onPress={onAisleHistory} />
       ) : null}
       <Button label="Volver a pasillos" onPress={onBackToAisles} />
       <Button label="Capturar otro pasillo" onPress={onAnotherAisle} />

@@ -1,0 +1,12 @@
+RECOMMENDED_WITH_CONDITIONS
+
+Estrategia: Upload-first (compresión/dimensión, background upload, opcional signed PUT) + CODE_SCAN local opcional con sync validado y fallback al pipeline remoto intacto.
+
+Condiciones:
+1) Instrumentar baseline (Fase 0) antes de declarar % de mejora.
+2) No promover OCR local ni pipeline completo sin nueva evidencia.
+3) Resultados móviles siempre untrusted hasta validación servidor.
+4) WorkManager/FGS real debe documentar límites OEM (Samsung Doze); no prometer background ilimitado.
+5) Endpoints nuevos solo aditivos; flags off = comportamiento actual.
+
+Evidencia clave: móvil ya tiene cola SQLite y prepare HEIC/resize reactivo; no hay OCR/barcode on-device; upload es multipart vía API (sin signed PUT); WorkManager es noop; cuello de botella primario = transferencia de bytes, no ausencia de process local.

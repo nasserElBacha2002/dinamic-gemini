@@ -13,6 +13,7 @@ export type AppErrorCode =
   | 'JOB_FAILED'
   | 'CONFIG_MISSING'
   | 'CONFIG_INSECURE_HTTP'
+  | 'LOCAL_DB_CORRUPTED'
   | 'UNKNOWN';
 
 export interface AppErrorDefinition {
@@ -92,6 +93,13 @@ export const APP_ERRORS: Readonly<Record<AppErrorCode, AppErrorDefinition>> = {
   CONFIG_INSECURE_HTTP: {
     code: 'CONFIG_INSECURE_HTTP',
     userMessage: 'En producción solo se permite HTTPS.',
+    retryable: false,
+    severity: 'error',
+  },
+  LOCAL_DB_CORRUPTED: {
+    code: 'LOCAL_DB_CORRUPTED',
+    userMessage:
+      'Los datos locales estaban corruptos y se reiniciaron. Volvé a iniciar sesión y capturar.',
     retryable: false,
     severity: 'error',
   },

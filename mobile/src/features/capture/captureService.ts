@@ -13,6 +13,7 @@ import { cursorFromInitialMarker, cursorFromSession, imageFromPhotoRow } from '.
 import type { ForegroundService } from '../../native/foregroundService';
 import type { IncrementalScanOptions, IncrementalScanResult, PermissionState } from '../../native/mediaStore';
 import type { StabilityOutcome } from '../../native/stabilityProber';
+import { emitObservability, sessionMarkKey } from '../../observability';
 
 const VALIDATION_TIMEOUT_MS = 15_000;
 /** Re-scan gallery while capture is active (missed MediaStore events / delayed indexing). */
@@ -65,6 +66,11 @@ export interface CaptureServiceAdapters {
   readonly createId?: () => string;
   /** Called after a photo becomes stable (progressive upload hook). */
   readonly onPhotoStable?: (sessionId: string, photoId: string) => void | Promise<void>;
+  /** Phase 0 observability (optional; never required for capture). */
+  readonly observability?: {
+    readonly reporter: import('../../observability').ObservabilityReporter;
+    readonly marks: import('../../observability').TimingMarkStore;
+  } | null;
 }
 
 type Listener = (snapshot: CaptureSnapshot) => void;
@@ -122,6 +128,7 @@ export class CaptureService {
   private readonly validationTimeoutMs: number;
   private readonly createId: () => string;
   private readonly onPhotoStable: CaptureServiceAdapters['onPhotoStable'];
+  private readonly observability: CaptureServiceAdapters['observability'];
 
   constructor(
     private readonly repo: CaptureRepository,
@@ -134,6 +141,7 @@ export class CaptureService {
     this.validationTimeoutMs = adapters.validationTimeoutMs ?? VALIDATION_TIMEOUT_MS;
     this.createId = adapters.createId ?? createId;
     this.onPhotoStable = adapters.onPhotoStable;
+    this.observability = adapters.observability ?? null;
     this.coordinator = createScanCoordinator(() => this.runScanOnce());
   }
 
@@ -291,6 +299,14 @@ export class CaptureService {
         inventoryId: input.inventoryId,
         aisleId: input.aisleId,
       });
+      if (this.observability) {
+        this.observability.marks.mark(sessionMarkKey(result.session.id, 'created'));
+        emitObservability(this.observability.reporter, {
+          name: 'session.created',
+          sessionId: result.session.id,
+          batchId: result.session.upload_batch_id ?? undefined,
+        });
+      }
     } catch (e) {
       this.detachListener();
       await this.stopForeground();
@@ -322,12 +338,58 @@ export class CaptureService {
   }
 
   async finish(): Promise<void> {
+    await this.finalizeCaptureForUpload({ targetStatus: 'review' });
+  }
+
+  /**
+   * Single capture→upload handoff path. Stops autoscan, runs final scan/validation,
+   * then transitions to review or uploading. Does not skip validation gates.
+   */
+  async finalizeCaptureForUpload(options?: {
+    readonly targetStatus?: 'review' | 'uploading';
+  }): Promise<string> {
+    const target = options?.targetStatus ?? 'uploading';
     const sessionId = this.requireSessionId();
     const current = await this.repo.getSession(sessionId);
-    if (!current || (current.status !== 'active' && current.status !== 'paused')) {
-      throw new Error('Solo se puede finalizar una captura activa o pausada.');
+    if (!current) {
+      throw new Error('No se encontró la captura local.');
     }
-    await this.repo.updateSessionStatus(sessionId, 'finishing');
+
+    if (current.status === 'uploading' && target === 'uploading') {
+      this.clearCurrentSession();
+      return sessionId;
+    }
+
+    // Uploads may finish during capture/local-review before completeReview runs.
+    // Treat post-review pipeline states as an idempotent handoff to uploads UI.
+    if (
+      target === 'uploading' &&
+      (current.status === 'upload_review' || current.status === 'ready_to_process')
+    ) {
+      this.clearCurrentSession();
+      return sessionId;
+    }
+
+    if (current.status === 'review' && target === 'uploading') {
+      await this.reloadPhotos(sessionId);
+      this.assertPhotosReadyForUpload();
+      await this.repo.updateSessionStatus(sessionId, 'uploading');
+      this.clearCurrentSession();
+      return sessionId;
+    }
+
+    if (current.status !== 'active' && current.status !== 'paused' && current.status !== 'finishing') {
+      if (current.status === 'review' && target === 'review') {
+        return sessionId;
+      }
+      throw new Error(
+        `No se puede finalizar la captura desde el estado "${current.status}".`,
+      );
+    }
+
+    if (current.status !== 'finishing') {
+      await this.repo.updateSessionStatus(sessionId, 'finishing');
+    }
     this.autoScanEnabled = false;
     this.detachListener();
     await this.loadSession(sessionId, false);
@@ -337,9 +399,29 @@ export class CaptureService {
     await this.markRemainingPendingAsInterrupted(sessionId, 'validation_timeout');
     await this.stopForeground();
     await this.reloadPhotos(sessionId);
+    this.assertPhotosReadyForUpload();
+
+    if (target === 'review') {
+      await this.repo.updateSessionStatus(sessionId, 'review');
+      await this.loadSession(sessionId, false);
+      this.logger.info('session_finish', { sessionId });
+      return sessionId;
+    }
+
     await this.repo.updateSessionStatus(sessionId, 'review');
-    await this.loadSession(sessionId, false);
-    this.logger.info('session_finish', { sessionId });
+    await this.repo.updateSessionStatus(sessionId, 'uploading');
+    this.clearCurrentSession();
+    this.logger.info('session_finish', { sessionId, handoff: 'uploading' });
+    return sessionId;
+  }
+
+  private assertPhotosReadyForUpload(): void {
+    if (this.photos.some((p) => p.status === 'detected' || p.status === 'waiting_stability')) {
+      throw new Error('Todavía hay fotografías validándose.');
+    }
+    if (this.photos.some((p) => p.status === 'unstable' || p.status === 'undecodable')) {
+      throw new Error('Resolvé o excluí los errores antes de confirmar.');
+    }
   }
 
   /**
@@ -347,17 +429,7 @@ export class CaptureService {
    * Does not mark the session completed until processing succeeds.
    */
   async completeReview(): Promise<string> {
-    const sessionId = this.requireSessionId();
-    await this.reloadPhotos(sessionId);
-    if (this.photos.some((p) => p.status === 'detected' || p.status === 'waiting_stability')) {
-      throw new Error('Todavía hay fotografías validándose.');
-    }
-    if (this.photos.some((p) => p.status === 'unstable' || p.status === 'undecodable')) {
-      throw new Error('Resolvé o excluí los errores antes de confirmar.');
-    }
-    await this.repo.updateSessionStatus(sessionId, 'uploading');
-    this.clearCurrentSession();
-    return sessionId;
+    return this.finalizeCaptureForUpload({ targetStatus: 'uploading' });
   }
 
   async cancel(): Promise<void> {

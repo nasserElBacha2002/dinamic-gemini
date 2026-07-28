@@ -1,4 +1,12 @@
 import { resolveFeatureFlags, type FeatureFlags } from '../../core/featureFlags';
+import {
+  evaluateFeatureFlagCompatibility,
+  formatFlagCompatibilityErrors,
+} from '../../core/featureFlagCompatibility';
+import {
+  resolveProductionCutover,
+  type ProductionCutoverThresholds,
+} from '../../core/productionCutover';
 
 export type AppEnvironment = 'development' | 'staging' | 'production';
 
@@ -12,6 +20,8 @@ export interface AppConfig {
   readonly gitSha: string;
   readonly buildTime: string;
   readonly flags: FeatureFlags;
+  /** Phase 10: configurable rollout / alert thresholds. */
+  readonly cutover: ProductionCutoverThresholds;
 }
 
 /** Raw values injected via app.config.ts `extra` (from mobile/.env at build time). */
@@ -24,6 +34,7 @@ export interface RawAppExtra {
   readonly gitSha?: unknown;
   readonly buildTime?: unknown;
   readonly flags?: unknown;
+  readonly cutover?: unknown;
 }
 
 function asString(value: unknown): string {
@@ -78,6 +89,7 @@ export function resolveAppConfig(extra: RawAppExtra | null | undefined): AppConf
     gitSha: asString(extra?.gitSha) || fromProcessEnv('DINAMIC_GIT_SHA') || 'unknown',
     buildTime: asString(extra?.buildTime) || fromProcessEnv('DINAMIC_BUILD_TIME') || '',
     flags: resolveFeatureFlags(extra?.flags, environment),
+    cutover: resolveProductionCutover(extra?.cutover),
   };
 }
 
@@ -95,6 +107,11 @@ export function validateAppConfig(config: AppConfig): string | null {
     }
   } catch {
     return 'DINAMIC_API_BASE_URL no es una URL válida.';
+  }
+  // Phase 10: incompatible flag combos fail-fast in all environments.
+  const flagErrors = formatFlagCompatibilityErrors(evaluateFeatureFlagCompatibility(config.flags));
+  if (flagErrors) {
+    return `Configuración de feature flags incompatible: ${flagErrors}`;
   }
   return null;
 }

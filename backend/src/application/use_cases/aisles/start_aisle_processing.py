@@ -218,6 +218,24 @@ class StartAisleProcessingUseCase:
                 f"No source assets for aisle {command.aisle_id}; upload media before processing."
             )
 
+        settings = load_settings()
+        if bool(
+            getattr(settings, "server_skip_remote_code_scan_for_local_authority", False)
+        ):
+            from src.application.services.authoritative_session_readiness import (
+                AuthoritativeSessionReadiness,
+            )
+            from src.runtime.app_container import get_app_container
+
+            AuthoritativeSessionReadiness(
+                asset_repo=self._asset_repo,
+                authoritative_repo=get_app_container().get_authoritative_local_code_scan_repo(),
+                enabled=True,
+            ).require_ready(
+                inventory_id=command.inventory_id,
+                aisle_id=command.aisle_id,
+            )
+
         existing_idempotent = _find_job_by_idempotency_key(
             self._job_repo,
             aisle_id=command.aisle_id,

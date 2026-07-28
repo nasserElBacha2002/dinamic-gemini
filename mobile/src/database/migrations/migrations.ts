@@ -163,6 +163,395 @@ CREATE INDEX IF NOT EXISTS idx_processing_jobs_status ON processing_jobs(status)
 CREATE INDEX IF NOT EXISTS idx_processing_jobs_next_poll_at ON processing_jobs(next_poll_at);
 `,
   },
+  {
+    version: 5,
+    name: 'observability_events',
+    sql: `
+CREATE TABLE IF NOT EXISTS observability_events (
+  id TEXT PRIMARY KEY NOT NULL,
+  name TEXT NOT NULL,
+  timestamp TEXT NOT NULL,
+  session_id TEXT,
+  server_job_id TEXT,
+  client_file_id TEXT,
+  batch_id TEXT,
+  attempt_id TEXT,
+  duration_ms INTEGER,
+  attributes_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_observability_events_created_at
+  ON observability_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_observability_events_session
+  ON observability_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_observability_events_name
+  ON observability_events(name);
+CREATE INDEX IF NOT EXISTS idx_observability_events_client_file
+  ON observability_events(client_file_id);
+`,
+  },
+  {
+    version: 6,
+    name: 'session_preparation_processing_mode',
+    sql: `
+ALTER TABLE capture_sessions ADD COLUMN preparation_processing_mode TEXT NOT NULL DEFAULT 'UNKNOWN';
+`,
+  },
+  {
+    version: 7,
+    name: 'upload_worker_leases',
+    sql: `
+ALTER TABLE capture_photos ADD COLUMN upload_worker_owner TEXT;
+ALTER TABLE capture_photos ADD COLUMN upload_lease_token TEXT;
+ALTER TABLE capture_photos ADD COLUMN upload_lease_expires_at TEXT;
+ALTER TABLE capture_photos ADD COLUMN upload_heartbeat_at TEXT;
+ALTER TABLE capture_photos ADD COLUMN upload_cancel_requested INTEGER NOT NULL DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS idx_capture_photos_upload_lease
+  ON capture_photos(upload_lease_expires_at);
+`,
+  },
+  {
+    version: 8,
+    name: 'local_detection_drafts',
+    sql: `
+CREATE TABLE IF NOT EXISTS local_detection_drafts (
+  id TEXT PRIMARY KEY NOT NULL,
+  capture_photo_id TEXT NOT NULL,
+  capture_session_id TEXT NOT NULL,
+  client_file_id TEXT,
+  status TEXT NOT NULL,
+  raw_value_hash TEXT,
+  raw_value_preview TEXT,
+  internal_code TEXT,
+  quantity INTEGER,
+  quantity_status TEXT,
+  detected_format TEXT,
+  detected_symbology TEXT,
+  parser_version TEXT NOT NULL,
+  detector_version TEXT NOT NULL,
+  candidate_count INTEGER NOT NULL DEFAULT 0,
+  error_code TEXT,
+  processing_ms INTEGER,
+  compare_result TEXT,
+  compared_at TEXT,
+  prepared_asset_fingerprint TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(capture_photo_id, detector_version, parser_version, prepared_asset_fingerprint)
+);
+
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_photo
+  ON local_detection_drafts(capture_photo_id);
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_session
+  ON local_detection_drafts(capture_session_id);
+`,
+  },
+  {
+    version: 9,
+    name: 'local_detection_drafts_harden',
+    sql: `
+CREATE TABLE IF NOT EXISTS local_detection_drafts_v9 (
+  id TEXT PRIMARY KEY NOT NULL,
+  capture_photo_id TEXT NOT NULL,
+  capture_session_id TEXT NOT NULL,
+  client_file_id TEXT,
+  status TEXT NOT NULL,
+  raw_value_hash TEXT,
+  internal_code TEXT,
+  quantity INTEGER,
+  quantity_status TEXT,
+  detected_format TEXT,
+  detected_symbology TEXT,
+  parser_version TEXT NOT NULL,
+  detector_version TEXT NOT NULL,
+  candidate_count INTEGER NOT NULL DEFAULT 0,
+  error_code TEXT,
+  processing_ms INTEGER,
+  comparison_status TEXT,
+  compare_result TEXT,
+  compared_at TEXT,
+  prepared_asset_fingerprint TEXT,
+  scan_owner TEXT,
+  scan_generation INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(capture_photo_id, detector_version, parser_version, prepared_asset_fingerprint),
+  FOREIGN KEY (capture_photo_id) REFERENCES capture_photos(id) ON DELETE CASCADE
+);
+
+DELETE FROM local_detection_drafts
+ WHERE capture_photo_id NOT IN (SELECT id FROM capture_photos);
+
+INSERT OR IGNORE INTO local_detection_drafts_v9 (
+  id, capture_photo_id, capture_session_id, client_file_id, status,
+  raw_value_hash, internal_code, quantity, quantity_status,
+  detected_format, detected_symbology, parser_version, detector_version,
+  candidate_count, error_code, processing_ms, comparison_status, compare_result, compared_at,
+  prepared_asset_fingerprint, scan_owner, scan_generation, created_at, updated_at
+)
+SELECT
+  id, capture_photo_id, capture_session_id, client_file_id, status,
+  raw_value_hash, internal_code, quantity, quantity_status,
+  detected_format, detected_symbology, parser_version, detector_version,
+  candidate_count, error_code, processing_ms, NULL, compare_result, compared_at,
+  prepared_asset_fingerprint, NULL, 0, created_at, updated_at
+FROM local_detection_drafts;
+
+DROP TABLE IF EXISTS local_detection_drafts;
+ALTER TABLE local_detection_drafts_v9 RENAME TO local_detection_drafts;
+
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_photo
+  ON local_detection_drafts(capture_photo_id);
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_session
+  ON local_detection_drafts(capture_session_id);
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_status
+  ON local_detection_drafts(status);
+`,
+  },
+  {
+    version: 10,
+    name: 'local_detection_drafts_sync',
+    sql: `
+ALTER TABLE local_detection_drafts ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'NOT_READY';
+ALTER TABLE local_detection_drafts ADD COLUMN sync_attempt_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE local_detection_drafts ADD COLUMN sync_next_retry_at TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN sync_last_error_code TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN server_preliminary_id TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN synced_at TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN sync_lease_token TEXT;
+ALTER TABLE local_detection_drafts ADD COLUMN sync_lease_expires_at TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_local_detection_drafts_sync
+  ON local_detection_drafts(sync_status, sync_next_retry_at);
+`,
+  },
+  {
+    version: 11,
+    name: 'local_detection_drafts_detected_at',
+    sql: `
+ALTER TABLE local_detection_drafts ADD COLUMN detected_at TEXT;
+UPDATE local_detection_drafts
+   SET detected_at = updated_at
+ WHERE detected_at IS NULL
+   AND status NOT IN ('PENDING', 'SCANNING', 'NOT_APPLICABLE');
+`,
+  },
+  {
+    version: 12,
+    name: 'confirmed_local_results',
+    sql: `
+CREATE TABLE IF NOT EXISTS confirmed_local_results (
+  id TEXT PRIMARY KEY NOT NULL,
+  capture_photo_id TEXT NOT NULL UNIQUE,
+  capture_session_id TEXT NOT NULL,
+  client_file_id TEXT,
+  asset_id TEXT,
+  detected_internal_code TEXT,
+  detected_quantity INTEGER,
+  confirmed_internal_code TEXT NOT NULL,
+  confirmed_quantity INTEGER,
+  quantity_status TEXT NOT NULL,
+  source TEXT NOT NULL,
+  detected_symbology TEXT,
+  parser_version TEXT NOT NULL,
+  detector_version TEXT NOT NULL,
+  prepared_asset_sha256 TEXT NOT NULL,
+  confirmed_by_user_id TEXT,
+  confirmed_at TEXT NOT NULL,
+  sync_status TEXT NOT NULL DEFAULT 'PENDING',
+  sync_attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_retry_at TEXT,
+  sync_last_error_code TEXT,
+  row_version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (capture_photo_id) REFERENCES capture_photos(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_confirmed_local_results_session
+  ON confirmed_local_results(capture_session_id);
+CREATE INDEX IF NOT EXISTS idx_confirmed_local_results_sync
+  ON confirmed_local_results(sync_status, next_retry_at);
+`,
+  },
+  {
+    version: 13,
+    name: 'confirmed_local_results_applied_at',
+    sql: `
+ALTER TABLE confirmed_local_results ADD COLUMN applied_at TEXT;
+`,
+  },
+  {
+    version: 14,
+    name: 'aisle_finalization_intents',
+    sql: `
+CREATE TABLE IF NOT EXISTS aisle_finalization_intents (
+  id TEXT PRIMARY KEY NOT NULL,
+  capture_session_id TEXT NOT NULL,
+  inventory_id TEXT NOT NULL,
+  aisle_id TEXT NOT NULL,
+  finalization_id TEXT NOT NULL,
+  expected_asset_count INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  last_error_code TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_retry_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(capture_session_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_aisle_finalization_intents_status
+  ON aisle_finalization_intents(status, next_retry_at);
+`,
+  },
+  {
+    version: 15,
+    name: 'server_reprocess_request_intents',
+    sql: `
+CREATE TABLE IF NOT EXISTS server_reprocess_request_intents (
+  id TEXT PRIMARY KEY NOT NULL,
+  request_id TEXT NOT NULL UNIQUE,
+  inventory_id TEXT NOT NULL,
+  aisle_id TEXT NOT NULL,
+  scope_type TEXT NOT NULL,
+  scope_json TEXT NOT NULL,
+  processing_mode TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL,
+  last_error_code TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_retry_at TEXT,
+  server_run_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_server_reprocess_request_intents_status
+  ON server_reprocess_request_intents(status, next_retry_at);
+`,
+  },
+  {
+    version: 16,
+    name: 'aisle_revision_drafts',
+    sql: `
+CREATE TABLE IF NOT EXISTS aisle_revision_drafts (
+  revision_id TEXT PRIMARY KEY NOT NULL,
+  inventory_id TEXT NOT NULL,
+  aisle_id TEXT NOT NULL,
+  base_finalization_id TEXT,
+  status TEXT NOT NULL,
+  pending_changes_json TEXT NOT NULL DEFAULT '{}',
+  sync_status TEXT NOT NULL DEFAULT 'LOCAL',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_aisle_revision_drafts_aisle
+  ON aisle_revision_drafts(inventory_id, aisle_id);
+CREATE INDEX IF NOT EXISTS idx_aisle_revision_drafts_status
+  ON aisle_revision_drafts(status, sync_status);
+`,
+  },
+  {
+    version: 17,
+    name: 'offline_operations',
+    sql: `
+CREATE TABLE IF NOT EXISTS offline_operations (
+  operation_id TEXT PRIMARY KEY NOT NULL,
+  operation_type TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  inventory_id TEXT,
+  aisle_id TEXT,
+  asset_id TEXT,
+  session_id TEXT,
+  payload_json TEXT NOT NULL,
+  payload_version INTEGER NOT NULL DEFAULT 1,
+  idempotency_key TEXT NOT NULL,
+  status TEXT NOT NULL,
+  priority INTEGER NOT NULL DEFAULT 100,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 12,
+  next_retry_at TEXT,
+  last_attempt_at TEXT,
+  last_error_code TEXT,
+  last_error_message TEXT,
+  requires_network INTEGER NOT NULL DEFAULT 1,
+  requires_auth INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_offline_operations_idempotency
+  ON offline_operations(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_offline_operations_status_retry
+  ON offline_operations(status, next_retry_at, priority);
+CREATE INDEX IF NOT EXISTS idx_offline_operations_aisle
+  ON offline_operations(inventory_id, aisle_id);
+CREATE INDEX IF NOT EXISTS idx_offline_operations_session
+  ON offline_operations(session_id);
+
+CREATE TABLE IF NOT EXISTS offline_operation_dependencies (
+  operation_id TEXT NOT NULL,
+  depends_on_operation_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (operation_id, depends_on_operation_id),
+  FOREIGN KEY (operation_id) REFERENCES offline_operations(operation_id) ON DELETE CASCADE,
+  FOREIGN KEY (depends_on_operation_id) REFERENCES offline_operations(operation_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_offline_operation_deps_parent
+  ON offline_operation_dependencies(depends_on_operation_id);
+
+CREATE TABLE IF NOT EXISTS offline_operation_attempts (
+  attempt_id TEXT PRIMARY KEY NOT NULL,
+  operation_id TEXT NOT NULL,
+  attempt_number INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  outcome TEXT NOT NULL,
+  error_code TEXT,
+  error_message TEXT,
+  FOREIGN KEY (operation_id) REFERENCES offline_operations(operation_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_offline_operation_attempts_op
+  ON offline_operation_attempts(operation_id, attempt_number);
+
+CREATE TABLE IF NOT EXISTS offline_operation_events (
+  event_id TEXT PRIMARY KEY NOT NULL,
+  operation_id TEXT NOT NULL,
+  event_name TEXT NOT NULL,
+  detail_json TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (operation_id) REFERENCES offline_operations(operation_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_offline_operation_events_op
+  ON offline_operation_events(operation_id, created_at);
+`,
+  },
+  {
+    version: 18,
+    name: 'offline_operations_claim_and_payload_hash',
+    sql: `
+ALTER TABLE offline_operations ADD COLUMN payload_hash TEXT;
+ALTER TABLE offline_operations ADD COLUMN owner_token TEXT;
+ALTER TABLE offline_operations ADD COLUMN lease_expires_at TEXT;
+ALTER TABLE offline_operations ADD COLUMN heartbeat_at TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_offline_operations_claim
+  ON offline_operations(status, lease_expires_at, priority, created_at);
+CREATE INDEX IF NOT EXISTS idx_offline_operations_payload_hash
+  ON offline_operations(idempotency_key, payload_hash);
+CREATE INDEX IF NOT EXISTS idx_offline_operation_deps_child
+  ON offline_operation_dependencies(operation_id);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

@@ -18,6 +18,11 @@ import { LoginScreen } from './src/screens/LoginScreen';
 import { ProcessingScreen } from './src/screens/ProcessingScreen';
 import { ResultsScreen } from './src/screens/ResultsScreen';
 import { ReviewScreen } from './src/screens/ReviewScreen';
+import { LocalResultReviewScreen } from './src/screens/LocalResultReviewScreen';
+import { AuthoritativeFinalizeScreen } from './src/screens/AuthoritativeFinalizeScreen';
+import { ServerReprocessScreen } from './src/screens/ServerReprocessScreen';
+import { AisleRevisionScreen } from './src/screens/AisleRevisionScreen';
+import { AisleHistoryScreen } from './src/screens/AisleHistoryScreen';
 import { UploadsScreen } from './src/screens/UploadsScreen';
 import type { AisleIdentificationMode } from './src/features/processing/processingMode';
 import { sanitizeIdentificationModeSelection } from './src/features/processing/processingMode';
@@ -30,7 +35,12 @@ type Screen =
   | 'aisles'
   | 'capture'
   | 'review'
+  | 'local-result-review'
   | 'uploads'
+  | 'authoritative-finalize'
+  | 'server-reprocess'
+  | 'aisle-revision'
+  | 'aisle-history'
   | 'processing'
   | 'results'
   | 'diagnostic';
@@ -46,7 +56,6 @@ export default function App(): JSX.Element {
   const [selectedAisle, setSelectedAisle] = useState<AisleDto | null>(null);
   const [capture, setCapture] = useState<CaptureSnapshot | null>(null);
   const [workSessionId, setWorkSessionId] = useState<string | null>(null);
-  /** Session preference for process-aisle mode (null = inherit). Survives aisle changes until app restart. */
   const [identificationModePreference, setIdentificationModePreference] =
     useState<AisleIdentificationMode | null>(null);
   const [connectivity, setConnectivity] = useState<'online' | 'offline' | 'unknown'>('unknown');
@@ -71,6 +80,18 @@ export default function App(): JSX.Element {
         createdServices = created;
         setServices(created);
         setConfigError(created.configError);
+        if (created.databaseRecoveredFromCorruption) {
+          Alert.alert(
+            'Datos locales reiniciados',
+            userMessageForCode('LOCAL_DB_CORRUPTED'),
+          );
+        }
+        if (
+          created.config.flags.mobileLocalCodeScan ||
+          created.config.flags.mobileAuthoritativeLocalCodeScan
+        ) {
+          setIdentificationModePreference('CODE_SCAN');
+        }
         unsubscribeConnectivity = created.connectivity.subscribe((state) => {
           if (mounted) setConnectivity(state);
         });
@@ -208,6 +229,13 @@ export default function App(): JSX.Element {
       pending_review_positions_count: 0,
     });
     hydrateSelection(work.inventoryId, work.aisleId, work.aisleName);
+    if (
+      services &&
+      (services.config.flags.mobileLocalCodeScan ||
+        services.config.flags.mobileAuthoritativeLocalCodeScan)
+    ) {
+      void services.uploadQueue.setSessionPreparationMode(work.sessionId, 'CODE_SCAN');
+    }
     if (work.kind === 'capture_active' || work.kind === 'capture_paused') {
       void services.capture.loadSession(work.sessionId, work.kind === 'capture_active');
       setScreen('capture');
@@ -310,10 +338,54 @@ export default function App(): JSX.Element {
           services={services}
           snapshot={capture}
           onBack={() => setScreen('capture')}
-          onDone={(sessionId) => {
+          onConfirm={(sessionId) => {
             setWorkSessionId(sessionId);
-            void services.uploadQueue.enqueueSession(sessionId);
-            setScreen('uploads');
+            const useLocalReview =
+              services.config.flags.mobileAuthoritativeLocalCodeScan &&
+              services.config.flags.mobileLocalResultReview;
+            if (useLocalReview) {
+              setScreen('local-result-review');
+              return;
+            }
+            void services.capture
+              .completeReview()
+              .then((sid) => {
+                setWorkSessionId(sid);
+                if (identificationModePreference) {
+                  void services.uploadQueue.setSessionPreparationMode(
+                    sid,
+                    identificationModePreference,
+                  );
+                }
+                void services.uploadQueue.enqueueSession(sid);
+                setScreen('uploads');
+              })
+              .catch((e) => setError(messageOf(e)));
+          }}
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'local-result-review' && workSessionId && auth ? (
+        <LocalResultReviewScreen
+          services={services}
+          sessionId={workSessionId}
+          userId={auth.user.id}
+          onBack={() => setScreen('review')}
+          onDone={(_sessionId) => {
+            void services.capture
+              .completeReview()
+              .then((sid) => {
+                setWorkSessionId(sid);
+                if (identificationModePreference) {
+                  void services.uploadQueue.setSessionPreparationMode(
+                    sid,
+                    identificationModePreference,
+                  );
+                }
+                void services.uploadQueue.enqueueSession(sid);
+                setScreen('uploads');
+              })
+              .catch((e) => setError(messageOf(e)));
           }}
           onError={setError}
         />
@@ -323,11 +395,33 @@ export default function App(): JSX.Element {
           services={services}
           sessionId={workSessionId}
           identificationModePreference={identificationModePreference}
-          onIdentificationModePreferenceChange={(next) =>
-            setIdentificationModePreference(sanitizeIdentificationModeSelection(next))
-          }
+          onIdentificationModePreferenceChange={(next) => {
+            const sanitized = sanitizeIdentificationModeSelection(next);
+            setIdentificationModePreference(sanitized);
+            if (workSessionId && sanitized) {
+              void services.uploadQueue.setSessionPreparationMode(workSessionId, sanitized);
+            }
+          }}
           onBack={() => setScreen(selectedInventory ? 'aisles' : 'inventories')}
           onProcess={() => setScreen('processing')}
+          onError={setError}
+          onLocalReview={() => setScreen('local-result-review')}
+          onAuthoritativeFinalize={() => setScreen('authoritative-finalize')}
+        />
+      ) : null}
+      {screen === 'authoritative-finalize' &&
+      workSessionId &&
+      selectedInventory &&
+      selectedAisle ? (
+        <AuthoritativeFinalizeScreen
+          services={services}
+          sessionId={workSessionId}
+          inventoryId={selectedInventory.id}
+          aisleId={selectedAisle.id}
+          inventoryName={selectedInventory.name ?? ''}
+          aisleName={selectedAisle.code ?? ''}
+          onBack={() => setScreen('uploads')}
+          onCompleted={() => setScreen('results')}
           onError={setError}
         />
       ) : null}
@@ -338,9 +432,13 @@ export default function App(): JSX.Element {
           inventoryName={selectedInventory?.name ?? ''}
           aisleName={selectedAisle?.code ?? ''}
           identificationModePreference={identificationModePreference}
-          onIdentificationModePreferenceChange={(next) =>
-            setIdentificationModePreference(sanitizeIdentificationModeSelection(next))
-          }
+          onIdentificationModePreferenceChange={(next) => {
+            const sanitized = sanitizeIdentificationModeSelection(next);
+            setIdentificationModePreference(sanitized);
+            if (workSessionId && sanitized) {
+              void services.uploadQueue.setSessionPreparationMode(workSessionId, sanitized);
+            }
+          }}
           onBack={() => setScreen(selectedInventory ? 'aisles' : 'inventories')}
           onAnotherAisle={() => setScreen('inventories')}
           onViewResults={() => setScreen('results')}
@@ -355,6 +453,41 @@ export default function App(): JSX.Element {
           aisle={selectedAisle}
           onBackToAisles={() => setScreen(selectedInventory ? 'aisles' : 'inventories')}
           onAnotherAisle={() => setScreen('inventories')}
+          onServerReprocess={() => setScreen('server-reprocess')}
+          onAisleRevision={() => setScreen('aisle-revision')}
+          onAisleHistory={() => setScreen('aisle-history')}
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'server-reprocess' && selectedInventory && selectedAisle ? (
+        <ServerReprocessScreen
+          services={services}
+          inventory={selectedInventory}
+          aisle={selectedAisle}
+          onBack={() => setScreen('results')}
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'aisle-revision' && selectedInventory && selectedAisle && auth ? (
+        <AisleRevisionScreen
+          services={services}
+          inventory={selectedInventory}
+          aisle={selectedAisle}
+          userId={auth.user.id}
+          onBack={() => setScreen('results')}
+          {...(services.aisleRevision.isHistoryVisible()
+            ? { onOpenHistory: () => setScreen('aisle-history') }
+            : {})}
+          onError={setError}
+        />
+      ) : null}
+      {screen === 'aisle-history' && selectedInventory && selectedAisle && auth ? (
+        <AisleHistoryScreen
+          services={services}
+          inventory={selectedInventory}
+          aisle={selectedAisle}
+          userId={auth.user.id}
+          onBack={() => setScreen('aisle-revision')}
           onError={setError}
         />
       ) : null}

@@ -28,7 +28,13 @@ from src.application.ports.code_scan_repository import CodeScanRepository
 from src.application.ports.finalization_stage_store import FinalizationStageStore
 from src.application.ports.job_result_unit_of_work import JobResultUnitOfWorkFactory
 from src.application.ports.job_scoped_recompute import JobScopedRecomputeFactory
+from src.application.ports.mobile_preliminary_detection_repository import (
+    MobilePreliminaryDetectionRepository,
+)
 from src.application.ports.operational_job_promotion import OperationalJobPromotionRepository
+from src.application.ports.preliminary_detection_reconciliation_repository import (
+    PreliminaryDetectionReconciliationRepository,
+)
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -167,16 +173,22 @@ from src.runtime.container.repository_backend import (
 )
 from src.runtime.container.repository_builders import (
     build_aisle_repository,
+    build_aisle_revision_repository,
+    build_authoritative_aisle_finalization_repository,
+    build_authoritative_local_code_scan_repository,
     build_client_repository,
     build_client_supplier_repository,
     build_code_scan_repository,
     build_evidence_repository,
     build_inventory_repository,
     build_job_repository,
+    build_mobile_preliminary_detection_repository,
     build_position_repository,
+    build_preliminary_detection_reconciliation_repository,
     build_product_record_repository,
     build_result_evidence_repository,
     build_review_action_repository,
+    build_server_reprocess_repository,
     build_source_asset_repository,
     build_supplier_extraction_profile_repository,
     build_supplier_prompt_config_repository,
@@ -260,6 +272,14 @@ class AppContainer:
         self._capture_session_confirm_repo: CaptureSessionConfirmIdempotencyRepository | None = None
         self._capture_session_group_repo: CaptureSessionGroupRepository | None = None
         self._code_scan_repo: CodeScanRepository | None = None
+        self._preliminary_detection_repo: MobilePreliminaryDetectionRepository | None = None
+        self._authoritative_local_code_scan_repo = None
+        self._authoritative_aisle_finalization_repo = None
+        self._server_reprocess_repo = None
+        self._aisle_revision_repo = None
+        self._preliminary_reconciliation_repo: (
+            PreliminaryDetectionReconciliationRepository | None
+        ) = None
         self._stored_artifact_reader: StoredArtifactReader | None = None
         self._finalization_stage_store: FinalizationStageStore | None = None
         self._artifact_manifest_store: ArtifactManifestStore | None = None
@@ -359,6 +379,12 @@ class AppContainer:
         self._capture_session_confirm_repo = None
         self._capture_session_group_repo = None
         self._code_scan_repo = None
+        self._preliminary_detection_repo = None
+        self._authoritative_local_code_scan_repo = None
+        self._authoritative_aisle_finalization_repo = None
+        self._server_reprocess_repo = None
+        self._aisle_revision_repo = None
+        self._preliminary_reconciliation_repo = None
         self._stored_artifact_reader = None
         self._repository_backend_resolution = None
 
@@ -502,6 +528,320 @@ class AppContainer:
             return self._code_scan_repo
         self._code_scan_repo = build_code_scan_repository(self._build_sql_repository_or_memory)
         return self._code_scan_repo
+
+    def get_mobile_preliminary_detection_repo(self) -> MobilePreliminaryDetectionRepository:
+        if self._preliminary_detection_repo is not None:
+            return self._preliminary_detection_repo
+        self._preliminary_detection_repo = build_mobile_preliminary_detection_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._preliminary_detection_repo
+
+    def get_authoritative_local_code_scan_repo(self):
+        if self._authoritative_local_code_scan_repo is not None:
+            return self._authoritative_local_code_scan_repo
+        self._authoritative_local_code_scan_repo = build_authoritative_local_code_scan_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._authoritative_local_code_scan_repo
+
+    def get_authoritative_aisle_finalization_repo(self):
+        if self._authoritative_aisle_finalization_repo is not None:
+            return self._authoritative_aisle_finalization_repo
+        self._authoritative_aisle_finalization_repo = (
+            build_authoritative_aisle_finalization_repository(
+                self._build_sql_repository_or_memory
+            )
+        )
+        return self._authoritative_aisle_finalization_repo
+
+    def get_server_reprocess_repo(self):
+        if self._server_reprocess_repo is not None:
+            return self._server_reprocess_repo
+        self._server_reprocess_repo = build_server_reprocess_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._server_reprocess_repo
+
+    def get_aisle_revision_repo(self):
+        if self._aisle_revision_repo is not None:
+            return self._aisle_revision_repo
+        self._aisle_revision_repo = build_aisle_revision_repository(
+            self._build_sql_repository_or_memory
+        )
+        return self._aisle_revision_repo
+
+    @property
+    def create_aisle_revision(self):
+        from src.application.use_cases.aisles.manage_aisle_revisions import (
+            CreateAisleRevision,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return CreateAisleRevision(
+            enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
+            inventory_repo=self.get_inventory_repo(),
+            aisle_repo=self.get_aisle_repo(),
+            asset_repo=self.get_asset_repo(),
+            finalization_repo=self.get_authoritative_aisle_finalization_repo(),
+            authoritative_repo=self.get_authoritative_local_code_scan_repo(),
+            position_repo=self.get_position_repo(),
+            revision_repo=self.get_aisle_revision_repo(),
+            clock=self.get_clock(),
+        )
+
+    @property
+    def update_aisle_revision_item(self):
+        from src.application.use_cases.aisles.manage_aisle_revisions import (
+            UpdateAisleRevisionItem,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return UpdateAisleRevisionItem(
+            enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
+            revision_repo=self.get_aisle_revision_repo(),
+            reprocess_repo=self.get_server_reprocess_repo(),
+        )
+
+    @property
+    def cancel_aisle_revision(self):
+        from src.application.use_cases.aisles.manage_aisle_revisions import (
+            CancelAisleRevision,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return CancelAisleRevision(
+            enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
+            revision_repo=self.get_aisle_revision_repo(),
+        )
+
+    @property
+    def list_aisle_history(self):
+        from src.application.use_cases.aisles.manage_aisle_revisions import (
+            ListAisleHistory,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return ListAisleHistory(
+            enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
+            revision_repo=self.get_aisle_revision_repo(),
+            finalization_repo=self.get_authoritative_aisle_finalization_repo(),
+        )
+
+    @property
+    def get_aisle_revision_diff(self):
+        from src.application.use_cases.aisles.manage_aisle_revisions import (
+            GetAisleRevisionDiff,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return GetAisleRevisionDiff(
+            enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
+            revision_repo=self.get_aisle_revision_repo(),
+        )
+
+    @property
+    def apply_aisle_revision(self):
+        from src.application.ports.aisle_revision_unit_of_work import AisleRevisionRepositories
+        from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
+        from src.application.use_cases.aisles.apply_aisle_revision import (
+            ApplyAisleRevision,
+        )
+        from src.config import load_settings
+        from src.infrastructure.persistence.memory_aisle_revision_unit_of_work import (
+            build_memory_aisle_revision_uow_factory,
+        )
+        from src.infrastructure.persistence.sql_aisle_revision_unit_of_work import (
+            build_sql_aisle_revision_uow_factory,
+        )
+
+        settings = load_settings()
+        revision_repo = self.get_aisle_revision_repo()
+        finalization_repo = self.get_authoritative_aisle_finalization_repo()
+        authoritative_repo = self.get_authoritative_local_code_scan_repo()
+        position_repo = self.get_position_repo()
+        aisle_repo = self.get_aisle_repo()
+        inventory_repo = self.get_inventory_repo()
+        clock = self.get_clock()
+        reconciler = InventoryStatusReconciler(
+            inventory_repo=inventory_repo,
+            aisle_repo=aisle_repo,
+            clock=clock,
+        )
+        if self.is_sql_repository_backend():
+            uow_factory = build_sql_aisle_revision_uow_factory(self._get_v3_sql_client())
+        else:
+            uow_factory = build_memory_aisle_revision_uow_factory(
+                AisleRevisionRepositories(
+                    revision_repo=revision_repo,
+                    authoritative_repo=authoritative_repo,
+                    position_repo=position_repo,
+                    finalization_repo=finalization_repo,
+                    aisle_repo=aisle_repo,
+                    inventory_repo=inventory_repo,
+                )
+            )
+        return ApplyAisleRevision(
+            enabled=bool(getattr(settings, "server_aisle_revisions_enabled", False)),
+            uow_factory=uow_factory,
+            revision_repo=revision_repo,
+            finalization_repo=finalization_repo,
+            authoritative_repo=authoritative_repo,
+            position_repo=position_repo,
+            inventory_status_reconciler=reconciler,
+            clock=clock,
+        )
+
+    @property
+    def create_rollback_revision(self):
+        from src.application.services.historical_finalization_snapshot_reader import (
+            HistoricalFinalizationSnapshotReader,
+        )
+        from src.application.use_cases.aisles.apply_aisle_revision import (
+            CreateRollbackRevision,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return CreateRollbackRevision(
+            enabled=bool(
+                getattr(settings, "server_aisle_revisions_enabled", False)
+                and getattr(settings, "server_aisle_rollback_enabled", False)
+            ),
+            create_revision=self.create_aisle_revision,
+            apply_revision=self.apply_aisle_revision,
+            finalization_repo=self.get_authoritative_aisle_finalization_repo(),
+            revision_repo=self.get_aisle_revision_repo(),
+            authoritative_repo=self.get_authoritative_local_code_scan_repo(),
+            update_item=self.update_aisle_revision_item,
+            snapshot_reader=HistoricalFinalizationSnapshotReader(
+                finalization_repo=self.get_authoritative_aisle_finalization_repo(),
+                authoritative_repo=self.get_authoritative_local_code_scan_repo(),
+                position_repo=self.get_position_repo(),
+            ),
+        )
+
+    @property
+    def create_server_reprocess_run(self):
+        from src.application.use_cases.aisles.create_server_reprocess_run import (
+            CreateServerReprocessRun,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return CreateServerReprocessRun(
+            enabled=bool(
+                getattr(settings, "server_server_reprocess_enabled", False)
+            ),
+            inventory_repo=self.get_inventory_repo(),
+            aisle_repo=self.get_aisle_repo(),
+            asset_repo=self.get_asset_repo(),
+            reprocess_repo=self.get_server_reprocess_repo(),
+            authoritative_repo=self.get_authoritative_local_code_scan_repo(),
+            position_repo=self.get_position_repo(),
+            clock=self.get_clock(),
+        )
+
+    @property
+    def list_server_reprocess_proposals(self):
+        from src.application.use_cases.aisles.list_server_reprocess_proposals import (
+            ListServerReprocessProposals,
+        )
+
+        return ListServerReprocessProposals(
+            reprocess_repo=self.get_server_reprocess_repo()
+        )
+
+    @property
+    def execute_server_reprocess_run(self):
+        from src.application.use_cases.aisles.execute_server_reprocess_run import (
+            ExecuteServerReprocessRun,
+        )
+
+        return ExecuteServerReprocessRun(
+            reprocess_repo=self.get_server_reprocess_repo(),
+            clock=self.get_clock(),
+        )
+
+    @property
+    def cancel_server_reprocess_run(self):
+        from src.application.use_cases.aisles.execute_server_reprocess_run import (
+            CancelServerReprocessRun,
+        )
+
+        return CancelServerReprocessRun(
+            reprocess_repo=self.get_server_reprocess_repo(),
+            clock=self.get_clock(),
+        )
+
+    @property
+    def adopt_server_reprocess_proposals(self):
+        from src.application.use_cases.aisles.adopt_server_reprocess_proposals import (
+            AdoptServerReprocessProposals,
+        )
+        from src.config import load_settings
+
+        settings = load_settings()
+        return AdoptServerReprocessProposals(
+            enabled=bool(
+                getattr(settings, "server_server_reprocess_adoption_enabled", False)
+            ),
+            reprocess_repo=self.get_server_reprocess_repo(),
+            authoritative_repo=self.get_authoritative_local_code_scan_repo(),
+            position_repo=self.get_position_repo(),
+            clock=self.get_clock(),
+        )
+
+    @property
+    def execute_server_reprocess_worker(self):
+        from src.application.use_cases.aisles.execute_server_reprocess_worker import (
+            ExecuteServerReprocessWorker,
+        )
+        from src.domain.image_processing.contracts import (
+            ImageProcessingResult,
+            ImageResultStatus,
+        )
+
+        class _UnavailableStrategy:
+            def process_asset(self, asset):
+                return ImageProcessingResult(
+                    job_id="",
+                    asset_id=asset.id,
+                    status=ImageResultStatus.FAILED_TECHNICAL,
+                    processing_mode="UNAVAILABLE",
+                    error_code="SERVER_REPROCESS_MODE_UNAVAILABLE",
+                    error_message="No live strategy wired for worker in this process",
+                )
+
+        def _factory(mode: str):
+            # Production worker should inject real CODE_SCAN/OCR strategies.
+            # Default: unavailable until bridge wires strategies (fail-closed).
+            _ = mode
+            return _UnavailableStrategy()
+
+        return ExecuteServerReprocessWorker(
+            reprocess_repo=self.get_server_reprocess_repo(),
+            asset_repo=self.get_asset_repo(),
+            strategy_factory=_factory,
+            clock=self.get_clock(),
+        )
+
+    def get_preliminary_detection_reconciliation_repo(
+        self,
+    ) -> PreliminaryDetectionReconciliationRepository:
+        if self._preliminary_reconciliation_repo is not None:
+            return self._preliminary_reconciliation_repo
+        self._preliminary_reconciliation_repo = (
+            build_preliminary_detection_reconciliation_repository(
+                self._build_sql_repository_or_memory
+            )
+        )
+        return self._preliminary_reconciliation_repo
 
     def get_supplier_reference_image_repo(self) -> SupplierReferenceImageRepository:
         if self._supplier_reference_image_repo is not None:

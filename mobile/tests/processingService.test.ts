@@ -26,6 +26,7 @@ describe('ProcessingService', () => {
     getSession: jest.fn(),
     updateSessionStatus: jest.fn(),
     updateSessionUploadMeta: jest.fn(),
+    setPreparationProcessingMode: jest.fn(async () => undefined),
   };
   const jobs = {
     getByBackendJobId: jest.fn(),

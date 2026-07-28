@@ -10,6 +10,12 @@ from collections.abc import Callable
 from typing import Protocol, TypeVar
 
 from src.application.ports.code_scan_repository import CodeScanRepository
+from src.application.ports.mobile_preliminary_detection_repository import (
+    MobilePreliminaryDetectionRepository,
+)
+from src.application.ports.preliminary_detection_reconciliation_repository import (
+    PreliminaryDetectionReconciliationRepository,
+)
 from src.application.ports.repositories import (
     AisleRepository,
     ClientRepository,
@@ -408,6 +414,160 @@ def build_code_scan_repository(
     return build_repo(
         backend_info_name="CodeScanRepository",
         sql_error_subject="code_scan repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_mobile_preliminary_detection_repository(
+    build_repo: BuildSqlOrMemory[MobilePreliminaryDetectionRepository],
+) -> MobilePreliminaryDetectionRepository:
+    def _sql(client: SqlServerClient) -> MobilePreliminaryDetectionRepository:
+        from src.infrastructure.repositories.sql_mobile_preliminary_detection_repository import (
+            SqlMobilePreliminaryDetectionRepository,
+        )
+
+        return SqlMobilePreliminaryDetectionRepository(client)
+
+    def _memory() -> MobilePreliminaryDetectionRepository:
+        from src.infrastructure.repositories.memory_mobile_preliminary_detection_repository import (
+            MemoryMobilePreliminaryDetectionRepository,
+        )
+
+        return MemoryMobilePreliminaryDetectionRepository()
+
+    return build_repo(
+        backend_info_name="MobilePreliminaryDetectionRepository",
+        sql_error_subject="mobile_preliminary_detection repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_authoritative_local_code_scan_repository(
+    build_repo: BuildSqlOrMemory,
+):
+    from src.application.ports.authoritative_local_code_scan_repository import (
+        AuthoritativeLocalCodeScanRepository,
+    )
+
+    def _sql(client: SqlServerClient) -> AuthoritativeLocalCodeScanRepository:
+        from src.infrastructure.repositories.sql_authoritative_local_code_scan_repository import (
+            SqlAuthoritativeLocalCodeScanRepository,
+        )
+
+        return SqlAuthoritativeLocalCodeScanRepository(client)
+
+    def _memory() -> AuthoritativeLocalCodeScanRepository:
+        from src.infrastructure.repositories.memory_authoritative_local_code_scan_repository import (
+            MemoryAuthoritativeLocalCodeScanRepository,
+        )
+
+        return MemoryAuthoritativeLocalCodeScanRepository()
+
+    return build_repo(
+        backend_info_name="AuthoritativeLocalCodeScanRepository",
+        sql_error_subject="authoritative_local_code_scan repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_authoritative_aisle_finalization_repository(
+    build_repo: BuildSqlOrMemory,
+):
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_authoritative_aisle_finalization_repository import (
+            SqlAuthoritativeAisleFinalizationRepository,
+        )
+
+        return SqlAuthoritativeAisleFinalizationRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_authoritative_aisle_finalization_repository import (
+            MemoryAuthoritativeAisleFinalizationRepository,
+        )
+
+        return MemoryAuthoritativeAisleFinalizationRepository()
+
+    return build_repo(
+        backend_info_name="AuthoritativeAisleFinalizationRepository",
+        sql_error_subject="authoritative_aisle_finalization repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_server_reprocess_repository(build_repo: BuildSqlOrMemory):
+    """Phase 7: SQL when backend is SQL; memory only for explicit memory/test backends."""
+
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_server_reprocess_repository import (
+            SqlServerReprocessRepository,
+        )
+
+        return SqlServerReprocessRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_server_reprocess_repository import (
+            MemoryServerReprocessRepository,
+        )
+
+        return MemoryServerReprocessRepository()
+
+    return build_repo(
+        backend_info_name="ServerReprocessRepository",
+        sql_error_subject="server_reprocess repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_aisle_revision_repository(build_repo: BuildSqlOrMemory):
+    """Phase 8: aisle revisions + position versions."""
+
+    def _sql(client: SqlServerClient):
+        from src.infrastructure.repositories.sql_aisle_revision_repository import (
+            SqlAisleRevisionRepository,
+        )
+
+        return SqlAisleRevisionRepository(client)
+
+    def _memory():
+        from src.infrastructure.repositories.memory_aisle_revision_repository import (
+            MemoryAisleRevisionRepository,
+        )
+
+        return MemoryAisleRevisionRepository()
+
+    return build_repo(
+        backend_info_name="AisleRevisionRepository",
+        sql_error_subject="aisle_revision repo",
+        build_sql=_sql,
+        build_memory=_memory,
+    )
+
+
+def build_preliminary_detection_reconciliation_repository(
+    build_repo: BuildSqlOrMemory[PreliminaryDetectionReconciliationRepository],
+) -> PreliminaryDetectionReconciliationRepository:
+    def _sql(client: SqlServerClient) -> PreliminaryDetectionReconciliationRepository:
+        from src.infrastructure.repositories.sql_preliminary_detection_reconciliation_repository import (
+            SqlPreliminaryDetectionReconciliationRepository,
+        )
+
+        return SqlPreliminaryDetectionReconciliationRepository(client)
+
+    def _memory() -> PreliminaryDetectionReconciliationRepository:
+        from src.infrastructure.repositories.memory_preliminary_detection_reconciliation_repository import (
+            MemoryPreliminaryDetectionReconciliationRepository,
+        )
+
+        return MemoryPreliminaryDetectionReconciliationRepository()
+
+    return build_repo(
+        backend_info_name="PreliminaryDetectionReconciliationRepository",
+        sql_error_subject="preliminary_detection_reconciliation repo",
         build_sql=_sql,
         build_memory=_memory,
     )
