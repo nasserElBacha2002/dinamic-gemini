@@ -3,8 +3,8 @@ In-memory analytics — aggregates from v3 repositories (no SQL).
 
 Processing success uses ``JobRepository.list_all_jobs()`` (same bulk read as SQL analytics).
 
-Multi-run scope: same as SQL analytics — position counts are **all rows in scope**, not the
-single-run slice used by Aisle Results. See ``notes`` on summary and planning docs.
+Position KPIs use the same operational result slice as SQL analytics:
+``positions.job_id = aisle.operational_job_id`` when set, else ``positions.job_id IS NULL``.
 """
 
 from __future__ import annotations
@@ -55,9 +55,18 @@ from src.application.services.analytics_aggregation_core import (
     unidentified_product,
 )
 from src.application.services.display_primary_product import select_display_primary_product
+from src.domain.aisle.entities import Aisle
 from src.domain.jobs.entities import JobStatus
 from src.domain.positions.entities import Position, PositionReviewResolution, PositionStatus
 from src.domain.products.entities import ProductRecord
+
+
+def _position_matches_operational_slice(pos: Position, aisle: Aisle) -> bool:
+    """Same semantics as SQL ``_operational_result_slice_predicate``."""
+    op = (aisle.operational_job_id or "").strip()
+    if op:
+        return pos.job_id == op
+    return pos.job_id is None
 
 
 class MemoryAnalyticsRepository(AnalyticsRepository):
@@ -127,10 +136,12 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
                 if active_aisles_only and not aisle.is_active:
                     continue
                 aisle_to_inventory[aisle.id] = inv.id
-                # Analytics aggregate across all job runs for an aisle (default unset job filter).
+                # Operational slice: same as SQL analytics (operational_job_id → else legacy NULL).
                 for pos in self._position_repo.list_by_aisle(
                     aisle.id, page=1, page_size=100000, sort_by="id", sort_dir="asc"
                 ):
+                    if not _position_matches_operational_slice(pos, aisle):
+                        continue
                     position_to_aisle[pos.id] = aisle.id
                     if not position_in_scope(pos, aisle.id, inv.id, aisle_to_inventory, filters):
                         continue
@@ -191,8 +202,8 @@ class MemoryAnalyticsRepository(AnalyticsRepository):
             "Current-state metrics use entity scope; date filters apply only to review-action and job-based metrics."
         )
         notes.append(
-            "Multi-run: position totals count every persisted row in scope, not only the operational "
-            "or single-resolved slice shown on Aisle Results. Do not compare 1:1 with per-run browsing."
+            "Multi-run: position totals use the operational result slice "
+            "(aisle.operational_job_id, else positions.job_id IS NULL), aligned with Aisle Results / SQL analytics."
         )
         return build_summary_metrics(
             SummaryMetricInputs(

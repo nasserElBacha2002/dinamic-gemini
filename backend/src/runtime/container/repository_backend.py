@@ -1,4 +1,4 @@
-"""Repository persistence backend resolution (Phase C1 — foundation only).
+"""Repository persistence backend resolution (Phase C1 + Phase 2 policy).
 
 Pure resolution logic lives here; :class:`~src.runtime.app_container.AppContainer` wires
 settings, SQL probe, and env-driven fallback policy without importing concrete repositories.
@@ -6,11 +6,20 @@ settings, SQL probe, and env-driven fallback policy without importing concrete r
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
 from src.config import AppSettings
+from src.runtime.container.runtime_environment import (
+    RepositoryBackendForbiddenError,
+    allows_memory_only,
+    requires_sql,
+    resolve_runtime_environment,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class RepositoryBackendMode(str, Enum):
@@ -48,7 +57,8 @@ def resolve_repository_backend_mode(
     """
     Decide repository backend mode without instantiating repositories.
 
-    - If SQL is not targeted by settings → :attr:`RepositoryBackendMode.MEMORY_ONLY` (no probe).
+    - If SQL is not targeted by settings → :attr:`RepositoryBackendMode.MEMORY_ONLY` when
+      the runtime allows memory-only; otherwise raise :class:`RepositoryBackendForbiddenError`.
     - If SQL is targeted → ``probe_sql()``; on success → :attr:`RepositoryBackendMode.SQL`.
     - On probe failure → :attr:`RepositoryBackendMode.MEMORY_FALLBACK` if fallback allowed,
       else re-raises the original exception.
@@ -56,9 +66,25 @@ def resolve_repository_backend_mode(
     ``probe_sql`` must perform connectivity validation (e.g. ``SELECT 1``) and may cache a client
     in the caller; it must not import infrastructure repository implementations.
     """
+    env = resolve_runtime_environment()
     fallback_allowed = allow_in_memory_fallback()
     sql_target = _sql_persistence_target_enabled(settings)
     if not sql_target:
+        if requires_sql(env) or not allows_memory_only(env):
+            logger.error(
+                "event=repository_backend_policy_violation mode=memory_only environment=%s",
+                env.value,
+            )
+            raise RepositoryBackendForbiddenError(
+                f"MEMORY_ONLY is forbidden in environment {env.value!r}; SQL is required",
+                mode=RepositoryBackendMode.MEMORY_ONLY.value,
+                environment=env.value,
+            )
+        logger.info(
+            "event=repository_backend_selected mode=memory_only environment=%s "
+            "fallback_activated=false",
+            env.value,
+        )
         return RepositoryBackendResolution(
             mode=RepositoryBackendMode.MEMORY_ONLY,
             sql_enabled=False,
@@ -72,6 +98,12 @@ def resolve_repository_backend_mode(
         if len(summary) > 500:
             summary = summary[:497] + "..."
         if fallback_allowed:
+            logger.warning(
+                "event=repository_backend_selected mode=memory_fallback environment=%s "
+                "fallback_activated=true reason=%s",
+                env.value,
+                summary,
+            )
             return RepositoryBackendResolution(
                 mode=RepositoryBackendMode.MEMORY_FALLBACK,
                 sql_enabled=True,
@@ -79,6 +111,10 @@ def resolve_repository_backend_mode(
                 reason=summary,
             )
         raise
+    logger.info(
+        "event=repository_backend_selected mode=sql environment=%s fallback_activated=false",
+        env.value,
+    )
     return RepositoryBackendResolution(
         mode=RepositoryBackendMode.SQL,
         sql_enabled=True,

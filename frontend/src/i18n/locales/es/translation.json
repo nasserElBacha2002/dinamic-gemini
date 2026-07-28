@@ -2147,6 +2147,7 @@
   },
   "results": {
     "browse_run": "Seleccionar corrida",
+    "browse_run_legacy_or_empty": "Legacy / sin run operacional",
     "cannot_exceed_max": "No puede superar el máximo",
     "clear_filter": "Clear filter",
     "close_preview": "Close preview",

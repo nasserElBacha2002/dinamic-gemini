@@ -49,10 +49,14 @@ class StubListAisleAssetsUseCase:
         self._assets = list(assets)
         self._aisle = aisle
 
-    def execute(self, inventory_id: str, aisle_id: str) -> Sequence[SourceAsset]:
+    def execute(
+        self, inventory_id: str, aisle_id: str, *, access_user: AuthUser | None = None
+    ) -> Sequence[SourceAsset]:
         return self._assets
 
-    def get_validated_aisle(self, inventory_id: str, aisle_id: str) -> Aisle:
+    def get_validated_aisle(
+        self, inventory_id: str, aisle_id: str, *, access_user: AuthUser | None = None
+    ) -> Aisle:
         from src.application.errors import AisleNotFoundError
 
         if self._aisle is None:

@@ -173,8 +173,23 @@ async def api_key_middleware(request: Request, call_next):
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    """Liveness with schema compatibility metadata."""
+    """Liveness with schema compatibility metadata and repository backend observability."""
     _sha = (os.environ.get("GIT_SHA") or "").strip() or None
+    repo_backend: str | None = None
+    repo_env: str | None = None
+    fallback_activated: bool | None = None
+    try:
+        from src.runtime.app_container import get_app_container
+        from src.runtime.container.repository_backend import RepositoryBackendMode
+        from src.runtime.container.runtime_environment import resolve_runtime_environment
+
+        container = get_app_container()
+        resolution = container._get_repository_backend_resolution()
+        repo_backend = resolution.mode.value
+        repo_env = resolve_runtime_environment().value
+        fallback_activated = resolution.mode == RepositoryBackendMode.MEMORY_FALLBACK
+    except Exception as exc:
+        logger.warning("health: repository backend resolution unavailable: %s", type(exc).__name__)
     return HealthResponse(
         ok=True,
         deploy_git_sha=_sha,
@@ -184,6 +199,9 @@ async def health() -> HealthResponse:
         required_schema_version=schema_guard_state.required_version,
         current_schema_version=schema_guard_state.current_version,
         schema_reason=schema_guard_state.reason,
+        repository_backend=repo_backend,
+        repository_backend_environment=repo_env,
+        fallback_activated=fallback_activated,
     )
 
 

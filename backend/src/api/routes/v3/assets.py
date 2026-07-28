@@ -21,6 +21,7 @@ from src.api.dependencies import (
     get_list_aisle_assets_use_case,
     get_result_context_resolver,
     get_upload_aisle_assets_use_case,
+    require_inventory_client_scope,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.asset_schemas import (
@@ -47,6 +48,8 @@ from src.application.services.upload_stream_io import close_uploaded_files
 from src.application.use_cases.aisles.delete_aisle_source_asset import DeleteAisleSourceAssetUseCase
 from src.application.use_cases.aisles.list_aisle_assets import ListAisleAssetsUseCase
 from src.application.use_cases.aisles.upload_aisle_assets import UploadAisleAssetsUseCase
+from src.auth.dependencies import get_current_admin
+from src.auth.schemas import AuthUser
 from src.config import load_settings
 
 from .shared import asset_to_response, resolve_normalized_asset_path
@@ -119,8 +122,10 @@ async def upload_aisle_assets(
     upload_batch_id: str | None = Form(default=None),
     client_file_ids: list[str] | None = Form(default=None),
     use_case: UploadAisleAssetsUseCase = Depends(get_upload_aisle_assets_use_case),
+    current_user: AuthUser = Depends(require_inventory_client_scope),
 ) -> UploadAisleAssetsResponse:
     """Upload one or more assets (photos/videos) to an aisle. Aisle transitions to assets_uploaded."""
+    # Client scope enforced by ``require_inventory_client_scope`` before multipart spool.
     uploaded: list[UploadedFile] = []
     try:
         uploaded = await read_uploaded_files_for_aisle_asset_upload(
@@ -137,6 +142,7 @@ async def upload_aisle_assets(
             aisle_id,
             uploaded,
             upload_batch_id=upload_batch_id,
+            access_user=current_user,
         )
         asset_responses = [asset_to_response(a) for a in batch.assets]
         uploaded_items = [
@@ -175,10 +181,11 @@ def list_aisle_assets(
     inventory_id: str,
     aisle_id: str,
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
+    current_user: AuthUser = Depends(get_current_admin),
 ) -> list[SourceAssetResponse]:
     """List source assets for an aisle."""
     try:
-        assets = use_case.execute(inventory_id, aisle_id)
+        assets = use_case.execute(inventory_id, aisle_id, access_user=current_user)
         return [asset_to_response(a) for a in assets]
     except AisleNotFoundError as e:
         reraise_if_mapped(e)
@@ -204,11 +211,12 @@ def get_aisle_asset_file(
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
     resolver: ResultContextResolver = Depends(get_result_context_resolver),
     artifact_storage=Depends(get_artifact_storage),
+    current_user: AuthUser = Depends(get_current_admin),
 ) -> Response:
     """Serve the reference image/file for an aisle asset. HEIC/HEIF: serves normalized JPG when available (optional job_id)."""
     failure_reason: AssetFileFailureReason | None = None
     try:
-        assets = use_case.execute(inventory_id, aisle_id)
+        assets = use_case.execute(inventory_id, aisle_id, access_user=current_user)
     except AisleNotFoundError:
         failure_reason = AssetFileFailureReason.AISLE_NOT_FOUND
         logger.warning(
@@ -298,10 +306,11 @@ def get_aisle_asset_image_display_url(
     use_case: ListAisleAssetsUseCase = Depends(get_list_aisle_assets_use_case),
     resolver: ResultContextResolver = Depends(get_result_context_resolver),
     artifact_storage=Depends(get_artifact_storage),
+    current_user: AuthUser = Depends(get_current_admin),
 ) -> SourceAssetImageDisplayUrlResponse:
     """Return how to display the asset image: presigned URL or authenticated GET on ``.../file``."""
     try:
-        assets = use_case.execute(inventory_id, aisle_id)
+        assets = use_case.execute(inventory_id, aisle_id, access_user=current_user)
     except AisleNotFoundError:
         logger.warning(
             "Asset image-display-url: aisle_not_found inventory_id=%s aisle_id=%s asset_id=%s",
@@ -378,10 +387,11 @@ def delete_aisle_source_asset(
     aisle_id: str,
     asset_id: str,
     use_case: DeleteAisleSourceAssetUseCase = Depends(get_delete_aisle_source_asset_use_case),
+    current_user: AuthUser = Depends(get_current_admin),
 ) -> None:
     """Remove one uploaded source asset for the aisle (DB row + stored object best-effort)."""
     try:
-        use_case.execute(inventory_id, aisle_id, asset_id)
+        use_case.execute(inventory_id, aisle_id, asset_id, access_user=current_user)
     except Exception as e:
         reraise_if_mapped(e)
         raise

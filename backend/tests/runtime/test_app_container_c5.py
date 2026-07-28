@@ -12,9 +12,10 @@ from src.runtime.app_container import AppContainer, get_app_container, reset_app
 from src.runtime.container.repository_backend import RepositoryBackendMode
 
 
-def test_explicit_v3_allow_true_overrides_production_on_probe_failure(
+def test_explicit_v3_allow_true_ignored_in_production_on_probe_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Phase 2: V3_ALLOW_IN_MEMORY_FALLBACK=true must not enable MEMORY_FALLBACK in production."""
     monkeypatch.setenv("SQLSERVER_ENABLED", "true")
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("V3_ALLOW_IN_MEMORY_FALLBACK", "true")
@@ -41,8 +42,9 @@ def test_explicit_v3_allow_true_overrides_production_on_probe_failure(
 
     monkeypatch.setattr("src.runtime.app_container.SqlServerClient", _ProbeFailClient)
     c = AppContainer(load_settings())
-    res = c._get_repository_backend_resolution()
-    assert res.mode == RepositoryBackendMode.MEMORY_FALLBACK
+    with pytest.raises(ConnectionError, match="simulated probe failure"):
+        c._get_repository_backend_resolution()
+    assert c._repository_backend_resolution is None
 
 
 def test_explicit_v3_allow_false_disables_fallback_in_non_production(
@@ -113,13 +115,48 @@ def test_unset_v3_allow_in_production_disallows_memory_fallback_on_probe_failure
     assert c._repository_backend_resolution is None
 
 
-def test_unset_v3_allow_in_local_runtime_allows_memory_fallback_on_probe_failure(
+def test_unset_v3_allow_with_unknown_env_disallows_memory_fallback_on_probe_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase 2: unknown / empty APP_ENV (outside pytest markers) requires SQL — no fallback."""
+    monkeypatch.setenv("SQLSERVER_ENABLED", "true")
+    monkeypatch.setenv("APP_ENV", "mystery-cloud")
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("NODE_ENV", raising=False)
+    monkeypatch.delenv("V3_ALLOW_IN_MEMORY_FALLBACK", raising=False)
+    monkeypatch.setenv(
+        "SQLSERVER_CONNECTION_STRING",
+        "Driver=ODBC Driver 18 for SQL Server;Server=127.0.0.1,1;Database=x;Uid=x;Pwd=x;"
+        "TrustServerCertificate=yes",
+    )
+    config_module._settings = None
+
+    class _FailingCursor:
+        def __enter__(self) -> None:
+            raise ConnectionError("simulated probe failure")
+
+        def __exit__(self, *_a: object) -> bool:
+            return False
+
+    class _ProbeFailClient:
+        def __init__(self, *_a: object, **_k: object) -> None:
+            pass
+
+        def cursor(self) -> _FailingCursor:
+            return _FailingCursor()
+
+    monkeypatch.setattr("src.runtime.app_container.SqlServerClient", _ProbeFailClient)
+    c = AppContainer(load_settings())
+    with pytest.raises(ConnectionError, match="simulated probe failure"):
+        c._get_repository_backend_resolution()
+    assert c._repository_backend_resolution is None
+
+
+def test_development_allows_memory_fallback_on_probe_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("SQLSERVER_ENABLED", "true")
-    monkeypatch.delenv("APP_ENV", raising=False)
-    monkeypatch.delenv("ENVIRONMENT", raising=False)
-    monkeypatch.delenv("NODE_ENV", raising=False)
+    monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.delenv("V3_ALLOW_IN_MEMORY_FALLBACK", raising=False)
     monkeypatch.setenv(
         "SQLSERVER_CONNECTION_STRING",

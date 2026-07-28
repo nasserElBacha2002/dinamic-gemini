@@ -34,11 +34,11 @@ export default function AisleResultsJobSelector({
         <Typography variant="body2" color="text.secondary">
           {t('common.loading')}
         </Typography>
-      ) : jobs.length > 0 && pickedRunJobId ? (
+      ) : jobs.length > 0 ? (
         <AisleRunSelector
           operationalJobId={operationalJobId}
           jobs={jobs}
-          valueJobId={pickedRunJobId}
+          valueJobId={pickedRunJobId ?? ''}
           onChange={onRunSelectionChange}
         />
       ) : null}

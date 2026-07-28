@@ -51,6 +51,7 @@ from src.application.services.aisle_job_launch_service import AisleJobLaunchServ
 from src.application.services.aisle_review_lifecycle_sync import AisleReviewLifecycleSync
 from src.application.services.analytics_query_service import AnalyticsQueryService
 from src.application.services.finalization_assessment_service import FinalizationAssessmentService
+from src.application.services.inventory_access import authorize_inventory_access_or_log_denied
 from src.application.services.inventory_status_reconciler import InventoryStatusReconciler
 from src.application.services.job_stale_reconciler import JobStaleReconciler
 from src.application.services.operational_execution_config_resolver import (
@@ -272,6 +273,20 @@ def get_result_evidence_query_service(
 
 def get_operational_execution_config_resolver() -> OperationalExecutionConfigResolver:
     return OperationalExecutionConfigResolver()
+
+
+def require_inventory_client_scope(
+    inventory_id: str,
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
+    user: AuthUser = Depends(get_current_admin),
+) -> AuthUser:
+    """FastAPI dependency: enforce actor→client→inventory before handlers spool uploads."""
+    authorize_inventory_access_or_log_denied(
+        inventory_repo,
+        inventory_id=inventory_id,
+        user=user,
+    )
+    return user
 
 
 def get_create_inventory_use_case(
@@ -695,6 +710,7 @@ def get_upload_aisle_assets_use_case(
     artifact_storage=Depends(get_artifact_storage),
     clock: Clock = Depends(get_clock),
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> UploadAisleAssetsUseCase:
     from src.application.services.upload_request_limits import UploadRequestLimitPolicy
     from src.config import load_settings
@@ -705,6 +721,7 @@ def get_upload_aisle_assets_use_case(
         artifact_storage=artifact_storage,
         clock=clock,
         status_reconciler=status_reconciler,
+        inventory_repo=inventory_repo,
         upload_policy=UploadRequestLimitPolicy.from_settings(load_settings()),
     )
 
@@ -712,10 +729,12 @@ def get_upload_aisle_assets_use_case(
 def get_list_aisle_assets_use_case(
     aisle_repo: AisleRepository = Depends(get_aisle_repo),
     asset_repo: SourceAssetRepository = Depends(get_source_asset_repo),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> ListAisleAssetsUseCase:
     return ListAisleAssetsUseCase(
         aisle_repo=aisle_repo,
         asset_repo=asset_repo,
+        inventory_repo=inventory_repo,
     )
 
 
@@ -931,6 +950,7 @@ def get_delete_aisle_source_asset_use_case(
     artifact_storage=Depends(get_artifact_storage),
     clock: Clock = Depends(get_clock),
     status_reconciler: InventoryStatusReconciler = Depends(get_inventory_status_reconciler),
+    inventory_repo: InventoryRepository = Depends(get_inventory_repo),
 ) -> DeleteAisleSourceAssetUseCase:
     return DeleteAisleSourceAssetUseCase(
         aisle_repo=aisle_repo,
@@ -939,6 +959,7 @@ def get_delete_aisle_source_asset_use_case(
         artifact_storage=artifact_storage,
         clock=clock,
         status_reconciler=status_reconciler,
+        inventory_repo=inventory_repo,
     )
 
 

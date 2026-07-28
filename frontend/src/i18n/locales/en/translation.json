@@ -1420,6 +1420,7 @@
   },
   "results": {
     "browse_run": "Browse run",
+    "browse_run_legacy_or_empty": "Legacy / no operational run",
     "cannot_exceed_max": "Cannot exceed max",
     "clear_filter": "Clear filter",
     "close_preview": "Close preview",

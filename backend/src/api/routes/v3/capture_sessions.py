@@ -22,6 +22,7 @@ from src.api.dependencies import (
     get_materialize_capture_session_use_case,
     get_update_capture_session_clock_offset_use_case,
     get_upload_capture_session_staging_items_use_case,
+    require_inventory_client_scope,
 )
 from src.api.errors import reraise_if_mapped
 from src.api.schemas.capture_schemas import (
@@ -99,6 +100,7 @@ from src.application.use_cases.capture_sessions.upload_capture_session_staging_i
     StagingUploadBatchResult,
     UploadCaptureSessionStagingItemsUseCase,
 )
+from src.auth.schemas import AuthUser
 
 router = APIRouter()
 
@@ -588,6 +590,7 @@ async def upload_capture_session_staging_items_inventory_scope(
     use_case: UploadCaptureSessionStagingItemsUseCase = Depends(
         get_upload_capture_session_staging_items_use_case
     ),
+    _scoped: AuthUser = Depends(require_inventory_client_scope),
 ) -> UploadCaptureSessionItemsResponse:
     uploaded: list[UploadedFile] = []
     try:
@@ -629,6 +632,7 @@ async def upload_capture_session_staging_items(
     use_case: UploadCaptureSessionStagingItemsUseCase = Depends(
         get_upload_capture_session_staging_items_use_case
     ),
+    _scoped: AuthUser = Depends(require_inventory_client_scope),
 ) -> UploadCaptureSessionItemsResponse:
     """Stage files for a capture session (spooled ingest with per-request size limits)."""
     uploaded: list[UploadedFile] = []
