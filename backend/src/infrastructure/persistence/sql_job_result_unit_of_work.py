@@ -97,6 +97,54 @@ class SqlJobResultUnitOfWork:
             source_asset_id=source_asset_id,
         )
 
+    def fence_job_lease(self, lease, *, now) -> None:
+        """UPDLOCK the job row under the current UoW transaction — reject stale domain writes.
+
+        Holding the row lock until commit closes the TOCTOU window between lease check and
+        delete-replace of job-scoped domain results.
+        """
+        from datetime import timezone
+
+        from src.domain.jobs.entities import JobStatus
+        from src.domain.jobs.lease import JobLeaseLostError
+        from src.infrastructure.repositories.sql_job_repository import _ensure_utc
+
+        if self._tx is None:
+            raise RuntimeError("SqlJobResultUnitOfWork is not active")
+        now_utc = _ensure_utc(now) or now
+        if getattr(now_utc, "tzinfo", None) is None:
+            now_utc = now_utc.replace(tzinfo=timezone.utc)
+        with self._tx.connection.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                FROM inventory_jobs WITH (UPDLOCK, ROWLOCK)
+                WHERE id = ?
+                  AND status IN (?, ?)
+                  AND claim_owner_id = ?
+                  AND lease_fencing_token = ?
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at >= ?
+                """,
+                (
+                    lease.job_id,
+                    JobStatus.RUNNING.value,
+                    JobStatus.CANCEL_REQUESTED.value,
+                    lease.owner_id,
+                    lease.fencing_token,
+                    now_utc,
+                ),
+            )
+            row = cur.fetchone()
+        if row is None:
+            raise JobLeaseLostError(
+                "Lease lost during domain persist fence",
+                job_id=lease.job_id,
+                owner_id=lease.owner_id,
+                fencing_token=lease.fencing_token,
+                reason="domain_persist_fence_miss",
+            )
+
     def __enter__(self) -> SqlJobResultUnitOfWork:
         self._tx = self._client.begin_transaction()
         self._tx.__enter__()

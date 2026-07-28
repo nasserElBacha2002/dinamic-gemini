@@ -77,3 +77,9 @@ Prep                    Repo                 Monitoring              Executor
 2. Loss ⇒ stop local; **no** `FAILED` por fencing.
 3. `fencing_token` en logs de loss para auditoría.
 4. Cancel API / unfenced saves fuera de este lifecycle (gap documentado).
+
+## Corrections (2026-07-28 UTC)
+- Safety margin validated at settings load: `duration > heartbeat + margin`.
+- Heartbeat aborts if remaining lease time < margin after renew.
+- Global fallback requires active JobLease (no `lease=None`).
+- Recovery policy: stale-fail; reacquire is test/admin.

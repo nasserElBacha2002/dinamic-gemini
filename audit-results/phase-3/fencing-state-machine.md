@@ -77,3 +77,9 @@ stateDiagram-v2
 ## Relación con job status (Phase 1)
 
 Lease fencing **no** reemplaza `JobClaimOutcome` ni stale reclaim Option C. Amplía writes post-claim con fencing. Cancel unfenced y promotion/artifacts siguen fuera de esta máquina (ver `implementation-report.md` §11/13/15).
+
+## Corrections (2026-07-28 UTC)
+- Domain: UPDLOCK fence inside result UoW before delete-replace.
+- Tracker: all writes via `update_finalization_if_leased`.
+- Cancel: external CANCEL_REQUESTED unfenced; worker ack fenced.
+- Artifacts: token-scoped keys + lease gate before mark_published.

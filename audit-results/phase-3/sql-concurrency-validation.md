@@ -37,3 +37,7 @@ Cómo `backend/tests/integration/jobs/test_sql_job_lease_fencing.py` valida leas
 - Worker end-to-end multi-process con heartbeat real.
 - Cancel / artifact / promotion races.
 - Wiring de `reacquire_expired_lease` en recovery productiva.
+
+## Corrections (2026-07-28 UTC)
+- Added `test_sql_job_finalization_fencing.py` (update_finalization + cancel ack).
+- SQL IT focused suite must not skip when SQL Server is available.

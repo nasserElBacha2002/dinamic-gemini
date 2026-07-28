@@ -96,3 +96,8 @@ Helpers compartidos: `job_lease_helpers.lease_is_currently_valid` / `classify_le
 - `JOB_LEASE_DURATION_SEC` (default 60) — grant / extension.
 - `JOB_LEASE_HEARTBEAT_INTERVAL_SEC` (default 15) — loop interval.
 - `JOB_LEASE_RENEWAL_SAFETY_MARGIN_SEC` (default 20) — documentado en settings; **aún no** usado por la lógica de urgencia del heartbeat.
+
+## Corrections (2026-07-28 UTC)
+- Null expiry / token 0 / empty owner → `lease_not_initialized`.
+- Finalization writes allowed on SUCCEEDED for completing owner/token.
+- Ports: lease ops are `@abstractmethod` incl. tracker/cancel.

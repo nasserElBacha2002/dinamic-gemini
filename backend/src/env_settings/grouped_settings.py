@@ -661,6 +661,20 @@ class ApiRuntimeSettings(BaseModel):
             "urgency (renew before expiry, not exactly at it). Env: JOB_LEASE_RENEWAL_SAFETY_MARGIN_SEC."
         ),
     )
+
+    @model_validator(mode="after")
+    def _validate_job_lease_timing(self) -> Self:
+        duration = int(self.job_lease_duration_sec)
+        heartbeat = int(self.job_lease_heartbeat_interval_sec)
+        margin = int(self.job_lease_renewal_safety_margin_sec)
+        if duration <= heartbeat + margin:
+            raise ValueError(
+                "JOB_LEASE_DURATION_SEC must be greater than "
+                "JOB_LEASE_HEARTBEAT_INTERVAL_SEC + JOB_LEASE_RENEWAL_SAFETY_MARGIN_SEC "
+                f"(got duration={duration}, heartbeat={heartbeat}, margin={margin})"
+            )
+        return self
+
     cors_allow_origins: str = Field(
         default_factory=lambda: (os.getenv("CORS_ALLOW_ORIGINS", "") or "").strip(),
         description=(

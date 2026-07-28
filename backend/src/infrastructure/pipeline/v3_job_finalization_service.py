@@ -121,13 +121,42 @@ class V3JobFinalizationService:
 
     def finalize_success(self, req: V3JobFinalizationRequest) -> bool:
         """Persist domain, upload durables, finalize success. True => caller must return True (failure)."""
+        if req.lease is None:
+            raise ValueError(
+                f"V3JobFinalizationRequest requires an active JobLease for modern jobs "
+                f"(job_id={req.job_id})"
+            )
+        # Validate lease before tracker.begin() — LEASE_LOST must not write metadata/FAIL.
+        pre = self._job_repo.assert_lease(req.lease, now=self._clock.now())
+        if not pre.applied:
+            logger.info(
+                "event=job_lease_lost job_id=%s owner_id=%s fencing_token=%s "
+                "reason=%s stage=finalization_pre_begin",
+                req.job_id,
+                req.lease.owner_id,
+                req.lease.fencing_token,
+                pre.reason,
+            )
+            return True
         tracker = JobFinalizationTracker(
             job_repo=self._job_repo,
             clock=self._clock,
             job_id=req.job_id,
+            lease=req.lease,
             stage_recorder=self._stage_recorder,
         )
-        tracker.begin()
+        try:
+            tracker.begin()
+        except JobLeaseLostError as lease_exc:
+            logger.info(
+                "event=job_lease_lost job_id=%s owner_id=%s fencing_token=%s "
+                "reason=%s stage=finalization_begin",
+                req.job_id,
+                lease_exc.owner_id,
+                lease_exc.fencing_token,
+                lease_exc.reason,
+            )
+            return True
         try:
             return self._finalize_success_body(req, tracker)
         except JobLeaseLostError as lease_exc:
@@ -149,6 +178,7 @@ class V3JobFinalizationService:
                     tracker=tracker,
                     exec_log=req.exec_log,
                     cancel_event_emitted=req.cancel_event_emitted,
+                    lease=req.lease,
                 )
             else:
                 self._state.cancel_job_and_aisle(
@@ -158,6 +188,7 @@ class V3JobFinalizationService:
                     exec_log=req.exec_log,
                     cancel_event_emitted=req.cancel_event_emitted,
                     tracker=tracker,
+                    lease=req.lease,
                 )
             return True
 
@@ -184,6 +215,7 @@ class V3JobFinalizationService:
                     model_name=(req.job.model_name or "").strip() or None,
                     prompt_composition=_prompt_composition_from_run_metadata(req.pipeline_result.run_metadata),
                     input_type=req.input_type,
+                    lease=req.lease,
                 )
             )
         except PipelineCancellationRequestedError:
@@ -522,6 +554,7 @@ class V3JobFinalizationService:
                 run_segment=RUN_ID,
                 run_dir=req.run_dir,
                 required_kind_overrides=required_kind_overrides,
+                fencing_token=req.lease.fencing_token if req.lease is not None else None,
             )
         except ArtifactSourceStagingFailedError as exc:
             staging_code = getattr(exc, "error_code", "ARTIFACT_STAGING_FAILED")

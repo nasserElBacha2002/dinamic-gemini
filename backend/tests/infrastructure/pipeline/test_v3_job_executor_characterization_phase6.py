@@ -374,6 +374,7 @@ def _build_outbox_executor_params(
         job_repo=harness.job_repo,
         clock=FixedClock(harness.now),
         job_id=harness.job_id,
+        lease=harness.lease(),
         stage_recorder=executor._stage_recorder,
     )
     tracker.begin()
@@ -395,6 +396,7 @@ def _build_outbox_executor_params(
         cancel_event_emitted={"requested": False, "detected": False, "cancelled": False},
         input_type="photos",
         canonical_traceability_expected=True,
+        lease=harness.lease(),
     )
     dispatcher_spy = MagicMock()
     executor._artifact_dispatcher = dispatcher_spy

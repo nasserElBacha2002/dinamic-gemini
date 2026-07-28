@@ -7,7 +7,7 @@ Use cases depend on these abstractions; infrastructure provides SQL (or other) i
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from typing import Any, Literal, Union
 
@@ -303,6 +303,7 @@ class JobRepository(ABC):
         ``lease_duration_seconds``) and attaches it to the returned ``JobClaimResult.lease``.
         """
 
+    @abstractmethod
     def renew_lease(
         self,
         lease: JobLease,
@@ -310,13 +311,12 @@ class JobRepository(ABC):
         now: datetime,
         extension_seconds: int,
     ) -> LeaseRenewalResult:
-        """Phase 3: extend ``lease_expires_at`` for an active lease (CAS on owner + fencing_token).
+        """Extend ``lease_expires_at`` for an active lease (CAS on owner + fencing_token).
 
-        Does not increment the fencing token. Default implementation raises
-        ``NotImplementedError``; concrete repositories must override.
+        Does not increment the fencing token.
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def reacquire_expired_lease(
         self,
         job_id: str,
@@ -327,11 +327,10 @@ class JobRepository(ABC):
     ) -> JobClaimResult:
         """Steal an expired RUNNING lease: new owner + fencing_token + 1.
 
-        For tests / controlled recovery. Default implementation raises ``NotImplementedError``;
-        concrete repositories must override.
+        Test / admin recovery only when production policy is stale-fail (see Phase 3 docs).
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def merge_result_json_if_leased(
         self,
         lease: JobLease,
@@ -339,11 +338,7 @@ class JobRepository(ABC):
         *,
         now: datetime,
     ) -> tuple[LeaseWriteResult, Job | None]:
-        """Phase 3: merge ``result_json`` only while the caller still holds the lease.
-
-        Default implementation raises ``NotImplementedError``; concrete repositories must override.
-        """
-        raise NotImplementedError
+        """Merge ``result_json`` only while the caller still holds the lease."""
 
     def touch_heartbeat_if_leased(
         self,
@@ -355,10 +350,11 @@ class JobRepository(ABC):
         """Renew lease + update ``last_heartbeat_at`` (same semantics as ``renew_lease`` for Phase 3)."""
         return self.renew_lease(lease, now=now, extension_seconds=extension_seconds)
 
+    @abstractmethod
     def assert_lease(self, lease: JobLease, *, now: datetime) -> LeaseWriteResult:
-        """Validate the caller still holds an active lease (no mutation). Default: NotImplementedError."""
-        raise NotImplementedError
+        """Validate the caller still holds an active lease (no mutation)."""
 
+    @abstractmethod
     def complete_if_leased(
         self,
         lease: JobLease,
@@ -366,13 +362,9 @@ class JobRepository(ABC):
         *,
         now: datetime,
     ) -> LeaseWriteResult:
-        """Persist a SUCCEEDED terminal row only while ``lease`` is still held.
+        """Persist a SUCCEEDED terminal row only while ``lease`` is still held."""
 
-        ``job`` must already carry the intended terminal fields (status, result_json, …).
-        Default raises ``NotImplementedError``; concrete repositories must override.
-        """
-        raise NotImplementedError
-
+    @abstractmethod
     def fail_if_leased(
         self,
         lease: JobLease,
@@ -381,8 +373,27 @@ class JobRepository(ABC):
         error_message: str,
         failure_code: str = "PROCESSING_FAILED",
     ) -> LeaseWriteResult:
-        """Mark job FAILED only while ``lease`` is still held. Default: NotImplementedError."""
-        raise NotImplementedError
+        """Mark job FAILED only while ``lease`` is still held."""
+
+    @abstractmethod
+    def update_finalization_if_leased(
+        self,
+        lease: JobLease,
+        *,
+        now: datetime,
+        mutator: Callable[[Job], None],
+    ) -> LeaseWriteResult:
+        """Apply finalization-field mutations under lease CAS (no generic save_if_owned)."""
+
+    @abstractmethod
+    def acknowledge_cancel_if_leased(
+        self,
+        lease: JobLease,
+        *,
+        now: datetime,
+        reason: str,
+    ) -> LeaseWriteResult:
+        """Worker acknowledgement: CANCEL_REQUESTED/RUNNING → CANCELED under lease CAS."""
 
     @abstractmethod
     def try_reclaim_stale_job_and_reconcile_aisle(

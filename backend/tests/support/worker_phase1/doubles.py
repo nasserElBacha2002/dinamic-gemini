@@ -410,6 +410,12 @@ class PartialFailingJobRepository(JobRepositoryTestBase):
             lease, now=now, error_message=error_message, failure_code=failure_code
         )
 
+    def update_finalization_if_leased(self, lease, *, now: datetime, mutator):
+        return self._inner.update_finalization_if_leased(lease, now=now, mutator=mutator)
+
+    def acknowledge_cancel_if_leased(self, lease, *, now: datetime, reason: str):
+        return self._inner.acknowledge_cancel_if_leased(lease, now=now, reason=reason)
+
     def try_reclaim_stale_job_and_reconcile_aisle(
         self,
         job_id: str,

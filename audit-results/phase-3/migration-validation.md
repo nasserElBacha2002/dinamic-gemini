@@ -70,3 +70,7 @@ ALTER TABLE inventory_jobs DROP COLUMN lease_acquired_at;
 **No dropear columnas con datos de producción** sin plan ops explícito (pérdida de fencing state, incompatibilidad con código deployado). Preferir rollback de **código** solo si se mantiene schema aditivo, o forward-fix.
 
 Drop del índice filtrado antes de columnas si el engine lo requiere en el entorno concreto.
+
+## Corrections (2026-07-28 UTC)
+- Rollback SQL documented for dev/test only (DROP INDEX / CONSTRAINT / columns).
+- Keep 0072 additive; reapply-safe via COL_LENGTH guards.

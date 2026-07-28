@@ -72,7 +72,7 @@ from src.application.use_cases.pipeline.recompute_consolidated_counts import (
 )
 from src.config import Settings, load_settings
 from src.domain.aisle.entities import Aisle
-from src.domain.jobs.lease import JobLeaseLostError
+from src.domain.jobs.lease import JobLease, JobLeaseLostError
 from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
 from src.infrastructure.pipeline.hybrid_report_to_domain_adapter import (
     default_map_hybrid_report_to_domain,
@@ -244,6 +244,7 @@ class V3JobExecutor:
             final_count_repo=final_count_repo,
             job_scoped_recompute_factory=job_scoped_recompute_factory,
             job_result_uow_factory=job_result_uow_factory,
+            job_repo=job_repo,
         )
         self._result_evidence_repo = result_evidence_repo
         self._traceability_artifact_service = TraceabilityArtifactService(
@@ -487,6 +488,7 @@ class V3JobExecutor:
         state_repo: Any,
         lease_repo: Any,
         ctx: _GlobalFallbackRuntimeCtx,
+        lease: JobLease | None = None,
     ) -> bool:
         """Run GLOBAL_BATCH after internal aisle pass. False => caller must stop (failed)."""
         import uuid as _uuid
@@ -711,7 +713,13 @@ class V3JobExecutor:
         )
 
         def _persist_summary(job_id: str, summary: dict) -> None:
-            self._state.merge_result_json_protected(job_id, {"global_fallback": summary}, lease=None)
+            if lease is None:
+                raise ValueError(
+                    f"modern job global_fallback requires JobLease (job_id={job_id})"
+                )
+            self._state.merge_result_json_protected(
+                job_id, {"global_fallback": summary}, lease=lease
+            )
 
         coordinator = GlobalExternalFallbackCoordinator(
             lease_repo=lease_repo,
@@ -1131,6 +1139,7 @@ class V3JobExecutor:
                     error=PipelineCancellationRequestedError(outcome.error_message or "cancelled"),
                     exec_log=exec_log,
                     cancel_event_emitted=cancel_event_emitted,
+                    lease=lease,
                 )
             return True
 
@@ -1175,6 +1184,7 @@ class V3JobExecutor:
                 state_repo=state_repo,
                 lease_repo=lease_repo,
                 ctx=global_fallback_ctx,
+                lease=lease,
             )
             if gf is False:
                 return True
@@ -1568,6 +1578,7 @@ class V3JobExecutor:
                     error=PipelineCancellationRequestedError(outcome.error_message or "cancelled"),
                     exec_log=exec_log,
                     cancel_event_emitted=cancel_event_emitted,
+                    lease=lease,
                 )
             return True
 
@@ -1600,6 +1611,7 @@ class V3JobExecutor:
                 state_repo=state_repo,
                 lease_repo=lease_repo,
                 ctx=global_fallback_ctx,
+                lease=lease,
             )
             if gf is False:
                 return True
@@ -1760,6 +1772,9 @@ class V3JobExecutor:
             lease=prep.lease,
             lease_extension_seconds=int(
                 getattr(settings, "job_lease_duration_sec", 60) or 60
+            ),
+            renewal_safety_margin_sec=int(
+                getattr(settings, "job_lease_renewal_safety_margin_sec", 20) or 20
             ),
         )
         with self._monitoring_service.session(monitoring_req) as rt:
@@ -2019,6 +2034,7 @@ class V3JobExecutor:
                                 ),
                                 exec_log=rt.exec_log,
                                 cancel_event_emitted=rt.cancel_event_emitted,
+                                lease=lease,
                             )
                         return True
 
@@ -2122,6 +2138,7 @@ class V3JobExecutor:
                     error=e,
                     exec_log=rt.exec_log,
                     cancel_event_emitted=rt.cancel_event_emitted,
+                    lease=lease,
                 )
             except Exception as e:
                 return self._failure_handler.handle_unexpected_failure(

@@ -20,6 +20,7 @@ from src.domain.jobs.artifact_policy import (
 from src.domain.jobs.entities import JobStatus
 from src.domain.jobs.finalization import LastCompletedFinalizationStep
 from src.domain.jobs.finalization_evidence import FinalizationStage, StageStatus
+from src.domain.jobs.lease import JobLease
 from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
 from src.infrastructure.pipeline.v3_job_execution_state import V3JobExecutionStateService
@@ -98,6 +99,13 @@ class AutomaticFinalizationContinuationUseCase:
         if aisle is None:
             return ContinuationResult(started=False, completed=False, reason="aisle_not_found")
 
+        try:
+            lease = _lease_from_job(job)
+        except ValueError:
+            return ContinuationResult(
+                started=False, completed=False, reason="lease_not_initialized"
+            )
+
         report_manifest = self._manifest.get_entry(job_id, ARTIFACT_KIND_HYBRID_REPORT_JSON)
         report_path = Path(
             report_manifest.storage_key if report_manifest and report_manifest.storage_key else "hybrid_report.json"
@@ -120,6 +128,7 @@ class AutomaticFinalizationContinuationUseCase:
             job_id=job_id,
             job_repo=self._job_repo,
             clock=self._clock,
+            lease=lease,
             stage_recorder=recorder,
         )
 
@@ -161,3 +170,19 @@ class AutomaticFinalizationContinuationUseCase:
             if key in job.result_json:
                 meta[key] = job.result_json[key]
         return meta or None
+
+
+def _lease_from_job(job) -> JobLease:
+    owner = (job.claim_owner_id or "").strip()
+    token = int(job.lease_fencing_token or 0)
+    expires = job.lease_expires_at
+    acquired = job.lease_acquired_at
+    if not owner or token < 1 or expires is None or acquired is None:
+        raise ValueError("job lease not initialized")
+    return JobLease(
+        job_id=job.id,
+        owner_id=owner,
+        fencing_token=token,
+        acquired_at=acquired,
+        expires_at=expires,
+    )

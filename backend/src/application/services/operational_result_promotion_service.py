@@ -41,6 +41,7 @@ class OperationalResultPromotionService:
                 operational_job_id=None,
             )
 
+        # Always re-read job after heavy work — never promote from a stale in-memory snapshot.
         job = self._job_repo.get_by_id(candidate_job_id)
         if job is None:
             return PromotionResult(
@@ -66,6 +67,19 @@ class OperationalResultPromotionService:
                 previous_job_id=aisle.operational_job_id,
                 operational_job_id=aisle.operational_job_id,
             )
+        # Phase 3: require a completed lease-backed terminalization (token >= 1).
+        # Stale workers that never held / lost the lease cannot promote.
+        if int(job.lease_fencing_token or 0) < 1:
+            logger.warning(
+                "operational_promotion rejected: lease_not_initialized aisle_id=%s candidate=%s",
+                aisle_id,
+                candidate_job_id,
+            )
+            return PromotionResult(
+                outcome=PromotionOutcome.REJECTED_INVALID_STATUS,
+                previous_job_id=aisle.operational_job_id,
+                operational_job_id=aisle.operational_job_id,
+            )
 
         previous = aisle.operational_job_id
         result = self._promotion_repo.promote_if_eligible(
@@ -74,12 +88,14 @@ class OperationalResultPromotionService:
             candidate_created_at=job.created_at,
         )
         logger.info(
-            "operational_promotion aisle_id=%s candidate=%s outcome=%s previous=%s operational=%s",
+            "operational_promotion aisle_id=%s candidate=%s outcome=%s previous=%s operational=%s "
+            "fencing_token=%s",
             aisle_id,
             candidate_job_id,
             result.outcome.value,
             previous,
             result.operational_job_id,
+            job.lease_fencing_token,
         )
         return result
 

@@ -17,7 +17,15 @@ from src.application.services.job_claim_helpers import classify_claim_after_cas_
 from src.application.services.job_lease_helpers import (
     classify_lease_renewal_after_cas_miss,
     classify_lease_write_after_cas_miss,
+    lease_allows_finalization_write,
     lease_is_currently_valid,
+)
+from src.application.services.job_lease_metrics import (
+    METRIC_ACQUIRE,
+    METRIC_LOST,
+    METRIC_REACQUIRE,
+    METRIC_RENEW,
+    inc_lease_metric,
 )
 from src.application.services.job_stale_reconciler import (
     STALE_FAILURE_CODE,
@@ -291,6 +299,7 @@ class MemoryJobRepository(JobRepository):
                 job.lease_fencing_token,
                 lease_expires_at.isoformat(),
             )
+            inc_lease_metric(METRIC_ACQUIRE, operation="claim", outcome="acquired")
             return JobClaimResult(
                 outcome=JobClaimOutcome.ACQUIRED,
                 job=job,
@@ -325,6 +334,7 @@ class MemoryJobRepository(JobRepository):
                     result.outcome.value,
                     result.reason,
                 )
+                inc_lease_metric(METRIC_LOST, operation="renew", outcome=result.outcome.value)
                 return result
 
             assert job is not None
@@ -348,6 +358,7 @@ class MemoryJobRepository(JobRepository):
                 lease.fencing_token,
                 new_expires_at.isoformat(),
             )
+            inc_lease_metric(METRIC_RENEW, operation="renew", outcome="renewed")
             return LeaseRenewalResult(outcome=LeaseRenewalOutcome.RENEWED, lease=renewed)
 
     def reacquire_expired_lease(
@@ -418,6 +429,7 @@ class MemoryJobRepository(JobRepository):
                 job.lease_fencing_token,
                 new_expires_at.isoformat(),
             )
+            inc_lease_metric(METRIC_REACQUIRE, operation="reacquire", outcome="acquired")
             return JobClaimResult(
                 outcome=JobClaimOutcome.ACQUIRED,
                 job=job,
@@ -548,6 +560,85 @@ class MemoryJobRepository(JobRepository):
             job.finished_at = now
             job.last_heartbeat_at = now
             job.failure_code = failure_code
+            job.failure_message = msg
+            job.error_message = msg
+            self._store[job.id] = job
+            return LeaseWriteResult(outcome=LeaseWriteOutcome.APPLIED)
+
+    def update_finalization_if_leased(
+        self,
+        lease: JobLease,
+        *,
+        now: datetime,
+        mutator,
+    ) -> LeaseWriteResult:
+        """Apply finalization mutations under lease CAS."""
+        with self._lock:
+            current = self._store.get(lease.job_id)
+            if not lease_allows_finalization_write(
+                current, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now
+            ):
+                result = classify_lease_write_after_cas_miss(
+                    current, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now
+                )
+                # SUCCEEDED with mismatched owner is lease_lost; with match we already returned APPLIED path.
+                if current is not None and current.status == JobStatus.SUCCEEDED:
+                    if not (
+                        (current.claim_owner_id or "").strip() == (lease.owner_id or "").strip()
+                        and int(current.lease_fencing_token or 0) == int(lease.fencing_token)
+                    ):
+                        result = LeaseWriteResult(
+                            outcome=LeaseWriteOutcome.LEASE_LOST,
+                            reason="owner_or_fencing_token_mismatch",
+                        )
+                logger.warning(
+                    "event=job_stale_write_rejected job_id=%s operation=finalization owner_id=%s "
+                    "fencing_token=%s outcome=%s reason=%s",
+                    lease.job_id,
+                    lease.owner_id,
+                    lease.fencing_token,
+                    result.outcome.value,
+                    result.reason,
+                )
+                return result
+            assert current is not None
+            mutator(current)
+            current.updated_at = now
+            self._store[current.id] = current
+            return LeaseWriteResult(outcome=LeaseWriteOutcome.APPLIED)
+
+    def acknowledge_cancel_if_leased(
+        self,
+        lease: JobLease,
+        *,
+        now: datetime,
+        reason: str,
+    ) -> LeaseWriteResult:
+        with self._lock:
+            job = self._store.get(lease.job_id)
+            if not lease_is_currently_valid(
+                job, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now
+            ):
+                result = classify_lease_write_after_cas_miss(
+                    job, owner_id=lease.owner_id, fencing_token=lease.fencing_token, now=now
+                )
+                logger.warning(
+                    "event=job_stale_write_rejected job_id=%s operation=acknowledge_cancel "
+                    "owner_id=%s fencing_token=%s outcome=%s reason=%s",
+                    lease.job_id,
+                    lease.owner_id,
+                    lease.fencing_token,
+                    result.outcome.value,
+                    result.reason,
+                )
+                return result
+            assert job is not None
+            msg = reason[:2048] if len(reason) > 2048 else reason
+            job.status = JobStatus.CANCELED
+            job.updated_at = now
+            job.finished_at = now
+            job.last_heartbeat_at = now
+            job.failure_code = "CANCELED"
             job.failure_message = msg
             job.error_message = msg
             self._store[job.id] = job

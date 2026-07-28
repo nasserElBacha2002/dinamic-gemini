@@ -453,9 +453,14 @@ class V3JobExecutionStateService:
         durable_artifacts: dict[str, dict[str, Any]] | None,
         lease: JobLease | None = None,
     ) -> None:
+        import copy
+
         job = self._job_repo.get_by_id(job_id)
         if job is None:
             raise RuntimeError(f"Job not found for terminalization: {job_id}")
+        # Memory repos return live store references — mutate a copy so lease CAS
+        # still sees RUNNING/CANCEL_REQUESTED on the persisted row.
+        job = copy.deepcopy(job)
         job.status = JobStatus.SUCCEEDED
         job.updated_at = completion_now
         job.finished_at = completion_now
@@ -602,7 +607,21 @@ class V3JobExecutionStateService:
             return None
         return job
 
-    def cancel_job(self, job: Job, reason: str, *, now) -> None:
+    def cancel_job(self, job: Job, reason: str, *, now, lease: JobLease | None = None) -> None:
+        if lease is not None:
+            write = self._job_repo.acknowledge_cancel_if_leased(
+                lease, now=now, reason=reason
+            )
+            if write.outcome != LeaseWriteOutcome.APPLIED:
+                raise JobLeaseLostError(
+                    "Lease lost during cancel acknowledgement",
+                    job_id=job.id,
+                    owner_id=lease.owner_id,
+                    fencing_token=lease.fencing_token,
+                    reason=write.reason,
+                )
+            return
+        # Legacy / external paths without a worker lease (e.g. pre-claim cancel).
         job.status = JobStatus.CANCELED
         job.updated_at = now
         job.finished_at = now
@@ -731,10 +750,11 @@ class V3JobExecutionStateService:
         *,
         lease: JobLease | None,
     ) -> None:
-        """Merge ``result_json``; when ``lease`` is set, reject stale workers via fencing CAS."""
+        """Merge ``result_json`` under fencing CAS. Modern jobs must pass a non-None lease."""
         if lease is None:
-            self._job_repo.merge_result_json(job_id, patch)
-            return
+            raise ValueError(
+                f"merge_result_json_protected requires JobLease for modern jobs (job_id={job_id})"
+            )
         write, _job = self._job_repo.merge_result_json_if_leased(
             lease, patch, now=self._clock.now()
         )
@@ -783,9 +803,11 @@ class V3JobExecutionStateService:
         exec_log: ExecutionLogWriter | None = None,
         cancel_event_emitted: dict[str, bool] | None = None,
         tracker: JobFinalizationTracker | None = None,
+        lease: JobLease | None = None,
     ) -> None:
         now = self._clock.now()
         current_job = self._job_repo.get_by_id(job_id)
+        active_lease = lease or (tracker.lease if tracker is not None else None)
         if exec_log is not None:
             should_emit_canceled = cancel_event_emitted is None or not cancel_event_emitted.get(
                 "cancelled", False
@@ -804,13 +826,23 @@ class V3JobExecutionStateService:
                 if cancel_event_emitted is not None:
                     cancel_event_emitted["cancelled"] = True
         if tracker is not None:
-            if tracker.last_completed == LastCompletedFinalizationStep.DOMAIN_RESULTS_PERSISTED:
-                tracker.cancel_after_domain_commit(reason=reason)
-            else:
-                tracker.cancel_before_domain_commit(reason=reason)
+            try:
+                if tracker.last_completed == LastCompletedFinalizationStep.DOMAIN_RESULTS_PERSISTED:
+                    tracker.cancel_after_domain_commit(reason=reason)
+                else:
+                    tracker.cancel_before_domain_commit(reason=reason)
+            except JobLeaseLostError:
+                logger.info(
+                    "event=job_lease_lost job_id=%s operation=cancel_ack "
+                    "owner_id=%s fencing_token=%s stage=cancel_job_and_aisle",
+                    job_id,
+                    tracker.lease.owner_id,
+                    tracker.lease.fencing_token,
+                )
+                raise
             current_job = self._job_repo.get_by_id(job_id)
         elif current_job is not None:
-            self.cancel_job(current_job, reason, now=now)
+            self.cancel_job(current_job, reason, now=now, lease=active_lease)
         aisle.mark_failed(
             now,
             error_code="CANCELED",
@@ -829,6 +861,7 @@ class V3JobExecutionStateService:
         tracker: JobFinalizationTracker,
         exec_log: ExecutionLogWriter | None = None,
         cancel_event_emitted: dict[str, bool] | None = None,
+        lease: JobLease | None = None,
     ) -> None:
         """Post-commit cancellation: domain rows retained, job CANCELED, no artifacts."""
         self.cancel_job_and_aisle(
@@ -838,6 +871,7 @@ class V3JobExecutionStateService:
             exec_log=exec_log,
             cancel_event_emitted=cancel_event_emitted,
             tracker=tracker,
+            lease=lease or tracker.lease,
         )
 
     def raise_if_cancellation_requested(

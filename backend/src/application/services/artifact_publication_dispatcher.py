@@ -62,6 +62,7 @@ from src.domain.jobs.artifact_publication_outbox import (
     ArtifactSourceType,
     ArtifactVerificationLevel,
 )
+from src.domain.jobs.lease import JobLeaseLostError
 from src.infrastructure.pipeline.finalization_stage_recorder import FinalizationStageRecorder
 from src.infrastructure.pipeline.job_finalization_tracker import JobFinalizationTracker
 from src.infrastructure.pipeline.worker_durable_artifact_publisher import stored_artifact_to_dict
@@ -155,6 +156,7 @@ class ArtifactPublicationDispatcher:
         run_dir: Path,
         source_paths: dict[str, Path] | None = None,
         required_kind_overrides: dict[str, bool] | None = None,
+        fencing_token: int | None = None,
     ) -> None:
         now = self._clock.now()
         self._manifest.ensure_expected_entries(job_id, now=now)
@@ -168,6 +170,7 @@ class ArtifactPublicationDispatcher:
                 run_dir=run_dir,
                 source_paths=source_paths,
                 required_override=required_override,
+                fencing_token=fencing_token,
             )
             if not resolved.required and resolved.local_path is None:
                 continue
@@ -379,6 +382,7 @@ class ArtifactPublicationDispatcher:
                 run_dir=run_dir,
                 source_paths=source_paths,
                 result=result,
+                lease_gate=tracker,
             )
             if (
                 inline_worker
@@ -461,6 +465,7 @@ class ArtifactPublicationDispatcher:
         run_dir: Path | None = None,
         source_paths: dict[str, Path] | None = None,
         result: ArtifactPublicationDispatchResult,
+        lease_gate: JobFinalizationTracker | None = None,
     ) -> None:
         job_id = claimed.job_id
         kind = claimed.artifact_kind
@@ -547,6 +552,7 @@ class ArtifactPublicationDispatcher:
                         result=result,
                         duration_ms=int((time.monotonic() - started) * 1000),
                         confirmed_existing=True,
+                        lease_gate=lease_gate,
                     )
                     return
                 if level == ArtifactVerificationLevel.POSITIVE_EVIDENCE_ONLY:
@@ -594,7 +600,10 @@ class ArtifactPublicationDispatcher:
                 result=result,
                 duration_ms=int((time.monotonic() - started) * 1000),
                 stored=stored,
+                lease_gate=lease_gate,
             )
+        except JobLeaseLostError:
+            raise
         except ArtifactManifestConcurrencyError:
             self._handle_manifest_write_failure(claimed=claimed, result=result)
         except ArtifactPublicationOutboxConcurrencyError:
@@ -672,7 +681,22 @@ class ArtifactPublicationDispatcher:
         duration_ms: int,
         confirmed_existing: bool = False,
         stored=None,
+        lease_gate: JobFinalizationTracker | None = None,
     ) -> None:
+        # Promote manifest/outbox only while the worker still holds the job lease.
+        if lease_gate is not None:
+            try:
+                lease_gate.assert_still_leased()
+            except JobLeaseLostError:
+                logger.info(
+                    "event=job_stale_write_rejected job_id=%s operation=artifact_mark_published "
+                    "artifact_kind=%s owner_id=%s fencing_token=%s",
+                    claimed.job_id,
+                    claimed.artifact_kind,
+                    lease_gate.lease.owner_id,
+                    lease_gate.lease.fencing_token,
+                )
+                raise
         now = self._clock.now()
         self._manifest.mark_published(
             job_id=claimed.job_id,

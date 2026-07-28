@@ -29,6 +29,7 @@ from src.application.ports.repositories import (
     AisleRepository,
     EvidenceRepository,
     FinalCountRepository,
+    JobRepository,
     NormalizedLabelRepository,
     PositionRepository,
     ProductRecordRepository,
@@ -39,6 +40,7 @@ from src.application.use_cases.pipeline.recompute_consolidated_counts import (
     RecomputeConsolidatedCountsCommand,
 )
 from src.domain.jobs.finalization_evidence import EvidenceLevel, FinalizationStage
+from src.domain.jobs.lease import JobLease, JobLeaseLostError
 from src.domain.result_evidence.manifest_primary import primary_manifest_entry
 from src.domain.traceability import TraceabilityStatus
 
@@ -58,6 +60,8 @@ class PersistAisleResultCommand:
     model_name: str | None = None
     prompt_composition: dict | None = None
     input_type: str | None = None
+    #: When set (modern Phase-3 workers), domain writes are fenced inside the UoW.
+    lease: JobLease | None = None
 
 
 class PersistAisleResultUseCase:
@@ -76,6 +80,7 @@ class PersistAisleResultUseCase:
         *,
         job_scoped_recompute_factory: JobScopedRecomputeFactory,
         job_result_uow_factory: JobResultUnitOfWorkFactory,
+        job_repo: JobRepository | None = None,
     ) -> None:
         if job_result_uow_factory is None:
             raise ValueError(
@@ -97,6 +102,7 @@ class PersistAisleResultUseCase:
         self._final_count_repo = final_count_repo
         self._recompute_factory = job_scoped_recompute_factory
         self._uow_factory = job_result_uow_factory
+        self._job_repo = job_repo
 
     def execute(self, command: PersistAisleResultCommand) -> None:
         job_id = (command.job_id or "").strip()
@@ -129,6 +135,8 @@ class PersistAisleResultUseCase:
         with self._uow_factory(base_repos) as uow:
             active = uow.repositories
             try:
+                # Same-TX fence when the UoW supports it; otherwise CAS assert before writes.
+                self._fence_domain_persist(uow, command, now=now)
                 before = uow.scope_store.delete_scope(
                     inventory_id=inventory_id,
                     aisle_id=command.aisle_id,
@@ -169,6 +177,39 @@ class PersistAisleResultUseCase:
                     e,
                 )
                 raise
+
+    def _fence_domain_persist(
+        self,
+        uow: JobResultUnitOfWork,
+        command: PersistAisleResultCommand,
+        *,
+        now: datetime,
+    ) -> None:
+        """Reject stale domain writes without relying on a standalone pre-assert alone.
+
+        Prefer ``uow.fence_job_lease`` (UPDLOCK in the same SQL transaction as delete/insert).
+        Fall back to ``job_repo.assert_lease`` for memory UoW / test doubles.
+        """
+        lease = command.lease
+        if lease is None:
+            return
+        fence = getattr(uow, "fence_job_lease", None)
+        if callable(fence):
+            fence(lease, now=now)
+            return
+        if self._job_repo is None:
+            raise ValueError(
+                "PersistAisleResultCommand.lease requires job_repo or UoW.fence_job_lease"
+            )
+        result = self._job_repo.assert_lease(lease, now=now)
+        if not result.applied:
+            raise JobLeaseLostError(
+                "Lease lost before domain persist",
+                job_id=command.job_id,
+                owner_id=lease.owner_id,
+                fencing_token=lease.fencing_token,
+                reason=result.reason,
+            )
 
     def _inventory_id_for_aisle(self, aisle_id: str) -> str:
         aisle = self._aisle_repo.get_by_id(aisle_id)

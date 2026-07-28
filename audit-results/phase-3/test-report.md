@@ -45,3 +45,8 @@ cd backend
 - **Merge SQL environments:** SQL IT PASS obligatorio tras 0072.
 - No se reclama cobertura Prometheus (no existe).
 - No se reclama Phase 4.
+
+## Corrections (2026-07-28 UTC)
+- New: contract, stale finalization, artifact fencing, cancel fencing, SQL finalization fencing.
+- Supplier-prompt test IDs truncated to VARCHAR(36).
+- Focused lease suite: 53 passed.

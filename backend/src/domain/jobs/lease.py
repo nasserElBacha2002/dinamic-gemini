@@ -15,6 +15,7 @@ class LeaseWriteOutcome(str, Enum):
     JOB_TERMINAL = "job_terminal"
     NOT_FOUND = "not_found"
     INVALID_STATE = "invalid_state"
+    LEASE_NOT_INITIALIZED = "lease_not_initialized"
 
 
 class LeaseRenewalOutcome(str, Enum):
@@ -24,6 +25,7 @@ class LeaseRenewalOutcome(str, Enum):
     NOT_FOUND = "not_found"
     INVALID_STATE = "invalid_state"
     EXPIRED = "expired"
+    LEASE_NOT_INITIALIZED = "lease_not_initialized"
 
 
 @dataclass(frozen=True)

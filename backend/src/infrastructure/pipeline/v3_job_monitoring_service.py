@@ -46,6 +46,8 @@ class V3JobMonitoringRequest:
     aisle_id: str
     lease: JobLease | None = None
     lease_extension_seconds: int = 60
+    #: Abort if remaining lease time after renew falls below this margin (seconds).
+    renewal_safety_margin_sec: int = 20
 
 
 @dataclass
@@ -139,6 +141,27 @@ class V3JobMonitoringService:
                         break
                     if renew.lease is not None:
                         active_lease = renew.lease
+                    # After renew, remaining time must clear the configured safety margin.
+                    margin = max(0, int(req.renewal_safety_margin_sec or 0))
+                    if margin > 0 and active_lease is not None:
+                        from datetime import datetime, timezone
+
+                        now_utc = datetime.now(timezone.utc)
+                        expires = active_lease.expires_at
+                        if expires.tzinfo is None:
+                            expires = expires.replace(tzinfo=timezone.utc)
+                        remaining = (expires - now_utc).total_seconds()
+                        if remaining < margin:
+                            logger.warning(
+                                "event=job_lease_renewal_margin_insufficient job_id=%s "
+                                "remaining_sec=%.1f margin_sec=%s",
+                                req.job_id,
+                                remaining,
+                                margin,
+                            )
+                            runtime_abort_event.set()
+                            stop_heartbeat.set()
+                            break
                 else:
                     current_job = self._state.heartbeat(req.job_id)
                 if current_job is None:

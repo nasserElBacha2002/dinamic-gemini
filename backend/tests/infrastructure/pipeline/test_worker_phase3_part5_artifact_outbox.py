@@ -123,6 +123,7 @@ def _build_dispatcher(harness: ExecutorHarness, *, artifact_store=None, max_atte
         job_id=harness.job_id,
         job_repo=harness.job_repo,
         clock=FixedClock(harness.now),
+        lease=harness.lease(),
         stage_recorder=recorder,
     )
     return dispatcher, tracker, recorder, state
