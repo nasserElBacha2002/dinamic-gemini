@@ -1,0 +1,12 @@
+A	audit-results/phase-0/implementation-report.md
+A	audit-results/phase-0/root-cause-notes.md
+M	docs/quality-gate.md
+M	mobile/tests/fase10ProductionHardening.test.ts
+M	scripts/audit/enforce_quality_gate.py
+M	scripts/audit/generate_audit_summary.py
+A	scripts/audit/resolve_python.sh
+M	scripts/audit/run_backend_audit.sh
+M	scripts/audit/run_frontend_audit.sh
+M	scripts/audit/run_full_audit.sh
+A	scripts/audit/run_mobile_audit.sh
+A	scripts/audit/tests/test_phase0_parsers_and_gate.py

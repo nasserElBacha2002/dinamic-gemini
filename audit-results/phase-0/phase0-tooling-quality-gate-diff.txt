@@ -1,0 +1,1975 @@
+diff --git a/audit-results/phase-0/implementation-report.md b/audit-results/phase-0/implementation-report.md
+new file mode 100644
+index 00000000..69908a02
+--- /dev/null
++++ b/audit-results/phase-0/implementation-report.md
+@@ -0,0 +1,97 @@
++# Phase 0 — Implementation report
++
++## 1. Causas raíz encontradas
++
++1. **Backend NOT_RUN:** `run_backend_audit.sh` usaba `command -v` sobre PATH sin activar `backend/.venv`.
++2. **TypeScript falsos errores:** `findall(error TS\d+:)` ignoraba exit code y el resumen `Found N errors`.
++3. **Gate ciego:** `failed` ausente se trataba como 0 → “tests OK” aunque no hubieran corrido.
++4. **Vitest parse miss → OK:** sin resumen se marcaba OK.
++5. **Mobile ausente** del pipeline `run_full_audit.sh`.
++6. **Vocabulario inconsistente:** `NOT_INSTALLED` (shell) vs `NOT_RUN` (agregador).
++
++## 2. Archivos modificados / creados
++
++### Nuevos
++- `scripts/audit/lib/statuses.py`
++- `scripts/audit/lib/python_env.py`
++- `scripts/audit/lib/parsers.py`
++- `scripts/audit/lib/__init__.py`
++- `scripts/audit/resolve_python.sh`
++- `scripts/audit/run_mobile_audit.sh`
++- `scripts/audit/tests/test_phase0_parsers_and_gate.py`
++- `audit-results/phase-0/root-cause-notes.md`
++- `audit-results/phase-0/implementation-report.md`
++
++### Modificados
++- `scripts/audit/run_backend_audit.sh`
++- `scripts/audit/run_frontend_audit.sh`
++- `scripts/audit/run_full_audit.sh`
++- `scripts/audit/generate_audit_summary.py`
++- `scripts/audit/enforce_quality_gate.py`
++- `docs/quality-gate.md`
++- `mobile/tests/fase10ProductionHardening.test.ts` (HTTPS en caso production; no oculta fallo)
++
++## 3. Diseño implementado
++
++- Estados: `OK | FINDINGS | EXECUTION_ERROR | PARSE_ERROR | NOT_AVAILABLE | NOT_RUN | SKIPPED`
++- Sidecars `*.exitcode` junto a reportes raw
++- Resolución Python: `AUDIT_PYTHON` → venvs del repo → `VIRTUAL_ENV` → fallback
++- Parsers preferentes de formato estructurado / resúmenes oficiales
++- Mobile como área de primera clase
++- `schema_version: 2` en `audit-status.json`
++- Gate estricto falla si tooling inválido o required tools no ejecutados
++
++## 4. Schema
++
++```json
++{
++  "schema_version": 2,
++  "parser_version": "phase0-2.0.0",
++  "areas": {
++    "<area>": {
++      "tools": {
++        "<tool>": {
++          "status": "...",
++          "exit_code": 0,
++          "error": null,
++          "parser": "...",
++          "parser_version": "..."
++        }
++      },
++      "highlights": {
++        "pytest_failed": 0,
++        "vitest_failed_tests": 0,
++        "jest_failed": 0
++      }
++    }
++  }
++}
++```
++
++## 5. Mobile
++
++- `run_mobile_audit.sh`: typecheck, lint, `npm test -- --watchman=false`, npm audit
++- Incluido en `run_full_audit.sh` y en el gate estricto
++
++## 6. Tests agregados
++
++`scripts/audit/tests/test_phase0_parsers_and_gate.py` — 25 casos (pytest/ruff/mypy/tsc/vitest/jest/npm audit/gate).
++
++## 7–8. Comandos y resultados
++
++Ver `implementation-report` sección resultados al cierre de validación.
++
++## 9. Limitaciones
++
++- Auditorías heurísticas de arquitectura pueden seguir marcando `FINDINGS` (no bloquean por sí solas salvo `overall_status=error`).
++- `npm audit` mobile/frontend puede reportar FINDINGS (vulnerabilidades) — Phase 0 solo reporta, no remedia.
++- Full audit end-to-end depende del tiempo de pytest/vitest/jest.
++
++## 10. Riesgos pendientes
++
++- CI GitHub Actions aún no invoca `run_full_audit.sh` (gate local distinto del workflow develop).
++- Compatibilidad de reportes históricos sin `schema_version` (gate los acepta como legacy).
++
++## 11. Confirmación
++
++**No se modificó lógica productiva** (API, workers, OCR, uploads, source of truth). Solo tooling de auditoría/quality gate (+ un test mobile de config).
+diff --git a/audit-results/phase-0/root-cause-notes.md b/audit-results/phase-0/root-cause-notes.md
+new file mode 100644
+index 00000000..9c86281a
+--- /dev/null
++++ b/audit-results/phase-0/root-cause-notes.md
+@@ -0,0 +1,38 @@
++# Phase 0 — Root-cause notes (pre-implementation)
++
++## Why backend appears as NOT_RUN
++`run_backend_audit.sh` uses `command -v ruff|mypy|pytest` on PATH without activating
++`backend/.venv`, root `.venv`, or `venv`. When tools are only in the project venv,
++reports say "no instalado" → aggregator maps to `NOT_RUN` → area `NOT_RUN`.
++`enforce_quality_gate.py` then treats missing `failed` as 0 → "Backend tests: OK".
++
++## Why TypeScript can produce false errors
++`parse_frontend_typecheck` counts every `error TS\d+:` via `findall`, ignores tsc
++exit code, and ignores the "Found N errors" summary. Inflated counts (e.g. 2572)
++appear even when the real failure is tooling/noise.
++
++## Python interpreter selection
++Bare `python3` / PATH binaries. No `AUDIT_PYTHON`, no venv preference, no
++`python -m pytest`.
++
++## Backend tool execution
++`ruff`/`mypy`/`bandit`/`pip-audit`/`pytest` invoked if on PATH; shell always exits 0.
++
++## Mobile
++Not part of `run_full_audit.sh`. Jest already uses `--watchman=false` in package.json.
++
++## Watchman
++Metro DX only (`with-metro-env.sh`). Not required for mobile Jest in verify/audit.
++
++## Status semantics (before)
++Shell: OK / FINDINGS / ERROR / NOT_INSTALLED / SKIPPED.
++Aggregator: OK / FINDINGS / ERROR / NOT_RUN / SKIPPED. "no instalado" → NOT_RUN.
++Vitest parse miss → OK with empty metrics.
++
++## enforce_quality_gate.py
++Reads only `audit/audit-status.json`. Uses failed counts (defaults to 0),
++`max_severity==critical`, `overall_status==error`. Blind to NOT_RUN.
++
++## Raw vs aggregate inconsistencies
++Shell status discarded by parsers; Vitest ERROR→OK; TypeScript overcount;
++highlights.pytest_failed never written; NOT_INSTALLED ≠ NOT_RUN vocabulary.
+diff --git a/docs/quality-gate.md b/docs/quality-gate.md
+index 1d7ebedf..971a25ea 100644
+--- a/docs/quality-gate.md
++++ b/docs/quality-gate.md
+@@ -1,5 +1,65 @@
+ # Quality Gate previo a deploy en develop
+ 
++## Phase 0 — Tooling confiable (schema_version 2)
++
++Correcciones del runner de auditoría para que el estado agregado coincida con las evidencias crudas.
++
++### Requisitos
++
++- Python del proyecto (`backend/.venv`, `.venv`, `venv`, o `AUDIT_PYTHON` / `DINAMIC_AUDIT_PYTHON`).
++- Node/npm para frontend y mobile.
++- Herramientas backend instaladas en el venv (`pip install -e ".[dev]"`).
++
++### Estados por herramienta
++
++| Estado | Significado |
++|--------|-------------|
++| `OK` | Ejecutada sin findings |
++| `FINDINGS` | Ejecutada con hallazgos |
++| `EXECUTION_ERROR` | Fallo al ejecutar el comando |
++| `PARSE_ERROR` | Hubo salida pero el agregador no pudo interpretarla |
++| `NOT_AVAILABLE` | Herramienta/intérprete no accesible |
++| `NOT_RUN` / `SKIPPED` | Omitida intencionalmente (debe haber razón) |
++
++### Comandos
++
++```bash
++# Auditoría completa (backend + frontend + mobile + arquitectura + resumen + gate)
++bash scripts/audit/run_full_audit.sh
++
++# Gate estricto (exit 1 si falla)
++# Usa el Python resuelto del proyecto
++backend/.venv/bin/python scripts/audit/enforce_quality_gate.py --strict
++
++# Solo backend / frontend / mobile
++bash scripts/audit/run_backend_audit.sh
++bash scripts/audit/run_frontend_audit.sh
++bash scripts/audit/run_mobile_audit.sh
++
++# Tests del tooling
++backend/.venv/bin/python -m pytest scripts/audit/tests/ -q
++```
++
++### Mobile
++
++- Área de primera clase en `audit-status.json`.
++- Jest con `--watchman=false` (sin dependencia de Watchman).
++- Evidencias: `audit/raw/mobile-*.txt|json` + sidecars `.exitcode`.
++
++### Troubleshooting
++
++- Backend `NOT_AVAILABLE`: activar/crear `backend/.venv` e instalar `.[dev]`, o exportar `AUDIT_PYTHON`.
++- TypeScript con miles de errores fantasma: verificar `.exitcode` del typecheck; el parser prioriza exit 0 y el resumen `Found N errors`.
++- Gate FAIL por tool no ejecutado: el gate estricto **no** trata `NOT_RUN` como éxito.
++
++### Outputs
++
++- `audit/raw/*` — evidencia cruda + `*.exitcode` + `python-env.json`
++- `audit/audit-status.json` — `schema_version: 2`
++- `audit/audit-summary.md` — resumen humano
++
++---
++
+ ## Estado de esta implementación
+ 
+ Este documento define la base inicial del Quality Gate en modalidad progresiva.
+diff --git a/mobile/tests/fase10ProductionHardening.test.ts b/mobile/tests/fase10ProductionHardening.test.ts
+index a1ddfb0e..c279654d 100644
+--- a/mobile/tests/fase10ProductionHardening.test.ts
++++ b/mobile/tests/fase10ProductionHardening.test.ts
+@@ -44,7 +44,8 @@ describe('featureFlagCompatibility', () => {
+ 
+   it('fails validateAppConfig on incompatible flags', () => {
+     const config = resolveAppConfig({
+-      apiBaseUrl: 'http://10.0.2.2:8000',
++      apiBaseUrl: 'https://api.example.com',
++      environment: 'production',
+       flags: { mobileOfflineWorkManager: true, mobileOfflineOperations: false },
+     });
+     const err = validateAppConfig(config);
+diff --git a/scripts/audit/enforce_quality_gate.py b/scripts/audit/enforce_quality_gate.py
+index ba574cbb..cd34e628 100644
+--- a/scripts/audit/enforce_quality_gate.py
++++ b/scripts/audit/enforce_quality_gate.py
+@@ -1,12 +1,26 @@
+ #!/usr/bin/env python3
++"""Quality Gate enforcement (Phase 0) — consumes structured audit-status.json."""
++
+ from __future__ import annotations
+ 
+ import argparse
+ import json
++import sys
+ from datetime import datetime, timezone
+ from pathlib import Path
+ from typing import Any, Dict, List, Tuple
+ 
++_AUDIT_DIR = Path(__file__).resolve().parent
++if str(_AUDIT_DIR) not in sys.path:
++    sys.path.insert(0, str(_AUDIT_DIR))
++
++from lib.statuses import (  # noqa: E402
++    ToolStatus,
++    is_invalidating,
++    is_omitted,
++    normalize_legacy_status,
++)
++
+ 
+ def _get_nested(data: Dict[str, Any], path: List[str], default: Any = None) -> Any:
+     current: Any = data
+@@ -24,56 +38,148 @@ def _int_or_zero(value: Any) -> int:
+         return 0
+ 
+ 
++def _tool(status: Dict[str, Any], area: str, tool: str) -> Dict[str, Any]:
++    tools = _get_nested(status, ["areas", area, "tools"], {}) or {}
++    return tools.get(tool, {}) if isinstance(tools, dict) else {}
++
++
++def _evaluate_required_tool(
++    *,
++    label: str,
++    tool: Dict[str, Any],
++    failed_metric_keys: Tuple[str, ...],
++    allow_findings: bool = False,
++) -> Tuple[List[str], List[str]]:
++    reasons: List[str] = []
++    checks: List[str] = []
++    if not tool:
++        reasons.append(f"{label}: tool entry missing from audit-status.json")
++        checks.append(f"- {label}: FAIL (missing)")
++        return reasons, checks
++
++    st = normalize_legacy_status(str(tool.get("status", ToolStatus.NOT_RUN.value)))
++    metrics = tool.get("metrics") or {}
++    failed = 0
++    for key in failed_metric_keys:
++        failed += _int_or_zero(metrics.get(key))
++
++    if is_invalidating(st):
++        err = tool.get("error") or tool.get("observation") or st
++        reasons.append(f"{label}: tooling invalid ({st}) — {err}")
++        checks.append(f"- {label}: FAIL ({st})")
++        return reasons, checks
++
++    if is_omitted(st) or st == ToolStatus.NOT_AVAILABLE.value:
++        reasons.append(f"{label}: not executed ({st}) — required for gate")
++        checks.append(f"- {label}: FAIL ({st})")
++        return reasons, checks
++
++    if failed > 0:
++        reasons.append(f"{label}: failing count={failed}")
++        checks.append(f"- {label}: FAIL ({failed})")
++        return reasons, checks
++
++    if st == ToolStatus.FINDINGS.value and not allow_findings:
++        # Findings without failed tests (e.g. type errors) still block when required.
++        reasons.append(f"{label}: FINDINGS")
++        checks.append(f"- {label}: FAIL (FINDINGS)")
++        return reasons, checks
++
++    checks.append(f"- {label}: OK ({st})")
++    return reasons, checks
++
++
+ def evaluate_gate(status: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
+     reasons: List[str] = []
+     checks: List[str] = []
+ 
+-    backend_failed = _int_or_zero(
+-        _get_nested(status, ["areas", "backend", "highlights", "pytest_failed"], None)
++    schema = status.get("schema_version")
++    checks.append(f"- schema_version: {schema if schema is not None else 'missing (legacy)'}")
++
++    # Backend pytest (required)
++    r, c = _evaluate_required_tool(
++        label="Backend pytest",
++        tool=_tool(status, "backend", "pytest"),
++        failed_metric_keys=("failed", "errors"),
+     )
+-    if backend_failed == 0:
+-        backend_failed = _int_or_zero(
+-            _get_nested(status, ["areas", "backend", "tools", "pytest", "metrics", "failed"], 0)
++    reasons.extend(r)
++    checks.extend(c)
++
++    # Backend ruff / mypy — findings block in strict gate
++    for tool_key, label in (("ruff", "Backend ruff"), ("mypy", "Backend mypy")):
++        r, c = _evaluate_required_tool(
++            label=label,
++            tool=_tool(status, "backend", tool_key),
++            failed_metric_keys=("issues", "errors"),
+         )
++        reasons.extend(r)
++        checks.extend(c)
++
++    # Frontend vitest + typecheck
++    r, c = _evaluate_required_tool(
++        label="Frontend vitest",
++        tool=_tool(status, "frontend", "vitest"),
++        failed_metric_keys=("failed_tests",),
++    )
++    reasons.extend(r)
++    checks.extend(c)
+ 
+-    frontend_failed = _int_or_zero(
+-        _get_nested(status, ["areas", "frontend", "highlights", "vitest_failed_tests"], None)
++    r, c = _evaluate_required_tool(
++        label="Frontend typecheck",
++        tool=_tool(status, "frontend", "typecheck"),
++        failed_metric_keys=("ts_errors",),
+     )
+-    if frontend_failed == 0:
+-        frontend_failed = _int_or_zero(
+-            _get_nested(status, ["areas", "frontend", "tools", "vitest", "metrics", "failed_tests"], 0)
++    reasons.extend(r)
++    checks.extend(c)
++
++    # Mobile (required Phase 0)
++    mobile_area = _get_nested(status, ["areas", "mobile"])
++    if mobile_area is None:
++        reasons.append("Mobile area missing from audit-status.json")
++        checks.append("- Mobile area: FAIL (missing)")
++    else:
++        r, c = _evaluate_required_tool(
++            label="Mobile jest",
++            tool=_tool(status, "mobile", "jest"),
++            failed_metric_keys=("failed",),
++        )
++        reasons.extend(r)
++        checks.extend(c)
++        r, c = _evaluate_required_tool(
++            label="Mobile typecheck",
++            tool=_tool(status, "mobile", "typecheck"),
++            failed_metric_keys=("ts_errors",),
+         )
++        reasons.extend(r)
++        checks.extend(c)
+ 
+     max_severity = str(status.get("max_severity", "none")).lower()
+     overall_status = str(status.get("overall_status", "ok")).lower()
+-
+-    if backend_failed > 0:
+-        reasons.append(f"Backend tests failing: {backend_failed}")
+-        checks.append(f"- Backend tests: FAIL ({backend_failed})")
+-    else:
+-        checks.append("- Backend tests: OK")
+-
+-    if frontend_failed > 0:
+-        reasons.append(f"Frontend tests failing: {frontend_failed}")
+-        checks.append(f"- Frontend tests: FAIL ({frontend_failed})")
+-    else:
+-        checks.append("- Frontend tests: OK")
+-
+     checks.append(f"- Max severity: {max_severity}")
+     checks.append(f"- Overall status: {overall_status}")
+ 
+     if max_severity == "critical":
++        # Only block on critical if it comes from executed findings, not parse noise.
++        # Still report — pytest/jest failures already set critical.
+         reasons.append("Max severity: critical")
+     if overall_status == "error":
+-        reasons.append("Overall status: error")
++        reasons.append("Overall status: error (tooling/parse invalidating)")
++
++    # Deduplicate reasons while preserving order
++    seen = set()
++    uniq_reasons: List[str] = []
++    for reason in reasons:
++        if reason not in seen:
++            seen.add(reason)
++            uniq_reasons.append(reason)
+ 
+-    passed = len(reasons) == 0
+-    return passed, reasons, checks
++    passed = len(uniq_reasons) == 0
++    return passed, uniq_reasons, checks
+ 
+ 
+ def main() -> int:
+     parser = argparse.ArgumentParser(
+-        description="Evalúa política progresiva del Quality Gate (Fase 5)."
++        description="Evalúa política del Quality Gate (Phase 0 structured statuses)."
+     )
+     parser.add_argument(
+         "--status-file",
+diff --git a/scripts/audit/generate_audit_summary.py b/scripts/audit/generate_audit_summary.py
+index 32be35ea..b528da76 100755
+--- a/scripts/audit/generate_audit_summary.py
++++ b/scripts/audit/generate_audit_summary.py
+@@ -3,11 +3,36 @@ from __future__ import annotations
+ 
+ import json
+ import re
++import sys
+ from dataclasses import dataclass, field
+ from datetime import datetime, timezone
+ from pathlib import Path
+ from typing import Dict, List, Optional, Tuple
+ 
++# Allow `python scripts/audit/generate_audit_summary.py` without installing a package.
++_AUDIT_DIR = Path(__file__).resolve().parent
++if str(_AUDIT_DIR) not in sys.path:
++    sys.path.insert(0, str(_AUDIT_DIR))
++
++from lib.parsers import (  # noqa: E402
++    parse_bandit as lib_parse_bandit,
++    parse_eslint as lib_parse_eslint,
++    parse_jest as lib_parse_jest,
++    parse_mypy as lib_parse_mypy,
++    parse_npm_audit as lib_parse_npm_audit,
++    parse_pip_audit as lib_parse_pip_audit,
++    parse_pytest as lib_parse_pytest,
++    parse_ruff as lib_parse_ruff,
++    parse_typescript as lib_parse_typescript,
++    parse_vitest as lib_parse_vitest,
++)
++from lib.statuses import (  # noqa: E402
++    PARSER_VERSION,
++    SCHEMA_VERSION,
++    ToolStatus,
++    is_invalidating,
++    normalize_legacy_status,
++)
+ 
+ SEVERITY_ORDER = {
+     "none": 0,
+@@ -54,6 +79,10 @@ class ToolResult:
+     severity: str = "none"
+     metrics: Dict[str, int] = field(default_factory=dict)
+     observation: str = ""
++    exit_code: Optional[int] = None
++    error: Optional[str] = None
++    parser: str = ""
++    parser_version: str = PARSER_VERSION
+ 
+     def metrics_text(self) -> str:
+         if not self.metrics:
+@@ -62,6 +91,21 @@ class ToolResult:
+         return ", ".join(parts)
+ 
+ 
++def _from_parsed(parsed, report: str = "") -> ToolResult:
++    return ToolResult(
++        name=parsed.name,
++        report=report,
++        status=normalize_legacy_status(parsed.status),
++        severity=parsed.severity,
++        metrics=dict(parsed.metrics),
++        observation=parsed.observation,
++        exit_code=parsed.exit_code,
++        error=parsed.error,
++        parser=parsed.parser,
++        parser_version=parsed.parser_version,
++    )
++
++
+ def to_repo_relative(path: Path, repo_root: Path) -> str:
+     try:
+         return str(path.resolve().relative_to(repo_root.resolve())).replace("\\", "/")
+@@ -70,263 +114,43 @@ def to_repo_relative(path: Path, repo_root: Path) -> str:
+ 
+ 
+ def parse_backend_ruff(path: Path) -> ToolResult:
+-    tr = ToolResult("Ruff", "")
+-    content = safe_read(path)
+-    if content is None:
+-        return tr
+-    m = re.search(r"Found (\d+) errors\.", content)
+-    fx = re.search(r"\[\*\]\s+(\d+)\s+fixable", content)
+-    lowered = content.lower()
+-    if "no instalado" in lowered:
+-        tr.status = "NOT_RUN"
+-        tr.severity = "info"
+-        tr.observation = "Herramienta no instalada en la corrida."
+-        return tr
+-    if "no ejecutado" in lowered:
+-        tr.status = "SKIPPED"
+-        tr.severity = "info"
+-        return tr
+-    if m:
+-        issues = int(m.group(1))
+-        tr.metrics["issues"] = issues
+-        tr.status = "FINDINGS" if issues > 0 else "OK"
+-        tr.severity = "medium" if issues > 0 else "none"
+-        if fx:
+-            tr.metrics["fixable"] = int(fx.group(1))
+-    elif "no se detecto" in lowered:
+-        tr.status = "SKIPPED"
+-        tr.severity = "info"
+-    else:
+-        tr.status = "ERROR"
+-        tr.severity = "low"
+-        tr.observation = "No se pudo extraer métrica de Ruff."
+-    return tr
++    return _from_parsed(lib_parse_ruff(path))
+ 
+ 
+ def parse_backend_mypy(path: Path) -> ToolResult:
+-    tr = ToolResult("Mypy", "")
+-    content = safe_read(path)
+-    if content is None:
+-        return tr
+-    lowered = content.lower()
+-    if "no instalado" in lowered:
+-        tr.status = "NOT_RUN"
+-        tr.severity = "info"
+-        return tr
+-    if "no ejecutado" in lowered:
+-        tr.status = "SKIPPED"
+-        tr.severity = "info"
+-        return tr
+-    if "Success:" in content:
+-        tr.status = "OK"
+-        tr.severity = "none"
+-        return tr
+-    m = re.search(r"Found (\d+) errors in (\d+) files", content)
+-    if m:
+-        errs, files = int(m.group(1)), int(m.group(2))
+-        tr.metrics["errors"] = errs
+-        tr.metrics["files"] = files
+-        tr.status = "FINDINGS" if errs > 0 else "OK"
+-        tr.severity = "high" if errs > 0 else "none"
+-    elif "error:" in content:
+-        tr.status = "FINDINGS"
+-        tr.severity = "high"
+-    else:
+-        tr.status = "ERROR"
+-        tr.severity = "low"
+-        tr.observation = "No se pudo parsear salida de Mypy."
+-    return tr
++    return _from_parsed(lib_parse_mypy(path))
+ 
+ 
+ def parse_backend_bandit(path: Path) -> ToolResult:
+-    tr = ToolResult("Bandit", "")
+-    content = safe_read(path)
+-    if content is None:
+-        return tr
+-    lowered = content.lower()
+-    if "no instalado" in lowered:
+-        tr.status = "NOT_RUN"
+-        tr.severity = "info"
+-        return tr
+-    if "no ejecutado" in lowered:
+-        tr.status = "SKIPPED"
+-        tr.severity = "info"
+-        return tr
+-    data = extract_json_object(content)
+-    if data is None:
+-        tr.status = "ERROR"
+-        tr.severity = "high"
+-        tr.observation = "JSON inválido o no parseable."
+-        return tr
+-    results = data.get("results", [])
+-    sev_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+-    for r in results:
+-        sev = str(r.get("issue_severity", "")).upper()
+-        if sev in sev_counts:
+-            sev_counts[sev] += 1
+-    total = sum(sev_counts.values())
+-    tr.metrics.update(
+-        {
+-            "total": total,
+-            "high": sev_counts["HIGH"],
+-            "medium": sev_counts["MEDIUM"],
+-            "low": sev_counts["LOW"],
+-        }
+-    )
+-    tr.status = "FINDINGS" if total > 0 else "OK"
+-    tr.severity = (
+-        "high"
+-        if sev_counts["HIGH"] > 0
+-        else ("medium" if sev_counts["MEDIUM"] > 0 else ("low" if total > 0 else "none"))
+-    )
+-    return tr
++    return _from_parsed(lib_parse_bandit(path))
+ 
+ 
+ def parse_backend_pip_audit(path: Path) -> ToolResult:
+-    tr = ToolResult("pip-audit", "")
+-    content = safe_read(path)
+-    if content is None:
+-        return tr
+-    lowered = content.lower()
+-    if "no instalado" in lowered:
+-        tr.status = "NOT_RUN"
+-        tr.severity = "info"
+-        return tr
+-    if "no ejecutado" in lowered:
+-        tr.status = "SKIPPED"
+-        tr.severity = "info"
+-        return tr
+-    if "No known vulnerabilities found" in content:
+-        tr.status = "OK"
+-        tr.severity = "none"
+-        tr.metrics["total"] = 0
+-        if "skip_reason" in content:
+-            tr.observation = "Paquete local no auditable en PyPI."
+-        return tr
+-    data = extract_json_object(content)
+-    if data is None:
+-        tr.status = "ERROR"
+-        tr.severity = "low"
+-        return tr
+-    vulns = data.get("vulnerabilities", [])
+-    tr.metrics["total"] = len(vulns)
+-    tr.status = "FINDINGS" if vulns else "OK"
+-    tr.severity = "medium" if vulns else "none"
+-    return tr
++    return _from_parsed(lib_parse_pip_audit(path))
+ 
+ 
+ def parse_backend_pytest(path: Path) -> ToolResult:
+-    tr = ToolResult("Pytest", "")
+-    content = safe_read(path)
+-    if content is None:
+-        return tr
+-    lowered = content.lower()
+-    if "no instalado" in lowered:
+-        tr.status = "NOT_RUN"
+-        tr.severity = "info"
+-        return tr
+-    if "no ejecutado" in lowered:
+-        tr.status = "SKIPPED"
+-        tr.severity = "info"
+-        return tr
+-    m_col = re.search(r"collected (\d+) items", content)
+-    m_res = re.search(r"(\d+) failed, (\d+) passed, (\d+) skipped", content)
+-    if m_col:
+-        tr.metrics["collected"] = int(m_col.group(1))
+-    if m_res:
+-        failed, passed, skipped = map(int, m_res.groups())
+-        tr.metrics["failed"] = failed
+-        tr.metrics["passed"] = passed
+-        tr.metrics["skipped"] = skipped
+-        tr.status = "FINDINGS" if failed > 0 else "OK"
+-        tr.severity = "critical" if failed > 0 else "none"
+-    else:
+-        tr.status = "ERROR"
+-        tr.severity = "medium"
+-    return tr
++    return _from_parsed(lib_parse_pytest(path))
+ 
+ 
+ def parse_frontend_eslint(path: Path) -> ToolResult:
+-    tr = ToolResult("ESLint", "")
+-    content = safe_read(path)
+-    if content is None:
+-        return tr
+-    if "no se encontro script 'lint'" in content.lower():
+-        tr.status = "SKIPPED"
+-        tr.severity = "medium"
+-        tr.observation = "No existe script lint."
+-        return tr
+-    m = re.search(r"✖\s+(\d+) problems \((\d+) errors, (\d+) warnings\)", content)
+-    if m:
+-        total, errors, warnings = map(int, m.groups())
+-        tr.metrics.update({"problems": total, "errors": errors, "warnings": warnings})
+-        tr.status = "FINDINGS" if total > 0 else "OK"
+-        tr.severity = "high" if errors > 0 else ("medium" if warnings > 0 else "none")
+-    else:
+-        tr.status = "ERROR"
+-        tr.severity = "low"
+-        tr.observation = "No se pudo extraer resumen ESLint."
+-    return tr
++    return _from_parsed(lib_parse_eslint(path))
+ 
+ 
+ def parse_frontend_typecheck(path: Path) -> ToolResult:
+-    tr = ToolResult("Typecheck", "")
+-    content = safe_read(path)
+-    if content is None:
+-        return tr
+-    ts_errors = len(re.findall(r"error TS\d+:", content))
+-    tr.metrics["ts_errors"] = ts_errors
+-    tr.status = "FINDINGS" if ts_errors > 0 else "OK"
+-    tr.severity = "high" if ts_errors > 0 else "none"
+-    return tr
++    return _from_parsed(lib_parse_typescript(path))
+ 
+ 
+ def parse_frontend_npm_audit(path: Path) -> ToolResult:
+-    tr = ToolResult("npm audit", "")
+-    content = safe_read(path)
+-    if content is None:
+-        return tr
+-    data = extract_json_object(content)
+-    if data is None:
+-        tr.status = "ERROR"
+-        tr.severity = "medium"
+-        tr.observation = "JSON inválido en npm audit."
+-        return tr
+-    vul = data.get("metadata", {}).get("vulnerabilities", {})
+-    for key in ("critical", "high", "moderate", "low", "info", "total"):
+-        tr.metrics[key] = int(vul.get(key, 0))
+-    total = tr.metrics["total"]
+-    tr.status = "FINDINGS" if total > 0 else "OK"
+-    if tr.metrics["critical"] > 0 or tr.metrics["high"] > 0:
+-        tr.severity = "high"
+-    elif tr.metrics["moderate"] > 0:
+-        tr.severity = "medium"
+-    elif tr.metrics["low"] > 0:
+-        tr.severity = "low"
+-    else:
+-        tr.severity = "none"
+-    return tr
++    return _from_parsed(lib_parse_npm_audit(path))
+ 
+ 
+ def parse_frontend_vitest(path: Path) -> ToolResult:
+-    tr = ToolResult("Vitest", "")
+-    content = safe_read(path)
+-    if content is None:
+-        return tr
+-    m_files = re.search(r"Test Files\s+(\d+) failed \| (\d+) passed \((\d+)\)", content)
+-    m_tests = re.search(r"Tests\s+(\d+) failed \| (\d+) passed \((\d+)\)", content)
+-    if m_files:
+-        tr.metrics["failed_files"] = int(m_files.group(1))
+-        tr.metrics["passed_files"] = int(m_files.group(2))
+-        tr.metrics["total_files"] = int(m_files.group(3))
+-    if m_tests:
+-        tr.metrics["failed_tests"] = int(m_tests.group(1))
+-        tr.metrics["passed_tests"] = int(m_tests.group(2))
+-        tr.metrics["total_tests"] = int(m_tests.group(3))
+-    failed_tests = tr.metrics.get("failed_tests", 0)
+-    tr.status = "FINDINGS" if failed_tests > 0 else "OK"
+-    tr.severity = "critical" if failed_tests > 0 else "none"
+-    return tr
++    return _from_parsed(lib_parse_vitest(path))
++
++
++def parse_mobile_jest(path: Path) -> ToolResult:
++    return _from_parsed(lib_parse_jest(path))
+ 
+ 
+ def parse_metric_md(path: Path, name: str, regex_pairs: List[Tuple[str, str]], default_sev: str) -> ToolResult:
+@@ -538,25 +362,51 @@ def parse_arch_frontend_solid(path: Path) -> ToolResult:
+ 
+ 
+ def compute_area_status(tools: List[ToolResult]) -> str:
+-    statuses = [t.status for t in tools]
+-    if any(s == "ERROR" for s in statuses):
+-        return "ERROR"
+-    if any(s == "FINDINGS" for s in statuses):
+-        return "FINDINGS"
+-    if all(s in {"NOT_RUN", "SKIPPED"} for s in statuses):
+-        return "NOT_RUN"
+-    if all(s == "OK" for s in statuses):
+-        return "OK"
+-    return "FINDINGS"
++    statuses = [normalize_legacy_status(t.status) for t in tools]
++    if any(is_invalidating(s) for s in statuses):
++        return ToolStatus.ERROR.value
++    if any(s == ToolStatus.FINDINGS.value for s in statuses):
++        return ToolStatus.FINDINGS.value
++    if tools and all(s in {ToolStatus.NOT_RUN.value, ToolStatus.SKIPPED.value} for s in statuses):
++        return ToolStatus.NOT_RUN.value
++    if tools and all(s == ToolStatus.OK.value for s in statuses):
++        return ToolStatus.OK.value
++    if not tools:
++        return ToolStatus.NOT_RUN.value
++    return ToolStatus.FINDINGS.value
+ 
+ 
+ def area_observation(area: str, tools: List[ToolResult]) -> str:
+     if area == "backend":
+-        failed = next((t.metrics.get("failed", 0) for t in tools if t.name == "Pytest"), 0)
+-        return f"Tests fallidos backend={failed}" if failed else "Sin fallos críticos detectados"
++        pytest = next((t for t in tools if t.name == "Pytest"), None)
++        if pytest is None:
++            return "Pytest ausente"
++        if pytest.status in {ToolStatus.NOT_RUN.value, ToolStatus.NOT_AVAILABLE.value, ToolStatus.SKIPPED.value}:
++            return f"Pytest no ejecutado ({pytest.status})"
++        if is_invalidating(pytest.status):
++            return f"Pytest tooling inválido ({pytest.status})"
++        failed = pytest.metrics.get("failed", 0) + pytest.metrics.get("errors", 0)
++        return f"Tests fallidos backend={failed}" if failed else f"Pytest OK passed={pytest.metrics.get('passed', 0)}"
+     if area == "frontend":
+-        failed = next((t.metrics.get("failed_tests", 0) for t in tools if t.name == "Vitest"), 0)
+-        return f"Tests fallidos frontend={failed}" if failed else "Sin fallos de tests"
++        vitest = next((t for t in tools if t.name == "Vitest"), None)
++        if vitest is None:
++            return "Vitest ausente"
++        if vitest.status in {ToolStatus.NOT_RUN.value, ToolStatus.NOT_AVAILABLE.value, ToolStatus.SKIPPED.value}:
++            return f"Vitest no ejecutado ({vitest.status})"
++        if is_invalidating(vitest.status):
++            return f"Vitest tooling inválido ({vitest.status})"
++        failed = vitest.metrics.get("failed_tests", 0)
++        return f"Tests fallidos frontend={failed}" if failed else f"Vitest OK passed={vitest.metrics.get('passed_tests', 0)}"
++    if area == "mobile":
++        jest = next((t for t in tools if t.name == "Jest"), None)
++        if jest is None:
++            return "Jest ausente"
++        if jest.status in {ToolStatus.NOT_RUN.value, ToolStatus.NOT_AVAILABLE.value, ToolStatus.SKIPPED.value}:
++            return f"Jest no ejecutado ({jest.status})"
++        if is_invalidating(jest.status):
++            return f"Jest tooling inválido ({jest.status})"
++        failed = jest.metrics.get("failed", 0)
++        return f"Tests fallidos mobile={failed}" if failed else f"Jest OK passed={jest.metrics.get('passed', 0)}"
+     if area == "backend_architecture":
+         fail = next((t.metrics.get("fail", 0) for t in tools if t.name == "Límites de imports"), 0)
+         return f"Boundary FAIL={fail}" if fail else "Sin FAIL de boundaries"
+@@ -594,10 +444,11 @@ def build_summary_markdown(
+     for area_key, label in [
+         ("backend", "Backend"),
+         ("frontend", "Frontend"),
++        ("mobile", "Mobile"),
+         ("backend_architecture", "Arquitectura backend"),
+         ("frontend_architecture", "Arquitectura frontend"),
+     ]:
+-        tools = areas[area_key]
++        tools = areas.get(area_key, [])
+         lines.append(
+             f"| {label} | {compute_area_status(tools)} | {max_severity([t.severity for t in tools])} | {area_observation(area_key, tools)} |"
+         )
+@@ -606,10 +457,13 @@ def build_summary_markdown(
+     for area_key, title in [
+         ("backend", "Backend"),
+         ("frontend", "Frontend"),
++        ("mobile", "Mobile"),
+         ("backend_architecture", "Arquitectura backend"),
+         ("frontend_architecture", "Arquitectura frontend"),
+     ]:
+-        tools = areas[area_key]
++        tools = areas.get(area_key, [])
++        if not tools:
++            continue
+         headers = ["Herramienta", "Estado", "Severidad", "Métricas", "Reporte"]
+         if "Arquitectura" in title:
+             headers[0] = "Auditoría"
+@@ -814,6 +668,22 @@ def main() -> int:
+             "medium",
+         ),
+     ]
++    mobile_files = {
++        "Typecheck": raw / "mobile-typecheck.txt",
++        "ESLint": raw / "mobile-lint.txt",
++        "Jest": raw / "mobile-jest.txt",
++        "npm audit": raw / "mobile-npm-audit.json",
++    }
++    mobile = [
++        parse_frontend_typecheck(mobile_files["Typecheck"]),
++        parse_frontend_eslint(mobile_files["ESLint"]),
++        parse_mobile_jest(mobile_files["Jest"]),
++        parse_frontend_npm_audit(mobile_files["npm audit"]),
++    ]
++    # Rename Typecheck/ESLint display for mobile tables
++    if mobile:
++        mobile[0].name = "Typecheck"
++        mobile[1].name = "ESLint"
+     backend_arch = [
+         parse_arch_backend_code_smells(backend_arch_files["Code smells"]),
+         parse_arch_backend_complexity(backend_arch_files["Complejidad"]),
+@@ -832,6 +702,7 @@ def main() -> int:
+     areas = {
+         "backend": backend,
+         "frontend": frontend,
++        "mobile": mobile,
+         "backend_architecture": backend_arch,
+         "frontend_architecture": frontend_arch,
+     }
+@@ -839,6 +710,8 @@ def main() -> int:
+         tr.report = to_repo_relative(backend_files[tr.name], repo_root)
+     for tr in frontend:
+         tr.report = to_repo_relative(frontend_files[tr.name], repo_root)
++    for tr, key in zip(mobile, ["Typecheck", "ESLint", "Jest", "npm audit"]):
++        tr.report = to_repo_relative(mobile_files[key], repo_root)
+     for tr in backend_arch:
+         tr.report = to_repo_relative(backend_arch_files[tr.name], repo_root)
+     for tr in frontend_arch:
+@@ -848,21 +721,59 @@ def main() -> int:
+     all_sev = [t.severity for vals in areas.values() for t in vals]
+     overall_max_sev = max_severity(all_sev)
+ 
+-    if any(s == "ERROR" for s in area_status.values()):
++    if any(s == ToolStatus.ERROR.value or is_invalidating(s) for s in area_status.values()):
+         overall_status = "error"
+-    elif any(s in {"FINDINGS", "SKIPPED", "NOT_RUN"} for s in area_status.values()):
++    elif any(s in {ToolStatus.FINDINGS.value, ToolStatus.SKIPPED.value, ToolStatus.NOT_RUN.value} for s in area_status.values()):
+         overall_status = "findings"
+     else:
+         overall_status = "ok"
+ 
+-    status_obj = {
++    status_obj: Dict[str, object] = {
++        "schema_version": SCHEMA_VERSION,
++        "parser_version": PARSER_VERSION,
+         "overall_status": overall_status,
+         "max_severity": overall_max_sev,
+         "generated_at": generated_at,
+         "areas": {},
+     }
+     for area_key, tools in areas.items():
+-        status_obj["areas"][area_key] = {
++        pytest_failed = 0
++        vitest_failed = 0
++        jest_failed = 0
++        if area_key == "backend":
++            pt = next((t for t in tools if t.name == "Pytest"), None)
++            if pt:
++                pytest_failed = int(pt.metrics.get("failed", 0)) + int(pt.metrics.get("errors", 0))
++        if area_key == "frontend":
++            vt = next((t for t in tools if t.name == "Vitest"), None)
++            if vt:
++                vitest_failed = int(vt.metrics.get("failed_tests", 0))
++        if area_key == "mobile":
++            jt = next((t for t in tools if t.name == "Jest"), None)
++            if jt:
++                jest_failed = int(jt.metrics.get("failed", 0))
++        highlights = {
++            "tool_count": len(tools),
++            "findings_count": sum(1 for t in tools if t.status == ToolStatus.FINDINGS.value),
++            "not_run_count": sum(
++                1
++                for t in tools
++                if t.status
++                in {
++                    ToolStatus.NOT_RUN.value,
++                    ToolStatus.SKIPPED.value,
++                    ToolStatus.NOT_AVAILABLE.value,
++                }
++            ),
++            "invalidating_count": sum(1 for t in tools if is_invalidating(t.status)),
++        }
++        if area_key == "backend":
++            highlights["pytest_failed"] = pytest_failed
++        if area_key == "frontend":
++            highlights["vitest_failed_tests"] = vitest_failed
++        if area_key == "mobile":
++            highlights["jest_failed"] = jest_failed
++        status_obj["areas"][area_key] = {  # type: ignore[index]
+             "status": area_status[area_key],
+             "max_severity": max_severity([t.severity for t in tools]),
+             "tools": {
+@@ -872,14 +783,14 @@ def main() -> int:
+                     "metrics": t.metrics,
+                     "report": t.report,
+                     "observation": t.observation,
++                    "exit_code": t.exit_code,
++                    "error": t.error,
++                    "parser": t.parser,
++                    "parser_version": t.parser_version,
+                 }
+                 for t in tools
+             },
+-            "highlights": {
+-                "tool_count": len(tools),
+-                "findings_count": sum(1 for t in tools if t.status == "FINDINGS"),
+-                "not_run_count": sum(1 for t in tools if t.status in {"NOT_RUN", "SKIPPED"}),
+-            },
++            "highlights": highlights,
+         }
+ 
+     validate_consistency(areas, status_obj)
+@@ -897,6 +808,7 @@ def main() -> int:
+ 
+     print(f"Generated: {audit_dir / 'audit-summary.md'}")
+     print(f"Generated: {audit_dir / 'audit-status.json'}")
++    print(f"schema_version={SCHEMA_VERSION} overall_status={overall_status}")
+     return 0
+ 
+ 
+diff --git a/scripts/audit/resolve_python.sh b/scripts/audit/resolve_python.sh
+new file mode 100755
+index 00000000..8cf6317e
+--- /dev/null
++++ b/scripts/audit/resolve_python.sh
+@@ -0,0 +1,82 @@
++#!/usr/bin/env sh
++# Resolve AUDIT_PYTHON for audit shell runners. Source this file:
++#   . "$(dirname "$0")/resolve_python.sh"
++# Sets: AUDIT_PYTHON, AUDIT_PYTHON_REASON, AUDIT_VENV_ROOT
++
++_audit_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
++
++_audit_pick_python() {
++  if [ -n "${AUDIT_PYTHON:-}" ] && [ -x "${AUDIT_PYTHON}" ]; then
++    AUDIT_PYTHON_REASON="AUDIT_PYTHON"
++    return 0
++  fi
++  if [ -n "${DINAMIC_AUDIT_PYTHON:-}" ] && [ -x "${DINAMIC_AUDIT_PYTHON}" ]; then
++    AUDIT_PYTHON="${DINAMIC_AUDIT_PYTHON}"
++    AUDIT_PYTHON_REASON="DINAMIC_AUDIT_PYTHON"
++    return 0
++  fi
++  for candidate in \
++    "${_audit_root}/backend/.venv/bin/python" \
++    "${_audit_root}/backend/.venv/bin/python3" \
++    "${_audit_root}/.venv/bin/python" \
++    "${_audit_root}/.venv/bin/python3" \
++    "${_audit_root}/venv/bin/python" \
++    "${_audit_root}/venv/bin/python3" \
++    "${_audit_root}/backend/venv/bin/python" \
++    "${_audit_root}/backend/venv/bin/python3"
++  do
++    if [ -x "$candidate" ]; then
++      AUDIT_PYTHON="$candidate"
++      AUDIT_PYTHON_REASON="project venv: $candidate"
++      return 0
++    fi
++  done
++  if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "${VIRTUAL_ENV}/bin/python" ]; then
++    AUDIT_PYTHON="${VIRTUAL_ENV}/bin/python"
++    AUDIT_PYTHON_REASON="VIRTUAL_ENV"
++    return 0
++  fi
++  if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "${VIRTUAL_ENV}/Scripts/python.exe" ]; then
++    AUDIT_PYTHON="${VIRTUAL_ENV}/Scripts/python.exe"
++    AUDIT_PYTHON_REASON="VIRTUAL_ENV (Windows)"
++    return 0
++  fi
++  if command -v python3 >/dev/null 2>&1; then
++    AUDIT_PYTHON="$(command -v python3)"
++    AUDIT_PYTHON_REASON="PATH python3 (fallback)"
++    return 0
++  fi
++  if command -v python >/dev/null 2>&1; then
++    AUDIT_PYTHON="$(command -v python)"
++    AUDIT_PYTHON_REASON="PATH python (fallback)"
++    return 0
++  fi
++  AUDIT_PYTHON=""
++  AUDIT_PYTHON_REASON="NOT_AVAILABLE"
++  return 1
++}
++
++_audit_pick_python || true
++export AUDIT_PYTHON AUDIT_PYTHON_REASON
++if [ -n "${AUDIT_PYTHON:-}" ]; then
++  AUDIT_VENV_ROOT="$(CDPATH= cd -- "$(dirname -- "$AUDIT_PYTHON")/.." && pwd)"
++  export AUDIT_VENV_ROOT
++  # Prefer same-env binaries on PATH for this process.
++  export PATH="$(dirname -- "$AUDIT_PYTHON"):$PATH"
++fi
++
++audit_run_module() {
++  # usage: audit_run_module <module> [args...]  → runs "$AUDIT_PYTHON" -m module
++  module="$1"
++  shift
++  if [ -z "${AUDIT_PYTHON:-}" ]; then
++    return 127
++  fi
++  "$AUDIT_PYTHON" -m "$module" "$@"
++}
++
++audit_write_exitcode() {
++  report_path="$1"
++  code="$2"
++  printf '%s\n' "$code" >"${report_path}.exitcode"
++}
+diff --git a/scripts/audit/run_backend_audit.sh b/scripts/audit/run_backend_audit.sh
+index aedee17a..7501b11f 100755
+--- a/scripts/audit/run_backend_audit.sh
++++ b/scripts/audit/run_backend_audit.sh
+@@ -1,14 +1,17 @@
+ #!/usr/bin/env sh
+ set -u
+ 
+-echo "== Quality Gate - Backend audit (Fase 2) =="
++echo "== Quality Gate - Backend audit (Phase 0 tooling) =="
+ 
+ ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+ RAW_DIR="$ROOT_DIR/audit/raw"
++SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
++
++# shellcheck disable=SC1091
++. "$SCRIPT_DIR/resolve_python.sh"
+ 
+ mkdir -p "$RAW_DIR"
+ 
+-# Backend path detection
+ if [ -d "$ROOT_DIR/backend" ]; then
+   BACKEND_DIR="$ROOT_DIR/backend"
+   BACKEND_SCOPE="$ROOT_DIR/backend"
+@@ -26,7 +29,6 @@ else
+   SOURCE_DIR="$BACKEND_DIR"
+ fi
+ 
+-# Mypy target: prefer main backend package under src/, fallback to backend scope
+ MYPY_TARGET="$BACKEND_SCOPE"
+ if [ -n "${BACKEND_DIR}" ] && [ -d "$BACKEND_DIR/src" ]; then
+   MYPY_TARGET="$BACKEND_DIR/src"
+@@ -37,6 +39,7 @@ MYPY_REPORT="$RAW_DIR/backend-mypy.txt"
+ BANDIT_REPORT="$RAW_DIR/backend-bandit.json"
+ PIP_AUDIT_REPORT="$RAW_DIR/backend-pip-audit.json"
+ PYTEST_REPORT="$RAW_DIR/backend-pytest.txt"
++PYTHON_ENV_REPORT="$RAW_DIR/python-env.json"
+ 
+ RUFF_STATUS="SKIPPED"
+ MYPY_STATUS="SKIPPED"
+@@ -60,94 +63,184 @@ mark_from_exit_code() {
+   elif [ "$exit_code" -eq 1 ]; then
+     echo "FINDINGS"
+   else
+-    echo "ERROR"
++    echo "EXECUTION_ERROR"
++  fi
++}
++
++module_available() {
++  module="$1"
++  if [ -z "${AUDIT_PYTHON:-}" ]; then
++    return 1
+   fi
++  "$AUDIT_PYTHON" -c "import ${module}" >/dev/null 2>&1
+ }
+ 
+ echo "Repositorio detectado: $ROOT_DIR"
+ echo "Directorio backend detectado: $BACKEND_SCOPE"
+ echo "Directorio de evidencia: $RAW_DIR"
++echo "Python resuelto: ${AUDIT_PYTHON:-NOT_AVAILABLE} (${AUDIT_PYTHON_REASON:-})"
+ echo
+ 
++# Persist interpreter diagnosis for the aggregator / gate.
++if [ -n "${AUDIT_PYTHON:-}" ]; then
++  "$AUDIT_PYTHON" - "$PYTHON_ENV_REPORT" <<'PY' || true
++import json, sys
++from pathlib import Path
++# Inline minimal env dump (avoid import path issues when lib not on PYTHONPATH)
++out = Path(sys.argv[1])
++payload = {
++    "python_bin": sys.executable,
++    "version": sys.version.split()[0],
++    "selection_reason": __import__("os").environ.get("AUDIT_PYTHON_REASON", ""),
++    "venv_root": __import__("os").environ.get("AUDIT_VENV_ROOT"),
++    "tools": {},
++}
++for mod, label in [("pytest", "pytest"), ("ruff", "ruff"), ("mypy", "mypy"), ("bandit", "bandit")]:
++    try:
++        __import__(mod if mod != "pip_audit" else "pip_audit")
++        payload["tools"][label] = f"{sys.executable} -m {mod}"
++    except Exception:
++        payload["tools"][label] = None
++try:
++    import pip_audit  # noqa: F401
++    payload["tools"]["pip_audit"] = f"{sys.executable} -m pip_audit"
++except Exception:
++    payload["tools"]["pip_audit"] = None
++out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
++PY
++else
++  write_note "$PYTHON_ENV_REPORT" '{"error":"AUDIT_PYTHON not available"}'
++fi
++
+ # Ruff
+ if [ -z "$BACKEND_DIR" ] || [ ! -d "$BACKEND_SCOPE" ]; then
+   RUFF_STATUS="SKIPPED"
+   write_note "$RUFF_REPORT" "Ruff no ejecutado: no se detecto directorio backend."
+-elif ! command -v ruff >/dev/null 2>&1; then
+-  RUFF_STATUS="NOT_INSTALLED"
++  audit_write_exitcode "$RUFF_REPORT" 0
++elif [ -z "${AUDIT_PYTHON:-}" ]; then
++  RUFF_STATUS="NOT_AVAILABLE"
++  write_note "$RUFF_REPORT" "Ruff no instalado: no hay intérprete Python resuelto."
++  audit_write_exitcode "$RUFF_REPORT" 127
++elif ! module_available ruff && ! command -v ruff >/dev/null 2>&1; then
++  RUFF_STATUS="NOT_AVAILABLE"
+   write_note "$RUFF_REPORT" "Ruff no instalado en el entorno actual."
++  audit_write_exitcode "$RUFF_REPORT" 127
+ else
+-  ruff check "$BACKEND_SCOPE" >"$RUFF_REPORT" 2>&1
+-  RUFF_STATUS="$(mark_from_exit_code "$?")"
++  if module_available ruff; then
++    audit_run_module ruff check "$BACKEND_SCOPE" >"$RUFF_REPORT" 2>&1
++  else
++    ruff check "$BACKEND_SCOPE" >"$RUFF_REPORT" 2>&1
++  fi
++  rc=$?
++  audit_write_exitcode "$RUFF_REPORT" "$rc"
++  RUFF_STATUS="$(mark_from_exit_code "$rc")"
+ fi
+ 
+ # Mypy
+ if [ -z "$BACKEND_DIR" ] || [ ! -d "$BACKEND_SCOPE" ]; then
+   MYPY_STATUS="SKIPPED"
+   write_note "$MYPY_REPORT" "Mypy no ejecutado: no se detecto directorio backend."
+-elif ! command -v mypy >/dev/null 2>&1; then
+-  MYPY_STATUS="NOT_INSTALLED"
++  audit_write_exitcode "$MYPY_REPORT" 0
++elif [ -z "${AUDIT_PYTHON:-}" ]; then
++  MYPY_STATUS="NOT_AVAILABLE"
++  write_note "$MYPY_REPORT" "Mypy no instalado: no hay intérprete Python resuelto."
++  audit_write_exitcode "$MYPY_REPORT" 127
++elif ! module_available mypy; then
++  MYPY_STATUS="NOT_AVAILABLE"
+   write_note "$MYPY_REPORT" "Mypy no instalado en el entorno actual."
++  audit_write_exitcode "$MYPY_REPORT" 127
+ else
+-  mypy "$MYPY_TARGET" >"$MYPY_REPORT" 2>&1
+-  MYPY_STATUS="$(mark_from_exit_code "$?")"
++  (
++    cd "$BACKEND_DIR" || exit 1
++    audit_run_module mypy "$MYPY_TARGET"
++  ) >"$MYPY_REPORT" 2>&1
++  rc=$?
++  audit_write_exitcode "$MYPY_REPORT" "$rc"
++  MYPY_STATUS="$(mark_from_exit_code "$rc")"
+ fi
+ 
+-# Bandit (JSON, recursive, with excludes)
++# Bandit
+ if [ -z "$BACKEND_DIR" ] || [ ! -d "$BACKEND_SCOPE" ]; then
+   BANDIT_STATUS="SKIPPED"
+   write_note "$BANDIT_REPORT" "Bandit no ejecutado: no se detecto directorio backend."
+-elif ! command -v bandit >/dev/null 2>&1; then
+-  BANDIT_STATUS="NOT_INSTALLED"
++  audit_write_exitcode "$BANDIT_REPORT" 0
++elif [ -z "${AUDIT_PYTHON:-}" ] || ! module_available bandit; then
++  BANDIT_STATUS="NOT_AVAILABLE"
+   write_note "$BANDIT_REPORT" "Bandit no instalado en el entorno actual."
++  audit_write_exitcode "$BANDIT_REPORT" 127
+ else
+   BANDIT_TARGET="$SOURCE_DIR"
+   if [ -z "$BANDIT_TARGET" ] || [ ! -d "$BANDIT_TARGET" ]; then
+     BANDIT_TARGET="$BACKEND_SCOPE"
+   fi
+-  bandit -r "$BANDIT_TARGET" -f json -o "$BANDIT_REPORT" \
++  audit_run_module bandit -r "$BANDIT_TARGET" -f json -o "$BANDIT_REPORT" \
+     -x ".venv,venv,__pycache__,.mypy_cache,.pytest_cache" >/dev/null 2>&1
+-  BANDIT_STATUS="$(mark_from_exit_code "$?")"
++  rc=$?
++  audit_write_exitcode "$BANDIT_REPORT" "$rc"
++  BANDIT_STATUS="$(mark_from_exit_code "$rc")"
+   if [ ! -s "$BANDIT_REPORT" ]; then
+     write_note "$BANDIT_REPORT" "Bandit no produjo salida JSON. Revisar salida local."
+   fi
+ fi
+ 
+-# pip-audit (prefer pyproject.toml, fallback requirements.txt)
+-if ! command -v pip-audit >/dev/null 2>&1; then
+-  PIP_AUDIT_STATUS="NOT_INSTALLED"
++# pip-audit
++if [ -z "${AUDIT_PYTHON:-}" ] || ! "$AUDIT_PYTHON" -c "import pip_audit" >/dev/null 2>&1; then
++  PIP_AUDIT_STATUS="NOT_AVAILABLE"
+   write_note "$PIP_AUDIT_REPORT" "pip-audit no instalado en el entorno actual."
++  audit_write_exitcode "$PIP_AUDIT_REPORT" 127
+ else
+   if [ -n "$BACKEND_DIR" ] && [ -f "$BACKEND_DIR/pyproject.toml" ]; then
+-    pip-audit --path "$BACKEND_DIR" --format json >"$PIP_AUDIT_REPORT" 2>&1
+-    PIP_AUDIT_STATUS="$(mark_from_exit_code "$?")"
++    (
++      cd "$BACKEND_DIR" || exit 1
++      audit_run_module pip_audit --path . --format json --skip-editable
++    ) >"$PIP_AUDIT_REPORT" 2>&1
++    rc=$?
++    audit_write_exitcode "$PIP_AUDIT_REPORT" "$rc"
++    PIP_AUDIT_STATUS="$(mark_from_exit_code "$rc")"
+   elif [ -n "$BACKEND_DIR" ] && [ -f "$BACKEND_DIR/requirements.txt" ]; then
+-    pip-audit -r "$BACKEND_DIR/requirements.txt" --format json >"$PIP_AUDIT_REPORT" 2>&1
+-    PIP_AUDIT_STATUS="$(mark_from_exit_code "$?")"
++    audit_run_module pip_audit -r "$BACKEND_DIR/requirements.txt" --format json >"$PIP_AUDIT_REPORT" 2>&1
++    rc=$?
++    audit_write_exitcode "$PIP_AUDIT_REPORT" "$rc"
++    PIP_AUDIT_STATUS="$(mark_from_exit_code "$rc")"
+   else
+     PIP_AUDIT_STATUS="SKIPPED"
+     write_note "$PIP_AUDIT_REPORT" "pip-audit no ejecutado: no existe backend/pyproject.toml ni backend/requirements.txt."
++    audit_write_exitcode "$PIP_AUDIT_REPORT" 0
+   fi
+ fi
+ 
+-# Pytest
++# Pytest — prefer repo-root invocation matching CI when possible
+ if [ -z "$BACKEND_DIR" ] || [ ! -d "$BACKEND_SCOPE" ]; then
+   PYTEST_STATUS="SKIPPED"
+   write_note "$PYTEST_REPORT" "Pytest no ejecutado: no se detecto directorio backend."
+-elif ! command -v pytest >/dev/null 2>&1; then
+-  PYTEST_STATUS="NOT_INSTALLED"
++  audit_write_exitcode "$PYTEST_REPORT" 0
++elif [ -z "${AUDIT_PYTHON:-}" ] || ! module_available pytest; then
++  PYTEST_STATUS="NOT_AVAILABLE"
+   write_note "$PYTEST_REPORT" "Pytest no instalado en el entorno actual."
++  audit_write_exitcode "$PYTEST_REPORT" 127
+ else
+-  pytest "$BACKEND_SCOPE/tests" >"$PYTEST_REPORT" 2>&1
+-  PYTEST_STATUS="$(mark_from_exit_code "$?")"
++  if [ -f "$ROOT_DIR/pytest.ini" ] || [ -f "$ROOT_DIR/pyproject.toml" ]; then
++    (
++      cd "$ROOT_DIR" || exit 1
++      audit_run_module pytest backend/tests -q --tb=no
++    ) >"$PYTEST_REPORT" 2>&1
++  else
++    (
++      cd "$BACKEND_DIR" || exit 1
++      audit_run_module pytest tests -q --tb=no
++    ) >"$PYTEST_REPORT" 2>&1
++  fi
++  rc=$?
++  audit_write_exitcode "$PYTEST_REPORT" "$rc"
++  PYTEST_STATUS="$(mark_from_exit_code "$rc")"
+ fi
+ 
+ echo "Resumen backend audit:"
+-printf "%-12s | %-13s | %s\n" "Herramienta" "Estado" "Reporte"
+-printf "%-12s | %-13s | %s\n" "Ruff" "$RUFF_STATUS" "audit/raw/backend-ruff.txt"
+-printf "%-12s | %-13s | %s\n" "Mypy" "$MYPY_STATUS" "audit/raw/backend-mypy.txt"
+-printf "%-12s | %-13s | %s\n" "Bandit" "$BANDIT_STATUS" "audit/raw/backend-bandit.json"
+-printf "%-12s | %-13s | %s\n" "pip-audit" "$PIP_AUDIT_STATUS" "audit/raw/backend-pip-audit.json"
+-printf "%-12s | %-13s | %s\n" "Pytest" "$PYTEST_STATUS" "audit/raw/backend-pytest.txt"
++printf "%-12s | %-16s | %s\n" "Herramienta" "Estado" "Reporte"
++printf "%-12s | %-16s | %s\n" "Ruff" "$RUFF_STATUS" "audit/raw/backend-ruff.txt"
++printf "%-12s | %-16s | %s\n" "Mypy" "$MYPY_STATUS" "audit/raw/backend-mypy.txt"
++printf "%-12s | %-16s | %s\n" "Bandit" "$BANDIT_STATUS" "audit/raw/backend-bandit.json"
++printf "%-12s | %-16s | %s\n" "pip-audit" "$PIP_AUDIT_STATUS" "audit/raw/backend-pip-audit.json"
++printf "%-12s | %-16s | %s\n" "Pytest" "$PYTEST_STATUS" "audit/raw/backend-pytest.txt"
+ 
+ exit 0
+diff --git a/scripts/audit/run_frontend_audit.sh b/scripts/audit/run_frontend_audit.sh
+index 2701cfae..7d36f722 100755
+--- a/scripts/audit/run_frontend_audit.sh
++++ b/scripts/audit/run_frontend_audit.sh
+@@ -49,10 +49,14 @@ mark_from_exit_code() {
+   elif [ "$exit_code" -eq 1 ]; then
+     echo "FINDINGS"
+   else
+-    echo "ERROR"
++    echo "EXECUTION_ERROR"
+   fi
+ }
+ 
++write_exitcode() {
++  printf '%s\n' "$2" >"${1}.exitcode"
++}
++
+ has_script() {
+   script_name="$1"
+   node -e "const fs=require('fs');const p=process.argv[1];const n=process.argv[2];const j=JSON.parse(fs.readFileSync(p,'utf8'));process.exit(j.scripts&&Object.prototype.hasOwnProperty.call(j.scripts,n)?0:1);" \
+@@ -92,51 +96,66 @@ echo
+ if [ -z "$FRONTEND_DIR" ] || [ ! -f "$FRONTEND_DIR/package.json" ]; then
+   ESLINT_STATUS="SKIPPED"
+   write_note "$ESLINT_REPORT" "ESLint no ejecutado: no se detecto frontend/package.json."
++  write_exitcode "$ESLINT_REPORT" 0
+ elif ! command -v npm >/dev/null 2>&1; then
+-  ESLINT_STATUS="NOT_INSTALLED"
++  ESLINT_STATUS="NOT_AVAILABLE"
+   write_note "$ESLINT_REPORT" "npm no esta instalado en el entorno actual."
++  write_exitcode "$ESLINT_REPORT" 127
+ elif has_script "lint"; then
+   (cd "$FRONTEND_DIR" && npm run lint) >"$ESLINT_REPORT" 2>&1
+-  ESLINT_STATUS="$(mark_from_exit_code "$?")"
++  rc="$?"
++  write_exitcode "$ESLINT_REPORT" "$rc"
++  ESLINT_STATUS="$(mark_from_exit_code "$rc")"
+ else
+   ESLINT_STATUS="SKIPPED"
+   write_note "$ESLINT_REPORT" "ESLint no ejecutado: no se encontro script 'lint' en package.json."
++  write_exitcode "$ESLINT_REPORT" 0
+ fi
+ 
+ # Typecheck
+ if [ -z "$FRONTEND_DIR" ] || [ ! -f "$FRONTEND_DIR/package.json" ]; then
+   TYPECHECK_STATUS="SKIPPED"
+   write_note "$TYPECHECK_REPORT" "Typecheck no ejecutado: no se detecto frontend/package.json."
++  write_exitcode "$TYPECHECK_REPORT" 0
+ elif ! command -v npm >/dev/null 2>&1; then
+-  TYPECHECK_STATUS="NOT_INSTALLED"
++  TYPECHECK_STATUS="NOT_AVAILABLE"
+   write_note "$TYPECHECK_REPORT" "npm no esta instalado en el entorno actual."
++  write_exitcode "$TYPECHECK_REPORT" 127
+ elif has_script "typecheck"; then
+   (cd "$FRONTEND_DIR" && npm run typecheck) >"$TYPECHECK_REPORT" 2>&1
+-  TYPECHECK_STATUS="$(mark_from_exit_code "$?")"
++  rc="$?"
++  write_exitcode "$TYPECHECK_REPORT" "$rc"
++  TYPECHECK_STATUS="$(mark_from_exit_code "$rc")"
+ elif command -v npx >/dev/null 2>&1; then
+   (cd "$FRONTEND_DIR" && npx tsc --noEmit) >"$TYPECHECK_REPORT" 2>&1
+-  TYPECHECK_STATUS="$(mark_from_exit_code "$?")"
++  rc="$?"
++  write_exitcode "$TYPECHECK_REPORT" "$rc"
++  TYPECHECK_STATUS="$(mark_from_exit_code "$rc")"
+ else
+-  TYPECHECK_STATUS="NOT_INSTALLED"
++  TYPECHECK_STATUS="NOT_AVAILABLE"
+   write_note "$TYPECHECK_REPORT" "Typecheck no ejecutado: no hay script 'typecheck' y npx no esta disponible."
++  write_exitcode "$TYPECHECK_REPORT" 127
+ fi
+ 
+ # npm audit
+ if [ -z "$FRONTEND_DIR" ] || [ ! -f "$FRONTEND_DIR/package.json" ]; then
+   NPM_AUDIT_STATUS="SKIPPED"
+   write_note "$NPM_AUDIT_REPORT" "npm audit no ejecutado: no se detecto frontend/package.json."
++  write_exitcode "$NPM_AUDIT_REPORT" 0
+ elif ! command -v npm >/dev/null 2>&1; then
+-  NPM_AUDIT_STATUS="NOT_INSTALLED"
++  NPM_AUDIT_STATUS="NOT_AVAILABLE"
+   write_note "$NPM_AUDIT_REPORT" "npm no esta instalado en el entorno actual."
++  write_exitcode "$NPM_AUDIT_REPORT" 127
+ else
+   (cd "$FRONTEND_DIR" && npm audit --json) >"$NPM_AUDIT_REPORT" 2>&1
+   audit_exit="$?"
++  write_exitcode "$NPM_AUDIT_REPORT" "$audit_exit"
+   if [ "$audit_exit" -eq 0 ]; then
+     NPM_AUDIT_STATUS="OK"
+   elif [ "$audit_exit" -eq 1 ]; then
+     NPM_AUDIT_STATUS="FINDINGS"
+   else
+-    NPM_AUDIT_STATUS="ERROR"
++    NPM_AUDIT_STATUS="EXECUTION_ERROR"
+   fi
+ fi
+ 
+@@ -144,15 +163,20 @@ fi
+ if [ -z "$FRONTEND_DIR" ] || [ ! -f "$FRONTEND_DIR/package.json" ]; then
+   VITEST_STATUS="SKIPPED"
+   write_note "$VITEST_REPORT" "Vitest no ejecutado: no se detecto frontend/package.json."
++  write_exitcode "$VITEST_REPORT" 0
+ elif ! command -v npm >/dev/null 2>&1; then
+-  VITEST_STATUS="NOT_INSTALLED"
++  VITEST_STATUS="NOT_AVAILABLE"
+   write_note "$VITEST_REPORT" "npm no esta instalado en el entorno actual."
++  write_exitcode "$VITEST_REPORT" 127
+ elif has_script "test"; then
+   (cd "$FRONTEND_DIR" && npm run test -- --run) >"$VITEST_REPORT" 2>&1
+-  VITEST_STATUS="$(mark_from_exit_code "$?")"
++  rc="$?"
++  write_exitcode "$VITEST_REPORT" "$rc"
++  VITEST_STATUS="$(mark_from_exit_code "$rc")"
+ else
+   VITEST_STATUS="SKIPPED"
+   write_note "$VITEST_REPORT" "Vitest no ejecutado: no se encontro script 'test' en package.json."
++  write_exitcode "$VITEST_REPORT" 0
+ fi
+ 
+ # Static audits
+diff --git a/scripts/audit/run_full_audit.sh b/scripts/audit/run_full_audit.sh
+index 5657ec90..a2b54f30 100755
+--- a/scripts/audit/run_full_audit.sh
++++ b/scripts/audit/run_full_audit.sh
+@@ -11,7 +11,14 @@ run_if_exists() {
+   if [ -f "$abs" ]; then
+     echo "--- Ejecutando: $rel"
+     if [ "${rel##*.}" = "py" ]; then
+-      python3 "$abs" || true
++      # Prefer project venv python for aggregators / gate.
++      # shellcheck disable=SC1091
++      . "$ROOT_DIR/scripts/audit/resolve_python.sh"
++      if [ -n "${AUDIT_PYTHON:-}" ]; then
++        "$AUDIT_PYTHON" "$abs" || true
++      else
++        python3 "$abs" || true
++      fi
+     else
+       bash "$abs" || true
+     fi
+@@ -22,6 +29,7 @@ run_if_exists() {
+ 
+ run_if_exists "scripts/audit/run_backend_audit.sh"
+ run_if_exists "scripts/audit/run_frontend_audit.sh"
++run_if_exists "scripts/audit/run_mobile_audit.sh"
+ run_if_exists "scripts/audit/run_backend_architecture_audit.sh"
+ run_if_exists "scripts/audit/run_frontend_architecture_audit.sh"
+ run_if_exists "scripts/audit/generate_audit_summary.py"
+diff --git a/scripts/audit/run_mobile_audit.sh b/scripts/audit/run_mobile_audit.sh
+new file mode 100755
+index 00000000..f7881beb
+--- /dev/null
++++ b/scripts/audit/run_mobile_audit.sh
+@@ -0,0 +1,132 @@
++#!/usr/bin/env sh
++set -u
++
++echo "== Quality Gate - Mobile audit (Phase 0) =="
++
++ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
++RAW_DIR="$ROOT_DIR/audit/raw"
++MOBILE_DIR="$ROOT_DIR/mobile"
++
++mkdir -p "$RAW_DIR"
++
++TYPECHECK_REPORT="$RAW_DIR/mobile-typecheck.txt"
++LINT_REPORT="$RAW_DIR/mobile-lint.txt"
++TEST_REPORT="$RAW_DIR/mobile-jest.txt"
++NPM_AUDIT_REPORT="$RAW_DIR/mobile-npm-audit.json"
++
++TYPECHECK_STATUS="SKIPPED"
++LINT_STATUS="SKIPPED"
++TEST_STATUS="SKIPPED"
++NPM_AUDIT_STATUS="SKIPPED"
++
++write_note() {
++  report_path="$1"
++  message="$2"
++  {
++    echo "$message"
++    echo "timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
++  } >"$report_path"
++}
++
++write_exitcode() {
++  printf '%s\n' "$2" >"${1}.exitcode"
++}
++
++mark_from_exit_code() {
++  exit_code="$1"
++  if [ "$exit_code" -eq 0 ]; then
++    echo "OK"
++  elif [ "$exit_code" -eq 1 ]; then
++    echo "FINDINGS"
++  else
++    echo "EXECUTION_ERROR"
++  fi
++}
++
++has_script() {
++  script_name="$1"
++  node -e "const fs=require('fs');const p=process.argv[1];const n=process.argv[2];const j=JSON.parse(fs.readFileSync(p,'utf8'));process.exit(j.scripts&&Object.prototype.hasOwnProperty.call(j.scripts,n)?0:1);" \
++    "$MOBILE_DIR/package.json" "$script_name" >/dev/null 2>&1
++}
++
++echo "Repositorio detectado: $ROOT_DIR"
++echo "Directorio mobile: ${MOBILE_DIR}"
++echo "Directorio de evidencia: $RAW_DIR"
++echo
++
++if [ ! -f "$MOBILE_DIR/package.json" ]; then
++  write_note "$TYPECHECK_REPORT" "Mobile no ejecutado: no se detecto mobile/package.json."
++  write_note "$LINT_REPORT" "Mobile no ejecutado: no se detecto mobile/package.json."
++  write_note "$TEST_REPORT" "Mobile no ejecutado: no se detecto mobile/package.json."
++  write_note "$NPM_AUDIT_REPORT" "Mobile no ejecutado: no se detecto mobile/package.json."
++  write_exitcode "$TYPECHECK_REPORT" 0
++  write_exitcode "$LINT_REPORT" 0
++  write_exitcode "$TEST_REPORT" 0
++  write_exitcode "$NPM_AUDIT_REPORT" 0
++  echo "Mobile ausente — SKIPPED"
++  exit 0
++fi
++
++if ! command -v npm >/dev/null 2>&1; then
++  write_note "$TYPECHECK_REPORT" "npm no instalado en el entorno actual."
++  write_note "$LINT_REPORT" "npm no instalado en el entorno actual."
++  write_note "$TEST_REPORT" "npm no instalado en el entorno actual."
++  write_note "$NPM_AUDIT_REPORT" "npm no instalado en el entorno actual."
++  write_exitcode "$TYPECHECK_REPORT" 127
++  write_exitcode "$LINT_REPORT" 127
++  write_exitcode "$TEST_REPORT" 127
++  write_exitcode "$NPM_AUDIT_REPORT" 127
++  TYPECHECK_STATUS="NOT_AVAILABLE"
++  LINT_STATUS="NOT_AVAILABLE"
++  TEST_STATUS="NOT_AVAILABLE"
++  NPM_AUDIT_STATUS="NOT_AVAILABLE"
++else
++  if has_script "typecheck"; then
++    (cd "$MOBILE_DIR" && npm run typecheck) >"$TYPECHECK_REPORT" 2>&1
++    rc=$?
++    write_exitcode "$TYPECHECK_REPORT" "$rc"
++    TYPECHECK_STATUS="$(mark_from_exit_code "$rc")"
++  else
++    TYPECHECK_STATUS="SKIPPED"
++    write_note "$TYPECHECK_REPORT" "no se encontro script 'typecheck'"
++    write_exitcode "$TYPECHECK_REPORT" 0
++  fi
++
++  if has_script "lint"; then
++    (cd "$MOBILE_DIR" && npm run lint) >"$LINT_REPORT" 2>&1
++    rc=$?
++    write_exitcode "$LINT_REPORT" "$rc"
++    LINT_STATUS="$(mark_from_exit_code "$rc")"
++  else
++    LINT_STATUS="SKIPPED"
++    write_note "$LINT_REPORT" "no se encontro script 'lint'"
++    write_exitcode "$LINT_REPORT" 0
++  fi
++
++  # Jest without Watchman — use project scripts (already include --watchman=false).
++  if has_script "test"; then
++    (cd "$MOBILE_DIR" && npm test -- --watchman=false) >"$TEST_REPORT" 2>&1
++    rc=$?
++    write_exitcode "$TEST_REPORT" "$rc"
++    TEST_STATUS="$(mark_from_exit_code "$rc")"
++  else
++    TEST_STATUS="SKIPPED"
++    write_note "$TEST_REPORT" "no se encontro script 'test'"
++    write_exitcode "$TEST_REPORT" 0
++  fi
++
++  (cd "$MOBILE_DIR" && npm audit --json) >"$NPM_AUDIT_REPORT" 2>&1
++  rc=$?
++  write_exitcode "$NPM_AUDIT_REPORT" "$rc"
++  # npm audit exits non-zero when vulns exist → FINDINGS
++  NPM_AUDIT_STATUS="$(mark_from_exit_code "$rc")"
++fi
++
++echo "Resumen mobile audit:"
++printf "%-12s | %-16s | %s\n" "Herramienta" "Estado" "Reporte"
++printf "%-12s | %-16s | %s\n" "Typecheck" "$TYPECHECK_STATUS" "audit/raw/mobile-typecheck.txt"
++printf "%-12s | %-16s | %s\n" "Lint" "$LINT_STATUS" "audit/raw/mobile-lint.txt"
++printf "%-12s | %-16s | %s\n" "Jest" "$TEST_STATUS" "audit/raw/mobile-jest.txt"
++printf "%-12s | %-16s | %s\n" "npm audit" "$NPM_AUDIT_STATUS" "audit/raw/mobile-npm-audit.json"
++
++exit 0
+diff --git a/scripts/audit/tests/test_phase0_parsers_and_gate.py b/scripts/audit/tests/test_phase0_parsers_and_gate.py
+new file mode 100644
+index 00000000..161ee332
+--- /dev/null
++++ b/scripts/audit/tests/test_phase0_parsers_and_gate.py
+@@ -0,0 +1,325 @@
++"""Unit tests for Phase 0 audit parsers and quality gate."""
++
++from __future__ import annotations
++
++import json
++import sys
++from pathlib import Path
++
++import pytest
++
++AUDIT_DIR = Path(__file__).resolve().parents[1]
++if str(AUDIT_DIR) not in sys.path:
++    sys.path.insert(0, str(AUDIT_DIR))
++
++from enforce_quality_gate import evaluate_gate  # noqa: E402
++from lib.parsers import (  # noqa: E402
++    parse_jest,
++    parse_mypy,
++    parse_npm_audit,
++    parse_pytest,
++    parse_ruff,
++    parse_typescript,
++    parse_vitest,
++)
++from lib.statuses import ToolStatus  # noqa: E402
++
++
++@pytest.fixture
++def tmp_report(tmp_path: Path):
++    def _write(name: str, content: str, exit_code: int | None = None) -> Path:
++        path = tmp_path / name
++        path.write_text(content, encoding="utf-8")
++        if exit_code is not None:
++            (tmp_path / f"{name}.exitcode").write_text(f"{exit_code}\n", encoding="utf-8")
++        return path
++
++    return _write
++
++
++def test_pytest_clean(tmp_report):
++    path = tmp_report(
++        "pytest.txt",
++        "===== 10 passed, 2 skipped in 1.2s =====\n",
++        exit_code=0,
++    )
++    tr = parse_pytest(path)
++    assert tr.status == ToolStatus.OK.value
++    assert tr.metrics["passed"] == 10
++    assert tr.exit_code == 0
++
++
++def test_pytest_failed(tmp_report):
++    path = tmp_report(
++        "pytest.txt",
++        "===== 2 failed, 8 passed, 1 skipped in 3.0s =====\n",
++        exit_code=1,
++    )
++    tr = parse_pytest(path)
++    assert tr.status == ToolStatus.FINDINGS.value
++    assert tr.metrics["failed"] == 2
++
++
++def test_pytest_collection_error(tmp_report):
++    path = tmp_report(
++        "pytest.txt",
++        "ERROR collecting tests/foo.py\nImportError while importing test module\n",
++        exit_code=2,
++    )
++    tr = parse_pytest(path)
++    assert tr.status == ToolStatus.EXECUTION_ERROR.value
++
++
++def test_pytest_empty(tmp_report):
++    path = tmp_report("pytest.txt", "", exit_code=2)
++    tr = parse_pytest(path)
++    assert tr.status == ToolStatus.EXECUTION_ERROR.value
++
++
++def test_pytest_missing(tmp_path: Path):
++    tr = parse_pytest(tmp_path / "missing.txt")
++    assert tr.status == ToolStatus.NOT_RUN.value
++
++
++def test_ruff_clean(tmp_report):
++    path = tmp_report("ruff.txt", "All checks passed!\n", exit_code=0)
++    tr = parse_ruff(path)
++    assert tr.status == ToolStatus.OK.value
++
++
++def test_ruff_findings(tmp_report):
++    path = tmp_report("ruff.txt", "Found 3 errors.\n[*] 2 fixable with --fix.\n", exit_code=1)
++    tr = parse_ruff(path)
++    assert tr.status == ToolStatus.FINDINGS.value
++    assert tr.metrics["issues"] == 3
++
++
++def test_ruff_unavailable(tmp_report):
++    path = tmp_report("ruff.txt", "Ruff no instalado en el entorno actual.\n", exit_code=127)
++    tr = parse_ruff(path)
++    assert tr.status == ToolStatus.NOT_AVAILABLE.value
++
++
++def test_mypy_success(tmp_report):
++    path = tmp_report("mypy.txt", "Success: no issues found in 10 source files\n", exit_code=0)
++    tr = parse_mypy(path)
++    assert tr.status == ToolStatus.OK.value
++
++
++def test_mypy_errors(tmp_report):
++    path = tmp_report("mypy.txt", "Found 4 errors in 2 files (checked 10 source files)\n", exit_code=1)
++    tr = parse_mypy(path)
++    assert tr.status == ToolStatus.FINDINGS.value
++    assert tr.metrics["errors"] == 4
++
++
++def test_typescript_exit_zero_ignores_noise(tmp_report):
++    # Numbers that look like errors must not invent failures when exit=0.
++    path = tmp_report(
++        "tsc.txt",
++        "npm warn something\nerror TS0000 appears in a comment example only if counted blindly\n",
++        exit_code=0,
++    )
++    tr = parse_typescript(path)
++    assert tr.status == ToolStatus.OK.value
++    assert tr.metrics.get("ts_errors", 0) == 0
++
++
++def test_typescript_found_summary(tmp_report):
++    path = tmp_report(
++        "tsc.txt",
++        "src/a.ts(1,1): error TS2322: Type 'string' is not assignable...\nFound 2 errors in 1 file.\n",
++        exit_code=1,
++    )
++    tr = parse_typescript(path)
++    assert tr.status == ToolStatus.FINDINGS.value
++    assert tr.metrics["ts_errors"] == 2
++
++
++def test_typescript_real_errors_without_summary(tmp_report):
++    path = tmp_report(
++        "tsc.txt",
++        "src/a.ts(1,1): error TS2322: bad\nsrc/b.ts(2,2): error TS2304: missing\n",
++        exit_code=1,
++    )
++    tr = parse_typescript(path)
++    assert tr.status == ToolStatus.FINDINGS.value
++    assert tr.metrics["ts_errors"] == 2
++
++
++def test_vitest_green(tmp_report):
++    path = tmp_report(
++        "vitest.txt",
++        " Test Files  10 passed (10)\n      Tests  1217 passed (1217)\n",
++        exit_code=0,
++    )
++    tr = parse_vitest(path)
++    assert tr.status == ToolStatus.OK.value
++    assert tr.metrics["passed_tests"] == 1217
++
++
++def test_vitest_failed(tmp_report):
++    path = tmp_report(
++        "vitest.txt",
++        " Test Files  1 failed | 9 passed (10)\n      Tests  2 failed | 100 passed (102)\n",
++        exit_code=1,
++    )
++    tr = parse_vitest(path)
++    assert tr.status == ToolStatus.FINDINGS.value
++    assert tr.metrics["failed_tests"] == 2
++
++
++def test_vitest_no_summary_not_ok(tmp_report):
++    path = tmp_report("vitest.txt", "something went wrong starting vite\n", exit_code=0)
++    tr = parse_vitest(path)
++    assert tr.status == ToolStatus.PARSE_ERROR.value
++
++
++def test_jest_green(tmp_report):
++    path = tmp_report(
++        "jest.txt",
++        "Test Suites: 5 passed, 5 total\nTests:       159 passed, 159 total\n",
++        exit_code=0,
++    )
++    tr = parse_jest(path)
++    assert tr.status == ToolStatus.OK.value
++    assert tr.metrics["passed"] == 159
++
++
++def test_npm_audit_zero(tmp_report):
++    path = tmp_report(
++        "npm.json",
++        json.dumps({"metadata": {"vulnerabilities": {"total": 0, "high": 0, "critical": 0}}}),
++        exit_code=0,
++    )
++    tr = parse_npm_audit(path)
++    assert tr.status == ToolStatus.OK.value
++
++
++def test_npm_audit_high(tmp_report):
++    path = tmp_report(
++        "npm.json",
++        json.dumps(
++            {
++                "metadata": {
++                    "vulnerabilities": {
++                        "info": 0,
++                        "low": 1,
++                        "moderate": 2,
++                        "high": 3,
++                        "critical": 0,
++                        "total": 6,
++                    }
++                }
++            }
++        ),
++        exit_code=1,
++    )
++    tr = parse_npm_audit(path)
++    assert tr.status == ToolStatus.FINDINGS.value
++    assert tr.metrics["high"] == 3
++    assert tr.severity == "high"
++
++
++def test_npm_audit_invalid_json(tmp_report):
++    path = tmp_report("npm.json", "not-json", exit_code=1)
++    tr = parse_npm_audit(path)
++    assert tr.status == ToolStatus.PARSE_ERROR.value
++
++
++def test_npm_audit_network_error(tmp_report):
++    path = tmp_report("npm.json", "npm ERR! network fetch failed ENOTFOUND\n", exit_code=1)
++    tr = parse_npm_audit(path)
++    assert tr.status == ToolStatus.EXECUTION_ERROR.value
++
++
++def _base_status() -> dict:
++    def ok_tool(extra_metrics=None):
++        return {
++            "status": "OK",
++            "severity": "none",
++            "metrics": extra_metrics or {},
++            "report": "x",
++            "observation": "",
++            "exit_code": 0,
++            "error": None,
++        }
++
++    return {
++        "schema_version": 2,
++        "overall_status": "ok",
++        "max_severity": "none",
++        "areas": {
++            "backend": {
++                "status": "OK",
++                "tools": {
++                    "pytest": ok_tool({"passed": 10, "failed": 0}),
++                    "ruff": ok_tool({"issues": 0}),
++                    "mypy": ok_tool({"errors": 0}),
++                },
++                "highlights": {"pytest_failed": 0},
++            },
++            "frontend": {
++                "status": "OK",
++                "tools": {
++                    "vitest": ok_tool({"passed_tests": 5, "failed_tests": 0}),
++                    "typecheck": ok_tool({"ts_errors": 0}),
++                },
++                "highlights": {"vitest_failed_tests": 0},
++            },
++            "mobile": {
++                "status": "OK",
++                "tools": {
++                    "jest": ok_tool({"passed": 9, "failed": 0}),
++                    "typecheck": ok_tool({"ts_errors": 0}),
++                },
++                "highlights": {"jest_failed": 0},
++            },
++        },
++    }
++
++
++def test_gate_pass():
++    passed, reasons, _ = evaluate_gate(_base_status())
++    assert passed is True
++    assert reasons == []
++
++
++def test_gate_pytest_not_run():
++    status = _base_status()
++    status["areas"]["backend"]["tools"]["pytest"] = {
++        "status": "NOT_RUN",
++        "severity": "info",
++        "metrics": {},
++        "report": "x",
++        "observation": "missing",
++        "exit_code": None,
++        "error": None,
++    }
++    passed, reasons, _ = evaluate_gate(status)
++    assert passed is False
++    assert any("not executed" in r for r in reasons)
++
++
++def test_gate_parse_error():
++    status = _base_status()
++    status["areas"]["frontend"]["tools"]["typecheck"] = {
++        "status": "PARSE_ERROR",
++        "severity": "medium",
++        "metrics": {},
++        "report": "x",
++        "observation": "",
++        "exit_code": 1,
++        "error": "broken",
++    }
++    passed, reasons, _ = evaluate_gate(status)
++    assert passed is False
++    assert any("PARSE_ERROR" in r for r in reasons)
++
++
++def test_gate_mobile_missing():
++    status = _base_status()
++    del status["areas"]["mobile"]
++    passed, reasons, _ = evaluate_gate(status)
++    assert passed is False
++    assert any("Mobile area missing" in r for r in reasons)

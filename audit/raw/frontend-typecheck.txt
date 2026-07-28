@@ -1,0 +1,5 @@
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+> dinamic-inventory-v3-frontend@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+

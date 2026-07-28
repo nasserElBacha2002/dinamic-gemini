@@ -44,7 +44,8 @@ describe('featureFlagCompatibility', () => {
 
   it('fails validateAppConfig on incompatible flags', () => {
     const config = resolveAppConfig({
-      apiBaseUrl: 'http://10.0.2.2:8000',
+      apiBaseUrl: 'https://api.example.com',
+      environment: 'production',
       flags: { mobileOfflineWorkManager: true, mobileOfflineOperations: false },
     });
     const err = validateAppConfig(config);

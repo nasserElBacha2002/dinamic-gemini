@@ -11,7 +11,14 @@ run_if_exists() {
   if [ -f "$abs" ]; then
     echo "--- Ejecutando: $rel"
     if [ "${rel##*.}" = "py" ]; then
-      python3 "$abs" || true
+      # Prefer project venv python for aggregators / gate.
+      # shellcheck disable=SC1091
+      . "$ROOT_DIR/scripts/audit/resolve_python.sh"
+      if [ -n "${AUDIT_PYTHON:-}" ]; then
+        "$AUDIT_PYTHON" "$abs" || true
+      else
+        python3 "$abs" || true
+      fi
     else
       bash "$abs" || true
     fi
@@ -22,6 +29,7 @@ run_if_exists() {
 
 run_if_exists "scripts/audit/run_backend_audit.sh"
 run_if_exists "scripts/audit/run_frontend_audit.sh"
+run_if_exists "scripts/audit/run_mobile_audit.sh"
 run_if_exists "scripts/audit/run_backend_architecture_audit.sh"
 run_if_exists "scripts/audit/run_frontend_architecture_audit.sh"
 run_if_exists "scripts/audit/generate_audit_summary.py"

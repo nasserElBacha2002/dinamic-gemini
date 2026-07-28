@@ -1,0 +1,423 @@
+{
+  "schema_version": 2,
+  "parser_version": "phase0-2.0.0",
+  "overall_status": "findings",
+  "max_severity": "high",
+  "generated_at": "2026-07-28T14:09:38+00:00",
+  "areas": {
+    "backend": {
+      "status": "FINDINGS",
+      "max_severity": "medium",
+      "tools": {
+        "ruff": {
+          "status": "OK",
+          "severity": "none",
+          "metrics": {
+            "issues": 0
+          },
+          "report": "audit/raw/backend-ruff.txt",
+          "observation": "",
+          "exit_code": 0,
+          "error": null,
+          "parser": "ruff",
+          "parser_version": "phase0-2.0.0"
+        },
+        "mypy": {
+          "status": "OK",
+          "severity": "none",
+          "metrics": {
+            "errors": 0
+          },
+          "report": "audit/raw/backend-mypy.txt",
+          "observation": "",
+          "exit_code": 0,
+          "error": null,
+          "parser": "mypy",
+          "parser_version": "phase0-2.0.0"
+        },
+        "bandit": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "total": 92,
+            "high": 0,
+            "medium": 54,
+            "low": 38
+          },
+          "report": "audit/raw/backend-bandit.json",
+          "observation": "",
+          "exit_code": 1,
+          "error": null,
+          "parser": "bandit",
+          "parser_version": "phase0-2.0.0"
+        },
+        "pip-audit": {
+          "status": "OK",
+          "severity": "none",
+          "metrics": {
+            "total": 0
+          },
+          "report": "audit/raw/backend-pip-audit.json",
+          "observation": "",
+          "exit_code": 0,
+          "error": null,
+          "parser": "pip_audit",
+          "parser_version": "phase0-2.0.0"
+        },
+        "pytest": {
+          "status": "OK",
+          "severity": "none",
+          "metrics": {
+            "passed": 3797,
+            "skipped": 44
+          },
+          "report": "audit/raw/backend-pytest.txt",
+          "observation": "",
+          "exit_code": 0,
+          "error": null,
+          "parser": "pytest",
+          "parser_version": "phase0-2.0.0"
+        }
+      },
+      "highlights": {
+        "tool_count": 5,
+        "findings_count": 1,
+        "not_run_count": 0,
+        "invalidating_count": 0,
+        "pytest_failed": 0
+      }
+    },
+    "frontend": {
+      "status": "FINDINGS",
+      "max_severity": "medium",
+      "tools": {
+        "eslint": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "problems": 21,
+            "errors": 0,
+            "warnings": 21
+          },
+          "report": "audit/raw/frontend-eslint.txt",
+          "observation": "",
+          "exit_code": 0,
+          "error": null,
+          "parser": "eslint",
+          "parser_version": "phase0-2.0.0"
+        },
+        "typecheck": {
+          "status": "OK",
+          "severity": "none",
+          "metrics": {
+            "ts_errors": 0
+          },
+          "report": "audit/raw/frontend-typecheck.txt",
+          "observation": "",
+          "exit_code": 0,
+          "error": null,
+          "parser": "typescript",
+          "parser_version": "phase0-2.0.0"
+        },
+        "npm_audit": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "critical": 0,
+            "high": 0,
+            "moderate": 2,
+            "low": 0,
+            "info": 0,
+            "total": 2
+          },
+          "report": "audit/raw/frontend-npm-audit.json",
+          "observation": "",
+          "exit_code": 1,
+          "error": null,
+          "parser": "npm_audit",
+          "parser_version": "phase0-2.0.0"
+        },
+        "vitest": {
+          "status": "OK",
+          "severity": "none",
+          "metrics": {
+            "failed_files": 0,
+            "passed_files": 203,
+            "total_files": 203,
+            "failed_tests": 0,
+            "passed_tests": 1217,
+            "total_tests": 1217
+          },
+          "report": "audit/raw/frontend-vitest.txt",
+          "observation": "",
+          "exit_code": 0,
+          "error": null,
+          "parser": "vitest",
+          "parser_version": "phase0-2.0.0"
+        },
+        "useeffect_audit": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "uses": 64,
+            "files": 41
+          },
+          "report": "audit/raw/frontend-useeffects-audit.md",
+          "observation": "",
+          "exit_code": null,
+          "error": null,
+          "parser": "",
+          "parser_version": "phase0-2.0.0"
+        },
+        "error_handling_audit": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "files": 224,
+            "try_blocks": 88,
+            "catch_blocks": 61
+          },
+          "report": "audit/raw/frontend-error-handling-audit.md",
+          "observation": "",
+          "exit_code": null,
+          "error": null,
+          "parser": "",
+          "parser_version": "phase0-2.0.0"
+        },
+        "reusable_components_audit": {
+          "status": "FINDINGS",
+          "severity": "medium",
+          "metrics": {
+            "candidate_files": 0,
+            "button_refs": 650
+          },
+          "report": "audit/raw/frontend-reusable-components-audit.md",
+          "observation": "",
+          "exit_code": null,
+          "error": null,
+          "parser": "",
+          "parser_version": "phase0-2.0.0"
+        }
+      },
+      "highlights": {
+        "tool_count": 7,
+        "findings_count": 5,
+        "not_run_count": 0,
+        "invalidating_count": 0,
+        "vitest_failed_tests": 0
+      }
+    },
+    "mobile": {
+      "status": "FINDINGS",
+      "max_severity": "high",
+      "tools": {
+        "typecheck": {
+          "status": "OK",
+          "severity": "none",
+          "metrics": {
+            "ts_errors": 0
+          },
+          "report": "audit/raw/mobile-typecheck.txt",
+          "observation": "",
+          "exit_code": 0,
+          "error": null,
+          "parser": "typescript",
+          "parser_version": "phase0-2.0.0"
+        },
+        "eslint": {
+          "status": "OK",
+          "severity": "none",
+          "metrics": {
+            "problems": 0,
+            "errors": 0,
+            "warnings": 0
+          },
+          "report": "audit/raw/mobile-lint.txt",
+          "observation": "",
+          "exit_code": 0,
+          "error": null,
+          "parser": "eslint",
+          "parser_version": "phase0-2.0.0"
+        },
+        "jest": {
+          "status": "OK",
+          "severity": "none",
+          "metrics": {
+            "failed": 0,
+            "skipped": 0,
+            "passed": 320,
+            "total": 320,
+            "failed_suites": 0,
+            "passed_suites": 45,
+            "total_suites": 45
+          },
+          "report": "audit/raw/mobile-jest.txt",
+          "observation": "",
+          "exit_code": 0,
+          "error": null,
+          "parser": "jest",
+          "parser_version": "phase0-2.0.0"
+        },
+        "npm_audit": {
+          "status": "FINDINGS",
+          "severity": "high",
+          "metrics": {
+            "critical": 1,
+            "high": 62,
+            "moderate": 12,
+            "low": 1,
+            "info": 0,
+            "total": 76
+          },
+          "report": "audit/raw/mobile-npm-audit.json",
+          "observation": "",
+          "exit_code": 1,
+          "error": null,
+          "parser": "npm_audit",
+          "parser_version": "phase0-2.0.0"
+        }
+      },
+      "highlights": {
+        "tool_count": 4,
+        "findings_count": 1,
+        "not_run_count": 0,
+        "invalidating_count": 0,
+        "jest_failed": 0
+      }
+    },
+    "backend_architecture": {
+      "status": "NOT_RUN",
+      "max_severity": "none",
+      "tools": {
+        "code_smells": {
+          "status": "NOT_RUN",
+          "severity": "none",
+          "metrics": {},
+          "report": "audit/raw/backend-code-smells.txt",
+          "observation": "",
+          "exit_code": null,
+          "error": null,
+          "parser": "",
+          "parser_version": "phase0-2.0.0"
+        },
+        "complejidad": {
+          "status": "NOT_RUN",
+          "severity": "none",
+          "metrics": {},
+          "report": "audit/raw/backend-complexity.txt",
+          "observation": "",
+          "exit_code": null,
+          "error": null,
+          "parser": "",
+          "parser_version": "phase0-2.0.0"
+        },
+        "límites_de_imports": {
+          "status": "NOT_RUN",
+          "severity": "none",
+          "metrics": {},
+          "report": "audit/raw/backend-import-boundaries.txt",
+          "observation": "",
+          "exit_code": null,
+          "error": null,
+          "parser": "",
+          "parser_version": "phase0-2.0.0"
+        },
+        "solid/grasp": {
+          "status": "NOT_RUN",
+          "severity": "none",
+          "metrics": {},
+          "report": "audit/raw/backend-solid-grasp-audit.md",
+          "observation": "",
+          "exit_code": null,
+          "error": null,
+          "parser": "",
+          "parser_version": "phase0-2.0.0"
+        }
+      },
+      "highlights": {
+        "tool_count": 4,
+        "findings_count": 0,
+        "not_run_count": 4,
+        "invalidating_count": 0
+      }
+    },
+    "frontend_architecture": {
+      "status": "NOT_RUN",
+      "max_severity": "none",
+      "tools": {
+        "code_smells": {
+          "status": "NOT_RUN",
+          "severity": "none",
+          "metrics": {},
+          "report": "audit/raw/frontend-code-smells.txt",
+          "observation": "",
+          "exit_code": null,
+          "error": null,
+          "parser": "",
+          "parser_version": "phase0-2.0.0"
+        },
+        "complejidad": {
+          "status": "NOT_RUN",
+          "severity": "none",
+          "metrics": {},
+          "report": "audit/raw/frontend-complexity.txt",
+          "observation": "",
+          "exit_code": null,
+          "error": null,
+          "parser": "",
+          "parser_version": "phase0-2.0.0"
+        },
+        "límites_de_imports": {
+          "status": "NOT_RUN",
+          "severity": "none",
+          "metrics": {},
+          "report": "audit/raw/frontend-import-boundaries.txt",
+          "observation": "",
+          "exit_code": null,
+          "error": null,
+          "parser": "",
+          "parser_version": "phase0-2.0.0"
+        },
+        "duplicación": {
+          "status": "NOT_RUN",
+          "severity": "none",
+          "metrics": {},
+          "report": "audit/raw/frontend-duplication.txt",
+          "observation": "",
+          "exit_code": null,
+          "error": null,
+          "parser": "",
+          "parser_version": "phase0-2.0.0"
+        },
+        "código_muerto": {
+          "status": "NOT_RUN",
+          "severity": "none",
+          "metrics": {},
+          "report": "audit/raw/frontend-dead-code.txt",
+          "observation": "",
+          "exit_code": null,
+          "error": null,
+          "parser": "",
+          "parser_version": "phase0-2.0.0"
+        },
+        "solid/react": {
+          "status": "NOT_RUN",
+          "severity": "none",
+          "metrics": {},
+          "report": "audit/raw/frontend-solid-react-audit.md",
+          "observation": "",
+          "exit_code": null,
+          "error": null,
+          "parser": "",
+          "parser_version": "phase0-2.0.0"
+        }
+      },
+      "highlights": {
+        "tool_count": 6,
+        "findings_count": 0,
+        "not_run_count": 6,
+        "invalidating_count": 0
+      }
+    }
+  }
+}

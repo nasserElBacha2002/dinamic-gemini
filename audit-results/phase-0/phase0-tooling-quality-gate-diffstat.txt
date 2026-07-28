@@ -1,0 +1,13 @@
+ audit-results/phase-0/implementation-report.md     |  97 +++++
+ audit-results/phase-0/root-cause-notes.md          |  38 ++
+ docs/quality-gate.md                               |  60 +++
+ mobile/tests/fase10ProductionHardening.test.ts     |   3 +-
+ scripts/audit/enforce_quality_gate.py              | 160 ++++++--
+ scripts/audit/generate_audit_summary.py            | 428 ++++++++-------------
+ scripts/audit/resolve_python.sh                    |  82 ++++
+ scripts/audit/run_backend_audit.sh                 | 163 ++++++--
+ scripts/audit/run_frontend_audit.sh                |  46 ++-
+ scripts/audit/run_full_audit.sh                    |  10 +-
+ scripts/audit/run_mobile_audit.sh                  | 132 +++++++
+ .../audit/tests/test_phase0_parsers_and_gate.py    | 325 ++++++++++++++++
+ 12 files changed, 1211 insertions(+), 333 deletions(-)

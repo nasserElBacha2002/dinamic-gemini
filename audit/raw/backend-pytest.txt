@@ -1,0 +1,1420 @@
+.................................................s...................... [  1%]
+........................................................................ [  3%]
+........................................................................ [  5%]
+........................................................................ [  7%]
+........................................................................ [  9%]
+........................................................................ [ 11%]
+........................................................................ [ 13%]
+........................................................................ [ 14%]
+..........s............................................................. [ 16%]
+........................................................................ [ 18%]
+........................................................................ [ 20%]
+........................................................................ [ 22%]
+........................................................................ [ 24%]
+........................................................................ [ 26%]
+........................................................................ [ 28%]
+........................................................................ [ 29%]
+........................................................................ [ 31%]
+........................................................................ [ 33%]
+........................................................................ [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+........................................................................ [ 41%]
+........................................................................ [ 43%]
+........................................................................ [ 44%]
+........................................................................ [ 46%]
+........................................................................ [ 48%]
+........................................................................ [ 50%]
+........................................................................ [ 52%]
+........................................................................ [ 54%]
+..s..................................................................... [ 56%]
+........................................................................ [ 58%]
+.........s..........s.....................ssss..................ss...... [ 59%]
+.............................................................s.......... [ 61%]
+.............................sssss...sss..ss...ssssss.................ss [ 63%]
+sss.......sssss..................................................ssssss. [ 65%]
+........................................................................ [ 67%]
+........................................................................ [ 69%]
+........................................................................ [ 71%]
+........................................................................ [ 73%]
+........................................................................ [ 74%]
+........................................................................ [ 76%]
+........................................................................ [ 78%]
+........................................................................ [ 80%]
+........................................................................ [ 82%]
+........................................................................ [ 84%]
+........................................................................ [ 86%]
+........................................................................ [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 91%]
+........................................................................ [ 93%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+.........................                                                [100%]
+=============================== warnings summary ===============================
+backend/src/api/server.py:216
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/api/server.py:216: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+backend/.venv/lib/python3.13/site-packages/fastapi/applications.py:4599
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/.venv/lib/python3.13/site-packages/fastapi/applications.py:4599: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+backend/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+backend/tests/infrastructure/repositories/test_sql_aisle_repository.py:20
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_aisle_repository.py:20: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+backend/tests/infrastructure/repositories/test_sql_client_repository.py:13
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_client_repository.py:13: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+backend/tests/infrastructure/repositories/test_sql_client_supplier_repository.py:17
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_client_supplier_repository.py:17: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+backend/tests/infrastructure/repositories/test_sql_inventory_repository.py:20
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_inventory_repository.py:20: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+backend/tests/infrastructure/repositories/test_sql_normalized_label_repository.py:20
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_normalized_label_repository.py:20: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+backend/tests/infrastructure/repositories/test_sql_raw_label_repository.py:18
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_raw_label_repository.py:18: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+backend/tests/infrastructure/repositories/test_sql_supplier_prompt_config_repository.py:24
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/infrastructure/repositories/test_sql_supplier_prompt_config_repository.py:24: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+backend/tests/integration/capture/test_capture_session_sql_repository.py:35
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/integration/capture/test_capture_session_sql_repository.py:35: PytestUnknownMarkWarning: Unknown pytest.mark.integration - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    pytestmark = pytest.mark.integration
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:103: DeprecationWarning: deprecated
+    assert resp.sku == "ITEM-A"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:104: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 10
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:105: DeprecationWarning: deprecated
+    assert resp.qty == 10
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:106: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:107: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:110: DeprecationWarning: deprecated
+    assert resp.has_evidence is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_sku_and_detected_quantity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:111: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_has_evidence_false_when_no_primary_evidence
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:129: DeprecationWarning: deprecated
+    assert resp.has_evidence is False
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_source_image_original_filename_when_in_summary
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:152: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename == "photo.jpg"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_source_image_original_filename_when_in_summary
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:153: DeprecationWarning: deprecated
+    assert resp.source_image_id == "img-uuid"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:354: DeprecationWarning: deprecated
+    assert resp.sku is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:355: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:356: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:357: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:358: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:359: DeprecationWarning: deprecated
+    assert resp.has_evidence is False
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:360: DeprecationWarning: deprecated
+    assert resp.source_image_original_filename is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+tests/api/test_position_summary_mapping.py::test_position_to_summary_non_dict_detected_summary_json_no_raise
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:361: DeprecationWarning: deprecated
+    assert resp.source_image_id is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_omits_legacy_snapshot_when_include_technical_false
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:382: DeprecationWarning: deprecated
+    assert resp.detected_summary_json is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:443: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:444: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_qty_one_for_counted_with_evidence_missing_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:445: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:470: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:471: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:472: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == "valid_evidence_without_explicit_quantity"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_infers_one_for_needs_review_with_strong_presence_legacy
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:473: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:497: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:498: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_needs_review_weak_presence_unresolved
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:499: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_includes_corrected_quantity_when_provided
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:532: DeprecationWarning: deprecated
+    assert resp.corrected_quantity == 7
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_corrected_quantity_none_when_not_provided
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:565: DeprecationWarning: deprecated
+    assert resp.corrected_quantity is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:601: DeprecationWarning: deprecated
+    assert resp.qty == 5
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:602: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:603: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_uses_primary_product_authoritative
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:604: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:637: DeprecationWarning: deprecated
+    assert resp.qty == 3
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:638: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:639: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_primary_product_empty_qty_source_uses_persisted_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:640: DeprecationWarning: deprecated
+    assert resp.qtyResolved is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:673: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:674: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:675: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_unresolved_primary_returns_zero_detected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:676: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:698: DeprecationWarning: deprecated
+    assert resp.qty == 7
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:699: DeprecationWarning: deprecated
+    assert resp.qtySource == "detected"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:700: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is None
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_fallback_when_no_primary_product
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:701: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_with_qty_is_resolved_in_summary_returns_it
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:723: DeprecationWarning: deprecated
+    assert resp.qty == 0
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_legacy_with_qty_is_resolved_in_summary_returns_it
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:724: DeprecationWarning: deprecated
+    assert resp.qtyResolved is False
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:757: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:758: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:759: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason is not None
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_null_qty
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:760: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_zero
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:793: DeprecationWarning: deprecated
+    assert resp.qty == 1
+
+tests/api/test_position_summary_mapping.py::test_regression_valid_entity_never_exposes_unjustified_zero
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:794: DeprecationWarning: deprecated
+    assert resp.qtySource == "inferred"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:830: DeprecationWarning: deprecated
+    assert resp.qty == 4
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:831: DeprecationWarning: deprecated
+    assert resp.qtySource == "consolidated"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:833: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_consolidated_qty_uses_product_record_projection
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:836: DeprecationWarning: deprecated
+    assert resp.detected_quantity == 4
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:858: DeprecationWarning: deprecated
+    assert resp.qty == 7
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:859: DeprecationWarning: deprecated
+    assert resp.qtySource == "consolidated"
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:860: DeprecationWarning: deprecated
+    assert resp.qtyResolved is True
+
+tests/api/test_position_summary_mapping.py::test_position_to_summary_aggregated_row_emits_consolidated_qty_source
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_mapping.py:861: DeprecationWarning: deprecated
+    assert resp.corrected_quantity is None
+
+tests/api/test_position_summary_sprint2_contract.py::test_product_block_primary_sku_and_identity
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:51: DeprecationWarning: deprecated
+    assert r.sku == r.product.sku
+
+tests/api/test_position_summary_sprint2_contract.py::test_quantity_final_vs_qty_when_corrected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:177: DeprecationWarning: deprecated
+    assert r.qty == 2
+
+tests/api/test_position_summary_sprint2_contract.py::test_quantity_final_vs_qty_when_corrected
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:181: DeprecationWarning: deprecated
+    assert r.qtySource == r.quantity.source
+
+tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:210: DeprecationWarning: deprecated
+    assert r.source_image_id == r.traceability.source_image_id
+
+tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:211: DeprecationWarning: deprecated
+    assert r.traceability_status == r.traceability.status
+
+tests/api/test_position_summary_sprint2_contract.py::test_traceability_block_matches_legacy_and_enrichment
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:212: DeprecationWarning: deprecated
+    assert r.primary_evidence_id == r.traceability.primary_evidence_id
+
+tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:272: DeprecationWarning: deprecated
+    assert r.sku == "Z"
+
+tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:274: DeprecationWarning: deprecated
+    assert r.detected_quantity == 5
+
+tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:276: DeprecationWarning: deprecated
+    assert r.qtySource == "detected"
+
+tests/api/test_position_summary_sprint2_contract.py::test_nested_blocks_and_legacy_aliases_present_together
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/api/test_position_summary_sprint2_contract.py:278: DeprecationWarning: deprecated
+    assert r.primary_evidence_id == "pe"
+
+tests/application/api/test_observability_metrics_endpoint.py::test_get_observability_metrics_invalid_range_422
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py:986: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    result = context.run(func, *args)
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:341: DeprecationWarning: deprecated
+    assert resp.sku == view.product.public_sku
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:342: DeprecationWarning: deprecated
+    assert resp.qty == view.quantity.qty
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:343: DeprecationWarning: deprecated
+    assert resp.qtySource == view.quantity.qty_source
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:344: DeprecationWarning: deprecated
+    assert resp.qtyInferenceReason == view.quantity.qty_inference_reason
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:345: DeprecationWarning: deprecated
+    assert resp.qtyResolved == view.quantity.qty_resolved
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:346: DeprecationWarning: deprecated
+    assert resp.detected_quantity == view.quantity.detected_quantity
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:347: DeprecationWarning: deprecated
+    assert resp.corrected_quantity == view.quantity.corrected_quantity
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:348: DeprecationWarning: deprecated
+    assert resp.source_image_id == view.traceability.source_image_id
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:349: DeprecationWarning: deprecated
+    assert resp.traceability_status == view.traceability.traceability_status
+
+tests/application/mappers/test_position_canonical_view.py::test_position_to_summary_exposes_same_flat_fields_as_canonical_view
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/tests/application/mappers/test_position_canonical_view.py:350: DeprecationWarning: deprecated
+    assert resp.has_evidence == view.review.has_evidence
+
+tests/test_e2e_v2_2.py::test_e2e_photos_job_persists_normalized_and_generates_report
+tests/test_stage8_db.py::test_worker_inserts_error_event_on_exception
+tests/test_stage_b_ports_adapters.py::test_job_repository_create_returns_persisted_record
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/jobs/job_store.py:96: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = datetime.utcnow().isoformat() + "Z"
+
+tests/test_stage8_db.py::test_worker_inserts_error_event_on_exception
+tests/test_stage8_db.py::test_worker_inserts_error_event_on_exception
+  /Users/nasserelbacha/Documents/Dinamic sistems/dinamic-gemini/backend/src/jobs/job_store.py:268: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    data["updated_at"] = datetime.utcnow().isoformat() + "Z"
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.13.12-final-0 _______________
+
+Name                                                                                                       Stmts   Miss  Cover   Missing
+----------------------------------------------------------------------------------------------------------------------------------------
+backend/src/__init__.py                                                                                        0      0   100%
+backend/src/api/__init__.py                                                                                    0      0   100%
+backend/src/api/constants/__init__.py                                                                          0      0   100%
+backend/src/api/constants/error_wire.py                                                                       83      0   100%
+backend/src/api/constants/route_paths.py                                                                       9      0   100%
+backend/src/api/dependencies.py                                                                              497    128    74%   224-225, 300, 314, 332, 492, 556, 565, 577, 584, 751-758, 774-782, 799-820, 845-878, 886-893, 912-918, 935, 963, 969-973, 984, 1005, 1020, 1030, 1042, 1054, 1064, 1204, 1208, 1212, 1216, 1220, 1224, 1228, 1232, 1496, 1500, 1504, 1508, 1519-1523, 1534, 1538-1542, 1551-1555, 1559-1563, 1570-1574, 1585-1590, 1604-1609, 1625-1630, 1640-1643, 1647-1652, 1656-1661, 1665-1670, 1682-1687, 1707-1711, 1726-1728, 1737-1739, 1749-1755, 1770-1772, 1860, 1871-1876, 2133-2139, 2159-2163
+backend/src/api/errors/__init__.py                                                                             4      0   100%
+backend/src/api/errors/error_mapping.py                                                                       85      0   100%
+backend/src/api/errors/structured_api_http.py                                                                 95      0   100%
+backend/src/api/mappers/result_evidence_mapper.py                                                             13      0   100%
+backend/src/api/photos_handler.py                                                                             63     10    84%   22, 30-32, 59, 68, 73, 76, 79, 97
+backend/src/api/routes/__init__.py                                                                             0      0   100%
+backend/src/api/routes/v3/__init__.py                                                                          2      0   100%
+backend/src/api/routes/v3/admin_ai_config.py                                                                  19      0   100%
+backend/src/api/routes/v3/admin_finalization_recovery.py                                                      26      1    96%   70
+backend/src/api/routes/v3/admin_storage.py                                                                    22      0   100%
+backend/src/api/routes/v3/aisle_revisions.py                                                                 117     83    29%   48-55, 59-63, 67, 85-89, 110-138, 150-173, 191-205, 220-239, 253-267, 280-302, 315-337, 350-357, 370-392
+backend/src/api/routes/v3/aisles.py                                                                          652    349    46%   292-294, 305, 314-318, 360-361, 395, 412-430, 446-453, 469-476, 543, 588, 608, 634-636, 654-655, 684-685, 724-725, 735-739, 757-758, 769, 793, 810, 872, 903-911, 947, 949-957, 977, 980, 985, 1013-1016, 1039-1055, 1078-1084, 1102-1211, 1230-1297, 1325-1329, 1384-1459, 1495-1572, 1618-1690, 1757-1761, 1804-1806, 1838, 1861-1863, 1903, 1935, 1962, 1985, 2004-2018
+backend/src/api/routes/v3/analytics_api.py                                                                   112     16    86%   106, 132, 137, 192, 319-333, 387-389, 420-422, 499
+backend/src/api/routes/v3/assets.py                                                                          133     27    80%   185, 212-221, 251-253, 283, 305-312, 324-350, 383-387
+backend/src/api/routes/v3/authoritative_aisle_finalization.py                                                 80     53    34%   68-86, 114-162, 181-231
+backend/src/api/routes/v3/authoritative_local_code_scan.py                                                    29     16    45%   47-101
+backend/src/api/routes/v3/capture_sessions.py                                                                218     50    77%   169-171, 189, 206-208, 228, 245-247, 265-267, 301, 336, 358, 384, 399-401, 421, 436-438, 465, 491-493, 509-514, 537-544, 567-574, 601, 643, 654
+backend/src/api/routes/v3/clients.py                                                                         324    113    65%   239, 261-266, 288, 317, 330-331, 364, 374-389, 407, 412, 425-427, 451, 473, 518, 537, 552, 575-577, 582-591, 609, 615-625, 655, 685, 717, 739, 761-763, 777-788, 804-818, 832-845, 860-871, 887-898, 912-942, 958-970, 985-998, 1014-1029
+backend/src/api/routes/v3/code_scans.py                                                                       72      9    88%   71, 165, 200-202, 250-252, 275
+backend/src/api/routes/v3/config.py                                                                           32      4    88%   55-56, 83-84
+backend/src/api/routes/v3/image_results.py                                                                    42      5    88%   91, 181-185
+backend/src/api/routes/v3/inventories.py                                                                     113     20    82%   110, 113, 126-143, 238, 245-247, 263-265, 292, 316, 330
+backend/src/api/routes/v3/job_observability.py                                                                 4      4     0%   8-31
+backend/src/api/routes/v3/observability.py                                                                    23      3    87%   51-56
+backend/src/api/routes/v3/positions.py                                                                        92      3    97%   205, 328, 356
+backend/src/api/routes/v3/preliminary_detections.py                                                           28      1    96%   78
+backend/src/api/routes/v3/preliminary_reconciliations.py                                                      38     12    68%   39, 98-105, 164-172
+backend/src/api/routes/v3/processing_observability.py                                                        153    112    27%   92-94, 98-101, 105-111, 135-161, 184-205, 233-253, 263, 287-307, 324-340, 357-375, 392-410, 425-517
+backend/src/api/routes/v3/review_queue.py                                                                     49      0   100%
+backend/src/api/routes/v3/reviews.py                                                                          51      2    96%   106-109
+backend/src/api/routes/v3/router.py                                                                           20      0   100%
+backend/src/api/routes/v3/server_reprocess.py                                                                132     95    28%   59-63, 72, 101-109, 113, 117, 121, 135-168, 191-209, 255-285, 296-308, 339-350, 365-397
+backend/src/api/routes/v3/shared.py                                                                          289     53    82%   145, 148, 152-153, 157, 160, 171-172, 196-202, 280, 319, 330-338, 354-375, 393-400, 418-425, 443-450, 612-613, 624-627, 640-643, 656-659, 672-680, 778, 1003, 1033
+backend/src/api/schema_guard.py                                                                               11      0   100%
+backend/src/api/schemas/__init__.py                                                                            0      0   100%
+backend/src/api/schemas/admin_ai_config_schemas.py                                                            70      0   100%
+backend/src/api/schemas/admin_finalization_recovery_schemas.py                                                22      0   100%
+backend/src/api/schemas/admin_storage_cleanup_schemas.py                                                      47      0   100%
+backend/src/api/schemas/aisle_revision_schemas.py                                                             80      0   100%
+backend/src/api/schemas/aisle_schemas.py                                                                      76      9    88%   51-56, 60-62
+backend/src/api/schemas/analytics_cost_schemas.py                                                             66      0   100%
+backend/src/api/schemas/analytics_schemas.py                                                                  91      0   100%
+backend/src/api/schemas/asset_schemas.py                                                                      46      2    96%   96, 99
+backend/src/api/schemas/authoritative_aisle_finalization_schemas.py                                           34      0   100%
+backend/src/api/schemas/authoritative_local_code_scan_schemas.py                                              30      0   100%
+backend/src/api/schemas/benchmark_schemas.py                                                                 161      0   100%
+backend/src/api/schemas/capture_schemas.py                                                                   128      3    98%   112, 115, 215
+backend/src/api/schemas/client_schemas.py                                                                     28      3    89%   47-49
+backend/src/api/schemas/client_supplier_schemas.py                                                            17      0   100%
+backend/src/api/schemas/code_scan_schemas.py                                                                 101      0   100%
+backend/src/api/schemas/identification_mode_literals.py                                                        5      0   100%
+backend/src/api/schemas/image_result_schemas.py                                                               43      0   100%
+backend/src/api/schemas/inventory_schemas.py                                                                  70      9    87%   51-56, 60-62
+backend/src/api/schemas/listing_schemas.py                                                                    17      0   100%
+backend/src/api/schemas/merge_schemas.py                                                                      24      0   100%
+backend/src/api/schemas/observability_job_schemas.py                                                         131      0   100%
+backend/src/api/schemas/observability_metrics_schemas.py                                                      63      0   100%
+backend/src/api/schemas/position_schemas.py                                                                  140      0   100%
+backend/src/api/schemas/preliminary_detection_schemas.py                                                      33      0   100%
+backend/src/api/schemas/preliminary_reconciliation_schemas.py                                                 70      0   100%
+backend/src/api/schemas/processing_observability_schemas.py                                                   90      0   100%
+backend/src/api/schemas/processing_schemas.py                                                                251      0   100%
+backend/src/api/schemas/reference_usage_schemas.py                                                             9      0   100%
+backend/src/api/schemas/requests.py                                                                           11     11     0%   3-22
+backend/src/api/schemas/responses.py                                                                          68      1    99%   21
+backend/src/api/schemas/result_evidence_schemas.py                                                            73      0   100%
+backend/src/api/schemas/review_queue_schemas.py                                                               18      0   100%
+backend/src/api/schemas/server_reprocess_schemas.py                                                           93      0   100%
+backend/src/api/schemas/supplier_extraction_profile_schemas.py                                                76      0   100%
+backend/src/api/schemas/supplier_prompt_config_schemas.py                                                     20      0   100%
+backend/src/api/schemas/supplier_reference_image_schemas.py                                                   22      0   100%
+backend/src/api/schemas/upload_limits_schemas.py                                                               9      0   100%
+backend/src/api/server.py                                                                                    130     50    62%   58, 76, 96, 166-171, 205, 209-213, 219-307
+backend/src/api/services/__init__.py                                                                           0      0   100%
+backend/src/api/services/identification_mode_response.py                                                      34      9    74%   77-84, 97-101
+backend/src/api/services/multipart_aisle_uploads.py                                                           64      3    95%   104, 109, 112
+backend/src/api/services/v3_stored_artifact_access.py                                                        176     36    80%   62, 72-73, 98, 108-109, 132, 146, 154-159, 181, 195, 203-208, 234, 286, 380, 402, 446, 482, 499-528
+backend/src/app.py                                                                                            80     41    49%   134-136, 140-192, 196
+backend/src/application/__init__.py                                                                            0      0   100%
+backend/src/application/constants/__init__.py                                                                  0      0   100%
+backend/src/application/constants/review_quality.py                                                            1      0   100%
+backend/src/application/constants/upload_limits.py                                                             5      0   100%
+backend/src/application/dto/__init__.py                                                                        0      0   100%
+backend/src/application/dto/analytics_cost_dto.py                                                             85      0   100%
+backend/src/application/dto/analytics_dto.py                                                                  99      0   100%
+backend/src/application/dto/mapped_aisle_result.py                                                            14      0   100%
+backend/src/application/dto/uploaded_file.py                                                                  13      0   100%
+backend/src/application/errors.py                                                                            138      2    99%   522-523
+backend/src/application/mappers/__init__.py                                                                    0      0   100%
+backend/src/application/mappers/inventory_export_rows.py                                                      67      3    96%   38, 57, 97
+backend/src/application/mappers/position_canonical_view.py                                                   248     23    91%   52-53, 60, 98, 100, 135-136, 188-189, 193-196, 339, 407, 411-414, 416-419
+backend/src/application/ports/__init__.py                                                                      5      0   100%
+backend/src/application/ports/aisle_revision_repository.py                                                     6      0   100%
+backend/src/application/ports/aisle_revision_unit_of_work.py                                                  18      0   100%
+backend/src/application/ports/analytics_repository.py                                                          4      0   100%
+backend/src/application/ports/artifact_manifest_store.py                                                       9      0   100%
+backend/src/application/ports/artifact_publication_outbox_store.py                                            15      0   100%
+backend/src/application/ports/artifact_staging_store.py                                                       10      0   100%
+backend/src/application/ports/asset_processing_command_repository.py                                           7      0   100%
+backend/src/application/ports/authoritative_aisle_finalization_repository.py                                   8      0   100%
+backend/src/application/ports/authoritative_local_code_scan_repository.py                                     13      2    85%   14-15
+backend/src/application/ports/capture_repositories.py                                                         54      0   100%
+backend/src/application/ports/capture_staging_time.py                                                         14      0   100%
+backend/src/application/ports/clock.py                                                                         5      0   100%
+backend/src/application/ports/code_scan_repository.py                                                         25      0   100%
+backend/src/application/ports/code_scanner.py                                                                 17      0   100%
+backend/src/application/ports/contracts.py                                                                   114      0   100%
+backend/src/application/ports/external_image_analysis_provider.py                                             52      0   100%
+backend/src/application/ports/external_image_analysis_request_repository.py                                    8      0   100%
+backend/src/application/ports/finalization_evidence_writer.py                                                  6      0   100%
+backend/src/application/ports/finalization_recovery_store.py                                                  11      0   100%
+backend/src/application/ports/finalization_stage_store.py                                                      8      0   100%
+backend/src/application/ports/global_fallback_batch_request_repository.py                                     13      0   100%
+backend/src/application/ports/hybrid_report_to_domain_mapper.py                                                7      0   100%
+backend/src/application/ports/image_processing_repositories.py                                                43      0   100%
+backend/src/application/ports/internal_label_reader.py                                                        47      0   100%
+backend/src/application/ports/job_image_coverage_repository.py                                                22      0   100%
+backend/src/application/ports/job_result_scope_store.py                                                       15      0   100%
+backend/src/application/ports/job_result_unit_of_work.py                                                      18      0   100%
+backend/src/application/ports/job_scoped_recompute.py                                                          8      0   100%
+backend/src/application/ports/job_source_asset_repository.py                                                  28      0   100%
+backend/src/application/ports/manual_image_coverage_repository.py                                             18      0   100%
+backend/src/application/ports/manual_image_result_unit_of_work.py                                             18      0   100%
+backend/src/application/ports/mobile_preliminary_detection_repository.py                                      11      0   100%
+backend/src/application/ports/operational_job_promotion.py                                                    21      0   100%
+backend/src/application/ports/preliminary_detection_reconciliation_repository.py                               9      0   100%
+backend/src/application/ports/processing_action_idempotency_repository.py                                      5      0   100%
+backend/src/application/ports/processing_event_repository.py                                                   6      0   100%
+backend/src/application/ports/repositories.py                                                                171     14    92%   195-200, 269, 280, 303, 306, 308, 329, 332, 334
+backend/src/application/ports/rollup_contracts.py                                                              7      0   100%
+backend/src/application/ports/run_audit_execution_log_loader.py                                                5      0   100%
+backend/src/application/ports/server_reprocess_repository.py                                                   6      0   100%
+backend/src/application/ports/services.py                                                                     18      0   100%
+backend/src/application/ports/source_asset_content_reader.py                                                   5      0   100%
+backend/src/application/ports/stored_artifact_reader.py                                                        5      0   100%
+backend/src/application/ports/supplier_extraction_profile_repository.py                                       11      0   100%
+backend/src/application/services/__init__.py                                                                   3      0   100%
+backend/src/application/services/admin_ai_config_inspection.py                                               106      4    96%   211, 226, 284-285
+backend/src/application/services/aisle_aggregated_execution_log.py                                            22      0   100%
+backend/src/application/services/aisle_analysis_context_builder.py                                            38      0   100%
+backend/src/application/services/aisle_identification_configuration_query.py                                  57      7    88%   83, 92-100, 107, 123-126
+backend/src/application/services/aisle_identification_execution.py                                            33      0   100%
+backend/src/application/services/aisle_inventory_scope.py                                                     17      0   100%
+backend/src/application/services/aisle_job_launch_service.py                                                  53      0   100%
+backend/src/application/services/aisle_results_export_source.py                                               35      3    91%   42, 63-64
+backend/src/application/services/aisle_review_lifecycle_sync.py                                               38      5    87%   49-54, 61-63
+backend/src/application/services/aisle_revision_mutation_planner.py                                          198      5    97%   266, 398-400, 416
+backend/src/application/services/aisle_revision_snapshot.py                                                   65     23    65%   125-163
+backend/src/application/services/aisle_source_asset_materializer.py                                           86      4    95%   50, 56, 162-163
+backend/src/application/services/aisle_table_query_params.py                                                   4      0   100%
+backend/src/application/services/analytics_aggregation_core.py                                               256     43    83%   97, 101, 114, 116, 129, 174-186, 213, 292, 340, 406, 408, 410, 412, 414, 418, 436, 438, 440, 443-446, 460-461, 472, 477, 482-496
+backend/src/application/services/analytics_cost_counted_quantity.py                                           95     40    58%   58-61, 64-69, 116-117, 124-127, 147, 155-181, 184, 187-188
+backend/src/application/services/analytics_cost_snapshot_parser.py                                            55      3    95%   30, 49, 55
+backend/src/application/services/analytics_cost_summary_service.py                                           160      8    95%   147, 199, 296, 312, 316, 318, 349, 351
+backend/src/application/services/analytics_cost_warnings.py                                                   13      0   100%
+backend/src/application/services/analytics_query_service.py                                                   28      6    79%   40, 43, 46, 49, 52, 57
+backend/src/application/services/artifact_finalization_continuation.py                                        38      5    87%   48, 53, 56-58
+backend/src/application/services/artifact_publication_diagnostics.py                                          38      0   100%
+backend/src/application/services/artifact_publication_dispatcher.py                                          269     40    85%   234, 245-246, 313, 340-354, 356-359, 374-375, 418, 427, 430-431, 493-501, 513-520, 538-551, 562, 599, 601-602, 624, 641, 650, 705-707, 715, 736-742
+backend/src/application/services/artifact_publication_retry_policy.py                                         38      7    82%   28, 30, 37, 39, 43, 45, 47
+backend/src/application/services/artifact_publication_source_policy.py                                        48      2    96%   56, 86
+backend/src/application/services/artifact_publication_state_reconciler.py                                     60      8    87%   60, 65, 80-86, 121-122, 149-150
+backend/src/application/services/artifact_publication_verifier.py                                             24      2    92%   27, 54
+backend/src/application/services/artifact_recovery_source_resolver.py                                         63     25    60%   48, 64, 79-104, 120, 123, 127-138
+backend/src/application/services/authoritative_session_readiness.py                                           53      7    87%   55, 86-87, 112-116
+backend/src/application/services/automatic_finalization_continuation_use_case.py                              88     43    51%   62, 66, 72-140, 143-153, 157-163
+backend/src/application/services/billable_job_cost_aggregation.py                                             70      4    94%   73, 88, 107, 127
+backend/src/application/services/capture_assignment_preview.py                                                52      3    94%   35, 43, 77
+backend/src/application/services/capture_flow_observability.py                                                83      0   100%
+backend/src/application/services/capture_group_item_integrity.py                                              19      2    89%   23, 38
+backend/src/application/services/capture_group_materialization_state.py                                       12      2    83%   21, 25
+backend/src/application/services/capture_session_status_filter.py                                             16      0   100%
+backend/src/application/services/capture_staging_time_metadata.py                                             89     16    82%   38, 44, 48, 53-54, 60-61, 63, 92-93, 98, 104-105, 111-112, 141
+backend/src/application/services/code_scan_csv_exporter.py                                                    39      1    97%   79
+backend/src/application/services/code_scan_matching_metadata.py                                               18      0   100%
+backend/src/application/services/code_scan_normalization.py                                                    5      0   100%
+backend/src/application/services/code_scan_qr_payload.py                                                      56      7    88%   29, 42-43, 51, 70-71, 87
+backend/src/application/services/code_scan_result_matcher.py                                                  80      4    95%   46, 72, 75, 114
+backend/src/application/services/code_scan_review_signals.py                                                  85      5    94%   90, 143, 169, 175, 196
+backend/src/application/services/code_scan_run_metadata.py                                                    53      3    94%   30-31, 34
+backend/src/application/services/code_scan_summary.py                                                          4      0   100%
+backend/src/application/services/code_scan_summary_match.py                                                   21      1    95%   36
+backend/src/application/services/csv_inventory_exporter.py                                                    25      1    96%   89
+backend/src/application/services/default_job_scoped_recompute_factory.py                                      13      0   100%
+backend/src/application/services/display_primary_product.py                                                    7      0   100%
+backend/src/application/services/evaluate_authoritative_aisle_readiness.py                                   130     39    70%   33-41, 84, 104, 139-148, 164, 172-174, 180-191, 223, 228-229, 233
+backend/src/application/services/execution_log_enrichment.py                                                 201     16    92%   36-42, 69, 109, 112, 143, 203, 270, 400, 407-408
+backend/src/application/services/execution_log_incremental.py                                                179     78    56%   81, 86-87, 98-100, 102, 104-107, 138, 166, 169-171, 175-176, 178, 181-182, 184, 192, 235-272, 286-328
+backend/src/application/services/execution_log_pagination.py                                                  65     10    85%   33-35, 59, 73, 77, 79-82
+backend/src/application/services/execution_log_ranged.py                                                      67     48    28%   33-34, 46, 54, 59-75, 94-174
+backend/src/application/services/export_cost_helpers.py                                                       18     18     0%   7-28
+backend/src/application/services/export_csv_column_mapper.py                                                  26      2    92%   86, 89
+backend/src/application/services/export_filename_helpers.py                                                   20      0   100%
+backend/src/application/services/export_inventory_collector.py                                               116      5    96%   132-134, 168, 171
+backend/src/application/services/export_operational_csv_builder.py                                            21      2    90%   52, 56
+backend/src/application/services/export_quantity_rollup.py                                                    75      1    99%   141
+backend/src/application/services/export_summary_builder.py                                                    31      1    97%   62
+backend/src/application/services/export_zip_packager.py                                                       11      0   100%
+backend/src/application/services/final_count_builder.py                                                       35      0   100%
+backend/src/application/services/finalization_assessment_service.py                                          148     23    84%   106, 136, 149, 188, 196-200, 216-228, 248, 252, 255, 275
+backend/src/application/services/finalization_projection_service.py                                           83     11    87%   66, 89-91, 100, 157-162
+backend/src/application/services/finalization_recovery_eligibility.py                                         79     20    75%   74, 94-98, 111, 113, 136-142, 147-154, 180-182
+backend/src/application/services/finalization_recovery_support.py                                             77     10    87%   36, 38, 67, 114, 118, 134, 149-151, 220
+backend/src/application/services/finalization_stage_transitions.py                                            15      5    67%   49-53
+backend/src/application/services/historical_finalization_snapshot_reader.py                                   51      5    90%   67, 101-104
+backend/src/application/services/image_processing/__init__.py                                                  0      0   100%
+backend/src/application/services/image_processing/aisle_processing_orchestrator.py                           335     56    83%   235-241, 253-259, 280, 295-305, 348, 389-390, 429, 494-497, 522, 589, 618-627, 646, 664, 679-687, 700, 755-761, 814-819, 857, 861-862, 886-887, 935-937, 957, 960-961, 991, 1008-1009, 1033-1034
+backend/src/application/services/image_processing/apply_authoritative_local_results.py                       119     27    77%   84, 89-90, 108, 110, 117-118, 163-164, 189, 202, 204, 235-241, 273-282, 291, 301-304
+backend/src/application/services/image_processing/asset_processing_reconciler.py                              85     22    74%   73-79, 89-101, 108-120, 125, 149, 167-173
+backend/src/application/services/image_processing/asset_result_coverage_resolver.py                           43      3    93%   97-102, 108
+backend/src/application/services/image_processing/available_asset_actions.py                                  46      3    93%   25, 70, 73
+backend/src/application/services/image_processing/code_detection_consolidator.py                              50      0   100%
+backend/src/application/services/image_processing/code_scan_asset_processor.py                               203     81    60%   128, 149, 151, 165, 168-180, 189, 245-253, 271, 292-376, 409-416, 454, 468, 500-520, 523-532, 569, 576
+backend/src/application/services/image_processing/code_scan_job_outcome_policy.py                             27      0   100%
+backend/src/application/services/image_processing/code_scan_processing_strategy.py                           230     36    84%   121-122, 130, 141, 189-191, 201, 210, 235-239, 242-246, 263-273, 275-286, 435, 437, 453, 457, 473-474, 479, 483-485
+backend/src/application/services/image_processing/encoded_label_payload_parser.py                             99     10    90%   69, 139-140, 142-143, 155, 159-161, 164
+backend/src/application/services/image_processing/external_circuit_breaker.py                                 85     14    84%   55, 58, 73, 76, 80, 92, 99-101, 113-117
+backend/src/application/services/image_processing/external_concurrency_limiter.py                             15      0   100%
+backend/src/application/services/image_processing/external_cost_estimator.py                                  21     15    29%   21-40
+backend/src/application/services/image_processing/external_fallback_mode.py                                   23      2    91%   49, 53
+backend/src/application/services/image_processing/external_fallback_prompt.py                                202     33    84%   140, 145, 175, 180-202, 240, 279, 285-286, 301, 309-312, 316, 320, 358, 469, 542, 556-557
+backend/src/application/services/image_processing/external_fallback_recovery.py                               26      0   100%
+backend/src/application/services/image_processing/external_fallback_schema_error.py                            6      0   100%
+backend/src/application/services/image_processing/external_provider_fallback_orchestrator.py                 517    150    71%   156-185, 283-285, 362-371, 447-456, 460-474, 520-540, 554, 566-580, 583, 793, 806-808, 819, 829, 845, 859, 886-901, 960-969, 1183, 1213-1226, 1236, 1240, 1309, 1320, 1328, 1331, 1339, 1342-1345, 1358-1361, 1403-1404, 1430, 1438-1462, 1466, 1468, 1471, 1474-1477, 1494, 1523, 1579-1580, 1630, 1632-1633, 1636, 1639-1650, 1660-1733, 1744-1760
+backend/src/application/services/image_processing/external_result_normalizer.py                               94     37    61%   43, 52-55, 111, 120, 211, 235, 241-242, 244, 300-374
+backend/src/application/services/image_processing/extraction_profile_configuration.py                        192     54    72%   47, 53, 58, 62, 67, 77-78, 89-90, 99, 102, 111-112, 119, 121, 135, 140, 144, 149, 153, 159, 190, 238, 243, 247, 273-303, 359, 378, 403, 433-434, 444-445, 450, 468-469, 485, 495, 508
+backend/src/application/services/image_processing/fallback_eligibility_policy.py                              88      9    90%   156, 167-176, 215, 219
+backend/src/application/services/image_processing/field_candidate_set.py                                      75     16    79%   45, 91, 94, 99-104, 188, 226, 251-256
+backend/src/application/services/image_processing/global_external_fallback_coordinator.py                    291     84    71%   158, 164-165, 173-178, 182, 190, 194, 229-240, 248, 288-289, 305, 319-320, 323, 396-408, 414, 441-468, 485-513, 540, 550, 552, 554, 556, 559, 583-604, 644-647, 714, 744-746, 751-752, 755-758, 761-764, 769-772, 786-797
+backend/src/application/services/image_processing/global_fallback_batching.py                                 63      8    87%   46, 52-53, 57, 67, 70, 98, 100
+backend/src/application/services/image_processing/global_fallback_eligibility.py                              48     13    73%   47, 65-66, 70-78, 90, 110, 113-114
+backend/src/application/services/image_processing/global_fallback_fingerprints.py                             23      6    74%   19, 35, 72-77
+backend/src/application/services/image_processing/global_fallback_merge_applier.py                           103     36    65%   87-88, 91, 94, 106-108, 114-128, 186-188, 194-207, 212-214
+backend/src/application/services/image_processing/global_fallback_merge_planner.py                            68     14    79%   82, 119-120, 122-129, 140, 142, 144, 159, 164-165
+backend/src/application/services/image_processing/global_fallback_merge_policy.py                            128     27    79%   58-59, 73, 104, 121, 132-140, 149, 166-175, 186, 206, 213, 226, 248, 251, 256, 258-259, 262, 265-266, 277-279
+backend/src/application/services/image_processing/global_fallback_outcome_policy.py                           35     11    69%   44, 50, 57, 64-80, 87
+backend/src/application/services/image_processing/global_fallback_schema_validation.py                        58     14    76%   25, 28, 44, 66, 74, 76, 84-90, 97, 103, 108
+backend/src/application/services/image_processing/image_processing_orchestrator.py                           106     17    84%   42, 104-141, 199, 205-208
+backend/src/application/services/image_processing/internal_ocr_processing_strategy.py                        393    100    75%   177, 184-185, 204-213, 246-258, 269-272, 289, 301-315, 339-342, 383, 519, 556, 592-605, 666-667, 705, 707, 810-819, 832-938, 962, 966, 984, 987-993, 1026, 1028, 1034, 1105, 1107, 1130, 1132, 1154, 1171-1217, 1224, 1233
+backend/src/application/services/image_processing/label_geometry_normalizer.py                               145     98    32%   47, 55, 69-71, 77, 87, 96-124, 133-175, 183, 198-205, 208-238, 249-252
+backend/src/application/services/image_processing/label_region_detector.py                                   227     59    74%   92-93, 103-105, 118, 158-167, 169-174, 183, 188-189, 207-209, 216-226, 236, 239, 259-264, 275, 282, 285, 289, 294, 299, 301, 329, 335-336, 363-365, 372, 375-379
+backend/src/application/services/image_processing/legacy_llm_processing_strategy.py                           31      1    97%   60
+backend/src/application/services/image_processing/missing_quantity_resolution_policy.py                       27      5    81%   34, 43, 47, 50, 57
+backend/src/application/services/image_processing/ocr_anchor_matcher.py                                      139     13    91%   36, 38, 53, 55, 98, 119, 192, 194-196, 205, 210, 217
+backend/src/application/services/image_processing/ocr_candidate_filters.py                                    73      9    88%   54, 61, 70, 105, 111, 125, 131, 137, 143
+backend/src/application/services/image_processing/ocr_candidate_policy.py                                     52     16    69%   38, 42-51, 60, 63-67, 77
+backend/src/application/services/image_processing/ocr_candidate_ranker.py                                     82     10    88%   51-52, 70-73, 87, 106, 125, 135
+backend/src/application/services/image_processing/ocr_candidate_to_field_candidate_mapper.py                  69     20    71%   34, 42-50, 72-73, 75-76, 78-79, 82-87, 106-110
+backend/src/application/services/image_processing/ocr_client_field_rules.py                                   16      3    81%   11, 34, 47
+backend/src/application/services/image_processing/ocr_field_extractor.py                                     313     32    90%   252, 322-331, 343-365, 367-372, 468, 513, 548, 595-619
+backend/src/application/services/image_processing/ocr_image_preprocessor.py                                  111     49    56%   43, 59-71, 80-82, 87, 113-114, 117-135, 139-167
+backend/src/application/services/image_processing/ocr_numeric_candidate_generator.py                          67      3    96%   69, 72, 81
+backend/src/application/services/image_processing/ocr_profile_context.py                                      30      0   100%
+backend/src/application/services/image_processing/ocr_result_normalizer.py                                   147     13    91%   181, 189-190, 197-198, 230, 236, 238, 240, 246, 249, 252-253
+backend/src/application/services/image_processing/ocr_spatial_relation_evaluator.py                           63     12    81%   64, 83-91, 100-101
+backend/src/application/services/image_processing/ocr_time_budget.py                                          29     29     0%   3-55
+backend/src/application/services/image_processing/ocr_token_normalizer.py                                     48      4    92%   37, 58, 63, 85
+backend/src/application/services/image_processing/ocr_variant_plan.py                                         40      3    92%   45, 70, 78
+backend/src/application/services/image_processing/processing_action_idempotency_service.py                    50      9    82%   49, 82-96, 113
+backend/src/application/services/image_processing/processing_asset_scope_validator.py                         34      4    88%   55, 61, 63, 71
+backend/src/application/services/image_processing/processing_event_publisher.py                               79     38    52%   75, 78-82, 104-108, 125-158, 193, 212-218
+backend/src/application/services/image_processing/processing_evidence_sanitizer.py                            59     17    71%   178, 191, 211, 213, 222, 230-261
+backend/src/application/services/image_processing/processing_result_persister.py                             156     36    77%   95, 97, 100, 125, 149-155, 159, 173-178, 199-206, 324-345, 355-360, 372-394, 413-424
+backend/src/application/services/image_processing/processing_strategy_resolver.py                             20      1    95%   45
+backend/src/application/services/image_processing/profile_aware_processing_result_validator.py               232     44    81%   60-66, 71, 74, 92, 106-118, 135-137, 188, 193-194, 208, 214, 223, 238, 241, 244, 251, 253, 259, 267, 286, 294, 296, 298, 300, 314, 319-320, 326-327, 345
+backend/src/application/services/image_processing/reference_template_hint_resolver.py                         50     50     0%   6-121
+backend/src/application/services/image_processing/single_asset_command_executor.py                           123     50    59%   80-81, 89-96, 112-115, 134-154, 165-180, 187-212, 216, 229, 245, 250, 269-276
+backend/src/application/services/image_processing/supplier_extraction_profile_resolver.py                     74     11    85%   82, 88, 97-98, 147-155, 157-172, 194
+backend/src/application/services/inventory_aggregation_scope.py                                               31      0   100%
+backend/src/application/services/inventory_primary_execution_config.py                                        18      0   100%
+backend/src/application/services/inventory_processing_mode.py                                                  7      0   100%
+backend/src/application/services/inventory_status_reconciler.py                                               33      1    97%   57
+backend/src/application/services/inventory_table_query_params.py                                               4      0   100%
+backend/src/application/services/job_artifact_catalog_service.py                                             242     52    79%   97, 121, 162-172, 222, 227-228, 277-278, 280-281, 283-284, 286, 309-313, 330-386, 396, 400, 402, 405-406, 526-530
+backend/src/application/services/job_artifact_verifier.py                                                     46      8    83%   56, 63, 86-93, 107-109
+backend/src/application/services/job_domain_result_verifier.py                                                78     17    78%   65, 120-121, 134, 149-188, 221, 233, 244
+backend/src/application/services/job_engine_params.py                                                         15      1    93%   26
+backend/src/application/services/job_errors_service.py                                                        64     32    50%   44-45, 54-116, 126-131
+backend/src/application/services/job_image_result_resolution.py                                               96      9    91%   76, 91, 123, 152-157, 178, 180, 182, 189
+backend/src/application/services/job_retry_chain_service.py                                                  139     18    87%   62, 67, 75, 82, 88-90, 146, 150, 152-153, 155-156, 158-159, 194, 202-203
+backend/src/application/services/job_source_asset_snapshot.py                                                 55      7    87%   48, 124-129, 150-152
+backend/src/application/services/job_stale_reconciler.py                                                      64      5    92%   53-54, 97, 100, 102
+backend/src/application/services/job_timeline_service.py                                                      92     21    77%   104, 109, 114, 131, 146, 200-216
+backend/src/application/services/label_normalization.py                                                       39      0   100%
+backend/src/application/services/legacy_processing_guard.py                                                   53      2    96%   99, 169
+backend/src/application/services/legacy_processing_metrics.py                                                 33      2    94%   41, 87
+backend/src/application/services/llm_cost_snapshot_public.py                                                  16      2    88%   28-29
+backend/src/application/services/manual_image_result_input.py                                                 40      5    88%   47, 49, 52, 56, 60
+backend/src/application/services/observability_access.py                                                      81      8    90%   90, 92, 105, 146-147, 173, 182-183
+backend/src/application/services/observability_download_gate.py                                               27     15    44%   22-39, 44-52
+backend/src/application/services/observability_metrics_service.py                                            212     15    93%   46, 82, 129, 144, 149-152, 162, 170-173, 184, 211
+backend/src/application/services/observability_output_sanitizer.py                                            45     10    78%   81, 102-106, 108-112, 120
+backend/src/application/services/operational_execution_config_resolver.py                                     16      1    94%   32
+backend/src/application/services/operational_result_promotion_service.py                                      44      6    86%   38, 46, 58, 90, 97, 99
+backend/src/application/services/optional_unset.py                                                             9      0   100%
+backend/src/application/services/position_sku_consolidation.py                                                70     12    83%   23, 25, 28-36, 44
+backend/src/application/services/position_traceability.py                                                     65     27    58%   30, 39-44, 58, 75, 78, 81, 86-110
+backend/src/application/services/preliminary_detection_compare.py                                             82      6    93%   36, 38-40, 82, 90
+backend/src/application/services/preliminary_detection_content.py                                             62      6    90%   12, 25, 28, 33, 35, 92
+backend/src/application/services/preliminary_reconciliation_enqueue_hook.py                                   20     10    50%   23-27, 30-61
+backend/src/application/services/process_aisle_execution_resolution.py                                        21      0   100%
+backend/src/application/services/process_aisle_job_for_aisle.py                                               13      0   100%
+backend/src/application/services/processing_experiment_catalog.py                                             46      6    87%   22, 25-31, 44, 61
+backend/src/application/services/processing_provider_availability.py                                         103      4    96%   44, 54, 92, 232
+backend/src/application/services/processing_provider_resolution.py                                            38      2    95%   83, 93
+backend/src/application/services/production_inventory_processing.py                                            8      0   100%
+backend/src/application/services/provider_contract_validation.py                                              43      3    93%   109-110, 125
+backend/src/application/services/reconciliation_content.py                                                    27      2    93%   32, 53
+backend/src/application/services/reference_usage_from_job_result.py                                           52      3    94%   16, 21, 26
+backend/src/application/services/resolve_comparable_remote_result.py                                         116     16    86%   85, 88, 108, 121, 123, 144, 147, 153, 160, 163, 166, 183, 186-188, 205
+backend/src/application/services/result_context_resolver.py                                                   45      1    98%   105
+backend/src/application/services/result_evidence_query_service.py                                            213     20    91%   117-118, 130, 146, 149-154, 162, 170, 289, 297, 362, 365, 413, 415, 419, 423, 425, 429, 464
+backend/src/application/services/run_audit_snapshot.py                                                       117      9    92%   52, 59, 129-131, 145-146, 155, 168
+backend/src/application/services/run_auditability_execution_log.py                                            37      3    92%   23, 30, 32
+backend/src/application/services/run_auditability_models.py                                                   64      0   100%
+backend/src/application/services/run_auditability_service.py                                                 228     16    93%   50, 57, 87-89, 100, 146-148, 152, 264, 278, 319, 321, 325-326
+backend/src/application/services/server_reprocess_adoption_hash.py                                             9      0   100%
+backend/src/application/services/server_reprocess_difference.py                                               41     11    73%   14, 21, 35, 38, 44-46, 49, 52, 63, 67
+backend/src/application/services/server_reprocess_position_snapshot.py                                        52     35    33%   18-26, 30-40, 44-50, 60-79
+backend/src/application/services/server_reprocess_proposal_sink.py                                            17      0   100%
+backend/src/application/services/source_asset_heic.py                                                         20      0   100%
+backend/src/application/services/supplier_prompt_resolver.py                                                  85      0   100%
+backend/src/application/services/supplier_reference_image_resolver.py                                         13      0   100%
+backend/src/application/services/traceability_artifact_service.py                                             64      8    88%   74-77, 134-135, 152, 173
+backend/src/application/services/upload_file_count_validation.py                                               7      0   100%
+backend/src/application/services/upload_request_limits.py                                                     26      2    92%   50, 57
+backend/src/application/services/upload_stream_io.py                                                          66     14    79%   77-78, 88-99
+backend/src/application/use_cases/__init__.py                                                                  3      0   100%
+backend/src/application/use_cases/admin_storage_cleanup.py                                                    67     48    28%   51-138, 148
+backend/src/application/use_cases/aisles/__init__.py                                                           0      0   100%
+backend/src/application/use_cases/aisles/activate_aisle.py                                                    21      1    95%   36
+backend/src/application/use_cases/aisles/adopt_server_reprocess_proposals.py                                 173     33    81%   46-47, 132, 136, 140, 154, 159, 161, 163, 173, 192, 196, 201-202, 225-226, 240, 321, 347, 351, 353, 360, 365, 409-445
+backend/src/application/use_cases/aisles/apply_aisle_revision.py                                             215     39    82%   125-131, 163, 167, 172, 175, 180, 191, 203-204, 207, 217, 248, 253, 271, 273, 275, 277, 286-289, 368, 377, 382, 397, 410, 413, 503, 505, 512, 518, 523, 546-557, 559, 564, 582
+backend/src/application/use_cases/aisles/backfill_legacy_aisles.py                                            82      8    90%   89, 165-172
+backend/src/application/use_cases/aisles/build_server_reprocess_proposals.py                                  55      9    84%   34-35, 40-41, 54, 65, 67, 75, 86
+backend/src/application/use_cases/aisles/cancel_aisle_job.py                                                  42      0   100%
+backend/src/application/use_cases/aisles/create_aisle.py                                                      45      0   100%
+backend/src/application/use_cases/aisles/create_server_reprocess_run.py                                      202     51    75%   46-47, 58-59, 70-71, 114, 148, 152, 156, 175, 184, 188-189, 201, 233-237, 297, 387, 403-438
+backend/src/application/use_cases/aisles/deactivate_aisle.py                                                  30      0   100%
+backend/src/application/use_cases/aisles/delete_aisle_source_asset.py                                         44      3    93%   77, 84-85
+backend/src/application/use_cases/aisles/execute_server_reprocess_run.py                                      63     14    78%   59, 64, 66, 87, 93-108, 121, 126, 128
+backend/src/application/use_cases/aisles/execute_server_reprocess_worker.py                                   69     69     0%   3-147
+backend/src/application/use_cases/aisles/finalize_authoritative_aisle.py                                     149     25    83%   58-59, 77-78, 131, 135, 167, 180, 205-210, 217-229, 233, 252-265, 341, 349, 354
+backend/src/application/use_cases/aisles/get_aisle_merge_results.py                                           32      1    97%   49
+backend/src/application/use_cases/aisles/get_aisle_processing_status.py                                       23      0   100%
+backend/src/application/use_cases/aisles/get_aisle_revision_capabilities.py                                   32      0   100%
+backend/src/application/use_cases/aisles/list_aisle_assets.py                                                 17      0   100%
+backend/src/application/use_cases/aisles/list_aisle_jobs.py                                                   28      1    96%   41
+backend/src/application/use_cases/aisles/list_aisles_by_inventory.py                                          13      0   100%
+backend/src/application/use_cases/aisles/list_aisles_with_status.py                                           98     10    90%   76, 78-79, 81, 83, 85, 118-119, 121, 124
+backend/src/application/use_cases/aisles/list_preliminary_reconciliations.py                                  82     21    74%   78-80, 84-89, 124-126, 131-181
+backend/src/application/use_cases/aisles/list_server_reprocess_proposals.py                                   46      6    87%   64, 88, 90-91, 93, 97
+backend/src/application/use_cases/aisles/manage_aisle_revisions.py                                           289     77    73%   91, 97-108, 163, 168, 171, 176, 181, 194-196, 217, 224, 233, 240, 254, 369-370, 383-384, 480, 491, 494, 499, 501, 508, 517, 532-537, 560, 566, 600-601, 606-625, 636-638, 643-673, 678-679, 684-691
+backend/src/application/use_cases/aisles/persist_authoritative_local_code_scan.py                            174     29    83%   154, 171, 222, 227, 233, 289-313, 366, 368, 370, 373, 375, 377, 383, 386, 388, 390, 392-394, 399, 401, 404, 407
+backend/src/application/use_cases/aisles/promote_aisle_operational_job.py                                     41      3    93%   65, 78, 86
+backend/src/application/use_cases/aisles/reconcile_preliminary_detections.py                                 253     75    70%   90-91, 96-104, 107-109, 148, 171, 182-183, 219-226, 232, 239, 241, 279, 298-300, 322, 335-338, 372-398, 487-494, 499-501, 505, 513-536, 544-565, 571, 573, 604-606, 609-612
+backend/src/application/use_cases/aisles/resolve_aisle_job_for_inventory_read.py                              23      0   100%
+backend/src/application/use_cases/aisles/retry_aisle_job.py                                                   53      0   100%
+backend/src/application/use_cases/aisles/run_aisle_merge.py                                                   34      0   100%
+backend/src/application/use_cases/aisles/start_aisle_processing.py                                           184     22    88%   206, 225-230, 267, 344-345, 396, 413, 428, 433, 444-445, 508, 527-532, 553-554
+backend/src/application/use_cases/aisles/update_aisle_code.py                                                 55      1    98%   58
+backend/src/application/use_cases/aisles/upload_aisle_assets.py                                              128      9    93%   151, 160-168, 233-236, 272
+backend/src/application/use_cases/aisles/upsert_preliminary_detection.py                                     171     28    84%   124-125, 151-152, 180, 195, 250, 258-259, 303, 305, 307, 309, 311, 313, 315, 317, 319, 321, 323, 325, 327, 331, 333, 335, 337, 345, 347
+backend/src/application/use_cases/analytics/__init__.py                                                        0      0   100%
+backend/src/application/use_cases/analytics/compare_aisle_runs.py                                             62      0   100%
+backend/src/application/use_cases/analytics/compare_many_aisle_runs.py                                       129      4    97%   131, 134, 143, 184
+backend/src/application/use_cases/analytics/export_aisle_benchmark.py                                         69      7    90%   100, 110, 112, 161-178
+backend/src/application/use_cases/capture_sessions/__init__.py                                                 0      0   100%
+backend/src/application/use_cases/capture_sessions/assign_capture_session_group_to_existing_aisle.py          44      1    98%   80
+backend/src/application/use_cases/capture_sessions/cancel_capture_session.py                                  40      8    80%   38, 42, 46, 48, 56, 59, 62-63
+backend/src/application/use_cases/capture_sessions/close_capture_session.py                                   44     10    77%   62, 68, 70, 75, 81, 83-86, 88
+backend/src/application/use_cases/capture_sessions/compute_capture_session_assignment_preview.py              41      2    95%   56, 77
+backend/src/application/use_cases/capture_sessions/compute_capture_session_groups.py                          90      6    93%   75, 120, 158, 166, 175-176
+backend/src/application/use_cases/capture_sessions/compute_materialized_capture_session_group_preview.py     203     14    93%   65-66, 85-88, 233, 261, 268, 341, 361, 387-397, 419
+backend/src/application/use_cases/capture_sessions/create_aisle_and_assign_capture_session_group.py           39      3    92%   65, 74, 79
+backend/src/application/use_cases/capture_sessions/create_capture_session.py                                  30      1    97%   47
+backend/src/application/use_cases/capture_sessions/get_capture_session_detail.py                              24      1    96%   37
+backend/src/application/use_cases/capture_sessions/get_capture_session_groups.py                              13      1    92%   30
+backend/src/application/use_cases/capture_sessions/list_capture_sessions.py                                   28      1    96%   49
+backend/src/application/use_cases/capture_sessions/materialize_capture_session.py                            173     18    90%   117, 157, 167, 231, 233, 235-237, 247-248, 297, 303, 326-327, 333-334, 344-345
+backend/src/application/use_cases/capture_sessions/materialize_capture_session_group.py                      184     12    93%   115, 122, 133, 191, 211-212, 362-370, 416, 431, 437
+backend/src/application/use_cases/capture_sessions/update_capture_session_clock_offset.py                     38      2    95%   57, 72
+backend/src/application/use_cases/capture_sessions/upload_capture_session_staging_items.py                   207     36    83%   149, 186, 190, 203, 263-264, 280-296, 304-348, 379, 396-414, 431-447, 464
+backend/src/application/use_cases/clients/__init__.py                                                          0      0   100%
+backend/src/application/use_cases/clients/create_client.py                                                    23      0   100%
+backend/src/application/use_cases/clients/get_client.py                                                       12      0   100%
+backend/src/application/use_cases/clients/list_clients.py                                                      9      0   100%
+backend/src/application/use_cases/clients/update_client.py                                                    50     32    36%   29-30, 33-71
+backend/src/application/use_cases/code_scans/__init__.py                                                       0      0   100%
+backend/src/application/use_cases/code_scans/export_aisle_code_scans.py                                       45      0   100%
+backend/src/application/use_cases/code_scans/get_aisle_code_scan_review_signals.py                            30      0   100%
+backend/src/application/use_cases/code_scans/list_aisle_code_scans.py                                         25      8    68%   31-32, 35-48
+backend/src/application/use_cases/code_scans/match_aisle_code_scan_detections.py                             116     10    91%   90, 97, 164-169, 192, 197, 203
+backend/src/application/use_cases/code_scans/run_aisle_code_scan.py                                          194     20    90%   108, 182-192, 214-222, 254-255, 310-312, 392-393
+backend/src/application/use_cases/code_scans/summarize_aisle_code_scans.py                                    25      0   100%
+backend/src/application/use_cases/finalization_recovery/recovery_command.py                                   23      0   100%
+backend/src/application/use_cases/finalization_recovery/recovery_helpers.py                                   37      5    86%   68, 93, 111, 136, 165
+backend/src/application/use_cases/finalization_recovery/resume_job_finalization.py                            80     44    45%   67, 71-163, 195-196
+backend/src/application/use_cases/finalization_recovery/terminalize_promote_reconcile.py                     168     84    50%   51, 70, 72, 77, 90, 138, 141, 143, 145, 148, 150, 168, 182-203, 221-283, 301-362
+backend/src/application/use_cases/finalization_recovery/verify_and_republish.py                              127     29    77%   105-170, 191, 198, 243, 252
+backend/src/application/use_cases/inventories/__init__.py                                                      0      0   100%
+backend/src/application/use_cases/inventories/backfill_inventory_statuses.py                                  20      0   100%
+backend/src/application/use_cases/inventories/create_inventory.py                                             43      0   100%
+backend/src/application/use_cases/inventories/export_inventory_business.py                                    77      1    99%   187
+backend/src/application/use_cases/inventories/export_inventory_results.py                                     74      2    97%   178, 181
+backend/src/application/use_cases/inventories/get_inventory.py                                                12      0   100%
+backend/src/application/use_cases/inventories/get_inventory_metrics.py                                        14      0   100%
+backend/src/application/use_cases/inventories/list_inventories.py                                              9      0   100%
+backend/src/application/use_cases/inventories/list_inventory_list_items.py                                    65      9    86%   43, 45, 47, 49-50, 52, 54, 101-102
+backend/src/application/use_cases/inventories/update_inventory_name.py                                        52      1    98%   54
+backend/src/application/use_cases/pipeline/__init__.py                                                         0      0   100%
+backend/src/application/use_cases/pipeline/cleanup_job_results.py                                             55      4    93%   68, 72, 74, 97
+backend/src/application/use_cases/pipeline/persist_aisle_result.py                                           173      7    96%   85, 104, 176, 291, 397, 400, 420
+backend/src/application/use_cases/pipeline/recompute_consolidated_counts.py                                   94      2    98%   144, 155
+backend/src/application/use_cases/positions/__init__.py                                                        0      0   100%
+backend/src/application/use_cases/positions/confirm_position.py                                               31      0   100%
+backend/src/application/use_cases/positions/create_manual_image_result.py                                    153     16    90%   107, 117, 120, 122, 135, 139, 146-151, 158, 163, 170, 364-366
+backend/src/application/use_cases/positions/delete_position.py                                                33      1    97%   62
+backend/src/application/use_cases/positions/get_position_code_scan_evidence.py                                42      0   100%
+backend/src/application/use_cases/positions/get_position_detail.py                                            74      0   100%
+backend/src/application/use_cases/positions/list_aisle_positions.py                                          121      6    95%   79, 83, 85, 98-99, 130
+backend/src/application/use_cases/positions/list_job_image_results.py                                         98      3    97%   102, 113, 125
+backend/src/application/use_cases/positions/list_review_queue.py                                             133     23    83%   53-55, 59-60, 66-79, 84, 86, 95-97, 103-104, 156, 158, 201, 203
+backend/src/application/use_cases/positions/mark_position_image_mismatch.py                                   31      0   100%
+backend/src/application/use_cases/positions/mark_position_unknown.py                                          31      0   100%
+backend/src/application/use_cases/positions/update_position_code.py                                           35     18    49%   54-99
+backend/src/application/use_cases/positions/update_product_quantity.py                                        42      0   100%
+backend/src/application/use_cases/positions/update_product_sku.py                                             52      2    96%   79-83
+backend/src/application/use_cases/processing/__init__.py                                                       0      0   100%
+backend/src/application/use_cases/processing/asset_processing_queries.py                                     240    187    22%   75-76, 99-101, 105-106, 110-115, 119-126, 130-137, 141, 161-169, 172-273, 291-316, 319-332, 351-372, 375-575
+backend/src/application/use_cases/processing/invalidate_asset_result.py                                       89      7    92%   79, 81, 98, 108, 112, 116, 142
+backend/src/application/use_cases/processing/list_processing_events.py                                        35     35     0%   3-105
+backend/src/application/use_cases/processing/reprocess_asset.py                                              125     10    92%   85, 116, 120, 124, 146, 164-165, 171, 297, 300
+backend/src/application/use_cases/shared/__init__.py                                                           0      0   100%
+backend/src/application/use_cases/shared/benchmark_compare_support.py                                        152     21    86%   38-46, 54-57, 142, 193-207, 216, 248, 289
+backend/src/application/use_cases/shared/capture_session_group_assignment_guard.py                            11      2    82%   26, 30
+backend/src/application/use_cases/shared/review_validation.py                                                 63     10    84%   64, 69, 105-106, 114-117, 147, 149
+backend/src/application/use_cases/suppliers/__init__.py                                                        0      0   100%
+backend/src/application/use_cases/suppliers/backfill_legacy_client_supplier_defaults.py                       88      0   100%
+backend/src/application/use_cases/suppliers/create_client_supplier.py                                         31      0   100%
+backend/src/application/use_cases/suppliers/get_client_supplier.py                                            16      0   100%
+backend/src/application/use_cases/suppliers/list_client_suppliers.py                                          14      0   100%
+backend/src/application/use_cases/suppliers/manage_supplier_extraction_profiles.py                           229     87    62%   117, 120, 122, 167-192, 242-244, 249-255, 265-267, 272-287, 329-334, 344-349, 388-393, 406-409, 414-443, 454-457, 462-473, 502, 508, 514, 523-541
+backend/src/application/use_cases/suppliers/manage_supplier_prompt_configs.py                                159     11    93%   99, 105, 130, 133, 168, 172, 182, 192, 261, 325, 334
+backend/src/application/use_cases/suppliers/manage_supplier_reference_images.py                               54      2    96%   49, 52
+backend/src/application/use_cases/suppliers/test_extraction_profile_diagnostic.py                             65     43    34%   49-205
+backend/src/application/use_cases/suppliers/upload_supplier_reference_images.py                              100      4    96%   112-113, 142-143
+backend/src/application/utils/__init__.py                                                                      0      0   100%
+backend/src/application/utils/natural_sort.py                                                                 16      0   100%
+backend/src/application/utils/reference_image_mime.py                                                         12      0   100%
+backend/src/application/utils/review_queue_derived.py                                                         35      4    89%   62-64, 70
+backend/src/application/utils/supplier_reference_image_paths.py                                                5      0   100%
+backend/src/auth/__init__.py                                                                                   0      0   100%
+backend/src/auth/config.py                                                                                    15      0   100%
+backend/src/auth/dependencies.py                                                                              52      6    88%   49, 57, 83, 97-98, 110
+backend/src/auth/errors.py                                                                                     9      0   100%
+backend/src/auth/routes.py                                                                                    25      0   100%
+backend/src/auth/schemas.py                                                                                   26      0   100%
+backend/src/auth/security.py                                                                                  43     10    77%   37-39, 72, 74, 76, 80, 97, 101, 116, 126
+backend/src/auth/service.py                                                                                  116      9    92%   76, 104, 108, 130, 203, 237, 244, 285, 288
+backend/src/backfill_inventory_status.py                                                                      18     18     0%   11-43
+backend/src/backfill_legacy_aisles.py                                                                         46     46     0%   11-119
+backend/src/backfill_legacy_client_supplier_defaults.py                                                       23     23     0%   8-58
+backend/src/config.py                                                                                         87      9    90%   71, 115-117, 124, 129, 144-145, 150, 154
+backend/src/consolidate/__init__.py                                                                            0      0   100%
+backend/src/consolidate/consolidate.py                                                                        88     10    89%   132, 145, 152, 173-174, 184, 198, 231, 244-245
+backend/src/consolidate/normalize.py                                                                          19      1    95%   37
+backend/src/database/__init__.py                                                                               3      0   100%
+backend/src/database/migrations/__init__.py                                                                    2      0   100%
+backend/src/database/migrations/__main__.py                                                                    4      4     0%   3-8
+backend/src/database/migrations/cli.py                                                                        68     39    43%   25-36, 40-41, 45-46, 71-90, 94-114, 118-138, 156-162
+backend/src/database/migrations/service.py                                                                   127     53    58%   68-81, 85-87, 111-127, 133-144, 148-161, 170-171, 205-208, 241-261, 274
+backend/src/database/repository.py                                                                           219     76    65%   29-30, 61, 67-71, 78-83, 151, 159, 168-179, 207-216, 254-265, 299, 304, 360, 362, 364, 397-438, 456, 515-548, 564-576, 582-606
+backend/src/database/sqlserver.py                                                                             46     18    61%   13-14, 27, 33, 38, 41-43, 51-53, 56-60, 65-69
+backend/src/database/sqlserver_business_data_cleanup.py                                                       69     17    75%   21, 62-76, 81-85, 168, 190, 198, 202
+backend/src/decision/__init__.py                                                                               2      0   100%
+backend/src/decision/count_status.py                                                                          46      2    96%   78-79
+backend/src/decision/entity_order.py                                                                           3      0   100%
+backend/src/decision/pallet_id.py                                                                             33      0   100%
+backend/src/decision/processing_mode.py                                                                        6      0   100%
+backend/src/decision/quality_score.py                                                                         14      0   100%
+backend/src/detection/__init__.py                                                                              2      2     0%   9-11
+backend/src/detection/heuristic_detector.py                                                                   79     79     0%   8-134
+backend/src/detection/pallet_detector.py                                                                      20     20     0%   8-66
+backend/src/domain/__init__.py                                                                                11      0   100%
+backend/src/domain/aisle/__init__.py                                                                           2      0   100%
+backend/src/domain/aisle/entities.py                                                                          68      3    96%   66, 88-89
+backend/src/domain/aisle_identification/__init__.py                                                            3      0   100%
+backend/src/domain/aisle_identification/modes.py                                                             107     24    78%   59, 72-81, 89-98, 133, 155, 178
+backend/src/domain/aisle_identification/resolver.py                                                           17      0   100%
+backend/src/domain/aisle_revision/entities.py                                                                118      0   100%
+backend/src/domain/assets/__init__.py                                                                          2      0   100%
+backend/src/domain/assets/entities.py                                                                         27      0   100%
+backend/src/domain/authoritative_aisle_finalization/__init__.py                                                1      0   100%
+backend/src/domain/authoritative_aisle_finalization/entities.py                                               83      0   100%
+backend/src/domain/authoritative_local_code_scan/__init__.py                                                   0      0   100%
+backend/src/domain/authoritative_local_code_scan/entities.py                                                  42      0   100%
+backend/src/domain/capture/__init__.py                                                                         2      0   100%
+backend/src/domain/capture/entities.py                                                                        80      0   100%
+backend/src/domain/client/__init__.py                                                                          0      0   100%
+backend/src/domain/client/entities.py                                                                         16      0   100%
+backend/src/domain/client_supplier/__init__.py                                                                 0      0   100%
+backend/src/domain/client_supplier/entities.py                                                                15      0   100%
+backend/src/domain/client_supplier/extraction_profile.py                                                     212      6    97%   506, 510, 512, 514, 516, 518
+backend/src/domain/client_supplier/prompt_config.py                                                           33      7    79%   25, 27, 31, 37, 39, 41, 43
+backend/src/domain/client_supplier/reference_image.py                                                         38      2    95%   44, 46
+backend/src/domain/code_scans/__init__.py                                                                      2      0   100%
+backend/src/domain/code_scans/bounding_box.py                                                                 42     32    24%   39, 75-119
+backend/src/domain/code_scans/entities.py                                                                     61      0   100%
+backend/src/domain/code_scans/matching.py                                                                     27      2    93%   62, 64
+backend/src/domain/code_scans/signals.py                                                                      17      0   100%
+backend/src/domain/entity.py                                                                                  34      0   100%
+backend/src/domain/evidence/__init__.py                                                                        2      0   100%
+backend/src/domain/evidence/entities.py                                                                       30      0   100%
+backend/src/domain/execution_image_manifest.py                                                               172     28    84%   160-166, 169-170, 173-174, 190, 204, 224, 227, 247, 257, 259, 278, 293, 323-328, 340, 343
+backend/src/domain/image_processing/__init__.py                                                                5      0   100%
+backend/src/domain/image_processing/asset_processing_command.py                                               37      0   100%
+backend/src/domain/image_processing/batch_processing_attempt.py                                               28      0   100%
+backend/src/domain/image_processing/contracts.py                                                              57      0   100%
+backend/src/domain/image_processing/external_image_analysis_request.py                                        49      0   100%
+backend/src/domain/image_processing/global_fallback_batch_request.py                                          55      1    98%   74
+backend/src/domain/image_processing/job_asset_processing_state.py                                             32      0   100%
+backend/src/domain/image_processing/job_processing_lease.py                                                   25      0   100%
+backend/src/domain/image_processing/processing_action_idempotency.py                                          20      0   100%
+backend/src/domain/image_processing/processing_attempt.py                                                     39      0   100%
+backend/src/domain/image_processing/processing_event.py                                                       20      0   100%
+backend/src/domain/inventory/__init__.py                                                                       3      0   100%
+backend/src/domain/inventory/derive_status_from_aisles.py                                                     19      1    95%   45
+backend/src/domain/inventory/entities.py                                                                      39      0   100%
+backend/src/domain/jobs/__init__.py                                                                            2      0   100%
+backend/src/domain/jobs/artifact_manifest.py                                                                  32      0   100%
+backend/src/domain/jobs/artifact_policy.py                                                                    35      0   100%
+backend/src/domain/jobs/artifact_publication_outbox.py                                                        59      0   100%
+backend/src/domain/jobs/entities.py                                                                           58      0   100%
+backend/src/domain/jobs/finalization.py                                                                       38      0   100%
+backend/src/domain/jobs/finalization_evidence.py                                                              81      0   100%
+backend/src/domain/jobs/finalization_recovery.py                                                              87      0   100%
+backend/src/domain/labels/__init__.py                                                                          3      0   100%
+backend/src/domain/labels/canonicalization.py                                                                 13      0   100%
+backend/src/domain/labels/entities.py                                                                         55      0   100%
+backend/src/domain/labels/merge.py                                                                            61      4    93%   60, 63, 107, 143
+backend/src/domain/manifest_evidence_resolution.py                                                           230     24    90%   89, 100, 110, 159, 161, 259, 274-283, 289-296, 318-326, 374, 421, 467, 479, 505, 507, 510, 513
+backend/src/domain/mobile_preliminary_detections/__init__.py                                                   0      0   100%
+backend/src/domain/mobile_preliminary_detections/entities.py                                                  31      0   100%
+backend/src/domain/pallet.py                                                                                  14      0   100%
+backend/src/domain/positions/__init__.py                                                                       2      0   100%
+backend/src/domain/positions/entities.py                                                                      38      0   100%
+backend/src/domain/preliminary_detection_reconciliations/__init__.py                                           0      0   100%
+backend/src/domain/preliminary_detection_reconciliations/entities.py                                          44      0   100%
+backend/src/domain/products/__init__.py                                                                        2      0   100%
+backend/src/domain/products/entities.py                                                                       18      0   100%
+backend/src/domain/prompt_image_projection.py                                                                 35      3    91%   85, 88, 91
+backend/src/domain/quantity/__init__.py                                                                        0      0   100%
+backend/src/domain/quantity/resolution.py                                                                     69      4    94%   71, 73-74, 79
+backend/src/domain/result_evidence/display.py                                                                 43     10    77%   31-34, 59, 62, 65, 78, 81, 89
+backend/src/domain/result_evidence/entities.py                                                                35      0   100%
+backend/src/domain/result_evidence/manifest_primary.py                                                        18      3    83%   23-24, 35
+backend/src/domain/result_evidence/mapper.py                                                                 129     19    85%   44-45, 60, 95, 111, 138, 141, 143, 174-176, 245-263
+backend/src/domain/result_evidence/review_context.py                                                          36     13    64%   36-38, 43-45, 48-53, 57
+backend/src/domain/result_evidence/validation.py                                                              27      2    93%   49, 53
+backend/src/domain/reviews/__init__.py                                                                         2      0   100%
+backend/src/domain/reviews/entities.py                                                                        25      0   100%
+backend/src/domain/reviews/sql_literals.py                                                                    24      0   100%
+backend/src/domain/server_reprocess/__init__.py                                                                2      0   100%
+backend/src/domain/server_reprocess/entities.py                                                              180      0   100%
+backend/src/domain/traceability.py                                                                           140      5    96%   99, 145-146, 153, 323
+backend/src/domain/traceability_artifact/builder.py                                                          146     10    93%   54, 61, 69, 71, 74, 307-308, 313-314, 317
+backend/src/domain/traceability_artifact/canonical_json.py                                                    10      0   100%
+backend/src/domain/traceability_artifact/errors.py                                                            13      0   100%
+backend/src/env_settings/__init__.py                                                                           0      0   100%
+backend/src/env_settings/grouped_settings.py                                                                 367     15    96%   295-298, 583-586, 782-785, 809, 1068, 1674
+backend/src/env_settings/parsing.py                                                                           71     20    72%   19-20, 28-32, 42-43, 50, 54-55, 67, 81, 86, 94-98
+backend/src/env_settings/pipeline_analysis_execution_strings.py                                               16      0   100%
+backend/src/env_settings/sqlserver_pytest_policy.py                                                           49      4    92%   36, 38, 42, 78
+backend/src/env_settings/sqlserver_resolution.py                                                             155     36    77%   24-36, 44-56, 63-64, 70, 95-98, 101, 129, 151, 295, 313
+backend/src/evidence/__init__.py                                                                               4      0   100%
+backend/src/evidence/evidence_pack.py                                                                        169     13    92%   43, 56-61, 80-81, 102, 114, 221-225, 236, 279, 302
+backend/src/evidence/paths.py                                                                                 10      0   100%
+backend/src/evidence/scoring.py                                                                               33      0   100%
+backend/src/exceptions/__init__.py                                                                             2      0   100%
+backend/src/exceptions/global_analysis_exceptions.py                                                           4      0   100%
+backend/src/fallback/__init__.py                                                                               3      0   100%
+backend/src/fallback/fallback_policy.py                                                                       20      3    85%   19, 45, 47
+backend/src/fallback/visual_fallback_analyzer.py                                                              61     12    80%   36-37, 47, 58, 60, 65-66, 71-72, 76, 78, 104
+backend/src/frames/__init__.py                                                                                 3      0   100%
+backend/src/frames/normalize.py                                                                              204     45    78%   42-54, 74, 90, 95-99, 149, 185, 234, 270, 282-286, 289, 295, 298, 301, 307, 318, 333, 336-338, 371, 385, 388, 404-406, 413, 423
+backend/src/frames/sources/__init__.py                                                                         5      0   100%
+backend/src/frames/sources/base.py                                                                             6      0   100%
+backend/src/frames/sources/factory.py                                                                          9      0   100%
+backend/src/frames/sources/photos_source.py                                                                   48      6    88%   41-42, 44, 47, 54, 74
+backend/src/frames/sources/video_source.py                                                                    34      3    91%   46, 67-68
+backend/src/frames/types.py                                                                                    8      0   100%
+backend/src/infrastructure/__init__.py                                                                         0      0   100%
+backend/src/infrastructure/adapters/__init__.py                                                                2      0   100%
+backend/src/infrastructure/adapters/clock.py                                                                   5      0   100%
+backend/src/infrastructure/artifacts/__init__.py                                                               0      0   100%
+backend/src/infrastructure/artifacts/filesystem_artifact_staging_store.py                                     49      3    94%   21, 66, 69
+backend/src/infrastructure/artifacts/run_audit_execution_log_loader.py                                        10     10     0%   3-21
+backend/src/infrastructure/artifacts/stored_artifact_reader.py                                               193     47    76%   57, 80-88, 95, 117-126, 172, 181-191, 203, 281-282, 301, 305-318, 325, 329-340, 378-387, 415-430
+backend/src/infrastructure/code_scanning/image_decode.py                                                      66     19    71%   46, 53, 58, 77-80, 86-89, 105-106, 115-120
+backend/src/infrastructure/code_scanning/pyzbar_code_scanner.py                                               61      7    89%   32-33, 55, 61-67, 97
+backend/src/infrastructure/code_scanning/pyzbar_type_mapping.py                                               21      1    95%   39
+backend/src/infrastructure/database/sql_transaction.py                                                        82     22    73%   18-19, 34, 41-43, 50-55, 59, 69, 71, 73-74, 78-80, 86, 95
+backend/src/infrastructure/image_processing/__init__.py                                                        0      0   100%
+backend/src/infrastructure/image_processing/llm_external_image_analysis_provider.py                          355    243    32%   69-73, 77-80, 85, 89, 110, 145, 258, 260, 262, 308-309, 325-340, 354-359, 363, 367-371, 378-525, 536-691, 703-929, 932-974
+backend/src/infrastructure/ocr/__init__.py                                                                     0      0   100%
+backend/src/infrastructure/ocr/tesseract_internal_label_reader.py                                            126     32    75%   59, 62, 69-71, 100, 109-122, 135, 165-166, 201, 204-214
+backend/src/infrastructure/persistence/image_result_applock.py                                                26     18    31%   18, 34-70
+backend/src/infrastructure/persistence/job_result_bundle_validation.py                                        23      0   100%
+backend/src/infrastructure/persistence/memory_aisle_revision_unit_of_work.py                                  64      6    91%   32, 38-40, 62, 69
+backend/src/infrastructure/persistence/memory_artifact_manifest_store.py                                      71     12    83%   36, 41, 65-78, 219
+backend/src/infrastructure/persistence/memory_artifact_publication_outbox_store.py                           194     12    94%   78, 145, 150, 152, 154, 178, 184, 186, 287, 395, 409, 411
+backend/src/infrastructure/persistence/memory_finalization_evidence_writer.py                                 17      0   100%
+backend/src/infrastructure/persistence/memory_finalization_recovery_store.py                                  46      5    89%   20, 24, 77, 88-89
+backend/src/infrastructure/persistence/memory_finalization_stage_store.py                                     51      5    90%   55-59, 63, 86
+backend/src/infrastructure/persistence/memory_job_image_coverage_repository.py                                61      3    95%   52, 112, 145
+backend/src/infrastructure/persistence/memory_job_result_scope_store.py                                       59      0   100%
+backend/src/infrastructure/persistence/memory_job_result_unit_of_work.py                                     111     10    91%   38, 44, 51, 54, 73, 82, 94, 100-101, 145
+backend/src/infrastructure/persistence/memory_job_source_asset_repository.py                                  15      0   100%
+backend/src/infrastructure/persistence/memory_manual_image_coverage_repository.py                             23      2    91%   23, 30
+backend/src/infrastructure/persistence/memory_manual_image_result_unit_of_work.py                            112     14    88%   21-24, 30, 36, 41, 44, 57, 63, 67, 98, 107, 140
+backend/src/infrastructure/persistence/memory_operational_job_promotion_repository.py                         27      3    89%   35, 43, 50
+backend/src/infrastructure/persistence/sql_artifact_manifest_store.py                                        136     87    36%   27, 30, 39, 41-44, 72-85, 88-101, 109-182, 185-187, 207-211, 244, 263, 284-383, 395-460, 469
+backend/src/infrastructure/persistence/sql_artifact_publication_outbox_store.py                              140    110    21%   38-42, 46-53, 86-93, 98-99, 102-112, 115-125, 128-136, 144-279, 289-330, 341-392, 410, 440, 462, 481, 501, 512-529, 532-553, 586-636
+backend/src/infrastructure/persistence/sql_finalization_evidence_writer.py                                    18      6    67%   31, 43-57
+backend/src/infrastructure/persistence/sql_finalization_recovery_store.py                                     51     35    31%   15-19, 24-25, 28-42, 57-95, 108-126, 129-142, 145-158, 162-168
+backend/src/infrastructure/persistence/sql_finalization_stage_store.py                                        71     48    32%   26-30, 34-43, 47, 72-84, 87-99, 107, 136-241
+backend/src/infrastructure/persistence/sql_job_result_scope_store.py                                          48     31    35%   36-50, 67-94, 100-103, 107-110, 120-149
+backend/src/infrastructure/persistence/sql_job_result_unit_of_work.py                                         97     17    82%   56, 62, 70-78, 82, 86, 92-94, 123
+backend/src/infrastructure/persistence/sql_job_source_asset_repository.py                                     37     25    32%   16-17, 20-33, 66-80, 84-95
+backend/src/infrastructure/persistence/sql_operational_job_promotion_repository.py                            32     22    31%   19-21, 26, 35-95
+backend/src/infrastructure/pipeline/__init__.py                                                                3      0   100%
+backend/src/infrastructure/pipeline/finalization_errors.py                                                     9      0   100%
+backend/src/infrastructure/pipeline/finalization_stage_recorder.py                                            62      5    92%   71, 133, 148, 211-212
+backend/src/infrastructure/pipeline/global_fallback_hybrid_runner.py                                          79      8    90%   52, 55, 105, 145-151, 182, 193
+backend/src/infrastructure/pipeline/hybrid_report_to_domain_adapter.py                                         8      0   100%
+backend/src/infrastructure/pipeline/input_artifact_resolver.py                                               110     16    85%   37, 41-42, 55, 110-111, 123, 128, 132, 151, 153, 158, 182, 191, 208, 212
+backend/src/infrastructure/pipeline/job_finalization_tracker.py                                              192     26    86%   50-52, 274-290, 295, 343-372
+backend/src/infrastructure/pipeline/v3_cancellation_coordinator.py                                            19      0   100%
+backend/src/infrastructure/pipeline/v3_execution_artifacts_service.py                                         17      0   100%
+backend/src/infrastructure/pipeline/v3_image_processing_bridge.py                                            180    115    36%   68, 72, 74, 83-86, 153-172, 216-219, 222-230, 233, 238-295, 308-312, 347-359, 391-434, 465, 496-613, 644, 677, 745-748
+backend/src/infrastructure/pipeline/v3_job_execution_state.py                                                325     51    84%   136-157, 255-263, 297-334, 351, 381, 426, 444, 475, 483-485, 498-499, 509, 519, 545, 587-588, 631, 760
+backend/src/infrastructure/pipeline/v3_job_executor.py                                                       713    458    36%   228, 412-416, 488-750, 766-1210, 1226-1649, 1700-1721, 1727-1738, 1753, 1839, 1867, 1913-1931, 1950-1962, 1989-2000, 2012, 2018-2073, 2093
+backend/src/infrastructure/pipeline/v3_job_finalization_service.py                                           227     31    86%   142, 178, 276-295, 417-436, 441-463, 474-476, 568-587, 599-621, 631-632, 676, 722-731
+backend/src/infrastructure/pipeline/v3_job_monitoring_service.py                                              85      3    96%   156-157, 188
+backend/src/infrastructure/pipeline/v3_job_preparation_service.py                                             78      0   100%
+backend/src/infrastructure/pipeline/v3_pipeline_execution_service.py                                          95      3    97%   50, 166-171
+backend/src/infrastructure/pipeline/v3_process_aisle_pipeline_runner.py                                       81      0   100%
+backend/src/infrastructure/pipeline/v3_report_mapper.py                                                      186     18    90%   59, 63-64, 97, 104-107, 169-171, 174, 211, 313, 355-358
+backend/src/infrastructure/pipeline/v3_worker_failure_handler.py                                              29      0   100%
+backend/src/infrastructure/pipeline/worker_durable_artifact_publisher.py                                      69      6    91%   163, 214, 222-226, 240
+backend/src/infrastructure/queue/__init__.py                                                                   0      0   100%
+backend/src/infrastructure/queue/v3_job_queue_adapter.py                                                      13     13     0%   9-40
+backend/src/infrastructure/repositories/__init__.py                                                            3      0   100%
+backend/src/infrastructure/repositories/db_row_text.py                                                        10      1    90%   12
+backend/src/infrastructure/repositories/memory_aisle_repository.py                                            20      0   100%
+backend/src/infrastructure/repositories/memory_aisle_revision_repository.py                                   91     15    84%   43-46, 68, 76, 97-99, 108, 111, 151-154
+backend/src/infrastructure/repositories/memory_analytics_repository.py                                       221    128    42%   97, 100, 102, 123, 126, 128, 136, 146-148, 219-298, 307-396, 399-466, 474, 512-523
+backend/src/infrastructure/repositories/memory_asset_processing_command_repository.py                         57     13    77%   55, 69-84, 90
+backend/src/infrastructure/repositories/memory_authoritative_aisle_finalization_repository.py                 78     10    87%   70-71, 80-89, 137-139, 147, 150
+backend/src/infrastructure/repositories/memory_authoritative_local_code_scan_repository.py                    67      8    88%   48, 67, 72, 75, 79, 105, 107, 122
+backend/src/infrastructure/repositories/memory_batch_processing_attempt_repository.py                         29      1    97%   40
+backend/src/infrastructure/repositories/memory_capture_session_confirm_idempotency_repository.py              14      0   100%
+backend/src/infrastructure/repositories/memory_capture_session_group_repository.py                            43      3    93%   48, 63, 66
+backend/src/infrastructure/repositories/memory_capture_session_item_repository.py                             59      9    85%   30, 55, 65, 67, 69, 75-78
+backend/src/infrastructure/repositories/memory_capture_session_repository.py                                  64      6    91%   34, 50, 72, 91, 96, 98
+backend/src/infrastructure/repositories/memory_client_repository.py                                           13      0   100%
+backend/src/infrastructure/repositories/memory_client_supplier_repository.py                                  20      0   100%
+backend/src/infrastructure/repositories/memory_code_scan_repository.py                                        68      3    96%   21, 35, 72
+backend/src/infrastructure/repositories/memory_evidence_repository.py                                         13      0   100%
+backend/src/infrastructure/repositories/memory_external_image_analysis_request_repository.py                  40      6    85%   35-37, 67-69
+backend/src/infrastructure/repositories/memory_final_count_repository.py                                      24      1    96%   43
+backend/src/infrastructure/repositories/memory_global_fallback_batch_request_repository.py                    38      3    92%   46, 58, 60
+backend/src/infrastructure/repositories/memory_inventory_repository.py                                        13      0   100%
+backend/src/infrastructure/repositories/memory_job_asset_processing_state_repository.py                       79      7    91%   81, 95, 132, 134-135, 139, 142
+backend/src/infrastructure/repositories/memory_job_processing_lease_repository.py                             90     20    78%   82-92, 98, 128, 146, 151-155, 162
+backend/src/infrastructure/repositories/memory_job_repository.py                                              66      6    91%   27, 69, 84, 96-97, 101
+backend/src/infrastructure/repositories/memory_mobile_preliminary_detection_repository.py                     40      6    85%   40, 48, 75-83, 95
+backend/src/infrastructure/repositories/memory_normalized_label_repository.py                                 22      0   100%
+backend/src/infrastructure/repositories/memory_position_repository.py                                         48      4    92%   45, 49, 55, 57
+backend/src/infrastructure/repositories/memory_preliminary_detection_reconciliation_repository.py            115     60    48%   78, 88, 99-103, 106, 117-145, 177, 181-190, 214-227, 233-234, 237-245, 264-293
+backend/src/infrastructure/repositories/memory_processing_action_idempotency_repository.py                    25      1    96%   43
+backend/src/infrastructure/repositories/memory_processing_attempt_repository.py                               40      4    90%   40, 45-51
+backend/src/infrastructure/repositories/memory_processing_event_repository.py                                 21      4    81%   36, 45-47
+backend/src/infrastructure/repositories/memory_product_record_repository.py                                   18      0   100%
+backend/src/infrastructure/repositories/memory_raw_label_repository.py                                        18      0   100%
+backend/src/infrastructure/repositories/memory_result_evidence_repository.py                                  32      1    97%   19
+backend/src/infrastructure/repositories/memory_review_action_repository.py                                    12      0   100%
+backend/src/infrastructure/repositories/memory_server_reprocess_repository.py                                108     23    79%   51-54, 65, 87, 107, 109, 111, 113, 115, 122-128, 170-187
+backend/src/infrastructure/repositories/memory_source_asset_repository.py                                     53     12    77%   30, 35, 47-59, 67
+backend/src/infrastructure/repositories/memory_supplier_extraction_profile_repository.py                      68     10    85%   34-41, 47-52, 129, 131, 157, 162
+backend/src/infrastructure/repositories/memory_supplier_prompt_config_repository.py                           71      2    97%   39, 179
+backend/src/infrastructure/repositories/memory_supplier_reference_image_repository.py                         25      1    96%   28
+backend/src/infrastructure/repositories/sql_aisle_repository.py                                               68     49    28%   24-28, 32-41, 45-54, 75-76, 79-112, 139-152, 155-166, 169-182
+backend/src/infrastructure/repositories/sql_aisle_revision_repository.py                                     130    130     0%   3-457
+backend/src/infrastructure/repositories/sql_analytics_repository.py                                          333    291    13%   53-57, 62, 67, 76, 95-102, 111-116, 126-131, 188, 191-337, 357-390, 393-511, 520-617, 622-666, 671-698, 701-790, 793-855, 860-910
+backend/src/infrastructure/repositories/sql_asset_processing_command_repository.py                            55     55     0%   3-228
+backend/src/infrastructure/repositories/sql_authoritative_aisle_finalization_repository.py                   113    113     0%   3-343
+backend/src/infrastructure/repositories/sql_authoritative_local_code_scan_repository.py                      115    115     0%   3-325
+backend/src/infrastructure/repositories/sql_batch_processing_attempt_repository.py                            42     25    40%   33-37, 41-47, 70, 73-102, 113-127, 132-141
+backend/src/infrastructure/repositories/sql_capture_session_confirm_idempotency_repository.py                 59     59     0%   3-109
+backend/src/infrastructure/repositories/sql_capture_session_group_repository.py                               92     92     0%   3-212
+backend/src/infrastructure/repositories/sql_capture_session_item_repository.py                               115     88    23%   26-30, 34-44, 48-60, 64-69, 74-75, 81-85, 113, 116-192, 195-209, 212-228, 233-250, 253-270, 273-285, 288-303, 308-318
+backend/src/infrastructure/repositories/sql_capture_session_repository.py                                    106     84    21%   22-23, 29-33, 37-47, 51-61, 76, 79-131, 134-144, 147-157, 161-173, 186-221
+backend/src/infrastructure/repositories/sql_client_repository.py                                              43     29    33%   15-19, 23-28, 42, 45-62, 73-85, 88-97
+backend/src/infrastructure/repositories/sql_client_supplier_repository.py                                     59     46    22%   14-18, 23, 26-44, 60-80, 90-110, 120-151
+backend/src/infrastructure/repositories/sql_code_scan_repository.py                                          138    138     0%   3-406
+backend/src/infrastructure/repositories/sql_evidence_repository.py                                            69     33    52%   25-39, 46, 49-50, 92-126, 157-170, 173-185
+backend/src/infrastructure/repositories/sql_external_image_analysis_request_repository.py                     94     66    30%   36-40, 44-55, 59-61, 65-71, 105, 108-152, 155, 198-204, 209-215, 220-232, 235-241, 246-253, 258-268
+backend/src/infrastructure/repositories/sql_final_count_repository.py                                         65     40    38%   18-22, 27, 29, 34-47, 70-79, 153-179, 182-206
+backend/src/infrastructure/repositories/sql_global_fallback_batch_request_repository.py                       93     28    70%   41, 44, 51, 54-55, 65, 72-74, 142, 218, 221-224, 228-238, 241-249
+backend/src/infrastructure/repositories/sql_inventory_repository.py                                           66     47    29%   30-34, 42-52, 56-85, 113-138, 158-202
+backend/src/infrastructure/repositories/sql_job_asset_processing_state_repository.py                          88     66    25%   36-40, 52-63, 87, 90-120, 158-194, 203-212, 215-222, 235-263, 266-293, 312-344
+backend/src/infrastructure/repositories/sql_job_processing_lease_repository.py                                77     52    32%   33-37, 42, 46-52, 71, 83-149, 159-173, 176, 179, 189-190, 195-196, 208-217, 222-240
+backend/src/infrastructure/repositories/sql_job_repository.py                                                232    160    31%   48, 52-67, 71-77, 81-87, 91-97, 101-113, 117-131, 151-160, 221, 364-391, 394-402, 405-418, 425-437, 452, 476-480, 484-489, 492-511, 522-539, 550-568, 576-605, 609-637
+backend/src/infrastructure/repositories/sql_mobile_preliminary_detection_repository.py                        68     47    31%   19-23, 27, 31, 35, 76, 79-88, 98-118, 121-174, 177-185, 194-204, 214-232
+backend/src/infrastructure/repositories/sql_normalized_label_repository.py                                    78     51    35%   18-22, 26-29, 33-43, 47-58, 63, 66, 70-73, 100-107, 178-194
+backend/src/infrastructure/repositories/sql_position_repository.py                                           152     98    36%   29-40, 45-49, 53-69, 73-84, 91-102, 106-111, 139-181, 211-224, 249-251, 253-254, 256-257, 259-260, 275, 303-307, 321-338, 342-360
+backend/src/infrastructure/repositories/sql_preliminary_detection_reconciliation_repository.py               156    156     0%   3-512
+backend/src/infrastructure/repositories/sql_processing_action_idempotency_repository.py                       36     36     0%   3-123
+backend/src/infrastructure/repositories/sql_processing_attempt_repository.py                                 113     84    26%   41-45, 50, 54-65, 69-80, 111, 114-162, 203-211, 220-231, 236-246, 249-259, 262-275, 302-379, 385-394
+backend/src/infrastructure/repositories/sql_processing_event_repository.py                                    44     44     0%   3-150
+backend/src/infrastructure/repositories/sql_product_record_repository.py                                      82     60    27%   19, 23-27, 31-36, 56-61, 65-77, 86-115, 141-153, 156-166, 169-188
+backend/src/infrastructure/repositories/sql_raw_label_repository.py                                           63     34    46%   18-22, 26-31, 35-45, 57-60, 89-96
+backend/src/infrastructure/repositories/sql_result_evidence_repository.py                                     67     45    33%   16-20, 24, 28-33, 37-41, 75-125, 167-169, 178-186, 189-194, 197-206, 215-224
+backend/src/infrastructure/repositories/sql_review_action_repository.py                                       65     65     0%   5-132
+backend/src/infrastructure/repositories/sql_server_reprocess_repository.py                                   160    160     0%   3-585
+backend/src/infrastructure/repositories/sql_source_asset_repository.py                                       140     70    50%   40, 46, 50, 53-59, 65-79, 86, 208-222, 225-227, 230-247, 255-275, 278-290, 293-317
+backend/src/infrastructure/repositories/sql_supplier_extraction_profile_repository.py                        177    177     0%   3-500
+backend/src/infrastructure/repositories/sql_supplier_prompt_config_repository.py                              87     68    22%   14-18, 23-32, 36-42, 57, 60-87, 90-106, 114-128, 131-142, 150-165, 173-187, 195-196, 212-261
+backend/src/infrastructure/repositories/sql_supplier_reference_image_repository.py                            82     40    51%   16, 18, 42, 44, 46, 48, 50, 52, 54, 56, 79, 82-94, 97-104, 134-144, 174-187, 190-191
+backend/src/infrastructure/services/__init__.py                                                                2      0   100%
+backend/src/infrastructure/services/inventory_metrics_service.py                                              29      0   100%
+backend/src/infrastructure/services/on_demand_worker_launch_service.py                                        73     14    81%   35-38, 72-79, 86-98, 122-123, 131
+backend/src/infrastructure/storage/__init__.py                                                                 0      0   100%
+backend/src/infrastructure/storage/artifact_storage_maintenance.py                                           377    102    73%   109, 129, 135, 147, 172, 187-188, 197-200, 207, 210, 216, 218, 224, 248-250, 255-266, 276-289, 298, 300, 303, 319, 329-330, 335-344, 370-371, 377-378, 389, 393, 418-419, 422-423, 426-427, 434-435, 437-438, 441-443, 452-454, 475, 480-482, 486-487, 509-512, 542-544, 546-548, 556, 572, 593, 616-618
+backend/src/infrastructure/storage/artifact_store.py                                                          47      2    96%   115-116
+backend/src/infrastructure/storage/gcs_artifact_storage_adapter.py                                           175     51    71%   45, 57, 62, 66, 75, 81, 91, 107-108, 115-122, 132-134, 150-154, 168-179, 197, 199, 207-215, 221, 228-230, 242, 250-257, 274-276, 284-285, 291, 299-306
+backend/src/infrastructure/storage/s3_artifact_storage_adapter.py                                            164     47    71%   46, 48-57, 62, 66, 72, 78, 90, 102-103, 111-118, 123, 129-132, 147-149, 161, 168-170, 187, 189, 199-207, 213, 219-221, 235, 243-250, 258-260, 276, 284-291
+backend/src/infrastructure/storage/sql_storage_fields.py                                                      10      1    90%   33
+backend/src/infrastructure/storage/v3_artifact_storage_adapter.py                                             92     12    87%   34-35, 81, 94, 96, 116-118, 121-122, 125, 131
+backend/src/io/__init__.py                                                                                     0      0   100%
+backend/src/io/logging.py                                                                                     25      4    84%   65-68
+backend/src/io/outputs.py                                                                                     59      9    85%   31-51
+backend/src/io/sanitize.py                                                                                    28      2    93%   96, 99
+backend/src/jobs/__init__.py                                                                                   4      0   100%
+backend/src/jobs/adapters/__init__.py                                                                          3      0   100%
+backend/src/jobs/adapters/job_store_adapter.py                                                                19      2    89%   26, 46
+backend/src/jobs/adapters/memory_queue_adapter.py                                                              8      2    75%   20, 23
+backend/src/jobs/artifact_publication_worker.py                                                               80     32    60%   58-60, 75-88, 92-94, 98-119, 123
+backend/src/jobs/dev_reset_local_jobs.py                                                                      86     86     0%   7-141
+backend/src/jobs/image_identity.py                                                                            54      4    93%   81-82, 100, 112
+backend/src/jobs/job_store.py                                                                                207     60    71%   66-68, 156, 161-166, 217-218, 227, 246, 249, 251-253, 261, 278, 282, 297-312, 327-332, 337-345, 350-365
+backend/src/jobs/models.py                                                                                    32      0   100%
+backend/src/jobs/photos_paths.py                                                                              21      0   100%
+backend/src/jobs/ports/__init__.py                                                                             3      3     0%   3-6
+backend/src/jobs/ports/job_queue.py                                                                            5      5     0%   7-25
+backend/src/jobs/ports/job_repository.py                                                                       7      7     0%   7-25
+backend/src/jobs/preliminary_reconciliation_worker.py                                                         44     44     0%   3-80
+backend/src/jobs/queue.py                                                                                     11      6    45%   16, 21-25
+backend/src/jobs/run_worker.py                                                                                83      6    93%   21-23, 68, 70, 85, 175
+backend/src/jobs/run_worker_dev.py                                                                            18      1    94%   36
+backend/src/jobs/worker.py                                                                                   148     38    74%   34-43, 110, 160, 172-180, 192, 199-200, 250-251, 258-259, 263-267, 269-270, 274-282, 293, 315-341, 356-357
+backend/src/jobs/worker_bootstrap.py                                                                          52      5    90%   81-83, 111, 130-132
+backend/src/legacy/__init__.py                                                                                 2      0   100%
+backend/src/legacy/persistence_observability.py                                                               77      9    88%   41, 54, 56, 58, 70, 75, 104, 129, 154
+backend/src/llm/__init__.py                                                                                    0      0   100%
+backend/src/llm/anthropic_final_image_validation.py                                                          130     18    86%   59, 66, 73, 81, 92-93, 98, 108-111, 116, 127-128, 164, 171, 207, 216
+backend/src/llm/anthropic_sdk_adapter.py                                                                     385     43    89%   74, 102-103, 106, 119, 266, 268, 281-282, 312-317, 335, 371, 439, 447-449, 560, 583-590, 616-621, 686-687, 707, 711-726, 763, 782-783, 817, 868-870
+backend/src/llm/costing.py                                                                                    13      0   100%
+backend/src/llm/costing_helpers/__init__.py                                                                    0      0   100%
+backend/src/llm/costing_helpers/billing_dimensions.py                                                         40      7    82%   65-68, 71, 81-82
+backend/src/llm/costing_helpers/billing_rules.py                                                              38      5    87%   15, 48-49, 55-56
+backend/src/llm/costing_helpers/calculators.py                                                                 7      0   100%
+backend/src/llm/costing_helpers/capture_status.py                                                             23      0   100%
+backend/src/llm/costing_helpers/catalog.py                                                                   147     20    86%   20, 24, 41, 46, 63-65, 78, 81, 92, 95, 127, 164, 167, 183-186, 188-189
+backend/src/llm/costing_helpers/catalog_defaults.py                                                            3      0   100%
+backend/src/llm/costing_helpers/coercion.py                                                                   41      9    78%   17-20, 26-31, 49-50
+backend/src/llm/costing_helpers/constants.py                                                                   4      0   100%
+backend/src/llm/costing_helpers/coverage.py                                                                   43      6    86%   31, 33, 43, 50, 55-64
+backend/src/llm/costing_helpers/formatting.py                                                                 15      0   100%
+backend/src/llm/costing_helpers/snapshot_builder.py                                                           75      1    99%   159
+backend/src/llm/costing_helpers/snapshot_parts.py                                                             40      2    95%   90, 104
+backend/src/llm/costing_helpers/usage_normalize.py                                                            60      3    95%   117, 119, 135
+backend/src/llm/deepseek_sdk_adapter.py                                                                       30      0   100%
+backend/src/llm/errors.py                                                                                     18      0   100%
+backend/src/llm/gemini_client.py                                                                              98     20    80%   95-105, 194-200, 233-235, 250-256
+backend/src/llm/gemini_global_analyzer.py                                                                     85     12    86%   44-45, 73, 90, 97, 102, 109-110, 145-148
+backend/src/llm/gemini_sdk_adapter.py                                                                         54     19    65%   44-48, 50, 96-128
+backend/src/llm/multimodal_image_normalization.py                                                            145     15    90%   126, 132, 161, 168, 186, 212, 219, 261, 278, 288, 291-292, 294, 320, 328
+backend/src/llm/normalization/__init__.py                                                                      3      0   100%
+backend/src/llm/normalization/entity_normalizer.py                                                           163     10    94%   126, 135, 182, 185-186, 225, 242, 253-254, 315
+backend/src/llm/normalization/model_entity_id.py                                                              49      2    96%   55, 60
+backend/src/llm/normalization/numeric_coercion.py                                                             30      0   100%
+backend/src/llm/openai_sdk_adapter.py                                                                        271     45    83%   159-160, 192-193, 210, 243, 255-257, 357, 409, 420-447, 484-497, 507-513, 583-584, 587, 601-603
+backend/src/llm/prompt_composer/__init__.py                                                                    3      0   100%
+backend/src/llm/prompt_composer/composer.py                                                                   11      0   100%
+backend/src/llm/prompt_composer/enrichments.py                                                                57      8    86%   75, 96-102
+backend/src/llm/prompt_composer/hybrid_assembly.py                                                            15      0   100%
+backend/src/llm/prompt_composer/hybrid_profiles.py                                                            27      0   100%
+backend/src/llm/prompt_composer/hybrid_resolution.py                                                          35      5    86%   46, 88, 91-92, 112
+backend/src/llm/prompt_composer/prompt_traceability.py                                                       138      7    95%   257, 265, 277-278, 294, 306, 340
+backend/src/llm/prompt_composer/protected_prompt_contract.py                                                   9      0   100%
+backend/src/llm/prompts.py                                                                                     8      0   100%
+backend/src/llm/provider_error_taxonomy.py                                                                    38      2    95%   94, 127
+backend/src/llm/providers/__init__.py                                                                          7      4    43%   9-13
+backend/src/llm/providers/base.py                                                                              6      0   100%
+backend/src/llm/providers/factory.py                                                                          15      5    67%   34-40
+backend/src/llm/providers/gemini_provider.py                                                                  12      1    92%   22
+backend/src/llm/providers/openai_provider.py                                                                  15      2    87%   18, 23
+backend/src/llm/response_trace.py                                                                             14      1    93%   26
+backend/src/llm/schema_versions.py                                                                            11      2    82%   20-21
+backend/src/llm/types.py                                                                                      36      1    97%   62
+backend/src/llm/vision_multimodal_payload.py                                                                 257     12    95%   439-440, 476-477, 484, 497-498, 506, 577-580
+backend/src/models/__init__.py                                                                                 0      0   100%
+backend/src/models/schemas.py                                                                                152      6    96%   156-163, 167-168
+backend/src/parsing/__init__.py                                                                                2      0   100%
+backend/src/parsing/global_analysis_parser.py                                                                113     27    76%   44, 48, 50, 52, 61, 64, 70, 73-74, 80, 83, 88-89, 95-96, 125-126, 134, 137-138, 161, 164, 169, 173, 178, 185-186
+backend/src/pipeline/__init__.py                                                                               6      4    33%   7-11
+backend/src/pipeline/adapters/__init__.py                                                                      6      4    33%   7-13
+backend/src/pipeline/adapters/gemini/__init__.py                                                               2      2     0%   3-5
+backend/src/pipeline/adapters/hybrid_global_analysis_strategy.py                                             196     14    93%   253-258, 326-332, 376-382, 428, 534-535, 559
+backend/src/pipeline/context/__init__.py                                                                       2      0   100%
+backend/src/pipeline/context/run_context.py                                                                   58      1    98%   129
+backend/src/pipeline/contracts/__init__.py                                                                     3      0   100%
+backend/src/pipeline/contracts/analysis_context.py                                                            70     10    86%   57-64, 75-76
+backend/src/pipeline/contracts/multi_provider_trace_types.py                                                  23      0   100%
+backend/src/pipeline/contracts/pipeline_analysis_execution_settings.py                                         6      0   100%
+backend/src/pipeline/contracts/stage.py                                                                        5      0   100%
+backend/src/pipeline/errors.py                                                                                 4      0   100%
+backend/src/pipeline/execution_log.py                                                                        173     31    82%   56, 60, 65-72, 101-116, 157-175, 181, 222-223, 231, 239, 272, 277-278, 286, 290, 313-314
+backend/src/pipeline/execution_log_sanitizer.py                                                              106     19    82%   53, 72, 94-99, 113-114, 129, 158, 166, 183, 194, 200, 203-207, 213
+backend/src/pipeline/hybrid_inventory_pipeline.py                                                            279     37    87%   88, 134, 148-151, 186-197, 255-256, 267, 278-279, 482, 489-492, 499-502, 506-509, 537-540, 558-561
+backend/src/pipeline/llm_metadata_json_safety.py                                                              36     15    58%   30, 47, 55-69
+backend/src/pipeline/ports/__init__.py                                                                         2      0   100%
+backend/src/pipeline/ports/analysis_provider.py                                                               24      0   100%
+backend/src/pipeline/ports/llm_execution.py                                                                    5      0   100%
+backend/src/pipeline/provider_keys.py                                                                         33      0   100%
+backend/src/pipeline/providers/__init__.py                                                                     9      4    56%   33-39
+backend/src/pipeline/providers/capabilities.py                                                                42      3    93%   144, 147, 158
+backend/src/pipeline/providers/definitions.py                                                                 35      0   100%
+backend/src/pipeline/providers/registry.py                                                                    33      0   100%
+backend/src/pipeline/run_metadata.py                                                                          85     13    85%   51-60, 178-180
+backend/src/pipeline/secret_redaction.py                                                                      34      3    91%   38, 47, 65
+backend/src/pipeline/services/__init__.py                                                                      0      0   100%
+backend/src/pipeline/services/analysis_visual_reference_prep.py                                               52      3    94%   49-50, 87
+backend/src/pipeline/services/effective_prompt_composer.py                                                    63      0   100%
+backend/src/pipeline/services/execution_image_manifest_builder.py                                            113     19    83%   76, 89, 111, 113, 162, 166-167, 170, 194, 212-230
+backend/src/pipeline/services/execution_image_manifest_payload.py                                             97     19    80%   33, 37, 57, 101, 105, 109, 113, 125, 134, 170, 200-208
+backend/src/pipeline/services/hybrid_analysis_prompt.py                                                      121      5    96%   182-189
+backend/src/pipeline/services/multi_provider_analysis_execution.py                                            77      7    91%   57, 79, 165, 190, 266-273
+backend/src/pipeline/services/pipeline_provider_resolver.py                                                   55      2    96%   87, 119
+backend/src/pipeline/services/provider_analysis_execution_config.py                                           60      2    97%   140-141
+backend/src/pipeline/services/provider_analysis_result_normalization.py                                       11      0   100%
+backend/src/pipeline/services/provider_execution_bridge.py                                                    28      2    93%   44-45
+backend/src/pipeline/services/provider_execution_errors.py                                                    28      2    93%   42, 44
+backend/src/pipeline/services/provider_execution_request.py                                                  134     30    78%   120, 122, 145, 151, 166, 178, 239, 245, 252, 259, 267, 273, 281, 294-320
+backend/src/pipeline/services/provider_llm_request_metadata.py                                                16      0   100%
+backend/src/pipeline/services/provider_payload_serialization.py                                               93     14    85%   52, 70-79, 156, 170, 190, 200, 210, 220, 229, 237
+backend/src/pipeline/services/provider_result_aggregator.py                                                   24      1    96%   48
+backend/src/pipeline/stages/__init__.py                                                                        7      0   100%
+backend/src/pipeline/stages/analysis_stage.py                                                                 65     23    65%   32-36, 57-68, 87, 97-98, 139-141
+backend/src/pipeline/stages/entity_resolution_stage.py                                                        76      1    99%   60
+backend/src/pipeline/stages/evidence_stage.py                                                                 26      2    92%   46-51
+backend/src/pipeline/stages/frame_acquisition_stage.py                                                        92      2    98%   225-226
+backend/src/pipeline/stages/input_preparation_stage.py                                                        37      0   100%
+backend/src/pipeline/stages/reporting_stage.py                                                                45      1    98%   75
+backend/src/preprocess/__init__.py                                                                             0      0   100%
+backend/src/preprocess/image_ops.py                                                                           73      8    89%   82, 126, 133, 140, 164, 174, 201, 238
+backend/src/preprocess/selectors.py                                                                           36      1    97%   108
+backend/src/preprocess/similarity.py                                                                          60     18    70%   37, 42, 62, 67, 76, 113-124, 147, 149, 153
+backend/src/reid/__init__.py                                                                                  47      8    83%   101-108
+backend/src/reid/clip_embedder.py                                                                             48      8    83%   18, 23, 30, 69, 81, 85-87
+backend/src/reid/gating.py                                                                                    72     32    56%   76-107
+backend/src/reid/merge.py                                                                                     78      8    90%   24, 29, 43, 87, 121-122, 149, 154
+backend/src/reid/phash.py                                                                                     46     11    76%   18, 20, 53, 65-66, 70-71, 73, 77-79
+backend/src/reid/signature.py                                                                                 75      5    93%   64-66, 111, 121
+backend/src/reporting/__init__.py                                                                              3      0   100%
+backend/src/reporting/artifacts.py                                                                            32      0   100%
+backend/src/reporting/display_label.py                                                                         9      0   100%
+backend/src/reporting/hybrid_report.py                                                                        46      7    85%   35-36, 40, 48, 122-124
+backend/src/reporting/supplier_traceability.py                                                                14      0   100%
+backend/src/review/__init__.py                                                                                 3      0   100%
+backend/src/review/review_merge.py                                                                            52     10    81%   26-29, 35, 37, 49, 72, 75, 78
+backend/src/review/review_store.py                                                                            39      5    87%   25-27, 29, 51
+backend/src/roi/__init__.py                                                                                    3      3     0%   9-12
+backend/src/roi/cropper.py                                                                                    32     32     0%   5-68
+backend/src/roi/quality.py                                                                                     8      8     0%   7-27
+backend/src/runtime/__init__.py                                                                                2      0   100%
+backend/src/runtime/app_container.py                                                                         761    260    66%   323-328, 341-342, 398, 407-411, 486, 528, 534, 541-546, 549-556, 559-564, 567-572, 576-582, 596-602, 610-616, 623-629, 637-643, 650-689, 702-711, 731-737, 752-756, 762-766, 773-777, 784-790, 802-827, 837-844, 871-876, 908, 937, 979-990, 1009-1015, 1018-1023, 1039, 1049, 1056, 1066, 1083, 1102, 1111-1129, 1133-1151, 1155-1171, 1174-1190, 1193-1211, 1225, 1244, 1252-1268, 1271-1291, 1294-1339, 1346, 1362-1437, 1477-1484, 1487-1526, 1531, 1534, 1549, 1578, 1589, 1599, 1606, 1615, 1624, 1633, 1642, 1652, 1661, 1671, 1681
+backend/src/runtime/container/__init__.py                                                                      2      0   100%
+backend/src/runtime/container/analytics_builders.py                                                           14      7    50%   34-53
+backend/src/runtime/container/capture_session_builders.py                                                     37     18    51%   22-26, 47-51, 73-87, 98-112
+backend/src/runtime/container/extraction_profile_builders.py                                                  21      8    62%   33, 46, 59, 73, 87, 101, 116, 132
+backend/src/runtime/container/label_builders.py                                                               28      6    79%   19-21, 42-46, 67-71
+backend/src/runtime/container/prompt_config_builders.py                                                       15      4    73%   44, 60, 74, 87
+backend/src/runtime/container/repository_backend.py                                                           32      1    97%   73
+backend/src/runtime/container/repository_builders.py                                                         187     71    62%   77-79, 98-102, 121-123, 161-165, 186-190, 209-213, 231-245, 257-261, 282-284, 305-309, 330-332, 353-357, 378-382, 403-405, 426-430, 450-468, 479-493, 504-518, 529-543, 554-568
+backend/src/runtime/container/runtime_environment.py                                                          12      0   100%
+backend/src/runtime/container/service_builders.py                                                             13      0   100%
+backend/src/runtime/container/storage_builders.py                                                             33      2    94%   23, 44
+backend/src/runtime/container/use_case_builders.py                                                             8      0   100%
+backend/src/runtime/production_alerts.py                                                                      18      0   100%
+backend/src/runtime/production_cutover.py                                                                     81     14    83%   20-21, 30-31, 111, 116, 121, 126, 133, 143-150, 160
+backend/src/runtime/v3_deps.py                                                                                98     10    90%   86, 98, 102, 125, 139, 159, 171, 175, 215, 223
+backend/src/storage/__init__.py                                                                                0      0   100%
+backend/src/storage/adapters/__init__.py                                                                       2      2     0%   3-5
+backend/src/storage/adapters/filesystem_artifact_storage.py                                                   31     31     0%   5-52
+backend/src/storage/ports/__init__.py                                                                          2      2     0%   3-5
+backend/src/storage/ports/artifact_storage.py                                                                  8      8     0%   9-37
+backend/src/tools/__init__.py                                                                                  0      0   100%
+backend/src/tools/supplier_reference_image_audit.py                                                           87     15    83%   56, 58, 60, 63, 83, 87, 92, 94, 161, 189-190, 215-226
+backend/src/tracking/__init__.py                                                                               3      0   100%
+backend/src/tracking/track_builder.py                                                                         19     16    16%   22-57
+backend/src/tracking/tracker.py                                                                               56      4    93%   58, 61-62, 75
+backend/src/utils/__init__.py                                                                                  2      0   100%
+backend/src/utils/validation.py                                                                               34      3    91%   40, 47, 57
+backend/src/validation/__init__.py                                                                             2      0   100%
+backend/src/validation/global_analysis_schema.py                                                             107     25    77%   44, 53, 55, 57, 59, 61, 63, 66-67, 87, 93, 131, 138, 146, 150, 160, 164, 172, 175, 183, 186-187, 195, 200, 202
+backend/src/video/__init__.py                                                                                  0      0   100%
+backend/src/video/frames.py                                                                                  165     25    85%   53, 112, 118, 122, 128, 132, 145, 197, 207, 230, 238, 242, 260-266, 268, 272, 312, 314, 318, 323, 326
+backend/src/video/ingest.py                                                                                   45      7    84%   39, 52, 63, 66, 69, 115-116
+backend/src/view_selection/__init__.py                                                                         2      0   100%
+backend/src/view_selection/selector.py                                                                       237     58    76%   39, 50, 52, 66-69, 75, 81-82, 101, 120, 124, 134, 137, 147-156, 194, 207, 213, 237, 283, 300-306, 314, 336-350, 354-358, 371-372, 382-408
+----------------------------------------------------------------------------------------------------------------------------------------
+TOTAL                                                                                                      58465  13222    77%
+Coverage HTML written to dir htmlcov
+3797 passed, 44 skipped, 124 warnings in 63.96s (0:01:03)

@@ -1,5 +1,65 @@
 # Quality Gate previo a deploy en develop
 
+## Phase 0 — Tooling confiable (schema_version 2)
+
+Correcciones del runner de auditoría para que el estado agregado coincida con las evidencias crudas.
+
+### Requisitos
+
+- Python del proyecto (`backend/.venv`, `.venv`, `venv`, o `AUDIT_PYTHON` / `DINAMIC_AUDIT_PYTHON`).
+- Node/npm para frontend y mobile.
+- Herramientas backend instaladas en el venv (`pip install -e ".[dev]"`).
+
+### Estados por herramienta
+
+| Estado | Significado |
+|--------|-------------|
+| `OK` | Ejecutada sin findings |
+| `FINDINGS` | Ejecutada con hallazgos |
+| `EXECUTION_ERROR` | Fallo al ejecutar el comando |
+| `PARSE_ERROR` | Hubo salida pero el agregador no pudo interpretarla |
+| `NOT_AVAILABLE` | Herramienta/intérprete no accesible |
+| `NOT_RUN` / `SKIPPED` | Omitida intencionalmente (debe haber razón) |
+
+### Comandos
+
+```bash
+# Auditoría completa (backend + frontend + mobile + arquitectura + resumen + gate)
+bash scripts/audit/run_full_audit.sh
+
+# Gate estricto (exit 1 si falla)
+# Usa el Python resuelto del proyecto
+backend/.venv/bin/python scripts/audit/enforce_quality_gate.py --strict
+
+# Solo backend / frontend / mobile
+bash scripts/audit/run_backend_audit.sh
+bash scripts/audit/run_frontend_audit.sh
+bash scripts/audit/run_mobile_audit.sh
+
+# Tests del tooling
+backend/.venv/bin/python -m pytest scripts/audit/tests/ -q
+```
+
+### Mobile
+
+- Área de primera clase en `audit-status.json`.
+- Jest con `--watchman=false` (sin dependencia de Watchman).
+- Evidencias: `audit/raw/mobile-*.txt|json` + sidecars `.exitcode`.
+
+### Troubleshooting
+
+- Backend `NOT_AVAILABLE`: activar/crear `backend/.venv` e instalar `.[dev]`, o exportar `AUDIT_PYTHON`.
+- TypeScript con miles de errores fantasma: verificar `.exitcode` del typecheck; el parser prioriza exit 0 y el resumen `Found N errors`.
+- Gate FAIL por tool no ejecutado: el gate estricto **no** trata `NOT_RUN` como éxito.
+
+### Outputs
+
+- `audit/raw/*` — evidencia cruda + `*.exitcode` + `python-env.json`
+- `audit/audit-status.json` — `schema_version: 2`
+- `audit/audit-summary.md` — resumen humano
+
+---
+
 ## Estado de esta implementación
 
 Este documento define la base inicial del Quality Gate en modalidad progresiva.

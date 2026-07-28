@@ -49,8 +49,12 @@ mark_from_exit_code() {
   elif [ "$exit_code" -eq 1 ]; then
     echo "FINDINGS"
   else
-    echo "ERROR"
+    echo "EXECUTION_ERROR"
   fi
+}
+
+write_exitcode() {
+  printf '%s\n' "$2" >"${1}.exitcode"
 }
 
 has_script() {
@@ -92,51 +96,66 @@ echo
 if [ -z "$FRONTEND_DIR" ] || [ ! -f "$FRONTEND_DIR/package.json" ]; then
   ESLINT_STATUS="SKIPPED"
   write_note "$ESLINT_REPORT" "ESLint no ejecutado: no se detecto frontend/package.json."
+  write_exitcode "$ESLINT_REPORT" 0
 elif ! command -v npm >/dev/null 2>&1; then
-  ESLINT_STATUS="NOT_INSTALLED"
+  ESLINT_STATUS="NOT_AVAILABLE"
   write_note "$ESLINT_REPORT" "npm no esta instalado en el entorno actual."
+  write_exitcode "$ESLINT_REPORT" 127
 elif has_script "lint"; then
   (cd "$FRONTEND_DIR" && npm run lint) >"$ESLINT_REPORT" 2>&1
-  ESLINT_STATUS="$(mark_from_exit_code "$?")"
+  rc="$?"
+  write_exitcode "$ESLINT_REPORT" "$rc"
+  ESLINT_STATUS="$(mark_from_exit_code "$rc")"
 else
   ESLINT_STATUS="SKIPPED"
   write_note "$ESLINT_REPORT" "ESLint no ejecutado: no se encontro script 'lint' en package.json."
+  write_exitcode "$ESLINT_REPORT" 0
 fi
 
 # Typecheck
 if [ -z "$FRONTEND_DIR" ] || [ ! -f "$FRONTEND_DIR/package.json" ]; then
   TYPECHECK_STATUS="SKIPPED"
   write_note "$TYPECHECK_REPORT" "Typecheck no ejecutado: no se detecto frontend/package.json."
+  write_exitcode "$TYPECHECK_REPORT" 0
 elif ! command -v npm >/dev/null 2>&1; then
-  TYPECHECK_STATUS="NOT_INSTALLED"
+  TYPECHECK_STATUS="NOT_AVAILABLE"
   write_note "$TYPECHECK_REPORT" "npm no esta instalado en el entorno actual."
+  write_exitcode "$TYPECHECK_REPORT" 127
 elif has_script "typecheck"; then
   (cd "$FRONTEND_DIR" && npm run typecheck) >"$TYPECHECK_REPORT" 2>&1
-  TYPECHECK_STATUS="$(mark_from_exit_code "$?")"
+  rc="$?"
+  write_exitcode "$TYPECHECK_REPORT" "$rc"
+  TYPECHECK_STATUS="$(mark_from_exit_code "$rc")"
 elif command -v npx >/dev/null 2>&1; then
   (cd "$FRONTEND_DIR" && npx tsc --noEmit) >"$TYPECHECK_REPORT" 2>&1
-  TYPECHECK_STATUS="$(mark_from_exit_code "$?")"
+  rc="$?"
+  write_exitcode "$TYPECHECK_REPORT" "$rc"
+  TYPECHECK_STATUS="$(mark_from_exit_code "$rc")"
 else
-  TYPECHECK_STATUS="NOT_INSTALLED"
+  TYPECHECK_STATUS="NOT_AVAILABLE"
   write_note "$TYPECHECK_REPORT" "Typecheck no ejecutado: no hay script 'typecheck' y npx no esta disponible."
+  write_exitcode "$TYPECHECK_REPORT" 127
 fi
 
 # npm audit
 if [ -z "$FRONTEND_DIR" ] || [ ! -f "$FRONTEND_DIR/package.json" ]; then
   NPM_AUDIT_STATUS="SKIPPED"
   write_note "$NPM_AUDIT_REPORT" "npm audit no ejecutado: no se detecto frontend/package.json."
+  write_exitcode "$NPM_AUDIT_REPORT" 0
 elif ! command -v npm >/dev/null 2>&1; then
-  NPM_AUDIT_STATUS="NOT_INSTALLED"
+  NPM_AUDIT_STATUS="NOT_AVAILABLE"
   write_note "$NPM_AUDIT_REPORT" "npm no esta instalado en el entorno actual."
+  write_exitcode "$NPM_AUDIT_REPORT" 127
 else
   (cd "$FRONTEND_DIR" && npm audit --json) >"$NPM_AUDIT_REPORT" 2>&1
   audit_exit="$?"
+  write_exitcode "$NPM_AUDIT_REPORT" "$audit_exit"
   if [ "$audit_exit" -eq 0 ]; then
     NPM_AUDIT_STATUS="OK"
   elif [ "$audit_exit" -eq 1 ]; then
     NPM_AUDIT_STATUS="FINDINGS"
   else
-    NPM_AUDIT_STATUS="ERROR"
+    NPM_AUDIT_STATUS="EXECUTION_ERROR"
   fi
 fi
 
@@ -144,15 +163,20 @@ fi
 if [ -z "$FRONTEND_DIR" ] || [ ! -f "$FRONTEND_DIR/package.json" ]; then
   VITEST_STATUS="SKIPPED"
   write_note "$VITEST_REPORT" "Vitest no ejecutado: no se detecto frontend/package.json."
+  write_exitcode "$VITEST_REPORT" 0
 elif ! command -v npm >/dev/null 2>&1; then
-  VITEST_STATUS="NOT_INSTALLED"
+  VITEST_STATUS="NOT_AVAILABLE"
   write_note "$VITEST_REPORT" "npm no esta instalado en el entorno actual."
+  write_exitcode "$VITEST_REPORT" 127
 elif has_script "test"; then
   (cd "$FRONTEND_DIR" && npm run test -- --run) >"$VITEST_REPORT" 2>&1
-  VITEST_STATUS="$(mark_from_exit_code "$?")"
+  rc="$?"
+  write_exitcode "$VITEST_REPORT" "$rc"
+  VITEST_STATUS="$(mark_from_exit_code "$rc")"
 else
   VITEST_STATUS="SKIPPED"
   write_note "$VITEST_REPORT" "Vitest no ejecutado: no se encontro script 'test' en package.json."
+  write_exitcode "$VITEST_REPORT" 0
 fi
 
 # Static audits

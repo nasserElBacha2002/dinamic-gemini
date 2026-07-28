@@ -3,11 +3,36 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+# Allow `python scripts/audit/generate_audit_summary.py` without installing a package.
+_AUDIT_DIR = Path(__file__).resolve().parent
+if str(_AUDIT_DIR) not in sys.path:
+    sys.path.insert(0, str(_AUDIT_DIR))
+
+from lib.parsers import (  # noqa: E402
+    parse_bandit as lib_parse_bandit,
+    parse_eslint as lib_parse_eslint,
+    parse_jest as lib_parse_jest,
+    parse_mypy as lib_parse_mypy,
+    parse_npm_audit as lib_parse_npm_audit,
+    parse_pip_audit as lib_parse_pip_audit,
+    parse_pytest as lib_parse_pytest,
+    parse_ruff as lib_parse_ruff,
+    parse_typescript as lib_parse_typescript,
+    parse_vitest as lib_parse_vitest,
+)
+from lib.statuses import (  # noqa: E402
+    PARSER_VERSION,
+    SCHEMA_VERSION,
+    ToolStatus,
+    is_invalidating,
+    normalize_legacy_status,
+)
 
 SEVERITY_ORDER = {
     "none": 0,
@@ -54,12 +79,31 @@ class ToolResult:
     severity: str = "none"
     metrics: Dict[str, int] = field(default_factory=dict)
     observation: str = ""
+    exit_code: Optional[int] = None
+    error: Optional[str] = None
+    parser: str = ""
+    parser_version: str = PARSER_VERSION
 
     def metrics_text(self) -> str:
         if not self.metrics:
             return "-"
         parts = [f"{k}={v}" for k, v in self.metrics.items()]
         return ", ".join(parts)
+
+
+def _from_parsed(parsed, report: str = "") -> ToolResult:
+    return ToolResult(
+        name=parsed.name,
+        report=report,
+        status=normalize_legacy_status(parsed.status),
+        severity=parsed.severity,
+        metrics=dict(parsed.metrics),
+        observation=parsed.observation,
+        exit_code=parsed.exit_code,
+        error=parsed.error,
+        parser=parsed.parser,
+        parser_version=parsed.parser_version,
+    )
 
 
 def to_repo_relative(path: Path, repo_root: Path) -> str:
@@ -70,263 +114,43 @@ def to_repo_relative(path: Path, repo_root: Path) -> str:
 
 
 def parse_backend_ruff(path: Path) -> ToolResult:
-    tr = ToolResult("Ruff", "")
-    content = safe_read(path)
-    if content is None:
-        return tr
-    m = re.search(r"Found (\d+) errors\.", content)
-    fx = re.search(r"\[\*\]\s+(\d+)\s+fixable", content)
-    lowered = content.lower()
-    if "no instalado" in lowered:
-        tr.status = "NOT_RUN"
-        tr.severity = "info"
-        tr.observation = "Herramienta no instalada en la corrida."
-        return tr
-    if "no ejecutado" in lowered:
-        tr.status = "SKIPPED"
-        tr.severity = "info"
-        return tr
-    if m:
-        issues = int(m.group(1))
-        tr.metrics["issues"] = issues
-        tr.status = "FINDINGS" if issues > 0 else "OK"
-        tr.severity = "medium" if issues > 0 else "none"
-        if fx:
-            tr.metrics["fixable"] = int(fx.group(1))
-    elif "no se detecto" in lowered:
-        tr.status = "SKIPPED"
-        tr.severity = "info"
-    else:
-        tr.status = "ERROR"
-        tr.severity = "low"
-        tr.observation = "No se pudo extraer métrica de Ruff."
-    return tr
+    return _from_parsed(lib_parse_ruff(path))
 
 
 def parse_backend_mypy(path: Path) -> ToolResult:
-    tr = ToolResult("Mypy", "")
-    content = safe_read(path)
-    if content is None:
-        return tr
-    lowered = content.lower()
-    if "no instalado" in lowered:
-        tr.status = "NOT_RUN"
-        tr.severity = "info"
-        return tr
-    if "no ejecutado" in lowered:
-        tr.status = "SKIPPED"
-        tr.severity = "info"
-        return tr
-    if "Success:" in content:
-        tr.status = "OK"
-        tr.severity = "none"
-        return tr
-    m = re.search(r"Found (\d+) errors in (\d+) files", content)
-    if m:
-        errs, files = int(m.group(1)), int(m.group(2))
-        tr.metrics["errors"] = errs
-        tr.metrics["files"] = files
-        tr.status = "FINDINGS" if errs > 0 else "OK"
-        tr.severity = "high" if errs > 0 else "none"
-    elif "error:" in content:
-        tr.status = "FINDINGS"
-        tr.severity = "high"
-    else:
-        tr.status = "ERROR"
-        tr.severity = "low"
-        tr.observation = "No se pudo parsear salida de Mypy."
-    return tr
+    return _from_parsed(lib_parse_mypy(path))
 
 
 def parse_backend_bandit(path: Path) -> ToolResult:
-    tr = ToolResult("Bandit", "")
-    content = safe_read(path)
-    if content is None:
-        return tr
-    lowered = content.lower()
-    if "no instalado" in lowered:
-        tr.status = "NOT_RUN"
-        tr.severity = "info"
-        return tr
-    if "no ejecutado" in lowered:
-        tr.status = "SKIPPED"
-        tr.severity = "info"
-        return tr
-    data = extract_json_object(content)
-    if data is None:
-        tr.status = "ERROR"
-        tr.severity = "high"
-        tr.observation = "JSON inválido o no parseable."
-        return tr
-    results = data.get("results", [])
-    sev_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
-    for r in results:
-        sev = str(r.get("issue_severity", "")).upper()
-        if sev in sev_counts:
-            sev_counts[sev] += 1
-    total = sum(sev_counts.values())
-    tr.metrics.update(
-        {
-            "total": total,
-            "high": sev_counts["HIGH"],
-            "medium": sev_counts["MEDIUM"],
-            "low": sev_counts["LOW"],
-        }
-    )
-    tr.status = "FINDINGS" if total > 0 else "OK"
-    tr.severity = (
-        "high"
-        if sev_counts["HIGH"] > 0
-        else ("medium" if sev_counts["MEDIUM"] > 0 else ("low" if total > 0 else "none"))
-    )
-    return tr
+    return _from_parsed(lib_parse_bandit(path))
 
 
 def parse_backend_pip_audit(path: Path) -> ToolResult:
-    tr = ToolResult("pip-audit", "")
-    content = safe_read(path)
-    if content is None:
-        return tr
-    lowered = content.lower()
-    if "no instalado" in lowered:
-        tr.status = "NOT_RUN"
-        tr.severity = "info"
-        return tr
-    if "no ejecutado" in lowered:
-        tr.status = "SKIPPED"
-        tr.severity = "info"
-        return tr
-    if "No known vulnerabilities found" in content:
-        tr.status = "OK"
-        tr.severity = "none"
-        tr.metrics["total"] = 0
-        if "skip_reason" in content:
-            tr.observation = "Paquete local no auditable en PyPI."
-        return tr
-    data = extract_json_object(content)
-    if data is None:
-        tr.status = "ERROR"
-        tr.severity = "low"
-        return tr
-    vulns = data.get("vulnerabilities", [])
-    tr.metrics["total"] = len(vulns)
-    tr.status = "FINDINGS" if vulns else "OK"
-    tr.severity = "medium" if vulns else "none"
-    return tr
+    return _from_parsed(lib_parse_pip_audit(path))
 
 
 def parse_backend_pytest(path: Path) -> ToolResult:
-    tr = ToolResult("Pytest", "")
-    content = safe_read(path)
-    if content is None:
-        return tr
-    lowered = content.lower()
-    if "no instalado" in lowered:
-        tr.status = "NOT_RUN"
-        tr.severity = "info"
-        return tr
-    if "no ejecutado" in lowered:
-        tr.status = "SKIPPED"
-        tr.severity = "info"
-        return tr
-    m_col = re.search(r"collected (\d+) items", content)
-    m_res = re.search(r"(\d+) failed, (\d+) passed, (\d+) skipped", content)
-    if m_col:
-        tr.metrics["collected"] = int(m_col.group(1))
-    if m_res:
-        failed, passed, skipped = map(int, m_res.groups())
-        tr.metrics["failed"] = failed
-        tr.metrics["passed"] = passed
-        tr.metrics["skipped"] = skipped
-        tr.status = "FINDINGS" if failed > 0 else "OK"
-        tr.severity = "critical" if failed > 0 else "none"
-    else:
-        tr.status = "ERROR"
-        tr.severity = "medium"
-    return tr
+    return _from_parsed(lib_parse_pytest(path))
 
 
 def parse_frontend_eslint(path: Path) -> ToolResult:
-    tr = ToolResult("ESLint", "")
-    content = safe_read(path)
-    if content is None:
-        return tr
-    if "no se encontro script 'lint'" in content.lower():
-        tr.status = "SKIPPED"
-        tr.severity = "medium"
-        tr.observation = "No existe script lint."
-        return tr
-    m = re.search(r"✖\s+(\d+) problems \((\d+) errors, (\d+) warnings\)", content)
-    if m:
-        total, errors, warnings = map(int, m.groups())
-        tr.metrics.update({"problems": total, "errors": errors, "warnings": warnings})
-        tr.status = "FINDINGS" if total > 0 else "OK"
-        tr.severity = "high" if errors > 0 else ("medium" if warnings > 0 else "none")
-    else:
-        tr.status = "ERROR"
-        tr.severity = "low"
-        tr.observation = "No se pudo extraer resumen ESLint."
-    return tr
+    return _from_parsed(lib_parse_eslint(path))
 
 
 def parse_frontend_typecheck(path: Path) -> ToolResult:
-    tr = ToolResult("Typecheck", "")
-    content = safe_read(path)
-    if content is None:
-        return tr
-    ts_errors = len(re.findall(r"error TS\d+:", content))
-    tr.metrics["ts_errors"] = ts_errors
-    tr.status = "FINDINGS" if ts_errors > 0 else "OK"
-    tr.severity = "high" if ts_errors > 0 else "none"
-    return tr
+    return _from_parsed(lib_parse_typescript(path))
 
 
 def parse_frontend_npm_audit(path: Path) -> ToolResult:
-    tr = ToolResult("npm audit", "")
-    content = safe_read(path)
-    if content is None:
-        return tr
-    data = extract_json_object(content)
-    if data is None:
-        tr.status = "ERROR"
-        tr.severity = "medium"
-        tr.observation = "JSON inválido en npm audit."
-        return tr
-    vul = data.get("metadata", {}).get("vulnerabilities", {})
-    for key in ("critical", "high", "moderate", "low", "info", "total"):
-        tr.metrics[key] = int(vul.get(key, 0))
-    total = tr.metrics["total"]
-    tr.status = "FINDINGS" if total > 0 else "OK"
-    if tr.metrics["critical"] > 0 or tr.metrics["high"] > 0:
-        tr.severity = "high"
-    elif tr.metrics["moderate"] > 0:
-        tr.severity = "medium"
-    elif tr.metrics["low"] > 0:
-        tr.severity = "low"
-    else:
-        tr.severity = "none"
-    return tr
+    return _from_parsed(lib_parse_npm_audit(path))
 
 
 def parse_frontend_vitest(path: Path) -> ToolResult:
-    tr = ToolResult("Vitest", "")
-    content = safe_read(path)
-    if content is None:
-        return tr
-    m_files = re.search(r"Test Files\s+(\d+) failed \| (\d+) passed \((\d+)\)", content)
-    m_tests = re.search(r"Tests\s+(\d+) failed \| (\d+) passed \((\d+)\)", content)
-    if m_files:
-        tr.metrics["failed_files"] = int(m_files.group(1))
-        tr.metrics["passed_files"] = int(m_files.group(2))
-        tr.metrics["total_files"] = int(m_files.group(3))
-    if m_tests:
-        tr.metrics["failed_tests"] = int(m_tests.group(1))
-        tr.metrics["passed_tests"] = int(m_tests.group(2))
-        tr.metrics["total_tests"] = int(m_tests.group(3))
-    failed_tests = tr.metrics.get("failed_tests", 0)
-    tr.status = "FINDINGS" if failed_tests > 0 else "OK"
-    tr.severity = "critical" if failed_tests > 0 else "none"
-    return tr
+    return _from_parsed(lib_parse_vitest(path))
+
+
+def parse_mobile_jest(path: Path) -> ToolResult:
+    return _from_parsed(lib_parse_jest(path))
 
 
 def parse_metric_md(path: Path, name: str, regex_pairs: List[Tuple[str, str]], default_sev: str) -> ToolResult:
@@ -538,25 +362,51 @@ def parse_arch_frontend_solid(path: Path) -> ToolResult:
 
 
 def compute_area_status(tools: List[ToolResult]) -> str:
-    statuses = [t.status for t in tools]
-    if any(s == "ERROR" for s in statuses):
-        return "ERROR"
-    if any(s == "FINDINGS" for s in statuses):
-        return "FINDINGS"
-    if all(s in {"NOT_RUN", "SKIPPED"} for s in statuses):
-        return "NOT_RUN"
-    if all(s == "OK" for s in statuses):
-        return "OK"
-    return "FINDINGS"
+    statuses = [normalize_legacy_status(t.status) for t in tools]
+    if any(is_invalidating(s) for s in statuses):
+        return ToolStatus.ERROR.value
+    if any(s == ToolStatus.FINDINGS.value for s in statuses):
+        return ToolStatus.FINDINGS.value
+    if tools and all(s in {ToolStatus.NOT_RUN.value, ToolStatus.SKIPPED.value} for s in statuses):
+        return ToolStatus.NOT_RUN.value
+    if tools and all(s == ToolStatus.OK.value for s in statuses):
+        return ToolStatus.OK.value
+    if not tools:
+        return ToolStatus.NOT_RUN.value
+    return ToolStatus.FINDINGS.value
 
 
 def area_observation(area: str, tools: List[ToolResult]) -> str:
     if area == "backend":
-        failed = next((t.metrics.get("failed", 0) for t in tools if t.name == "Pytest"), 0)
-        return f"Tests fallidos backend={failed}" if failed else "Sin fallos críticos detectados"
+        pytest = next((t for t in tools if t.name == "Pytest"), None)
+        if pytest is None:
+            return "Pytest ausente"
+        if pytest.status in {ToolStatus.NOT_RUN.value, ToolStatus.NOT_AVAILABLE.value, ToolStatus.SKIPPED.value}:
+            return f"Pytest no ejecutado ({pytest.status})"
+        if is_invalidating(pytest.status):
+            return f"Pytest tooling inválido ({pytest.status})"
+        failed = pytest.metrics.get("failed", 0) + pytest.metrics.get("errors", 0)
+        return f"Tests fallidos backend={failed}" if failed else f"Pytest OK passed={pytest.metrics.get('passed', 0)}"
     if area == "frontend":
-        failed = next((t.metrics.get("failed_tests", 0) for t in tools if t.name == "Vitest"), 0)
-        return f"Tests fallidos frontend={failed}" if failed else "Sin fallos de tests"
+        vitest = next((t for t in tools if t.name == "Vitest"), None)
+        if vitest is None:
+            return "Vitest ausente"
+        if vitest.status in {ToolStatus.NOT_RUN.value, ToolStatus.NOT_AVAILABLE.value, ToolStatus.SKIPPED.value}:
+            return f"Vitest no ejecutado ({vitest.status})"
+        if is_invalidating(vitest.status):
+            return f"Vitest tooling inválido ({vitest.status})"
+        failed = vitest.metrics.get("failed_tests", 0)
+        return f"Tests fallidos frontend={failed}" if failed else f"Vitest OK passed={vitest.metrics.get('passed_tests', 0)}"
+    if area == "mobile":
+        jest = next((t for t in tools if t.name == "Jest"), None)
+        if jest is None:
+            return "Jest ausente"
+        if jest.status in {ToolStatus.NOT_RUN.value, ToolStatus.NOT_AVAILABLE.value, ToolStatus.SKIPPED.value}:
+            return f"Jest no ejecutado ({jest.status})"
+        if is_invalidating(jest.status):
+            return f"Jest tooling inválido ({jest.status})"
+        failed = jest.metrics.get("failed", 0)
+        return f"Tests fallidos mobile={failed}" if failed else f"Jest OK passed={jest.metrics.get('passed', 0)}"
     if area == "backend_architecture":
         fail = next((t.metrics.get("fail", 0) for t in tools if t.name == "Límites de imports"), 0)
         return f"Boundary FAIL={fail}" if fail else "Sin FAIL de boundaries"
@@ -594,10 +444,11 @@ def build_summary_markdown(
     for area_key, label in [
         ("backend", "Backend"),
         ("frontend", "Frontend"),
+        ("mobile", "Mobile"),
         ("backend_architecture", "Arquitectura backend"),
         ("frontend_architecture", "Arquitectura frontend"),
     ]:
-        tools = areas[area_key]
+        tools = areas.get(area_key, [])
         lines.append(
             f"| {label} | {compute_area_status(tools)} | {max_severity([t.severity for t in tools])} | {area_observation(area_key, tools)} |"
         )
@@ -606,10 +457,13 @@ def build_summary_markdown(
     for area_key, title in [
         ("backend", "Backend"),
         ("frontend", "Frontend"),
+        ("mobile", "Mobile"),
         ("backend_architecture", "Arquitectura backend"),
         ("frontend_architecture", "Arquitectura frontend"),
     ]:
-        tools = areas[area_key]
+        tools = areas.get(area_key, [])
+        if not tools:
+            continue
         headers = ["Herramienta", "Estado", "Severidad", "Métricas", "Reporte"]
         if "Arquitectura" in title:
             headers[0] = "Auditoría"
@@ -814,6 +668,22 @@ def main() -> int:
             "medium",
         ),
     ]
+    mobile_files = {
+        "Typecheck": raw / "mobile-typecheck.txt",
+        "ESLint": raw / "mobile-lint.txt",
+        "Jest": raw / "mobile-jest.txt",
+        "npm audit": raw / "mobile-npm-audit.json",
+    }
+    mobile = [
+        parse_frontend_typecheck(mobile_files["Typecheck"]),
+        parse_frontend_eslint(mobile_files["ESLint"]),
+        parse_mobile_jest(mobile_files["Jest"]),
+        parse_frontend_npm_audit(mobile_files["npm audit"]),
+    ]
+    # Rename Typecheck/ESLint display for mobile tables
+    if mobile:
+        mobile[0].name = "Typecheck"
+        mobile[1].name = "ESLint"
     backend_arch = [
         parse_arch_backend_code_smells(backend_arch_files["Code smells"]),
         parse_arch_backend_complexity(backend_arch_files["Complejidad"]),
@@ -832,6 +702,7 @@ def main() -> int:
     areas = {
         "backend": backend,
         "frontend": frontend,
+        "mobile": mobile,
         "backend_architecture": backend_arch,
         "frontend_architecture": frontend_arch,
     }
@@ -839,6 +710,8 @@ def main() -> int:
         tr.report = to_repo_relative(backend_files[tr.name], repo_root)
     for tr in frontend:
         tr.report = to_repo_relative(frontend_files[tr.name], repo_root)
+    for tr, key in zip(mobile, ["Typecheck", "ESLint", "Jest", "npm audit"]):
+        tr.report = to_repo_relative(mobile_files[key], repo_root)
     for tr in backend_arch:
         tr.report = to_repo_relative(backend_arch_files[tr.name], repo_root)
     for tr in frontend_arch:
@@ -848,21 +721,59 @@ def main() -> int:
     all_sev = [t.severity for vals in areas.values() for t in vals]
     overall_max_sev = max_severity(all_sev)
 
-    if any(s == "ERROR" for s in area_status.values()):
+    if any(s == ToolStatus.ERROR.value or is_invalidating(s) for s in area_status.values()):
         overall_status = "error"
-    elif any(s in {"FINDINGS", "SKIPPED", "NOT_RUN"} for s in area_status.values()):
+    elif any(s in {ToolStatus.FINDINGS.value, ToolStatus.SKIPPED.value, ToolStatus.NOT_RUN.value} for s in area_status.values()):
         overall_status = "findings"
     else:
         overall_status = "ok"
 
-    status_obj = {
+    status_obj: Dict[str, object] = {
+        "schema_version": SCHEMA_VERSION,
+        "parser_version": PARSER_VERSION,
         "overall_status": overall_status,
         "max_severity": overall_max_sev,
         "generated_at": generated_at,
         "areas": {},
     }
     for area_key, tools in areas.items():
-        status_obj["areas"][area_key] = {
+        pytest_failed = 0
+        vitest_failed = 0
+        jest_failed = 0
+        if area_key == "backend":
+            pt = next((t for t in tools if t.name == "Pytest"), None)
+            if pt:
+                pytest_failed = int(pt.metrics.get("failed", 0)) + int(pt.metrics.get("errors", 0))
+        if area_key == "frontend":
+            vt = next((t for t in tools if t.name == "Vitest"), None)
+            if vt:
+                vitest_failed = int(vt.metrics.get("failed_tests", 0))
+        if area_key == "mobile":
+            jt = next((t for t in tools if t.name == "Jest"), None)
+            if jt:
+                jest_failed = int(jt.metrics.get("failed", 0))
+        highlights = {
+            "tool_count": len(tools),
+            "findings_count": sum(1 for t in tools if t.status == ToolStatus.FINDINGS.value),
+            "not_run_count": sum(
+                1
+                for t in tools
+                if t.status
+                in {
+                    ToolStatus.NOT_RUN.value,
+                    ToolStatus.SKIPPED.value,
+                    ToolStatus.NOT_AVAILABLE.value,
+                }
+            ),
+            "invalidating_count": sum(1 for t in tools if is_invalidating(t.status)),
+        }
+        if area_key == "backend":
+            highlights["pytest_failed"] = pytest_failed
+        if area_key == "frontend":
+            highlights["vitest_failed_tests"] = vitest_failed
+        if area_key == "mobile":
+            highlights["jest_failed"] = jest_failed
+        status_obj["areas"][area_key] = {  # type: ignore[index]
             "status": area_status[area_key],
             "max_severity": max_severity([t.severity for t in tools]),
             "tools": {
@@ -872,14 +783,14 @@ def main() -> int:
                     "metrics": t.metrics,
                     "report": t.report,
                     "observation": t.observation,
+                    "exit_code": t.exit_code,
+                    "error": t.error,
+                    "parser": t.parser,
+                    "parser_version": t.parser_version,
                 }
                 for t in tools
             },
-            "highlights": {
-                "tool_count": len(tools),
-                "findings_count": sum(1 for t in tools if t.status == "FINDINGS"),
-                "not_run_count": sum(1 for t in tools if t.status in {"NOT_RUN", "SKIPPED"}),
-            },
+            "highlights": highlights,
         }
 
     validate_consistency(areas, status_obj)
@@ -897,6 +808,7 @@ def main() -> int:
 
     print(f"Generated: {audit_dir / 'audit-summary.md'}")
     print(f"Generated: {audit_dir / 'audit-status.json'}")
+    print(f"schema_version={SCHEMA_VERSION} overall_status={overall_status}")
     return 0
 
 
