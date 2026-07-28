@@ -13,6 +13,7 @@ export class AuthService {
     private readonly tokenStorage: TokenStorage,
     private readonly logger: Logger,
     private readonly onBeforeLogout?: () => Promise<void>,
+    private readonly onAfterLogin?: () => Promise<void>,
   ) {}
 
   async login(username: string, password: string): Promise<AuthSession> {
@@ -28,6 +29,20 @@ export class AuthService {
       refreshExpiresIn: payload.refresh_expires_in,
     });
     this.logger.info('auth_login', { userId: payload.user.id, role: payload.user.role });
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { emitAuthState } = require('../../features/offlineOperations/authStateEvents') as {
+        emitAuthState: (s: 'authenticated' | 'unauthenticated') => void;
+      };
+      emitAuthState('authenticated');
+    } catch {
+      /* optional */
+    }
+    try {
+      await this.onAfterLogin?.();
+    } catch (e) {
+      this.logger.warn('recovery', { where: 'auth_after_login', message: String(e) });
+    }
     return { user: payload.user };
   }
 
@@ -38,6 +53,15 @@ export class AuthService {
     }
     try {
       const user = await this.api.get<AuthUserDto>('/auth/me');
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { emitAuthState } = require('../../features/offlineOperations/authStateEvents') as {
+          emitAuthState: (s: 'authenticated' | 'unauthenticated') => void;
+        };
+        emitAuthState('authenticated');
+      } catch {
+        /* optional */
+      }
       return { user };
     } catch (e) {
       this.logger.warn('recovery', { where: 'auth_restore', message: String(e) });

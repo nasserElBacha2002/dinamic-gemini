@@ -2,7 +2,7 @@ import { Text, View } from 'react-native';
 
 import type { CaptureSnapshot } from '../features/capture/captureService';
 import type { AppServices } from '../runtime/bootstrap/createAppServices';
-import { Button, ErrorText, PhotoWorkList, SmallButton, countPhotos, messageOf, styles } from '../ui';
+import { Button, ErrorText, PhotoWorkList, SmallButton, countPhotos, styles } from '../ui';
 
 export interface ReviewScreenProps {
   services: AppServices;

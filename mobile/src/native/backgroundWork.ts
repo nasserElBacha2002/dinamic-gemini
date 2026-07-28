@@ -18,10 +18,14 @@ export interface BackgroundWorkScheduler {
   scheduleRemoteDelete(assetId: string): Promise<void>;
   cancelAllTracked(): Promise<void>;
   scheduleUploadQueue(expedited?: boolean): Promise<void>;
+  /** Phase 9: wake OfflineOpsRecoveryWorker (RUNNING→READY + upload queue). */
+  scheduleOfflineOperations(expedited?: boolean): Promise<void>;
   /** Clear native AuthVault queuePaused and reschedule WorkManager (no-op if flag off). */
   resumeUploadQueue(): Promise<void>;
   getStatus(): Promise<BackgroundUploadStatus>;
 }
+
+export const UNIQUE_OFFLINE_OPERATIONS_WORK = 'dinamic-offline-operations';
 
 export interface BackgroundUploadStatus {
   readonly uniqueWorkState: string;
@@ -88,12 +92,13 @@ export function createBackgroundWorkScheduler(
   logger: Logger,
   flags?: Pick<
     FeatureFlags,
-    'backgroundUploadWorker' | 'workManagerScheduling'
+    'backgroundUploadWorker' | 'workManagerScheduling' | 'mobileOfflineWorkManager'
   > | null,
 ): BackgroundWorkScheduler {
   const tracked = new Set<string>();
   const native = resolveNative();
   const workerEnabled = flags?.backgroundUploadWorker === true;
+  const offlineWmEnabled = flags?.mobileOfflineWorkManager === true;
 
   const scheduleNative = async (name: string, tag: string) => {
     tracked.add(name);
@@ -146,6 +151,26 @@ export function createBackgroundWorkScheduler(
         return;
       }
       await scheduleNative(UNIQUE_UPLOAD_QUEUE_WORK, 'upload-queue');
+    },
+    scheduleOfflineOperations: async (expedited = false) => {
+      tracked.add(UNIQUE_OFFLINE_OPERATIONS_WORK);
+      if ((offlineWmEnabled || workerEnabled) && native) {
+        await native.scheduleUniqueWork(
+          UNIQUE_OFFLINE_OPERATIONS_WORK,
+          expedited ? 'expedited' : 'offline-ops',
+        );
+        logger.info('work_scheduled', {
+          name: UNIQUE_OFFLINE_OPERATIONS_WORK,
+          tag: 'offline-ops',
+          mode: 'native_workmanager',
+        });
+        return;
+      }
+      logger.info('work_scheduled', {
+        name: UNIQUE_OFFLINE_OPERATIONS_WORK,
+        tag: 'offline-ops',
+        mode: 'noop_js_restore_on_open',
+      });
     },
     resumeUploadQueue: async () => {
       if (workerEnabled && native?.resumeUploadQueue) {

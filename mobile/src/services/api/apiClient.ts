@@ -230,6 +230,17 @@ export class ApiClient {
           refreshExpiresIn: payload.refresh_expires_in,
         };
         await this.options.tokenStorage.saveTokens(tokens);
+        // Phase 9: successful refresh restores auth for blocked offline ops.
+        try {
+          // Lazy require to avoid cycles with offline module graph.
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { emitAuthState } = require('../../features/offlineOperations/authStateEvents') as {
+            emitAuthState: (s: 'authenticated' | 'unauthenticated') => void;
+          };
+          emitAuthState('authenticated');
+        } catch {
+          /* optional */
+        }
       })().finally(() => {
         this.refreshPromise = null;
       });
@@ -242,6 +253,15 @@ export class ApiClient {
       return;
     }
     this.authExpiredNotified = true;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { emitAuthState } = require('../../features/offlineOperations/authStateEvents') as {
+        emitAuthState: (s: 'authenticated' | 'unauthenticated') => void;
+      };
+      emitAuthState('unauthenticated');
+    } catch {
+      /* optional */
+    }
     this.options.onAuthExpired?.();
   }
 }

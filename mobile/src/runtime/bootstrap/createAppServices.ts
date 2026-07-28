@@ -34,9 +34,18 @@ import { AuthoritativeAisleFinalizationService } from '../../features/authoritat
 import { ServerReprocessApi } from '../../features/serverReprocess/serverReprocessApi';
 import { ServerReprocessService } from '../../features/serverReprocess/serverReprocessService';
 import { ServerReprocessIntentRepository } from '../../database/repositories/serverReprocessIntentRepository';
+import { OfflineOperationRepository } from '../../database/repositories/offlineOperationRepository';
 import { AisleRevisionApi } from '../../features/aisleRevision/aisleRevisionApi';
 import { AisleRevisionService } from '../../features/aisleRevision/aisleRevisionService';
 import { AisleRevisionDraftRepository } from '../../database/repositories/aisleRevisionDraftRepository';
+import {
+  OfflineOperationScheduler,
+  createOfflineOperationFacade,
+  buildDirectedExecutorMap,
+  createOfflineAutoEnqueue,
+  subscribeAuthState,
+  type OfflineOperationFacade,
+} from '../../features/offlineOperations';
 import { createId } from '../../shared/createId';
 import { PreliminaryReconciliationApi } from '../../features/preliminaryReconciliation/preliminaryReconciliationApi';
 import { ReconciliationQueryService } from '../../features/preliminaryReconciliation/reconciliationQueryService';
@@ -106,7 +115,10 @@ export interface AppServices {
   readonly jobMonitor: JobMonitor;
   readonly localDetectionDrafts: LocalDetectionDraftRepository;
   readonly confirmedLocalResults: ConfirmedLocalResultRepository;
-  readonly confirmLocalResult: ConfirmLocalResultService;
+  readonly confirmLocalResult: Pick<
+    ConfirmLocalResultService,
+    'isEnabled' | 'getLatestDraftForPhoto' | 'resolveSource' | 'confirm'
+  >;
   readonly preliminarySync: PreliminaryDetectionSyncService;
   readonly authoritativeLocalSync: AuthoritativeLocalResultSyncService;
   readonly authoritativeAisleFinalization: AuthoritativeAisleFinalizationService;
@@ -116,6 +128,9 @@ export interface AppServices {
   readonly connectivity: ConnectivityService;
   readonly backgroundWork: BackgroundWorkScheduler;
   readonly backgroundUpload: BackgroundUploadScheduler;
+  /** Phase 9: null when `mobileOfflineOperations` is off. */
+  readonly offlineOperations: OfflineOperationFacade | null;
+  readonly offlineScheduler: OfflineOperationScheduler | null;
   exportDiagnostic(): Promise<DiagnosticBundle>;
   diagnosticShareText(bundle: DiagnosticBundle): string;
   exportObservabilityBaseline(): Promise<BaselineReport | null>;
@@ -150,6 +165,9 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
   const aisleFinalizationIntents = new AisleFinalizationIntentRepository(db);
   const serverReprocessIntents = new ServerReprocessIntentRepository(db);
   const aisleRevisionDrafts = new AisleRevisionDraftRepository(db);
+  const offlineOpsRepo = new OfflineOperationRepository(db);
+  const offlineOpsEnabled = config.flags.mobileOfflineOperations === true;
+  let offlineAutoEnqueue: ReturnType<typeof createOfflineAutoEnqueue> | null = null;
   const connectivity = createConnectivityService();
   const backgroundWork = createBackgroundWorkScheduler(logger, config.flags);
   const backgroundUpload = asBackgroundUploadScheduler(backgroundWork);
@@ -202,12 +220,37 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     reporter: obsWire?.reporter ?? null,
     connectivity,
   });
-  const confirmLocalResult = new ConfirmLocalResultService(
+  const confirmLocalResultBase = new ConfirmLocalResultService(
     config.flags,
     confirmedLocalResults,
     localDetectionDrafts,
   );
-  if (config.flags.mobileAuthoritativeLocalCodeScan) {
+  const confirmLocalResult = {
+    isEnabled: () => confirmLocalResultBase.isEnabled(),
+    getLatestDraftForPhoto: (id: string) => confirmLocalResultBase.getLatestDraftForPhoto(id),
+    resolveSource: confirmLocalResultBase.resolveSource.bind(confirmLocalResultBase),
+    confirm: async (args: Parameters<ConfirmLocalResultService['confirm']>[0]) => {
+      const row = await confirmLocalResultBase.confirm(args);
+      const session = await captureRepo.getSession(args.captureSessionId);
+      if (session && offlineOpsEnabled) {
+        // assigned after offline bootstrap — call via delayed tick
+        void (async () => {
+          // wait until offlineAutoEnqueue is wired (same tick as bootstrap)
+          await Promise.resolve();
+          await offlineAutoEnqueue?.onResultConfirmed({
+            resultId: row.id,
+            capturePhotoId: row.capture_photo_id,
+            sessionId: args.captureSessionId,
+            inventoryId: session.inventory_id,
+            aisleId: session.aisle_id,
+            contentHash: `${row.id}:${row.row_version}:${row.confirmed_internal_code}`,
+          });
+        })();
+      }
+      return row;
+    },
+  };
+  if (config.flags.mobileAuthoritativeLocalCodeScan && !offlineOpsEnabled) {
     authoritativeLocalSync.startScheduler();
   }
   const authoritativeAisleFinalization = new AuthoritativeAisleFinalizationService({
@@ -236,7 +279,8 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       serverAisleRollback: config.flags.serverAisleRollback,
     },
   );
-  if (config.flags.serverReprocessOfflineQueue) {
+  // Legacy drains — suppressed when unified offline_operations scheduler owns them.
+  if (config.flags.serverReprocessOfflineQueue && !offlineOpsEnabled) {
     const drain = () => {
       void serverReprocess.drainPending().catch(() => undefined);
     };
@@ -247,7 +291,11 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     });
     drain();
   }
-  if (config.flags.mobileAisleRevisions && config.flags.serverAisleRevisions) {
+  if (
+    config.flags.mobileAisleRevisions &&
+    config.flags.serverAisleRevisions &&
+    !offlineOpsEnabled
+  ) {
     const syncDrafts = () => {
       void aisleRevision.syncPendingDrafts().catch(() => undefined);
     };
@@ -257,6 +305,21 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
       }
     });
     syncDrafts();
+  }
+  if (
+    config.flags.authoritativeFinalizationOfflineQueue &&
+    config.flags.mobileAuthoritativeAisleFinalization &&
+    !offlineOpsEnabled
+  ) {
+    const drainFinalize = () => {
+      void authoritativeAisleFinalization.drainPending().catch(() => undefined);
+    };
+    connectivity.subscribe((state) => {
+      if (state === 'online') {
+        drainFinalize();
+      }
+    });
+    drainFinalize();
   }
   const useNativeBg =
     config.flags.backgroundUploadWorker === true || config.flags.workManagerScheduling === true;
@@ -290,6 +353,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     },
     onPhotoStable: (sessionId, photoId) => {
       void uploadQueue.enqueuePhoto(sessionId, photoId);
+      void offlineAutoEnqueue?.onPhotoPersisted(sessionId, photoId);
     },
     observability: obsWire,
   });
@@ -316,6 +380,79 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     localDrafts: localDetectionDrafts,
     reconciliation,
   });
+
+  let offlineScheduler: OfflineOperationScheduler | null = null;
+  let offlineOperations: OfflineOperationFacade | null = null;
+  if (offlineOpsEnabled) {
+    offlineOperations = createOfflineOperationFacade({ repo: offlineOpsRepo, logger });
+    const executors = buildDirectedExecutorMap({
+      wakeUploadQueue: async () => {
+        void uploadQueue.restoreAndStart();
+        await backgroundWork.scheduleUploadQueue(true);
+      },
+      capture: captureRepo,
+      confirmed: confirmedLocalResults,
+      authoritativeSync: authoritativeLocalSync,
+      finalization: authoritativeAisleFinalization,
+      finalizationIntents: aisleFinalizationIntents,
+      serverReprocess,
+      serverReprocessIntents: config.flags.serverReprocessOfflineQueue
+        ? serverReprocessIntents
+        : null,
+      aisleRevision,
+      aisleRevisionDrafts: config.flags.mobileAisleRevisions ? aisleRevisionDrafts : null,
+      processing,
+    });
+    offlineScheduler = new OfflineOperationScheduler({
+      repo: offlineOpsRepo,
+      logger,
+      executors,
+      getHasNetwork: () => connectivity.getState() !== 'offline',
+      getHasAuth: async () => Boolean(await tokenStorage.getAccessToken()),
+      concurrency: 2,
+      onWakeNative: async () => {
+        if (config.flags.mobileOfflineWorkManager) {
+          await backgroundWork.scheduleOfflineOperations(false);
+        }
+      },
+    });
+    offlineAutoEnqueue = createOfflineAutoEnqueue({
+      enabled: true,
+      facade: offlineOperations,
+      scheduler: offlineScheduler,
+      capture: captureRepo,
+      logger,
+    });
+    offlineScheduler.start();
+    subscribeAuthState((state) => {
+      if (state === 'authenticated') {
+        void offlineScheduler?.onAuthRestored();
+      } else {
+        void offlineScheduler?.onAuthMissing();
+      }
+    });
+    connectivity.subscribe((state) => {
+      if (state === 'online') {
+        void offlineScheduler?.tick();
+      }
+    });
+    if (config.flags.mobileOfflineWorkManager) {
+      void backgroundWork.scheduleOfflineOperations(false);
+    }
+    const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    void offlineOpsRepo
+      .purgeRetention({
+        completedBeforeIso: cutoff,
+        failedBeforeIso: cutoff,
+        eventBeforeIso: cutoff,
+      })
+      .catch(() => undefined);
+    logger.info('recovery', {
+      obs: true,
+      obs_name: 'offline_recovery_started',
+      mode: 'offline_operations_scheduler',
+    });
+  }
 
   if (!configError) {
     void uploadLimits.refresh();
@@ -352,10 +489,13 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
         // best-effort — never block bootstrap
       });
     }
-    if (config.flags.mobileAuthoritativeLocalCodeScan) {
+    if (config.flags.mobileAuthoritativeLocalCodeScan && !offlineOpsEnabled) {
       void authoritativeLocalSync.syncPending().catch(() => {
         // best-effort — never block bootstrap
       });
+    }
+    if (offlineOpsEnabled) {
+      void offlineScheduler?.recoverAndTick().catch(() => undefined);
     }
     void cleanupTransformTemps(logger);
     void getStorageStatus().then((s) => {
@@ -371,19 +511,28 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     databaseRecoveredFromCorruption,
     logger,
     api,
-    auth: new AuthService(api, tokenStorage, logger, async () => {
-      await backgroundWork.cancelAllTracked();
-      await clearNativeUploadAuth();
-      await uploadQueue.pause('logout');
-      try {
-        await localDetectionDrafts.deleteAll();
-        await confirmedLocalResults.deleteAll();
-      } catch {
-        // best-effort — drafts must not survive logout
-      }
-      preliminarySync.stopScheduler();
-      authoritativeLocalSync.stopScheduler();
-    }),
+    auth: new AuthService(
+      api,
+      tokenStorage,
+      logger,
+      async () => {
+        await backgroundWork.cancelAllTracked();
+        await clearNativeUploadAuth();
+        await uploadQueue.pause('logout');
+        try {
+          await localDetectionDrafts.deleteAll();
+          await confirmedLocalResults.deleteAll();
+        } catch {
+          // best-effort — drafts must not survive logout
+        }
+        preliminarySync.stopScheduler();
+        authoritativeLocalSync.stopScheduler();
+        offlineScheduler?.stop();
+      },
+      async () => {
+        await offlineScheduler?.onAuthRestored();
+      },
+    ),
     inventories: new InventoryService(api),
     clients: new ClientService(api),
     aisles: new AisleService(api, logger),
@@ -404,6 +553,8 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     connectivity,
     backgroundWork,
     backgroundUpload,
+    offlineOperations,
+    offlineScheduler,
     exportDiagnostic: () =>
       buildDiagnosticBundle({
         config,
@@ -439,6 +590,7 @@ export async function createAppServices(onAuthExpired: () => void): Promise<AppS
     async dispose() {
       preliminarySync.stopScheduler();
       authoritativeLocalSync.stopScheduler();
+      offlineScheduler?.stop();
       capture.dispose();
       await uploadQueue.dispose();
       jobMonitor.dispose();

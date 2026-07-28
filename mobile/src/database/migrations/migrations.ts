@@ -455,6 +455,103 @@ CREATE INDEX IF NOT EXISTS idx_aisle_revision_drafts_status
   ON aisle_revision_drafts(status, sync_status);
 `,
   },
+  {
+    version: 17,
+    name: 'offline_operations',
+    sql: `
+CREATE TABLE IF NOT EXISTS offline_operations (
+  operation_id TEXT PRIMARY KEY NOT NULL,
+  operation_type TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  inventory_id TEXT,
+  aisle_id TEXT,
+  asset_id TEXT,
+  session_id TEXT,
+  payload_json TEXT NOT NULL,
+  payload_version INTEGER NOT NULL DEFAULT 1,
+  idempotency_key TEXT NOT NULL,
+  status TEXT NOT NULL,
+  priority INTEGER NOT NULL DEFAULT 100,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 12,
+  next_retry_at TEXT,
+  last_attempt_at TEXT,
+  last_error_code TEXT,
+  last_error_message TEXT,
+  requires_network INTEGER NOT NULL DEFAULT 1,
+  requires_auth INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_offline_operations_idempotency
+  ON offline_operations(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_offline_operations_status_retry
+  ON offline_operations(status, next_retry_at, priority);
+CREATE INDEX IF NOT EXISTS idx_offline_operations_aisle
+  ON offline_operations(inventory_id, aisle_id);
+CREATE INDEX IF NOT EXISTS idx_offline_operations_session
+  ON offline_operations(session_id);
+
+CREATE TABLE IF NOT EXISTS offline_operation_dependencies (
+  operation_id TEXT NOT NULL,
+  depends_on_operation_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (operation_id, depends_on_operation_id),
+  FOREIGN KEY (operation_id) REFERENCES offline_operations(operation_id) ON DELETE CASCADE,
+  FOREIGN KEY (depends_on_operation_id) REFERENCES offline_operations(operation_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_offline_operation_deps_parent
+  ON offline_operation_dependencies(depends_on_operation_id);
+
+CREATE TABLE IF NOT EXISTS offline_operation_attempts (
+  attempt_id TEXT PRIMARY KEY NOT NULL,
+  operation_id TEXT NOT NULL,
+  attempt_number INTEGER NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  outcome TEXT NOT NULL,
+  error_code TEXT,
+  error_message TEXT,
+  FOREIGN KEY (operation_id) REFERENCES offline_operations(operation_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_offline_operation_attempts_op
+  ON offline_operation_attempts(operation_id, attempt_number);
+
+CREATE TABLE IF NOT EXISTS offline_operation_events (
+  event_id TEXT PRIMARY KEY NOT NULL,
+  operation_id TEXT NOT NULL,
+  event_name TEXT NOT NULL,
+  detail_json TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (operation_id) REFERENCES offline_operations(operation_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_offline_operation_events_op
+  ON offline_operation_events(operation_id, created_at);
+`,
+  },
+  {
+    version: 18,
+    name: 'offline_operations_claim_and_payload_hash',
+    sql: `
+ALTER TABLE offline_operations ADD COLUMN payload_hash TEXT;
+ALTER TABLE offline_operations ADD COLUMN owner_token TEXT;
+ALTER TABLE offline_operations ADD COLUMN lease_expires_at TEXT;
+ALTER TABLE offline_operations ADD COLUMN heartbeat_at TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_offline_operations_claim
+  ON offline_operations(status, lease_expires_at, priority, created_at);
+CREATE INDEX IF NOT EXISTS idx_offline_operations_payload_hash
+  ON offline_operations(idempotency_key, payload_hash);
+CREATE INDEX IF NOT EXISTS idx_offline_operation_deps_child
+  ON offline_operation_dependencies(operation_id);
+`,
+  },
 ];
 
 export function validateMigrations(migrations: readonly Migration[] = MIGRATIONS): void {

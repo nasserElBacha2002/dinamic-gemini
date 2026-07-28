@@ -199,4 +199,39 @@ export class AuthoritativeAisleFinalizationService {
       this.inFlight = false;
     }
   }
+
+  /**
+   * Phase 9: drain durable finalization intents after reconnect / recovery.
+   * Resets abandoned FINALIZATION_SYNCING → PENDING then retries finalize.
+   */
+  async drainPending(): Promise<{ attempted: number; completed: number }> {
+    if (!this.isEnabled() || !this.options.intents) {
+      return { attempted: 0, completed: 0 };
+    }
+    const online = this.options.connectivity
+      ? this.options.connectivity.getState() === 'online'
+      : true;
+    if (!online) {
+      return { attempted: 0, completed: 0 };
+    }
+    const pending = await this.options.intents.listPending();
+    let completed = 0;
+    for (const intent of pending) {
+      if (intent.status === 'FINALIZATION_SYNCING') {
+        await this.options.intents.updateStatus(intent.capture_session_id, 'FINALIZATION_PENDING', {
+          nowIso: new Date().toISOString(),
+        });
+      }
+      this.finalizationIds.set(intent.capture_session_id, intent.finalization_id);
+      const result = await this.finalize({
+        sessionId: intent.capture_session_id,
+        inventoryId: intent.inventory_id,
+        aisleId: intent.aisle_id,
+      });
+      if (result.ok) {
+        completed += 1;
+      }
+    }
+    return { attempted: pending.length, completed };
+  }
 }

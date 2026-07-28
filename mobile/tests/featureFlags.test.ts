@@ -123,4 +123,36 @@ describe('featureFlags', () => {
     expect(on.mobileAuthoritativeLocalCodeScan).toBe(true);
     expect(on.mobileLocalResultReview).toBe(true);
   });
+
+  it('defaults phase9 offline operations flags off in every environment', () => {
+    for (const env of ['development', 'staging', 'production'] as const) {
+      const flags = resolveFeatureFlags({}, env);
+      expect(flags.mobileOfflineOperations).toBe(false);
+      expect(flags.mobileOfflineWorkManager).toBe(false);
+      expect(flags.mobileOfflineFinalization).toBe(false);
+      expect(flags.mobileOfflineRevisions).toBe(false);
+      expect(flags.mobileOfflineServerProcessing).toBe(false);
+      expect(flags.serverOfflineIdempotencySupport).toBe(false);
+    }
+  });
+
+  it('can independently enable phase9 offline operations flags', () => {
+    const on = resolveFeatureFlags(
+      {
+        mobileOfflineOperations: '1',
+        mobileOfflineWorkManager: true,
+        mobileOfflineFinalization: '1',
+        mobileOfflineRevisions: '1',
+        mobileOfflineServerProcessing: '1',
+        serverOfflineIdempotencySupport: '1',
+      },
+      'production',
+    );
+    expect(on.mobileOfflineOperations).toBe(true);
+    expect(on.mobileOfflineWorkManager).toBe(true);
+    expect(on.mobileOfflineFinalization).toBe(true);
+    expect(on.mobileOfflineRevisions).toBe(true);
+    expect(on.mobileOfflineServerProcessing).toBe(true);
+    expect(on.serverOfflineIdempotencySupport).toBe(true);
+  });
 });

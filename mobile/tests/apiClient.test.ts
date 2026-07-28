@@ -7,6 +7,7 @@ import {
 } from '../src/services/api/apiClient';
 import type { AppConfig } from '../src/runtime/config/resolveAppConfig';
 import { createLogger } from '../src/core/logging';
+import { DEFAULT_FEATURE_FLAGS } from '../src/core/featureFlags';
 import type { AuthTokens, TokenStorage } from '../src/services/secureStorage/tokenStorage';
 
 class MemoryTokenStorage implements TokenStorage {
@@ -39,6 +40,7 @@ describe('ApiClient refresh mutex', () => {
     gitSha: 'test',
     buildTime: '',
     flags: {
+      ...DEFAULT_FEATURE_FLAGS,
       allowMobileDataUploads: true,
       heicConvertToJpeg: true,
       workManagerScheduling: true,
@@ -183,6 +185,7 @@ describe('ApiClient abort / timeout classification', () => {
     gitSha: 'test',
     buildTime: '',
     flags: {
+      ...DEFAULT_FEATURE_FLAGS,
       allowMobileDataUploads: true,
       heicConvertToJpeg: true,
       workManagerScheduling: false,

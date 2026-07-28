@@ -160,6 +160,19 @@ const config: ExpoConfig = {
       ...optionalFlag('DINAMIC_FLAG_MOBILE_AISLE_HISTORY', 'mobileAisleHistory'),
       ...optionalFlag('DINAMIC_FLAG_SERVER_AISLE_REVISIONS', 'serverAisleRevisions'),
       ...optionalFlag('DINAMIC_FLAG_SERVER_AISLE_ROLLBACK', 'serverAisleRollback'),
+      // Phase 9 offline operations — default off; set =1 to enable.
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_OFFLINE_OPERATIONS', 'mobileOfflineOperations'),
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_OFFLINE_WORKMANAGER', 'mobileOfflineWorkManager'),
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_OFFLINE_FINALIZATION', 'mobileOfflineFinalization'),
+      ...optionalFlag('DINAMIC_FLAG_MOBILE_OFFLINE_REVISIONS', 'mobileOfflineRevisions'),
+      ...optionalFlag(
+        'DINAMIC_FLAG_MOBILE_OFFLINE_SERVER_PROCESSING',
+        'mobileOfflineServerProcessing',
+      ),
+      ...optionalFlag(
+        'DINAMIC_FLAG_SERVER_OFFLINE_IDEMPOTENCY_SUPPORT',
+        'serverOfflineIdempotencySupport',
+      ),
     },
   },
 };

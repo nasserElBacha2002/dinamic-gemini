@@ -371,7 +371,7 @@ export default function App(): JSX.Element {
           sessionId={workSessionId}
           userId={auth.user.id}
           onBack={() => setScreen('review')}
-          onDone={(sessionId) => {
+          onDone={(_sessionId) => {
             void services.capture
               .completeReview()
               .then((sid) => {
@@ -475,11 +475,9 @@ export default function App(): JSX.Element {
           aisle={selectedAisle}
           userId={auth.user.id}
           onBack={() => setScreen('results')}
-          onOpenHistory={
-            services.aisleRevision.isHistoryVisible()
-              ? () => setScreen('aisle-history')
-              : undefined
-          }
+          {...(services.aisleRevision.isHistoryVisible()
+            ? { onOpenHistory: () => setScreen('aisle-history') }
+            : {})}
           onError={setError}
         />
       ) : null}

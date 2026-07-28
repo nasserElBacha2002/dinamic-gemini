@@ -101,4 +101,15 @@ export class AisleFinalizationIntentRepository {
       sessionId,
     );
   }
+
+  async listPending(limit = 20): Promise<AisleFinalizationIntentRow[]> {
+    const rows = await this.db.getAllAsync<AisleFinalizationIntentRow>(
+      `SELECT * FROM aisle_finalization_intents
+       WHERE status IN ('FINALIZATION_PENDING', 'FINALIZATION_RETRY_SCHEDULED', 'FINALIZATION_SYNCING')
+       ORDER BY created_at ASC
+       LIMIT ?;`,
+      limit,
+    );
+    return rows ?? [];
+  }
 }

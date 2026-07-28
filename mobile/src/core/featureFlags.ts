@@ -58,6 +58,18 @@ export interface FeatureFlags {
   readonly serverAisleRevisions: boolean;
   /** Phase 8: allow rollback from history (default false). */
   readonly serverAisleRollback: boolean;
+  /** Phase 9: unified durable offline_operations ledger + scheduler (default false). */
+  readonly mobileOfflineOperations: boolean;
+  /** Phase 9: schedule WorkManager wake for offline recovery (default false). */
+  readonly mobileOfflineWorkManager: boolean;
+  /** Phase 9: route finalization intents through offline_operations (default false). */
+  readonly mobileOfflineFinalization: boolean;
+  /** Phase 9: route revision sync/apply through offline_operations (default false). */
+  readonly mobileOfflineRevisions: boolean;
+  /** Phase 9: durable START_SERVER_PROCESSING ops (default false). */
+  readonly mobileOfflineServerProcessing: boolean;
+  /** Phase 9: backend idempotency helpers for offline replays (default false). */
+  readonly serverOfflineIdempotencySupport: boolean;
 }
 
 /** Non-production defaults. Phase 1/2 upload optimizations default off in production. */
@@ -92,6 +104,12 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   mobileAisleHistory: false,
   serverAisleRevisions: false,
   serverAisleRollback: false,
+  mobileOfflineOperations: false,
+  mobileOfflineWorkManager: false,
+  mobileOfflineFinalization: false,
+  mobileOfflineRevisions: false,
+  mobileOfflineServerProcessing: false,
+  serverOfflineIdempotencySupport: false,
 };
 
 function phaseOptInDefaultForEnvironment(environment: string): boolean {
@@ -159,5 +177,11 @@ export function resolveFeatureFlags(raw: unknown, environment: string): FeatureF
     mobileAisleHistory: bool('mobileAisleHistory', false),
     serverAisleRevisions: bool('serverAisleRevisions', false),
     serverAisleRollback: bool('serverAisleRollback', false),
+    mobileOfflineOperations: bool('mobileOfflineOperations', false),
+    mobileOfflineWorkManager: bool('mobileOfflineWorkManager', false),
+    mobileOfflineFinalization: bool('mobileOfflineFinalization', false),
+    mobileOfflineRevisions: bool('mobileOfflineRevisions', false),
+    mobileOfflineServerProcessing: bool('mobileOfflineServerProcessing', false),
+    serverOfflineIdempotencySupport: bool('serverOfflineIdempotencySupport', false),
   };
 }

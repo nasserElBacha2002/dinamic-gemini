@@ -4,6 +4,7 @@
 import { UploadQueue } from '../src/features/upload/uploadQueue';
 import type { CapturePhotoRow, CaptureSessionRow } from '../src/database/schema/captureSchema';
 import { createLogger } from '../src/core/logging';
+import { DEFAULT_FEATURE_FLAGS } from '../src/core/featureFlags';
 import { ApiError } from '../src/services/api/apiClient';
 
 jest.mock('../src/features/upload/photoPrepare', () => ({
@@ -30,6 +31,11 @@ jest.mock('../src/features/upload/photoPrepare', () => ({
   PrepareFileTooLargeError: class PrepareFileTooLargeError extends Error {
     readonly code = 'PREPARE_FILE_TOO_LARGE';
   },
+}));
+
+jest.mock('../src/features/localCodeScan/preparedAssetHash', () => ({
+  hashPreparedFileSha256: jest.fn(async () => 'deadbeef'),
+  hashPreparedMetaSha256: jest.fn(() => 'cafebabe'),
 }));
 
 import { cleanupTransformUri } from '../src/features/upload/photoPrepare';
@@ -278,6 +284,7 @@ describe('UploadQueue phase1 corrections', () => {
       logger,
       {
         flags: {
+          ...DEFAULT_FEATURE_FLAGS,
           allowMobileDataUploads: true,
           heicConvertToJpeg: true,
           workManagerScheduling: false,

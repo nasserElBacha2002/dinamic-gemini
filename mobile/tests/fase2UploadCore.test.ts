@@ -188,7 +188,9 @@ describe('fase2 session transitions', () => {
 
 describe('fase2 migrations', () => {
   it('includes v3 and v4 upload/job schema', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+    ]);
     const sql = MIGRATIONS.map((m) => m.sql).join('\n');
     expect(sql).toContain('upload_batch_id');
     expect(sql).toContain('client_file_id');
@@ -198,5 +200,8 @@ describe('fase2 migrations', () => {
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS upload_batches');
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS processing_jobs');
     expect(sql).toContain('idx_capture_photos_session_client_file');
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS offline_operations');
+    expect(sql).toContain('payload_hash');
+    expect(sql).toContain('lease_expires_at');
   });
 });

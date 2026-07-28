@@ -94,4 +94,13 @@ export class ServerReprocessIntentRepository {
     );
     return rows ?? [];
   }
+
+  async getByRequestId(requestId: string): Promise<ServerReprocessRequestIntent | null> {
+    return (
+      (await this.db.getFirstAsync<ServerReprocessRequestIntent>(
+        `SELECT * FROM server_reprocess_request_intents WHERE request_id = ? LIMIT 1;`,
+        requestId,
+      )) ?? null
+    );
+  }
 }
