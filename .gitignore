@@ -12,6 +12,12 @@ eggs/
 .eggs/
 lib/
 lib64/
+# Allow the Phase 0 audit shared package (root `lib/` stays ignored).
+!scripts/audit/lib/
+!scripts/audit/lib/**
+# Re-ignore bytecode under the force-included audit lib package.
+scripts/audit/lib/**/__pycache__/
+scripts/audit/lib/**/*.py[cod]
 parts/
 sdist/
 var/
@@ -78,14 +84,18 @@ data/
 # Mobile / Android Gradle caches (never commit)
 **/.gradle/
 
-!audit/raw/.gitkeep
-!audit/raw/LATEST_RUN.txt
-!audit/raw/runs/
-!audit/raw/runs/**
+# Formal audit docs (versioned). Machine outputs below are regenerated.
 !audit/audit-report.md
 !audit/audit-backlog.md
-!audit/audit-summary.md
-!audit/audit-status.json
+
+# Generated audit machine outputs — do not commit (regenerate via scripts/audit/).
+audit/audit-status.json
+audit/audit-summary.md
+audit/raw/**
+!audit/raw/.gitkeep
+
+# Ephemeral Phase 0 git/command dumps (reports/notes stay tracked).
+audit-results/phase-0/phase0-*.txt
 
 # Test coverage
 htmlcov/

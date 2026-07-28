@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -594,13 +596,37 @@ def validate_consistency(areas: Dict[str, List[ToolResult]], status_obj: Dict[st
             raise ValueError(f"Falta campo requerido en audit-status.json: {required}")
 
 
-def main() -> int:
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description="Aggregate audit/raw into status + summary.")
+    parser.add_argument(
+        "--status-out",
+        default=None,
+        help="Write audit-status.json to this path (default: audit/audit-status.json).",
+    )
+    parser.add_argument(
+        "--summary-out",
+        default=None,
+        help="Write audit-summary.md to this path (default: audit/audit-summary.md).",
+    )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Correlation id for this aggregation (default: AUDIT_RUN_ID or UTC timestamp).",
+    )
+    parser.add_argument(
+        "--skip-report-update",
+        action="store_true",
+        help="Do not rewrite the autosection in audit/audit-report.md.",
+    )
+    args = parser.parse_args(argv)
+
     repo_root = Path(__file__).resolve().parents[2]
     raw = repo_root / "audit" / "raw"
     audit_dir = repo_root / "audit"
     audit_dir.mkdir(parents=True, exist_ok=True)
 
     generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    run_id = args.run_id or os.environ.get("AUDIT_RUN_ID") or generated_at.replace(":", "").replace("+00:00", "Z")
 
     backend_files = {
         "Ruff": raw / "backend-ruff.txt",
@@ -731,6 +757,7 @@ def main() -> int:
     status_obj: Dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "parser_version": PARSER_VERSION,
+        "run_id": run_id,
         "overall_status": overall_status,
         "max_severity": overall_max_sev,
         "generated_at": generated_at,
@@ -796,19 +823,25 @@ def main() -> int:
     validate_consistency(areas, status_obj)
     summary_md = build_summary_markdown(generated_at, overall_status, overall_max_sev, areas)
 
-    (audit_dir / "audit-summary.md").write_text(summary_md, encoding="utf-8")
-    (audit_dir / "audit-status.json").write_text(
+    status_path = Path(args.status_out) if args.status_out else (audit_dir / "audit-status.json")
+    summary_path = Path(args.summary_out) if args.summary_out else (audit_dir / "audit-summary.md")
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+
+    summary_path.write_text(summary_md, encoding="utf-8")
+    status_path.write_text(
         json.dumps(status_obj, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
 
-    update_audit_report_with_autosection(
-        audit_dir / "audit-report.md", generated_at, overall_status, overall_max_sev
-    )
+    if not args.skip_report_update:
+        update_audit_report_with_autosection(
+            audit_dir / "audit-report.md", generated_at, overall_status, overall_max_sev
+        )
 
-    print(f"Generated: {audit_dir / 'audit-summary.md'}")
-    print(f"Generated: {audit_dir / 'audit-status.json'}")
-    print(f"schema_version={SCHEMA_VERSION} overall_status={overall_status}")
+    print(f"Generated: {summary_path}")
+    print(f"Generated: {status_path}")
+    print(f"schema_version={SCHEMA_VERSION} run_id={run_id} overall_status={overall_status}")
     return 0
 
 

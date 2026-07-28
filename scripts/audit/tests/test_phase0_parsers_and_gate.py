@@ -247,8 +247,10 @@ def _base_status() -> dict:
 
     return {
         "schema_version": 2,
+        "run_id": "test-run",
         "overall_status": "ok",
         "max_severity": "none",
+        "generated_at": "2026-01-01T00:00:00+00:00",
         "areas": {
             "backend": {
                 "status": "OK",
@@ -256,6 +258,8 @@ def _base_status() -> dict:
                     "pytest": ok_tool({"passed": 10, "failed": 0}),
                     "ruff": ok_tool({"issues": 0}),
                     "mypy": ok_tool({"errors": 0}),
+                    "bandit": ok_tool({"high": 0}),
+                    "pip-audit": ok_tool({"total": 0}),
                 },
                 "highlights": {"pytest_failed": 0},
             },
@@ -264,6 +268,8 @@ def _base_status() -> dict:
                 "tools": {
                     "vitest": ok_tool({"passed_tests": 5, "failed_tests": 0}),
                     "typecheck": ok_tool({"ts_errors": 0}),
+                    "eslint": ok_tool({"errors": 0, "warnings": 0}),
+                    "npm_audit": ok_tool({"total": 0}),
                 },
                 "highlights": {"vitest_failed_tests": 0},
             },
@@ -272,6 +278,8 @@ def _base_status() -> dict:
                 "tools": {
                     "jest": ok_tool({"passed": 9, "failed": 0}),
                     "typecheck": ok_tool({"ts_errors": 0}),
+                    "eslint": ok_tool({"errors": 0, "warnings": 0}),
+                    "npm_audit": ok_tool({"total": 0}),
                 },
                 "highlights": {"jest_failed": 0},
             },
@@ -322,4 +330,4 @@ def test_gate_mobile_missing():
     del status["areas"]["mobile"]
     passed, reasons, _ = evaluate_gate(status)
     assert passed is False
-    assert any("Mobile area missing" in r for r in reasons)
+    assert any("mobile" in r.lower() for r in reasons)

@@ -21,6 +21,46 @@ Correcciones del runner de auditoría para que el estado agregado coincida con l
 | `NOT_AVAILABLE` | Herramienta/intérprete no accesible |
 | `NOT_RUN` / `SKIPPED` | Omitida intencionalmente (debe haber razón) |
 
+### Política de schema (`audit-status.json`)
+
+Definida en `scripts/audit/lib/schema.py`:
+
+| Caso | Resultado |
+|------|-----------|
+| `schema_version: 2` | Aceptado |
+| Legacy (`1` o ausente) con áreas/tools mínimas | Migrado explícitamente a v2 |
+| Legacy incompleto | Rechazado |
+| Versión futura / desconocida | Rechazado |
+| Tipo inválido (`"two"`, bool, etc.) | Rechazado |
+
+El gate **no** acepta silenciosamente documentos sin versión compatible.
+
+### Política de herramientas requeridas
+
+Centralizada en `scripts/audit/lib/gate_policy.py` (única fuente de verdad):
+
+| Tool | Bloqueo |
+|------|---------|
+| Backend pytest / Ruff / Mypy | Hard: FINDINGS o métricas fallidas bloquean |
+| Frontend typecheck / Vitest | Hard |
+| Mobile typecheck / Jest | Hard |
+| Frontend ESLint / Mobile lint | Debe ejecutarse; `errors > 0` bloquea; warnings-only permitidos |
+| Bandit / pip-audit / npm audit (FE+mobile) | Debe ejecutarse; FINDINGS reportados **no** bloquean (progresivo); `PARSE_ERROR` / `NOT_RUN` sí |
+
+Findings de colectores ≠ fallo estructural del agregador/gate.
+
+### Política de artefactos generados
+
+| Path | Versionar? |
+|------|------------|
+| `audit/audit-report.md`, `audit/audit-backlog.md` | Sí (docs formales) |
+| `audit/audit-status.json`, `audit/audit-summary.md` | No (`.gitignore`; regenerar) |
+| `audit/raw/**` | No (excepto `.gitkeep`) |
+| `audit-results/phase-0/phase0-*.txt` | No (dumps efímeros) |
+| `audit-results/phase-0/*-report.md`, `root-cause-notes.md` | Sí |
+
+`run_full_audit.sh` limpia los agregados publicados al inicio, escribe a temporales y solo publica tras generación exitosa. Incluye `run_id` + `generated_at` para correlacionar con `audit/raw/runs/<run_id>/`.
+
 ### Comandos
 
 ```bash
@@ -51,11 +91,12 @@ backend/.venv/bin/python -m pytest scripts/audit/tests/ -q
 - Backend `NOT_AVAILABLE`: activar/crear `backend/.venv` e instalar `.[dev]`, o exportar `AUDIT_PYTHON`.
 - TypeScript con miles de errores fantasma: verificar `.exitcode` del typecheck; el parser prioriza exit 0 y el resumen `Found N errors`.
 - Gate FAIL por tool no ejecutado: el gate estricto **no** trata `NOT_RUN` como éxito.
+- Fallo del generador: no queda `audit-status.json` publicado; el gate no puede consumir evidencia stale.
 
 ### Outputs
 
 - `audit/raw/*` — evidencia cruda + `*.exitcode` + `python-env.json`
-- `audit/audit-status.json` — `schema_version: 2`
+- `audit/audit-status.json` — `schema_version: 2`, `run_id`, `generated_at`
 - `audit/audit-summary.md` — resumen humano
 
 ---

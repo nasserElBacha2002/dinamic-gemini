@@ -36,3 +36,11 @@ Reads only `audit/audit-status.json`. Uses failed counts (defaults to 0),
 ## Raw vs aggregate inconsistencies
 Shell status discarded by parsers; Vitest ERROR→OK; TypeScript overcount;
 highlights.pytest_failed never written; NOT_INSTALLED ≠ NOT_RUN vocabulary.
+
+## Code-review follow-ups (corrections)
+- `scripts/audit/lib/*` was excluded by root `.gitignore` pattern `lib/` → fixed with
+  `!scripts/audit/lib/` (+ re-ignore `__pycache__` under that tree).
+- `run_full_audit.sh` used `|| true` on the aggregator → stale `audit-status.json`
+  could be consumed; fixed with clear → temp generate → atomic publish + exit propagation.
+- Schema accepted silently without version policy; gate tools hardcoded in multiple places;
+  generated artifacts left the tree dirty — addressed in corrections pass.

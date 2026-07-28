@@ -14,6 +14,8 @@ _AUDIT_DIR = Path(__file__).resolve().parent
 if str(_AUDIT_DIR) not in sys.path:
     sys.path.insert(0, str(_AUDIT_DIR))
 
+from lib.gate_policy import REQUIRED_AREAS, REQUIRED_TOOL_RULES, ToolGateRule  # noqa: E402
+from lib.schema import SchemaValidationError, normalize_status_document  # noqa: E402
 from lib.statuses import (  # noqa: E402
     ToolStatus,
     is_invalidating,
@@ -45,11 +47,10 @@ def _tool(status: Dict[str, Any], area: str, tool: str) -> Dict[str, Any]:
 
 def _evaluate_required_tool(
     *,
-    label: str,
+    rule: ToolGateRule,
     tool: Dict[str, Any],
-    failed_metric_keys: Tuple[str, ...],
-    allow_findings: bool = False,
 ) -> Tuple[List[str], List[str]]:
+    label = rule.label
     reasons: List[str] = []
     checks: List[str] = []
     if not tool:
@@ -60,7 +61,7 @@ def _evaluate_required_tool(
     st = normalize_legacy_status(str(tool.get("status", ToolStatus.NOT_RUN.value)))
     metrics = tool.get("metrics") or {}
     failed = 0
-    for key in failed_metric_keys:
+    for key in rule.failed_metric_keys:
         failed += _int_or_zero(metrics.get(key))
 
     if is_invalidating(st):
@@ -79,13 +80,13 @@ def _evaluate_required_tool(
         checks.append(f"- {label}: FAIL ({failed})")
         return reasons, checks
 
-    if st == ToolStatus.FINDINGS.value and not allow_findings:
-        # Findings without failed tests (e.g. type errors) still block when required.
+    if st == ToolStatus.FINDINGS.value and not rule.allow_findings:
         reasons.append(f"{label}: FINDINGS")
         checks.append(f"- {label}: FAIL (FINDINGS)")
         return reasons, checks
 
-    checks.append(f"- {label}: OK ({st})")
+    note = " (findings allowed)" if st == ToolStatus.FINDINGS.value and rule.allow_findings else ""
+    checks.append(f"- {label}: OK ({st}){note}")
     return reasons, checks
 
 
@@ -93,63 +94,34 @@ def evaluate_gate(status: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
     reasons: List[str] = []
     checks: List[str] = []
 
+    try:
+        status, schema_notes = normalize_status_document(status)
+        for note in schema_notes:
+            checks.append(f"- schema: {note}")
+    except SchemaValidationError as exc:
+        reasons.append(f"schema validation: {exc}")
+        checks.append(f"- schema: FAIL ({exc})")
+        return False, reasons, checks
+
     schema = status.get("schema_version")
-    checks.append(f"- schema_version: {schema if schema is not None else 'missing (legacy)'}")
+    checks.append(f"- schema_version: {schema}")
 
-    # Backend pytest (required)
-    r, c = _evaluate_required_tool(
-        label="Backend pytest",
-        tool=_tool(status, "backend", "pytest"),
-        failed_metric_keys=("failed", "errors"),
-    )
-    reasons.extend(r)
-    checks.extend(c)
+    run_id = status.get("run_id")
+    if run_id:
+        checks.append(f"- run_id: {run_id}")
+    generated_at = status.get("generated_at")
+    if generated_at:
+        checks.append(f"- generated_at: {generated_at}")
 
-    # Backend ruff / mypy — findings block in strict gate
-    for tool_key, label in (("ruff", "Backend ruff"), ("mypy", "Backend mypy")):
-        r, c = _evaluate_required_tool(
-            label=label,
-            tool=_tool(status, "backend", tool_key),
-            failed_metric_keys=("issues", "errors"),
-        )
-        reasons.extend(r)
-        checks.extend(c)
+    for area in sorted(REQUIRED_AREAS):
+        if _get_nested(status, ["areas", area]) is None:
+            reasons.append(f"Required area missing: {area}")
+            checks.append(f"- {area} area: FAIL (missing)")
 
-    # Frontend vitest + typecheck
-    r, c = _evaluate_required_tool(
-        label="Frontend vitest",
-        tool=_tool(status, "frontend", "vitest"),
-        failed_metric_keys=("failed_tests",),
-    )
-    reasons.extend(r)
-    checks.extend(c)
-
-    r, c = _evaluate_required_tool(
-        label="Frontend typecheck",
-        tool=_tool(status, "frontend", "typecheck"),
-        failed_metric_keys=("ts_errors",),
-    )
-    reasons.extend(r)
-    checks.extend(c)
-
-    # Mobile (required Phase 0)
-    mobile_area = _get_nested(status, ["areas", "mobile"])
-    if mobile_area is None:
-        reasons.append("Mobile area missing from audit-status.json")
-        checks.append("- Mobile area: FAIL (missing)")
-    else:
-        r, c = _evaluate_required_tool(
-            label="Mobile jest",
-            tool=_tool(status, "mobile", "jest"),
-            failed_metric_keys=("failed",),
-        )
-        reasons.extend(r)
-        checks.extend(c)
-        r, c = _evaluate_required_tool(
-            label="Mobile typecheck",
-            tool=_tool(status, "mobile", "typecheck"),
-            failed_metric_keys=("ts_errors",),
-        )
+    for rule in REQUIRED_TOOL_RULES:
+        if not rule.required:
+            continue
+        r, c = _evaluate_required_tool(rule=rule, tool=_tool(status, rule.area, rule.tool))
         reasons.extend(r)
         checks.extend(c)
 
@@ -159,13 +131,10 @@ def evaluate_gate(status: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
     checks.append(f"- Overall status: {overall_status}")
 
     if max_severity == "critical":
-        # Only block on critical if it comes from executed findings, not parse noise.
-        # Still report — pytest/jest failures already set critical.
         reasons.append("Max severity: critical")
     if overall_status == "error":
         reasons.append("Overall status: error (tooling/parse invalidating)")
 
-    # Deduplicate reasons while preserving order
     seen = set()
     uniq_reasons: List[str] = []
     for reason in reasons:
@@ -201,6 +170,7 @@ def main() -> int:
         print("")
         print("Reasons:")
         print(f"- audit-status.json no encontrado: {status_path}")
+        print("  (no se usa evidencia de corridas anteriores)")
         print("")
         print("Deploy blocked")
         return 1 if args.strict else 0
